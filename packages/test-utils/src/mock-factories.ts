@@ -442,6 +442,23 @@ const UNLINKED_CREDITS = {
 /** Create a mock Transport with all methods stubbed via `vi.fn()`. */
 export function createMockTransport(overrides: Partial<Transport> = {}): Transport {
   return {
+    // Optional delivery remains unavailable unless a test supplies its actual port.
+    browserViewerDelivery: undefined,
+    browserInput: undefined,
+    browserFiles: undefined,
+    browserDiagnostics: undefined,
+    getBrowserProfiles: vi.fn().mockResolvedValue([]),
+    getBrowserProfile: vi
+      .fn()
+      .mockRejectedValue(new Error('Browser fixture profile is unavailable.')),
+    getBrowserInstances: vi.fn().mockResolvedValue([]),
+    getBrowserInstance: vi
+      .fn()
+      .mockRejectedValue(new Error('Browser fixture instance is unavailable.')),
+    closeBrowserInstance: vi
+      .fn()
+      .mockRejectedValue(new Error('Browser fixture close result is unavailable.')),
+
     // Aggregated-list envelope (ADR-0310): { sessions, warnings? }, not a bare array.
     listSessions: vi.fn().mockResolvedValue({ sessions: [] }),
     listRecentSessions: vi

@@ -4,7 +4,7 @@ import { once } from 'node:events';
 import { expect, it, onTestFinished, vi } from 'vitest';
 import { createBrokerIssuer } from '../issuer.js';
 import { createPrivateBroker } from '../broker.js';
-import { createNodeBrokerTransport } from '../node-transport.js';
+import { createNodeBrokerTransport } from '../node/node-transport.js';
 import { createFixtureOriginCustody } from '../live/fixture-origin-custody.js';
 
 async function endpoint(port = 0) {

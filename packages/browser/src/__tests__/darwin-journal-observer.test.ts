@@ -3,7 +3,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it, onTestFinished } from 'vitest';
 import { observeDarwinJournal } from '../runtime/darwin-journal-observer.js';
-import { darwinBirth, type DarwinProcessObserver } from '../runtime/darwin-process-observer.js';
+import {
+  darwinBirth,
+  type DarwinProcessObserver,
+  type DarwinProcessBatch,
+} from '../runtime/darwin-process-observer.js';
 import {
   observeJournalDirectory,
   readJournal,
@@ -235,94 +239,101 @@ it('refuses new root attribution if its old parent dies between the initial nati
   }
 });
 
-it('retains a genuine-shaped discovery gap while tracking admitted originals to natural absence', async () => {
-  const f = await fixture();
-  let round = 0,
-    clock = 10,
-    childrenCalls = 0;
-  const boot = { version: 1 as const, bootSeconds: '1', bootMicroseconds: '0' };
-  const refusals: unknown[] = [];
-  const checkpoints: JournalSnapshot[] = [];
-  const observer: DarwinProcessObserver = {
-    async inspect(pids) {
-      return {
-        ...boot,
-        processes: pids.map((pid) => {
-          if (round >= 4 || (round >= 2 && pid === 10)) return { kind: 'absent' as const, pid };
-          return {
-            kind: 'present' as const,
-            identity: pid === 10 ? f.managerNative : pid === 20 ? f.rootNative : f.childNative,
-            parentPid: pid === 10 ? 1 : pid === 20 ? (round >= 2 ? 1 : 10) : 20,
-            zombie: false,
-          };
-        }),
-      };
-    },
-    async children(parent) {
-      childrenCalls++;
-      const identity = parent.pid === 20 ? f.rootNative : f.childNative;
-      return {
-        ...boot,
-        parentBefore: identity,
-        parentAfter: identity,
-        complete: round !== 2,
-        processes:
-          parent.pid === 20 && round === 1
-            ? [
-                {
-                  kind: 'present' as const,
-                  identity: f.childNative,
-                  parentPid: 20,
-                  zombie: false,
-                },
-              ]
-            : [],
-      };
-    },
-  };
-  try {
-    expect(
-      await observeDarwinJournal({
-        location: f.location,
-        initial: f.initial,
-        root: f.root,
-        observer,
-        monotonicNow: () => clock++,
-        endMonotonic: 1000,
-        maxGap: 100,
-        onIncompleteChildren: async (parent, batch) => {
-          refusals.push({ parent, batch });
+it.each([false, true])(
+  'retains the same original incomplete or unqualified child batch (%s)',
+  async (unqualified) => {
+    const f = await fixture();
+    let round = 0,
+      clock = 10,
+      childrenCalls = 0;
+    const boot = { version: 1 as const, bootSeconds: '1', bootMicroseconds: '0' };
+    const refusals: unknown[] = [];
+    const checkpoints: JournalSnapshot[] = [];
+    const observer: DarwinProcessObserver = {
+      async inspect(pids) {
+        return {
+          ...boot,
+          processes: pids.map((pid) => {
+            if (round >= 4 || (round >= 2 && pid === 10)) return { kind: 'absent' as const, pid };
+            return {
+              kind: 'present' as const,
+              identity: pid === 10 ? f.managerNative : pid === 20 ? f.rootNative : f.childNative,
+              parentPid: pid === 10 ? 1 : pid === 20 ? (round >= 2 ? 1 : 10) : 20,
+              zombie: false,
+            };
+          }),
+        };
+      },
+      async children(parent) {
+        childrenCalls++;
+        const identity = parent.pid === 20 ? f.rootNative : f.childNative;
+        return {
+          ...boot,
+          parentBefore: identity,
+          parentAfter: identity,
+          complete: round !== 2,
+          processes:
+            parent.pid === 20 && round === 1
+              ? [
+                  {
+                    kind: 'present' as const,
+                    identity: f.childNative,
+                    parentPid: 20,
+                    zombie: unqualified,
+                  },
+                ]
+              : [],
+        };
+      },
+    };
+    try {
+      expect(
+        await observeDarwinJournal({
+          location: f.location,
+          initial: f.initial,
+          root: f.root,
+          observer,
+          monotonicNow: () => clock++,
+          endMonotonic: 1000,
+          maxGap: 100,
+          onIncompleteChildren: async (parent, batch, original) => {
+            refusals.push({ parent, batch, original });
+          },
+          pause: async () => {
+            const read = await readJournal(f.location);
+            if (read.state === 'valid-recorded-data') checkpoints.push(read.snapshot);
+            round++;
+          },
+        })
+      ).toBe('retained');
+      expect(refusals).toHaveLength(1);
+      expect(refusals[0]).toMatchObject({
+        original: {
+          reason: unqualified ? 'CHILD_UNQUALIFIED' : 'CHILDREN_INCOMPLETE',
+          sequence: expect.any(Number),
         },
-        pause: async () => {
-          const read = await readJournal(f.location);
-          if (read.state === 'valid-recorded-data') checkpoints.push(read.snapshot);
-          round++;
-        },
-      })
-    ).toBe('retained');
-    expect(refusals).toHaveLength(1);
-    expect(childrenCalls).toBe(2); // Initial root discovery, then the exact incomplete root sweep.
-    const gappedAlive = checkpoints.find((snapshot) => snapshot.gaps.length);
-    expect(gappedAlive?.retainedIdentities[1].lifecycle).toBe('alive');
-    const final = await readJournal(f.location);
-    expect(final.state).toBe('valid-recorded-data');
-    if (final.state === 'valid-recorded-data') {
-      expect(final.snapshot.phase).toBe('retained');
-      expect(final.snapshot.retainedIdentities.map((value) => value.lifecycle)).toEqual([
-        'dead',
-        'dead',
-        'dead',
-      ]);
-      expect(final.snapshot.root).toEqual(checkpoints[0].root);
-      expect(final.snapshot.gaps).toHaveLength(1);
-      expect(final.snapshot.gaps[0].cause).toBe('association-missing');
-      expect(final.snapshot.gaps[0].identity).toEqual(f.root);
-      expect(final.snapshot.firstCause?.cause).toBe('association-missing');
+      });
+      expect(childrenCalls).toBe(unqualified ? 1 : 2); // Initial root discovery, then the exact incomplete root sweep.
+      const gappedAlive = checkpoints.find((snapshot) => snapshot.gaps.length);
+      expect(gappedAlive?.retainedIdentities[1].lifecycle).toBe('alive');
+      const final = await readJournal(f.location);
+      expect(final.state).toBe('valid-recorded-data');
+      if (final.state === 'valid-recorded-data') {
+        expect(final.snapshot.phase).toBe('retained');
+        expect(final.snapshot.retainedIdentities.map((value) => value.lifecycle)).toEqual(
+          unqualified ? ['dead', 'dead'] : ['dead', 'dead', 'dead']
+        );
+        expect(final.snapshot.root).toEqual(checkpoints[0].root);
+        expect(final.snapshot.gaps).toHaveLength(1);
+        expect(final.snapshot.gaps[0].cause).toBe('association-missing');
+        expect(final.snapshot.gaps[0].identity).toEqual(f.root);
+        expect(final.snapshot.firstCause?.cause).toBe('association-missing');
+      }
+    } finally {
+      await rm(f.parentDirectory, { recursive: true, force: true });
     }
-  } finally {
-    await rm(f.parentDirectory, { recursive: true, force: true });
   }
-});
+);
 
 it.each([false, true])(
   'records the selected controller-supervisor-root chain and refuses a replaced supervisor (%s)',
@@ -1354,3 +1365,135 @@ it('retains an original undefined pre-close ACK failure without reopening enumer
     await rm(f.parentDirectory, { recursive: true, force: true });
   }
 });
+
+it.each([
+  ['birth-changed', 'JOURNAL_IDENTITY_NATIVE_BIRTH_CHANGED'],
+  ['parent-changed', 'JOURNAL_IDENTITY_NATIVE_PARENT_CHANGED'],
+  ['alive-to-zombie', 'JOURNAL_IDENTITY_NATIVE_ALIVE_TO_ZOMBIE'],
+  ['zombie-to-alive', 'JOURNAL_IDENTITY_NATIVE_ZOMBIE_TO_ALIVE'],
+  ['membership-disappeared', 'JOURNAL_IDENTITY_NATIVE_MEMBERSHIP_DISAPPEARED'],
+  ['membership-appeared', 'JOURNAL_IDENTITY_NATIVE_MEMBERSHIP_APPEARED'],
+  [
+    'membership-absent-with-present-reads',
+    'JOURNAL_IDENTITY_NATIVE_MEMBERSHIP_ABSENT_WITH_PRESENT_READS',
+  ],
+  [35, 'JOURNAL_IDENTITY_NATIVE_EAGAIN'],
+  [3, 'JOURNAL_IDENTITY_NATIVE_ESRCH'],
+  [1, 'JOURNAL_IDENTITY_NATIVE_PERMISSION'],
+  [13, 'JOURNAL_IDENTITY_NATIVE_PERMISSION'],
+  [5, 'JOURNAL_IDENTITY_NATIVE_IO'],
+  [22, 'JOURNAL_IDENTITY_NATIVE_OTHER'],
+  ['missing', 'JOURNAL_IDENTITY_MISSING_FACT'],
+  ['boot', 'JOURNAL_IDENTITY_BOOT_MISMATCH'],
+  ['terminal', 'JOURNAL_IDENTITY_TERMINAL_CONTRADICTION'],
+] as const)(
+  'retains original identity gap %s and only its fixed refusal branch',
+  async (fault, code) => {
+    const f = await fixture();
+    let clock = 10,
+      round = 0,
+      refusal: string | undefined;
+    const boot = { version: 1 as const, bootSeconds: '1', bootMicroseconds: '0' };
+    const observer: DarwinProcessObserver = {
+      async inspect(pids) {
+        return {
+          ...boot,
+          ...(fault === 'boot' && round >= 2 ? { bootSeconds: '2' } : {}),
+          processes: pids.flatMap((pid): DarwinProcessBatch['processes'] => {
+            if (pid === 30 && round >= 2 && fault !== 'terminal')
+              return fault === 'missing'
+                ? []
+                : [
+                    {
+                      kind: 'unknown' as const,
+                      pid,
+                      error: typeof fault === 'number' ? fault : 35,
+                      ...(typeof fault === 'string' && fault !== 'boot'
+                        ? { uncertainty: fault }
+                        : {}),
+                    },
+                  ];
+            return [
+              {
+                kind: 'present' as const,
+                identity: pid === 10 ? f.managerNative : pid === 20 ? f.rootNative : f.childNative,
+                parentPid: pid === 10 ? 1 : pid === 20 ? 10 : 20,
+                zombie: pid === 30 && fault === 'terminal' && round === 2,
+              },
+            ];
+          }),
+        };
+      },
+      async children(parent) {
+        const native =
+          parent.pid === 10 ? f.managerNative : parent.pid === 20 ? f.rootNative : f.childNative;
+        return {
+          ...boot,
+          parentBefore: native,
+          parentAfter: native,
+          complete: true,
+          processes:
+            parent.pid === 10
+              ? [{ kind: 'present' as const, identity: f.rootNative, parentPid: 10, zombie: false }]
+              : parent.pid === 20 && round <= 1
+                ? [
+                    {
+                      kind: 'present' as const,
+                      identity: f.childNative,
+                      parentPid: 20,
+                      zombie: false,
+                    },
+                  ]
+                : [],
+        };
+      },
+    };
+    try {
+      expect(
+        await observeDarwinJournal({
+          location: f.location,
+          initial: f.initial,
+          root: f.root,
+          observer,
+          monotonicNow: () => clock++,
+          pause: async () => {
+            round++;
+          },
+          endMonotonic: 1000,
+          continuousWindowMilliseconds: 1000,
+          maxGap: 100,
+          onObservationFault: async (value) => {
+            refusal = value;
+            clock = 10000;
+          },
+        })
+      ).toBe(fault === 'boot' ? 'uncertain' : 'retained');
+      expect(refusal).toBe(code);
+      const read = await readJournal(f.location);
+      expect(read.state).toBe('valid-recorded-data');
+      if (read.state === 'valid-recorded-data') {
+        if (fault === 'boot') {
+          // The original writer fenced the invalid commit and its later refusal commit.
+          expect(read.snapshot.firstCause).toBeNull();
+          expect(read.snapshot.gaps).toEqual([]);
+          expect(read.snapshot.phase).toBe('observing');
+        } else {
+          expect(read.snapshot.firstCause?.cause).toBe('identity-unknown');
+          expect(read.snapshot.gaps.some((value) => value.cause === 'identity-unknown')).toBe(true);
+          expect(read.snapshot.phase).toBe('retained');
+        }
+        if (fault === 'boot') {
+          // The original validator refused the multi-identity invalid sweep; its last actual rows remain.
+          expect(read.snapshot.retainedIdentities.every((row) => row.lifecycle === 'alive')).toBe(
+            true
+          );
+          expect(read.snapshot.retainedIdentities.some((row) => row.identity.pid === 30)).toBe(
+            true
+          );
+        }
+      }
+    } finally {
+      await rm(f.parentDirectory, { recursive: true, force: true });
+    }
+  }
+);

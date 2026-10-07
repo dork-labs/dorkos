@@ -2,8 +2,32 @@ import type { BrowserRecord, TabRecord } from './records.js';
 import { ordinaryRecord } from './ownership.js';
 import { popupOwnsHandle, popupCohortKnown } from '../tabs/popup-navigation.js';
 
+/** Fixed private cause vocabulary; never contains participant data or an error message. */
+export type AuthorityCustodyRefusalStage =
+  | 'local'
+  | 'membership'
+  | 'network'
+  | 'journal'
+  | 'supervisor'
+  | 'slot'
+  | 'transport'
+  | 'reentrant'
+  | 'popup'
+  | 'exception';
+const refusals = new WeakMap<BrowserRecord, AuthorityCustodyRefusalStage>();
+/** Data-only observation of the most recent actual custody decision. */
+export function readAuthorityCustodyRefusal(
+  record: BrowserRecord
+): AuthorityCustodyRefusalStage | undefined {
+  return refusals.get(record);
+}
+
 /** Observe only the captured engine originals; no caller DTO can supply custody. */
 export function currentAuthorityCustody(record: BrowserRecord, current: () => boolean): boolean {
+  const refuse = (stage: AuthorityCustodyRefusalStage): false => {
+    refusals.set(record, stage);
+    return false;
+  };
   const lifetime = record.lifetime;
   const ordinary = lifetime.ordinary;
   const local = () =>
@@ -28,7 +52,9 @@ export function currentAuthorityCustody(record: BrowserRecord, current: () => bo
     lifetime.proxyCloses.size === 0 &&
     ordinary.retirement.firstCause === null &&
     !ordinary.retirement.coverageUnavailable;
-  if (!local() || record.tabs.size === 0 || lifetime.inputs.size !== record.tabs.size) return false;
+  if (!local()) return refuse('local');
+  if (record.tabs.size === 0 || lifetime.inputs.size !== record.tabs.size)
+    return refuse('membership');
   const journal = record.journal,
     supervisor = record.supervisor;
   const owners = [...record.tabs.values()].map((tab) => ({ tab, slot: lifetime.inputs.get(tab) }));
@@ -43,17 +69,21 @@ export function currentAuthorityCustody(record: BrowserRecord, current: () => bo
         !!slot && record.tabs.get(tab.binding.tabId) === tab && lifetime.inputs.get(tab) === slot
     );
   try {
-    if (record.networkPeer && record.networkCustody?.() !== true) return false;
+    if (record.networkPeer && record.networkCustody?.() !== true) return refuse('network');
+    if (record.controllerWire && !record.controllerWire.isKnown()) return refuse('transport');
+    if (record.controllerAuthentication && !record.controllerAuthentication.isKnown())
+      return refuse('transport');
     if (journal) {
       const custody = journal.custody();
       // An active original observer is expected to remain owned, not returned.
-      if (!custody.pending || custody.uncertain || journal.historyGapped()) return false;
+      if (!custody.pending || custody.uncertain || journal.historyGapped())
+        return refuse('journal');
     }
     if (supervisor) {
       const custody = supervisor.custody();
-      if (!custody.pending || custody.uncertain) return false;
+      if (!custody.pending || custody.uncertain) return refuse('supervisor');
     }
-    if (!exact()) return false;
+    if (!exact()) return refuse('reentrant');
     const pendingOriginals: { tab: TabRecord; handle: object }[] = [];
     for (const { tab, slot } of owners) {
       if (
@@ -69,17 +99,18 @@ export function currentAuthorityCustody(record: BrowserRecord, current: () => bo
         !slot.handle ||
         (slot.registeredTarget && slot.registeredTarget.page !== tab.page)
       )
-        return false;
+        return refuse('slot');
       const handle = slot.handle;
       const target = slot.registeredTarget;
       const pendingPopup = !slot.ready && popupOwnsHandle(tab, handle);
       if (pendingPopup) pendingOriginals.push({ tab, handle });
-      if ((!slot.ready || !target) && !pendingPopup) return false;
+      if ((!slot.ready || !target) && !pendingPopup) return refuse('slot');
       // Reset fences new input, but retains the original browser/network authority.
       // This genuine input-owner predicate deliberately distinguishes held ordinary
       // work from sticky unknown custody. Older producers cannot assert a positive.
       const known = pendingPopup ? handle.isPopupCustodyKnown : handle.isCustodyKnown;
-      if (typeof known !== 'function' || Reflect.apply(known, handle, []) !== true) return false;
+      if (typeof known !== 'function' || Reflect.apply(known, handle, []) !== true)
+        return refuse('transport');
       if (
         !exact() ||
         slot.handle !== handle ||
@@ -95,10 +126,13 @@ export function currentAuthorityCustody(record: BrowserRecord, current: () => bo
         slot.page !== tab.page ||
         (target && target.page !== tab.page)
       )
-        return false;
+        return refuse('reentrant');
     }
-    return exact() && popupCohortKnown(pendingOriginals);
+    if (!exact()) return refuse('reentrant');
+    if (!popupCohortKnown(pendingOriginals)) return refuse('popup');
+    refusals.delete(record);
+    return true;
   } catch {
-    return false;
+    return refuse('exception');
   }
 }

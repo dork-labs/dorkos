@@ -95,7 +95,9 @@ const byteCounts = new Map<string, number>();
 
 describe('private browser package boundaries', () => {
   it('keeps real acquisition outside default tests and enumerates explicit browser and Node observer fixture files', () => {
-    const portable = portableConfig as { test: { include: string[]; exclude: string[] } };
+    const portable = portableConfig as {
+      test: { include: string[]; exclude: string[] };
+    };
     const native = nativeConfig as {
       test: { include: string[]; fileParallelism: boolean; retry: number };
     };
@@ -157,7 +159,11 @@ describe('private browser package boundaries', () => {
   it('exports implemented validation and the complete narrow lifecycle slice through the real package entry', () => {
     const manifest = JSON.parse(readFileSync(path.join(packageRoot, 'package.json'), 'utf8'));
     expect(manifest.private).toBe(true);
-    expect(manifest.dependencies).toEqual({ 'playwright-core': '1.63.0', zod: '^4.6.2' });
+    expect(manifest.dependencies).toEqual({
+      '@dorkos/shared': 'workspace:*',
+      'playwright-core': '1.63.0',
+      zod: '^4.6.2',
+    });
     const exports = Object.entries(manifest.exports) as [
       string,
       { types: string; default: string },
@@ -168,7 +174,10 @@ describe('private browser package boundaries', () => {
         types: './src/runtime/installation/index.ts',
         default: './dist/runtime/installation/index.js',
       },
-      './server-owner': { types: './src/server-owner.ts', default: './dist/server-owner.js' },
+      './server-owner': {
+        types: './src/server-owner.ts',
+        default: './dist/server-owner.js',
+      },
     });
     for (const [subpath, target] of exports) {
       expect(['.', './runtime-installation', './server-owner']).toContain(subpath);
@@ -214,6 +223,19 @@ describe('private browser package boundaries', () => {
       else {
         const module = path.relative(path.join(packageRoot, 'src'), file).split(path.sep).join('/');
         const allowed: Record<string, readonly string[]> = {
+          // Reviewed bounded browser data schemas only; no auth, room, or server capabilities.
+          '@dorkos/shared/browser-schemas': ['semantic/owned-read.ts'],
+          '@dorkos/shared/browser-semantic-sanitizer': ['semantic/native-reader.ts'],
+          '@dorkos/shared/browser-semantic-schemas': [
+            'input/semantic-work.ts',
+            'runtime/darwin-supervisor-client.ts',
+            'runtime/darwin-supervisor-protocol.ts',
+            'semantic/native-reader.ts',
+            'semantic/native-target.ts',
+            'semantic/owned-read.ts',
+            'semantic/process-owner.ts',
+            'semantic/process-worker.ts',
+          ],
           zod: [
             'runtime/darwin-supervisor-protocol.ts',
             'runtime/darwin-supervisor-worker.ts',
@@ -239,8 +261,15 @@ describe('private browser package boundaries', () => {
             'runtime/identity/native-observation.ts',
             'runtime/installation/contracts.ts',
             'runtime/installation/filesystem.ts',
+            'semantic/native-effect.ts',
+            'semantic/native-reader.ts',
+            'semantic/native-target.ts',
+            'semantic/owned-read.ts',
+            'semantic/process-owner.ts',
+            'semantic/process-worker.ts',
           ],
           'node:path': [
+            'runtime/identity/supervisor-native-identity.ts',
             // Fixed package-relative native worker and manifest paths.
             'runtime/installation/packaged.ts',
             'runtime/darwin-supervisor-browser.ts',
@@ -258,6 +287,8 @@ describe('private browser package boundaries', () => {
             'runtime/installation/transaction.ts',
           ],
           'node:crypto': [
+            'runtime/identity/supervisor-identity-acceptance.ts',
+            'runtime/identity/supervisor-native-identity.ts',
             // Package manifest, controller, worker and native artifact hash correspondence.
             'runtime/installation/packaged.ts',
             'runtime/darwin-supervisor-client.ts',
@@ -282,6 +313,11 @@ describe('private browser package boundaries', () => {
             'runtime/installation/index.ts',
             // Exact installed native-observer/controller digest correspondence.
             'runtime/installation/native-mode.ts',
+
+            'semantic/bounded-relay.ts',
+            'semantic/native-effect.ts',
+            'semantic/native-reader.ts',
+            'semantic/owned-read.ts',
           ],
           'node:child_process': [
             'runtime/darwin-supervisor-client.ts',
@@ -291,8 +327,11 @@ describe('private browser package boundaries', () => {
             'runtime/darwin-process-observer.ts',
             'runtime/darwin-journal-worker.ts',
             'runtime/darwin-owned-child.ts',
+
+            'semantic/process-owner.ts',
           ],
           'node:fs': [
+            'runtime/identity/supervisor-native-identity.ts',
             // No-follow file opens and original file identity comparison.
             'runtime/installation/packaged.ts',
             'runtime/darwin-supervisor-browser.ts',
@@ -310,6 +349,7 @@ describe('private browser package boundaries', () => {
             'runtime/installation/fresh-verifier.ts',
           ],
           'node:fs/promises': [
+            'runtime/identity/supervisor-native-identity.ts',
             // Bounded original installed-file reads and canonical package paths.
             'runtime/installation/packaged.ts',
             'runtime/darwin-supervisor-browser.ts',
@@ -328,6 +368,9 @@ describe('private browser package boundaries', () => {
             'runtime/darwin-supervisor-client.ts',
             'runtime/installation/jobs.ts',
             'runtime/darwin-owned-child.ts',
+
+            'semantic/bounded-relay.ts',
+            'semantic/process-owner.ts',
           ],
           'node:url': [
             // Convert the canonical original module URL to its file path.
@@ -336,17 +379,39 @@ describe('private browser package boundaries', () => {
             'runtime/darwin-packaged-observer.ts',
           ],
           // Exact native Proxy rejection for owner-private final binding checks.
-          'node:util': ['lifecycle/input-owner.ts', 'runtime/darwin-generation-return.ts'],
-          'node:os': ['runtime/host-identity.ts'],
+          'node:util': [
+            'lifecycle/input-owner.ts',
+            'runtime/darwin-generation-return.ts',
+            'semantic/byte-channel.ts',
+          ],
+          'node:os': ['runtime/host-identity.ts', 'runtime/identity/supervisor-native-identity.ts'],
           'node:module': [
             // Resolve the installed CLI package relative to its actual controller entry.
             'runtime/installation/packaged.ts',
             'runtime/public-library.ts',
           ],
-          'node:http': ['network/fixture-proxy.ts'],
+          // Private identity observers own fixed local peers and the exact original cohort.
+          'node:http': [
+            'network/fixture-proxy.ts',
+            'semantic/bounded-relay.ts',
+            'runtime/identity/supervisor-identity-acceptance.ts',
+            'runtime/identity/supervisor-native-identity.ts',
+          ],
+          'node:tls': ['runtime/identity/supervisor-identity-acceptance.ts'],
+          'node:perf_hooks': ['runtime/identity/supervisor-native-cohort.ts'],
           // Only pinned public types/library imports in these reviewed internal modules.
           // Inline import types are enumerated too; private package subpaths stay forbidden.
           'playwright-core': [
+            // Public transport type for the same original SDK controller auth owner.
+            'runtime/identity/controller-proxy-authentication.ts',
+            'runtime/identity/controller-original-catalog.ts',
+            'runtime/identity/supervisor-native-identity.ts',
+            'runtime/identity/supervisor-original-catalog.ts',
+            'runtime/identity/supervisor-protocol-wire.ts',
+            'runtime/identity/supervisor-proxy-authentication.ts',
+            'runtime/identity/supervisor-sdk-reconciliation.ts',
+            // Public original transport type for the retained private Chrome bridge.
+            'runtime/identity/supervisor-chrome-barrier.ts',
             'runtime/crash-custody.ts',
             // Public Browser/CDPSession types pin the sole lifetime-retained deny owner.
             'runtime/default-downloads.ts',
@@ -370,7 +435,21 @@ describe('private browser package boundaries', () => {
             'tabs/popup-navigation.ts',
             'input/page-transport.ts',
             'input/engine-input.ts',
+
+            'files/response-download.ts',
+            'files/upload-chooser.ts',
+            'runtime/target-metadata.ts',
+            'semantic/native-effect.ts',
+            'semantic/native-reader.ts',
+            'semantic/process-worker.ts',
           ],
+          'node:net': [
+            'semantic/bounded-relay.ts',
+            'semantic/process-worker.ts',
+            'runtime/identity/supervisor-identity-acceptance.ts',
+            'runtime/identity/supervisor-native-identity.ts',
+          ],
+          'node:v8': ['semantic/process-worker.ts'],
         };
         expect(allowed[specifier], `${module}: ${specifier}`).toContain(module);
       }
@@ -389,9 +468,13 @@ describe('private browser package boundaries', () => {
   });
   it.each(frontendRoots)('keeps %s dependencies outside the browser package', (root) => {
     const manifest = JSON.parse(readFileSync(path.join(repoRoot, root, 'package.json'), 'utf8'));
-    const tuples = Object.keys({ ...manifest.dependencies, ...manifest.devDependencies }).map(
-      (specifier) => ({ file: path.join(repoRoot, root, 'package.json'), specifier })
-    );
+    const tuples = Object.keys({
+      ...manifest.dependencies,
+      ...manifest.devDependencies,
+    }).map((specifier) => ({
+      file: path.join(repoRoot, root, 'package.json'),
+      specifier,
+    }));
     expect(frontendViolations(tuples)).toEqual([]);
   });
   it.each(frontendBatches)(
@@ -402,9 +485,17 @@ describe('private browser package boundaries', () => {
       for (const file of files) {
         const text = readFileSync(file, 'utf8');
         byteCounts.set(root, (byteCounts.get(root) ?? 0) + Buffer.byteLength(text));
-        tuples.push(...importsFromText(file, text).map((specifier) => ({ file, specifier })));
+        tuples.push(
+          ...importsFromText(file, text).map((specifier) => ({
+            file,
+            specifier,
+          }))
+        );
         oldTuples.push(
-          ...importsFromText(file, text, true).map((specifier) => ({ file, specifier }))
+          ...importsFromText(file, text, true).map((specifier) => ({
+            file,
+            specifier,
+          }))
         );
       }
       expect(tuples).toEqual(oldTuples);

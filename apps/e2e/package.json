@@ -19,6 +19,7 @@
   },
   "devDependencies": {
     "@dorkos/eslint-config": "workspace:*",
+    "@dorkos/shared": "workspace:*",
     "@dorkos/test-utils": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
     "@playwright/test": "^1.63.0",

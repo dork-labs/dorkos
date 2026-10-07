@@ -64,6 +64,24 @@ import {
   type FailureCode,
 } from './contracts.js';
 
+// Hash-only regular files use a fixed private pool. Sixteen lazy 1MiB buffers bound
+// additional allocated backing stores to 16MiB per process; saturation uses existing 64KiB.
+// Slots stay charged until the original read and independent descriptor close have returned.
+const LARGE_HASH_BUFFER_BYTES = 1_048_576;
+const LARGE_HASH_BUFFER_SLOTS = 16;
+type LargeHashBufferSlot = { inUse: boolean; buffer?: Buffer };
+const largeHashBuffers: LargeHashBufferSlot[] = [];
+function takeLargeHashBuffer(size: string, retain: number): LargeHashBufferSlot | undefined {
+  if (retain !== 0 || BigInt(size) < BigInt(LARGE_HASH_BUFFER_BYTES)) return undefined;
+  let slot = largeHashBuffers.find((value) => !value.inUse);
+  if (!slot && largeHashBuffers.length < LARGE_HASH_BUFFER_SLOTS) {
+    slot = { inUse: false };
+    largeHashBuffers.push(slot);
+  }
+  if (slot) slot.inUse = true; // Charge synchronously before allocation or any original await.
+  return slot;
+}
+
 type Duty = {
   path: string;
   original: FileHandle | Dir | null;
@@ -420,43 +438,62 @@ class NodeInstallationFilesystem implements InstallationFilesystem {
       constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK
     );
     const handle = duty.original as FileHandle;
-    return this.closeAfter([duty], async () => {
-      const acquired = identity(await handle.stat({ bigint: true }));
-      requireFact(sameFileIdentity(named, acquired), 'ROOT_CHANGED');
-      const hash = createHash('sha256'),
-        chunks: Uint8Array[] = [];
-      const buffer = Buffer.alloc(LIMIT.bufferBytes);
-      let bytes = 0,
-        retained = 0;
-      let prefix = new Uint8Array();
-      while (true) {
-        const value = await handle.read(buffer, 0, Math.min(buffer.length, cap + 1 - bytes), bytes);
-        if (!value.bytesRead) break;
-        const chunk = buffer.subarray(0, value.bytesRead);
-        bytes += value.bytesRead;
-        requireFact(bytes <= cap, 'RETENTION_EXCEEDED');
-        hash.update(chunk);
-        if (prefix.length < 8)
-          prefix = Buffer.concat([prefix, chunk.subarray(0, 8 - prefix.length)]);
-        if (retained < retain) {
-          const copy = Uint8Array.from(chunk.subarray(0, retain - retained));
-          chunks.push(copy);
-          retained += copy.length;
+    const allocation: { slot?: LargeHashBufferSlot } = {};
+    try {
+      return await this.closeAfter([duty], async () => {
+        const acquired = identity(await handle.stat({ bigint: true }));
+        requireFact(sameFileIdentity(named, acquired), 'ROOT_CHANGED');
+        const hash = createHash('sha256'),
+          chunks: Uint8Array[] = [];
+        allocation.slot = takeLargeHashBuffer(named.size, retain);
+        const buffer = allocation.slot
+          ? (allocation.slot.buffer ??= Buffer.alloc(LARGE_HASH_BUFFER_BYTES))
+          : Buffer.alloc(LIMIT.bufferBytes);
+        let bytes = 0,
+          retained = 0;
+        let prefix = new Uint8Array();
+        while (true) {
+          const value = await handle.read(
+            buffer,
+            0,
+            Math.min(buffer.length, cap + 1 - bytes),
+            bytes
+          );
+          if (!value.bytesRead) break;
+          const chunk = buffer.subarray(0, value.bytesRead);
+          bytes += value.bytesRead;
+          requireFact(bytes <= cap, 'RETENTION_EXCEEDED');
+          hash.update(chunk);
+          if (prefix.length < 8)
+            prefix = Buffer.concat([prefix, chunk.subarray(0, 8 - prefix.length)]);
+          if (retained < retain) {
+            const copy = Uint8Array.from(chunk.subarray(0, retain - retained));
+            chunks.push(copy);
+            retained += copy.length;
+          }
         }
-      }
-      requireFact(
-        bytes === Number(acquired.size) &&
-          sameFileIdentity(acquired, identity(await handle.stat({ bigint: true }))) &&
-          sameFileIdentity(acquired, identity(await fs.lstat(name, { bigint: true }))),
-        'ROOT_CHANGED'
-      );
-      await this.recheckParents(parents);
-      return {
-        file: Object.freeze({ path: name, identity: acquired, bytes, sha256: hash.digest('hex') }),
-        bytes: Buffer.concat(chunks),
-        prefix,
-      };
-    });
+        requireFact(
+          bytes === Number(acquired.size) &&
+            sameFileIdentity(acquired, identity(await handle.stat({ bigint: true }))) &&
+            sameFileIdentity(acquired, identity(await fs.lstat(name, { bigint: true }))),
+          'ROOT_CHANGED'
+        );
+        await this.recheckParents(parents);
+        return {
+          file: Object.freeze({
+            path: name,
+            identity: acquired,
+            bytes,
+            sha256: hash.digest('hex'),
+          }),
+          bytes: Buffer.concat(chunks),
+          prefix,
+        };
+      });
+    } finally {
+      // Allocation/read/body/stat/ancestor/close rejection cannot retain a pool admission.
+      if (allocation.slot) allocation.slot.inUse = false;
+    }
   }
   private async names(name: string, cap: number): Promise<string[]> {
     const directory = await this.directory(name),
@@ -544,6 +581,34 @@ class NodeInstallationFilesystem implements InstallationFilesystem {
     const result: Tree = { rows: [], files: [], directories: [], entries: 0, bytes: 0 };
     const entryLimit = library ? LIMIT.libraryEntries : LIMIT.payloadEntries;
     const totalLimit = library ? LIMIT.libraryBytes : LIMIT.payloadBytes;
+    let first: Readonly<{ value: unknown }> | undefined;
+    const checkFailure = (): void => {
+      if (first) throw first.value;
+    };
+    const pending: {
+      relative: string;
+      original: Promise<Awaited<ReturnType<NodeInstallationFilesystem['read']>>> | null;
+    }[] = [];
+    const flush = async (): Promise<void> => {
+      const batch = pending.splice(0);
+      const joined = await Promise.allSettled(batch.map((job) => job.original!));
+      checkFailure();
+      // Commit in sorted traversal order, independent of I/O completion order.
+      for (let index = 0; index < joined.length; index++) {
+        const settled = joined[index]!;
+        if (settled.status === 'rejected') throw settled.reason;
+        const read = settled.value;
+        result.bytes += read.file.bytes;
+        requireFact(result.bytes <= totalLimit, 'RETENTION_EXCEEDED');
+        result.files.push(read.file);
+        result.rows.push({
+          path: batch[index]!.relative,
+          type: 'file',
+          identity: read.file.identity,
+          sha256: read.file.sha256,
+        });
+      }
+    };
     const visit = async (directory: string, depth: number): Promise<void> => {
       requireFact(depth <= LIMIT.payloadDepth, 'RETENTION_EXCEEDED');
       const dirIdentity = identity(await fs.lstat(directory, { bigint: true }));
@@ -554,12 +619,15 @@ class NodeInstallationFilesystem implements InstallationFilesystem {
         type: 'directory',
         identity: dirIdentity,
       });
+      checkFailure();
       for (const name of await this.names(directory, entryLimit)) {
+        checkFailure();
         requireFact(++result.entries <= entryLimit, 'RETENTION_EXCEEDED');
         const absolute = path.join(directory, name),
           relative = path.relative(root, absolute).split(path.sep).join('/');
         requireFact(relativePath.safeParse(relative).success, 'INSTALLATION_INVALID');
         const stat = await fs.lstat(absolute, { bigint: true });
+        checkFailure();
         if (library && relative === 'node_modules') {
           requireFact(stat.isDirectory() && !stat.isSymbolicLink(), 'LIBRARY_MISMATCH');
           await this.libraryBinMetadata(root, absolute);
@@ -592,30 +660,49 @@ class NodeInstallationFilesystem implements InstallationFilesystem {
             mode: Number(stat.mode),
             uid: Number(stat.uid),
           });
-        } else if (stat.isDirectory()) await visit(absolute, depth + 1);
-        else {
+        } else if (stat.isDirectory()) {
+          await visit(absolute, depth + 1);
+        } else {
           requireFact(stat.isFile(), 'INSTALLATION_INVALID');
-          const read = await this.read(
-            absolute,
-            library ? LIMIT.libraryFileBytes : LIMIT.payloadBytes
-          );
-          result.bytes += read.file.bytes;
-          requireFact(result.bytes <= totalLimit, 'RETENTION_EXCEEDED');
-          result.files.push(read.file);
-          result.rows.push({
-            path: relative,
-            type: 'file',
-            identity: read.file.identity,
-            sha256: read.file.sha256,
+          // Bank the task before its first I/O. Each read retains its original
+          // descriptor custody and ancestry checks; no attestation is reused.
+          const job: {
+            relative: string;
+            original: Promise<Awaited<ReturnType<NodeInstallationFilesystem['read']>>> | null;
+          } = { relative, original: null };
+          pending.push(job);
+          job.original = Promise.resolve().then(() => {
+            checkFailure();
+            return this.read(absolute, library ? LIMIT.libraryFileBytes : LIMIT.payloadBytes);
           });
+          void job.original.catch((value: unknown) => {
+            first ??= { value };
+          });
+          if (pending.length === LARGE_HASH_BUFFER_SLOTS) await flush();
         }
       }
+    };
+    try {
+      await visit(root, 0);
+      await flush();
+    } catch (value) {
+      first ??= { value };
+    } finally {
+      // The single tree bank spans directories, including one-file locales.
+      // Metadata and read failures drain every original before returning.
+      await Promise.allSettled(pending.map((job) => job.original!));
+    }
+    checkFailure();
+    // Each captured directory is revalidated only after its entire subtree's
+    // original reads have settled; no child can escape a failed observation.
+    for (const directory of [...result.directories].reverse())
       requireFact(
-        sameFileIdentity(dirIdentity, identity(await fs.lstat(directory, { bigint: true }))),
+        sameFileIdentity(
+          directory.identity,
+          identity(await fs.lstat(directory.path, { bigint: true }))
+        ),
         'ROOT_CHANGED'
       );
-    };
-    await visit(root, 0);
     await this.recheckParents(parents);
     result.rows.sort((a, b) =>
       String(a.path) < String(b.path) ? -1 : String(a.path) > String(b.path) ? 1 : 0

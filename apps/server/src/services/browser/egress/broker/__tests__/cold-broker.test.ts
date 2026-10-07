@@ -4,7 +4,7 @@ import { once } from 'node:events';
 import { expect, it, onTestFinished, vi } from 'vitest';
 import { createBrokerIssuer, type PreparedRunReceiver } from '../issuer.js';
 import { createPreparedPrivateBroker } from '../broker.js';
-import { createNodeBrokerTransport } from '../node-transport.js';
+import { createNodeBrokerTransport } from '../node/node-transport.js';
 import type { BrokerTransport, OwnedSocket } from '../transport.js';
 
 async function origin(status = 200) {

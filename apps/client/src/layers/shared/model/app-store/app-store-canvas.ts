@@ -366,6 +366,7 @@ const CONTENT_TYPE_FALLBACK_LABELS: Record<UiCanvasContent['type'], string> = {
   video: 'Video',
   csv: 'CSV',
   browser: 'Browser',
+  managed_browser: 'Shared browser',
   diff: 'Diff',
 };
 
@@ -910,7 +911,9 @@ export const createCanvasSlice: StateCreator<
         // write-through (a nav committed the same tick the document closed) must
         // not re-add an entry that a removal path already pruned.
         if (!s.openDocuments.some((d) => d.id === documentId)) return {};
-        return { browserHistories: { ...s.browserHistories, [documentId]: entry } };
+        return {
+          browserHistories: { ...s.browserHistories, [documentId]: entry },
+        };
       }),
 
     openCanvasDocument: (content) => {
@@ -937,7 +940,12 @@ export const createCanvasSlice: StateCreator<
           // document, whatever the row's history is, and that is what the driver
           // seat reads.
           const refreshed: CanvasDocument = existing.editing
-            ? { ...existing, openedHere: true, heldUpdate: content, lastActiveAt: now }
+            ? {
+                ...existing,
+                openedHere: true,
+                heldUpdate: content,
+                lastActiveAt: now,
+              }
             : {
                 ...existing,
                 openedHere: true,
@@ -1038,7 +1046,12 @@ export const createCanvasSlice: StateCreator<
           if (d.editing) return { ...d, heldUpdate: content };
           // Not editing: the push lands, and a hold left over from an earlier
           // edit is stale — a newer version is the document's content now.
-          return { ...d, content, sourceLabel: sourceLabel(content), heldUpdate: null };
+          return {
+            ...d,
+            content,
+            sourceLabel: sourceLabel(content),
+            heldUpdate: null,
+          };
         }),
       }));
 
@@ -1063,7 +1076,13 @@ export const createCanvasSlice: StateCreator<
       set((s) => ({
         openDocuments: s.openDocuments.map((d) =>
           d.id === id
-            ? { ...d, content, sourceLabel: sourceLabel(content), heldUpdate: null, editing: false }
+            ? {
+                ...d,
+                content,
+                sourceLabel: sourceLabel(content),
+                heldUpdate: null,
+                editing: false,
+              }
             : d
         ),
       }));
@@ -1144,7 +1163,10 @@ export const createCanvasSlice: StateCreator<
           set((s) => {
             if (s.openDocuments.some((d) => d.id === id)) return {};
             const documents = [...s.openDocuments, closed];
-            return { openDocuments: documents, ...reconcileActiveIds(documents, s) };
+            return {
+              openDocuments: documents,
+              ...reconcileActiveIds(documents, s),
+            };
           })
       );
     },
@@ -1171,8 +1193,14 @@ export const createCanvasSlice: StateCreator<
         );
         const activeIds =
           canvasViewForContent(target.content) === 'browser'
-            ? { activeCanvasDocumentId: s.activeCanvasDocumentId, activeBrowserDocumentId: id }
-            : { activeCanvasDocumentId: id, activeBrowserDocumentId: s.activeBrowserDocumentId };
+            ? {
+                activeCanvasDocumentId: s.activeCanvasDocumentId,
+                activeBrowserDocumentId: id,
+              }
+            : {
+                activeCanvasDocumentId: id,
+                activeBrowserDocumentId: s.activeBrowserDocumentId,
+              };
         return { openDocuments: documents, ...activeIds };
       });
       if (isPendingId(id)) return;
@@ -1379,7 +1407,11 @@ export const createCanvasSlice: StateCreator<
                   const landed = fromServer(row, d);
                   return newestOwnEcho
                     ? landed
-                    : { ...landed, content: d.content, sourceLabel: d.sourceLabel };
+                    : {
+                        ...landed,
+                        content: d.content,
+                        sourceLabel: d.sourceLabel,
+                      };
                 }),
               };
             }
@@ -1393,7 +1425,10 @@ export const createCanvasSlice: StateCreator<
               return {
                 openDocuments: s.openDocuments.map((d) =>
                   d.id === row.id
-                    ? { ...fromServer(row, d), ...(retracts ? { heldUpdate: null } : {}) }
+                    ? {
+                        ...fromServer(row, d),
+                        ...(retracts ? { heldUpdate: null } : {}),
+                      }
                     : d
                 ),
               };

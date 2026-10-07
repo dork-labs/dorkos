@@ -1,4 +1,21 @@
 import type {
+  BrowserBinding,
+  BrowserOpenRequest,
+  BrowserControl,
+  BrowserProductionOpenReceipt,
+  BrowserProductionStatus,
+  BrowserNavigateRequest,
+  BrowserProductionNavigateReceipt,
+  BrowserViewer,
+  BrowserRenderReceipt,
+  BrowserProfile,
+  BrowserProductionProfileCreateRequest,
+  BrowserProductionProfileCreateReceipt,
+  BrowserInstance,
+  BrowserCloseRequest,
+  BrowserCloseReceipt,
+} from './browser-schemas.js';
+import type {
   PageEvent,
   CanvasChannelEventReceipt,
   CanvasChannelReplayResponse,
@@ -706,6 +723,13 @@ export interface Transport
    * is worse than no tab (ADR 260911-200304).
    */
   readonly supportsWorkbenchServe: boolean;
+  readonly browserViewerDelivery?: BrowserViewerTransport;
+  readonly browserInput?: BrowserInputTransport;
+  readonly browserCanvas?: BrowserCanvasTransport;
+  readonly browserProduction?: BrowserProductionTransport;
+  readonly browserSemantic?: BrowserSemanticTransport;
+  readonly browserFiles?: BrowserFilesTransport;
+  readonly browserDiagnostics?: BrowserDiagnosticsTransport;
   /**
    * List sessions across all registered runtimes, optionally scoped to a
    * working directory. Returns the aggregation envelope (ADR-0310): `sessions`
@@ -3692,4 +3716,174 @@ export interface Transport
     accountId: string,
     projects: string[] | null
   ): Promise<OnlyProjectsResponse>;
+  /** Owner-filtered nonsecret browser profile metadata. */
+  getBrowserProfiles(signal?: AbortSignal): Promise<BrowserProfile[]>;
+  /** Read one accessible profile; unavailable and inaccessible requests reject. */
+  getBrowserProfile(profileId: string, signal?: AbortSignal): Promise<BrowserProfile>;
+  /** Current original generation projections, never an authority token. */
+  getBrowserInstances(signal?: AbortSignal): Promise<BrowserInstance[]>;
+  /** Read the exact original generation without silently replacing it. */
+  getBrowserInstance(
+    browserId: string,
+    browserGeneration: number,
+    signal?: AbortSignal
+  ): Promise<BrowserInstance>;
+  /** Explicit stop; unverified cleanup remains an unverified receipt. */
+  closeBrowserInstance(
+    request: BrowserCloseRequest,
+    signal?: AbortSignal
+  ): Promise<BrowserCloseReceipt>;
+}
+
+/** Ephemeral private viewer issuance result; ticket correlates delivery and grants no authority. */
+export interface BrowserViewerAdmission {
+  readonly viewer: BrowserViewer;
+  readonly ticket: string;
+}
+/** Supplemental unmounted viewer transport seam; all calls require original HTTP/server authority. */
+export interface BrowserViewerTransport {
+  issueBrowserViewer(binding: BrowserBinding, signal: AbortSignal): Promise<BrowserViewerAdmission>;
+  nextBrowserViewerFrame(
+    ticket: string,
+    receipt: BrowserRenderReceipt | undefined,
+    signal: AbortSignal,
+    /** Original response cleanup failure only; never a permission or a replacement ACK. */
+    observeCleanupFailure?: (reason: unknown) => void
+  ): Promise<ReadableStream<Uint8Array>>;
+  disconnectBrowserViewer(ticket: string): Promise<void>;
+}
+
+/** Private input dispatch; server verifies actual controller ownership and original action policy. */
+export interface BrowserInputTransport {
+  inputBrowser(
+    command: import('./browser-schemas.js').BrowserInputRequest,
+    controllerId: string,
+    signal: AbortSignal
+  ): Promise<import('./browser-schemas.js').BrowserActionReceipt>;
+}
+
+/** Authenticated production ownership wire. Tickets and private grant/native objects stay in RAM
+ * behind original server custody; this capability alone conveys no readiness or permission. */
+export interface BrowserProductionTransport {
+  /** Explicit owner permission for one local HTTP endpoint; protected app endpoints stay denied. */
+  allowBrowserLocalDestination?(
+    request: import('./browser-schemas.js').BrowserLocalDestinationRequest,
+    signal: AbortSignal
+  ): Promise<import('./browser-schemas.js').BrowserLocalDestinationReceipt>;
+  /** Named owner metadata, distinct from native storage and open authority. */
+  createBrowserProfile(
+    request: BrowserProductionProfileCreateRequest,
+    signal: AbortSignal
+  ): Promise<BrowserProductionProfileCreateReceipt>;
+  /** Actual owner/native-mode Settings opt-in; disabling joins original owned browsers. */
+  setBrowserRuntimeEnabled(
+    enabled: boolean,
+    signal: AbortSignal,
+    choice?: Readonly<{ chromeUserAgent: boolean }>
+  ): Promise<BrowserProductionStatus>;
+  readBrowserRuntimeStatus(signal: AbortSignal): Promise<BrowserProductionStatus>;
+  openBrowserRuntime(
+    workspaceId: string,
+    request: BrowserOpenRequest,
+    signal: AbortSignal,
+    initialUrl?: string
+  ): Promise<BrowserProductionOpenReceipt>;
+  getBrowserBindings(
+    browserId: string,
+    browserGeneration: number,
+    signal: AbortSignal
+  ): Promise<BrowserBinding[]>;
+  takeBrowserControl(binding: BrowserBinding, signal: AbortSignal): Promise<BrowserControl>;
+  /** Existing controller navigation plumbing only; current server authority remains required. */
+  navigateBrowser?(
+    command: BrowserNavigateRequest,
+    controllerId: string,
+    signal: AbortSignal
+  ): Promise<BrowserProductionNavigateReceipt>;
+}
+
+/** Server-issued recipient view grant; the server rechecks all authority on every request. */
+export interface BrowserSemanticScope {
+  readonly binding: BrowserBinding;
+  readonly grant?: Readonly<{ grantId: string; revision: number }>;
+}
+/** Original bounded stream; its identifier is correspondence data, never permission. */
+export interface BrowserSemanticStream {
+  readonly eventStreamId: string;
+  next(
+    signal: AbortSignal
+  ): Promise<import('./browser-semantic-schemas.js').SemanticEventV1 | null>;
+  close(): Promise<void>;
+}
+/** Optional installed semantic composition. Presence is not native readiness or permission. */
+export interface BrowserSemanticTransport {
+  readBrowserSemantic(
+    scope: BrowserSemanticScope,
+    signal: AbortSignal
+  ): Promise<import('./browser-semantic-schemas.js').SemanticSnapshotV1>;
+  openBrowserSemanticStream(
+    scope: BrowserSemanticScope,
+    leaseId: string,
+    signal: AbortSignal
+  ): Promise<BrowserSemanticStream>;
+  actionBrowserSemantic(
+    scope: BrowserSemanticScope,
+    controllerId: string,
+    request: import('./browser-semantic-schemas.js').SemanticActionV1,
+    signal: AbortSignal
+  ): Promise<import('./browser-semantic-schemas.js').SemanticReceiptV1>;
+}
+
+/** Canonical canvas metadata and explicit sharing commands. Every call is freshly authenticated. */
+export interface BrowserCanvasTransport {
+  createCanvasViewerDelivery(
+    receipt: import('./browser-canvas-schemas.js').BrowserCanvasDeliveryReceipt
+  ): BrowserViewerTransport;
+  presentBrowserCanvas(
+    request: import('./browser-canvas-schemas.js').BrowserCanvasPresent,
+    signal: AbortSignal
+  ): Promise<import('./canvas-schemas.js').CanvasDocument>;
+  shareBrowserCanvas(
+    request: import('./browser-canvas-schemas.js').BrowserCanvasShare,
+    signal: AbortSignal
+  ): Promise<import('./browser-schemas.js').BrowserGrant>;
+  resolveBrowserCanvas(
+    request: import('./browser-canvas-schemas.js').BrowserCanvasDelivery,
+    signal: AbortSignal
+  ): Promise<import('./browser-canvas-schemas.js').BrowserCanvasDeliveryReceipt>;
+  detachBrowserCanvas(attachmentId: string, signal: AbortSignal): Promise<void>;
+}
+
+/** Human cookie-authenticated operations; separate original grants remain mandatory. */
+export interface BrowserFilesTransport {
+  issueBrowserFileGrant(
+    request: import('./browser-schemas.js').BrowserHumanGrantRequest,
+    signal: AbortSignal
+  ): Promise<import('./browser-schemas.js').BrowserGrant>;
+  revokeBrowserFileGrant(
+    request: import('./browser-schemas.js').BrowserHumanGrantRevoke,
+    signal: AbortSignal
+  ): Promise<import('./browser-schemas.js').BrowserGrant>;
+  stageBrowserFile(
+    request: import('./browser-schemas.js').BrowserHumanStageRequest,
+    signal: AbortSignal
+  ): Promise<import('./browser-schemas.js').BrowserHumanStageReceipt>;
+  uploadBrowserFile(
+    request: import('./browser-schemas.js').BrowserHumanUploadRequest,
+    signal: AbortSignal
+  ): Promise<import('./browser-schemas.js').BrowserActionReceipt>;
+  downloadBrowserFile(
+    request: import('./browser-schemas.js').BrowserHumanDownloadRequest,
+    signal: AbortSignal
+  ): Promise<import('./browser-schemas.js').BrowserHumanDownloadReceipt>;
+  readBrowserArtifact(
+    request: import('./browser-schemas.js').BrowserHumanArtifactReadRequest,
+    signal: AbortSignal
+  ): Promise<import('./browser-schemas.js').BrowserHumanArtifactReceipt>;
+}
+export interface BrowserDiagnosticsTransport {
+  readBrowserDiagnostics(
+    request: import('./browser-schemas.js').BrowserDiagnosticsRequest,
+    signal: AbortSignal
+  ): Promise<import('./browser-schemas.js').BrowserDiagnosticSummary>;
 }

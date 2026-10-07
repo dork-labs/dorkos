@@ -2,7 +2,7 @@ import { createDarwinEngineProcesses } from '../runtime/darwin-engine-processes.
 import { assertDirectory } from '../profiles/owned-directory.js';
 import { rm } from 'node:fs/promises';
 import type { EngineConfiguration, ProcessIdentity } from '../configuration.js';
-import type { BrowserRecord, CloseOutcome } from './records.js';
+import type { BrowserRecord, CloseOutcome, RetirementCloseRefusalStage } from './records.js';
 import { completeInventory } from './inventory.js';
 import { until, pause } from './deadline.js';
 import {
@@ -23,6 +23,17 @@ const unavailable: CloseOutcome = Object.freeze({
   cleanup: 'unverified',
   reason: 'observationUnavailable',
 });
+
+/** Read only the first existing failure branch; no native work or authority is conveyed. */
+export function readRetirementCloseRefusal(
+  record: BrowserRecord
+): RetirementCloseRefusalStage | undefined {
+  return record.retirementCloseRefusal;
+}
+
+function noteRefusal(record: BrowserRecord, stage: RetirementCloseRefusalStage): void {
+  record.retirementCloseRefusal ??= stage;
+}
 
 async function snapshot(
   config: EngineConfiguration,
@@ -86,14 +97,19 @@ async function observeGone(
         'PROCESS_OBSERVATION_UNAVAILABLE'
       );
     } catch {
+      noteRefusal(record, 'observe-gone');
       return unavailable;
     } finally {
       abort.abort();
     }
-    if (statuses.some((status) => status !== 'alive' && status !== 'dead')) return unavailable;
+    if (statuses.some((status) => status !== 'alive' && status !== 'dead')) {
+      noteRefusal(record, 'observe-gone');
+      return unavailable;
+    }
     if (statuses.every((status) => status === 'dead')) return { cleanup: 'observed' };
     await until(pause(25), end, 'PROCESS_OBSERVATION_UNAVAILABLE').catch(() => {});
   }
+  noteRefusal(record, 'observe-gone');
   return { cleanup: 'failed', reason: 'processesRemain' };
 }
 
@@ -126,7 +142,9 @@ async function performClose(
   const observed = record.launchEntered
     ? snapshot(config, record, Math.min(end, performance.now() + 1000))
     : Promise.resolve();
-  void observed.catch(() => {});
+  void observed.catch(() => {
+    noteRefusal(record, 'snapshot');
+  });
   const inputs = Promise.all([
     ...[...record.tabs.values()].map((tab) => tab.tail),
     ...[...owner.inputs.values()].map(async (slot) => {
@@ -135,7 +153,9 @@ async function performClose(
       if (slot.closePromise) await slot.closePromise;
     }),
   ]);
-  void inputs.catch(() => {});
+  void inputs.catch(() => {
+    noteRefusal(record, 'inputs');
+  });
   // Reserve the original worker barrier before any SDK context close can make
   // a live-parent query incomplete. A timeout never substitutes for its ACK.
   const requiresJournalBarrier = !!record.journal && record.launchEntered;
@@ -143,13 +163,32 @@ async function performClose(
     ? ownOperation(record, () => record.journal!.prepareClose())
     : Promise.resolve();
   void journalBarrier.catch(() => {
+    noteRefusal(record, 'journal');
     owner.uncertain = true;
   });
-  const closeEntryBarrier = Promise.allSettled([observed, inputs, journalBarrier]).then(
-    (joined) => {
-      if (joined.some((result) => result.status === 'rejected')) owner.uncertain = true;
-    }
-  );
+  const authentication = record.controllerAuthentication;
+  const wire = record.controllerWire;
+  const prepareAuthentication = authentication?.prepareClose.bind(authentication);
+  const closeControllerWire = authentication
+    ? authentication.close.bind(authentication)
+    : wire?.close.bind(wire);
+  const controllerPreparation = prepareAuthentication
+    ? (record.controllerAuthenticationPreparation ??= ownOperation(record, prepareAuthentication))
+    : Promise.resolve();
+  void controllerPreparation.catch(() => {
+    noteRefusal(record, 'connection');
+    owner.uncertain = true;
+  });
+  // Private original ACKs settle before the supervisor may terminate their producer.
+  // The whole controller wire terminal remains an independent close duty below.
+  const closeEntryBarrier = Promise.allSettled([
+    observed,
+    inputs,
+    journalBarrier,
+    controllerPreparation,
+  ]).then((joined) => {
+    if (joined.some((result) => result.status === 'rejected')) owner.uncertain = true;
+  });
   if (record.supervisor) {
     // Enter all original closes now, but preserve the attributable snapshot and exact
     // input-session detach before asking the separate owner to terminate Chromium.
@@ -161,6 +200,7 @@ async function performClose(
       ))
     : Promise.resolve();
   void navigationObserver.catch(() => {
+    noteRefusal(record, 'navigation');
     owner.uncertain = true;
   });
   const context = record.context
@@ -179,9 +219,20 @@ async function performClose(
       }))
     : Promise.resolve();
   void network.catch(() => {
+    noteRefusal(record, 'network');
     record.lifetime.closeFailed = true;
   });
   const proxy = record.proxy ? closeOwned(record, 'proxy', record.proxy) : Promise.resolve();
+  const controllerWireClose = closeControllerWire
+    ? (record.controllerWireClose ??= ownOperation(record, async () => {
+        await closeEntryBarrier;
+        await closeControllerWire();
+      }))
+    : Promise.resolve();
+  void controllerWireClose.catch(() => {
+    noteRefusal(record, 'connection');
+    owner.uncertain = true;
+  });
   const connection =
     !record.context && record.controllerBrowser
       ? ownOperation(record, () =>
@@ -191,47 +242,64 @@ async function performClose(
         )
       : Promise.resolve();
   void connection.catch(() => {
+    noteRefusal(record, 'connection');
     owner.uncertain = true;
   });
   let observationFailed = record.setupCleanupUncertain === true;
+  if (observationFailed) noteRefusal(record, 'setup');
   try {
     await until(navigationObserver, inputEnd, 'CONTEXT_CLOSE_TIMEOUT');
   } catch {
+    noteRefusal(record, 'navigation');
     owner.uncertain = true;
   }
   try {
     await until(observed, end, 'PROCESS_OBSERVATION_UNAVAILABLE');
   } catch {
+    noteRefusal(record, 'snapshot');
     observationFailed = true;
   }
   try {
     await until(context, inputEnd, 'CONTEXT_CLOSE_TIMEOUT');
   } catch {
+    noteRefusal(record, 'context');
     if (!owner.closeFailed) owner.uncertain = true;
   }
   try {
     await until(inputs, inputEnd, 'CONTEXT_CLOSE_TIMEOUT');
   } catch {
+    noteRefusal(record, 'inputs');
     owner.uncertain = true;
   }
   try {
     await until(proxy, end, 'FIXTURE_PROXY_CLOSE_FAILED');
   } catch {
+    noteRefusal(record, 'proxy');
     if (!owner.closeFailed) owner.uncertain = true;
   }
   try {
     await until(connection, end, 'CONTEXT_CLOSE_TIMEOUT');
   } catch {
+    noteRefusal(record, 'connection');
+    owner.uncertain = true;
+  }
+  try {
+    await until(controllerWireClose, end, 'CONTEXT_CLOSE_TIMEOUT');
+  } catch {
+    noteRefusal(record, 'connection');
     owner.uncertain = true;
   }
   try {
     await until(network, end, 'NETWORK_CLOSE_FAILED');
   } catch {
+    noteRefusal(record, 'network');
     owner.uncertain = true;
   }
   if (record.journal) {
     const journal = ownOperation(record, () => record.journal!.stop(record.launchEntered));
-    void journal.catch(() => {});
+    void journal.catch(() => {
+      noteRefusal(record, 'journal');
+    });
     try {
       const result = await until(journal, end, 'PROCESS_OBSERVATION_UNAVAILABLE');
       if (result === 'campaign-closed-gapped') {
@@ -247,11 +315,16 @@ async function performClose(
           record.supervisor.custody().pending ||
           record.supervisor.custody().uncertain ||
           manager.status !== 'alive'
-        )
+        ) {
+          noteRefusal(record, 'journal');
           observationFailed = true;
-      } else if (result !== 'campaign-closed' && result !== 'recorded-gone')
+        }
+      } else if (result !== 'campaign-closed' && result !== 'recorded-gone') {
+        noteRefusal(record, 'journal');
         observationFailed = true;
+      }
     } catch {
+      noteRefusal(record, 'journal');
       observationFailed = true;
     }
   }
@@ -261,16 +334,24 @@ async function performClose(
       : record.launchEntered
         ? await observeGone(config, record, Math.min(end, performance.now() + 2000))
         : { cleanup: 'observed' };
-  if (owner.closeFailed) outcome = { cleanup: 'failed', reason: 'closeFailed' };
-  if (outcome.cleanup === 'observed' && (!custodySettled(record) || performance.now() >= end))
+  if (owner.closeFailed) {
+    noteRefusal(record, 'terminal');
+    outcome = { cleanup: 'failed', reason: 'closeFailed' };
+  }
+  if (outcome.cleanup === 'observed' && (!custodySettled(record) || performance.now() >= end)) {
+    noteRefusal(record, 'final-custody');
     outcome = unavailable;
+  }
   if (outcome.cleanup === 'observed') {
+    let releaseStage: RetirementCloseRefusalStage = 'directory';
     try {
       if (record.dataRoot) assertDirectory(record.dataRoot);
       if (record.profileDir && !record.directory) throw new Error();
       if (record.directory) assertDirectory(record.directory);
+      releaseStage = 'final-custody';
       // Directory observations can reenter retirement; all custody is checked again before release.
       if (!custodySettled(record) || performance.now() >= end) throw new Error();
+      releaseStage = 'release';
       owner.releasePending = true;
       const release = ownOperation(record, () => {
         const reservation = record.reservation;
@@ -302,6 +383,7 @@ async function performClose(
       await until(release, end, 'PROCESS_OBSERVATION_UNAVAILABLE');
       if (owner.pending.size !== 0 || owner.uncertain) throw new Error();
     } catch {
+      noteRefusal(record, releaseStage);
       owner.uncertain = true;
       outcome = unavailable;
     }
@@ -311,6 +393,10 @@ async function performClose(
     owner.inputs.clear();
     record.supervisor = undefined;
     record.controllerBrowser = undefined;
+    record.controllerWire = undefined;
+    record.controllerAuthentication = undefined;
+    record.controllerAuthenticationPreparation = undefined;
+    record.controllerWireClose = undefined;
     record.context = undefined;
     record.ownerNavigationObserver = undefined;
     record.ownerNavigationObserverClose = undefined;
@@ -342,6 +428,7 @@ export function closeRecord(
   const slot = owner && fenceOrdinary(record, 'explicitStop');
   record.status = 'stopping';
   if (!owner || !slot) {
+    noteRefusal(record, 'entry');
     if (owner) owner.uncertain = true;
     record.status = 'uncertain';
     resolve(unavailable);
@@ -358,6 +445,7 @@ export function closeRecord(
     slot.end = owner.parentEnd;
     slot.inputEnd = owner.inputEnd;
   } catch {
+    noteRefusal(record, 'entry');
     owner.uncertain = true;
     slot.coverageUnavailable = true;
     // No additional deadline and no cleanup permit. Available terminal closes still enter.
@@ -367,6 +455,7 @@ export function closeRecord(
     slot.inputEnd = owner.inputEnd;
   }
   void retireThenClose(config, record, slot).then(resolve, () => {
+    noteRefusal(record, 'terminal');
     owner.uncertain = true;
     record.status = 'uncertain';
     const aggregate = aggregateRetirement(record, slot);
@@ -388,15 +477,20 @@ async function retireThenClose(
   try {
     aggregate = await until(draining, owner.inputEnd!, 'RETIREMENT_DRAIN_UNAVAILABLE');
   } catch {
+    noteRefusal(record, 'aggregate');
     owner.uncertain = true;
     aggregate = aggregateRetirement(record, slot);
   }
-  if (aggregate.state !== 'settled') owner.uncertain = true;
+  if (aggregate.state !== 'settled') {
+    noteRefusal(record, 'aggregate');
+    owner.uncertain = true;
+  }
   // Attempt every local terminal invalidation; one throwing callback cannot suppress its peers.
   slot.terminalEntered = true;
   try {
     owner.gate.stop();
   } catch {
+    noteRefusal(record, 'terminal');
     owner.uncertain = true;
   }
   for (const tab of record.tabs.values()) {
@@ -404,6 +498,7 @@ async function retireThenClose(
       try {
         local();
       } catch {
+        noteRefusal(record, 'terminal');
         owner.uncertain = true;
       }
     }
@@ -413,6 +508,7 @@ async function retireThenClose(
   try {
     terminal = await performClose(config, record);
   } catch {
+    noteRefusal(record, 'terminal');
     owner.uncertain = true;
     record.status = 'uncertain';
     terminal = unavailable;

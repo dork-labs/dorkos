@@ -464,8 +464,31 @@ describe('in-session tool exposure', () => {
     // from the docs registry, which composes no extension. Extension tools are
     // guarded separately, against a contributed fixture, in
     // `extension-tools-every-list.test.ts`.
-    expect(tools).toHaveLength(120);
-    expect(deferred).toHaveLength(109);
+    // 120 -> 133: the 8 core and 5 optional managed-browser tools are all deferred.
+    // Docs metadata exposes the complete vocabulary; each actual operation still
+    // resolves its original runtime principal, current graph and explicit grants.
+    expect(tools).toHaveLength(133);
+    expect(deferred).toHaveLength(122);
+    expect(
+      deferred
+        .map((tool) => tool.name)
+        .filter((name) => name.startsWith('managed_browser_'))
+        .sort()
+    ).toEqual([
+      'managed_browser_close',
+      'managed_browser_control',
+      'managed_browser_download',
+      'managed_browser_file_access',
+      'managed_browser_input',
+      'managed_browser_navigate',
+      'managed_browser_open',
+      'managed_browser_open_delegated',
+      'managed_browser_semantic_action',
+      'managed_browser_semantic_read',
+      'managed_browser_stage_upload',
+      'managed_browser_tabs',
+      'managed_browser_upload',
+    ]);
     for (const name of [
       'configure_doc_channel',
       'approve_doc_route',

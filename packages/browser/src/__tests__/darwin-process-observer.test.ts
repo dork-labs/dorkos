@@ -164,3 +164,33 @@ it.skipIf(process.platform !== 'darwin').each(['healthy', 'rejected-drain'] as c
     }
   }
 );
+
+it.each([
+  'birth-changed',
+  'parent-changed',
+  'alive-to-zombie',
+  'zombie-to-alive',
+  'membership-disappeared',
+  'membership-appeared',
+  'membership-absent-with-present-reads',
+] as const)(
+  'preserves original native unknown evidence %s without creating presence or absence',
+  (uncertainty) => {
+    const value = {
+      version: 1,
+      bootSeconds: '1',
+      bootMicroseconds: '0',
+      processes: [{ kind: 'unknown', pid: 10, error: 35, uncertainty }],
+    };
+    expect(parseDarwinProcessBatch(encode(value), [10])).toEqual(value);
+    expect(() =>
+      parseDarwinProcessBatch(
+        encode({
+          ...value,
+          processes: [{ ...value.processes[0], uncertainty: 'other-untrusted' }],
+        }),
+        [10]
+      )
+    ).toThrow();
+  }
+);

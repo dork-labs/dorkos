@@ -13,6 +13,7 @@
 import { lazy, Suspense } from 'react';
 import type { WidgetChannelPort } from '@/layers/features/gen-ui';
 import type { UiCanvasContent } from '@dorkos/shared/types';
+import { ManagedBrowserCanvasContent } from '@/layers/features/managed-browser';
 import { CanvasBrowserContent } from './CanvasBrowserContent';
 import { CanvasMarkdownContent } from './CanvasMarkdownContent';
 import { CanvasJsonContent } from './CanvasJsonContent';
@@ -30,7 +31,9 @@ const CanvasFileContent = lazy(() =>
   import('./CanvasFileContent').then((m) => ({ default: m.CanvasFileContent }))
 );
 const CanvasModel3dContent = lazy(() =>
-  import('./CanvasModel3dContent').then((m) => ({ default: m.CanvasModel3dContent }))
+  import('./CanvasModel3dContent').then((m) => ({
+    default: m.CanvasModel3dContent,
+  }))
 );
 const CanvasCsvContent = lazy(() =>
   import('./CanvasCsvContent').then((m) => ({ default: m.CanvasCsvContent }))
@@ -39,7 +42,9 @@ const CanvasCsvContent = lazy(() =>
 // variant to the diff-review feature's viewer, lazy so its `@codemirror/merge`
 // runtime never lands in the main bundle.
 const CanvasDiffContent = lazy(() =>
-  import('@/layers/features/diff-review').then((m) => ({ default: m.CanvasDiffContent }))
+  import('@/layers/features/diff-review').then((m) => ({
+    default: m.CanvasDiffContent,
+  }))
 );
 
 /**
@@ -60,6 +65,8 @@ export function CanvasRenderer({
   onContentChange: (content: UiCanvasContent) => void;
 }) {
   switch (content.type) {
+    case 'managed_browser':
+      return <ManagedBrowserCanvasContent key={documentId} content={content} />;
     // `url` and `browser` share one renderer (DOR-233): every canvas webpage gets
     // navigation chrome and origin isolation, whichever content type opened it.
     // Key on document identity AND content identity — the browser snapshots

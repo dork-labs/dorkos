@@ -1,6 +1,6 @@
 import { Socket } from 'node:net';
-import type { OwnedSocket } from './transport.js';
-import type { PinnedEndpoint } from '../policy.js';
+import type { OwnedSocket } from '../transport.js';
+import type { PinnedEndpoint } from '../../policy.js';
 
 // The actual original survives callbacks and failed cleanup, independently of DTOs.
 const originals = new Set<Socket>();

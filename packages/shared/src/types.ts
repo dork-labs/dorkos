@@ -168,6 +168,7 @@ export type {
   SubmitElicitationRequest,
   UiCommand,
   UiCanvasContent,
+  ManagedBrowserCanvasReference,
   UiState,
   UiStateReport,
   UiStateReportDocument,

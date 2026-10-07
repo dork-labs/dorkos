@@ -61,8 +61,7 @@ export interface DialObservation {
   readonly socket: OwnedSocket;
   readonly outcome: 'connected' | 'failed';
 }
-export interface BrokerTransport {
-  readonly scope: 'fixture-only';
+export interface BrokerIO {
   /**
    * Default injected intake reserves each socket before acquisition. Public Node
    * acceptance instead requires an aggregate owner registered before listen:
@@ -96,6 +95,15 @@ export interface BrokerTransport {
     body: RequestBody,
     guard: { check: () => void; bodyLimit: number; queueLimit: number }
   ): Promise<OriginResponse>;
+}
+
+/** Existing injectable fixture surface remains explicitly fixture-qualified. */
+export interface BrokerTransport extends BrokerIO {
+  readonly scope: 'fixture-only';
+}
+/** Production IO is admitted only by exact original Node producer membership, never this tag. */
+export interface ProductionBrokerTransport extends BrokerIO {
+  readonly scope: 'server-owned';
 }
 
 /** Compare the observed connected peer with the exact policy-pinned numeric endpoint. */

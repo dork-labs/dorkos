@@ -13,6 +13,7 @@ import { canvasViewForContent, type CanvasView } from '../canvas-view.js';
 const EXPECTED: Record<UiCanvasContent['type'], CanvasView> = {
   url: 'browser',
   browser: 'browser',
+  managed_browser: 'browser',
   markdown: 'canvas',
   json: 'canvas',
   image: 'canvas',
@@ -33,11 +34,23 @@ const EXPECTED: Record<UiCanvasContent['type'], CanvasView> = {
 const SAMPLES: Record<UiCanvasContent['type'], UiCanvasContent> = {
   url: { type: 'url', url: 'https://a.test/' },
   browser: { type: 'browser', url: 'https://a.test/' },
+  managed_browser: {
+    type: 'managed_browser',
+    attachmentId: 'attachment_original_reference_001',
+    browserId: 'browser_original_reference_000001',
+    browserGeneration: 1,
+    tabId: 'tab_original_reference_000000001',
+    ownerAuthorId: 'actual_owner_author',
+    scope: { kind: 'room', roomId: 'actual_room' },
+  },
   markdown: { type: 'markdown', content: '# hi' },
   json: { type: 'json', data: {} },
   image: { type: 'image', src: 'a.png' },
   pdf: { type: 'pdf', src: 'a.pdf' },
-  widget: { type: 'widget', definition: { version: 1, root: { type: 'text', text: 'x' } } },
+  widget: {
+    type: 'widget',
+    definition: { version: 1, root: { type: 'text', text: 'x' } },
+  },
   mcp_app: { type: 'mcp_app', serverName: 'srv', uri: 'ui://a' },
   file: { type: 'file', sourcePath: 'a.ts' },
   model3d: { type: 'model3d', src: 'a.glb' },
@@ -48,7 +61,7 @@ const SAMPLES: Record<UiCanvasContent['type'], UiCanvasContent> = {
 };
 
 describe('canvasViewForContent', () => {
-  it('sends exactly the two types the embedded browser renders to the Browser view', () => {
+  it('sends embedded pages and authenticated managed browser references to the Browser view', () => {
     const byView = Object.entries(SAMPLES).map(
       ([type, content]) => [type, canvasViewForContent(content)] as const
     );
@@ -59,6 +72,6 @@ describe('canvasViewForContent', () => {
     const browserTypes = Object.entries(SAMPLES)
       .filter(([, content]) => canvasViewForContent(content) === 'browser')
       .map(([type]) => type);
-    expect(browserTypes.sort()).toEqual(['browser', 'url']);
+    expect(browserTypes.sort()).toEqual(['browser', 'managed_browser', 'url']);
   });
 });

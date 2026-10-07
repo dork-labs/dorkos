@@ -2,6 +2,11 @@
 export {
   constructOwnedBrowserEngine,
   type PrivateBrowserBirthOwner,
+  type PrivateBrowserResourceOwner,
+  type PrivateBrowserUploadOwner,
+  type PrivateBrowserUploadDispatcher,
+  type PrivateBrowserDownloadOwner,
+  type PrivateBrowserDownloadDispatcher,
   type PrivateBrowserInputOwner,
   type PrivateBrowserInputDispatcher,
   type PrivateBrowserCaptureOwner,
@@ -16,3 +21,17 @@ export type { OwnedCaptureAuthorization, OwnedCaptureWork } from './tabs/owned-c
 export type { OwnedNavigationAuthorization } from './navigation/owned-work.js';
 export type { PrivateOwnerNavigationContinuation } from './navigation/owner-continuation.js';
 export { isOwnedCaptureCancellation } from './tabs/owned-capture-work.js';
+export type {
+  PrivateBrowserSemanticOwner,
+  PrivateBrowserSemanticDispatcher,
+  OwnedSemanticReadAuthorization,
+  OwnedSemanticControlAuthorization,
+  PrivateSemanticStream,
+} from './semantic/owned-read.js';
+export type { OwnedUploadLease } from './files/upload-chooser.js';
+export type { OwnedDownloadSink, OwnedDownloadArtifact } from './files/response-download.js';
+export { isOriginalSemanticReadRefusal } from './semantic/owned-read.js';
+export { isOriginalBrowserDiagnosticRefusal } from './engine.js';
+
+export type { AuthorityCustodyRefusalStage } from './lifecycle/live-custody.js';
+export type { RetirementCloseRefusalStage } from './lifecycle/records.js';

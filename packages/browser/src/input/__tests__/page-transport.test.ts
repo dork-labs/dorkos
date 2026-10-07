@@ -15,6 +15,7 @@ import { fenceOrdinary } from '../../lifecycle/ownership.js';
 import type { PrivateBrowserInputDispatcher } from '../../engine.js';
 import type { CDPSession, Page } from 'playwright-core';
 import { createPageTransport } from '../page-transport.js';
+import { NativeSemanticTargetSchema } from '../../semantic/native-target.js';
 import { createPointerLedger, type PointerLedger } from '../../tabs/pointer.js';
 import { parseBrowserId, parseTabId } from '../../ids.js';
 import { createBrowserStopGate } from '../../lifecycle/stop.js';
@@ -52,7 +53,9 @@ function fixture(
       effects.push([method, ...args]);
     });
   const session = { send: record('send'), detach: record('detach') };
-  const context = { newCDPSession: vi.fn(async () => session as unknown as CDPSession) };
+  const context = {
+    newCDPSession: vi.fn(async () => session as unknown as CDPSession),
+  };
   configure?.(context);
   const mouse = {
     move: record('move'),
@@ -60,7 +63,11 @@ function fixture(
     up: record('mouseUp'),
     wheel: record('wheel'),
   };
-  const keyboard = { down: record('keyDown'), up: record('keyUp'), insertText: record('text') };
+  const keyboard = {
+    down: record('keyDown'),
+    up: record('keyUp'),
+    insertText: record('text'),
+  };
   const page = {
     context: () => context,
     mouse,
@@ -86,7 +93,10 @@ function fixture(
   const composed = createOwnedFixtureEngineInput({
     tab,
     stopGate: gate,
-    policy: { authorizeAction: async () => 'allowed', verifyBrokerLease: async () => 'unknown' },
+    policy: {
+      authorizeAction: async () => 'allowed',
+      verifyBrokerLease: async () => 'unknown',
+    },
     readTab: () => {
       observeBinding?.();
       return current ? tab : null;
@@ -245,7 +255,10 @@ it('retains in-flight native uncertainty after detach and later acknowledgement'
   expect(await h.close()).toMatchObject({ nativePending: 1, uncertain: true });
   pending.resolve();
   await tick();
-  expect(h.owner.custody()).toMatchObject({ nativePending: 0, uncertain: true });
+  expect(h.owner.custody()).toMatchObject({
+    nativePending: 0,
+    uncertain: true,
+  });
 });
 it('shares the exact child close promise after genuine parent terminal entry, including reentrant detach', async () => {
   const h = fixture();
@@ -277,7 +290,10 @@ it('subordinates a hung detach to caller deadline and observes late rejection', 
   expect(await close).toMatchObject({ detachPending: true, uncertain: true });
   detach.reject(new Error('LATE_DETACH_REJECTION'));
   await tick();
-  expect(h.owner.custody()).toMatchObject({ detachPending: false, uncertain: true });
+  expect(h.owner.custody()).toMatchObject({
+    detachPending: false,
+    uncertain: true,
+  });
 });
 it('late session after acquisition deadline is detached without target publication or uncertainty healing', async () => {
   vi.useFakeTimers({ toFake: ['performance', 'setTimeout', 'clearTimeout'] });
@@ -292,7 +308,10 @@ it('late session after acquisition deadline is detached without target publicati
   const originalEnd = h.record.lifetime.inputEnd;
   const close = h.close(performance.now());
   await vi.advanceTimersByTimeAsync(2000);
-  expect(await close).toMatchObject({ acquisitionPending: true, uncertain: true });
+  expect(await close).toMatchObject({
+    acquisitionPending: true,
+    uncertain: true,
+  });
   pending.resolve(h.session as unknown as CDPSession);
   await tick();
   expect(h.session.detach).toHaveBeenCalledTimes(1);
@@ -308,7 +327,9 @@ it('late session after acquisition deadline is detached without target publicati
 it('already-expired caller budget still attempts exact-owned detach without claiming certainty', async () => {
   const h = fixture();
   await h.ready;
-  expect(await h.close(performance.now() - 1)).toMatchObject({ uncertain: true });
+  expect(await h.close(performance.now() - 1)).toMatchObject({
+    uncertain: true,
+  });
   expect(h.session.detach).toHaveBeenCalledTimes(1);
 });
 
@@ -439,7 +460,10 @@ it('final binding observation losing current authority refuses captured Page IO'
   ).rejects.toThrow('TARGET_REFUSED');
   expect(armed).toBe(false);
   expect(h.effects).toEqual([]);
-  expect(h.owner.custody()).toMatchObject({ nativePending: 0, uncertain: true });
+  expect(h.owner.custody()).toMatchObject({
+    nativePending: 0,
+    uncertain: true,
+  });
   await h.close();
 });
 it.each(['composition', 'drag'] as const)(
@@ -467,7 +491,10 @@ it.each(['composition', 'drag'] as const)(
     await expect(work).rejects.toThrow('TARGET_REFUSED');
     expect(armed).toBe(false);
     expect(h.effects).toEqual([]);
-    expect(h.owner.custody()).toMatchObject({ nativePending: 0, uncertain: true });
+    expect(h.owner.custody()).toMatchObject({
+      nativePending: 0,
+      uncertain: true,
+    });
     await h.close();
   }
 );
@@ -561,7 +588,10 @@ it('distinguishes original known native custody from a pending observation DTO',
   const pending = deferred<void>();
   h.keyboard.insertText.mockImplementation(() => pending.promise);
   const call = original.native.dispatch({ kind: 'text', text: 'FIXTURE' }, signal());
-  expect(original.custody()).toMatchObject({ nativePending: 1, uncertain: true });
+  expect(original.custody()).toMatchObject({
+    nativePending: 1,
+    uncertain: true,
+  });
   expect(original.isCustodyKnown()).toBe(true);
   expect(h.input.isCustodyKnown()).toBe(true);
   pending.resolve();
@@ -652,7 +682,9 @@ for (const replacement of ['epoch', 'page', 'ordinary', 'parentMap'] as const)
   it(`an owned dispatcher current callback cannot replace canonical ${replacement} after SDK lookup`, async () => {
     const h = fixture();
     const issuer = createOwnedInputIssuer();
-    const originals: { operation?: ReturnType<PrivateBrowserInputDispatcher['input']> } = {};
+    const originals: {
+      operation?: ReturnType<PrivateBrowserInputDispatcher['input']>;
+    } = {};
     const parentRecords = h.record.lifetime.ordinary.records;
     onTestFinished(async () => {
       await Promise.allSettled([originals.operation]);
@@ -685,7 +717,12 @@ for (const replacement of ['epoch', 'page', 'ordinary', 'parentMap'] as const)
       },
     };
     const operation = dispatcher.input(
-      { kind: 'input', requestId, binding, steps: [{ kind: 'text', text: 'refused' }] },
+      {
+        kind: 'input',
+        requestId,
+        binding,
+        steps: [{ kind: 'text', text: 'refused' }],
+      },
       {
         authorize: async () => 'allowed',
         isCurrent() {
@@ -706,3 +743,255 @@ for (const replacement of ['epoch', 'page', 'ordinary', 'parentMap'] as const)
     expect(replaced).toBe(true);
     expect(insert).not.toHaveBeenCalled();
   });
+
+for (const nativeTargetMatches of [true, false])
+  it(`consumes only the original canonical Page frame candidate with exact native target matching=${nativeTargetMatches}`, async () => {
+    const h = fixture();
+    const originals: { operation?: Promise<unknown> } = {};
+    const expected = new Set<unknown>();
+    onTestFinished(async () => {
+      const results = await Promise.allSettled([
+        ...(originals.operation ? [originals.operation] : []),
+        h.close(),
+      ]);
+      for (const result of results)
+        if (result.status === 'rejected' && !expected.has(result.reason)) throw result.reason;
+    });
+    await h.ready;
+    const main = {},
+      frame = { page: () => h.page, isDetached: () => false };
+    Object.defineProperty(h.page, 'frames', { value: () => [main, frame] });
+    const childSend = vi.fn(async (method: string, params: Record<string, unknown> = {}) => {
+      switch (method) {
+        case 'Target.getTargetInfo':
+          return {
+            targetInfo: {
+              type: 'iframe',
+              targetId: nativeTargetMatches ? 'exact-child-native' : 'different-child-native',
+            },
+          };
+        case 'Page.createIsolatedWorld':
+          return { executionContextId: 1 };
+        case 'DOM.resolveNode':
+          return {
+            object: {
+              objectId: params.backendNodeId === 1 ? 'document' : 'element',
+            },
+          };
+        case 'Runtime.callFunctionOn':
+          return {
+            result: {
+              value: {
+                connected: true,
+                focused: true,
+                disabled: false,
+                readonly: false,
+                kind: 'none',
+                selectedAll: false,
+              },
+            },
+          };
+        case 'Accessibility.getPartialAXTree':
+          return {
+            nodes: [
+              {
+                backendDOMNodeId: 2,
+                role: { value: 'button' },
+                name: { value: 'Field' },
+              },
+            ],
+          };
+        case 'DOM.focus':
+          return {};
+        case 'Runtime.releaseObjectGroup':
+          return {};
+        default:
+          throw new Error('UNEXPECTED_FRAME_COMMAND');
+      }
+    });
+    const childDetach = vi.fn(async () => {}),
+      session = {
+        send: childSend,
+        detach: childDetach,
+      } as unknown as CDPSession;
+    h.context.newCDPSession.mockResolvedValueOnce(session);
+    const target = NativeSemanticTargetSchema.parse({
+      identity: {
+        ...h.record.tabs.values().next().value!.binding,
+        version: 1,
+        treeId: 'semantic_tree_fixture_0001',
+        treeRevision: 1,
+        grantRevision: 1,
+        semanticLeaseId: 'semantic_lease_fixture_001',
+      },
+      nodeRef: 'semantic_node_fixture_0001',
+      frameId: 'semantic_frame_fixture_001',
+      frameNavigationGeneration: 0,
+      nativeFrameId: 'exact-child-frame',
+      nativeTargetId: 'exact-child-native',
+      nativeFrameSlot: 1,
+      backendNodeId: 2,
+      documentBackendNodeId: 1,
+      role: 'button',
+      name: 'Field',
+      kind: 'none',
+      disabled: false,
+      readonly: false,
+      focused: true,
+      focusRevision: 1,
+    });
+    originals.operation = h.owner.semanticEffect(target, true, signal(), () => true);
+    void originals.operation.catch(() => {});
+    if (nativeTargetMatches) {
+      await expect(originals.operation).resolves.toMatchObject({
+        focused: true,
+      });
+      expect(childSend).toHaveBeenCalledWith('DOM.focus', { backendNodeId: 2 });
+    } else {
+      const reason = await originals.operation.then(
+        () => {
+          throw new Error('FOREIGN_TARGET_ACCEPTED');
+        },
+        (reason) => reason
+      );
+      expect(reason).toBeInstanceOf(Error);
+      expect(reason.message).toBe('SEMANTIC_TARGET_REFUSED');
+      expected.add(reason);
+      expect(childSend.mock.calls.some(([method]) => method === 'DOM.focus')).toBe(false);
+    }
+    expect(h.context.newCDPSession).toHaveBeenLastCalledWith(frame);
+    expect(h.session.send.mock.calls.some(([method]) => method === 'DOM.focus')).toBe(false);
+    expect(childDetach).toHaveBeenCalledOnce();
+  });
+
+it('retains a late original frame session across retirement and detaches it without native entry', async () => {
+  const h = fixture(),
+    held = deferred<CDPSession>();
+  const childSend = vi.fn(),
+    childDetach = vi.fn(async () => {}),
+    child = { send: childSend, detach: childDetach } as unknown as CDPSession;
+  const bank: { operation?: Promise<unknown>; expected?: unknown } = {};
+  onTestFinished(async () => {
+    held.resolve(child);
+    const results = await Promise.allSettled([
+      ...(bank.operation ? [bank.operation] : []),
+      h.close(),
+    ]);
+    for (const result of results)
+      if (result.status === 'rejected' && result.reason !== bank.expected) throw result.reason;
+  });
+  await h.ready;
+  const frame = { page: () => h.page, isDetached: () => false };
+  Object.defineProperty(h.page, 'frames', { value: () => [{}, frame] });
+  h.context.newCDPSession.mockReturnValueOnce(held.promise);
+  const binding = h.record.tabs.values().next().value!.binding;
+  const target = NativeSemanticTargetSchema.parse({
+    identity: {
+      ...binding,
+      version: 1,
+      treeId: 'semantic_tree_fixture_0001',
+      treeRevision: 1,
+      grantRevision: 1,
+      semanticLeaseId: 'semantic_lease_fixture_001',
+    },
+    nodeRef: 'semantic_node_fixture_0001',
+    frameId: 'semantic_frame_fixture_001',
+    frameNavigationGeneration: 0,
+    nativeFrameId: 'exact-child-frame',
+    nativeTargetId: 'exact-child-native',
+    nativeFrameSlot: 1,
+    backendNodeId: 2,
+    documentBackendNodeId: 1,
+    role: 'button',
+    name: 'Field',
+    kind: 'none',
+    disabled: false,
+    readonly: false,
+    focused: false,
+    focusRevision: 0,
+  });
+  bank.operation = h.owner.semanticEffect(target, true, signal(), () => true);
+  void bank.operation.catch(() => {});
+  await vi.waitFor(() => expect(h.context.newCDPSession).toHaveBeenLastCalledWith(frame));
+  h.retire();
+  held.resolve(child);
+  const reason = await bank.operation.then(
+    () => {
+      throw new Error('LATE_FRAME_ACCEPTED');
+    },
+    (reason) => reason
+  );
+  expect(reason).toBeInstanceOf(Error);
+  expect(reason.message).toBe('INPUT_TARGET_REFUSED');
+  bank.expected = reason;
+  expect(childSend).not.toHaveBeenCalled();
+  expect(childDetach).toHaveBeenCalledOnce();
+});
+
+it('uses the lifetime-owned CDP session for preedit and commit with exact UTF-16 offsets', async () => {
+  const h = fixture();
+  await h.ready;
+  await h.owner.native.dispatch(
+    { kind: 'composition', text: '😀中', selectionStart: 2, selectionEnd: 3 },
+    signal()
+  );
+  await h.owner.native.dispatch({ kind: 'compositionCommit', text: '😀中' }, signal());
+  expect(h.effects).toEqual([
+    ['send', 'Input.imeSetComposition', { text: '😀中', selectionStart: 2, selectionEnd: 3 }],
+    ['send', 'Input.insertText', { text: '😀中' }],
+  ]);
+  await h.close();
+});
+it('refuses reentrant lifetime replacement by the original composition sender getter', async () => {
+  const h = fixture();
+  await h.ready;
+  const original = h.session.send;
+  Object.defineProperty(h.session, 'send', {
+    get: () => {
+      h.replace();
+      return original;
+    },
+  });
+  await expect(
+    h.owner.native.dispatch(
+      { kind: 'composition', text: '中', selectionStart: 1, selectionEnd: 1 },
+      signal()
+    )
+  ).rejects.toThrow('TARGET_REFUSED');
+  expect(h.effects).toEqual([]);
+  Object.defineProperty(h.session, 'send', { value: original });
+  await h.close();
+});
+
+it('retains original held preedit uncertainty after detach and late acknowledgment', async () => {
+  const h = fixture();
+  await h.ready;
+  const held = deferred<void>();
+  const originalSend = h.session.send;
+  h.session.send = vi.fn(async (...args: unknown[]) => {
+    if (args[0] === 'Input.imeSetComposition' && (args[1] as { text?: string }).text === '中') {
+      h.effects.push('original-preedit');
+      await held.promise;
+    } else await originalSend(...args);
+  });
+  const preedit = h.owner.native.dispatch(
+    { kind: 'composition', text: '中', selectionStart: 1, selectionEnd: 1 },
+    signal()
+  );
+  const originalClose = h.close();
+  onTestFinished(async () => {
+    held.resolve();
+    await Promise.allSettled([preedit, originalClose]);
+  });
+  await tick();
+  expect(await originalClose).toMatchObject({ nativePending: 1, uncertain: true, detached: true });
+  held.resolve();
+  await Promise.allSettled([preedit]);
+  expect(h.owner.custody()).toMatchObject({ nativePending: 0, uncertain: true });
+  expect(h.effects).toContainEqual([
+    'send',
+    'Input.imeSetComposition',
+    { text: '', selectionStart: 0, selectionEnd: 0 },
+  ]);
+  expect(h.effects).toContainEqual(['detach']);
+});

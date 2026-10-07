@@ -33,6 +33,8 @@ export function canvasSourceKey(content: UiCanvasContent): string | null {
       return `url:${content.url}`;
     case 'browser':
       return `browser:${content.url}`;
+    case 'managed_browser':
+      return `managed-browser:${content.attachmentId}`;
     case 'markdown':
       return content.sourcePath ? `path:${content.sourcePath}` : null;
     case 'file':

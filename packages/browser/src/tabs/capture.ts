@@ -15,13 +15,15 @@ import { advanceCounter } from '../counters.js';
 import { parseBrowserResult, type BrowserBinding, type BrowserResult } from '../contracts.js';
 import type { BrowserRecord, CaptureCommand, TabRecord } from '../lifecycle/records.js';
 import { BrowserLifecycleError } from '../lifecycle/errors.js';
-import { ownOperation } from '../lifecycle/ownership.js';
+import { ownCaptureOperation } from '../lifecycle/ownership.js';
 import { deadline } from '../lifecycle/deadline.js';
 
 /** Actual bytes and attributed frame metadata; consumers receive no Page or path. */
 export interface BrowserCapture {
   readonly receipt: Extract<BrowserResult, { kind: 'frame' }>;
   readonly bytes: Uint8Array;
+  /** Backend-only original screenshot/JPEG encoding elapsed time, never a wire receipt. */
+  readonly encodingMilliseconds?: number;
 }
 
 function matches(left: BrowserBinding, right: BrowserBinding): boolean {
@@ -159,12 +161,16 @@ async function acquire(
   if (!valid()) refuse();
   const pointerBefore = tab.pointer.read();
   let bytes: Uint8Array;
+  let encodingMilliseconds: number;
+  const captureNow = config.clock.monotonicNow.bind(config.clock);
   try {
     const screenshot = page.screenshot;
     if (!valid()) refuse();
     const originals = nativeCaptures.get(tab) ?? new Set<Promise<Uint8Array>>();
     nativeCaptures.set(tab, originals);
-    const original = ownOperation(
+    const encodingStarted = captureNow();
+    if (!valid()) refuse();
+    const original = ownCaptureOperation(
       record,
       () =>
         Reflect.apply(screenshot, page, [
@@ -177,6 +183,9 @@ async function acquire(
       () => originals.delete(original)
     );
     bytes = await deadline(original, 2000, 'CAPTURE_TIMEOUT');
+    encodingMilliseconds = captureNow() - encodingStarted;
+    if (!Number.isFinite(encodingMilliseconds) || encodingMilliseconds < 0)
+      throw new BrowserLifecycleError('CAPTURE_FAILED');
   } catch (error) {
     if (error instanceof BrowserLifecycleError) throw error;
     throw new BrowserLifecycleError('CAPTURE_FAILED');
@@ -238,5 +247,5 @@ async function acquire(
   if (!valid()) refuse();
   const copiedBytes = new Uint8Array(bytes);
   if (!valid()) refuse();
-  return Object.freeze({ receipt, bytes: copiedBytes });
+  return Object.freeze({ receipt, bytes: copiedBytes, encodingMilliseconds });
 }

@@ -372,6 +372,8 @@ export const CONFIG_WRITE_POLICY = {
   'relay.maxAgentTurnsTotalPerHour': 'operator-only',
 
   'browser.enabled': 'operator-only',
+  // The person's outbound browser identity choice cannot be changed by agents.
+  'browser.chromeUserAgent': 'operator-only',
   // Whether the external A2A surface mounts: an agent card describing the agents
   // here, plus a JSON-RPC address outside clients post work to. That is squarely
   // "who can reach this instance", which is why it sits with `tunnel.enabled` and
@@ -1041,6 +1043,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
     area: 'reach',
     description: 'What leaves this machine',
     paths: [
+      'browser.chromeUserAgent',
       'telemetry.userHasDecided',
       'telemetry.install',
       'telemetry.heartbeat',

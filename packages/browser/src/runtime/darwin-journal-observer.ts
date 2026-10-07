@@ -1,3 +1,5 @@
+import type { JournalIdentityRefusalCode } from './supervisor-uncertainty-diagnostic.js';
+import type { OriginalChildBatchReason } from './darwin-journal-diagnostic.js';
 import type { ProcessIdentity } from '../configuration.js';
 import {
   copyJournalData,
@@ -25,7 +27,11 @@ export async function observeDarwinJournal(
     root: ProcessIdentity | Promise<ProcessIdentity | null>;
     rootSupervisor?: () => ProcessIdentity | undefined;
     onEnrolled?: () => Promise<void>;
-    onIncompleteChildren?: (parent: ProcessIdentity, batch: DarwinChildrenBatch) => Promise<void>;
+    onIncompleteChildren?: (
+      parent: ProcessIdentity,
+      batch: DarwinChildrenBatch,
+      original: Readonly<{ sequence: number; reason: OriginalChildBatchReason }>
+    ) => Promise<void>;
     logicalManager?: ProcessIdentity;
     exitingObserver?: ProcessIdentity;
     endBrowser?: () => boolean;
@@ -48,7 +54,7 @@ export async function observeDarwinJournal(
     endMonotonic: number;
     /** Renew only this original durable campaign after each complete gap-free native sweep. */
     continuousWindowMilliseconds?: number;
-    onObservationFault?: () => Promise<void>;
+    onObservationFault?: (reason?: JournalIdentityRefusalCode) => Promise<void>;
     /** Emitted only after an original gap-free sweep is durably committed. */
     onCheckpoint?: (
       checkpoint: Readonly<{
@@ -88,12 +94,13 @@ export async function observeDarwinJournal(
   )
     return 'uncertain';
   let currentWindowEnd = options.endMonotonic;
+  let identityRefusal: JournalIdentityRefusalCode | undefined;
   let faultReported = false;
   let enumerationClosed = false;
   const reportFault = async () => {
     if (options.continuousWindowMilliseconds === undefined || faultReported) return;
     faultReported = true;
-    await options.onObservationFault?.();
+    await options.onObservationFault?.(identityRefusal);
   };
   const opened = await openJournalWriter({
     ...options.location,
@@ -205,6 +212,35 @@ export async function observeDarwinJournal(
           if (!validBoot || !fact || fact.kind === 'unknown') {
             retained.lifecycle = 'unknown';
             gap(next, 'identity-unknown', retained.identity);
+            identityRefusal ??= !validBoot
+              ? 'JOURNAL_IDENTITY_BOOT_MISMATCH'
+              : !fact
+                ? 'JOURNAL_IDENTITY_MISSING_FACT'
+                : fact.kind === 'unknown'
+                  ? fact.uncertainty === 'birth-changed'
+                    ? 'JOURNAL_IDENTITY_NATIVE_BIRTH_CHANGED'
+                    : fact.uncertainty === 'parent-changed'
+                      ? 'JOURNAL_IDENTITY_NATIVE_PARENT_CHANGED'
+                      : fact.uncertainty === 'alive-to-zombie'
+                        ? 'JOURNAL_IDENTITY_NATIVE_ALIVE_TO_ZOMBIE'
+                        : fact.uncertainty === 'zombie-to-alive'
+                          ? 'JOURNAL_IDENTITY_NATIVE_ZOMBIE_TO_ALIVE'
+                          : fact.uncertainty === 'membership-disappeared'
+                            ? 'JOURNAL_IDENTITY_NATIVE_MEMBERSHIP_DISAPPEARED'
+                            : fact.uncertainty === 'membership-appeared'
+                              ? 'JOURNAL_IDENTITY_NATIVE_MEMBERSHIP_APPEARED'
+                              : fact.uncertainty === 'membership-absent-with-present-reads'
+                                ? 'JOURNAL_IDENTITY_NATIVE_MEMBERSHIP_ABSENT_WITH_PRESENT_READS'
+                                : fact.error === 35
+                                  ? 'JOURNAL_IDENTITY_NATIVE_EAGAIN'
+                                  : fact.error === 3
+                                    ? 'JOURNAL_IDENTITY_NATIVE_ESRCH'
+                                    : fact.error === 1 || fact.error === 13
+                                      ? 'JOURNAL_IDENTITY_NATIVE_PERMISSION'
+                                      : fact.error === 5
+                                        ? 'JOURNAL_IDENTITY_NATIVE_IO'
+                                        : 'JOURNAL_IDENTITY_NATIVE_OTHER'
+                  : 'JOURNAL_IDENTITY_NATIVE_OTHER';
           } else if (fact.kind === 'absent') {
             retained.lifecycle = 'dead';
             retained.currentParent = null;
@@ -243,6 +279,7 @@ export async function observeDarwinJournal(
             // The exact terminal original cannot become executable again; a contradictory fact is unknown.
             retained.lifecycle = 'unknown';
             gap(next, 'identity-unknown', retained.identity);
+            identityRefusal ??= 'JOURNAL_IDENTITY_TERMINAL_CONTRADICTION';
           } else {
             retained.lifecycle = 'alive';
             const parent = facts.get(fact.parentPid);
@@ -290,6 +327,7 @@ export async function observeDarwinJournal(
             continue;
           if (options.enumerationCloseRequested?.()) continue;
           let childFacts: DarwinProcessBatch['processes'];
+          let childBatch: DarwinChildrenBatch | undefined;
           if (parent.role === 'manager') {
             // This generation enrolls one selected root, not every controller auxiliary.
             // Bind its native parent PID to the independently observed parent lifetime on both sides.
@@ -319,11 +357,16 @@ export async function observeDarwinJournal(
             childFacts = [fact];
           } else {
             const children = await options.observer.children!(parent.identity);
-            if (!children.complete || !checkBoot(children)) {
-              await options.onIncompleteChildren?.(parent.identity, children);
+            const complete = children.complete;
+            if (!complete || !checkBoot(children)) {
+              await options.onIncompleteChildren?.(parent.identity, children, {
+                sequence: next.sequence,
+                reason: complete ? 'CHILD_BOOT_MISMATCH' : 'CHILDREN_INCOMPLETE',
+              });
               gap(next, 'association-missing', parent.identity);
               continue;
             }
+            childBatch = children;
             childFacts = children.processes;
           }
           for (const fact of childFacts) {
@@ -347,6 +390,16 @@ export async function observeDarwinJournal(
             }
             if (fact.kind !== 'present' || fact.zombie) {
               gap(next, 'association-missing', parent.identity);
+              if (childBatch) {
+                try {
+                  await options.onIncompleteChildren?.(parent.identity, childBatch, {
+                    sequence: next.sequence,
+                    reason: 'CHILD_UNQUALIFIED',
+                  });
+                } catch {
+                  /* Diagnostic failure cannot alter this already-recorded refusal. */
+                }
+              }
               continue;
             }
             const child = darwinBirth(fact.identity);

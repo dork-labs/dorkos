@@ -215,12 +215,18 @@ describe('supplied semantic projection: no native or authority claims', () => {
   it('omits markup descriptions and refuses unknown-role action affordances', () => {
     const projected = output([
       item(0, { description: '<img src=x onerror="MARKUP_71">' }),
-      item(1, { role: 'application', candidateActions: ['activate', 'insertText'] }),
+      item(1, {
+        role: 'application',
+        candidateActions: ['activate', 'insertText'],
+      }),
     ]);
     expect(projected.snapshot.nodes).toHaveLength(2);
     expect(projected.snapshot.nodes[0]).not.toHaveProperty('description');
     expect(JSON.stringify(projected.snapshot)).not.toContain('MARKUP_71');
-    expect(projected.snapshot.nodes[1]).toMatchObject({ role: 'unknown', actions: [] });
+    expect(projected.snapshot.nodes[1]).toMatchObject({
+      role: 'unknown',
+      actions: [],
+    });
   });
 
   it('normalizes text without preserving unsafe controls or split surrogates', () => {
@@ -240,7 +246,10 @@ describe('supplied semantic projection: no native or authority claims', () => {
       expect(browserUtf8Bytes(healthy.snapshot.nodes[0][field]!)).toBe(bytes);
       expect(healthy.snapshot.completeness).toBe('complete');
       const limited = output([item(0, { [field]: '🙂'.repeat(count + 1) }), item(1)]);
-      expect(limited.snapshot).toMatchObject({ completeness: 'truncated', reason: 'limit' });
+      expect(limited.snapshot).toMatchObject({
+        completeness: 'truncated',
+        reason: 'limit',
+      });
       expect(browserUtf8Bytes(limited.snapshot.nodes[0][field]!)).toBe(bytes);
       expect(limited.snapshot.nodes.every((node) => node.actions.length === 0)).toBe(true);
       expect(SemanticSnapshotV1Schema.safeParse(limited.snapshot).success).toBe(true);
@@ -265,7 +274,10 @@ describe('supplied semantic projection: no native or authority claims', () => {
     expect(output(chain(32)).snapshot.completeness).toBe('complete');
     const limited = output(chain(33)).snapshot;
     expect(limited.nodes).toHaveLength(32);
-    expect(limited).toMatchObject({ completeness: 'truncated', reason: 'limit' });
+    expect(limited).toMatchObject({
+      completeness: 'truncated',
+      reason: 'limit',
+    });
     expect(limited.nodes[31].childRefs).toEqual([]);
     expect(limited.nodes.every((node) => node.actions.length === 0)).toBe(true);
     expect(SemanticSnapshotV1Schema.safeParse(limited).success).toBe(true);
@@ -291,7 +303,11 @@ describe('supplied semantic projection: no native or authority claims', () => {
   it('refuses an over-node supplied batch without claiming2000 public nodes fit the byte budget', () => {
     const subjects = Array.from({ length: 2001 }, (_, index) => item(index));
     const limited = output(subjects).snapshot;
-    expect(limited).toMatchObject({ completeness: 'unavailable', reason: 'limit', nodes: [] });
+    expect(limited).toMatchObject({
+      completeness: 'unavailable',
+      reason: 'limit',
+      nodes: [],
+    });
     // Node-counter isolation is in the private reference-ledger test, not schema preflight.
     expect(output(subjects.slice(0, 2000)).snapshot.nodes.length).toBeGreaterThan(0);
     expect(output(subjects.slice(0, 2000)).snapshot.completeness).toBe('truncated');
@@ -313,7 +329,10 @@ describe('supplied semantic projection: no native or authority claims', () => {
     expect(actualBytes).toBeLessThanOrEqual(262144);
     expect(limited.nodes.length).toBeGreaterThan(1);
     expect(limited.nodes.length).toBeLessThan(subjects.length);
-    expect(limited).toMatchObject({ completeness: 'truncated', reason: 'limit' });
+    expect(limited).toMatchObject({
+      completeness: 'truncated',
+      reason: 'limit',
+    });
     expect(limited.nodes.every((node) => node.actions.length === 0)).toBe(true);
     expect(SemanticSnapshotV1Schema.safeParse(limited).success).toBe(true);
     // Independent raw sizing ensures this subject exercises the byte ceiling, not another limit.
@@ -324,14 +343,22 @@ describe('supplied semantic projection: no native or authority claims', () => {
     }));
     expect(
       browserUtf8Bytes(
-        JSON.stringify({ ...one, nodes: rawNodes, rootRefs: rawNodes.map((node) => node.nodeRef) })
+        JSON.stringify({
+          ...one,
+          nodes: rawNodes,
+          rootRefs: rawNodes.map((node) => node.nodeRef),
+        })
       )
     ).toBeGreaterThan(262144);
   });
 
   it('rejects cycles/dangling parents and accessors without invoking supplied getters', () => {
     const dangling = output([item(0, { parentRef: reference(999) })]).snapshot;
-    expect(dangling).toMatchObject({ completeness: 'unavailable', reason: 'unstable', nodes: [] });
+    expect(dangling).toMatchObject({
+      completeness: 'unavailable',
+      reason: 'unstable',
+      nodes: [],
+    });
     const cycle = output([
       item(0, { parentRef: reference(101) }),
       item(1, { parentRef: reference(100) }),

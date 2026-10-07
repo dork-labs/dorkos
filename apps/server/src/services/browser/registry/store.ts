@@ -73,7 +73,12 @@ export class BrowserRegistryStore {
   }
 
   /** Read one exact owner/generation identity; missing and foreign references are indistinguishable. */
-  instance(owner: string, browserId: string, generation: number): BrowserInstanceRow {
+  instance(
+    owner: string,
+    browserId: string,
+    generation: number,
+    onOriginalDenial?: (value: BrowserRegistryError) => void
+  ): BrowserInstanceRow {
     const row = this.db
       .select()
       .from(browserInstances)
@@ -85,7 +90,11 @@ export class BrowserRegistryStore {
         )
       )
       .get();
-    if (!row) throw new BrowserRegistryError('inaccessible');
+    if (!row) {
+      const refusal = new BrowserRegistryError('inaccessible');
+      onOriginalDenial?.(refusal);
+      throw refusal;
+    }
     return row;
   }
 

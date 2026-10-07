@@ -1,3 +1,5 @@
+import ts from 'typescript';
+import { originalStartupCleanup } from '../../../../__tests__/startup-root-wiring.js';
 import express from 'express';
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
@@ -300,11 +302,9 @@ describe('offline Composio browser upstream', () => {
     expect(source).toMatch(
       /if \(env\.DORKOS_TEST_RUNTIME\) \{\s*const \{ startTestComposioFixture \}/
     );
+    originalStartupCleanup(ts.createSourceFile('index.ts', source, ts.ScriptTarget.Latest, true));
     expect(source).toMatch(
-      /start\(\)\.catch\(async \(err\) => \{[\s\S]*?await testComposioFixture\?\.close\(\)/
-    );
-    expect(source).toMatch(
-      /async function shutdownServices\(\) \{[\s\S]*?await testComposioFixture\?\.close\(\)/
+      /async function shutdownRemainingServices\(\) \{[\s\S]*?await testComposioFixture\?\.close\(\)/
     );
   });
 });

@@ -1,3 +1,4 @@
+import { logger } from '../../../lib/logger.js';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import {
@@ -8,6 +9,8 @@ import {
 import {
   constructOwnedBrowserEngine,
   type BrowserLifecycleEngine,
+  type AuthorityCustodyRefusalStage,
+  type RetirementCloseRefusalStage,
   type PrivateBrowserBirthOwner,
   type PrivateBrowserRetirementReceiver,
 } from '@dorkos/browser/server-owner';
@@ -28,6 +31,10 @@ interface Birth {
   readonly receiver: PrivateBrowserRetirementReceiver;
   readonly ordinary: () => boolean;
   readonly current: () => boolean;
+  readonly refusal?: () => AuthorityCustodyRefusalStage | undefined;
+  readonly closeDiagnostic: {
+    read?: () => RetirementCloseRefusalStage | undefined;
+  };
   readonly runtime: PrivateBrowserRetirementReceiver['verifiedRuntimeBinding'];
   refused: boolean;
 }
@@ -36,6 +43,169 @@ interface Birth {
  * The startup host must retain this owner, supply its genuine authenticated birth/network/input/
  * capture participants, and join close before releasing them. No fixture or repair fallback exists. */
 export function createProductionBrowserRuntimeOwner() {
+  let diagnosticCount = 0;
+  let emit: typeof logger.info | undefined;
+  try {
+    emit = logger.info.bind(logger);
+  } catch {
+    /* Diagnostics never confer authority. */
+  }
+  const noteCustodyRefusal = () => {
+    if (diagnosticCount >= 16) return;
+    try {
+      const stage = birth?.refusal?.();
+      if (
+        ![
+          'local',
+          'membership',
+          'network',
+          'journal',
+          'supervisor',
+          'slot',
+          'transport',
+          'reentrant',
+          'popup',
+          'exception',
+        ].some((literal) => stage === literal)
+      )
+        return;
+      emit?.(
+        'Browser original custody refusal stage',
+        Object.freeze({ stage, ordinal: ++diagnosticCount })
+      );
+    } catch {
+      /* Preserve the actual custody result and original operational cause. */
+    }
+  };
+  const readCloseRefusal = () => {
+    try {
+      const original = birth?.closeDiagnostic.read;
+      if (!original) return 'unavailable';
+      const stage = original();
+      if (stage === undefined) return 'none';
+      return [
+        'entry',
+        'aggregate',
+        'terminal',
+        'setup',
+        'snapshot',
+        'navigation',
+        'context',
+        'inputs',
+        'proxy',
+        'connection',
+        'network',
+        'journal',
+        'observe-gone',
+        'final-custody',
+        'directory',
+        'release',
+      ].some((code) => code === stage)
+        ? stage
+        : 'invalid';
+    } catch {
+      return 'unavailable'; // A diagnostic method cannot replace original sealed data or close.
+    }
+  };
+  const originalPromiseThen = Promise.prototype.then;
+  const noteRetirement = (
+    observation: Awaited<PrivateBrowserRetirementReceiver['observation']>
+  ) => {
+    // Existing sealed producer data only. No identities, bindings, participant errors or queries.
+    const literal = (value: unknown, allowed: readonly string[]) =>
+      allowed.some((code) => code === value) ? value : 'invalid';
+    const reasons = [
+      'permitUnavailable',
+      'targetChanged',
+      'clockUnavailable',
+      'drainTimeout',
+      'releaseTimeout',
+      'custodyPending',
+      'observationUnavailable',
+      'drainFailed',
+      'releaseFailed',
+    ];
+    try {
+      const cleanup = observation.cleanup;
+      const owners = observation.owners;
+      const ownerCount =
+        Number.isSafeInteger(owners.length) && owners.length >= 0 && owners.length <= 512
+          ? owners.length
+          : 'invalid';
+      let firstOwner: (typeof owners)[number]['observation'] | undefined;
+      if (ownerCount !== 'invalid') {
+        for (const owner of owners) {
+          if (owner.observation.state !== 'settled') {
+            firstOwner = owner.observation;
+            break;
+          }
+        }
+      }
+      const terminal = observation.terminal;
+      emit?.(
+        'Browser original sealed retirement result',
+        Object.freeze({
+          ordinal: 1,
+          closeStage:
+            terminal.cleanup === 'failed' || terminal.cleanup === 'unverified'
+              ? readCloseRefusal()
+              : 'none',
+          aggregateState: literal(cleanup.state, ['settled', 'failed', 'unverified']),
+          coverage: literal(cleanup.coverage, ['closed', 'unavailable']),
+          pending: typeof cleanup.pending === 'boolean' ? cleanup.pending : 'invalid',
+          aggregateReasons: Object.freeze(
+            cleanup.uncertainty.slice(0, 16).map((value) => literal(value, reasons))
+          ),
+          ownerCount,
+          firstOwnerState: firstOwner
+            ? literal(firstOwner.state, ['failed', 'unverified'])
+            : ownerCount === 'invalid'
+              ? 'unobserved'
+              : 'none',
+          firstOwnerReason:
+            firstOwner && 'reason' in firstOwner ? literal(firstOwner.reason, reasons) : 'none',
+          firstOwnerPending: firstOwner
+            ? typeof firstOwner.pending === 'boolean'
+              ? firstOwner.pending
+              : 'invalid'
+            : false,
+          terminalCleanup: literal(terminal.cleanup, [
+            'observed',
+            'failed',
+            'unverified',
+            'notYetObserved',
+          ]),
+          terminalReason:
+            'reason' in terminal
+              ? literal(terminal.reason, [
+                  'processesRemain',
+                  'observationUnavailable',
+                  'closeFailed',
+                ])
+              : 'none',
+          firstCause: literal(observation.firstCause, [
+            'explicitStop',
+            'disabled',
+            'authorityRevoked',
+            'persistenceFailure',
+            'engineFault',
+            'cleanupFailure',
+          ]),
+        })
+      );
+    } catch {
+      /* A diagnostic callback cannot replace any original retirement or close outcome. */
+    }
+  };
+  const observeOriginalRetirement = (receiver: PrivateBrowserRetirementReceiver) => {
+    try {
+      const original = receiver.observation; // Capture exactly once, after genuine register/check.
+      // Observe the genuine Promise without reading a participant-supplied then method or adding a wait.
+      void originalPromiseThen.call(original, noteRetirement, () => {});
+    } catch {
+      /* Diagnostic registration is isolated from original birth/authority/cleanup. */
+    }
+  };
   const abort = new AbortController();
   const stopVerification = abort.abort.bind(abort);
   let closed = false;
@@ -110,8 +280,47 @@ export function createProductionBrowserRuntimeOwner() {
       if (shutdownWork) {
         try {
           const outcomes = await shutdownWork;
-          if (outcomes.some((outcome) => outcome.cleanup !== 'observed'))
+          const diagnostic: {
+            refused?: { outcome: (typeof outcomes)[number]; cleanup: unknown };
+          } = {};
+          if (
+            outcomes.some((outcome) => {
+              const cleanup = outcome.cleanup; // Same original one-read classification order.
+              if (cleanup === 'observed') return false;
+              diagnostic.refused = { outcome, cleanup };
+              return true;
+            })
+          ) {
             fail(new ProductionRuntimeRefusal('CUSTODY_UNCERTAIN'));
+            // Classification and first failure are sealed before this non-authoritative sink.
+            // Read only a data descriptor: participant getters and arbitrary error text never enter.
+            try {
+              const cleanup =
+                diagnostic.refused!.cleanup === 'failed' ||
+                diagnostic.refused!.cleanup === 'unverified'
+                  ? diagnostic.refused!.cleanup
+                  : 'invalid';
+              const descriptor = Object.getOwnPropertyDescriptor(
+                diagnostic.refused!.outcome,
+                'reason'
+              );
+              const value = descriptor && 'value' in descriptor ? descriptor.value : undefined;
+              const reason =
+                value === 'processesRemain' ||
+                value === 'observationUnavailable' ||
+                value === 'closeFailed'
+                  ? value
+                  : descriptor
+                    ? 'invalid'
+                    : 'missing';
+              emit?.(
+                'Browser original shutdown refused result',
+                Object.freeze({ cleanup, reason, ordinal: 1 })
+              );
+            } catch {
+              /* Original cleanup result and exact first failure remain unchanged. */
+            }
+          }
         } catch (error) {
           fail(error);
         }
@@ -136,7 +345,8 @@ export function createProductionBrowserRuntimeOwner() {
         bindEngine(engine: BrowserLifecycleEngine): void;
       },
       command: unknown,
-      signal?: AbortSignal
+      signal?: AbortSignal,
+      identityMode: BrowserRuntimeDescriptor['identity']['mode'] = 'native'
     ) {
       if (closed) return Promise.reject(failed ? failure : new ProductionRuntimeRefusal('CLOSED'));
       if (work) return Promise.reject(new ProductionRuntimeRefusal('BUSY'));
@@ -161,6 +371,36 @@ export function createProductionBrowserRuntimeOwner() {
         const input = participant.input;
         const capture = participant.capture;
         const navigation = participant.navigation;
+        const upload = participant.upload;
+        const download = participant.download;
+        const semantic = participant.semantic;
+        const uploadRegister = upload?.registerDispatcher;
+        const downloadRegister = download?.registerDispatcher;
+        const semanticRegister = semantic?.registerDispatcher;
+        if (
+          (upload && typeof uploadRegister !== 'function') ||
+          (download && typeof downloadRegister !== 'function') ||
+          (semantic && typeof semanticRegister !== 'function')
+        )
+          throw new ProductionRuntimeRefusal('UNSUPPORTED');
+        const ownedUpload =
+          upload && uploadRegister
+            ? Object.freeze({ registerDispatcher: uploadRegister.bind(upload) })
+            : undefined;
+        const ownedDownload =
+          download && downloadRegister
+            ? Object.freeze({
+                registerDispatcher: downloadRegister.bind(download),
+              })
+            : undefined;
+        const ownedSemantic =
+          semantic && semanticRegister
+            ? Object.freeze({
+                registerDispatcher: semanticRegister.bind(semantic),
+              })
+            : undefined;
+        if (identityMode !== 'native' && identityMode !== 'chrome-compatible')
+          throw new ProductionRuntimeRefusal('UNSUPPORTED');
         const native = participant.network;
         const network = Object.freeze({ ...configuration.network });
         // Do not enter the verifier for fixture networks or absent genuine native egress ownership.
@@ -171,6 +411,10 @@ export function createProductionBrowserRuntimeOwner() {
         const policy = configuration.policy;
         const nativeJournal = configuration.nativeJournal;
         const recovery = configuration.recordedRecovery;
+        // Optional fields must remain absent: the canonical validator rejects own undefined values.
+        const browserWorkerPath = nativeJournal?.browserWorkerPath;
+        const continuous = nativeJournal?.continuous;
+        const onDiagnostic = nativeJournal?.onDiagnostic;
         const settings = Object.freeze({
           dataDir: configuration.dataDir,
           network,
@@ -190,12 +434,14 @@ export function createProductionBrowserRuntimeOwner() {
             ? {
                 nativeJournal: Object.freeze({
                   workerPath: nativeJournal.workerPath,
-                  browserWorkerPath: nativeJournal.browserWorkerPath,
+                  ...(browserWorkerPath === undefined ? {} : { browserWorkerPath }),
                   artifact: Object.freeze({ ...nativeJournal.artifact }),
                   duration: nativeJournal.duration,
-                  continuous: nativeJournal.continuous,
+                  ...(continuous === undefined ? {} : { continuous }),
                   maxGap: nativeJournal.maxGap,
-                  onDiagnostic: nativeJournal.onDiagnostic?.bind(nativeJournal),
+                  ...(onDiagnostic === undefined
+                    ? {}
+                    : { onDiagnostic: onDiagnostic.bind(nativeJournal) }),
                 }),
               }
             : {}),
@@ -226,13 +472,23 @@ export function createProductionBrowserRuntimeOwner() {
         });
         const bindNetwork = native.bindBeforeLaunch;
         const activateNetwork = native.activateReady;
-        const ownedInput = Object.freeze({ registerDispatcher: registerInput.bind(input) });
-        const ownedCapture = Object.freeze({ registerDispatcher: registerCapture.bind(capture) });
+        const ownedInput = Object.freeze({
+          registerDispatcher: registerInput.bind(input),
+        });
+        const ownedCapture = Object.freeze({
+          registerDispatcher: registerCapture.bind(capture),
+        });
         const ownedNetwork = Object.freeze({
           bindBeforeLaunch: bindNetwork.bind(native),
           activateReady: activateNetwork.bind(native),
         });
         const bindEngine = participant.bindEngine;
+        const resourceOriginal = participant.resources;
+        const ownedResources = resourceOriginal
+          ? Object.freeze({
+              onOriginalChild: resourceOriginal.onOriginalChild.bind(resourceOriginal),
+            })
+          : undefined;
         const register = participant.registerBirth;
         const refuse = participant.refuseBirth;
         const addSignal = signal?.addEventListener;
@@ -297,7 +553,7 @@ export function createProductionBrowserRuntimeOwner() {
               arch: 'arm64',
             },
             identity: {
-              mode: 'native',
+              mode: identityMode,
               policyRevision: network.policyRevision,
             },
           });
@@ -307,6 +563,10 @@ export function createProductionBrowserRuntimeOwner() {
           });
           const owner: PrivateBrowserBirthOwner = Object.freeze({
             input: ownedInput,
+            ...(ownedUpload ? { upload: ownedUpload } : {}),
+            ...(ownedDownload ? { download: ownedDownload } : {}),
+            ...(ownedSemantic ? { semantic: ownedSemantic } : {}),
+            ...(ownedResources ? { resources: ownedResources } : {}),
             capture: ownedCapture,
             navigation: ownedNavigation,
             network: ownedNetwork,
@@ -316,16 +576,32 @@ export function createProductionBrowserRuntimeOwner() {
               const ordinary = receiver.isOrdinary,
                 authority = receiver.isAuthorityCurrent,
                 binding = receiver.verifiedRuntimeBinding;
+              let refusal: PrivateBrowserRetirementReceiver['authorityCustodyRefusal'];
+              try {
+                refusal = receiver.authorityCustodyRefusal?.bind(receiver);
+              } catch {
+                /* Non-authoritative diagnostics. */
+              }
               birth = {
                 receiver,
                 ordinary: ordinary.bind(receiver),
                 current: authority.bind(receiver),
                 runtime: binding.bind(receiver),
+                ...(typeof refusal === 'function' ? { refusal } : {}),
+                closeDiagnostic: {},
                 refused: false,
               };
               check();
               Reflect.apply(register, participant, [receiver]);
               check();
+              const diagnostic = birth.closeDiagnostic;
+              try {
+                const original = receiver.retirementCloseRefusal;
+                if (typeof original === 'function') diagnostic.read = original.bind(receiver);
+              } catch {
+                /* Only the retained birth owns this non-authoritative diagnostic cell. */
+              }
+              observeOriginalRetirement(receiver);
             },
             refuseBirth(receiver: PrivateBrowserRetirementReceiver) {
               if (birth?.receiver === receiver) birth.refused = true;
@@ -359,7 +635,10 @@ export function createProductionBrowserRuntimeOwner() {
       if (closed || !birth || birth.receiver !== receiver || birth.refused || !expected)
         return false;
       try {
-        if (!birth.ordinary() || !birth.current()) return false;
+        if (!birth.ordinary() || !birth.current()) {
+          noteCustodyRefusal();
+          return false;
+        }
         const proof = birth.runtime();
         return (
           !closed &&
@@ -384,6 +663,7 @@ export function createProductionBrowserRuntimeOwner() {
       const lost = () => {
         fail(new ProductionRuntimeRefusal('CUSTODY_UNCERTAIN'));
         void close().catch(() => {});
+        noteCustodyRefusal();
         return false;
       };
       try {

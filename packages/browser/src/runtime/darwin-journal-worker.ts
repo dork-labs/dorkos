@@ -1,3 +1,7 @@
+import {
+  createSupervisorUncertaintyDiagnostic,
+  journalIdentityRefusalCodes,
+} from './supervisor-uncertainty-diagnostic.js';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { z } from 'zod';
 import {
@@ -86,7 +90,12 @@ const prepareCloseSchema = z
 const endSchema = z.object({ kind: z.literal('end-browser'), launchEntered: z.boolean() }).strict();
 const messages = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('enrolled') }).strict(),
-  z.object({ kind: z.literal('observation-fault') }).strict(),
+  z
+    .object({
+      kind: z.literal('observation-fault'),
+      reason: z.enum(journalIdentityRefusalCodes).optional(),
+    })
+    .strict(),
   z
     .object({
       kind: z.literal('enumeration-closed'),
@@ -217,6 +226,7 @@ export async function startDarwinJournalWorker(
   });
   void closeReady.catch(() => {});
   let closeSend: Promise<void> | undefined;
+  const identityDiagnostic = createSupervisorUncertaintyDiagnostic();
   const fault = (reason: unknown) => {
     failure = true;
     refuse(reason);
@@ -246,6 +256,10 @@ export async function startDarwinJournalWorker(
     }
     if (parsed.data.kind === 'observation-fault') {
       fault(new Error('JOURNAL_OBSERVATION_REFUSED'));
+      if (parsed.data.reason) {
+        identityDiagnostic.note(parsed.data.reason);
+        identityDiagnostic.emit();
+      }
     } else if (parsed.data.kind === 'enumeration-closed') {
       const next = parsed.data;
       const now = monotonicNow();
@@ -700,18 +714,21 @@ async function runPrivateWorker(): Promise<void> {
         ...(value.continuous
           ? {
               continuousWindowMilliseconds: value.duration,
-              onObservationFault: () => send({ kind: 'observation-fault' }),
+              onObservationFault: (reason) =>
+                send({ kind: 'observation-fault', ...(reason ? { reason } : {}) }),
               onCheckpoint: (checkpoint) => send({ kind: 'checkpoint', ...checkpoint }),
             }
           : {}),
         maxGap: value.maxGap,
         onEnrolled: () => send({ kind: 'enrolled' }),
-        onIncompleteChildren: async (parent, batch) => {
+        onIncompleteChildren: async (parent, batch, original) => {
           if (reportedIncomplete) return;
           reportedIncomplete = true;
           const bytes =
             JSON.stringify({
               kind: 'incomplete-native-children',
+              sequence: original.sequence,
+              reason: original.reason,
               parent,
               batch,
             }) + '\n';

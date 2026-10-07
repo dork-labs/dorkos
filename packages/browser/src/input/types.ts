@@ -1,3 +1,4 @@
+import type { OwnedSemanticInputWork } from './semantic-work.js';
 import type { OwnedInputWork } from './owned-work.js';
 import type { BrowserBinding, BrowserInputStep, BrowserResult } from '../contracts.js';
 import type { BrowserStopGate } from '../lifecycle/stop.js';
@@ -8,7 +9,10 @@ import type { ReleaseLedger } from './held.js';
 export type NativeInputStep = Exclude<BrowserInputStep, { kind: 'click' }>;
 export type InputResult = Extract<BrowserResult, { kind: 'action' }>;
 export type InputReason = Extract<InputResult, { reason: unknown }>['reason'];
-export type ResetResult = Readonly<{ binding: BrowserBinding; status: 'ready' | 'stopped' }>;
+export type ResetResult = Readonly<{
+  binding: BrowserBinding;
+  status: 'ready' | 'stopped';
+}>;
 
 /** Trusted, private transport. AbortSignal is notification, never proof of native cancellation. */
 export interface NativeInputTransport {
@@ -71,6 +75,8 @@ export interface InputPorts {
 
 /** Implemented input leaf; parent owns transport and registry wiring, not this queue's state. */
 export interface TabInput {
+  /** Constructor-private action Work, never selected by a public input command. */
+  submitSemantic(work: OwnedSemanticInputWork, signal?: AbortSignal): Promise<InputResult>;
   submit(command: unknown, signal?: AbortSignal, ownedWork?: OwnedInputWork): Promise<InputResult>;
   reset(): Promise<ResetResult>;
   retire(end: number): Promise<CleanupObservation>;

@@ -1,3 +1,11 @@
+import { observeOriginalQueueAdmission } from './acceptance-observer.js';
+import {
+  consumeSemanticInputWork,
+  semanticInputCurrent,
+  executeSemanticInputWork,
+  settleSemanticInputWork,
+  type OwnedSemanticInputWork,
+} from './semantic-work.js';
 import {
   consumeOwnedInputWork,
   ownedInputWorkCurrent,
@@ -26,6 +34,8 @@ import type {
 type InputCommand = Extract<BrowserCommand, { kind: 'input' }>;
 type Work = {
   ownedWork?: OwnedInputWork;
+  semanticWork?: OwnedSemanticInputWork;
+  semanticReject?(value: unknown): void;
   command: InputCommand;
   steps: readonly NativeInputStep[];
   end: number;
@@ -34,12 +44,16 @@ type Work = {
   dispose(): void;
 };
 
+const semanticOwners = new WeakMap<Work, object>();
+
 /** One native queue per canonical tab; failed barriers stop its whole browser admission gate. */
 export function createTabInput(ports: InputPorts): TabInput {
   const queue = new InputQueue(ports);
   return Object.freeze({
     submit: (command: unknown, signal?: AbortSignal, ownedWork?: OwnedInputWork) =>
       queue.submit(command, signal, ownedWork),
+    submitSemantic: (work: OwnedSemanticInputWork, signal?: AbortSignal) =>
+      queue.submitSemantic(work, signal),
     reset: () => queue.reset(),
     retire: (end: number) => queue.retire(end),
     stop: () => ports.cleanup.requestRetirement('explicitStop'),
@@ -104,6 +118,66 @@ class InputQueue implements TabInput {
         return;
       }
       this.pending.push(work);
+      observeOriginalQueueAdmission(command);
+      this.pump();
+    });
+  }
+
+  submitSemantic(token: OwnedSemanticInputWork, signal?: AbortSignal): Promise<InputResult> {
+    const identity = {};
+    const retained = consumeSemanticInputWork(token, identity);
+    const command: InputCommand = {
+      kind: 'input',
+      requestId: retained.requestId,
+      binding: retained.binding,
+      steps: [],
+    };
+    const refused = this.refusal(command.binding);
+    if (refused || this.pending.length + (this.active ? 1 : 0) >= 64) {
+      settleSemanticInputWork(token, identity);
+      return Promise.resolve(this.result(command, 'rejected', refused ?? 'policyRefused'));
+    }
+    const cancel = new AbortController();
+    const abort = () => cancel.abort();
+    let remove: ((type: string, callback: () => void) => void) | undefined;
+    // Reserve whole Work before original signal getters or listener acquisition can reenter retirement.
+    return new Promise((settle, reject) => {
+      const work: Work = {
+        semanticWork: token,
+        semanticReject: reject,
+        command,
+        steps: [],
+        end: performance.now() + INPUT_BUDGET_MS,
+        cancel,
+        settle,
+        dispose: () => {
+          try {
+            remove?.('abort', abort);
+          } finally {
+            settleSemanticInputWork(token, identity);
+          }
+        },
+      };
+      semanticOwners.set(work, identity);
+      this.pending.push(work);
+      try {
+        remove = signal?.removeEventListener.bind(signal);
+        const add = signal?.addEventListener.bind(signal);
+        if (this.pending.includes(work)) {
+          add?.('abort', abort, { once: true });
+          if (signal?.aborted) abort();
+        }
+      } catch (value) {
+        const index = this.pending.indexOf(work);
+        if (index >= 0) this.pending.splice(index, 1);
+        this.ports.cleanup.requestRetirement('engineFault');
+        try {
+          work.dispose();
+        } catch {
+          /* The entered acquisition remains the first cause. */
+        }
+        reject(value);
+      }
       this.pump();
     });
   }
@@ -159,7 +233,10 @@ class InputQueue implements TabInput {
     if (!observed || this.stopped || !this.identityMatches(current)) {
       if (!this.retired) this.ports.cleanup.requestRetirement('cleanupFailure');
       return Promise.resolve(
-        Object.freeze({ binding: Object.freeze({ ...current }), status: 'stopped' })
+        Object.freeze({
+          binding: Object.freeze({ ...current }),
+          status: 'stopped',
+        })
       );
     }
     let next: BrowserBinding;
@@ -189,7 +266,10 @@ class InputQueue implements TabInput {
     } catch {
       if (!this.retired) this.ports.cleanup.requestRetirement('cleanupFailure');
       return Promise.resolve(
-        Object.freeze({ binding: Object.freeze({ ...current }), status: 'stopped' })
+        Object.freeze({
+          binding: Object.freeze({ ...current }),
+          status: 'stopped',
+        })
       );
     }
     this.active?.cancel.abort();
@@ -261,14 +341,37 @@ class InputQueue implements TabInput {
     const work = this.pending.shift();
     if (!work) return;
     this.active = work;
-    void this.execute(work).then((result) => {
-      work.dispose();
-      this.active = null;
-      // A rejected queued release can strand state from an earlier successful operation.
-      if (this.needsReset(work, result) && !this.barrier && !this.stopped) void this.reset();
-      work.settle(result);
-      this.pump();
-    });
+    void this.execute(work).then(
+      (result) => {
+        try {
+          work.dispose();
+        } catch (value) {
+          this.active = null;
+          this.ports.cleanup.requestRetirement('engineFault');
+          if (work.semanticReject) work.semanticReject(value);
+          else work.settle(this.result(work.command, 'uncertain', 'dispatchFailed'));
+          this.pump();
+          return;
+        }
+        this.active = null;
+        // A rejected queued release can strand state from an earlier successful operation.
+        if (this.needsReset(work, result) && !this.barrier && !this.stopped) void this.reset();
+        work.settle(result);
+        this.pump();
+      },
+      (value) => {
+        try {
+          work.dispose();
+        } catch {
+          /* The original operation remains the first cause. */
+        }
+        this.active = null;
+        this.ports.cleanup.requestRetirement('engineFault');
+        if (work.semanticReject) work.semanticReject(value);
+        else work.settle(this.result(work.command, 'uncertain', 'dispatchFailed'));
+        this.pump();
+      }
+    );
   }
 
   private needsReset(work: Work, result: InputResult): boolean {
@@ -276,7 +379,13 @@ class InputQueue implements TabInput {
     return (
       result.outcome === 'rejected' &&
       this.held.hasHeld() &&
-      work.steps.some((step) => step.kind === 'keyUp' || step.kind === 'mouseUp')
+      work.steps.some(
+        (step) =>
+          step.kind === 'keyUp' ||
+          step.kind === 'mouseUp' ||
+          step.kind === 'compositionCommit' ||
+          (step.kind === 'composition' && step.text.length === 0)
+      )
     );
   }
 
@@ -296,6 +405,7 @@ class InputQueue implements TabInput {
   }
 
   private async execute(work: Work): Promise<InputResult> {
+    if (work.semanticWork) return this.executeSemantic(work);
     let completed = 0;
     for (const step of work.steps) {
       const reason = this.refusal(work.command.binding);
@@ -370,6 +480,80 @@ class InputQueue implements TabInput {
       }
     }
     return this.result(work.command, 'completed');
+  }
+
+  private async executeSemantic(work: Work): Promise<InputResult> {
+    const token = work.semanticWork;
+    const owner = semanticOwners.get(work);
+    if (!token || !owner) return this.result(work.command, 'rejected', 'policyRefused');
+    const check = () => {
+      if (
+        work.cancel.signal.aborted ||
+        performance.now() >= work.end ||
+        !semanticInputCurrent(token, owner)
+      )
+        throw new Error('SEMANTIC_WORK_REVOKED');
+      // Fallible authority producer ran above; only the current original queue/binding fence follows.
+      if (this.refusal(work.command.binding)) throw new Error('SEMANTIC_BINDING_REFUSED');
+    };
+    try {
+      check();
+    } catch {
+      return this.result(work.command, 'rejected', 'policyRefused');
+    }
+    let done!: () => void, rejected!: (value: unknown) => void;
+    const original = new Promise<void>((resolve, reject) => {
+      done = resolve;
+      rejected = reject;
+    });
+    this.nativePending = original;
+    void original.then(
+      () => this.clearNative(original),
+      () => this.clearNative(original)
+    );
+    try {
+      Promise.resolve(
+        executeSemanticInputWork(token, owner, work.cancel.signal, check, async (step) => {
+          check();
+          const allowed = await this.ports.authorize(
+            work.command.binding,
+            step,
+            work.cancel.signal
+          );
+          check();
+          if (allowed !== 'allowed') throw new Error('SEMANTIC_POLICY_REFUSED');
+          const transport = this.ports.native;
+          const dispatch = transport.dispatch;
+          check();
+          this.held.track(step);
+          // The whole semantic original remains nativePending through all CDP/read/key steps.
+          await Reflect.apply(dispatch, transport, [
+            step,
+            work.cancel.signal,
+            () => {
+              check();
+              return true;
+            },
+          ]);
+          this.held.settled(step);
+          check();
+        })
+      ).then(done, rejected);
+    } catch (value) {
+      rejected(value);
+    }
+    try {
+      await within(original, work.end, work.cancel.signal);
+      check();
+      return this.result(work.command, 'completed');
+    } catch (value) {
+      if (!this.barrier) this.ports.cleanup.requestRetirement('engineFault');
+      return this.result(
+        work.command,
+        'uncertain',
+        value instanceof InputDeadline ? 'deadline' : 'dispatchFailed'
+      );
+    }
   }
 
   private dispatchNative(

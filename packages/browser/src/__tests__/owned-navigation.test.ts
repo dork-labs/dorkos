@@ -1,4 +1,5 @@
 import type { BrowserBinding } from '../contracts.js';
+import { parseProfileId } from '../ids.js';
 import { navigationPending } from '../navigation/cohort.js';
 import { installOwnerNavigation } from '../navigation/owner-continuation.js';
 import type { Route } from 'playwright-core';
@@ -376,9 +377,14 @@ it('raw screenshot remains joined after its caller deadline, without admitting n
 });
 
 /** Page/Route are semantic doubles; original engine reset/queue/canonical binding are real. */
-async function ownerRouteFixture(join: () => Promise<void> = async () => {}) {
+async function ownerRouteFixture(
+  join: () => Promise<void> = async () => {},
+  mode: 'ephemeral' | 'persistent' = 'ephemeral'
+) {
   const f = await fixture();
-  f.record.mode = 'ephemeral';
+  f.record.mode = mode;
+  if (mode === 'persistent')
+    f.record.profileId = parseProfileId('retained-owner-navigation-profile');
   let handler: ((route: Route, request: Request) => Promise<void>) | undefined;
   const register = vi.fn(async (_matcher: string, original: typeof handler) => {
     handler = original;
@@ -432,38 +438,43 @@ async function ownerRouteFixture(join: () => Promise<void> = async () => {}) {
   };
 }
 
-it('joins the original HTTP publication before native link reset/fallback and adopts its actual Page', async () => {
-  const wire = deferred<void>();
-  const f = await ownerRouteFixture(() => wire.promise);
-  f.releases.push(() => wire.resolve());
-  expect(
-    (await submitInput(f.record, { ...f.command(), steps: [{ kind: 'keyDown', key: 'Shift' }] }))
-      .outcome
-  ).toBe('completed');
-  const target = f.slot.registeredTarget,
-    before = { ...f.tab.binding };
-  const incoming = f.enter();
-  await Promise.resolve();
-  await Promise.resolve();
-  expect(f.acquire).not.toHaveBeenCalled();
-  expect(incoming.fallback).not.toHaveBeenCalled();
-  expect(f.effects).not.toContain('keyUp');
-  expect((await submitInput(f.record, f.command())).outcome).toBe('rejected');
-  wire.resolve();
-  await incoming.operation;
-  expect(incoming.fallback).toHaveBeenCalledTimes(1);
-  expect(incoming.abort).not.toHaveBeenCalled();
-  expect(f.effects).toContain('keyUp');
-  expect(f.tab.binding).toEqual({
-    ...before,
-    epoch: before.epoch + 1,
-    inputGeneration: before.inputGeneration + 1,
-    navigationGeneration: before.navigationGeneration + 1,
-  });
-  expect(f.slot.registeredTarget).toBe(target);
-  expect(f.complete).toHaveBeenCalledExactlyOnceWith(f.tab.binding);
-  expect(f.close).toHaveBeenCalledTimes(1);
-});
+it.each(['ephemeral', 'persistent'] as const)(
+  '%s joins the original HTTP publication before native link reset/fallback and adopts its actual Page',
+  async (mode) => {
+    const wire = deferred<void>();
+    const f = await ownerRouteFixture(() => wire.promise, mode);
+    f.releases.push(() => wire.resolve());
+    expect(
+      (await submitInput(f.record, { ...f.command(), steps: [{ kind: 'keyDown', key: 'Shift' }] }))
+        .outcome
+    ).toBe('completed');
+    const target = f.slot.registeredTarget,
+      before = { ...f.tab.binding };
+    const incoming = f.enter();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(f.acquire).not.toHaveBeenCalled();
+    expect(incoming.fallback).not.toHaveBeenCalled();
+    expect(f.effects).not.toContain('keyUp');
+    expect((await submitInput(f.record, f.command())).outcome).toBe('rejected');
+    wire.resolve();
+    await incoming.operation;
+    expect(incoming.fallback).toHaveBeenCalledTimes(1);
+    expect(incoming.abort).not.toHaveBeenCalled();
+    expect(f.effects).toContain('keyUp');
+    expect(f.tab.binding).toEqual({
+      ...before,
+      epoch: before.epoch + 1,
+      inputGeneration: before.inputGeneration + 1,
+      navigationGeneration: before.navigationGeneration + 1,
+    });
+    expect(f.slot.registeredTarget).toBe(target);
+    expect(f.complete).toHaveBeenCalledExactlyOnceWith(f.tab.binding);
+    expect(f.close).toHaveBeenCalledTimes(1);
+    expect(f.record.mode).toBe(mode);
+    if (mode === 'persistent') expect(f.record.profileId).toBe('retained-owner-navigation-profile');
+  }
+);
 
 it('does not fallback a real owner request whose original publication failed, including undefined', async () => {
   const f = await ownerRouteFixture(async () => {
@@ -476,18 +487,21 @@ it('does not fallback a real owner request whose original publication failed, in
   expect(incoming.abort).toHaveBeenCalledTimes(1);
 });
 
-it('rejects a natural owner continuation after original authority loss before route fallback', async () => {
-  const f = await ownerRouteFixture();
-  f.config.policy.authorizeAction = async () => {
-    f.lose();
-    return 'allowed';
-  };
-  const incoming = f.enter();
-  await expect(incoming.operation).rejects.toMatchObject({ code: 'STALE_BINDING' });
-  expect(incoming.fallback).not.toHaveBeenCalled();
-  expect(incoming.abort).toHaveBeenCalledTimes(1);
-  expect(f.close).toHaveBeenCalledTimes(1);
-});
+it.each(['ephemeral', 'persistent'] as const)(
+  '%s rejects a natural owner continuation after original authority loss before route fallback',
+  async (mode) => {
+    const f = await ownerRouteFixture(undefined, mode);
+    f.config.policy.authorizeAction = async () => {
+      f.lose();
+      return 'allowed';
+    };
+    const incoming = f.enter();
+    await expect(incoming.operation).rejects.toMatchObject({ code: 'STALE_BINDING' });
+    expect(incoming.fallback).not.toHaveBeenCalled();
+    expect(incoming.abort).toHaveBeenCalledTimes(1);
+    expect(f.close).toHaveBeenCalledTimes(1);
+  }
+);
 
 it('retains the original natural navigation cohort when original close rejects undefined', async () => {
   const f = await ownerRouteFixture();

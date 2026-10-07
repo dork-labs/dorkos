@@ -56,7 +56,10 @@ describe('frozen semantic v1 wire', () => {
   it('bounds safe integers, random references, UTF-8 bytes and entire action envelopes', () => {
     for (const revision of [-1, 1.5, Infinity, Number.MAX_SAFE_INTEGER + 1])
       expect(
-        SemanticSnapshotV1Schema.safeParse({ ...snapshot(), treeRevision: revision }).success
+        SemanticSnapshotV1Schema.safeParse({
+          ...snapshot(),
+          treeRevision: revision,
+        }).success
       ).toBe(false);
     for (const id of ['short', 'x'.repeat(65), '/private/profile/path', 'é'.repeat(22)])
       expect(SemanticActionV1Schema.safeParse({ ...edit(), nodeRef: id }).success).toBe(false);
@@ -84,19 +87,31 @@ describe('frozen semantic v1 wire', () => {
     const { eventStreamId: _stream, ...withoutStream } = request;
     expect(SemanticActionV1Schema.safeParse(withoutStream).success).toBe(false);
     expect(
-      SemanticActionV1Schema.safeParse({ ...request, action: { kind: 'focus' } }).success
+      SemanticActionV1Schema.safeParse({
+        ...request,
+        action: { kind: 'focus' },
+      }).success
     ).toBe(false);
     expect(
-      SemanticActionV1Schema.safeParse({ ...withoutStream, action: { kind: 'focus' } }).success
+      SemanticActionV1Schema.safeParse({
+        ...withoutStream,
+        action: { kind: 'focus' },
+      }).success
     ).toBe(true);
   });
   it('rejects duplicate/dangling references, nonreciprocal hierarchy, cycles and wrong focus', () => {
     const initial = snapshot();
     expect(
-      SemanticSnapshotV1Schema.safeParse({ ...initial, nodes: [node(), node()] }).success
+      SemanticSnapshotV1Schema.safeParse({
+        ...initial,
+        nodes: [node(), node()],
+      }).success
     ).toBe(false);
     expect(
-      SemanticSnapshotV1Schema.safeParse({ ...initial, rootRefs: [reference(30)] }).success
+      SemanticSnapshotV1Schema.safeParse({
+        ...initial,
+        rootRefs: [reference(30)],
+      }).success
     ).toBe(false);
     expect(
       SemanticSnapshotV1Schema.safeParse({
@@ -112,7 +127,10 @@ describe('frozen semantic v1 wire', () => {
       }).success
     ).toBe(false);
     expect(
-      SemanticSnapshotV1Schema.safeParse({ ...initial, focusedRef: reference(30) }).success
+      SemanticSnapshotV1Schema.safeParse({
+        ...initial,
+        focusedRef: reference(30),
+      }).success
     ).toBe(false);
   });
   it('accepts depth32 but refuses depth33 and more than32 frame documents', () => {
@@ -139,7 +157,11 @@ describe('frozen semantic v1 wire', () => {
     const wide = {
       ...chain(33, true),
       rootRefs: Array.from({ length: 33 }, (_, index) => reference(100 + index)),
-      nodes: chain(33, true).nodes.map((item) => ({ ...item, parentRef: null, childRefs: [] })),
+      nodes: chain(33, true).nodes.map((item) => ({
+        ...item,
+        parentRef: null,
+        childRefs: [],
+      })),
     };
     expect(SemanticSnapshotV1Schema.safeParse(wide).success).toBe(false);
     const wrongDocument = {
@@ -229,11 +251,17 @@ describe('frozen semantic v1 wire', () => {
     expect(SemanticNodeV1Schema.safeParse(secret).success).toBe(true);
     for (const field of ['value', 'text', 'description', 'selection', 'length', 'axSource'])
       expect(
-        SemanticNodeV1Schema.safeParse({ ...secret, [field]: 'PASSWORD-SENTINEL' }).success,
+        SemanticNodeV1Schema.safeParse({
+          ...secret,
+          [field]: 'PASSWORD-SENTINEL',
+        }).success,
         field
       ).toBe(false);
     expect(
-      SemanticNodeV1Schema.safeParse({ ...secret, name: 'Autofill credential hint' }).success
+      SemanticNodeV1Schema.safeParse({
+        ...secret,
+        name: 'Autofill credential hint',
+      }).success
     ).toBe(false);
     expect(SemanticNodeV1Schema.safeParse({ ...node(), editKind: 'unsupported' }).success).toBe(
       false
@@ -246,12 +274,19 @@ describe('frozen semantic v1 wire', () => {
     for (const name of ['x\u202ey', 'x\u0000y', 'x\udc00y', '界'.repeat(171)])
       expect(SemanticNodeV1Schema.safeParse({ ...node(), name }).success).toBe(false);
     expect(
-      SemanticNodeV1Schema.safeParse({ ...node(), description: '<img src=x onerror=alert(1)>' })
-        .success
+      SemanticNodeV1Schema.safeParse({
+        ...node(),
+        description: '<img src=x onerror=alert(1)>',
+      }).success
     ).toBe(false);
   });
   it('accepts each exact event payload and rejects mixed reasons, content and focus correlation', () => {
-    const base = { version: 1, sequence: 0, eventStreamId: reference(8), identity: admission };
+    const base = {
+      version: 1,
+      sequence: 0,
+      eventStreamId: reference(8),
+      identity: admission,
+    };
     const subjects = [
       { ...base, type: 'ready', reason: 'initial' },
       { ...base, type: 'dirty', reason: 'domChanged' },
@@ -283,10 +318,16 @@ describe('frozen semantic v1 wire', () => {
       expect(SemanticEventV1Schema.safeParse({ ...subject, text: 'SECRET' }).success).toBe(false);
     }
     expect(
-      SemanticEventV1Schema.safeParse({ ...subjects[0], reason: 'grantExpired' }).success
+      SemanticEventV1Schema.safeParse({
+        ...subjects[0],
+        reason: 'grantExpired',
+      }).success
     ).toBe(false);
     expect(
-      SemanticEventV1Schema.safeParse({ ...subjects[6], editRequestId: reference(7) }).success
+      SemanticEventV1Schema.safeParse({
+        ...subjects[6],
+        editRequestId: reference(7),
+      }).success
     ).toBe(false);
     expect(
       SemanticEventV1Schema.safeParse({
@@ -311,8 +352,11 @@ describe('frozen semantic v1 wire', () => {
       false
     );
     expect(
-      SemanticReceiptV1Schema.safeParse({ ...complete, outcome: 'uncertain', reason: 'deadline' })
-        .success
+      SemanticReceiptV1Schema.safeParse({
+        ...complete,
+        outcome: 'uncertain',
+        reason: 'deadline',
+      }).success
     ).toBe(false);
     if (complete.outcome !== 'completed' || !complete.editContinuation)
       throw Error('Fixture must contain continuation');
@@ -322,8 +366,10 @@ describe('frozen semantic v1 wire', () => {
       ['key', 'replaceText', 'insertText'],
     ])
       expect(
-        SemanticEditContinuationV1Schema.safeParse({ ...complete.editContinuation, allowedKinds })
-          .success
+        SemanticEditContinuationV1Schema.safeParse({
+          ...complete.editContinuation,
+          allowedKinds,
+        }).success
       ).toBe(false);
     expect(
       SemanticReceiptV1Schema.safeParse({
@@ -332,8 +378,11 @@ describe('frozen semantic v1 wire', () => {
       }).success
     ).toBe(false);
     expect(
-      SemanticErrorV1Schema.safeParse({ version: 1, reason: 'inaccessible', identity: admission })
-        .success
+      SemanticErrorV1Schema.safeParse({
+        version: 1,
+        reason: 'inaccessible',
+        identity: admission,
+      }).success
     ).toBe(false);
   });
 });

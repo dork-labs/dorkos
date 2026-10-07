@@ -24,7 +24,8 @@
  */
 import { useCallback, useEffect } from 'react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
-import { Cable, LayoutDashboard, Sparkles, Store, Users } from 'lucide-react';
+import { Cable, Globe, LayoutDashboard, Sparkles, Store, Users } from 'lucide-react';
+import { useConfig } from '@/layers/entities/config';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { useStartNewSession } from '@/layers/entities/session';
 import { isHomeSurfacePath, TOUR_ANCHORS } from '@/layers/shared/config';
@@ -40,7 +41,7 @@ const DORKBOT_AGENT_NAME = 'dorkbot';
 /** One destination in the strip. */
 interface Destination {
   /** Route to navigate to. */
-  to: '/' | '/team' | '/marketplace' | '/connections';
+  to: '/' | '/team' | '/marketplace' | '/connections' | '/browser';
   /** Accessible name; also the tooltip. */
   label: string;
   /** The glyph. */
@@ -90,6 +91,21 @@ const DESTINATIONS: readonly Destination[] = [
  */
 export function SidebarFooterStrip() {
   const navigate = useNavigate();
+  const { data: config } = useConfig();
+  // The experiment only reveals navigation. Native admission is checked by the actual browser page.
+  const browserChosen =
+    config?.experiments?.some(({ key, enabled }) => key === 'browser.enabled' && enabled) === true;
+  const destinations: readonly Destination[] = browserChosen
+    ? [
+        ...DESTINATIONS,
+        {
+          to: '/browser',
+          label: 'Shared browser',
+          icon: Globe,
+          isActive: (path) => path === '/browser',
+        },
+      ]
+    : DESTINATIONS;
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   useDevPlaygroundShortcut();
   // **One nav, two shapes.** A phone gives this the whole You tab instead of a
@@ -111,7 +127,7 @@ export function SidebarFooterStrip() {
           isMobile ? 'flex flex-col gap-0.5 p-1' : 'flex items-center gap-1 px-1.5 py-1'
         )}
       >
-        {DESTINATIONS.map((destination) => (
+        {destinations.map((destination) => (
           <DestinationButton
             key={destination.to}
             destination={destination}

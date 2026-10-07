@@ -225,3 +225,96 @@ int main(void) {
     ]);
   }
 );
+
+it.skipIf(process.platform !== 'darwin')(
+  'retains actual native inspect refusal origin without changing its unknown outcome',
+  async () => {
+    const control = join(directory, 'inspect-transition-control.c');
+    const binary = join(directory, 'inspect-transition-control');
+    const source = new URL('../runtime/native/darwin-process-observer.c', import.meta.url);
+    const headerDirectory = new URL('../runtime/native/', import.meta.url);
+    await writeFile(
+      control,
+      `
+#include "darwin-process-observer.h"
+#include <libproc.h>
+#include <sys/proc.h>
+#include <sys/proc_info.h>
+#include <sys/time.h>
+#include <string.h>
+#include <stdio.h>
+static int scenario, reads, lists;
+int control_sysctl(int *name, unsigned int count, void *old, size_t *bytes, void *new_value, size_t new_bytes) {
+  (void)name; (void)count; (void)new_value; (void)new_bytes;
+  struct timeval value = { 1000, 20 }; memcpy(old, &value, sizeof(value)); *bytes = sizeof(value); return 0;
+}
+int control_listpids(uint32_t type, uint32_t parent, void *buffer, int capacity) {
+  (void)parent;
+  if (type != PROC_ALL_PIDS || capacity < 2 * (int)sizeof(pid_t)) return -1;
+  int absent = (scenario == 5 || scenario == 7) ? lists == 1 : (scenario == 6 && lists == 0) || scenario == 8;
+  lists++;
+  const pid_t pids[2] = { absent ? 99 : 42, 100 }; memcpy(buffer, pids, sizeof(pids)); return sizeof(pids);
+}
+int control_pidinfo(int pid, int flavor, uint64_t arg, void *buffer, int capacity) {
+  if (pid != 42 || flavor != PROC_PIDTBSDINFO || arg != 1 || capacity != (int)sizeof(struct proc_bsdinfo)) return -1;
+  struct proc_bsdinfo value; memset(&value, 0, sizeof(value));
+  value.pbi_pid = pid; value.pbi_ppid = 10; value.pbi_status = SSLEEP;
+  value.pbi_start_tvsec = 100; value.pbi_start_tvusec = 5;
+  if (scenario == 4 && reads == 0) value.pbi_status = SZOMB;
+  if (reads == 1) {
+    if (scenario == 1 || scenario == 7) value.pbi_start_tvusec++;
+    if (scenario == 2) value.pbi_ppid++;
+    if (scenario == 3) value.pbi_status = SZOMB;
+  }
+  reads++; memcpy(buffer, &value, sizeof(value)); return sizeof(value);
+}
+int main(void) {
+  const pid_t pid = 42;
+  for (scenario = 0; scenario < 9; scenario++) {
+    reads = lists = 0; struct dorkos_darwin_batch result;
+    if (dorkos_darwin_inspect(&pid, 1, &result)) return 2;
+    printf("%d %d %d %d %d %d\\n", scenario, result.processes[0].kind,
+      result.processes[0].uncertainty, result.processes[0].error, reads, lists);
+  }
+  return 0;
+}
+`
+    );
+    execFileSync(
+      '/usr/bin/xcrun',
+      [
+        '--sdk',
+        'macosx',
+        'clang',
+        '-std=c11',
+        '-Wall',
+        '-Wextra',
+        '-Werror',
+        '-DDORKOS_DARWIN_OBSERVER_NO_MAIN',
+        '-Dproc_pidinfo=control_pidinfo',
+        '-Dproc_listpids=control_listpids',
+        '-Dsysctl=control_sysctl',
+        '-I',
+        fileURLToPath(headerDirectory),
+        fileURLToPath(source),
+        control,
+        '-o',
+        binary,
+      ],
+      { encoding: 'utf8', maxBuffer: 256 * 1024 }
+    );
+    expect(
+      execFileSync(binary, [], { encoding: 'utf8', maxBuffer: 8192 }).trim().split('\n')
+    ).toEqual([
+      '0 0 0 0 2 2',
+      '1 2 1 35 2 2',
+      '2 2 2 35 2 2',
+      '3 2 3 35 2 2',
+      '4 2 4 35 2 2',
+      '5 2 5 35 2 2',
+      '6 2 6 35 2 2',
+      '7 2 5 35 2 2',
+      '8 2 7 35 2 2',
+    ]);
+  }
+);

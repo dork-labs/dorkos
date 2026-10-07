@@ -414,14 +414,18 @@ export function applyConfigPatch(patch: unknown): ConfigPatchResult {
   const taken = takeAccountsSeen(patch as Record<string, unknown>);
   if (!taken.ok) return { ok: false, error: 'Validation failed', details: taken.details };
   const patchObj = taken.patch;
-  const browserRefusal = browserSettingRefusal('browser', patchObj.browser);
+  const current = configManager.getAll();
+  const browserRefusal = browserSettingRefusal(
+    'browser',
+    patchObj.browser,
+    current.browser?.chromeUserAgent === true
+  );
   if (browserRefusal) return { ok: false, error: browserRefusal };
   const colorRefusal = defaultAccountColorRefusal(patchObj);
   if (colorRefusal) return { ok: false, error: 'Validation failed', details: colorRefusal };
   const rulesRefusal = accountRulesRefusal(patchObj);
   if (rulesRefusal) return { ok: false, error: 'Validation failed', details: rulesRefusal };
 
-  const current = configManager.getAll();
   const merged = deepMerge(current as unknown as Record<string, unknown>, patchObj);
   // A patch that NAMES the Claude default account settles the pre-0.65.0 spelling
   // of it, before the schema's read-time heal can speak for the absent one.

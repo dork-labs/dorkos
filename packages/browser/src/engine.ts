@@ -1,3 +1,14 @@
+import type {
+  OwnedResponseDownload,
+  OwnedDownloadSink,
+  OwnedDownloadArtifact,
+} from './files/response-download.js';
+import {
+  createPrivateSemanticDispatcher,
+  type PrivateBrowserSemanticOwner,
+} from './semantic/owned-read.js';
+import { type OwnedUploadChooser, type OwnedUploadLease } from './files/upload-chooser.js';
+import { currentTab, readyInput } from './lifecycle/input-owner.js';
 import {
   installOwnerNavigation,
   type PrivateOwnerNavigationContinuation,
@@ -16,8 +27,13 @@ import {
 import { createOwnedInputIssuer, type OwnedInputAuthorization } from './input/owned-work.js';
 import { navigateOwnedInitial } from './lifecycle/initial-navigation.js';
 import { initialNavigationPending } from './lifecycle/initial-navigation-state.js';
-import { currentAuthorityCustody } from './lifecycle/live-custody.js';
+import {
+  currentAuthorityCustody,
+  readAuthorityCustodyRefusal,
+  type AuthorityCustodyRefusalStage,
+} from './lifecycle/live-custody.js';
 import { createDiagnosticsBudget } from './tabs/diagnostics-budget.js';
+import type { DiagnosticSummary } from './tabs/diagnostics.js';
 import { randomBytes, createHash } from 'node:crypto';
 import {
   createDarwinGenerationReturnOwner,
@@ -26,6 +42,8 @@ import {
 } from './runtime/darwin-generation-return.js';
 import { validateEngineConfiguration } from './configuration.js';
 import {
+  parseBrowserUpload,
+  parseBrowserDownload,
   parseBrowserBinding,
   parseBrowserCommand,
   parseBrowserResult,
@@ -36,12 +54,17 @@ import { parseBrowserId } from './ids.js';
 import { createDarwinEngineProcesses } from './runtime/darwin-engine-processes.js';
 import { hostIdentity } from './runtime/host-identity.js';
 import { acquireBrowser } from './lifecycle/acquisition.js';
-import { closeRecord } from './lifecycle/close.js';
+import { closeRecord, readRetirementCloseRefusal } from './lifecycle/close.js';
 import { BrowserLifecycleError } from './lifecycle/errors.js';
-import type { BrowserRecord, OpenedResult } from './lifecycle/records.js';
+import type {
+  BrowserRecord,
+  OpenedResult,
+  RetirementCloseRefusalStage,
+} from './lifecycle/records.js';
 import {
   createBrowserLifetime,
   ownOperation,
+  ownCaptureOperation,
   bindOrdinaryRecord,
   ordinaryRecord,
   fenceOrdinary,
@@ -53,11 +76,23 @@ import { until } from './lifecycle/deadline.js';
 import { sameBinding } from './input/binding.js';
 import { captureTab, type BrowserCapture } from './tabs/capture.js';
 
+const originalDiagnosticRefusals = new WeakSet<object>();
+/** Provenance of the actual diagnostics receiver's own current-binding refusal. */
+export function isOriginalBrowserDiagnosticRefusal(value: unknown): boolean {
+  return !!value && typeof value === 'object' && originalDiagnosticRefusals.has(value);
+}
+function diagnosticRefusal(): BrowserLifecycleError {
+  const error = new BrowserLifecycleError('STALE_BINDING');
+  originalDiagnosticRefusals.add(error);
+  return error;
+}
+
 /** Private canonical input/capture/lifecycle composition; native production readiness is separate. */
 export interface BrowserLifecycleEngine {
   open(command: unknown): Promise<OpenedResult>;
   listTabs(browserId: string, browserGeneration: number): readonly BrowserBinding[];
   capture(command: unknown): Promise<BrowserCapture>;
+  diagnostics(binding: unknown): DiagnosticSummary;
   input(command: unknown, signal?: AbortSignal): Promise<InputResult>;
   resetInput(binding: unknown): Promise<ResetResult>;
   close(command: unknown): Promise<Extract<BrowserResult, { kind: 'close' }>>;
@@ -73,6 +108,10 @@ export interface PrivateBrowserRetirementReceiver {
   readonly observation: Promise<import('./lifecycle/ownership.js').RetirementObservation>;
   isOrdinary(): boolean;
   isAuthorityCurrent(): boolean;
+  /** Private fixed-code diagnostic; it conveys no authority or participant data. */
+  authorityCustodyRefusal?(): AuthorityCustodyRefusalStage | undefined;
+  /** Private close diagnostic; fixed stage only, without authority or owner data. */
+  retirementCloseRefusal?(): RetirementCloseRefusalStage | undefined;
   navigateInitial(command: unknown): Promise<Readonly<BrowserBinding>>;
   verifiedBrowserAdminEndpoint(): Readonly<{
     url: string;
@@ -142,7 +181,50 @@ export interface PrivateBrowserNavigationOwner {
   ): void;
   registerDispatcher(dispatcher: PrivateBrowserNavigationDispatcher): void;
 }
+/** Constructor-private upload receiver; public JSON never supplies file bytes or a lease. */
+export interface PrivateBrowserUploadDispatcher {
+  upload(
+    value: unknown,
+    authorization: OwnedInputAuthorization,
+    lease: OwnedUploadLease,
+    signal?: AbortSignal
+  ): Promise<InputResult>;
+}
+/** Original authenticated staging owner captures the sole original upload dispatcher. */
+export interface PrivateBrowserUploadOwner {
+  registerDispatcher(dispatcher: PrivateBrowserUploadDispatcher): void;
+}
+/** Genuine host captures this constructor-private dispatcher; no response ID comes from HTTP. */
+export interface PrivateBrowserDownloadDispatcher {
+  download(
+    value: unknown,
+    authorization: OwnedInputAuthorization,
+    sink: OwnedDownloadSink,
+    signal?: AbortSignal
+  ): Promise<Readonly<{ input: InputResult; artifact: OwnedDownloadArtifact }>>;
+}
+/** Download and artifact permissions belong to the original authenticated owner. */
+export interface PrivateBrowserDownloadOwner {
+  registerDispatcher(dispatcher: PrivateBrowserDownloadDispatcher): void;
+}
+/** Constructor-private native role observer; original process births convey no admission authority. */
+export interface PrivateBrowserResourceOwner {
+  onOriginalChild(
+    receiver: PrivateBrowserRetirementReceiver,
+    original: Readonly<{
+      root: import('./configuration.js').ProcessIdentity;
+      supervisor: import('./configuration.js').ProcessIdentity;
+      manager: import('./configuration.js').ProcessIdentity;
+      identities: readonly import('./configuration.js').ProcessIdentity[];
+      complete: boolean;
+    }>
+  ): Promise<void>;
+}
 export interface PrivateBrowserBirthOwner {
+  readonly resources?: PrivateBrowserResourceOwner;
+  readonly download?: PrivateBrowserDownloadOwner;
+  readonly semantic?: PrivateBrowserSemanticOwner;
+  readonly upload?: PrivateBrowserUploadOwner;
   readonly navigation?: PrivateBrowserNavigationOwner;
   readonly input?: PrivateBrowserInputOwner;
   readonly capture?: PrivateBrowserCaptureOwner;
@@ -157,11 +239,27 @@ type EngineConstruction =
       owner: PrivateBrowserBirthOwner;
       registerBirth: PrivateBrowserBirthOwner['registerBirth'];
       refuseBirth: PrivateBrowserBirthOwner['refuseBirth'];
+      resources?: Readonly<{
+        owner: PrivateBrowserResourceOwner;
+        onOriginalChild: PrivateBrowserResourceOwner['onOriginalChild'];
+      }>;
       navigation?: Readonly<{
         owner: PrivateBrowserNavigationOwner;
         registerDispatcher: PrivateBrowserNavigationOwner['registerDispatcher'];
         continuation?: PrivateOwnerNavigationContinuation;
         observeLifetime?: PrivateBrowserNavigationOwner['observeLifetime'];
+      }>;
+      semantic?: Readonly<{
+        owner: PrivateBrowserSemanticOwner;
+        registerDispatcher: PrivateBrowserSemanticOwner['registerDispatcher'];
+      }>;
+      download?: Readonly<{
+        owner: PrivateBrowserDownloadOwner;
+        registerDispatcher: PrivateBrowserDownloadOwner['registerDispatcher'];
+      }>;
+      upload?: Readonly<{
+        owner: PrivateBrowserUploadOwner;
+        registerDispatcher: PrivateBrowserUploadOwner['registerDispatcher'];
       }>;
       input?: Readonly<{
         owner: PrivateBrowserInputOwner;
@@ -193,6 +291,15 @@ export function constructOwnedBrowserEngine(
   const refuseBirth = owner.refuseBirth;
   if (typeof registerBirth !== 'function' || typeof refuseBirth !== 'function')
     throw new BrowserLifecycleError('ENGINE_STOPPED');
+  const resourceOwner = owner.resources;
+  const resources = resourceOwner
+    ? Object.freeze({
+        owner: resourceOwner,
+        onOriginalChild: resourceOwner.onOriginalChild,
+      })
+    : undefined;
+  if (resources && typeof resources.onOriginalChild !== 'function')
+    throw new BrowserLifecycleError('ENGINE_STOPPED');
   const navigationOwner = owner.navigation;
   const originalContinuation = navigationOwner?.continuation;
   const continuation = originalContinuation
@@ -211,6 +318,33 @@ export function constructOwnedBrowserEngine(
       })
     : undefined;
   if (navigation && typeof navigation.registerDispatcher !== 'function')
+    throw new BrowserLifecycleError('ENGINE_STOPPED');
+  const semanticOwner = owner.semantic;
+  const semantic = semanticOwner
+    ? Object.freeze({
+        owner: semanticOwner,
+        registerDispatcher: semanticOwner.registerDispatcher,
+      })
+    : undefined;
+  if (semantic && typeof semantic.registerDispatcher !== 'function')
+    throw new BrowserLifecycleError('ENGINE_STOPPED');
+  const downloadOwner = owner.download;
+  const download = downloadOwner
+    ? Object.freeze({
+        owner: downloadOwner,
+        registerDispatcher: downloadOwner.registerDispatcher,
+      })
+    : undefined;
+  if (download && typeof download.registerDispatcher !== 'function')
+    throw new BrowserLifecycleError('ENGINE_STOPPED');
+  const uploadOwner = owner.upload;
+  const upload = uploadOwner
+    ? Object.freeze({
+        owner: uploadOwner,
+        registerDispatcher: uploadOwner.registerDispatcher,
+      })
+    : undefined;
+  if (upload && typeof upload.registerDispatcher !== 'function')
     throw new BrowserLifecycleError('ENGINE_STOPPED');
   const inputOwner = owner.input;
   const input = inputOwner
@@ -250,8 +384,12 @@ export function constructOwnedBrowserEngine(
       owner,
       registerBirth,
       refuseBirth,
+      resources,
       network,
       input,
+      upload,
+      download,
+      semantic,
       capture,
       navigation,
     })
@@ -322,6 +460,8 @@ function constructEngine(
       observation,
       isOrdinary: () => current() && ordinaryRecord(record),
       isAuthorityCurrent: () => currentAuthorityCustody(record, current),
+      authorityCustodyRefusal: () => readAuthorityCustodyRefusal(record),
+      retirementCloseRefusal: () => readRetirementCloseRefusal(record),
       navigateInitial: (command: unknown) => navigateOwnedInitial(config, record, current, command),
       verifiedBrowserAdminEndpoint: () => {
         if (
@@ -492,6 +632,21 @@ function constructEngine(
                 credentials: Object.freeze({ ...peer.credentials }),
               });
             }
+          : undefined,
+        construction.kind === 'serverOwned' && construction.resources && birthReceiver
+          ? (original) => {
+              const resources = construction.resources!;
+              const receiver = birthReceiver!;
+              // Capture even a late original birth before refusing a retired record.
+              return ownOperation(record, async () => {
+                await Reflect.apply(resources.onOriginalChild, resources.owner, [
+                  receiver,
+                  original,
+                ]);
+                if (!ordinaryRecord(record) || record.lifetime.gate.stopped || stopping)
+                  throw new BrowserLifecycleError('ENGINE_STOPPED');
+              });
+            }
           : undefined
       );
       // Generation returns belong to the opt-in native journal composition, not legacy fixtures.
@@ -588,7 +743,7 @@ function constructEngine(
     const tab = record.tabs.get(command.binding.tabId);
     if (tab && navigationPending(tab)) throw new BrowserLifecycleError('STALE_BINDING');
     const page = tab?.page;
-    const capture = await ownOperation(record, () =>
+    const capture = await ownCaptureOperation(record, () =>
       captureTab(config, record, command, ownedWork)
     ).catch((error: unknown) => {
       // The unchanged capture deadline bounds waiting, not an underlying Page effect.
@@ -634,6 +789,33 @@ function constructEngine(
           .filter((tab) => !tab.stopped)
           .map((tab) => Object.freeze({ ...tab.binding }))
       );
+    },
+    diagnostics(value: unknown) {
+      const binding = parseBrowserBinding(value);
+      let record: ReturnType<typeof find>;
+      try {
+        record = find(binding.browserId, binding.browserGeneration);
+      } catch (error) {
+        if (error instanceof BrowserLifecycleError && error.code === 'STALE_BINDING')
+          throw diagnosticRefusal();
+        throw error;
+      }
+      const tab = record.tabs.get(binding.tabId);
+      const current = () =>
+        ordinaryRecord(record) &&
+        record.status === 'running' &&
+        !record.lifetime.gate.stopped &&
+        !record.lifetime.uncertain &&
+        tab &&
+        !tab.stopped &&
+        !navigationPending(tab) &&
+        record.tabs.get(binding.tabId) === tab &&
+        sameBinding(tab.binding, binding);
+      if (!current() || !tab) throw diagnosticRefusal();
+      const summary = tab.diagnostics.read();
+      if (!summary || !current() || !sameBinding(summary.binding, binding))
+        throw diagnosticRefusal();
+      return summary;
     },
     capture(value: unknown) {
       if (construction.kind === 'serverOwned' && construction.capture)
@@ -696,6 +878,220 @@ function constructEngine(
       return shutdownPromise;
     },
   });
+  if (construction.kind === 'serverOwned' && construction.semantic) {
+    const dispatcher = createPrivateSemanticDispatcher(
+      (binding) => find(binding.browserId, binding.browserGeneration),
+      (record) => !stopping && Map.prototype.get.call(records, record.browserId) === record
+    );
+    Reflect.apply(construction.semantic.registerDispatcher, construction.semantic.owner, [
+      dispatcher,
+    ]);
+  }
+  if (construction.kind === 'serverOwned' && construction.upload) {
+    const issuer = createOwnedInputIssuer();
+    const dispatcher: PrivateBrowserUploadDispatcher = Object.freeze({
+      upload(
+        value: unknown,
+        authority: OwnedInputAuthorization,
+        lease: OwnedUploadLease,
+        signal?: AbortSignal
+      ) {
+        const request = parseBrowserUpload(value);
+        if (stopping) throw new BrowserLifecycleError('ENGINE_STOPPED');
+        const record = find(request.binding.browserId, request.binding.browserGeneration);
+        const current = authority.isCurrent.bind(authority),
+          authorize = authority.authorize.bind(authority);
+        const closeLease = lease.close.bind(lease);
+        const leaseBinding = parseBrowserBinding(lease.binding);
+        if (!sameBinding(leaseBinding, request.binding) || lease.artifactId !== request.artifactId)
+          throw new BrowserLifecycleError('STALE_BINDING');
+        return ownOperation(record, async () => {
+          let chooser: OwnedUploadChooser | undefined;
+          let failure: Readonly<{ value: unknown }> | undefined;
+          let result: InputResult | undefined;
+          try {
+            const tab = record.tabs.get(request.binding.tabId);
+            if (!tab || !currentTab(record, tab) || !sameBinding(tab.binding, request.binding))
+              throw new BrowserLifecycleError('STALE_BINDING');
+            const admitted = () =>
+              !stopping &&
+              currentTab(record, tab) &&
+              sameBinding(tab.binding, request.binding) &&
+              current() &&
+              !stopping &&
+              currentTab(record, tab) &&
+              sameBinding(tab.binding, request.binding);
+            if (!admitted()) throw new BrowserLifecycleError('POLICY_REFUSED');
+            const slot = readyInput(record, request.binding);
+            const handle = slot.handle;
+            const upload = handle?.upload;
+            if (!handle || typeof upload !== 'function' || !admitted())
+              throw new BrowserLifecycleError('PAGE_UNAVAILABLE');
+            chooser = Reflect.apply(upload, handle, [lease, admitted]);
+            const originalChooser = chooser;
+            const command = parseBrowserCommand({
+              kind: 'input',
+              requestId: request.requestId,
+              binding: request.binding,
+              steps: [
+                {
+                  kind: 'click',
+                  x: request.activation.x,
+                  y: request.activation.y,
+                  button: 'left',
+                },
+              ],
+            });
+            if (command.kind !== 'input') throw new BrowserLifecycleError('COMMAND_UNSUPPORTED');
+            const token = issuer.issue(
+              command,
+              Object.freeze({
+                isCurrent: admitted,
+                authorize,
+                beginUpload: originalChooser.begin.bind(originalChooser),
+                completeUpload: async (binding: BrowserBinding, signal: AbortSignal) => {
+                  let failure: Readonly<{ value: unknown }> | undefined;
+                  try {
+                    await originalChooser.complete(binding, signal);
+                  } catch (value) {
+                    failure = { value };
+                  }
+                  try {
+                    await originalChooser.close();
+                  } catch (value) {
+                    failure ??= { value };
+                  }
+                  if (failure) throw failure.value;
+                },
+              })
+            );
+            try {
+              result = await submitInput(record, command, signal, token);
+            } finally {
+              issuer.invalidate(token);
+            }
+          } catch (value) {
+            failure = Object.freeze({ value });
+          }
+          // Cleanup joins exact chooser/native file command before the consumed staging lease can be released.
+          try {
+            if (chooser) await chooser.close();
+            else await closeLease();
+          } catch (value) {
+            failure ??= Object.freeze({ value });
+          }
+          if (failure) throw failure.value;
+          if (!result) throw new BrowserLifecycleError('OPERATION_FAILED');
+          return result;
+        });
+      },
+    });
+    Reflect.apply(construction.upload.registerDispatcher, construction.upload.owner, [dispatcher]);
+  }
+  if (construction.kind === 'serverOwned' && construction.download) {
+    const issuer = createOwnedInputIssuer();
+    const dispatcher: PrivateBrowserDownloadDispatcher = Object.freeze({
+      download(
+        value: unknown,
+        authority: OwnedInputAuthorization,
+        sink: OwnedDownloadSink,
+        signal?: AbortSignal
+      ) {
+        const request = parseBrowserDownload(value);
+        if (stopping) throw new BrowserLifecycleError('ENGINE_STOPPED');
+        const record = find(request.binding.browserId, request.binding.browserGeneration);
+        const current = authority.isCurrent.bind(authority),
+          authorize = authority.authorize.bind(authority);
+
+        const sinkBinding = parseBrowserBinding(sink.binding);
+        if (!sameBinding(sinkBinding, request.binding))
+          throw new BrowserLifecycleError('STALE_BINDING');
+        return ownOperation(record, async () => {
+          let chooser: OwnedResponseDownload | undefined;
+          let failure: Readonly<{ value: unknown }> | undefined;
+          let result: InputResult | undefined;
+          try {
+            const tab = record.tabs.get(request.binding.tabId);
+            if (!tab || !currentTab(record, tab) || !sameBinding(tab.binding, request.binding))
+              throw new BrowserLifecycleError('STALE_BINDING');
+            const admitted = () =>
+              !stopping &&
+              currentTab(record, tab) &&
+              sameBinding(tab.binding, request.binding) &&
+              current() &&
+              !stopping &&
+              currentTab(record, tab) &&
+              sameBinding(tab.binding, request.binding);
+            if (!admitted()) throw new BrowserLifecycleError('POLICY_REFUSED');
+            const slot = readyInput(record, request.binding);
+            const handle = slot.handle;
+            const download = handle?.download;
+            if (!handle || typeof download !== 'function' || !admitted())
+              throw new BrowserLifecycleError('PAGE_UNAVAILABLE');
+            chooser = Reflect.apply(download, handle, [sink, admitted]);
+            const originalChooser = chooser;
+            const command = parseBrowserCommand({
+              kind: 'input',
+              requestId: request.requestId,
+              binding: request.binding,
+              steps: [
+                {
+                  kind: 'click',
+                  x: request.activation.x,
+                  y: request.activation.y,
+                  button: 'left',
+                },
+              ],
+            });
+            if (command.kind !== 'input') throw new BrowserLifecycleError('COMMAND_UNSUPPORTED');
+            const token = issuer.issue(
+              command,
+              Object.freeze({
+                isCurrent: admitted,
+                authorize,
+                // Existing private queue completion hooks hold transfer custody, not upload permission.
+                beginUpload: originalChooser.begin.bind(originalChooser),
+                completeUpload: async (binding: BrowserBinding, signal: AbortSignal) => {
+                  let failure: Readonly<{ value: unknown }> | undefined;
+                  try {
+                    await originalChooser.complete(binding, signal);
+                  } catch (value) {
+                    failure = { value };
+                  }
+                  try {
+                    await originalChooser.close();
+                  } catch (value) {
+                    failure ??= { value };
+                  }
+                  if (failure) throw failure.value;
+                },
+              })
+            );
+            try {
+              result = await submitInput(record, command, signal, token);
+            } finally {
+              issuer.invalidate(token);
+            }
+          } catch (value) {
+            failure = Object.freeze({ value });
+          }
+          // Join exact response IO and paused-request cleanup before private artifact metadata can leave the engine.
+          try {
+            if (chooser) await chooser.close();
+          } catch (value) {
+            failure ??= Object.freeze({ value });
+          }
+          if (failure) throw failure.value;
+          if (!result || !chooser || result.outcome !== 'completed')
+            throw new BrowserLifecycleError('OPERATION_FAILED');
+          return Object.freeze({ input: result, artifact: chooser.artifact() });
+        });
+      },
+    });
+    Reflect.apply(construction.download.registerDispatcher, construction.download.owner, [
+      dispatcher,
+    ]);
+  }
   if (construction.kind === 'serverOwned' && construction.input) {
     const issuer = createOwnedInputIssuer();
     const dispatcher: PrivateBrowserInputDispatcher = Object.freeze({

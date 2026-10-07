@@ -32,12 +32,15 @@ import {
  * sets would match, and the drift this file exists to catch would pass. The
  * proxy has no such list — any property read that is not on the base returns a
  * truthy placeholder, so a domain added to the boot composer is composed here
- * the moment it lands. Nothing is ever invoked: every `assertDeps` in the
- * codebase is a presence check, and this registry is only ever read for
- * metadata.
+ * the moment it lands. Live availability predicates are supplied explicitly
+ * below; no capability operation is invoked by this metadata-only projection.
  */
 function allDepsPresent(): CapabilityDeps {
-  const base: Record<string | symbol, unknown> = { logger: noopLogger };
+  const base: Record<string | symbol, unknown> = {
+    logger: noopLogger,
+    // A live conditional domain observes its original service availability during discovery.
+    managedBrowserDeps: { current: () => true, optionalAvailable: () => true },
+  };
   return new Proxy(base, {
     get(target, prop) {
       if (prop in target) return target[prop];

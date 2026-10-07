@@ -3,7 +3,7 @@ import { createServer as createHTTPServer, IncomingMessage } from 'node:http';
 import { once } from 'node:events';
 import { Readable } from 'node:stream';
 import { afterEach, expect, it, vi } from 'vitest';
-import { createNodeBrokerTransport } from '../node-transport.js';
+import { createNodeBrokerTransport } from '../node/node-transport.js';
 import { frameRequest } from '../framing.js';
 import { BROKER_LIMITS } from '../limits.js';
 import type { AcceptedRequest, OwnedListener, OwnedSocket, RequestBody } from '../transport.js';

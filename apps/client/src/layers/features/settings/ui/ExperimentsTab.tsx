@@ -1,7 +1,9 @@
 /**
  * Settings → Advanced → Experiments — the staged opt-ins, rendered from the server's list.
  *
- * This tab holds no knowledge of any individual experiment. The server sends an
+ * Most rows write the registered config path. Shared browser uses its authenticated
+ * native startup operation, because a stored boolean cannot establish startup capability.
+ * This tab otherwise holds no table of individual experiments. The server sends an
  * ordered array of resolved entries (`config.experiments`), each carrying its own
  * prose, its position, and whether the position is even the setting's to give;
  * this file draws one switch per entry and writes the path back. That is what
@@ -14,8 +16,10 @@
  * @module features/settings/ui/ExperimentsTab
  */
 import { FieldCard, FieldCardContent, SwitchSettingRow } from '@/layers/shared/ui';
-import { useAppStore } from '@/layers/shared/model';
-import { useConfig, useUpdateConfig } from '@/layers/entities/config';
+import { useRef } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTransport, useAppStore, CONFIG_WRITE_MUTATION_KEY } from '@/layers/shared/model';
+import { useConfig, useUpdateConfig, configKeys } from '@/layers/entities/config';
 
 /**
  * Turn a dot-path into the nested patch body `PATCH /api/config` deep-merges.
@@ -67,10 +71,64 @@ function rowDescription(
 export function ExperimentsTab() {
   const { data: config, isLoading } = useConfig();
   const updateConfig = useUpdateConfig();
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+  const browserWriteEntered = useRef(false);
+  const browserChoice = useMutation({
+    mutationKey: CONFIG_WRITE_MUTATION_KEY,
+    mutationFn: async (choice: boolean | { chromeUserAgent: boolean }) => {
+      const original = transport.browserProduction;
+      if (!original) throw new Error('Shared browser cannot be changed on this computer yet.');
+      // This original authenticated operation is retained through its actual settlement.
+      // Stored choice and a generic config patch cannot authorize native startup.
+      return typeof choice === 'boolean'
+        ? original.setBrowserRuntimeEnabled(choice, new AbortController().signal)
+        : original.setBrowserRuntimeEnabled(false, new AbortController().signal, choice);
+    },
+    onSettled: () => {
+      browserWriteEntered.current = false;
+      void queryClient.invalidateQueries({ queryKey: configKeys.current() });
+      void queryClient.invalidateQueries({ queryKey: ['browser'] });
+    },
+  });
+  function changeBrowserChoice(enabled: boolean) {
+    if (browserWriteEntered.current || !transport.browserProduction) return;
+    browserWriteEntered.current = true;
+    browserChoice.mutate(enabled);
+  }
+  function changeBrowserIdentityChoice(chromeUserAgent: boolean) {
+    if (
+      browserWriteEntered.current ||
+      !transport.browserProduction ||
+      !runtimeIsOff ||
+      runtimeStatus.isFetching ||
+      runtimeStatus.isError
+    )
+      return;
+    browserWriteEntered.current = true;
+    browserChoice.mutate({ chromeUserAgent });
+  }
   const devtoolsOpen = useAppStore((s) => s.devtoolsOpen);
   const toggleDevtools = useAppStore((s) => s.toggleDevtools);
 
   const experiments = config?.experiments ?? [];
+  const sharedBrowserEnabled = experiments.some(
+    ({ key, enabled }) => key === 'browser.enabled' && enabled
+  );
+
+  const chromeChoiceListed = experiments.some(({ key }) => key === 'browser.chromeUserAgent');
+  const runtimeStatus = useQuery({
+    queryKey: ['browser', 'runtime-status'],
+    enabled: chromeChoiceListed && !!transport.browserProduction,
+    retry: false,
+    queryFn: ({ signal }) => {
+      const original = transport.browserProduction;
+      if (!original) throw new Error('Shared browser is unavailable.');
+      return original.readBrowserRuntimeStatus(signal);
+    },
+  });
+  const runtimeIsOff =
+    runtimeStatus.data?.state === 'disabled' && runtimeStatus.data.enabled === false;
 
   return (
     <div className="space-y-6" data-testid="experiments-tab">
@@ -102,9 +160,9 @@ export function ExperimentsTab() {
       ) : (
         <FieldCard>
           <FieldCardContent>
-            {experiments.map((experiment) => (
+            {experiments.map(({ key, ...experiment }) => (
               <SwitchSettingRow
-                key={experiment.key}
+                key={key}
                 label={experiment.title}
                 description={rowDescription(
                   experiment.description,
@@ -113,15 +171,35 @@ export function ExperimentsTab() {
                 )}
                 checked={experiment.enabled}
                 onCheckedChange={(value) =>
-                  updateConfig.mutate(buildNestedPatch(experiment.key, value))
+                  key === 'browser.enabled'
+                    ? changeBrowserChoice(value)
+                    : key === 'browser.chromeUserAgent'
+                      ? changeBrowserIdentityChoice(value)
+                      : updateConfig.mutate(buildNestedPatch(key, value))
                 }
-                disabled={experiment.lockedByEnv}
+                disabled={
+                  experiment.lockedByEnv ||
+                  (key === 'browser.chromeUserAgent' &&
+                    (sharedBrowserEnabled ||
+                      !runtimeIsOff ||
+                      runtimeStatus.isFetching ||
+                      runtimeStatus.isError ||
+                      browserChoice.isPending ||
+                      !transport.browserProduction)) ||
+                  (key === 'browser.enabled' &&
+                    (browserChoice.isPending || !transport.browserProduction))
+                }
               />
             ))}
           </FieldCardContent>
         </FieldCard>
       )}
 
+      {browserChoice.isError ? (
+        <p role="alert" className="text-sm">
+          Shared browser could not be changed. Refresh before trying again.
+        </p>
+      ) : null}
       <p className="text-muted-foreground text-xs">
         These start off. Each one graduates or goes away.
       </p>

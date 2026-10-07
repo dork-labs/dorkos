@@ -7,8 +7,10 @@ import { BrowserFrameBodyDecoder, type BrowserFrameBody } from '@dorkos/shared/b
  */
 export async function readBrowserFrameBody(
   body: ReadableStream<Uint8Array>,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  observeCleanupFailure: (reason: unknown) => void = () => undefined
 ): Promise<BrowserFrameBody> {
+  const cleanupObserver = observeCleanupFailure.bind(undefined);
   const reader = body.getReader();
   const read = reader.read.bind(reader);
   const cancel = reader.cancel.bind(reader);
@@ -25,11 +27,19 @@ export async function readBrowserFrameBody(
     }
     decoder.discard(first);
   };
+  const cleanupFailure = (error: unknown) => {
+    fail(error);
+    try {
+      cleanupObserver(error);
+    } catch (observerError) {
+      fail(observerError);
+    }
+  };
   const stop = () => {
     if (!cancellation) {
       cancellation = Promise.resolve().then(() => cancel(first));
       // Attach immediately, retaining the same original promise for cleanup below.
-      void cancellation.catch((error: unknown) => fail(error));
+      void cancellation.catch((error: unknown) => cleanupFailure(error));
     }
   };
   const abort = () => {
@@ -52,19 +62,23 @@ export async function readBrowserFrameBody(
   } catch (error) {
     fail(error);
   } finally {
-    signal?.removeEventListener('abort', abort);
+    try {
+      signal?.removeEventListener('abort', abort);
+    } catch (error) {
+      cleanupFailure(error);
+    }
     if (failed) stop();
     if (cancellation) {
       try {
         await cancellation;
       } catch (error) {
-        fail(error);
+        cleanupFailure(error);
       }
     }
     try {
       release();
     } catch (error) {
-      fail(error);
+      cleanupFailure(error);
     }
   }
   if (failed) {

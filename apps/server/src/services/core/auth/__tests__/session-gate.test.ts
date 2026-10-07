@@ -11,6 +11,7 @@ import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createDb, runMigrations, user, session, type Db } from '@dorkos/db';
 import { getAuth, initAuth, sessionGate, toNodeHandler, verifyRequestAuth } from '../index.js';
+import { verifiedRequestSession } from '../session-gate.js';
 import { configManager, initConfigManager } from '../../config-manager.js';
 import { env } from '../../../../env.js';
 
@@ -282,6 +283,95 @@ describe('sessionGate — /api/* and /mcp credential gate (integration)', () => 
   });
 
   describe('verifyRequestAuth (the shared verifier reused by MCP auth in 1.4)', () => {
+    it('binds private cookie metadata only to the original fresh verifier identity', async () => {
+      const req = { headers: { cookie: cookies.join('; ') } };
+      const identity = await verifyRequestAuth(req, {
+        sessionFreshness: 'server-store',
+        sessionFailure: 'propagate',
+      });
+      expect(identity?.credential).toBe('cookie');
+      if (!identity) throw new Error('Expected original authenticated owner');
+      const metadata = verifiedRequestSession(identity);
+      expect(metadata).toMatchObject({
+        userId: ownerId,
+        id: expect.any(String),
+        expiresAt: expect.any(Number),
+      });
+      expect(Object.isFrozen(metadata)).toBe(true);
+      expect(verifiedRequestSession({ ...identity })).toBeUndefined();
+      expect(JSON.stringify(identity)).not.toContain('expiresAt');
+      const ordinary = await verifyRequestAuth(req);
+      if (!ordinary) throw new Error('Expected original ordinary owner');
+      expect(verifiedRequestSession(ordinary)).toBeUndefined();
+    });
+
+    it.each([undefined, false, new Error('Original private session rejection')])(
+      'preserves an exact original private session rejection without API-key fallback: %s',
+      async (original) => {
+        const auth = getAuth()!;
+        const producer = vi.spyOn(auth.api, 'getSession').mockRejectedValueOnce(original);
+        const fallback = vi.spyOn(auth.api, 'verifyApiKey');
+        try {
+          await expect(
+            verifyRequestAuth(
+              { headers: { authorization: `Bearer ${apiKey}` } },
+              {
+                sessionFreshness: 'server-store',
+                sessionFailure: 'propagate',
+              }
+            )
+          ).rejects.toBe(original);
+          expect(producer).toHaveBeenCalledOnce();
+          expect(fallback).not.toHaveBeenCalled();
+          producer.mockRejectedValueOnce(original);
+          expect(
+            await verifyRequestAuth({ headers: { authorization: `Bearer ${apiKey}` } })
+          ).toMatchObject({
+            userId: ownerId,
+            credential: 'api-key',
+            credentialId: apiKeyId,
+          });
+          expect(fallback).toHaveBeenCalledOnce();
+        } finally {
+          producer.mockRestore();
+          fallback.mockRestore();
+        }
+      }
+    );
+
+    it('keeps ordinary cookie acceptance free of private session metadata getters', async () => {
+      const auth = getAuth()!;
+      const original = new Error('Original private metadata getter');
+      let entered = 0;
+      const value = {
+        user: { id: ownerId },
+        get session(): never {
+          entered++;
+          throw original;
+        },
+      };
+      const producer = vi.spyOn(auth.api, 'getSession');
+      try {
+        producer.mockResolvedValueOnce(
+          value as unknown as Awaited<ReturnType<typeof auth.api.getSession>>
+        );
+        expect(await verifyRequestAuth({ headers: {} })).toEqual({
+          userId: ownerId,
+          credential: 'cookie',
+        });
+        expect(entered).toBe(0);
+        producer.mockResolvedValueOnce(
+          value as unknown as Awaited<ReturnType<typeof auth.api.getSession>>
+        );
+        await expect(
+          verifyRequestAuth({ headers: {} }, { sessionFailure: 'propagate' })
+        ).rejects.toBe(original);
+        expect(entered).toBe(1);
+      } finally {
+        producer.mockRestore();
+      }
+    });
+
     // The `credential` field is asserted, not incidental. A few writes are
     // reserved for a person in the cockpit rather than for anything holding a
     // valid credential, and this is the only place the difference is observable

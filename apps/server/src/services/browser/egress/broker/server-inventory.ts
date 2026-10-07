@@ -55,13 +55,20 @@ export function createServerInventory(options: ServerInventoryOptions) {
     }
     declarations.set(instance.id, listeners);
   }
-  const adminAuthorities = Object.freeze(
-    options.adminAuthorities.map((authority) => {
-      if (authority.length > 512) throw new Error('Invalid administrative authority');
-      parseDestination({ url: authority });
-      return authority;
-    })
-  );
+  const authorityDenies = new Set<string>();
+  let authorityCapacityUnknown = false;
+  const retainAdministrativeAuthority = (authority: string): void => {
+    if (authorityCapacityUnknown) throw new Error('Administrative inventory exhausted');
+    if (authority.length > 512) throw new Error('Invalid administrative authority');
+    const parsed = parseDestination({ url: authority });
+    const canonical = parsed.origin;
+    if (!authorityDenies.has(canonical) && authorityDenies.size >= 128) {
+      authorityCapacityUnknown = true;
+      throw new Error('Administrative inventory exhausted');
+    }
+    authorityDenies.add(canonical);
+  };
+  for (const authority of options.adminAuthorities) retainAdministrativeAuthority(authority);
   const attempted = new Set<object>();
   const retainedServers = new Set<Server>();
   const interfaceDenies = new Set<string>();
@@ -115,6 +122,7 @@ export function createServerInventory(options: ServerInventoryOptions) {
   function observe(): ServerInventorySnapshot {
     // A newly observed permanent deny that cannot be retained stays unresolved
     // for this generation, even if a later census no longer contains it.
+    if (authorityCapacityUnknown) throw new Error('Administrative inventory exhausted');
     if (interfaceCapacityUnknown) throw new Error('Interface inventory exhausted');
     if (endpointCapacityUnknown) throw new Error('Protected endpoint inventory exhausted');
     const now = clock();
@@ -203,7 +211,8 @@ export function createServerInventory(options: ServerInventoryOptions) {
     const hostInterfaces = [...interfaceDenies].sort();
     // Coverage gaps revoke local grants independently. Retain every known deny
     // and preserve public circuits until the security policy itself changes.
-    const nextFingerprint = JSON.stringify([protectedEndpoints, hostInterfaces]);
+    const adminAuthorities = Object.freeze([...authorityDenies].sort());
+    const nextFingerprint = JSON.stringify([protectedEndpoints, hostInterfaces, adminAuthorities]);
     if (nextFingerprint !== fingerprint) {
       if (revision === Number.MAX_SAFE_INTEGER) throw new Error('Inventory revision exhausted');
       revision++;
@@ -233,5 +242,10 @@ export function createServerInventory(options: ServerInventoryOptions) {
     });
   }
 
-  return Object.freeze({ acquire, observe, readInventory: () => observe().inventory });
+  return Object.freeze({
+    acquire,
+    observe,
+    retainAdministrativeAuthority,
+    readInventory: () => observe().inventory,
+  });
 }

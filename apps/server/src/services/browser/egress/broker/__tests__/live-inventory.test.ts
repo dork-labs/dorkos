@@ -2,7 +2,7 @@ import { createServer } from 'node:net';
 import { once } from 'node:events';
 import { afterEach, expect, it } from 'vitest';
 import { createServerInventory } from '../server-inventory.js';
-import { createNodeBrokerTransport } from '../node-transport.js';
+import { createNodeBrokerTransport } from '../node/node-transport.js';
 import { createLiveBrowserInventory } from '../live/live-inventory.js';
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {

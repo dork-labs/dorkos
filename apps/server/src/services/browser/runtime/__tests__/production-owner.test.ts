@@ -1,6 +1,11 @@
+import { logger } from '../../../../lib/logger.js';
 import { createHash } from 'node:crypto';
 import { beforeEach, expect, it, onTestFinished, vi } from 'vitest';
-import { parseBrowserResult, type EngineConfiguration } from '@dorkos/browser';
+import {
+  parseBrowserResult,
+  validateEngineConfiguration,
+  type EngineConfiguration,
+} from '@dorkos/browser';
 import type {
   BrowserLifecycleEngine,
   PrivateBrowserBirthOwner,
@@ -140,6 +145,9 @@ function setup() {
       constructedOwner.registerBirth(receiver);
       return result;
     }),
+    diagnostics: () => {
+      throw new Error('unused');
+    },
     listTabs: () => [],
     capture: async () => {
       throw new Error('unused');
@@ -163,7 +171,8 @@ function setup() {
   });
   originals.construct.mockImplementation(
     (config: EngineConfiguration, owner: PrivateBrowserBirthOwner) => {
-      identity = createHash('sha256').update(JSON.stringify(config.runtime)).digest('hex');
+      const actual = validateEngineConfiguration(config);
+      identity = createHash('sha256').update(JSON.stringify(actual.runtime)).digest('hex');
       constructedOwner = owner;
       return engine;
     }
@@ -220,8 +229,8 @@ function owned(release: () => void = () => {}) {
     track(original: Promise<unknown>) {
       observed.push(original);
     },
-    open(signal?: AbortSignal) {
-      const original = owner.open(f.settings, f.participant, {}, signal);
+    open(signal?: AbortSignal, identityMode?: 'native' | 'chrome-compatible') {
+      const original = owner.open(f.settings, f.participant, {}, signal, identityMode);
       originals.opening = original;
       void original.catch(() => {});
       return original;
@@ -448,7 +457,9 @@ it.each(['input', 'capture', 'navigation'] as const)(
   'a present %s owner with no registration cannot reach verification or construction',
   async (kind) => {
     const f = owned();
-    Object.defineProperty(f.participant[kind]!, 'registerDispatcher', { value: undefined });
+    Object.defineProperty(f.participant[kind]!, 'registerDispatcher', {
+      value: undefined,
+    });
     const failure = await rejected(f.open());
     f.accept(failure.reason);
     expect(failure.reason).toMatchObject({ code: 'UNSUPPORTED' });
@@ -522,5 +533,524 @@ it('configuration receiver getters are captured once and constructor callbacks u
     }
   );
   await f.open();
-  expect(reads).toEqual({ clock: 1, processes: 1, policy: 1, nativeJournal: 1 });
+  expect(reads).toEqual({
+    clock: 1,
+    processes: 1,
+    policy: 1,
+    nativeJournal: 1,
+  });
+});
+
+// The real constructor's canonical parser is consumed by the original constructor double above.
+it.each([false, true])(
+  'preserves absent journal fields before real configuration validation (%s)',
+  async (includeWorker) => {
+    const f = owned();
+    f.settings.nativeJournal = {
+      workerPath: '/owned/journal-worker.mjs',
+      artifact: { path: '/owned/process-observer', sha256: hash },
+      duration: 30000,
+      maxGap: 5000,
+      ...(includeWorker
+        ? { browserWorkerPath: '/owned/browser-worker.mjs', continuous: false }
+        : {}),
+    };
+    await expect(f.open()).resolves.toMatchObject({ opened: f.result });
+    const configured = originals.construct.mock.calls[0]![0] as EngineConfiguration;
+    const journal = configured.nativeJournal!;
+    expect(Object.prototype.hasOwnProperty.call(journal, 'onDiagnostic')).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(journal, 'browserWorkerPath')).toBe(includeWorker);
+    expect(Object.prototype.hasOwnProperty.call(journal, 'continuous')).toBe(includeWorker);
+    expect(() => validateEngineConfiguration(configured)).not.toThrow();
+    // Do not weaken the exact parser merely to accept a malformed private projection.
+    expect(() =>
+      validateEngineConfiguration({
+        ...configured,
+        nativeJournal: { ...journal, onDiagnostic: undefined },
+      })
+    ).toThrow(expect.objectContaining({ code: 'INVALID_CONFIGURATION' }));
+  }
+);
+it('captures a present original journal diagnostic with its actual receiver', async () => {
+  const f = owned();
+  const received: unknown[] = [];
+  const diagnostic = vi.fn(function (this: unknown) {
+    received.push(this);
+  });
+  const journal = (f.settings.nativeJournal = {
+    workerPath: '/owned/journal-worker.mjs',
+    artifact: { path: '/owned/process-observer', sha256: hash },
+    duration: 30000,
+    maxGap: 5000,
+    onDiagnostic: diagnostic,
+  });
+  await f.open();
+  const actual = (originals.construct.mock.calls[0]![0] as EngineConfiguration).nativeJournal!;
+  await actual.onDiagnostic!({} as Parameters<NonNullable<typeof actual.onDiagnostic>>[0]);
+  expect(diagnostic).toHaveBeenCalledTimes(1);
+  expect(received).toEqual([journal]);
+});
+
+it.each([false, undefined])(
+  'a failing custody diagnostic sink cannot replace original custody refusal (%s)',
+  async (sinkFailure) => {
+    const emit = vi.spyOn(logger, 'info').mockImplementation(() => {
+      throw sinkFailure;
+    });
+    onTestFinished(() => {
+      emit.mockRestore();
+    });
+    const f = owned();
+    const read = vi.fn(() => 'transport' as const);
+    f.receiver.authorityCustodyRefusal = read;
+    await f.open();
+    f.receiver.authorityCustodyRefusal = () => {
+      throw new Error('replacement must not enter');
+    };
+    f.setCustody(false);
+    expect(f.owner.isNativeCurrent(f.engine)).toBe(false);
+    const closed = await rejected(f.owner.close());
+    f.accept(closed.reason);
+    expect(closed.reason).toMatchObject({ code: 'CUSTODY_UNCERTAIN' });
+    expect(read).toHaveBeenCalledOnce();
+    expect(emit).toHaveBeenCalledWith('Browser original custody refusal stage', {
+      stage: 'transport',
+      ordinal: 1,
+    });
+  }
+);
+
+it.each([
+  ['unverified', 'observationUnavailable'],
+  ['failed', 'closeFailed'],
+  ['failed', 'processesRemain'],
+] as const)(
+  'reports the exact original shutdown classification %s/%s after its natural return',
+  async (cleanup, reason) => {
+    const emit = vi.spyOn(logger, 'info').mockImplementation(() => {});
+    onTestFinished(() => {
+      emit.mockRestore();
+    });
+    const stopping = held<Awaited<ReturnType<BrowserLifecycleEngine['shutdown']>>>();
+    const closeResult = parseBrowserResult({
+      kind: 'close',
+      requestId: 'shutdown_result_original_001',
+      browserId: 'browser_original_native_00001',
+      browserGeneration: 1,
+      cleanup,
+      reason,
+    });
+    if (closeResult.kind !== 'close') throw new Error('CONTROL_CLOSE_RESULT');
+    const f = owned(() => stopping.resolve([closeResult]));
+    vi.mocked(f.engine.shutdown).mockImplementation(() => stopping.promise);
+    await f.open();
+    const closing = f.owner.close();
+    void closing.catch(() => {});
+    let settled = false;
+    void closing.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      }
+    );
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    expect(emit).not.toHaveBeenCalled();
+    stopping.resolve([closeResult]);
+    const original = await rejected(closing);
+    f.accept(original.reason);
+    expect(original.reason).toMatchObject({ code: 'CUSTODY_UNCERTAIN' });
+    expect(emit).toHaveBeenCalledWith('Browser original shutdown refused result', {
+      cleanup,
+      reason,
+      ordinal: 1,
+    });
+    expect(f.engine.shutdown).toHaveBeenCalledOnce();
+  }
+);
+it.each([false, undefined])(
+  'preserves refused original shutdown when its diagnostic logger throws %s',
+  async (sinkFailure) => {
+    const emit = vi.spyOn(logger, 'info').mockImplementation(() => {
+      throw sinkFailure;
+    });
+    onTestFinished(() => {
+      emit.mockRestore();
+    });
+    const f = owned();
+    const closeResult = parseBrowserResult({
+      kind: 'close',
+      requestId: 'shutdown_result_original_001',
+      browserId: f.receiver.browserId,
+      browserGeneration: 1,
+      cleanup: 'unverified',
+      reason: 'observationUnavailable',
+    });
+    if (closeResult.kind !== 'close') throw new Error('CONTROL_CLOSE_RESULT');
+    vi.mocked(f.engine.shutdown).mockResolvedValue([closeResult]);
+    await f.open();
+    const original = await rejected(f.owner.close());
+    f.accept(original.reason);
+    expect(original.reason).toMatchObject({ code: 'CUSTODY_UNCERTAIN' });
+    expect(emit).toHaveBeenCalledOnce();
+  }
+);
+it('does not enter an original reason getter or heal a refused close result', async () => {
+  const emit = vi.spyOn(logger, 'info').mockImplementation(() => {});
+  onTestFinished(() => {
+    emit.mockRestore();
+  });
+  const f = owned();
+  const closeResult = parseBrowserResult({
+    kind: 'close',
+    requestId: 'shutdown_result_original_001',
+    browserId: f.receiver.browserId,
+    browserGeneration: 1,
+    cleanup: 'unverified',
+    reason: 'observationUnavailable',
+  });
+  if (closeResult.kind !== 'close') throw new Error('CONTROL_CLOSE_RESULT');
+  const read = vi.fn(() => {
+    throw undefined;
+  });
+  Object.defineProperty(closeResult, 'reason', { get: read });
+  vi.mocked(f.engine.shutdown).mockResolvedValue([closeResult]);
+  await f.open();
+  const original = await rejected(f.owner.close());
+  f.accept(original.reason);
+  expect(original.reason).toMatchObject({ code: 'CUSTODY_UNCERTAIN' });
+  expect(read).not.toHaveBeenCalled();
+  expect(emit).toHaveBeenCalledWith('Browser original shutdown refused result', {
+    cleanup: 'unverified',
+    reason: 'invalid',
+    ordinal: 1,
+  });
+});
+
+function sealedRetirement(): Awaited<PrivateBrowserRetirementReceiver['observation']> {
+  return Object.freeze({
+    cleanup: Object.freeze({
+      state: 'unverified' as const,
+      coverage: 'closed' as const,
+      pending: false,
+      uncertainty: Object.freeze(['permitUnavailable' as const]),
+    }),
+    owners: Object.freeze([
+      Object.freeze({
+        identity: Object.freeze({}),
+        observation: Object.freeze({
+          state: 'unverified' as const,
+          binding: null,
+          reason: 'permitUnavailable' as const,
+          pending: false,
+          uncertainty: true as const,
+        }),
+      }),
+    ]),
+    terminal: Object.freeze({
+      cleanup: 'unverified' as const,
+      reason: 'observationUnavailable' as const,
+    }),
+    firstCause: 'explicitStop' as const,
+    uncertainty: Object.freeze(['permitUnavailable' as const, 'terminalCloseFailed' as const]),
+  });
+}
+it('observes the captured original retirement promise once without joining it or reading replacement getters', async () => {
+  const emit = vi.spyOn(logger, 'info').mockImplementation(() => {});
+  onTestFinished(() => {
+    emit.mockRestore();
+  });
+  const original = held<Awaited<PrivateBrowserRetirementReceiver['observation']>>();
+  const f = owned(() => original.resolve(sealedRetirement()));
+  const read = vi.fn(() => original.promise);
+  Object.defineProperty(f.receiver, 'observation', {
+    configurable: true,
+    get: read,
+  });
+  await f.open();
+  expect(read).toHaveBeenCalledOnce();
+  expect(f.participant.registerBirth).toHaveBeenCalledOnce();
+  Object.defineProperty(f.receiver, 'observation', {
+    get: () => {
+      throw false;
+    },
+  });
+  await f.owner.close(); // Diagnostic observation is not a new cleanup wait.
+  expect(emit).not.toHaveBeenCalled();
+  original.resolve(sealedRetirement());
+  await Promise.resolve();
+  expect(emit).toHaveBeenCalledWith('Browser original sealed retirement result', {
+    ordinal: 1,
+    closeStage: 'unavailable',
+    aggregateState: 'unverified',
+    coverage: 'closed',
+    pending: false,
+    aggregateReasons: ['permitUnavailable'],
+    ownerCount: 1,
+    firstOwnerState: 'unverified',
+    firstOwnerReason: 'permitUnavailable',
+    firstOwnerPending: false,
+    terminalCleanup: 'unverified',
+    terminalReason: 'observationUnavailable',
+    firstCause: 'explicitStop',
+  });
+});
+it.each([false, undefined])(
+  'a reentrant retirement diagnostic sink fault %s cannot settle or replace held original shutdown',
+  async (sinkFailure) => {
+    const retired = held<Awaited<PrivateBrowserRetirementReceiver['observation']>>();
+    const stopping = held<Awaited<ReturnType<BrowserLifecycleEngine['shutdown']>>>();
+    const bank: {
+      owner?: ReturnType<typeof createProductionBrowserRuntimeOwner>;
+      reentered?: Promise<void>;
+    } = {};
+    const emit = vi.spyOn(logger, 'info').mockImplementation((message) => {
+      if (message === 'Browser original sealed retirement result') {
+        bank.reentered = bank.owner!.close();
+        throw sinkFailure;
+      }
+    });
+    onTestFinished(() => {
+      emit.mockRestore();
+    });
+    const f = owned(() => {
+      retired.resolve(sealedRetirement());
+      stopping.resolve([]);
+    });
+    bank.owner = f.owner;
+    Object.defineProperty(f.receiver, 'observation', {
+      value: retired.promise,
+    });
+    vi.mocked(f.engine.shutdown).mockImplementation(() => stopping.promise);
+    await f.open();
+    const closing = f.owner.close();
+    void closing.catch(() => {});
+    let settled = false;
+    void closing.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      }
+    );
+    retired.resolve(sealedRetirement());
+    await Promise.resolve();
+    expect(bank.reentered).toBe(closing);
+    expect(settled).toBe(false);
+    expect(f.engine.shutdown).toHaveBeenCalledOnce();
+    stopping.resolve([]);
+    await closing;
+  }
+);
+it.each([false, undefined])(
+  'diagnostic registration fault %s cannot refuse a genuine original birth',
+  async (cause) => {
+    const f = owned();
+    const read = vi.fn(() => {
+      throw cause;
+    });
+    Object.defineProperty(f.receiver, 'observation', { get: read });
+    await expect(f.open()).resolves.toMatchObject({ opened: f.result });
+    expect(read).toHaveBeenCalledOnce();
+    expect(f.owner.isNativeCurrent(f.engine)).toBe(true);
+    await f.owner.close();
+  }
+);
+
+it.each([false, undefined])(
+  'preserves original shutdown rejection %s after a failed retirement diagnostic',
+  async (cause) => {
+    const retired = held<Awaited<PrivateBrowserRetirementReceiver['observation']>>();
+    const emit = vi.spyOn(logger, 'info').mockImplementation(() => {
+      throw new Error('DIAGNOSTIC_ONLY');
+    });
+    onTestFinished(() => {
+      emit.mockRestore();
+    });
+    const f = owned(() => retired.resolve(sealedRetirement()));
+    Object.defineProperty(f.receiver, 'observation', {
+      value: retired.promise,
+    });
+    vi.mocked(f.engine.shutdown).mockRejectedValue(cause);
+    await f.open();
+    retired.resolve(sealedRetirement());
+    const original = await rejected(f.owner.close());
+    f.accept(original.reason);
+    expect(original.reason).toBe(cause);
+    expect(f.engine.shutdown).toHaveBeenCalledOnce();
+    expect(emit).toHaveBeenCalledWith(
+      'Browser original sealed retirement result',
+      expect.objectContaining({ firstOwnerReason: 'permitUnavailable' })
+    );
+  }
+);
+
+it('reads only the captured close-stage method after the original sealed terminal refusal', async () => {
+  const emit = vi.spyOn(logger, 'info').mockImplementation(() => {});
+  onTestFinished(() => {
+    emit.mockRestore();
+  });
+  const retired = held<Awaited<PrivateBrowserRetirementReceiver['observation']>>();
+  const f = owned(() => retired.resolve(sealedRetirement()));
+  const receivers: unknown[] = [];
+  const read = vi.fn(function (this: unknown) {
+    receivers.push(this);
+    return 'snapshot' as const;
+  });
+  f.receiver.retirementCloseRefusal = read;
+  Object.defineProperty(f.receiver, 'observation', { value: retired.promise });
+  await f.open();
+  expect(read).not.toHaveBeenCalled();
+  f.receiver.retirementCloseRefusal = () => {
+    throw false;
+  };
+  retired.resolve(sealedRetirement());
+  await Promise.resolve();
+  expect(read).toHaveBeenCalledOnce();
+  expect(receivers).toEqual([f.receiver]);
+  expect(emit).toHaveBeenCalledWith(
+    'Browser original sealed retirement result',
+    expect.objectContaining({ closeStage: 'snapshot' })
+  );
+  await f.owner.close();
+});
+it.each([false, undefined])(
+  'a close-stage diagnostic method fault %s cannot omit sealed data or replace original shutdown rejection',
+  async (cause) => {
+    const emit = vi.spyOn(logger, 'info').mockImplementation(() => {});
+    onTestFinished(() => {
+      emit.mockRestore();
+    });
+    const retired = held<Awaited<PrivateBrowserRetirementReceiver['observation']>>();
+    const f = owned(() => retired.resolve(sealedRetirement()));
+    f.receiver.retirementCloseRefusal = () => {
+      throw cause;
+    };
+    Object.defineProperty(f.receiver, 'observation', {
+      value: retired.promise,
+    });
+    vi.mocked(f.engine.shutdown).mockRejectedValue(cause);
+    await f.open();
+    retired.resolve(sealedRetirement());
+    const original = await rejected(f.owner.close());
+    f.accept(original.reason);
+    expect(original.reason).toBe(cause);
+    expect(emit).toHaveBeenCalledWith(
+      'Browser original sealed retirement result',
+      expect.objectContaining({
+        closeStage: 'unavailable',
+        firstOwnerReason: 'permitUnavailable',
+      })
+    );
+  }
+);
+it('does not read close-stage data for an observed original terminal result', async () => {
+  const emit = vi.spyOn(logger, 'info').mockImplementation(() => {});
+  onTestFinished(() => {
+    emit.mockRestore();
+  });
+  const retired = held<Awaited<PrivateBrowserRetirementReceiver['observation']>>();
+  const positive: Awaited<PrivateBrowserRetirementReceiver['observation']> = Object.freeze({
+    cleanup: Object.freeze({
+      state: 'settled',
+      coverage: 'closed',
+      pending: false,
+      uncertainty: Object.freeze([]) as readonly [],
+    }),
+    owners: Object.freeze([]),
+    terminal: Object.freeze({ cleanup: 'observed' }),
+    firstCause: 'explicitStop',
+    uncertainty: Object.freeze([]),
+  });
+  const f = owned(() => retired.resolve(positive));
+  const read = vi.fn(() => 'terminal' as const);
+  f.receiver.retirementCloseRefusal = read;
+  Object.defineProperty(f.receiver, 'observation', { value: retired.promise });
+  await f.open();
+  retired.resolve(positive);
+  await Promise.resolve();
+  expect(read).not.toHaveBeenCalled();
+  expect(emit).toHaveBeenCalledWith(
+    'Browser original sealed retirement result',
+    expect.objectContaining({
+      closeStage: 'none',
+      terminalCleanup: 'observed',
+    })
+  );
+  await f.owner.close();
+});
+
+it('retains birth and completes original registration before a close-stage getter reentrantly closes its original owner', async () => {
+  const f = owned();
+  const bank: { closing?: Promise<void>; registered?: number } = {};
+  const read = vi.fn(() => {
+    bank.registered = vi.mocked(f.participant.registerBirth).mock.calls.length;
+    bank.closing = f.owner.close();
+    void bank.closing.catch(() => {});
+    return () => 'snapshot' as const;
+  });
+  Object.defineProperty(f.receiver, 'retirementCloseRefusal', { get: read });
+  const opening = await rejected(f.open());
+  f.accept(opening.reason);
+  expect(bank.registered).toBe(1);
+  expect(read).toHaveBeenCalledOnce();
+  expect(bank.closing).toBe(f.owner.close());
+  const closing = await rejected(bank.closing!);
+  f.accept(closing.reason);
+  expect(closing.reason).toBe(opening.reason);
+  expect(closing.reason).toMatchObject({ code: 'CLOSED' });
+  expect(f.engine.shutdown).toHaveBeenCalledOnce();
+});
+
+it.each(['native', 'chrome-compatible'] as const)(
+  'preserves original selected %s identity while rebuilding verified installed provenance',
+  async (mode) => {
+    const turn = held<InstallResult>();
+    const f = owned(() => turn.resolve(verified));
+    const network = f.settings.network;
+    if (network.kind !== 'owned') throw new Error('EXPECTED_OWNED_NETWORK');
+    f.verify.mockImplementation(() => turn.promise);
+    const opening = f.open(undefined, mode);
+    await vi.waitFor(() => expect(f.verify).toHaveBeenCalledOnce());
+    expect(originals.construct).not.toHaveBeenCalled();
+    turn.resolve(verified);
+    expect((await opening).engine).toBe(f.engine);
+    const actual = validateEngineConfiguration(originals.construct.mock.calls[0][0]);
+    expect(actual.runtime.identity).toEqual({
+      mode,
+      policyRevision: network.policyRevision,
+    });
+    expect(actual.runtime.library.rootDir).toBe('/owned/library');
+    expect(actual.runtime.executable).toEqual({
+      path: '/owned/cache/candidates/installation_verified_original/payload/chromium-1243/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing',
+      sha256: verified.executableSHA256,
+      revision: '1243',
+      version: verified.observedVersion,
+      platform: 'darwin',
+      arch: 'arm64',
+    });
+    expect(f.inspect).toHaveBeenCalledOnce();
+    expect(f.owner.isOriginalNativeCurrent(f.receiver)).toBe(true);
+  }
+);
+
+it('refuses an unsupported private identity selection before original installation or engine acquisition', async () => {
+  const f = owned();
+  const opening = Reflect.apply(f.owner.open, f.owner, [
+    f.settings,
+    f.participant,
+    {},
+    undefined,
+    'unsupported',
+  ]);
+  f.track(opening);
+  const refusal = await rejected(opening);
+  f.accept(refusal.reason);
+  expect(refusal.reason).toMatchObject({ code: 'UNSUPPORTED' });
+  expect(originals.resolve).not.toHaveBeenCalled();
+  expect(f.verify).not.toHaveBeenCalled();
+  expect(originals.construct).not.toHaveBeenCalled();
 });

@@ -8,14 +8,16 @@ import {
 } from 'node:http';
 import type {
   RequestBody,
+  BrokerIO,
   BrokerTransport,
+  ProductionBrokerTransport,
   OwnedListener,
   OwnedSocket,
   OriginResponse,
-} from './transport.js';
-import { BrokerError } from './errors.js';
+} from '../transport.js';
+import { BrokerError } from '../errors.js';
 import { ownNodeSocket, originalNodeSocket } from './node-transport-socket.js';
-import { forwardFlow } from './flow.js';
+import { forwardFlow } from '../flow.js';
 
 type IntakeOwner = {
   server: NetServer;
@@ -67,11 +69,10 @@ function body(message: IncomingMessage): RequestBody {
  * Callback-time quota registration is not represented as native preaccept proof.
  * Overflow stops the whole pre-owned intake; it never uses internal unobserved drops.
  */
-export function createNodeBrokerTransport(): BrokerTransport {
-  return Object.freeze<BrokerTransport>({
+function createOriginalNodeBrokerIO(): BrokerIO {
+  return Object.freeze<BrokerIO>({
     intake: 'listener-owned' as const,
-    scope: 'fixture-only' as const,
-    listen(options: Parameters<BrokerTransport['listen']>[0]): Promise<OwnedListener> {
+    listen(options: Parameters<BrokerIO['listen']>[0]): Promise<OwnedListener> {
       if (
         !Number.isSafeInteger(options.maxConnections) ||
         options.maxConnections < 1 ||
@@ -472,4 +473,29 @@ export function createNodeBrokerTransport(): BrokerTransport {
       });
     },
   });
+}
+
+const productionOriginals = new WeakSet<ProductionBrokerTransport>();
+/** Preserve existing injected fixture identity and original Node IO behavior. */
+export function createNodeBrokerTransport(): BrokerTransport {
+  return Object.freeze({ ...createOriginalNodeBrokerIO(), scope: 'fixture-only' as const });
+}
+/** Actual original production Node intake producer; not a caller-selected transport seam. */
+export function createProductionNodeBrokerTransport(): ProductionBrokerTransport {
+  const original = Object.freeze({
+    ...createOriginalNodeBrokerIO(),
+    scope: 'server-owned' as const,
+  });
+  productionOriginals.add(original);
+  return original;
+}
+/** Exact producer custody only; serialized/copied tags cannot pass this membership test. */
+export function isOriginalProductionNodeTransport(
+  value: unknown
+): value is ProductionBrokerTransport {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    productionOriginals.has(value as ProductionBrokerTransport)
+  );
 }

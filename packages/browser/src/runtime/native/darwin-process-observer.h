@@ -9,12 +9,19 @@
 #define DORKOS_DARWIN_ENUMERATION_MAX 16384
 
 enum dorkos_darwin_kind { DORKOS_DARWIN_PRESENT, DORKOS_DARWIN_ABSENT, DORKOS_DARWIN_UNKNOWN };
+enum dorkos_darwin_uncertainty {
+  DORKOS_DARWIN_UNCERTAINTY_NONE, DORKOS_DARWIN_BIRTH_CHANGED, DORKOS_DARWIN_PARENT_CHANGED,
+  DORKOS_DARWIN_ALIVE_TO_ZOMBIE, DORKOS_DARWIN_ZOMBIE_TO_ALIVE,
+  DORKOS_DARWIN_MEMBERSHIP_DISAPPEARED, DORKOS_DARWIN_MEMBERSHIP_APPEARED,
+  DORKOS_DARWIN_MEMBERSHIP_ABSENT_WITH_PRESENT_READS
+};
 struct dorkos_darwin_process {
   pid_t pid;
   enum dorkos_darwin_kind kind;
   uint64_t seconds, microseconds;
   pid_t parent_pid;
   int zombie, error;
+  enum dorkos_darwin_uncertainty uncertainty;
 };
 struct dorkos_darwin_batch {
   uint64_t boot_seconds, boot_microseconds;

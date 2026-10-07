@@ -22,21 +22,29 @@ export interface ReleaseDriver {
 
 /** Conservative native state is charged before entry and removed only on exact acknowledgement. */
 export class HeldInput {
+  private composition = false;
   private readonly keys = new Set<string>();
   private readonly buttons = new Set<Button>();
 
   track(step: NativeInputStep): void {
+    if (step.kind === 'composition' && step.text.length > 0) this.composition = true;
     if (step.kind === 'keyDown') this.keys.add(step.key);
     if (step.kind === 'mouseDown') this.buttons.add(step.button);
   }
   settled(step: NativeInputStep): void {
+    if (
+      step.kind === 'compositionCommit' ||
+      (step.kind === 'composition' && step.text.length === 0)
+    )
+      this.composition = false;
     if (step.kind === 'keyUp') this.keys.delete(step.key);
     if (step.kind === 'mouseUp') this.buttons.delete(step.button);
   }
   hasHeld(): boolean {
-    return this.keys.size > 0 || this.buttons.size > 0;
+    return this.composition || this.keys.size > 0 || this.buttons.size > 0;
   }
   clear(): void {
+    this.composition = false;
     this.keys.clear();
     this.buttons.clear();
   }

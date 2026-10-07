@@ -2,6 +2,7 @@ import {
   Activity,
   Cable,
   FolderGit2,
+  Globe,
   Inbox,
   LayoutDashboard,
   ListTodo,
@@ -65,6 +66,7 @@ export const ROUTE_LABELS: Record<string, string> = {
   // "Agents" on a strip whose page says Team is a tab that looks stale.
   '/agents': 'Team',
   '/channels': 'Channels',
+  '/browser': 'Shared browser',
   '/connections': 'Connections',
   '/feedback-requests': 'Your reports',
   '/marketplace': 'Marketplace',
@@ -89,6 +91,7 @@ export const ROUTE_ICONS: Record<string, LucideIcon> = {
   // Plural on purpose: /session's single-bubble icon is taken, and two tabs
   // that read alike should at least not look alike (DOR-587 review).
   '/channels': MessagesSquare,
+  '/browser': Globe,
   // Same icon the sidebar nav and the /connections page already use for this
   // route (DOR-919).
   '/connections': Cable,

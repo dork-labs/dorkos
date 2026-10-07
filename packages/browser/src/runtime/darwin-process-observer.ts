@@ -42,6 +42,17 @@ const replySchema = z
               kind: z.literal('unknown'),
               pid: z.number().int().positive().max(2147483647),
               error: z.number().int(),
+              uncertainty: z
+                .enum([
+                  'birth-changed',
+                  'parent-changed',
+                  'alive-to-zombie',
+                  'zombie-to-alive',
+                  'membership-disappeared',
+                  'membership-appeared',
+                  'membership-absent-with-present-reads',
+                ])
+                .optional(),
             })
             .strict(),
         ])

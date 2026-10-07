@@ -59,33 +59,56 @@ async function settle() {
   for (let n = 0; n < 10; n++) await Promise.resolve();
 }
 it('authenticates only the exact proxy and never supplies secrets to upstream server challenges', async () => {
-  const f = await fixture();
-  const challenge = (requestId: string, source: string, origin: string) =>
+  const lines: string[] = [];
+  const sink = vi.spyOn(process.stderr, 'write').mockImplementation((value) => {
+    lines.push(String(value));
+    return true;
+  });
+  const owned: { owner?: Awaited<ReturnType<typeof ownPrivateProxyAuthentication>> } = {};
+  try {
+    const f = await fixture();
+    owned.owner = f.owner;
+    const challenge = (requestId: string, source: string, origin: string) =>
+      f.channel.emit({
+        method: 'Fetch.authRequired',
+        sessionId: 'original-page',
+        params: { requestId, authChallenge: { source, origin } },
+      });
+    challenge('proxy', 'Proxy', peer.url);
+    challenge('server', 'Server', peer.url);
+    challenge('other', 'Proxy', 'http://127.0.0.1:4242');
+    challenge('proxy', 'Proxy', peer.url);
+    challenge('malformed', 'Proxy', 'not-a-url');
     f.channel.emit({
       method: 'Fetch.authRequired',
       sessionId: 'original-page',
-      params: { requestId, authChallenge: { source, origin } },
+      params: { requestId: 'missing', authChallenge: { source: 'Proxy' } },
     });
-  challenge('proxy', 'Proxy', peer.url);
-  challenge('server', 'Server', peer.url);
-  challenge('other', 'Proxy', 'http://127.0.0.1:4242');
-  challenge('proxy', 'Proxy', peer.url);
-  challenge('malformed', 'Proxy', 'not-a-url');
-  f.channel.emit({
-    method: 'Fetch.authRequired',
-    sessionId: 'original-page',
-    params: { requestId: 'missing', authChallenge: { source: 'Proxy' } },
-  });
-  await settle();
-  const replies = f.channel.commands.filter((m) => m.method === 'Fetch.continueWithAuth');
-  expect(replies[0]!.params.authChallengeResponse).toEqual({
-    response: 'ProvideCredentials',
-    ...peer.credentials,
-  });
-  for (const reply of replies.slice(1))
-    expect(reply.params.authChallengeResponse).toEqual({ response: 'CancelAuth' });
-  expect(f.failed).not.toHaveBeenCalled();
-  await f.owner.close();
+    await settle();
+    const replies = f.channel.commands.filter((m) => m.method === 'Fetch.continueWithAuth');
+    expect(replies[0]!.params.authChallengeResponse).toEqual({
+      response: 'ProvideCredentials',
+      ...peer.credentials,
+    });
+    for (const reply of replies.slice(1))
+      expect(reply.params.authChallengeResponse).toEqual({ response: 'CancelAuth' });
+    expect(f.failed).not.toHaveBeenCalled();
+    await f.owner.close();
+    expect(lines.join('')).toContain('PROXY_AUTH_CHALLENGE_EXACT');
+    expect(lines.join('')).toContain('PROXY_AUTH_CHALLENGE_REPEAT');
+    expect(lines.join('')).toContain('PROXY_AUTH_CHALLENGE_NOT_PROXY');
+    expect(lines.join('')).toContain('PROXY_AUTH_CHALLENGE_ORIGIN_INVALID');
+    expect(lines.join('')).toContain('PROXY_AUTH_CHALLENGE_ORIGIN_MISMATCH');
+    expect(lines.join('')).toContain('PROXY_AUTH_ACK_OBSERVED');
+    expect(lines.join('')).not.toContain(peer.credentials.password);
+    expect(lines.join('')).not.toContain(peer.url);
+  } finally {
+    try {
+      await owned.owner?.close().catch(() => {});
+    } finally {
+      sink.mockRestore();
+    }
+  }
 });
 it('initializes recursively attached worker sessions before resuming their original paused target', async () => {
   const f = await fixture();
@@ -185,6 +208,131 @@ it.each(['missing', 'detached'] as const)(
     ).toBe(false);
     expect(f.failed).toHaveBeenCalledOnce();
     expect(f.owner.isCustodyKnown()).toBe(false);
-    await expect(f.owner.close()).rejects.toThrow('PROXY_AUTH_CUSTODY_UNCERTAIN');
+    await expect(f.owner.close()).rejects.toThrow('PROXY_AUTH_WORKER_PARENT_UNAVAILABLE');
+  }
+);
+
+it('records original authentication ACK refusal without changing failed custody', async () => {
+  const lines: string[] = [];
+  const sink = vi.spyOn(process.stderr, 'write').mockImplementation((value) => {
+    lines.push(String(value));
+    return true;
+  });
+  const owned: { owner?: Awaited<ReturnType<typeof ownPrivateProxyAuthentication>> } = {};
+  try {
+    const f = await fixture();
+    owned.owner = f.owner;
+    f.channel.refuseMethod = 'Fetch.continueWithAuth';
+    f.channel.emit({
+      method: 'Fetch.authRequired',
+      sessionId: 'original-page',
+      params: { requestId: 'actual-ack', authChallenge: { source: 'Proxy', origin: peer.url } },
+    });
+    await settle();
+    expect(f.failed).toHaveBeenCalledOnce();
+    expect(f.owner.isCustodyKnown()).toBe(false);
+    await expect(f.owner.close()).rejects.toThrow('PROXY_AUTH_METHOD_REFUSED');
+    expect(lines.join('')).toContain('PROXY_AUTH_ACK_REFUSED');
+    expect(lines.join('')).not.toContain('private-original-secret');
+  } finally {
+    try {
+      await owned.owner?.close().catch(() => {});
+    } finally {
+      sink.mockRestore();
+    }
+  }
+});
+
+it.each([false, undefined])(
+  'retains native auth setup and paused stages despite reentrant falsy sink %s',
+  async (cause) => {
+    const lines: string[] = [];
+    let reentered = false;
+    const sink = vi.spyOn(process.stderr, 'write').mockImplementation((value) => {
+      lines.push(String(value));
+      if (String(value).includes('PROXY_AUTH_REQUEST_PAUSED') && !reentered) {
+        reentered = true;
+        Channel.current.emit({
+          method: 'Fetch.requestPaused',
+          sessionId: 'original-page',
+          params: { requestId: 'second-original-request' },
+        });
+      }
+      throw cause;
+    });
+    const owned: { owner?: Awaited<ReturnType<typeof ownPrivateProxyAuthentication>> } = {};
+    try {
+      const f = await fixture();
+      owned.owner = f.owner;
+      expect(lines.join('')).toContain('PROXY_AUTH_OWNER_ENTERED');
+      expect(lines.join('')).toContain('PROXY_AUTH_TARGET_ATTACHED');
+      expect(lines.join('')).toContain('PROXY_AUTH_FETCH_ENABLED');
+      expect(lines.join('')).toContain('PROXY_AUTH_READY');
+      f.channel.emit({
+        method: 'Fetch.requestPaused',
+        sessionId: 'original-page',
+        params: { requestId: 'first-original-request' },
+      });
+      await settle();
+      expect(
+        f.channel.commands
+          .filter((value) => value.method === 'Fetch.continueRequest')
+          .map((value) => value.params.requestId)
+      ).toEqual(['first-original-request', 'second-original-request']);
+      expect(lines.filter((value) => value.includes('PROXY_AUTH_REQUEST_PAUSED'))).toHaveLength(1);
+      expect(f.failed).not.toHaveBeenCalled();
+      await f.owner.close();
+      expect(lines.join('')).not.toContain('original-page');
+      expect(lines.join('')).not.toContain(peer.credentials.password);
+    } finally {
+      try {
+        await owned.owner?.close().catch(() => {});
+      } finally {
+        sink.mockRestore();
+      }
+    }
+  }
+);
+it.each(['malformed-event', 'unowned-session', 'malformed-message'] as const)(
+  'retains the original native auth refusal branch %s after original fault entry',
+  async (mode) => {
+    const lines: string[] = [];
+    const sink = vi.spyOn(process.stderr, 'write').mockImplementation((value) => {
+      lines.push(String(value));
+      return true;
+    });
+    const owned: { owner?: Awaited<ReturnType<typeof ownPrivateProxyAuthentication>> } = {};
+    try {
+      const f = await fixture();
+      owned.owner = f.owner;
+      if (mode === 'malformed-message')
+        f.channel.dispatchEvent(new MessageEvent('message', { data: '{invalid-original' }));
+      else
+        f.channel.emit({
+          method: 'Fetch.authRequired',
+          sessionId: mode === 'unowned-session' ? 'unowned' : 'original-page',
+          params: mode === 'malformed-event' ? {} : { requestId: 'original-request' },
+        });
+      expect(f.failed).toHaveBeenCalledOnce();
+      expect(f.owner.isCustodyKnown()).toBe(false);
+      expect(f.channel.commands.some((value) => value.method === 'Fetch.continueWithAuth')).toBe(
+        false
+      );
+      const code =
+        mode === 'unowned-session'
+          ? 'PROXY_AUTH_EVENT_SESSION_UNKNOWN'
+          : mode === 'malformed-message'
+            ? 'PROXY_AUTH_MESSAGE_INVALID'
+            : 'PROXY_AUTH_EVENT_INVALID';
+      expect(lines.join('')).toContain(code);
+      expect(lines.join('')).not.toContain('PROXY_AUTH_CHALLENGE_EXACT');
+      await expect(f.owner.close()).rejects.toThrow('PROXY_AUTH_CUSTODY_UNCERTAIN');
+    } finally {
+      try {
+        await owned.owner?.close().catch(() => {});
+      } finally {
+        sink.mockRestore();
+      }
+    }
   }
 );

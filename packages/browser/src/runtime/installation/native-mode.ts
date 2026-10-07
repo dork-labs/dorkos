@@ -31,10 +31,15 @@ export async function verifyInstalledNativeJournal(configuration: InstallationCo
     digest(await resolveInstalledNativeJournal(configuration)) !== digest(journal)
   )
     throw new Error('NATIVE_MODE_UNAVAILABLE');
+  const native = createDarwinEngineProcesses(journal.artifact);
   return Object.freeze({
     journal,
     manager,
-    processes: createDarwinEngineProcesses(journal.artifact).processes,
+    processes: native.processes,
+    // Private constructor observers qualify an exact original ChildProcess birth, never a baseline tree.
+    identity: native.identity,
+    attributeRoot: native.attributeRoot,
+    treeObservationFailure: native.treeObservationFailure,
     bootScope: Object.freeze({
       kind: 'observed' as const,
       value: `darwin-boot:${before.bootSeconds}:${before.bootMicroseconds}`,

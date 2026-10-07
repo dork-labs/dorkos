@@ -1,3 +1,8 @@
+import {
+  originalStartupCatch,
+  originalStartupCleanup,
+} from '../../__tests__/startup-root-wiring.js';
+import { joinOriginalProjectionStartupFailure } from '../../browser/runtime/private-acceptance.js';
 import { MainRequestAdmission } from '../../core/lifecycle/main-request-admission.js';
 /** Structural root wiring and an isolated startup-catch callback; no server boot/exit proof. */
 import { readFileSync } from 'node:fs';
@@ -76,22 +81,7 @@ function expectAdmissionClose(statement: ts.Statement) {
 }
 
 function startupCatch(): ts.ArrowFunction {
-  const calls = descendants(source)
-    .filter(ts.isCallExpression)
-    .filter((call) => {
-      if (!ts.isPropertyAccessExpression(call.expression) || call.expression.name.text !== 'catch')
-        return false;
-      const start = call.expression.expression;
-      return (
-        ts.isCallExpression(start) &&
-        ts.isIdentifier(start.expression) &&
-        start.expression.text === 'start'
-      );
-    });
-  expect(calls).toHaveLength(1);
-  const callback = calls[0].arguments[0];
-  if (!ts.isArrowFunction(callback)) throw new Error('Expected startup catch callback');
-  return callback;
+  return originalStartupCatch(source);
 }
 
 describe('workspace reconciler root wiring (AST, not a full server boot)', () => {
@@ -151,7 +141,22 @@ describe('workspace reconciler root wiring (AST, not a full server boot)', () =>
     expect(shutdown?.body).toBeDefined();
     // No unrelated work or await may separate admission close from the workspace fence.
     expectAdmissionClose(shutdown!.body!.statements[0]);
-    expectAwaitedDisposal(shutdown!.body!.statements[1], owner);
+    const join = shutdown!.body!.statements[1];
+    if (
+      !ts.isExpressionStatement(join) ||
+      !ts.isAwaitExpression(join.expression) ||
+      !ts.isCallExpression(join.expression.expression)
+    )
+      throw new Error('Expected joined cleanup');
+    const call = join.expression.expression;
+    expect(call.expression.getText(source)).toBe('joinBrowserBeforeShutdown');
+    expect(call.arguments).toHaveLength(3);
+    const workspace = call.arguments[2];
+    expect(ts.isArrowFunction(workspace)).toBe(true);
+    if (!ts.isArrowFunction(workspace)) throw new Error('Expected workspace owner factory');
+    expect(namedCall(workspace.body, owner, 'dispose')).toBe(true);
+    if (!ts.isCallExpression(workspace.body)) throw new Error('Expected workspace disposal');
+    expect(workspace.body.arguments).toHaveLength(0);
   });
 
   it('awaits the same owner first in startup failure and contains only that disposal failure', () => {
@@ -159,7 +164,7 @@ describe('workspace reconciler root wiring (AST, not a full server boot)', () =>
     const callback = startupCatch();
     if (!ts.isBlock(callback.body)) throw new Error('Expected startup callback block');
     expectAdmissionClose(callback.body.statements[0]);
-    const first = callback.body.statements[1];
+    const { workspace: first, offline } = originalStartupCleanup(source);
     expect(ts.isTryStatement(first)).toBe(true);
     if (!ts.isTryStatement(first)) throw new Error('Expected scoped workspace cleanup try');
     expect(first.tryBlock.statements).toHaveLength(1);
@@ -170,25 +175,13 @@ describe('workspace reconciler root wiring (AST, not a full server boot)', () =>
     expect(caught!.block.statements).toHaveLength(1);
     const report = caught!.block.statements[0];
     expect(
-      ts.isExpressionStatement(report) && namedCall(report.expression, 'logger', 'error')
+      ts.isExpressionStatement(report) &&
+        namedCall(report.expression, 'startupCleanupFailures', 'push')
     ).toBe(true);
     expect(descendants(caught!.block).some(ts.isThrowStatement)).toBe(false);
-    // The existing unrelated fixture cleanup remains outside the contained failure.
-    const fixtureClose = callback.body.statements[2];
-    expect(
-      ts.isExpressionStatement(fixtureClose) && ts.isAwaitExpression(fixtureClose.expression)
-    ).toBe(true);
-    if (!ts.isExpressionStatement(fixtureClose) || !ts.isAwaitExpression(fixtureClose.expression))
-      throw new Error('Expected fixture cleanup await');
-    const fixtureCall = fixtureClose.expression.expression;
-    expect(ts.isCallExpression(fixtureCall)).toBe(true);
-    if (!ts.isCallExpression(fixtureCall) || !ts.isPropertyAccessExpression(fixtureCall.expression))
-      throw new Error('Expected fixture close call');
-    expect(fixtureCall.expression.name.text).toBe('close');
-    expect(
-      ts.isIdentifier(fixtureCall.expression.expression) &&
-        fixtureCall.expression.expression.text === 'testComposioFixture'
-    ).toBe(true);
+    // This separately contained original close cannot be skipped by workspace rejection.
+    expect(offline.catchClause).toBeDefined();
+    expect(descendants(offline.catchClause!.block).some(ts.isThrowStatement)).toBe(false);
   });
 
   it.each(['throw', 'reject'] as const)(
@@ -221,6 +214,8 @@ describe('workspace reconciler root wiring (AST, not a full server boot)', () =>
       }).outputText;
       const run = runInNewContext(javascript, {
         [ownerName()]: owner,
+        originalNativeProjection: undefined,
+        joinOriginalProjectionStartupFailure,
         mainRequestAdmission: new MainRequestAdmission(),
         logger: logged,
         logError,
@@ -256,6 +251,100 @@ describe('workspace reconciler root wiring (AST, not a full server boot)', () =>
         );
         expect(exit).toHaveBeenCalledExactlyOnceWith(1);
       } finally {
+        vi.restoreAllMocks();
+      }
+    }
+  );
+  it.each([false, undefined])(
+    'joins original projection and offline close while preserving falsy startup cause %s',
+    async (original) => {
+      const { WorkspaceReconcilerLifecycle } = await import('../workspace-reconciler-lifecycle.js');
+      const admission = new MainRequestAdmission();
+      const owner = new WorkspaceReconcilerLifecycle();
+      let releaseProjection!: () => void, releaseOffline!: () => void;
+      const projectionReturned = new Promise<void>((resolve) => {
+        releaseProjection = resolve;
+      });
+      const offlineReturned = new Promise<void>((resolve) => {
+        releaseOffline = resolve;
+      });
+      const admissionAtBegin: boolean[] = [];
+      const projection = {
+        beginClose: vi.fn(() => {
+          admissionAtBegin.push(admission.isClosed);
+        }),
+        close: vi.fn(() => projectionReturned),
+      };
+      const cleanupError = new Error('original offline cleanup');
+      const fixtureClose = vi.fn(async () => {
+        await offlineReturned;
+        throw cleanupError;
+      });
+      const stopDocDelivery = vi.fn(async () => {
+          throw original;
+        }),
+        docNotificationCleanup = vi.fn(() => {
+          throw original;
+        });
+      const logger = { error: vi.fn() },
+        logError = vi.fn((cause: unknown) => cause),
+        exit = vi.fn();
+      const javascript = ts.transpileModule(`(${startupCatch().getText(source)})`, {
+        compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
+      }).outputText;
+      const run = runInNewContext(javascript, {
+        [ownerName()]: owner,
+        mainRequestAdmission: admission,
+        originalNativeProjection: projection,
+        joinOriginalProjectionStartupFailure,
+        logger,
+        logError,
+        process: { exit },
+        testComposioFixture: { close: fixtureClose },
+        stopDocDelivery,
+        docNotificationCleanup,
+        DatabaseOpenError: class extends Error {},
+        SnapshotFailedError: class extends Error {},
+      }) as (cause: unknown) => Promise<void>;
+      const operation = run(original);
+      void operation.catch(() => {});
+      try {
+        expect(admission.isClosed).toBe(true);
+        expect(admissionAtBegin).toEqual([true]);
+        expect(projection.beginClose).toHaveBeenCalledOnce();
+        expect(projection.close).toHaveBeenCalledOnce();
+        await vi.waitFor(() => expect(fixtureClose).toHaveBeenCalledOnce());
+        expect(stopDocDelivery).not.toHaveBeenCalled();
+        expect(exit).not.toHaveBeenCalled();
+        releaseOffline();
+        await vi.waitFor(() => expect(docNotificationCleanup).toHaveBeenCalledOnce());
+        expect(exit).not.toHaveBeenCalled();
+        expect(logError).not.toHaveBeenCalled();
+        releaseProjection();
+        await operation;
+        expect(logger.error).toHaveBeenCalledWith(
+          '[DorkOS] Offline listener cleanup failed during startup:',
+          cleanupError
+        );
+        expect(stopDocDelivery).toHaveBeenCalledOnce();
+        expect(logger.error).toHaveBeenCalledWith(
+          '[DorkOS] Doc delivery cleanup failed during startup:',
+          original
+        );
+        expect(logger.error).toHaveBeenCalledWith(
+          '[DorkOS] Doc notification cleanup failed during startup:',
+          original
+        );
+        expect(logError).toHaveBeenCalledExactlyOnceWith(original);
+        expect(logger.error).toHaveBeenLastCalledWith(
+          '[DorkOS] Fatal error during startup',
+          original
+        );
+        expect(exit).toHaveBeenCalledExactlyOnceWith(1);
+      } finally {
+        releaseOffline();
+        releaseProjection();
+        await operation;
         vi.restoreAllMocks();
       }
     }

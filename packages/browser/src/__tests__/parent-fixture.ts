@@ -68,7 +68,10 @@ export function configuration(): EngineConfiguration {
     network: { kind: 'fixture', origin: 'http://127.0.0.1:9001' },
     clock: { monotonicNow: () => 0, wallNow: () => 1000 },
     processes: {
-      descendants: vi.fn(async () => ({ status: 'complete' as const, identities: [root] })),
+      descendants: vi.fn(async () => ({
+        status: 'complete' as const,
+        identities: [root],
+      })),
       observe: vi.fn(async () => ({ status: 'dead' as const })),
     },
     policy: {
@@ -126,7 +129,11 @@ export function fakePage() {
       up: action('mouseUp'),
       wheel: action('wheel'),
     },
-    keyboard: { down: action('keyDown'), up: action('keyUp'), insertText: action('text') },
+    keyboard: {
+      down: action('keyDown'),
+      up: action('keyUp'),
+      insertText: action('text'),
+    },
     on: (event: string, callback: (...values: unknown[]) => void) => {
       const set = callbacks.get(event) ?? new Set();
       set.add(callback);
@@ -531,6 +538,10 @@ export function createOwnedFixtureCohort(members: readonly FixtureMember[]) {
     const handle: EngineTabInput = Object.freeze({
       ready: Promise.resolve(),
       submit: (command: unknown, signal?: AbortSignal) => queue.submit(command, signal),
+      submitSemantic: (
+        work: Parameters<EngineTabInput['submitSemantic']>[0],
+        signal?: AbortSignal
+      ) => queue.submitSemantic(work, signal),
       reset: () => queue.reset(),
       retire: (end: number) => queue.retire(end),
       // Queue-only fixtures do not acquire an original Page transport session.
@@ -637,7 +648,10 @@ export function createOwnedFixtureEngineInput(options: Omit<EngineInputOptions, 
       closePending: false,
     };
     owned.lifetime.inputs.set(tab, slot);
-    const input = createEngineInput({ ...options, cleanup: cleanupRoute(owned, slot) });
+    const input = createEngineInput({
+      ...options,
+      cleanup: cleanupRoute(owned, slot),
+    });
     slot.handle = input;
     const retire = input.retire;
     slot.retireOwner = (end) => Reflect.apply(retire, input, [end]);
@@ -680,7 +694,13 @@ export function createOwnedFixtureEngineInput(options: Omit<EngineInputOptions, 
       }, reject);
       return parentWait;
     };
-    return Object.freeze({ input, record: owned, tab, slot: capturedSlot, close });
+    return Object.freeze({
+      input,
+      record: owned,
+      tab,
+      slot: capturedSlot,
+      close,
+    });
   } catch (error) {
     if (slot) {
       slot.constructing = false;

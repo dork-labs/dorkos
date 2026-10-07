@@ -26,6 +26,7 @@
     "test:fixture": "pnpm build && vitest run --config vitest.fixture.config.ts"
   },
   "dependencies": {
+    "@dorkos/shared": "workspace:*",
     "playwright-core": "1.63.0",
     "zod": "^4.6.2"
   },

@@ -90,6 +90,10 @@ int dorkos_darwin_inspect(const pid_t *pids, size_t count, struct dorkos_darwin_
     if (first_error || second_error) { fact->error = first_error ? first_error : second_error; continue; }
     if (first.pbi_start_tvsec != second.pbi_start_tvsec || first.pbi_start_tvusec != second.pbi_start_tvusec ||
         first.pbi_ppid != second.pbi_ppid || (first.pbi_status == SZOMB) != (second.pbi_status == SZOMB)) {
+      fact->uncertainty = (first.pbi_start_tvsec != second.pbi_start_tvsec || first.pbi_start_tvusec != second.pbi_start_tvusec)
+        ? DORKOS_DARWIN_BIRTH_CHANGED : first.pbi_ppid != second.pbi_ppid
+          ? DORKOS_DARWIN_PARENT_CHANGED : second.pbi_status == SZOMB
+            ? DORKOS_DARWIN_ALIVE_TO_ZOMBIE : DORKOS_DARWIN_ZOMBIE_TO_ALIVE;
       fact->error = EAGAIN; continue;
     }
     fact->kind = DORKOS_DARWIN_PRESENT;
@@ -114,6 +118,9 @@ int dorkos_darwin_inspect(const pid_t *pids, size_t count, struct dorkos_darwin_
       if (absence_eligible[i]) { fact->kind = DORKOS_DARWIN_ABSENT; fact->error = 0; }
     } else if (!seen_before || !seen_after) {
       fact->kind = DORKOS_DARWIN_UNKNOWN; fact->error = EAGAIN;
+      /* This final membership refusal supersedes any earlier per-read disagreement. */
+      fact->uncertainty = seen_before ? DORKOS_DARWIN_MEMBERSHIP_DISAPPEARED : seen_after
+        ? DORKOS_DARWIN_MEMBERSHIP_APPEARED : DORKOS_DARWIN_MEMBERSHIP_ABSENT_WITH_PRESENT_READS;
     }
   }
 done:
@@ -244,7 +251,22 @@ int main(int argc, char **argv) {
       printf("{\"kind\":\"present\",\"identity\":{\"pid\":%d,\"seconds\":\"%" PRIu64 "\",\"microseconds\":\"%" PRIu64
         "\"},\"parentPid\":%d,\"zombie\":%s}", fact->pid, fact->seconds, fact->microseconds, fact->parent_pid, fact->zombie ? "true" : "false");
     else if (fact->kind == DORKOS_DARWIN_ABSENT) printf("{\"kind\":\"absent\",\"pid\":%d}", fact->pid);
-    else printf("{\"kind\":\"unknown\",\"pid\":%d,\"error\":%d}", fact->pid, fact->error);
+    else {
+      const char *reason = NULL;
+      switch (fact->uncertainty) {
+        case DORKOS_DARWIN_BIRTH_CHANGED: reason = "birth-changed"; break;
+        case DORKOS_DARWIN_PARENT_CHANGED: reason = "parent-changed"; break;
+        case DORKOS_DARWIN_ALIVE_TO_ZOMBIE: reason = "alive-to-zombie"; break;
+        case DORKOS_DARWIN_ZOMBIE_TO_ALIVE: reason = "zombie-to-alive"; break;
+        case DORKOS_DARWIN_MEMBERSHIP_DISAPPEARED: reason = "membership-disappeared"; break;
+        case DORKOS_DARWIN_MEMBERSHIP_APPEARED: reason = "membership-appeared"; break;
+        case DORKOS_DARWIN_MEMBERSHIP_ABSENT_WITH_PRESENT_READS: reason = "membership-absent-with-present-reads"; break;
+        default: break;
+      }
+      printf("{\"kind\":\"unknown\",\"pid\":%d,\"error\":%d", fact->pid, fact->error);
+      if (reason) printf(",\"uncertainty\":\"%s\"", reason);
+      putchar('}');
+    }
   }
   puts("]}");
   return ferror(stdout) ? 1 : 0;

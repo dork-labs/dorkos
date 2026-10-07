@@ -17,7 +17,7 @@ import {
 } from './live-authority.js';
 import { createBrokerIssuer } from '../issuer.js';
 import { createPreparedPrivateBroker } from '../broker.js';
-import { createNodeBrokerTransport } from '../node-transport.js';
+import { createNodeBrokerTransport } from '../node/node-transport.js';
 import { BrokerError } from '../errors.js';
 import { createLiveBrowserInventory } from './live-inventory.js';
 import type { EgressPolicyOptions } from '../../settings.js';

@@ -67,6 +67,7 @@ const FALLBACK_LABELS: Record<UiCanvasContent['type'], string> = {
   video: 'Video',
   csv: 'CSV',
   browser: 'Browser',
+  managed_browser: 'Shared browser',
   diff: 'Diff',
 };
 

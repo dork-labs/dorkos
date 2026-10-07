@@ -17,6 +17,7 @@ import { ActivityPage } from '@/layers/widgets/activity';
 import { TasksPage } from '@/layers/widgets/tasks';
 import { ChannelsPage } from '@/layers/widgets/room-view';
 import { WorkspacesPage } from '@/layers/widgets/workspaces';
+import { BrowserPage } from '@/layers/widgets/browser';
 import { ConnectionsPage } from '@/layers/widgets/connections';
 import { MarketplacePage, MarketplaceSourcesPage } from '@/layers/widgets/marketplace';
 import { FeedbackRequestsPage } from '@/layers/widgets/feedback-requests';
@@ -572,6 +573,14 @@ const feedbackRequestsRoute = createRoute({
   component: FeedbackRequestsPage,
 });
 
+/** Explicit route stays default-off inside the page until actual experiment state and auth resolve. */
+const browserRoute = createRoute({
+  getParentRoute: () => appShellRoute,
+  path: '/browser',
+  staticData: { header: () => <TitleBar title="Shared browser" /> },
+  component: BrowserPage,
+});
+
 // ── Extension pages at /x/<extensionId>/<path> ──────────────
 // Two routes, one page component: an extension's home (`/x/flow`) and every
 // page under it (`/x/flow/p/dorkos`). The `x/` prefix is what means no core
@@ -610,6 +619,7 @@ const routeTree = rootRoute.addChildren([
     marketplaceRoute,
     marketplaceSourcesRoute,
     feedbackRequestsRoute,
+    browserRoute,
     extensionHomeRoute,
     extensionPageRoute,
   ]),

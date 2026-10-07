@@ -69,6 +69,7 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'a2a.enabled',
       'agents.defaultDirectory',
       'auth.enabled',
+      'browser.chromeUserAgent',
       'browser.enabled',
       'cloud.credits.agents',
       'cloud.credits.defaults',

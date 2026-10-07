@@ -1,3 +1,7 @@
+import { semanticNativeEffect, type NativeSemanticState } from '../semantic/native-effect.js';
+import type { NativeSemanticTarget } from '../semantic/native-target.js';
+import { OwnedResponseDownload, type OwnedDownloadSink } from '../files/response-download.js';
+import { OwnedUploadChooser, type OwnedUploadLease } from '../files/upload-chooser.js';
 import type { PointerLedger } from '../tabs/pointer.js';
 import type { CDPSession, Page } from 'playwright-core';
 import { registerOriginalPageSession } from '../navigation/native-same-document.js';
@@ -30,6 +34,18 @@ export interface PageTransportOptions {
 }
 /** A preregistered acquisition with irreversible admission retirement and shared teardown. */
 export interface OwnedPageTransport {
+  /** Fixed private native Page target metadata from this lifetime-retained original session. */
+  semanticTarget(signal: AbortSignal): Promise<string>;
+  semanticEffect(
+    target: NativeSemanticTarget,
+    focus: boolean,
+    signal: AbortSignal,
+    current: () => boolean
+  ): Promise<NativeSemanticState>;
+  /** Private fixed upload operations use this existing owned Page session only. */
+  upload(lease: OwnedUploadLease, current: () => boolean): OwnedUploadChooser;
+  /** One response-stage transfer uses the existing private input session. */
+  download(sink: OwnedDownloadSink, current: () => boolean): OwnedResponseDownload;
   readonly native: NativeInputTransport;
   readonly ready: Promise<void>;
   /** Original session attribution; pending calls may be known, without authorizing effects. */
@@ -40,13 +56,22 @@ export interface OwnedPageTransport {
   close(deadline?: number): Promise<PageInputCustody>;
 }
 
-/** Own exactly one public Page CDPSession; expose only fixed composition/drag cancellation. */
+/** Own exactly one public Page CDPSession; expose fixed input/composition operations and drag cancellation. */
 export function createPageTransport(options: PageTransportOptions): OwnedPageTransport {
   if (!options.pointer) throw new Error('POINTER_OBSERVER_UNAVAILABLE');
   const owner = new PageTransportOwner(options);
   owner.acquire();
   return Object.freeze({
     native: owner.native,
+    download: (sink: OwnedDownloadSink, current: () => boolean) => owner.download(sink, current),
+    upload: (lease: OwnedUploadLease, current: () => boolean) => owner.upload(lease, current),
+    semanticTarget: (signal: AbortSignal) => owner.semanticTarget(signal),
+    semanticEffect: (
+      target: NativeSemanticTarget,
+      focus: boolean,
+      signal: AbortSignal,
+      current: () => boolean
+    ) => owner.semanticEffect(target, focus, signal, current),
     ready: owner.ready,
     isCustodyKnown: () => owner.isCustodyKnown(),
     isAcquisitionCustodyKnown: () => owner.isAcquisitionCustodyKnown(),
@@ -68,6 +93,10 @@ class PageTransportOwner {
   private acquisitionEnd?: number;
   private acquisitionPending = true;
   private nativePending = 0;
+  private readonly uploads = new Set<OwnedUploadChooser>();
+  private readonly downloads = new Set<OwnedResponseDownload>();
+  private semanticTargetId?: string;
+  private readonly semanticSessions = new Map<CDPSession, { closing?: Promise<void> }>();
   private readonly heldKeys = new Set<string>();
   private readonly heldButtons = new Set<string>();
   private retired = false;
@@ -116,6 +145,155 @@ class PageTransportOwner {
         );
       },
     });
+  }
+
+  /** Observe fixed native metadata using the already owned session; no new Page/session or action. */
+  async semanticEffect(
+    target: NativeSemanticTarget,
+    focus: boolean,
+    signal: AbortSignal,
+    current: () => boolean
+  ): Promise<NativeSemanticState> {
+    let result: NativeSemanticState | undefined;
+    await this.call(
+      async (guard) => {
+        const root = this.session;
+        if (!root) throw new Error('SEMANTIC_SESSION_REFUSED');
+        guard();
+        if (target.nativeFrameSlot === undefined) {
+          result = await semanticNativeEffect(root, target, guard, focus);
+          return;
+        }
+        // Slot selects only a candidate from this original Page. Exact native target/frame
+        // metadata and the fresh actor lease still authorize the effect, never array order.
+        const frames = this.page.frames.bind(this.page);
+        guard();
+        const subjects = frames();
+        guard();
+        if (subjects.length > 32) throw new Error('SEMANTIC_FRAME_CAPACITY');
+        const frame = subjects[target.nativeFrameSlot];
+        if (!frame) throw new Error('SEMANTIC_FRAME_REFUSED');
+        const framePage = frame.page.bind(frame),
+          detached = frame.isDetached.bind(frame);
+        const context = this.acquisitionContext;
+        if (!context) throw new Error('SEMANTIC_SESSION_REFUSED');
+        const create = context.newCDPSession.bind(context);
+        const frameGuard = () => {
+          const page = framePage(),
+            stopped = detached(),
+            members = frames();
+          guard();
+          if (
+            page !== this.page ||
+            stopped ||
+            members.length > 32 ||
+            members[target.nativeFrameSlot!] !== frame
+          )
+            throw new Error('SEMANTIC_FRAME_REFUSED');
+        };
+        frameGuard();
+        const session = await create(frame);
+        if (session === root || this.semanticSessions.has(session))
+          throw new Error('SEMANTIC_SESSION_REFUSED');
+        const owned: { closing?: Promise<void> } = {};
+        this.semanticSessions.set(session, owned); // Original acquisition retained before any late guard.
+        let first: Readonly<{ value: unknown }> | undefined;
+        try {
+          frameGuard();
+          result = await semanticNativeEffect(session, target, frameGuard, focus);
+        } catch (value) {
+          first = { value };
+        }
+        try {
+          await this.closeSemanticSession(session, owned);
+        } catch (value) {
+          first ??= { value };
+        }
+        if (first) throw first.value;
+      },
+      signal,
+      undefined,
+      undefined,
+      undefined,
+      current
+    );
+    if (!result) throw new Error('SEMANTIC_TARGET_REFUSED');
+    return result;
+  }
+  async semanticTarget(signal: AbortSignal): Promise<string> {
+    let targetId: string | undefined;
+    await this.call(async (guard) => {
+      const session = this.requireSession(),
+        send = session.send.bind(session);
+      guard();
+      const observed = await send('Target.getTargetInfo');
+      guard();
+      const info = observed.targetInfo;
+      if (
+        info.type !== 'page' ||
+        typeof info.targetId !== 'string' ||
+        !/^[A-Za-z0-9_-]{1,128}$/.test(info.targetId) ||
+        (this.semanticTargetId !== undefined && this.semanticTargetId !== info.targetId)
+      )
+        throw new Error('SEMANTIC_NATIVE_TARGET_REFUSED');
+      guard();
+      this.semanticTargetId = info.targetId;
+      targetId = info.targetId;
+    }, signal);
+    if (!targetId) throw new Error('SEMANTIC_NATIVE_TARGET_REFUSED');
+    return targetId;
+  }
+
+  /** Create only a private fixed chooser owner on the exact retained input session. */
+  upload(lease: OwnedUploadLease, current: () => boolean): OwnedUploadChooser {
+    const session = this.session;
+    if (!session || !this.current() || this.uploads.size >= 16 || this.downloads.size)
+      throw new Error('UPLOAD_SESSION_REFUSED');
+    const owner = new OwnedUploadChooser(
+      session,
+      lease,
+      () => this.current() && current() && this.current()
+    );
+    this.uploads.add(owner);
+    const close = owner.close.bind(owner);
+    owner.close = () => {
+      const original = close();
+      void original.then(
+        () => this.uploads.delete(owner),
+        () => {
+          this.uncertain = true;
+          this.uploads.delete(owner);
+        }
+      );
+      return original;
+    };
+    return owner;
+  }
+
+  /** Exclusively arm one response owner so Fetch handler state cannot be overwritten by a sibling. */
+  download(sink: OwnedDownloadSink, current: () => boolean): OwnedResponseDownload {
+    const session = this.session;
+    if (!session || !this.current() || this.downloads.size || this.uploads.size)
+      throw new Error('DOWNLOAD_SESSION_REFUSED');
+    const owner = new OwnedResponseDownload(
+      session,
+      sink,
+      () => this.current() && current() && this.current()
+    );
+    this.downloads.add(owner);
+    const close = owner.close.bind(owner);
+    owner.close = () => {
+      const original = close();
+      void original.then(
+        () => this.downloads.delete(owner),
+        () => {
+          this.uncertain = true;
+          this.downloads.delete(owner);
+        }
+      );
+      return original;
+    };
+    return owner;
   }
 
   acquire(): void {
@@ -195,6 +373,7 @@ class PageTransportOwner {
       !this.acquisitionPending &&
       !this.retired &&
       !this.uncertain &&
+      [...this.uploads, ...this.downloads].every((owner) => !owner.custody().failed) &&
       !this.detachPending &&
       !this.detached &&
       this.detachPromise === undefined &&
@@ -234,13 +413,20 @@ class PageTransportOwner {
   }
 
   custody(): PageInputCustody {
+    const uploads = [...this.uploads, ...this.downloads].map((owner) => owner.custody());
+    const nativePending =
+      this.nativePending + uploads.reduce((count, upload) => count + upload.pending, 0);
     return Object.freeze({
       acquisitionPending: this.acquisitionPending,
-      nativePending: this.nativePending,
+      nativePending,
       detachPending: this.detachPending,
       detached: this.detached,
       uncertain:
-        this.uncertain || this.acquisitionPending || this.nativePending > 0 || this.detachPending,
+        this.uncertain ||
+        this.acquisitionPending ||
+        nativePending > 0 ||
+        uploads.some((owner) => owner.failed) ||
+        this.detachPending,
     });
   }
 
@@ -262,13 +448,40 @@ class PageTransportOwner {
     return this.closePromise;
   }
 
+  private closeSemanticSession(
+    session: CDPSession,
+    owned: { closing?: Promise<void> }
+  ): Promise<void> {
+    return (owned.closing ??= Promise.resolve().then(async () => {
+      const detach = session.detach.bind(session);
+      await detach();
+      if (this.semanticSessions.get(session) === owned) this.semanticSessions.delete(session);
+    }));
+  }
+
   private async finishClose(): Promise<PageInputCustody> {
     // An expired wait budget cannot suppress an exact-owned cleanup attempt.
+    const originals = [
+      ...[...this.uploads, ...this.downloads].map((owner) =>
+        Promise.resolve().then(() => owner.close())
+      ),
+      ...[...this.semanticSessions].map(([session, owned]) =>
+        this.closeSemanticSession(session, owned)
+      ),
+    ];
+    if (originals.length) {
+      try {
+        const outcomes = await within(Promise.allSettled(originals), this.end!);
+        if (outcomes.some((outcome) => outcome.status === 'rejected')) this.uncertain = true;
+      } catch {
+        this.uncertain = true;
+      }
+    }
     const detach = this.session ? this.detach() : undefined;
     try {
       if (this.acquisition) await within(this.acquisition, this.end!);
       if (this.session) await within(detach ?? this.detach(), this.end!);
-      if (this.nativePending > 0) this.uncertain = true;
+      if (this.nativePending > 0 || this.semanticSessions.size > 0) this.uncertain = true;
     } catch {
       this.uncertain = true;
     }
@@ -521,6 +734,25 @@ class PageTransportOwner {
       case 'keyUp': {
         const up = keyboard.up;
         run = () => up.call(keyboard, step.key);
+        break;
+      }
+      case 'composition': {
+        const session = this.requireSession(),
+          send = session.send;
+        run = () =>
+          send
+            .call(session, 'Input.imeSetComposition', {
+              text: step.text,
+              selectionStart: step.selectionStart,
+              selectionEnd: step.selectionEnd,
+            })
+            .then(() => {});
+        break;
+      }
+      case 'compositionCommit': {
+        const session = this.requireSession(),
+          send = session.send;
+        run = () => send.call(session, 'Input.insertText', { text: step.text }).then(() => {});
         break;
       }
       case 'text': {

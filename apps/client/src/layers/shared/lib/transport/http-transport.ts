@@ -1,3 +1,5 @@
+import { createBrowserHumanHttp } from './browser-human-http';
+import { createBrowserCanvasHttp } from './browser-canvas-http';
 /**
  * HTTP Transport — implements the Transport interface for standalone web clients.
  *
@@ -8,7 +10,22 @@
  * @module shared/lib/transport/http-transport
  */
 import type { HistoryMessage } from '@dorkos/shared/types';
-import type { Transport } from '@dorkos/shared/transport';
+import type {
+  Transport,
+  BrowserViewerTransport,
+  BrowserInputTransport,
+  BrowserProductionTransport,
+  BrowserSemanticTransport,
+} from '@dorkos/shared/transport';
+import {
+  createBrowserViewerHttp,
+  createBrowserInputHttp,
+  type BrowserViewerHttpContextReader,
+  type BrowserInputHttpContextReader,
+} from '../browser-frame';
+import { createBrowserMethods } from './browser-methods';
+import { createBrowserSemanticHttp } from './browser-semantic-http';
+import { createBrowserProductionHttp } from './browser-production-http';
 import { resolveStableClientId } from './client-id';
 import { createTasksMethods } from './task-methods';
 import { createRelayMethods } from './relay-methods';
@@ -54,6 +71,7 @@ import { createAccountMethods } from './account-methods';
 export interface HttpTransport
   extends
     ReturnType<typeof createTasksMethods>,
+    ReturnType<typeof createBrowserMethods>,
     ReturnType<typeof createRelayMethods>,
     ReturnType<typeof createMeshMethods>,
     ReturnType<typeof createSessionMethods>,
@@ -92,14 +110,34 @@ export interface HttpTransport
 // eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
 export class HttpTransport implements Transport {
   readonly clientId: string;
+  readonly browserViewerDelivery: BrowserViewerTransport;
+  readonly browserInput: BrowserInputTransport;
+  readonly browserCanvas: import('@dorkos/shared/transport').BrowserCanvasTransport;
+  readonly browserProduction: BrowserProductionTransport;
+  readonly browserSemantic: BrowserSemanticTransport;
+  readonly browserFiles: import('@dorkos/shared/transport').BrowserFilesTransport;
+  readonly browserDiagnostics: import('@dorkos/shared/transport').BrowserDiagnosticsTransport;
   private readonly etagCache = new Map<string, string>();
   private readonly messageCache = new Map<string, { messages: HistoryMessage[] }>();
 
-  constructor(private readonly baseUrl: string) {
+  constructor(
+    private readonly baseUrl: string,
+    viewerContext?: BrowserViewerHttpContextReader,
+    inputContext?: BrowserInputHttpContextReader
+  ) {
+    this.browserViewerDelivery = createBrowserViewerHttp(baseUrl, viewerContext);
+    this.browserInput = createBrowserInputHttp(baseUrl, inputContext);
+    this.browserCanvas = createBrowserCanvasHttp(baseUrl, viewerContext);
+    this.browserProduction = createBrowserProductionHttp(baseUrl);
+    this.browserSemantic = createBrowserSemanticHttp(baseUrl);
+    const human = createBrowserHumanHttp(baseUrl);
+    this.browserFiles = human.files;
+    this.browserDiagnostics = human.diagnostics;
     this.clientId = resolveStableClientId();
     Object.assign(
       this,
       createTasksMethods(baseUrl),
+      createBrowserMethods(baseUrl),
       createRelayMethods(baseUrl, () => this.clientId),
       createMeshMethods(baseUrl),
       createSessionMethods(baseUrl, () => this.clientId, this.etagCache, this.messageCache),

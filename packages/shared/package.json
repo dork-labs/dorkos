@@ -137,6 +137,14 @@
       "types": "./src/agent-browser.ts",
       "default": "./dist/agent-browser.js"
     },
+    "./browser-semantic-schemas": {
+      "types": "./src/browser-semantic-schemas.ts",
+      "default": "./dist/browser-semantic-schemas.js"
+    },
+    "./browser-semantic-sanitizer": {
+      "types": "./src/browser-semantic-sanitizer.ts",
+      "default": "./dist/browser-semantic-sanitizer.js"
+    },
     "./browser-schemas": {
       "types": "./src/browser-schemas.ts",
       "default": "./dist/browser-schemas.js"
@@ -468,6 +476,10 @@
     "./browser-frame-wire": {
       "types": "./src/browser-frame-wire.ts",
       "default": "./dist/browser-frame-wire.js"
+    },
+    "./browser-canvas-schemas": {
+      "types": "./src/browser-canvas-schemas.ts",
+      "default": "./dist/browser-canvas-schemas.js"
     }
   },
   "scripts": {

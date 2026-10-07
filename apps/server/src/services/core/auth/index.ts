@@ -49,6 +49,7 @@ import { resolveAuthTrustedOrigins } from '../../../lib/trusted-origins.js';
 import { findOwnerAccount, type Account } from './accounts.js';
 import { resolveBetterAuthSecret } from './secret.js';
 import { seedLegacyMcpApiKey } from './seed-legacy-mcp-key.js';
+import { authSessionRemovals } from './session-removals.js';
 
 /**
  * The parts of the auth options that shape the instance's TYPE: the plugins
@@ -225,6 +226,13 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
       },
     },
     databaseHooks: {
+      session: {
+        delete: {
+          after: async (removed) => {
+            authSessionRemovals.remove({ sessionId: removed.id, userId: removed.userId });
+          },
+        },
+      },
       user: {
         create: {
           before: async (userData) => {

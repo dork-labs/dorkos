@@ -150,12 +150,20 @@ export class BrowserRegistry {
     }
   }
 
-  private refresh(row: BrowserInstanceRow): BrowserInstanceRow {
+  private refresh(
+    row: BrowserInstanceRow,
+    onOriginalDenial?: (value: BrowserRegistryError) => void
+  ): BrowserInstanceRow {
     const original = this.originals.get(row.browserId);
     if (this.faulted.has(row.browserId)) throw new BrowserRegistryError('profileUncertain');
     if (!original) {
       if (row.status !== 'stopped') this.store.transition(row, 'uncertain');
-      return this.store.instance(row.ownerAuthorId, row.browserId, row.browserGeneration);
+      return this.store.instance(
+        row.ownerAuthorId,
+        row.browserId,
+        row.browserGeneration,
+        onOriginalDenial
+      );
     }
     if (
       original &&
@@ -178,12 +186,27 @@ export class BrowserRegistry {
         }
       }
     }
-    return this.store.instance(row.ownerAuthorId, row.browserId, row.browserGeneration);
+    return this.store.instance(
+      row.ownerAuthorId,
+      row.browserId,
+      row.browserGeneration,
+      onOriginalDenial
+    );
   }
 
   /** Return live metadata only after querying the original engine, never database status alone. */
-  instance(owner: string, browserId: string, generation: number): BrowserInstance {
-    return this.store.project(this.refresh(this.store.instance(owner, browserId, generation)));
+  instance(
+    owner: string,
+    browserId: string,
+    generation: number,
+    onOriginalDenial?: (value: BrowserRegistryError) => void
+  ): BrowserInstance {
+    return this.store.project(
+      this.refresh(
+        this.store.instance(owner, browserId, generation, onOriginalDenial),
+        onOriginalDenial
+      )
+    );
   }
 
   /** List only authenticated owner's metadata, refreshing actual owned engine authority. */

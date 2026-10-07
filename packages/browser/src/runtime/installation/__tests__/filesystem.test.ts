@@ -37,6 +37,21 @@ const control = vi.hoisted(() => ({
   readReplacementMade: false,
   closeCalls: [] as string[],
   cleanup: [] as (() => Promise<void>)[],
+  reads: [] as { path: string; handleId: number; buffer: NodeJS.ArrayBufferView; bytes: number }[],
+  holdReadPath: '',
+  holdReadPrefix: '',
+  releaseFault: undefined as Promise<void> | undefined,
+  faultReadArrived: false,
+  rootMutationLstatPath: '',
+  rootMutationEntry: '',
+  rootMutationAfterFile: '',
+  rootMutationMade: false,
+  heldReadHandles: new Set<number>(),
+  releaseReads: undefined as Promise<void> | undefined,
+  readFailurePath: '',
+  readFailure: undefined as Readonly<{ value: unknown }> | undefined,
+  closeFailurePath: '',
+  closeFailure: undefined as Readonly<{ value: unknown }> | undefined,
   opened: [] as { handleId: number; path: string; flags: Parameters<typeof fs.open>[1] }[],
   closeAttempts: [] as { handleId: number; path: string }[],
 }));
@@ -44,6 +59,19 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>();
   return {
     ...actual,
+    lstat: (async (...args: Parameters<typeof actual.lstat>) => {
+      const stat = await actual.lstat(...args);
+      if (
+        String(args[0]) === control.rootMutationLstatPath &&
+        !control.rootMutationMade &&
+        control.closeAttempts.some((value) => value.path === control.rootMutationAfterFile)
+      ) {
+        control.rootMutationMade = true;
+        // Real root entry mutation after the captured descendant stat returns.
+        await actual.writeFile(control.rootMutationEntry, 'late-entry', { mode: 0o600 });
+      }
+      return stat;
+    }) as typeof actual.lstat,
     open: async (...args: Parameters<typeof actual.open>) => {
       const handle = await actual.open(...args),
         name = String(args[0]);
@@ -55,11 +83,28 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       const read = handle.read.bind(handle);
       handle.read = (async (...readArgs: [NodeJS.ArrayBufferView, number, number, number]) => {
         const result = await read(...readArgs);
+        control.reads.push({ path: name, handleId, buffer: readArgs[0], bytes: result.bytesRead });
+        if (
+          (name === control.holdReadPath ||
+            (!!control.holdReadPrefix && name.startsWith(control.holdReadPrefix))) &&
+          result.bytesRead > 0 &&
+          !control.heldReadHandles.has(handleId)
+        ) {
+          control.heldReadHandles.add(handleId);
+          await control.releaseReads;
+        }
+        if (name === control.readFailurePath && control.readFailure) {
+          control.faultReadArrived = true;
+          await control.releaseFault;
+          throw control.readFailure.value;
+        }
         if (
           name === control.replaceDuringReadPath &&
           !control.readReplacementMade &&
           result.bytesRead > 0
         ) {
+          control.faultReadArrived = true;
+          await control.releaseFault;
           control.readReplacementMade = true;
           await actual.rename(name, name + '.old-read');
           await actual.copyFile(name + '.old-read', name);
@@ -84,6 +129,8 @@ vi.mock('node:fs/promises', async (importOriginal) => {
         control.closeCalls.push(name);
         await close();
         closed = true;
+        if (name === control.closeFailurePath && control.closeFailure)
+          throw control.closeFailure.value;
         if (name === control.closePath && (!control.closeOnlyAfterSync || control.syncFaultFired))
           throw Object.assign(new Error('injected close ambiguity'), { code: 'EIO' });
       };
@@ -134,10 +181,11 @@ function config(): InstallationConfiguration {
 }
 async function staged(
   suffix = 'one',
-  executableRelativePath: string = INSTALLATION_TARGET.executablePath
+  executableRelativePath: string = INSTALLATION_TARGET.executablePath,
+  producerFactory = createInstallationFilesystem,
+  configuration = config()
 ) {
-  const configuration = config(),
-    producer = createInstallationFilesystem(configuration),
+  const producer = producerFactory(configuration),
     b = binding(suffix),
     end = bounds();
   const reservation = await producer.acquireReservation(b, end),
@@ -284,6 +332,21 @@ beforeEach(async () => {
   control.readReplacementMade = false;
   control.closeCalls.length = 0;
   control.cleanup.length = 0;
+  control.reads.length = 0;
+  control.holdReadPath = '';
+  control.holdReadPrefix = '';
+  control.releaseFault = undefined;
+  control.faultReadArrived = false;
+  control.rootMutationLstatPath = '';
+  control.rootMutationEntry = '';
+  control.rootMutationAfterFile = '';
+  control.rootMutationMade = false;
+  control.heldReadHandles.clear();
+  control.releaseReads = undefined;
+  control.readFailurePath = '';
+  control.readFailure = undefined;
+  control.closeFailurePath = '';
+  control.closeFailure = undefined;
   control.opened.length = 0;
   control.closeAttempts.length = 0;
 });
@@ -375,6 +438,365 @@ describe('real installation filesystem', () => {
     );
     expect((await fs.stat(attempt.homeRoot)).mode & 0o077).toBe(0);
     await producer.releaseReservation(reservation);
+  });
+  it('joins actual allocation failures and returns every large-hash admission without exporting the pool', async () => {
+    // Fresh concrete module owns a cold private buffer bank; original Node fs remains underneath.
+    vi.resetModules();
+    const originalModule = await import('../filesystem.js');
+    const fixtures: Awaited<ReturnType<typeof staged>>[] = [];
+    for (let index = 0; index < 17; index++)
+      fixtures.push(
+        await staged(
+          `allocation-fault-${index}`,
+          INSTALLATION_TARGET.executablePath,
+          originalModule.createInstallationFilesystem,
+          { ...config(), cacheRoot: path.join(root, `allocation-cache-${index}`) }
+        )
+      );
+    const bytes = Buffer.alloc(3 * 1024 * 1024 + 32);
+    bytes.writeUInt32LE(0xfeedfacf, 0);
+    bytes.writeUInt32LE(16777228, 4);
+    for (const f of fixtures) await fs.writeFile(f.executable, bytes);
+    const originalAlloc = Buffer.alloc;
+    const allocation = vi
+      .spyOn(Buffer, 'alloc')
+      .mockImplementation((...args: Parameters<typeof Buffer.alloc>) => {
+        if (args[0] === 1048576) throw undefined;
+        return Reflect.apply(originalAlloc, Buffer, args) as ReturnType<typeof originalAlloc>;
+      });
+    try {
+      // A leaked admission would saturate 16 slots and let the 17th existing 64KiB path succeed.
+      for (const f of fixtures)
+        await expect(f.producer.observeCandidate(f.candidate)).rejects.toBeUndefined();
+      expect(allocation.mock.calls.filter((args) => args[0] === 1048576)).toHaveLength(17);
+      expect(
+        control.closeAttempts.filter((value) => fixtures.some((f) => value.path === f.executable))
+      ).toHaveLength(17);
+    } finally {
+      allocation.mockRestore();
+    }
+  });
+  it('overlaps at most sixteen original reads across single-file directories and preserves inventory order', async () => {
+    const f = await staged('inventory-overlap');
+    const directory = f.candidate.payloadRoot;
+    const asset = (index: number) =>
+      path.join(directory, `locale-${String(index).padStart(2, '0')}`, 'data');
+    for (let index = 0; index < 32; index++) {
+      await fs.mkdir(path.dirname(asset(index)), { mode: 0o700 });
+      await fs.writeFile(asset(index), Buffer.from(`actual-${index}`), { mode: 0o600 });
+    }
+    let release!: () => void;
+    control.releaseReads = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    control.holdReadPrefix = directory + path.sep;
+    const original = f.producer.observeCandidate(f.candidate);
+    void original.catch(() => {});
+    try {
+      await vi.waitFor(() => expect(control.heldReadHandles.size).toBe(16));
+      expect(
+        control.reads.filter((value) => value.path.startsWith(directory + path.sep))
+      ).toHaveLength(16);
+      expect(control.opened.some((value) => value.path === asset(15))).toBe(false);
+      control.holdReadPrefix = '';
+      release();
+      const first = await original;
+      expect(first.bytes).toBe(
+        32 +
+          Array.from({ length: 32 }, (_, index) => Buffer.byteLength(`actual-${index}`)).reduce(
+            (sum, bytes) => sum + bytes,
+            0
+          )
+      );
+      // Force an early sorted entry to finish after its later sibling on the
+      // next observation; completion order must not alter the inventory.
+      control.heldReadHandles.clear();
+      control.holdReadPath = asset(0);
+      control.releaseReads = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const before = control.closeAttempts.length;
+      const reordered = f.producer.observeCandidate(f.candidate);
+      void reordered.catch(() => {});
+      try {
+        await vi.waitFor(() => {
+          expect(control.heldReadHandles.size).toBe(1);
+          expect(control.closeAttempts.slice(before).some((value) => value.path === asset(1))).toBe(
+            true
+          );
+        });
+        release();
+        expect((await reordered).inventoryDigest).toBe(first.inventoryDigest);
+      } finally {
+        release();
+        await Promise.allSettled([reordered]);
+      }
+    } finally {
+      control.holdReadPrefix = '';
+      release();
+      await Promise.allSettled([original]);
+    }
+  });
+  it.each([undefined, false])(
+    'joins a held inventory sibling before propagating original falsy failure %s',
+    async (cause) => {
+      const f = await staged(`inventory-failure-${String(cause)}`);
+      const directory = path.dirname(f.executable),
+        failing = path.join(directory, 'asset-00'),
+        held = path.join(directory, 'asset-01');
+      await fs.writeFile(failing, 'failure', { mode: 0o600 });
+      await fs.writeFile(held, 'held', { mode: 0o600 });
+      let triggerFault!: () => void;
+      control.releaseFault = new Promise<void>((resolve) => {
+        triggerFault = resolve;
+      });
+      let release!: () => void;
+      control.releaseReads = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      control.holdReadPath = held;
+      control.readFailurePath = failing;
+      control.readFailure = { value: cause };
+      control.closeFailurePath = failing;
+      control.closeFailure = { value: 'secondary-close' };
+      let settled = false;
+      const original = f.producer.observeCandidate(f.candidate);
+      void original.then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        }
+      );
+      try {
+        await vi.waitFor(() => {
+          expect(control.heldReadHandles.size).toBe(1);
+          expect(control.faultReadArrived).toBe(true);
+        });
+        triggerFault();
+        await vi.waitFor(() => {
+          expect(control.heldReadHandles.size).toBe(1);
+          expect(control.closeAttempts.some((value) => value.path === failing)).toBe(true);
+        });
+        expect(settled).toBe(false);
+        release();
+        await expect(original).rejects.toBe(cause);
+        expect(control.closeAttempts.filter((value) => value.path === held)).toHaveLength(1);
+        expect(f.producer.custody(f.reservation).unresolvedHandles).toBeGreaterThan(0);
+      } finally {
+        triggerFault();
+        release();
+        await Promise.allSettled([original]);
+      }
+    }
+  );
+  it('rejects equal-byte inventory replacement and settles an independent held sibling before returning', async () => {
+    const f = await staged('inventory-replacement');
+    const directory = path.dirname(f.executable),
+      replaced = path.join(directory, 'asset-00'),
+      held = path.join(directory, 'asset-01');
+    await fs.writeFile(replaced, 'identical', { mode: 0o600 });
+    await fs.writeFile(held, 'held', { mode: 0o600 });
+    let triggerFault!: () => void;
+    control.releaseFault = new Promise<void>((resolve) => {
+      triggerFault = resolve;
+    });
+    let release!: () => void;
+    control.releaseReads = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    control.holdReadPath = held;
+    control.replaceDuringReadPath = replaced;
+    let settled = false;
+    const original = f.producer.observeCandidate(f.candidate);
+    void original.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      }
+    );
+    try {
+      await vi.waitFor(() => {
+        expect(control.heldReadHandles.size).toBe(1);
+        expect(control.faultReadArrived).toBe(true);
+      });
+      triggerFault();
+      await vi.waitFor(() => {
+        expect(control.heldReadHandles.size).toBe(1);
+        expect(control.readReplacementMade).toBe(true);
+        expect(control.closeAttempts.some((value) => value.path === replaced)).toBe(true);
+      });
+      expect(settled).toBe(false);
+      release();
+      await expect(original).rejects.toMatchObject({ code: 'ROOT_CHANGED' });
+      expect(control.closeAttempts.filter((value) => value.path === held)).toHaveLength(1);
+    } finally {
+      triggerFault();
+      release();
+      await Promise.allSettled([original]);
+    }
+  });
+  it('rejects a new root entry created during late descendant validation', async () => {
+    const f = await staged('postorder-root-mutation');
+    control.rootMutationLstatPath = path.dirname(f.executable);
+    control.rootMutationEntry = path.join(f.candidate.payloadRoot, 'late-entry');
+    control.rootMutationAfterFile = f.executable;
+    await expect(f.producer.observeCandidate(f.candidate)).rejects.toMatchObject({
+      code: 'ROOT_CHANGED',
+    });
+    expect(control.rootMutationMade).toBe(true);
+    expect(await fs.readFile(control.rootMutationEntry, 'utf8')).toBe('late-entry');
+    expect(control.closeAttempts.filter((value) => value.path === f.executable)).toHaveLength(1);
+  });
+  it('hashes every byte with at most 1MiB original reads and keeps retained metadata at 64KiB', async () => {
+    const f = await staged('bounded-hash'),
+      bytes = Buffer.alloc(3 * 1024 * 1024 + 32);
+    bytes.writeUInt32LE(0xfeedfacf, 0);
+    bytes.writeUInt32LE(16777228, 4);
+    await fs.writeFile(f.executable, bytes);
+    const snapshot = await f.producer.observeCandidate(f.candidate);
+    expect(snapshot.executable.sha256).toBe(sha256(bytes));
+    expect(snapshot.machOCPU).toBe(16777228);
+    const reads = control.reads.filter((value) => value.path === f.executable);
+    // Tree and exact executable revalidation are both retained: two full originals, five calls each.
+    expect(reads).toHaveLength(10);
+    expect(reads.every((value) => value.buffer.byteLength === 1048576)).toBe(true);
+    expect(reads.reduce((sum, value) => sum + value.bytes, 0)).toBe(bytes.length * 2);
+    const retained = control.reads.filter((value) => value.path.endsWith('/owner.json'));
+    expect(retained.length).toBeGreaterThan(0);
+    expect(retained.every((value) => value.buffer.byteLength === 65536)).toBe(true);
+  });
+  it('saturates only 16 actual 1MiB buffers and returns each charge before later original reuse', async () => {
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const bank: { originals: Promise<CandidateSnapshot>[] } = { originals: [] };
+    let first: Readonly<{ value: unknown }> | undefined;
+    try {
+      const f = await staged('bounded-pool'),
+        bytes = Buffer.alloc(3 * 1024 * 1024 + 32);
+      bytes.writeUInt32LE(0xfeedfacf, 0);
+      bytes.writeUInt32LE(16777228, 4);
+      await fs.writeFile(f.executable, bytes);
+      control.holdReadPath = f.executable;
+      control.releaseReads = released;
+      for (let index = 0; index < 17; index++) {
+        const original = f.producer.observeCandidate(f.candidate);
+        bank.originals.push(original);
+        void original.catch(() => {});
+      }
+      await vi.waitFor(() => expect(control.heldReadHandles.size).toBe(17));
+      const held = control.reads.filter((value) => value.path === f.executable);
+      expect(held).toHaveLength(17);
+      const large = held.filter((value) => value.buffer.byteLength === 1048576);
+      expect(large).toHaveLength(16);
+      expect(new Set(large.map((value) => value.buffer)).size).toBe(16);
+      expect(held.filter((value) => value.buffer.byteLength === 65536)).toHaveLength(1);
+      release();
+      await Promise.all(bank.originals);
+      control.holdReadPath = '';
+      const before = control.reads.length;
+      expect((await f.producer.observeCandidate(f.candidate)).executable.sha256).toBe(
+        sha256(bytes)
+      );
+      const fresh = control.reads.slice(before).filter((value) => value.path === f.executable);
+      expect(fresh.every((value) => value.buffer.byteLength === 1048576)).toBe(true);
+      expect(new Set(large.map((value) => value.buffer)).has(fresh[0]!.buffer)).toBe(true);
+    } catch (value) {
+      first = { value };
+    } finally {
+      release();
+      const joined = await Promise.allSettled(bank.originals);
+      for (const result of joined)
+        if (result.status === 'rejected') first ??= { value: result.reason };
+    }
+    if (first) throw first.value;
+  });
+  it('retains original undefined read failure over false close while releasing all 17 charged reads', async () => {
+    const f = await staged('unknown-hash'),
+      bytes = Buffer.alloc(3 * 1024 * 1024 + 32);
+    bytes.writeUInt32LE(0xfeedfacf, 0);
+    bytes.writeUInt32LE(16777228, 4);
+    await fs.writeFile(f.executable, bytes);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const originals: Promise<CandidateSnapshot>[] = [];
+    control.holdReadPath = f.executable;
+    control.releaseReads = held;
+    control.readFailurePath = f.executable;
+    control.readFailure = { value: undefined };
+    control.closeFailurePath = f.executable;
+    control.closeFailure = { value: false };
+    try {
+      // One durable installation, seventeen independent original descriptor reads.
+      // Hold before throwing so every admission is charged before the first failure.
+      for (let index = 0; index < 17; index++) {
+        const original = f.producer.observeCandidate(f.candidate);
+        originals.push(original);
+        void original.catch(() => {});
+      }
+      await vi.waitFor(() => expect(control.heldReadHandles.size).toBe(17));
+      const reads = control.reads.filter((value) => value.path === f.executable);
+      expect(reads).toHaveLength(17);
+      expect(reads.filter((value) => value.buffer.byteLength === 1048576)).toHaveLength(16);
+      expect(reads.filter((value) => value.buffer.byteLength === 65536)).toHaveLength(1);
+      release();
+      for (const result of await Promise.allSettled(originals)) {
+        expect(result.status).toBe('rejected');
+        if (result.status === 'rejected') expect(result.reason).toBeUndefined();
+      }
+      // Returning all buffers never heals uncertain original descriptor custody.
+      expect(f.producer.custody(f.reservation).unresolvedHandles).toBe(19);
+      // Faulted custody includes two original reservation directory leases as well.
+      // Healthy held leases alone are excluded; neither uncertain reads nor leases heal.
+      // Custody exposes a stable failure code; original rejected reads above retain undefined.
+      expect(f.producer.custody(f.reservation).firstCause).toBe('IO_FAILED');
+      expect(control.closeAttempts.filter((value) => value.path === f.executable)).toHaveLength(17);
+    } finally {
+      release();
+      await Promise.allSettled(originals);
+      control.holdReadPath = '';
+      control.readFailurePath = '';
+      control.closeFailurePath = '';
+    }
+    // A different producer can acquire a returned large buffer; it cannot heal f.
+    const fresh = await staged(
+      'after-unknown-hash',
+      INSTALLATION_TARGET.executablePath,
+      createInstallationFilesystem,
+      { ...config(), cacheRoot: path.join(root, 'fresh-cache') }
+    );
+    await fs.writeFile(fresh.executable, bytes);
+    expect((await fresh.producer.observeCandidate(fresh.candidate)).executable.sha256).toBe(
+      sha256(bytes)
+    );
+    const freshReads = control.reads.filter((value) => value.path === fresh.executable);
+    expect(freshReads.every((value) => value.buffer.byteLength === 1048576)).toBe(true);
+    expect(f.producer.custody(f.reservation).unresolvedHandles).toBe(19);
+  });
+  it('large original reads still reject replacement of the named inode after reading identical bytes', async () => {
+    const f = await staged('large-replacement'),
+      bytes = Buffer.alloc(3 * 1024 * 1024 + 32);
+    bytes.writeUInt32LE(0xfeedfacf, 0);
+    bytes.writeUInt32LE(16777228, 4);
+    await fs.writeFile(f.executable, bytes);
+    control.replaceDuringReadPath = f.executable;
+    await expect(f.producer.observeCandidate(f.candidate)).rejects.toMatchObject({
+      code: 'ROOT_CHANGED',
+    });
+    expect(control.readReplacementMade).toBe(true);
+    expect(
+      control.reads.some(
+        (value) => value.path === f.executable && value.buffer.byteLength === 1048576
+      )
+    ).toBe(true);
+    expect(control.closeAttempts.some((value) => value.path === f.executable)).toBe(true);
   });
   it('hashes architecture-shaped payload bytes and detects a later byte mutation', async () => {
     const f = await staged(),

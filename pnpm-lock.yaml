@@ -729,6 +729,9 @@ importers:
       '@dorkos/eslint-config':
         specifier: workspace:*
         version: link:../../packages/eslint-config
+      '@dorkos/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@dorkos/test-utils':
         specifier: workspace:*
         version: link:../../packages/test-utils
@@ -807,12 +810,12 @@ importers:
       '@dorkos/harness':
         specifier: workspace:*
         version: link:../../packages/harness
-      '@dorkos/marketplace':
-        specifier: workspace:*
-        version: link:../../packages/marketplace
       '@dorkos/keep-awake':
         specifier: workspace:*
         version: link:../../packages/keep-awake
+      '@dorkos/marketplace':
+        specifier: workspace:*
+        version: link:../../packages/marketplace
       '@dorkos/memory':
         specifier: workspace:*
         version: link:../../packages/memory
@@ -1227,6 +1230,9 @@ importers:
 
   packages/browser:
     dependencies:
+      '@dorkos/shared':
+        specifier: workspace:*
+        version: link:../shared
       playwright-core:
         specifier: 1.63.0
         version: 1.63.0
