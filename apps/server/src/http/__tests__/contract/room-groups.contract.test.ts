@@ -661,7 +661,7 @@ describe('contract: the room routes, driven by hand (login off)', () => {
     );
   });
 
-  it('an agent’s reactions stop at the hourly ceiling with 429', async () => {
+  it('an agent’s reactions are not counted (ADR 261006-225605)', async () => {
     const emojis = [
       '😀',
       '😃',
@@ -694,7 +694,8 @@ describe('contract: the room routes, driven by hand (login off)', () => {
       );
       expect(answer.status, `${emoji}: ${answer.text}`).toBe(202);
     }
-    expectRefusal(
+    // The twenty-first lands too: the hourly ceiling is retired.
+    expectAnswer(
       await call(
         server,
         'POST',
@@ -702,10 +703,8 @@ describe('contract: the room routes, driven by hand (login off)', () => {
         { emoji: '🤔', on: true },
         member.header
       ),
-      429,
-      'REACTION_RATE_LIMITED'
+      202
     );
-    // Taking one back is never charged.
     expectAnswer(
       await call(
         server,

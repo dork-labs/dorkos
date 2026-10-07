@@ -1022,7 +1022,6 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
         },
       },
     }),
-    getUnattendedAutonomy: vi.fn().mockResolvedValue({ drivers: [] }),
     getKeepAwake: vi.fn().mockResolvedValue({
       enabled: true,
       supported: true,

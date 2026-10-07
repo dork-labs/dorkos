@@ -268,7 +268,6 @@
     "GET /api/subagents",
     "GET /api/system/memory",
     "GET /api/system/requirements",
-    "GET /api/system/unattended-autonomy",
     "GET /api/tasks",
     "GET /api/tasks/runs",
     "GET /api/tasks/runs/:id",

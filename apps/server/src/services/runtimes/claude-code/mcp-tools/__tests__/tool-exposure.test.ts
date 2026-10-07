@@ -51,7 +51,6 @@ import {
   searchHintFrom,
 } from '../tool-exposure.js';
 import { composeCapabilityRegistryForDocs } from '../../../../core/self-description/dorkos-registry.js';
-import { NotifyBudget } from '../../../../relay/notify-budget.js';
 import type { McpToolDeps } from '../types.js';
 import { CONNECTOR_RUNTIME_CAPABILITY_IDS } from '../../../../connectors/runtime-capability-scope.js';
 import { createServerPrincipal } from '../../../../connectors/principal/server-principal.js';
@@ -92,7 +91,6 @@ function createFullDeps(): McpToolDeps {
     extensionManager: stub,
     runtimeRegistry: stub,
     activityService: stub,
-    notifyBudget: new NotifyBudget(),
   };
 }
 

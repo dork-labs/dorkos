@@ -4,7 +4,6 @@ import {
   type McpToolDeps,
 } from '../../runtimes/claude-code/mcp-tools/index.js';
 import type { SenderIdentity } from '../../runtimes/claude-code/mcp-tools/relay-helpers.js';
-import { NotifyBudget } from '../../relay/notify-budget.js';
 import { AdapterBindingSchema } from '@dorkos/shared/relay-schemas';
 import { resolveSenderIdentity } from '../../runtimes/claude-code/mcp-tools/relay-helpers.js';
 import { createCanUseTool } from '../../runtimes/claude-code/messaging/interactive-handlers.js';
@@ -128,7 +127,6 @@ function makeMockDeps(overrides: Partial<McpToolDeps> = {}): McpToolDeps {
     // notes the tests above it sent — and, past the tenth, fail for a reason that
     // has nothing to do with what it asserts. The ceiling's own behaviour is the
     // subject of its own describe block, below.
-    notifyBudget: new NotifyBudget(),
     transcriptReader: {} as McpToolDeps['transcriptReader'],
     defaultCwd: '/test',
     dorkHome: '/tmp/dorkos-test-home',
@@ -517,182 +515,18 @@ describe('relay_notify_user', () => {
     });
   });
 
-  // DOR-1265. This verb stopped asking a person's permission, because the card it
-  // raised in a room turn was a card nobody was watching — so the hourly count is
-  // now the only thing between a looping agent and somebody's evening. It is a
-  // MECHANISM rather than a line in a prompt, per `.claude/rules/room-conduct.md`.
-  describe('the hourly note ceiling (DOR-1265)', () => {
-    /** The sentence an agent gets back, and the one it can act on. */
-    const SPENT = 'You have sent as many notes as you can for now — say it here instead, or wait.';
-
-    /** A second registered agent, for the isolation case. */
-    const OTHER: SenderIdentity = { subject: 'relay.agent.ns.agent-2', agentId: 'agent-2' };
-
-    /** A budget on a clock the test moves, so an hour costs no wall time. */
-    function budgetOnAClock(limit: number) {
-      let clock = 1_000_000;
-      return {
-        budget: new NotifyBudget({ limit: () => limit, now: () => clock }),
-        advance: (ms: number) => {
-          clock += ms;
-        },
-      };
-    }
-
-    it('sends up to the ceiling and then says so in words the agent can act on', async () => {
-      const { budget } = budgetOnAClock(2);
-      const deps = makeMockDeps({ notifyBudget: budget });
+  // No hourly count bounds a note any more (ADR 261006-225605, DOR-2739): it
+  // goes only where the operator configured, and each one lands in the inbox.
+  describe('no hourly note ceiling (DOR-2739)', () => {
+    it('sends every note, however many', async () => {
+      const deps = makeMockDeps();
       const handler = makeHandler(deps);
 
-      expect(JSON.parse((await handler({ message: 'one' })).content[0].text).sent).toBe(true);
-      expect(JSON.parse((await handler({ message: 'two' })).content[0].text).sent).toBe(true);
-
-      const refused = await handler({ message: 'three' });
-      expect(refused.isError).toBe(true);
-      const data = JSON.parse(refused.content[0].text);
-      expect(data.sent).toBe(false);
-      expect(data.code).toBe('NOTIFY_RATE_LIMITED');
-      expect(data.error).toBe(SPENT);
-      // The refused note reached nobody: two publishes, not three.
-      expect(deps.relayCore!.publish).toHaveBeenCalledTimes(2);
-    });
-
-    it('caps the DorkOS DM the same way it caps a connected chat app', async () => {
-      // The fallback surface is the one a stock install actually uses, so a cap
-      // that only counted the integration path would bound almost nobody.
-      const notifyDm = makeMockNotifyDm();
-      const { budget } = budgetOnAClock(1);
-      const deps = makeMockDeps({
-        bindingStore: makeMockBindingStore({
-          getAll: vi.fn().mockReturnValue([]),
-        }) as unknown as McpToolDeps['bindingStore'],
-        notifyDm,
-        notifyBudget: budget,
-      });
-      const handler = makeHandler(deps);
-
-      expect(JSON.parse((await handler({ message: 'one' })).content[0].text).surface).toBe(
-        'dorkos-dm'
-      );
-      const refused = await handler({ message: 'two' });
-      expect(JSON.parse(refused.content[0].text).code).toBe('NOTIFY_RATE_LIMITED');
-      expect(notifyDm.rooms.post).toHaveBeenCalledTimes(1);
-    });
-
-    it('gives the allowance back as the hour rolls off', async () => {
-      const { budget, advance } = budgetOnAClock(1);
-      const deps = makeMockDeps({ notifyBudget: budget });
-      const handler = makeHandler(deps);
-
-      await handler({ message: 'one' });
-      expect(JSON.parse((await handler({ message: 'two' })).content[0].text).code).toBe(
-        'NOTIFY_RATE_LIMITED'
-      );
-
-      advance(60 * 60_000 + 1_000);
-      expect(JSON.parse((await handler({ message: 'later' })).content[0].text).sent).toBe(true);
-    });
-
-    it('spends one agent’s allowance and never another’s', async () => {
-      // Both agents have a chat of their own to notify through, so the only thing
-      // that can stop the second one is the first one's spending.
-      const { budget } = budgetOnAClock(1);
-      const deps = makeMockDeps({
-        bindingStore: makeMockBindingStore({
-          getAll: vi
-            .fn()
-            .mockReturnValue([makeBinding(), makeBinding({ id: 'b-2', agentId: 'agent-2' })]),
-        }) as unknown as McpToolDeps['bindingStore'],
-        notifyBudget: budget,
-      });
-      const ana = makeHandler(deps, NOTIFY);
-      const bo = makeHandler(deps, OTHER);
-
-      await ana({ message: 'mine' });
-      expect(JSON.parse((await ana({ message: 'again' })).content[0].text).code).toBe(
-        'NOTIFY_RATE_LIMITED'
-      );
-      expect(JSON.parse((await bo({ message: 'mine too' })).content[0].text).sent).toBe(true);
-    });
-
-    it('charges nothing for a call that was going to be refused anyway', async () => {
-      // Somebody turned "Agent can start conversations" off. The agent should not
-      // also lose a note off its hour for a message that never left the machine.
-      const { budget } = budgetOnAClock(1);
-      const deps = makeMockDeps({
-        bindingStore: makeMockBindingStore({
-          getAll: vi.fn().mockReturnValue([makeBinding({ canInitiate: false })]),
-        }) as unknown as McpToolDeps['bindingStore'],
-        notifyBudget: budget,
-      });
-      const handler = makeHandler(deps);
-
-      expect(JSON.parse((await handler({ message: 'blocked' })).content[0].text).code).toBe(
-        'INITIATE_NOT_ALLOWED'
-      );
-      // No card was raised for it either: the auto-allow does not mean the tool
-      // does whatever it is asked, it means the ANSWER comes from the binding the
-      // operator configured rather than from a prompt nobody sees.
-      // The whole allowance is still there for a message that can actually go.
-      expect(budget.tryReserve('agent-1')).toBe(true);
-    });
-
-    it('charges the hour for a note that reached nobody at all (DOR-1383)', async () => {
-      // This REVERSED with DOR-1383, and the reason is the hole the refund left
-      // once notes started leaving inbox rows behind. On a stock install nothing
-      // external resolves and the mesh cannot always place the sender, so every
-      // note took the refunded path — which meant the ceiling could never be
-      // reached, and an agent in a loop could write unbounded rows into a
-      // person's inbox while never appearing to have said anything.
-      //
-      // What the allowance bounds is how often an agent may INTERRUPT somebody,
-      // not how often it succeeds at it.
-      const notifyDm = makeMockNotifyDm({
-        mesh: {
-          getProjectPath: vi.fn().mockReturnValue(undefined),
-          get: vi.fn().mockReturnValue(undefined),
-        },
-      });
-      const { budget } = budgetOnAClock(3);
-      const deps = makeMockDeps({
-        bindingStore: makeMockBindingStore({
-          getAll: vi.fn().mockReturnValue([]),
-        }) as unknown as McpToolDeps['bindingStore'],
-        notifyDm,
-        notifyBudget: budget,
-      });
-      const handler = makeHandler(deps);
-
-      for (const message of ['one', 'two', 'three']) {
-        const result = await handler({ message });
-        // The non-delivery answer is unchanged for as long as there is allowance.
-        expect(JSON.parse(result.content[0].text).code).toBe('NO_BINDING');
+      for (let i = 0; i < 15; i += 1) {
+        const result = await handler({ message: `note ${i}` });
+        expect(JSON.parse(result.content[0].text).sent).toBe(true);
       }
-
-      // The fourth is refused as rate-limited rather than answered NO_BINDING
-      // again, which is what makes the ceiling a real bound on row creation.
-      const spent = await handler({ message: 'four' });
-      expect(JSON.parse(spent.content[0].text).code).toBe('NOTIFY_RATE_LIMITED');
-      expect(budget.tryReserve('agent-1')).toBe(false);
-    });
-
-    it('is one allowance per install, not one per session', async () => {
-      // The mutation this kills: constructing a budget alongside the handlers.
-      // The `dorkos` tool server is rebuilt per session, so a per-handler budget
-      // is a ceiling an agent resets by opening a new session — and every test
-      // above would still pass. Two handlers off one deps object is exactly what
-      // two sessions on one install get (`index.ts` builds `mcpToolDeps` once and
-      // hands the same object to every `createDorkOsToolServer`).
-      const { budget } = budgetOnAClock(1);
-      const deps = makeMockDeps({ notifyBudget: budget });
-
-      const firstSession = makeHandler(deps);
-      const secondSession = makeHandler(deps);
-
-      expect(JSON.parse((await firstSession({ message: 'one' })).content[0].text).sent).toBe(true);
-      expect(JSON.parse((await secondSession({ message: 'two' })).content[0].text).code).toBe(
-        'NOTIFY_RATE_LIMITED'
-      );
+      expect(deps.relayCore!.publish).toHaveBeenCalledTimes(15);
     });
   });
 

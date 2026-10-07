@@ -943,6 +943,32 @@ export function dropSchedulerTimezone(store: {
 }
 
 /**
+ * Migration body: remove `rooms.maxPostsPerTurn` and `rooms.maxCanvasOpsPerTurn`
+ * (DOR-2739).
+ *
+ * Both capped how often one of our own agents could post into a room, or change
+ * its canvas, inside one turn. ADR 261006-225605 retires agent-only caps on
+ * routine output: etiquette is held by review and the record, not refusal, and
+ * the loop guards (cascade guard, turn budgets) still stop runaway exchanges. So
+ * neither leaf is declared any more, and both are deleted rather than left
+ * riding along in every config.
+ *
+ * Idempotent: only deletes a key when it is present. Nothing else under `rooms`
+ * is touched.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `has`/`delete`).
+ */
+export function dropAgentTurnCaps(store: {
+  has: (key: string) => boolean;
+  delete: (key: string) => void;
+}): void {
+  for (const key of ['rooms.maxPostsPerTurn', 'rooms.maxCanvasOpsPerTurn']) {
+    if (store.has(key)) store.delete(key);
+  }
+}
+
+/**
  * Migration body: remove `ui.autonomyAcknowledgedAt` (DOR-2739).
  *
  * It recorded that a person had read what Full autonomy means, and the server
@@ -3135,6 +3161,9 @@ export function retireToolOnlyReplies(store: {
   const next: Record<string, unknown> = { ...rest };
   let changed = 'toolOnlyReplies' in current;
   if (current.maxPostsPerTurn == null) {
+    // @ts-expect-error -- `rooms.maxPostsPerTurn` left the schema (DOR-2739). This
+    // shipped body is frozen and still names the default it seeded; that reads
+    // `undefined` now, and the `'0.112.0'` key deletes the leaf either way.
     next.maxPostsPerTurn = USER_CONFIG_DEFAULTS.rooms.maxPostsPerTurn;
     changed = true;
   }
@@ -3425,6 +3454,8 @@ export function seedRoomCanvasOps(store: {
   if (current.maxCanvasOpsPerTurn != null) return;
   store.set('rooms', {
     ...current,
+    // @ts-expect-error -- `rooms.maxCanvasOpsPerTurn` left the schema (DOR-2739).
+    // Same frozen-body note as `retireToolOnlyReplies`: `'0.112.0'` deletes it.
     maxCanvasOpsPerTurn: USER_CONFIG_DEFAULTS.rooms.maxCanvasOpsPerTurn,
   });
 }
@@ -4832,6 +4863,17 @@ export const CONFIG_MIGRATIONS = {
   // Disjoint from every other key here: it adds one nested leaf under
   // `runtimes.doe`, beside the fields it preserves.
   '0.109.0': seedDoeDefaultModel,
+  // v0.111.0 is the newest tag, so this opens 0.112.0. Frozen from merge, for
+  // the reason `'0.60.0'` above states; anything further opens `'0.113.0'`.
+  //
+  // Disjoint from every other key here: it deletes two leaves under `rooms`
+  // and touches nothing beside them.
+  '0.112.0': (store: { has: (key: string) => boolean; delete: (key: string) => void }) => {
+    // `rooms.maxPostsPerTurn` and `rooms.maxCanvasOpsPerTurn` — the per-turn
+    // caps on our own agents, retired (ADR 261006-225605, DOR-2739). See
+    // `dropAgentTurnCaps`.
+    dropAgentTurnCaps(store);
+  },
 } as const;
 
 /**

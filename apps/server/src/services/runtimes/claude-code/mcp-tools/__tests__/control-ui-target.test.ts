@@ -21,10 +21,9 @@
  *   every write case with it: the document lands on the session's own canvas.
  * - Dropping the `requireMembership` call in `applyTargeted` reddens the
  *   non-member case with a row on a room the agent is not in.
- * - Keying the derived turn id on the session alone (no room id) reddens "two
- *   rooms get one allowance each" at the fourth write overall.
- * - Leaving `n` still across a boundary reddens "the next turn gets fresh
- *   allowances": the reused id carries the previous turn's spend.
+ * - Leaving `n` still across a boundary reddens "the next turn gets a ledger
+ *   of its own": the reused id is remembered as closed, so the next turn's
+ *   first write posts its own line on the spot instead of waiting for the end.
  * - Finishing every open ledger rather than only the `session:` ones reddens
  *   "a room turn's own ledger is untouched".
  * - Answering `null` for a missing `sdkSessionId` — the old fall-through —
@@ -84,9 +83,6 @@ describe('control_ui target through the real MCP layer', () => {
     harness = createRoomHarness({
       agents,
       runner: scriptedRunner(() => null),
-      // Pinned to a literal: the spec's own number, so "the fourth is refused"
-      // is a claim about the rule rather than about whatever config says today.
-      maxCanvasOpsPerTurn: 3,
     });
     setRoomService(harness.service);
     backend = harness.service.createRoom(
@@ -231,28 +227,19 @@ describe('control_ui target through the real MCP layer', () => {
     expect(harness.service.canvas.list(secret)).toHaveLength(0);
   });
 
-  it('refuses the fourth write to one room in one turn, and says what the limit is', async () => {
-    for (let n = 0; n < 3; n += 1) {
+  it('lands a fourth write to one room in one turn — there is no per-turn count (DOR-2739)', async () => {
+    for (let n = 0; n < 4; n += 1) {
       const ok = await controlUi({
         action: 'open_canvas',
         content: jsonDoc(`chart ${n}`),
         target: { roomId: backend },
       });
-      expect(ok, `write ${n} should be inside the ceiling`).toMatchObject({ success: true });
+      expect(ok, `write ${n}`).toMatchObject({ success: true });
     }
-
-    const refused = await controlUi({
-      action: 'open_canvas',
-      content: jsonDoc('one too many'),
-      target: { roomId: backend },
-    });
-
-    expect(refused).toMatchObject({ success: false });
-    expect(refused.reason).toContain('3');
-    expect(harness.service.canvas.list(backend)).toHaveLength(3);
+    expect(harness.service.canvas.list(backend)).toHaveLength(4);
   });
 
-  it('gives two rooms one allowance each in the same turn', async () => {
+  it('writes to two rooms in the same turn', async () => {
     for (let n = 0; n < 3; n += 1) {
       await controlUi({
         action: 'open_canvas',
@@ -260,8 +247,6 @@ describe('control_ui target through the real MCP layer', () => {
         target: { roomId: backend },
       });
     }
-    // The fourth write OVERALL, and the first to this room: a ceiling keyed on
-    // the session alone would refuse it.
     const other = await controlUi({
       action: 'open_canvas',
       content: jsonDoc('design 0'),
@@ -300,15 +285,14 @@ describe('control_ui target through the real MCP layer', () => {
     expect(canvasLines(design)).toHaveLength(1);
   });
 
-  it('gives the next turn fresh allowances', async () => {
-    for (let n = 0; n < 3; n += 1) {
-      await controlUi({
-        action: 'open_canvas',
-        content: jsonDoc(`chart ${n}`),
-        target: { roomId: backend },
-      });
-    }
+  it('gives the next turn a ledger of its own', async () => {
+    await controlUi({
+      action: 'open_canvas',
+      content: jsonDoc('chart 0'),
+      target: { roomId: backend },
+    });
     endTurn();
+    expect(canvasLines(backend)).toHaveLength(1);
 
     const afterBoundary = await controlUi({
       action: 'open_canvas',
@@ -316,8 +300,12 @@ describe('control_ui target through the real MCP layer', () => {
       target: { roomId: backend },
     });
 
+    // Filed under the NEW turn and held for its end — a reused id would be one
+    // the room remembers as closed, and would post a line on the spot.
     expect(afterBoundary).toMatchObject({ success: true });
-    expect(harness.service.canvas.list(backend)).toHaveLength(4);
+    expect(canvasLines(backend)).toHaveLength(1);
+    endTurn();
+    expect(canvasLines(backend)).toHaveLength(2);
   });
 
   it('leaves a room turn’s own ledger for the room runner to finish', async () => {
@@ -350,8 +338,7 @@ describe('control_ui target through the real MCP layer', () => {
   });
 
   it('refuses rather than falling onto this session’s own canvas', async () => {
-    // A surface with no session has no key to charge the ceiling against and
-    // none to close a ledger on. The old answer fell through: the document
+    // A surface with no session has no key to close a ledger on. The old answer fell through: the document
     // landed on that session's OWN canvas and the tool said `success` with no
     // mention that `target` had been dropped — the one thing §10 forbids,
     // reporting success for something that did not happen.

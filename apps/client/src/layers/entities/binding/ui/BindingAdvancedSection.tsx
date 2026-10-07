@@ -145,8 +145,9 @@ export function BindingAdvancedSection({
    * this screen than on a session's: an integration nobody is watching sets the
    * agent off, and there is no one to notice it did not ask.
    *
-   * A session somebody is watching no longer asks (ADR 261006-225605); a
-   * binding still does, because nobody is there to notice.
+   * A session, a scheduled task and a schedule approval no longer ask (ADR
+   * 261006-225605); a binding still does, because people outside the team can
+   * message the connection and trust never extends to strangers.
    */
   function handleChangeMode(next: string) {
     const descriptor = descriptors.find((d) => d.id === next);

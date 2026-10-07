@@ -39,7 +39,7 @@ function openDoor(descriptor: PermissionModeDescriptor): void {
   render(
     <UnattendedAutonomyDialog
       descriptor={descriptor}
-      consequence="Runs on its schedule without waiting for you."
+      consequence="Anyone who can message this connection can make the agent act."
       onCancel={vi.fn()}
       onConfirm={vi.fn()}
     />

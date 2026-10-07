@@ -168,8 +168,6 @@ Three settings live under `workbench` in your [config file](/docs/getting-starte
 - `workbench.terminalGraceTtlMinutes`: how long a terminal's shell stays alive after every browser tab pointed at it disconnects, so a refresh can reattach instead of losing the shell. Defaults to 10 minutes.
 - `workbench.autoOpenDiff`: whether a diff opens automatically when the agent edits a file. On by default; set it to `false` to keep the canvas on whatever you last had open.
 
-One more sits outside `workbench`, because it's about rooms rather than your own panel: `rooms.maxCanvasOpsPerTurn` is how many times one agent may change a room's shared canvas in a single turn. It defaults to 3, and the fourth change is refused with a note telling the agent to put the rest in one change next turn.
-
 None of these are something most people ever need to touch.
 
 ## Next Steps
