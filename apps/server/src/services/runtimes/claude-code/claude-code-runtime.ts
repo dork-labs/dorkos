@@ -658,6 +658,15 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     // Per turn too, for the same reason: an automatic carry-over's first turn
     // has nobody to ask, and the person who opens it next does.
     session.unattendedTurn = opts?.unattended === true;
+    // Per turn as well, and the one of the three that bounds what the turn may
+    // DO: a turn another agent's post or a stranger's message started runs no
+    // looser than its sender (spec `trusted-by-default-flip` §4). Cleared when
+    // absent, so a person's next turn runs at the level they chose.
+    if (opts?.permissionCeiling !== undefined) {
+      session.turnPermissionCeiling = opts.permissionCeiling;
+    } else {
+      delete session.turnPermissionCeiling;
+    }
     const accessContext =
       connectorTurn &&
       this.connectorRuntimeTools &&

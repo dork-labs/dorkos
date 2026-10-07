@@ -41,7 +41,9 @@
  *
  * @module services/runtimes/opencode/approvals
  */
-import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
+import type { DirectoryGrant, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
+import { clampModeToCeiling } from '@dorkos/shared/permission-semantics';
+import { OPENCODE_CAPABILITIES } from '../runtime-constants.js';
 import type { ApprovalEvent, PermissionModeId, StreamEvent } from '@dorkos/shared/types';
 import { SESSIONS } from '../../../../config/constants.js';
 import { logger, logError } from '../../../../lib/logger.js';
@@ -260,6 +262,12 @@ export interface ApprovalRouting {
    * a `read` one is refused in every mode (`directory-grants.ts`).
    */
   grants?: readonly DirectoryGrant[];
+  /**
+   * The loosest level THIS turn may run at (`MessageOpts.permissionCeiling`).
+   * Applied to the live mode on every ask, so the turn runs at the stricter of
+   * the two and the session's stored mode is never rewritten.
+   */
+  permissionCeiling?: TurnPermissionCeiling;
 }
 
 /**
@@ -388,7 +396,15 @@ export async function* enforceApprovals(
         );
       }
     }
-    const mode = deps.registry.get(sessionId)?.permissionMode;
+    const liveMode = deps.registry.get(sessionId)?.permissionMode;
+    const mode =
+      liveMode !== undefined && turn.permissionCeiling !== undefined
+        ? clampModeToCeiling(
+            OPENCODE_CAPABILITIES.permissionModes,
+            liveMode,
+            turn.permissionCeiling
+          )
+        : liveMode;
     if (
       grantVerdict !== 'deny' &&
       resolveApprovalDecision(mode, approval.toolName) === 'auto-approve'

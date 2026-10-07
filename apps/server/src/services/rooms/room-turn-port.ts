@@ -15,7 +15,7 @@
  *
  * @module server/services/rooms/room-turn-port
  */
-import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
+import type { DirectoryGrant, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import type { RoomContextData, RoomContextFiles } from '@dorkos/shared/additional-context';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
 import type { SessionActivity } from '@dorkos/shared/session-stream';
@@ -132,6 +132,24 @@ export interface RoomTurnRequest {
    * while reporting a stranger as local would lose the boundary.
    */
   externalAuthor: boolean;
+  /**
+   * The loosest level this turn may run at, whatever the conversation is set
+   * to (spec `trusted-by-default-flip` §4, "power flows downstream, never up").
+   *
+   * `externalAuthor` only decides what a NEW conversation is seeded with; a
+   * room conversation is one per (room, agent) and is usually not new, so on
+   * its own a stranger's message into a conversation already at Full autonomy
+   * ran at Full autonomy. This bounds the turn itself:
+   *
+   * - a message from off this machine (or an author nobody can resolve):
+   *   `'runtime-default'`, the mode the runtime starts in when nobody chose;
+   * - another agent's post: the level that agent's turn ran at when it wrote
+   *   the post, or `'runtime-default'` when that is not known;
+   * - a person on this machine, or the room's own voice: none.
+   *
+   * Never written to the conversation's stored settings.
+   */
+  permissionCeiling?: TurnPermissionCeiling;
   /**
    * The words the turn is triggered with — what reaches the model as the visible
    * user message, byte for byte.

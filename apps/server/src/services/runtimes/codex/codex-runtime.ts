@@ -119,7 +119,7 @@ import {
   type CodexThreadMetadataPatch,
   type CodexThreadRecord,
 } from './thread-map.js';
-import { tightensDeclaredMode } from '@dorkos/shared/permission-semantics';
+import { clampModeToCeiling, tightensDeclaredMode } from '@dorkos/shared/permission-semantics';
 import { CODEX_CAPABILITIES } from './runtime-constants.js';
 import {
   ExecCodexTransport,
@@ -1305,8 +1305,20 @@ export class CodexRuntime implements AgentRuntime {
     const model = opts?.model ?? tracked.model;
     const effort = opts?.effort ?? tracked.effort;
     const fastMode = opts?.fastMode ?? tracked.fastMode;
+    const chosen = opts?.permissionMode ?? tracked.permissionMode;
     return {
-      permissionMode: opts?.permissionMode ?? tracked.permissionMode,
+      // Held to the turn's ceiling, for this turn only: a turn another agent's
+      // post or a stranger's message started runs no looser than its sender,
+      // and the tracked mode is left as the person chose it (spec
+      // `trusted-by-default-flip` §4).
+      permissionMode:
+        opts?.permissionCeiling !== undefined
+          ? clampModeToCeiling(
+              this.getCapabilities().permissionModes,
+              chosen,
+              opts.permissionCeiling
+            )
+          : chosen,
       ...(model !== undefined ? { model } : {}),
       ...(effort !== undefined ? { effort } : {}),
       ...(fastMode !== undefined ? { fastMode } : {}),
@@ -1845,6 +1857,9 @@ function wakeContextOf(opts: MessageOpts | undefined, cwd: string): CodexWakeCon
     ...(opts?.unattendedApprovals !== undefined
       ? { unattendedApprovals: opts.unattendedApprovals }
       : {}),
+    // The bound travels with the work it bounds: a wake turn after background
+    // work an outsider's turn started runs no looser than that turn did.
+    ...(opts?.permissionCeiling !== undefined ? { permissionCeiling: opts.permissionCeiling } : {}),
   } as MessageOpts;
   return { opts: carried };
 }

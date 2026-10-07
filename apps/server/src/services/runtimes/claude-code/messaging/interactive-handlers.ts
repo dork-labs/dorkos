@@ -46,6 +46,8 @@ import {
   WITHDRAWN_DENIALS,
 } from '../sessions/tool-result-outcome.js';
 import { randomUUID } from 'node:crypto';
+import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
+import { turnPermissionMode } from '../turn-permission.js';
 
 // ---------------------------------------------------------------------------
 // Auto-approved tool sets (module-level to avoid per-call reconstruction)
@@ -1036,7 +1038,10 @@ async function hasAgentIdentity(
  *   disk.
  */
 export function createCanUseTool(
-  session: InteractiveSession & { permissionMode: PermissionModeId },
+  session: InteractiveSession & {
+    permissionMode: PermissionModeId;
+    turnPermissionCeiling?: TurnPermissionCeiling;
+  },
   log: ToolGateLogger,
   onToolPreflight?: (toolName: string, input: Record<string, unknown>) => Promise<void>,
   resolveIdentity: () => Promise<unknown> = createInSessionContextResolver(
@@ -1081,7 +1086,9 @@ export function createCanUseTool(
       return { behavior: 'allow', updatedInput: input };
     }
 
-    if (resolveModeDecision(session.permissionMode) === 'ask') {
+    // The turn's mode, not the session's: a turn held to a ceiling must not be
+    // auto-allowed on the strength of the level a person chose for others.
+    if (resolveModeDecision(turnPermissionMode(session)) === 'ask') {
       // The measurement (spec `auto-mode-classifier-context`). Reaching here in
       // AUTO mode with a DorkOS tool means the runtime's classifier decided this
       // call deserved a person, and DorkOS's own auto-allow list did not cover

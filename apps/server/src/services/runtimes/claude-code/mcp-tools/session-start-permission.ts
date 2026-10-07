@@ -19,6 +19,7 @@ import {
   hasStandingAutonomyAck,
 } from '../../../core/approvals/autonomy-consent.js';
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
+import { turnPermissionMode } from '../turn-permission.js';
 import type { McpToolSession } from './types.js';
 
 /**
@@ -67,9 +68,24 @@ const AUTO_FALLBACK_MODE_ID = 'default';
  * @param session - The live session, or undefined when there is none.
  */
 export function runningPermissionMode(
-  session: Pick<McpToolSession, 'permissionMode' | 'model' | 'autoModeConfirmedFor'> | undefined
+  session:
+    | Pick<
+        McpToolSession,
+        'permissionMode' | 'model' | 'autoModeConfirmedFor' | 'turnPermissionCeiling'
+      >
+    | undefined
 ): string | undefined {
-  const mode = session?.permissionMode;
+  // The turn's ceiling first: a chat a stranger's message woke runs below its
+  // own level for that turn, and must start nothing above it (spec
+  // `trusted-by-default-flip` §4).
+  const mode = session
+    ? turnPermissionMode({
+        permissionMode: session.permissionMode,
+        ...(session.turnPermissionCeiling !== undefined
+          ? { turnPermissionCeiling: session.turnPermissionCeiling }
+          : {}),
+      })
+    : undefined;
   if (mode !== AUTO_MODE_ID) return mode;
   const confirmed =
     session?.autoModeConfirmedFor !== undefined &&

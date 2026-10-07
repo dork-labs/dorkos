@@ -19,6 +19,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
   permissionSeedForOrigin,
+  relayTurnOrigin,
   type OriginPermissionSeed,
   type TurnOrigin,
 } from '../turn-origin.js';
@@ -50,6 +51,9 @@ const TABLE: ReadonlyArray<readonly [TurnOrigin, OriginPermissionSeed]> = [
   // them, and the operator's own level is not a second one (DOR-604).
   [{ kind: 'relay-binding' }, 'none'],
   [{ kind: 'agent-dm' }, 'none'],
+  // A sender from outside on an agent subject (the A2A gateway): never
+  // anything, whatever a later change does to our own agents' DMs.
+  [{ kind: 'outside-sender' }, 'none'],
   [{ kind: 'connector-event' }, 'none'],
   // An agent started it through `session_start`: the agent is not the person
   // the operator's stop was set for, so power comes only from the tool's own
@@ -91,5 +95,26 @@ describe('permissionSeedForOrigin', () => {
     );
     expect(declared.size).toBeGreaterThan(0);
     expect([...new Set(TABLE.map(([origin]) => origin.kind))].sort()).toEqual([...declared].sort());
+  });
+});
+
+describe('relayTurnOrigin', () => {
+  it('calls a message from one of our agents an agent DM', () => {
+    expect(relayTurnOrigin('relay.agent.default.agent-01')).toEqual({ kind: 'agent-dm' });
+  });
+
+  // The A2A gateway publishes to the same agent subjects an agent's
+  // `relay_send` does; the stamped sender is the only fact that tells them
+  // apart, and it must not read as one of ours.
+  it.each([
+    'a2a-gateway',
+    'relay.external.mcp',
+    'relay.session.project-1a2b3c4d',
+    'relay.human.telegram.4242',
+    'relay.system.tasks',
+    'relay.agentx.default.agent-01',
+    '',
+  ])('calls a message from %o an outside sender', (from) => {
+    expect(relayTurnOrigin(from)).toEqual({ kind: 'outside-sender' });
   });
 });

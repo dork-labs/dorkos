@@ -14,7 +14,7 @@
  *
  * @module server/services/rooms/room-claims
  */
-import type { RoomWorkingClaim } from '@dorkos/shared/room-schemas';
+import type { RoomEntry, RoomWorkingClaim } from '@dorkos/shared/room-schemas';
 import type { SessionActivity } from '@dorkos/shared/session-stream';
 import type { DispatchOutcome } from '../observability/dispatch-buffers.js';
 import type { BusyContext } from './notices/notice-copy.js';
@@ -364,6 +364,14 @@ export interface TriggerTarget {
    * typed at an idle agent is gathered and nothing was running.
    */
   gathered: ReadonlySet<string>;
+  /**
+   * Who wrote every message this one turn answers — the gathered ones and the
+   * trigger — for the trust decision (spec `trusted-by-default-flip` §4). A
+   * burst can mix a stranger and a person within one debounce window, and the
+   * turn must be held to the strictest of them, not to whoever wrote last.
+   * Absent for a turn that answers one message, which is decided on that.
+   */
+  answers?: readonly Pick<RoomEntry, 'id' | 'authorId'>[];
 }
 
 /**
