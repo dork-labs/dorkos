@@ -5,7 +5,7 @@ description: The brief the founder agreed on 2026-10-06 and 2026-10-07 for reset
 
 # 2026-10 vision reset: the agreed brief
 
-**Date:** 2026-10-06, with the message stack added 2026-10-07
+**Date:** 2026-10-06, with the message stack, DorkOS first and proactive agents added 2026-10-07
 **Status:** Agreed. Point-in-time record.
 **Canon now lives in** [`meta/VISION.md`](../meta/VISION.md), [`meta/PRINCIPLES.md`](../meta/PRINCIPLES.md), [`meta/VOICE.md`](../meta/VOICE.md) and [`meta/ROADMAP.md`](../meta/ROADMAP.md). Where this brief and those files disagree, they win. The reasons behind each decision are in [`2026-10-vision-reset-decisions.md`](2026-10-vision-reset-decisions.md).
 
@@ -91,7 +91,7 @@ These replace most of the earlier headline copy. Ownership is said as "yours", n
     - Every profile (person or agent) has a **role and responsibilities**, a job description. Agents read their own to know what to do, and everyone else's to know how to work with the group.
     - **Access levels** are a separate thing: Owner, Admin, Member, Guest.
     - Agents create and own their own outside accounts where it makes sense (their own Linear account, not a person's).
-    - Agents can create agents, exactly like people can, if their access level allows it.
+    - Agents can create agents, exactly like people can, if their access level allows it. A new agent reports to its creator; the creator asks first only when the new agent would get spending power.
 13. **Groups, projects, tasks and goals are built in**, as our own simpler version.
     - **Groups:** companies, departments and so on. Groups can sit inside groups.
     - **Projects** have goals and can span many repos or folders. A project sits in a group or directly in the space.
@@ -99,7 +99,7 @@ These replace most of the earlier headline copy. Ownership is said as "yours", n
     - People and agents can be in many groups and projects.
     - **Goals come in tiers:** space, then group, then project. They guide what agents do.
 14. **Health check.** Like a linter for your organisation. Rules are written in TypeScript and are configurable. Anyone allowed can run it from the app, the CLI or the API. Examples: a group with no goals, an agent idle too long.
-15. **Mini apps** (the name picked on 2026-10-06; it replaces "shapes" and "generative UI" as the value word). Mini apps are apps that live inside DorkOS.
+15. **Mini apps** (the final name, picked on 2026-10-06, DOR-2759; it replaces "shapes" and "generative UI" as the value word). Mini apps are apps that live inside DorkOS.
     - "Build me something to manage my email." The agent asks one thing: inside DorkOS (in the side panel), or its own website?
     - The proof it works: the LifeOS and Tangerines dashboards, and the flow plugin.
     - This is core, and every agent knows how to build these.
@@ -109,16 +109,27 @@ These replace most of the earlier headline copy. Ownership is said as "yours", n
 19. **DorkOS first, ready in under a minute** (2026-10-07).
     - **No outside subscription needed.** New users run on DorkOS: account, DorkOS Cloud and DorkOS's own AI. DorkOS's own products and services come first everywhere in the app. Using your own Claude, ChatGPT or OpenRouter is the second option.
     - **Our own engine, named Doe** (as in John or Jane Doe: unnamed until you name your agents). It is built before launch on Pi (`pi-ai` and `pi-agent-core`, MIT) wrapped in our own layer, in its own package, `packages/doe`. The name is for developers only; the app says "Runs on: DorkOS". Research: [`research/20261007_dorkos-runtime.md`](../research/20261007_dorkos-runtime.md). Users never see a runtime name, a model name or a new concept while getting started.
+    - **How Doe is built** (DOR-2782): first the engine package (DOR-2786), then plugging it into DorkOS as a runtime (DOR-2787). Together they unblock onboarding (DOR-2783) and model choice (DOR-2784). A Codex agent builds it. Reuse first: audit the Pi ecosystem before writing our own. Tools load lazily, and every DorkOS capability becomes a Doe tool.
     - **The DorkOS account is the default but can be skipped.** Free local use with no account stays true.
     - **A card is required for DorkOS's own AI.** There are no free starter credits, so checkout stays quick.
     - **DorkOS picks the model automatically.** People can change it in Settings and in the agent status bar, where the model item is hidden by default among the extra items you can pin.
     - **Goal:** up and running in under one minute.
+20. **Proactive persistent agents** (2026-10-07; design: [`meta/PROACTIVE-AGENTS.md`](../meta/PROACTIVE-AGENTS.md), role-plays: [`research/20261007_agent-teams-role-play.md`](../research/20261007_agent-teams-role-play.md)).
+    - **Every agent is proactive.** Its type template decides how: leads beat on a timer in working hours, business doers wake on events first, coders wake on events only, the starter agent learns the business and then stays quiet until it has work.
+    - **The heartbeat is a skill plus a small beat runner.** The skill holds what to watch and how to judge. The runner holds the economics and manners: a free change-check, cheap decision-model triage, smart timing and event wakes, one-line records, batching per person and quiet hours.
+    - **Triage runs on DorkOS credits for every agent,** Claude Code and Codex included, and its cost is shown in the agent's settings.
+    - **Heartbeats ship before launch** (DOR-2788, urgent).
+    - **"Reports to" is optional** on every profile. When blank it is the agent's creator, and every chain ends at a person.
+    - **No built-in money caps.** An agent's spending limit lives on the card it is given.
+    - **Agents may create agents** that report to them. They ask first only when the new agent would get spending power.
 
 ## Launch (as soon as possible)
 
 - **The DorkOS Community Space is the launch centerpiece.** Every new DorkOS account joins it automatically; that means people only, and agents join when their owner adds them. It is where everyone using DorkOS chats, shares tips and learns. No Discord. It is the only space open at launch; creating your own spaces stays behind the experimental switch. It soft-launches with current users for about two weeks first.
-- **Date:** late November 2026, once our own engine lands (around November 23 to 30) and the community space is solid. Using your own AI key or sign-in is a launch item, so everyone gets a working first run.
-- **Scope:** the new story, on today's product, plus DorkOS Cloud: managed remote access (required), credits and accounts.
+- **Date:** late November 2026, holding the cut line: our own engine lands around November 23 to 30, and the community space must be solid.
+- **Heartbeats ship before launch** (DOR-2788), with decision-model triage (DOR-2778).
+- **The card path is US-only at launch,** so "use your own AI key or sign-in" is a launch item and everyone else still gets a working first run.
+- **Scope:** the new story, on today's product, plus DorkOS Cloud (managed remote access, required; credits and accounts), DorkOS's own AI on Doe, and proactive agents.
 - The pricing page marks the hosted space and cloud agents with email as "coming soon". Prices do not change.
 - Posting, notification and reaction caps are removed before launch. Loop guards stay until their replacement is ready.
 - Cloud computers are not built, and they are not needed for launch.
