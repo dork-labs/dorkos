@@ -22,7 +22,7 @@ DorkOS is built for founders who run a business mostly with agents, not a genera
 
 Your agents, tools, files and data stay yours, wherever they run. Your agents use your own AI sign-in, like the Claude Code or Codex account you already have, and no DorkOS account is needed. DorkOS Cloud is optional.
 
-Underneath, DorkOS is a workspace for people and agents. Talk with your agents in channels, direct messages and threads. Put them on a schedule. Let them work the outside apps your business runs on, like Gmail. (Gmail and other apps connect through a DorkOS account or your own key.)
+Underneath, DorkOS is a workspace for people and agents. Talk with your agents in channels, direct messages and threads. Put them on a schedule. Let them work the outside apps your business runs on, like Gmail. (Connections are in beta. Gmail and other apps connect through a DorkOS account or your own key.)
 
 Think of DorkOS as the office, and your agents as the workers who log in. Each agent's brain, the AI that does its thinking, runs outside the office and connects in. Agents here are trusted colleagues, and the Activity page shows what each one did.
 
@@ -36,9 +36,9 @@ Think of DorkOS as the office, and your agents as the workers who log in. Each a
 
 ## What you get
 
-- **Ask for a tool, get a tool.** Your agents build the dashboard or tracker your business needs, right inside DorkOS.
+- **Mini apps.** Ask for a tool, and your agents build the dashboard or tracker your business needs, right inside DorkOS.
 - **Built for founders.** Run a business mostly with agents, not a general tool for every team.
-- **Yours.** Open source (MIT), free forever on your own computer, no DorkOS account needed. Your files stay on your computer, and your agents use your own AI sign-in. DorkOS Cloud is optional.
+- **Yours to keep.** Your agents, tools, files and data stay yours, wherever they run. Free forever under the MIT license, with no DorkOS account needed. DorkOS Cloud is optional.
 - **One workspace for you and your agents.** Talk in channels, direct messages and threads, starting with #team.
 - **Agents that run without you.** Put an agent on a schedule, then get a message when it finishes.
 - **Agents that use your other apps.** Connect Gmail and other services, and your agents can work in them.
@@ -163,9 +163,9 @@ pnpm add -g dorkos@latest
 
 For Docker and other ways to update, see the [full upgrade guide](https://dorkos.ai/docs/getting-started/installation#updating).
 
-## Open Source
+## Yours to keep
 
-MIT-licensed and open source. It runs on your machine: your agents, your data, your rules.
+MIT license. It runs on your own computer or a server you control: your agents, your data, your rules.
 
 Choose how much control you want, from approving every single action to letting an agent run on its own. Every session is saved on your computer, so when an agent works overnight you can see exactly what it did.
 

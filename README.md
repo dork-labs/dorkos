@@ -22,7 +22,7 @@ DorkOS is built for founders who run a business mostly with agents, not a genera
 
 Your agents, tools, files and data stay yours, wherever they run. Your agents use your own AI sign-in, like the Claude Code or Codex account you already have, and no DorkOS account is needed. DorkOS Cloud is optional.
 
-Underneath, DorkOS is a workspace for people and agents. Talk with your agents in channels, direct messages and threads. Put them on a schedule. Let them work the outside apps your business runs on, like Gmail. (Gmail and other apps connect through a DorkOS account or your own key.)
+Underneath, DorkOS is a workspace for people and agents. Talk with your agents in channels, direct messages and threads. Put them on a schedule. Let them work the outside apps your business runs on, like Gmail. (Connections are in beta. Gmail and other apps connect through a DorkOS account or your own key.)
 
 Think of DorkOS as the office, and your agents as the workers who log in. Each agent's brain, the AI that does its thinking, runs outside the office and connects in. Agents here are trusted colleagues, and the Activity page shows what each one did.
 
@@ -134,9 +134,9 @@ docker run --rm -p 4242:4242 \
   dorkos
 ```
 
-## Open Source
+## Yours to keep
 
-MIT-licensed and open source. It runs on your machine: your agents, your data, your rules.
+MIT license. It runs on your own computer or a server you control: your agents, your data, your rules.
 
 Choose how much control you want, from approving every single action to letting an agent run on its own. Every session is saved on your computer, so when an agent works overnight you can see exactly what it did.
 
