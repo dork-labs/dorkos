@@ -156,11 +156,11 @@ describe('dorkbot-templates', () => {
 
   describe('dorkbotDiscoveryFoundLine', () => {
     it('spells out a single result as "one"', () => {
-      expect(dorkbotDiscoveryFoundLine(1)).toBe('Found one. Want them in your fleet?');
+      expect(dorkbotDiscoveryFoundLine(1)).toBe('Found one. Want them on your team?');
     });
 
     it('uses the numeral for multiple results', () => {
-      expect(dorkbotDiscoveryFoundLine(4)).toBe('Found 4. Want them in your fleet?');
+      expect(dorkbotDiscoveryFoundLine(4)).toBe('Found 4. Want them on your team?');
     });
   });
 

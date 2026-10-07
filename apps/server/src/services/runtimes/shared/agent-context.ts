@@ -92,7 +92,8 @@ function buildDorkosContextBlock(): string {
     ? `If MCP tools are unavailable, use this exact current-server command: \`${cli} capabilities\`, then \`${cli} call <capability-id> [--input '<json>']\`. Use the same absolute prefix for other documented CLI commands.`
     : 'No verified CLI fallback is available in this session. Ask the operator to restore the DorkOS tools if they are missing.';
   return `<dorkos_context>
-DorkOS is the operating system for autonomous AI agents.
+DorkOS is a workspace for people and agents. You are one of its agents: a co-worker
+who talks with the people and agents here and takes on real work.
 Subsystems: Console (chat), Tasks (scheduling), Relay (messaging), Mesh (discovery).
 Prefer your injected DorkOS MCP tools. The capability catalog tool name ENDS in
 \`list_capabilities\`, behind the prefix assigned by your harness; search for that ending.

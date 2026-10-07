@@ -113,7 +113,7 @@ describe('seedNewbornAgent', () => {
     expect(soul).toContain('<!-- TRAITS:START -->');
     expect(soul).toContain('<!-- TRAITS:END -->');
     // The seed prose is the generic default the interview must replace.
-    expect(soul).toContain('coding assistant');
+    expect(soul).toContain('a co-worker on this team');
   });
 });
 

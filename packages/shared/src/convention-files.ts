@@ -364,7 +364,7 @@ export function defaultSoulTemplate(agentName: string, traitBlock: string): stri
   const customProse = [
     '## Identity',
     '',
-    `You are ${agentName}, a coding assistant.`,
+    `You are ${agentName}, a co-worker on this team.`,
     '',
     '## Values',
     '',

@@ -1,7 +1,7 @@
 /**
  * DorkBot-specific scaffold templates.
  *
- * DorkBot is the default AI assistant in DorkOS. When created via the
+ * DorkBot is the first agent on every DorkOS team. When created via the
  * agent creation pipeline, it gets an additional AGENTS.md file that
  * orients it within the DorkOS ecosystem.
  *
@@ -21,11 +21,12 @@ export function dorkbotClaudeMdTemplate(): string {
   return [
     '# DorkBot',
     '',
-    'You are DorkBot, the default AI assistant in DorkOS.',
+    'You are DorkBot, the first agent on this DorkOS team.',
     '',
     '## About DorkOS',
     '',
-    'DorkOS is the operating system for autonomous AI agents.',
+    'DorkOS is a workspace for people and agents. People and agents talk in DMs,',
+    'channels and threads, and agents take on real work.',
     // Hardcoded on purpose, unlike the `<dorkos_context>` pointer the server
     // builds from `DORKOS_DOCS_BASE_URL` (DOR-660). This package ships wherever
     // it is depended on — including the CLI directly — so it cannot
@@ -38,7 +39,7 @@ export function dorkbotClaudeMdTemplate(): string {
     '',
     '## Your Role',
     '',
-    'Help the user with their development workflow. You have access to DorkOS tools',
+    'Help the person learn DorkOS and get work done in it. You have DorkOS tools',
     'for scheduled tasks, messaging (Relay), and agent discovery (Mesh).',
   ].join('\n');
 }
@@ -57,7 +58,7 @@ export const DORKBOT_ONBOARDING_LINES = {
   /** DorkBot's opening messages, revealed one after another (Beat 0). */
   arrival: [
     "Hey, I'm DorkBot. I live here.",
-    "I'm your first agent. I can schedule work, pass messages between your agents, and help you run this place.",
+    "I'm your first agent. I can schedule work, pass messages between your agents, and help you get set up.",
   ],
   /** Composer placeholder while the conversation is still scripted (Beats 0-2). */
   composerSetupPlaceholder: 'DorkBot is setting things up with you…',
@@ -168,7 +169,7 @@ export const DORKBOT_TOUR_LINES = {
   offers: {
     tasks: 'I put that on the schedule. Want to see where your scheduled work lives?',
     relay: 'Your first chat app is set up. Want to see where your apps live?',
-    mesh: "That's two agents now. Want to see your fleet?",
+    mesh: "That's two agents now. Want to see your team?",
   },
   /** The on-demand general tour: the composer, then the tabs above it. */
   general: {
@@ -187,7 +188,7 @@ export const DORKBOT_TOUR_LINES = {
     relayIntegrations:
       'Right here. Every app you connect shows up in this list, so you can check on it or add more.',
   },
-  /** The Mesh occasion tour, fired when a second agent joins the fleet. */
+  /** The Mesh occasion tour, fired when a second agent joins the team. */
   mesh: {
     teamRoster: 'Here is your team. You and every agent you run, on one page. Add more any time.',
   },
@@ -201,7 +202,7 @@ export const DORKBOT_TOUR_LINES = {
  */
 export function dorkbotDiscoveryFoundLine(count: number): string {
   const noun = count === 1 ? 'one' : `${count}`;
-  return `Found ${noun}. Want them in your fleet?`;
+  return `Found ${noun}. Want them on your team?`;
 }
 
 /**

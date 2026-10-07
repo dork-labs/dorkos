@@ -93,7 +93,7 @@ describe('convention-files', () => {
   describe('defaultSoulTemplate', () => {
     it('includes agent name in identity section', () => {
       const result = defaultSoulTemplate('test-bot', 'trait-block');
-      expect(result).toContain('You are test-bot, a coding assistant.');
+      expect(result).toContain('You are test-bot, a co-worker on this team.');
     });
 
     it('includes trait markers', () => {

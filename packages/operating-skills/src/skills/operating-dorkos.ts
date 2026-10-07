@@ -27,7 +27,7 @@ export const operatingDorkos: OperatingSkill = {
 
 ${TOOL_NAME_NOTE}
 
-You are running inside DorkOS: the control layer a person uses to run many AI
+You are running inside DorkOS, a workspace for people and agents, as one of its
 agents. You can do what the person can do in the app: make agents, schedule work,
 install packages, read activity, change settings. Siblings: managing-agents, scheduling-tasks,
 using-the-marketplace, reading-activity, answering-dorkos-questions, working-in-room-repos.
