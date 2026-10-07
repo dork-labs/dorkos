@@ -321,6 +321,8 @@ Agents report their own outcome in their final message — treat it as a claim, 
 4. **Too many agents** — batch in groups of 3-5, not 20 at once
 5. **Re-spawning instead of continuing** — use `SendMessage` for follow-ups; a new `Agent` call loses the prior context
 6. **Trusting success reports** — check the diff or output evidence
+7. **Vague output asks** — tell each agent the exact format to report back in
+8. **Parallelizing chatty work** — work that needs rapid back-and-forth with the person stays in one thread
 
 ## Progress Display
 

@@ -916,6 +916,7 @@ Each `ConfigField` defines one configuration input; the UI renders the form cont
 | `section`          | `string`                      | No       | Group label; the UI renders section headers and groups fields under them |
 | `showWhen`         | `{ field, equals }`           | No       | Conditional visibility based on another field's value                    |
 | `pattern`          | `string`                      | No       | Regex for client-side blur validation; pair with `patternMessage`        |
+| `patternMessage`   | `string`                      | No       | Message shown when `pattern` fails                                       |
 | `visibleByDefault` | `boolean`                     | No       | For `password` fields: show the value in plaintext by default            |
 | `displayAs`        | `'radio-cards'`               | No       | Render `select` options as selectable cards instead of a dropdown        |
 | `helpMarkdown`     | `string`                      | No       | Markdown shown in a collapsible disclosure below the field               |

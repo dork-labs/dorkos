@@ -59,7 +59,7 @@ DorkOS writes several runtime data files under `~/.dork/` in addition to `config
 
 ### Relay config (`~/.dork/relay/adapters.json`)
 
-The Relay subsystem reads adapter configuration from `~/.dork/relay/adapters.json`. This file is watched with chokidar and hot-reloaded whenever it changes — no server restart is required. Each entry follows the adapter manifest format: a `type` field matching a registered adapter, plus a `config` object whose shape is defined by the adapter's `ConfigField` schema. Sensitive config fields (marked `sensitive: true` in the manifest) are masked to `***` in API responses.
+The Relay subsystem reads adapter configuration from `~/.dork/relay/adapters.json`. This file is watched with chokidar and hot-reloaded whenever it changes — no server restart is required. Each entry follows the adapter manifest format: a `type` field matching a registered adapter, plus a `config` object whose shape is defined by the adapter's `ConfigField` schema. Password fields (`type: 'password'`) are masked to `***` in API responses (`maskSensitiveFields`).
 
 ### Relay bindings (`~/.dork/relay/bindings.json`)
 

@@ -875,7 +875,7 @@ Returns the full adapter catalog with manifests and running instances for each a
       "type": "telegram",
       "displayName": "Telegram",
       "description": "Send and receive messages via a Telegram bot.",
-      "iconEmoji": "\u2708\ufe0f",
+      "iconId": "telegram",
       "category": "messaging",
       "builtin": true,
       "multiInstance": false,
