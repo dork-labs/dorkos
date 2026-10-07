@@ -87,7 +87,7 @@ DorkOS keeps two separate lists of agents. They answer different questions, so d
 | **Mesh-discovered**       | Any directory you scan, typically project folders anywhere on disk | You, via scan from UI / MCP / CLI / API | `packages/mesh/src/discovery/unified-scanner.ts`            | `GET /api/mesh/agents`           |
 
 - **"What did I install from the marketplace?"** → `GET /api/marketplace/installed`. Narrow provenance question: packages that came through the managed install pipeline with their `.dork/install-metadata.json` sidecar intact.
-- **"What agents does my system know about right now?"** → `GET /api/mesh/agents`. The full fleet: every directory with a `.dork/agent.json` manifest that Mesh has been pointed at, whether via marketplace install, manual registration, or a discovery scan.
+- **"What agents does my system know about right now?"** → `GET /api/mesh/agents`. Every agent it knows: every directory with a `.dork/agent.json` manifest that Mesh has been pointed at, whether via marketplace install, manual registration, or a discovery scan.
 
 Marketplace installs always land under `~/.dork/{plugins,agents}/` with provenance metadata, so they also show up in the mesh registry once the install hands off. The reverse isn't true: a mesh-discovered agent registered from a directory the marketplace never touched has no install-metadata sidecar, so the installed-scanner ignores it.
 
@@ -113,7 +113,7 @@ Manifest write-through semantics (the file on disk is authoritative, the SQLite 
 
 ### Discovering agents
 
-Mesh ships with ten detection strategies covering the major AI coding agents:
+Mesh ships with ten detection strategies covering the major AI agent tools:
 
 | Strategy        | Filesystem markers                                                                                   | Runtime       |
 | --------------- | ---------------------------------------------------------------------------------------------------- | ------------- |
