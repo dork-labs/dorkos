@@ -6,7 +6,7 @@ category: testing
 
 # Multi-window check
 
-Open several cockpit windows against a **running** DorkOS, send a real message in
+Open several app windows against a **running** DorkOS, send a real message in
 each, and report a PASS/FAIL table. Use it to go looking — for the regression
 guard that runs in CI, see `apps/e2e/tests/streams/multi-window.spec.ts`.
 

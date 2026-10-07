@@ -84,7 +84,7 @@ The site consumes assets through `ProductFrame` (`apps/site/.../marketing/ui/Pro
 
 - **Real UI + seeded data only.** Every pixel is the actual app rendering data seeded through a real API/code path. No mock components, no DOM doctoring, no editing pixels in.
 - **Skip-and-report over faking.** Each drive is error-isolated (`attempt`): if a surface can't reach its money state, it is skipped and logged — never faked. A clean run has zero skips; investigate any skip before shipping.
-- **Demo-claim gate.** Only market what is genuinely working. If a surface or pillar is unverified, do not stage a shot that implies it works (see the GTM plan's demo-claim gate).
+- **Demo-claim gate.** Only market what is genuinely working. If a surface or pillar is unverified, do not stage a shot that implies it works (see "The demo-claim gate" in `meta/positioning-202610/00-overview.md`). Trusted by default, more than one person on a server, the DorkOS Community Space and every roadmap item there stay off film until they ship.
 
 ## Staging Knobs
 
@@ -124,5 +124,6 @@ Deterministic and idempotent: same raw + markers → same webm + poster.
 ## Art Direction
 
 - Desktop stills are 1280×800 @2x (text readable at rendered size); mobile is 390×844 @3x; loops match their surface's dimensions.
+- What the story wants on film, in order (`meta/positioning-202610/00-overview.md`, "What sets us apart"): a mini app an agent built opening inside DorkOS (today an extension, approved by a person), a founder's business run with people and agents, and ownership (real files on your own computer). A chat workspace alone is table stakes, never the lead shot, and runtime names are never the subject of a hero shot.
 - What reads premium: an **inhabited** app (a real fleet, distinct session rows, green-with-one-failure run history), motion that tells a story (streaming tokens, morphing radar, pulsing concurrent sessions), and a settled, un-squished layout. Crop modes (`top`/`bottom` in `ProductFrame`) bias a frame toward the edge that holds content when the vertical center is empty.
 - Keep loops short and looping cleanly; respect the size budget so the site stays fast.

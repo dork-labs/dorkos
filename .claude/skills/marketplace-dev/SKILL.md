@@ -5,7 +5,9 @@ description: Develop, validate, and publish DorkOS marketplace packages — agen
 
 # Marketplace Package Development
 
-Build packages that work for both DorkOS and Claude Code. Every package must pass `dorkos package validate` before submission.
+Build packages that work for both DorkOS and Claude Code. Every package must pass `dorkos package validate` before submission. Claude Code compatibility of the whole marketplace is not verified end to end, so package copy never claims "works with any Claude Code setup".
+
+An `agent` package ships a co-worker, not an assistant: its persona and description state the agent's job (what it owns and who it works with), so the person who installs it, and the agents beside it, can read what it does.
 
 ## When to Use
 
@@ -323,7 +325,7 @@ Plugins can register UI extensions. Available slots:
 | `settings.tabs`         | Settings dialog tabs                     |
 | `right-panel`           | Shell-level right panel (inspector) tabs |
 
-> The `sidebar.tabs` and `header.actions` slots were removed when the web cockpit
+> The `sidebar.tabs` and `header.actions` slots were removed when the web app
 > retired the sidebar tab strip. For a contextual side panel use `right-panel`;
 > for a dashboard card use `dashboard.sections`.
 

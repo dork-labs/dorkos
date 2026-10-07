@@ -214,7 +214,7 @@ rg "useEffect\(" apps/client/src/ --type tsx -A 20 | grep -A 15 "return \(\) =>"
 Check if issue is dev-specific:
 
 ```bash
-# Run the production build locally — dev:dogfood serves the built CLI cockpit on :4242
+# Run the production build locally — dev:dogfood serves the built CLI app on :4242
 pnpm build && pnpm dev:dogfood
 ```
 
