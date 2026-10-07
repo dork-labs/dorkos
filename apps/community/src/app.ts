@@ -93,6 +93,26 @@ export function createLiveHub(config: CommunityConfig): LiveHub {
   });
 }
 
+/**
+ * Stop `live` whenever `pool` ends, before the pool itself does. The hub's connection sits outside
+ * the pool, so ending the pool alone would leave it connected, and a test dropping its database
+ * right after would find it still in use. `pg` emits no event when a pool ends, so this wraps
+ * `end` once. It is only for a hub the app made itself; a caller that passes its own stops it.
+ */
+function stopLiveWithPool(live: LiveHub, pool: Pool): void {
+  const end = pool.end.bind(pool) as () => Promise<void>;
+  const endWithLive = (callback?: (error?: Error) => void) => {
+    const ended = live
+      .stop()
+      .catch(() => undefined)
+      .then(() => end());
+    if (!callback) return ended;
+    ended.then(() => callback(), callback);
+    return undefined;
+  };
+  pool.end = endWithLive as Pool['end'];
+}
+
 /** Assemble the injectable HTTP app without reading environment variables. */
 export function createCommunityApp({
   config,
@@ -100,14 +120,14 @@ export function createCommunityApp({
   hooks,
   blobStore = createBlobStore(config),
   noticeComposers = {},
-  live = createLiveHub(config),
+  live,
 }: {
   config: CommunityConfig;
   pool: Pool;
   /**
-   * Live-stream fan-out. `main.ts` passes one it started (pinned open, self-tested) so it can
-   * stop it on shutdown; without one the app makes its own, which listens only while a stream
-   * is open.
+   * Live-stream fan-out. `main.ts` passes one it started (pinned open, self-tested) and stops it
+   * on shutdown. Without one the app makes its own, which listens only while a stream is open
+   * and stops when `pool` ends (see {@link stopLiveWithPool}).
    */
   live?: LiveHub;
   /**
@@ -146,6 +166,10 @@ export function createCommunityApp({
   };
   blobStore?: BlobStore;
 }) {
+  if (!live) {
+    live = createLiveHub(config);
+    stopLiveWithPool(live, pool);
+  }
   const app = new Hono();
   // A notice is queued only where mail is set up and the worker can compose its kind.
   const canSendNotice = (kind: NoticeKind) =>

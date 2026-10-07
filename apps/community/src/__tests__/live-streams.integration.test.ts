@@ -8,7 +8,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { createServer, connect, type Server, type Socket } from 'node:net';
-import { Client } from 'pg';
+import { Client, Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createCommunityApp } from '../app.js';
 import { LiveHub } from '../live/hub.js';
@@ -856,6 +856,35 @@ describe('stream lifetime', () => {
     } finally {
       await reader.cancel().catch(() => undefined);
     }
+  });
+
+  it('ends its own listen connection with the pool, even with a stream still open', async () => {
+    // Purpose: fails if an app that made its own hub leaves the listen connection open after its
+    // pool ends: a test harness dropping its database next is refused ("in use by other users").
+    const s = await space();
+    const pool = new Pool({ connectionString: h.config.databaseUrl });
+    const app = createCommunityApp({ config: h.config, pool });
+    const listeners = async () =>
+      (
+        await h.pool.query<{ n: number }>(
+          `SELECT count(*)::int AS n FROM pg_stat_activity
+           WHERE application_name=$1 AND datname=current_database()`,
+          [LIVE_LISTENER_APPLICATION_NAME]
+        )
+      ).rows[0].n;
+    expect(await listeners()).toBe(0);
+    const response = await app.fetch(
+      new Request(`http://localhost${s.base}/channels/${s.channelId}/events`, {
+        headers: { cookie: s.owner.cookie },
+      })
+    );
+    const reader = response.body!.getReader();
+    await reader.read();
+    expect(await listeners()).toBe(1);
+    // The stream is never cancelled: only the pool ends, as a harness's teardown does.
+    await pool.end();
+    expect(await listeners()).toBe(0);
+    await reader.cancel().catch(() => undefined);
   });
 
   it('answers readiness while every pooled connection is busy', async () => {

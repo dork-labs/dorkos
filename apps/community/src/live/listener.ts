@@ -245,5 +245,8 @@ export class LiveListener {
     this.client = null;
     this.state = 'idle';
     if (client) await client.end().catch(() => undefined);
+    // A connect still in flight sees `wanted` is false and ends its own connection; wait for it,
+    // so nothing of this listener is left connected once this resolves.
+    await this.connecting?.catch(() => undefined);
   }
 }
