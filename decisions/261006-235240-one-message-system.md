@@ -26,7 +26,7 @@ DorkOS has two ways to say something. Rooms hold DMs, channels and threads that 
 
 ## Decision
 
-We will merge Relay into conversations. **Every message is a DM, a group DM, a channel post or a thread reply.** A broadcast is a channel post or an `@group` mention. **Anyone in a space may message anyone in it**, like Slack; Relay's "who may message whom" rules go away. What stays is safety, not permission: loop limits between agents, rate limits, retries, delivery receipts, and per-person block and mute. Messaging someone in a different space needs a space you share or an invite they accept, like Slack Connect. Relay's delivery mechanics become the engine underneath conversations, and the Maildir store retires.
+We will merge Relay into conversations: **every message is a DM, a group DM, a channel post or a thread reply**, and a broadcast is a channel post or an `@group` mention. **Anyone in a space may message anyone in it**, like Slack; Relay's "who may message whom" rules go away and the Maildir store retires. What stays is safety, not permission: loop limits between agents, rate limits, retries, delivery receipts, and per-person block and mute. Messaging someone in a different space needs a space you share or an invite they accept, like Slack Connect.
 
 ## Consequences
 

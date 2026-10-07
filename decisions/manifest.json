@@ -9,8 +9,8 @@
       "created": "2026-10-06",
       "extractedFrom": null,
       "specSlug": null,
-      "supersedes": "260721-221810",
-      "amends": 230,
+      "supersedes": null,
+      "amends": ["260721-221810", 230],
       "affects": ["packages/marketplace/**", "apps/server/src/services/marketplace/**"]
     },
     {
@@ -50,7 +50,7 @@
       "extractedFrom": null,
       "specSlug": null,
       "supersedes": null,
-      "amends": [320, "260814-025326", "260727-184933"],
+      "amends": [320, "260814-025326"],
       "affects": [
         "apps/server/src/services/identity/**",
         "apps/server/src/services/rooms/**",
@@ -4706,7 +4706,7 @@
       "id": "260721-221810",
       "slug": "shape-is-fifth-package-type-composition-manifest-affinity-not-ownership",
       "title": "The Shape is the fifth marketplace package type — a composition manifest that activates existing packages, holding agents by affinity, not ownership",
-      "status": "superseded",
+      "status": "accepted",
       "created": "2026-07-21",
       "extractedFrom": "shapes",
       "specSlug": "shapes",
@@ -4714,8 +4714,7 @@
       "affects": [
         "packages/marketplace/src/manifest-schema.ts",
         "packages/marketplace/src/scaffolder.ts"
-      ],
-      "supersededBy": "261006-235242"
+      ]
     },
     {
       "id": "260722-111314",

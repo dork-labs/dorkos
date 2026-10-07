@@ -25,14 +25,13 @@ Shared docs today are whole files. Two writers, a person and an agent or two age
 
 ## Decision
 
-We will make docs that people and agents write together **live Yjs documents**, a CRDT (a data type that merges edits from many writers without conflicts). The DorkOS server hosts the Yjs endpoint, so every server, laptop or space, can host docs, and a doc stores as bytes in either SQLite or Postgres. Agents edit as ordinary Yjs clients on the server, so their edits carry cursors and attribution like anyone else's. **Chat does not use a CRDT**: rooms, threads and the roster stay a server-ordered log with `seq` numbers.
+We will make docs that people and agents write together **live documents using Yjs**, a CRDT (a data type that merges edits from many writers without conflicts). People and agents edit the same doc at once. **Chat does not use a CRDT**: rooms and threads stay a server-ordered log. Where the Yjs endpoint runs and how docs are stored is left to the spec.
 
 ## Consequences
 
 ### Positive
 
 - People and agents can edit the same doc at once, with no lost work and no conflict banner.
-- Offline edits merge when the laptop reconnects or a doc is pushed to another server.
 - Chat keeps the simple ordering and cursors it already has.
 
 ### Negative

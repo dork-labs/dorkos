@@ -13,7 +13,7 @@ superseded-by: null
 
 Accepted
 
-Amended by [261006-235238](261006-235238-one-dorkos-server-in-every-size.md) (one DorkOS server in every size; 2026-10-06 vision reset): retires "identities are never migrated between local and cloud databases". Pushing can move an agent, with its identity, between DorkOS servers. The DorkOS account and the device link stand.
+Amended by [261006-235238](261006-235238-one-dorkos-server-in-every-size.md) (one DorkOS server in every size; 2026-10-06 vision reset): narrows "identities are never migrated between local and cloud databases" to people: an agent, with its identity, can be pushed from one DorkOS server to another. Local logins stay instance-scoped, and the DorkOS account and the device link stand.
 
 ## Context
 
