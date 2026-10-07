@@ -511,8 +511,7 @@ it.each([false, true])(
   'keeps finite duration unchanged; continuous original campaign=%s crosses 30 seconds',
   async (continuous) => {
     const f = await fixture();
-    let round = 0,
-      clock = 10;
+    let clock = 10;
     const checkpoints: JournalSnapshot[] = [];
     const published: number[] = [];
     const boot = {
@@ -525,7 +524,7 @@ it.each([false, true])(
         return {
           ...boot,
           processes: pids.map((pid) =>
-            round >= 35
+            clock >= 35010
               ? { kind: 'absent' as const, pid }
               : {
                   kind: 'present' as const,
@@ -557,8 +556,8 @@ it.each([false, true])(
         pause: async () => {
           const read = await readJournal(f.location);
           if (read.state === 'valid-recorded-data') checkpoints.push(read.snapshot);
-          round++;
-          clock += 1000;
+          // Sample fewer synthetic idle epochs, strictly inside the unchanged5000ms gap.
+          clock += 4000;
         },
         endMonotonic: 30010,
         maxGap: 5000,
@@ -581,6 +580,7 @@ it.each([false, true])(
       });
       expect(result).toBe(continuous ? 'recorded-gone' : 'retained');
       expect(published.length > 0).toBe(continuous);
+      expect(checkpoints.length).toBeGreaterThan(0);
       if (continuous) {
         expect(
           checkpoints.some((snapshot) => snapshot.observationWindow.endMonotonic > 30010)
@@ -1017,7 +1017,9 @@ it('never heals an already-entered incomplete query when the original root retur
         originalRootReturned: () => (returned ? f.root : undefined),
         endBrowser: () => returned,
         monotonicNow: () => clock++,
-        pause: async () => {},
+        pause: async () => {
+          clock += 20;
+        },
         endMonotonic: 100,
         maxGap: 100,
       })
@@ -1025,8 +1027,10 @@ it('never heals an already-entered incomplete query when the original root retur
     expect(entered).toBe(true);
     const read = await readJournal(f.location);
     expect(read.state).toBe('valid-recorded-data');
-    if (read.state === 'valid-recorded-data')
+    if (read.state === 'valid-recorded-data') {
       expect(read.snapshot.gaps.some((gap) => gap.cause === 'association-missing')).toBe(true);
+      expect(read.snapshot.firstCause?.cause).toBe('association-missing');
+    }
   } finally {
     await rm(f.parentDirectory, { recursive: true, force: true });
   }
@@ -1071,6 +1075,7 @@ it('refuses a returned-root lifetime mismatch without upgrading the recorded cam
         monotonicNow: () => clock++,
         pause: async () => {
           round++;
+          clock += 20;
         },
         endMonotonic: 100,
         maxGap: 100,
@@ -1078,8 +1083,10 @@ it('refuses a returned-root lifetime mismatch without upgrading the recorded cam
     ).toBe('retained');
     const read = await readJournal(f.location);
     expect(read.state).toBe('valid-recorded-data');
-    if (read.state === 'valid-recorded-data')
+    if (read.state === 'valid-recorded-data') {
       expect(read.snapshot.gaps.some((gap) => gap.cause === 'identity-unknown')).toBe(true);
+      expect(read.snapshot.firstCause?.cause).toBe('identity-unknown');
+    }
   } finally {
     await rm(f.parentDirectory, { recursive: true, force: true });
   }

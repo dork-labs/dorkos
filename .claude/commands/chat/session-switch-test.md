@@ -75,7 +75,7 @@ DORKOS_TEST_RUNTIME=true DORKOS_PORT=4243 VITE_PORT=4248 \
 DORKOS_PORT=4243 VITE_PORT=4248 dotenv -- turbo dev --filter=@dorkos/client
 ```
 
-A never-onboarded `DORK_HOME` renders the **first-run wizard instead of the cockpit**, so every wait for the app shell times out. Dismiss it once, exactly as `apps/e2e/global-setup.ts` does:
+A never-onboarded `DORK_HOME` renders the **first-run wizard instead of the app**, so every wait for the app shell times out. Dismiss it once, exactly as `apps/e2e/global-setup.ts` does:
 
 ```bash
 NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -104,7 +104,7 @@ Confirm `$MODEL` is in the model list. Navigate to `TEST_URL`, capture baseline 
 
 ### 1c. Name the install before you drive it — and get a yes for the real one
 
-**The probe above falls through to 4242, the operator's installed cockpit on their real `~/.dork`** — which is what answers whenever the dev server is simply down. That is the accident case, not a choice, and this test creates two sessions and drives real tool-heavy turns in whatever it found. Ask the server which install it is:
+**The probe above falls through to 4242, the operator's installed app on their real `~/.dork`** — which is what answers whenever the dev server is simply down. That is the accident case, not a choice, and this test creates two sessions and drives real tool-heavy turns in whatever it found. Ask the server which install it is:
 
 ```bash
 curl -s "http://localhost:$API_PORT/api/config" > /tmp/ss-config.json
@@ -123,7 +123,7 @@ echo "DORK_DIR=$DORK_DIR"
 
 `DORK_DIR` is the reported `dorkHome` — authoritative, never guessed from the port — and an empty one is a hard stop, because every path built from it below would silently become `/config.json`. Put all four lines in the report header.
 
-**Then ask for a yes — UNLESS `dorkHome` starts with `/tmp/dorkos-`**, the browser suite's own throwaway home, wiped before every boot. That prefix is the only exemption: `~/.dork` is the installed cockpit, `apps/server/.temp/.dork` is the dev stack's own data (real work lives there), and anything else is a `DORK_HOME` override, a Docker mount, or someone's copy. All of those need an explicit `AskUserQuestion` before you drive anything: name the port, the `dorkHome` and the version, say that the run creates two sessions and spends real model credit there, and offer **drive this install** / **cancel** (starting `pnpm dev` and re-running lands on the dev stack instead). Default to asking — a gate that recognises only one bad path waves every other one through. Never infer a yes from `mode:live` or from the probe having found something.
+**Then ask for a yes — UNLESS `dorkHome` starts with `/tmp/dorkos-`**, the browser suite's own throwaway home, wiped before every boot. That prefix is the only exemption: `~/.dork` is the installed app, `apps/server/.temp/.dork` is the dev stack's own data (real work lives there), and anything else is a `DORK_HOME` override, a Docker mount, or someone's copy. All of those need an explicit `AskUserQuestion` before you drive anything: name the port, the `dorkHome` and the version, say that the run creates two sessions and spends real model credit there, and offer **drive this install** / **cancel** (starting `pnpm dev` and re-running lands on the dev stack instead). Default to asking — a gate that recognises only one bad path waves every other one through. Never infer a yes from `mode:live` or from the probe having found something.
 
 ### 1d. Snapshot the config before any write
 

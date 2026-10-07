@@ -71,7 +71,7 @@ Two facts about where it would sit in DorkOS, because they bound the whole desig
 - **Ikechi** (`meta/personas/the-ai-native-founder.md`) — talks to his agents in
   rooms. He has no idea a permission prompt exists; he sees an agent that went
   quiet. ADR `260908-170643` was written after exactly this report.
-- **Priya** (`meta/personas/the-knowledge-architect.md`) — cares that "denied"
+- **Priya** (`meta/archive/personas/the-knowledge-architect.md`) — cares that "denied"
   is recorded as denied, and that nothing was skipped without a trace.
 
 ## Options

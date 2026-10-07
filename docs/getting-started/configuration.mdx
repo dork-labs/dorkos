@@ -609,7 +609,7 @@ Your answer lives in `extensions.approvedToRun`, and the copy it applies to live
 
 ### Runtimes
 
-DorkOS runs three agent runtimes: Claude Code (the default), Codex, and OpenCode. The `runtimes` block in `~/.dork/config.json` controls which ones are available and how their binaries are found. Running multiple runtimes side by side is shipped, but still getting real-world mileage, so treat multi-runtime setups as an area to watch rather than a fully settled feature. See the [Runtimes guide](/docs/guides/runtimes) for connecting and choosing runtimes.
+DorkOS runs three agent runtimes: Claude Code (the default), Codex, and OpenCode. The `runtimes` block in `~/.dork/config.json` controls which ones are available and how their binaries are found. Using more than one runtime at once is shipped, but still getting real-world mileage, so treat multi-runtime setups as an area to watch rather than a fully settled feature. See the [Runtimes guide](/docs/guides/runtimes) for connecting and choosing runtimes.
 
 **If you have more than one Claude account**, the `runtimes.claudeCode` settings say which one your work runs on. A Claude account is a folder that holds that account's chat history and its own sign-in. It is usually `~/.claude`, and a second one might be `~/.claude2`. Point `defaultAccount` at a folder and your next chat runs and bills there, unless the agent or the chat itself names another account. Write the folder's full path, like `/Users/you/.claude2`. Leave it `null` and nothing changes: DorkOS uses whatever your shell already set, or `~/.claude`. List your accounts under `accounts` and give each one a name you'll recognise, like the client you bill it to. Nothing outside DorkOS changes either way. Your shell, your aliases, and a plain `claude` all keep working exactly as before.
 
@@ -1243,3 +1243,18 @@ Settings → Advanced → Experiments lists **Shared browser**, off by default. 
 The choice applies to all users of this installation without sharing their profiles. Availability depends on checks of the installed browser. Keep the experiment off until those checks are complete.
 
 The experiment also lists **Use Chrome user agent**, off by default. A user agent tells websites which browser is visiting. Only the signed-in owner can change this choice, while Shared browser is off. Agents can read the choice but cannot change it. Checks with the installed browser are still pending.
+
+### Spaces experiment
+
+<TypeTable
+  type={{
+    'spaces.enabled': {
+      description:
+        'Spaces: join, start or move a shared space for people and their agents. Off by default.',
+      type: 'boolean',
+      default: 'false',
+    },
+  }}
+/>
+
+Settings → Advanced → Experiments lists **Spaces**, off by default. While it is off, nothing about spaces shows in the app, and the app refuses requests that reach a space. Your space connections stay saved, so turning it back on finds them where you left them. Your own channels and #team are not spaces and work the same either way. Agents can read this setting but cannot change it.

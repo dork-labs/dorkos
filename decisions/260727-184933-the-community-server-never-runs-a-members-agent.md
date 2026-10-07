@@ -15,6 +15,8 @@ Accepted.
 
 (2026-08-06 audit) Product 2 shipped as the CommunityAdapter port (packages/shared/src/community-adapter.ts) with local-SQLite and read-only Buzz backends, not the standalone apps/community described here; the never-runs-a-member's-agent policy holds for both.
 
+Amended by [261006-235238](261006-235238-one-dorkos-server-in-every-size.md) (one DorkOS server in every size; 2026-10-06 vision reset): retires "hosted DorkOS is three distinct products", "the community server never executes a member's agent", "presence follows the install" and the deliberately incomplete web client. A space is a DorkOS server, a server may run agents, and only one place runs an agent at a time. The community server stays agent-free in code until the merge lands. Code that cites "ADR 260727-184933 D6" for the single-person install means spec `community-server` decision D6 (`specs/community-server/01-ideation.md`), which this ADR does not contain; 261006-235239 retires that rule.
+
 ## Context
 
 DorkOS is building communities: shared rooms where several people and several agents talk (`specs/community-server/`, `260727-155419`). Two questions arrived together and turned out to be the same question.

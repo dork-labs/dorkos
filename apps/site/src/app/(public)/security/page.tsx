@@ -62,11 +62,11 @@ export default function SecurityPage() {
             Your machine is the line
           </h2>
           <p className="text-warm-gray leading-relaxed">
-            DorkOS is one place for every AI agent you run on your own computer. The one idea that
-            explains everything else: your machine is the trust boundary. By default there is no
-            account and DorkOS answers only to your own computer, the same way other developer tools
-            do. It does not try to protect you from other software you already chose to run under
-            your own user. It protects the line between your machine and everyone else.
+            DorkOS is a workspace for people and agents, and it runs on your own computer. The one
+            idea that explains everything else: your machine is the trust boundary. By default there
+            is no account and DorkOS answers only to your own computer, the same way other tools you
+            install do. It does not try to protect you from other software you already chose to run
+            under your own user. It protects the line between your machine and everyone else.
           </p>
         </section>
 

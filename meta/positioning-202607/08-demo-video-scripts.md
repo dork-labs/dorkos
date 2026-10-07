@@ -1,5 +1,7 @@
 # Demo Video Scripts: Three Brain-Melters
 
+> **Superseded 2026-10-06.** This July 2026 positioning work is kept for history. The current strategy is [`../positioning-202610/00-overview.md`](../positioning-202610/00-overview.md): DorkOS is a workspace for people and agents, built first for founders who run a business with agents, with Kai (developers) second. Read what follows as dated planning, not current direction.
+
 > **Obsidian retirement, 2026-09-25:** The plugin has been retired from the active codebase. Any plugin build, launch, demo, directory submission, hardening or future release proposed below is cancelled. The remaining product focus is web, desktop, phone, Cloud and Community. Obsidian users can work with vault folders in the normal app, without in-vault features. See [migration and source recovery](../../docs/guides/obsidian-plugin.mdx). Earlier study text below is retained as dated planning context, not an active plugin commitment.
 
 > Positioning review deliverable (July 2026). Three distinct demo concepts for the flagship video. Each is written as a beat sheet with timings, what's on screen, and the caption/voiceover. Some beats are aspirational; every script ends with an honest "what's real today vs not yet" ledger so we never ship a dishonest cut (brand rule: honest by design; a demo that lies is a refund waiting to happen).

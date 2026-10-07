@@ -233,6 +233,10 @@
       "types": "./src/community-deliveries.ts",
       "default": "./dist/community-deliveries.js"
     },
+    "./decision-model": {
+      "types": "./src/decision-model.ts",
+      "default": "./dist/decision-model.js"
+    },
     "./memory-provider": {
       "types": "./src/memory-provider.ts",
       "default": "./dist/memory-provider.js"

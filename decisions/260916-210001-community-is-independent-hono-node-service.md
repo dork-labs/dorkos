@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted.
 
+Amended by [261006-235238](261006-235238-one-dorkos-server-in-every-size.md) (one DorkOS server in every size; 2026-10-06 vision reset): retires "independent" service and "Do not migrate the local Express server as part of this decision". The local server moves to Hono and then merges with this one. The Hono, Better Auth, Drizzle/Postgres and blob-store choices stand.
+
 ## Context
 
 A community needs account sessions, channel history, membership checks, ordered writes, long-lived SSE, and durable attachments. It must be deployable by someone who does not operate DorkOS Cloud. The local server is an Express app with SQLite and single-owner trust rules; `apps/site` is a Next app tied to Cloud accounts. Neither is the shared community's trust or deployment boundary.

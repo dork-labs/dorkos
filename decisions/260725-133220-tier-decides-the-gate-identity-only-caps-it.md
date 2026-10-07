@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted
 
+Amended by [261006-225605](261006-225605-agents-are-trusted-by-default-outsiders-and-third-party-code-are-not.md) (agents are trusted by default): "destructive requires a granted approval" is retired for in-circle actions. Tiers and the choke points stay, now as the audit points; perimeter and third-party-code actions still ask.
+
 ## Context
 
 Phase 2 declared an observe/act/destructive tier on every capability but enforced nothing. When phase 3 built enforcement, the first implementation returned `allowed` whenever no agent identity resolved, on the reasoning that "absent identity = today's behavior" (spec §3.1). That resolution was about _attribution_, and applying it to enforcement made the gate optional: the CLI attaches its identity header only when `DORKOS_AGENT_TOKEN` is in the environment, so unsetting one variable, or sending a bare `curl` to the locally-open API, skipped the gate entirely. Review reproduced it and confirmed the tier gate never ran; the action was still stopped only because `marketplace.uninstall` happens to carry its own legacy confirmation flow.

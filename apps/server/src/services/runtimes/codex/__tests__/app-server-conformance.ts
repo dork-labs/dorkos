@@ -152,6 +152,72 @@ async function drain(gen: AsyncGenerator<StreamEvent>): Promise<StreamEvent[]> {
 }
 
 /**
+ * `compactIntentTurn` (DOR-2732): a conversation of one turn, then the
+ * summary a person's `/compact` or the agent's request runs —
+ * `thread/compact/start` on that thread. Runs unchanged against the real
+ * binary in the live arm.
+ *
+ * @param runtime - An app-server runtime.
+ * @param projectDir - Its working directory.
+ * @param observe - Called after each event of the summary.
+ */
+export async function appServerCompactIntentTurn(
+  runtime: AgentRuntime,
+  projectDir: string,
+  observe?: (runtime: AgentRuntime, sessionId: string) => void
+): Promise<StreamEvent[]> {
+  const sessionId = randomUUID();
+  runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: projectDir });
+  await drain(
+    runtime.sendMessage(sessionId, 'Reply with the single word: hi', { cwd: projectDir })
+  );
+  const events: StreamEvent[] = [];
+  for await (const event of runtime.executeCommandIntent(sessionId, 'compact', {
+    cwd: projectDir,
+  })) {
+    events.push(event);
+    observe?.(runtime, sessionId);
+  }
+  return events;
+}
+
+/**
+ * `contextReadingTurn` (DOR-2732): one reply on a fresh session, its events.
+ *
+ * @param runtime - A Codex runtime, on either transport.
+ * @param projectDir - Its working directory.
+ */
+export async function driveContextReading(
+  runtime: AgentRuntime,
+  projectDir: string
+): Promise<StreamEvent[]> {
+  const sessionId = randomUUID();
+  runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: projectDir });
+  return drain(
+    runtime.sendMessage(sessionId, 'Reply with the single word: hi', { cwd: projectDir })
+  );
+}
+
+/**
+ * `makeCompactingRuntime` (DOR-110): a runtime whose next turn has Codex
+ * summarize on its own partway through (a `contextCompaction` item inside an
+ * ordinary turn), then answer.
+ */
+export function makeAutoCompactingAppServerRuntime(): CodexRuntime {
+  const runtime = makeAppServerRuntime();
+  wiringOf(runtime)
+    .host.home(PERSON_HOME)
+    .nextTurn((ctx) => {
+      const item = { type: 'contextCompaction', id: 'compact-auto' };
+      ctx.emit('item/started', { item });
+      ctx.tokenUsage(4_000, 200_000);
+      ctx.emit('item/completed', { item });
+      pongTurn(ctx);
+    });
+  return runtime;
+}
+
+/**
  * `warmSession`: one completed turn, the thread left loaded in a live process.
  *
  * @param runtime - The runtime.

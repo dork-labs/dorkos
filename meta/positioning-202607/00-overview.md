@@ -1,5 +1,7 @@
 # Positioning Review 2026-07: Overview
 
+> **Superseded 2026-10-06.** This July 2026 positioning work is kept for history. The current strategy is [`../positioning-202610/00-overview.md`](../positioning-202610/00-overview.md): DorkOS is a workspace for people and agents, built first for founders who run a business with agents, with Kai (developers) second. Read what follows as dated planning, not current direction.
+
 > **Obsidian retirement, 2026-09-25:** The plugin has been retired from the active codebase. Any plugin build, launch, demo, directory submission, hardening or future release proposed below is cancelled. The remaining product focus is web, desktop, phone, Cloud and Community. Obsidian users can work with vault folders in the normal app, without in-vault features. See [migration and source recovery](../../docs/guides/obsidian-plugin.mdx). Earlier study text below is retained as dated planning context, not an active plugin commitment.
 
 > The July 2026 repositioning study. One founder question drove it: "If we were starting from scratch today, how would we position DorkOS for massive success?" This doc is the executive summary; the numbered docs carry the detail.

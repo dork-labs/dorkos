@@ -5,6 +5,7 @@ status: accepted
 created: 2026-09-23
 spec: marketplace-fetch-integrity
 superseded-by: null
+amends: 0232
 ---
 
 # 260923-162950. A marketplace cache entry is keyed by the commit its checkout verifiably holds

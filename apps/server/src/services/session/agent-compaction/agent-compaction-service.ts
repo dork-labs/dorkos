@@ -18,9 +18,10 @@
  *
  * 1. A session, and a loaded one.
  * 2. A runtime that can summarize on request — the same capability flag the
- *    person's `/compact` reads. Codex compacts on its own and has no way to be
- *    asked: its sessions are not offered the tool at all, and a call that
- *    reaches here anyway is refused honestly rather than accepted and dropped.
+ *    person's `/compact` reads. Codex on its exec transport compacts on its own
+ *    and has no way to be asked: its sessions are not offered the tool at all,
+ *    and a call that reaches here anyway is refused honestly rather than
+ *    accepted and dropped. Every other runtime can, Codex on app-server included.
  * 3. Not already scheduled — "already scheduled" spends nothing.
  * 4. The once-an-hour allowance ({@link CompactionRequestBudget}).
  *

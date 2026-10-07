@@ -266,13 +266,28 @@ export class TestModeRuntime implements AgentRuntime {
    *
    * Yields the Claude adapter's full three-event shape (progress `started` →
    * boundary → progress `done`), not a bare boundary — see the note in the body
-   * for why the readings matter.
+   * for why the readings matter — and ends with the one `done` every runtime's
+   * run ends with. It counts as an open turn while it runs, as every runtime's
+   * compaction does ({@link isTurnOpen}).
    */
   async *executeCommandIntent(
-    _sessionId: string,
+    sessionId: string,
     _intent: RuntimeCommandIntentId,
     _opts?: CommandIntentOpts
   ): AsyncGenerator<StreamEvent> {
+    this.openTurns.set(sessionId, (this.openTurns.get(sessionId) ?? 0) + 1);
+    try {
+      yield* this.syntheticCompaction();
+      yield { type: 'done', data: { sessionId } };
+    } finally {
+      const open = (this.openTurns.get(sessionId) ?? 1) - 1;
+      if (open > 0) this.openTurns.set(sessionId, open);
+      else this.openTurns.delete(sessionId);
+    }
+  }
+
+  /** The compaction {@link executeCommandIntent} reports, in the Claude adapter's shape. */
+  private async *syntheticCompaction(): AsyncGenerator<StreamEvent> {
     // Full-fidelity, in the Claude adapter's own shape: the progress pair its
     // system-event mapper builds from `status:'compacting'` and
     // `compact_result:'success'`, around a boundary carrying the same four

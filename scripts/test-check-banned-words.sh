@@ -137,7 +137,7 @@ run_case 'ProductShot registry key is allowed' 0 'docs/index.mdx' \
 # violation here (check-vocab-gate.ts judges app source with a real parser),
 # and a guard that fired on identifiers would be one everyone learns to skip.
 run_case 'clean prose passes' 0 'README.md' \
-  'DorkOS is one place for every AI agent you run.'
+  'DorkOS is a workspace for people and agents.'
 
 echo ""
 printf '%s passed, %s failed\n' "$pass" "$fail"

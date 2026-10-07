@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted (extracted from spec: agent-permissions).
 
+Amended by [261006-225605](261006-225605-agents-are-trusted-by-default-outsiders-and-third-party-code-are-not.md) (agents are trusted by default): the destructive rule no longer covers in-circle actions, and `safety` and `permissions` are no longer floor areas. The `reach` floor stands whole: `FLOOR_NEVER_ALLOWED`, the resolver clamp, and `operator.config_patch` escalating into `reach` for perimeter paths.
+
 ## Context
 
 The operator asked for far more agent autonomy by default, with one exception: an agent must not be able to "nuke our entire system with a single mistake". Today "destructive means a person says yes first" holds on every setting (`capability-definition.ts`). An area set to Allowed, by a preset or a person, would otherwise quietly extend to every delete in it, and nothing stopped an agent from being allowed to change its own permissions, its safety limits, or what the machine exposes.

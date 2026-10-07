@@ -44,7 +44,7 @@ status: ideation
 - `specs/command-palette-10x/02-specification.md`: Comprehensive command palette spec (spec #87). Covers Cmd+K binding, zero-query state, agent frecency.
 - `specs/agent-centric-ux/02-specification.md`: Agent-centric UX overhaul (spec #85). Covers sidebar redesign and command palette integration.
 - `meta/personas/the-autonomous-builder.md`: Kai — runs 10-20 agent sessions/week across 5 projects. Needs glanceable agent identity. Keyboard-first.
-- `meta/personas/the-knowledge-architect.md`: Priya — flow preservation is core emotional need. Every unnecessary element is a distraction. Reads source code.
+- `meta/archive/personas/the-knowledge-architect.md`: Priya — flow preservation is core emotional need. Every unnecessary element is a distraction. Reads source code.
 - `research/20260310_top_nav_header_design.md`: Full research report covering industry patterns (Linear, VS Code, Arc, Raycast, Warp, GitHub Desktop), agent identity chip anatomy, command palette trigger UX, micro-interactions, progressive disclosure, and 10x enhancement ideas.
 
 ## 3) Codebase Map

@@ -634,7 +634,7 @@ export const SessionSchema = z
     /**
      * ISO-8601 timestamp of the most recent AUTO-triggered context compaction
      * visible in the session's readable transcript tail (claude-code only;
-     * codex has no compaction, opencode reports it live-only). ABSENT means no
+     * codex and opencode report compaction live only). ABSENT means no
      * auto-compaction is visible in the tail — either the session never
      * auto-compacted, or the boundary has scrolled past the 64 KB tail window
      * as the session grew (an honest, disclosed limitation; durable recency is

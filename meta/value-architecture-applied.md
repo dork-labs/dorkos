@@ -1,16 +1,54 @@
 # The Value Architecture — Applied to DorkOS
 
-> **2026-09-25 product update:** The Obsidian plugin is retired. In-vault features and plugin-based journeys described below are historical research, not current product promises. Priya remains a target persona; the current path is the normal DorkOS app working with her vault folder, subject to ordinary permissions. See [retirement and migration](../docs/guides/obsidian-plugin.mdx).
+> **2026-10-06 vision reset:** read the 2026-10 Addendum below first (the hero there was replaced on 2026-10-07 by the message stack). The strategy is [`positioning-202610/00-overview.md`](positioning-202610/00-overview.md). Priya and Lil are retired personas (`archive/personas/`); every Priya column, job map and persona reading in the 1.0 body below is history. _(Earlier note, 2026-09-25: the Obsidian plugin is retired, so in-vault journeys below are historical research. See [retirement and migration](../docs/guides/obsidian-plugin.mdx).)_
 
-**Version**: 1.2
-**Created**: 2026-02-27 (1.0) · **Amended**: 2026-07-06 (positioning review, `positioning-202607/`) · 2026-07-09 (hero reframe: "You, multiplied." roof; personas expanded)
+**Version**: 1.3
+**Created**: 2026-02-27 (1.0) · **Amended**: 2026-07-06 (positioning review, `positioning-202607/`) · 2026-07-09 (hero reframe: "You, multiplied." roof; personas expanded) · 2026-10-06 (vision reset: new pillars and personas, `positioning-202610/`; pillars re-cut the same day to mini apps, built for founders, ownership) · 2026-10-07 (the message stack replaces the 2026-10-06 hero)
 **Framework**: `meta/value-architecture.md` + `meta/value-architecture-handbook.md`
 **Personas**: `meta/personas/`
 **Brand Foundation**: `meta/brand-foundation.md`
 
 ---
 
-## 2026-07 Addendum (read first)
+## 2026-10 Addendum (read first)
+
+The 2026-10 vision reset replaces this document's outputs again, without rerunning the whole method. Where this addendum disagrees with the 2026-07 addendum or the 1.0 body, this addendum wins. The method mechanics (phases, ladders, matrix, templates) are unchanged.
+
+**Message House v3** (supersedes v2's pillars; roof kept; pillars re-cut the same day to the three differentiators in [`positioning-202610/00-overview.md`](positioning-202610/00-overview.md), "What sets us apart"):
+
+- **Roof:** **You, multiplied.** One founder, running a business far bigger than its headcount. The customer stays the subject.
+- **Category line:** a workspace for people and agents ("the workspace where founders run their business with people and agents"). It says what DorkOS is. It is **table stakes, not a pillar**: everyone will have a chat workspace with people and agents (Slack Code, Buzz, ChatGPT Space, Ando), so it never leads.
+- **Pillar 1: Mini apps (the lead).** Ask for a tool your business needs, and your agents build it inside DorkOS. _Proof (built):_ an agent's `create_extension` tool writes a starter, the agent fills it in, DorkOS builds it and turns it on; none of its code runs until a person says yes in Activity or Settings; it opens in fixed places (its own page, the side panel, the Activity page, the status bar, settings tabs, or a sidebar menu item). Supporting proof: live widgets in chat (charts, tables, checklists, buttons) and MCP Apps rendering in chat or on the canvas. _Internal proof only:_ the LifeOS and Tangerines dashboards and the flow plugin. _Later (roadmap):_ every agent knowing how, the "inside DorkOS or its own website" choice, ready-made founder mini apps.
+- **Pillar 2: Built for founders.** Not general purpose. For the semi-technical founder running a big or complex business mostly with agents. _Proof (built):_ agents that work the business's real tools through Connections (Composio and Nango, Gmail and others), schedules, and Telegram and Slack connections. _Later (roadmap):_ goals, groups and projects, business connections built for founders, ready-made founder mini apps, account features (email, phone, vault, payments).
+- **Pillar 3: Ownership.** Your agents, tools, files and data stay yours, wherever they run. Underneath: your real files, your AI plans (your own Claude or ChatGPT sign-in), MIT license, free forever on your own computer, no DorkOS account needed (body-copy facts, never headline words); DorkOS Cloud is optional and you can leave any time. Marketing says "ownership" or "yours", never "local first". _Proof (built):_ the CLI and desktop installs, localhost defaults, readable source, DorkOS Cloud today.
+- **Foundation (supporting, never the lead):** the office (`#team` home, rooms, DMs and threads, direct chat with the full coding view, the shared canvas; agents as co-workers), and colleagues, not babysitters (trusted by default; the safety net is a record anyone in the space can read; trust goes to your agents, never to strangers). _Proof today:_ the Activity page (not a complete audit trail). _Before launch:_ full power by default and the readable audit trail; until then public copy states the principle only (demo-claim gate).
+- **Never in public:** equal accounts ("agents equal to humans", "peers", "agents can run the place", "no human required"). They stay an internal design principle.
+
+**Hero: the message stack (decided 2026-10-07):** tagline "You, Multiplied." (the roof); headline and page title "Build and run your business with an agent team." (page title exactly "DorkOS: Build and run your business with an agent team"); supporting line "Your agents join your team chat, take on real work, and build the custom tools your company runs on." This supersedes the 2026-10-06 hero ("Ask for a tool. Your agents build it." and its lede) and the 4A hero below. The three pillars stay the structure below the hero, in order.
+
+**Headline bank (2026-10-07):** the message stack above is the headline set; the 3B bank below is history. Headline copy (hero, titles, meta descriptions, social cards, section headlines, README opening, npm description, llms.txt summary) never says "on your computer" or literally "open source"; ownership is "yours to keep" or "Your agents, tools, files and data stay yours, wherever they run." Body copy may state the plain facts (MIT license, runs on your computer or a server). "Ask for a tool. Your agents build it." stays usable as a mini apps section line.
+
+**Vocabulary (2026-10-06 update):** "role" now means the job on a profile ("role and responsibilities"). Owner, Admin, Member and Guest are **access levels**. **"Mini apps"** is the public name for apps agents build inside DorkOS; the app and docs still call them extensions ("mini apps (the app calls them extensions)"). **"Shape"** keeps its meaning: an installable setup bundle, which can carry mini apps. "Generative UI" is no longer a value word.
+
+**Launch centerpiece:** the official DorkOS Community Space, the one space open at launch, where everyone using DorkOS chats, shares tips and learns. It is **not built yet**: copy may say it is coming, never that it works, and never links to it. There is no Discord.
+
+**Retired pillars (v2):** "All your agents, one place" (the runtime trio is a docs fact now, not a pillar), "A team, not tabs", and "Yours, and safe to run". **Retired the same day (first v3 cut):** "One office for your people and agents" and "Colleagues, not babysitters" (now foundation, not pillars), "Agents that work your real tools" (folded into Built for founders), and "Yours, free, cloud optional" (now Ownership).
+
+**Ladder status:**
+
+- **VL-11 Every Agent In One Place** demotes from lead to proof under the foundation ("any agent can log in") and supports Ownership (your own AI plan). Do not lead with it.
+- **VL-12 Marketplace + Ecosystem Judo** stays gated: the Claude Code superset claim is still unverified.
+- **VL-07 Trust & Oversight** is rewritten in spirit: the emotional payoff is "I trust my agents like colleagues and can always check the record", not "I approve what they do". Re-author it in the 1.0 format at the next full revision.
+- **New ladders owed** (author in the 1.0 format): **VL-16 Mini Apps** (the lead ladder: ask for a tool, your agents build it; claim only today's built form), **VL-17 Built for Founders**, **VL-18 Ownership** (rebuilds VL-10 Open Foundation around "yours"), then **VL-13 The Office** (people and agents in one workspace, agents as co-workers with a job), **VL-14 Agents in Your Real Tools** (built Connections today; account features later), **VL-15 Trusted by Default** (the readable record; claimable only after it ships).
+- **VL-08 (Wing)** stays vision-stage. **VL-01 (autonomy)** remains proof, not hero.
+
+**Personas (2026-10-06):** primary **Ikechi, The Founder** (`personas/the-ai-native-founder.md`); secondary **Kai** (`personas/the-autonomous-builder.md`); anti-persona unchanged in principle (operator mentality, not technical skill) but no longer defined by "never hosted". Priya and Lil are retired. Maintenance owed at the next full revision: rebuild the Phase 1B job maps and the Persona-Benefit Matrix with the founder as the first column and Kai as the second, and re-check every activation template against the plain-language register, which is now the primary persona's register.
+
+**1C Identity Territory, current reading:** worldview: agents are colleagues, and a founder with the right workspace runs a company far bigger than its headcount. Tribe: founders and builders who give agents real jobs and own the system they run on. Signal: "My company is a few people and a lot of agents, and my agents build the tools we run on." Anti-identity: people who want to rent an outcome with nobody in charge of it.
+
+---
+
+## 2026-07 Addendum _(superseded 2026-10-06 by the addendum above; kept for history)_
 
 The July 2026 positioning review updates this document's outputs without rerunning the whole method. Where the addendum and the 1.0 body disagree, the addendum wins.
 

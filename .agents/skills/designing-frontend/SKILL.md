@@ -75,7 +75,8 @@ Before writing any code, work through these questions:
 ### 1. Purpose
 
 - What problem does this interface solve?
-- Who is the user? What's their context?
+- Who is the user? What's their context? Default to the founder (`meta/personas/the-ai-native-founder.md`): semi-technical, running a business mostly with agents, who must never be scared off. Kai (`meta/personas/the-autonomous-builder.md`), the developer running many agents, is second and wants density with calm.
+- Where do agents sit? DorkOS is a workspace for people and agents, and agents are co-workers: they get a name, an avatar and a profile beside people, not the chrome of a tool or a chatbot assistant.
 - What action do we want them to take?
 
 ### 2. Hierarchy

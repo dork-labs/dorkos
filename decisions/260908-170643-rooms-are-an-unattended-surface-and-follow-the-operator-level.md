@@ -15,6 +15,8 @@ amends: 260822-235802
 Accepted. Amends ADR `260822-235802` (unattended surfaces follow the operator's
 power level) by adding the surface that decision's enumeration left out.
 
+Amended by [261006-225605](261006-225605-agents-are-trusted-by-default-outsiders-and-third-party-code-are-not.md) (agents are trusted by default): Any confirm step before a room runs unattended is retired; following the operator's level stands.
+
 **Amended 2026-09-19 by**
 [260919-010733](260919-010733-a-session-binding-declares-what-started-it.md)
 (A session binding declares what started it, and one mapping turns that into

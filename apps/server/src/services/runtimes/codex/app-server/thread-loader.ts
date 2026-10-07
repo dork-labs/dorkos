@@ -101,9 +101,22 @@ export interface LoadedThread {
   readonly retired?: string;
 }
 
+/** Why a compaction found nothing to summarize. */
+export type NothingToCompact =
+  /** The session never ran a turn: no thread, no conversation. */
+  | 'empty'
+  /** Codex no longer has the bound thread (deleted, archived, rollout gone). */
+  | 'gone';
+
 interface LoadedRecord {
   readonly sessionId: string;
   readonly fingerprint: string;
+  /**
+   * Loaded cold for a compaction alone, with none of the agent's tools. The
+   * next turn keeps it only if it wants exactly that load; otherwise it is
+   * reloaded with that turn's config.
+   */
+  compactionOnly?: boolean;
   /** Digest of the credential VALUES it loaded with (see `credentialsOf`). */
   readonly credentials: string;
   readonly keyId: string | undefined;
@@ -175,6 +188,16 @@ export class CodexThreadLoader {
     const existingId = this.loadedThreadFor(input);
     if (existingId !== undefined) {
       const record = records.get(existingId)!;
+      // Loaded for a compaction alone, without tools: a loaded thread keeps
+      // the config it loaded with, so unless this turn wants exactly that
+      // load, reload just this thread with its config (a fork, carrying the
+      // summarized history). A turn that wants no tools either uses it as is.
+      if (record.compactionOnly) {
+        if (record.fingerprint !== desired || record.credentials !== credentials) {
+          return this.reload(input, existingId);
+        }
+        record.compactionOnly = false;
+      }
       // Only a credential VALUE changed (a managed server's OAuth bearer was
       // refreshed): reload just this thread, never the whole home (§9).
       if (record.fingerprint === desired && record.credentials !== credentials) {
@@ -210,6 +233,68 @@ export class CodexThreadLoader {
       return this.start(input, records, desired, credentials, undefined);
     }
     return this.resume(input, records, desired, credentials, input.boundThreadId);
+  }
+
+  /**
+   * Make sure the session's BOUND thread is loaded, for a compaction. When
+   * there is nothing to summarize it says why: `'empty'` (the session never
+   * bound a thread) or `'gone'` (Codex no longer has it: deleted or
+   * archived). A fresh thread would hold no conversation, so none is started.
+   *
+   * A thread already loaded is used exactly as it is: a compaction runs no
+   * tools, so the config it loaded with does not matter, and a mismatch must
+   * not mark its process stale. One loaded cold here carries none of the
+   * agent's tools (`input.tools` is empty), so it is marked `compactionOnly`
+   * and the next turn reloads it with its own unless it wants that very load
+   * ({@link ensureLoaded}).
+   *
+   * @param input - The compaction's load inputs; its tools are not loaded.
+   */
+  async ensureLoadedForCompaction(
+    input: ThreadLoadInput
+  ): Promise<LoadedThread | NothingToCompact> {
+    const records = this.recordsFor(input.process);
+    const existingId = this.loadedThreadFor(input);
+    if (existingId !== undefined) {
+      const record = records.get(existingId)!;
+      // A thread started for a first turn that never began has nothing in it
+      // (a fork waiting to bind names the thread it replaces, and has).
+      if (record.unbound && record.replaces === undefined) {
+        return 'empty';
+      }
+      return {
+        threadId: existingId,
+        keyId: record.keyId,
+        needsBinding: record.unbound,
+        replaces: record.replaces,
+        notice: undefined,
+      };
+    }
+    const threadId = input.boundThreadId;
+    if (threadId === undefined) return 'empty';
+    try {
+      const overrides = await this.overrides(input, undefined);
+      await input.process.client.request('thread/resume', { threadId, ...overrides });
+    } catch (err) {
+      if (isCodexRpcError(err, 'no-rollout', 'thread-not-found', 'archived')) return 'gone';
+      throw err;
+    }
+    records.set(threadId, {
+      sessionId: input.sessionId,
+      fingerprint: this.fingerprintOf(input),
+      compactionOnly: true,
+      credentials: credentialsOf(input),
+      keyId: undefined,
+      unbound: false,
+      replaces: undefined,
+    });
+    return {
+      threadId,
+      keyId: undefined,
+      needsBinding: false,
+      replaces: undefined,
+      notice: undefined,
+    };
   }
 
   /**

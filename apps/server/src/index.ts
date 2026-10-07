@@ -558,6 +558,7 @@ import {
   sweepDepartedAgentSeats,
 } from './services/rooms/manage/departed-agents.js';
 import { registerLocalCommunity } from './services/communities/index.js';
+import { spacesEnabled } from './middleware/spaces-enabled.js';
 import { SearchIndexer, selectSearchSources } from './services/search/index.js';
 import { TerminalManager, terminalUpgradeRoute } from './services/terminal/index.js';
 import { attachUpgradeRouter } from './services/core/streams/upgrade-router.js';
@@ -2078,7 +2079,8 @@ async function start() {
     (localAgentId) => resolveRemoteLocalAgent(localAgentId)?.authorId ?? null,
     undefined,
     remoteCommunityRuntime.outbox,
-    remoteCommunityRuntime
+    remoteCommunityRuntime,
+    spacesEnabled
   );
   remoteRedactionSync = new RemoteRedactionSync({
     db,

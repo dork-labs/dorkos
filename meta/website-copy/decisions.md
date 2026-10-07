@@ -16,7 +16,9 @@ Tracking key creative decisions as they're made.
 **Decision:** Round 1 asks for the organizing concept, not a tagline. A slogan is the compression of a concept — you need the concept first.
 **Rationale:** Starting with slogans produces clever lines with no structural integrity. Starting with concepts produces a site where every section reinforces the same idea.
 
-## Decision 3: Reject "Employment" Metaphor
+## Decision 3: Reject "Employment" Metaphor _(retired 2026-10-06, see Decision 19)_
+
+> **Retired 2026-10-06.** The nuance below ("The human is the lead. Human and agent are not peers.") is superseded. People and agents are colleagues. They will have equal accounts (roadmap), with no person required anywhere, so an agent could even be a space's admin (internal; never in public copy, Decision 20). The "like teammates" hedge is retired with it (`brand-foundation.md` §10). What survives: the tone stays warm and collaborative, not managerial, and copy never frames the founder as "a boss managing headcount". The word "worker" is allowed in the one image the story now uses ("DorkOS is the office; people and agents are the workers who log in"). See Decision 19.
 
 **Date:** 2026-02-27
 **Decision:** Ogilvy's "tool → employee" framing is rejected. Too corporate. The relationship between human and agent should use language like "work with," "teammate," "collaborate," "crew" — not "employ," "worker," "hire."
@@ -137,6 +139,8 @@ Tracking key creative decisions as they're made.
 
 ## Decision 18: The Category Phrase Is "One Place" — "Mission Control" and "Cockpit" Are Retired
 
+> **Updated 2026-10-06 (Decision 19).** The category phrase is no longer "one place". It is now **"a workspace for people and agents"**. "All your agents. One place." and "one place for every AI agent you run" are retired as category lines; plain uses of the words "one place", "one window" and "the app" remain fine and remain the right replacements for the two banned words. **The ban on "mission control" and "cockpit" is unchanged** and still enforced by `scripts/check-banned-words.sh`. The text below is the 2026-08-24 record.
+
 **Date:** 2026-08-24 (DOR-1517)
 **Decision:** The category phrase is **"one place"**. Hero form: **"All your agents. One place."** Long form: **"DorkOS is one place for every AI agent you run."** Supporting variants when the sentence needs a different shape: "one window", "one home", "your team". For prose about the product itself, write "the DorkOS app" or "the app".
 
@@ -151,3 +155,73 @@ Tracking key creative decisions as they're made.
 **One exception, and it is not ours:** GitHub ships a product literally named "Mission Control". Competitive-analysis copy may name it.
 
 **Affected documents:** `AGENTS.md`, both READMEs, the marketing site, `brand-foundation.md`, `dorkos-litepaper.md`, `value-architecture-applied.md`, `chat-capabilities.md`, `agent-etiquette.md`, `INDEX.md`, all of `positioning-202607/`, and two personas. Deliberately untouched: `rounds/**` and `archive/**`, which are frozen historical artifacts.
+
+## Decision 19: The 2026-10 Story: A Workspace for People and Agents
+
+**Date:** 2026-10-06 (vision reset, agreed with the founder; strategy in `meta/positioning-202610/00-overview.md`)
+**Decision:**
+
+- **Category:** **a workspace for people and agents.** Long form: "the workspace where founders run their business with people and agents." Replaces "one place for every AI agent you run" (Decision 18) and "operating system for AI agents" as category claims. The product name stays DorkOS.
+- **Tagline:** **You, Multiplied.** Unchanged, hero surfaces only. "Intelligence doesn't scale. Coordination does." stays a manifesto line for essays, never a headline.
+- **Explainer:** "Teams needed Slack. AI agents need DorkOS."
+- **Core image:** DorkOS is the office; people and agents are the workers who log in. An agent's brain (Claude Code, Codex or OpenCode) and its computer sit outside the office and connect in.
+- **Audience:** the founder first (semi-technical, T-shaped, YC-style, building a big business mostly with agents); Kai, the developer, second. Priya and Lil retired for focus.
+- **Relationship:** people and agents are colleagues, and will have equal accounts (roadmap). Retires Decision 3's "not peers" nuance. _(Amended by Decision 20: equal accounts are internal only and never said in public.)_
+- **Co-workers, not assistants** _(added 2026-10-06, brief update)_: agents are co-workers and co-creators working toward shared goals. Never frame our agents as "AI assistants". Every profile will carry a "role and responsibilities", the job (roadmap). Describing other products as assistants, and technical uses such as "assistant message", are fine.
+- **Access levels** _(added 2026-10-06)_: Owner, Admin, Member and Guest are **access levels**, not roles. "Role" means the job on a profile. All of it is roadmap; copy does not claim it.
+- **Apps inside DorkOS** _(added 2026-10-06; superseded by Decision 20)_: ~~the new name is not final; public copy keeps "shapes"~~. "Mini apps" is now the public name; see Decision 20.
+- **Trust:** "trusted by default", "colleagues, not babysitters". Copy may state the principle now. It may not claim full power by default, an audit trail anyone can read, or the absence of permission prompts as shipped behavior until the trust work ships (the demo-claim gate, `meta/positioning-202610/00-overview.md#the-demo-claim-gate`).
+- **Runtime names:** "Claude Code, Codex and OpenCode side by side" leaves the headline. Runtimes are a docs fact; one plain mention lower down on a story surface is fine.
+- **Cloud:** local first, cloud optional. Free forever on your own computer with no required account; DorkOS Cloud is an option, never a requirement. _(Amended by Decision 20: marketing says "ownership", not "local first".)_
+
+**Name collision:** "Workspaces" is an existing product noun (the /workspaces page). Make the category use obvious ("a workspace for people and agents") and never redefine the product page.
+
+**Why:** the product already looks like this (rooms, `#team`, connections to business tools), and the founder audience is where DorkOS is load-bearing rather than a convenience. "One place for every AI agent you run" described a developer's fleet; the new line describes a business.
+
+**Affected documents:** `meta/` (this folder's brief is bannered; `brand-foundation.md`, `dorkos-litepaper.md`, `value-architecture-applied.md`, the personas). `AGENTS.md`, the READMEs, docs and the site follow in their own changes under DOR-2736. Deliberately left as history: `rounds/**` (untouched) and the bodies of `archive/**` files (which only gained banners, link fixes and the removal of old price notes).
+
+## Decision 20: What Sets Us Apart: Mini Apps, Built for Founders, Ownership
+
+**Date:** 2026-10-06 (decided by the founder the same day as Decision 19; canon in `meta/positioning-202610/00-overview.md`, "What sets us apart")
+**Decision:**
+
+- **Table stakes, not our edge:** a chat workspace with people and agents (channels, DMs, threads). Everyone will have it (Slack Code, Buzz, ChatGPT Space, Ando). Copy may state it plainly as what DorkOS is. It is never the lead, the headline or the reason to choose DorkOS. Decision 19's category line stands, but it no longer leads.
+- **The three differentiators, always in this order:**
+  1. **Mini apps (lead with this).** Ask for a tool your business needs, and your agents build it inside DorkOS. "Mini apps" is the public name. It replaces "generative UI" as a value word. Docs say "mini apps (the app calls them extensions)". "Shape" stays the name of the setup bundle, which can carry mini apps.
+  2. **Built for founders.** Not general purpose. Goals, business connections and ready-made founder mini apps are the direction; copy says "coming" or leaves them out.
+  3. **Ownership.** Your computer, your real files, your AI plans, your data. Open source (MIT), free forever on your computer, no account needed. Marketing says "ownership" or "yours", never "local first".
+- **The homepage hero** _(replaced 2026-10-07 by Decision 21; kept here as the record)_:
+  - Eyebrow: "for founders"
+  - Title: "Ask for a tool. Your agents build it."
+  - Lede: "Your agents build the dashboards and trackers your business needs, right inside DorkOS. On your computer, with your files. Free and open source."
+- **Tagline:** "You, Multiplied." stays, hero surfaces only. The manifesto line is still never a headline.
+- **Claim mini apps as built, no further.** Today an agent's `create_extension` tool writes a starter, the agent fills it in, DorkOS builds it and turns it on, a person says yes in Activity or Settings, and it opens inside DorkOS in fixed places (its own page, the side panel, the Activity page, the status bar, settings tabs, or a sidebar menu item). Safe verbs: "ask for", "builds", "you say yes", "opens inside DorkOS". Never "any tool", "no code ever", "instantly" or "builds anything". Every agent knowing how, the "inside DorkOS or its own website" choice and ready-made founder mini apps are roadmap. The LifeOS and Tangerines dashboards and the flow plugin are internal proof, never a public demo.
+- **Never in public:** "agents equal to humans", "equal accounts", "peers", "same account as you", "agents can run the place" (or your company, or the space), "no human required", "agents can be admins". Equal accounts stay an internal design principle. "Co-workers" and "teammates" are fine.
+- **No Discord.** The community is the official DorkOS Community Space (DOR-2764), not built yet: say "coming", never that it works, never link to it.
+
+**Why:** the competitive analysis (`research/20261006_competitive-analysis-2026-10-vision.md`) found that a chat workspace with agents is becoming common. What rivals do not combine is agents building the business's own tools inside the workspace, a product made for founders, and a system the founder owns.
+
+**Affected documents:** `meta/positioning-202610/00-overview.md`, `brand-foundation.md`, `dorkos-litepaper.md`, `value-architecture-applied.md`, the personas, `.claude/rules/site-marketing-copy.md` and the writing skills. The site, READMEs and docs follow in their own changes. Deliberately left as history: `rounds/**` and `archive/**`.
+
+## Decision 21: The Message Stack: Build and Run Your Business with an Agent Team
+
+**Date:** 2026-10-07 (decided by the founder; canon in `meta/positioning-202610/00-overview.md`, "The message stack")
+**Amends:** Decision 20's homepage hero. The rest of Decision 20 stands.
+**Decision:**
+
+- **The message stack, three levels:**
+  1. **Tagline:** "You, Multiplied." Each surface keeps its established casing (the site's closing section says "You, multiplied.").
+  2. **Page title and main headline:** "Build and run your business with an agent team." The homepage title is exactly "DorkOS: Build and run your business with an agent team".
+  3. **Supporting line:** "Your agents join your team chat, take on real work, and build the custom tools your company runs on."
+- **Retired:** "Ask for a tool. Your agents build it." as the hero title, and its lede. The line may still head a mini apps section.
+- **Headline rules.** Headline copy means the hero, page titles, meta descriptions, OG and Twitter cards, section headlines, the README opening, the npm description and the llms.txt summary line. In headline copy:
+  - Never "on your computer", "on your own computer" or "runs on your computer". DorkOS Cloud runs on our servers too.
+  - Never the literal words "open source".
+  - Ownership is said as "yours": "yours to keep", or "Your agents, tools, files and data stay yours, wherever they run."
+  - Lower on the page (body text, FAQ, install details, the license section), plain facts such as "MIT license" or "runs on your computer or a server" are fine.
+- **Structure below the hero:** the three differentiators stay the beats, in order: mini apps, built for founders, ownership. The chat workspace is still table stakes; the supporting line names it first, and that is fine.
+- **Ownership wording:** "Your agents, tools, files and data stay yours, wherever they run." It replaces "your computer, your real files, your AI plans, your data" as the lead phrasing.
+
+**Why:** the new headline says what a founder gets in one plain sentence, and the supporting line carries the chat, the work and the mini apps together. "Your computer" stops being true as a headline once DorkOS Cloud runs agents on our servers, so ownership is said as "yours".
+
+**Affected documents:** `meta/positioning-202610/00-overview.md`, `brand-foundation.md`, `dorkos-litepaper.md`, `value-architecture-applied.md`, `website-copy/brief/creative-brief.md`, `INDEX.md`, `.claude/rules/site-marketing-copy.md` and the writing skills. The site, READMEs, npm copy and docs follow in their own changes. Deliberately left as history: `rounds/**`, `archive/**` and Decision 20's hero.

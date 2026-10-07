@@ -1,10 +1,12 @@
 # Kai Nakamura — The Autonomous Builder
 
-**Role**: Primary persona
+**Role**: Secondary persona _(was primary until 2026-10-06)_
 **Confidence**: Proto-persona (assumption-based)
 **Created**: 2026-02-27
-**Reviewed**: 2026-07-06 (positioning review; vendor-hedging trait added below)
-**Review by**: 2027-01-06
+**Reviewed**: 2026-07-06 (positioning review; vendor-hedging trait added below) · 2026-10-06 (vision reset: moved to secondary)
+**Review by**: 2027-04-06
+
+> **2026-10-06:** Kai is now the secondary persona. The primary is the founder who runs a business with agents ([`the-ai-native-founder.md`](the-ai-native-founder.md)); the strategy is [`../positioning-202610/00-overview.md`](../positioning-202610/00-overview.md). Kai is still served well: the direct chat with its full coding view, many agents across many projects, schedules, and Claude Code, Codex and OpenCode in one app all stay. What changed is that he no longer defines the whole audience or the headline. Of the three differentiators, ownership (his own computer, real files, his own AI plan, open source) and mini apps (agents building tools inside DorkOS, through an extension API he can read) land hardest with him; "built for founders" is aimed at the founder, not at him. Where the text below says DorkOS is "for developers" or treats Kai as the beachhead, read it as history.
 
 ---
 

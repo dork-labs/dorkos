@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted
 
+Amended by [261006-235240](261006-235240-one-message-system.md) (one message system; 2026-10-06 vision reset): retires mailbox directories as a storage shape. They go with the Maildir store when Relay merges into conversations; until then this still governs.
+
 ## Context
 
 The Relay endpoint registry hashes subject strings into 12-character SHA-256 hex prefixes for use as Maildir directory names under `~/.dork/relay/mailboxes/`. This produces opaque folder names like `02cdb2a9d371/` that cannot be identified without reading messages inside them or inspecting in-memory state. The hash-to-subject mapping only exists while the server runs.

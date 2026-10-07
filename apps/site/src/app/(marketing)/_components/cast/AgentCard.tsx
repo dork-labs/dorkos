@@ -24,8 +24,8 @@ interface AgentCardProps {
  * header, so the agent physically leaves this card when the chat opens.
  *
  * The runtime badge is the point of the card. Otto, Pip and Hal are the film's
- * characters, but what they are standing for here is Claude Code, Codex and
- * OpenCode running side by side in one window, which is the whole differentiator.
+ * characters, and the badges show which tool each agent runs on: Claude Code,
+ * Codex or OpenCode.
  */
 export function AgentCard({ agent, index, joined, floating }: AgentCardProps) {
   const { runtime, RuntimeLogo, runtimeColor } = RUNTIMES[agent.key];

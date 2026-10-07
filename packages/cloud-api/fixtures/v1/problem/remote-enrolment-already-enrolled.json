@@ -1,0 +1,6 @@
+{
+  "code": "conflict",
+  "status": 409,
+  "title": "This machine is already set up.",
+  "detail": "Managed remote access is already on for this machine. Turn it off first to agree again."
+}

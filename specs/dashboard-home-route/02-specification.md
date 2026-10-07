@@ -768,7 +768,7 @@ await page.goto('/session');
 - `research/20260320_tanstack_router_vs_react_router_v7.md` — Router comparison
 - `meta/value-architecture-applied.md` — VL-03 (Multi-Session Command Center)
 - `meta/personas/the-autonomous-builder.md` — Kai's at-a-glance needs
-- `meta/personas/the-knowledge-architect.md` — Priya's quick orientation needs
+- `meta/archive/personas/the-knowledge-architect.md` — Priya's quick orientation needs
 - `research/20260320_tanstack_router_code_patterns.md` — TanStack Router code patterns for DorkOS
 - [TanStack Router docs — Code-based routing](https://tanstack.com/router/latest/docs/routing/code-based-routing)
 - [TanStack Router docs — Search params](https://tanstack.com/router/latest/docs/guide/search-params)

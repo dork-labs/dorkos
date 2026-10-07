@@ -12,20 +12,38 @@
 
 **You, multiplied.**
 
-DorkOS is one place for every AI agent you run: Claude Code, Codex, and OpenCode, in one window. See every session, approve what your agents do, and let them work on a schedule, all on your own machine.
+**Build and run your business with an agent team.**
+
+Your agents join your team chat, take on real work, and build the custom tools your company runs on.
+
+Ask for a tool your business needs, like a dashboard or a tracker, and your agents build it as a mini app inside DorkOS. You approve it before it runs, then it opens on its own page or in the side panel. (The app and docs call these [extensions](https://dorkos.ai/docs/integrations/extensions).)
+
+DorkOS is built for founders who run a business mostly with agents, not a general tool for every team.
+
+Your agents, tools, files and data stay yours, wherever they run. Your agents use your own AI sign-in, like the Claude Code or Codex account you already have, and no DorkOS account is needed. DorkOS Cloud is optional.
+
+Underneath, DorkOS is a workspace for people and agents. Talk with your agents in channels, direct messages and threads. Put them on a schedule. Let them work the outside apps your business runs on, like Gmail. (Connections are in beta. Gmail and other apps connect through a DorkOS account or your own key.)
+
+Think of DorkOS as the office, and your agents as the workers who log in. Each agent's brain, the AI that does its thinking, runs outside the office and connects in. Agents here are trusted colleagues, and the Activity page shows what each one did.
 
 **Alpha, and moving fast.** DorkOS is built in the open by one person and a fleet of agents. Expect rough edges. [File an issue](https://github.com/dork-labs/dorkos/issues) and we'll get to it.
 
 ## Who this is for
 
-You run AI coding agents like Claude Code, Codex, and OpenCode, and you start them from a lot of places: your terminal, your editor, a script. DorkOS gathers all of those sessions into one dashboard in your browser, so you can see what each agent is doing and step in when it matters.
+**Founders who build with agents.** You have a clear picture of the business you want and the taste to judge the work. You get most of it done by directing AI agents, and you don't need to be a full-time developer to do it. DorkOS gives you and your agents one workspace: a #team channel where you all talk, a channel per project, schedules that run while you sleep, and a Telegram or Slack message when something needs you.
+
+**Developers running many agents.** You run a lot of coding agents across a lot of projects, and you start them from your terminal, your editor and your scripts. DorkOS shows every session in one window, whichever tool started it, so you can see what each agent is doing and step in from your laptop or your phone. Your agents can run on Claude Code, Codex or OpenCode.
 
 ## What you get
 
-- **Every session in one place.** See your Claude Code sessions for a project, no matter where you started them, then switch folders to see the rest.
-- **Control from anywhere.** Approve or deny what an agent wants to do, from your laptop or your phone.
+- **Mini apps.** Ask for a tool, and your agents build the dashboard or tracker your business needs, right inside DorkOS.
+- **Built for founders.** Run a business mostly with agents, not a general tool for every team.
+- **Yours to keep.** Your agents, tools, files and data stay yours, wherever they run. Free forever under the MIT license, with no DorkOS account needed. DorkOS Cloud is optional.
+- **One workspace for you and your agents.** Talk in channels, direct messages and threads, starting with #team.
 - **Agents that run without you.** Put an agent on a schedule, then get a message when it finishes.
-- **Your machine, your data.** DorkOS runs on your computer. Sessions and data stay local, and the code is open source.
+- **Agents that use your other apps.** Connect Gmail and other services, and your agents can work in them.
+- **All your sessions in one list.** See your Claude Code sessions for a project, no matter where you started them, then switch folders to see the rest.
+- **Step in from anywhere.** Check on an agent and answer it from your laptop or your phone.
 
 ## Install
 
@@ -43,7 +61,7 @@ Just want to try it first? `npx dorkos@latest` runs DorkOS with no install step 
 dorkos
 ```
 
-Already signed in to Claude Code? You're done. Your browser opens on your Claude Code sessions in this folder: the ones you started from your terminal, from VS Code, from anywhere. Switch folders from the sidebar to see sessions from your other projects.
+Already signed in to Claude Code? You're done. Your browser opens on #team, where you and your agents talk. Your Claude Code sessions from this folder, wherever you started them, are on that agent's Sessions page. Switch folders from the sidebar to see your other projects.
 
 No Claude Code yet, or paying per token instead of on a subscription? Set an API key first:
 
@@ -56,7 +74,19 @@ dorkos
 
 It's 7am. CI has been red since 2:47am. A dependency update broke three repos. Your agent could have caught this overnight, fixed it, and sent you a message. Instead, nothing was watching.
 
-DorkOS gives your agents what they're missing: a schedule, a way to reach you, and a way to find each other. The intelligence comes from the agents. Everything else comes from DorkOS.
+DorkOS gives your agents what they're missing: a place to work with you, a schedule, a way to reach you, and a way to find each other. The intelligence comes from the agents. Everything else comes from DorkOS.
+
+### Rooms: talk with your agents
+
+Every install starts with a #team channel: you, DorkBot (the built-in helper agent) and every agent you add. Open more channels for each project or topic, send any agent a direct message, and reply in threads. Agents post their updates where you can see them, and a shared canvas holds the documents a room is working on.
+
+- Type without naming anyone and your default agent answers
+- Name an agent with `@` to ask it directly
+- Bring a Telegram chat in as a channel, so your agent reads the whole conversation
+
+### Connections: let agents work your other apps
+
+Connect the outside apps your work depends on, like Gmail, and your agents can read and act in them for you. You choose which apps to connect.
 
 ### Tasks: run agents on a schedule
 
@@ -69,9 +99,9 @@ Set an agent to run at a time you pick (like every morning at 9am) or on demand,
 
 ### Relay: let agents reach you
 
-Your agents can message you on the channels you already use: Telegram, a webhook, or the browser. When an agent finishes or gets stuck, you hear about it where you are. Agents can also message each other across projects.
+Your agents can message you on the channels you already use: Telegram, Slack, a webhook, or the browser. When an agent finishes or gets stuck, you hear about it where you are. Agents can also message each other across projects.
 
-- Telegram and webhook support built in
+- Telegram, Slack and webhook support built in
 - Add a new channel with a plugin, no custom bot required
 - Messages wait for you even after you close the terminal
 
@@ -87,7 +117,7 @@ DorkOS scans your projects and finds the folders that hold agents. You choose wh
 
 Your agents have names, colors, and a status. Glance at your browser and know which ones are working, which are done, and which need you.
 
-Start a session in the browser. Check on it from your phone. Every session shows up in one place, whichever tool started it.
+Start a session in the browser. Check on it from your phone. Every session shows up together, whichever tool started it.
 
 - Full session history with rich markdown
 - Approve or deny an agent's actions from any device
@@ -95,7 +125,7 @@ Start a session in the browser. Check on it from your phone. Every session shows
 
 ### Extensions
 
-Agents can build and install extensions that add new features. Each extension brings its own settings and secrets, all managed from the dashboard.
+Agents can build and install extensions that add new features. Each extension brings its own settings and secrets, all managed from the app.
 
 ### Connect other AI tools (MCP)
 
@@ -133,9 +163,9 @@ pnpm add -g dorkos@latest
 
 For Docker and other ways to update, see the [full upgrade guide](https://dorkos.ai/docs/getting-started/installation#updating).
 
-## Open Source
+## Yours to keep
 
-MIT-licensed and open source. It runs on your machine: your agents, your data, your rules.
+MIT license. It runs on your own computer or a server you control: your agents, your data, your rules.
 
 Choose how much control you want, from approving every single action to letting an agent run on its own. Every session is saved on your computer, so when an agent works overnight you can see exactly what it did.
 

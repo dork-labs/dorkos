@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted
 
+Amended by [261006-235240](261006-235240-one-message-system.md) (one message system; 2026-10-06 vision reset): retires access rules as something to author at all. Anyone in a space may message anyone once Relay merges into conversations; until then rules stay an opt-in firewall (261006-225605) and this still governs who may write them.
+
 ## Context
 
 Mesh topology access rules control which project namespaces can communicate. The research recommended human-only authorship (with optional agent-proposal-then-approve queue) to prevent agents from self-granting cross-project access. However, for the current single-user context, maximum autonomy was preferred to minimize configuration friction and enable fully autonomous agent networks.

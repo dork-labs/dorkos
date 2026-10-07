@@ -1,6 +1,12 @@
 import { z } from 'zod';
 
-import { IdSchema, SecretValueSchema, TimestampSchema, tolerantEnum } from './primitives.js';
+import {
+  IdSchema,
+  ONE_TIME_CREDENTIAL_META,
+  SecretValueSchema,
+  TimestampSchema,
+  tolerantEnum,
+} from './primitives.js';
 import { HandleSchema } from './seats.js';
 
 /**
@@ -117,27 +123,6 @@ export const RemoteWakeTokenSchema = z
     singleUse: z.boolean(),
   })
   .describe('A token that can open a closed tunnel. The value is returned exactly once.');
-
-/**
- * `POST /v1/remote/enrolment` — the person`s consent to managed remote access.
- *
- * Accepted only from a person`s session. An instance cannot enrol itself.
- */
-export const RemoteEnrolmentSchema = z
-  .object({
-    enrolmentId: IdSchema,
-    consentVersion: z.string().describe('Which version of the consent text the person agreed to.'),
-    enrolledAt: TimestampSchema,
-  })
-  .describe('A person`s consent to managed remote access. Only a person`s session can create one.');
-
-/** A person`s consent to managed remote access. */
-export type RemoteEnrolment = z.infer<typeof RemoteEnrolmentSchema>;
-
-/** `DELETE /v1/remote/enrolment` — withdrawn by the person or by the instance. */
-export const RemoteEnrolmentWithdrawnSchema = z
-  .object({ withdrawnAt: TimestampSchema })
-  .describe('When consent was withdrawn. Either the person or the instance may withdraw it.');
 
 /** `GET` / `POST /v1/remote/address` — the canonical address for an instance. */
 export const RemoteAddressSchema = z
@@ -324,7 +309,45 @@ export type RemoteUsageResponse = z.infer<typeof RemoteUsageResponseSchema>;
  * `POST /v1/remote/credentials/issue` — an instance asks for a tunnel
  * credential.
  *
- * Instance API key only. `value` is returned once.
+ * Instance API key only, and the credential is for the instance the key
+ * belongs to: the body`s `instanceId` does not choose another one. `value` and
+ * `edgeProof.secret` are returned once, in this answer and never again,
+ * because the service does not keep them.
+ *
+ * ## A repeated key is refused, never answered twice
+ *
+ * The `idempotencyKey` stops a retry from creating a second credential. It
+ * does not replay the answer: a second call with a key the service already
+ * issued under is refused with `conflict`, whatever happened to the first
+ * answer. The refusal`s `detail` names the issuance, the credential id, its
+ * fingerprint and whether it was confirmed, for a person reading a log; do not
+ * parse it.
+ *
+ * ## Recovering after a lost answer
+ *
+ * When an issue answer is lost (a timeout, a crash before the value was
+ * stored), issue again with a **fresh** `idempotencyKey`. The new answer is a
+ * new credential; store it and confirm it. The credential behind the lost
+ * answer was never confirmed, so it is never used: the service withdraws an
+ * issued but unconfirmed credential when a newer one is issued to the same
+ * instance, and in any case once the window for confirming it passes.
+ *
+ * A `rotate` command`s key is the one exception to choosing the key: present
+ * the command`s `credentialId` as the key. A key whose replacement was already
+ * collected, or is no longer on offer, is refused with `conflict` and nothing
+ * is created; keep using the current credential.
+ *
+ * A lost rotation answer recovers on its own. A replacement that was collected
+ * but not confirmed within the window for confirming it is withdrawn, and the
+ * service sends a new `rotate` command, with a new `credentialId`, before the
+ * current credential`s own deadline. Until then the instance keeps serving
+ * with its current credential, which stays valid.
+ *
+ * Other refusals: `precondition_failed` when the machine is not linked to an
+ * organization, has no address yet, or its owner has not agreed to the
+ * current terms (then with an `actionUrl`); `unauthenticated` when the key is
+ * no longer valid, including a machine unlinked while the call was on its way;
+ * `forbidden` for a person`s session.
  */
 export const RemoteCredentialIssueRequestSchema = z
   .object({
@@ -333,12 +356,133 @@ export const RemoteCredentialIssueRequestSchema = z
       .string()
       .min(1)
       .describe(
-        'A client-chosen key. Repeating an issue with the same key repeats the answer, not the effect.'
+        'A client-chosen key that stops a retry from creating a second credential. A key already used is refused with `conflict`, never answered with the value again. After a lost answer, issue again with a fresh key; a rotate command supplies its own key.'
       ),
   })
-  .describe('An instance asking for a tunnel credential. Instance API key only.');
+  .describe(
+    'An instance asking for a tunnel credential. Instance API key only. A repeated key is refused, not replayed; recover a lost answer with a fresh key.'
+  );
 
-/** A freshly issued tunnel credential. */
+/**
+ * Header names an edge proof may never use, because HTTP, a proxy or a session
+ * already gives them a meaning. Any `x-forwarded-*` name is refused as well,
+ * and a `:` pseudo-header cannot pass the name pattern at all.
+ */
+export const REMOTE_EDGE_PROOF_RESERVED_HEADERS: readonly string[] = [
+  'authorization',
+  'proxy-authorization',
+  'cookie',
+  'set-cookie',
+  'host',
+  'connection',
+  'upgrade',
+  'content-length',
+  'transfer-encoding',
+  'te',
+  'forwarded',
+];
+
+/**
+ * The header a request must carry to prove it arrived through the managed
+ * edge, and the value it must carry.
+ *
+ * ## Which requests must carry it
+ *
+ * **Every** request that arrives over managed access: on the instance`s
+ * managed listener, or whose `Host` is one of the credential`s `hosts`. The
+ * proof is required, never optional: a request without the header is refused,
+ * not let through as if it came some other way.
+ *
+ * ## What the edge does, and what the instance checks
+ *
+ * The managed edge removes every copy of `header` a client sent and adds
+ * exactly one, carrying `secret`. So before any other handling (before login,
+ * sessions, routing, logging or counting) an instance refuses such a request
+ * unless it carries **exactly one** `header` whose value equals `secret`. Zero
+ * copies, more than one copy, or a different value are all refused, and never
+ * resolved by reading the first or last copy. Count copies from the raw or
+ * distinct header lists (in Node, `req.rawHeaders` or `req.headersDistinct`),
+ * never from a field that folds repeats into one comma-joined value. Compare
+ * the value in constant time. Then remove the header, so no later handler,
+ * logger or proxy ever sees it. A refused request is not activity and is not
+ * counted.
+ *
+ * The proof says only that a request came through the edge. It is not a
+ * person, a login or an approval, and it never stands in for one.
+ *
+ * ## When a secret changes
+ *
+ * The secret belongs to one credential, and every issued credential carries a
+ * new one. A **replacement** (a `rotate` command, or any newer credential the
+ * instance confirms) overlaps: the instance accepts the new secret from when it
+ * starts serving the new credential, and keeps accepting the old one until
+ * {@link REMOTE_EDGE_PROOF_OVERLAP_SECONDS} after it confirmed the new
+ * credential, never more than these two. The service, in turn, moves the edge
+ * to the new secret no earlier than the confirmation, and does not revoke the
+ * replaced credential or retire its secret until that overlap has passed. A
+ * **revoke** (a `revoke` command, `POST /v1/remote/credentials/revoke`, a
+ * withdrawn enrolment, an unlinked machine) is a security action, not a
+ * replacement: it is immediate on both sides, and the instance stops accepting
+ * that credential`s secret at once.
+ *
+ * Header names that already mean something to HTTP, a proxy or a session are
+ * refused ({@link REMOTE_EDGE_PROOF_RESERVED_HEADERS}, any `x-forwarded-*`, and
+ * any `:` pseudo-header), so honouring the proof can never mean stripping one.
+ *
+ * Never log `secret`, never put it in configuration in the clear, and never
+ * return it to a browser.
+ */
+export const RemoteEdgeProofSchema = z
+  .object({
+    header: z
+      .string()
+      .max(64)
+      .regex(
+        /^[a-z0-9]+(-[a-z0-9]+)*$/,
+        'must be a lower-case header name: letters, digits and single hyphens'
+      )
+      .refine(
+        (name) =>
+          !REMOTE_EDGE_PROOF_RESERVED_HEADERS.includes(name) && !name.startsWith('x-forwarded-'),
+        'must not be a header HTTP, a proxy or a session already uses'
+      )
+      .describe(
+        'The request header that carries the proof, in lower case. Never a header HTTP, a proxy or a session already uses. Compare header names without regard to case.'
+      ),
+    secret: z
+      .string()
+      .min(32)
+      .max(512)
+      .regex(/^[\x21-\x7e]+$/, 'must be printable ASCII with no spaces')
+      .meta({
+        description:
+          'The value the header carries: opaque, high-entropy, at least 32 characters. Returned once, with its credential. Never log it or return it to a browser.',
+        [ONE_TIME_CREDENTIAL_META]: true,
+      }),
+  })
+  .describe(
+    'The header the managed edge adds to every request it forwards, and the secret it carries. Every request over managed access must carry exactly one matching copy; refuse it otherwise.'
+  );
+
+/** The header and secret that prove a request came through the managed edge. */
+export type RemoteEdgeProof = z.infer<typeof RemoteEdgeProofSchema>;
+
+/**
+ * How long, in seconds, a replacement credential and the one it replaces
+ * overlap after the replacement is confirmed: the instance keeps accepting the
+ * old edge secret, and the service keeps the old credential valid, for this
+ * long. A revoke has no overlap. See {@link RemoteEdgeProofSchema}.
+ */
+export const REMOTE_EDGE_PROOF_OVERLAP_SECONDS = 60 as const;
+
+/**
+ * A freshly issued tunnel credential.
+ *
+ * `edgeProof` is optional only so an answer from an older service still
+ * parses. An instance does not open managed access with a credential that
+ * lacks it, because it would have no way to tell a request that came through
+ * the managed edge from one that did not.
+ */
 export const RemoteCredentialSchema = z
   .object({
     issuanceId: IdSchema,
@@ -355,8 +499,13 @@ export const RemoteCredentialSchema = z
       .describe(
         'Every hostname this credential lets the instance serve: its own address first, then any custom hostname its organization added. The instance serves each one, and stops serving any hostname it served before that is not in the list. Compare hostnames without regard to case. Read this rather than `acl`, which stays opaque. When the field is absent, keep serving as before: absent is not an empty list, and a present list is never empty.'
       ),
+    edgeProof: RemoteEdgeProofSchema.optional().describe(
+      'The header and secret every request forwarded by the managed edge carries for this credential. Refuse a managed request without exactly one matching copy. Absent only from an older service; do not open managed access without it.'
+    ),
   })
-  .describe('A freshly issued tunnel credential. The `value` is returned exactly once.');
+  .describe(
+    'A freshly issued tunnel credential. The `value` and the edge proof secret are returned exactly once.'
+  );
 
 /** A freshly issued tunnel credential. */
 export type RemoteCredential = z.infer<typeof RemoteCredentialSchema>;
@@ -370,6 +519,29 @@ export const RemoteCredentialConfirmRequestSchema = z
 export const RemoteCredentialConfirmResponseSchema = z
   .object({ credentialId: IdSchema, confirmedAt: TimestampSchema })
   .describe('When the server recorded the instance`s confirmation.');
+
+/**
+ * `POST /v1/remote/credentials/revoke` — an instance cuts off its own
+ * reachability.
+ *
+ * Instance API key only (`forbidden` for a person`s session), and it takes no
+ * body: the instance is the one the key belongs to, and there is no way to
+ * name another. Every tunnel credential the instance holds is revoked, and
+ * their edge secrets with them. An instance with nothing to revoke still gets
+ * `200`: it asked not to be reachable, and it is not. Never refused for want
+ * of agreement to the terms.
+ *
+ * It does not withdraw the enrolment, so the service can still offer the
+ * machine a credential later. To end consent as well, use
+ * `DELETE /v1/remote/enrolment`, which revokes the credential too.
+ */
+export const RemoteCredentialRevokeResponseSchema = z
+  .object({
+    revokedAt: TimestampSchema.describe('When the instance`s credentials were marked revoked.'),
+  })
+  .describe(
+    'When an instance`s own tunnel credentials were revoked. Answered even when there was nothing to revoke.'
+  );
 
 /**
  * One event on the instance command stream.

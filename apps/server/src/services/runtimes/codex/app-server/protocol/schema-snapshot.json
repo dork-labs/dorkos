@@ -205,6 +205,15 @@
         "type": "object"
       }
     },
+    "thread/compact/start": {
+      "params": {
+        "$ref": "#/definitions/ThreadCompactStartParams"
+      },
+      "result": {
+        "title": "ThreadCompactStartResponse",
+        "type": "object"
+      }
+    },
     "thread/fork": {
       "params": {
         "$ref": "#/definitions/ThreadForkParams"
@@ -7302,6 +7311,17 @@
       "type": "object"
     },
     "ThreadClosedNotification": {
+      "properties": {
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "threadId"
+      ],
+      "type": "object"
+    },
+    "ThreadCompactStartParams": {
       "properties": {
         "threadId": {
           "type": "string"

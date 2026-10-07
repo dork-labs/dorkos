@@ -9,7 +9,7 @@ DorkOS docs reuse a handful of terms on purpose. This page defines each one once
 
 ## Agent
 
-An agent is one of the named teammates in your fleet: a coding assistant you have given a face (a name, color, and emoji) and pointed at one of your projects. You talk to it in a session. Each agent runs on a runtime (Claude Code, Codex, or OpenCode), but you think in agents, not engines. See [What Is DorkOS?](/docs/getting-started/what-is-dorkos).
+An agent is one of the named AI workers on your team: an AI co-worker you have given a face (a name, color, and emoji) and pointed at one of your projects. You talk to it in a room or in a session. Each agent runs on a runtime (Claude Code, Codex, or OpenCode), but you think in agents, not engines. See [What Is DorkOS?](/docs/getting-started/what-is-dorkos).
 
 ## Agent Identity
 
@@ -45,7 +45,7 @@ The DorkOS app is the window where you chat with your agents, watch them work, a
 
 ## Extension
 
-An extension is a bundle of code that adds custom UI or automation to DorkOS, built by anyone. It runs in your browser alongside the app and can watch session activity without ever seeing what was actually said inside a session. See [Extensions](/docs/integrations/extensions).
+An extension is a bundle of code that adds custom UI or automation to DorkOS, built by anyone. It runs in your browser alongside the app and can watch session activity without ever seeing what was actually said inside a session. The mini apps your agents build for you are extensions. See [Extensions](/docs/integrations/extensions).
 
 ## Generative UI
 
@@ -63,13 +63,17 @@ MCP (the Model Context Protocol) is the standard that lets AI tools talk to each
 
 Mesh is how DorkOS finds the AI agents scattered across your projects and gathers them in one place, so they can find and message each other. It scans your folders for signs of an agent project and always asks before adding anything. See [Mesh](/docs/concepts/mesh).
 
+## Mini App
+
+A mini app is a tool that lives inside DorkOS, like a dashboard or a tracker. Ask an agent for the tool your business needs, and it builds one for you. Once you approve it in Activity or Settings, it opens on its own page, in the side panel, or on the Activity page. The app calls mini apps extensions. See [Extensions](/docs/integrations/extensions).
+
 ## Moment
 
 A moment is a short line in your **#team** channel marking something that really happened, like "tangerines joined your team" or your first overnight run. Every one is read off a record DorkOS already keeps, so nothing in it is guessed at; each lands once and never repeats; and the room marks at most one an hour. A moment is a message in the conversation, not a separate feed. See [Rooms](/docs/concepts/rooms#moments-the-things-team-marks).
 
 ## Persona
 
-Persona is DorkOS's underlying name for an agent's personality: traits like terse or chatty, cautious or bold, plus any custom instructions that turn a generalist into a specialist. In the app today you'll find it under a tab simply called Config. See [Shape How Your Agent Behaves](/docs/guides/persona).
+Persona is DorkOS's underlying name for an agent's personality: traits like terse or chatty, cautious or bold, plus any custom instructions that give it a job and turn a generalist into a specialist. In the app you'll find it on the agent's profile, in its **Personality** and **Instructions** rows. See [Shape How Your Agent Behaves](/docs/guides/persona).
 
 ## Relay
 
@@ -81,7 +85,7 @@ Room is DorkOS's umbrella term for channels and direct messages: an ongoing conv
 
 ## Runtime
 
-A runtime is the engine behind a session: Claude Code, Codex, or OpenCode. Every runtime lands in the same session list and uses the same chat and tool approvals, so switching between them doesn't change how you work. See [Runtimes](/docs/guides/runtimes).
+A runtime is the engine behind an agent and its sessions, the brain that does the thinking: Claude Code, Codex, or OpenCode. Every runtime lands in the same session list and uses the same chat and tool approvals, so switching between them doesn't change how you work. See [Runtimes](/docs/guides/runtimes).
 
 ## Scheduled Task
 
@@ -125,7 +129,7 @@ The workbench is the file, terminal, and browser view that opens beside your cha
 
 ## Workspace
 
-A workspace is a private folder DorkOS can give a task, so two agents working on different issues never step on each other's files or dev-server ports. Today a workspace is created on request through the API; DorkOS doesn't create them on its own yet. See [Workspaces](/docs/guides/workspaces).
+A workspace is a private folder DorkOS can give a task, so two agents working on different issues never step on each other's files or dev-server ports. Today a workspace is created on request through the API; DorkOS doesn't create them on its own yet. This is a different thing from the phrase "a workspace for people and agents", which describes what DorkOS is as a whole. See [Workspaces](/docs/guides/workspaces).
 
 ## Worktree
 

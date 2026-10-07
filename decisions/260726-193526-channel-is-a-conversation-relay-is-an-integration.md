@@ -5,6 +5,7 @@ status: accepted
 created: 2026-07-26
 spec: rooms
 superseded-by: null
+supersedes: 0224
 ---
 
 # 260726-193526. "Channel" means a conversation; Relay's integrations are called "Integrations"

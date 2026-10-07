@@ -198,6 +198,42 @@ export const hangingTurn: FakeTurnScript = async (ctx) => {
   await new Promise(() => {});
 };
 
+/** The context size the default compaction leaves behind. */
+export const COMPACTED_TOKENS = 5_690;
+
+/**
+ * The turn `thread/compact/start` runs, as 0.154 sends it (verified against
+ * the binary): a `contextCompaction` item, a usage reading with the
+ * post-summary size, the item's completion, `turn/completed`. No
+ * `thread/compacted` (deprecated; the binary did not send it).
+ */
+export const compactionTurn: FakeTurnScript = (ctx) => {
+  const item = { type: 'contextCompaction', id: `compact-${randomUUID().slice(0, 8)}` };
+  ctx.emit('item/started', { item, startedAtMs: 1_000 });
+  ctx.tokenUsage(COMPACTED_TOKENS, 200_000);
+  ctx.emit('item/completed', { item, completedAtMs: 8_277 });
+  ctx.complete('completed');
+};
+
+/**
+ * A compaction the model provider refused, as 0.154 reports it (verified): the
+ * item opens, an `error`, then `turn/completed` failed.
+ */
+export const failedCompactionTurn: FakeTurnScript = (ctx) => {
+  const item = { type: 'contextCompaction', id: 'compact-failed' };
+  ctx.emit('item/started', { item, startedAtMs: 1_000 });
+  const error = { message: 'Error running remote compact task: model not supported' };
+  ctx.emit('error', { error, willRetry: false });
+  ctx.complete('failed', error);
+};
+
+/** A compaction that runs until it is stopped. */
+export const parkedCompactionTurn: FakeTurnScript = async (ctx) => {
+  ctx.emit('item/started', { item: { type: 'contextCompaction', id: 'compact-parked' } });
+  await ctx.turn.interrupted;
+  ctx.complete('interrupted');
+};
+
 /** A command left running in the background by its turn, and how to end it. */
 export interface FakeBackgroundCommand {
   /** The turn script: starts the command, answers, completes the turn. */
@@ -276,6 +312,8 @@ export class FakeCodexHome {
   readonly projects: Record<string, { trust_level: string }> = {};
   /** Turn scripts, consumed in order; the default runs when empty. */
   readonly scripts: FakeTurnScript[] = [];
+  /** Compaction scripts, consumed in order; {@link compactionTurn} runs when empty. */
+  readonly compactionScripts: FakeTurnScript[] = [];
   /** The script that runs when none is queued. */
   defaultScript: FakeTurnScript = pongTurn;
   /** Every process ever spawned on this home. */
@@ -351,6 +389,12 @@ export class FakeAppServer extends EventEmitter {
   turnStartGate: Promise<void> | undefined;
   /** Set to refuse every request with `Server overloaded` this many times. */
   overloadNext = 0;
+  /** Send a compaction's `turn/started` BEFORE answering `thread/compact/start`. */
+  compactionStartsBeforeAnswer = false;
+  /** Answer `thread/compact/start` and then never open its turn. */
+  compactionNeverStarts = false;
+  /** Answer `thread/compact/start`, and open its turn only this much later. */
+  compactionStartDelayMs = 0;
   /** Signals passed to `kill`. */
   readonly killSignals: string[] = [];
   exitCode: number | null = null;
@@ -480,6 +524,8 @@ export class FakeAppServer extends EventEmitter {
           return;
         }
         return this.turnStart(id, params);
+      case 'thread/compact/start':
+        return this.compactStart(id, params);
       case 'turn/interrupt':
         return this.turnInterrupt(id, params);
       case 'turn/steer':
@@ -640,6 +686,49 @@ export class FakeAppServer extends EventEmitter {
     setImmediate(() => {
       void Promise.resolve(script(this.contextFor(turn, params))).catch(() => {});
     });
+  }
+
+  private compactStart(id: number | string, params: Record<string, unknown>): void {
+    const threadId = params.threadId as string;
+    const loaded = this.loaded.get(threadId);
+    if (!loaded) return this.fail(id, `thread not found: ${threadId}`);
+    // NOT verified against the binary: DorkOS never asks while a turn is open,
+    // and this fake refuses rather than guess what the binary would do.
+    if (loaded.activeTurn && !loaded.activeTurn.done) {
+      return this.fail(id, 'a turn is already running on this thread');
+    }
+    if (this.compactionNeverStarts) return this.reply(id, {});
+    let interrupt!: () => void;
+    const interrupted = new Promise<void>((resolve) => (interrupt = resolve));
+    const turn: FakeTurn = { id: randomUUID(), threadId, interrupted, steered: [], done: false };
+    (turn as { interrupt?: () => void }).interrupt = interrupt;
+    loaded.activeTurn = turn;
+    const started = () =>
+      this.send({
+        method: 'turn/started',
+        params: { threadId, turn: { id: turn.id, status: 'inProgress', items: [] } },
+      });
+    const script = this.home.compactionScripts.shift() ?? compactionTurn;
+    const run = () =>
+      setImmediate(() => {
+        void Promise.resolve(script(this.contextFor(turn, params))).catch(() => {});
+      });
+    if (this.compactionStartDelayMs > 0) {
+      this.reply(id, {});
+      setTimeout(() => {
+        started();
+        run();
+      }, this.compactionStartDelayMs);
+      return;
+    }
+    if (this.compactionStartsBeforeAnswer) {
+      started();
+      this.reply(id, {});
+    } else {
+      this.reply(id, {});
+      started();
+    }
+    run();
   }
 
   private turnInterrupt(id: number | string, params: Record<string, unknown>): void {

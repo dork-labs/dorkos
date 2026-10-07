@@ -137,7 +137,12 @@ export function mapMessageUpdated(
         sessionId,
         model: assistant.modelID,
         costUsd: assistant.cost,
-        contextTokens: assistant.tokens.input,
+        // What the model read for this reply, the same sum Claude Code's
+        // reading is (`sumContextTokens`): OpenCode's `input` excludes the
+        // cached part of the prompt, so input alone undercounts a conversation
+        // whose history is cached by roughly all of it.
+        contextTokens:
+          assistant.tokens.input + assistant.tokens.cache.read + assistant.tokens.cache.write,
         outputTokens: assistant.tokens.output,
         cacheReadTokens: assistant.tokens.cache.read,
         cacheCreationTokens: assistant.tokens.cache.write,

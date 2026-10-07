@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted (extracted from spec: canvas-markdown-editing)
 
+Amended by [261006-235241](261006-235241-shared-docs-are-yjs-documents.md) (shared docs are Yjs documents; 2026-10-06 vision reset): retires for docs people and agents edit together, the consequence "surfaces conflicts to the user (Reload or Overwrite) rather than auto-merging … not a CRDT". Those docs become Yjs documents. Editor owns the document, host owns the file, boundary checks and atomic writes stand.
+
 ## Context
 
 The canvas was a one-way display: the agent authored a snapshot that rendered read-only,

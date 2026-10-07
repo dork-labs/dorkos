@@ -5,6 +5,7 @@ status: accepted
 created: 2026-09-15
 spec: null
 superseded-by: null
+supersedes: 260707-122350
 ---
 
 # 260915-205815. The admin console and the account surface move to the control plane
@@ -12,6 +13,8 @@ superseded-by: null
 ## Status
 
 Accepted. **Supersedes [260707-122350](260707-122350-admin-console-lives-in-site.md)** (The admin console lives in `apps/site` now, extracted to its own app only on a trigger).
+
+(2026-10-06 audit) Still governs; the old admin pages in `apps/site` (`src/app/admin/*`, `src/lib/admin-service.ts`) are still in this repo and still wired; removing them is follow-up work.
 
 ## Context
 

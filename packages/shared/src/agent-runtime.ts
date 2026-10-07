@@ -1104,8 +1104,9 @@ export interface CommandIntentOpts extends MessageOpts {
    * `/compact focus on the API changes` → `'focus on the API changes'`).
    * Runtimes whose native mechanism accepts guidance forward them verbatim
    * (claude-code appends them to the bare `/compact`); runtimes whose mechanism
-   * takes no instruction (opencode's `session.summarize`, test-mode's synthetic
-   * boundary) ignore them — an honest per-runtime difference, not an error.
+   * takes no instruction (opencode's `session.summarize`, codex's
+   * `thread/compact/start`, test-mode's synthetic boundary) ignore them — an
+   * honest per-runtime difference, not an error.
    */
   instructions?: string;
 }

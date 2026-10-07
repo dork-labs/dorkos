@@ -59,6 +59,8 @@ There is no exception marker. A block that "has to" be long has not been split y
 - Call an agent by its name. Without one, say "your agent". The pronoun is "it".
 - Describe what an agent did, as fact: "Scout changed 3 files". No feelings or mind verbs: not "thinking hard", "confused", "happy to help".
 - Be honest about limits: "Scout stopped. It hit its turn limit."
+- Agents are co-workers, not assistants. Name the job, not a service: "Scout reviews pull requests", never "your AI assistant" or "How can I help?".
+- Treat agents as trusted colleagues. Copy never casts one as a suspect: "Scout wants to delete the build folder", not "Scout is trying to delete…". The asks that exist today stay plain and neutral (see Approvals).
 
 ## Buttons
 

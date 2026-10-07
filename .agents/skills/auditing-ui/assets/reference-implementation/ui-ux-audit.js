@@ -133,7 +133,7 @@ const LENSES = [
     model: 'opus',
     title: 'Clutter, simplification & progressive disclosure',
     brief:
-      'Product-designer pass over the major surfaces: home/team room, session/chat view, settings, connections, marketplace, tasks, activity, onboarding, right panel, one-bar. For each: what would a world-class product designer cut, merge, reorder, or hide behind progressive disclosure? Surfaces doing too much at once, settings panels listing advanced options flat, toolbars with too many always-visible controls, duplicate paths to the same action. Judge against the personas: Kai wants density with calm; Ikechi must not be scared off. Read the actual page/widget components to ground every claim.',
+      'Product-designer pass over the major surfaces: home/team room, session/chat view, settings, connections, marketplace, tasks, activity, onboarding, right panel, one-bar. For each: what would a world-class product designer cut, merge, reorder, or hide behind progressive disclosure? Surfaces doing too much at once, settings panels listing advanced options flat, toolbars with too many always-visible controls, duplicate paths to the same action. Judge against the personas: the founder must not be scared off; Kai wants density with calm. Read the actual page/widget components to ground every claim.',
   },
   {
     key: 'componentize',

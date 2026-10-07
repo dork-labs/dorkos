@@ -1,7 +1,7 @@
 ---
 id: 260930-210144
 title: Build managed wire responses by explicit mapping and share one legacy error body
-status: draft
+status: proposed
 created: 2026-09-30
 spec: managed-cloud-error-honesty
 superseded-by: null
@@ -12,7 +12,9 @@ amends: null
 
 ## Status
 
-Draft (extracted from `managed-cloud-error-honesty`).
+Proposed (2026-10-06 review): `draft` is not a lifecycle status; the spec is specified and the fix is not built yet.
+
+Originally: Draft (extracted from `managed-cloud-error-honesty`).
 
 ## Context
 

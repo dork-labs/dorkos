@@ -51,6 +51,12 @@ vi.mock('../ui/RoomFlow', () => ({
   RoomHistorySkeleton: () => <div data-testid="room-history-skeleton" />,
 }));
 
+// Local rooms are this file's subject, and they work with spaces off (DOR-2740),
+// which is how spaces ship.
+vi.mock('@/layers/entities/config', () => ({
+  useSpacesState: () => ({ enabled: false, isLoading: false }),
+}));
+
 import { ChannelsPage } from '../ui/ChannelsPage';
 
 afterEach(() => {

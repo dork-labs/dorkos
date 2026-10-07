@@ -36,8 +36,9 @@ their dates so a later reader knows what is durable and what was situational.
   barrel imports only.
 - `.claude/skills/maintaining-dev-playground/SKILL.md` — playground candidacy rules.
 - `AGENTS.md`, sections Vision and Quality Standard — the personas an auditor judges against
-  (**Kai**, **Priya**, **Ikechi**; Lil is horizon-staged and explicitly not a launch target, so
-  do not weight her), the retired vocabulary enforced by `scripts/check-banned-words.sh`, and the
+  (**the founder** first, the semi-technical person running a business mostly with agents;
+  **Kai**, the developer running many agents, second; Priya and Lil are retired for focus, so do
+  not weight them), the retired vocabulary enforced by `scripts/check-banned-words.sh`, and the
   `writing-for-humans` standard that binds all user-facing copy.
 - `meta/personas/` — the full persona set, when a lens needs more than the AGENTS.md summary.
 - `decisions/` and `research/` — check before flagging a pattern that looks odd. It may be settled.
@@ -109,8 +110,8 @@ it everywhere; do not invent a second spelling elsewhere.
     staggering, and dramatic or bouncy motion to remove. Delight that stays quiet.
 11. **Clutter, simplification & progressive disclosure** `clutter` — surfaces doing too much at once;
     panels that should hide advanced options behind disclosure; for each major surface, what
-    would a world-class product designer cut, merge, or reorder? Judge against the personas: Kai
-    wants density with calm, Ikechi must not be scared off.
+    would a world-class product designer cut, merge, or reorder? Judge against the personas: the
+    founder must not be scared off; Kai wants density with calm.
 12. **Componentization** `componentize` — repeated inline JSX that should become a shared component; ad-hoc
     reimplementations of things the shared layer already solves; near-stock primitives worth
     customizing further for responsiveness, styling, or micro-interaction.
@@ -132,7 +133,7 @@ whole-tree lenses only through rotation, one per run, in the order listed above.
 
 - **P1** — visibly broken or embarrassing to a new user, an accessibility failure, or a Hard
   Rule violation. Fix first.
-- **P2** — a real quality gap a designer or a Priya-grade engineer would flag. The bulk of the work.
+- **P2** — a real quality gap a designer or a source-reading engineer like Kai would flag. The bulk of the work.
 - **P3** — polish and delight. After P1 and P2.
 - **Effort:** **S** (about an hour, one file) · **M** (one PR, one slice) · **L** (multi-file
   refactor, wants its own spec).

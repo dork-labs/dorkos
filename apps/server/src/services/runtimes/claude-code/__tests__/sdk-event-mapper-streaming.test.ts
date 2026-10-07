@@ -802,7 +802,7 @@ describe('mapSdkMessage', () => {
       expect(events[1].type).toBe('done');
     });
 
-    it('includes token counts from the last request usage', async () => {
+    it('RT-CMP-03: includes token counts from the last request usage, and the model’s window', async () => {
       // contextTokens reflects the most recent request (captured during streaming),
       // not the result message's cumulative usage. contextWindow is a per-model
       // constant read from the aggregate.

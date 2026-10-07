@@ -5,6 +5,7 @@ status: accepted
 created: 2026-06-27
 spec: flow-plugin-extraction
 superseded-by: null
+supersedes: 0281
 ---
 
 # 297. Flow's canonical home is an external marketplace plugin, not dorkos

@@ -5,6 +5,7 @@ status: accepted
 created: 2026-03-29
 spec: activity-feed
 superseded-by: null
+supersedes: 0162
 ---
 
 # 0217. Single-Table Activity Log Over Hybrid Derivation

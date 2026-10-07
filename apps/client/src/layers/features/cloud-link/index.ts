@@ -18,6 +18,7 @@ export { CloudLinkInline, type CloudLinkInlineProps } from './ui/CloudLinkInline
 export {
   CloudEligibilityNote,
   CLOUD_ELIGIBILITY_TEXT,
+  CLOUD_ELIGIBILITY_TEXT_WITHOUT_SPACES,
   CLOUD_ELIGIBILITY_URL,
   type CloudEligibilityNoteProps,
 } from './ui/CloudEligibilityNote';

@@ -305,6 +305,13 @@ describe('findDrift — integrity violations', () => {
     ]);
     expect(findings.missingFiles.map((m: ManifestEntry) => m.slug)).toEqual(['gone']);
   });
+
+  it('flags a manifest that lists the same id more than once', () => {
+    const dir = makeCorpus([accepted(1, 'first'), accepted(1, 'first'), accepted(2, 'second')]);
+    const findings = findDrift(dir);
+    expect(findings.duplicateEntries).toEqual([{ key: '0001', count: 2 }]);
+    expect(formatReport(findings)).toContain('  - duplicate entry: manifest lists id 0001 2 times');
+  });
 });
 
 describe('normalizeKey / readFrontmatter', () => {

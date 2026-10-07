@@ -2,7 +2,7 @@
 
 Welcome! We're excited that you're interested in contributing to DorkOS. This guide will help you get started with development, testing, and submitting contributions.
 
-DorkOS is one place for every AI agent you run — Claude Code, Codex, and OpenCode, side by side in one window. It's a local-first web app and a REST/SSE API: a chat UI with tool approval flows, plus scheduled tasks, rooms, and a message bus your agents use to talk to each other.
+DorkOS is a workspace for people and agents, where a founder runs their business by talking with agents in channels, direct messages and threads. Under the hood it is a local-first web app and a REST/SSE API: rooms, a direct chat view for each agent, scheduled tasks, and a message bus agents use to reach each other, with agents running on Claude Code, Codex or OpenCode.
 
 ## Prerequisites
 
@@ -34,7 +34,7 @@ The client will be available at `http://localhost:6241` and the server at `http:
 
 ## Monorepo Structure
 
-This is a Turborepo monorepo with six apps and seventeen shared packages:
+This is a Turborepo monorepo with five apps and nineteen shared packages:
 
 | Directory                    | Package                     | Description                                          |
 | ---------------------------- | --------------------------- | ---------------------------------------------------- |
@@ -50,6 +50,7 @@ This is a Turborepo monorepo with six apps and seventeen shared packages:
 | `packages/mesh`              | `@dorkos/mesh`              | Agent discovery & registry                           |
 | `packages/harness`           | `@dorkos/harness`           | Projects skills, commands & hooks to every agent CLI |
 | `packages/memory`            | `@dorkos/memory`            | Agent memory engine behind the `MemoryProvider` port |
+| `packages/decisions`         | `@dorkos/decisions`         | Decision bridges and ladder behind `DecisionModel`   |
 | `packages/keep-awake`        | `@dorkos/keep-awake`        | Holds the computer awake while agents work           |
 | `packages/skills`            | `@dorkos/skills`            | `SKILL.md` schemas, parser, writer, scanner          |
 | `packages/operating-skills`  | `@dorkos/operating-skills`  | First-party skills that teach agents to run DorkOS   |

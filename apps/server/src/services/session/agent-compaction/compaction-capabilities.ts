@@ -59,7 +59,8 @@ export const COMPACT_MY_SESSION_TOOL_NAME = 'compact_my_session';
 
 /**
  * The tool names to leave off a session's tool list because its runtime cannot
- * summarize on request (Codex compacts on its own). Listing it there would be a
+ * summarize on request (Codex on its exec transport, which only runs prompts;
+ * every other runtime, and Codex on app-server, can). Listing it there would be a
  * tool that can only refuse — the reason it is not on the external `/mcp`
  * server either. Decided by the same capability flag the person's `/compact`
  * reads, never by runtime name.

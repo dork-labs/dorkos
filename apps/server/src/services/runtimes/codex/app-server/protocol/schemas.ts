@@ -128,6 +128,11 @@ export const OUTBOUND_PARAMS: Record<ClientMethod, z.ZodType | null> = {
   'thread/fork': ThreadResumeParamsSchema,
   // Lets a retired thread unload once Codex's idle window passes.
   'thread/unsubscribe': z.strictObject({ threadId: z.string() }),
+  // Summarize a loaded thread's history (a person's `/compact`, or the agent's
+  // own request). Takes no instructions, so a focus note cannot ride it. It
+  // answers `{}` at once and runs as a turn of its own: `turn/started`, a
+  // `contextCompaction` item, `turn/completed` (verified on 0.154).
+  'thread/compact/start': z.strictObject({ threadId: z.string() }),
 };
 
 // --- Inbound -----------------------------------------------------------------

@@ -5,6 +5,7 @@ status: accepted
 created: 2026-04-16
 spec: codex-runtime-adapter-prework
 superseded-by: null
+supersedes: 0241
 ---
 
 # 0256. RuntimeCapabilities Shape — Booleans + Structured Permission Modes + `features` Extension Point

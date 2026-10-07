@@ -5,6 +5,7 @@ status: deprecated
 created: 2026-03-20
 spec: chat-streaming-motion
 superseded-by: null
+supersedes: 0092
 ---
 
 # 151. Replace Custom Scroll Logic with use-stick-to-bottom for Spring-Based Streaming Scroll

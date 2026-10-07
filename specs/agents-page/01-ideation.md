@@ -42,7 +42,7 @@ status: ideation
 - `.claude/rules/fsd-layers.md`: Unidirectional imports enforced by ESLint; cross-feature UI composition allowed, cross-feature hooks forbidden
 - `.claude/rules/agent-storage.md`: File-first write-through (ADR-0043); `.dork/agent.json` is canonical source
 - `meta/personas/the-autonomous-builder.md`: Kai — senior dev, 10-20 sessions/week across 5 projects, wants fleet oversight
-- `meta/personas/the-knowledge-architect.md`: Priya — staff architect, flow preservation is key, reads source code
+- `meta/archive/personas/the-knowledge-architect.md`: Priya — staff architect, flow preservation is key, reads source code
 - `apps/client/src/router.tsx`: Current routes: `/` (DashboardPage), `/session` (SessionPage), pathless `_shell` layout
 - `apps/client/src/AppShell.tsx`: Slot hooks dispatch on pathname for sidebar/header; AnimatePresence cross-fade
 - `apps/client/src/layers/features/dashboard-sidebar/ui/DashboardSidebar.tsx`: Menu items: Dashboard, Sessions; "Agent overview coming soon" placeholder

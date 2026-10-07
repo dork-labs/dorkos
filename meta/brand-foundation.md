@@ -1,24 +1,24 @@
-# DorkOS — Brand & Product Foundation
+# DorkOS: Brand & Product Foundation
 
-> Strategy snapshot (Q1 2026), amended 2026-07-06 by the positioning review (`positioning-202607/`, see `02-positioning.md` for the current message house) and 2026-07-09 by the hero reframe. Key amendments applied inline below: the multi-runtime story is now shipped fact, vendor neutrality and security are named brand positions, the villain gained the vendor-silo pattern, and — 2026-07-09 — the primary tagline is now **"You, Multiplied."** with the coordination thesis demoted to manifesto line (the customer is the hero; the roof speaks about them, not about our theory). Persona set expanded the same day: two grounded non-developer operators (Ikechi, Lil — see `personas/`) and an anti-persona boundary redrawn on operator mentality. Naming note: the scheduler shipped as **Tasks** (Pulse remains its internal codename in older sections). Amended again 2026-07-17 by the Shapes naming addendum (§19; decision D3 in `plans/shapes-program.md`): the place-noun **Home Base** was to supersede "cockpit" and "mission control" in future copy. **Settled 2026-08-24 (DOR-1517):** the founder retired "mission control" and "cockpit" for good and named the replacement — the category phrase is **"one place"** ("All your agents. One place."), with "one window", "one home" and "your team" as supporting variants. The swap is done: site, both READMEs, `AGENTS.md`, and this file and its siblings under `meta/` now read in the new language. The ban lives in §10 ("Terms to Avoid"); the deliberation that produced it is in `positioning-202607/02-positioning.md` §2.
+> **Current as of 2026-10-07.** Brought up to date with the 2026-10 vision reset ([`positioning-202610/00-overview.md`](positioning-202610/00-overview.md)). DorkOS is now **a workspace for people and agents**, built first for founders who run a business with agents, with Kai (developers) second. The tagline **"You, Multiplied."** is unchanged. Retired: "operating system for AI agents" as the category, "one place for every AI agent you run" as the category line, the runtime trio as the headline, developer-first framing, and the personas Priya and Lil. Sections that were only history (the fleet-era tagline bank, the module-by-module architecture) are rewritten or pointed at the litepaper. The voice, the name and the Shapes naming addendum (§19) carry over. **Same-day update (2026-10-06): what sets DorkOS apart.** The chat workspace is table stakes, not the edge. The three differentiators, in order, are mini apps (your agents build the tools your business needs inside DorkOS), built for founders, and ownership. They now lead the positioning statement (§3), the big idea (§4), the hero (§13) and the taglines (§12); see [`positioning-202610/00-overview.md`](positioning-202610/00-overview.md), "What sets us apart". **Update 2026-10-07: the message stack.** The hero is now three levels: the tagline "You, Multiplied.", the headline "Build and run your business with an agent team." and the supporting line "Your agents join your team chat, take on real work, and build the custom tools your company runs on." It replaces "Ask for a tool. Your agents build it." (§12, §13). Headline copy never says "your computer" or literally "open source"; ownership is "yours, wherever they run". The three differentiators stay the structure below the hero. Earlier amendment notes (2026-07-06 positioning review, 2026-07-09 hero reframe, 2026-08-24 retirement of two words, see §10) are kept inline where they still apply.
 
 ## 1. Executive Summary
 
-**DorkOS** is an autonomous agent operating system for developers, founders, and serious builders.
+**DorkOS** is a workspace for people and agents: the place where founders run their business with people and agents.
 
-It makes AI coding agents more capable — giving them a scheduling engine, a messaging layer that reaches you and other agents, and a mesh that lets agents discover each other. It runs **Claude Code, Codex, and OpenCode today**, per-session, behind one conformance-tested interface: one place, any agent, any vendor, including local models via OpenCode.
+A founder talks to people and agents in DMs, channels and threads, and their agents work the outside tools the business runs on (Gmail and the rest). That chat workspace is table stakes. What sets DorkOS apart is three things, in this order: **mini apps** (ask for a tool your business needs, and your agents build it inside DorkOS), **built for founders**, and **ownership** (your agents, tools, files and data stay yours, wherever they run). Agents are trusted colleagues, not suspects. It runs on your own computer, free, with no DorkOS account required. DorkOS Cloud is optional.
 
 DorkOS is:
 
 - Open source
-- Developer-first
+- Yours: your agents, tools, files and data, wherever they run (internally, "local first, cloud optional")
+- Trusted by default
 - Radically honest
-- Modular
-- Extremely powerful
+- Built for people who run things
 
 It is not a toy.
 It is not an agent wrapper.
-It is an autonomous agent operating system for people who build.
+It is the office where your people and your agents work.
 
 ---
 
@@ -36,7 +36,7 @@ When AI coding agents arrived, Dorian saw the gap immediately. The agents were b
 
 He'd seen this before. Every time a powerful capability emerges, the missing piece is always the same: the layer that lets it coordinate, communicate, and persist. Applications needed an OS. Teams needed Slack. AI agents need DorkOS.
 
-So he built it. Not as a side project — as the system he needed. An autonomous agent operating system. Open source, because the foundation should be owned by the people who build on it. Developer-first, because that's who he is. Named after himself — because the people who build at 3am, who have opinions about cron expressions and message routing, who care about the things most people don't understand — those people deserve a tool that's unapologetically theirs.
+So he built it. Not as a side project, but as the system he needed: first as a way to run his own agents, and now as the office where a founder runs a whole business with people and agents _(updated 2026-10-06)_. Open source, because the foundation should be owned by the people who build on it. Named after himself, because the people who build at 3am, who have opinions about cron expressions and message routing, who care about the things most people don't understand, those people deserve a tool that's unapologetically theirs.
 
 ---
 
@@ -44,43 +44,49 @@ So he built it. Not as a side project — as the system he needed. An autonomous
 
 ### Category
 
-Autonomous Agent Operating System
+A workspace for people and agents _(changed 2026-10-06; was "Autonomous Agent Operating System")_
 
 ### Positioning Statement
 
-DorkOS is the operating system for autonomous AI agents — scheduling, communication, and coordination so one person can ship like a team.
+DorkOS is the workspace where founders run their business with people and agents. What sets it apart: your agents build the tools your business needs right inside DorkOS (mini apps), it is built for founders, and you own all of it (your agents, tools, files and data stay yours, wherever they run).
 
-Category entry point (2026-07; language settled 2026-08-24): **one place for every AI agent you run.** "OS for agents" is the vision line; the door is running Claude Code, Codex and OpenCode side by side in one window.
+The core image: **DorkOS is the office. People and agents are the workers who log in.** An agent's brain (Claude Code, Codex or OpenCode) and its computer sit outside the office and connect in.
 
-### Vendor Neutrality (added 2026-07-06)
+The explainer line: **Teams needed Slack. AI agents need DorkOS.** Use it where the Slack comparison helps a first-time reader understand what kind of thing this is. Use it only beside the differentiators, never as a lead: Slack Code exists, so the line alone says DorkOS is a Slack clone.
 
-DorkOS is structurally neutral across model vendors, and this is a brand position, not a feature. First parties will orchestrate only their own agents; DorkOS runs all of them, so every model release, price cut, and outage anywhere in the ecosystem is marketing for the neutral layer. The neutrality is architecturally enforced (the `AgentRuntime` interface; SDK imports confined by lint) and extends to the ecosystem: the marketplace is a strict superset of the Claude Code plugin format, and harness sync projects what you install to every tool you use. We do not fight the ecosystem; we orchestrate it and inherit it.
+**What sets it apart** _(added 2026-10-06)_. The category says what DorkOS is; it is not why a founder picks it. Everyone will have a chat workspace with people and agents (Slack Code, Buzz, ChatGPT Space, Ando), so it never leads. The three differentiators, always in this order:
 
-### Security Posture (added 2026-07-06)
+1. **Mini apps.** Ask for a tool your business needs, and your agents build it inside DorkOS. This leads every story surface. Claim it as built today: an agent builds a mini app (an extension, in the app's words), a person says yes, and it opens inside DorkOS in fixed places. Every agent knowing how, and ready-made founder mini apps, are **Roadmap**.
+2. **Built for founders.** Not general purpose. Goals, business connections and ready-made founder mini apps are the direction (**Roadmap**).
+3. **Ownership.** Your agents, tools, files and data stay yours, wherever they run. Underneath: your real files, your AI plans, MIT license, free forever on your own computer, no DorkOS account needed. Those are body-copy facts; headlines never say "your computer" or literally "open source". Marketing says "ownership" or "yours", never "local first".
 
-Post-OpenClaw, "self-hosted agents" reads as risk until proven otherwise. DorkOS commits to: localhost-first defaults, no silent network exposure, permission gates on tool execution, a published threat model, and a disclosure policy. Security is part of the trust pillar, stated in public, before traction rather than after.
+**Equal accounts are never said in public** _(added 2026-10-06)_. They remain how DorkOS is built (an internal design principle, **Roadmap** as a feature), but public copy never says agents are equal to people, peers, on the same account as you, able to run the place, or able to be admins. Co-workers and teammates are fine.
+
+Retired from the category _(2026-10-06)_: "the operating system for AI agents" (the product name stays DorkOS) and "one place for every AI agent you run" (from 2026-08-24). Plain uses of the words "one place" are fine; they are just no longer the category phrase.
+
+**Co-workers, not assistants** _(added 2026-10-06)_. The agents in DorkOS are co-workers and co-creators working toward shared goals, not assistants waiting for the next instruction. Each one has a job (its "role and responsibilities", on its profile; **Roadmap** as a feature). Write about agents the way you would write about colleagues: what they own, what they are working on, who they work with. Never call our agents "AI assistants" in story copy. "Role" means that job; Owner, Admin, Member and Guest are **access levels**, a separate thing.
+
+**Name collision.** "Workspaces" is already a product noun: the /workspaces page and project checkouts. When "workspace" is the category word, make that obvious ("a workspace for people and agents"). Never rename or redefine the product's Workspaces page to fit the category.
+
+### Vendor Neutrality (added 2026-07-06; demoted from headline 2026-10-06)
+
+DorkOS is structurally neutral across agent vendors. Agents can run on Claude Code, Codex or OpenCode, behind one conformance-tested interface, and the server never depends on one vendor's SDK. This is still true and still matters: an agent's brain sits outside the office, so any brain can log in. But it is a docs fact and a proof point, not the headline. Story surfaces do not lead with runtime names; one plain mention lower down is fine.
+
+### Trust Posture (rewritten 2026-10-06; was "Security Posture")
+
+**Trusted by default.** Agents are trusted professionals; people are colleagues, not babysitters. The safety net is a record anyone in the space can read, not a permission prompt for every step. **Trust goes to your agents, not to strangers:** messages from outsiders never give an agent full power, code from strangers still needs a yes, and the front-door settings (login, remote access, credentials, package sources) belong to the Owner.
+
+Security against strangers stays a stated brand position: localhost-first defaults, no silent network exposure, a published threat model and a disclosure policy. Full power by default and the readable audit trail ship before launch; until they do, public copy states the principle and never claims them as shipped behavior (the demo-claim gate).
 
 ### Target Audience
 
-**Primary:**
+**Primary: the founder.** Semi-technical and T-shaped, with a strong vision and strong taste. Think of a YC founder. Builds a big or complex business mostly with agents. Persona: **Ikechi, The Founder** (`personas/the-ai-native-founder.md`).
 
-- Professional developers
-- Indie hackers
-- Technical founders
-- AI power users
-- DevOps-oriented builders
+**Secondary: the developer.** Runs many agents across many projects. Persona: **Kai, The Autonomous Builder** (`personas/the-autonomous-builder.md`).
 
-**Secondary:**
+**Retired for focus (2026-10-06):** Priya (the Obsidian architect) and Lil (the private professional), now in `archive/personas/`.
 
-- Technical operators
-- Productivity system enthusiasts
-- AI-native entrepreneurs — now embodied by a grounded persona: **Ikechi, The AI-Native Founder** (`personas/the-ai-native-founder.md`), a non-developer power user who ships apps by directing agents _(added 2026-07-09)_
-
-**Horizon** _(added 2026-07-09)_:
-
-- Privacy-sensitive non-technical professionals — **Lil, The Private Professional** (`personas/the-private-professional.md`). Staged, not a launch target; informs privacy defaults, plain-language copy, and the desktop surface. Graduates only when the desktop app ships and an organic Lil-shaped user exists.
-
-This is not built for casual users. The line is **operator mentality, not technical skill** _(redrawn 2026-07-09)_: DorkOS serves people who own and run their system — including non-developers who do — and refuses people who want a rented, hosted, zero-ownership outcome, however technical they are.
+This is not built for casual users. The line is **operator mentality, not technical skill** _(redrawn 2026-07-09)_: DorkOS serves people who own and run their system, including non-developers who do, and does not build for people who want to rent an outcome with nobody in charge of it. A hosted option no longer marks that line: DorkOS Cloud is optional, and the same program runs free on your own computer.
 
 ---
 
@@ -88,176 +94,104 @@ This is not built for casual users. The line is **operator mentality, not techni
 
 You, multiplied.
 
-Model intelligence is abundant — every quarter it gets smarter and cheaper, and every vendor sells it. Your intelligence is not. Your judgment, your taste, your intent: those don't scale by buying a better model. They scale when one person's vision can direct a coordinated fleet. You've always had more ideas than hours. The missing piece was never smarter agents — it's the layer that multiplies you.
+Model intelligence is abundant: every few months it gets smarter and cheaper, and every vendor sells it. Your intelligence is not. Your judgment, your taste, your intent: those do not scale by buying a better model. They scale when one founder's vision can direct a team of people and agents that works like a company.
 
-DorkOS is that layer. One person with the right system ships like a team — not because the agents replace what you do, but because they multiply what you can accomplish.
+DorkOS is where that team works. One founder with the right workspace runs a business far bigger than its headcount, not because the agents replace what you do, but because they multiply what you can accomplish.
 
-_The underlying thesis — "intelligence doesn't scale; coordination does" — remains the brand's argument (manifesto, essays, anti-positioning surfaces; see §12). The Big Idea is what the thesis means for the customer: hero surfaces lead with who they become, not with our theory of the world. (Reframed 2026-07-09.)_
+_The underlying thesis, "intelligence doesn't scale; coordination does", remains the brand's argument for essays and anti-positioning surfaces (see §12). Hero surfaces lead with who the customer becomes, not with our theory of the world. (Reframed 2026-07-09; kept 2026-10-06.)_
 
-DorkOS makes your agents:
+With DorkOS, your business gets:
 
-- Your coordination layer — scheduling, messaging, and discovery
-- Your persistent knowledge layer — context that survives across sessions
-- Your always-available system — browser-based, from any device
-- Your extensible AI operating layer — open source, modular, yours to shape
+- Tools built for you: ask for one, and your agents build it inside DorkOS (mini apps)
+- Built for how founders work: agents that work in your real tools, trusted by default
+- A system you own: your agents, tools, files and data stay yours, wherever they run
+- An office: conversations, docs and a record, shared by people and agents
 
-Your ideas.
-Your agents.
+Your vision.
+Your people and agents.
 Your rules.
 
 ---
 
 ## 5. The Villain
 
-The villain isn't a company or a competitor. The villain is a missing layer.
+The villain is not a company or a competitor. The villain is a missing place: nowhere for people, agents and the business's tools to work together.
 
-### The Moment
+### The Moment _(rewritten 2026-10-06)_
 
-It's 7am. You open your laptop. CI has been red since 2:47am. A dependency update broke three repos. The fix takes five minutes — your agent could have handled it. But the terminal was closed. The agent wasn't running. There was no coordination layer to keep things moving. Your entire morning is consumed by something that should have been resolved six hours ago.
+It is Monday morning. Over the weekend one agent rebuilt the signup page, another answered forty support emails, a third drafted the investor update. You find out in four different places: a terminal, a chat window, a scheduled script's log, your own sent folder. Nobody told your cofounder. One agent sat waiting all Saturday for an approval you never saw. The work was good. The business still felt like chaos.
 
-You have the most powerful AI coding agent available. And it has no way to run without you sitting in front of it.
+You have agents that could run half the company. And no office for them to work in.
 
 ### The Pattern
 
-This missing layer shows up everywhere. Different forms, same root cause:
+**The scattered team.** Every agent lives in its own tool. Your people live in another. Nobody, person or agent, can see what the others are doing, so you become the switchboard.
 
-**The dead terminal.** Your agent shipped clean code at 11pm. Created a PR, wrote tests, refactored the edge cases. Then the terminal closed. The work is done but nobody knows — no Telegram message, no Slack notification, no record of what happened. You find the PR by accident three days later. The agent did its job. The missing piece was a way to tell you about it.
+**The babysitter.** Your tools treat agents as suspects. Every small step needs your yes, so the agent that could have finished in an hour waits all day for you. You hired help and got a second job.
 
-**The re-introduction.** "Let me give you some context..." You've typed these words a hundred times. Every session starts from zero. Every agent interaction begins with you re-explaining who you are, what you're building, and what happened yesterday. The most capable developer tool in the world has no persistent memory — because there's no layer to provide one.
+**The locked door.** The agent can write the email but cannot send it, because it is not in your Gmail. It can plan the invoice run but cannot see the books. Every outside tool is a separate project to wire up.
 
-**The 15-tab juggle.** Five projects. Agents running in different terminals. You can't tell which session is doing what. One is waiting for approval. One finished 20 minutes ago. One crashed silently. There's no coordination, no status dashboard, no messaging — every agent is isolated because nothing connects them.
+**The black box.** An agent did something in a customer's inbox. What, exactly? There is no one record to check, so trust erodes and you go back to doing it yourself.
 
-**The flow-killer.** You're deep in an architecture document. Forty minutes of focused thinking. You need to check one thing in the codebase. Alt-tab. Open the terminal. Three paragraphs of context to set up a ten-second question. Get the answer. Switch back. The flow is gone. Fifteen minutes re-reading your own notes. This happens four times a day — not because you're doing something wrong, but because the tools don't connect your thinking and doing environments.
-
-**The vendor silo** _(added 2026-07-06)_. You run Claude Code for the hard problems and Codex for the bulk work, because they're good at different things. Two CLIs, two session stores, two sets of plugins, two workflows — and neither knows the other exists. You are the integration layer between your own tools. The agents aren't siloed by capability; they're siloed by vendor, and nothing you can buy from either vendor will ever fix that.
+**The dead terminal** _(Kai's version, kept)_. The agent shipped clean code at 11pm, then the terminal closed. The work is done but nobody knows. You find the pull request by accident three days later.
 
 ### The Truth
 
-The gap isn't intelligence. The agents are brilliant. The gap is everything around the intelligence — scheduling, memory, communication, coordination. The things an operating system provides.
+The gap is not intelligence. The agents are brilliant. The gap is the workplace around them: somewhere to talk, to share work, to act in real tools, and to see what happened.
 
-We solved this for applications fifty years ago. We called it an operating system.
-
-Your agents are still running without one.
+Teams needed Slack. AI agents need DorkOS.
 
 ---
 
-## 6. Product Architecture
+## 6. Product Architecture _(rewritten 2026-10-06)_
 
-DorkOS is modular and open source. Each module can run independently or together.
+The full picture, with every capability labelled **Built**, **Before launch** or **Roadmap**, is in the litepaper ([`dorkos-litepaper.md`](dorkos-litepaper.md)). The short version:
 
-### Available now
+**The office (DorkOS):**
 
-#### 6.1 DorkOS Engine (Runtime)
+- Conversations: `#team`, channels, DMs and threads with you and your agents (**Built**, on your own computer; more than one person on a server is **Roadmap**)
+- Direct chat with an agent, with the full coding view (**Built**)
+- Shared canvas in rooms (**Built**); live shared docs (**Roadmap**)
+- Connections to outside tools such as Gmail, plus Telegram and Slack (**Built**)
+- Schedules (Tasks) (**Built**)
+- The record: the Activity page (**Built**, not a complete audit trail); the full audit trail (**Before launch**)
+- Access levels: Owner, Admin, Member, Guest (**Roadmap**)
+- Groups, projects, tasks in projects and tiered goals, plus a health check for the organisation (**Roadmap**; today's Tasks are schedules)
+- Mini apps, the lead differentiator: an agent's `create_extension` tool writes a starter, the agent fills it in, DorkOS builds it and turns it on, a person says yes in Activity or Settings, and it opens in fixed places (its own page, the side panel, the Activity page, the status bar, settings tabs, or a sidebar menu item) (**Built**; the app calls them extensions). Live chat widgets and MCP Apps are supporting proof (**Built**). Every agent knowing how, the "inside DorkOS or its own website" choice, and ready-made founder mini apps (**Roadmap**)
+- Shapes: installable setup bundles (layout, extensions, suggested agents, schedules), which can carry mini apps (**Built** in early form; not a story-surface name)
 
-The runtime that powers everything. Engine connects your AI agents, exposes a REST API that listens only on your own machine by default, and serves as the foundation for all other modules. Agent adapters let you plug in any coding agent: **Claude Code, Codex, and OpenCode are all shipped today**, per-session switchable, each passing a shared conformance suite. OpenCode brings local models, so fully-offline private sessions are possible in the same window.
+**The workers (people and agents):**
 
-- Runs locally on your machine
-- Connects AI agents via pluggable adapters (Claude Code first, more coming)
-- Exposes a REST + SSE API, bound to localhost by default
-- Enables remote access via tunnel
-- Runs Pulse, Relay, and Mesh as integrated capabilities
+- Agents on Claude Code, Codex or OpenCode (**Built**)
+- Agents as co-workers: a role and responsibilities on every profile, their own outside accounts, agents creating agents (**Roadmap**)
+- Equal accounts for people and agents (**Roadmap**; internal design principle, never said in public)
+- Email, phone, a vault for secrets, payments as account features (**Roadmap**)
+- An agent's own computer, local or cloud (**Roadmap**, behind an experimental flag; not built and not part of the launch)
 
-This is the foundation.
+**Where it runs:** free on your own computer (**Built**); DorkOS Cloud for accounts, remote access and credits (**Built**); push to another DorkOS and publishing (**Roadmap**).
 
-**Status: Available**
+**Extending it:** one package type, the plugin (**Roadmap**); everything programmable through a CLI, an SDK and API, and GraphQL, with per-account keys (**Roadmap**). The marketplace install path (**Built**) and the MCP server (**Built**) are the early forms.
 
-#### 6.2 DorkOS Console (Web UI)
+**The launch:** one space opens at launch, the official DorkOS Community Space (**Before launch**, not built yet; never claim it until it ships). Every other space feature stays behind an experimental switch.
 
-- Browser-based interface
-- Connect to your local Claude instance from anywhere
-- Remote dev workflow
-- Multi-project support
-
-This makes DorkOS location-independent.
-
-**Status: Available**
-
-#### 6.3 DorkOS Pulse (Scheduler)
-
-- Cron-based agent scheduling, independent of your IDE or terminal
-- Overrun protection prevents duplicate runs
-- Isolated sessions per run
-- Run history with full session recording
-- Configurable concurrency limits
-- Pending_approval gates for agent-created schedules
-
-This is what makes DorkOS alive. Your agents keep shipping — on schedule, around the clock.
-
-**Status: Available**
-
-#### 6.4 DorkOS Relay (Agent Communication)
-
-Built-in messaging between your agents and the channels you already use. Relay handles all communication in DorkOS — agent-to-agent, human-to-agent, and external notifications. Your agents can reach you on Telegram, notify each other across projects, and connect through any channel.
-
-- Telegram and webhook adapters built in
-- Plugin system for adding new channels
-- Messages persist even when terminals close
-- Agents can message each other, not just you
-
-Like giving your agents Slack.
-
-**Status: Available**
-
-#### 6.5 DorkOS Wing (Life Layer)
-
-Your personal life layer. Wing is the always-on AI companion that lives beside you — remembering what matters, helping you plan, keeping you accountable, and coordinating across every part of your life.
-
-- Memory system
-- Life coach
-- Project planner
-- Journal & knowledge base
-- Chief of staff
-
-Acts as:
-
-- Persistent context layer for all agents
-- Long-term memory and commitment tracker
-- Life coordination intelligence
-
-Wing is supportive, steady, and proactive. Not just storage — presence.
-
-**Status: Vision (not in the repo; do not market as "coming soon".** Per the honesty pillar, Wing appears in vision documents only until code exists. _Amended 2026-07-06.)_
-
-#### 6.6 DorkOS Mesh (Agent Network)
-
-Agent discovery and coordination. Mesh turns solo agents into a discoverable, governed team.
-
-- Scans your projects and finds agent-capable directories automatically
-- `.dork/agent.json` manifests with `.claude/` fallback for zero-config discovery
-- Intentional registration — you approve which agents join the network
-- Namespace isolation (default-allow within project, default-deny across)
-- Access control rules authored by Mesh, enforced by Relay
-
-The Mesh is what makes DorkOS an operating system, not just a runtime. Without it, you have solo agents. With it, you have a team.
-
-**Status: Available**
-
-#### 6.7 Loop (Autonomous Improvement Engine)
-
-A companion product by Dork Labs. Loop closes the feedback loop — collecting signals from the real world, forming hypotheses, dispatching tasks to agents, and measuring outcomes. Fully deterministic, no AI built in, agent-agnostic.
-
-DorkOS's Pulse scheduler polls Loop for the next priority task. Loop returns prepared instructions. Agents execute. Outcomes feed back as new signals. The system improves itself.
-
-See the [Loop Litepaper](../research/loop-litepaper.md) for the full vision.
-
-**Status: [Live](https://www.looped.me/)**
+**Module names.** Engine, Console, Pulse (shipped as Tasks), Relay and Mesh were the Q1 2026 architecture names. Relay and Mesh still exist in code and in the module litepapers (`modules/`); Relay is planned to merge into one conversation system. These names belong in technical docs, not in story copy. Wing remains a vision item only. Loop is a separate Dork Labs product ([looped.me](https://www.looped.me/)).
 
 ---
 
 ## 7. We Believe
 
-- AI agents work like teammates — they need communication, scheduling, and coordination to be effective
-- Your AI should work autonomously on your behalf — and trust features make that comfortable, not risky
-- One person with the right system should be able to ship like a team
-- Power tools deserve power users
+- Agents are colleagues. They deserve trust by default, and a record anyone can read is a better safety net than a permission prompt
+- Trust goes to your agents, not to strangers
+- One founder with the right workspace can run a business far bigger than its headcount
+- Power tools deserve people who run things, technical or not
+- Your system should be yours: free on your own computer, cloud only if you choose it
 - Open source is a foundation, not charity
-- Honesty builds trust — we tell you exactly what runs where
+- Honesty builds trust: we tell you exactly what runs where, and we never claim something works before it does
 
 DorkOS is:
 
 - Opinionated
-- Performance-focused
-- Developer-centric
+- Calm
 - Built for serious work
 - Radically transparent
 
@@ -297,13 +231,13 @@ _Predecessor:_ "Built by dorks. For dorks. Run by you." — retired from custome
 
 ## 9. What DorkOS Is Not
 
-Not a chatbot wrapper. Not a hosted service. Not an agent. The layer agents were missing.
+Not a chatbot wrapper. Not an agent. Not a babysitter. The place agents and people work.
 
-DorkOS is not a model aggregator. Not a chat widget. Not a cloud platform. It's an autonomous agent operating system you run on your machine, configure, and control.
+DorkOS is not a model and not a model aggregator. It is not a cloud you have to rent: the full app runs on your computer, free, and DorkOS Cloud is optional. It does not make you approve every step your agents take; it gives you a record and the means to act on it.
 
-**The philosophical argument:** We gave people Slack because teammates can't coordinate in isolation. We gave applications an OS because software needs files, scheduling, and a way to communicate with other programs. AI agents work like teammates — but right now, they start every day with amnesia, work alone, and have no way to reach you. That's a missing layer.
+**The philosophical argument:** we gave teams Slack because colleagues cannot coordinate in isolation. AI agents are colleagues now, but most of them still work alone, in separate tools, with no way to reach the people they work with. That is a missing place.
 
-**Honesty note:** Claude Code uses Anthropic's API for inference. Your code context is sent to their servers. DorkOS doesn't change that and won't pretend it does. What DorkOS controls: the agent runs on your machine, sessions are stored locally, tools execute in your shell, and the orchestration layer is entirely yours.
+**Honesty note:** your agents send their context to whichever model vendor powers them. DorkOS does not change that and will not pretend it does. What DorkOS controls: the office runs on your computer, your conversations and records stay there, and the cloud is something you choose.
 
 ---
 
@@ -322,8 +256,8 @@ Avoid hype language.
 
 DorkOS writing speaks in two registers, and each surface belongs to exactly one. The tone pillars and vocabulary below define the **expert-technical register**; they are not a license to make plain-language surfaces harder to read.
 
-- **Expert-technical register:** API reference, `contributing/` guides, ADRs, and deep-dive docs. Written for Kai and Priya, who read source before adopting. Keep the pillars (Confident, Minimal, Technical, Sharp) and the vocabulary below.
-- **Plain-language register:** changelog, release notes, READMEs, npm copy, blog posts, onboarding, UI microcopy, and `docs/` guide and concept pages. Written for a smart 9th grader who does not code. This register routes to the **`writing-for-humans`** skill (`.agents/skills/writing-for-humans/`), which sets the readability bar.
+- **Expert-technical register:** API reference, `contributing/` guides, ADRs, and deep-dive docs. Written for Kai and for any reader who reads source before adopting (Priya, who once anchored this register, is retired; the bar is not). Keep the pillars (Confident, Minimal, Technical, Sharp) and the vocabulary below.
+- **Plain-language register:** changelog, release notes, READMEs, npm copy, blog posts, onboarding, UI microcopy, and `docs/` guide and concept pages. Written for a smart 9th grader who does not code. Since 2026-10-06 this is the register of the primary persona (the founder), so it covers every story surface. This register routes to the **`writing-for-humans`** skill (`.agents/skills/writing-for-humans/`), which sets the readability bar.
 
 Brand vocabulary (Autonomous, Orchestration, Operator, Engine) is still allowed in the plain register, but only with an in-sentence gloss the first time it appears: "orchestration (letting one agent hand work to another)." Confident, Honest, and Not-corporate apply everywhere; Technical and Sharp belong to the expert register.
 
@@ -342,9 +276,10 @@ Use language like:
 
 | Don't say                  | Say                                                       |
 | -------------------------- | --------------------------------------------------------- |
-| "Easy-to-use AI assistant" | "Autonomous agent operating system"                       |
+| "Easy-to-use AI assistant" | "A workspace for people and agents"                       |
+| "Your AI assistants"       | "Your agents" (co-workers with a job)                     |
 | "Get started in minutes!"  | "Install. Configure. Run."                                |
-| "We help developers..."    | "Built for developers who ship."                          |
+| "We help founders..."      | "Run your business with people and agents."               |
 | "Powerful AI features"     | "Agents that multiply what you accomplish."               |
 | "No cloud dependency"      | "Intelligence from the agents. Everything else is yours." |
 
@@ -358,7 +293,7 @@ _Established during Value Architecture review (2026-02-27). These rules apply to
 | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | "server-side"                                                 | "independently" / "not tied to your IDE or terminal" / "keeps running when you close the terminal" | Most users run DorkOS on their laptop first. "Server-side" sounds enterprise/cloud. The real differentiator is independence from the IDE, not running on a server.                                                                                                                                                                                                                                                                          |
 | "infrastructure"                                              | "system" / "foundation" / "the layer" / just remove it                                             | Too cold, too enterprise. DorkOS is a tool for builders, not an infrastructure play.                                                                                                                                                                                                                                                                                                                                                        |
-| "audit trail"                                                 | "every session recorded" / "full session history"                                                  | Enterprise compliance language. Focus on transparency and reviewability instead.                                                                                                                                                                                                                                                                                                                                                            |
+| "audit trail" _(revised 2026-10-06)_                          | "a record of what every agent did" / "a record anyone in the space can read"                       | The readable record is now the core of the trust story, so the idea is central, not banned. Plain words still win over compliance words in story copy. The record ships before launch; until then public copy may point to the Activity page but must not claim every action is recorded. "Audit trail" is fine in docs and technical copy.                                                                                                 |
 | "session locking"                                             | Remove from marketing copy                                                                         | Enterprise term. Keep only in technical API docs.                                                                                                                                                                                                                                                                                                                                                                                           |
 | "universal message bus" / "message bus"                       | "built-in messaging" / "your agents can message you and each other"                                | Too technical. Describe the outcome (agents reach you), not the mechanism. Think: how would Apple describe this?                                                                                                                                                                                                                                                                                                                            |
 | "agents that can talk" / "talk to each other"                 | "agents, connected" / "message each other" / "communicate"                                         | Confused with voice/speech agents (ElevenLabs, etc.). "Connected" and "message" are unambiguous.                                                                                                                                                                                                                                                                                                                                            |
@@ -369,30 +304,31 @@ _Established during Value Architecture review (2026-02-27). These rules apply to
 
 #### Metaphor Guidelines
 
-| Use                              | Don't Use                              | Why                                                                                                                                 |
-| -------------------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| "Agents work **like** teammates" | "Agents **are** teammates"             | People aren't ready to place agents on the same level as human teammates yet. "Like" acknowledges the analogy without overclaiming. |
-| "Like giving your agents Slack"  | "Kernel IPC for agents"                | The Slack metaphor is immediately understood. IPC is jargon that excludes most of the audience.                                     |
-| "From solo agents to a team"     | "From isolated processes to a network" | Human-scale language. Teams, not networks.                                                                                          |
-| "Your agents can reach you"      | "Your agents have a voice"             | "Voice" implies speech/audio. "Reach" implies connection on any channel.                                                            |
+| Use                                                                   | Don't Use                                | Why                                                                                                                                                                                                                                                                                                    |
+| --------------------------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| "Agents are colleagues" / "trusted colleagues" _(changed 2026-10-06)_ | "Agents are tools" / "your AI employees" | Agents are colleagues, not tools and not staff you police. Trust by default is decided; equal accounts for people and agents are roadmap and will make it literal (internal; never in public copy, Decision 20). The old rule ("**like** teammates", 2026-02) is retired with website-copy Decision 3. |
+| "Like giving your agents Slack"                                       | "Kernel IPC for agents"                  | The Slack metaphor is immediately understood. IPC is jargon that excludes most of the audience.                                                                                                                                                                                                        |
+| "From solo agents to a team"                                          | "From isolated processes to a network"   | Human-scale language. Teams, not networks.                                                                                                                                                                                                                                                             |
+| "The office and its workers"                                          | "The platform and its nodes"             | The core image (2026-10-06): DorkOS is the office, people and agents are the workers who log in.                                                                                                                                                                                                       |
+| "Your agents can reach you"                                           | "Your agents have a voice"               | "Voice" implies speech/audio. "Reach" implies connection on any channel.                                                                                                                                                                                                                               |
 
 #### Tone Guardrails
 
 - **Apple-style outcomes over mechanisms.** Describe what happens for the user, not how the system works internally. "Get a Telegram message when your agent finishes" not "Publish to a NATS-style hierarchical subject."
-- **No enterprise compliance language.** DorkOS is for indie hackers and builders, not SOC 2 audits. "Every session recorded" not "complete audit trail." "Open source" not "auditable."
-- **Laptop-first, not cloud-first.** Most users will run DorkOS on their own computer. Language should reflect that. "Run on your laptop, a home server, or a $5 VPS" — in that order.
+- **No enterprise compliance language.** DorkOS is for founders and builders, not SOC 2 audits. Say "a record of what every agent did", not "compliance-grade audit logging." "Open source" not "auditable." _(Revised 2026-10-06: the readable record is now central to the trust story; see the "audit trail" row above.)_
+- **Ownership, cloud optional.** Most people start DorkOS on their own computer, free, with no account. Language should reflect that, then offer DorkOS Cloud as an option, never as a requirement. Say "ownership" and "yours" ("your agents, tools, files and data stay yours, wherever they run"); never "local first" or "local-first" in marketing. Headlines never say "your computer" or literally "open source"; body copy may state those as plain facts. _(Revised 2026-10-07.)_
 - **Connectivity and flexibility over reliability.** When describing Relay, lead with "your agents can reach you on Telegram, notify each other, connect through any channel" — not "durable delivery, guaranteed message persistence."
-- **No "infrastructure" identity.** The brand identity is about building teams and shipping code, not about running infrastructure. "I build with AI teammates" not "I own my agent infrastructure."
-- **Guide, not hero** _(added 2026-07-06, StoryBrand)_. The user is the hero; DorkOS and its maker are the guide. In any asset, sentences whose subject is "you / your fleet" should outnumber sentences whose subject is "DorkOS / we." The founder story appears as empathy plus credentials ("I built this because I needed it"), never as the story's protagonist. DorkOS brags only through what the user's fleet did.
+- **No "infrastructure" identity.** The brand identity is about running a business with a team of people and agents, not about running infrastructure. "I run my company with people and agents" not "I own my agent infrastructure."
+- **Guide, not hero** _(added 2026-07-06, StoryBrand)_. The user is the hero; DorkOS and its maker are the guide. In any asset, sentences whose subject is "you / your team" should outnumber sentences whose subject is "DorkOS / we." The founder story appears as empathy plus credentials ("I built this because I needed it"), never as the story's protagonist. DorkOS brags only through what the user's team did.
 - **Luxury codes, not luxury economics** _(added 2026-07-06)_. Premium feel is earned through craft, provenance, selectivity, and restraint (see `positioning-202607/02-positioning.md` §8.2). Brand surfaces (homepage, hero assets) never mention competitors: superlative, not comparative. Comparisons live only in docs/SEO evaluation surfaces. Copy test: would the sentence still work if we charged $200/month?
 
 #### Human-Empowerment Positioning (Added 2026-03-02)
 
-DorkOS positions AI agents as tools for human creativity and empowerment — like Apple positions the Mac, iPhone, and iPad. The human is the creative force. The agents are the coordination layer that lets human vision scale.
+DorkOS celebrates human creativity and ambition, the way Apple positions the Mac, iPhone and iPad. The founder's vision is the point. _(2026-10-06: agents are colleagues now, and will have equal accounts once that roadmap work ships (internal; never in public copy, Decision 20), but the rule below still holds: never imply agents make people smaller.)_
 
 | Never Say                         | Say Instead                                | Why                                                 |
 | --------------------------------- | ------------------------------------------ | --------------------------------------------------- |
-| "Your AI is smarter than you"     | "Your AI amplifies what you build"         | The human is the creator, the agent is the tool     |
+| "Your AI is smarter than you"     | "Your AI amplifies what you build"         | The human's vision is the point                     |
 | "You're the bottleneck"           | "You've always had more ideas than hours"  | Celebrate human ambition, don't diminish it         |
 | "Agents that never stop"          | "Agents that multiply what you accomplish" | Tirelessness framed as empowerment, not superiority |
 | "While you sleep" (as deficiency) | "So you can focus on what matters"         | Human choices are valid, not limitations            |
@@ -424,185 +360,195 @@ DorkOS should feel like:
 - A tool
 - A weapon
 - A control panel
-- A developer instrument
+- A well-made instrument _(was "a developer instrument" until 2026-10-06)_
 
 ---
 
 ## 12. Taglines
 
-**Primary** _(changed 2026-07-09)_: **You, Multiplied.**
+**Primary** _(changed 2026-07-09; kept 2026-10-06)_: **You, Multiplied.** Hero surfaces only.
 
-**Manifesto line:** Intelligence Doesn't Scale. Coordination Does. _(Demoted from primary 2026-07-09 — not deleted. This is the argument we defend in essays, the litepaper, comparison/anti-positioning surfaces, and the Show HN comment thread. It names the mechanism; hero surfaces lead with the customer instead. Pre-launch, write the Brooks-law defense: agents changed the coordination-cost curve — machine-speed messaging, no ego, no meetings — which is why coordination now scales where Brooks said it couldn't.)_
+**Headline** _(changed 2026-10-07)_: **Build and run your business with an agent team.** The page title and main headline, under the tagline. Page title exactly: "DorkOS: Build and run your business with an agent team".
 
-**Identity close:** We built it for ourselves. Now it's yours. _(Changed 2026-07-09 — the predecessor "Built by dorks. For dorks. Run by you." labeled the hero; see §8. "Built by dorks." survives as the short maker-voice form.)_
+**Supporting line** _(added 2026-10-07)_: **Your agents join your team chat, take on real work, and build the custom tools your company runs on.**
 
-**Fleet-era lines** (added 2026-07-06 for the category entry point; rewritten 2026-08-24 when "mission control" and "cockpit" were retired — see §10):
+Together these are the message stack: tagline, headline, supporting line. Headline copy (hero, titles, meta descriptions, social cards, section headlines, README opening, npm description, llms.txt summary line) never says "on your computer" or literally "open source"; ownership is said as "yours". The three differentiators stay the structure below the hero.
 
-- All Your Agents. One Place.
-- Every Agent You Run. One Window.
-- Your Agents, Any Vendor.
-- Your Plugins Already Work Here.
-- Some Code Never Leaves. Now the Agent Doesn't Either. _(local-model/privacy contexts)_
+**Retired 2026-10-07:** "Ask for a tool. Your agents build it." as the hero title (2026-10-06). It may still describe mini apps below the hero.
 
-**Messaging bank** (secondary/contextual use):
+**Category line** _(added 2026-10-06)_: A workspace for people and agents. Long form: "The workspace where founders run their business with people and agents." It says what DorkOS is, never the headline.
 
+**Explainer line:** Teams needed Slack. AI agents need DorkOS. (Only beside the differentiators, never as a lead: Slack Code exists.)
+
+**Manifesto line:** Intelligence Doesn't Scale. Coordination Does. _(Demoted from primary 2026-07-09, not deleted. This is the argument we defend in essays, the litepaper and anti-positioning surfaces. It names the mechanism; hero surfaces lead with the customer instead. Never a headline.)_
+
+**Identity close:** We built it for ourselves. Now it's yours. _(Changed 2026-07-09. "Built by dorks." survives as the short maker-voice form; see §8.)_
+
+**Retired 2026-10-06, the fleet-era lines** (kept here so nobody re-proposes them): "All Your Agents. One Place.", "Every Agent You Run. One Window.", "Your Agents, Any Vendor.", "Your Plugins Already Work Here." (also never verified), and "Some Code Never Leaves. Now the Agent Doesn't Either."
+
+**Messaging bank** (secondary and contextual use):
+
+- Build and Run Your Business with an Agent Team.
+- Ask for a Tool. Your Agents Build It. _(a mini apps section line now, not the hero)_
+- Your Agents Build the Tools Your Business Runs On.
+- Built for Founders.
+- Your Agents, Tools, Files and Data. Yours, Wherever They Run.
 - You've Always Had More Ideas Than Hours. That Ratio Just Changed.
-- One Person. Ten Agents. Ship What You've Always Imagined.
-- The Operating System for AI Agents
-- Tools for Builders Who Never Run Out of Ideas.
-- From Solo Agents to a Coordinated Team
-- Your Ideas. Your Agents. Your Rules.
+- Colleagues, Not Babysitters.
+- Your Agents, Trusted by Default.
+- The Office Where Your Agents Work.
+- One Founder. A Whole Company.
+- Yours to Keep. Cloud If You Want It.
+- Your Vision. Your People and Agents. Your Rules.
 - Agents That Multiply What You Accomplish.
-- Not a Chatbot. A System. The Layer Agents Were Missing.
+- Not a Chatbot. A Workplace.
 - Intelligence from the Agents. Everything Else Is Yours.
 - We Named It After Ourselves.
 - The Ones Who Care Too Much Build the Things That Matter Most.
-- You Slept. They Shipped. _(Use with awareness — the power is in celebrating the outcome, not framing sleep as deficiency.)_
+- You Slept. They Shipped. _(Use with awareness: the power is in celebrating the outcome, not framing sleep as a deficiency.)_
+
+Lines that state trust by default as shipped behavior ("Your Agents, Trusted by Default") stay internal until the trust work ships, per the demo-claim gate.
 
 ---
 
 ## 13. Website Structure Draft
 
-### Hero Section _(reframed 2026-07-09 — customer as subject, per the hero test in §10)_
+### Hero Section _(rewritten 2026-10-07: the message stack)_
 
-> **YOU, MULTIPLIED.**
+> _You, Multiplied._
 >
-> Every coding agent you run — Claude Code, Codex, OpenCode — in one place.
-> Your fleet, scheduled, connected, and reporting back to you.
-> You've always had more ideas than hours. That ratio just changed.
+> **Build and run your business with an agent team.**
 >
-> `npm install -g dorkos`
+> Your agents join your team chat, take on real work, and build the custom tools your company runs on.
+
+The install command and the desktop download sit under the hero. Runtime names do not appear in the hero. The hero never says "on your computer" or literally "open source"; ownership is "yours". This replaces the 2026-10-06 hero ("Ask for a tool. Your agents build it."). The supporting line names the team chat first, which is fine; the sections below still lead with mini apps. The chat workspace never leads the hero: it is table stakes.
 
 ### Sections
 
-1. The System (Architecture Overview)
-2. What This Unlocks (Use Cases)
-3. How It Works
-4. Your First 5 Minutes (Getting Started)
-5. Honest by Design (Transparency)
-6. About
-7. Contact
+1. Mini apps: ask for a tool, your agents build it (built form only: an agent builds it, you say yes, it opens inside DorkOS)
+2. Built for founders (use cases, built features only; goals and ready-made founder mini apps are "coming")
+3. Ownership: your agents, tools, files and data stay yours, wherever they run (body copy may add the plain facts: MIT license, free on your own computer, your own AI plan)
+4. The office and the workers (what DorkOS is: channels, DMs and threads with people and agents)
+5. Colleagues, not babysitters (the trust principle, claimed only as far as it has shipped)
+6. Your first five minutes
+7. For developers (Kai: many agents, many projects, any runtime)
+8. About
 
 ---
 
-## 14. Your First 5 Minutes
+## 14. Your First 5 Minutes _(rewritten 2026-10-06; built features only)_
 
-This is what happens when you install DorkOS for the first time. No signup. No cloud account. No configuration wizard.
+This is what happens when you start DorkOS for the first time. No signup. No cloud account. No fee.
 
 ### Minute 0: Install
+
+Download the desktop app, or run one command:
 
 ```
 npm install -g dorkos
 ```
 
-One command. If you know what that means, you're in the right place.
-
-### Minute 1: Launch
+### Minute 1: Open the office
 
 ```
 dorkos
 ```
 
-Your browser opens. You're looking at every Claude Code session across all your projects — sessions you started from the CLI, from VS Code, from anywhere. One place. Every session. Already there.
+The app opens on `#team`: a channel with you and every agent. DorkOS finds agent sessions you already have on this computer and shows them.
 
-### Minute 2: Explore
+### Minute 2: Give an agent a job
 
-Pick a session. You see the full conversation: messages, code changes, tool calls, results. Rich markdown, syntax highlighting, the full story of what your agent did. Start a new session from the browser — same Claude Code, no terminal required.
+Open a direct chat with an agent and ask for something real: a landing page, a reply to a customer, a summary of last week's sales. The direct chat shows the full working view: what the agent is thinking, the tools it uses, and a status bar.
 
-### Minute 3: Schedule
+### Minute 3: Connect your tools
 
-Open Pulse. Create your first schedule:
+Open Connections. Connect Gmail so agents can work in it, and Telegram or Slack so they can reach you.
 
-> "Run my test suite every night at 2am. If anything breaks, create a fix and open a PR."
+### Minute 4: Put it on a schedule
 
-Set the cron. The agent runs tonight whether you're at your desk or not.
+Open Tasks and create a schedule:
 
-### Minute 4: Connect
+> "Every weekday at 8am, read the support inbox and post a summary in #team."
 
-Open Relay. Add the Telegram adapter. Connect your account.
+### Minute 5: Walk away
 
-Now your agents can reach you — on your phone, while you're at lunch, while you're asleep. When your 2am test run finishes, you'll know.
+Your 8am summary arrives in `#team`, and a note reaches your phone. See what each agent did on the Activity page.
 
-### Minute 5: Walk away.
-
-This is the moment. The terminal is closed. The browser is closed. You're done for the night.
-
-DorkOS isn't. It keeps running, and your 2am schedule fires on time.
-
-Want your agents working when your laptop isn't? Put DorkOS on a machine that stays on: a desktop, a home server, a cheap cloud box.
-
-At 2:07am, your phone buzzes. Telegram: "Test suite passed. One flaky test fixed. PR #47 ready for review."
-
-You see it at 7am. Your morning starts with progress, not firefighting.
-
-That's DorkOS.
+Want agents working while your laptop is closed? Keep DorkOS on a computer that stays on, or turn on DorkOS Cloud for remote access.
 
 ---
 
-## 15. The Ten-Agent Team
+## 15. A Founder's Team _(rewritten 2026-10-06)_
 
-What does "one person, ten agents" actually look like? Here's what Kai runs:
+What does "one founder, a whole company" look like? Here is the kind of team Ikechi runs. Every capability in this table is built today except where marked.
 
-| Agent        | Project           | Schedule         | What It Does                                   |
-| ------------ | ----------------- | ---------------- | ---------------------------------------------- |
-| **Atlas**    | dorkos/core       | Every night, 2am | Runs tests, fixes failures, opens PRs          |
-| **Scout**    | dorkos/docs       | Every 6 hours    | Checks for stale docs, updates examples        |
-| **Sentinel** | production-api    | Every 30 minutes | Monitors error rates, triages new errors       |
-| **Forge**    | client-app        | On demand        | Implements features from the roadmap           |
-| **Lens**     | analytics-service | Daily, 6am       | Analyzes yesterday's metrics, files reports    |
-| **Bridge**   | integration-layer | On deploy        | Runs integration tests across services         |
-| **Archive**  | knowledge-base    | Weekly           | Organizes and indexes new documentation        |
-| **Patrol**   | security-scanner  | Daily, 4am       | Dependency audit, vulnerability scanning       |
-| **Herald**   | all projects      | Always on        | Routes notifications to Telegram and Slack     |
-| **Loop**     | feedback-engine   | Every 4 hours    | Collects signals, dispatches improvement tasks |
+| Who        | Kind                          | What they own                                                    |
+| ---------- | ----------------------------- | ---------------------------------------------------------------- |
+| **Ikechi** | Person (founder)              | Vision, product calls, the final word                            |
+| **Ada**    | Person (cofounder, part time) | Sales calls, partnerships                                        |
+| **Forge**  | Agent                         | Builds and ships the app                                         |
+| **Inbox**  | Agent                         | Works the support inbox in Gmail, escalates in `#support`        |
+| **Ledger** | Agent                         | Weekly books check and invoice follow-ups (on a schedule)        |
+| **Herald** | Agent                         | Drafts the weekly update and posts it in `#team`                 |
+| **Scout**  | Agent                         | Researches competitors and customers, posts findings in a thread |
 
-Each agent has a name, a color, an icon, and a Relay address. They appear in Console as browser tabs — you know at a glance who's working, who's done, and who needs you. And they need not share a vendor: Atlas can run on Claude Code while Lens runs on Codex and Patrol runs a local model through OpenCode — same window, same rules _(amended 2026-07-06)_.
+They all meet in `#team`, with channels and threads for each area. Ikechi talks to an agent in a direct chat when he wants the full working view, and in a channel when he only needs the result.
 
-This isn't hypothetical. This is what DorkOS makes possible today.
+Today Ada is a person Ikechi works with outside DorkOS; more than one person on one server is **Roadmap**. The table becomes a single shared space when equal accounts ship (internal; never in public copy, Decision 20).
+
+**Kai's version** (the developer, secondary) is the same idea pointed at code: ten agents across five projects, each on a schedule (tests at 2am, docs every six hours, errors every thirty minutes), reporting into rooms and to his phone. His agents need not share a vendor: one can run on Claude Code, another on Codex, another on a local model through OpenCode.
 
 ---
 
 ## 16. Open Source Strategy
 
-- Engine open source
+- The DorkOS app is MIT-licensed and complete on its own: clone it, build it, test it, run it
+- DorkOS Cloud is a separate, optional hosted service; the app never requires it
 - Community contributions encouraged
-- Modular architecture allows extension
+- Modular architecture allows extension (the marketplace, extensions, MCP)
 - GitHub-first presence
 
 Position DorkOS as a movement, not just a tool.
 
 ---
 
-## 17. Long-Term Vision
+## 17. Long-Term Vision _(rewritten 2026-10-06)_
+
+Millions of solopreneurs and founders use DorkOS every day to earn billions of dollars and compete with companies far bigger than them.
 
 DorkOS becomes:
 
-- The default autonomous agent operating system
-- The backbone of autonomous software development
-- The operating layer for AI-native companies
-- A distributed mesh of privately-run AI agents
+- The workspace where founders run their business with people and agents
+- One program, local or hosted, the same app everywhere
+- Equal accounts for people and agents, each with a job, access levels, email, phone, secrets and payments
+- Groups, projects and goals that guide what agents do, and a health check that keeps the organisation in shape
+- A network of spaces you can push work to, publish from, and leave at any time
+
+(This vision is internal. It is not marketing copy.)
 
 ---
 
 ## 18. Final Brand Summary
 
-DorkOS is not trying to be friendly. It is trying to be powerful.
+DorkOS is not trying to be cute. It is trying to be powerful, calm and honest.
 
-It is for developers who:
+It is for founders, and the developers beside them, who:
 
-- Want autonomy
-- Want control
+- Want to run a business far bigger than their headcount
+- Want agents as colleagues, not as suspects
 - Want full capability
-- Want a serious AI system they own
+- Want a system they own
 - Want honest tools
 
 It is a tool for operators.
 
-Built by dorks. For dorks. Run by you.
+We built it for ourselves. Now it's yours.
 
 ---
 
 ## 19. Shapes — Naming Addendum (2026-07-17)
+
+> _2026-10-06:_ Shapes do not appear in the 2026-10 story. This addendum is kept as their naming record. **"Mini apps" is now the public name for apps your agents build inside DorkOS** (the lead differentiator; the app calls them extensions). **"Shape" stays the name of the setup bundle** (layout, extensions, suggested agents, schedules). A Shape can bundle mini apps, but a mini app is not a Shape, and neither word replaces the other. Where it mentions "one place", read that as history: the category phrase is now "a workspace for people and agents" (§3).
 
 Decision D3 of the Shapes program, ratified by the founder 2026-07-17. Full evidence trail: `research/20260717_shapes-byoa-positioning.md` §2; program plan: `plans/shapes-program.md`. This section governs vocabulary for **Shapes** — installable, forkable bundles (extensions, layout, agents, skills, connections, schedules) that change what DorkOS is for you. Shapes are a capability under active build, not a shipped pillar: the demo-claim gate applies (AGENTS.md → Product state) — none of the terms below appear in marketing copy until a reference Shape ships end-to-end.
 
@@ -631,5 +577,5 @@ The 2026-07-17 decision was that **"Home Base" replaces "cockpit" and "mission c
 
 ### Rejected
 
-- **"Malleable."** Academically flavored, boring for marketing. Survives only as a lineage footnote (Ink & Switch, "Malleable Software," June 2025) for Priya-tier credibility in a manifesto essay — never in customer-facing copy.
+- **"Malleable."** Academically flavored, boring for marketing. Survives only as a lineage footnote (Ink & Switch, "Malleable Software," June 2025) for architect-reader credibility in a manifesto essay — never in customer-facing copy.
 - **"World's first meta-harness" as identity claim.** "Meta-harness" stays in category/SEO vocabulary (docs, comparison surfaces) but is never a brand identity claim — Databricks' Omnigent already self-describes that way (June 2026).

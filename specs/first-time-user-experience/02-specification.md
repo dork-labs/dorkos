@@ -834,7 +834,7 @@ Start DorkOS with: dorkos
 
 - Ideation document: `specs/first-time-user-experience/01-ideation.md`
 - FTUE research: `research/20260301_ftue_best_practices_deep_dive.md`
-- Personas: `meta/personas/the-autonomous-builder.md`, `meta/personas/the-knowledge-architect.md`
+- Personas: `meta/personas/the-autonomous-builder.md`, `meta/archive/personas/the-knowledge-architect.md`
 - Design system: `contributing/design-system.md`
 - Animation patterns: `contributing/animations.md`
 - BJ Fogg Behavior Model: B = MAP (Motivation, Ability, Prompt)

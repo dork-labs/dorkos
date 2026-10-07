@@ -111,26 +111,34 @@ export const equationItems: EquationItem[] = [
   { lhs: 'automated hooks', rhs: 'small scripts' },
 ];
 
+/**
+ * The three differentiators, in the order the 2026-10-06 positioning fixes.
+ * Each card says plainly what ships today; goals, business connections and
+ * ready-made founder mini apps are roadmap, so that card says "Coming next".
+ */
 export const futureCards: FutureCard[] = [
   {
-    id: 'autonomous',
-    label: 'Autonomous',
-    title: 'Agents that run',
-    description: 'Tasks. Already shipping. Your agents run on a schedule, without you.',
+    id: 'mini-apps',
+    label: 'Mini apps',
+    title: 'Agents that build your tools',
+    description:
+      'Already shipping. Ask for a dashboard or a tracker. Your agents build it inside DorkOS, and it opens once you say yes.',
     color: 'orange',
   },
   {
-    id: 'connected',
-    label: 'Connected',
-    title: 'Agents that connect',
-    description: 'Mesh. Agent-to-agent discovery across your projects.',
+    id: 'founders',
+    label: 'For founders',
+    title: 'Built to run a business',
+    description:
+      'Made for founders who run a business mostly with agents. Coming next: goals, business connections, and ready-made mini apps.',
     color: 'blue',
   },
   {
-    id: 'commerce',
-    label: 'Commerce',
-    title: 'Agents that transact',
-    description: 'HTTP 402. Agents negotiate, purchase, settle. The economy reshapes.',
+    id: 'ownership',
+    label: 'Ownership',
+    title: 'Yours to keep',
+    description:
+      'Already shipping. Your agents, tools, files and data stay yours, wherever they run. MIT licensed and free forever.',
     color: 'green',
   },
 ];

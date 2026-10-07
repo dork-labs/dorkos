@@ -17,9 +17,9 @@ import {
   FOOTER_SOCIAL_LINKS,
 } from '@/layers/features/marketing';
 
-const storyTitle = 'The Story — DorkOS';
+const storyTitle = 'The Story | DorkOS';
 const storyDescription =
-  'How DorkOS started: one founder, a fleet of coding agents, and the bet that coordination scales further than raw intelligence.';
+  'How DorkOS started: one founder, an agent team, and the bet that one person with good help can build and run a whole business.';
 
 export const metadata: Metadata = {
   title: 'The Story',
@@ -36,7 +36,9 @@ export const metadata: Metadata = {
 };
 
 /**
- * The DorkOS origin story -- Dorian's personal arc from LifeOS to multi-agent coordination.
+ * The DorkOS origin story: Dorian's personal arc from LifeOS to DorkOS. The closing
+ * vision cards frame its value as the three differentiators (mini apps, built for
+ * founders, ownership).
  *
  * Add ?present=true for presentation mode: full-screen snap sections + keyboard navigation.
  */

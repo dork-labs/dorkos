@@ -74,7 +74,7 @@ Three facts that shape any design:
 
 ## Users
 
-- **Priya** (`meta/personas/the-knowledge-architect.md`) — the reason to be
+- **Priya** (`meta/archive/personas/the-knowledge-architect.md`) — the reason to be
   careful about the shape. She reads the source before she trusts a tool, and the
   question she will ask is exactly the right one: does this note make the agent
   able to do more? The answer has to be provably no.

@@ -11,8 +11,11 @@ export interface Block {
  * Every word on the home page, in one file.
  *
  * The page's whole argument is about six sentences long, and several of them
- * are settled: "All your agents. One place." is the category line, and
- * "You, multiplied." is the product's tagline. Keeping them here rather than
+ * are settled. The 2026-10-07 message stack is three levels: the tagline
+ * ("You, multiplied.", which closes this page), the headline "Build and run
+ * your business with an agent team.", and the supporting line under it. The
+ * beats below the hero then carry the three differentiators in order (mini
+ * apps, built for founders, ownership). Keeping them here rather than
  * scattered through the components means the word budget is one thing you can
  * read end to end, and `__tests__/home-copy.test.ts` can hold the settled
  * lines still while the rest stays editable.
@@ -24,13 +27,31 @@ export interface Block {
  * re-theming the section in two places. The copy test sweeps that object into
  * the same checks as everything here, so nothing escapes the gates.
  */
+/**
+ * The hero: the headline and supporting line of the message stack.
+ *
+ * The eyebrow stays "for founders" rather than repeating the tagline: "You,
+ * multiplied." is the close's headline, and saying it at both ends of a page
+ * this short spends it. The eyebrow is also the one place above the fold that
+ * names the audience, the second differentiator, which no beat carries.
+ */
 export const HERO: Block = {
-  eyebrow: 'claude code · codex · opencode',
-  title: 'All your agents. One place.',
-  lede: 'DorkOS puts every AI agent you run in one window. Watch them work.',
+  eyebrow: 'for founders',
+  title: 'Build and run your business with an agent team.',
+  lede: 'Your agents join your team chat, take on real work, and build the custom tools your company runs on.',
 };
 
-/** What the pinned stage says at each of its three moments. */
+/**
+ * What the pinned stage says at each of its three moments.
+ *
+ * The talk beat is table stakes: every workspace for people and agents has
+ * channels and DMs, so it says what happens and claims no edge. The other two
+ * carry the differentiators in order. "yours" is mini apps (an agent builds
+ * an extension and it opens only after a person says yes, which is what the
+ * chat shows), and "computer" is ownership. The ownership headline says
+ * "yours", never where DorkOS runs, because DorkOS Cloud runs it on a server
+ * too; the laptop the stage draws is the one place the page shows a computer.
+ */
 export const BEATS: Record<Beat, Block> = {
   talk: {
     eyebrow: 'people + agents',
@@ -38,14 +59,14 @@ export const BEATS: Record<Beat, Block> = {
     lede: 'You talk to them. They talk to each other. Work happens out loud.',
   },
   yours: {
-    eyebrow: 'what you add',
-    title: 'Make it yours.',
-    lede: 'Add a skill. Set a schedule. Pick where they reach you.',
+    eyebrow: 'mini apps',
+    title: 'Ask for the tool you need.',
+    lede: 'Your agents build it right inside DorkOS. It opens once you say yes.',
   },
   computer: {
-    eyebrow: 'yours alone',
-    title: 'It all happens on your computer.',
-    lede: 'Your files stay home. You pick what your agents can touch, and what needs your say-so.',
+    eyebrow: 'ownership',
+    title: 'Yours to keep.',
+    lede: 'Your agents, tools, files and data stay yours, wherever they run. Use the AI plan you already have. No DorkOS account needed.',
   },
 };
 
@@ -95,8 +116,8 @@ export const CLOSE = {
   /**
    * The bill, said once and plainly.
    *
-   * "free · open source" is true of DorkOS and false of running agents, and
-   * this page says the first part twice. `/` can afford to answer it in a FAQ
+   * "free" is true of DorkOS and false of running agents, and this page
+   * says it more than once. `/` can afford to answer it in a FAQ
    * entry; a page with a word budget this small has to answer it in a line,
    * or the cheerful half stands alone.
    */
@@ -122,7 +143,7 @@ export const CLOSE = {
 /** What the download button offers, and what it costs. */
 export const DOWNLOAD = {
   label: 'Download for Mac',
-  terms: 'free · open source · apple silicon',
+  terms: 'free · mit license · apple silicon',
 } as const;
 
 /** Introduces the terminal install, wherever the download button appears. */

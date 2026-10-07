@@ -1,0 +1,6 @@
+{
+  "code": "forbidden",
+  "status": 403,
+  "title": "That code does not match.",
+  "detail": "The code you entered is not the one shown on your computer. Check it and try again. Nothing was changed."
+}

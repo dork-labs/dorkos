@@ -9,7 +9,7 @@ import { CHAT_SCRIPT, isAgentLine, type ChatLine, type Sender } from './chat-scr
  * A scroll-driven chat has one hard constraint: it has to finish inside the
  * scroll it is pinned to. This page shortened that scroll deliberately, so the
  * conversation was still on its sixth line when the second beat's headline had
- * already arrived, and a visitor met "Make it yours." next to a dock nobody had
+ * already arrived, and a visitor met the second beat's headline next to a dock nobody had
  * used yet.
  *
  * These are the floor, not a preference. An agent's turn costs GAP + TYPING =

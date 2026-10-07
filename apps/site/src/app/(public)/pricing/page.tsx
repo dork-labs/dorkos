@@ -23,7 +23,7 @@ import {
 } from './pricing-data';
 
 const DESCRIPTION =
-  'DorkOS is free and open source. Pay only if you want the cloud: AI included, and your agents in reach from anywhere.';
+  'DorkOS is free, and yours to keep. Pay only if you want the cloud: AI included, and your agents in reach from anywhere.';
 
 export const metadata: Metadata = {
   title: 'Pricing',
@@ -50,8 +50,8 @@ export default function PricingPage() {
           The cloud is optional.
         </h1>
         <p className="text-warm-gray mx-auto mt-6 max-w-xl text-lg text-pretty sm:text-xl">
-          DorkOS is open source and runs on your computer at no cost, forever. Pay only if you want
-          AI included and your agents in reach from anywhere.
+          DorkOS is free forever and yours to keep, with the AI plan you already have. Pay only if
+          you want AI included and your agents in reach from anywhere.
         </p>
       </header>
 

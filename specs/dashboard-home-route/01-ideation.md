@@ -45,7 +45,7 @@ status: ideation
 - `meta/dorkos-litepaper.md`: Console is described as "browser-based command center" — dashboard aligns with this vision.
 - `meta/value-architecture-applied.md`: VL-03 (Multi-Session Command Center) explicitly calls for "glance at your browser tabs and instantly know: which agents are working, which are done, and which need your attention."
 - `meta/personas/the-autonomous-builder.md`: Kai wants at-a-glance status of his agent team across 5 projects. "Mission control" mental model.
-- `meta/personas/the-knowledge-architect.md`: Priya values quick orientation so she can dive into the right context fast.
+- `meta/archive/personas/the-knowledge-architect.md`: Priya values quick orientation so she can dive into the right context fast.
 
 ## 3) Codebase Map
 

@@ -90,9 +90,8 @@ export const DAVE: CastMember<'dave'> = {
  * Which runtime powers which agent.
  *
  * This mapping is the page's own invention, not the film's: the film's agents
- * have personalities, not runtimes. It is here because running Claude Code,
- * Codex and OpenCode side by side in one window is the product's headline
- * difference, and the badges are what say so without a sentence. Reassigning
+ * have personalities, not runtimes. It is here because the badges show which
+ * tool each agent runs on: Claude Code, Codex or OpenCode. Reassigning
  * any of the three is a one-line change and breaks nothing.
  */
 export const RUNTIMES: Record<CastKey, AgentRuntime> = {

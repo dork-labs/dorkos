@@ -5,6 +5,7 @@ status: accepted
 created: 2026-07-02
 spec: accounts-and-auth
 superseded-by: null
+supersedes: 0103
 ---
 
 # 0320. Optional-by-default local login, auto-required on exposure; subsumes tunnel passcode and global MCP key
@@ -12,6 +13,8 @@ superseded-by: null
 ## Status
 
 Accepted
+
+Amended by [261006-235239](261006-235239-people-and-agents-hold-equal-accounts.md) (equal accounts; 2026-10-06 vision reset): retires "registration auto-closes after the first user" and the single-person trust domain behind it. People and agents get equal accounts with Owner, Admin, Member and Guest access levels. Optional local login, login required on exposure, and per-account API keys stand.
 
 ## Context
 

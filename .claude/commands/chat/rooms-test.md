@@ -72,7 +72,7 @@ DORKOS_TEST_RUNTIME=true DORKOS_PORT=4243 VITE_PORT=4248 \
 DORKOS_PORT=4243 VITE_PORT=4248 dotenv -- turbo dev --filter=@dorkos/client
 ```
 
-A never-onboarded `DORK_HOME` renders the **first-run wizard instead of the cockpit**, so every wait for the app shell times out. Dismiss it once, exactly as `apps/e2e/global-setup.ts` does:
+A never-onboarded `DORK_HOME` renders the **first-run wizard instead of the app**, so every wait for the app shell times out. Dismiss it once, exactly as `apps/e2e/global-setup.ts` does:
 
 ```bash
 NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -155,7 +155,7 @@ Put all four lines in the report header. An empty `DORK_DIR` is a hard stop rath
 | `dorkHome`                | What it is                                             |
 | ------------------------- | ------------------------------------------------------ |
 | `/tmp/dorkos-*`           | throwaway — go ahead                                   |
-| `~/.dork`                 | the installed cockpit (what port 4242 means)           |
+| `~/.dork`                 | the installed app (what port 4242 means)               |
 | `apps/server/.temp/.dork` | the dev stack's own data — real work lives here        |
 | anything else             | a `DORK_HOME` override, a Docker mount, someone's copy |
 
@@ -265,13 +265,13 @@ Then type the three messages in the UI, and put it back:
 - **Prior value was a number** → `PATCH` that number back, and re-read the file to confirm.
 - **Prior key was absent** → a `PATCH` cannot express absence. Restore the config snapshot taken in Phase 1 instead (`cp "$CONFIG_SNAPSHOT" "$DORK_DIR/config.json"`), then reload the tab; the server re-reads the file on every access. Re-read the file and confirm the key is gone. Deleting the key by hand is **not** a durable restore: any later config write re-materialises every default, so the key comes back at 500 on its own (`contributing/configuration.md` → "`config.json` holds the effective config", DOR-1267).
 
-This is a real config write on a live install, not a test fixture. Two caveats on the write itself: `rooms.collectDebounceMs` is `operator-only` (`config-write-policy.ts`), which a plain `curl` clears by simply not sending agent-identity headers; but **with login on it also needs a real session cookie**, so on such an install make the change from the cockpit's own settings rather than the shell. Whichever route you take, **print the window value in force beside the verdict** — a verdict about gathering is meaningless without the window it gathered in — and **say in the report which restore path you took and what the file holds now**.
+This is a real config write on a live install, not a test fixture. Two caveats on the write itself: `rooms.collectDebounceMs` is `operator-only` (`config-write-policy.ts`), which a plain `curl` clears by simply not sending agent-identity headers; but **with login on it also needs a real session cookie**, so on such an install make the change from the app's own Settings rather than the shell. Whichever route you take, **print the window value in force beside the verdict** — a verdict about gathering is meaningless without the window it gathered in — and **say in the report which restore path you took and what the file holds now**.
 
 In `mode:sandbox`, use the API burst too, and for the same reason twice over: the `simple-text` echo returns before a second browser-driven post could even be typed.
 
 The window is `rooms.collectDebounceMs` (default **500ms**), capped at `rooms.collectMaxEntries` (default **20**) — declared in `packages/shared/src/config-schema.ts`, read into the collector in `apps/server/src/services/rooms/index.ts`. It opens on the first message and **does not slide**, so three messages inside half a second are one turn's worth of input.
 
-Confirm this machine's actual values rather than trusting the defaults. `GET /api/config` will not tell you: it deliberately exposes only the two engaged-window ceilings from the `rooms` block, because those are the only ones the cockpit says out loud. Read the stored config instead, and fall back to the schema defaults when the key was never written:
+Confirm this machine's actual values rather than trusting the defaults. `GET /api/config` will not tell you: it deliberately exposes only the two engaged-window ceilings from the `rooms` block, because those are the only ones the app says out loud. Read the stored config instead, and fall back to the schema defaults when the key was never written:
 
 ```bash
 python3 - "$DORK_DIR/config.json" <<'PY' 2>/dev/null || echo "not set — schema defaults apply (500ms / 20)"
@@ -617,7 +617,7 @@ This report is the durable record. On a re-run after a fix:
 ## Technical Notes
 
 - **Rooms API:** `GET /api/rooms` (list, with per-community `warnings[]`), `POST /api/rooms` (201 new / **200 an existing DM reopened** — DM creation is idempotent on the member set), `GET /api/rooms/:id` (room **+ roster**, 404 `ROOM_NOT_FOUND` if you are not a member — no entries), `GET /api/rooms/:id/entries` (history; `before` cursor, `limit` default 50 / max 200), `POST /api/rooms/:id/entries` (**trigger-only, 202** — the entry itself arrives on the stream, exactly like session messages), `POST /api/rooms/:id/threads` (reply, also 202), `POST /api/rooms/:id/entries/:entryId/reactions` (202, toggle), `POST /api/rooms/:id/halt`, `POST /api/rooms/:id/halt/:authorId` (**stop one agent** — same verb scoped to one `(room, agent)` key; writes a `halted` notice carrying `subjectAuthorId`), `POST /api/rooms/:id/members`. Routes: `apps/server/src/routes/rooms.ts`.
-- **Live updates:** `GET /api/rooms/:id/events` — durable per-room stream (snapshot → gap-free replay via `Last-Event-ID` → live), the same contract as `GET /api/sessions/:id/events`. The cockpit itself uses the WebSocket served on the same path (`apps/server/src/routes/room-events-socket.ts`); the SSE route is the public integration contract. **A 202 from a post and nothing on screen means a stream problem, not a write problem** — check the stream before blaming the write.
+- **Live updates:** `GET /api/rooms/:id/events` — durable per-room stream (snapshot → gap-free replay via `Last-Event-ID` → live), the same contract as `GET /api/sessions/:id/events`. The app itself uses the WebSocket served on the same path (`apps/server/src/routes/room-events-socket.ts`); the SSE route is the public integration contract. **A 202 from a post and nothing on screen means a stream problem, not a write problem** — check the stream before blaming the write.
 - **Disk:** one consolidated `dork.db` under the data dir (`apps/server/.temp/.dork/` in dev, `~/.dork/` in production, `DORK_HOME` overrides both). Room tables: `rooms`, `room_members`, `room_entries`, `room_entry_reactions`, `room_attachments`, `room_sessions`, `authors`.
 - **Threads** are a relation between entries in one room, not a separate entity: `parentEntryId` (what this answers) and `threadRootEntryId` (the head). One level deep, enforced as service policy (`NESTED_THREAD`). The main timeline is `parentEntryId IS NULL`.
 - **The collect window** opens on the first message for a `(room, agent)` pair and does **not** slide — a sliding window would starve a busy room. It closes early at `rooms.collectMaxEntries`. Everything gathered becomes **one** turn, answering the newest, with the rest as ambient context.

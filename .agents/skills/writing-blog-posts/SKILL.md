@@ -9,24 +9,24 @@ The blog at `blog/*.mdx` holds 61 posts and every one of them is a release note.
 
 ## The gate, before you write a sentence
 
-A blog post is exactly where an unverified claim slips out. `AGENTS.md:7`:
+A blog post is exactly where an unverified claim slips out. The rule is the demo-claim gate in `meta/positioning-202610/00-overview.md` ("The demo-claim gate"), restated in `AGENTS.md` under Product state: never state that a still-unverified or unbuilt surface works.
 
-> "In user-facing copy, docs, and release notes, never state that a still-unverified surface or pillar ... works (the demo-claim gate: `meta/positioning-202607/09-gtm-plan.md` §2.0)."
+Under the gate right now:
 
-Under the gate right now, per that same line:
+| Surface                                                                                                                  | Status                                                                                                         |
+| ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| Obsidian plugin                                                                                                          | Retired; link the migration guide, never promise an install                                                    |
+| Windows x64 desktop                                                                                                      | Early alpha, never confirmed by a real end-user install                                                        |
+| Marketplace Claude-Code-superset compatibility                                                                           | Shipped, unverified end to end                                                                                 |
+| Linux desktop                                                                                                            | Does not exist. Not gated, absent                                                                              |
+| Room slash commands, `post_to_room` everywhere                                                                           | Designed, not built (`specs/rooms/02-specification.md:628-706`)                                                |
+| Trust by default: full power by default, no permission prompts, an audit trail anyone can read                           | Decided, not built. State the principle only; the Activity page is a record of what agents did, not that trail |
+| Equal accounts                                                                                                           | Internal design principle. Never named in public: no "equal accounts", "peers", "agents can run the place"     |
+| Roles, the vault, email and phone, agents with their own computer, push, publishing, live shared docs, spaces            | Roadmap. Say "coming" or leave it out                                                                          |
+| Mini apps beyond today: every agent knowing how, "inside DorkOS or its own website", ready-made founder mini apps, goals | Roadmap. Today an agent builds one (an extension), a person says yes, and it opens in fixed places             |
+| The official DorkOS Community Space                                                                                      | Not built. Say "coming", never link it. There is no Discord                                                    |
 
-| Surface                                        | Status                                                          |
-| ---------------------------------------------- | --------------------------------------------------------------- |
-| Obsidian plugin                                | Retired; link the migration guide, never promise an install     |
-| Windows x64 desktop                            | Early alpha, never confirmed by a real end-user install         |
-| Mesh+Relay multi-agent coordination            | Shipped, unverified end to end                                  |
-| Marketplace Claude-Code-superset compatibility | Shipped, unverified end to end                                  |
-| Linux desktop                                  | Does not exist. Not gated, absent                               |
-| Room slash commands, `post_to_room` everywhere | Designed, not built (`specs/rooms/02-specification.md:628-706`) |
-
-Clear of the gate: the web cockpit via CLI install, and the macOS desktop app (signed, notarized, downloadable).
-
-`AGENTS.md` is the live list. `09-gtm-plan.md` §2.0 is the rule behind it and is older, so where the two disagree, `AGENTS.md` wins.
+Clear of the gate: the app via CLI install, the macOS desktop app (signed, notarized, downloadable), rooms, direct chat, tasks, connections and the marketplace install path.
 
 **The instruction, and it is not optional.** Go through the finished draft one capability claim at a time. For each one, name the artifact that proves it shipped and was verified: a merged PR, a changelog fragment, a browser test, a docs page describing it as it works today. If you cannot find one, rewrite the sentence in the future tense or cut it. "DorkOS agents coordinate across machines" and "we are building toward agents that coordinate across machines" are different claims, and only one of them is currently true.
 
@@ -44,20 +44,21 @@ The `writing-for-humans` skill sets the sentence-level standard for everything h
 
 A post argues from a position. A neutral explainer is a docs page, and we already have docs.
 
-The position comes from three places:
+The position comes from four places:
 
-- **The thesis.** `meta/dorkos-litepaper.md:298`: "Intelligence doesn't scale. Coordination does." Most posts here are an instance of it. The manifesto line is licensed on this surface and almost nowhere else (see Voice below), which makes an essay the one place the argument can be stated outright rather than implied.
-- **The design filters.** `AGENTS.md:15` names Jobs, Ive and Rams as the design mentors and states what they imply: every element justifies its existence, so if a paragraph would not be missed, cut it. The product "feels like a control panel, not a consumer app," and `meta/brand-foundation.md:425` says the same. The prose is instrument-panel prose, not lifestyle copy.
+- **The thesis.** `meta/brand-foundation.md` §12: "Intelligence doesn't scale. Coordination does." Most posts here are an instance of it. The manifesto line is licensed on this surface and almost nowhere else (see Voice below), which makes an essay the one place the argument can be stated outright rather than implied.
+- **What sets us apart.** `meta/positioning-202610/00-overview.md` names three differentiators, in order: mini apps (your agents build the tools your business needs inside DorkOS), built for founders, and ownership (your agents, tools, files and data stay yours, wherever they run). A feature post ties back to one of them. The chat workspace itself is table stakes, so never argue that it is the edge. Marketing says "ownership", not "local first". The site headline is "Build and run your business with an agent team." (the overview's "The message stack"). A post title or social card never says "on your computer" or literally "open source"; the body may state those as plain facts (MIT license, runs on your computer or a server).
+- **The design filters.** The Decision filters line in `AGENTS.md` (Quality Standard) names Jobs, Ive and Rams as the design mentors and states what they imply: every element justifies its existence, so if a paragraph would not be missed, cut it. The product "feels like a control panel, not a consumer app," and `meta/brand-foundation.md` §11 (Brand Aesthetic) says the same. The prose is instrument-panel prose, not lifestyle copy.
 - **A named reader.** A post aimed at everyone reaches nobody. Name the persona before the first sentence.
 
-| Post type      | Usually for                                                                                                                       |
-| -------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Feature post   | Kai (`meta/personas/the-autonomous-builder.md`), running many agents, asking whether this does something his current setup cannot |
-| Decision essay | Priya (`the-knowledge-architect.md`), who reads the source before adopting and is really evaluating our judgment                  |
-| Ecosystem post | Kai plus the other project's users, who arrived because of that project and not because of us                                     |
-| Release recap  | People already running DorkOS, who want to know what changed and whether it was worth the upgrade                                 |
+| Post type      | Usually for                                                                                                                                                                                                                 |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Feature post   | The founder (`meta/personas/the-ai-native-founder.md`), running a business mostly with agents, asking what this lets them hand off next; Kai (`meta/personas/the-autonomous-builder.md`) when the feature is for developers |
+| Decision essay | The skeptical reader (Kai, or a technical founder) who reads the source before adopting and is really evaluating our judgment                                                                                               |
+| Ecosystem post | Kai plus the other project's users, who arrived because of that project and not because of us                                                                                                                               |
+| Release recap  | People already running DorkOS, who want to know what changed and whether it was worth the upgrade                                                                                                                           |
 
-A feature that removes the need to write code is Ikechi's (`the-ai-native-founder.md`), not Kai's. Pick one and write to them.
+A feature aimed at developers (runtimes, the CLI, the API) is Kai's, running many agents and asking whether this does something his current setup cannot. One that lets a founder hand off work without writing code is the founder's. Pick one and write to them.
 
 The test: **if the post could have been written by a competitor about their own product, it has no point of view.** Rewrite it or do not publish it.
 
@@ -161,7 +162,7 @@ Openings to avoid: throat-clearing history ("Since the dawn of..."), defining a 
 
 ## Naming competitors
 
-The repo has no anti-disparagement rule. What it has is surface-scoped: brand surfaces (homepage, hero assets) never mention competitors (`meta/brand-foundation.md:386`), and comparison content is planned elsewhere and required to be "honest about their strengths" (`meta/positioning-202607/06-marketing-tactics.md:31`). A blog post sits between the two, so this skill settles it:
+The repo has no anti-disparagement rule. What it has is surface-scoped: brand surfaces (homepage, hero assets) never mention competitors (`meta/brand-foundation.md` §10, the "Luxury codes" guardrail), and comparison content is planned elsewhere and required to be "honest about their strengths" (`meta/positioning-202607/06-marketing-tactics.md:31`). A blog post sits between the two, so this skill settles it:
 
 **Name them, name a specific strength and where it comes from, then narrow the rejection to our own context.**
 
@@ -170,7 +171,7 @@ Ably's "No, we don't use Kubernetes" credits Kubernetes's Borg lineage, its vend
 Two limits:
 
 - Not in a hero paragraph or a pull quote. Those are brand surfaces wherever they appear.
-- `meta/brand-foundation.md:112`: "The villain isn't a company or a competitor. The villain is a missing layer." That is the framing to reach for instead of an opponent.
+- `meta/brand-foundation.md` §5 (The Villain): "The villain is not a company or a competitor. The villain is a missing place." That is the framing to reach for instead of an opponent.
 
 ## Admitting error
 
@@ -181,7 +182,7 @@ Two limits:
 ## Voice and lines you may use
 
 - **"You, Multiplied." is hero-only.** Do not open a blog post with it.
-- **"Intelligence doesn't scale. Coordination does." is licensed here.** `meta/brand-foundation.md:434` reserves the manifesto line for "essays, the litepaper, comparison/anti-positioning surfaces, and the Show HN comment thread." A blog essay is that surface, and the only writing surface here where the line belongs.
+- **"Intelligence doesn't scale. Coordination does." is licensed here.** `meta/brand-foundation.md` §12 (Taglines) reserves the manifesto line for "essays, the litepaper, comparison/anti-positioning surfaces, and the Show HN comment thread." A blog essay is that surface, and the only writing surface here where the line belongs.
 - **Byline: a named human.** Every one of the 61 existing posts says `DorkOS Team`, which is right for a release note and wrong for an opinion piece. A corporate byline on an argument reads as content marketing. The evidence is a consistent pattern across every strong exemplar in the research rather than a controlled finding, and it is worth following anyway: no one signs an essay "the team."
 
 ## Humor

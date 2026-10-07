@@ -10,7 +10,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, waitFor, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport, withSpacesExperiment } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import type { CloudCreditsStatus, CloudPlanResponse } from '@dorkos/shared/cloud-schemas';
 import balanceFixture from '@dork-labs/cloud-api/fixtures/v1/billing/balance-denominated.json' with { type: 'json' };
@@ -23,6 +23,20 @@ import { describeDorkosAccountLine, lowCreditsFigure } from '../model/use-dorkos
 import { AccountContents } from '../ui/AccountContents';
 import { SeatManagement } from '../ui/SeatManagement';
 import { UseCreditsFor } from '../ui/UseCreditsFor';
+
+/**
+ * A hosted-community answer to hand `AccountContents` directly, standing in for
+ * one already cached, or `null` for the real read over the mock transport.
+ */
+const hostedOverride = vi.hoisted(() => ({ current: null as unknown }));
+vi.mock('@/layers/features/community-hosting', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/features/community-hosting')>();
+  return {
+    ...actual,
+    useHostedCommunities: (enabled: boolean) =>
+      hostedOverride.current ?? actual.useHostedCommunities(enabled),
+  };
+});
 
 const OFF: CloudCreditsStatus = {
   enabled: false,
@@ -75,7 +89,10 @@ function planWith(remainingMicro: string, purchasedMicro: string): CloudPlanResp
 }
 
 beforeEach(() => vi.clearAllMocks());
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  hostedOverride.current = null;
+});
 
 describe('readCreditsFor', () => {
   it('offers nothing where credits cannot be chosen', () => {
@@ -288,43 +305,76 @@ describe('errorReason', () => {
 
 describe('What’s on your account', () => {
   it('lists the runtimes on credits, the apps connected through it and its communities', async () => {
-    const transport = createMockTransport({
-      getCloudCredits: vi.fn().mockResolvedValue(LIVE),
-      getConnectorConnections: vi.fn().mockResolvedValue({
-        connections: [
-          {
-            connectionId: 'c1',
-            toolkit: 'gmail',
-            label: 'work',
-            mode: 'managed',
-            agentCount: 1,
-            everyAgent: null,
-            readiness: { state: 'ready' },
-          },
-          {
-            connectionId: 'c2',
-            toolkit: 'slack',
-            label: 'own key',
-            mode: 'byo',
-            agentCount: 1,
-            everyAgent: null,
-            readiness: { state: 'ready' },
-          },
-        ],
-      }),
-      listHostedCommunities: vi.fn().mockResolvedValue({
-        available: true,
-        communities: [{ name: 'Acme Robotics' }],
-        moves: [],
-        allowance: null,
-      }),
-    });
+    const transport = withSpacesExperiment(
+      createMockTransport({
+        getCloudCredits: vi.fn().mockResolvedValue(LIVE),
+        getConnectorConnections: vi.fn().mockResolvedValue({
+          connections: [
+            {
+              connectionId: 'c1',
+              toolkit: 'gmail',
+              label: 'work',
+              mode: 'managed',
+              agentCount: 1,
+              everyAgent: null,
+              readiness: { state: 'ready' },
+            },
+            {
+              connectionId: 'c2',
+              toolkit: 'slack',
+              label: 'own key',
+              mode: 'byo',
+              agentCount: 1,
+              everyAgent: null,
+              readiness: { state: 'ready' },
+            },
+          ],
+        }),
+        listHostedCommunities: vi.fn().mockResolvedValue({
+          available: true,
+          communities: [{ name: 'Acme Robotics' }],
+          moves: [],
+          allowance: null,
+        }),
+      })
+    );
     renderWith(<AccountContents />, transport);
     expect(await screen.findByText('Claude Code')).toBeInTheDocument();
     expect(await screen.findByText('Acme Robotics')).toBeInTheDocument();
     expect(await screen.findByText(/^Gmail/)).toBeInTheDocument();
     // An app on the person's own key is not on the DorkOS account.
     expect(screen.queryByText(/Slack/)).not.toBeInTheDocument();
+  });
+
+  // Purpose: spaces ship off (DOR-2740), so the account names none, even from a
+  // list it already holds, and its empty line does not promise them. Fails if
+  // `AccountContents` stops reading the switch.
+  it('leaves spaces out while spaces are off, even with a list on hand', async () => {
+    hostedOverride.current = {
+      data: {
+        available: true,
+        communities: [{ name: 'Acme Robotics' }],
+        moves: [],
+        allowance: null,
+      },
+    };
+    const transport = createMockTransport({
+      getCloudCredits: vi.fn().mockResolvedValue(LIVE),
+    });
+    renderWith(<AccountContents />, transport);
+    expect(await screen.findByText('Claude Code')).toBeInTheDocument();
+    await waitFor(() => expect(transport.getConfig).toHaveBeenCalled());
+    expect(screen.queryByText('Acme Robotics')).not.toBeInTheDocument();
+  });
+
+  it('promises no spaces in its empty line while spaces are off', async () => {
+    renderWith(<AccountContents />, createMockTransport());
+    expect(
+      await screen.findByText(
+        'Nothing uses this account yet. Agents on credits and connected apps show here.'
+      )
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/spaces/)).not.toBeInTheDocument();
   });
 
   it('says one plain line when nothing is on the account yet', async () => {

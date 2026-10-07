@@ -1,5 +1,7 @@
 # Creative Brief: DorkOS Website
 
+> **Superseded 2026-10-06.** This is the February 2026 brief, kept as the record behind the `rounds/` drafts. Its audience (developers who run coding agents, with Kai primary and Priya secondary), its one line ("the operating system for autonomous AI agents") and its "not a hosted service" stance are all retired. For any new website copy, brief from [`../../positioning-202610/00-overview.md`](../../positioning-202610/00-overview.md): use the message stack (2026-10-07): the tagline "You, Multiplied.", the headline "Build and run your business with an agent team." and the supporting line "Your agents join your team chat, take on real work, and build the custom tools your company runs on." Below the hero, lead with what sets DorkOS apart, in order: mini apps (ask for a tool, your agents build it inside DorkOS), built for founders, and ownership (your agents, tools, files and data stay yours, wherever they run). Headlines never say "your computer" or literally "open source". The chat workspace for people and agents is table stakes, never the edge. The founder comes first, Kai second, under the demo-claim gate. See also `../decisions.md` Decisions 19, 20 and 21.
+
 ## What Are We Making?
 
 The marketing website for DorkOS — the first impression for every developer who discovers it. This site needs to do three things in order: make them feel something, make them understand what this is, make them install it.

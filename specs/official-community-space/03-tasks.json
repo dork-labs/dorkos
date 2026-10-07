@@ -1,0 +1,218 @@
+{
+  "spec": "specs/official-community-space/02-specification.md",
+  "slug": "official-community-space",
+  "generatedAt": "2026-10-07T07:24:34.660Z",
+  "mode": "incremental",
+  "lastDecomposeDate": null,
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "Foundation",
+      "subject": "[official-community-space] [P1] Add open admission, auto-join channels and bans to the Community server",
+      "description": "Read specs/official-community-space/02-specification.md first; the decision numbers (D1..D14) are binding. Implements D1, D2, D3 and the ban half of D6 in apps/community.\n- Migration: admissionPolicy gains 'open' (schema.ts:34 and its check at :72-75); channels.auto_join boolean default false; new bans table (community_id, user_id, email_hash, reason, actor_member_id, created_at, lifted_at) with an index on (community_id, user_id) and (community_id, email_hash).\n- Open join: a route for 'open' communities that admits a signed-in person with a verified email, reusing the redeem transaction in routes/community/invites.ts:434-570 (community lock, member cap via host/limits.ts, handle minting, reactivation, audit 'member.admit' with origin 'open'). The sign-up gate in auth.ts:64-105/202-208 must admit a sign-up that targets an open community (a short-lived admission cookie, like invites' preflight).\n- Auto-join: every admission path (invite, open, owner claim) adds the person to every public auto_join channel.\n- Ban: owner/admin ban + unban routes (admin cannot ban an admin or the owner); ban removes the member through the existing removal path (members.ts) and refuses invite preflight/redeem, open join, pairing start and sign-in-to-community for that user or verified-email hash. Audited.\n- Settings route accepts 'open' (administration.ts) and channels accept auto_join.\n- Wire types in packages/shared/src/community-wire.ts; conformance capability flags in packages/test-utils/src/community-conformance.ts if the adapter surface changes.\n- Space web UI (apps/community/src/browser): a join page for open spaces; ban/unban in member management.\nAcceptance: Postgres integration tests for open join (verified vs unverified email, member cap, auto-join channels), ban blocking every admission path and rejoin with a new account on the same email, admin-cannot-ban-admin; pnpm --filter @dorkos/community typecheck/lint/test and the pg suite pass; changelog fragment.\nReview additions (binding):\n- Open join only through the host's configured single sign-on callback (isOidcCallback in auth.ts); never a password sign-up. Per-IP and per-host open-join rate limits (limits/attempt-limiter.ts) and a host switch COMMUNITY_OPEN_ADMISSION=0 that refuses every open join.\n- Ban email key: normalise (lowercase; strip +tag; Gmail dots) then HMAC with the auth secret; never an unsalted hash.\n- The admin wire enum CommunityAdminAdmissionPolicySchema in packages/shared/src/community-admin-wire.ts:18 must gain 'open'. That file is read by the private host operator, so open a GitHub issue labelled cloud-contract and land the contract change first, additively.\n- bans and channels.auto_join join export (exports/collections.ts), import (imports/v2-*), erasure (erasure/), takedown and deletion-worker.ts, with tests.",
+      "activeForm": "Adding open admission and bans",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [
+        "1.2",
+        "1.3"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "Foundation",
+      "subject": "[official-community-space] [P1] Pin stranger safety for space messages end to end in the app",
+      "description": "Read specs/official-community-space/02-specification.md first; the decision numbers (D1..D14) are binding. Implements D9 and D10 in apps/server.\n- Tests that walk a mirrored space entry from RemoteRoomSubscriptionBridge.importLive (services/communities/remote/remote-room-subscription-bridge.ts) through RoomService.dispatchImportedRemoteEntry, isEntryAuthorExternal (services/rooms/room-trigger.ts:571) and room-turn-runner.ts:641-646/890 to permissionSeedForOrigin === 'none' (services/session/origin/turn-origin.ts:215).\n- Pin that no automatic path (operator unattended level, the DOR-2739 trusted preset, configured-stop-on-insert) raises a space room's session.\n- Pin: a remote agent's entry never dispatches; a stranger cannot enroll, eject or spoof an enrolled local agent (local-agent-authority.ts).\n- Fix: space mirror rooms get the outsider framing in the room context (room-core.ts:216-219 bridgedFraming only checks chat bridges; room-context.ts:199-206).\n- New per-connection setting wakeAgentsFrom: 'me' | 'members' on the remote connection record (connection-store.ts), default 'members' (official default comes in 2.2). With 'me' only an entry whose remote author is this install's own owner member wakes an agent. Owner-only route to change it.\n- Mutation check: for each new test, remove its guard locally and confirm it fails; list the results in the PR body.\nAcceptance: tests pass; outsider-framing visible in room context for a space room; changelog fragment.\nReview additions (binding):\n- The real gap: externalAuthor is only checked when the session is NEW (room-turn-runner.ts:629-650). Implement a per-turn stranger ceiling: every turn whose trigger is external runs at the mode that asks (or dontAsk when the agent is set lower) whatever the session row holds. Test \"owner mentions first (row born at configured stop), stranger mentions second\" and assert the stranger turn runs at the ceiling.\n- wakeAgentsFrom is operator-only: register it in config-write-policy / default-verdicts the way DOR-2740 did for spaces.enabled (or the equivalent owner-only route check), with a test that an agent cannot change it.",
+      "activeForm": "Pinning stranger safety for spaces",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [
+        "1.1",
+        "1.3"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "1.3",
+      "phase": 1,
+      "phaseName": "Foundation",
+      "subject": "[official-community-space] [P1] Make Community live streams scale with LISTEN/NOTIFY fan-out",
+      "description": "Read specs/official-community-space/02-specification.md first; the decision numbers (D1..D14) are binding. Implements D12 and the server half of D13 in apps/community.\n- Today each GET /channels/:id/events stream (routes/community/events.ts:231-520) polls access every 250 ms and the next entry every 250 ms through a 12-connection pool (main.ts:48-50). Replace with: one dedicated LISTEN connection; entry insert/removal/redaction and membership/ban/mute changes NOTIFY on a channel keyed by community/channel; an in-process hub wakes only the affected streams, which read once. Access decisions cached per (stream, member) and invalidated by membership/ban/mute notices; a 15 s fallback poll catches a lost notice; LISTEN reconnect re-reads every stream once.\n- Config (config.ts): pool size, per-process stream cap (past it: 503 with Retry-After), fallback interval.\n- /health/ready checks a database round trip; /health stays a liveness probe.\n- /metrics in Prometheus text, requiring a host API key with a read scope: open streams, posts per minute, joins per minute, pool waiting count, notice-to-delivery lag.\n- Keep the single-machine rule (FLY.md:83); no cross-process fan-out.\nAcceptance: pg integration tests (two streams one notice both wake; dropped notice recovered by fallback; revoked access ends the stream promptly; cap answers 503); existing events tests pass; changelog fragment.\nReview additions (binding):\n- Invalidate cached access on EVERY revocation source the 250 ms assertPrincipalCurrent check covers today (data.ts:328-390): session revocation, grant and agent-credential revocation, community lifecycle (held, suspended, takedown, deletion), channel archive and epoch change, agent deactivation, plus bans and mutes. A test per source proves the stream ends promptly.\n- LISTEN on a direct (unpooled) connection: COMMUNITY_LISTEN_DATABASE_URL defaulting to the main URL; a NOTIFY self-test at boot; listener health in /health/ready and /metrics; ids-only payloads (8 kB NOTIFY cap); re-read every stream on reconnect.\n- A per-community stream quota beside the per-process cap, so one community's spike cannot shut out the rest of the host. Note FLY.md already requires the direct URL; document the listener URL there.",
+      "activeForm": "Making live streams scale",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [
+        "1.1",
+        "1.2"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "Moderation and the official space",
+      "subject": "[official-community-space] [P2] Add mute, slow mode, reports, rules and display names to the Community server",
+      "description": "Read specs/official-community-space/02-specification.md first; the decision numbers (D1..D14) are binding. Implements the rest of D6, D7 and D8 in apps/community. Depends on 1.1 (same migration chain).\n- Mute: members.muted_until; owner/admin set/clear with a duration; a muted person and their agents get 403 COMMUNITY_MUTED with the end time on post.\n- Slow mode: channels.slow_mode_seconds; per-person last post time; owner/admin exempt; 429 COMMUNITY_SLOW_MODE with retry-after on post.\n- Reports: reports table (community, entry, reporter member, reason enum + note, status open/actioned/dismissed, resolver, times). Any member reports an entry once; owner/admin list the queue and resolve with remove-message / mute / ban / dismiss, each audited.\n- Rules: community rules text + version; members.rules_accepted_version; posting before accepting the current version answers 403 COMMUNITY_RULES_NOT_ACCEPTED; accept route.\n- Display name: member self-update with the same validation as sign-up.\n- Wire types, adapter + conformance flags, and the space web UI (moderation queue, rules editor and acceptance, mute and slow-mode controls).\nAcceptance: pg integration tests per feature including agent posts under a muted owner; changelog fragment.\nReview additions (binding):\n- An agent's post needs its owner to have accepted the current rules, and a muted owner's agents cannot post.\n- Display name: refuse owner-reserved names (a community setting) and the handles/names of the community's agents.\n- New tables/columns (reports, mutes, slow mode, rules acceptance) join export, import, erasure, takedown and the deletion worker.\n- If the admin wire changes, the same cloud-contract-first rule as 1.1 applies.",
+      "activeForm": "Adding moderation tools",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [
+        "2.2"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "2.2",
+      "phase": 2,
+      "phaseName": "Moderation and the official space",
+      "subject": "[official-community-space] [P2] Let the official space through the spaces switch and offer it at onboarding",
+      "description": "Read specs/official-community-space/02-specification.md first; the decision numbers (D1..D14) are binding. Implements D4, D5 and the app half of D13. Depends on DOR-2740 merging (session 6baaf5dc; its middleware is apps/server/src/middleware/spaces-enabled.ts).\n- Config spaces.official.url (default '' until Dorian supplies the link), env DORKOS_OFFICIAL_SPACE_URL, semver-keyed migration (adding-config-fields skill).\n- Connection record gains official: true, set only in pairing-service start() when the started link equals the configured link and discovery resolves to the same origin + community id.\n- spaceReachable(ref) replaces whole-feature checks: per-:ref gates in remote-communities and community-connections routers; while off, list returns only the official row, start pairing only from the official link, /api/cloud/communities/sign-in only for the official origin; bridge dispatchEnabled takes the ref. Official connection defaults wakeAgentsFrom 'me' (from 1.2).\n- Client useSpaceVisible(ref): the official row shows in the switcher with the experiment off; other spaces, Start and hosting stay hidden. A calm unreachable state for the official space.\n- Onboarding step \"Join the DorkOS community\" (features/onboarding) and a prompt after linking a DorkOS account, using the account sign-in hint (entities/community/model/use-account-sign-in.ts). Skippable, never repeated after a skip.\nAcceptance: route tests with the experiment on/off; client tests; one e2e journey on the test-mode server; app copy per writing-app-copy; changelog fragment.\nReview additions (binding):\n- spaces.official.url and the official connection's settings are operator-only (config-write-policy / default-verdicts), with a test that an agent's config_patch is refused.\n- Never store official: true. Store the origin and community id discovery returned at pairing and compute official on every read against current config.\n- Router-param middleware for :ref (DOR-2740 gates at router level in app.ts and cloud.ts). Routes without a :ref also need an answer while off: the connection list, the global SSE stream, /api/rooms contributions, room MCP tools on mirror rooms and the outbox.",
+      "activeForm": "Opening the official space through the switch",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.2"
+      ],
+      "parallelWith": [
+        "2.1"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "2.3",
+      "phase": 2,
+      "phaseName": "Moderation and the official space",
+      "subject": "[official-community-space] [P2] Give members report, rules, display name and muted states in the app",
+      "description": "Read specs/official-community-space/02-specification.md first; the decision numbers (D1..D14) are binding. Implements the member-facing half of D6-D8 in the DorkOS app space view (widgets/room-view/ui/RemoteCommunity*). Depends on 2.1.\n- Report a message (reason + optional note), accept the rules before first post, change your display name in a space, and clear states for muted (until when) and slow mode (seconds left). Server routes in remote-communities.ts proxy to the adapter.\nAcceptance: client + route tests; e2e journey; writing-app-copy; changelog fragment.",
+      "activeForm": "Adding moderation for members in the app",
+      "size": "medium",
+      "priority": "medium",
+      "dependencies": [
+        "2.1"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "2.4",
+      "phase": 2,
+      "phaseName": "Moderation and the official space",
+      "subject": "[official-community-space] [P2] Write and run the Community load test",
+      "description": "Read specs/official-community-space/02-specification.md first; the decision numbers (D1..D14) are binding. Implements the measurement half of D12. Depends on 1.3.\n- apps/community/load/: a Node script (no new dependency beyond what the repo has, or one small dev dependency) that signs in N readers, opens their channel streams, runs M writers at a set rate, and prints delivery p50/p95/p99, errors and stream drops. Seeds its own throwaway community through the local test-control or host API.\n- Record one run against a local server + Postgres at 1,000 readers in the PR body, and document the production command and the D12 target in apps/community/OPERATIONS.md.\nAcceptance: script runs locally end to end; results recorded; changelog fragment not needed (dev tooling) unless OPERATIONS changes user-facing behaviour.\nReview additions (binding):\n- State and measure the target in streams (D12: 20,000 open streams), including agents' background streams, not people.",
+      "activeForm": "Load-testing the Community server",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "1.3"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "3.1",
+      "phase": 3,
+      "phaseName": "Hosting and launch",
+      "subject": "[official-community-space] [P3] Let our agents host the space",
+      "description": "Read specs/official-community-space/02-specification.md first; the decision numbers (D1..D14) are binding. Implements D11. Depends on 2.2.\n- Per-connection answerIn: string[] (channel names); every fresh human post in those channels wakes the enrolled host agent without a mention, still seeded 'none'.\n- An agent set to dontAsk keeps dontAsk on stranger turns (pin with a test).\n- Host agent persona (greets in #welcome, answers in #help, points to docs, never promises features that are not shipped) as a template file, plus contributing/official-community-host.md: setting up the staff install, enrolling the host agent, docs read-only access, answerIn, and what to watch.\nAcceptance: tests for answerIn and the dontAsk ceiling; runbook; changelog fragment.\nReview additions (binding):\n- The staff install holds a plain member seat, never admin.\n- answerIn must get past the bridge's mentions.length early return (remote-room-subscription-bridge.ts ~:188) without loosening it for other connections.\n- A wake budget per author and per channel for answerIn wakes (a flood cannot buy unlimited turns), with tests.\n- The runbook lists the exact tool allowlist for the host agent.",
+      "activeForm": "Setting up the host agent",
+      "size": "medium",
+      "priority": "medium",
+      "dependencies": [
+        "2.2"
+      ],
+      "parallelWith": [
+        "3.2",
+        "3.3"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "3.2",
+      "phase": 3,
+      "phaseName": "Hosting and launch",
+      "subject": "[official-community-space] [P3] Tell the story: community guide, rules draft and code of conduct",
+      "description": "Read specs/official-community-space/02-specification.md first; the decision numbers (D1..D14) are binding. Implements the docs side. docs/guides/dorkos-community.mdx (join, leave, display name, report, rules); a draft of the official space's rules and a CODE_OF_CONDUCT.md for the repo, both marked for Dorian's approval; README and docs pointers. Site pointers after #2621 lands. Never name any other chat product. writing-for-humans.\nAcceptance: docs build; vocab gates pass.",
+      "activeForm": "Writing the community docs",
+      "size": "small",
+      "priority": "medium",
+      "dependencies": [
+        "2.3"
+      ],
+      "parallelWith": [
+        "3.1",
+        "3.3"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "3.3",
+      "phase": 3,
+      "phaseName": "Hosting and launch",
+      "subject": "[official-community-space] [P3] Write the soft-launch and monitoring runbook",
+      "description": "Read specs/official-community-space/02-specification.md first; the decision numbers (D1..D14) are binding. Implements D13 (operations) and D14. contributing/official-community-operations.md: alerts to wire from /metrics and /health/ready, daily checks during the soft launch, the launch bar, the upgrade freeze around launch, and the incident steps. No private Cloud details.\nAcceptance: guide indexed in contributing/INDEX.md.",
+      "activeForm": "Writing the soft-launch runbook",
+      "size": "small",
+      "priority": "medium",
+      "dependencies": [
+        "2.4"
+      ],
+      "parallelWith": [
+        "3.1",
+        "3.2"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "2.5",
+      "phase": 2,
+      "phaseName": "Moderation and the official space",
+      "subject": "[official-community-space] [P2] Add the DecisionModel port with rules, OpenAI-compatible and Jev bridges",
+      "description": "Read specs/official-community-space/02-specification.md first; the decision numbers (D1..D15) are binding. Read research/20261006_decision-models.md §5 and §7 (the design this follows).\n- packages/shared/src/decision-model.ts: DecisionQuestion (choice/score/yesno), DecisionRequest, DecisionAnswer, DecisionResult, DecisionModel with capabilities, DecisionPolicy; Zod schemas; types only, no network.\n- New packages/decisions: rules bridge (pure TS checks, confidence 0/1), OpenAI-compatible chat bridge (forced JSON answer; logprob confidence where offered, else ask twice and lower confidence on disagreement), Jev bridge (System One endpoint via OpenRouter or TypeSafe; yes/no confidence = |p-0.5|*2). Timeouts, unknown labels, outages and refusals all return confidence 0. Circuit breaker per bridge.\n- decisionModelConformance in @dorkos/test-utils, run against every bridge with a stubbed fetch. No real network in any test.\n- Register the package in the root vitest projects list and turbo. TSDoc on exports. Coordinate: DOR-2745 (loop judge) will reuse this port.\nAcceptance: conformance passes for all three bridges; a test pins that DecisionResult types are never accepted by any permission/tool API (type-level or a grep test); changelog fragment only if user-visible (likely none).",
+      "activeForm": "Adding the decision model port",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [
+        "2.1"
+      ],
+      "issue": "DOR-2776",
+      "parentIssue": "DOR-2764"
+    },
+    {
+      "id": "2.6",
+      "phase": 2,
+      "phaseName": "Moderation and the official space",
+      "subject": "[official-community-space] [P2] Run spam and rule checks on Community posts in watch-only mode",
+      "description": "Read specs/official-community-space/02-specification.md first; the decision numbers (D1..D15) are binding. Read research/20261006_decision-models.md §5 and §7 (the design this follows).\n- In apps/community: after a post commits (never in the post request path), run the ladder: rules (rate, links, repeats) then the configured decision models for two questions, spam and rule-breaking (labels from the space rules, neutral codes). Write one decision.* row per rung to audit_events (use case, rung, pinned model id, policy hash, entry id + input hash, answers, confidence, latency, cost).\n- Watch-only: nothing is hidden, held or removed. Owners/admins see the decision as a hint on reports and in a small flagged list in the moderation queue (from 2.1).\n- Side by side: Jev and one OpenAI-format model on the same posts; a comparison (agreement with moderator actions, cost, latency per model) readable from /metrics and a host API read route.\n- Money rule: paid calls need COMMUNITY_DECISIONS_PAID=1 beside each key; a key alone arms nothing; daily call cap per model; past the cap behave as unsure. Add the path to the money table in AGENTS.md with the same shape as the others, and make sure no CI/test task sees the flag (turbo strict env).\n- Decisions only narrow: a test pins that no decision result reaches a permission check.\nAcceptance: pg integration tests with stubbed bridges; a post is never delayed by the checks; changelog fragment.",
+      "activeForm": "Running watch-only spam checks",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "2.5",
+        "2.1"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-2777",
+      "parentIssue": "DOR-2764"
+    }
+  ]
+}

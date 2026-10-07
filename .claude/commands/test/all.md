@@ -106,7 +106,7 @@ Run it from the repo root — every other tier here does, and a `cd` that persis
 pnpm --filter @dorkos/e2e exec playwright test 2>&1 | tee "$RESULTS_DIR/$TIMESTAMP-e2e.log"
 ```
 
-**This tier boots its own servers.** `apps/e2e/playwright.config.ts` sets `REUSE_EXISTING_SERVER = false` deliberately (a default-port run once attached to the operator's real cockpit on 4242 and mutated the real `~/.dork`). Every leg also boots on its own ports, against its own throwaway `DORK_HOME` under `/tmp`, wiped before every boot — so this tier can no longer read or write the operator's data (DOR-1223). Consequences:
+**This tier boots its own servers.** `apps/e2e/playwright.config.ts` sets `REUSE_EXISTING_SERVER = false` deliberately (a default-port run once attached to the operator's real app on 4242 and mutated the real `~/.dork`). Every leg also boots on its own ports, against its own throwaway `DORK_HOME` under `/tmp`, wiped before every boot — so this tier can no longer read or write the operator's data (DOR-1223). Consequences:
 
 - Ports **4245** (Express API), **4244** (Vite), **4243** (test-mode API), **4248** (test-mode Vite) must be **free**. None is a dev port (6xxx) or the production default (4242), so a plain `pnpm dev` / `pnpm dev:dogfood` does not collide — but do not read that as "nothing else can be there": the desktop app starts at 4242 and walks up to the next free port across a ten-port range, which covers every port in this list. A collision is loud either way (`reuseExistingServer: false` makes a busy port a startup error naming it), never a silent adoption. If Phase 0 found any busy, this tier will fail on startup with a port error. Report it as `BLOCKED (port in use)`, never as FAIL, and tell the operator which port and which command to stop. The isolated-run recipe in `apps/e2e/README.md` (move `DORKOS_COCKPIT_PORT` / `DORKOS_COCKPIT_VITE_PORT` / `DORKOS_MOCK_PORT` / `DORKOS_MOCK_VITE_PORT`) lets two runs coexist.
 - Playwright starts every configured `webServer` leg for the run, so the boot cost is paid even for a narrow project selection.
@@ -207,7 +207,7 @@ Flip `Status: IN PROGRESS` → `COMPLETE`, append the total duration, and print 
 - **A tier that did not execute is never green.** Cache replay, a skipped tier, a blocked port, a suite that matched zero cases — each has its own verdict word (`PASS (CACHED)`, `SKIPPED`, `BLOCKED`, `NOT AVAILABLE YET`). None of them is PASS.
 - **Never infer a verdict from a green exit code alone** when the command has a known way of exiting zero without working. Turbo's replay is the one in this repo; `scripts/assert-tests-executed.sh` exists because a full cache hit prints "29 successful" in ~280ms and CI could not tell the difference either.
 - **Name failures, don't count them.** "3 specs failed" is not a report; the three spec names are.
-- **Never claim a tier ran on a surface you didn't touch.** This ladder covers the cockpit; the desktop apps and the marketing site are outside it unless explicitly run.
+- **Never claim a tier ran on a surface you didn't touch.** This ladder covers the web app; the desktop apps and the marketing site are outside it unless explicitly run.
 - **Report the paid tier's cost after the fact** when one runs — the evals CLI prints which credential answered and what the run spent; carry that number into the report.
 
 ## Technical Notes

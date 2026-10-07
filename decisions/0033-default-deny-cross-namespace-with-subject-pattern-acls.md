@@ -1,17 +1,19 @@
 ---
 number: 33
 title: Use Default-Deny Cross-Namespace with Subject-Pattern ACLs
-status: accepted
+status: superseded
 created: 2026-02-25
 spec: mesh-network-topology
-superseded-by: null
+superseded-by: 261006-225605
 ---
 
 # 33. Use Default-Deny Cross-Namespace with Subject-Pattern ACLs
 
 ## Status
 
-Accepted
+Superseded by [261006-225605](261006-225605-agents-are-trusted-by-default-outsiders-and-third-party-code-are-not.md) (agents are trusted by default). Our agents may message each other across projects by default; access rules stay as an opt-in firewall.
+
+Originally: Accepted
 
 ## Context
 

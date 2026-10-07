@@ -444,19 +444,24 @@ describe('real installation filesystem', () => {
     vi.resetModules();
     const originalModule = await import('../filesystem.js');
     const fixtures: Awaited<ReturnType<typeof staged>>[] = [];
-    for (let index = 0; index < 17; index++)
-      fixtures.push(
-        await staged(
-          `allocation-fault-${index}`,
-          INSTALLATION_TARGET.executablePath,
-          originalModule.createInstallationFilesystem,
-          { ...config(), cacheRoot: path.join(root, `allocation-cache-${index}`) }
+    // Stage distinct owners four at a time; join every entered original even if one fails.
+    for (let index = 0; index < 17; index += 4) {
+      const prepared = await Promise.allSettled(
+        Array.from({ length: Math.min(4, 17 - index) }, (_, offset) =>
+          staged(
+            `allocation-fault-${index + offset}`,
+            INSTALLATION_TARGET.executablePath,
+            originalModule.createInstallationFilesystem,
+            { ...config(), cacheRoot: path.join(root, `allocation-cache-${index + offset}`) }
+          )
         )
       );
-    const bytes = Buffer.alloc(3 * 1024 * 1024 + 32);
-    bytes.writeUInt32LE(0xfeedfacf, 0);
-    bytes.writeUInt32LE(16777228, 4);
-    for (const f of fixtures) await fs.writeFile(f.executable, bytes);
+      for (const result of prepared) if (result.status === 'fulfilled') fixtures.push(result.value);
+      const failed = prepared.find((result) => result.status === 'rejected');
+      if (failed?.status === 'rejected') throw failed.reason;
+    }
+    // Truncation preserves the real architecture header and extends with the same zeros.
+    for (const f of fixtures) await fs.truncate(f.executable, 3 * 1024 * 1024 + 32);
     const originalAlloc = Buffer.alloc;
     const allocation = vi
       .spyOn(Buffer, 'alloc')
@@ -469,9 +474,11 @@ describe('real installation filesystem', () => {
       for (const f of fixtures)
         await expect(f.producer.observeCandidate(f.candidate)).rejects.toBeUndefined();
       expect(allocation.mock.calls.filter((args) => args[0] === 1048576)).toHaveLength(17);
-      expect(
-        control.closeAttempts.filter((value) => fixtures.some((f) => value.path === f.executable))
-      ).toHaveLength(17);
+      const closes = control.closeAttempts.filter((value) =>
+        fixtures.some((f) => value.path === f.executable)
+      );
+      expect(closes).toHaveLength(17);
+      expect(new Set(closes.map((value) => value.handleId)).size).toBe(17);
     } finally {
       allocation.mockRestore();
     }

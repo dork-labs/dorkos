@@ -1,98 +1,112 @@
-# Ikechi — The AI-Native Founder
+# Ikechi: The Founder
 
-**Role**: Secondary persona
-**Confidence**: Grounded — modeled on a real DorkOS user (a close contact, not an organic one; see Validation Caveat)
+**Role**: Primary persona _(promoted 2026-10-06; was secondary)_
+**Confidence**: Partly grounded. The core is modeled on a real DorkOS user (a close contact, not an organic one; see Evidence Limits). The broader "builds a big business with agents" shape is the 2026-10 target and is still assumption-based.
 **Created**: 2026-07-09
-**Review by**: 2027-01-09
+**Rewritten**: 2026-10-06 (vision reset, `../positioning-202610/00-overview.md`)
+**Review by**: 2027-04-06
 
 ---
 
 ## Demographics
 
-- **Age**: 30-45
-- **Role**: Serial entrepreneur running multiple businesses at once
-- **Company**: Several small ventures, mostly solo or with contractors
-- **Technical level**: Non-developer. No CS background, doesn't read source code, but fearless with tools — will follow install instructions, edit a config, and troubleshoot by asking the agent itself
-- **Tools**: DorkOS, marketplace skills, Pulse tasks, whatever the businesses need (Stripe, social platforms, site builders he's replacing with agent-built apps)
+- **Age**: 25-45
+- **Role**: Founder. Often a serial entrepreneur, sometimes running more than one business at once
+- **Company**: A small team of people plus many agents, aiming at a business far bigger than its headcount. Think of a YC company where most of the work is done by agents
+- **Technical level**: Semi-technical and T-shaped. Deep in one area (product, sales, design, an industry), broad enough everywhere else to follow install steps, edit a setting, read what an agent did and ask good questions. Does not need to read source code, and does not want to be told that he should
+- **Tools**: DorkOS, plus whatever the business runs on: Gmail, a calendar, a payments tool, accounting, social accounts, a site builder he is replacing with agent-built apps
 
 ## Context
 
-Ikechi doesn't write code — he ships products anyway. He builds websites and apps by directing coding agents through DorkOS, with a separate agent for each business and each app in flight. He uses agents as thought partners for strategy and as builders for execution. He schedules recurring work with Pulse, installs capabilities from the marketplace instead of writing them, and treats his agent roster the way another founder treats a contractor bench.
+Ikechi has a strong vision and strong taste, and more ideas than hours. He builds products and runs operations by directing agents: one agent writes the app, another drafts the investor update, another works the support inbox, another keeps the books in order. He treats agents as co-workers and co-creators, not as assistants or a chat box he types into. He sets the goals; each agent has a job and works toward them.
 
-He is a **power user without being a programmer** — the combination the industry keeps insisting doesn't exist. The dabbler anti-persona wants a hosted chat app; Ikechi self-hosts a coordination layer. What separates him from Jordan Wells is not skill, it's **operator mentality**: he wants to own and run his system, and he'll climb whatever learning curve that requires.
+He wants **the tools his business needs without buying or building software**: he asks for a dashboard or a tracker, and his agents build it inside DorkOS (mini apps). He wants a product **made for founders**, not a general-purpose chat app, and a system he **owns**: his computer, his files, his own AI plan. The chat workspace (DMs, channels and threads with his people and agents, and agents acting in the outside tools the business depends on) is what he expects as a given, not why he chose DorkOS. He wants to trust his agents the way he trusts a good hire, and to be able to check the record when something looks off.
 
-DorkOS is load-bearing for Ikechi in a way it isn't for Kai. Kai could approximate DorkOS with tmux and shell scripts; Ikechi cannot. Without the coordination layer, he has no access to this way of working at all.
+He is a **power user without being a programmer**. What separates him from the anti-persona (`the-prompt-dabbler.md`) is not skill, it is **operator mentality**: he wants to own and run his system, and he will climb whatever learning curve that takes.
+
+DorkOS is load-bearing for him in a way it is not for Kai. Kai could approximate parts of DorkOS with tmux and shell scripts. Ikechi cannot. Without a workspace that holds his people, his agents and his tools together, he has no access to this way of working at all.
 
 ## Trigger
 
-An app idea for one of his businesses that would previously have meant finding, vetting, and paying a freelance developer — weeks of latency and thousands of dollars before the first version exists. Instead, he opens a session and starts directing.
+A piece of the business that would once have meant hiring: a new app, a support function, a sales process, a back office. Weeks of recruiting and real money before anything happens. Instead he opens DorkOS, gives the work to an agent, and starts directing.
 
 ## The Worst Day
 
-An agent hit an error mid-build and the message was a stack trace. Ikechi doesn't read stack traces. The session stalled, he didn't know whether the app was broken or the tool was, and he lost an afternoon to something Kai would have recognized in five seconds. Cryptic errors, dead-end states, and docs that assume a developer's vocabulary are his 15-tab juggle: each one is a wall, not a speed bump.
+An agent hit an error in the middle of a job and the message was a stack trace. Ikechi does not read stack traces. The work stalled, he could not tell whether his instructions, the agent or the tool was at fault, and he lost an afternoon to something Kai would have recognized in five seconds. Cryptic errors, dead ends, and docs that assume a developer's vocabulary are each a wall for him, not a speed bump.
+
+The second-worst day: not knowing what an agent did in an outside account (an email sent, a record changed) and having no easy place to look.
 
 ## Jobs to Be Done
 
-- When I have an idea for one of my businesses, I want to direct an agent to build it, so that I can ship software without hiring developers.
-- When I'm thinking through a business decision, I want a thought partner that knows that business's context, so that I reason better and faster.
-- When work should recur (content, reports, checks), I want to schedule it and forget it, so that the businesses run without me pushing every task.
-- When I need a capability I don't have, I want to install it from the marketplace, so that I extend my system without writing anything.
+- When part of the business needs doing, I want to hand it to an agent the way I would hand it to a colleague, so that the business grows without hiring for every function.
+- When I am thinking through a decision, I want a thought partner that knows this business's context, so that I reason better and faster.
+- When work should recur (reports, follow-ups, content, checks), I want to schedule it and forget it, so that the business runs without me pushing every task.
+- When agents act in Gmail or other outside tools, I want to see what they did and step in when I need to, so that I can trust them with real work.
+- When the business needs a tool nobody sells (a dashboard, a tracker, a page for one odd job), I want to ask my agents for it and have it open inside DorkOS, so that I get the tool without hiring a developer.
+- When I need a capability I do not have, I want to install it, so that I extend the system without writing code.
 
 ## Goals
 
-1. Run multiple businesses at once without hiring for every function
-2. Keep each business's agents, context, and work cleanly separated
-3. Compound capability over time — every installed skill and configured agent makes the next project faster
+1. Build a business far bigger than its headcount
+2. Set the goals and let co-workers, people and agents, own the work toward them
+3. Ask for the tools the business needs and have agents build them; let agents work the business's real tools
+4. Trust agents with real work, with a record to check instead of a permission prompt for every step
+5. Compound capability over time: every agent set up and every skill installed makes the next job faster
 
 ## Frustrations
 
-1. Error messages and docs written for developers — jargon walls in an otherwise navigable product
+1. Error messages and docs written for developers: jargon walls in an otherwise navigable product
 2. Not knowing whether a stuck agent is his mistake, the agent's, or the tool's
-3. Advice and tutorials that assume he can read the code the agent wrote
-4. Tools that treat "non-technical" as "wants less power"
+3. Tools that treat agents as suspects and make him approve every small step
+4. Tools that treat "not a developer" as "wants less power"
+5. Juggling a separate app for each kind of work, none of which knows about the others
 
 ## Quote
 
-"I'm not a developer. I just ship apps."
+"I'm not a developer. I run a business, and my agents do most of the work."
 
-## What Ikechi Brags About
+## What He Brags About
 
-- "I built and launched that site in a weekend, no dev team"
-- The size of his roster — an agent per business, each with its own job
-- Speed from idea to live product
+- "We launched that in a weekend, with no dev team"
+- The size of his team, people and agents, and what each one owns
+- Speed from idea to something live
 - Doing with a monthly AI budget what used to take a payroll
 
 ## Fears & Objections
 
 - "If something breaks, can I fix it without knowing how to code?" (recoverability)
-- "Is the thing the agent built actually safe and correct? I can't check it myself" (verification without expertise)
-- "Will I hit a wall where this stops working without a real developer?" (ceiling anxiety)
+- "Is what the agent built or sent actually right? I cannot check the code myself" (verification without expertise)
+- "Will I hit a wall where this only works with a real developer?" (ceiling anxiety)
+- "What did the agent do in my email while I was away?" (visibility)
 
 ## Buying Triggers
 
-- Seeing a non-developer ship something real with it (proof someone like him can)
-- A marketplace skill that solves a whole job for one of his businesses
+- Seeing a founder like him run real parts of a business on it
+- One agent taking a whole job off his plate in the first week
 - Word of mouth from other founders, not from developer channels
 
 ## Anti-Adoption Signals
 
 - If setup or recovery requires reading code
-- If the first failure produces a message he can't act on
+- If the first failure produces a message he cannot act on
+- If the product makes him babysit agents instead of working with them
 - If the community treats non-developers as tourists
 
 ## Why This Persona Matters
 
-Ikechi makes the brand's existing secondary audience ("AI-native entrepreneurs," "technical operators") concrete, and he is the standing test reader for the plain-language register (`writing-for-humans`): error messages, onboarding, docs, and recovery paths must survive Ikechi. Meeting that bar helps every persona — Kai forgives a cryptic error, but he doesn't prefer one.
+Ikechi is who DorkOS is built for first. He is the standing test reader for the plain-language register (`writing-for-humans`): error messages, onboarding, docs and recovery paths must survive him. Meeting that bar helps every persona. Kai forgives a cryptic error, but he does not prefer one.
 
-**Boundary**: Ikechi does not redirect launch messaging (the beachhead is Kai; see `positioning-202607/02-positioning.md` §3) and does not justify no-code builders, hosted offerings, or visual workflow tools. He adopted DorkOS as it is. The product bar absorbs him; the marketing aim does not move.
+**Boundary.** Ikechi is semi-technical, not anti-technical. He does not justify visual workflow builders or a product that hides how it works. He chose a system he owns: it runs on his own computer for free, and DorkOS Cloud is an option he can take or leave.
 
-## Validation Caveat (read before citing this persona)
+## Evidence Limits (read before citing this persona)
 
-This persona is modeled on a real user who is a close contact rather than an organic one — he had live install support and prompt coaching from someone on the project, scaffolding no organic user gets. His existence proves a non-developer _can_ operate DorkOS; it does not yet prove one can do so unassisted. The validation milestone is the first AI-native founder we've never met. Recruit at least one into the Phase-1 quiet beta and record what stops them.
+The core of this persona is modeled on a real user who is a close contact rather than an organic one. He had live install help and prompt coaching from someone on the project, which no organic user gets. That limits what his case proves, not what he can do: it shows a semi-technical founder **can** run real work through DorkOS, and does not yet show one can do it unassisted. The 2026-10 broadening (a YC-style founder building a large business mostly with agents) is the target audience, not yet an observed user. The validation milestone is the first founder we have never met running part of a real business on DorkOS. Record what stops them.
 
 ## Key Assumptions to Validate
 
-1. A non-developer can complete install and first-run without a human helping
-2. Error/recovery paths are survivable without reading code
-3. The marketplace is discoverable and trustworthy to someone who can't audit a package
-4. "Agent per business" separation maps cleanly onto workspaces/Mesh namespaces for a non-technical operator
+1. A semi-technical founder can install DorkOS and get to a first useful agent without a person helping
+2. Error and recovery paths are survivable without reading code
+3. Founders want to talk to people and agents in one workspace, rather than keep agents in a separate tool
+4. A readable record of what agents did is enough for a founder to trust them with outside accounts
+5. The marketplace is discoverable and trustworthy to someone who cannot audit a package
+6. Founders want their agents to build the tools the business needs (mini apps), and will approve running them

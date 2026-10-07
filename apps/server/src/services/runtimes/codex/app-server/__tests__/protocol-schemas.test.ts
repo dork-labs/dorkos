@@ -99,6 +99,7 @@ const SAMPLES: Record<(typeof CLIENT_REQUEST_METHODS)[number], unknown> = {
     config: {},
   },
   'thread/unsubscribe': { threadId: 't' },
+  'thread/compact/start': { threadId: 't' },
 };
 
 /** The object keys a zod schema names, recursively, as dotted paths. */

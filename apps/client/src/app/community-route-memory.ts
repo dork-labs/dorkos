@@ -18,7 +18,11 @@ import {
   getCommunityAuthority,
   isCommunityAuthorityCurrent,
 } from '@/layers/shared/lib';
-import { commitCommunityRouteEpoch, getCommunityRouteEpoch } from '@/layers/shared/model';
+import {
+  commitCommunityRouteEpoch,
+  getCommunityRouteEpoch,
+  readSpacesEnabled,
+} from '@/layers/shared/model';
 import { communityNavigationKeys } from '@/layers/entities/community';
 
 /** The part of a loaded location this memory reads. */
@@ -121,9 +125,16 @@ export function createCommunityRouteMemory(
   }
 
   return ({ pathname, search }) => {
+    // Both memories are saved through the space routes, which refuse while
+    // the spaces experiment is off (DOR-2740). Off, or not known yet on a cold
+    // load, nothing is sent. The route epoch is this tab's own bookkeeping and
+    // is committed either way: the space surfaces read the experiment
+    // themselves, and a cold load of a space link must not be fenced off by a
+    // config answer that simply had not arrived.
+    const spaces = readSpacesEnabled(queryClient);
     if (pathname !== '/channels') {
       commitCommunityRouteEpoch('installation');
-      rememberInstallation(pathname, search);
+      if (spaces) rememberInstallation(pathname, search);
       return;
     }
     const params = search as { community?: unknown; id?: unknown; thread?: unknown };
@@ -134,6 +145,6 @@ export function createCommunityRouteMemory(
     const roomId = typeof params.id === 'string' ? params.id : null;
     const threadId = typeof params.thread === 'string' ? params.thread : null;
     commitCommunityRouteEpoch(JSON.stringify(['community', params.community, roomId, threadId]));
-    if (roomId !== null) rememberCommunity(params.community, roomId, threadId);
+    if (spaces && roomId !== null) rememberCommunity(params.community, roomId, threadId);
   };
 }

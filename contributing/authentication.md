@@ -80,7 +80,7 @@ The gate is mounted **after** the Better Auth handler and `express.json()`, **be
 
 The auth instance is always mounted (even when `auth.enabled` is `false`) so the enable-login flow can create the owner before flipping the flag. A `databaseHooks.user.create.before` hook enforces the policy: sign-up succeeds only while the `user` table is empty, and the first user is stamped `role: 'owner'`. Every later sign-up throws `FORBIDDEN` / `REGISTRATION_CLOSED`.
 
-**This is permanent.** ADR 260727-184933 D6: the local install is single-user for good — nobody else ever holds an account on the machine that runs your agents and spends your model quota. Multi-user lives in `apps/community`, which is a different server with a different job. Do not reopen registration here.
+**This holds until equal accounts land.** Spec `community-server` decision D6 (cited in code as "ADR 260727-184933 D6") keeps the local install single-user today: nobody else holds an account on the machine that runs your agents and spends your model quota, and multi-user lives in `apps/community`. ADR 261006-235239 (equal accounts, Owner/Admin/Member/Guest) retires that rule as after-launch work, and ADR 261006-235238 merges the two servers. Do not reopen registration piecemeal; it reopens with access levels.
 
 ### There are no roles here, and there is no gate for them
 

@@ -3,9 +3,8 @@ import { siteConfig } from '@/config/site';
 import { rssFeedAlternateTypes, twitterFromOpenGraph } from '@/lib/metadata';
 import { MarketingShell } from './marketing-shell';
 
-const metaTitle = `${siteConfig.name} - ${siteConfig.description}`;
-const metaDescription =
-  'One place for every AI agent you run: Claude Code, Codex, and OpenCode. Put them on a schedule, get a message when they finish, and keep everything on your own computer. Open source, MIT.';
+const metaTitle = `${siteConfig.name}: ${siteConfig.category}`;
+const metaDescription = siteConfig.description;
 
 export const metadata: Metadata = {
   title: metaTitle,
@@ -20,7 +19,7 @@ export const metadata: Metadata = {
         url: '/opengraph-image',
         width: 1200,
         height: 630,
-        alt: 'DorkOS: one place for every AI agent you run',
+        alt: `${siteConfig.name}: ${siteConfig.category.toLowerCase()}`,
       },
     ],
   },
@@ -49,7 +48,7 @@ const softwareAppJsonLd = {
   name: siteConfig.name,
   url: siteConfig.url,
   description: siteConfig.description,
-  applicationCategory: 'DeveloperApplication',
+  applicationCategory: 'BusinessApplication',
   operatingSystem: 'Any',
   offers: {
     '@type': 'Offer',

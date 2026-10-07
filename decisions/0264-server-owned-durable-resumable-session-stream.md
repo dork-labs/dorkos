@@ -5,6 +5,7 @@ status: accepted
 created: 2026-06-10
 spec: chat-stream-reconnection
 superseded-by: null
+supersedes: [0117, 0146, 0148, 0209, 0262]
 ---
 
 # 264. Server-Owned Durable, Resumable Per-Session Stream (Turn Decoupled from POST)

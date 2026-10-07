@@ -39,7 +39,7 @@ export default async function Image() {
       {OgTitle({ children: 'DorkOS vs the field' })}
       {OgDescription({
         children:
-          'Honest comparisons with the coding agents you already run, and the tools you might pick instead.',
+          'Honest comparisons with the agents you already run, and the tools you might pick instead.',
       })}
       {OgAccentStripes({})}
     </div>,

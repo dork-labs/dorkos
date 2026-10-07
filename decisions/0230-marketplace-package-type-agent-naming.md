@@ -14,6 +14,8 @@ superseded-by: null
 
 Accepted
 
+Amended by [261006-235242](261006-235242-everything-is-a-plugin.md) (everything is a plugin; 2026-10-06 vision reset): retires `agent` as its own registry type value. There will be one package type, the plugin; "Agents" stays as a filter for plugins that contain one.
+
 ## Context
 
 The marketplace registry uses a `type` field on each package entry to determine the install flow. One of the four package types represents installable agents — the user picks one, and DorkOS clones the repo + scaffolds a new agent workspace. This is what existing template-downloader.ts already does for the 7 built-in templates.

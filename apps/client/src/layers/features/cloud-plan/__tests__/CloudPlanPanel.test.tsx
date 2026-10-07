@@ -13,7 +13,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport, withSpacesExperiment } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import balanceFixture from '@dork-labs/cloud-api/fixtures/v1/billing/balance-denominated.json' with { type: 'json' };
 import entitlementsFixture from '@dork-labs/cloud-api/fixtures/v1/billing/entitlements-denominated.json' with { type: 'json' };
@@ -71,10 +71,10 @@ function linkedTransport(overrides: Partial<Record<string, unknown>> = {}): Tran
 }
 
 /** The line saying who can buy a plan, with its link to the pricing page's answer. */
-async function findEligibilityLine() {
-  const line = await screen.findByText(
-    /Paid plans and hosted spaces are for people in the United States, 18 or older\./
-  );
+async function findEligibilityLine(
+  text = /^Paid plans are for people in the United States, 18 or older\./
+) {
+  const line = await screen.findByText(text);
   const link = within(line).getByRole('link', { name: 'Who can buy a plan?' });
   expect(link).toHaveAttribute('href', 'https://dorkos.ai/pricing#faq');
   return line;
@@ -106,6 +106,15 @@ describe('the plan-aware surfaces', () => {
     expect(card).not.toBeNull();
     expect(card).toContainElement(line);
     expect(screen.getAllByText(/18 or older/)).toHaveLength(1);
+  });
+
+  // Spaces are an experiment, off by default (DOR-2740): the line names
+  // hosted spaces only while it is on.
+  it('mentions hosted spaces on the plan card only while spaces are on', async () => {
+    renderPanel(withSpacesExperiment(linkedTransport()));
+    await findEligibilityLine(
+      /Paid plans and hosted spaces are for people in the United States, 18 or older\./
+    );
   });
 
   it('says nothing about linking until the read has settled', async () => {
