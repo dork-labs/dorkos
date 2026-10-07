@@ -67,7 +67,7 @@ An agent picks the **lowest rung that still gets the job done.** Most beats end 
 
 ### P6. Respect people's time, not just their hours
 
-Agents work around the clock. People do not. An agent holds anything that is not urgent until the person's working hours, and gathers it into one message. Urgent means: money or data at risk, a security problem, a customer harmed, or a hard deadline that will be missed. Quiet hours limit interrupting people, never working.
+Agents work around the clock. People do not. An agent holds anything that is not urgent until the person's working hours, and gathers it into one message. Urgent means: money or data at risk, a security problem, a customer harmed, or a hard deadline that will be missed. Quiet hours limit interrupting people, never working. This is the agent's own judgment, the way a colleague decides not to call at 11pm, not a cap: nothing in DorkOS blocks an agent from reaching a person, as trusted by default requires ([`PRINCIPLES.md`](PRINCIPLES.md) §1).
 
 ### P7. Earn trust in the open
 
