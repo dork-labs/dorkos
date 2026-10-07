@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(site): /compare pages for Paperclip, ChatGPT Space and Slack Code'
+  - 'fix(site): compare pages: corrections from the adversarial review'
 ---
 
 ### Added
