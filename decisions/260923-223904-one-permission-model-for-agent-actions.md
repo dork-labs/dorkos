@@ -5,6 +5,7 @@ status: accepted
 created: 2026-09-23
 spec: agent-permissions
 superseded-by: null
+supersedes: [0069, 0071, 260726-171347, 260828-123331]
 ---
 
 # 260923-223904. One permission model for agent actions, areas with three states, a default and per-agent overrides

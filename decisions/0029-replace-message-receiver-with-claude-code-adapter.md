@@ -5,6 +5,7 @@ status: accepted
 created: 2026-02-25
 spec: relay-runtime-adapters
 superseded-by: null
+supersedes: 0027
 ---
 
 # 29. Replace MessageReceiver with ClaudeCodeAdapter

@@ -5,6 +5,7 @@ status: accepted
 created: 2026-06-27
 spec: flow-plugin-extraction
 superseded-by: null
+supersedes: 0294
 ---
 
 # 298. Ship the flow engine as runnable TypeScript, not compiled .mjs

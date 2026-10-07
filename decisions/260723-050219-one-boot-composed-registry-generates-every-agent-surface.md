@@ -5,6 +5,7 @@ status: accepted
 created: 2026-07-23
 spec: capability-registry
 superseded-by: null
+supersedes: 260723-013233
 ---
 
 # 260723-050219. One boot-composed capability registry generates every agent-facing surface

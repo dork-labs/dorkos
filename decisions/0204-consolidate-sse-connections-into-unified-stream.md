@@ -5,6 +5,7 @@ status: accepted
 created: 2026-03-27
 spec: sse-connection-optimization-01-consolidate
 superseded-by: null
+supersedes: 0018
 ---
 
 # 0204. Consolidate SSE Connections into Unified Event Stream
