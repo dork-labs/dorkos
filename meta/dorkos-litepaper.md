@@ -19,11 +19,13 @@ Today each agent lives in its own tool: a terminal here, a chat window there, a 
 
 Teams needed Slack. AI agents need DorkOS.
 
+_(Internal note: use this line only beside the differentiators, never as a lead. Slack Code exists.)_
+
 ---
 
 ## What DorkOS is
 
-**DorkOS is a workspace for people and agents.** A founder runs their whole business from it: they talk to people and agents in DMs, channels and threads, and their agents work the outside tools the business runs on.
+**Your agents build the tools your business needs, right inside DorkOS (mini apps).** It is built for founders, and you own all of it. Underneath, DorkOS is a workspace for people and agents. A founder runs their whole business from it: they talk to people and agents in DMs, channels and threads, and their agents work the outside tools the business runs on.
 
 The picture to hold in your head is **an office and its workers.**
 
@@ -96,7 +98,7 @@ A linter for your organisation. Its rules are written in TypeScript and can be c
 
 Mini apps are apps your agents build inside DorkOS, and they are the first thing that sets DorkOS apart. "Mini apps" is the public name; the app and the docs still call them extensions.
 
-- **Built.** An agent's `create_extension` tool writes a mini app's code, builds it and turns it on. A person says yes before it runs. It opens inside DorkOS in fixed places: its own full page, the right-side panel, dashboard sections, the sidebar, the status bar and settings tabs. Agents can also reply in chat with live widgets (charts, tables, checklists, buttons) from a fixed catalog, and an installed tool server's own app (MCP Apps) can render in chat or on the canvas. Both are supporting proof.
+- **Built.** An agent's `create_extension` tool writes a starter, the agent fills it in, DorkOS builds it and turns it on. None of its code runs until a person says yes on the Activity page or in Settings. It opens inside DorkOS in fixed places: its own full page, the right-side panel, the Activity page, the status bar, settings tabs and a sidebar menu item. Agents can also reply in chat with live widgets (charts, tables, checklists, buttons) from a fixed catalog, and an installed tool server's own app (MCP Apps) can render in chat or on the canvas. Both are supporting proof.
 - **Roadmap.** Every agent knows how to build one. Ask "build me something to manage my email" and the agent asks one thing: inside DorkOS, in the side panel, or its own website? Ready-made mini apps for founders ship with DorkOS.
 - **Internal proof.** The LifeOS and Tangerines dashboards and the flow plugin show the idea works. They are not public demos.
 

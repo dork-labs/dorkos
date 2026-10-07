@@ -109,3 +109,4 @@ The core of this persona is modeled on a real user who is a close contact rather
 3. Founders want to talk to people and agents in one workspace, rather than keep agents in a separate tool
 4. A readable record of what agents did is enough for a founder to trust them with outside accounts
 5. The marketplace is discoverable and trustworthy to someone who cannot audit a package
+6. Founders want their agents to build the tools the business needs (mini apps), and will approve running them

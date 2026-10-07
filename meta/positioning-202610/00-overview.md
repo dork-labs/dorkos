@@ -4,7 +4,7 @@
 
 ## The story in one breath
 
-DorkOS is a workspace for people and agents. A founder runs their whole business from it: they talk to people and agents in DMs, channels and threads, and their agents work the outside tools a business runs on (Gmail and the rest). Agents are trusted colleagues, not suspects. It runs on your own computer, free, with no account required. DorkOS Cloud is optional.
+A founder's agents build the tools the business needs right inside DorkOS (mini apps). It is built for founders, and they own all of it. Underneath, DorkOS is a workspace for people and agents. A founder runs their whole business from it: they talk to people and agents in DMs, channels and threads, and their agents work the outside tools a business runs on (Gmail and the rest). Agents are trusted colleagues, not suspects. It runs on your own computer, free, with no DorkOS account required. DorkOS Cloud is optional.
 
 The chat workspace is what DorkOS is. It is not why a founder picks it. Three things are: their agents build the tools the business needs right inside DorkOS (mini apps), it is built for founders, and they own all of it. See "What sets us apart" below.
 
@@ -57,7 +57,7 @@ DorkOS is the single interface a founder uses to run their whole business: talk 
 - **Mini apps** is the public name for the apps your agents build inside DorkOS. The app and the docs still call them extensions today, so docs say "mini apps (the app calls them extensions)". "Shape" stays the name of a setup bundle. "Generative UI" is no longer a value word.
 - **Tagline: You, Multiplied.** Unchanged. Hero surfaces only.
 - **Manifesto line:** "Intelligence doesn't scale. Coordination does." It may appear in essays. It is never a headline.
-- **Explainer line** (from `../brand-foundation.md`): "Teams needed Slack. AI agents need DorkOS." Use it where the Slack comparison helps a first-time reader.
+- **Explainer line** (from `../brand-foundation.md`): "Teams needed Slack. AI agents need DorkOS." Use it where the Slack comparison helps a first-time reader, and only beside the differentiators, never as a lead (Slack Code exists).
 - **Name collision.** "Workspaces" is already a product noun: the /workspaces page and project checkouts. When "workspace" is the category word, make that plain ("a workspace for people and agents"). Never rename or redefine the Workspaces page to fit the category.
 
 **Retired from the story:**
@@ -114,7 +114,7 @@ Each idea carries its status. "Built" means it works today. "Before launch" mean
     - **Goals come in tiers:** space, then group, then project. They guide what agents do.
 14. **Health check.** A linter for your organisation. Its rules are written in TypeScript and can be configured. Anyone allowed can run it from the app, the CLI or the API. Examples: a group with no goals, an agent idle too long. _Status: roadmap._
 15. **Mini apps: apps that live inside DorkOS.** "Mini apps" is the public name (decided 2026-10-06) and the lead differentiator. Shapes are a different thing: a Shape is an installable setup bundle (layout, extensions, suggested agents, schedules), and it can bundle mini apps.
-    - **Built today.** An agent can build a real mini app now. Its `create_extension` tool writes the code, builds it and turns it on, and a person says yes before it runs (the extension approval). It opens inside DorkOS in fixed places: its own full page (`/x/<id>`), the right-side panel, dashboard sections, the sidebar, the status bar and settings tabs. The app and the docs still call these extensions. Supporting proof: agents can reply in chat with live widgets (charts, tables, checklists, buttons) from a fixed catalog, today's Generative UI feature, and an installed tool server's own app (MCP Apps) can render in chat or on the canvas.
+    - **Built today.** An agent can build a real mini app now. Its `create_extension` tool writes a starter, the agent fills it in, DorkOS builds it and turns it on, and none of its code runs until a person says yes on the Activity page or in Settings (the extension approval). It opens inside DorkOS in fixed places: its own full page (`/x/<id>`), the right-side panel, the Activity page (the "From your extensions" group), the status bar, settings tabs and a sidebar menu item. The app and the docs still call these extensions. Supporting proof: agents can reply in chat with live widgets (charts, tables, checklists, buttons) from a fixed catalog, today's Generative UI feature, and an installed tool server's own app (MCP Apps) can render in chat or on the canvas.
     - **Roadmap.** Every agent knowing how to build one, as a core skill. The one question an agent asks ("build me something to manage my email": inside DorkOS, in the side panel, or its own website?). Ready-made founder mini apps. Goals that guide them.
     - **Internal proof only.** The LifeOS and Tangerines dashboards and the flow plugin show it works. There is no public demo of them, so public surfaces never cite them as something a reader can see.
     - **Safe verbs:** "ask for", "builds", "you say yes", "opens inside DorkOS". Never "any tool", "no code ever", "instantly" or "builds anything".
@@ -191,7 +191,7 @@ Launch is as soon as possible. It is:
 
 ### Built today (may be claimed, in plain words)
 
-- **Mini apps, as far as they go today.** Ask an agent for a tool, and it builds a mini app (an extension, in the app's words), you say yes, and it opens inside DorkOS in fixed places: its own page, the side panel, the dashboard, the sidebar, the status bar or a settings tab. Live widgets in chat and MCP Apps are supporting proof.
+- **Mini apps, as far as they go today.** Ask an agent for a tool, and it builds a mini app (an extension, in the app's words), you say yes, and it opens inside DorkOS in fixed places: its own page, the side panel, the Activity page, the status bar, settings tabs, or a sidebar menu item. Live widgets in chat and MCP Apps are supporting proof.
 
 - The app on your own computer: the CLI install, the macOS desktop app, and the phone as an installable web app over the built-in remote access.
 - The Windows desktop app, **as an early alpha only.** Always say "alpha". It is built and code-reviewed but not yet confirmed by a real end-user install on Windows, so never say it works.
