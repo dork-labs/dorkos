@@ -25,7 +25,7 @@ import { COMPACT_MY_SESSION_TOOL_NAME } from './compaction-capabilities.js';
 /**
  * Render the warning for one runtime.
  *
- * Where the runtime cannot summarize on request (Codex compacts on its own), the
+ * Where the runtime cannot summarize on request (Codex on exec, which compacts on its own), the
  * note still says how full the conversation is and still asks the agent to save
  * what matters, but never names a tool that would only refuse.
  *

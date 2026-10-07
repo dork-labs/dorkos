@@ -263,6 +263,8 @@ import { LocalSessionAttachmentStore } from '../../../session/attachments/local-
 import { initConfigManager } from '../../../core/config-manager.js';
 import { CONFORMANCE_CREDITS_TOKEN } from '@dorkos/test-utils';
 import {
+  appServerCompactIntentTurn,
+  driveContextReading,
   appServerCreditsTurn,
   appServerDirectoryGrantTurns,
   appServerDispositionTurn,
@@ -272,6 +274,7 @@ import {
   hangAppServerInterrupt,
   makeFailingAppServerRuntime,
   makeAppServerRuntime,
+  makeAutoCompactingAppServerRuntime,
   startConformanceRelay,
   stopAppServerConformance,
   warmAppServerSession,
@@ -408,6 +411,27 @@ runtimeConformance(
     // (no feedProjector), so native history is [] by design — completed
     // history lives in the DorkOS-owned EventLog (ADR-0263).
     expectHistory: false,
+    // DOR-2732, RT-CMP-03: on exec the reading comes from the turn's rollout
+    // file, which the mocked SDK writes none of (`read-context-usage.test.ts`
+    // proves that read); live, the real binary writes one.
+    ...(LIVE
+      ? {
+          contextReadingTurn: () =>
+            driveContextReading(
+              onModel(
+                new CodexRuntime({
+                  transport: 'exec',
+                  threadMap: new CodexThreadMap(createTestDb()),
+                }),
+                LIVE_MODEL
+              ),
+              projectDir
+            ),
+        }
+      : {
+          contextReadingUnprovenReason:
+            'on exec the context reading is read from the turn’s rollout file, which the mocked SDK never writes; read-context-usage.test.ts proves that read against real rollout records',
+        }),
     // DOR-189: a completed turn must survive a restart via the durable store.
     durableHistory: (runtime, sessionId, content) =>
       driveDurableTurn(runtime, sessionId, content, projectDir),
@@ -715,6 +739,36 @@ runtimeConformance(
     queueDurability: () => driveQueueDurability(),
     // A thread stays loaded between turns, so a session is warm after one.
     warmSession: (runtime, sessionId) => warmAppServerSession(runtime, sessionId, projectDir),
+    // DOR-2732, RT-CMP-03: Codex's usage update carries the model's window.
+    contextReadingTurn: () =>
+      driveContextReading(
+        LIVE
+          ? onModel(
+              new CodexRuntime({
+                threadMap: new CodexThreadMap(createTestDb()),
+                transport: 'app-server',
+              }),
+              LIVE_MODEL
+            )
+          : makeAppServerRuntime(),
+        projectDir
+      ),
+    // DOR-2732: a summary somebody asked for, `thread/compact/start` on a
+    // thread with a conversation in it. Live, against the real binary too.
+    compactIntentTurn: (observe) =>
+      appServerCompactIntentTurn(
+        LIVE
+          ? onModel(
+              new CodexRuntime({
+                threadMap: new CodexThreadMap(createTestDb()),
+                transport: 'app-server',
+              }),
+              LIVE_MODEL
+            )
+          : makeAppServerRuntime(),
+        projectDir,
+        observe
+      ),
     // C1: app-server declares steer (`turn/steer` into the open turn). Mocked,
     // the fake holds the turn open until it is stopped; live, the real model's
     // turn has to still be running when the steer lands.
@@ -778,6 +832,8 @@ runtimeConformance(
           systemPromptAppendTurns: (runtime, sessionId, appends) =>
             appServerSystemPromptAppendTurns(runtime, sessionId, appends, projectDir),
           makeFailingRuntime: () => makeFailingAppServerRuntime('Simulated Codex turn failure'),
+          // DOR-110: Codex summarizing on its own inside an ordinary turn.
+          makeCompactingRuntime: makeAutoCompactingAppServerRuntime,
           // DOR-1656 on app-server: Codex reports a dead sign-in as
           // `codexErrorInfo: unauthorized` with the vendor's words; the person
           // must read DorkOS's sentence, the vendor's words kept in details.

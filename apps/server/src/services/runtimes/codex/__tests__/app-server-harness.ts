@@ -8,7 +8,7 @@ import type { ConnectorRuntimeTools } from '../../connector-tools.js';
 import type { CreditsRelay } from '../../../core/cloud/credits-relay.js';
 import { CodexAppServerPool } from '../app-server/process-pool.js';
 import { AppServerCodexTransport } from '../transport/app-server-transport.js';
-import type { CodexTurnRequest } from '../transport/codex-transport.js';
+import type { CodexCompactRequest, CodexTurnRequest } from '../transport/codex-transport.js';
 import { createCodexEventContext } from '../event-mapper.js';
 import { FakeAppServerHost } from './fake-app-server.js';
 
@@ -25,6 +25,8 @@ export interface AppServerHarnessOptions {
   relay?: CreditsRelay;
   /** Stop-ack bound. */
   stopAckMs?: number;
+  /** Bound on a compaction's turn opening. */
+  compactionStartMs?: number;
   /** When an unanswered request is declined. */
   interactionExpireMs?: number;
   /** Background-work timings. */
@@ -59,6 +61,9 @@ export function makeAppServerHarness(options: AppServerHarnessOptions = {}) {
     },
     realpath: (path) => `/real${path}`,
     stopAckMs: options.stopAckMs ?? 300,
+    ...(options.compactionStartMs !== undefined
+      ? { compactionStartMs: options.compactionStartMs }
+      : {}),
     ...(options.interactionExpireMs !== undefined
       ? { interactionExpireMs: options.interactionExpireMs }
       : {}),
@@ -101,5 +106,28 @@ export function makeAppServerHarness(options: AppServerHarnessOptions = {}) {
     return events;
   };
 
-  return { host, pool, transport, threadKeys, tools, bindings, request, run };
+  /** Drain a compaction of the session's thread. */
+  const compact = async (
+    overrides: Partial<CodexCompactRequest> & { sessionId: string }
+  ): Promise<StreamEvent[]> => {
+    const { binary, boundThreadId, cwd, settings, launch, signal, events, onThreadBound } =
+      request(overrides);
+    const out: StreamEvent[] = [];
+    for await (const event of transport.compact({
+      binary,
+      sessionId: overrides.sessionId,
+      boundThreadId,
+      cwd,
+      settings,
+      launch,
+      signal,
+      events,
+      onThreadBound,
+    })) {
+      out.push(event);
+    }
+    return out;
+  };
+
+  return { host, pool, transport, threadKeys, tools, bindings, request, run, compact };
 }

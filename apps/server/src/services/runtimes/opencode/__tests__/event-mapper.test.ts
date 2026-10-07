@@ -1171,7 +1171,8 @@ describe('mapOpenCodeEvent', () => {
             sessionId: SESSION_ID,
             model: 'claude-sonnet-4-5',
             costUsd: DEFAULT_COST,
-            contextTokens: 120,
+            // input 120 + cache read 80 + cache write 12: the whole prompt.
+            contextTokens: 212,
             outputTokens: 45,
             cacheReadTokens: 80,
             cacheCreationTokens: 12,

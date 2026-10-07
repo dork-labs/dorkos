@@ -127,7 +127,7 @@ import {
   type CodexTransport,
   type CodexTransportKind,
 } from './transport/index.js';
-import { backgroundDoneEvent } from './transport/app-server-transport.js';
+import { backgroundDoneEvent, nothingToSummarize } from './transport/app-server-transport.js';
 import {
   buildBackgroundUpdate,
   type BackgroundCompletion,
@@ -1119,8 +1119,10 @@ export class CodexRuntime implements AgentRuntime {
       });
       let completedTurn = false;
       let sawDone = false;
+      let sawCompaction = false;
       for await (const event of turnEvents) {
         if (event.type === 'done') sawDone = true;
+        if (event.type === 'compact_boundary') sawCompaction = true;
         if (
           event.type === 'session_status' &&
           'terminalReason' in event.data &&
@@ -1155,6 +1157,9 @@ export class CodexRuntime implements AgentRuntime {
         neutralContextSelection.commit();
         accessContext?.commit();
       }
+      // Codex summarized the thread on its own mid-turn: the summary may have
+      // dropped the identity it was told, so the next turn re-anchors it.
+      if (sawCompaction) this.contextGate.forget(sessionId);
       connectorRevokeReason = connectorRuntimeFailed ? 'runtime_failed' : 'turn_terminal';
     } finally {
       if (controller.signal.aborted) connectorRevokeReason = 'turn_cancelled';
@@ -1179,18 +1184,102 @@ export class CodexRuntime implements AgentRuntime {
   }
 
   /**
-   * Codex has no compaction/summarize API (`Thread.run` only), so
-   * `CODEX_CAPABILITIES` declares `commandIntents.compact.supported: false`
-   * permanently and the gated route never calls this. The throw is the correct
-   * defensive contract (task 2.3 keeps it as codex's final form).
+   * @inheritdoc
+   *
+   * Summarizes the session's thread with `thread/compact/start`, which Codex
+   * runs as a turn of its own. Only the app-server transport can ask for one
+   * (`codex exec` only runs prompts), so on exec
+   * {@link CODEX_CAPABILITIES} keeps `commandIntents.compact` false, the
+   * route and the agent's tool list never reach this, and it throws as the
+   * defensive contract.
+   *
+   * It is tracked as an open turn ({@link isTurnOpen}, a stop, the stall
+   * watchdog) exactly like a prompt. `opts.instructions` is ignored: Codex's
+   * compaction takes none, the same honest difference OpenCode has. Who pays
+   * is decided as for any turn on the thread: a credits thread is summarized
+   * on credits, and refused when credits cannot pay. A summary Codex
+   * finished re-anchors the thread's DorkOS context on its next turn.
    */
-  // eslint-disable-next-line require-yield -- unsupported: always throws, never yields (final form)
   async *executeCommandIntent(
-    _sessionId: string,
+    sessionId: string,
     _intent: RuntimeCommandIntentId,
-    _opts?: CommandIntentOpts
+    opts?: CommandIntentOpts
   ): AsyncGenerator<StreamEvent> {
-    throw new Error('executeCommandIntent(compact) is not supported by codex');
+    const compact = this.transport.compact?.bind(this.transport);
+    if (!compact) {
+      throw new Error('executeCommandIntent(compact) is not supported by codex on exec');
+    }
+    await this.seedFromDurable(sessionId);
+    const settings = await this.resolveTurnSettings(sessionId, opts);
+    const binding = this.threadMap.get(sessionId);
+    const boundThreadId = binding?.threadId;
+    // No thread, no conversation: said before anything about who would pay.
+    if (boundThreadId === undefined) {
+      yield* nothingToSummarize(sessionId);
+      return;
+    }
+    const cwd = opts?.cwd ?? this.registry.get(sessionId)?.cwd ?? binding?.cwd ?? this.defaultCwd;
+    let credits: CreditsLaunch | null;
+    let creditsSwap: CreditsModelDecision['swap'];
+    try {
+      credits = await this.creditsLaunchFor(boundThreadId);
+      // The same model decision a credits turn makes (DOR-2636): a list that
+      // names no model Codex can run refuses the summary too. A swap it makes
+      // is said and saved here, but takes effect from the next turn:
+      // `thread/compact/start` takes no model, so the summary runs on the
+      // model the thread already has.
+      if (credits) {
+        creditsSwap = (
+          await decideCreditsLaunchModel({
+            capabilities: this.getCapabilities(),
+            runtimeLabel: 'Codex',
+            sessionId,
+            model: settings.model,
+            nameOf: async () =>
+              settings.model === undefined ? undefined : catalogNameFor(this, settings.model),
+            remember: async (model) => {
+              await this.updateSession(sessionId, { model });
+            },
+          })
+        ).swap;
+      }
+    } catch (err) {
+      const refusal = creditsRefusalEvent(err);
+      if (!refusal) throw err;
+      yield refusal;
+      yield { type: 'done', data: { sessionId } };
+      return;
+    }
+    if (creditsSwap?.notice) yield creditsSwap.notice;
+    await creditsSwap?.commit();
+    const controller = new AbortController();
+    this.activeTurns.set(sessionId, controller);
+    if (credits) this.creditsTurns.add(controller);
+    try {
+      const events = compact({
+        binary: await this.resolveTurnBinary(),
+        sessionId,
+        boundThreadId,
+        cwd,
+        settings,
+        launch: credits ? { home: 'credits', credits } : { home: 'person' },
+        signal: controller.signal,
+        events: createCodexEventContext(sessionId),
+        onThreadBound: (threadId, replaces) => {
+          if (replaces !== undefined) this.threadMap.replaceThreadId(sessionId, replaces, threadId);
+        },
+      });
+      let summarized = false;
+      for await (const event of events) {
+        if (event.type === 'compact_boundary') summarized = true;
+        yield credits ? asCreditsStopped(event, 'Codex') : event;
+      }
+      // The summary may have dropped the identity this thread was told.
+      if (summarized) this.contextGate.forget(sessionId);
+    } finally {
+      this.creditsTurns.delete(controller);
+      if (this.activeTurns.get(sessionId) === controller) this.activeTurns.delete(sessionId);
+    }
   }
 
   /**
@@ -1512,10 +1601,16 @@ export class CodexRuntime implements AgentRuntime {
    */
   getCapabilities(): RuntimeCapabilities {
     const overrides = this.transport.capabilities;
+    // `commandIntents` is merged per intent, so a transport that turns one on
+    // does not drop the others the base declares.
     const base =
       Object.keys(overrides).length === 0
         ? CODEX_CAPABILITIES
-        : { ...CODEX_CAPABILITIES, ...overrides };
+        : {
+            ...CODEX_CAPABILITIES,
+            ...overrides,
+            commandIntents: { ...CODEX_CAPABILITIES.commandIntents, ...overrides.commandIntents },
+          };
     if (!this.attachments) return base;
     return { ...base, mediaOutput: 'attachments' };
   }

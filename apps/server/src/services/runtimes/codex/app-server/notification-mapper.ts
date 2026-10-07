@@ -138,6 +138,12 @@ export const NOTIFICATION_DISPOSITION: Record<ServerNotificationMethod, Notifica
 export const CODEX_STOPPED_COPY =
   'Codex stopped unexpectedly. Send your message again to continue.';
 
+/** A compaction the turn's stop ended before it finished. */
+export const CODEX_COMPACTION_STOPPED_COPY = 'The summary was stopped before it finished.';
+
+/** A turn that completed with a compaction it never reported finished. */
+export const CODEX_COMPACTION_UNFINISHED_COPY = 'Codex did not finish the summary.';
+
 type Item = Record<string, unknown> & { type: string; id?: string };
 type Phase = 'started' | 'completed';
 
@@ -145,6 +151,32 @@ type Phase = 'started' | 'completed';
 export interface TurnMapperOptions {
   /** The turn's rate-limit readings in rollout shape (`[]` on credits). */
   readonly rateLimits?: () => readonly unknown[];
+  /**
+   * This turn IS a requested compaction (`thread/compact/start`: a person's
+   * `/compact` or the agent's own request), so its boundary is `manual`. A
+   * compaction Codex runs on its own inside an ordinary turn is `auto`.
+   */
+  readonly compaction?: boolean;
+  /**
+   * How full the thread's context was when the turn opened, from the last
+   * turn this process ran on it. The `preTokens` of a compaction that runs
+   * before this turn has a reading of its own; unknown on a thread loaded
+   * cold, and then left out rather than guessed.
+   */
+  readonly priorContextTokens?: number;
+}
+
+/** The progress label a compaction opens with (the Claude Code adapter's words). */
+export const CODEX_COMPACTING_COPY = 'Compacting context…';
+
+/** One `contextCompaction` item still running. */
+interface OpenCompaction {
+  /** The context tokens before it started, when known. */
+  readonly preTokens: number | undefined;
+  /** The usage reading current when it started, to tell a newer one apart. */
+  readonly usageAtStart: unknown;
+  /** Codex's own start time for the item, when it sent one. */
+  readonly startedAtMs: number | undefined;
 }
 
 /** Maps one turn's notifications. */
@@ -170,6 +202,10 @@ export class AppServerTurnMapper {
     | undefined;
   private heldError: { message: string; code?: string } | undefined;
   private finished = false;
+  /** Compaction items started and not yet completed, by item id. */
+  private readonly openCompactions = new Map<string, OpenCompaction>();
+  /** Boundaries drawn from `contextCompaction` items not yet matched by a `thread/compacted`. */
+  private unmatchedItemBoundaries = 0;
 
   /**
    * Start mapping a turn.
@@ -220,9 +256,9 @@ export class AppServerTurnMapper {
           },
         ];
       case 'item/started':
-        return this.mapItem(params.item as Item, 'started');
+        return this.mapItem(params.item as Item, 'started', params);
       case 'item/completed':
-        return this.mapItem(params.item as Item, 'completed');
+        return this.mapItem(params.item as Item, 'completed', params);
       case 'turn/plan/updated':
         return this.mapPlan(params.plan as Array<{ step: string; status: string }>);
       case 'thread/tokenUsage/updated': {
@@ -246,7 +282,7 @@ export class AppServerTurnMapper {
           },
         ];
       case 'thread/compacted':
-        return [{ type: 'compact_boundary', data: { trigger: 'auto' } }];
+        return this.legacyCompacted();
       case 'error':
         return this.mapError(params);
       case 'turn/completed':
@@ -270,6 +306,7 @@ export class AppServerTurnMapper {
     if (this.finished) return [];
     this.finished = true;
     return [
+      ...this.failOpenCompactions(CODEX_STOPPED_COPY),
       { type: 'session_status', data: { sessionId: this.ctx.sessionId, terminalReason: 'error' } },
       {
         type: 'error',
@@ -289,6 +326,7 @@ export class AppServerTurnMapper {
     if (this.finished) return [];
     this.finished = true;
     return [
+      ...this.failOpenCompactions(error?.message ?? CODEX_COMPACTION_STOPPED_COPY),
       ...(error ? ([{ type: 'error', data: error }] as StreamEvent[]) : []),
       { type: 'done', data: { sessionId: this.ctx.sessionId } },
     ];
@@ -321,6 +359,113 @@ export class AppServerTurnMapper {
     return this.runningAgents.size;
   }
 
+  /** The context tokens the turn's latest usage reading reports, if any. */
+  get contextTokens(): number | undefined {
+    return this.lastUsage?.last.totalTokens;
+  }
+
+  /**
+   * `thread/compacted`, deprecated in favour of the `contextCompaction` item
+   * (0.154 sends the item and, in the runs verified, not this). Drawn only
+   * when no item accounts for it, so a binary that sends both never draws the
+   * line twice, and one that sends only this still draws it.
+   */
+  private legacyCompacted(): StreamEvent[] {
+    if (this.openCompactions.size > 0) return [];
+    if (this.unmatchedItemBoundaries > 0) {
+      this.unmatchedItemBoundaries -= 1;
+      return [];
+    }
+    return [{ type: 'compact_boundary', data: { trigger: this.trigger } }];
+  }
+
+  private get trigger(): 'manual' | 'auto' {
+    return this.options.compaction === true ? 'manual' : 'auto';
+  }
+
+  /**
+   * `contextCompaction` → the runtime-neutral compaction contract: progress
+   * `started` when the item opens, then `done` and the `compact_boundary` the
+   * transcript keeps when it completes. Codex reports no percent, so the bar
+   * is indeterminate. The token counts are the readings either side of it,
+   * each left out when there is none (a usage update during the item is the
+   * post-summary size, verified on 0.154).
+   */
+  contextCompaction(item: Item, phase: Phase, params: Record<string, unknown>): StreamEvent[] {
+    const id = String(item.id);
+    if (phase === 'started') {
+      if (this.openCompactions.has(id)) return [];
+      this.openCompactions.set(id, {
+        preTokens: this.lastUsage?.last.totalTokens ?? this.options.priorContextTokens,
+        usageAtStart: this.lastUsage,
+        startedAtMs: typeof params.startedAtMs === 'number' ? params.startedAtMs : undefined,
+      });
+      return [
+        {
+          type: 'operation_progress',
+          data: {
+            operation: 'compaction',
+            state: 'started',
+            determinate: false,
+            message: CODEX_COMPACTING_COPY,
+          },
+        },
+      ];
+    }
+    const open = this.openCompactions.get(id);
+    this.openCompactions.delete(id);
+    this.unmatchedItemBoundaries += 1;
+    const postTokens =
+      this.lastUsage !== undefined && this.lastUsage !== open?.usageAtStart
+        ? this.lastUsage.last.totalTokens
+        : undefined;
+    const completedAtMs =
+      typeof params.completedAtMs === 'number' ? params.completedAtMs : undefined;
+    const durationMs =
+      open?.startedAtMs !== undefined && completedAtMs !== undefined
+        ? Math.max(0, Math.round(completedAtMs - open.startedAtMs))
+        : undefined;
+    return [
+      // Opened here even when its start was missed, so `done` never resolves nothing.
+      ...(open
+        ? []
+        : ([
+            {
+              type: 'operation_progress',
+              data: { operation: 'compaction', state: 'started', determinate: false },
+            },
+          ] as StreamEvent[])),
+      {
+        type: 'operation_progress',
+        data: { operation: 'compaction', state: 'done', determinate: false },
+      },
+      {
+        type: 'compact_boundary',
+        data: {
+          trigger: this.trigger,
+          ...(open?.preTokens !== undefined ? { preTokens: open.preTokens } : {}),
+          ...(postTokens !== undefined ? { postTokens } : {}),
+          ...(durationMs !== undefined ? { durationMs } : {}),
+        },
+      },
+    ];
+  }
+
+  /**
+   * A compaction still open when its turn ended did not finish: resolve its
+   * progress as failed, so the bar never stays open and the failure is said.
+   */
+  private failOpenCompactions(message: string): StreamEvent[] {
+    if (this.openCompactions.size === 0) return [];
+    this.openCompactions.clear();
+    return [
+      {
+        type: 'operation_progress',
+        data: { operation: 'compaction', state: 'failed', determinate: false, error: message },
+      },
+    ];
+  }
+
   private complete(turn: {
     status: string;
     error?: { message?: string; codexErrorInfo?: unknown } | null;
@@ -337,7 +482,11 @@ export class AppServerTurnMapper {
       },
     }));
     if (turn.status === 'interrupted') {
-      return [...background, { type: 'done', data: { sessionId } }];
+      return [
+        ...background,
+        ...this.failOpenCompactions(CODEX_COMPACTION_STOPPED_COPY),
+        { type: 'done', data: { sessionId } },
+      ];
     }
     if (turn.status === 'failed') {
       const message =
@@ -351,6 +500,7 @@ export class AppServerTurnMapper {
       });
       return [
         ...background,
+        ...this.failOpenCompactions(copy.message),
         { type: 'session_status', data: { sessionId, terminalReason: 'error' } },
         { type: 'error', data: { ...copy, code: 'turn_failed' } },
         ...(limit ? [limit] : []),
@@ -372,6 +522,7 @@ export class AppServerTurnMapper {
       : [];
     return [
       ...background,
+      ...this.failOpenCompactions(CODEX_COMPACTION_UNFINISHED_COPY),
       ...held,
       {
         type: 'session_status',
@@ -440,8 +591,8 @@ export class AppServerTurnMapper {
     return [{ type: 'task_update', data: { action: 'snapshot', task: tasks[0]!, tasks } }];
   }
 
-  private mapItem(item: Item, phase: Phase): StreamEvent[] {
-    return ITEM_HANDLERS[item.type as ThreadItemType]?.call(this, item, phase) ?? [];
+  private mapItem(item: Item, phase: Phase, params: Record<string, unknown>): StreamEvent[] {
+    return ITEM_HANDLERS[item.type as ThreadItemType]?.call(this, item, phase, params) ?? [];
   }
 
   /** `agentMessage`: deltas streamed already; on completion, emit any tail they missed. */
@@ -621,7 +772,12 @@ export class AppServerTurnMapper {
   }
 }
 
-type ItemHandler = (this: AppServerTurnMapper, item: Item, phase: Phase) => StreamEvent[];
+type ItemHandler = (
+  this: AppServerTurnMapper,
+  item: Item,
+  phase: Phase,
+  params: Record<string, unknown>
+) => StreamEvent[];
 const none: ItemHandler = () => [];
 
 /**
@@ -634,7 +790,8 @@ const none: ItemHandler = () => [];
  *   to show beyond what other events already carry.
  * - `collabAgentToolCall`: the spawn call itself; the agent's lifecycle rides
  *   `subAgentActivity`, so showing both would count every sub-agent twice.
- * - `contextCompaction`: `thread/compacted` already marks the boundary.
+ * - `contextCompaction`: the compaction itself — progress and the boundary
+ *   (`thread/compacted`, its deprecated twin, only fills in when it is missing).
  */
 const ITEM_HANDLERS: Record<ThreadItemType, ItemHandler> = {
   userMessage: none,
@@ -655,5 +812,5 @@ const ITEM_HANDLERS: Record<ThreadItemType, ItemHandler> = {
   imageGeneration: none,
   enteredReviewMode: none,
   exitedReviewMode: none,
-  contextCompaction: none,
+  contextCompaction: AppServerTurnMapper.prototype.contextCompaction,
 };

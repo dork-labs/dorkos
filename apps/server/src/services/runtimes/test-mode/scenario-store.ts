@@ -201,6 +201,12 @@ const SLOW_CLOSE_SCENARIO = 'long-turn-slow-close';
  */
 const COMPACT_HOLD_TICKS = 60;
 
+/** Tokens in context the `context-reading` scenario reports: 85% of its window. */
+export const CONTEXT_READING_TOKENS = 170_000;
+
+/** The window the `context-reading` scenario reports. */
+export const CONTEXT_READING_WINDOW = 200_000;
+
 /**
  * A turn that compacts instead of answering — an AUTO compaction, the kind
  * context pressure fires rather than a person typing `/compact`.
@@ -484,6 +490,29 @@ const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
    * test needs that.
    */
   'compacting-hold': compactingTurn({ hold: true }),
+  /**
+   * A reply that says how full its conversation is, past the 80% line: the
+   * reading the Claude adapter's result mapper reports (`contextTokens` with
+   * `contextMaxTokens`), so the agent's context note (DOR-2732) and the
+   * gauge can be driven end to end. Every other scenario reports no reading,
+   * which keeps their gauges and notes exactly as they were.
+   */
+  'context-reading': async function* () {
+    yield {
+      type: 'text_delta',
+      data: { text: 'This conversation is getting long.' },
+    } as StreamEvent;
+    yield {
+      type: 'session_status',
+      data: {
+        sessionId: 'test-mode',
+        model: 'claude-haiku-4-5',
+        contextTokens: CONTEXT_READING_TOKENS,
+        contextMaxTokens: CONTEXT_READING_WINDOW,
+      },
+    } as StreamEvent;
+    yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
+  },
   error: async function* (_content) {
     yield {
       type: 'session_status',
