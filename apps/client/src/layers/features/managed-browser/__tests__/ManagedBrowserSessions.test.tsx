@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
@@ -38,6 +38,60 @@ describe('owner browser selection', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'View' }));
     expect(onSelect).toHaveBeenCalledWith(original);
     expect(onSelect).toHaveBeenCalledOnce();
+  });
+
+  it('marks only the selected original generation among identical saved-profile labels', async () => {
+    const selected: BrowserInstance = {
+      ...original,
+      mode: 'persistent',
+      profileId: 'profile_original_000000000001',
+    };
+    const instances: BrowserInstance[] = [
+      { ...selected, browserGeneration: 2, status: 'uncertain' },
+      { ...selected, browserId: 'browser_history_000000000001', status: 'uncertain' },
+      selected,
+    ];
+    const closeBrowserInstance = vi.fn(async (request: BrowserCloseRequest) => ({
+      ...request,
+      cleanup: 'observed' as const,
+    }));
+    const wrapper = setup(
+      createMockTransport({
+        getBrowserInstances: vi.fn().mockResolvedValue(instances),
+        getBrowserProfiles: vi
+          .fn()
+          .mockResolvedValue([
+            { profileId: selected.profileId, label: 'Saved work', revision: 1, status: 'inUse' },
+          ]),
+        closeBrowserInstance,
+      })
+    );
+    const view = render(
+      <ManagedBrowserSessions owner="alice" selected={selected} onSelect={vi.fn()} />,
+      { wrapper }
+    );
+    await screen.findAllByText('Saved work');
+    const rows = screen.getAllByRole('listitem');
+    expect(rows).toHaveLength(3);
+    expect(rows.map((row) => row.getAttribute('aria-current'))).toEqual([null, null, 'true']);
+    expect(
+      rows.every(
+        (row) => !within(row).getByRole('button', { name: 'Close' }).hasAttribute('disabled')
+      )
+    ).toBe(true);
+    const currentRow = rows.find((row) => row.getAttribute('aria-current') === 'true');
+    if (!currentRow) throw new Error('Original selected browser row required');
+    fireEvent.click(within(currentRow).getByRole('button', { name: 'Close' }));
+    await screen.findByText('Browser closed.');
+    expect(closeBrowserInstance).toHaveBeenCalledExactlyOnceWith({
+      requestId: expect.any(String),
+      browserId: selected.browserId,
+      browserGeneration: selected.browserGeneration,
+    });
+    view.rerender(<ManagedBrowserSessions owner="alice" onSelect={vi.fn()} />);
+    expect(screen.getAllByRole('listitem').every((row) => !row.hasAttribute('aria-current'))).toBe(
+      true
+    );
   });
 
   it('preserves unverified cleanup and closes exactly the selected generation once', async () => {

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { EventEmitter } from 'node:events';
 import { launchDarwinSupervisorBrowser } from '../../darwin-supervisor-browser.js';
+import { createOriginalClosePendingDiagnostic } from '../../supervisor-uncertainty-diagnostic.js';
 import type { BrowserRuntimeDescriptor } from '../../../runtime-descriptor.js';
 const mocks = vi.hoisted(() => ({
   library: vi.fn(),
@@ -82,6 +83,7 @@ const nativeIdentity = {
 function fixture(
   options: {
     holdBrowserSession?: true;
+    holdBrowserClose?: true;
     substituteCloseSession?: true;
     replaceDetachAfterFirst?: true;
   } = {}
@@ -107,6 +109,11 @@ function fixture(
     original?.();
   };
   releases.push(releaseSession);
+  let releaseClose!: () => void;
+  const heldClose = new Promise<void>((resolve) => {
+    releaseClose = resolve;
+  });
+  releases.push(releaseClose);
   const extraHomes = new Set<string>();
   const detachBrowserSession = vi.fn(async () => {});
   const replacementDetach = vi.fn(async () => {
@@ -269,6 +276,7 @@ function fixture(
         },
         send: async (method: string) => {
           if (method !== 'Browser.close') throw new Error('UNEXPECTED_ORIGINAL_COMMAND');
+          if (options.holdBrowserClose) await own(heldClose);
           if (!sdkTransport) throw new Error('ORIGINAL_SDK_TRANSPORT_UNCAPTURED');
           sdkTransport.send({
             id: 100,
@@ -405,6 +413,7 @@ function fixture(
     detachReads: () => detachReads,
     sessionStarted,
     releaseSession,
+    releaseClose,
     async replaceDirectory() {
       if (!home) throw new Error('ORIGINAL_PROFILE_MISSING');
       const moved = home + '-original';
@@ -530,3 +539,73 @@ it('captures a late returned original detach getter once and never substitutes t
   expect(f.replacementDetach).not.toHaveBeenCalled();
   expect(f.browser.close).toHaveBeenCalledTimes(1);
 });
+
+it('publishes the exact held original Browser.close at the unchanged whole-close deadline', async () => {
+  const f = fixture({ holdBrowserClose: true });
+  const sink = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+  try {
+    const original = await f.open();
+    f.expectHeldClose();
+    vi.useFakeTimers();
+    const closing = f.own(original.close());
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(await closing).toBe(false);
+    const rows = sink.mock.calls.map(([value]) => String(value)).join('');
+    expect(rows).toContain('SUPERVISOR_UNCERTAIN: NATIVE_CLOSE_PENDING_BROWSER\n');
+    expect(rows).toContain('SUPERVISOR_UNCERTAIN: NATIVE_CLOSE_WAIT\n');
+    expect(rows).not.toContain('NATIVE_CLOSE_PENDING_CHILD');
+    expect(f.browser.close).not.toHaveBeenCalled();
+  } finally {
+    f.releaseClose();
+    try {
+      if (vi.isFakeTimers()) await vi.runOnlyPendingTimersAsync();
+    } finally {
+      vi.useRealTimers();
+      sink.mockRestore();
+    }
+  }
+});
+
+it.each([false, undefined])(
+  'diagnostic sink fault %s preserves original promise and pending snapshot',
+  async (cause) => {
+    let release!: () => void;
+    const original = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const rows: string[] = [];
+    const diagnostic = createOriginalClosePendingDiagnostic((line) => {
+      rows.push(line);
+      diagnostic.emit();
+      release();
+      throw cause;
+    });
+    try {
+      expect(diagnostic.observe('NATIVE_CLOSE_PENDING_CHILD', original)).toBe(original);
+      diagnostic.emit();
+      diagnostic.emit();
+      expect(rows).toEqual(['SUPERVISOR_UNCERTAIN: NATIVE_CLOSE_PENDING_CHILD\n']);
+      await original;
+    } finally {
+      release();
+      await original;
+    }
+  }
+);
+it.each([false, undefined])(
+  'exact original rejection %s settles its pending stage without replacement',
+  async (cause) => {
+    let reject!: (value: unknown) => void;
+    const original = new Promise<void>((_resolve, no) => {
+      reject = no;
+    });
+    const sink = vi.fn();
+    const diagnostic = createOriginalClosePendingDiagnostic(sink);
+    expect(diagnostic.observe('NATIVE_CLOSE_PENDING_BROWSER', original)).toBe(original);
+    reject(cause);
+    const result = await Promise.allSettled([original]);
+    expect(result[0]).toEqual({ status: 'rejected', reason: cause });
+    diagnostic.emit();
+    expect(sink).not.toHaveBeenCalled();
+  }
+);

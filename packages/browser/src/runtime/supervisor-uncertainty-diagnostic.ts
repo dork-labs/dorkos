@@ -1,3 +1,64 @@
+/** Original close producers that can still be pending at the existing whole-close deadline. */
+export const originalClosePendingCodes = Object.freeze([
+  'NATIVE_CLOSE_PENDING_TREE',
+  'NATIVE_CLOSE_PENDING_AUTH_ENTRY',
+  'NATIVE_CLOSE_PENDING_AUTH_TERMINAL',
+  'NATIVE_CLOSE_PENDING_BROWSER',
+  'NATIVE_CLOSE_PENDING_PROXY',
+  'NATIVE_CLOSE_PENDING_CHROME_AUTH',
+  'NATIVE_CLOSE_PENDING_CHILD',
+  'NATIVE_CLOSE_PENDING_GONE',
+  'NATIVE_CLOSE_PENDING_DOWNLOADS',
+  'NATIVE_CLOSE_PENDING_WIRES',
+  'NATIVE_CLOSE_PENDING_ROOT_FORWARD',
+] as const);
+type OriginalClosePendingCode = (typeof originalClosePendingCodes)[number];
+
+/** Observe the same original promises without replacing them or inspecting rejection values. */
+export function createOriginalClosePendingDiagnostic(write?: (value: string) => unknown) {
+  const pending = new Set<OriginalClosePendingCode>();
+  let emitted = false;
+  let sink: ((value: string) => unknown) | undefined;
+  try {
+    sink = write ?? process.stderr.write.bind(process.stderr);
+  } catch {
+    /* Diagnostics only. */
+  }
+  return Object.freeze({
+    observe<T>(code: OriginalClosePendingCode, original: Promise<T>): Promise<T> {
+      pending.add(code);
+      try {
+        Promise.prototype.then.call(
+          original,
+          () => pending.delete(code),
+          () => pending.delete(code)
+        );
+      } catch {
+        /* An observation failure cannot replace the original producer. */
+      }
+      return original;
+    },
+    enter(code: OriginalClosePendingCode) {
+      pending.add(code);
+      return () => {
+        pending.delete(code);
+      };
+    },
+    emit() {
+      if (emitted) return;
+      emitted = true;
+      const rows = originalClosePendingCodes.filter((code) => pending.has(code));
+      for (const code of rows) {
+        try {
+          sink?.('SUPERVISOR_UNCERTAIN: ' + code + '\n');
+        } catch {
+          /* Original close stays primary. */
+        }
+      }
+    },
+  });
+}
+
 /** Closed proxy challenge/ACK decisions; no request IDs, addresses or credentials. */
 export const originalProxyAuthenticationCodes = Object.freeze([
   'PROXY_AUTH_OWNER_ENTERED',
@@ -63,6 +124,7 @@ export type JournalIdentityRefusalCode = (typeof journalIdentityRefusalCodes)[nu
 /** Fixed private close evidence; it has no participant reads or admission authority. */
 export const supervisorUncertaintyCodes = [
   ...originalProxyAuthenticationCodes,
+  ...originalClosePendingCodes,
   'WIRE_SEND_CALL',
   'WIRE_MESSAGE_CALLBACK',
   'WIRE_MESSAGE_PAYLOAD',

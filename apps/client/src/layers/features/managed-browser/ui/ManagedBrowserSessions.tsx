@@ -10,6 +10,7 @@ import {
 /** Cache and selection scope only; the server authenticates every operation. */
 export interface ManagedBrowserSessionsProps {
   readonly owner: string;
+  readonly selected?: Pick<BrowserInstance, 'browserId' | 'browserGeneration'>;
   readonly onSelect: (instance: BrowserInstance) => void;
   readonly onClosing?: (instance: BrowserInstance) => void;
   readonly disabled?: boolean;
@@ -24,6 +25,7 @@ export function ManagedBrowserSessions(props: ManagedBrowserSessionsProps) {
 /** A fresh local UI lifetime is created for every authenticated cache owner. */
 function OwnerBrowserSessions({
   owner,
+  selected,
   onSelect,
   onClosing,
   disabled = false,
@@ -98,7 +100,16 @@ function OwnerBrowserSessions({
               ? (profileLabels.get(instance.profileId) ?? 'Saved browser')
               : `Clean browser ${index + 1}`;
           return (
-            <li key={key} className="bg-muted/40 flex flex-wrap items-center gap-2 rounded-md p-2">
+            <li
+              key={key}
+              aria-current={
+                selected?.browserId === instance.browserId &&
+                selected.browserGeneration === instance.browserGeneration
+                  ? true
+                  : undefined
+              }
+              className="bg-muted/40 flex flex-wrap items-center gap-2 rounded-md p-2"
+            >
               <span className="min-w-0 flex-1 text-sm">{label}</span>
               <span className="text-muted-foreground text-xs">
                 {instance.status === 'uncertain' ? 'Could not confirm' : instance.status}

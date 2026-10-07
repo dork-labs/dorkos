@@ -9,6 +9,7 @@ import {
 export class ManagedBrowserPage {
   readonly canvas: Locator;
   readonly pointer: Locator;
+  private savedInstance?: Pick<BrowserBinding, 'browserId' | 'browserGeneration'>;
   constructor(readonly page: Page) {
     this.canvas = page.locator('canvas[role="img"][aria-label="Shared browser"]');
     this.pointer = page.getByTestId('managed-browser-pointer');
@@ -25,15 +26,34 @@ export class ManagedBrowserPage {
     await expect(this.page.getByLabel('Saved profile', { exact: true })).not.toHaveValue('');
   }
   async openSaved() {
+    this.savedInstance = undefined;
     await this.page.getByLabel('Browser', { exact: true }).selectOption('persistent');
-    await this.page.getByRole('button', { name: 'Open saved browser', exact: true }).click();
-    await expect(
-      this.page.getByRole('button', { name: 'Take control', exact: true })
-    ).toBeEnabled();
-    await this.page.getByRole('button', { name: 'Take control', exact: true }).click();
-    await expect(
-      this.page.getByRole('button', { name: 'You have control', exact: true })
-    ).toBeVisible();
+    const opening = this.page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === '/api/browser/runtime/open' &&
+        response.request().method() === 'POST'
+    );
+    void opening.catch(() => {});
+    try {
+      await this.page.getByRole('button', { name: 'Open saved browser', exact: true }).click();
+      const response = await opening;
+      expect(response.status()).toBe(200);
+      const receipt = BrowserProductionOpenReceiptSchema.parse(await response.json());
+      expect(receipt.instance.mode).toBe('persistent');
+      this.savedInstance = Object.freeze({
+        browserId: receipt.instance.browserId,
+        browserGeneration: receipt.instance.browserGeneration,
+      });
+      await expect(
+        this.page.getByRole('button', { name: 'Take control', exact: true })
+      ).toBeEnabled();
+      await this.page.getByRole('button', { name: 'Take control', exact: true }).click();
+      await expect(
+        this.page.getByRole('button', { name: 'You have control', exact: true })
+      ).toBeVisible();
+    } finally {
+      await Promise.allSettled([opening]);
+    }
   }
   async openClean() {
     await this.page.getByLabel('Browser', { exact: true }).selectOption('ephemeral');
@@ -65,6 +85,7 @@ export class ManagedBrowserPage {
     const row = this.page
       .getByRole('region', { name: 'Your browsers', exact: true })
       .getByRole('listitem')
+      .and(this.page.locator('[aria-current="true"]'))
       .filter({ has: this.page.getByText(/^Clean browser \d+$/, { exact: true }) })
       .filter({
         has: this.page
@@ -137,9 +158,12 @@ export class ManagedBrowserPage {
     ).toBeVisible();
   }
   async closeSaved(label: string) {
+    const instance = this.savedInstance;
+    if (!instance) throw new Error('Original saved browser open receipt required');
     const row = this.page
       .getByRole('region', { name: 'Your browsers', exact: true })
       .getByRole('listitem')
+      .and(this.page.locator('[aria-current="true"]'))
       .filter({ hasText: label })
       .filter({
         has: this.page
@@ -157,7 +181,11 @@ export class ManagedBrowserPage {
       await row.getByRole('button', { name: 'Close', exact: true }).click();
       const original = await response;
       expect(original.status()).toBe(200);
-      expect((await original.json()).cleanup).toBe('observed');
+      const receipt = BrowserCloseReceiptSchema.parse(await original.json());
+      expect(receipt.browserId).toBe(instance.browserId);
+      expect(receipt.browserGeneration).toBe(instance.browserGeneration);
+      expect(receipt.cleanup).toBe('observed');
+      this.savedInstance = undefined;
       await expect(this.canvas).toHaveCount(0);
       await expect(this.pointer).toHaveCount(0);
       // This UI message is checked only after the actual server cleanup receipt.

@@ -1,6 +1,7 @@
 import { classifyOriginalWireRetirement } from './identity/supervisor-wire-retirement.js';
 import {
   createSupervisorUncertaintyDiagnostic,
+  createOriginalClosePendingDiagnostic,
   type SupervisorUncertaintyCode,
 } from './supervisor-uncertainty-diagnostic.js';
 import { consumeSupervisorIdentityAcceptance } from './identity/supervisor-identity-acceptance.js';
@@ -588,6 +589,7 @@ export async function launchDarwinSupervisorBrowser(
     close() {
       if (closing) return closing;
       state.downloads?.retire();
+      const pendingClose = createOriginalClosePendingDiagnostic();
       const original = (async () => {
         const abort = new AbortController();
         let tree: ProcessTreeObservation = {
@@ -595,7 +597,10 @@ export async function launchDarwinSupervisorBrowser(
           identities: [],
         };
         try {
-          tree = await processes.processes.descendants(root, abort.signal);
+          tree = await pendingClose.observe(
+            'NATIVE_CLOSE_PENDING_TREE',
+            processes.processes.descendants(root, abort.signal)
+          );
         } catch {
           uncertain('NATIVE_TREE_QUERY');
         }
@@ -606,9 +611,13 @@ export async function launchDarwinSupervisorBrowser(
           childStopEntered = true;
           killOriginalChild('SIGTERM');
         };
-        const originalAuthenticationClose = Promise.resolve().then(() => state.auth?.close());
-        const originalAuthenticationEntry = Promise.resolve().then(() =>
-          state.auth?.prepareClose()
+        const originalAuthenticationClose = pendingClose.observe(
+          'NATIVE_CLOSE_PENDING_AUTH_TERMINAL',
+          Promise.resolve().then(() => state.auth?.close())
+        );
+        const originalAuthenticationEntry = pendingClose.observe(
+          'NATIVE_CLOSE_PENDING_AUTH_ENTRY',
+          Promise.resolve().then(() => state.auth?.prepareClose())
         );
         const originalBrowserStop = joinOriginalProxyAuthenticationStop(
           originalAuthenticationEntry,
@@ -643,7 +652,7 @@ export async function launchDarwinSupervisorBrowser(
               }
             }
             try {
-              await closeOriginal();
+              await pendingClose.observe('NATIVE_CLOSE_PENDING_BROWSER', closeOriginal());
             } catch (value) {
               primary ??= { value };
               try {
@@ -657,12 +666,18 @@ export async function launchDarwinSupervisorBrowser(
         );
         const results = await Promise.allSettled([
           originalBrowserStop,
-          Promise.resolve().then(() => proxy?.close()),
+          pendingClose.observe(
+            'NATIVE_CLOSE_PENDING_PROXY',
+            Promise.resolve().then(() => proxy?.close())
+          ),
           originalAuthenticationClose,
           // Closing the bridge closes SDK too: it must not race an unentered Browser.close.
           Promise.resolve().then(async () => {
             await Promise.allSettled([originalBrowserStop]);
-            await state.chromeAuth?.close();
+            await pendingClose.observe(
+              'NATIVE_CLOSE_PENDING_CHROME_AUTH',
+              Promise.resolve(state.chromeAuth?.close())
+            );
           }),
         ]);
         for (const result of results)
@@ -676,7 +691,7 @@ export async function launchDarwinSupervisorBrowser(
             );
         if (results.some((result) => result.status === 'rejected')) uncertain('NATIVE_STOP_JOIN');
         const originalBrowserStopResult = results[0]!;
-        const returned = await child.returned();
+        const returned = await pendingClose.observe('NATIVE_CLOSE_PENDING_CHILD', child.returned());
         // The actual original child capability is checked before the private event producer.
         // Reserve its promise before entering the captured receiver; join independently below.
         let originalReturnedAccepted = false;
@@ -693,6 +708,7 @@ export async function launchDarwinSupervisorBrowser(
           );
         let statuses: { status: 'alive' | 'dead' | 'unknown' }[] = [];
         const nativeEnd = performance.now() + 2000;
+        const goneSettled = pendingClose.enter('NATIVE_CLOSE_PENDING_GONE');
         try {
           do {
             statuses = await Promise.all(
@@ -703,22 +719,30 @@ export async function launchDarwinSupervisorBrowser(
           } while (performance.now() < nativeEnd);
         } catch {
           uncertain('NATIVE_GONE_QUERY');
+        } finally {
+          goneSettled();
         }
         try {
-          await closeBrowserAndDownloads(browser, state.downloads);
+          await pendingClose.observe(
+            'NATIVE_CLOSE_PENDING_DOWNLOADS',
+            closeBrowserAndDownloads(browser, state.downloads)
+          );
         } catch {
           uncertain('NATIVE_DOWNLOAD_CLOSE');
         }
         let qualifiedSDKRetirement: Readonly<{ reason: unknown }> | undefined;
         try {
-          const results = await Promise.allSettled([
-            state.sdkWire!.close(),
-            state.authWire?.close(),
-            state.chromeBarrier?.close(),
-            state.identityOwner?.close(),
-            ...state.reconciliationOriginals,
-            ...[...state.reconciliationCloses].map((close) => Promise.resolve().then(close)),
-          ]);
+          const results = await pendingClose.observe(
+            'NATIVE_CLOSE_PENDING_WIRES',
+            Promise.allSettled([
+              state.sdkWire!.close(),
+              state.authWire?.close(),
+              state.chromeBarrier?.close(),
+              state.identityOwner?.close(),
+              ...state.reconciliationOriginals,
+              ...[...state.reconciliationCloses].map((close) => Promise.resolve().then(close)),
+            ])
+          );
           const qualifiedRetirement = classifyOriginalWireRetirement({
             wire: state.sdkWire!,
             result: results[0]!,
@@ -754,7 +778,7 @@ export async function launchDarwinSupervisorBrowser(
           uncertain('NATIVE_WIRE_JOIN_THROW');
         }
         try {
-          await rootReturnForward;
+          await pendingClose.observe('NATIVE_CLOSE_PENDING_ROOT_FORWARD', rootReturnForward);
         } catch {
           uncertain('NATIVE_ROOT_FORWARD');
         }
@@ -779,6 +803,7 @@ export async function launchDarwinSupervisorBrowser(
       state.cleanup = original; // The deadline never relinquishes the actual originals or operation.
       closing = waitWithin(original, 5000).catch(() => {
         uncertain('NATIVE_CLOSE_WAIT');
+        pendingClose.emit();
         closeDiagnostic.emit();
         return false;
       });

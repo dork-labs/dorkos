@@ -731,6 +731,7 @@ export function ManagedBrowserWorkspace(props: ManagedBrowserWorkspaceProps) {
       {message ? <p role="alert">{message}</p> : null}
       <ManagedBrowserSessions
         owner={cacheOwner}
+        selected={selected?.binding}
         onSelect={selectInstance}
         selectionDisabled={!renderedReady}
         disabled={pending || lossSignal.aborted}
