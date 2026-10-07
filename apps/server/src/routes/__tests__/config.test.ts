@@ -1671,6 +1671,27 @@ describe('GET /api/config', () => {
   // shipped OFF and absent from this DTO is a flag nobody can reach without
   // hand-editing `~/.dork/config.json`, which is exactly what happened to
   // `runtimes.claudeCode.persistentSession`.
+  // Spec `official-community-space` D4: the app offers the official space only when a usable
+  // link is configured. Fails if the block is dropped, or passes an unusable link on.
+  describe('officialSpace', () => {
+    it('is null while no link is configured, and while the link is unusable', async () => {
+      const { configManager } = await import('../../services/core/config-manager.js');
+      configManager.set('spaces', { enabled: false, official: { url: '' } });
+      expect((await request(server).get('/api/config').expect(200)).body.officialSpace).toBeNull();
+      configManager.set('spaces', { enabled: false, official: { url: 'http://plain.example' } });
+      expect((await request(server).get('/api/config').expect(200)).body.officialSpace).toBeNull();
+    });
+
+    it('carries a usable link', async () => {
+      const { configManager } = await import('../../services/core/config-manager.js');
+      const url = 'https://space.example/c/11111111-1111-4111-8111-111111111111';
+      configManager.set('spaces', { enabled: false, official: { url } });
+      const res = await request(server).get('/api/config').expect(200);
+      expect(res.body.officialSpace).toEqual({ url });
+      configManager.set('spaces', { enabled: false, official: { url: '' } });
+    });
+  });
+
   describe('experiments', () => {
     const ORIGINAL_A2A = process.env.DORKOS_A2A_ENABLED;
 

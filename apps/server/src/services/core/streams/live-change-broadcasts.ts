@@ -75,7 +75,17 @@ export interface CommunityConnectionsSource {
    * every change it made. The changes name owners and refs, and this wiring
    * passes neither on. Returns an unsubscribe.
    */
-  onChange(listener: (changes: readonly { ownerKey: string }[]) => void): () => void;
+  onChange(listener: (changes: readonly CommunityConnectionChangeView[]) => void): () => void;
+}
+
+/** What one connection change says about where it points: enough to tell the official space. */
+export interface CommunityConnectionChangeView {
+  /** The local owner whose list changed. */
+  ownerKey: string;
+  /** The origin the connection is pinned to. */
+  pinnedOrigin: string;
+  /** The community id discovery returned at pairing. */
+  remoteCommunityId: string;
 }
 
 /** The narrow slice of the global fan-out this wiring needs. */
@@ -99,6 +109,13 @@ export interface LiveChangeBroadcastDeps {
   configManager: ConfigChangeSource;
   /** The Community connection store whose changes become `community_connections_changed`. */
   communityConnections: CommunityConnectionsSource;
+  /**
+   * Whether a window may hear about this connection's change right now: every one while the
+   * spaces experiment is on, and only the official space's while it is off (spec
+   * `official-community-space` D5), so the stream carries no other space. Every change is
+   * announced when it is not given.
+   */
+  connectionVisible?: (change: CommunityConnectionChangeView) => boolean;
   /** Where every event is written. */
   eventFanOut: BroadcastSink;
   /** The clock, for the `changedAt` stamp. Overridden only by tests. */
@@ -231,8 +248,10 @@ export function wireLiveChangeBroadcasts(deps: LiveChangeBroadcastDeps): void {
     eventFanOut.broadcast('config_changed', event, operatorAudience);
   });
 
-  communityConnections.onChange(() => {
-    // The change is not read: the owner and ref it names must not reach a
+  communityConnections.onChange((changes) => {
+    // A write that touched only spaces the windows cannot see right now says nothing.
+    if (deps.connectionVisible && !changes.some(deps.connectionVisible)) return;
+    // The change is not otherwise read: the owner and ref it names must not reach a
     // stream that cannot tell one owner's windows from another's.
     const event: CommunityConnectionsChangedEvent = { changedAt: now() };
     eventFanOut.broadcast('community_connections_changed', event, operatorAudience);

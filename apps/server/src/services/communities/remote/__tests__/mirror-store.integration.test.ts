@@ -329,6 +329,60 @@ describe('RemoteMirrorStore', () => {
     expect(harness.runner.turns).toHaveLength(1);
   });
 
+  // Spec `official-community-space` D5: the bridge asks `spaceReachable(ref)`, not the
+  // experiment alone. Fails if the predicate stops receiving the ref (both spaces would answer
+  // alike) or stops being asked (the other space would wake an agent).
+  it('wakes a local agent from the official space alone while spaces are off', async () => {
+    const agents = agentLookupFor({ '/agents/ana': { name: 'Ana', responseMode: 'always' } });
+    const { harness, mirrors } = wired(agents);
+    const agent = harness.authors.resolveAgent('/agents/ana', 'Ana');
+    const enrollments = new CommunityAgentEnrollmentStore(harness.db);
+    for (const communityRef of [REF_A, REF_B])
+      enrollments.activate({
+        communityRef,
+        localAgentId: 'local-ana',
+        remoteMemberId: 'remote-ana',
+        ownerAuthorId: harness.human,
+      });
+    const asked: CommunityRef[] = [];
+    const bridge = new RemoteRoomSubscriptionBridge(
+      mirrors,
+      harness.service,
+      enrollments,
+      (localAgentId) => (localAgentId === 'local-ana' ? agent.id : null),
+      () => Date.parse('2026-09-16T01:00:00.000Z'),
+      undefined,
+      undefined,
+      (ref) => {
+        asked.push(ref);
+        return ref === REF_A;
+      }
+    );
+    const opts = { reconnect: false, wasActiveBeforeDisconnect: false, readOnly: false };
+    const live = (ref: CommunityRef, seq: number) => {
+      const entry = nativeEntry(ref, 'general', seq);
+      return {
+        ...entry,
+        entry: { ...entry.entry, mentions: ['remote-ana'] },
+        author: { ...entry.author, kind: 'human' as const },
+        serverCreatedAt: '2026-09-16T01:00:00.000Z',
+      };
+    };
+    const roomIn = (ref: CommunityRef) => ({
+      ...roomInput(ref, 'general', harness.human),
+      accessors: [{ authorId: agent.id, responseMode: 'always' as const }],
+    });
+
+    bridge.importLive(roomIn(REF_B), live(REF_B, 1), opts);
+    await harness.service.triggersIdle();
+    expect(harness.runner.turns).toHaveLength(0);
+
+    bridge.importLive(roomIn(REF_A), live(REF_A, 1), opts);
+    await harness.service.triggersIdle();
+    expect(harness.runner.turns).toHaveLength(1);
+    expect(asked).toEqual([REF_B, REF_A]);
+  });
+
   it('does not refresh a stale owner mirror from a live frame before dispatching it', async () => {
     const agents = agentLookupFor({ '/agents/ana': { name: 'Ana', responseMode: 'always' } });
     const { harness, mirrors } = wired(agents);

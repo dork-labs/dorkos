@@ -269,6 +269,9 @@ export class RemoteCommunityPairingService {
    *   arrived, read just before a deleted or taken-down community's copy is purged (DOR-2575).
    * @param installationAgents - The agents this installation added to one community, which
    *   disconnecting removes there first (DOR-2603).
+   * @param noteDiscovery - Told what discovery found for the link a pairing starts from, before
+   *   the pending connection is written, so the official space can be recognised by a short-name
+   *   or origin-only link (spec `official-community-space` D4).
    */
   constructor(
     private readonly store: RemoteConnectionStore,
@@ -282,7 +285,12 @@ export class RemoteCommunityPairingService {
     ) => void,
     timing: Partial<RemoteAccessTiming> = {},
     private readonly countUndelivered?: (communityRef: CommunityRef, ownerKey: string) => number,
-    private readonly installationAgents?: RemoteInstallationAgentsReader
+    private readonly installationAgents?: RemoteInstallationAgentsReader,
+    private readonly noteDiscovery?: (
+      url: string,
+      origin: string,
+      communityId: string
+    ) => Promise<void>
   ) {
     this.timing = {
       budgetMs: COMMUNITY_ACCESS_BUDGET_MS,
@@ -679,6 +687,7 @@ export class RemoteCommunityPairingService {
     const expiry = Date.parse(start.expiresAt);
     if (expiry <= Date.now() || expiry > Date.now() + 10 * 60_000 + 5_000)
       throw new PinnedOriginError('REMOTE_RESPONSE');
+    await this.noteDiscovery?.(url, target.origin.origin, community.id);
     const ref = CommunityRefSchema.parse(`remote_${randomUUID().replaceAll('-', '')}`);
     const connection = await this.store.addPending(
       {

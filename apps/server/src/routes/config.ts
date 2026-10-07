@@ -27,6 +27,8 @@ import {
   USER_PROFILE_DEFAULTS,
 } from '@dorkos/shared/config-schema';
 import { describeExperiments } from '../services/core/config/describe-experiments.js';
+import { officialSpaceUrl } from '../services/communities/spaces-config.js';
+import { usableOfficialLink } from '../services/communities/official-space.js';
 import { deepMerge, sanitizedConfigSnapshot } from '../services/core/operator/config-patch.js';
 import {
   applyGuardedConfigWrite,
@@ -374,6 +376,13 @@ router.get('/', async (req, res) => {
     // nothing above listed it. Anything registered as an experiment is listed
     // here automatically, so the next flag cannot go missing the same way.
     experiments: describeExperiments(),
+    // The official space's link, already resolved against its env override and
+    // checked, so the app offers it only when it can be joined (spec
+    // `official-community-space` D4). `null` keeps every prompt hidden.
+    officialSpace: (() => {
+      const url = usableOfficialLink(officialSpaceUrl());
+      return url ? { url } : null;
+    })(),
   });
 });
 

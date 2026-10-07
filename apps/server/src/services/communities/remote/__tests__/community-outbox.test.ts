@@ -970,3 +970,79 @@ describe('community outbox', () => {
     expect(outbox.due(new Date(NOW + 400_000).toISOString())).toEqual([]);
   });
 });
+
+// Spec `official-community-space` D5: while spaces are off, a space other than the official one
+// is closed to agents here. Each case fails if its guard is dropped.
+describe('a space that cannot be reached right now', () => {
+  it('holds a waiting post untouched, and sends it once the space can be reached', async () => {
+    const harness = createRoomHarness({ agents: agentLookupFor({}) });
+    const outbox = new CommunityOutboxStore(harness.db);
+    const item = outboxItem({ ownerAuthorId: harness.human });
+    harness.db.transaction((tx) => outbox.enqueue(item, tx));
+    let reachable = false;
+    const canDeliver = vi.fn(() => true);
+    const deliver = vi.fn(async () => ({ kind: 'confirmed' as const, remoteEntryId: 'r-1' }));
+    const worker = new CommunityOutboxWorker(
+      outbox,
+      { canDeliver, held: () => !reachable },
+      { deliver },
+      () => NOW
+    );
+
+    await worker.runOnce();
+    expect(canDeliver).not.toHaveBeenCalled();
+    expect(deliver).not.toHaveBeenCalled();
+    expect(outbox.isPending(item.id)).toBe(true);
+
+    reachable = true;
+    await worker.runOnce();
+    expect(deliver).toHaveBeenCalledOnce();
+  });
+
+  it('reads as closed to room tools, and refuses an agent’s post into it', () => {
+    let reachable = false;
+    const harness = createRoomHarness({
+      agents: agentLookupFor({ '/agents/a': { name: 'Agent A' } }),
+    });
+    const agent = harness.authors.resolveAgent('/agents/a', 'Agent A');
+    const runtime = new CommunityOutboxRuntime({
+      db: harness.db,
+      roomStore: harness.store,
+      authors: harness.authors,
+      attachmentRows: {} as never,
+      attachmentBytes: {} as never,
+      adapters: () => ({}) as never,
+      isLocalAgentCurrent: () => true,
+      now: () => NOW,
+      reachable: (ref) => reachable && ref === REF,
+    });
+    const room = runtime.mirrors.ensureRoom({
+      communityRef: REF,
+      remoteRoomId: 'general',
+      title: 'General',
+      topic: null,
+      ownerAuthorId: harness.human,
+      accessors: [{ authorId: agent.id, responseMode: 'always' }],
+      authorizedAt: new Date(NOW).toISOString(),
+    });
+    runtime.enrollments.activate({
+      communityRef: REF,
+      localAgentId: agent.mintedForManifestId!,
+      remoteMemberId: 'remote-a',
+      ownerAuthorId: harness.human,
+    });
+    const access = runtime.mirrorAccess;
+    const post = () =>
+      runtime.mirrorWrites.prepare(room, agent.id, { parentEntryId: null, attachmentIds: [] });
+
+    expect(access.canRead(room.id, agent.id)).toBe(false);
+    expect(access.isMirror(room.id)).toBe(true);
+    expect(post).toThrow(RoomError);
+
+    reachable = true;
+    expect(access.canRead(room.id, agent.id)).toBe(true);
+    expect(post()).not.toBeNull();
+    // An ordinary room is not a mirror, so reachability never touches it.
+    expect(access.canRead('not-a-mirror', agent.id)).toBeNull();
+  });
+});

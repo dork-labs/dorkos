@@ -34,6 +34,11 @@ function memoryCredentials(): CredentialStore {
 }
 
 const OWNER = 'owner-author-a';
+/**
+ * Where every row here points. A change carries it so a listener can tell the official space
+ * from the rest without reading the store (spec `official-community-space` D5).
+ */
+const PLACE = { pinnedOrigin: 'https://community.example', remoteCommunityId: 'community-1' };
 const ACCESS = {
   state: 'verified' as const,
   effective: { read: true, post: true, enrollAgent: true, stream: true },
@@ -98,8 +103,8 @@ describe('RemoteConnectionStore change announcements', () => {
     await connected('remote_a');
 
     expect(changes).toEqual([
-      { ownerKey: OWNER, ref: 'remote_a', status: 'pending' },
-      { ownerKey: OWNER, ref: 'remote_a', status: 'connected' },
+      { ownerKey: OWNER, ref: 'remote_a', status: 'pending', ...PLACE },
+      { ownerKey: OWNER, ref: 'remote_a', status: 'connected', ...PLACE },
     ]);
   });
 
@@ -111,7 +116,7 @@ describe('RemoteConnectionStore change announcements', () => {
     // A second refusal (another route, a stream, a list) changes nothing.
     await store.requireReconnect(ref, OWNER);
 
-    expect(changes).toEqual([{ ownerKey: OWNER, ref, status: 'reconnect-required' }]);
+    expect(changes).toEqual([{ ownerKey: OWNER, ref, status: 'reconnect-required', ...PLACE }]);
   });
 
   it('announces a disconnect as a removed row', async () => {
@@ -120,7 +125,7 @@ describe('RemoteConnectionStore change announcements', () => {
 
     await store.disconnect(ref, OWNER);
 
-    expect(changes).toEqual([{ ownerKey: OWNER, ref, status: 'removed' }]);
+    expect(changes).toEqual([{ ownerKey: OWNER, ref, status: 'removed', ...PLACE }]);
   });
 
   it('announces expired pending rows swept from the list', async () => {
@@ -131,7 +136,7 @@ describe('RemoteConnectionStore change announcements', () => {
     // Nothing left to sweep: nothing to announce.
     await store.sweepExpired(OWNER);
 
-    expect(changes).toEqual([{ ownerKey: OWNER, ref, status: 'removed' }]);
+    expect(changes).toEqual([{ ownerKey: OWNER, ref, status: 'removed', ...PLACE }]);
   });
 
   it('announces a sweep of several expired rows as ONE write, not one per row', async () => {
@@ -150,7 +155,9 @@ describe('RemoteConnectionStore change announcements', () => {
     await store.sweepExpired(OWNER);
 
     expect(writes).toBe(1);
-    expect(changes).toEqual(refs.map((ref) => ({ ownerKey: OWNER, ref, status: 'removed' })));
+    expect(changes).toEqual(
+      refs.map((ref) => ({ ownerKey: OWNER, ref, status: 'removed', ...PLACE }))
+    );
   });
 
   it('does not announce an access re-verification, which every list read performs', async () => {
@@ -197,8 +204,8 @@ describe('RemoteConnectionStore change announcements', () => {
     await connected('remote_b', 'owner-author-b');
 
     expect(changes.filter((change) => change.status === 'connected')).toEqual([
-      { ownerKey: 'owner-author-a', ref: 'remote_a', status: 'connected' },
-      { ownerKey: 'owner-author-b', ref: 'remote_b', status: 'connected' },
+      { ownerKey: 'owner-author-a', ref: 'remote_a', status: 'connected', ...PLACE },
+      { ownerKey: 'owner-author-b', ref: 'remote_b', status: 'connected', ...PLACE },
     ]);
   });
 
@@ -210,7 +217,7 @@ describe('RemoteConnectionStore change announcements', () => {
 
     await expect(store.disconnect(ref, OWNER)).resolves.toBeUndefined();
     expect(await store.list(OWNER)).toEqual([]);
-    expect(changes.at(-1)).toEqual({ ownerKey: OWNER, ref, status: 'removed' });
+    expect(changes.at(-1)).toEqual({ ownerKey: OWNER, ref, status: 'removed', ...PLACE });
   });
 
   it('stops announcing to a listener that unsubscribed', async () => {

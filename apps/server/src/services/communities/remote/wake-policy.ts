@@ -12,7 +12,11 @@
  */
 import type { CommunityRef } from '@dorkos/shared/community-adapter';
 import { logger } from '../../../lib/logger.js';
-import type { RemoteConnectionStore, WakeAgentsFrom } from './connection-store.js';
+import {
+  DEFAULT_WAKE_AGENTS_FROM,
+  type RemoteConnectionStore,
+  type WakeAgentsFrom,
+} from './connection-store.js';
 
 /** The question the live stream bridge asks before a space message may start a turn. */
 export interface RemoteWakeGate {
@@ -27,7 +31,8 @@ export interface RemoteWakeGate {
 }
 
 interface Entry {
-  from: WakeAgentsFrom;
+  /** The owner's choice, or `null` when the default applies. */
+  chosen: WakeAgentsFrom | null;
   ownerMemberId: string | null;
 }
 
@@ -45,10 +50,15 @@ export class RemoteWakePolicy implements RemoteWakeGate {
    * @param retryDelaysMs - How long to wait before each further attempt when a read fails and
    *   the gate has no answer yet. Bounded: past the last one the gate keeps waking nobody until
    *   the next connection change reads again.
+   * @param defaultFor - Who may wake agents on a connection whose owner never chose, asked on
+   *   every message so a change of the official space's link applies at once (narrower for the
+   *   official space, spec `official-community-space` D9).
    */
   constructor(
     private readonly store: RemoteConnectionStore,
-    private readonly retryDelaysMs: readonly number[] = [250, 1_000, 5_000]
+    private readonly retryDelaysMs: readonly number[] = [250, 1_000, 5_000],
+    private readonly defaultFor: (ref: CommunityRef) => WakeAgentsFrom = () =>
+      DEFAULT_WAKE_AGENTS_FROM
   ) {
     store.onChange(() => {
       void this.reload();
@@ -72,7 +82,7 @@ export class RemoteWakePolicy implements RemoteWakeGate {
           this.entries = new Map(
             settings.map((setting) => [
               key(setting.ref, setting.ownerKey),
-              { from: setting.wakeAgentsFrom, ownerMemberId: setting.connectedHumanMemberId },
+              { chosen: setting.chosen, ownerMemberId: setting.connectedHumanMemberId },
             ])
           );
         }
@@ -115,7 +125,7 @@ export class RemoteWakePolicy implements RemoteWakeGate {
     // old `members` while the owner was told it changed.
     const current = this.entries?.get(key(ref, ownerKey));
     if (current) {
-      this.entries = new Map(this.entries).set(key(ref, ownerKey), { ...current, from: value });
+      this.entries = new Map(this.entries).set(key(ref, ownerKey), { ...current, chosen: value });
     }
     await this.reload();
   }
@@ -124,7 +134,7 @@ export class RemoteWakePolicy implements RemoteWakeGate {
   wakes(communityRef: CommunityRef, ownerAuthorId: string, authorMemberId: string): boolean {
     const entry = this.entries?.get(key(communityRef, ownerAuthorId));
     if (!entry) return false;
-    if (entry.from === 'members') return true;
+    if ((entry.chosen ?? this.defaultFor(communityRef)) === 'members') return true;
     return entry.ownerMemberId !== null && entry.ownerMemberId === authorMemberId;
   }
 }

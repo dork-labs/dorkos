@@ -4,6 +4,7 @@
  * @module services/communities/remote/community-outbox-runtime
  */
 import type { Db } from '@dorkos/db';
+import type { CommunityRef } from '@dorkos/shared/community-adapter';
 import type { AttachmentRowStore } from '../../rooms/attachments/attachment-row-store.js';
 import type { RoomAttachmentStore } from '../../rooms/attachments/room-attachment-store.js';
 import type { AuthorRegistry } from '../../rooms/author-registry.js';
@@ -40,6 +41,13 @@ export interface CommunityOutboxRuntimeDeps {
   now?: () => number;
   /** Told which mirrors a revocation emptied, so search and file storage can follow. */
   mirrorPurged?: (purge: MirrorPurge) => void;
+  /**
+   * `spaceReachable(ref)` (spec `official-community-space` D5). While spaces are off, a space
+   * other than the official one is closed to agents here: its channels cannot be read or posted
+   * to through room tools, and its waiting posts are held rather than sent. Halting and removal
+   * still work. Every space is reachable when not given.
+   */
+  reachable?: (communityRef: CommunityRef) => boolean;
 }
 
 /**
@@ -60,12 +68,14 @@ export class CommunityOutboxRuntime {
   private readonly isLocalAgentCurrent: (localAgentId: string) => boolean | Promise<boolean>;
   private readonly worker: CommunityOutboxWorker;
   private readonly runner: CommunityOutboxRunner;
+  private readonly reachable: (communityRef: CommunityRef) => boolean;
 
   constructor(deps: CommunityOutboxRuntimeDeps) {
     const now = deps.now ?? (() => Date.now());
     this.authors = deps.authors;
     this.changes = deps.changes;
     this.isLocalAgentCurrent = deps.isLocalAgentCurrent;
+    this.reachable = deps.reachable ?? (() => true);
     this.mirrors = new RemoteMirrorStore(deps.db, deps.roomStore, deps.authors, deps.mirrorPurged);
     this.enrollments = new CommunityAgentEnrollmentStore(deps.db);
     this.outbox = new CommunityOutboxStore(deps.db);
@@ -74,7 +84,8 @@ export class CommunityOutboxRuntime {
       this.enrollments,
       deps.authors,
       this.outbox,
-      now
+      now,
+      this.reachable
     );
     const delivery = new CommunityAdapterOutboxDelivery(
       deps.adapters,
@@ -88,6 +99,7 @@ export class CommunityOutboxRuntime {
     this.worker = new CommunityOutboxWorker(
       this.outbox,
       {
+        held: (item) => !this.reachable(item.communityRef),
         canDeliver: async (item) => {
           const localRoomId = this.mirrors.localRoomIdForOwner(
             item.communityRef,
@@ -129,9 +141,27 @@ export class CommunityOutboxRuntime {
     this.runner = new CommunityOutboxRunner(this.worker);
   }
 
-  /** Access control handed to the one existing RoomService at bootstrap. */
+  /**
+   * Access control handed to the one existing RoomService at bootstrap. A mirror of a space that
+   * cannot be reached right now reads as closed to everyone, so no room read or room tool reaches
+   * its history while spaces are off; the stores underneath, and the stop paths that use them
+   * directly, are untouched.
+   */
   get mirrorAccess(): RoomMirrorAccess {
-    return this.mirrors;
+    const mirrors = this.mirrors;
+    const reachable = this.reachable;
+    return {
+      canRead(roomId, authorId) {
+        const answer = mirrors.canRead(roomId, authorId);
+        if (answer !== true) return answer;
+        const address = mirrors.outboundAddress(roomId);
+        return address === null || reachable(address.communityRef);
+      },
+      hasMirrors: () => mirrors.hasMirrors(),
+      isRevokedMirrorOf: (roomId, ownerAuthorId) =>
+        mirrors.isRevokedMirrorOf(roomId, ownerAuthorId),
+      isMirror: (roomId) => mirrors.isMirror(roomId),
+    };
   }
 
   /** Start recovery of rows left pending by a prior process before serving new work. */

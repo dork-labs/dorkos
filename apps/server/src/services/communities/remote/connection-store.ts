@@ -77,8 +77,26 @@ export type RemoteConnectionDescriptor = CommunityConnectionDescriptor;
  */
 export type WakeAgentsFrom = 'me' | 'members';
 
-/** What a connection's wake setting is when nobody chose one: today's behaviour. */
+/**
+ * What a connection's wake setting is when nobody chose one: today's behaviour. The official
+ * space's connection is the exception, narrowed to {@link OFFICIAL_WAKE_AGENTS_FROM}.
+ */
 export const DEFAULT_WAKE_AGENTS_FROM: WakeAgentsFrom = 'members';
+
+/**
+ * The official space's default (spec `official-community-space` D9): only the owner's own
+ * mention wakes their agents there, since anyone using DorkOS can post in it.
+ */
+export const OFFICIAL_WAKE_AGENTS_FROM: WakeAgentsFrom = 'me';
+
+/**
+ * Whether a connection points at the official space, judged against the link configured now.
+ * Never stored: a connection keeps only its pinned origin and community id.
+ */
+export type OfficialConnectionPredicate = (place: {
+  pinnedOrigin: string;
+  remoteCommunityId: string;
+}) => boolean;
 
 /** One connection's wake setting beside the owner's own member id in that space. */
 export interface ConnectionWakeSetting {
@@ -88,8 +106,10 @@ export interface ConnectionWakeSetting {
   ownerKey: string;
   /** The owner's own member id in the space, or `null` before pairing completes. */
   connectedHumanMemberId: string | null;
-  /** Who may wake this owner's agents there. */
+  /** Who may wake this owner's agents there: the owner's choice, or the default. */
   wakeAgentsFrom: WakeAgentsFrom;
+  /** What the owner chose, or `null` when they never did and the default applies. */
+  chosen: WakeAgentsFrom | null;
 }
 
 /** A local ref that is absent or belongs to another local owner. */
@@ -124,6 +144,10 @@ export interface RemoteConnectionChange {
   ref: CommunityRef;
   /** Where the connection is now. */
   status: ConnectionRecord['status'] | 'removed';
+  /** The origin the connection is pinned to, so a listener can tell the official one. */
+  pinnedOrigin: string;
+  /** The community id discovery returned at pairing. */
+  remoteCommunityId: string;
 }
 
 /**
@@ -131,6 +155,20 @@ export interface RemoteConnectionChange {
  * committed write, with every change that write made (never empty).
  */
 export type RemoteConnectionChangeListener = (changes: readonly RemoteConnectionChange[]) => void;
+
+/** One {@link RemoteConnectionChange}, from the record the write touched. */
+function change(
+  record: ConnectionRecord,
+  status: RemoteConnectionChange['status']
+): RemoteConnectionChange {
+  return {
+    ownerKey: record.ownerKey,
+    ref: record.ref,
+    status,
+    pinnedOrigin: record.pinnedOrigin,
+    remoteCommunityId: record.remoteCommunityId,
+  };
+}
 
 const noEffectiveAccess = { read: false, post: false, enrollAgent: false, stream: false } as const;
 
@@ -216,10 +254,13 @@ export class RemoteConnectionStore {
    *
    * @param dorkHome - The resolved local DorkOS data directory.
    * @param credentials - Protected store, injected in tests or built from dorkHome.
+   * @param isOfficial - Whether a connection is the official space's, asked on every read
+   *   (spec `official-community-space` D4). None is, unless one is given.
    */
   constructor(
     dorkHome: string,
-    credentials: CredentialStore = new EncryptedFileCredentialStore(dorkHome)
+    credentials: CredentialStore = new EncryptedFileCredentialStore(dorkHome),
+    private readonly isOfficial: OfficialConnectionPredicate = () => false
   ) {
     this.directory = path.join(dorkHome, 'communities', 'remote');
     this.file = path.join(this.directory, 'connections.json');
@@ -246,9 +287,30 @@ export class RemoteConnectionStore {
     }
   }
 
+  /**
+   * Every owner's connection with the place it points at, for the in-memory official-space
+   * answer the live stream reads.
+   */
+  async places(): Promise<
+    { ref: CommunityRef; pinnedOrigin: string; remoteCommunityId: string }[]
+  > {
+    return (await this.read()).map(({ ref, pinnedOrigin, remoteCommunityId }) => ({
+      ref,
+      pinnedOrigin,
+      remoteCommunityId,
+    }));
+  }
+
+  /** The wake default for one connection: narrower for the official space. */
+  private defaultWake(record: ConnectionRecord): WakeAgentsFrom {
+    return this.isOfficial(record) ? OFFICIAL_WAKE_AGENTS_FROM : DEFAULT_WAKE_AGENTS_FROM;
+  }
+
   /** List only this locally authenticated owner's connections. */
   async list(ownerKey: string): Promise<RemoteConnectionDescriptor[]> {
-    return (await this.read()).filter((record) => record.ownerKey === ownerKey).map(this.project);
+    return (await this.read())
+      .filter((record) => record.ownerKey === ownerKey)
+      .map((record) => this.project(record));
   }
 
   /**
@@ -334,12 +396,13 @@ export class RemoteConnectionStore {
   }
 
   /**
-   * Who in this space may wake the owner's agents; {@link DEFAULT_WAKE_AGENTS_FROM} when
-   * nobody chose. Throws {@link RemoteConnectionNotFoundError} for another owner's connection.
+   * Who in this space may wake the owner's agents; when nobody chose, {@link
+   * DEFAULT_WAKE_AGENTS_FROM}, or {@link OFFICIAL_WAKE_AGENTS_FROM} for the official space.
+   * Throws {@link RemoteConnectionNotFoundError} for another owner's connection.
    */
   async wakeAgentsFrom(ref: CommunityRef, ownerKey: string): Promise<WakeAgentsFrom> {
-    await this.get(ref, ownerKey);
-    return (await this.readSide('wake'))[`${ownerKey}\0${ref}`] ?? DEFAULT_WAKE_AGENTS_FROM;
+    const record = await this.get(ref, ownerKey);
+    return (await this.readSide('wake'))[`${ownerKey}\0${ref}`] ?? this.defaultWake(record);
   }
 
   /**
@@ -362,12 +425,16 @@ export class RemoteConnectionStore {
   /** Every owner's connection with its wake setting, for the in-memory gate a live stream reads. */
   async wakeSettings(): Promise<ConnectionWakeSetting[]> {
     const [records, wake] = await Promise.all([this.read(), this.readSide('wake')]);
-    return records.map((record) => ({
-      ref: record.ref,
-      ownerKey: record.ownerKey,
-      connectedHumanMemberId: record.connectedHumanMemberId,
-      wakeAgentsFrom: wake[`${record.ownerKey}\0${record.ref}`] ?? DEFAULT_WAKE_AGENTS_FROM,
-    }));
+    return records.map((record) => {
+      const chosen = wake[`${record.ownerKey}\0${record.ref}`] ?? null;
+      return {
+        ref: record.ref,
+        ownerKey: record.ownerKey,
+        connectedHumanMemberId: record.connectedHumanMemberId,
+        wakeAgentsFrom: chosen ?? this.defaultWake(record),
+        chosen,
+      };
+    });
   }
 
   /**
@@ -437,9 +504,7 @@ export class RemoteConnectionStore {
         await this.credentials.delete(`community:${record.ref}:pairing`);
       const refs = new Set(expired.map((record) => record.ref));
       await this.write(records.filter((record) => !refs.has(record.ref)));
-      this.announce(
-        expired.map((record) => ({ ownerKey, ref: record.ref, status: 'removed' as const }))
-      );
+      this.announce(expired.map((record) => change(record, 'removed')));
     });
   }
 
@@ -452,7 +517,10 @@ export class RemoteConnectionStore {
     return record;
   }
 
-  /** Public projection, never containing an owner key, verifier, code or token. */
+  /**
+   * Public projection, never containing an owner key, verifier, code or token. `official` is
+   * worked out here, against the link configured now, and never read from the record.
+   */
   project(record: ConnectionRecord): RemoteConnectionDescriptor {
     const {
       ref,
@@ -477,6 +545,7 @@ export class RemoteConnectionStore {
       ...(status === 'connected' && record.access?.state === 'verified' && record.hostOperator
         ? { hostOperator: true }
         : {}),
+      ...(this.isOfficial(record) ? { official: true } : {}),
       attention:
         status === 'pending'
           ? null
@@ -507,7 +576,7 @@ export class RemoteConnectionStore {
         await this.credentials.delete(name);
         throw error;
       }
-      this.announce([{ ownerKey: record.ownerKey, ref: record.ref, status: 'pending' }]);
+      this.announce([change(record, 'pending')]);
       return this.project(record);
     });
   }
@@ -556,7 +625,7 @@ export class RemoteConnectionStore {
         throw error;
       }
       await this.credentials.delete(`community:${ref}:pairing`);
-      this.announce([{ ownerKey, ref, status: 'connected' }]);
+      this.announce([change(updated, 'connected')]);
       return this.project(updated);
     });
   }
@@ -636,7 +705,7 @@ export class RemoteConnectionStore {
         // Announced once, on the transition. The credentials below are still
         // being deleted, but every read already fails closed on the status
         // just written, so a window that re-lists now sees the truth.
-        this.announce([{ ownerKey, ref, status: 'reconnect-required' }]);
+        this.announce([change(record, 'reconnect-required')]);
       }
       await this.credentials.delete(`community:${ref}:personal`);
       for (const agentId of record.agentIds)
@@ -713,7 +782,7 @@ export class RemoteConnectionStore {
       const records = (await this.read()).filter((item) => item.ref !== ref);
       await this.write(records);
       await this.clearSideHeld('wake', ref, ownerKey);
-      this.announce([{ ownerKey, ref, status: 'removed' }]);
+      this.announce([change(record, 'removed')]);
       await rm(path.join(this.directory, 'cache', ref), { recursive: true, force: true });
     });
   }

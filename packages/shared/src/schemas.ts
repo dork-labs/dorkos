@@ -4859,6 +4859,10 @@ export const ServerConfigSchema = z
       })
       .optional()
       .openapi({ description: 'Cockpit UI preferences surfaced to the client' }),
+    officialSpace: z.object({ url: z.string() }).nullable().optional().openapi({
+      description:
+        'The official DorkOS space this install offers to join, even with the spaces experiment off (spec official-community-space D4). Null while no usable link is configured, which hides every official-space prompt',
+    }),
     experiments: z.array(ExperimentStateSchema).optional().openapi({
       description:
         'The staged opt-ins Settings → Experiments offers, already resolved, in the order to show them. An EMPTY array is a normal answer — it means every experiment has graduated or been withdrawn. A server that omits the block has no Experiments section at all',

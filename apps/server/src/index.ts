@@ -464,6 +464,7 @@ import {
   getRemoteConnectionStore,
   getRemotePairingService,
   getRemoteWakePolicy,
+  getOfficialSpace,
   publishRemoteCommunityDeliveryChanges,
   setRemoteCommunityDb,
   setRemoteCommunityDeliveryProjection,
@@ -550,7 +551,7 @@ import {
   sweepDepartedAgentSeats,
 } from './services/rooms/manage/departed-agents.js';
 import { registerLocalCommunity } from './services/communities/index.js';
-import { spacesEnabled } from './middleware/spaces-enabled.js';
+import { spaceReachable, spacesEnabled } from './middleware/spaces-enabled.js';
 import { SearchIndexer, selectSearchSources } from './services/search/index.js';
 import { TerminalManager, terminalUpgradeRoute } from './services/terminal/index.js';
 import { attachUpgradeRouter } from './services/core/streams/upgrade-router.js';
@@ -2007,6 +2008,7 @@ async function start() {
         // Bound below, once the sync exists: it rebuilds search and deletes files for a
         // revoked mirror whose content the store just deleted.
         mirrorPurged: (purge) => remoteRedactionSync?.afterPurge(purge),
+        reachable: spaceReachable,
       });
       return {
         mirrorAccess: remoteCommunityRuntime.mirrorAccess,
@@ -2039,7 +2041,7 @@ async function start() {
     undefined,
     remoteCommunityRuntime.outbox,
     remoteCommunityRuntime,
-    spacesEnabled
+    spaceReachable
   );
   // Who in each space may wake an agent here (spec `official-community-space` D9). Loaded
   // before the streams start below; until then the gate wakes nobody.
@@ -2659,6 +2661,15 @@ async function start() {
     } catch (err) {
       logger.warn('[Permissions] Could not record the ended standing permissions', logError(err));
     }
+    // Which space is official (spec `official-community-space` D5), before any
+    // remote work and before the server listens: until it has loaded no space
+    // is, so with spaces off nothing remote is reachable (fail closed). Loaded
+    // whatever Mesh did, since the official space's routes do not need Mesh.
+    try {
+      await getOfficialSpace().load(() => getRemoteConnectionStore().places());
+    } catch (err) {
+      logger.warn('[Communities] Could not read which space is official', logError(err));
+    }
     if (meshStartupReconciled) {
       // Before anything remote starts: no space message may be judged by a gate
       // that has not read who may wake an agent yet (it wakes nobody until then).
@@ -2885,6 +2896,8 @@ async function start() {
     meshCore,
     configManager,
     communityConnections: getRemoteConnectionStore(),
+    connectionVisible: (change) =>
+      spacesEnabled() || getOfficialSpace().isOfficialConnection(change),
     eventFanOut,
   });
 

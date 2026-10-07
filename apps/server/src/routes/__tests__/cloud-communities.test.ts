@@ -64,6 +64,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 });
 
 const { createCloudCommunitiesRouter } = await import('../cloud-communities.js');
+const { gateCloudCommunities } = await import('../../middleware/spaces-enabled.js');
 const { CommunityMoveUploads, initMoveStaging, moveStagingRoot, MOVE_STAGING_HEADROOM_BYTES } =
   await import('../../services/core/cloud/community-move-upload.js');
 
@@ -285,6 +286,25 @@ app.use('/api/cloud/communities', (req, res, next) =>
   createCloudCommunitiesRouter(uploads)(req, res, next)
 );
 const server = listeningServer(app);
+
+/**
+ * The same router behind the spaces gate, with spaces off (this file's config has no `spaces`
+ * section) and `officialOrigin` as the official space's server (spec `official-community-space`
+ * D5); `null` is no official space.
+ */
+const gated = vi.hoisted(() => ({ officialOrigin: null as string | null }));
+const gatedApp = express();
+gatedApp.use(express.json());
+gatedApp.use(
+  '/api/cloud/communities',
+  gateCloudCommunities(() => ({
+    reachable: () => false,
+    isOfficialLink: () => false,
+    origin: () => gated.officialOrigin,
+  })),
+  (req, res, next) => createCloudCommunitiesRouter(uploads)(req, res, next)
+);
+const gatedServer = listeningServer(gatedApp);
 
 /** The loopback origin the fake listens on. */
 function fakeOrigin() {
@@ -1152,5 +1172,37 @@ describe('GET /api/cloud/communities/moves/room', () => {
     await askRoom('-1').expect(400);
     await askRoom('1e30').expect(400);
     await askRoom(String(Number.MAX_SAFE_INTEGER) + '0').expect(400);
+  });
+});
+
+// Spec `official-community-space` D5. With spaces off the sign-in hint answers only about the
+// official space's server, and the rest of hosting stays off. Fails if the gate lets the full
+// list through, or refuses the official server.
+describe('GET /api/cloud/communities/sign-in with spaces off', () => {
+  it('names the official space’s server and no other', async () => {
+    gated.officialOrigin = 'https://community.example.invalid';
+    script.signIn = {
+      servers: [
+        { origin: 'https://community.example.invalid' },
+        { origin: 'https://other.example.invalid' },
+      ],
+    };
+    const res = await request(gatedServer).get('/api/cloud/communities/sign-in').expect(200);
+    expect(res.body).toEqual({ available: true, origins: ['https://community.example.invalid'] });
+  });
+
+  it('offers nothing when the account does not sign in on the official space’s server', async () => {
+    gated.officialOrigin = 'https://official.example.invalid';
+    const res = await request(gatedServer).get('/api/cloud/communities/sign-in').expect(200);
+    expect(res.body).toEqual({ available: false });
+  });
+
+  it('refuses while there is no official space, and refuses hosting either way', async () => {
+    gated.officialOrigin = null;
+    const none = await request(gatedServer).get('/api/cloud/communities/sign-in').expect(404);
+    expect(none.body.code).toBe('SPACES_DISABLED');
+    gated.officialOrigin = 'https://community.example.invalid';
+    const hosted = await request(gatedServer).get('/api/cloud/communities').expect(404);
+    expect(hosted.body.code).toBe('SPACES_DISABLED');
   });
 });

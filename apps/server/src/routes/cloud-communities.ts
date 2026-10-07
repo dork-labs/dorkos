@@ -72,6 +72,7 @@ import {
 import { isCloudLinked, problemOf } from '../services/core/cloud/v1-client.js';
 import { logger, logError } from '../lib/logger.js';
 import { refuseEnvelopeUnlessOwner, type AccountOwnerWording } from './cloud-owner-bar.js';
+import { officialOnly, officialOnlyOrigin } from '../middleware/spaces-enabled.js';
 
 /** What a person reads when the hosting service could not be reached. */
 const UNREACHABLE = 'Couldn’t reach your DorkOS account. Try again.';
@@ -265,6 +266,15 @@ function readFailed(res: Response, error: unknown, what: string) {
   return res.status(502).json({ error: UNREACHABLE });
 }
 
+/** Whether two origins name the same server, however each is spelled. */
+function sameOrigin(left: string, right: string): boolean {
+  try {
+    return new URL(left).origin === new URL(right).origin;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Build the router over one upload registry.
  *
@@ -363,9 +373,16 @@ export function createCloudCommunitiesRouter(
     if (!isCloudLinked())
       return res.json({ available: false } satisfies CloudCommunitySignInResponse);
     try {
-      const origins = await readAccountSignInOrigins();
+      const all = await readAccountSignInOrigins();
+      // With spaces off the gate let this through for the official space alone, so the answer
+      // names its server or nothing (spec `official-community-space` D5).
+      const official = officialOnlyOrigin(res);
+      const origins =
+        all === null || !officialOnly(res)
+          ? all
+          : all.filter((origin) => official !== null && sameOrigin(origin, official));
       return res.json(
-        (origins === null
+        (origins === null || (officialOnly(res) && origins.length === 0)
           ? { available: false }
           : { available: true, origins }) satisfies CloudCommunitySignInResponse
       );

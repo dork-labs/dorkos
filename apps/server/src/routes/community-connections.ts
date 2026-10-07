@@ -59,6 +59,7 @@ import { CommunityAttentionCache } from '../services/communities/remote/communit
 import { CommunityOwnerNoticeCache } from '../services/communities/remote/community-owner-notice-cache.js';
 import { CommunityOwnerNoticeAnnouncer } from '../services/notifications/emitters/community-owner-replacement.js';
 import { resolveDorkHome } from '../lib/dork-home.js';
+import { officialOnly } from '../middleware/spaces-enabled.js';
 
 /** Resolve the only local human allowed to use a stored community connection. */
 export function resolveCommunityOwner(req: Request, res: Response): string | null {
@@ -257,7 +258,12 @@ export function createCommunityConnectionsRouter(
     const owner = resolveCommunityOwner(req, res);
     if (!owner) return;
     try {
-      const connections = await connectionService.list(owner);
+      // With spaces off the gate let this list through for the official space alone, so the
+      // official row is the only one it carries (spec `official-community-space` D5).
+      const listed = await connectionService.list(owner);
+      const connections = officialOnly(res)
+        ? listed.filter((connection) => connection.official === true)
+        : listed;
       const readable = connections
         .filter((connection) => attentionAccess(connection) !== 'none')
         .map((connection) => connection.ref);

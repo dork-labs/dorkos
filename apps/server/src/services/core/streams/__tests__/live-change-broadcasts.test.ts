@@ -106,7 +106,13 @@ function fakeConfig() {
 
 /** A Community connection store that just holds its subscriber. */
 function fakeCommunityConnections() {
-  type Change = { ownerKey: string; ref: string; status: string };
+  type Change = {
+    ownerKey: string;
+    ref: string;
+    status: string;
+    pinnedOrigin: string;
+    remoteCommunityId: string;
+  };
   const listeners: Array<(changes: readonly Change[]) => void> = [];
   const source: CommunityConnectionsSource = {
     onChange: (listener) => {
@@ -274,6 +280,8 @@ describe('community_connections_changed', () => {
     ownerKey: 'owner-author-7f3a',
     ref: 'remote_0123456789abcdef0123456789abcdef',
     status: 'reconnect-required',
+    pinnedOrigin: 'https://space.example',
+    remoteCommunityId: '11111111-1111-4111-8111-111111111111',
   };
 
   it('is subscribed at all', () => {
@@ -313,6 +321,29 @@ describe('community_connections_changed', () => {
     for (const secret of [ENDED.ownerKey, ENDED.ref, ENDED.status]) {
       expect(`${encoded.json}\n${encoded.sse}`).not.toContain(secret);
     }
+  });
+
+  // Spec `official-community-space` D5: with spaces off the global stream carries only the
+  // official row. Fails if the filter is dropped (the other space's frame goes out) or if it
+  // drops the official space's frame too.
+  it('with spaces off, says nothing about a space the windows cannot see', () => {
+    const visibleCommunities = fakeCommunityConnections();
+    const visibleFanOut = recordingFanOut();
+    wireLiveChangeBroadcasts({
+      meshCore: undefined,
+      configManager: fakeConfig().source,
+      communityConnections: visibleCommunities.source,
+      connectionVisible: (change) => change.pinnedOrigin === 'https://official.example',
+      eventFanOut: visibleFanOut,
+    });
+
+    visibleCommunities.fire(ENDED);
+    expect(visibleFanOut.sent).toEqual([]);
+
+    visibleCommunities.fire(ENDED, { ...ENDED, pinnedOrigin: 'https://official.example' });
+    expect(visibleFanOut.sent.map((entry) => entry.event)).toEqual([
+      'community_connections_changed',
+    ]);
   });
 
   it('is ADDRESSED: a person and a program receive it, an agent never does', () => {

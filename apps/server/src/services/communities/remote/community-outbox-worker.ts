@@ -16,6 +16,13 @@ export type CommunityDeliveryResult =
 /** Recheck local Stop/enrollment/connection state immediately before network work. */
 export interface CommunityOutboxAuthority {
   canDeliver(item: CommunityOutboxItem): boolean | Promise<boolean>;
+  /**
+   * Whether an item waits, untouched and still pending, instead of being tried now: its space
+   * cannot be reached while the spaces experiment is off (spec `official-community-space` D5).
+   * Unlike {@link canDeliver} answering no, a held item is never stopped, so turning spaces back
+   * on sends it, unless it expired first. Nothing is held when not given.
+   */
+  held?(item: CommunityOutboxItem): boolean;
 }
 
 /**
@@ -136,6 +143,7 @@ export class CommunityOutboxWorker {
     const expiredOwners = this.store.expire(now);
     for (const ownerAuthorId of expiredOwners) this.changes?.changed(ownerAuthorId);
     for (const item of this.store.due(now)) {
+      if (this.authority.held?.(item)) continue;
       const abort = new AbortController();
       this.inFlight.set(item.id, { item, abort });
       // The owner SSE must expose this held delivery before any remote I/O can
