@@ -387,7 +387,7 @@ Seed at implementation time (`/adr:from-spec`):
 **Research + plan + decisions:**
 
 - `research/20260718_connector-gateway-spike.md` — the full evidence base (provider matrix, seams §3, interface sketch §2, custody §4, AGPL §5, recommendation + sequencing §6).
-- `plans/shapes-program.md` — D4 (custody stance), W5 (this workstream), P4 (CRM-lite, first consumer), W4 (connector evals).
+- `plans/archive/shapes-program.md` — D4 (custody stance), W5 (this workstream), P4 (CRM-lite, first consumer), W4 (connector evals).
 - `decisions/260718-045630-connector-provider-custody-composio-nango-raw-mcp.md` — the accepted D4 ADR (provider picks, canonical custody sentence, `NANGO_ENCRYPTION_KEY` mandate, re-check clause).
 - `specs/eval-harness/02-specification.md:286` — eval 13/14 (`connector-gmail`/`connector-slack`), whose eval-13 oracle §Testing Strategy refines.
 

@@ -14,7 +14,7 @@ linearIssue: DOR-154
 
 > Anchored to **DOR-154 - Ideation: Harness Sync scope, personas, cross-agent UX,
 > discovery model** (project **Harness Sync**, `bc4e663f`). This is workstream **B**
-> of `plans/agent-harness-portability-roadmap.md` (the B1 ideation gap the roadmap
+> of `plans/archive/agent-harness-portability-roadmap.md` (the B1 ideation gap the roadmap
 > flagged as unfilled). DOR-135 was the terse first draft of this same step and is
 > closed as a duplicate of DOR-154. Governing ADR drafts: **ADR-A** (canonical
 > `.agents/` + hybrid projection) and **ADR-B** (instructions scaffolded, not
@@ -90,7 +90,7 @@ linearIssue: DOR-154
 
 ## 2) Pre-reading Log
 
-- `plans/agent-harness-portability-roadmap.md` (§1 through-line, §4 projection model,
+- `plans/archive/agent-harness-portability-roadmap.md` (§1 through-line, §4 projection model,
   §6 workstream→project map, §7.B issues B1–B11, §8 ADR drafts A–F, §9 sequencing,
   §10 open questions): the authoritative source. Harness Sync is workstream B; the
   projection-mechanism-per-artifact decision and the "borrow not adopt" basis are made

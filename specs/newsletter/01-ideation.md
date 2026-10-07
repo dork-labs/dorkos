@@ -1,10 +1,10 @@
 # Newsletter & email capture: ideation
 
-The decision work is done in **ADR 260707-025214** (accepted): use **Resend Broadcasts + Audiences** for the launch newsletter, not Buttondown, on economics (Resend free tier = 1,000 marketing contacts, reuses the Resend stack already wired for transactional auth email). This spec is the SPECIFY-stage artifact; the ideation is the ADR plus `meta/positioning-202607/09-gtm-plan.md` §3.2.
+The decision work is done in **ADR 260707-025214** (accepted): use **Resend Broadcasts + Audiences** for the launch newsletter, not Buttondown, on economics (Resend free tier = 1,000 marketing contacts, reuses the Resend stack already wired for transactional auth email). This spec is the SPECIFY-stage artifact; the ideation is the ADR plus `meta/archive/positioning-202607/09-gtm-plan.md` §3.2.
 
 ## Problem
 
-DorkOS has zero owned audience. The launch plan (`meta/positioning-202607/_tracker.md`) needs an email list as the one platform-proof channel, captured from day one, before the Show HN ladder. Today there is no capture surface anywhere on the site.
+DorkOS has zero owned audience. The launch plan (`meta/archive/positioning-202607/_tracker.md`) needs an email list as the one platform-proof channel, captured from day one, before the Show HN ladder. Today there is no capture surface anywhere on the site.
 
 ## Why now
 

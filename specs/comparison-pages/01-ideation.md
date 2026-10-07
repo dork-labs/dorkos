@@ -4,7 +4,7 @@
 
 ## The idea
 
-A series of pages on dorkos.ai comparing DorkOS to other harnesses and agent platforms — for SEO (comparison keywords convert 5–10x informational content) and for our own competitive research hygiene. Already mandated in prose by `meta/positioning-202607/07-website-changes.md` §4.1 ("the cheapest high-intent SEO available to a bootstrapped product") and `05-marketing-strategy.md` §2.
+A series of pages on dorkos.ai comparing DorkOS to other harnesses and agent platforms — for SEO (comparison keywords convert 5–10x informational content) and for our own competitive research hygiene. Already mandated in prose by `meta/archive/positioning-202607/07-website-changes.md` §4.1 ("the cheapest high-intent SEO available to a bootstrapped product") and `05-marketing-strategy.md` §2.
 
 ## Key decisions made during ideation
 

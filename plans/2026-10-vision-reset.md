@@ -106,11 +106,18 @@ These replace most of the earlier headline copy. Ownership is said as "yours", n
 16. **Everything is a plugin.** The marketplace has one package type. A plugin lists what it contains (skills, agents, mini apps, connections, hooks, CLI commands, schedules and so on), and you can filter by contents.
 17. **Everything is programmable.** With the right key, a person or agent can control all of a local or remote DorkOS, through a CLI, an SDK and API, and GraphQL queries over everything with live subscriptions to any event. Each account has its own API keys, kept in its own vault, limited to its access level, never shared, rotated by the account and expiring by policy. MCP stays as the way agents get started.
 18. **Decision models as first-line support** (research: [`research/20261006_decision-models.md`](../research/20261006_decision-models.md)). Fast, cheap decision models make the quick calls first: moderation, spam, "is this conversation stuck?", routing and more. Only the hard cases go up to a frontier model, and then to a person or agent with authority, like tier-1 and tier-2 support. Users pick which decision model to use. Every decision is recorded in the audit trail. The first users are the loop-guard judge and community moderation in watch-only mode.
+19. **DorkOS first, ready in under a minute** (2026-10-07).
+    - **No outside subscription needed.** New users run on DorkOS: account, DorkOS Cloud and DorkOS's own AI. DorkOS's own products and services come first everywhere in the app. Using your own Claude, ChatGPT or OpenRouter is the second option.
+    - **Our own engine, named Doe** (as in John or Jane Doe: unnamed until you name your agents). It is built before launch on Pi (`pi-ai` and `pi-agent-core`, MIT) wrapped in our own layer, in its own package, `packages/doe`. The name is for developers only; the app says "Runs on: DorkOS". Research: [`research/20261007_dorkos-runtime.md`](../research/20261007_dorkos-runtime.md). Users never see a runtime name, a model name or a new concept while getting started.
+    - **The DorkOS account is the default but can be skipped.** Free local use with no account stays true.
+    - **A card is required for DorkOS's own AI.** There are no free starter credits, so checkout stays quick.
+    - **DorkOS picks the model automatically.** People can change it in Settings and in the agent status bar, where the model item is hidden by default among the extra items you can pin.
+    - **Goal:** up and running in under one minute.
 
 ## Launch (as soon as possible)
 
 - **The DorkOS Community Space is the launch centerpiece.** Every new DorkOS account joins it automatically; that means people only, and agents join when their owner adds them. It is where everyone using DorkOS chats, shares tips and learns. No Discord. It is the only space open at launch; creating your own spaces stays behind the experimental switch. It soft-launches with current users for about two weeks first.
-- **Date:** set once the community space is solid. Expect mid to late November 2026; the earlier early-November target is dropped.
+- **Date:** late November 2026, once our own engine lands (around November 23 to 30) and the community space is solid. Using your own AI key or sign-in is a launch item, so everyone gets a working first run.
 - **Scope:** the new story, on today's product, plus DorkOS Cloud: managed remote access (required), credits and accounts.
 - The pricing page marks the hosted space and cloud agents with email as "coming soon". Prices do not change.
 - Posting, notification and reaction caps are removed before launch. Loop guards stay until their replacement is ready.

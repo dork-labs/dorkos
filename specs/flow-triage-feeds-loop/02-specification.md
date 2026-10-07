@@ -31,7 +31,7 @@ Two pillars, one architecture:
 
 ## Background / Problem Statement
 
-The 2026-06-25 conformance audit (`plans/flow-loop-system-revision.md` section 10, workflow
+The 2026-06-25 conformance audit (`plans/archive/flow-loop-system-revision.md` section 10, workflow
 `wf_8d338ec8-3c8`) graded the running system against the 15 charter goals: **1 met, 11
 partial, 3 gap.** Nearly every shortfall has one root cause: the `@dorkos/flow` decision
 oracles (`selectDispatch`, `resolveInvolvement`, `evaluateAutoMerge`, `recoverOrphan`,
@@ -321,7 +321,7 @@ Seeded with this spec (status: draft, `extractedFrom: flow-triage-feeds-loop`):
 ## References
 
 - Charter: [`.agents/flow/CHARTER.md`](../../.agents/flow/CHARTER.md) (the 15 goals).
-- Plan + gap register: [`plans/flow-loop-system-revision.md`](../../plans/flow-loop-system-revision.md)
+- Plan + gap register: [`plans/archive/flow-loop-system-revision.md`](../../plans/archive/flow-loop-system-revision.md)
   (section 10; audit run `wf_8d338ec8-3c8`).
 - Ideation: [`01-ideation.md`](./01-ideation.md) (decisions A0-A5, B0-B6, L0, S0).
 - Research: [`research/20260625_hitl_question_routing_async_resume.md`](../../research/20260625_hitl_question_routing_async_resume.md).

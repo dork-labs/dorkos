@@ -17,11 +17,11 @@ Originally: Accepted
 
 ## Context
 
-The 2026-07-17 Shapes/BYOA research (`research/20260717_shapes-byoa-positioning.md` §7) surfaced a live tension: the founder wants to reposition DorkOS toward business users on the strength of Shapes, but the entire `meta/positioning-202607/` corpus, the imminent 14-week GTM plan, and the demo-claim gate (`09-gtm-plan.md` §2.0) are built on the developer/operator beachhead — and business-facing Shapes are the plan's least-verified surface (zero reference shapes shipped, zero non-developer users, unevaled). Editing Act-1 launch copy now to lead with business users would market capabilities that do not yet exist end-to-end, breaking the same demo-claim gate that already governs every other launch pillar in `09-gtm-plan.md` §2.2.
+The 2026-07-17 Shapes/BYOA research (`research/20260717_shapes-byoa-positioning.md` §7) surfaced a live tension: the founder wants to reposition DorkOS toward business users on the strength of Shapes, but the entire `meta/archive/positioning-202607/` corpus, the imminent 14-week GTM plan, and the demo-claim gate (`09-gtm-plan.md` §2.0) are built on the developer/operator beachhead — and business-facing Shapes are the plan's least-verified surface (zero reference shapes shipped, zero non-developer users, unevaled). Editing Act-1 launch copy now to lead with business users would market capabilities that do not yet exist end-to-end, breaking the same demo-claim gate that already governs every other launch pillar in `09-gtm-plan.md` §2.2.
 
 ## Decision
 
-We will run positioning in two acts. **Act 1 (now):** launch and market DorkOS on the existing operator/developer positioning exactly as planned in `02-positioning.md` and `09-gtm-plan.md` — no changes to Act-1 launch copy. **Act 2 (business users/operators broadly):** fires only when all three evidence triggers are met — (1) at least three business-facing Shapes work end-to-end, (2) a real non-developer user cohort exists, (3) desktop-app install friction is effectively zero. When Act 2 fires, it gets its own positioning review cycle (a fresh pass through the calibration process), not an edit-in-place of Act-1 copy. Until the triggers clear, Shapes marketing stays the Script-2 / second-visit story (`08-demo-video-scripts.md`), introduced after launch rather than as the headline (`plans/shapes-program.md` Phase 4).
+We will run positioning in two acts. **Act 1 (now):** launch and market DorkOS on the existing operator/developer positioning exactly as planned in `02-positioning.md` and `09-gtm-plan.md` — no changes to Act-1 launch copy. **Act 2 (business users/operators broadly):** fires only when all three evidence triggers are met — (1) at least three business-facing Shapes work end-to-end, (2) a real non-developer user cohort exists, (3) desktop-app install friction is effectively zero. When Act 2 fires, it gets its own positioning review cycle (a fresh pass through the calibration process), not an edit-in-place of Act-1 copy. Until the triggers clear, Shapes marketing stays the Script-2 / second-visit story (`08-demo-video-scripts.md`), introduced after launch rather than as the headline (`plans/archive/shapes-program.md` Phase 4).
 
 ## Consequences
 
@@ -29,12 +29,12 @@ We will run positioning in two acts. **Act 1 (now):** launch and market DorkOS o
 
 - Protects the imminent 14-week launch plan from a mid-flight repositioning that would contradict its own demo-claim gate.
 - Gives the founder's business-user instinct a concrete, evidence-gated path instead of either ignoring it or shipping it prematurely.
-- Keeps Shapes marketing honest — no claim outruns shipped and evaled work (`plans/shapes-program.md` W4/P8).
+- Keeps Shapes marketing honest — no claim outruns shipped and evaled work (`plans/archive/shapes-program.md` W4/P8).
 
 ### Negative
 
 - Delays the business-user narrative the founder wants, potentially past the 14-week launch window if the triggers are slow to clear.
-- Requires an explicit Act-2 trigger dashboard (`plans/shapes-program.md` success criterion 5) to track trigger status, or the gate becomes unenforceable vibes.
+- Requires an explicit Act-2 trigger dashboard (`plans/archive/shapes-program.md` success criterion 5) to track trigger status, or the gate becomes unenforceable vibes.
 - Introduces a second decision point mid-program (when do the triggers actually count as "met"?) that could itself get contested later — e.g., what "install friction ≈ zero" means operationally is not defined here.
 
 ## Alternatives Considered

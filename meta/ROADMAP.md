@@ -6,7 +6,7 @@
 
 ## The launch
 
-Launch is as soon as possible, and the date is set once the community space is solid: expect mid to late November 2026. The launch is the new story, on today's product, plus DorkOS Cloud.
+Launch is as soon as possible: late November 2026, once our own engine lands (expected around November 23 to 30) and the community space is solid. The launch is the new story, on today's product, plus DorkOS Cloud and DorkOS's own AI.
 
 | Before launch                                                                                                                                                                                                                                   | Ticket                                  | State    |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- | -------- |
@@ -18,8 +18,12 @@ Launch is as soon as possible, and the date is set once the community space is s
 | Trust step 3: full power by default, with tests that pin the protections against strangers, and the posting, notification and reaction caps removed                                                                                             | DOR-2739                                | Building |
 | Managed remote access through DorkOS Cloud                                                                                                                                                                                                      | DOR-2086, DOR-2763                      | Building |
 | The docs, site and README rewrite to this story, including marking the hosted space and cloud agents with email as "coming soon" on the pricing page                                                                                            | DOR-2736                                | Building |
+| Doe, our own agent engine: a new person's agents run on DorkOS, and the app says "Runs on: DorkOS"                                                                                                                                              | DOR-2782 (work in DOR-2786, DOR-2787)   | To do    |
+| DorkOS-first onboarding: a DorkOS account (skippable), DorkOS Cloud and DorkOS's own AI, up and running in under one minute, with no runtime or model names on the way                                                                          | DOR-2783                                | To do    |
+| DorkOS picks the model; it can be changed in Settings and in the status bar, where the model item is hidden by default                                                                                                                          | DOR-2784                                | To do    |
+| Using your own AI key or sign-in stays a working first run, for anyone who cannot or will not add a card                                                                                                                                        | DOR-2783                                | To do    |
 
-Prices do not change, and no file in this repo names them. Cloud computers are not built and are not needed for launch.
+A card is required for DorkOS's own AI; there are no free starter credits. Prices do not change, and no file in this repo names them. Cloud computers are not built and are not needed for launch.
 
 ## After launch, in order
 
@@ -62,6 +66,7 @@ Prices do not change, and no file in this repo names them. Cloud computers are n
 - **Trust by default** (DOR-2738, DOR-2739): full power by default, the readable audit trail, and the caps coming off. Until they ship, the caps are current behavior. Public copy may state the principle only (see [`VOICE.md`](VOICE.md#safety-claims)). Docs about permissions and approvals change with these tickets, not before.
 - **The DorkOS Community Space** (DOR-2764). Say it is coming (see [`VOICE.md`](VOICE.md)).
 - **Managed remote access** (DOR-2086). Describe remote access as it works today.
+- **DorkOS first, in under a minute** (DOR-2782, DOR-2783, DOR-2784): our own engine, the one-minute start and automatic model choice. Until they ship, getting started still means signing in to Claude Code, Codex or OpenCode, or using DorkOS credits.
 
 ### Roadmap: never claimed as working
 

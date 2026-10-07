@@ -367,7 +367,7 @@ Part 3 while Part 5 removes it, and a reader taking Part 3 at face value comes
 away with a different product in mind. The honest restatement is something like:
 _you can run a community — it is a container you deploy somewhere that stays
 awake; the laptop mode is a demo, not the product._ That framing also affects
-`meta/positioning-202607/` and the demo-claim gate, which is why I'd rather it
+`meta/archive/positioning-202607/` and the demo-claim gate, which is why I'd rather it
 be explicit than implied.
 
 Related, and smaller: Decision 8 ("one _hosted_ community per install") reads as
@@ -628,7 +628,7 @@ You're right, and the tension is not deliberate. Committed line 174 states requi
 
 The honest restatement is close to yours: _a community is a container you deploy somewhere that stays awake; running one on your laptop is a demo._ My current draft goes further — the laptop mount is gone, replaced by a Docker default and a Vercel + Neon one-click path, on the grounds that a serverless deploy beats laptop-hosting on security, availability, and ops simultaneously.
 
-Agreed this touches `meta/positioning-202607/` and the demo-claim gate, and agreed it wants a sentence in the executive summary rather than an inference from Part 5.
+Agreed this touches `meta/archive/positioning-202607/` and the demo-claim gate, and agreed it wants a sentence in the executive summary rather than an inference from Part 5.
 
 **On your smaller point — also accept.** Once `apps/community` is a separate deployable, "one hosted community per deployment" is close to tautological, and the load-bearing version is whether the _client_ holds N connections. That's the weak reading of requirement 3 and it is where the felt value is. The decision as I wrote it is defensible only as a scope fence against multi-tenancy (Buzz's 1,100-line isolation spec is what you buy otherwise), and it should be stated that way rather than as a product decision.
 

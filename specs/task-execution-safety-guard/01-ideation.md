@@ -12,7 +12,7 @@ linearIssue: DOR-149
 **Author:** Dorian Collier (via /flow)
 **Date:** 2026-06-25
 **Tracker:** DOR-149 (P1 · urgent) — project _Tasks — Execution Safety & Skill Unification_
-**Decided direction:** ADR-D in [`plans/agent-harness-portability-roadmap.md`](../../plans/agent-harness-portability-roadmap.md) (§8)
+**Decided direction:** ADR-D in [`plans/archive/agent-harness-portability-roadmap.md`](../../plans/archive/agent-harness-portability-roadmap.md) (§8)
 
 ---
 
@@ -57,7 +57,7 @@ linearIssue: DOR-149
 
 ## 2) Pre-reading Log
 
-- `plans/agent-harness-portability-roadmap.md` (§7 D1, §8 ADR-D, §9 Phase 1):
+- `plans/archive/agent-harness-portability-roadmap.md` (§7 D1, §8 ADR-D, §9 Phase 1):
   D1 is the urgent safety guard; ADR-D records the decision (production-gated +
   singleton-locked + idempotent). Phase 1 marks it **unblocked today** and
   independent of the big B-phase bet.

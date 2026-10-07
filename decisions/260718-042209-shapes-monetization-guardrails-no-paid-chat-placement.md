@@ -15,7 +15,7 @@ Accepted
 
 ## Context
 
-Shapes are becoming the installable-app unit for DorkOS — community-built and official-vendor-built alike (`plans/shapes-program.md` D2) — and a monetization boundary needs to exist before any vendor conversation starts (e.g., a Composio affiliate deal, a QuickBooks-style referral shape) or the marketplace's category/placement UI (`plans/shapes-program.md` W3) ships. Without a stated line, marketplace placement and vendor deals drift toward the single most lucrative and most trust-destroying pattern in the category: sponsored results woven into agent responses. The brand's honest-by-design pillar (`AGENTS.md` Quality Standard; `meta/brand-foundation.md`) and the "would Kai find it valuable" filter make in-chat ads a categorical non-starter, not a pricing tradeoff to weigh case by case.
+Shapes are becoming the installable-app unit for DorkOS — community-built and official-vendor-built alike (`plans/archive/shapes-program.md` D2) — and a monetization boundary needs to exist before any vendor conversation starts (e.g., a Composio affiliate deal, a QuickBooks-style referral shape) or the marketplace's category/placement UI (`plans/archive/shapes-program.md` W3) ships. Without a stated line, marketplace placement and vendor deals drift toward the single most lucrative and most trust-destroying pattern in the category: sponsored results woven into agent responses. The brand's honest-by-design pillar (`AGENTS.md` Quality Standard; `meta/brand-foundation.md`) and the "would Kai find it valuable" filter make in-chat ads a categorical non-starter, not a pricing tradeoff to weigh case by case.
 
 ## Decision
 
@@ -31,7 +31,7 @@ We will enforce three monetization rules for Shapes, confirmed by the founder 20
 
 - Removes the single highest-risk monetization path before any vendor partnership conversation starts, so business development never has to negotiate a sponsor's request for in-chat placement.
 - Keeps the community flywheel (fork/tweak/share) untaxed, which the research treats as the core distribution mechanism for Shapes.
-- Gives the marketplace placement UI (`plans/shapes-program.md` W3) an unambiguous scope: placement money can only ever touch browse/search surfaces, never the chat transcript.
+- Gives the marketplace placement UI (`plans/archive/shapes-program.md` W3) an unambiguous scope: placement money can only ever touch browse/search surfaces, never the chat transcript.
 
 ### Negative
 
@@ -42,5 +42,5 @@ We will enforce three monetization rules for Shapes, confirmed by the founder 20
 ## Alternatives Considered
 
 - **Allow limited, clearly-labeled sponsored suggestions inside chat** (the pattern several consumer AI products use) — rejected: even labeled, it changes what an agent's response can be bought to say, which is the exact trust violation the brand's honest-by-design pillar exists to prevent.
-- **Tax community shapes with a small marketplace fee to fund the platform** — rejected: it taxes the flywheel the whole Shapes strategy depends on for distribution (`research/20260717_shapes-byoa-positioning.md` §6), and the managed-data-layer/Cloud tiers are the intended revenue line instead (`11-revenue-model.md`).
+- **Tax community shapes with a small marketplace fee to fund the platform** — rejected: it taxes the flywheel the whole Shapes strategy depends on for distribution (`research/20260717_shapes-byoa-positioning.md` §6), and the managed-data-layer/Cloud tiers are the intended revenue line instead (the July revenue model (deleted 2026-10)).
 - **Defer the guardrail decision until a vendor deal is actually on the table** — rejected: waiting means negotiating boundaries under commercial pressure instead of recording them while the incentive is only theoretical.

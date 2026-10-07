@@ -8,7 +8,7 @@ tags: [security, hardening, mcp, relay, tunnel, auth, marketplace, exposure-guar
 
 # Security Hardening Audit
 
-Pre-traction hardening pass for the GTM security cluster (`meta/positioning-202607/09-gtm-plan.md` §2.4, the "OpenClaw lesson"). The goal is honest-by-design: an architect who reads the source before adopting (persona: Priya) should find the exposure surface deliberately gated, the sharp edges documented, and the residual risks tracked, not hidden.
+Pre-traction hardening pass for the GTM security cluster (`meta/archive/positioning-202607/09-gtm-plan.md` §2.4, the "OpenClaw lesson"). The goal is honest-by-design: an architect who reads the source before adopting (persona: Priya) should find the exposure surface deliberately gated, the sharp edges documented, and the residual risks tracked, not hidden.
 
 Scope: the surfaces that decide who can drive an agent fleet and what a package can do to the host — relay/adapter send paths, tunnel + authentication + the exposure guard, the `/mcp` endpoint, the marketplace install path, and secrets-in-logs hygiene. Method: five parallel read-only audits over the real code (not memory), each returning findings with `file:line`, severity, and whether the control is done right.
 
