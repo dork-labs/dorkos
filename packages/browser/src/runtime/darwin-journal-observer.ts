@@ -1,3 +1,8 @@
+import {
+  consumeOriginalLeafTerminal,
+  hasOriginalLeafTerminal,
+  type DarwinLeafEventOwner,
+} from './darwin-leaf-event-owner.js';
 import type { JournalIdentityRefusalCode } from './supervisor-uncertainty-diagnostic.js';
 import type { OriginalChildBatchReason } from './darwin-journal-diagnostic.js';
 import type { ProcessIdentity } from '../configuration.js';
@@ -49,6 +54,8 @@ export async function observeDarwinJournal(
     ) => Promise<void>;
     launchNotEntered?: () => boolean;
     observer: DarwinProcessObserver;
+    /** Original worker-owned event receiver; optional only for old callers/platforms. */
+    leafEvents?: DarwinLeafEventOwner;
     monotonicNow: () => number;
     pause: () => Promise<void>;
     endMonotonic: number;
@@ -275,7 +282,10 @@ export async function observeDarwinJournal(
             } else {
               gap(next, 'custody-pending', retained.identity);
             }
-          } else if (retained.lifecycle === 'exited-unreaped') {
+          } else if (
+            retained.lifecycle === 'exited-unreaped' ||
+            (options.leafEvents && hasOriginalLeafTerminal(options.leafEvents, retained.identity))
+          ) {
             // The exact terminal original cannot become executable again; a contradictory fact is unknown.
             retained.lifecycle = 'unknown';
             gap(next, 'identity-unknown', retained.identity);
@@ -359,6 +369,28 @@ export async function observeDarwinJournal(
             const children = await options.observer.children!(parent.identity);
             const complete = children.complete;
             if (!complete || !checkBoot(children)) {
+              if (
+                parent.role === 'descendant' &&
+                !next.retainedIdentities.some(
+                  (row) =>
+                    row.parent &&
+                    sameProcess(row.parent, parent.identity) &&
+                    row.lifecycle !== 'dead' &&
+                    row.lifecycle !== 'replacement'
+                ) &&
+                options.leafEvents &&
+                (await consumeOriginalLeafTerminal(
+                  options.leafEvents,
+                  parent.identity,
+                  next.sequence,
+                  children
+                ))
+              ) {
+                // The preceding inspect remains a historical positive sample.
+                // This private proof qualifies only the missing leaf census,
+                // never marks dead/zombie or releases its original identity.
+                continue;
+              }
               await options.onIncompleteChildren?.(parent.identity, children, {
                 sequence: next.sequence,
                 reason: complete ? 'CHILD_BOOT_MISMATCH' : 'CHILDREN_INCOMPLETE',
@@ -368,6 +400,19 @@ export async function observeDarwinJournal(
             }
             childBatch = children;
             childFacts = children.processes;
+            if (
+              parent.role === 'descendant' &&
+              !childFacts.length &&
+              options.leafEvents &&
+              !next.retainedIdentities.some(
+                (row) =>
+                  row.parent &&
+                  sameProcess(row.parent, parent.identity) &&
+                  row.lifecycle !== 'dead' &&
+                  row.lifecycle !== 'replacement'
+              )
+            )
+              await options.leafEvents.enroll(parent.identity, next.sequence);
           }
           for (const fact of childFacts) {
             // Enumeration may still include an already enrolled unreaped child; it admits no new parent/work.

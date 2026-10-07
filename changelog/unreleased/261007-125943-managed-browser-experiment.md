@@ -4,6 +4,7 @@ covers:
   - 'fix(browser): preserve displayed input and packaged runtime ownership'
   - 'fix(browser): identify current instances and diagnose pending shutdown'
   - 'fix(browser): finish viewer capture before renewing its lease'
+  - 'fix(browser): distinguish observed helper exits from tracking gaps'
 ---
 
 ### Added
@@ -15,3 +16,4 @@ covers:
 ### Fixed
 
 - Wait for an in-flight browser frame to finish before renewing the view, so renewal does not start overlapping captures.
+- Keep browser work running when an observed helper exits during a process check.

@@ -1,3 +1,4 @@
+import { openDarwinLeafEventOwner, type DarwinLeafEventOwner } from './darwin-leaf-event-owner.js';
 import {
   createSupervisorUncertaintyDiagnostic,
   journalIdentityRefusalCodes,
@@ -651,7 +652,7 @@ async function runPrivateWorker(): Promise<void> {
     | 'campaign-closed-gapped'
     | 'campaign-closed'
     | 'retained'
-    | 'uncertain';
+    | 'uncertain' = 'uncertain';
   try {
     const value = seedSchema.parse(await seed);
     seedNonce = value.initial.binding.reservationNonce;
@@ -699,13 +700,26 @@ async function runPrivateWorker(): Promise<void> {
       launchResolve(null);
     }, value.duration);
     let reportedIncomplete = false;
+    let leafEvents: DarwinLeafEventOwner | undefined;
+    let campaignFirst: { value: unknown } | undefined;
     try {
+      const originalBoot = /^darwin-boot:([1-9][0-9]*):(0|[1-9][0-9]*)$/.exec(
+        value.initial.binding.bootScope.value
+      );
+      if (!originalBoot) throw new Error('BOOT_SOURCE_UNAVAILABLE');
+      leafEvents = await openDarwinLeafEventOwner({
+        artifact: value.artifact,
+        manager: logicalManager,
+        boot: { seconds: originalBoot[1], microseconds: originalBoot[2] },
+      });
+      await leafEvents.identity();
       result = await observeDarwinJournal({
         location: value.location,
         initial: value.initial,
         root,
         rootSupervisor: () => supervisor,
         observer,
+        leafEvents,
         endBrowser: () => ended,
         originalRootReturned: () => {
           if (invalid) throw new Error('JOURNAL_ROOT_RETURN_REFUSED');
@@ -750,9 +764,17 @@ async function runPrivateWorker(): Promise<void> {
           );
         },
       });
+    } catch (cause) {
+      campaignFirst = { value: cause };
     } finally {
       clearTimeout(rootEnd);
+      try {
+        await leafEvents?.close();
+      } catch (cause) {
+        campaignFirst ??= { value: cause };
+      }
     }
+    if (campaignFirst) throw campaignFirst.value;
     if (value.ownedLaunch) {
       const original = ownedRoot as DarwinOwnedChild | null;
       if (!original || result !== 'original-child-returned-observer-live') result = 'uncertain';

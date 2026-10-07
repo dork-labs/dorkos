@@ -160,7 +160,12 @@ test('Actual viewer pixels: 100 local, 100 injected RTT and stalled second viewe
     const row = second
       .getByRole('region', { name: 'Your browsers', exact: true })
       .getByRole('listitem')
-      .filter({ hasText: label });
+      .filter({ hasText: label })
+      .filter({
+        has: originalSecond
+          .getByRole('button', { name: 'View', exact: true })
+          .and(originalSecond.locator('button:not([disabled])')),
+      });
     await expect(row).toHaveCount(1);
     const issuing = retainSetup(
       originalSecond.waitForResponse(

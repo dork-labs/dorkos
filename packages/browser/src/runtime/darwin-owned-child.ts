@@ -57,6 +57,8 @@ export function createDarwinOwnedChildLauncher(
         cwd: string;
         env: Readonly<Record<string, string>>;
         ipc?: boolean;
+        /** Private native event owner only; ordinary child launches retain ignored stdin. */
+        stdin?: 'pipe';
       }>
     ): Promise<DarwinOwnedChild> {
       if (process.platform !== 'darwin' || process.pid === manager.pid)
@@ -91,7 +93,9 @@ export function createDarwinOwnedChildLauncher(
           env: { ...command.env },
           shell: false,
           detached: false,
-          stdio: command.ipc ? ['ignore', 'pipe', 'pipe', 'ipc'] : ['ignore', 'pipe', 'pipe'],
+          stdio: command.ipc
+            ? [command.stdin ?? 'ignore', 'pipe', 'pipe', 'ipc']
+            : [command.stdin ?? 'ignore', 'pipe', 'pipe'],
         });
         state.child = child;
       } catch (error) {
