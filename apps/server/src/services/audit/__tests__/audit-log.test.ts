@@ -167,6 +167,8 @@ describe('AuditLog', () => {
     ['a token assignment', 'token=abc123def456', 'abc123def456'],
     ['URL user info', 'cloned https://u:secretpass@host/x', 'secretpass'],
     ['an access_token query', 'GET /cb?access_token=zz99yy88xx77&state=1', 'zz99yy88xx77'],
+    ['an access_token in a full URL', 'opened https://h/x?access_token=zzzz1111', 'zzzz1111'],
+    ['a token after a URL scheme with a port', 'http://h:8080/cb?token=qq77ww66', 'qq77ww66'],
     ['an env assignment', 'OPENAI_API_KEY=abcd1234 node run.js', 'abcd1234'],
     [
       'a JWT',

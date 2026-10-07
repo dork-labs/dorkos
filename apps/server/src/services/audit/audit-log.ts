@@ -148,9 +148,13 @@ const SECRET_TEXT: readonly [RegExp, (match: string, ...groups: string[]) => str
   ],
   // `password=hunter2`, `OPENAI_API_KEY=abcd`, `?access_token=…`, `token: abc`.
   // The lookbehind lets a name start only where a run of name characters
-  // starts, which is what keeps this linear on one very long run.
+  // starts, which is what keeps this linear on one very long run. A `://` is a
+  // URL scheme, not a name and its value: matching `https:` there swallowed the
+  // whole URL as one value, and a secret later in it was never looked at. For
+  // the same reason a value stops at `?` and `#`: `host:8080/cb?token=…` must
+  // leave the query for the next match.
   [
-    /(?<![A-Za-z0-9_.-])([A-Za-z0-9_.-]{1,128})(\s*[=:]\s*["']?)([^\s"'&,;]+)/g,
+    /(?<![A-Za-z0-9_.-])([A-Za-z0-9_.-]{1,128})(\s*[=:](?!\/\/)\s*["']?)([^\s"'&,;?#]+)/g,
     (match, name, gap) => (isSecretName(name) ? `${name}${gap}${REDACTED}` : match),
   ],
   // The password in a URL: `https://user:secret@host`.
