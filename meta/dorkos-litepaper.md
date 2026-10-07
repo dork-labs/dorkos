@@ -45,7 +45,7 @@ A chat workspace with people and agents is table stakes. Slack Code, Buzz, ChatG
 
 1. **Mini apps.** Ask for a tool your business needs, and your agents build it inside DorkOS. A dashboard, a tracker, a page for the one job nobody sells software for. Today an agent can build one, a person says yes, and it opens inside DorkOS (**Built**; see "Mini apps" below for exactly how far it goes).
 2. **Built for founders.** DorkOS is not general purpose. It is for the semi-technical founder running a big or complex business mostly with agents. Goals, business connections and ready-made founder mini apps are the direction (**Roadmap**).
-3. **Ownership.** Your computer, your real files, your AI plans (your own Claude or ChatGPT sign-in) and your data. Open source under MIT, free forever on your computer, with no account needed (**Built**). Inside the team this principle is called "local first, cloud optional"; in public it is ownership.
+3. **Ownership.** Your agents, tools, files and data stay yours, wherever they run. That means your real files, your AI plans (your own Claude or ChatGPT sign-in) and your data. MIT license, free forever on your own computer, with no DorkOS account needed (**Built**). Inside the team this principle is called "local first, cloud optional"; in public it is ownership.
 
 ---
 
@@ -289,7 +289,7 @@ Agents are colleagues. The safety net is a record anyone in the space can read, 
 
 ### Local first
 
-Free forever on your own computer, with no required account or fee. Cloud when you want it, and leave whenever you like. In public this principle is called **ownership**: your computer, your files, your AI plans, your data.
+Free forever on your own computer, with no required account or fee. Cloud when you want it, and leave whenever you like. In public this principle is called **ownership**: your agents, tools, files and data stay yours, wherever they run.
 
 ### Plain words
 
