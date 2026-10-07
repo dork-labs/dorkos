@@ -35,6 +35,8 @@ Four log lines are worth an alert, all with IDs only: `{"event":"community.accou
 
 An owner can open a space to anyone who signs in with this server's single sign-on (`COMMUNITY_OIDC_*`). Nobody gets in that way with a password. Set `COMMUNITY_OPEN_ADMISSION=0` to turn every open join off at once; invitations keep working.
 
+A ban keeps out the banned account and its confirmed email. The email is stored only as a key made with `COMMUNITY_AUTH_SECRET`, so rotating that secret stops every existing ban from matching an email. Bans still keep out the accounts they name.
+
 Most people can keep the default limits. Restart the service after changing one. The maximums protect every Community, even when an environment variable requests more.
 
 | Setting                                        |                       Default |                   Maximum |

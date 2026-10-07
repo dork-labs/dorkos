@@ -11,6 +11,7 @@ import { CommunityAdministration } from './CommunityAdministration.js';
 import { RemovedByHost } from '../takedowns/TakedownNotices.js';
 import { EraseMembershipPanel } from './Erasure.js';
 import { ExportPanel } from './ExportPanel.js';
+import { BanDialog, LiftBanDialog } from './BanDialogs.js';
 import type { Agent, Channel, Member } from '../types.js';
 import type { CommunitySettingsSection, CommunityWireBan } from '@dorkos/shared/community-wire';
 
@@ -105,6 +106,9 @@ export function Manage({
   const [directory, setDirectory] = useState<Member[]>([]);
   const [directoryCursor, setDirectoryCursor] = useState<string | null>(null);
   const [bans, setBans] = useState<CommunityWireBan[]>([]);
+  // The member a ban is being confirmed for, and the ban being lifted, while their dialog shows.
+  const [banning, setBanning] = useState<Member | null>(null);
+  const [lifting, setLifting] = useState<CommunityWireBan | null>(null);
   const [roster, setRoster] = useState<Member[]>([]);
   const [selectedMember, setSelectedMember] = useState('');
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -675,20 +679,7 @@ export function Manage({
                             variant="ghost"
                             disabled={busy}
                             aria-label={`Ban ${member.displayName} from space`}
-                            onClick={() => {
-                              // Cancel stops; an empty answer bans without a reason.
-                              const reason = window.prompt(
-                                `Ban ${member.displayName}? They can't rejoin with this account or email. Reason (optional):`
-                              );
-                              if (reason === null) return;
-                              void perform(
-                                () =>
-                                  request(`/api/v1/members/${member.memberId}/ban`, 'POST', {
-                                    ...(reason.trim() ? { reason: reason.trim() } : {}),
-                                  }),
-                                'Member banned.'
-                              );
-                            }}
+                            onClick={() => setBanning(member)}
                           >
                             <Ban size={16} />
                           </Button>
@@ -702,6 +693,36 @@ export function Manage({
                   </Button>
                 )}
               </section>
+            )}
+            {banning && (
+              <BanDialog
+                name={banning.displayName}
+                busy={busy}
+                onClose={() => setBanning(null)}
+                onBan={(reason) => {
+                  const target = banning;
+                  setBanning(null);
+                  void perform(
+                    () =>
+                      request(`/api/v1/members/${target.memberId}/ban`, 'POST', {
+                        ...(reason ? { reason } : {}),
+                      }),
+                    'Member banned.'
+                  );
+                }}
+              />
+            )}
+            {lifting && (
+              <LiftBanDialog
+                name={lifting.displayName}
+                busy={busy}
+                onClose={() => setLifting(null)}
+                onLift={() => {
+                  const target = lifting;
+                  setLifting(null);
+                  void perform(() => request(`/api/v1/bans/${target.id}`, 'DELETE'), 'Ban lifted.');
+                }}
+              />
             )}
             {moderator && bans.length > 0 && (
               <section className="panel">
@@ -722,13 +743,7 @@ export function Manage({
                       variant="ghost"
                       disabled={busy}
                       aria-label={`Lift the ban on ${ban.displayName}`}
-                      onClick={() => {
-                        if (window.confirm(`Let ${ban.displayName} join again?`))
-                          void perform(
-                            () => request(`/api/v1/bans/${ban.id}`, 'DELETE'),
-                            'Ban lifted.'
-                          );
-                      }}
+                      onClick={() => setLifting(ban)}
                     >
                       Lift ban
                     </Button>
