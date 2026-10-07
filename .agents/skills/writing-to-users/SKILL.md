@@ -5,7 +5,7 @@ description: 'Writes a direct reply to one person about their own report or ques
 
 # Writing to Users
 
-One person wrote to us. This skill is how we write back. It covers every one-to-one reply: a comment on a GitHub issue, the receipt and shipped emails, a decline, an answer in a discussion, a reply on Discord or social media.
+One person wrote to us. This skill is how we write back. It covers every one-to-one reply: a comment on a GitHub issue, the receipt and shipped emails, a decline, an answer in a discussion, a reply on social media. (There is no DorkOS Discord; the official Community Space is coming.)
 
 It builds on `writing-for-humans`, which owns everything published for everyone (docs, changelog, UI copy). Read that first if you have not. This skill adds what a reply to a specific person needs: the standard in `meta/user-care.md`, the three reply shapes, and the checks before anything posts.
 

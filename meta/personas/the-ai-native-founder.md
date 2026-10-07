@@ -20,7 +20,7 @@
 
 Ikechi has a strong vision and strong taste, and more ideas than hours. He builds products and runs operations by directing agents: one agent writes the app, another drafts the investor update, another works the support inbox, another keeps the books in order. He treats agents as co-workers and co-creators, not as assistants or a chat box he types into. He sets the goals; each agent has a job and works toward them.
 
-He wants **one place to run the business**, not a pile of tools: a workspace where he talks to his people and his agents in DMs, channels and threads, and where agents can act in the outside tools the business depends on. He wants to trust his agents the way he trusts a good hire, and to be able to check the record when something looks off.
+He wants **the tools his business needs without buying or building software**: he asks for a dashboard or a tracker, and his agents build it inside DorkOS (mini apps). He wants a product **made for founders**, not a general-purpose chat app, and a system he **owns**: his computer, his files, his own AI plan. The chat workspace (DMs, channels and threads with his people and agents, and agents acting in the outside tools the business depends on) is what he expects as a given, not why he chose DorkOS. He wants to trust his agents the way he trusts a good hire, and to be able to check the record when something looks off.
 
 He is a **power user without being a programmer**. What separates him from the anti-persona (`the-prompt-dabbler.md`) is not skill, it is **operator mentality**: he wants to own and run his system, and he will climb whatever learning curve that takes.
 
@@ -42,13 +42,14 @@ The second-worst day: not knowing what an agent did in an outside account (an em
 - When I am thinking through a decision, I want a thought partner that knows this business's context, so that I reason better and faster.
 - When work should recur (reports, follow-ups, content, checks), I want to schedule it and forget it, so that the business runs without me pushing every task.
 - When agents act in Gmail or other outside tools, I want to see what they did and step in when I need to, so that I can trust them with real work.
+- When the business needs a tool nobody sells (a dashboard, a tracker, a page for one odd job), I want to ask my agents for it and have it open inside DorkOS, so that I get the tool without hiring a developer.
 - When I need a capability I do not have, I want to install it, so that I extend the system without writing code.
 
 ## Goals
 
 1. Build a business far bigger than its headcount
 2. Set the goals and let co-workers, people and agents, own the work toward them
-3. Talk to people and agents in one place, and let agents work the business's real tools
+3. Ask for the tools the business needs and have agents build them; let agents work the business's real tools
 4. Trust agents with real work, with a record to check instead of a permission prompt for every step
 5. Compound capability over time: every agent set up and every skill installed makes the next job faster
 
