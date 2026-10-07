@@ -128,26 +128,26 @@ The research behind these decisions is in `research/20261006_*.md`.
 
 **Decided:** a new person needs no outside AI subscription. They start on a DorkOS account (the default, but skippable), DorkOS Cloud and DorkOS's own AI, and are running in under one minute. DorkOS's own services come first everywhere; bringing your own Claude, ChatGPT or OpenRouter is second. DorkOS builds its own engine before launch (developer name Doe, on Pi; the app says "Runs on: DorkOS"), and nobody sees a runtime or model name while getting started. A card is required for DorkOS's own AI, with no free starter credits. DorkOS picks the model; it can be changed in Settings and in the status bar, where it is hidden by default. Research: `research/20261007_dorkos-runtime.md`.
 
-## 23. How Doe is built
+## 23. Organise the repo around the vision
 
-**Decided:** Doe (DOR-2782) is built in order: the engine package first (DOR-2786), then plugging it into DorkOS as a runtime (DOR-2787); together they unblock one-minute onboarding (DOR-2783) and automatic model choice (DOR-2784). A Codex agent builds it, using the repo's own workflow skills. Reuse first: audit the Pi ecosystem (licence, no telemetry, runs in process, no coding persona) before writing our own. Tools load lazily, and every DorkOS capability becomes a Doe tool. The app label is "DorkOS".
+**Decided:** a north-star set at the top of `meta/` (vision, principles, voice, roadmap), with truly obsolete material deleted (git keeps the history) and only what is still worth citing archived; this brief and decision record in `plans/`; the vision, mission and message stack at the top of `AGENTS.md`; and the harness (path rules, skills, word checks, operating skills, a scheduled drift check) pointing every agent at the same source.
 
 ## 24. Launch date and the first-run path
 
 **Decided:** launch is late November 2026, holding the cut line in `research/20261007_dorkos-runtime.md`. The card path is US-only at launch, so using your own AI key or sign-in is a launch item: everyone else still gets a working first run.
 
-## 25. Proactive persistent agents
+## 25. How Doe is built
+
+**Decided:** Doe (DOR-2782) is built in order: the engine package first (DOR-2786), then plugging it into DorkOS as a runtime (DOR-2787); together they unblock one-minute onboarding (DOR-2783) and automatic model choice (DOR-2784). A Codex agent builds it, using the repo's own workflow skills. Reuse first: audit the Pi ecosystem (licence, no telemetry, runs in process, no coding persona) before writing our own. Tools load lazily, and every DorkOS capability becomes a Doe tool. The app label is "DorkOS".
+
+## 26. Proactive persistent agents
 
 **Decided:** every agent is proactive; its type template decides how (leads beat on a timer, business doers wake on events first, coders wake on events only). The heartbeat is a skill plus a small beat runner: a free change-check, cheap decision-model triage, smart timing and event wakes, one-line records, batching per person and quiet hours. Triage runs on DorkOS credits for every agent, Claude Code and Codex included, and its cost is shown in the agent's settings. **Heartbeats ship before launch** (DOR-2788, urgent). Design: `meta/PROACTIVE-AGENTS.md`; tested in four role-plays: `research/20261007_agent-teams-role-play.md`.
 
-## 26. Reports-to, money and agents creating agents
+## 27. Reports-to, money and agents creating agents
 
 **Decided:**
 
 - **"Reports to" is optional** on every profile. When blank it is the agent's creator, and every chain ends at a person.
 - **No built-in money caps.** An agent's spending limit lives on the card it is given, plus its instructions and budgeting skills.
 - **Agents may create agents** that report to them. They ask first only when the new agent would get spending power.
-
-## 27. Organise the repo around the vision
-
-**Decided:** a north-star set at the top of `meta/` (vision, principles, voice, roadmap), with truly obsolete material deleted (git keeps the history) and only what is still worth citing archived; this brief and decision record in `plans/`; the vision, mission and message stack at the top of `AGENTS.md`; and the harness (path rules, skills, word checks, operating skills, a scheduled drift check) pointing every agent at the same source.

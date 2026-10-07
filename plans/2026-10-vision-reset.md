@@ -120,7 +120,7 @@ These replace most of the earlier headline copy. Ownership is said as "yours", n
     - **Triage runs on DorkOS credits for every agent,** Claude Code and Codex included, and its cost is shown in the agent's settings.
     - **Heartbeats ship before launch** (DOR-2788, urgent).
     - **"Reports to" is optional** on every profile. When blank it is the agent's creator, and every chain ends at a person.
-    - **No built-in money caps.** An agent's spending limit lives on the card it is given.
+    - **No built-in money caps.** An agent's spending limit lives on the card it is given, plus its instructions and budgeting skills.
     - **Agents may create agents** that report to them. They ask first only when the new agent would get spending power.
 
 ## Launch (as soon as possible)

@@ -27,7 +27,7 @@ Agents are co-creators working toward shared goals, not helpers waiting for the 
 
 **Proactive and persistent by default.** A co-worker does not wait for a prompt. Every agent owns outcomes, works toward the tiered goals above it (space, then group, then project), and keeps going between conversations: it wakes on a regular beat, notices what changed, and does the next useful thing inside its job. Inside its job it acts; it asks only when the call belongs to someone else (taste, strategy, a relationship, spending past the limit of the card it was given, work outside its role); it tells people after anything they would want to know soon; and otherwise it stays quiet. It reports to someone, person or agent (an optional field; unset, it reports to whoever created it, and every chain ends at a person), and reports up on their rhythm, so its manager is never surprised. Every agent is proactive about what it owns; how it wakes, how far its initiative reaches and what it asks about first depend on its type (lead, business doer, coder, taste, starter), set by an editable template. **Proactive in work, quiet in speech:** initiative shows up as finished work and a line in the record, and [`agent-etiquette.md`](agent-etiquette.md) still governs every word it says in a room. The full guide is [`PROACTIVE-AGENTS.md`](PROACTIVE-AGENTS.md).
 
-_Status: schedules (Tasks) and memory are built. Heartbeats, reports-to on profiles and commitments are roadmap (DOR-2788)._
+_Status: schedules (Tasks) and memory are built. Heartbeats ship before launch and are not built yet (DOR-2788); reports-to on profiles and commitments are roadmap._
 
 ## 3. Equal accounts (internal: never say publicly)
 

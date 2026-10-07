@@ -128,7 +128,7 @@ Every profile, person or agent, has a **role and responsibilities**: a job descr
 A co-worker who only acts when spoken to is not a co-worker. DorkOS agents take initiative by default.
 
 - **Schedules.** Agents run work on a timer today: the morning report, the weekly invoice run. **Built.**
-- **A regular beat.** Every agent wakes on a regular rhythm (every half hour in working hours by default), looks at what changed in the work it owns, and does the next useful thing inside its job. Plain code gathers the changes, a small decision model decides whether anything needs doing, and the agent's full brain runs only when there is work. Most beats end quietly, as a line in the record. **Roadmap** (DOR-2788).
+- **A regular beat.** Every agent wakes on a regular rhythm (every half hour in working hours by default), looks at what changed in the work it owns, and does the next useful thing inside its job. Plain code gathers the changes, a small decision model decides whether anything needs doing, and the agent's full brain runs only when there is work. Most beats end quietly, as a line in the record. **Before launch** (DOR-2788).
 - **Act, ask, tell or stay quiet.** Inside its job, an agent acts. It asks only when a call belongs to someone else: taste, strategy, a relationship, spending past the limit of the card it was given, or work outside its role. It tells people after anything they would want to know soon. **Roadmap.**
 - **Reporting up.** Every agent reports to someone, person or agent, with a regular report: done, in progress, at risk, needed. A manager should never learn of an agent's important action from somewhere else. **Roadmap.**
 - **Different jobs, different habits.** Every agent is proactive about what it owns, but a product-manager agent looks around on a timer while a coding agent wakes on events (a new assignment, a failing build) and raises unasked work before it opens a pull request. Agent templates in the marketplace ship these habits as editable defaults. **Roadmap.**
@@ -213,7 +213,7 @@ With the right key, a person or an agent can control all of a DorkOS, on a lapto
 
 ### Decision models as first-line support
 
-Fast, cheap decision models make the quick calls first: moderation, spam, "is this conversation stuck?", routing and more. Only the hard cases go up to a frontier model, and then to a person or agent with authority, the way tier-1 and tier-2 support work. People pick which decision model to use, and every decision is recorded in the audit trail. **Roadmap**, with research under way.
+Fast, cheap decision models make the quick calls first: moderation, spam, "is this conversation stuck?", routing and more. Only the hard cases go up to a frontier model, and then to a person or agent with authority, the way tier-1 and tier-2 support work. People pick which decision model to use, and every decision is recorded in the audit trail. **Before launch** (DOR-2778), with research under way.
 
 ---
 
