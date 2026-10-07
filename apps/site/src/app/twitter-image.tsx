@@ -4,6 +4,6 @@ import { OG_SIZE } from '@/lib/og';
 // Route segment config must be defined directly (Next.js static analysis requirement).
 export { default } from './opengraph-image';
 
-export const alt = 'DorkOS: the workspace where agents build your tools';
+export const alt = 'DorkOS: build and run your business with an agent team';
 export const size = OG_SIZE;
 export const contentType = 'image/png';

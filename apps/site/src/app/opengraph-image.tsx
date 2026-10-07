@@ -1,7 +1,7 @@
 import { ImageResponse } from 'next/og';
 import { OG_COLORS, OG_FONT_SANS, OG_SIZE, OgAccentStripes, loadOgFonts } from '@/lib/og';
 
-export const alt = 'DorkOS: the workspace where agents build your tools';
+export const alt = 'DorkOS: build and run your business with an agent team';
 export const size = OG_SIZE;
 export const contentType = 'image/png';
 
@@ -87,7 +87,7 @@ export default async function Image() {
             marginTop: '8px',
           }}
         >
-          Ask for a tool. Your agents build it.
+          Build and run your business with an agent team.
         </span>
       </div>
 
@@ -101,7 +101,7 @@ export default async function Image() {
           fontWeight: 400,
         }}
       >
-        For founders · free · open source · on your computer
+        Mini apps · made for founders · yours to keep
       </span>
 
       {OgAccentStripes({ thickness: 4 })}

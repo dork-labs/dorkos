@@ -15,8 +15,16 @@ describe('the home page’s metadata', () => {
     // The root layout's template is `%s | DorkOS`. A plain string title would
     // be fed through it and come back "DorkOS: … | DorkOS".
     expect(metadata.title).toEqual({
-      absolute: 'DorkOS: The workspace where agents build your tools',
+      absolute: 'DorkOS: Build and run your business with an agent team',
     });
+  });
+
+  it('describes the page without saying where DorkOS runs or "open source"', () => {
+    // The 2026-10-07 message stack: DorkOS Cloud runs it on a server too, so
+    // headline copy (titles, descriptions, cards) says "yours" instead.
+    expect(metadata.description).toBe(siteConfig.description);
+    expect(String(metadata.description)).not.toMatch(/computer|open source/i);
+    expect(String(metadata.description).length).toBeLessThanOrEqual(160);
   });
 
   it('is indexable, with the site root as its canonical', () => {
@@ -37,7 +45,7 @@ describe('the home page’s metadata', () => {
         url: '/opengraph-image',
         width: 1200,
         height: 630,
-        alt: 'DorkOS: the workspace where agents build your tools',
+        alt: 'DorkOS: build and run your business with an agent team',
       },
     ]);
   });
@@ -62,7 +70,7 @@ describe('the home page’s metadata', () => {
     // different things about the same URL.
     expect(metadata.twitter).toEqual({
       card: 'summary_large_image',
-      title: 'DorkOS: The workspace where agents build your tools',
+      title: 'DorkOS: Build and run your business with an agent team',
       description: metadata.description,
     });
   });
