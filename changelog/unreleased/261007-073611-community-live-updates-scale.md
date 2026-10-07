@@ -8,6 +8,9 @@ covers:
   - 'feat(community): per-member stream cap, a self-checking listener, readiness off the pool (DOR-2764)'
   - 'fix(community): roomy per-member stream limit, batched reconnect wake, readiness checks both addresses (DOR-2764)'
   - 'chore(changelog): fold the review fixes into the live-updates fragment (DOR-2764)'
+  - 'chore(changelog): fold the delta fixes into the live-updates fragment (DOR-2764)'
+  - 'fix(community): an app's own live hub stops when its pool ends (DOR-2764)'
+  - 'chore(changelog): fold the pool-teardown fix into the live-updates fragment (DOR-2764)'
 ---
 
 ### Changed
