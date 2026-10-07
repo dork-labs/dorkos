@@ -1,0 +1,6 @@
+{
+  "code": "precondition_failed",
+  "status": 409,
+  "title": "That code does not match.",
+  "detail": "Check the code shown on your computer and try again. Nothing was changed."
+}

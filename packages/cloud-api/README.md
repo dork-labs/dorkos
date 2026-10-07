@@ -41,18 +41,18 @@ body is neither.
 
 ## What is in the contract
 
-| Group                     | Covers                                                                                                                                                                                                                    |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Session and account       | `GET /v1/session`, `GET /v1/account`, `POST /v1/account/export`, `POST /v1/account/deletion`                                                                                                                              |
-| Device link               | `POST /v1/device/code`, `POST /v1/device/token` (RFC 8628)                                                                                                                                                                |
-| Instances                 | heartbeat, revoke, list, organization re-link                                                                                                                                                                             |
-| Managed connections       | catalog, toolkits, connections, authentication flows, authority commands, executions, the lease-based event pull and acknowledgement, usage, who a grant covers (one agent or every agent)                                |
-| Billing                   | `GET /v1/entitlements`, `/v1/balance`, `/v1/usage`, `/v1/price-list`, `/v1/nudge`, `/v1/offers`, `POST /v1/checkout`, `/v1/topup`, `/v1/portal`, `GET /v1/statement`                                                      |
-| Inference                 | `POST /v1/inference/tokens`, `GET /v1/inference/models`, token revocation                                                                                                                                                 |
-| Seats, orgs and addresses | organizations, membership, invitations, agents and claims (an agent says whether a claim waits on approval, and which), seats, addresses, grants, add-ons, the seat inbox, presence, the seat activity event              |
-| Remote access             | status, open/close, wake tokens, enrolment, canonical and custom addresses, designation and its read, usage against the published limits, instance credentials, the command stream and its acknowledgement, event batches |
-| Hosted communities        | `GET`/`POST /v1/communities`, the short-name check, a fresh owner-claim link, keep (with a preview of what it holds) and restore, moves: start, list, poll, cancel, and the servers where the account signs a person in   |
-| Shared                    | the `Problem` envelope, bearer auth, cursor pagination, the `X-DorkOS-Wire: 1` header                                                                                                                                     |
+| Group                     | Covers                                                                                                                                                                                                                                                                                                      |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Session and account       | `GET /v1/session`, `GET /v1/account`, `POST /v1/account/export`, `POST /v1/account/deletion`                                                                                                                                                                                                                |
+| Device link               | `POST /v1/device/code`, `POST /v1/device/token` (RFC 8628)                                                                                                                                                                                                                                                  |
+| Instances                 | heartbeat, revoke, list, organization re-link                                                                                                                                                                                                                                                               |
+| Managed connections       | catalog, toolkits, connections, authentication flows, authority commands, executions, the lease-based event pull and acknowledgement, usage, who a grant covers (one agent or every agent)                                                                                                                  |
+| Billing                   | `GET /v1/entitlements`, `/v1/balance`, `/v1/usage`, `/v1/price-list`, `/v1/nudge`, `/v1/offers`, `POST /v1/checkout`, `/v1/topup`, `/v1/portal`, `GET /v1/statement`                                                                                                                                        |
+| Inference                 | `POST /v1/inference/tokens`, `GET /v1/inference/models`, token revocation                                                                                                                                                                                                                                   |
+| Seats, orgs and addresses | organizations, membership, invitations, agents and claims (an agent says whether a claim waits on approval, and which), seats, addresses, grants, add-ons, the seat inbox, presence, the seat activity event                                                                                                |
+| Remote access             | status, open/close, wake tokens, enrolment and the enrolment request a person approves, canonical and custom addresses, designation and its read, usage against the published limits, instance credentials with their edge proof and self-revoke, the command stream and its acknowledgement, event batches |
+| Hosted communities        | `GET`/`POST /v1/communities`, the short-name check, a fresh owner-claim link, keep (with a preview of what it holds) and restore, moves: start, list, poll, cancel, and the servers where the account signs a person in                                                                                     |
+| Shared                    | the `Problem` envelope, bearer auth, cursor pagination, the `X-DorkOS-Wire: 1` header                                                                                                                                                                                                                       |
 
 ### What is deliberately not in it
 
@@ -220,6 +220,54 @@ stays opaque; do not parse it for names. A `rotate` command's `credentialId` is 
 not a credential id: present it as the issue call's `idempotencyKey` to receive the
 replacement, then confirm the replacement with the `credentialId` that call returns. If that
 call is refused, keep the current credential; the service may offer another later.
+
+The issue key stops a retry from creating a second credential; it does not replay the answer.
+A key already used is refused with `conflict`, and the value is never sent twice, because the
+service does not keep it. After a lost answer, issue again with a fresh key, then store and
+confirm the new credential. An issued credential that was never confirmed is never used: the
+service withdraws it when a newer one is issued, and in any case once its confirmation window
+passes.
+
+`POST /v1/remote/credentials/revoke` (`remoteCredentialsRevoke`) lets an instance revoke its own
+tunnel credentials with its API key, no body, answered with `{ revokedAt }` even when there was
+nothing to revoke. It does not end consent; `DELETE /v1/remote/enrolment` does, and revokes the
+credential with it.
+
+### Proving a request came through the managed edge
+
+A credential may carry `edgeProof: { header, secret }` (`RemoteEdgeProofSchema`). The managed
+edge removes every copy of `header` a client sent and adds exactly one carrying `secret`. Before
+any other handling, refuse a request that arrived over managed access unless it carries exactly
+one `header` equal to `secret`: no copy, two copies, or a different value are all refused.
+Compare in constant time, never count a refused request as activity, and never treat the proof
+as a login. The secret belongs to its credential: a replacement brings a new one (accept both
+for at most `REMOTE_EDGE_PROOF_OVERLAP_SECONDS` after confirming the replacement), and a revoke
+ends it. The secret carries the `ONE_TIME_CREDENTIAL_META` marker: never log it or relay it to a
+browser. `edgeProof` is optional only so an older answer parses; do not open managed access
+with a credential that lacks it.
+
+### Enrolling a machine: a person approves what the machine asks
+
+Consent to managed remote access is always a person's. A person on the service's own pages
+uses `POST /v1/remote/enrolment?instanceId=…` with their browser session. A person at the
+machine reaches the same consent through a device-authorization ceremony:
+
+1. After someone signed in to DorkOS on the machine chooses managed access, the instance calls
+   `POST /v1/remote/enrolment/requests` with its API key and no body. The answer
+   (`RemoteEnrolmentRequestSchema`) carries a short `userCode` (`XXXX-XXXX`, from
+   `REMOTE_ENROLMENT_USER_CODE_ALPHABET`), an https `approveUrl`, `expiresAt`, `pollAfterMs` and
+   the `consentVersion` the person will agree to. A new request replaces an earlier pending one.
+2. The machine shows the code and opens the page. A signed-in person with a seat in the
+   machine's organization compares the code and approves (`v1Path.remoteEnrolmentRequestApprove`,
+   body `{ userCode }`) or denies (`v1Path.remoteEnrolmentRequestDeny`).
+3. The instance polls `v1Path.remoteEnrolmentRequest(requestId)` with its key. The answer
+   (`RemoteEnrolmentRequestStatusSchema`) is `pending`, `approved` with the `enrolment`,
+   `denied`, or `expired`; a request that is not the instance's own is `not_found`.
+
+A machine already enrolled is refused with `conflict`; withdraw first to agree again.
+`DELETE /v1/remote/enrolment` takes either the instance's own key (its own enrolment, whatever
+the query says) or a person's browser session with `?instanceId=…`, and revokes the tunnel
+credential before it answers.
 
 ### Hosted communities
 
