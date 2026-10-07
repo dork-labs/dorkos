@@ -226,7 +226,9 @@ A key already used is refused with `conflict`, and the value is never sent twice
 service does not keep it. After a lost answer, issue again with a fresh key, then store and
 confirm the new credential. An issued credential that was never confirmed is never used: the
 service withdraws it when a newer one is issued, and in any case once its confirmation window
-passes.
+passes. A lost rotation answer recovers on its own: a replacement collected but not confirmed in
+time is withdrawn, and the service sends a new `rotate` command with a new `credentialId` before
+your current credential's deadline. Keep serving with the current credential meanwhile.
 
 `POST /v1/remote/credentials/revoke` (`remoteCredentialsRevoke`) lets an instance revoke its own
 tunnel credentials with its API key, no body, answered with `{ revokedAt }` even when there was
@@ -236,15 +238,22 @@ credential with it.
 ### Proving a request came through the managed edge
 
 A credential may carry `edgeProof: { header, secret }` (`RemoteEdgeProofSchema`). The managed
-edge removes every copy of `header` a client sent and adds exactly one carrying `secret`. Before
-any other handling, refuse a request that arrived over managed access unless it carries exactly
-one `header` equal to `secret`: no copy, two copies, or a different value are all refused.
-Compare in constant time, never count a refused request as activity, and never treat the proof
-as a login. The secret belongs to its credential: a replacement brings a new one (accept both
-for at most `REMOTE_EDGE_PROOF_OVERLAP_SECONDS` after confirming the replacement), and a revoke
-ends it. The secret carries the `ONE_TIME_CREDENTIAL_META` marker: never log it or relay it to a
-browser. `edgeProof` is optional only so an older answer parses; do not open managed access
-with a credential that lacks it.
+edge removes every copy of `header` a client sent and adds exactly one carrying `secret`. Every
+request that arrives over managed access (on the managed listener, or whose `Host` is one of the
+credential's `hosts`) must carry it: before any other handling, refuse the request unless it
+carries exactly one `header` equal to `secret`. No copy, two copies, or a different value are all
+refused; a missing header is a refusal, never a skip. Count copies from the raw or distinct
+header lists (`req.rawHeaders`, `req.headersDistinct`), compare in constant time, then remove the
+header so no later handler, logger or proxy sees it. Never count a refused request as activity,
+and never treat the proof as a login. The header is never one HTTP, a proxy or a session already
+uses (`REMOTE_EDGE_PROOF_RESERVED_HEADERS`, any `x-forwarded-*`).
+
+The secret belongs to its credential. A replacement overlaps: accept the new secret once you
+serve the new credential, and the old one until `REMOTE_EDGE_PROOF_OVERLAP_SECONDS` after you
+confirm the replacement; the service keeps the old credential valid for that long too. A revoke
+is immediate. The secret carries the `ONE_TIME_CREDENTIAL_META` marker: never log it or relay
+it to a browser. `edgeProof` is optional only so an older answer parses; do not open managed
+access with a credential that lacks it.
 
 ### Enrolling a machine: a person approves what the machine asks
 
@@ -257,12 +266,16 @@ machine reaches the same consent through a device-authorization ceremony:
    (`RemoteEnrolmentRequestSchema`) carries a short `userCode` (`XXXX-XXXX`, from
    `REMOTE_ENROLMENT_USER_CODE_ALPHABET`), an https `approveUrl`, `expiresAt`, `pollAfterMs` and
    the `consentVersion` the person will agree to. A new request replaces an earlier pending one.
-2. The machine shows the code and opens the page. A signed-in person with a seat in the
-   machine's organization compares the code and approves (`v1Path.remoteEnrolmentRequestApprove`,
-   body `{ userCode }`) or denies (`v1Path.remoteEnrolmentRequestDeny`).
+2. The machine shows the code and opens the page, which shows which machine is asking (its name
+   and when it was linked) beside the code. A signed-in person with a seat in the machine's
+   organization compares the code and approves (`v1Path.remoteEnrolmentRequestApprove`, body
+   `{ userCode }`) or denies (`v1Path.remoteEnrolmentRequestDeny`). A wrong code is `forbidden`,
+   and the fifth one (`REMOTE_ENROLMENT_MAX_WRONG_CODES`) ends the request. Without a seat the
+   answer is `not_found`, so it never confirms a request exists.
 3. The instance polls `v1Path.remoteEnrolmentRequest(requestId)` with its key. The answer
    (`RemoteEnrolmentRequestStatusSchema`) is `pending`, `approved` with the `enrolment`,
-   `denied`, or `expired`; a request that is not the instance's own is `not_found`.
+   `denied`, or `expired`; a request that is not the instance's own is `not_found`. Wait at least
+   `pollAfterMs` (never under one second) between reads, or expect `rate_limited`.
 
 A machine already enrolled is refused with `conflict`; withdraw first to agree again.
 `DELETE /v1/remote/enrolment` takes either the instance's own key (its own enrolment, whatever

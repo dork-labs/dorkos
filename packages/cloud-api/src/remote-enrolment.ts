@@ -32,7 +32,10 @@ import { HttpsUrlSchema, IdSchema, TimestampSchema } from './primitives.js';
 export const RemoteEnrolmentSchema = z
   .object({
     enrolmentId: IdSchema,
-    consentVersion: z.string().describe('Which version of the consent text the person agreed to.'),
+    consentVersion: z
+      .string()
+      .min(1)
+      .describe('Which version of the consent text the person agreed to.'),
     enrolledAt: TimestampSchema,
   })
   .describe('A person`s consent to managed remote access. Only a person`s session can create one.');
@@ -93,8 +96,20 @@ export const RemoteEnrolmentUserCodeSchema = z
     'must be eight letters from the published alphabet, as XXXX-XXXX'
   )
   .describe(
-    'The short code a person compares and types to approve a machine: eight consonants as XXXX-XXXX, upper case, from BCDFGHJKLMNPQRSTVWXZ.'
+    `The short code a person compares and types to approve a machine: eight consonants as XXXX-XXXX, upper case, from ${REMOTE_ENROLMENT_USER_CODE_ALPHABET}.`
   );
+
+/**
+ * How many wrong codes an approval may be tried with. The wrong code that
+ * reaches this number ends the request, which then reads `expired`.
+ */
+export const REMOTE_ENROLMENT_MAX_WRONG_CODES = 5 as const;
+
+/**
+ * The shortest poll delay the service sends, in milliseconds. Polling sooner
+ * than `pollAfterMs` may be answered `rate_limited`.
+ */
+const MIN_POLL_AFTER_MS = 1000;
 
 /**
  * `POST /v1/remote/enrolment/requests` — a machine asks a person to approve
@@ -105,7 +120,10 @@ export const RemoteEnrolmentUserCodeSchema = z
  * signed in to DorkOS on that machine chose managed access there: the request
  * is how that local choice reaches a person the service knows. The instance
  * shows `userCode` and opens `approveUrl`; a signed-in person sees the same
- * code on the service`s page and approves or denies it. The instance polls
+ * code on the service`s page and approves or denies it. The page shows which
+ * machine is asking (its name and when it was linked), not only the code, so
+ * a person can tell a request from their own machine from one they did not
+ * expect. The instance polls
  * {@link RemoteEnrolmentRequestStatusSchema} until the request settles. Nothing
  * here enrols the machine by itself: only a person`s approval does.
  *
@@ -124,7 +142,8 @@ export const RemoteEnrolmentUserCodeSchema = z
  * - `precondition_failed` when the machine is not linked to an organization.
  * - `entitlement_required` when the organization cannot use managed remote
  *   access, with an `actionUrl` where a person can change that.
- * - `rate_limited` when the machine asks too often.
+ * - `rate_limited` when the machine asks too often, or reads a request`s
+ *   status sooner than `pollAfterMs` allows.
  */
 export const RemoteEnrolmentRequestSchema = z
   .object({
@@ -141,8 +160,10 @@ export const RemoteEnrolmentRequestSchema = z
     pollAfterMs: z
       .number()
       .int()
-      .nonnegative()
-      .describe('How long to wait before the first read of the request`s status.'),
+      .min(MIN_POLL_AFTER_MS)
+      .describe(
+        'How long to wait before the first read of the request`s status, at least one second. Reading sooner may be answered `rate_limited`.'
+      ),
     consentVersion: z
       .string()
       .min(1)
@@ -169,7 +190,8 @@ export type RemoteEnrolmentRequest = z.infer<typeof RemoteEnrolmentRequestSchema
  * - `approved`: a person approved it, and `enrolment` is the record that
  *   approval created. Managed access may now be set up.
  * - `denied`: a person declined it. Nothing was enrolled.
- * - `expired`: it lapsed, or a newer request replaced it. Nothing was enrolled.
+ * - `expired`: it lapsed, a newer request replaced it, or it was ended after
+ *   {@link REMOTE_ENROLMENT_MAX_WRONG_CODES} wrong codes. Nothing was enrolled.
  *
  * The last three are final. The approve and deny routes answer with this
  * shape too. A later release may add a status; a client that cannot parse an
@@ -185,8 +207,10 @@ export const RemoteEnrolmentRequestStatusSchema = z
         pollAfterMs: z
           .number()
           .int()
-          .nonnegative()
-          .describe('How long to wait before reading the status again.'),
+          .min(MIN_POLL_AFTER_MS)
+          .describe(
+            'How long to wait before reading the status again, at least one second. Reading sooner may be answered `rate_limited`.'
+          ),
       })
       .describe('Nobody has answered yet.'),
     z
@@ -201,7 +225,9 @@ export const RemoteEnrolmentRequestStatusSchema = z
       .describe('A person declined the request. Nothing was enrolled.'),
     z
       .object({ status: z.literal('expired'), requestId: IdSchema })
-      .describe('The request lapsed or was replaced by a newer one. Nothing was enrolled.'),
+      .describe(
+        'The request lapsed, was replaced by a newer one, or was ended after too many wrong codes. Nothing was enrolled.'
+      ),
   ])
   .describe(
     'Where one enrolment request stands: pending, approved with the enrolment it created, denied, or expired.'
@@ -217,16 +243,21 @@ export type RemoteEnrolmentRequestStatus = z.infer<typeof RemoteEnrolmentRequest
  * A person`s browser session only; the service`s own approval page is the
  * caller. `userCode` must match the request`s code, which is what ties the
  * person at the page to the machine that asked: a mismatch is refused with
- * `precondition_failed` and changes nothing, and the service may end a request
- * after repeated wrong codes. Approval checks what `POST /v1/remote/enrolment`
- * checks: a seat in the organization the machine is linked to (`forbidden`)
- * and agreement to the current terms (`precondition_failed`, with an
- * `actionUrl`). A request that is no longer pending is refused with
- * `conflict`; one the person cannot see is `not_found`. The answer is
+ * `forbidden` and a `detail` that says the code does not match, and changes
+ * nothing. The {@link REMOTE_ENROLMENT_MAX_WRONG_CODES}th wrong code ends the
+ * request, which then reads `expired`.
+ *
+ * Approval needs what `POST /v1/remote/enrolment` needs: a seat in the
+ * organization the machine is linked to, and agreement to the current terms
+ * (`precondition_failed`, with an `actionUrl`). A person without such a seat
+ * is answered `not_found`, exactly as for a request that does not exist, so
+ * the answer never confirms that a request exists. A request that is no
+ * longer pending is refused with `conflict`. The answer is
  * {@link RemoteEnrolmentRequestStatusSchema} with status `approved`.
  *
  * `POST /v1/remote/enrolment/requests/{requestId}/deny` takes no body, has the
- * same caller and seat rules, and answers with status `denied`.
+ * same caller and seat rules (`not_found` without a seat), and answers with
+ * status `denied`.
  */
 export const RemoteEnrolmentApproveRequestSchema = z
   .object({

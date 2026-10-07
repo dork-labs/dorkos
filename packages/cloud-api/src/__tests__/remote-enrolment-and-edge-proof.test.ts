@@ -9,6 +9,8 @@ import { z } from 'zod';
 import {
   ONE_TIME_CREDENTIAL_META,
   REMOTE_EDGE_PROOF_OVERLAP_SECONDS,
+  REMOTE_EDGE_PROOF_RESERVED_HEADERS,
+  REMOTE_ENROLMENT_MAX_WRONG_CODES,
   REMOTE_ENROLMENT_USER_CODE_ALPHABET,
   RemoteCredentialRevokeResponseSchema,
   RemoteCredentialSchema,
@@ -16,6 +18,7 @@ import {
   RemoteEnrolmentApproveRequestSchema,
   RemoteEnrolmentRequestSchema,
   RemoteEnrolmentRequestStatusSchema,
+  RemoteEnrolmentSchema,
   RemoteEnrolmentUserCodeSchema,
   V1_ROUTES,
   v1Path,
@@ -285,5 +288,87 @@ describe('the routes', () => {
     expect(
       RemoteCredentialRevokeResponseSchema.parse({ revokedAt: '2026-09-20T08:00:00.000Z' })
     ).toEqual({ revokedAt: '2026-09-20T08:00:00.000Z' });
+  });
+});
+
+describe('the review follow-ups', () => {
+  it('names the alphabet in the code`s description from the constant itself', () => {
+    expect(RemoteEnrolmentUserCodeSchema.description).toContain(
+      REMOTE_ENROLMENT_USER_CODE_ALPHABET
+    );
+  });
+
+  it('ends a request after a fixed, published number of wrong codes', () => {
+    expect(REMOTE_ENROLMENT_MAX_WRONG_CODES).toBe(5);
+  });
+
+  it('never asks for a poll sooner than one second', () => {
+    const request = {
+      requestId: 'enrq_0001',
+      userCode: 'BCDF-GHJK',
+      approveUrl: 'https://cloud.example.invalid/remote/approve',
+      expiresAt: '2026-09-15T12:15:00.000Z',
+      consentVersion: '2026-09-01',
+    };
+    expect(RemoteEnrolmentRequestSchema.safeParse({ ...request, pollAfterMs: 999 }).success).toBe(
+      false
+    );
+    expect(RemoteEnrolmentRequestSchema.safeParse({ ...request, pollAfterMs: 1000 }).success).toBe(
+      true
+    );
+    const pending = {
+      status: 'pending',
+      requestId: 'enrq_0001',
+      expiresAt: '2026-09-15T12:15:00.000Z',
+    };
+    expect(
+      RemoteEnrolmentRequestStatusSchema.safeParse({ ...pending, pollAfterMs: 0 }).success
+    ).toBe(false);
+  });
+
+  it('refuses an enrolment with an empty consent version', () => {
+    expect(
+      RemoteEnrolmentSchema.safeParse({
+        enrolmentId: 'enr_0001',
+        consentVersion: '',
+        enrolledAt: '2026-09-15T12:03:00.000Z',
+      }).success
+    ).toBe(false);
+  });
+
+  it('refuses every header HTTP, a proxy or a session already uses', () => {
+    const secret = 's'.repeat(32);
+    for (const header of [
+      'authorization',
+      'proxy-authorization',
+      'cookie',
+      'set-cookie',
+      'host',
+      'connection',
+      'upgrade',
+      'content-length',
+      'transfer-encoding',
+      'te',
+      'forwarded',
+      'x-forwarded-for',
+      'x-forwarded-host',
+      'x-forwarded-proto',
+      ':authority',
+      ':path',
+    ]) {
+      expect(RemoteEdgeProofSchema.safeParse({ header, secret }).success, header).toBe(false);
+    }
+    for (const header of REMOTE_EDGE_PROOF_RESERVED_HEADERS) {
+      expect(RemoteEdgeProofSchema.safeParse({ header, secret }).success, header).toBe(false);
+    }
+    // A name that merely contains a reserved word is still a usable name.
+    for (const header of ['x-forwarded', 'x-host-proof', 'tea']) {
+      expect(RemoteEdgeProofSchema.safeParse({ header, secret }).success, header).toBe(true);
+    }
+  });
+
+  it('says the proof is required on every request over managed access', () => {
+    const doc = RemoteEdgeProofSchema.description ?? '';
+    expect(doc).toContain('Every request over managed access');
   });
 });

@@ -337,6 +337,12 @@ export type RemoteUsageResponse = z.infer<typeof RemoteUsageResponseSchema>;
  * collected, or is no longer on offer, is refused with `conflict` and nothing
  * is created; keep using the current credential.
  *
+ * A lost rotation answer recovers on its own. A replacement that was collected
+ * but not confirmed within the window for confirming it is withdrawn, and the
+ * service sends a new `rotate` command, with a new `credentialId`, before the
+ * current credential`s own deadline. Until then the instance keeps serving
+ * with its current credential, which stays valid.
+ *
  * Other refusals: `precondition_failed` when the machine is not linked to an
  * organization, has no address yet, or its owner has not agreed to the
  * current terms (then with an `actionUrl`); `unauthenticated` when the key is
@@ -358,29 +364,70 @@ export const RemoteCredentialIssueRequestSchema = z
   );
 
 /**
+ * Header names an edge proof may never use, because HTTP, a proxy or a session
+ * already gives them a meaning. Any `x-forwarded-*` name is refused as well,
+ * and a `:` pseudo-header cannot pass the name pattern at all.
+ */
+export const REMOTE_EDGE_PROOF_RESERVED_HEADERS: readonly string[] = [
+  'authorization',
+  'proxy-authorization',
+  'cookie',
+  'set-cookie',
+  'host',
+  'connection',
+  'upgrade',
+  'content-length',
+  'transfer-encoding',
+  'te',
+  'forwarded',
+];
+
+/**
  * The header a request must carry to prove it arrived through the managed
  * edge, and the value it must carry.
  *
+ * ## Which requests must carry it
+ *
+ * **Every** request that arrives over managed access: on the instance`s
+ * managed listener, or whose `Host` is one of the credential`s `hosts`. The
+ * proof is required, never optional: a request without the header is refused,
+ * not let through as if it came some other way.
+ *
+ * ## What the edge does, and what the instance checks
+ *
  * The managed edge removes every copy of `header` a client sent and adds
  * exactly one, carrying `secret`. So before any other handling (before login,
- * sessions, routing or counting) an instance refuses a request that arrived
- * over managed access unless it carries **exactly one** `header` whose value
- * equals `secret`. Zero copies, more than one copy, or a different value are
- * all refused, and never resolved by reading the first or last copy. Compare
- * the value in constant time. A refused request is not activity and is not
+ * sessions, routing, logging or counting) an instance refuses such a request
+ * unless it carries **exactly one** `header` whose value equals `secret`. Zero
+ * copies, more than one copy, or a different value are all refused, and never
+ * resolved by reading the first or last copy. Count copies from the raw or
+ * distinct header lists (in Node, `req.rawHeaders` or `req.headersDistinct`),
+ * never from a field that folds repeats into one comma-joined value. Compare
+ * the value in constant time. Then remove the header, so no later handler,
+ * logger or proxy ever sees it. A refused request is not activity and is not
  * counted.
  *
  * The proof says only that a request came through the edge. It is not a
  * person, a login or an approval, and it never stands in for one.
  *
- * The secret belongs to one credential. Every issued credential carries a new
- * one: a replacement`s secret replaces the old secret, and a revoked
- * credential`s secret is no longer valid. During a replacement an instance
- * accepts the new secret from when it starts serving the new credential, and
- * stops accepting the old one {@link REMOTE_EDGE_PROOF_OVERLAP_SECONDS} after
- * it confirmed the new credential, or at once when the old credential is
- * revoked; never more than these two. The service moves the edge to the new
- * secret no earlier than the confirmation and within that overlap.
+ * ## When a secret changes
+ *
+ * The secret belongs to one credential, and every issued credential carries a
+ * new one. A **replacement** (a `rotate` command, or any newer credential the
+ * instance confirms) overlaps: the instance accepts the new secret from when it
+ * starts serving the new credential, and keeps accepting the old one until
+ * {@link REMOTE_EDGE_PROOF_OVERLAP_SECONDS} after it confirmed the new
+ * credential, never more than these two. The service, in turn, moves the edge
+ * to the new secret no earlier than the confirmation, and does not revoke the
+ * replaced credential or retire its secret until that overlap has passed. A
+ * **revoke** (a `revoke` command, `POST /v1/remote/credentials/revoke`, a
+ * withdrawn enrolment, an unlinked machine) is a security action, not a
+ * replacement: it is immediate on both sides, and the instance stops accepting
+ * that credential`s secret at once.
+ *
+ * Header names that already mean something to HTTP, a proxy or a session are
+ * refused ({@link REMOTE_EDGE_PROOF_RESERVED_HEADERS}, any `x-forwarded-*`, and
+ * any `:` pseudo-header), so honouring the proof can never mean stripping one.
  *
  * Never log `secret`, never put it in configuration in the clear, and never
  * return it to a browser.
@@ -394,8 +441,13 @@ export const RemoteEdgeProofSchema = z
         /^[a-z0-9]+(-[a-z0-9]+)*$/,
         'must be a lower-case header name: letters, digits and single hyphens'
       )
+      .refine(
+        (name) =>
+          !REMOTE_EDGE_PROOF_RESERVED_HEADERS.includes(name) && !name.startsWith('x-forwarded-'),
+        'must not be a header HTTP, a proxy or a session already uses'
+      )
       .describe(
-        'The request header that carries the proof, in lower case. Compare header names without regard to case.'
+        'The request header that carries the proof, in lower case. Never a header HTTP, a proxy or a session already uses. Compare header names without regard to case.'
       ),
     secret: z
       .string()
@@ -409,15 +461,17 @@ export const RemoteEdgeProofSchema = z
       }),
   })
   .describe(
-    'The header the managed edge adds to every request it forwards, and the secret it carries. Refuse a managed request without exactly one matching copy.'
+    'The header the managed edge adds to every request it forwards, and the secret it carries. Every request over managed access must carry exactly one matching copy; refuse it otherwise.'
   );
 
 /** The header and secret that prove a request came through the managed edge. */
 export type RemoteEdgeProof = z.infer<typeof RemoteEdgeProofSchema>;
 
 /**
- * How long, in seconds, an instance keeps accepting the previous edge secret
- * after it confirmed a replacement credential. See {@link RemoteEdgeProofSchema}.
+ * How long, in seconds, a replacement credential and the one it replaces
+ * overlap after the replacement is confirmed: the instance keeps accepting the
+ * old edge secret, and the service keeps the old credential valid, for this
+ * long. A revoke has no overlap. See {@link RemoteEdgeProofSchema}.
  */
 export const REMOTE_EDGE_PROOF_OVERLAP_SECONDS = 60 as const;
 
