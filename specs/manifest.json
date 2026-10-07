@@ -3603,6 +3603,14 @@
       "created": "2026-10-07",
       "status": "specified",
       "linearIssue": "DOR-2764"
+    },
+    {
+      "id": "261006-232018",
+      "slug": "trusted-by-default-flip",
+      "title": "Full-power defaults, with outsider protections pinned by tests",
+      "created": "2026-10-06",
+      "status": "specified",
+      "linearIssue": "DOR-2739"
     }
   ]
 }

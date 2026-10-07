@@ -140,6 +140,21 @@ describe('createCanUseTool — approval gate', () => {
     expect(session.pendingInteractions.size).toBe(0);
   });
 
+  // Power flows downstream, never up (spec `trusted-by-default-flip` §4). Under
+  // a ceiling the turn runs at a mode that calls back for every tool, and the
+  // callback must answer from the TURN's mode: answering from the session's
+  // Full autonomy would allow every call the ceiling exists to stop.
+  it('routes a non-safe tool to approval in a bypass session held to the runtime default', async () => {
+    const session = {
+      ...makeSession('bypassPermissions'),
+      turnPermissionCeiling: 'runtime-default' as const,
+    };
+    const canUseTool = createCanUseTool(session, noopLog);
+
+    void canUseTool(NON_SAFE_TOOL, { command: 'rm -rf build' }, makeContext('tool-ceiling'));
+    await vi.waitFor(() => expect(session.pendingInteractions.has('tool-ceiling')).toBe(true));
+  });
+
   it('auto-allows read-only tools even in auto mode', async () => {
     const session = makeSession('auto');
     const canUseTool = createCanUseTool(session, noopLog);

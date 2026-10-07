@@ -43,6 +43,7 @@ import { withSessionLimitStore } from '../session/fleet/session-limit-store.js';
 import { getSessionStartedByStore } from '../session/origin/session-started-by-store.js';
 import { traceRuntime, watchRuntimeSignin } from '../observability/index.js';
 import { holdAwakeDuringTurns } from './keep-awake/hold-during-turn.js';
+import { recordTurnLevels } from './turn-power/turn-levels.js';
 
 /** Columns read from `session_metadata` for the settings projection. */
 type SettingsRow = {
@@ -250,9 +251,20 @@ export class RuntimeRegistry {
     // Keep-awake wraps OUTERMOST so its hold spans everything inside it: the
     // computer stays awake for as long as the caller is consuming the turn,
     // whoever the caller is (spec `keep-awake`).
+    //
+    // The turn-level record wraps INNERMOST: it reads nothing the others add,
+    // and it must see every send, so a turn another agent's post starts can be
+    // held to the level its author's turn ran at (spec
+    // `trusted-by-default-flip` §4).
     this.runtimes.set(
       runtime.type,
-      holdAwakeDuringTurns(watchRuntimeSignin(traceRuntime(runtime)))
+      holdAwakeDuringTurns(
+        watchRuntimeSignin(
+          traceRuntime(
+            recordTurnLevels(runtime, (sessionId) => this.storedPermissionModeOf(sessionId))
+          )
+        )
+      )
     );
   }
 
@@ -652,6 +664,23 @@ export class RuntimeRegistry {
         set: { lastAutoResumeFor: episode },
       })
       .run();
+  }
+
+  /**
+   * A session's stored permission mode, read synchronously, or null when there
+   * is no row or no mode. For the turn-level record at the registration seam,
+   * which must not add an await between a dispatch and its turn.
+   *
+   * @param sessionId - Session identifier
+   */
+  storedPermissionModeOf(sessionId: string): string | null {
+    const db = this.requireDb('storedPermissionModeOf');
+    const row = db
+      .select({ permissionMode: sessionMetadata.permissionMode })
+      .from(sessionMetadata)
+      .where(eq(sessionMetadata.sessionId, sessionId))
+      .get();
+    return row?.permissionMode ?? null;
   }
 
   /**

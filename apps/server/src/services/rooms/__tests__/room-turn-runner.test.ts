@@ -283,6 +283,8 @@ interface TriggerCall {
    * that already has a row (DOR-1917).
    */
   newSessionPermissionMode?: string;
+  /** The bound on THIS turn, from who wrote the message (spec `trusted-by-default-flip` §4). */
+  permissionCeiling?: unknown;
   /** The runtime the real dispatcher resolves the canonical id through. */
   runtime: { getInternalSessionId: (sessionId: string) => string | undefined };
   /**
@@ -2689,6 +2691,44 @@ describe('what power a room turn runs at (DOR-1917)', () => {
       roomOrigin(true),
       '/repo/ana'
     );
+  });
+
+  // Power flows downstream, never up (spec `trusted-by-default-flip` §4). The
+  // seed above only reaches a NEW conversation; a room conversation is one per
+  // (room, agent) and usually already exists, so on its own a stranger's
+  // message into a conversation already at Full autonomy ran at Full autonomy.
+  // The ceiling bounds the turn itself, on an existing row too.
+  it('holds a stranger’s turn in an existing Full autonomy conversation to its bound', async () => {
+    runtimesConfig = atStop('autonomy');
+    storedSettings = { permissionMode: 'bypassPermissions' };
+
+    await createSessionRoomTurnRunner().run(
+      request({
+        sessionId: 'room-session-with-a-row',
+        externalAuthor: true,
+        permissionCeiling: 'runtime-default',
+      })
+    );
+
+    expect(triggered[0].newSessionPermissionMode).toBeUndefined();
+    expect(triggered[0].permissionCeiling).toBe('runtime-default');
+  });
+
+  it('holds a turn another agent’s post started to that agent’s level', async () => {
+    storedSettings = { permissionMode: 'bypassPermissions' };
+    const posterLevel = { asks: 'when-risky', reach: 'edit' } as const;
+
+    await createSessionRoomTurnRunner().run(
+      request({ sessionId: 'room-session-with-a-row', permissionCeiling: posterLevel })
+    );
+
+    expect(triggered[0].permissionCeiling).toEqual(posterLevel);
+  });
+
+  it('sends no bound for a person’s own message', async () => {
+    await createSessionRoomTurnRunner().run(request());
+
+    expect(triggered[0].permissionCeiling).toBeUndefined();
   });
 
   it('still carries the model and effort for that stranger’s turn', async () => {

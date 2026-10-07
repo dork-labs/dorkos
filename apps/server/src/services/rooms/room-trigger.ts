@@ -140,6 +140,8 @@ import type {
 } from '@dorkos/shared/room-schemas';
 import type { RoomContextCanvas } from '@dorkos/shared/additional-context';
 import type { SessionActivity } from '@dorkos/shared/session-stream';
+import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
+import { entryLevelOf } from '../core/turn-power/turn-levels.js';
 import type { InterruptReceipt } from '@dorkos/shared/types';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { logError, logger } from '../../lib/logger.js';
@@ -573,6 +575,32 @@ function isEntryAuthorExternal(authors: AuthorRegistry, authorId: string): boole
   const naturalKey = authors.getMany([authorId]).get(authorId)?.naturalKey;
   if (naturalKey === undefined) return true;
   return authorOrigin(naturalKey) !== 'local';
+}
+
+/**
+ * The ceiling a turn this entry starts runs under, as the spread a
+ * `RoomTurnRequest` takes (spec `trusted-by-default-flip` §4).
+ *
+ * A stranger's message, or one whose author cannot be resolved, is held to the
+ * receiving runtime's default. Another agent's post is held to the level its
+ * turn ran at when it wrote the post; when that was not kept (a restart, a post
+ * with no session), to the runtime's default, because the alternative is to
+ * hand out the receiving conversation's level on the strength of a missing
+ * record. A person on this machine and the room's own voice are not bounded.
+ *
+ * @param authors - The registry holding the stored author records.
+ * @param entry - The entry that triggered the turn.
+ */
+export function ceilingForEntry(
+  authors: AuthorRegistry,
+  entry: Pick<RoomEntry, 'id' | 'authorId'>
+): { permissionCeiling?: TurnPermissionCeiling } {
+  if (isEntryAuthorExternal(authors, entry.authorId)) {
+    return { permissionCeiling: 'runtime-default' };
+  }
+  const kind = authors.getMany([entry.authorId]).get(entry.authorId)?.kind;
+  if (kind !== 'agent') return {};
+  return { permissionCeiling: entryLevelOf(entry.id) ?? 'runtime-default' };
 }
 
 /**
@@ -2246,6 +2274,9 @@ export class RoomTriggerDispatcher {
         // costs a prompt, while reading an unknown author as local would hand
         // it out on the strength of a failed lookup.
         externalAuthor: isEntryAuthorExternal(this.deps.authors, entry.authorId),
+        // And the turn itself is held to its sender's level, new conversation
+        // or not — see `RoomTurnRequest.permissionCeiling`.
+        ...ceilingForEntry(this.deps.authors, entry),
         // The message, unchanged. A trigger asks the agent exactly what was
         // said; only the welcome-back offer below asks something else.
         prompt: entry.body.text,

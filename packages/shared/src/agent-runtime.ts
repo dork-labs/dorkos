@@ -106,6 +106,32 @@ export type PermissionReach = 'read' | 'edit' | 'workspace' | 'everything';
 export type PermissionAxis = 'trust' | 'working';
 
 /**
+ * A permission level as asking and reach, independent of any runtime's ids, so
+ * one runtime's level can bound a turn on another (`isNoLooserThan`).
+ *
+ * `auto` marks Claude Code's Auto mode, the one mode whose declaration
+ * understates it: it declares the same asking and reach as Accept edits, yet a
+ * safety classifier approves commands Accept edits would stop for. A level
+ * carrying `auto` admits Auto; one without it admits Auto only if it never asks.
+ */
+export interface TurnPermissionLevel {
+  /** How often the level asks. */
+  readonly asks: PermissionAsks;
+  /** How far the level reaches. */
+  readonly reach: PermissionReach;
+  /** True when the level IS Claude Code's Auto mode. */
+  readonly auto?: true;
+}
+
+/**
+ * The loosest level a turn may run at (`MessageOpts.permissionCeiling`): a
+ * level, or `'runtime-default'` for the mode the receiving runtime starts in
+ * when nobody chose one, which is how a stranger's message is bounded without
+ * the sender having to know which runtime answers.
+ */
+export type TurnPermissionCeiling = TurnPermissionLevel | 'runtime-default';
+
+/**
  * Describes a single permission mode a runtime supports. Runtimes enumerate
  * these so the UI can render a picker without hard-coding a shared enum.
  *
@@ -1062,6 +1088,23 @@ export interface MessageOpts extends SessionSettings {
    * its own ignores it.
    */
   unattended?: boolean;
+  /**
+   * The loosest level THIS turn may run at, whatever the session is set to
+   * (spec `trusted-by-default-flip` §4, "power flows downstream, never up").
+   *
+   * Sent when the message that started the turn came from somebody whose own
+   * level is lower than the conversation's: another agent's room post (its
+   * live level), or a stranger's message (`'runtime-default'`, the mode the
+   * runtime starts in when nobody chose one). A conversation that already runs
+   * at Full autonomy must not hand that to whoever writes into it next.
+   *
+   * Per TURN and NOT advisory: every runtime assigns it on every send, runs the
+   * turn at the stricter of its own mode and this one, and never writes it to
+   * the session's stored settings, so the next turn a person starts runs at
+   * the level they chose. Applied with `clampModeToCeiling` from
+   * `@dorkos/shared/permission-semantics`.
+   */
+  permissionCeiling?: TurnPermissionCeiling;
   /**
    * The caller can wait rather than have this send end the agent's background
    * work (spec `warm-process-lifecycle` D2, DOR-2065). Present only when the

@@ -999,6 +999,12 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         // for the one condition it may ride under is what keeps a future caller
         // from sending it for a session that already has a row (DOR-1917).
         ...(unattendedMode !== undefined ? { newSessionPermissionMode: unattendedMode } : {}),
+        // And the bound on THIS turn, from who wrote the message: applied by the
+        // runtime on top of whatever the conversation is set to, and never
+        // stored (spec `trusted-by-default-flip` §4).
+        ...(request.permissionCeiling !== undefined
+          ? { permissionCeiling: request.permissionCeiling }
+          : {}),
         projector,
         runtime,
         // **Refuse a stranger AT ACCEPTANCE**, unlike a person's own message: a
