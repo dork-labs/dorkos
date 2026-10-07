@@ -50,7 +50,8 @@ _Status: decided 2026-10-07, not built yet (DOR-2782, DOR-2783, DOR-2784)._
 - **Our own engine.** DorkOS ships its own agent engine before launch. Its developer name is Doe; the app only ever says "Runs on: DorkOS". While getting started, a person never sees a runtime name, a model name or a new concept.
 - **The account is the default, and it can be skipped.** Free local use with no account stays true.
 - **A card is required for DorkOS's own AI.** There are no free starter credits, so checkout has to be quick.
-- **DorkOS picks the model.** People can change it in Settings and in the agent status bar, where the model item is hidden by default.
+- **DorkOS picks the model.** People can change it in Settings and in the agent status bar, where the model item is hidden by default. Hidden is not secret: which model and vendor a person's agents use is always one click away in Settings and named in the docs (principle 7).
+- **Cloud is the default start, never a requirement.** Skipping the account keeps the free local path of principle 6.
 - **The bar:** up and running in under one minute.
 
 ## 6. Local first, cloud optional
