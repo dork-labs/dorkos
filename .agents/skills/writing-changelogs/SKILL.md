@@ -46,6 +46,7 @@ Changelog entries are user-facing prose, so the **`writing-for-humans`** skill s
 2. **Use imperative verbs** - "Add", "Fix", "Remove" not "Added", "Fixed", "Removed"
 3. **Include references, but never let them carry the meaning** - Link to commits, PRs, or issues where they exist; the sentence must stand alone without the `(DOR-123)` or `(#42)`
 4. **Internal notes never ship** - batch, task, and tracking entries ("Batch 9 — acceptance PASS") get cut at curation, not published
+5. **Only what ships** - an entry describes what works in the release, never a roadmap item; the demo-claim gate in `meta/positioning-202610/00-overview.md` decides. The story words come from that file and `writing-for-humans` ("Telling the DorkOS story"): agents are co-workers doing a job, not assistants, and the reader is usually the founder running a business with them
 
 ## Entry Format
 
@@ -201,6 +202,7 @@ Before publishing release notes, verify each entry:
 - [ ] No internal batch/task/tracking entries: those are cut at curation, never shipped
 - [ ] The reader is someone operating DorkOS, not someone building it (see "The audience test")
 - [ ] Appropriate for someone who doesn't know the codebase
+- [ ] Passes the demo-claim gate: nothing unbuilt or unverified reads as working
 
 For the overall release:
 
