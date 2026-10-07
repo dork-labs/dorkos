@@ -22,6 +22,7 @@ import { useConfig } from '@/layers/entities/config';
 import { LAUNCH_STARTED_AT } from '@/layers/shared/lib';
 import { readTunnelReport, type ReportedStatus } from './tunnel-report';
 import { useRemoteAccessStore } from './remote-access-store';
+import { isManagedReport } from './remote-access-report';
 
 /**
  * Announce remote-access changes the person did not make.
@@ -59,6 +60,12 @@ export function useRemoteAccessAnnouncer(): void {
     // Consumed on the first real transition either way, so a stop the server
     // never reports cannot leave the next genuine drop silent.
     if (useRemoteAccessStore.getState().consumeSuppression()) return;
+
+    // Managed access opens and closes its tunnel by design (DOR-2086): a
+    // tunnel closing when nothing uses it is the address working, not news,
+    // and a toast saying "turned off" would be false. Its state is on every
+    // surface already, so nothing is announced while it is selected.
+    if (isManagedReport(useRemoteAccessStore.getState().report)) return;
 
     if (reportedStatus === 'reconnecting') {
       // "Reconnecting" is a promise, and this is the one state in which DorkOS

@@ -26,7 +26,7 @@ import {
   type ConnectionReadiness,
 } from '@dorkos/shared/connector-schemas';
 import type { LimitPlan, SessionLimit } from '@dorkos/shared/session-stream';
-import type { TrackerItemRef } from '@dorkos/shared/types';
+import type { RemoteAccessReport, TrackerItemRef } from '@dorkos/shared/types';
 import type { HarnessStatusResponse } from '@dorkos/shared/harness-schemas';
 import type {
   CanvasDocument,
@@ -470,6 +470,20 @@ export function withSpacesExperiment<T extends Transport>(transport: T, enabled 
   }));
   return transport;
 }
+
+/**
+ * A remote access report from a server where managed access is not offered:
+ * nothing selected, nothing running, no enrolment. Surfaces read it exactly as
+ * they read a server that has no report at all.
+ */
+export const HIDDEN_REMOTE_ACCESS_REPORT: RemoteAccessReport = {
+  mode: 'off',
+  state: 'off',
+  alwaysAvailable: false,
+  cloudStale: false,
+  availability: 'hidden',
+  enrolment: { status: 'none' },
+};
 
 /** Create a mock Transport with all methods stubbed via `vi.fn()`. */
 export function createMockTransport(overrides: Partial<Transport> = {}): Transport {
@@ -1066,6 +1080,13 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     }),
     startTunnel: vi.fn().mockResolvedValue({ url: 'https://test.ngrok.io' }),
     stopTunnel: vi.fn().mockResolvedValue(undefined),
+    // Managed remote access is HIDDEN by default, so every surface renders the
+    // person's own ngrok setup exactly as it did before DOR-2086.
+    getRemoteAccessReport: vi.fn().mockResolvedValue(HIDDEN_REMOTE_ACCESS_REPORT),
+    startRemoteEnrolment: vi.fn().mockResolvedValue(HIDDEN_REMOTE_ACCESS_REPORT),
+    setRemoteAccessMode: vi.fn().mockResolvedValue(HIDDEN_REMOTE_ACCESS_REPORT),
+    closeRemoteAccess: vi.fn().mockResolvedValue(HIDDEN_REMOTE_ACCESS_REPORT),
+    withdrawRemoteAccess: vi.fn().mockResolvedValue(HIDDEN_REMOTE_ACCESS_REPORT),
     // Tasks
     listTasks: vi.fn().mockResolvedValue([]),
     createTask: vi.fn(),
