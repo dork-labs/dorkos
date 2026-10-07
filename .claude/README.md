@@ -10,8 +10,8 @@ This directory contains the **Claude Code Harness** — the customization framew
 | ------------- | ----- | ---------------------------------------------------------------------------- |
 | Commands      | 42    | `.claude/commands/`                                                          |
 | Agents        | 7     | `.claude/agents/`                                                            |
-| Skills        | 39    | `.claude/skills/` (14 Claude-only dirs + 25 symlinks into `.agents/skills/`) |
-| Shared Skills | 25    | `.agents/skills/` (canonical, projected to other harnesses)                  |
+| Skills        | 40    | `.claude/skills/` (14 Claude-only dirs + 26 symlinks into `.agents/skills/`) |
+| Shared Skills | 26    | `.agents/skills/` (canonical, projected to other harnesses)                  |
 | Rules         | 15    | `.claude/rules/`                                                             |
 | Claude Hooks  | 12    | `.claude/hooks/`, wired in `.claude/settings.json`                           |
 | Git Hooks     | —     | `lefthook.yml` (pre-commit/pre-push) + `.claude/git-hooks/` (post-commit)    |
@@ -101,14 +101,15 @@ Skills load their description into every session (the retrieval index) and their
 | `writing-for-humans`             | Plain-language standard for all user-facing prose (9th-grade readability)                                            |
 | `writing-to-users`               | Direct replies to one person about their own report or question                                                      |
 
-**Person-invoked skills** (`disable-model-invocation: true`: a person types them, the model never loads them on its own). They replace `.claude/commands/` for new entry points; each is a thin wrapper over one `pnpm ci:<verb>` engine command.
+**Person-invoked skills** (`disable-model-invocation: true`: a person types them, the model never loads them on its own). They replace `.claude/commands/` for new entry points; each is a thin wrapper over one engine command (`pnpm ci:<verb>`, or a script).
 
-| Skill             | What it runs                                                                                                   |
-| ----------------- | -------------------------------------------------------------------------------------------------------------- |
-| `ci-status`       | `pnpm ci:status`: SLOs, the constraint, ledger verdicts and collector health from `ci-steward-data`            |
-| `ci-pulse`        | `pnpm ci:pulse`: collect now into a temp directory and show the same screen; pushes nothing                    |
-| `ci-quarantine`   | Put a known-flaky test into, or out of, CI Steward's quarantine lane (runs and reports, cannot fail the queue) |
-| `ci-local-export` | `pnpm ci:local-export`, daily, as a DorkOS scheduled skill (approve it at Full autonomy)                       |
+| Skill                | What it runs                                                                                                       |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `ci-status`          | `pnpm ci:status`: SLOs, the constraint, ledger verdicts and collector health from `ci-steward-data`                |
+| `ci-pulse`           | `pnpm ci:pulse`: collect now into a temp directory and show the same screen; pushes nothing                        |
+| `ci-quarantine`      | Put a known-flaky test into, or out of, CI Steward's quarantine lane (runs and reports, cannot fail the queue)     |
+| `ci-local-export`    | `pnpm ci:local-export`, daily, as a DorkOS scheduled skill (approve it at Full autonomy)                           |
+| `vision-drift-check` | Weekly DorkOS scheduled skill: `scripts/check-vision-drift.sh` plus judgment against `meta/VOICE.md`; reports only |
 
 ## Rules (Path-Triggered)
 
