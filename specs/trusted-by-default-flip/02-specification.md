@@ -112,6 +112,7 @@ Unchanged and pinned (not touched by any PR here): `dmPolicy` allowlist, approve
 - Claude Code `updateSession` (a person loosening a live session) moves a running, ceilinged query to the looser mode until the turn ends; the next turn re-applies the ceiling only if its sender sends one.
 - The room context window shows earlier messages, strangers' included, to an agent answering a person; those are fenced as untrusted text, not ceilinged.
 - Codex and OpenCode reach DorkOS tools over the external `/mcp` server, where the agent token names the agent but not the session. Their room posts therefore keep no level (held to the runtime default downstream), and their `session_start` keeps the `acceptEdits` no-chat cap. PR4 uses the agent's own configured stop for a registered agent token; a session-bound token would close it exactly.
+- Two in-circle cases keep no level and fall to the runtime default (safe direction, may over-tighten our own work after the flip): a reply an agent writes as turn text rather than through `post_to_room`, and an in-session post whose session id was renamed outside a room turn (only the room path calls `aliasTurnLevel`).
 
 ### 4.6 Review round 1 (adversarial, 2026-10-07), fixed in PR1
 
