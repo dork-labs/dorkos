@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(trust): a turn another agent or a stranger starts runs no looser than its sender (DOR-2739)'
+  - 'fix(trust): close the review gaps in power flowing downstream (DOR-2739)'
 ---
 
 ### Fixed
