@@ -1,4 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
+import { createHash } from 'node:crypto';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -99,28 +100,81 @@ function migrationsFolderThrough(idx: number): string {
 }
 
 describe('Database Migrations', () => {
-  it('upgrades the published latest database through both Doc migrations exactly once', () => {
+  it('upgrades the published audit database through all Doc migrations exactly once', () => {
     const db = createDb(':memory:');
     try {
-      // This is the genuine published main history, before either unpublished Doc leaf.
-      migrate(db, { migrationsFolder: migrationsFolderThrough(145) });
+      // Published audit main is immutable; all unpublished Doc leaves follow it.
+      migrate(db, { migrationsFolder: migrationsFolderThrough(146) });
       db.$client
         .prepare(
           'INSERT INTO session_metadata (session_id, runtime, agent_path, created_at) VALUES (?, ?, ?, ?)'
         )
         .run('published-session', 'codex', '/agents/published', '2026-10-05T23:09:15Z');
+      // Fixed original-format stored DATA, including NULL columns: the audit hash
+      // covers every SQL column except hash, in canonical sorted-key JSON order.
+      const auditRow = {
+        seq: 1,
+        id: 'published-audit',
+        at: '2026-10-06T23:10:15Z',
+        space_id: null,
+        actor_id: 'system',
+        actor_kind: 'system',
+        actor_name: 'System',
+        on_behalf_of: null,
+        credential: null,
+        source: '{"surface":"system"}',
+        session_id: null,
+        action: 'upgrade.fixture',
+        operation: 'execute',
+        target_type: null,
+        target_id: null,
+        target_name: null,
+        container_id: null,
+        outcome: 'ok',
+        error: null,
+        change: null,
+        reason: null,
+        links: null,
+        summary: 'Published audit',
+        visibility: 'admins',
+        participants: null,
+        prev_hash: '0'.repeat(64),
+      };
+      const auditHash = createHash('sha256')
+        .update(
+          auditRow.prev_hash +
+            JSON.stringify(
+              Object.fromEntries(
+                Object.entries(auditRow).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+              )
+            ),
+          'utf8'
+        )
+        .digest('hex');
+      expect(auditHash).toMatch(/^[0-9a-f]{64}$/);
+      db.$client
+        .prepare(
+          `INSERT INTO audit_events (${Object.keys(auditRow).join(',')}, hash)
+         VALUES (${Object.keys(auditRow)
+           .map(() => '?')
+           .join(',')}, ?)`
+        )
+        .run(...Object.values(auditRow), auditHash);
+      const publishedAudit = db.$client.prepare('SELECT * FROM audit_events ORDER BY seq').all();
+      expect(publishedAudit).toEqual([{ ...auditRow, hash: auditHash }]);
       const publishedRow = db.$client
         .prepare("SELECT * FROM session_metadata WHERE session_id = 'published-session'")
         .get();
       const publishedHistory = db.$client
         .prepare('SELECT * FROM __drizzle_migrations ORDER BY id')
         .all();
-      expect(publishedHistory).toHaveLength(146);
+      expect(publishedHistory).toHaveLength(147);
       const tables = () =>
         db.$client
           .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
           .all()
           .map((row) => (row as { name: string }).name);
+      expect(tables()).toContain('audit_events');
       expect(tables()).not.toContain('canvas_doc_channel_tokens');
       expect(tables()).not.toContain('canvas_doc_room_pending_sources');
 
@@ -150,12 +204,15 @@ describe('Database Migrations', () => {
         readFileSync(path.join(DRIZZLE_DIR, 'meta/_journal.json'), 'utf-8')
       ) as { entries: { idx: number; tag: string }[] };
       expect(history).toHaveLength(journal.entries.length);
-      expect(history.slice(0, 146)).toEqual(publishedHistory);
-      // Later main migrations may follow these two immutable Doc leaves.
-      // Each original leaf must still appear exactly once in the full upgrade.
+      expect(history.slice(0, 147)).toEqual(publishedHistory);
+      expect(db.$client.prepare('SELECT * FROM audit_events ORDER BY seq').all()).toEqual(
+        publishedAudit
+      );
+      // All three unchanged Doc SQL hashes must occur once after published audit.
       for (const hash of [
         'c156544a648a0d5dd48a5147f2488420d8460da5ea9e0c596afdd407486adc84',
         '934167d31e86442927414b4ef1790e60ddc3d1d7af51285b59411d135514fc49',
+        'f85a83fc7fc5adc1764d1c10e089acdd3d0ea874139c5757bbff58ca77ed0825',
       ]) {
         expect(history.filter((row) => (row as { hash: string }).hash === hash)).toHaveLength(1);
       }
@@ -224,6 +281,8 @@ describe('Database Migrations', () => {
       // consent; the token lives here only as a hash (agent-trust spec §3.3,
       // migration 0031).
       'approvals',
+      // Immutable published audit main retains its append-only chain table.
+      'audit_events',
       // Opaque author identities keyed on (kind, natural_key) — an agent's
       // agentPath, never its manifest ULID (ADR 260726-170126, migration 0034).
       'authors',

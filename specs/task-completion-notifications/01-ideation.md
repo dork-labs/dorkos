@@ -85,7 +85,7 @@ linearIssue: DOR-240
   must carry a budget; the pipeline rejects + dead-letters an over-budget message before any
   costly dispatch. A completion notification is a terminal leaf (no downstream agent turn), so a
   minimal budget is correct and safe.
-- `meta/positioning-202607/08-demo-video-scripts.md` (Script 1) &
+- `meta/archive/positioning-202607/08-demo-video-scripts.md` (Script 1) &
   `meta/value-architecture-applied.md`: the exact promises — "Your agents can reach you," the
   2:47 AM Telegram buzz with a run summary ("test suite expanded, 14 new tests, 2 real bugs
   found. Opened PR #312"). The message content bar is: specific, useful, glanceable.

@@ -449,7 +449,7 @@ meta/
 ├── value-architecture-applied.md       # The actual applied output for this product
 ├── brand-foundation.md                 # Brand voice, tone, aesthetic
 ├── dorkos-litepaper.md                 # Product vision
-├── positioning-202610/00-overview.md   # Current strategy (2026-10)
+├── VISION.md                          # Current strategy (2026-10)
 └── personas/
     ├── manifest.json
     ├── the-ai-native-founder.md        # Primary persona (the founder)

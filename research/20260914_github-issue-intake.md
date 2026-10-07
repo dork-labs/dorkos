@@ -44,7 +44,7 @@ Only the dormant DorkBot scaffold, and it has a broken precondition:
 - `gh label list -R dork-labs/dorkos` shows: `bug documentation duplicate enhancement good first issue help wanted invalid question wontfix review:deep review:light skip-review re-review skip-changelog run-evals hold cloud-contract`. **There is no `needs-triage` label.** GitHub silently drops a template label that does not exist, which is why both open issues carry only `bug`.
 - The in-app and CLI report builders (`packages/shared/src/feedback.ts`, `LABELS_BY_KIND`) apply only `bug` or `enhancement`, never `needs-triage`.
 
-So even if someone turned the DorkBot skill on today, its queue would be empty. Nothing else exists: no AGENTS.md rule, no `contributing/` page, no `/feedback:*` or `/flow:*` command mentions GitHub issues. `meta/positioning-202607/09-gtm-plan.md` §3.7 planned "issue templates with labels wired to the Linear sync, and a triage agent (DorkBot) that labels, dedupes, and asks for missing repro info within the hour"; PR #235 shipped the templates and the skill scaffold and recorded "No GitHub↔Linear label sync exists in this repo today."
+So even if someone turned the DorkBot skill on today, its queue would be empty. Nothing else exists: no AGENTS.md rule, no `contributing/` page, no `/feedback:*` or `/flow:*` command mentions GitHub issues. `meta/archive/positioning-202607/09-gtm-plan.md` §3.7 planned "issue templates with labels wired to the Linear sync, and a triage agent (DorkBot) that labels, dedupes, and asks for missing repro info within the hour"; PR #235 shipped the templates and the skill scaffold and recorded "No GitHub↔Linear label sync exists in this repo today."
 
 ### The Linear feedback process, for comparison
 
@@ -130,4 +130,4 @@ Build one thing: a **GitHub intake step at the top of `/feedback:triage` Mode 1*
 - `.github/ISSUE_TEMPLATE/bug.yml`, `feature.yml`, `runtime.yml` — the templates (declare a label that does not exist)
 - `packages/shared/src/feedback.ts` — the prefilled-issue URL builder shared by the app and the CLI
 - `.dork/plugins/flow/skills/building-adapters/SKILL.md`, `.dork/plugins/flow/adapters/SPEC.md` — what a flow adapter costs (option A)
-- `meta/positioning-202607/09-gtm-plan.md` §3.7 — the original "feedback rails" plan
+- `meta/archive/positioning-202607/09-gtm-plan.md` §3.7 — the original "feedback rails" plan

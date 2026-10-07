@@ -16,7 +16,11 @@ DorkOS is the single interface a founder uses to run their whole business: talk 
 
 **A workspace for people and agents.** The long form is "the workspace where founders run their business with people and agents." It works like Slack: DMs, group DMs, channels and threads, with agents working the outside tools the business runs on.
 
-**The picture to keep in mind: DorkOS is the office, and people and agents are the workers who log in.** An agent's brain (Claude Code, Codex or OpenCode) and its computer sit outside the office and connect in. The office holds the conversations, the docs, who may do what (access levels are roadmap), and the connections to outside tools. The workers bring the skill. Which brains DorkOS supports is a docs fact, never the headline.
+**The picture to keep in mind: DorkOS is the office, and people and agents are the workers who log in.** An agent's brain (DorkOS's own engine by default, or Claude Code, Codex or OpenCode) plugs into the office, and its computer sits outside it and connects in. The office holds the conversations, the docs, who may do what (access levels are roadmap), and the connections to outside tools. The workers bring the skill. Which brains DorkOS supports is a docs fact, never the headline.
+
+## DorkOS first, ready in under a minute
+
+Decided on 2026-10-07. A new person needs no outside AI subscription. They start on DorkOS itself: a DorkOS account, DorkOS Cloud and DorkOS's own AI, and they are up and running in under one minute. DorkOS's own products and services come first everywhere in the app. Bringing your own Claude, ChatGPT or OpenRouter sign-in is the second option. How this is built is in [`PRINCIPLES.md`](PRINCIPLES.md) and [`ROADMAP.md`](ROADMAP.md).
 
 ## Who it is for
 

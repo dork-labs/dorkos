@@ -1,6 +1,6 @@
 # Mesh: Agent Discovery and Network Topology for DorkOS
 
-> **Note 2026-10-06 (roadmap).** Under the 2026-10 vision, agents get accounts like people's, and Relay (which enforces Mesh's access rules) is planned to merge into one conversation system where anyone in a space can message anyone. Mesh's discovery and registration still work as described below today; its access-control role is expected to change when that merge lands. This is roadmap, not built. See [`../positioning-202610/00-overview.md`](../positioning-202610/00-overview.md) and the current [litepaper](../dorkos-litepaper.md). The body below is the February 2026 design and is not rewritten.
+> **Note 2026-10-06 (roadmap).** Under the 2026-10 vision, agents get accounts like people's, and Relay (which enforces Mesh's access rules) is planned to merge into one conversation system where anyone in a space can message anyone. Mesh's discovery and registration still work as described below today; its access-control role is expected to change when that merge lands. This is roadmap, not built. See [`ROADMAP.md`](../ROADMAP.md) and the current [litepaper](../dorkos-litepaper.md). The body below is the February 2026 design and is not rewritten.
 
 **By Dorian Collier**
 **February 2026**

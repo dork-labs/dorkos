@@ -13,7 +13,7 @@
  * A domain is included only when its service handles are present in `deps`:
  * `operatorDeps` gates the operator domain, `marketplaceDeps` the marketplace
  * domain, `roomDeps` the rooms domain, `sessionCompactionDeps` the session
- * domain, and the memory, `ui` and self-description
+ * domain, `auditDeps` the audit domain, and the memory, `ui` and self-description
  * domains are always present. Every included
  * domain's `assertDeps` runs inside `composeRegistry`, so a domain admitted
  * without its deps fails fast at boot.
@@ -41,6 +41,7 @@ import { sessionDomain } from '../../session/agent-compaction/compaction-capabil
 import { uiDomain } from '../../session/browser-seat/ui-capabilities.js';
 import { capabilitiesDomain } from './capabilities-domain.js';
 import { permissionsDomain } from '../permissions/permission-capabilities.js';
+import { auditDomain } from '../../audit/audit-capabilities.js';
 
 /**
  * Compose the whole DorkOS capability registry from whichever domains `deps`
@@ -69,6 +70,7 @@ export function composeDorkOsCapabilityRegistry(
   if (deps.mcpDeps) domains.push(mcpDomain);
   if (deps.roomDeps) domains.push(roomsDomain);
   if (deps.sessionCompactionDeps) domains.push(sessionDomain);
+  if (deps.auditDeps) domains.push(auditDomain);
   // Unconditional, unlike every domain above it: memory has no service handle to
   // switch off. Every install has a filesystem, the builtin provider needs
   // nothing else, and an agent that could not save what it learns is the defect
@@ -131,6 +133,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     mcpDomain,
     roomsDomain,
     sessionDomain,
+    auditDomain,
     memoryDomain,
     uiDomain,
     capabilitiesDomain,
@@ -145,6 +148,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     mcpDeps: {} as CapabilityDeps['mcpDeps'],
     roomDeps: {} as CapabilityDeps['roomDeps'],
     sessionCompactionDeps: {} as CapabilityDeps['sessionCompactionDeps'],
+    auditDeps: {} as CapabilityDeps['auditDeps'],
   };
   return composeRegistry(domains, deps);
 }

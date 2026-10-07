@@ -704,7 +704,7 @@ Schema-side additions: `bridge` and `roomId` on `AdapterBindingSchema` **and** `
 - **Phase 2 — the claim card path.** Move 2's card gains "Answer in a channel" as its primary action, creating claim + binding + bridge + room atomically. Group-add claim flow.
 - **Phase 3 — Slack and the deferred edges.** Slack bridging (threads → DorkOS threads, which is why D-6 Q1 defers to it); topic-per-room if that resolves so; `[edited]` follow-ups; media payloads.
 
-**Demo-claim gate.** Until a bridged Telegram chat has been driven end to end by a real person on a real bot, no user-facing copy says this works (`meta/positioning-202607/09-gtm-plan.md` §2.0).
+**Demo-claim gate.** Until a bridged Telegram chat has been driven end to end by a real person on a real bot, no user-facing copy says this works (`meta/archive/positioning-202607/09-gtm-plan.md` §2.0).
 
 **Acceptance criteria (§12)**
 

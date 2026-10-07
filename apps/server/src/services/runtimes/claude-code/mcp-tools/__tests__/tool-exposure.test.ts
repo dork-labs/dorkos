@@ -466,9 +466,11 @@ describe('in-session tool exposure', () => {
     // `extension-tools-every-list.test.ts`.
     // Four operator management tools and one native task writer remain deferred.
     // Upstream compact_my_session is always loaded: total grows by one, deferred stays114.
-    expect(tools).toHaveLength(125);
-    expect(deferred).toHaveLength(114);
+    // The upstream audit_verify tool is deferred, adding one to both counts.
+    expect(tools).toHaveLength(126);
+    expect(deferred).toHaveLength(115);
     for (const name of [
+      'audit_verify',
       'configure_doc_channel',
       'approve_doc_route',
       'revoke_doc_route',

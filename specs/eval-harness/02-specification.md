@@ -24,7 +24,7 @@ eval suite v1 (12 core evals + 2 connector routing evals) and wires them to CI o
 the D5 cadence (per-PR label-gated smoke → nightly full → memoized release gate →
 weekly deep). It is **"everything via prompting" made testable** and the
 **demo-claim gate made executable**: a Shapes pillar enters marketing only when
-its evals are green (`plans/shapes-program.md` P8, success criterion #1).
+its evals are green (`plans/archive/shapes-program.md` P8, success criterion #1).
 
 ## Background / Problem Statement
 
@@ -42,7 +42,7 @@ the intended side effect. The existing test tiers stop short:
 - The `chat:self-test` command does drive a real model, but it is a manual,
   transcript-reading exercise — not a gate, not deterministic, not an oracle.
 
-The demo-claim gate (`meta/positioning-202607/09-gtm-plan.md` §2.0) forbids
+The demo-claim gate (`meta/archive/positioning-202607/09-gtm-plan.md` §2.0) forbids
 claiming a pillar works until it is verified end-to-end. That gate is currently a
 human judgment call. This spec makes it a **CI check backed by outcome oracles**:
 the harness answers "did the agent _do the thing_?" by inspecting the state the
@@ -377,7 +377,7 @@ cheapest, fastest, highest-signal five. ~cents/run.
     oracle; a **versioned rubric judge** confirms explicit refusal as a secondary
     check. This keeps the eval an outcome assertion, not a vibe.
 13. **`connector-gmail`** (quarantined, W5) — the **generic connector gateway
-    does not exist yet** (`plans/shapes-program.md` D4/W5; only the
+    does not exist yet** (`plans/archive/shapes-program.md` D4/W5; only the
     `CredentialProvider` seam `apps/server/src/services/core/credential-provider.ts`
     and the A2A gateway exist today). v1 encodes the routing contract against a
     **mock connector surface**: "Connect to my Gmail" must resolve to the
@@ -611,7 +611,7 @@ always passes is caught.
 
 ## References
 
-- `plans/shapes-program.md` — W4 scope, D5 eval-cadence policy, success criteria.
+- `plans/archive/shapes-program.md` — W4 scope, D5 eval-cadence policy, success criteria.
 - `apps/e2e/tests/chat/send-message.spec.ts` — the real-runtime precedent.
 - `packages/test-utils/src/sse-test-helpers.ts` — `collectDurableEvents`.
 - `packages/test-utils/src/runtime-conformance.ts` — the stream contract.

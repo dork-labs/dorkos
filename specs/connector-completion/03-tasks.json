@@ -218,7 +218,7 @@
       "title": "Site features catalog: alpha-labeled Connections entry + fix the false Marketplace bullet",
       "files": ["apps/site/src/layers/features/marketing/lib/features.ts"],
       "acceptance": [
-        "New catalog entry slug 'connections', category 'integration', status 'alpha' (demo-claim gate meta/positioning-202607/09-gtm-plan.md §2.0 — built, not user-verified); copy is user-outcome language per writing-for-humans, no 'works' claims, honest custody framing.",
+        "New catalog entry slug 'connections', category 'integration', status 'alpha' (demo-claim gate meta/archive/positioning-202607/09-gtm-plan.md §2.0 — built, not user-verified); copy is user-outcome language per writing-for-humans, no 'works' claims, honest custody framing.",
         "The Marketplace bullet at features.ts:666 ('Browse agents, plugins, skills, and connectors') is made true by C1 shipping in the same release, or 'connectors' is removed — whichever is accurate at merge time; acceptance is checked against C1's merge state.",
         "Media entry follows the existing shape (or reuses an existing surface until capturing-product-media provides a shot)."
       ],

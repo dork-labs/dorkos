@@ -9,6 +9,7 @@
  */
 export * from './a2a.js';
 export * from './activity.js';
+export * from './audit/audit-events.js';
 export * from './approvals.js';
 export * from './agent-identity.js';
 export * from './tasks.js';

@@ -155,5 +155,5 @@ a failure must not share a dependency with the thing that failed.
   recovery page is the deliberate exception, and the reason the URL gate can identify it at all.
 - `260709-210223` — one `navigate` IPC channel. The same doctrine: a small, audited main→renderer
   surface rather than a growing per-feature one.
-- `plans/desktop-resilience-program.md` §1, §4 Workstream 1 — the incident and its four missed
+- `plans/archive/desktop-resilience-program.md` §1, §4 Workstream 1 — the incident and its four missed
   safety nets.

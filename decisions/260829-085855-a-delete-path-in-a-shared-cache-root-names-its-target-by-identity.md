@@ -103,5 +103,5 @@ them destroys the diagnosis this whole program was built out of.
   install nobody attempted, so the next launch does not count a failure against it.
 - `260829-085854` — the install handoff, the other half of not letting the updater act on anything
   it has not proven.
-- `plans/desktop-resilience-program.md` §4 items 2.7–2.8 — the staged-update and manual-overwrite
+- `plans/archive/desktop-resilience-program.md` §4 items 2.7–2.8 — the staged-update and manual-overwrite
   states found on the reporting user's machine.

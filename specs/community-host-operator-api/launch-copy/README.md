@@ -4,7 +4,7 @@ These two texts describe the app's **Start a community** and **Move a community 
 points (task 5.2, DOR-2261). The code shipped dark in PR #2037: the rows appear only when the
 linked account's service answers the hosted-community routes, and the hosted service does not
 serve them yet. Saying people "can now" do this would break the demo-claim gate
-(`meta/positioning-202607/09-gtm-plan.md` §2.0), so the copy waits here.
+(`meta/archive/positioning-202607/09-gtm-plan.md` §2.0), so the copy waits here.
 
 They ship at the hosted-communities launch, in the same PR that turns the service on:
 

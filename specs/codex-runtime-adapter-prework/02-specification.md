@@ -24,7 +24,7 @@ The **actual CodexRuntime and CodexAdapter implementation is deliberately out of
 
 ## Background / Problem Statement
 
-Spec #97 (`agent-runtime-abstraction`) extracted `AgentRuntime` and `RuntimeRegistry` as the universal backend contract. Spec #? (`agent-runtime-review-remediation`) cleaned up known seams. But the 2026-03-06 Claude Code adapter audit (`plans/2026-03-06-claude-code-adapter-audit.md`) correctly predicted that three classes of issue would remain:
+Spec #97 (`agent-runtime-abstraction`) extracted `AgentRuntime` and `RuntimeRegistry` as the universal backend contract. Spec #? (`agent-runtime-review-remediation`) cleaned up known seams. But the 2026-03-06 Claude Code adapter audit (`plans/archive/2026-03-06-claude-code-adapter-audit.md`) correctly predicted that three classes of issue would remain:
 
 1. **Routing** — most production routes still call `runtimeRegistry.getDefault()` rather than resolving per-session or per-agent.
 2. **Capability consumption** — the client's `useRuntimeCapabilities` hook collapses to the default runtime; the `Transport` surface still has Claude-specific docstrings and method names (`reloadPlugins`, "Claude models", `'claudeai'` config scope, `McpServerEntry.status` documented against the Claude Agent SDK).

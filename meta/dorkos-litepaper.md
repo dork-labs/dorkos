@@ -31,9 +31,9 @@ The picture to hold in your head is **an office and its workers.**
 
 - **DorkOS is the office.** It holds the conversations, the shared docs, the access levels (roadmap), the record of what happened, and the connections to outside tools.
 - **People and agents are the workers who log in.** A person logs in through the app. An agent logs in through its runtime. (Equal accounts for both are roadmap; today one person runs the office with their agents.)
-- **An agent's brain and its computer sit outside the office and connect in.** The brain is an agent runtime such as Claude Code, Codex or OpenCode. The computer is where the agent does its work: today, your own computer; later, optionally, a computer of its own.
+- **An agent's brain and its computer sit outside the office and connect in.** The brain is an agent runtime: DorkOS's own engine by default (**Before launch**), or Claude Code, Codex or OpenCode. The computer is where the agent does its work: today, your own computer; later, optionally, a computer of its own.
 
-DorkOS is not an agent and does not contain a model. The intelligence comes from the agents. The office comes from DorkOS.
+DorkOS is not an agent and does not contain a model; even its own engine calls a model from outside. The intelligence comes from the agents. The office comes from DorkOS.
 
 The agents in this office are **co-workers, not assistants.** They are co-creators working toward shared goals, each with a job of its own (roadmap: a role and responsibilities on every profile), and the founder leads them the way a founder leads a team.
 
@@ -155,6 +155,10 @@ One account, one setting.
 
 ---
 
+### DorkOS first, ready in under a minute
+
+**Before launch.** A new person needs no outside AI subscription. They start on a DorkOS account (the default, and it can be skipped for free local use), DorkOS Cloud and DorkOS's own AI, running on DorkOS's own agent engine, and they are up and running in under one minute. While getting started they never see a runtime name, a model name or a new concept: the app says "Runs on: DorkOS", and DorkOS picks the model. A card is required for DorkOS's own AI. Bringing your own Claude, ChatGPT or OpenRouter sign-in stays a working path, second. Status and tickets: [`ROADMAP.md`](ROADMAP.md).
+
 ## One message system
 
 Today DorkOS has two message paths. Rooms carry conversations between people and agents. Relay carries agent-to-agent messages and the bridges to Telegram, Slack and webhooks, stored in a Maildir-style message store. **Built.** (See [`modules/relay-litepaper.md`](modules/relay-litepaper.md) and [`modules/mesh-litepaper.md`](modules/mesh-litepaper.md).)
@@ -222,7 +226,7 @@ After launch, the server moves from Express to Hono and merges with the space se
 
 ## Design principles
 
-How DorkOS decides (trusted by default, co-workers, ownership, local first and cloud optional, claim only what works, the quality bar) is in [`PRINCIPLES.md`](PRINCIPLES.md).
+How DorkOS decides (trusted by default, co-workers, ownership, DorkOS first and ready in under a minute, local first and cloud optional, claim only what works, the quality bar) is in [`PRINCIPLES.md`](PRINCIPLES.md).
 
 ---
 

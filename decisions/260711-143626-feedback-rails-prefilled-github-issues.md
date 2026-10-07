@@ -15,7 +15,7 @@ Accepted
 
 ## Context
 
-The alpha's most valuable output is feedback, and the GTM plan (`meta/positioning-202607/09-gtm-plan.md` §3.7) sets hard constraints on how a self-hosted, privacy-first dev tool collects it: GitHub is the canonical bug tracker, the app helps you report but never surveils you, and the site's "nothing phones home" claim must stay true. We need an in-app "Report an issue" (command palette + help menu) and a `dorkos feedback` CLI command that both remove the "gather my environment info" friction that kills alpha bug reports, without any third-party widget, tracking, or server round-trip.
+The alpha's most valuable output is feedback, and the GTM plan (`meta/archive/positioning-202607/09-gtm-plan.md` §3.7) sets hard constraints on how a self-hosted, privacy-first dev tool collects it: GitHub is the canonical bug tracker, the app helps you report but never surveils you, and the site's "nothing phones home" claim must stay true. We need an in-app "Report an issue" (command palette + help menu) and a `dorkos feedback` CLI command that both remove the "gather my environment info" friction that kills alpha bug reports, without any third-party widget, tracking, or server round-trip.
 
 The security-critical risk is a report leaking a secret. DorkOS config holds tokens (`tunnel.authtoken`, `mcp.apiKey`, `cloud.instanceToken`), credential references, absolute paths, hostnames, and timezones. Any of these in a URL, in front of the user or not, is a leak.
 

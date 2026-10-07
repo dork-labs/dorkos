@@ -50,7 +50,7 @@ status: ideation
 - `apps/client/src/layers/features/pulse/ui/PulsePanel.tsx`: Reference for disabled/empty state patterns (icon + message + env var code)
 - `apps/client/src/layers/features/relay/ui/RelayPanel.tsx`: Reference for tab-based organization and disabled states
 - `contributing/design-system.md`: Calm Tech philosophy, color palette, typography, motion specs, 8pt grid
-- `plans/mesh-specs/00-overview.md`: 4-spec plan (Core, Integration, Topology, Observability)
+- `plans/archive/mesh-specs/00-overview.md`: 4-spec plan (Core, Integration, Topology, Observability)
 
 ## 3) Codebase Map
 

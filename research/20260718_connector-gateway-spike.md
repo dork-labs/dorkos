@@ -24,7 +24,7 @@ tags:
 
 # ConnectorProvider Gateway Spike — Provider Landscape + Repo Seams
 
-**Scope**: DOR-365, the W5 research spike behind decision **D4** in `plans/shapes-program.md` ("Connector custody stance"). D4's _direction_ is already decided (founder, 2026-07-17): build a `ConnectorProvider` abstraction — a batteries-included **managed** provider, a **self-hostable** provider for the privacy cohort, and **raw MCP** as the baseline. This spike does the evidence work D4 deferred: (1) verify the provider landscape, licenses, and custody models against primary sources; (2) sketch the `ConnectorProvider` interface against the repo's proven seam pattern; (3) name the concrete in-repo integration seams; (4) settle the custody disclosure; (5) run the AGPL exposure check; (6) make a decisive provider recommendation and sequence the W5 spec.
+**Scope**: DOR-365, the W5 research spike behind decision **D4** in `plans/archive/shapes-program.md` ("Connector custody stance"). D4's _direction_ is already decided (founder, 2026-07-17): build a `ConnectorProvider` abstraction — a batteries-included **managed** provider, a **self-hostable** provider for the privacy cohort, and **raw MCP** as the baseline. This spike does the evidence work D4 deferred: (1) verify the provider landscape, licenses, and custody models against primary sources; (2) sketch the `ConnectorProvider` interface against the repo's proven seam pattern; (3) name the concrete in-repo integration seams; (4) settle the custody disclosure; (5) run the AGPL exposure check; (6) make a decisive provider recommendation and sequence the W5 spec.
 
 This spike **supersedes and deepens** `research/20260717_shapes-byoa-positioning.md` §8.3 (the connector-gateway reconnaissance). Where a claim below differs from §8.3, this doc is authoritative — three parallel web-research passes (Composio, Nango + alternatives, MCP spec) verified the load-bearing facts against docs, GitHub `LICENSE` files, npm metadata, and funding announcements (accessed 2026-07-17).
 
@@ -285,7 +285,7 @@ The AGPL question turns out to be **largely moot in practice** — but the guard
 5. **Distribution**: ship connectors as marketplace `adapter`-type packages (reuse the enum member; add a `connector` type only if install behavior genuinely diverges). Feeds W4's connector evals ("Connect to my Gmail" default-gateway eval; "Connect to Slack" routing eval that must pick the Relay Slack adapter over the gateway).
 6. **Consent/binding**: model per-account→session exposure on the relay binding subsystem's gate.
 
-Dependencies satisfied: this spike closes D4's evidence gap and answers the parked open question (`plans/shapes-program.md` OQ1 / DOR-369, first self-hostable provider) — **Nango**, on license + custody + maturity evidence, with `oomol-lab/open-connector` named as the explicit re-evaluation candidate.
+Dependencies satisfied: this spike closes D4's evidence gap and answers the parked open question (`plans/archive/shapes-program.md` OQ1 / DOR-369, first self-hostable provider) — **Nango**, on license + custody + maturity evidence, with `oomol-lab/open-connector` named as the explicit re-evaluation candidate.
 
 ---
 
@@ -316,7 +316,7 @@ Dependencies satisfied: this spike closes D4's evidence gap and answers the park
 - `packages/marketplace/src/manifest-schema.ts`, `packages/marketplace/src/package-types.ts` — the `adapter` package type + closed `PackageTypeSchema` enum; `apps/server/src/services/marketplace/marketplace-installer.ts`.
 - `apps/server/src/services/runtimes/connect/credentials.ts` — model-provider credential path (adjacent).
 - `apps/server/src/services/core/auth/cloud-link.ts`, `packages/shared/src/cloud-schemas.ts` — dorkos.ai account link (adjacent, device flow).
-- Prior research: `research/20260717_shapes-byoa-positioning.md` §8.3 (this doc supersedes it); `plans/shapes-program.md` D4/W5, OQ1 (DOR-369).
+- Prior research: `research/20260717_shapes-byoa-positioning.md` §8.3 (this doc supersedes it); `plans/archive/shapes-program.md` D4/W5, OQ1 (DOR-369).
 
 **External — Composio** (accessed 2026-07-17):
 

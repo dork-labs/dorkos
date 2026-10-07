@@ -49,7 +49,7 @@ function openLoudRoom(
    * Unbounded by default, because a bounded conversation is exactly what most
    * of these tests are measuring. **A test of an UNLIMITED room must pass a
    * number**: with this room's limits off nothing in DorkOS ends the exchange,
-   * which is the documented state (`plans/room-turn-limits-overhaul.md` risk 2)
+   * which is the documented state (`plans/archive/room-turn-limits-overhaul.md` risk 2)
    * and, in a test, an infinite loop. Agents that run out of things to say are
    * the honest stand-in for the person who would otherwise press Stop.
    */

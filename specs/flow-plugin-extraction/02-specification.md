@@ -207,6 +207,6 @@ controls; published installs record provenance later (DOR-147).
 ## References
 
 - `specs/flow-plugin-extraction/01-ideation.md`; the closed PR #56 + branch `spec-flow-marketplace-package`.
-- `plans/agent-harness-portability-roadmap.md` (workstream C); DOR-133 (umbrella), DOR-134 (ADR-0281
+- `plans/archive/agent-harness-portability-roadmap.md` (workstream C); DOR-133 (umbrella), DOR-134 (ADR-0281
   supersede), DOR-172 (dev-loop cleanup), DOR-146/147/148 (dev-loop tooling).
 - `packages/marketplace/src/{source-resolver,scaffolder,manifest-schema}.ts`; `dork-labs/marketplace`.

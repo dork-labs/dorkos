@@ -28,7 +28,7 @@ skill. A final, dependency-gated phase assembles and installs the package.
 `flow-loop` Stop hook + config + the `@dorkos/flow` package), but it is welded to our Linear +
 Composio + `DOR` setup and split across an unused npm package. ADR-0281 (proposed) already commits to
 shipping it as a `plugin`-type package built from `.agents/flow/`; the roadmap
-(`plans/agent-harness-portability-roadmap.md`) sets the projection direction. This spec defines the
+(`plans/archive/agent-harness-portability-roadmap.md`) sets the projection direction. This spec defines the
 content work that makes that real, portable, and safe, anchored to umbrella **DOR-133**.
 
 ## Goals
@@ -196,7 +196,7 @@ malformed adapter from corrupting dispatch.
 
 ## References
 
-- `specs/flow-marketplace-package/01-ideation.md`; `plans/agent-harness-portability-roadmap.md`.
+- `specs/flow-marketplace-package/01-ideation.md`; `plans/archive/agent-harness-portability-roadmap.md`.
 - DOR-133 (umbrella), DOR-134, DOR-150 / 151 / 152, DOR-159, DOR-160, DOR-145 / 146 / 147 / 148,
   DOR-138, DOR-88 / 90 / 95, DOR-131.
 - `research/20260626_plugin_config_and_iteration_patterns.md`; `agentskills.io` (scripts, progressive

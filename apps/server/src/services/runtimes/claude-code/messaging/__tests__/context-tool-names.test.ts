@@ -489,8 +489,10 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // composes no extension. `extension-tools-every-list.test.ts` guards those.
     // Four operator management tools and one native task writer remain deferred.
     // Upstream compact_my_session is also advertised and always loaded.
-    expect(advertised.size).toBe(125);
+    // The upstream audit_verify tool remains advertised and deferred.
+    expect(advertised.size).toBe(126);
     for (const name of [
+      'audit_verify',
       'configure_doc_channel',
       'approve_doc_route',
       'revoke_doc_route',

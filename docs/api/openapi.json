@@ -16751,6 +16751,50 @@
           }
         ]
       },
+      "AuditVerifyResult": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "checked": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "lastSeq": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "lastHash": {
+            "type": "string"
+          },
+          "firstBreak": {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "seq",
+              "reason"
+            ]
+          },
+          "nextFromSeq": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          }
+        },
+        "required": [
+          "ok",
+          "checked",
+          "lastSeq",
+          "lastHash"
+        ]
+      },
       "ListExtensionDecisionsResponse": {
         "type": "object",
         "properties": {
@@ -84990,6 +85034,57 @@
                   "required": [
                     "saved"
                   ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/audit/verify": {
+      "get": {
+        "tags": [
+          "Audit"
+        ],
+        "summary": "Check the audit log",
+        "description": "Check that the DorkOS audit log has not been edited: walk its hash chain and recompute every link. Returns ok, how many rows were checked, the last row and its hash, and — if the chain is broken — the first row that does not check out and why. Optional fromSeq and limit check a stretch instead of the whole log.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0
+            },
+            "required": false,
+            "name": "fromSeq",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 100000
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "required": false,
+            "name": "prevHash",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Check the audit log result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditVerifyResult"
                 }
               }
             }

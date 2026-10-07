@@ -321,6 +321,10 @@
       "types": "./src/activity-schemas.ts",
       "default": "./dist/activity-schemas.js"
     },
+    "./audit-schemas": {
+      "types": "./src/audit-schemas.ts",
+      "default": "./dist/audit-schemas.js"
+    },
     "./marketplace-schemas": {
       "types": "./src/marketplace-schemas.ts",
       "default": "./dist/marketplace-schemas.js"

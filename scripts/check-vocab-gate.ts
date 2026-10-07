@@ -131,7 +131,10 @@
  * control"/"cockpit"; Wave 3: the typography DOR-1756 settled — "...",
  * "&apos;", "&rsquo;", "&ldquo;", "&rdquo;"; Wave 4: "integration",
  * "connector", "adapter" and "provider", singular and plural, the four nouns
- * ADR 260804-021140 retired for "Connections"). Wave 4 is also the wave that
+ * ADR 260804-021140 retired for "Connections"; Wave 5: "community"; Wave 6:
+ * the positioning lines the 2026-10 vision reset retired, "operating system
+ * for AI agents", "one place for every agent", the equal-accounts claims and
+ * Discord invite links). Wave 4 is also the wave that
  * shows what the allowlist is FOR: all four words keep legitimate technical
  * senses this repo uses daily — `RelayAdapter`, `ConnectorProvider`, the
  * marketplace package types an author writes, OpenCode's model providers — and
@@ -518,13 +521,19 @@ export function isCopySink(node: ts.Node): boolean {
  * ends that have a word character to be a boundary of: `\bconnection\b` is what
  * keeps "reconnecting" clean, while `\b...\b` would never match anything.
  *
+ * A space inside a term matches any run of whitespace (wave 6, DOR-2736): a
+ * phrase like "operating system for AI agents" is often split across two lines
+ * of JSX text by Prettier, and a literal single space would let the line wrap
+ * hide it. Single-word terms are unaffected.
+ *
  * @param term - The banned term, as written in `banned-terms.json`.
  */
 export function termMatcher(term: string): RegExp {
   const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const spaced = escaped.replace(/ +/g, '\\s+');
   const lead = /^\w/.test(term) ? '\\b' : '';
   const tail = /\w$/.test(term) ? '\\b' : '';
-  return new RegExp(`${lead}${escaped}${tail}`, 'i');
+  return new RegExp(`${lead}${spaced}${tail}`, 'i');
 }
 
 /** Scan one already-read source file for banned-term hits in copy-bearing positions. */
@@ -824,6 +833,19 @@ export function scanMdx(filePath: string, text: string, terms: BannedTerm[]): Vi
  * person learns the word, so a docs page saying "community" undoes the rename
  * exactly as a UI string would. A literal command or route that still says
  * community belongs in inline code, which {@link stripNonProse} blanks.
+ *
+ * Wave 6 (the 2026-10 positioning lines, DOR-2736) is deliberately NOT here,
+ * for the same reason wave 2 is not: `check-banned-words.sh` already sweeps
+ * every docs page for the same phrase families with one regex, plus the blog,
+ * the READMEs and the operating skills this scan never reads. Listing wave 6
+ * here too would report each docs hit twice, under two different fixes. The
+ * split is the same in both directions: this script owns render-path strings
+ * in app source for wave 6, the shell script owns prose. The shell script
+ * reads this script's `allowlist.json` for a wave-6 hit under `docs/` (an
+ * entry must name a wave-6 term, and `contains` narrows it to a line), since
+ * {@link MDX_ALLOW_MARKER_BAN} leaves a docs page no inline marker. Moving
+ * wave 6 here instead would lose Discord invite links, which sit in link
+ * targets that {@link stripNonProse} blanks.
  */
 const MDX_SCANNED_WAVES = new Set(['wave-4', 'wave-5']);
 
@@ -892,6 +914,14 @@ if (isMain) {
         'Connections-domain noun, GitHub\'s own "Mission Control", a code sample — add ' +
         'a scoped entry with a reason to scripts/vocab-gate/allowlist.json.'
     );
+    if (violations.some((v) => v.wave === 'wave-6')) {
+      console.error(
+        '\nA wave-6 hit is a retired positioning line (DOR-2736). DorkOS is "a workspace ' +
+          'for people and agents"; never an operating system for agents, never "one place ' +
+          'for every agent", never equal accounts, and there is no DorkOS Discord. ' +
+          'meta/VOICE.md is the single list of words to use and never use.'
+      );
+    }
     if (violations.some((v) => v.wave === 'docs-marker-ban')) {
       console.error(
         '\nA "vocab-allow" hit above is a docs/**/*.mdx marker, banned outright: it leaks ' +

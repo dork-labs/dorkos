@@ -113,6 +113,7 @@ describe('UserConfigSchema', () => {
       a2a: { enabled: false },
       scheduler: { enabled: true, maxConcurrentRuns: 4, retentionCount: 100 },
       keepAwake: { whileAgentsWork: true, wakeForScheduledTasks: false },
+      activity: { retentionDays: 365 },
       mesh: { scanRoots: [] },
       rooms: {
         turnLimitsEnabled: true,
@@ -507,6 +508,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
       a2a: { enabled: false },
       scheduler: { enabled: true, maxConcurrentRuns: 4, retentionCount: 100 },
       keepAwake: { whileAgentsWork: true, wakeForScheduledTasks: false },
+      activity: { retentionDays: 365 },
       mesh: { scanRoots: [] },
       rooms: {
         turnLimitsEnabled: true,
@@ -813,6 +815,7 @@ describe('per-field and section-literal defaults agree', () => {
     ui: {},
     scheduler: {},
     keepAwake: {},
+    activity: {},
     runtimes: { claudeCode: {} },
   });
 
@@ -834,6 +837,11 @@ describe('per-field and section-literal defaults agree', () => {
   it('keepAwake is on while agents work, and wake is off, either way', () => {
     expect(fromFactory.keepAwake).toEqual({ whileAgentsWork: true, wakeForScheduledTasks: false });
     expect(fromFields.keepAwake).toEqual({ whileAgentsWork: true, wakeForScheduledTasks: false });
+  });
+
+  it('activity keeps a year either way', () => {
+    expect(fromFactory.activity).toEqual({ retentionDays: 365 });
+    expect(fromFields.activity).toEqual({ retentionDays: 365 });
   });
 
   it('runtimes.claudeCode.persistentSession is true either way', () => {

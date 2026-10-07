@@ -12,7 +12,7 @@ status: draft
 **Date:** 2026-02-24
 **Ideation:** [01-ideation.md](./01-ideation.md)
 **Litepaper:** [Mesh Litepaper](../../meta/modules/mesh-litepaper.md)
-**Spec Source:** [Mesh Spec 1](../../plans/mesh-specs/01-mesh-core-library.md)
+**Spec Source:** [Mesh Spec 1](../../plans/archive/mesh-specs/01-mesh-core-library.md)
 
 ---
 
@@ -803,15 +803,15 @@ No open questions -- all design decisions were resolved during ideation.
 
 - [Mesh Litepaper](../../meta/modules/mesh-litepaper.md) -- vision, lifecycle, strategies
 - [Relay Litepaper](../../meta/modules/relay-litepaper.md) -- messaging layer Mesh builds on
-- [Mesh Spec Sequence](../../plans/mesh-specs/00-overview.md) -- full 4-spec build plan
-- [Relay Core Library Spec](../../plans/relay-specs/01-relay-core-library.md) -- reference pattern
+- [Mesh Spec Sequence](../../plans/archive/mesh-specs/00-overview.md) -- full 4-spec build plan
+- [Relay Core Library Spec](../../plans/archive/relay-specs/01-relay-core-library.md) -- reference pattern
 - [A2A Agent Card Specification](https://a2a-protocol.org/latest/specification/) -- future alignment target
 - [ulidx on npm](https://www.npmjs.com/package/ulidx) -- ULID generation library
 - [better-sqlite3 docs](https://github.com/WiseLibs/better-sqlite3/blob/master/docs/api.md) -- SQLite API
 
 ## 16. Verification Criteria
 
-From the [Mesh Spec 1](../../plans/mesh-specs/01-mesh-core-library.md) verification checklist:
+From the [Mesh Spec 1](../../plans/archive/mesh-specs/01-mesh-core-library.md) verification checklist:
 
 - [ ] `npm test` passes for `packages/mesh`
 - [ ] `npm run typecheck` passes

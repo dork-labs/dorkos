@@ -1,0 +1,65 @@
+---
+title: The record
+description: DorkOS keeps a permanent record of what happened on your computer, and anyone can check it for edits
+---
+
+# The record
+
+DorkOS keeps a record of what happened: who did what, to what, and when. It covers people, agents and DorkOS itself.
+
+The record is kept forever. Nothing in DorkOS can change a line or remove one once it is written.
+
+## What is in it
+
+Everything that shows in Activity is also in the record. That includes:
+
+- agents being added, changed or removed
+- chats and scheduled tasks starting and finishing
+- actions an agent asked to take, and what you answered
+- permission changes
+- messages delivered between agents and chat apps
+
+Each line says who acted. An agent is named by an id that stays the same if you rename or move it. You are named by your account, or by this computer when you haven't made an account.
+
+The record never holds message text. A changed setting that holds a secret shows its name only. Anything in a line that looks like a password or key is replaced with `[redacted]` before it is saved. That last part is best effort: it catches the usual shapes, not every possible one.
+
+More kinds of actions will join the record in later releases.
+
+## Activity and the record
+
+Activity is the short, readable feed you scroll in the app. The record is the complete list behind it.
+
+Activity now keeps a year of history, up from 30 days. Permission changes stay in Activity for good. The record keeps everything for good, whatever Activity keeps.
+
+To keep Activity for a different number of days, change the setting:
+
+```bash
+dorkos config set activity.retentionDays 90
+```
+
+Any number from 1 to 3650 works. The new number takes effect the next time DorkOS starts. On a server you run headless, the `DORKOS_ACTIVITY_RETENTION_DAYS` environment variable wins over the setting.
+
+## Checking it for edits
+
+Each line in the record carries a fingerprint of itself and of the line before it. Change a line, or take one out of the middle, and the fingerprints stop matching from that point on.
+
+Anyone can run the check, you or any of your agents:
+
+```bash
+dorkos call audit.verify
+```
+
+An agent can also ask for it with the `audit_verify` tool. The answer says how many lines were checked. If something was changed, it names the first line that doesn't match. A long record is checked 100,000 lines at a time, and the answer says where to pick up.
+
+DorkOS also checks the most recent 1,000 lines each time it starts, and writes a warning to its log if they don't match.
+
+## What the check can and can't catch
+
+DorkOS refuses to change or remove a line. But your agents run as you, on your computer, so an agent could open the database file directly.
+
+The check catches a line that was changed, or taken out of the middle. It does not catch:
+
+- lines taken off the end of the record
+- a change where every line after it was rebuilt with new fingerprints
+
+Both need a copy of the fingerprints kept somewhere your agents can't reach, which is planned for a later release. The check also can't undo an edit or tell you what a line said before.

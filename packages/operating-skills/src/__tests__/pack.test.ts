@@ -404,7 +404,7 @@ describe('answering-dorkos-questions', () => {
   it('says what to do when the docs do not answer', () => {
     expect(docs).toContain('When the docs do not answer');
     expect(docs).toContain('Do not fill the gap from memory');
-    // The demo-claim gate (AGENTS.md, `meta/positioning-202607/09-gtm-plan.md`
+    // The demo-claim gate (AGENTS.md, `meta/archive/positioning-202607/09-gtm-plan.md`
     // §2.0): parts of DorkOS are documented ahead of being proven end to end, so
     // an agent may report what a page says and may not vouch for it.
     expect(docs).toContain('Do not promise that a feature works');

@@ -1,7 +1,7 @@
 # Desktop renderer supervision — the window that can never stay black
 
 **Spec id:** 260823-163732 · **Tracker:** DOR-1453 · **Project:** Desktop Resilience
-**Plan:** `plans/desktop-resilience-program.md` §4 Workstream 1 (items 1.1–1.3 + 0.3)
+**Plan:** `plans/archive/desktop-resilience-program.md` §4 Workstream 1 (items 1.1–1.3 + 0.3)
 **Research:** the Electron black-screen research summarized in the plan §2.
 
 ## Problem

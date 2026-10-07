@@ -124,6 +124,10 @@ The research behind these decisions is in `research/20261006_*.md`.
 
 **Why:** the headline says what a founder gets in one plain sentence. "Your computer" stops being true as a headline once DorkOS Cloud runs agents on our servers.
 
-## 22. Organise the repo around the vision
+## 22. DorkOS first, ready in under a minute
+
+**Decided:** a new person needs no outside AI subscription. They start on a DorkOS account (the default, but skippable), DorkOS Cloud and DorkOS's own AI, and are running in under one minute. DorkOS's own services come first everywhere; bringing your own Claude, ChatGPT or OpenRouter is second. DorkOS builds its own engine before launch (developer name Doe, on Pi; the app says "Runs on: DorkOS"), and nobody sees a runtime or model name while getting started. A card is required for DorkOS's own AI, with no free starter credits. DorkOS picks the model; it can be changed in Settings and in the status bar, where it is hidden by default. Research: `research/20261007_dorkos-runtime.md`.
+
+## 23. Organise the repo around the vision
 
 **Decided:** a north-star set at the top of `meta/` (vision, principles, voice, roadmap), with truly obsolete material deleted (git keeps the history) and only what is still worth citing archived; this brief and decision record in `plans/`; the vision, mission and message stack at the top of `AGENTS.md`; and the harness (path rules, skills, word checks, operating skills, a scheduled drift check) pointing every agent at the same source.

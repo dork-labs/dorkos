@@ -15,7 +15,7 @@ Accepted
 
 ## Context
 
-The GTM plan (`meta/positioning-202607/09-gtm-plan.md` §3.5) calls for instrumenting the server with OpenTelemetry so beta support has real numbers ("run with `--debug-trace`, send the file"), the fleet-report content engine gets turn latencies and run durations, and future performance work has a foundation. The hard constraints are the product's privacy posture: "nothing phones home" must stay true, spans must never carry prompts or session content, and there must be zero cost on the default path. Dashboards and any remote collector are explicitly post-launch.
+The GTM plan (`meta/archive/positioning-202607/09-gtm-plan.md` §3.5) calls for instrumenting the server with OpenTelemetry so beta support has real numbers ("run with `--debug-trace`, send the file"), the fleet-report content engine gets turn latencies and run durations, and future performance work has a foundation. The hard constraints are the product's privacy posture: "nothing phones home" must stay true, spans must never carry prompts or session content, and there must be zero cost on the default path. Dashboards and any remote collector are explicitly post-launch.
 
 DorkOS also just shipped an anonymous, opt-in telemetry consent namespace (`telemetry.*`, DOR-293). A debug trace is a different thing: it is a purely local artifact the operator turns on per invocation and never leaves the machine unless they choose to send the file. Routing it through the anonymous-telemetry consent would both misrepresent it and collide with the error-reporting work landing in parallel.
 

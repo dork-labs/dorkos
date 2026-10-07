@@ -18,7 +18,7 @@ design-session: .dork/visual-companion/38863-1786052797
 
 - **Task brief (Dorian, 2026-08-06):** The way agents and human avatars, names, handles, and lockups display is inconsistent across the app. Make it very consistent: (1) one clear way to distinguish agents from humans everywhere, (2) fewer components via composition + variants, (3) for agents, always be able to tell who an agent is managed by. Transform `/agents` into a Slack-style directory listing humans and agents (research the name; card view default, optional table view). The logged-in user appears in the directory as a real entity, not hardcoded — aligned with where the community server work is heading. Make the user's profile richer and more visible (accounts are buried in settings today); allow a profile image. Give identity components their own Dev Playground section and sweep all identity components into it. Groundwork for Buzz-like features where other people and their agents exist in our app.
 - **Assumptions:**
-  - The design language locked in `plans/composer-identity-components/design-handoff.md` (square = agent, circle = person, Bot corner badge, fill = agent / tint = person, external = platform glyph) is the convention to generalize — not to redesign.
+  - The design language locked in `plans/archive/composer-identity-components/design-handoff.md` (square = agent, circle = person, Bot corner badge, fill = agent / tint = person, external = platform glyph) is the convention to generalize — not to redesign.
   - This program extends the shipped DOR-951 identity work (DOR-900/903/904/905) rather than forking a parallel system.
   - Single-user reality today: the directory lists one human (the operator) + their agents. The schema/UX must not need a rewrite when other people and their agents appear (Buzz-like future).
 - **Out of scope:**
@@ -31,7 +31,7 @@ design-session: .dork/visual-companion/38863-1786052797
 
 Four parallel discovery audits (2026-08-06) + tracker archaeology:
 
-- `plans/composer-identity-components/design-handoff.md`: design-locked identity language; components shipped presentational-first; profiles explicitly deferred ("View profile — soon" in hover card).
+- `plans/archive/composer-identity-components/design-handoff.md`: design-locked identity language; components shipped presentational-first; profiles explicitly deferred ("View profile — soon" in hover card).
 - **Identity component audit** (full inventory in §3): convention fully implemented in exactly 2 of ~20+ agent-rendering surfaces; root cause is structural (`AgentAvatar` never sets `shape`/`variant`).
 - **Dev playground audit**: 241 sections / 18 pages / 5 sidebar groups; identity coverage fragmented across 3 pages + 5 showcase files; 10 identity sections already exist (> the 5-section threshold for a dedicated page); registration = 6 touch points + a source-scan drift test (`dev/__tests__/playground-registry.test.ts`); `category` metadata is dead code today.
 - **User-model audit**: Better Auth `user.image` exists in both auth schemas and is read nowhere; the human is hardcoded `'You'` (`author-registry.ts`, deliberately); `bindOwner` already rebinds the local author to `user:<betterAuthUserId>` keeping opaque id stable; `CommunityMemberSchema` already has `ownerMemberId` (agent → owning member); no query aggregates people+agents across sources; two independent Better Auth instances (local server vs dorkos.ai cloud).
