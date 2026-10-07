@@ -19,8 +19,8 @@ disagrees with it, the overview wins; older files carry a banner saying so.
 ## Current strategy (`positioning-202610/`)
 
 - [`positioning-202610/00-overview.md`](positioning-202610/00-overview.md): vision,
-  mission, what sets us apart (mini apps, built for founders, ownership, and the
-  hero), audience, category, core ideas, trust by default, local first and
+  mission, what sets us apart (mini apps, built for founders, ownership), the
+  message stack (tagline, headline, supporting line) and the headline rules, audience, category, core ideas, trust by default, local first and
   cloud optional, launch scope, roadmap order, the demo-claim gate, open risks,
   and what it supersedes.
 
@@ -30,7 +30,7 @@ disagrees with it, the overview wins; older files carry a banner saying so.
   the workers), with every capability labelled built, before launch or roadmap,
   plus the architecture that carries over. Rewritten 2026-10-06.
 - [`brand-foundation.md`](brand-foundation.md): category, positioning, audience,
-  origin story, voice, naming and taglines. Brought current 2026-10-06.
+  origin story, voice, naming and taglines. Brought current 2026-10-07.
 - [`agent-etiquette.md`](agent-etiquette.md): how an agent conducts itself in a
   room, DM or channel it shares with people and other agents. Present, useful
   and mostly quiet. Updated 2026-10-06 so its rules rest on judgment and the
@@ -91,8 +91,9 @@ material, not the current spec: for how `/flow` behaves today see
 The working sessions behind the marketing-site copy.
 
 - [`website-copy/decisions.md`](website-copy/decisions.md): the copy decisions of
-  record. Decision 19 records the 2026-10 category, tagline and story; Decision 3
-  is retired; Decision 18 is updated.
+  record. Decision 19 records the 2026-10 category, tagline and story; Decision 21
+  records the message stack and headline rules; Decision 3 is retired;
+  Decision 18 is updated.
 - [`website-copy/process.md`](website-copy/process.md): how the copy was produced.
 - `website-copy/brief/`: the February 2026 creative brief (superseded) and its
   supplement.

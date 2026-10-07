@@ -18,15 +18,26 @@ Decided by the founder on 2026-10-06. Every public surface leads with this, in t
 
 1. **Mini apps (lead with this).** Ask for a tool your business needs, and your agents build it inside DorkOS. "Mini apps" is the public name, and it replaces "generative UI" as a value word. Shapes are something else: a Shape is a setup bundle, and it can carry mini apps. What is built today versus roadmap is in idea 15 and the demo-claim gate; claim exactly that much.
 2. **Built for founders.** Not general purpose. It is for the semi-technical, YC-style founder running a big or complex business mostly with agents. Goals, business connections and ready-made founder mini apps are the direction (roadmap: say "coming", or leave them out).
-3. **Ownership.** Your computer, your real files, your AI plans (your own Claude or ChatGPT subscription sign-in), your data. Open source (MIT), free forever on your computer, no account needed. In marketing, say "ownership" or "yours", not "local first". "Local first, cloud optional" stays as the internal name of the architecture principle (idea 9).
+3. **Ownership.** Your agents, tools, files and data stay yours, wherever they run. Underneath that: your real files, your AI plans (your own Claude or ChatGPT subscription sign-in), MIT license, free forever on your own computer, no DorkOS account needed. Those facts belong in body copy, never in a headline (see "The message stack"). In marketing, say "ownership" or "yours", not "local first". "Local first, cloud optional" stays as the internal name of the architecture principle (idea 9).
 
-**The homepage hero (decided):**
+### The message stack
 
-- Eyebrow: "for founders"
-- Title: "Ask for a tool. Your agents build it."
-- Lede: "Your agents build the dashboards and trackers your business needs, right inside DorkOS. On your computer, with your files. Free and open source."
+Decided by the founder on 2026-10-07. It replaces the 2026-10-06 hero ("Ask for a tool. Your agents build it." and its lede). Three levels, top to bottom:
 
-The tagline "You, Multiplied." stays on hero surfaces. Agents may be called co-workers or teammates.
+1. **Tagline:** "You, Multiplied." Hero surfaces only. Each surface keeps its established casing (the site's closing section says "You, multiplied.").
+2. **Page title and main headline:** "Build and run your business with an agent team." The homepage title is exactly "DorkOS: Build and run your business with an agent team".
+3. **Supporting line:** "Your agents join your team chat, take on real work, and build the custom tools your company runs on."
+
+**Headline rules.** Headline copy means the hero, page titles, meta descriptions, OG and Twitter cards, section headlines, the README opening, the npm description and the llms.txt summary line. In headline copy:
+
+- Never say "on your computer", "on your own computer" or "runs on your computer". DorkOS Cloud runs on our servers too.
+- Never say "open source" literally.
+- Say ownership as "yours": "yours to keep", or "Your agents, tools, files and data stay yours, wherever they run."
+- Lower on the page (body text, FAQ, install details, the license section), plain facts such as "MIT license" or "runs on your computer or a server" are fine.
+
+**Below the hero, the three differentiators stay the structure:** mini apps, built for founders, ownership, in that order, as the beats or sections. The chat workspace is still table stakes; the supporting line names it first, and that is fine.
+
+Agents may be called co-workers or teammates.
 
 **Never said in public: equal accounts.** Never write "agents equal to humans", "equal accounts", "peers", "same account as you", "agents can run the place" (or your company, or the space), "no human required", or "agents can be admins". The idea scares people. Equal accounts stay an internal design principle (idea 2): still how DorkOS is built, because they let agents do far more as models improve. Internal `meta/` documents, `AGENTS.md` and ADRs may describe them, labelled internal or roadmap.
 
@@ -53,7 +64,8 @@ DorkOS is the single interface a founder uses to run their whole business: talk 
 ## Category and words
 
 - **Category: a workspace for people and agents.** Longer form: "the workspace where founders run their business with people and agents." The category says what DorkOS is. It is not the edge, so it never leads a hero or a pitch; the three differentiators above do.
-- **Ownership, not local first, in marketing.** Public copy says "ownership", "yours", "your computer, your files". It does not say "local first" or "local-first". The phrase stays an internal architecture name.
+- **Ownership, not local first, in marketing.** Public copy says "ownership" and "yours": "Your agents, tools, files and data stay yours, wherever they run." It does not say "local first" or "local-first". The phrase stays an internal architecture name. Headlines never say "your computer" or "open source" (see "The message stack").
+- **Headline: "Build and run your business with an agent team."** The page title and main headline, under the tagline (see "The message stack").
 - **Mini apps** is the public name for the apps your agents build inside DorkOS. The app and the docs still call them extensions today, so docs say "mini apps (the app calls them extensions)". "Shape" stays the name of a setup bundle. "Generative UI" is no longer a value word.
 - **Tagline: You, Multiplied.** Unchanged. Hero surfaces only.
 - **Manifesto line:** "Intelligence doesn't scale. Coordination does." It may appear in essays. It is never a headline.
@@ -69,6 +81,7 @@ DorkOS is the single interface a founder uses to run their whole business: talk 
 - Developer-first audience framing.
 - The chat workspace, or "talk to people and agents in channels", as the lead or the edge. It is table stakes.
 - "Generative UI" as a headline name. The chat widgets stay as supporting proof of mini apps.
+- "Ask for a tool. Your agents build it." as the homepage hero, and its lede (2026-10-06, replaced by the message stack on 2026-10-07). It still describes mini apps fine below the hero.
 
 ## The core image: the office and the workers
 

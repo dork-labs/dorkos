@@ -1,17 +1,17 @@
 # DorkOS: Brand & Product Foundation
 
-> **Current as of 2026-10-06.** Brought up to date with the 2026-10 vision reset ([`positioning-202610/00-overview.md`](positioning-202610/00-overview.md)). DorkOS is now **a workspace for people and agents**, built first for founders who run a business with agents, with Kai (developers) second. The tagline **"You, Multiplied."** is unchanged. Retired: "operating system for AI agents" as the category, "one place for every AI agent you run" as the category line, the runtime trio as the headline, developer-first framing, and the personas Priya and Lil. Sections that were only history (the fleet-era tagline bank, the module-by-module architecture) are rewritten or pointed at the litepaper. The voice, the name and the Shapes naming addendum (§19) carry over. **Same-day update (2026-10-06): what sets DorkOS apart.** The chat workspace is table stakes, not the edge. The three differentiators, in order, are mini apps (your agents build the tools your business needs inside DorkOS), built for founders, and ownership. They now lead the positioning statement (§3), the big idea (§4), the hero (§13) and the taglines (§12); see [`positioning-202610/00-overview.md`](positioning-202610/00-overview.md), "What sets us apart". Earlier amendment notes (2026-07-06 positioning review, 2026-07-09 hero reframe, 2026-08-24 retirement of two words, see §10) are kept inline where they still apply.
+> **Current as of 2026-10-07.** Brought up to date with the 2026-10 vision reset ([`positioning-202610/00-overview.md`](positioning-202610/00-overview.md)). DorkOS is now **a workspace for people and agents**, built first for founders who run a business with agents, with Kai (developers) second. The tagline **"You, Multiplied."** is unchanged. Retired: "operating system for AI agents" as the category, "one place for every AI agent you run" as the category line, the runtime trio as the headline, developer-first framing, and the personas Priya and Lil. Sections that were only history (the fleet-era tagline bank, the module-by-module architecture) are rewritten or pointed at the litepaper. The voice, the name and the Shapes naming addendum (§19) carry over. **Same-day update (2026-10-06): what sets DorkOS apart.** The chat workspace is table stakes, not the edge. The three differentiators, in order, are mini apps (your agents build the tools your business needs inside DorkOS), built for founders, and ownership. They now lead the positioning statement (§3), the big idea (§4), the hero (§13) and the taglines (§12); see [`positioning-202610/00-overview.md`](positioning-202610/00-overview.md), "What sets us apart". **Update 2026-10-07: the message stack.** The hero is now three levels: the tagline "You, Multiplied.", the headline "Build and run your business with an agent team." and the supporting line "Your agents join your team chat, take on real work, and build the custom tools your company runs on." It replaces "Ask for a tool. Your agents build it." (§12, §13). Headline copy never says "your computer" or literally "open source"; ownership is "yours, wherever they run". The three differentiators stay the structure below the hero. Earlier amendment notes (2026-07-06 positioning review, 2026-07-09 hero reframe, 2026-08-24 retirement of two words, see §10) are kept inline where they still apply.
 
 ## 1. Executive Summary
 
 **DorkOS** is a workspace for people and agents: the place where founders run their business with people and agents.
 
-A founder talks to people and agents in DMs, channels and threads, and their agents work the outside tools the business runs on (Gmail and the rest). That chat workspace is table stakes. What sets DorkOS apart is three things, in this order: **mini apps** (ask for a tool your business needs, and your agents build it inside DorkOS), **built for founders**, and **ownership** (your computer, your real files, your AI plans, your data). Agents are trusted colleagues, not suspects. It runs on your own computer, free, with no account required. DorkOS Cloud is optional.
+A founder talks to people and agents in DMs, channels and threads, and their agents work the outside tools the business runs on (Gmail and the rest). That chat workspace is table stakes. What sets DorkOS apart is three things, in this order: **mini apps** (ask for a tool your business needs, and your agents build it inside DorkOS), **built for founders**, and **ownership** (your agents, tools, files and data stay yours, wherever they run). Agents are trusted colleagues, not suspects. It runs on your own computer, free, with no DorkOS account required. DorkOS Cloud is optional.
 
 DorkOS is:
 
 - Open source
-- Yours: your computer, your files, your AI plans (internally, "local first, cloud optional")
+- Yours: your agents, tools, files and data, wherever they run (internally, "local first, cloud optional")
 - Trusted by default
 - Radically honest
 - Built for people who run things
@@ -48,7 +48,7 @@ A workspace for people and agents _(changed 2026-10-06; was "Autonomous Agent Op
 
 ### Positioning Statement
 
-DorkOS is the workspace where founders run their business with people and agents. What sets it apart: your agents build the tools your business needs right inside DorkOS (mini apps), it is built for founders, and you own all of it (your computer, your real files, your AI plans, your data).
+DorkOS is the workspace where founders run their business with people and agents. What sets it apart: your agents build the tools your business needs right inside DorkOS (mini apps), it is built for founders, and you own all of it (your agents, tools, files and data stay yours, wherever they run).
 
 The core image: **DorkOS is the office. People and agents are the workers who log in.** An agent's brain (Claude Code, Codex or OpenCode) and its computer sit outside the office and connect in.
 
@@ -58,7 +58,7 @@ The explainer line: **Teams needed Slack. AI agents need DorkOS.** Use it where 
 
 1. **Mini apps.** Ask for a tool your business needs, and your agents build it inside DorkOS. This leads every story surface. Claim it as built today: an agent builds a mini app (an extension, in the app's words), a person says yes, and it opens inside DorkOS in fixed places. Every agent knowing how, and ready-made founder mini apps, are **Roadmap**.
 2. **Built for founders.** Not general purpose. Goals, business connections and ready-made founder mini apps are the direction (**Roadmap**).
-3. **Ownership.** Your computer, your real files, your AI plans, your data. Open source, free forever on your computer, no account needed. Marketing says "ownership" or "yours", never "local first".
+3. **Ownership.** Your agents, tools, files and data stay yours, wherever they run. Underneath: your real files, your AI plans, MIT license, free forever on your own computer, no DorkOS account needed. Those are body-copy facts; headlines never say "your computer" or literally "open source". Marketing says "ownership" or "yours", never "local first".
 
 **Equal accounts are never said in public** _(added 2026-10-06)_. They remain how DorkOS is built (an internal design principle, **Roadmap** as a feature), but public copy never says agents are equal to people, peers, on the same account as you, able to run the place, or able to be admins. Co-workers and teammates are fine.
 
@@ -104,7 +104,7 @@ With DorkOS, your business gets:
 
 - Tools built for you: ask for one, and your agents build it inside DorkOS (mini apps)
 - Built for how founders work: agents that work in your real tools, trusted by default
-- A system you own: your computer, your files, your AI plans, free and open source
+- A system you own: your agents, tools, files and data stay yours, wherever they run
 - An office: conversations, docs and a record, shared by people and agents
 
 Your vision.
@@ -316,7 +316,7 @@ _Established during Value Architecture review (2026-02-27). These rules apply to
 
 - **Apple-style outcomes over mechanisms.** Describe what happens for the user, not how the system works internally. "Get a Telegram message when your agent finishes" not "Publish to a NATS-style hierarchical subject."
 - **No enterprise compliance language.** DorkOS is for founders and builders, not SOC 2 audits. Say "a record of what every agent did", not "compliance-grade audit logging." "Open source" not "auditable." _(Revised 2026-10-06: the readable record is now central to the trust story; see the "audit trail" row above.)_
-- **Ownership, cloud optional.** Most people start DorkOS on their own computer, free, with no account. Language should reflect that, then offer DorkOS Cloud as an option, never as a requirement. Say "ownership", "yours", "your computer, your files"; never "local first" or "local-first" in marketing. _(Revised 2026-10-06.)_
+- **Ownership, cloud optional.** Most people start DorkOS on their own computer, free, with no account. Language should reflect that, then offer DorkOS Cloud as an option, never as a requirement. Say "ownership" and "yours" ("your agents, tools, files and data stay yours, wherever they run"); never "local first" or "local-first" in marketing. Headlines never say "your computer" or literally "open source"; body copy may state those as plain facts. _(Revised 2026-10-07.)_
 - **Connectivity and flexibility over reliability.** When describing Relay, lead with "your agents can reach you on Telegram, notify each other, connect through any channel" — not "durable delivery, guaranteed message persistence."
 - **No "infrastructure" identity.** The brand identity is about running a business with a team of people and agents, not about running infrastructure. "I run my company with people and agents" not "I own my agent infrastructure."
 - **Guide, not hero** _(added 2026-07-06, StoryBrand)_. The user is the hero; DorkOS and its maker are the guide. In any asset, sentences whose subject is "you / your team" should outnumber sentences whose subject is "DorkOS / we." The founder story appears as empathy plus credentials ("I built this because I needed it"), never as the story's protagonist. DorkOS brags only through what the user's team did.
@@ -368,7 +368,13 @@ DorkOS should feel like:
 
 **Primary** _(changed 2026-07-09; kept 2026-10-06)_: **You, Multiplied.** Hero surfaces only.
 
-**Hero title** _(added 2026-10-06)_: **Ask for a tool. Your agents build it.** The homepage headline, leading with mini apps.
+**Headline** _(changed 2026-10-07)_: **Build and run your business with an agent team.** The page title and main headline, under the tagline. Page title exactly: "DorkOS: Build and run your business with an agent team".
+
+**Supporting line** _(added 2026-10-07)_: **Your agents join your team chat, take on real work, and build the custom tools your company runs on.**
+
+Together these are the message stack: tagline, headline, supporting line. Headline copy (hero, titles, meta descriptions, social cards, section headlines, README opening, npm description) never says "on your computer" or literally "open source"; ownership is said as "yours". The three differentiators stay the structure below the hero.
+
+**Retired 2026-10-07:** "Ask for a tool. Your agents build it." as the hero title (2026-10-06). It may still describe mini apps below the hero.
 
 **Category line** _(added 2026-10-06)_: A workspace for people and agents. Long form: "The workspace where founders run their business with people and agents." It says what DorkOS is, never the headline.
 
@@ -382,16 +388,17 @@ DorkOS should feel like:
 
 **Messaging bank** (secondary and contextual use):
 
-- Ask for a Tool. Your Agents Build It.
+- Build and Run Your Business with an Agent Team.
+- Ask for a Tool. Your Agents Build It. _(a mini apps section line now, not the hero)_
 - Your Agents Build the Tools Your Business Runs On.
 - Built for Founders.
-- Your Computer. Your Files. Your AI Plans.
+- Your Agents, Tools, Files and Data. Yours, Wherever They Run.
 - You've Always Had More Ideas Than Hours. That Ratio Just Changed.
 - Colleagues, Not Babysitters.
 - Your Agents, Trusted by Default.
 - The Office Where Your Agents Work.
 - One Founder. A Whole Company.
-- Free on Your Computer. Cloud If You Want It.
+- Yours to Keep. Cloud If You Want It.
 - Your Vision. Your People and Agents. Your Rules.
 - Agents That Multiply What You Accomplish.
 - Not a Chatbot. A Workplace.
@@ -406,21 +413,21 @@ Lines that state trust by default as shipped behavior ("Your Agents, Trusted by 
 
 ## 13. Website Structure Draft
 
-### Hero Section _(rewritten 2026-10-06, then decided the same day: mini apps lead)_
+### Hero Section _(rewritten 2026-10-07: the message stack)_
 
-> _for founders_
+> _You, Multiplied._
 >
-> **Ask for a tool. Your agents build it.**
+> **Build and run your business with an agent team.**
 >
-> Your agents build the dashboards and trackers your business needs, right inside DorkOS. On your computer, with your files. Free and open source.
+> Your agents join your team chat, take on real work, and build the custom tools your company runs on.
 
-The install command and the desktop download sit under the hero. Runtime names do not appear in the hero. "You, Multiplied." stays a hero-surface tagline and may sit near it. The chat workspace never leads the hero: it is table stakes.
+The install command and the desktop download sit under the hero. Runtime names do not appear in the hero. The hero never says "on your computer" or literally "open source"; ownership is "yours". This replaces the 2026-10-06 hero ("Ask for a tool. Your agents build it."). The supporting line names the team chat first, which is fine; the sections below still lead with mini apps. The chat workspace never leads the hero: it is table stakes.
 
 ### Sections
 
 1. Mini apps: ask for a tool, your agents build it (built form only: an agent builds it, you say yes, it opens inside DorkOS)
 2. Built for founders (use cases, built features only; goals and ready-made founder mini apps are "coming")
-3. Ownership: your computer, your files, your AI plans, free and open source
+3. Ownership: your agents, tools, files and data stay yours, wherever they run (body copy may add the plain facts: MIT license, free on your own computer, your own AI plan)
 4. The office and the workers (what DorkOS is: channels, DMs and threads with people and agents)
 5. Colleagues, not babysitters (the trust principle, claimed only as far as it has shipped)
 6. Your first five minutes

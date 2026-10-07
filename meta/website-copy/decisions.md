@@ -190,7 +190,7 @@ Tracking key creative decisions as they're made.
   1. **Mini apps (lead with this).** Ask for a tool your business needs, and your agents build it inside DorkOS. "Mini apps" is the public name. It replaces "generative UI" as a value word. Docs say "mini apps (the app calls them extensions)". "Shape" stays the name of the setup bundle, which can carry mini apps.
   2. **Built for founders.** Not general purpose. Goals, business connections and ready-made founder mini apps are the direction; copy says "coming" or leaves them out.
   3. **Ownership.** Your computer, your real files, your AI plans, your data. Open source (MIT), free forever on your computer, no account needed. Marketing says "ownership" or "yours", never "local first".
-- **The homepage hero:**
+- **The homepage hero** _(replaced 2026-10-07 by Decision 21; kept here as the record)_:
   - Eyebrow: "for founders"
   - Title: "Ask for a tool. Your agents build it."
   - Lede: "Your agents build the dashboards and trackers your business needs, right inside DorkOS. On your computer, with your files. Free and open source."
@@ -202,3 +202,26 @@ Tracking key creative decisions as they're made.
 **Why:** the competitive analysis (`research/20261006_competitive-analysis-2026-10-vision.md`) found that a chat workspace with agents is becoming common. What rivals do not combine is agents building the business's own tools inside the workspace, a product made for founders, and a system the founder owns.
 
 **Affected documents:** `meta/positioning-202610/00-overview.md`, `brand-foundation.md`, `dorkos-litepaper.md`, `value-architecture-applied.md`, the personas, `.claude/rules/site-marketing-copy.md` and the writing skills. The site, READMEs and docs follow in their own changes. Deliberately left as history: `rounds/**` and `archive/**`.
+
+## Decision 21: The Message Stack: Build and Run Your Business with an Agent Team
+
+**Date:** 2026-10-07 (decided by the founder; canon in `meta/positioning-202610/00-overview.md`, "The message stack")
+**Amends:** Decision 20's homepage hero. The rest of Decision 20 stands.
+**Decision:**
+
+- **The message stack, three levels:**
+  1. **Tagline:** "You, Multiplied." Each surface keeps its established casing (the site's closing section says "You, multiplied.").
+  2. **Page title and main headline:** "Build and run your business with an agent team." The homepage title is exactly "DorkOS: Build and run your business with an agent team".
+  3. **Supporting line:** "Your agents join your team chat, take on real work, and build the custom tools your company runs on."
+- **Retired:** "Ask for a tool. Your agents build it." as the hero title, and its lede. The line may still head a mini apps section.
+- **Headline rules.** Headline copy means the hero, page titles, meta descriptions, OG and Twitter cards, section headlines, the README opening, the npm description and the llms.txt summary line. In headline copy:
+  - Never "on your computer", "on your own computer" or "runs on your computer". DorkOS Cloud runs on our servers too.
+  - Never the literal words "open source".
+  - Ownership is said as "yours": "yours to keep", or "Your agents, tools, files and data stay yours, wherever they run."
+  - Lower on the page (body text, FAQ, install details, the license section), plain facts such as "MIT license" or "runs on your computer or a server" are fine.
+- **Structure below the hero:** the three differentiators stay the beats, in order: mini apps, built for founders, ownership. The chat workspace is still table stakes; the supporting line names it first, and that is fine.
+- **Ownership wording:** "Your agents, tools, files and data stay yours, wherever they run." It replaces "your computer, your real files, your AI plans, your data" as the lead phrasing.
+
+**Why:** the new headline says what a founder gets in one plain sentence, and the supporting line carries the chat, the work and the mini apps together. "Your computer" stops being true as a headline once DorkOS Cloud runs agents on our servers, so ownership is said as "yours".
+
+**Affected documents:** `meta/positioning-202610/00-overview.md`, `brand-foundation.md`, `dorkos-litepaper.md`, `value-architecture-applied.md`, `website-copy/brief/creative-brief.md`, `INDEX.md`, `.claude/rules/site-marketing-copy.md` and the writing skills. The site, READMEs, npm copy and docs follow in their own changes. Deliberately left as history: `rounds/**`, `archive/**` and Decision 20's hero.
