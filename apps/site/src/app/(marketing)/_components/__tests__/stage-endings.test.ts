@@ -219,7 +219,7 @@ describe('the finale reverses, because the whole page does', () => {
   });
 
   it('starts nothing before the last beat is on screen', () => {
-    // Where the beat flips to "It all happens on your computer.", read off the
+    // Where the beat flips to the ownership headline, read off the
     // beat switch rather than typed in again: the second boundary plus the
     // dead zone around it. Moving one moves this, which is the point — a
     // machine that begins arriving under the previous headline undoes the

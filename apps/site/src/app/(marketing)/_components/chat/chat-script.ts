@@ -23,8 +23,10 @@ export interface ChatLine {
  *
  * Four things in here are load-bearing rather than flavour:
  *
- *  1. **Dave asks, the agents do.** Twice, an agent proposes and Dave answers
- *     before anything happens. The film makes the same promise in its own chat
+ *  1. **Dave asks, the agents do.** Twice, an agent asks and Dave answers
+ *     before anything happens. The second time, Dave asked for a tool and
+ *     Otto built it: a mini app (an extension) only turns on once a person
+ *     says yes, so the question before it is the real approval, not flavour. The film makes the same promise in its own chat
  *     ("Wanna buy flowers?" then "Oh, nice! Yeah — do that."), Tool Approval
  *     and Action Approvals are what actually ships, and a script of completed
  *     actions off one instruction would sell autonomy the product does not
@@ -47,7 +49,13 @@ export const CHAT_SCRIPT: readonly ChatLine[] = [
   { from: 'dave', text: 'Go ahead.', time: '9:42' },
   { from: 'pip', text: 'Heyheyhey! I can double-check it after!', time: '9:42' },
   { from: 'hal', text: 'Good morning… Dave.', time: '9:42' },
-  { from: 'otto', text: 'Want the release-notes skill for this?', time: '9:43', dockApp: 'skills' },
+  { from: 'dave', text: 'Can you build me a launch tracker?', time: '9:43' },
+  {
+    from: 'otto',
+    text: 'Built it. Want me to turn it on?',
+    time: '9:43',
+    dockApp: 'tracker',
+  },
   { from: 'dave', text: 'Yes.', time: '9:43' },
   {
     from: 'pip',

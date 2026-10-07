@@ -24,7 +24,7 @@ export const systemModules: SystemModule[] = [
     name: 'Console',
     label: 'Interface',
     description:
-      'The app you work in. Talk with your agents in channels and DMs, manage schedules, and open it from any browser.',
+      'The app you work in. Ask your agents for mini apps, talk with them in channels and DMs, and open it from any browser.',
     status: 'available',
     group: 'platform',
   },

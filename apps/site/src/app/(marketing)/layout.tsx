@@ -5,7 +5,7 @@ import { MarketingShell } from './marketing-shell';
 
 const metaTitle = `${siteConfig.name}: ${siteConfig.category}`;
 const metaDescription =
-  'The workspace where founders run their business with people and agents. Talk in channels and DMs, schedule work, and keep it on your computer. Open source.';
+  'Your agents build the dashboards and trackers your business needs, inside DorkOS. Made for founders. On your computer, with your files. Free and open source.';
 
 export const metadata: Metadata = {
   title: metaTitle,

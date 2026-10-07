@@ -57,8 +57,8 @@ export default function InstallPage() {
           Install DorkOS
         </h1>
         <p className="text-warm-gray mt-4 text-lg">
-          Every path below sets up the same DorkOS on your machine. Pick the one that fits how you
-          work.
+          Every path below sets up the same DorkOS on your own computer. It is free, open source,
+          and needs no account. Pick the one that fits how you work.
         </p>
 
         <div className="mt-12 space-y-12">

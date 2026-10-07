@@ -9,12 +9,20 @@ import { company } from '@dorkos/shared/company';
 export const siteConfig = {
   name: 'DorkOS',
   /**
-   * The category line, as it reads in titles and card alt text. Settled in
-   * the 2026-10 story; the hero says the same words as a sentence.
+   * The lead line, as it reads in titles and card alt text, so it is a noun
+   * phrase that survives being lowercased after "DorkOS: ". The 2026-10-06
+   * positioning leads with mini apps (the hero says "Ask for a tool. Your
+   * agents build it."); a chat workspace with agents in it is table stakes,
+   * so it describes what DorkOS is further down and never leads a title.
    */
-  category: 'A workspace for people and agents',
+  category: 'The workspace where agents build your tools',
+  /**
+   * The site-wide description: the three differentiators in order (mini
+   * apps, built for founders, ownership). Feeds the root metadata, the web
+   * manifest, JSON-LD and the top of llms.txt.
+   */
   description:
-    'The workspace where founders run their business with people and agents. Free, open source, and it runs on your own computer.',
+    'Ask for a tool, and your agents build it inside DorkOS. Made for founders. Your computer, your files, your AI plan. Free and open source.',
   url: 'https://dorkos.ai',
   /** The company's published contact address; owned by `@dorkos/shared/company`. */
   contactEmail: company.contactEmail,

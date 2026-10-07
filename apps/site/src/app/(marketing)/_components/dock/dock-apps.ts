@@ -1,9 +1,9 @@
 import type { ComponentType } from 'react';
-import { Blocks, CalendarClock, Smartphone } from 'lucide-react';
+import { CalendarClock, LayoutDashboard, Smartphone } from 'lucide-react';
 import { SlackIcon, TelegramLogo } from '@dorkos/icons/adapter-logos';
 
 /** Id of something you can add to DorkOS, as the dock and the chat name it. */
-export type DockAppId = 'skills' | 'schedule' | 'slack' | 'telegram' | 'phone';
+export type DockAppId = 'tracker' | 'schedule' | 'slack' | 'telegram' | 'phone';
 
 /** One tile on the dock; its id drives the dock-to-message flight. */
 export interface DockApp {
@@ -19,7 +19,7 @@ export interface DockApp {
    * anything other than `ga`. That is why Connections is absent — it is the
    * catalog's one `beta` entry, and its sign-in is brokered by a third party
    * that holds the credential in its own vault, which is also the one thing
-   * that would make "It all happens on your computer." untrue.
+   * that would make "Your computer. Your files." untrue.
    */
   feature: string;
   color: string;
@@ -28,7 +28,14 @@ export interface DockApp {
 
 /** What the dock carries. Every tile gets used by the conversation above it. */
 export const DOCK: readonly DockApp[] = [
-  { id: 'skills', label: 'Skills', feature: 'marketplace', color: '#d5a439', Icon: Blocks },
+  // The mini app the agent builds in the chat: the tile the "yours" beat is about.
+  {
+    id: 'tracker',
+    label: 'Tracker',
+    feature: 'mini-apps',
+    color: '#d5a439',
+    Icon: LayoutDashboard,
+  },
   {
     id: 'schedule',
     label: 'Schedule',
