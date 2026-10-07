@@ -13,7 +13,7 @@ status: specified
 **Ideation:** `specs/identity-consistency/01-ideation.md` (§6 decisions D1–D6 are authoritative)
 **Design record:** `specs/identity-consistency/design-decisions.md`
 **Discovery audits:** `research/20260806_identity-component-audit.md` · `research/20260806_dev-playground-structure-audit.md` · `research/20260806_user-model-and-community-plans-audit.md`
-**Design language:** `plans/composer-identity-components/design-handoff.md` (locked; generalized here, not redesigned)
+**Design language:** `plans/archive/composer-identity-components/design-handoff.md` (locked; generalized here, not redesigned)
 **Prerequisite spec:** `specs/handles/02-specification.md` Phase 2 (DOR-676) — consumed, never re-specified
 **Tracker:** DOR-676 (prerequisite W0, existing) · DOR-677 (partially absorbed) · DOR-962 (absorbed) · DOR-957 (delivered) · DOR-950 (split) · DOR-955 (external, in progress) · DOR-954 / DOR-949 (related, separate)
 
@@ -1377,7 +1377,7 @@ an audit trail.
   `research/20260727_agent-identity-in-communities.md` (owner-vouched admission) ·
   `research/20260728_handle-systems-prior-art.md` ·
   `research/20260322_agents_page_fleet_management_ux_deep_dive.md`
-- **Design:** `plans/composer-identity-components/design-handoff.md` ·
+- **Design:** `plans/archive/composer-identity-components/design-handoff.md` ·
   `.dork/visual-companion/38863-1786052797/` (`directory-and-profile.html`, `team-and-profile-v2.html`)
 - **Rules:** `.claude/rules/fsd-layers.md` · `.claude/rules/components.md` · `.claude/rules/testing.md` ·
   `.claude/rules/dork-home.md` · `.claude/rules/server-structure.md` · `.claude/rules/api.md`

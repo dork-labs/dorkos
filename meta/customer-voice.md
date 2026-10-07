@@ -1,6 +1,6 @@
 # Customer Voice: Real Developer Frustrations DorkOS Solves
 
-> **Read this first (2026-10-06).** Everything collected below is **developer voice**: it speaks for Kai, now the secondary persona. The primary persona is the founder who runs a business with agents ([`personas/the-ai-native-founder.md`](personas/the-ai-native-founder.md); strategy in [`positioning-202610/00-overview.md`](positioning-202610/00-overview.md)), and **founder voice has not been gathered yet.** Theme 9 below is the place for it. Collect real quotes with source and date; never invent or paraphrase from memory. Until founder quotes exist, do not use this document to justify founder-facing copy.
+> **Read this first (2026-10-06).** Everything collected below is **developer voice**: it speaks for Kai, now the secondary persona. The primary persona is the founder who runs a business with agents ([`personas/the-ai-native-founder.md`](personas/the-ai-native-founder.md); strategy in `VISION.md`), and **founder voice has not been gathered yet.** Theme 9 below is the place for it. Collect real quotes with source and date; never invent or paraphrase from memory. Until founder quotes exist, do not use this document to justify founder-facing copy.
 
 > Verbatim quotes and attributed paraphrases from developers across Hacker News, GitHub Issues, Reddit, and developer blogs. Organized by pain theme. Collected February 2026.
 >

@@ -29,7 +29,7 @@ design-session: .dork/visual-companion/81863-1786054606
 
 ## 2) Pre-reading Log
 
-- `plans/composer-identity-components/design-handoff.md`: the identity phase is shipped; composer unification explicitly deferred as a later phase needing design.
+- `plans/archive/composer-identity-components/design-handoff.md`: the identity phase is shipped; composer unification explicitly deferred as a later phase needing design.
 - Memory `project_composer_rooms_unification_design`: all three composers share ONE core (`ChatInput.tsx` — textarea, focus, auto-resize, keyboard ladder, clear/attach/action slots); divergence is only orchestration. Locked: identity-first sequencing.
 - `apps/client/src/layers/widgets/room-view/ui/RoomComposer.tsx` (304 lines): wraps `ChatInput` + `ClearArmedHint`, adds `useMentionAutocomplete` over the room roster (from `features/mentions`), careful insert/undo handling.
 - `apps/client/src/layers/features/chat/ui/input/ChatInputContainer.tsx` (408 lines): the chat-side orchestration — queue panel, file chip bar, prompt suggestion chips, interactive input panel, drag-and-paste.

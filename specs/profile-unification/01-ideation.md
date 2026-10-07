@@ -30,7 +30,7 @@ design-session: specs/profile-unification/design
 
 - `specs/identity-consistency/` (01-ideation §6 decisions, 02-specification W3.2/W3.3, design-decisions.md §6) — the drawer/settings split (ADR `260806-222547`) that this spec **partially supersedes** (see D8).
 - `plans/identity-micro-interactions/design-spec.md` — §3D drawer entrance (300 ms, static identity rule, no stagger, no celebration) and §3E refusals; still binding.
-- `plans/composer-identity-components/design-handoff.md` — hover card direction A (compact) and the square/circle rule.
+- `plans/archive/composer-identity-components/design-handoff.md` — hover card direction A (compact) and the square/circle rule.
 - `research/20260806_identity-component-audit.md`, `research/20260727_agent-identity-in-communities.md` (Buzz's `ownerMemberId` vouch), `research/20260611_linear-agent-accounts.md`, `research/20260728_handle-systems-prior-art.md`, `research/20260226_agents_first_class_entity.md` (Approach 4 "Agent Profile as standalone config UI").
 - Live browser audit at 1440×900 (screens in the design session dir: `team-page.png`, `drawer-agent.png`, `drawer-you.png`, `session-panel-{profile,config,toolkit,menu}.png`, `session-dorkbot-panel.png`).
 

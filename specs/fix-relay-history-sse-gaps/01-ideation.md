@@ -2,7 +2,7 @@
 
 ## Origin
 
-Chat self-test run 2 (2026-03-06). See `plans/2026-03-06-chat-self-test-findings.md`.
+Chat self-test run 2 (2026-03-06). See `plans/archive/2026-03-06-chat-self-test-findings.md`.
 
 ## Problem
 

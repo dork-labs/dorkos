@@ -236,7 +236,7 @@ ADRs for (1) readiness ownership across the pipeline, (2) the dispatch starvatio
 
 Added after the table was first drafted (governed by
 [`../../.agents/flow/CHARTER.md`](../../.agents/flow/CHARTER.md) and
-[`../../plans/flow-loop-system-revision.md`](../../plans/flow-loop-system-revision.md)):
+[`../../plans/flow-loop-system-revision.md`](../../plans/archive/flow-loop-system-revision.md)):
 
 - **L0 - Loop architecture.** Replace the monolithic drain with a **prioritized
   reconciler registry + scheduler**. Small single-responsibility sub-loops (triage,

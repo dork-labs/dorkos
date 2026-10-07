@@ -47,8 +47,8 @@ status: ideation
 - `apps/server/src/routes/relay.ts`: 14+ endpoints implemented
 - `apps/server/src/routes/mesh.ts`: 8+ endpoints implemented
 - `specs/manifest.json`: Several Relay/Mesh specs still marked "specified" despite being implemented
-- `plans/relay-specs/`: 7 planning docs with comprehensive design details
-- `plans/mesh-specs/`: 5 planning docs with comprehensive design details
+- `plans/archive/relay-specs/`: 7 planning docs with comprehensive design details
+- `plans/archive/mesh-specs/`: 5 planning docs with comprehensive design details
 
 ## 3) Codebase Map
 
@@ -67,8 +67,8 @@ status: ideation
   - `packages/cli/package.json` — npm keywords
 
 - **Source material for docs:**
-  - `plans/relay-specs/` — 7 detailed design docs
-  - `plans/mesh-specs/` — 5 detailed design docs
+  - `plans/archive/relay-specs/` — 7 detailed design docs
+  - `plans/archive/mesh-specs/` — 5 detailed design docs
   - `contributing/relay-adapters.md` — Existing adapter guide
   - `packages/shared/src/relay-schemas.ts` — Zod schemas (12.6KB)
   - `packages/shared/src/mesh-schemas.ts` — Zod schemas (8KB)
@@ -129,7 +129,7 @@ N/A — not a bug fix.
 
 ### Recommendation
 
-**Recommended Approach:** Tiered documentation with full implementation plans. The planning docs in `plans/relay-specs/` and `plans/mesh-specs/` provide excellent source material that can be adapted into user-facing docs. The research agent identified the Diataxis framework as best practice for structuring docs (tutorials, how-to guides, concepts, reference).
+**Recommended Approach:** Tiered documentation with full implementation plans. The planning docs in `plans/archive/relay-specs/` and `plans/archive/mesh-specs/` provide excellent source material that can be adapted into user-facing docs. The research agent identified the Diataxis framework as best practice for structuring docs (tutorials, how-to guides, concepts, reference).
 
 ## 6) Decisions
 

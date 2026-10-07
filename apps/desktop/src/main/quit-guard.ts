@@ -171,7 +171,7 @@ export async function confirmInterruptingAgents(intent: QuitIntent = 'quit'): Pr
  * doing it anyway is the prime suspect for ten days of updates that quit and
  * came back on the old version. `preventDefault()` cancels the termination
  * Squirrel armed its install against, and the plain `app.quit()` issued in its
- * place is a different quit (`plans/desktop-resilience-program.md` §2B).
+ * place is a different quit (`plans/archive/desktop-resilience-program.md` §2B).
  * `autoInstallOnAppQuit = true` covers the ordinary quit, which still runs the
  * full sequence below. Do not "simplify" this split without preserving it.
  *

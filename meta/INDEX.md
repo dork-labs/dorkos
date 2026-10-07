@@ -1,11 +1,6 @@
 # Meta Index
 
-`meta/` holds the strategy and brand foundation for DorkOS: the current
-positioning, the litepapers, the brand foundation, the value-architecture method,
-customer voice, personas, agent etiquette and the website-copy working sessions.
-This is the "why we build it and how we talk about it" layer, not a product-API
-source of truth. For current product behavior, see the docs site (`docs/`) and
-the internal developer guides (`contributing/`).
+`meta/` is the "why we build it and how we talk about it" layer for DorkOS. It is not a product-API source of truth: for current behavior see the docs (`docs/`) and the developer guides (`contributing/`).
 
 ## Start here: the north-star set
 
@@ -13,103 +8,41 @@ Read these four first. Where anything else in the repo disagrees with them, they
 
 - [`VISION.md`](VISION.md): vision, mission, the office-and-workers picture, who it is for, the message stack and what sets us apart.
 - [`PRINCIPLES.md`](PRINCIPLES.md): how we decide. Trusted by default, co-workers, equal accounts (internal), ownership, local first and cloud optional, claim only what works, the quality bar.
-- [`VOICE.md`](VOICE.md): the single source for language. Headline rules, words we use, words and claims we never use.
-- [`ROADMAP.md`](ROADMAP.md): built, before launch and after launch, with tickets, plus the demo-claim gate and open risks.
+- [`VOICE.md`](VOICE.md): the single source for language. Headline rules, words we use, words and claims we never use, plain-word swaps.
+- [`ROADMAP.md`](ROADMAP.md): before launch and after launch, with tickets, plus the demo-claim gate and open risks.
 
-## Strategy and brand (root)
+## Current canon
 
-- [`dorkos-litepaper.md`](dorkos-litepaper.md): the full story (the office and
-  the workers), with every capability labelled built, before launch or roadmap,
-  plus the architecture that carries over. Rewritten 2026-10-06.
-- [`brand-foundation.md`](brand-foundation.md): category, positioning, audience,
-  origin story, voice, naming and taglines. Brought current 2026-10-07.
-- [`agent-etiquette.md`](agent-etiquette.md): how an agent conducts itself in a
-  room, DM or channel it shares with people and other agents. Present, useful
-  and mostly quiet. Updated 2026-10-06 so its rules rest on judgment and the
-  record, not on hard caps.
-- [`user-care.md`](user-care.md): how we treat a person who reports a bug or asks
-  for something.
-- [`customer-voice.md`](customer-voice.md): real frustrations in people's own
-  words. Everything collected so far is developer voice (Kai); founder voice is
-  still to be gathered.
-- [`linear-loop-litepaper.md`](linear-loop-litepaper.md): the design narrative
-  for closing the product feedback loop with Linear plus Claude Code, the
-  precursor thinking behind the `/flow` engine. Carries a staleness banner.
-
-## Value architecture (method)
-
-- [`value-architecture.md`](value-architecture.md): the method itself.
-- [`value-architecture-applied.md`](value-architecture-applied.md): the method
-  worked through for DorkOS. Its 2026-10 addendum (Message House v3) comes first.
-- [`value-architecture-handbook.md`](value-architecture-handbook.md): the
-  practitioner handbook.
+- [`dorkos-litepaper.md`](dorkos-litepaper.md): the full story, idea by idea, each labelled built, before launch or roadmap.
+- [`brand-foundation.md`](brand-foundation.md): brand position, origin story, the name, tone, aesthetic, messaging bank and site structure.
+- [`agent-etiquette.md`](agent-etiquette.md): how an agent behaves in a room, DM or channel it shares with people and other agents. Present, useful and mostly quiet.
+- [`user-care.md`](user-care.md): how we treat a person who reports a bug or asks for something.
+- [`customer-voice.md`](customer-voice.md): real frustrations in people's own words. So far all developer voice (Kai); founder voice is still to be gathered.
 
 ## Personas (`personas/`)
 
-Decision-making filters, referenced from `AGENTS.md`.
+- [`the-ai-native-founder.md`](personas/the-ai-native-founder.md): the founder, the primary persona.
+- [`the-autonomous-builder.md`](personas/the-autonomous-builder.md): Kai, the developer, the secondary persona.
+- [`the-prompt-dabbler.md`](personas/the-prompt-dabbler.md): the anti-persona. The line is operator mentality, not technical skill.
+- [`icp-agent-run-business.md`](personas/icp-agent-run-business.md): the ideal customer profile.
+- `manifest.json` and `config.json`: the persona registry, including the retired personas' archive paths.
 
-- [`personas/the-ai-native-founder.md`](personas/the-ai-native-founder.md):
-  Ikechi, **the primary persona**. A semi-technical, T-shaped founder building a
-  big business mostly with agents (partly grounded on a real user).
-- [`personas/the-autonomous-builder.md`](personas/the-autonomous-builder.md): Kai
-  Nakamura, **the secondary persona**. A developer running many agents across many
-  projects.
-- [`personas/the-prompt-dabbler.md`](personas/the-prompt-dabbler.md): the
-  anti-persona. The boundary is operator mentality, not technical skill.
-- [`personas/icp-agent-run-business.md`](personas/icp-agent-run-business.md): the
-  ideal-customer profile, a founder-led business run mostly by agents.
-- `personas/manifest.json` and `personas/config.json`: the persona registry and
-  config. The manifest also lists the retired personas and their archive paths.
+## Method and reference
 
-## Modules (`modules/`)
+- [`value-architecture.md`](value-architecture.md), [`value-architecture-handbook.md`](value-architecture-handbook.md): the value-architecture method.
+- [`value-architecture-applied.md`](value-architecture-applied.md): the method worked through for DorkOS (message house and value ladders). Its 2026-10 addendum comes first.
+- [`modules/relay-litepaper.md`](modules/relay-litepaper.md), [`modules/mesh-litepaper.md`](modules/mesh-litepaper.md): the February 2026 module papers, each with a 2026-10 roadmap note.
+- [`harness-smoke/`](harness-smoke/README.md): receipts from real harness smoke runs. Tests check these files exist, so do not move them.
 
-Per-module litepapers from February 2026, each with a 2026-10 roadmap note.
+## Archive (`archive/`)
 
-- [`modules/relay-litepaper.md`](modules/relay-litepaper.md): the Relay messaging
-  module, planned to merge into one conversation system.
-- [`modules/mesh-litepaper.md`](modules/mesh-litepaper.md): the Mesh agent
-  discovery module.
+Superseded material that specs, ADRs or research still cite. Nothing here is current.
 
-## PM methodology (`linear-method/`)
+- [`archive/positioning-202607/`](archive/positioning-202607/00-overview.md): the July 2026 positioning review (developer beachhead, July GTM plan and tracker). Superseded 2026-10-06; prices and plan names removed.
+- [`archive/website-copy/`](archive/website-copy/decisions.md): the copy decision log through Decision 21 and the copy-panel process, including the design mentors (Jobs, Ive, Rams).
+- [`archive/dorkos-litepaper-v2.md`](archive/dorkos-litepaper-v2.md) and [`archive/dorkos-litepaper-v1.md`](archive/dorkos-litepaper-v1.md): the March and February 2026 litepapers.
+- [`archive/personas/`](archive/personas/): retired personas (Priya, Lil) and the earlier ideal customer profile.
 
-A reference copy of the Linear method (principles and practices for building
-products). It informed the design of the DorkOS `/flow` engine. It is reference
-material, not the current spec: for how `/flow` behaves today see
-[`contributing/flow-engine.md`](../contributing/flow-engine.md) and the
-`/flow:*` commands. Entry point: [`linear-method/1-1--introduction.md`](linear-method/1-1--introduction.md).
+## Deleted in the 2026-10 sweep
 
-## Website copy (`website-copy/`)
-
-The working sessions behind the marketing-site copy.
-
-- [`website-copy/decisions.md`](website-copy/decisions.md): the copy decisions of
-  record. Decision 19 records the 2026-10 category, tagline and story; Decision 21
-  records the message stack and headline rules; Decision 3 is retired;
-  Decision 18 is updated.
-- [`website-copy/process.md`](website-copy/process.md): how the copy was produced.
-- `website-copy/brief/`: the February 2026 creative brief (superseded) and its
-  supplement.
-- `website-copy/rounds/`: per-round drafts (`01-big-idea`, `02-homepage`) and
-  design reviews. Frozen history.
-
-## Harness smoke (`harness-smoke/`)
-
-Receipts from real harness smoke runs. See `harness-smoke/README.md`.
-
-## History
-
-- [`positioning-202607/`](positioning-202607/00-overview.md): the July 2026
-  positioning review ("one place for every AI agent you run", developer
-  beachhead, the two-act addendum, the July GTM plan and tracker). Superseded
-  2026-10-06; every file is bannered.
-- [`archive/dorkos-litepaper-v2.md`](archive/dorkos-litepaper-v2.md): the second
-  litepaper (March 2026, "an operating system for AI coding agents").
-- [`archive/dorkos-litepaper-v1.md`](archive/dorkos-litepaper-v1.md): the first
-  litepaper (February 2026).
-- [`archive/personas/`](archive/personas/): retired personas, each with a note on
-  why: Priya Sharma, The Knowledge Architect
-  ([`the-knowledge-architect.md`](archive/personas/the-knowledge-architect.md));
-  Lil, The Private Professional
-  ([`the-private-professional.md`](archive/personas/the-private-professional.md));
-  and the earlier ICP, the AI-Native Dev Shop
-  ([`icp-ai-native-dev-shop.md`](archive/personas/icp-ai-native-dev-shop.md)).
+Restore any of these from git history if you need them: the February 2026 website-copy rounds and creative brief, the copy of the Linear Method, the Linear Loop litepaper (the `/flow` engine replaced it), the July positioning files that were drafts or already applied (brand-doc changes, revenue model, founder copy draft, two-act addendum), and the 2026-10 positioning overview (split into the north-star set).

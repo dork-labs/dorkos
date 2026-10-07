@@ -65,6 +65,23 @@ Lines with a fixed home: "Intelligence doesn't scale. Coordination does." is the
 | "Ask for a tool. Your agents build it." as the homepage hero                                                                                                                       | Replaced by the message stack on 2026-10-07. It may still head a mini apps section.                                                                                                                |
 | "secure by default", in any spelling                                                                                                                                               | Not true of everything we ship. See safety claims below.                                                                                                                                           |
 
+## Plain-word swaps
+
+Story copy describes outcomes, not mechanisms. Technical docs may use the exact terms.
+
+| Instead of                                                                     | Say                                                     | Why                                                           |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------- | ------------------------------------------------------------- |
+| "server-side"                                                                  | "keeps running when you close the terminal"             | It sounds enterprise; the point is independence from the IDE. |
+| "infrastructure"                                                               | "system", or cut it                                     | Too cold. DorkOS is for builders running a business.          |
+| "audit trail" in story copy                                                    | "a record of what every agent did"                      | Plain words win in story copy; "audit trail" is fine in docs. |
+| "session locking", "durable delivery", "dead-letter queue", "budget envelopes" | cut it, or keep it for docs                             | Mechanism, not benefit.                                       |
+| "message bus"                                                                  | "your agents can message you and each other"            | Describe the outcome.                                         |
+| "agents that talk to each other"                                               | "message each other"                                    | "Talk" reads as voice agents.                                 |
+| "renting" (for SaaS)                                                           | "it runs where you choose, and you can read every line" | Be concrete about ownership.                                  |
+| "isolated processes"                                                           | "solo agents"                                           | Human-scale words.                                            |
+
+Retired taglines nobody should re-propose: "All Your Agents. One Place.", "Every Agent You Run. One Window.", "Your Agents, Any Vendor.", "Your Plugins Already Work Here." and "Some Code Never Leaves. Now the Agent Doesn't Either."
+
 ## How to say ownership
 
 - Lead with: "Your agents, tools, files and data stay yours, wherever they run."
@@ -74,7 +91,7 @@ Lines with a fixed home: "Intelligence doesn't scale. Coordination does." is the
 ## Safety claims
 
 - Pair running it yourself with the claim that is true: "it listens only on your own machine by default." Never "sign-in required the moment you expose it".
-- State every protection together with the login setting it depends on. A protection that holds only when login is on, or only on your own machine, says so in the same sentence. The full rule and its reasoning (DOR-509) are under Pillar 3 of [`positioning-202607/02-positioning.md`](positioning-202607/02-positioning.md).
+- State every protection together with the login setting it depends on. A protection that holds only when login is on, or only on your own machine, says so in the same sentence. The full rule and its reasoning (DOR-509) are under Pillar 3 of [`positioning-202607/02-positioning.md`](archive/positioning-202607/02-positioning.md).
 - Trust by default is a principle until it ships. Public copy may say "agents are trusted colleagues; you can see what each one did on the Activity page". It must not claim that every action is recorded, that there is an audit trail anyone can read, that there are no permission prompts, or that agents have full power by default, until [`ROADMAP.md`](ROADMAP.md#the-demo-claim-gate) lists them as built.
 
 ## How this is enforced

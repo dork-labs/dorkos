@@ -151,7 +151,7 @@ Openings to avoid: throat-clearing history ("Since the dawn of..."), defining a 
 
 ## Naming competitors
 
-The repo has no anti-disparagement rule. What it has is surface-scoped: brand surfaces (homepage, hero assets) never mention competitors (`meta/brand-foundation.md` §10, the "Luxury codes" guardrail), and comparison content is planned elsewhere and required to be "honest about their strengths" (`meta/positioning-202607/06-marketing-tactics.md:31`). A blog post sits between the two, so this skill settles it:
+The repo has no anti-disparagement rule. What it has is surface-scoped: brand surfaces (homepage, hero assets) never mention competitors (`meta/brand-foundation.md` §10, the "Luxury codes" guardrail), and comparison content is planned elsewhere and required to be "honest about their strengths" (`meta/archive/positioning-202607/06-marketing-tactics.md:31`). A blog post sits between the two, so this skill settles it:
 
 **Name them, name a specific strength and where it comes from, then narrow the rejection to our own context.**
 

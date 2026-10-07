@@ -33,7 +33,7 @@ with zero escape hatches** (§CRM-lite validation).
 
 Managed sync / multi-user hosted data — the post-launch revenue line — is
 **out of scope** and named as future without being designed
-(`plans/shapes-program.md` W6).
+(`plans/archive/shapes-program.md` W6).
 
 ## Background / Problem Statement
 
@@ -795,4 +795,4 @@ falling back to string-built SQL, a second store, or an unsafe primitive.
 - Marketplace lifecycle: `apps/server/src/services/marketplace/transaction.ts`;
   `.../flows/uninstall.ts:116-140,235-253`;
   `contributing/marketplace-installs.md` §4, §16.
-- Program: `plans/shapes-program.md` (W6, P4, "Explicitly not doing").
+- Program: `plans/archive/shapes-program.md` (W6, P4, "Explicitly not doing").

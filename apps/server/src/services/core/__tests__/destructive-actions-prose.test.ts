@@ -67,7 +67,7 @@
  *   an ABSENCE: a true sentence about a protection that never says which auth
  *   posture makes it true. There is no phrase to match, and a regex for "does this
  *   paragraph mention login" would be noise. The copy rule lives in
- *   `meta/positioning-202607/02-positioning.md` and is enforced by review.
+ *   `meta/archive/positioning-202607/02-positioning.md` and is enforced by review.
  * - **The retired-phrase scan covers published copy, not the whole repo.** Eight
  *   files under `meta/`, `research/`, `decisions/`, and `changelog/` contain
  *   "secure by default" and "sign-in required the moment" legitimately: they are the

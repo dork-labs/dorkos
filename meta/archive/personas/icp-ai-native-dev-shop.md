@@ -42,4 +42,4 @@ They've hit the ceiling of what isolated agent sessions can do. They want agents
 - Would pay for hosted Relay adapters (managed Slack/Telegram bridges)
 - Would NOT pay for the core open source platform itself
 
-_Update 2026-07-06: these hypotheses held up against a full OSS-monetization research pass and fed a designed model for a team tier of DorkOS Cloud (shared fleet, shared agents with access rules, private registries, team spend dashboards, team SSO). See `meta/positioning-202607/11-revenue-model.md`._
+_Update 2026-07-06: these hypotheses held up against a full OSS-monetization research pass and fed a designed model for a team tier of DorkOS Cloud (shared fleet, shared agents with access rules, private registries, team spend dashboards, team SSO)._

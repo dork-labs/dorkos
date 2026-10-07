@@ -562,7 +562,7 @@ Each of the three is independently revertible and none is a dependency of the ot
 - GitHub #1840 (DOR-2034), PR #1853: the identity half.
 - GitHub #1860 (DOR-2041), PR #1862: the arming half, and the "Gaps" section that names both follow-ups this spec picks up.
 - `specs/desktop-renderer-supervision/02-specification.md`: the original supervisor design.
-- `plans/desktop-resilience-program.md` sections 1 and 4: the programme this belongs to.
+- `plans/archive/desktop-resilience-program.md` sections 1 and 4: the programme this belongs to.
 - Electron `docs/api/web-contents.md`, `docs/api/web-frame-main.md`; Chromium `docs/navigation_concepts.md`, `content/public/browser/web_contents_observer.h`, `content/browser/renderer_host/frame_tree.cc`: the platform contracts quoted in the ideation and in Background.
 
 ## Amendments (2026-09-15)

@@ -4,7 +4,7 @@
  * dorkos.ai site analytics — every PostHog event name and every `posthog.*`
  * call lives here, so no other file imports `posthog-js` directly. This is
  * the "one place" for event names the GTM plan calls for
- * (meta/positioning-202607/09-gtm-plan.md Part 3.1, DOR-268).
+ * (meta/archive/positioning-202607/09-gtm-plan.md Part 3.1, DOR-268).
  *
  * ## Env-gating and the consent gate
  *
