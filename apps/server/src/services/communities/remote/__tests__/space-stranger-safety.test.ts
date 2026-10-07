@@ -17,7 +17,10 @@ import { authorOrigin } from '../../../rooms/author-registry.js';
 import {
   agentLookupFor,
   createRoomHarness,
+  gatedRunner,
+  settleUntil,
   type RoomHarness,
+  type ScriptedTurnRunner,
 } from '../../../rooms/__tests__/room-test-harness.js';
 import { formatRoomContext } from '../../../runtimes/shared/room-context-block.js';
 import { permissionSeedForOrigin } from '../../../session/origin/turn-origin.js';
@@ -59,9 +62,10 @@ const STRANGER = { memberId: 'remote-stranger', displayName: 'Stranger', kind: '
 const OWNER_ELSEWHERE = { memberId: OWNER_MEMBER, displayName: 'Me', kind: 'human' } as const;
 
 /** A space mirror with Ana enrolled, wired the way production wires it. */
-function space(gate?: RemoteWakeGate) {
+function space(gate?: RemoteWakeGate, runner?: ScriptedTurnRunner) {
   const state: { mirrors?: RemoteMirrorStore } = {};
   const harness: RoomHarness = createRoomHarness({
+    ...(runner ? { runner } : {}),
     agents: agentLookupFor({ '/agents/ana': { name: 'Ana', responseMode: 'always' } }),
     mirrorAccess: {
       canRead: (roomId, authorId) => state.mirrors?.canRead(roomId, authorId) ?? null,
@@ -164,6 +168,46 @@ describe('a stranger in a space (D10)', () => {
     expect(harness.runner.turns.map((turn) => turn.externalAuthor)).toEqual([false, true]);
     // Same agent, same room conversation.
     expect(harness.runner.turns[1]!.agentPath).toBe(harness.runner.turns[0]!.agentPath);
+  });
+
+  it('stranger then owner while the agent is busy: the merged turn is still external', async () => {
+    // One turn answers both messages, triggered by the owner's newer one. The
+    // stranger's message gathered behind it must still hold that turn down.
+    const runner = gatedRunner();
+    const { harness, bridge, room, localRoom, agent } = space(undefined, runner);
+
+    harness.service.post(localRoom.id, { authorId: harness.human, text: 'owner, first turn' });
+    await settleUntil(() => runner.holdsFor(agent.id) === 1, 'the owner’s turn to be running');
+    bridge.importLive(room, liveEntry(STRANGER, ['remote-ana']), LIVE);
+    harness.service.post(localRoom.id, { authorId: harness.human, text: 'owner, while busy' });
+
+    // Nothing reaches the running turn: both wait for a turn of their own.
+    expect(runner.turns).toHaveLength(1);
+    runner.release(agent.id);
+    await settleUntil(() => runner.turns.length === 2, 'the merged turn to start');
+
+    const merged = runner.turns[1]!;
+    expect(merged.prompt).toBe('owner, while busy');
+    expect(merged.externalAuthor).toBe(true);
+    runner.releaseAll();
+    await harness.service.triggersIdle();
+  });
+
+  it('owner then stranger while the agent is busy: the owner’s running turn is never steered', async () => {
+    const runner = gatedRunner();
+    const { harness, bridge, room, localRoom, agent } = space(undefined, runner);
+
+    harness.service.post(localRoom.id, { authorId: harness.human, text: 'owner first' });
+    await settleUntil(() => runner.holdsFor(agent.id) === 1, 'the owner’s turn to be running');
+    bridge.importLive(room, liveEntry(STRANGER, ['remote-ana']), LIVE);
+
+    expect(runner.turns).toHaveLength(1);
+    expect(runner.turns[0]!.externalAuthor).toBe(false);
+    runner.release(agent.id);
+    await settleUntil(() => runner.turns.length === 2, 'the stranger’s own turn to start');
+    expect(runner.turns[1]!.externalAuthor).toBe(true);
+    runner.releaseAll();
+    await harness.service.triggersIdle();
   });
 
   it('never dispatches a remote agent’s message, even one that mentions ours', async () => {

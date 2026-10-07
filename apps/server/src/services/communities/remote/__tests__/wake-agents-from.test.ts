@@ -8,7 +8,7 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CommunityRef } from '@dorkos/shared/community-adapter';
 import type { CredentialStore } from '../../../core/credential-provider.js';
 import { RemoteConnectionNotFoundError, RemoteConnectionStore } from '../connection-store.js';
@@ -131,5 +131,54 @@ describe('the gate the live stream asks', () => {
     await policy.reload();
     expect(policy.wakes('remote_other' as CommunityRef, OWNER, OWNER_MEMBER)).toBe(false);
     expect(policy.wakes(REF, 'someone-else', OWNER_MEMBER)).toBe(false);
+  });
+});
+
+describe('the gate when a read fails', () => {
+  it('tries again a bounded number of times while it has no answer yet', async () => {
+    const real = store.wakeSettings.bind(store);
+    const read = vi
+      .spyOn(store, 'wakeSettings')
+      .mockRejectedValueOnce(new Error('disk busy'))
+      .mockImplementation(real);
+    const policy = new RemoteWakePolicy(store, [0, 0]);
+
+    await policy.reload();
+
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(policy.wakes(REF, OWNER, 'remote-stranger')).toBe(true);
+  });
+
+  it('gives up after the last retry and keeps waking nobody', async () => {
+    const read = vi.spyOn(store, 'wakeSettings').mockRejectedValue(new Error('gone'));
+    const policy = new RemoteWakePolicy(store, [0, 0]);
+
+    await policy.reload();
+
+    expect(read).toHaveBeenCalledTimes(3);
+    expect(policy.wakes(REF, OWNER, OWNER_MEMBER)).toBe(false);
+  });
+
+  it('keeps a good answer when a newer read fails, even if the good one finishes last', async () => {
+    const real = store.wakeSettings.bind(store);
+    await store.setWakeAgentsFrom(REF, OWNER, 'me');
+    let finishOlder!: () => void;
+    vi.spyOn(store, 'wakeSettings')
+      .mockImplementationOnce(async () => {
+        const settings = await real();
+        await new Promise<void>((resolve) => (finishOlder = resolve));
+        return settings;
+      })
+      .mockRejectedValueOnce(new Error('disk busy'));
+    const policy = new RemoteWakePolicy(store, []);
+
+    const older = policy.reload();
+    await vi.waitFor(() => expect(finishOlder).toBeDefined());
+    await policy.reload();
+    finishOlder();
+    await older;
+
+    expect(policy.wakes(REF, OWNER, 'remote-stranger')).toBe(false);
+    expect(policy.wakes(REF, OWNER, OWNER_MEMBER)).toBe(true);
   });
 });

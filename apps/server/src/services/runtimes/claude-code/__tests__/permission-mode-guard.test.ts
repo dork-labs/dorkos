@@ -86,6 +86,12 @@ describe('turnPermissionMode (official-community-space D10)', () => {
     ).toBe('default');
   });
 
+  it('keeps dontAsk, which refuses what it was not allowed, rather than raising it to asking', () => {
+    expect(
+      turnPermissionMode({ permissionMode: 'dontAsk', turnPermissionCeiling: 'default' })
+    ).toBe('dontAsk');
+  });
+
   it('never raises a session that sits lower', () => {
     expect(turnPermissionMode({ permissionMode: 'plan', turnPermissionCeiling: 'default' })).toBe(
       'plan'

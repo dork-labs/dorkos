@@ -273,6 +273,15 @@ interface SessionBundle {
    * and has not run since — what makes Switch now mean anything (DOR-2065).
    */
   holdOutstanding?: boolean;
+  /**
+   * The last turn this process ran was held to a stranger's permission ceiling
+   * (spec `official-community-space` D10). Background work that turn started
+   * still runs in this process, so moving the process back up to the owner's
+   * level live would hand that work the owner's level too: while it runs, the
+   * next looser turn replaces the process instead (see {@link PersistentDispatch}).
+   * A replacement process gets a fresh bundle.
+   */
+  ranUnderCeiling?: boolean;
 }
 
 /** What one dispatch needs beyond the session itself. */
@@ -812,12 +821,32 @@ export class PersistentDispatch {
         );
       }
     }
-    const reuse = decideProcessReuse(bundle.fingerprint, compared, {
+    let reuse = decideProcessReuse(bundle.fingerprint, compared, {
       holdPluginReloadWhenCacheWarm: pluginReloadIsWorthHolding(contextTokens),
       sessionId,
       ...(contextTokens !== undefined ? { contextTokens } : {}),
       onPluginReloadHeld: (impact) => this.onPluginReloadHeld?.(sessionId, impact, contextTokens),
     });
+    // **Leaving a stranger's turn while its background work runs** (spec
+    // `official-community-space` D10). The ceiling held that turn down, but a
+    // helper, Monitor or shell it started lives on in this process, and moving
+    // the process up to this turn's looser mode live would raise that work with
+    // it. So the move becomes a restart, through the same door every other
+    // restart goes through: a caller that can wait holds for the work instead.
+    if (
+      reuse.action === 'adjust' &&
+      bundle.ranUnderCeiling === true &&
+      session.turnPermissionCeiling === undefined &&
+      live !== undefined &&
+      live.live.permissionMode !== plan.fingerprint.live.permissionMode &&
+      !bundle.pump.quietness().quiet
+    ) {
+      reuse = {
+        action: 'replace',
+        reason: "leaving a stranger's turn while its background work runs",
+        changed: ['permissionMode'],
+      };
+    }
     if (reuse.action === 'replace') {
       // Only a caller that can wait pays for the settle interval.
       let busyNow =
@@ -882,6 +911,26 @@ export class PersistentDispatch {
           // setter that went unanswered inside its bound leaves its pin where it
           // was, and the next dispatch has to see that (DOR-1301).
           bundle.fingerprint = await reuse.apply(control);
+          // **A ceiling that did not land is not run on** (spec
+          // `official-community-space` D10). A setter the process left
+          // unanswered keeps its old mode, and for a stranger's turn that is
+          // the owner's looser one. Start a new process at the ceiling instead
+          // of running the turn on the old one.
+          if (
+            session.turnPermissionCeiling !== undefined &&
+            bundle.fingerprint.live.permissionMode !== plan.fingerprint.live.permissionMode
+          ) {
+            logger.warn(
+              "[persistent-dispatch] a stranger's ceiling did not reach the warm process; replacing it",
+              {
+                session: sessionId,
+                holds: bundle.fingerprint.live.permissionMode,
+                wanted: plan.fingerprint.live.permissionMode,
+              }
+            );
+            await this.replaceProcess(key);
+            bundle = this.acquire(key, session, opts);
+          }
         } catch (err) {
           if (err instanceof AccountPinViolationError) {
             logger.error('[persistent-dispatch] refused a cross-account dispatch', {
@@ -901,6 +950,11 @@ export class PersistentDispatch {
     }
 
     bundle.plan = plan;
+    // Sticky while a stranger's background work is still running here, so a
+    // later turn that changes the mode still sees it.
+    bundle.ranUnderCeiling =
+      session.turnPermissionCeiling !== undefined ||
+      (bundle.ranUnderCeiling === true && !bundle.pump.quietness().quiet);
     // A credits swap is saved only once its notice has gone out (DOR-2636).
     yield* deliverStatusEvents(plan);
 

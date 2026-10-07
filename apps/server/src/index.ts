@@ -2660,8 +2660,10 @@ async function start() {
       logger.warn('[Permissions] Could not record the ended standing permissions', logError(err));
     }
     if (meshStartupReconciled) {
-      remoteCommunityRuntime?.start();
+      // Before anything remote starts: no space message may be judged by a gate
+      // that has not read who may wake an agent yet (it wakes nobody until then).
       await getRemoteWakePolicy().reload();
+      remoteCommunityRuntime?.start();
       remoteCommunitySubscriptions?.start();
       // Copies left behind by a connection that no longer exists (DOR-2334).
       const subscriptions = remoteCommunitySubscriptions;

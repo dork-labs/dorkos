@@ -110,6 +110,9 @@ export function resolveEffectivePermissionMode(args: {
   return { permissionMode: args.permissionMode, autoDowngrade: null };
 }
 
+/** The SDK's refuse-unless-allowed mode, which no ceiling may raise. */
+const DONT_ASK_MODE_ID = 'dontAsk';
+
 /**
  * The mode THIS turn runs at, before the Auto check below: the session's own
  * mode, held to the turn's ceiling when it carries one (spec
@@ -128,6 +131,12 @@ export function turnPermissionMode(session: {
   turnPermissionCeiling?: PermissionModeId;
 }): PermissionModeId {
   if (session.turnPermissionCeiling === undefined) return session.permissionMode;
+  // `dontAsk` is the SDK's mode that refuses anything not already allowed — it
+  // never asks because it never says yes, so it sits below every ceiling. It
+  // is undeclared here (see `runtime-constants.ts`), and `clampToCeiling`
+  // would answer an undeclared mode with the ceiling, which for this one mode
+  // would RAISE the turn to asking. Kept as it is instead.
+  if (session.permissionMode === DONT_ASK_MODE_ID) return session.permissionMode;
   return clampToCeiling(
     CLAUDE_CODE_CAPABILITIES.permissionModes.values,
     session.permissionMode,

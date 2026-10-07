@@ -1055,6 +1055,75 @@ describe('what a warm process must be re-checked for', () => {
   });
 });
 
+describe("a stranger's turn on a warm process (official-community-space D10)", () => {
+  beforeEach(() => {
+    optIn.persistentSession = true;
+  });
+
+  /** One turn held to a stranger's ceiling. */
+  async function strangerTurn(sessionId: string, content = 'from a stranger'): Promise<void> {
+    for await (const _event of runtime.sendMessage(sessionId, content, {
+      cwd: CWD,
+      permissionCeiling: 'default',
+    })) {
+      // Drained.
+    }
+  }
+
+  it('moves the warm process down to the ceiling for the turn', async () => {
+    const sessionId = nextSession();
+    await runtime.updateSession(sessionId, { permissionMode: 'bypassPermissions' });
+    await turn(sessionId);
+
+    await strangerTurn(sessionId);
+
+    expect(cli.launches).toBe(1);
+    expect(cli.processes[0]!.liveSets).toContain('setPermissionMode:default');
+  });
+
+  it('never runs the turn on a process that did not take the ceiling', async () => {
+    const sessionId = nextSession();
+    await runtime.updateSession(sessionId, { permissionMode: 'bypassPermissions' });
+    await turn(sessionId);
+    const first = cli.processes[0]!;
+    first.permissionModeNeverSettles = true;
+
+    await strangerTurn(sessionId);
+
+    expect(first.ended).toBe(true);
+    expect(cli.launches).toBe(2);
+    expect(cli.processes[1]!.options.permissionMode).toBe('default');
+  }, 15_000);
+
+  it("restarts rather than raising a stranger's background work to the owner's level", async () => {
+    const sessionId = nextSession();
+    await runtime.updateSession(sessionId, { permissionMode: 'bypassPermissions' });
+    await turn(sessionId);
+    await strangerTurn(sessionId);
+    const process = cli.processes[0]!;
+    process.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
+    await vi.waitFor(() => expect(runtime.isHelperWorking(sessionId)).toBe(true));
+
+    await turn(sessionId, 'the owner again');
+
+    expect(process.liveSets).not.toContain('setPermissionMode:bypassPermissions');
+    expect(process.ended).toBe(true);
+    expect(cli.processes.at(-1)!.options.permissionMode).toBe('bypassPermissions');
+  });
+
+  it('moves back up live when the stranger left nothing running', async () => {
+    const sessionId = nextSession();
+    await runtime.updateSession(sessionId, { permissionMode: 'bypassPermissions' });
+    await turn(sessionId);
+    await strangerTurn(sessionId);
+
+    await turn(sessionId, 'the owner again');
+
+    expect(cli.launches).toBe(1);
+    expect(cli.processes[0]!.liveSets.at(-1)).toBe('setPermissionMode:bypassPermissions');
+  });
+});
+
 describe('a global plugin withdrawn from a warm process (DOR-2306, I-2)', () => {
   beforeEach(() => {
     optIn.persistentSession = true;

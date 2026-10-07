@@ -34,36 +34,59 @@ interface Entry {
 /** The production {@link RemoteWakeGate} over the connection store. */
 export class RemoteWakePolicy implements RemoteWakeGate {
   private entries: ReadonlyMap<string, Entry> | null = null;
-  private generation = 0;
+  /** The newest read started, and the newest one whose answer is in {@link entries}. */
+  private started = 0;
+  private applied = 0;
 
   /**
    * Build the gate and follow every committed connection change.
    *
    * @param store - The connection store that owns the setting.
+   * @param retryDelaysMs - How long to wait before each further attempt when a read fails and
+   *   the gate has no answer yet. Bounded: past the last one the gate keeps waking nobody until
+   *   the next connection change reads again.
    */
-  constructor(private readonly store: RemoteConnectionStore) {
+  constructor(
+    private readonly store: RemoteConnectionStore,
+    private readonly retryDelaysMs: readonly number[] = [250, 1_000, 5_000]
+  ) {
     store.onChange(() => {
       void this.reload();
     });
   }
 
-  /** Read every connection's setting into memory. Safe to call at any time; the newest read wins. */
+  /**
+   * Read every connection's setting into memory. Safe to call at any time.
+   *
+   * A newer read's answer always wins over an older one, whichever finishes first, and a read
+   * that fails changes nothing: the last good answer stands. Only while there is no answer at
+   * all does a failed read try again, a bounded number of times.
+   */
   async reload(): Promise<void> {
-    const generation = ++this.generation;
-    try {
-      const settings = await this.store.wakeSettings();
-      if (generation !== this.generation) return;
-      this.entries = new Map(
-        settings.map((setting) => [
-          key(setting.ref, setting.ownerKey),
-          { from: setting.wakeAgentsFrom, ownerMemberId: setting.connectedHumanMemberId },
-        ])
-      );
-    } catch (error) {
-      // The last answer stands; with none, nobody wakes anything.
-      logger.warn('[RemoteWakePolicy] Could not read who may wake agents in spaces', {
-        error: error instanceof Error ? error.message : String(error),
-      });
+    for (let attempt = 0; ; attempt += 1) {
+      const generation = ++this.started;
+      try {
+        const settings = await this.store.wakeSettings();
+        if (generation > this.applied) {
+          this.applied = generation;
+          this.entries = new Map(
+            settings.map((setting) => [
+              key(setting.ref, setting.ownerKey),
+              { from: setting.wakeAgentsFrom, ownerMemberId: setting.connectedHumanMemberId },
+            ])
+          );
+        }
+        return;
+      } catch (error) {
+        logger.warn('[RemoteWakePolicy] Could not read who may wake agents in spaces', {
+          attempt: attempt + 1,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        const wait = this.retryDelaysMs[attempt];
+        if (this.entries !== null || wait === undefined) return;
+        await new Promise((resolve) => setTimeout(resolve, wait));
+        if (this.entries !== null) return;
+      }
     }
   }
 

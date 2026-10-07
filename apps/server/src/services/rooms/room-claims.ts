@@ -364,6 +364,14 @@ export interface TriggerTarget {
    * typed at an idle agent is gathered and nothing was running.
    */
   gathered: ReadonlySet<string>;
+  /**
+   * Whether ANY message this one turn answers — the trigger or anything gathered
+   * behind it — came from somebody off this machine (spec
+   * `official-community-space` D10). A turn that answers a stranger runs at the
+   * stranger ceiling even when the newest message, the one it is triggered by,
+   * is the owner's: one turn, one level, and the lower one wins.
+   */
+  externalInTurn: boolean;
 }
 
 /**

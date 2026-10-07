@@ -1742,6 +1742,13 @@ export class RoomTriggerDispatcher {
       // above the chosen index is refused and unread, so marking it would be a
       // claim about a line nobody will read.
       gathered: new Set(collection.entries.slice(0, chosen.index).map((held) => held.entry.id)),
+      // Over the trigger AND everything gathered behind it: a stranger's message
+      // merged into a turn the owner's later message triggered is still a
+      // stranger's message that turn answers (spec `official-community-space`
+      // D10). Bounded by the chosen index like the two sets above.
+      externalInTurn: collection.entries
+        .slice(0, chosen.index + 1)
+        .some((held) => isEntryAuthorExternal(this.deps.authors, held.entry.authorId)),
     };
 
     // The cascade guard allowed these on the merits, one message at a time. The
@@ -2245,7 +2252,12 @@ export class RoomTriggerDispatcher {
         // treated as external: losing the operator's power level for one turn
         // costs a prompt, while reading an unknown author as local would hand
         // it out on the strength of a failed lookup.
-        externalAuthor: isEntryAuthorExternal(this.deps.authors, entry.authorId),
+        //
+        // Over the whole turn, not the trigger alone (spec
+        // `official-community-space` D10): `externalInTurn` also counts every
+        // message gathered behind the trigger, so a stranger's message merged
+        // into a turn the owner's later message triggered still holds it down.
+        externalAuthor: target.externalInTurn,
         // The message, unchanged. A trigger asks the agent exactly what was
         // said; only the welcome-back offer below asks something else.
         prompt: entry.body.text,
