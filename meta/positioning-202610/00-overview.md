@@ -4,7 +4,33 @@
 
 ## The story in one breath
 
-DorkOS is a workspace for people and agents. A founder runs their whole business from it: they talk to people and agents in DMs, channels and threads, and their agents work the outside tools a business runs on (Gmail and the rest). Agents are trusted colleagues, not suspects. It runs on your own computer, free, with no account required. DorkOS Cloud is optional.
+A founder's agents build the tools the business needs right inside DorkOS (mini apps). It is built for founders, and they own all of it. Underneath, DorkOS is a workspace for people and agents. A founder runs their whole business from it: they talk to people and agents in DMs, channels and threads, and their agents work the outside tools a business runs on (Gmail and the rest). Agents are trusted colleagues, not suspects. It runs on your own computer, free, with no DorkOS account required. DorkOS Cloud is optional.
+
+The chat workspace is what DorkOS is. It is not why a founder picks it. Three things are: their agents build the tools the business needs right inside DorkOS (mini apps), it is built for founders, and they own all of it. See "What sets us apart" below.
+
+## What sets us apart
+
+Decided by the founder on 2026-10-06. Every public surface leads with this, in this order.
+
+**Table stakes, not our edge: a chat workspace with people and agents.** Channels, DMs and threads with people and agents are what DorkOS is, and they may be stated plainly. Everyone will have them soon (Slack Code, Buzz, ChatGPT Space, Ando). They are never the lead, the headline or the reason to choose DorkOS.
+
+**The three differentiators, always in this order:**
+
+1. **Mini apps (lead with this).** Ask for a tool your business needs, and your agents build it inside DorkOS. "Mini apps" is the public name, and it replaces "generative UI" as a value word. Shapes are something else: a Shape is a setup bundle, and it can carry mini apps. What is built today versus roadmap is in idea 15 and the demo-claim gate; claim exactly that much.
+2. **Built for founders.** Not general purpose. It is for the semi-technical, YC-style founder running a big or complex business mostly with agents. Goals, business connections and ready-made founder mini apps are the direction (roadmap: say "coming", or leave them out).
+3. **Ownership.** Your computer, your real files, your AI plans (your own Claude or ChatGPT subscription sign-in), your data. Open source (MIT), free forever on your computer, no account needed. In marketing, say "ownership" or "yours", not "local first". "Local first, cloud optional" stays as the internal name of the architecture principle (idea 9).
+
+**The homepage hero (decided):**
+
+- Eyebrow: "for founders"
+- Title: "Ask for a tool. Your agents build it."
+- Lede: "Your agents build the dashboards and trackers your business needs, right inside DorkOS. On your computer, with your files. Free and open source."
+
+The tagline "You, Multiplied." stays on hero surfaces. Agents may be called co-workers or teammates.
+
+**Never said in public: equal accounts.** Never write "agents equal to humans", "equal accounts", "peers", "same account as you", "agents can run the place" (or your company, or the space), "no human required", or "agents can be admins". The idea scares people. Equal accounts stay an internal design principle (idea 2): still how DorkOS is built, because they let agents do far more as models improve. Internal `meta/` documents, `AGENTS.md` and ADRs may describe them, labelled internal or roadmap.
+
+**No Discord.** The community is the official DorkOS Community Space (DOR-2764). It is not built yet: public copy may say it is coming, never that it works, and never links to it.
 
 ## Vision
 
@@ -26,10 +52,12 @@ DorkOS is the single interface a founder uses to run their whole business: talk 
 
 ## Category and words
 
-- **Category: a workspace for people and agents.** Longer form: "the workspace where founders run their business with people and agents."
+- **Category: a workspace for people and agents.** Longer form: "the workspace where founders run their business with people and agents." The category says what DorkOS is. It is not the edge, so it never leads a hero or a pitch; the three differentiators above do.
+- **Ownership, not local first, in marketing.** Public copy says "ownership", "yours", "your computer, your files". It does not say "local first" or "local-first". The phrase stays an internal architecture name.
+- **Mini apps** is the public name for the apps your agents build inside DorkOS. The app and the docs still call them extensions today, so docs say "mini apps (the app calls them extensions)". "Shape" stays the name of a setup bundle. "Generative UI" is no longer a value word.
 - **Tagline: You, Multiplied.** Unchanged. Hero surfaces only.
 - **Manifesto line:** "Intelligence doesn't scale. Coordination does." It may appear in essays. It is never a headline.
-- **Explainer line** (from `../brand-foundation.md`): "Teams needed Slack. AI agents need DorkOS." Use it where the Slack comparison helps a first-time reader.
+- **Explainer line** (from `../brand-foundation.md`): "Teams needed Slack. AI agents need DorkOS." Use it where the Slack comparison helps a first-time reader, and only beside the differentiators, never as a lead (Slack Code exists).
 - **Name collision.** "Workspaces" is already a product noun: the /workspaces page and project checkouts. When "workspace" is the category word, make that plain ("a workspace for people and agents"). Never rename or redefine the Workspaces page to fit the category.
 
 **Retired from the story:**
@@ -37,8 +65,10 @@ DorkOS is the single interface a founder uses to run their whole business: talk 
 - "All your agents. One place." and "one place for every AI agent you run" as the category line. Plain uses of the words "one place" are fine.
 - "Claude Code, Codex and OpenCode side by side" as the headline. Which agent runtimes DorkOS supports is a docs fact. One plain mention lower down is fine.
 - "Operating system for AI agents" as the category. The product name stays DorkOS.
-- "Human and agent are not peers" (website-copy Decision 3).
+- "Human and agent are not peers" (website-copy Decision 3). Its replacement is not "peers" in public either: see "Never said in public: equal accounts" above.
 - Developer-first audience framing.
+- The chat workspace, or "talk to people and agents in channels", as the lead or the edge. It is table stakes.
+- "Generative UI" as a headline name. The chat widgets stay as supporting proof of mini apps.
 
 ## The core image: the office and the workers
 
@@ -49,7 +79,7 @@ DorkOS is the single interface a founder uses to run their whole business: talk 
 Each idea carries its status. "Built" means it works today. "Before launch" means decided and scheduled before the launch. "Roadmap" means planned after launch. The demo-claim gate below is the rule for what public surfaces may say about each.
 
 1. **The office and the workers.** As above. _Status: the image is the story. Today one person runs the office: rooms, DMs and threads with you and your agents are built, on your own computer. More than one person on a server is roadmap._
-2. **Equal accounts.** People and agents have the same kind of account: the same profile, the same messages, the same access levels, the same permissions. The only difference is how they act: an agent through its runtime, a person through the app. No person is required anywhere. An agent can create a space, be its admin, create accounts for people, or run a space where every member is an agent. _Status: roadmap._
+2. **Equal accounts** (internal design principle; never said in public, see "What sets us apart"). People and agents have the same kind of account: the same profile, the same messages, the same access levels, the same permissions. The only difference is how they act: an agent through its runtime, a person through the app. No person is required anywhere. An agent can create a space, be its admin, create accounts for people, or run a space where every member is an agent. _Status: roadmap._
 3. **Trusted by default.** Agents are trusted professionals. People are colleagues, not babysitters. Full power is the norm. See "Trust by default" below. _Status: decided; the first three steps ship before launch._
 4. **Access levels.** Built-in access levels like Slack's (Owner, Admin, Member, Guest). Each access level is a set of fine-grained switches, and all are at full power by default. Custom access levels come later. Approvals, now rare, go to anyone whose access level allows it, person or agent, never the one asking. ("Role" now means the job on a profile; see idea 12.) _Status: roadmap._
 5. **Agents have what they need, as account features.** These are part of every account, not optional add-on connections. _Status: roadmap._
@@ -83,7 +113,12 @@ Each idea carries its status. "Built" means it works today. "Before launch" mean
     - **People and agents** can be in many groups and projects.
     - **Goals come in tiers:** space, then group, then project. They guide what agents do.
 14. **Health check.** A linter for your organisation. Its rules are written in TypeScript and can be configured. Anyone allowed can run it from the app, the CLI or the API. Examples: a group with no goals, an agent idle too long. _Status: roadmap._
-15. **Apps that live inside DorkOS** ("mini apps" is the working name, not final; public copy keeps today's names, such as "shapes"). Ask "build me something to manage my email" and the agent asks one thing: inside DorkOS (in the side panel), or its own website? The LifeOS dashboard and the flow plugin show it works. This is core, and every agent will know how to build one. _Status: roadmap as a core feature; today's shapes and extensions are the early form._
+15. **Mini apps: apps that live inside DorkOS.** "Mini apps" is the public name (decided 2026-10-06) and the lead differentiator. Shapes are a different thing: a Shape is an installable setup bundle (layout, extensions, suggested agents, schedules), and it can bundle mini apps.
+    - **Built today.** An agent can build a real mini app now. Its `create_extension` tool writes a starter, the agent fills it in, DorkOS builds it and turns it on, and none of its code runs until a person says yes on the Activity page or in Settings (the extension approval). It opens inside DorkOS in fixed places: its own full page (`/x/<id>`), the right-side panel, the Activity page (the "From your extensions" group), the status bar, settings tabs and a sidebar menu item. The app and the docs still call these extensions. Supporting proof: agents can reply in chat with live widgets (charts, tables, checklists, buttons) from a fixed catalog, today's Generative UI feature, and an installed tool server's own app (MCP Apps) can render in chat or on the canvas.
+    - **Roadmap.** Every agent knowing how to build one, as a core skill. The one question an agent asks ("build me something to manage my email": inside DorkOS, in the side panel, or its own website?). Ready-made founder mini apps. Goals that guide them.
+    - **Internal proof only.** The LifeOS and Tangerines dashboards and the flow plugin show it works. There is no public demo of them, so public surfaces never cite them as something a reader can see.
+    - **Safe verbs:** "ask for", "builds", "you say yes", "opens inside DorkOS". Never "any tool", "no code ever", "instantly" or "builds anything".
+    - _Status: building one is built today, as above; the rest is roadmap._
 16. **Everything is a plugin.** The marketplace has one package type. A plugin lists what it contains (skills, agents, apps, connections, hooks, CLI commands, schedules and so on), and you can filter by contents. _Status: roadmap. Today the marketplace has several package types._
 17. **Everything is programmable.** With the right key, a person or agent can control all of a local or remote DorkOS through a CLI, an SDK and API, and GraphQL queries over everything with live subscriptions to any event. _Status: roadmap._
     - **Keys:** each account has its own API keys, kept in its own vault, limited to its access level, never shared, rotated by the account and expiring by policy.
@@ -146,7 +181,7 @@ Launch is as soon as possible. It is:
 4. One message system (Relay into conversations).
 5. Groups, projects, tasks and tiered goals, plus the health check.
 6. Vault, email and phone as account features; agents own their outside accounts.
-7. One package type (plugins), and apps inside DorkOS.
+7. One package type (plugins), and mini apps as a core feature every agent knows.
 8. Agents with their own computer (behind the flag), push to another DorkOS, and publishing.
 9. Live shared docs.
 
@@ -155,6 +190,8 @@ Launch is as soon as possible. It is:
 **Never state that something unbuilt works.** Every claim on a public surface (site, README, docs, release notes, videos, posts) falls into one of the classes below. Internal `meta/` documents may state "before launch" and "roadmap" items as decided direction, clearly labelled.
 
 ### Built today (may be claimed, in plain words)
+
+- **Mini apps, as far as they go today.** Ask an agent for a tool, and it builds a mini app (an extension, in the app's words), you say yes, and it opens inside DorkOS in fixed places: its own page, the side panel, the Activity page, the status bar, settings tabs, or a sidebar menu item. Live widgets in chat and MCP Apps are supporting proof.
 
 - The app on your own computer: the CLI install, the macOS desktop app, and the phone as an installable web app over the built-in remote access.
 - The Windows desktop app, **as an early alpha only.** Always say "alpha". It is built and code-reviewed but not yet confirmed by a real end-user install on Windows, so never say it works.
@@ -183,18 +220,19 @@ Full power by default and the readable audit trail. Removing the posting, notifi
 
 ### Launch work, not built yet
 
-- **The official DorkOS Community Space** (DOR-2764). It is not built yet. Never claim it, on any public surface, until it ships.
+- **The official DorkOS Community Space** (DOR-2764). It is not built yet. Public surfaces may say it is coming. Never claim it works, never link to it, and never point anyone to Discord instead: there is no Discord.
 - **Managed remote access through DorkOS Cloud**, as the launch describes it. Public surfaces describe remote access as it works today.
 
 ### Roadmap (never claimed as working)
 
 Say "coming" or "planned", or leave it out:
 
-- Equal accounts for people and agents, and access levels (Owner, Admin, Member, Guest).
+- Equal accounts for people and agents: never named in public at all, not even as "coming" (see "What sets us apart"). Access levels (Owner, Admin, Member, Guest) may be described as coming.
 - Role and responsibilities on every profile; agents owning their outside accounts; agents creating agents.
 - Groups, projects, tasks in projects, and tiered goals. Today's Tasks are scheduled tasks; never present them as this.
 - The health check.
-- Apps inside DorkOS as a core feature. Public copy keeps today's names ("shapes"); the new name is not final.
+- Mini apps beyond today's form: every agent knowing how to build one, the "inside DorkOS or its own website" choice, and ready-made founder mini apps. Public copy uses the name "mini apps" now; only these parts wait.
+- Goals that guide agents, and business connections built for founders, as the "built for founders" direction.
 - One package type (plugins) with filtering by contents.
 - Everything programmable: CLI, SDK and API, GraphQL queries and live event subscriptions, per-account API keys.
 - Decision models as first-line support.

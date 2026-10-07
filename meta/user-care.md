@@ -2,7 +2,7 @@
 
 > **A person who tells us about a problem gets a real answer within one business day, hears what we decided, and hears when it ships. Nobody gets silence.**
 
-This page is the standard. It applies to every person who contacts us about DorkOS in any channel: a GitHub issue, the in-app "Send feedback" dialog, `dorkos feedback`, a GitHub discussion, email, Discord, or a reply on social media. It binds people and agents alike. How to _write_ each reply is the `writing-to-users` skill. How the queue is worked is `/feedback:triage`.
+This page is the standard. It applies to every person who contacts us about DorkOS in any channel: a GitHub issue, the in-app "Send feedback" dialog, `dorkos feedback`, a GitHub discussion, email, or a reply on social media (there is no DorkOS Discord). It binds people and agents alike. How to _write_ each reply is the `writing-to-users` skill. How the queue is worked is `/feedback:triage`.
 
 ## 1. Why this is a standard and not a nice-to-have
 

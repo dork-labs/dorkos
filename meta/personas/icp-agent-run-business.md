@@ -24,7 +24,7 @@
 
 ## Why They Adopt DorkOS
 
-They have outgrown a chat box and a pile of disconnected tools. They want one workspace where people and agents talk in DMs, channels and threads, where agents act in the outside tools the business runs on, and where agents are trusted colleagues with a record anyone can check, not suspects that need approval for every step.
+They have outgrown a chat box and a pile of disconnected tools. A workspace where people and agents talk in DMs, channels and threads is the given; plenty of products will offer that. They choose DorkOS for three things, in this order: **mini apps** (they ask for a tool the business needs, and their agents build it inside DorkOS), a product **built for founders** rather than for everyone, and **ownership** (their computer, their files, their own AI plan, open source and free). They also want agents to act in the outside tools the business runs on, as trusted colleagues with a record anyone can check, not suspects that need approval for every step.
 
 ## Why They Don't Adopt
 

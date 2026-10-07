@@ -10,14 +10,17 @@ the internal developer guides (`contributing/`).
 **Start here:** [`positioning-202610/00-overview.md`](positioning-202610/00-overview.md),
 the canonical strategy statement since the 2026-10-06 vision reset. DorkOS is a
 workspace for people and agents, built first for founders who run a business
-with agents. Its [demo-claim gate](positioning-202610/00-overview.md#the-demo-claim-gate)
+with agents. The chat workspace is table stakes; what sets DorkOS apart is mini
+apps (your agents build the tools your business needs), built for founders, and
+ownership. Its [demo-claim gate](positioning-202610/00-overview.md#the-demo-claim-gate)
 decides what any public surface may claim. Where an older file in this folder
 disagrees with it, the overview wins; older files carry a banner saying so.
 
 ## Current strategy (`positioning-202610/`)
 
 - [`positioning-202610/00-overview.md`](positioning-202610/00-overview.md): vision,
-  mission, audience, category, core ideas, trust by default, local first and
+  mission, what sets us apart (mini apps, built for founders, ownership, and the
+  hero), audience, category, core ideas, trust by default, local first and
   cloud optional, launch scope, roadmap order, the demo-claim gate, open risks,
   and what it supersedes.
 

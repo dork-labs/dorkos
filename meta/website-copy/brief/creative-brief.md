@@ -1,6 +1,6 @@
 # Creative Brief: DorkOS Website
 
-> **Superseded 2026-10-06.** This is the February 2026 brief, kept as the record behind the `rounds/` drafts. Its audience (developers who run coding agents, with Kai primary and Priya secondary), its one line ("the operating system for autonomous AI agents") and its "not a hosted service" stance are all retired. For any new website copy, brief from [`../../positioning-202610/00-overview.md`](../../positioning-202610/00-overview.md): a workspace for people and agents, the founder first, Kai second, local first and cloud optional, under its demo-claim gate. See also `../decisions.md` Decision 19.
+> **Superseded 2026-10-06.** This is the February 2026 brief, kept as the record behind the `rounds/` drafts. Its audience (developers who run coding agents, with Kai primary and Priya secondary), its one line ("the operating system for autonomous AI agents") and its "not a hosted service" stance are all retired. For any new website copy, brief from [`../../positioning-202610/00-overview.md`](../../positioning-202610/00-overview.md): lead with what sets DorkOS apart, in order: mini apps (ask for a tool, your agents build it inside DorkOS), built for founders, and ownership (your computer, your files, your AI plans). The chat workspace for people and agents is table stakes, never the lead. The hero is "Ask for a tool. Your agents build it." The founder comes first, Kai second, under the demo-claim gate. See also `../decisions.md` Decisions 19 and 20.
 
 ## What Are We Making?
 
