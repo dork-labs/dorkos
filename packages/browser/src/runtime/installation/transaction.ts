@@ -68,6 +68,7 @@ export function createInstallationTransaction(
   let reservation: ReservationHandle | undefined;
   let binding: AttemptBinding | undefined;
   const returned: JobRun[] = [];
+  let cancellableReuse: AttemptBounds | undefined;
   const fail = (error: unknown): void => {
     firstCause ??= failureCode(error);
     if (error instanceof InstallationFailure && error.publicationMayHaveChanged)
@@ -337,6 +338,8 @@ export function createInstallationTransaction(
       const verifierFacts = jobReturned(verifier, 'fresh-verifier', binding, bounds, [
         config.verifierEntry,
       ]);
+      // Only the original existing-only verifier return can authorize cancellation cleanup.
+      if (reuse && options.existingOnly === true) cancellableReuse = bounds;
       check(bounds, options.signal);
       const reply = parseRecord(
         verifier.stdout,
@@ -475,9 +478,28 @@ export function createInstallationTransaction(
       });
     } catch (error) {
       fail(error);
+      // Cancellation cannot accept verification, but clean live originals may release their lease.
+      // Serialized reservations, failed producers and expired final windows never enter this path.
+      let cancellationReleased = false;
+      if (
+        firstCause === 'ABORTED' &&
+        cancellableReuse &&
+        reservation &&
+        !publicationMayHaveChanged
+      ) {
+        try {
+          allJobsReturned();
+          fsReturned();
+          require(time() < cancellableReuse.finalEnd, 'FINAL_EXPIRED');
+          await fs.releaseReservation(reservation);
+          cancellationReleased = true;
+        } catch (cleanupError) {
+          fail(cleanupError);
+        }
+      }
       // Acquisition can reject after F registered originals but before returning a handle.
       // Assignment alone is therefore never evidence of zero acquisition or returned custody.
-      let uncertain = !!reservation || publicationMayHaveChanged;
+      let uncertain = (!!reservation && !cancellationReleased) || publicationMayHaveChanged;
       try {
         const files = fs.custody(reservation);
         const processes = jobs.custody();

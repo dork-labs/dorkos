@@ -820,6 +820,196 @@ describe('existing-only startup verification prerequisite (semantic controls, ph
     expect(h.jobs.runInstaller).not.toHaveBeenCalled();
     expect(h.jobs.runVerifier).not.toHaveBeenCalled();
   });
+  it('joins a held original verifier before releasing an aborted existing-only reuse', async () => {
+    const h = harness(oldInstallation()),
+      abort = new AbortController();
+    const original = h.jobs.runVerifier;
+    let entered!: () => void, release!: () => void;
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    h.jobs.runVerifier = vi.fn(async (request) => {
+      entered();
+      await held;
+      return original(request);
+    });
+    const result = h.transaction().install({ existingOnly: true, signal: abort.signal });
+    await started;
+    abort.abort();
+    expect(h.fs.releaseReservation).not.toHaveBeenCalled();
+    release();
+    expect(await result).toMatchObject({ state: 'refused', cause: 'ABORTED' });
+    expect(h.fs.releaseReservation).toHaveBeenCalledTimes(1);
+    expect(h.fs.writeReuseJournal).not.toHaveBeenCalled();
+    expect(h.jobs.runInstaller).not.toHaveBeenCalled();
+    expect(h.events.indexOf('returned:fresh-verifier')).toBeLessThan(h.events.indexOf('release'));
+  });
+
+  it('waits for the original held reuse publication before cancellation release', async () => {
+    const h = harness(oldInstallation()),
+      abort = new AbortController();
+    const original = h.fs.writeReuseJournal;
+    let entered!: () => void, release!: () => void;
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    h.fs.writeReuseJournal = vi.fn(async (...args: Parameters<typeof original>) => {
+      const result = await original(...args);
+      entered();
+      await held;
+      return result;
+    });
+    const result = h.transaction().install({ existingOnly: true, signal: abort.signal });
+    await started;
+    abort.abort();
+    expect(h.fs.releaseReservation).not.toHaveBeenCalled();
+    release();
+    expect(await result).toMatchObject({ state: 'refused', cause: 'ABORTED' });
+    expect(h.reuse).not.toBeNull();
+    expect(h.fs.releaseReservation).toHaveBeenCalledTimes(1);
+    expect(h.fs.publish).not.toHaveBeenCalled();
+  });
+
+  it.each([false, undefined])(
+    'preserves ABORTED when original release fails with %s',
+    async (failure) => {
+      const h = harness(oldInstallation()),
+        abort = new AbortController();
+      const original = h.jobs.runVerifier;
+      h.jobs.runVerifier = vi.fn(async (request) => {
+        const run = await original(request);
+        abort.abort();
+        return run;
+      });
+      h.fs.releaseReservation = vi.fn(async () => {
+        throw failure;
+      });
+      expect(
+        await h.transaction().install({ existingOnly: true, signal: abort.signal })
+      ).toMatchObject({ state: 'uncertain', cause: 'ABORTED' });
+      expect(h.fs.releaseReservation).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it.each([false, undefined])(
+    'keeps uncertainty when release changes custody then throws %s',
+    async (failure) => {
+      const h = harness(oldInstallation()),
+        abort = new AbortController();
+      const verifier = h.jobs.runVerifier,
+        release = h.fs.releaseReservation;
+      h.jobs.runVerifier = vi.fn(async (request) => {
+        const run = await verifier(request);
+        abort.abort();
+        return run;
+      });
+      h.fs.releaseReservation = vi.fn(async (handle) => {
+        await release(handle);
+        throw failure;
+      });
+      expect(
+        await h.transaction().install({ existingOnly: true, signal: abort.signal })
+      ).toMatchObject({ state: 'uncertain', cause: 'ABORTED' });
+      expect(h.fs.custody().reservation).toBe('released');
+      expect(h.fs.releaseReservation).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it.each(['held', 'unreadable'] as const)(
+    'requires genuine final custody after a fulfilled cancellation release: %s',
+    async (condition) => {
+      const h = harness(oldInstallation()),
+        abort = new AbortController();
+      const original = h.jobs.runVerifier;
+      h.jobs.runVerifier = vi.fn(async (request) => {
+        const run = await original(request);
+        abort.abort();
+        return run;
+      });
+      h.fs.releaseReservation = vi.fn(async () => {
+        if (condition === 'unreadable')
+          h.fs.custody = () => {
+            throw undefined;
+          };
+        // A fulfilled DTO alone leaves the original reservation held.
+      });
+      expect(
+        await h.transaction().install({ existingOnly: true, signal: abort.signal })
+      ).toMatchObject({ state: 'uncertain', cause: 'ABORTED' });
+      expect(h.fs.releaseReservation).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it('does not release ordinary install reuse on cancellation', async () => {
+    const h = harness(oldInstallation()),
+      abort = new AbortController();
+    const original = h.jobs.runVerifier;
+    h.jobs.runVerifier = vi.fn(async (request) => {
+      const run = await original(request);
+      abort.abort();
+      return run;
+    });
+    expect(await h.transaction().install({ signal: abort.signal })).toMatchObject({
+      state: 'uncertain',
+      cause: 'ABORTED',
+    });
+    expect(h.fs.releaseReservation).not.toHaveBeenCalled();
+  });
+
+  it('does not release an aborted verifier whose original returned custody failed', async () => {
+    const h = harness(oldInstallation()),
+      abort = new AbortController();
+    h.changeJob((facts) => ({ ...facts, stopRequested: true }));
+    const original = h.jobs.runVerifier;
+    h.jobs.runVerifier = vi.fn(async (request) => {
+      const run = await original(request);
+      abort.abort();
+      return run;
+    });
+    expect(
+      await h.transaction().install({ existingOnly: true, signal: abort.signal })
+    ).toMatchObject({ state: 'uncertain', cause: 'CUSTODY_UNCERTAIN' });
+    expect(h.fs.releaseReservation).not.toHaveBeenCalled();
+  });
+
+  it.each(['files-pending', 'files-failed', 'jobs-pending', 'jobs-failed', 'expired'] as const)(
+    'retains canceled reuse reservation when original custody is %s',
+    async (condition) => {
+      const h = harness(oldInstallation()),
+        abort = new AbortController();
+      const original = h.jobs.runVerifier;
+      h.jobs.runVerifier = vi.fn(async (request) => {
+        const run = await original(request);
+        abort.abort();
+        if (condition === 'files-pending' || condition === 'files-failed') {
+          const custody = h.fs.custody();
+          h.fs.custody = () => ({
+            ...custody,
+            pendingOperations: condition === 'files-pending' ? 1 : 0,
+            firstCause: condition === 'files-failed' ? 'IO_FAILED' : null,
+          });
+        }
+        if (condition === 'jobs-pending' || condition === 'jobs-failed')
+          h.jobs.custody = () => ({
+            pending: condition === 'jobs-pending' ? 1 : 0,
+            firstCause: condition === 'jobs-failed' ? 'IO_FAILED' : null,
+          });
+        if (condition === 'expired') h.setClock(Number.MAX_SAFE_INTEGER);
+        return run;
+      });
+      expect(
+        await h.transaction().install({ existingOnly: true, signal: abort.signal })
+      ).toMatchObject({ state: 'uncertain', cause: 'ABORTED' });
+      expect(h.fs.releaseReservation).not.toHaveBeenCalled();
+    }
+  );
+
   it('existing-only cannot be turned into repair/install by a conflicting option', async () => {
     const h = harness(oldInstallation());
     expect(await h.transaction().install({ existingOnly: true, repair: true })).toMatchObject({

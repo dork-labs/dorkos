@@ -1,7 +1,8 @@
 import { openDarwinLeafEventOwner, type DarwinLeafEventOwner } from '../darwin-leaf-event-owner.js';
 import { sameProcess } from '../../lifecycle/process-journal.js';
 import type { ProcessIdentity } from '../../configuration.js';
-import { createDarwinProcessObserver, darwinBirth } from '../darwin-process-observer.js';
+import { darwinBirth } from '../darwin-process-observer.js';
+import { openRetainedDarwinObserver } from './retained-observer.js';
 import {
   createDarwinOwnedChildLauncher,
   acceptsDarwinOwnedChildReturn,
@@ -157,6 +158,7 @@ export async function runPrivateWorker(): Promise<void> {
     | 'campaign-closed'
     | 'retained'
     | 'uncertain' = 'uncertain';
+  let observationOwner: Awaited<ReturnType<typeof openRetainedDarwinObserver>> | undefined;
   try {
     const value = seedSchema.parse(await seed);
     seedNonce = value.initial.binding.reservationNonce;
@@ -168,7 +170,11 @@ export async function runPrivateWorker(): Promise<void> {
     const logicalManager = value.logicalManager ?? {
       ...value.initial.binding.manager,
     };
-    const observer = createDarwinProcessObserver(value.artifact);
+    observationOwner = await openRetainedDarwinObserver({
+      artifact: value.artifact,
+      manager: logicalManager,
+    });
+    const observer = observationOwner.observer;
     let ownedRoot: DarwinOwnedChild | null = null;
     if (value.ownedLaunch) {
       const self = (await observer.inspect([process.pid])).processes[0];
@@ -288,6 +294,12 @@ export async function runPrivateWorker(): Promise<void> {
     if (invalid) result = 'uncertain';
   } catch {
     result = 'uncertain';
+  } finally {
+    try {
+      await observationOwner?.close();
+    } catch {
+      result = 'uncertain';
+    }
   }
   if (process.connected) {
     try {

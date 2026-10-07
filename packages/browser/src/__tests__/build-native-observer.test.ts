@@ -331,3 +331,64 @@ int main(void) {
     ]);
   }
 );
+
+it.skipIf(process.platform !== 'darwin')(
+  'bounds the exact closed native formatter below the rotating original reply reserve',
+  async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'darwin-reply-bound-'));
+    try {
+      const source = fileURLToPath(
+        new URL('../runtime/native/darwin-process-observer.c', import.meta.url)
+      );
+      const control = join(directory, 'reply-bound.c'),
+        binary = join(directory, 'reply-bound');
+      await writeFile(
+        control,
+        `
+#define main original_observer_main
+#include "${source}"
+#undef main
+int main(int argc, char **argv) {
+  if (argc != 2) return 2;
+  const int mode = atoi(argv[1]);
+  struct dorkos_darwin_children result; memset(&result, 0, sizeof(result));
+  result.batch.boot_seconds = result.batch.boot_microseconds = UINT64_MAX;
+  result.have_parent_before = result.have_parent_after = 1;
+  result.parent_before.pid = result.parent_after.pid = INT_MIN;
+  result.parent_before.seconds = result.parent_after.seconds = UINT64_MAX;
+  result.parent_before.microseconds = result.parent_after.microseconds = UINT64_MAX;
+  result.parent_before_error = result.parent_after_error = INT_MIN;
+  result.batch.count = DORKOS_DARWIN_REQUEST_MAX;
+  for (size_t i = 0; i < result.batch.count; i++) {
+    struct dorkos_darwin_process *fact = &result.batch.processes[i];
+    fact->kind = mode == 0 ? DORKOS_DARWIN_PRESENT : mode == 1 ? DORKOS_DARWIN_UNKNOWN : DORKOS_DARWIN_ABSENT;
+    fact->error = INT_MIN; fact->uncertainty = DORKOS_DARWIN_MEMBERSHIP_ABSENT_WITH_PRESENT_READS;
+    fact->pid = fact->parent_pid = INT_MIN;
+    fact->seconds = fact->microseconds = UINT64_MAX; fact->zombie = 0;
+  }
+  return print_reply(&result.batch, &result);
+}
+`
+      );
+      execFileSync('/usr/bin/clang', [
+        '-std=c11',
+        '-Wall',
+        '-Wextra',
+        '-Werror',
+        control,
+        '-o',
+        binary,
+      ]);
+      for (const mode of ['0', '1', '2']) {
+        const bytes = execFileSync(binary, [mode], { maxBuffer: 256 * 1024 });
+        expect(bytes.byteLength).toBeLessThanOrEqual(512 + 160 * 512);
+        const returned = JSON.parse(bytes.toString());
+        expect(returned.processes).toHaveLength(512);
+        expect(returned.parentBefore.seconds).toBe('18446744073709551615');
+        expect(returned.parentAfter.microseconds).toBe('18446744073709551615');
+      }
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  }
+);

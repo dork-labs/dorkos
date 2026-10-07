@@ -348,44 +348,27 @@ static void print_identity(const struct dorkos_darwin_process *fact) {
   printf("{\"pid\":%d,\"seconds\":\"%" PRIu64 "\",\"microseconds\":\"%" PRIu64 "\"}",
     fact->pid, fact->seconds, fact->microseconds);
 }
-int main(int argc, char **argv) {
-  if (argc == 2 && !strcmp(argv[1], "watch-leaves")) return watch_leaves();
-  if (argc < 3 || argc > DORKOS_DARWIN_REQUEST_MAX + 2 ||
-      (strcmp(argv[1], "inspect") && strcmp(argv[1], "children"))) return 2;
-  const int children = !strcmp(argv[1], "children");
-  if (children && argc != 3) return 2;
-  pid_t pids[DORKOS_DARWIN_REQUEST_MAX];
-  for (int i = 2; i < argc; i++) {
-    if (!argv[i][0]) return 2;
-    for (const char *c = argv[i]; *c; c++) if (*c < '0' || *c > '9') return 2;
-    char *end; errno = 0; const unsigned long value = strtoul(argv[i], &end, 10);
-    if (errno || *end || !value || value > INT_MAX) return 2;
-    pids[i - 2] = (pid_t)value;
-  }
-  struct dorkos_darwin_batch batch;
-  struct dorkos_darwin_children result;
-  const int error = children ? dorkos_darwin_children(pids[0], &result) : dorkos_darwin_inspect(pids, (size_t)argc - 2, &batch);
-  if (error) { fprintf(stderr, "Darwin observation unavailable: %d\n", error); return 1; }
-  if (children) batch = result.batch;
+_Static_assert(sizeof(pid_t) <= 4 && sizeof(int) <= 4, "closed reply signed integer bound");
+static int print_reply(const struct dorkos_darwin_batch *batch, const struct dorkos_darwin_children *result) {
   printf("{\"version\":1,\"bootSeconds\":\"%" PRIu64 "\",\"bootMicroseconds\":\"%" PRIu64 "\"",
-    batch.boot_seconds, batch.boot_microseconds);
-  if (children) {
+    batch->boot_seconds, batch->boot_microseconds);
+  if (result) {
     printf(",\"parentBefore\":");
-    if (result.have_parent_before) print_identity(&result.parent_before); else printf("null");
+    if (result->have_parent_before) print_identity(&result->parent_before); else printf("null");
     printf(",\"parentAfter\":");
-    if (result.have_parent_after) print_identity(&result.parent_after); else printf("null");
-    printf(",\"complete\":%s", result.complete ? "true" : "false");
+    if (result->have_parent_after) print_identity(&result->parent_after); else printf("null");
+    printf(",\"complete\":%s", result->complete ? "true" : "false");
     printf(",\"parentObservation\":{\"beforeError\":%d,\"afterError\":%d,\"beforeZombie\":%s,\"afterZombie\":%s,\"identityChanged\":%s}",
-      result.parent_before_error, result.parent_after_error,
-      !result.have_parent_before ? "null" : result.parent_before.zombie ? "true" : "false",
-      !result.have_parent_after ? "null" : result.parent_after.zombie ? "true" : "false",
-      !result.have_parent_before || !result.have_parent_after ? "null" :
-        result.parent_before.seconds != result.parent_after.seconds ||
-        result.parent_before.microseconds != result.parent_after.microseconds ? "true" : "false");
+      result->parent_before_error, result->parent_after_error,
+      !result->have_parent_before ? "null" : result->parent_before.zombie ? "true" : "false",
+      !result->have_parent_after ? "null" : result->parent_after.zombie ? "true" : "false",
+      !result->have_parent_before || !result->have_parent_after ? "null" :
+        result->parent_before.seconds != result->parent_after.seconds ||
+        result->parent_before.microseconds != result->parent_after.microseconds ? "true" : "false");
   }
   printf(",\"processes\":[");
-  for (size_t i = 0; i < batch.count; i++) {
-    const struct dorkos_darwin_process *fact = &batch.processes[i];
+  for (size_t i = 0; i < batch->count; i++) {
+    const struct dorkos_darwin_process *fact = &batch->processes[i];
     if (i) putchar(',');
     if (fact->kind == DORKOS_DARWIN_PRESENT)
       printf("{\"kind\":\"present\",\"identity\":{\"pid\":%d,\"seconds\":\"%" PRIu64 "\",\"microseconds\":\"%" PRIu64
@@ -411,4 +394,53 @@ int main(int argc, char **argv) {
   puts("]}");
   return ferror(stdout) ? 1 : 0;
 }
+/* One original request at a time; each executes the unchanged read-only probe. */
+static int observe_requests(void) {
+  char line[8192];
+  while (fgets(line, sizeof(line), stdin)) {
+    const size_t length = strlen(line);
+    if (!length || line[length - 1] != '\n' || (line[0] != 'I' && line[0] != 'C') || line[1] != ' ') return 2;
+    pid_t pids[DORKOS_DARWIN_REQUEST_MAX]; size_t count = 0;
+    char *cursor = line + 2;
+    while (*cursor != '\n') {
+      if (count == DORKOS_DARWIN_REQUEST_MAX || *cursor < '0' || *cursor > '9') return 2;
+      char *end; errno = 0; const unsigned long value = strtoul(cursor, &end, 10);
+      if (errno || !value || value > INT_MAX || (*end != ' ' && *end != '\n')) return 2;
+      for (size_t i = 0; i < count; i++) if (pids[i] == (pid_t)value) return 2;
+      pids[count++] = (pid_t)value;
+      cursor = *end == ' ' ? end + 1 : end;
+    }
+    if (!count || (line[0] == 'C' && count != 1)) return 2;
+    struct dorkos_darwin_batch batch;
+    struct dorkos_darwin_children children;
+    const int error = line[0] == 'C' ? dorkos_darwin_children(pids[0], &children) : dorkos_darwin_inspect(pids, count, &batch);
+    if (error) { fprintf(stderr, "Darwin observation unavailable: %d\n", error); return 1; }
+    if (line[0] == 'C') batch = children.batch;
+    if (print_reply(&batch, line[0] == 'C' ? &children : NULL) || fflush(stdout)) return 1;
+  }
+  return ferror(stdin) ? 1 : 0;
+}
+int main(int argc, char **argv) {
+  if (argc == 2 && !strcmp(argv[1], "observe-requests")) return observe_requests();
+  if (argc == 2 && !strcmp(argv[1], "watch-leaves")) return watch_leaves();
+  if (argc < 3 || argc > DORKOS_DARWIN_REQUEST_MAX + 2 ||
+      (strcmp(argv[1], "inspect") && strcmp(argv[1], "children"))) return 2;
+  const int children = !strcmp(argv[1], "children");
+  if (children && argc != 3) return 2;
+  pid_t pids[DORKOS_DARWIN_REQUEST_MAX];
+  for (int i = 2; i < argc; i++) {
+    if (!argv[i][0]) return 2;
+    for (const char *c = argv[i]; *c; c++) if (*c < '0' || *c > '9') return 2;
+    char *end; errno = 0; const unsigned long value = strtoul(argv[i], &end, 10);
+    if (errno || *end || !value || value > INT_MAX) return 2;
+    pids[i - 2] = (pid_t)value;
+  }
+  struct dorkos_darwin_batch batch;
+  struct dorkos_darwin_children result;
+  const int error = children ? dorkos_darwin_children(pids[0], &result) : dorkos_darwin_inspect(pids, (size_t)argc - 2, &batch);
+  if (error) { fprintf(stderr, "Darwin observation unavailable: %d\n", error); return 1; }
+  if (children) batch = result.batch;
+  return print_reply(&batch, children ? &result : NULL);
+}
+
 #endif

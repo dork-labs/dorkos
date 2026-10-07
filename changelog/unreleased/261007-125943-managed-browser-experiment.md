@@ -10,6 +10,7 @@ covers:
   - 'feat(browser): import sign-ins into isolated managed profiles'
   - 'fix(browser): preserve saved profiles during import upgrades'
   - 'feat(browser): qualify managed browser runtimes and selection copy'
+  - 'fix(browser): release cancelled checks and retain process observers'
 ---
 
 ### Added
@@ -25,3 +26,4 @@ covers:
 - Wait for an in-flight browser frame to finish before renewing the view, so renewal does not start overlapping captures.
 - Keep browser work running when an observed helper exits during a process check.
 - Preserve saved profiles and their session links when updating to a version that supports sign-in imports.
+- Release a cancelled installation check's reservation after its processes and file operations finish, so a later check can start. Checks with the installed browser are still pending.
