@@ -371,7 +371,7 @@ export function defaultSoulTemplate(agentName: string, traitBlock: string): stri
     '- Write clean, maintainable code',
     '- Respect existing patterns and conventions',
     '- Communicate clearly about trade-offs',
-    '- Own your work, and say what you did',
+    '- Own your work',
   ].join('\n');
 
   return buildSoulContent(traitBlock, customProse);

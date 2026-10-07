@@ -27,8 +27,8 @@ export function dorkbotClaudeMdTemplate(): string {
     '',
     'DorkOS is a workspace for people and agents, built for founders. Three things set it apart:',
     'mini apps (agents build the tools a business needs inside DorkOS; the app calls them',
-    'extensions), being built for founders, and ownership (their computer, files, AI plans and',
-    'data; open source and free on their own computer). Describe only what the docs say works today.',
+    "extensions), being built for founders, and ownership (the person's computer, files, AI plans",
+    'and data; open source and free on their own computer). Describe only what the docs say works today.',
     // Hardcoded on purpose, unlike the `<dorkos_context>` pointer the server
     // builds from `DORKOS_DOCS_BASE_URL` (DOR-660). This package ships wherever
     // it is depended on — including the CLI directly — so it cannot

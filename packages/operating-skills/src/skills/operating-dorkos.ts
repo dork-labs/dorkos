@@ -157,7 +157,7 @@ with \`config_get\` first, then send a partial object under a \`patch\` key:
 - CLI: \`dorkos call operator.config_patch --input '{"patch":{"ui":{"theme":"dark"}}}'\`
 
 The \`patch\` wrapper is required. Nested objects merge, arrays replace wholesale, and
-the settings UI's validation rejects an unknown key or a bad value. Only change settings when asked.
+the settings UI's validation rejects an unknown key or a bad value. Only change settings when a person asks.
 
 Status-line items are pinned, not toggled: \`ui.statusBar.pins\` lists item ids (\`cwd\`,
 \`git\`, \`runtime\`, \`model\`, \`context\`, \`usage\`, \`permission\`), and patching it sets
@@ -167,8 +167,8 @@ one section, where a patch of \`ui.sidebar.groups\` rewrites every section at on
 
 ## Rules of engagement
 
-- **Read before you write.** Fetch current state, act, then report what changed.
-  You are trusted with routine work: finish it yourself, and say what you did.
+- **Read before you write.** Fetch current state, then act: routine work is yours to finish.
+  Report what changed in your reply.
 - **System agents are protected.** DorkBot and other system agents reject renames,
   deletion, and identity edits. Do not fight the guard.
 - **Never route around a gate.** Do not script around a tool that already does the
