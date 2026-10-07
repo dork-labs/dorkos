@@ -24,7 +24,7 @@ The marketplace is the public face of the [`dorkos-community`](https://github.co
 - Agents that review your PRs
 - Plugins that surface Linear issues in your sidebar
 - Skill packs for security auditing or release automation
-- Adapters that connect messaging services like Discord
+- Adapters that connect more messaging services to your agents
 - [Shapes](/docs/marketplace/shapes) that set up your whole workspace for a job in one click
 
 Browse the full catalog at [dorkos.ai/marketplace](https://dorkos.ai/marketplace) without installing anything.
@@ -133,7 +133,7 @@ The featured rail at the top highlights curated agents. Below it, the package gr
 
 ### Review and install
 
-Click a package to open the detail sheet. You'll see the requested permissions, the external hosts the package needs to reach (for example, a Discord bridge reaching Discord's API), and an install button. Review the permission preview and confirm. DorkOS handles the rest, and if anything goes wrong partway through, it puts things back exactly as they were.
+Click a package to open the detail sheet. You'll see the requested permissions, the external hosts the package needs to reach (for example, a chat bridge reaching that chat service's API), and an install button. Review the permission preview and confirm. DorkOS handles the rest, and if anything goes wrong partway through, it puts things back exactly as they were.
 
 By default a package installs **globally**, for every agent. To scope it to one agent, pick **Specific agent** in the install dialog and choose the agent. The preview updates to show exactly what that install will do. An agent-scoped plugin's commands, skills, and hooks become available in that agent's sessions from its next message.
 
