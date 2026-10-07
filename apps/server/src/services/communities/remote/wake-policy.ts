@@ -110,6 +110,13 @@ export class RemoteWakePolicy implements RemoteWakeGate {
    */
   async set(ref: CommunityRef, ownerKey: string, value: WakeAgentsFrom): Promise<void> {
     await this.store.setWakeAgentsFrom(ref, ownerKey, value);
+    // Applied here directly, never left to the reload below: a reload that fails
+    // keeps the last good answer, and for a tightening to `me` that would be the
+    // old `members` while the owner was told it changed.
+    const current = this.entries?.get(key(ref, ownerKey));
+    if (current) {
+      this.entries = new Map(this.entries).set(key(ref, ownerKey), { ...current, from: value });
+    }
     await this.reload();
   }
 

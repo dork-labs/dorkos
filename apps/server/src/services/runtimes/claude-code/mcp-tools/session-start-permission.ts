@@ -20,7 +20,7 @@ import {
 } from '../../../core/approvals/autonomy-consent.js';
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
 import type { McpToolSession } from './types.js';
-import { turnPermissionMode } from '../messaging/permission-mode-guard.js';
+import { gatePermissionMode } from '../messaging/permission-mode-guard.js';
 
 /**
  * The ceiling for a caller that has no chat (the external `/mcp` server): Claude
@@ -71,7 +71,11 @@ export function runningPermissionMode(
   session:
     | Pick<
         McpToolSession,
-        'permissionMode' | 'model' | 'autoModeConfirmedFor' | 'turnPermissionCeiling'
+        | 'permissionMode'
+        | 'model'
+        | 'autoModeConfirmedFor'
+        | 'turnPermissionCeiling'
+        | 'backgroundPermissionCeiling'
       >
     | undefined
 ): string | undefined {
@@ -79,10 +83,15 @@ export function runningPermissionMode(
   // A turn from off this machine runs at its ceiling, so that is the most a
   // chat it starts may have (spec `official-community-space` D10).
   const mode =
-    stored !== undefined && session?.turnPermissionCeiling !== undefined
-      ? turnPermissionMode({
+    stored !== undefined
+      ? gatePermissionMode({
           permissionMode: stored,
-          turnPermissionCeiling: session.turnPermissionCeiling,
+          ...(session?.turnPermissionCeiling !== undefined
+            ? { turnPermissionCeiling: session.turnPermissionCeiling }
+            : {}),
+          ...(session?.backgroundPermissionCeiling !== undefined
+            ? { backgroundPermissionCeiling: session.backgroundPermissionCeiling }
+            : {}),
         })
       : stored;
   if (mode !== AUTO_MODE_ID) return mode;

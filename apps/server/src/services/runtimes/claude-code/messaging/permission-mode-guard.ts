@@ -131,15 +131,38 @@ export function turnPermissionMode(session: {
   turnPermissionCeiling?: PermissionModeId;
 }): PermissionModeId {
   if (session.turnPermissionCeiling === undefined) return session.permissionMode;
+  return clampOne(session.permissionMode, session.turnPermissionCeiling);
+}
+
+/**
+ * The mode the TOOL GATE answers at, read at call time: {@link turnPermissionMode},
+ * further held to the ceiling a stranger's earlier turn left on background work
+ * that may still be running in the process (spec `official-community-space` D10).
+ *
+ * Apart from the launch on purpose. The launch sets the mode of the turn about
+ * to run; a helper or shell started by a stranger's turn keeps calling the gate
+ * after that turn ended — including while the owner's next turn waits to
+ * restart the process — and must not be answered at the owner's level.
+ *
+ * @param session - The live session's stored mode and both ceilings.
+ */
+export function gatePermissionMode(session: {
+  permissionMode: PermissionModeId;
+  turnPermissionCeiling?: PermissionModeId;
+  backgroundPermissionCeiling?: PermissionModeId;
+}): PermissionModeId {
+  const mode = turnPermissionMode(session);
+  if (session.backgroundPermissionCeiling === undefined) return mode;
+  return clampOne(mode, session.backgroundPermissionCeiling);
+}
+
+/** {@link turnPermissionMode} for one ceiling. */
+function clampOne(mode: PermissionModeId, ceiling: PermissionModeId): PermissionModeId {
   // `dontAsk` is the SDK's mode that refuses anything not already allowed — it
   // never asks because it never says yes, so it sits below every ceiling. It
   // is undeclared here (see `runtime-constants.ts`), and `clampToCeiling`
   // would answer an undeclared mode with the ceiling, which for this one mode
   // would RAISE the turn to asking. Kept as it is instead.
-  if (session.permissionMode === DONT_ASK_MODE_ID) return session.permissionMode;
-  return clampToCeiling(
-    CLAUDE_CODE_CAPABILITIES.permissionModes.values,
-    session.permissionMode,
-    session.turnPermissionCeiling
-  );
+  if (mode === DONT_ASK_MODE_ID) return mode;
+  return clampToCeiling(CLAUDE_CODE_CAPABILITIES.permissionModes.values, mode, ceiling);
 }

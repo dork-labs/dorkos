@@ -1745,7 +1745,9 @@ export class RoomTriggerDispatcher {
       // Over the trigger AND everything gathered behind it: a stranger's message
       // merged into a turn the owner's later message triggered is still a
       // stranger's message that turn answers (spec `official-community-space`
-      // D10). Bounded by the chosen index like the two sets above.
+      // D10). Bounded by the chosen index like the two sets above. Known gap:
+      // a stranger's message that addressed nobody, shown only in the
+      // recent-messages window, does not set this (outside D10, tracked apart).
       externalInTurn: collection.entries
         .slice(0, chosen.index + 1)
         .some((held) => isEntryAuthorExternal(this.deps.authors, held.entry.authorId)),

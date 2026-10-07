@@ -920,12 +920,16 @@ export class PersistentDispatch {
             session.turnPermissionCeiling !== undefined &&
             bundle.fingerprint.live.permissionMode !== plan.fingerprint.live.permissionMode
           ) {
+            // Said out loud like every other restart that ends work: whatever
+            // background work the process held ends with it.
+            const ending = this.workARestartWouldEndNow(bundle, key);
             logger.warn(
               "[persistent-dispatch] a stranger's ceiling did not reach the warm process; replacing it",
               {
                 session: sessionId,
                 holds: bundle.fingerprint.live.permissionMode,
                 wanted: plan.fingerprint.live.permissionMode,
+                ...(ending !== undefined ? { endingBackgroundWork: ending.because } : {}),
               }
             );
             await this.replaceProcess(key);
@@ -955,6 +959,13 @@ export class PersistentDispatch {
     bundle.ranUnderCeiling =
       session.turnPermissionCeiling !== undefined ||
       (bundle.ranUnderCeiling === true && !bundle.pump.quietness().quiet);
+    // And the tool gate's half of the same fact: while that work may run, the
+    // gate keeps answering it at the stranger's ceiling, whatever this turn's
+    // own level is. Set here, after the hold-or-restart decision above, so a
+    // turn that is held or restarting never clears it early.
+    session.backgroundPermissionCeiling = bundle.ranUnderCeiling
+      ? (session.turnPermissionCeiling ?? session.backgroundPermissionCeiling)
+      : undefined;
     // A credits swap is saved only once its notice has gone out (DOR-2636).
     yield* deliverStatusEvents(plan);
 

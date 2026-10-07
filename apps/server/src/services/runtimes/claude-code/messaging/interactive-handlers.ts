@@ -37,7 +37,7 @@ import {
   isHostServedOrUnattributed,
 } from '../mcp-tools/tool-exposure.js';
 import { recordAutoModeStop } from '../../../observability/auto-mode-stops.js';
-import { turnPermissionMode } from './permission-mode-guard.js';
+import { gatePermissionMode } from './permission-mode-guard.js';
 import {
   approvalTimeoutDenial,
   describeWaited,
@@ -1040,6 +1040,7 @@ export function createCanUseTool(
   session: InteractiveSession & {
     permissionMode: PermissionModeId;
     turnPermissionCeiling?: PermissionModeId;
+    backgroundPermissionCeiling?: PermissionModeId;
   },
   log: ToolGateLogger,
   onToolPreflight?: (toolName: string, input: Record<string, unknown>) => Promise<void>,
@@ -1085,10 +1086,11 @@ export function createCanUseTool(
       return { behavior: 'allow', updatedInput: input };
     }
 
-    // The TURN's mode, read at call time: a turn from off this machine is held
-    // to its ceiling here too, so a session sitting at Full autonomy asks
-    // before a stranger's turn acts (spec `official-community-space` D10).
-    const mode = turnPermissionMode(session);
+    // The gate's mode, read at call time: a turn from off this machine, and
+    // background work such a turn left running, are held to the stranger's
+    // ceiling here too, so a session sitting at Full autonomy asks before
+    // either acts (spec `official-community-space` D10).
+    const mode = gatePermissionMode(session);
     if (resolveModeDecision(mode) === 'ask') {
       // The measurement (spec `auto-mode-classifier-context`). Reaching here in
       // AUTO mode with a DorkOS tool means the runtime's classifier decided this

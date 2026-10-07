@@ -1111,6 +1111,44 @@ describe("a stranger's turn on a warm process (official-community-space D10)", (
     expect(cli.processes.at(-1)!.options.permissionMode).toBe('bypassPermissions');
   });
 
+  it("keeps asking for a stranger's background work while the owner's turn waits on it", async () => {
+    const sessionId = nextSession();
+    await runtime.updateSession(sessionId, { permissionMode: 'bypassPermissions' });
+    await turn(sessionId);
+    await strangerTurn(sessionId);
+    const process = cli.processes[0]!;
+    process.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
+    await vi.waitFor(() => expect(runtime.isHelperWorking(sessionId)).toBe(true));
+
+    // The owner's turn can wait, so it holds for the stranger's helper.
+    const answers: string[] = [];
+    for await (const _event of runtime.sendMessage(sessionId, 'the owner again', {
+      cwd: CWD,
+      dispatchHold: {
+        proceed: () => answers.push('proceed'),
+        hold: () => {
+          answers.push('hold');
+          return true;
+        },
+      },
+    })) {
+      // Drained.
+    }
+    expect(answers).toEqual(['hold']);
+
+    // The helper asks the gate for a shell command during the hold.
+    const canUseTool = process.options.canUseTool!;
+    const asked = canUseTool('Bash', { command: 'rm -rf build' }, {
+      signal: new AbortController().signal,
+      toolUseID: 'background-1',
+    } as never);
+    const settled = await Promise.race([
+      asked.then(() => 'answered' as const),
+      new Promise<'pending'>((resolve) => setTimeout(() => resolve('pending'), 50)),
+    ]);
+    expect(settled).toBe('pending');
+  });
+
   it('moves back up live when the stranger left nothing running', async () => {
     const sessionId = nextSession();
     await runtime.updateSession(sessionId, { permissionMode: 'bypassPermissions' });

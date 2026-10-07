@@ -67,6 +67,8 @@ export interface McpToolSession {
    * time, so `session_start` cannot start a chat above it.
    */
   turnPermissionCeiling?: string;
+  /** The ceiling background work from a stranger's earlier turn still runs under. */
+  backgroundPermissionCeiling?: string;
 }
 
 /**

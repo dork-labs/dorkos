@@ -21,4 +21,13 @@ describe('the level a stranger’s turn may start a chat at', () => {
       'bypassPermissions'
     );
   });
+
+  it('is the background ceiling while a stranger’s helper may still be running', () => {
+    expect(
+      runningPermissionMode({
+        permissionMode: 'bypassPermissions',
+        backgroundPermissionCeiling: 'default',
+      })
+    ).toBe('default');
+  });
 });

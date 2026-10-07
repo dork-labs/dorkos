@@ -162,6 +162,16 @@ export interface AgentSession {
    * {@link permissionMode} to it without rewriting the session's own choice.
    */
   turnPermissionCeiling?: PermissionModeId;
+  /**
+   * The ceiling a stranger's turn ran under, kept while background work that
+   * turn started may still be running in this session's warm process (spec
+   * `official-community-space` D10). Unlike {@link turnPermissionCeiling} it
+   * outlives the turn: a helper or shell keeps asking the tool gate after its
+   * turn ended — including while the next turn waits to restart the process —
+   * and must not be answered at the owner's level. Owned by the warm-process
+   * dispatcher, which clears it once the process is replaced or quiet.
+   */
+  backgroundPermissionCeiling?: PermissionModeId;
   /** True when auto-created by updateSession — sendMessage should check transcript before first query. */
   needsTranscriptCheck?: boolean;
   /**

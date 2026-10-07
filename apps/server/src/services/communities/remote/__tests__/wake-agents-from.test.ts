@@ -181,4 +181,15 @@ describe('the gate when a read fails', () => {
     expect(policy.wakes(REF, OWNER, 'remote-stranger')).toBe(false);
     expect(policy.wakes(REF, OWNER, OWNER_MEMBER)).toBe(true);
   });
+
+  it('applies a tightening at once even when the read after it fails', async () => {
+    const policy = new RemoteWakePolicy(store, []);
+    await policy.reload();
+    vi.spyOn(store, 'wakeSettings').mockRejectedValue(new Error('disk busy'));
+
+    await policy.set(REF, OWNER, 'me');
+
+    expect(policy.wakes(REF, OWNER, 'remote-stranger')).toBe(false);
+    expect(policy.wakes(REF, OWNER, OWNER_MEMBER)).toBe(true);
+  });
 });
