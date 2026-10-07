@@ -5,6 +5,8 @@ covers:
   - 'fix(rooms): tell agents in a space channel that outsiders post there (DOR-2764)'
   - 'chore(changelog): note stranger safety in rooms and spaces (DOR-2764)'
   - 'fix(rooms): hold every turn that answers a stranger to the ceiling (DOR-2764)'
+  - "fix(rooms): keep a stranger's background work at the ceiling while a turn waits (DOR-2764)"
+  - 'chore(changelog): cover the background-ceiling fix (DOR-2764)'
 ---
 
 ### Fixed
