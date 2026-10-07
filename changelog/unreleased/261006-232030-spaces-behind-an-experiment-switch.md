@@ -3,6 +3,7 @@ covers:
   - 'feat(spaces): put every space feature behind one experiment switch (DOR-2740)'
   - 'fix(spaces): close the review gaps in the spaces experiment (DOR-2740)'
   - 'test(spaces): run the space specs with the spaces experiment on (DOR-2740)'
+  - 'test(spaces): turn spaces on in the packaged community proof (DOR-2740)'
 ---
 
 ### Changed
