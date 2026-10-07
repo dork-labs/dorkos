@@ -1,6 +1,5 @@
 import { ExternalLinkAnchor } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
-import { useSpacesEnabled } from '@/layers/entities/config';
 
 /**
  * Who DorkOS Cloud is for, word for word as the pricing page's first sentence says it. Kept here
@@ -27,6 +26,11 @@ export const CLOUD_ELIGIBILITY_URL = 'https://dorkos.ai/pricing#faq';
 export interface CloudEligibilityNoteProps {
   /** Extra classes for the paragraph, such as spacing from its neighbours. */
   className?: string;
+  /**
+   * Whether to mention hosted spaces. Settings passes the spaces experiment
+   * (DOR-2740); the hosting dialogs only exist while it is on.
+   */
+  withSpaces?: boolean;
 }
 
 /**
@@ -37,11 +41,10 @@ export interface CloudEligibilityNoteProps {
  * is muted text rather than an alert: it is a fact to know, not a warning. It
  * names no plan and no price, because the app knows neither.
  */
-export function CloudEligibilityNote({ className }: CloudEligibilityNoteProps) {
-  const spaces = useSpacesEnabled();
+export function CloudEligibilityNote({ className, withSpaces = true }: CloudEligibilityNoteProps) {
   return (
     <p className={cn('text-muted-foreground text-xs', className)}>
-      {spaces ? CLOUD_ELIGIBILITY_TEXT : CLOUD_ELIGIBILITY_TEXT_WITHOUT_SPACES}{' '}
+      {withSpaces ? CLOUD_ELIGIBILITY_TEXT : CLOUD_ELIGIBILITY_TEXT_WITHOUT_SPACES}{' '}
       <ExternalLinkAnchor
         href={CLOUD_ELIGIBILITY_URL}
         className="text-foreground underline underline-offset-2"
