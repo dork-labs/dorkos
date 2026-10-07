@@ -12,6 +12,7 @@ import {
 } from '@dorkos/shared/community-deliveries';
 import { resolveDorkHome } from '../../../lib/dork-home.js';
 import { RemoteConnectionStore } from './connection-store.js';
+import { RemoteWakePolicy } from './wake-policy.js';
 import { RemoteCommunityPairingService, type RemoteInstallationAgent } from './pairing-service.js';
 import { RemoteCommunityAdapter } from './remote-community-adapter.js';
 import { CommunityAgentEnrollmentStore } from './agent-enrollment-store.js';
@@ -23,6 +24,7 @@ import type {
 } from './community-outbox-worker.js';
 
 let store: RemoteConnectionStore | undefined;
+let wakePolicy: RemoteWakePolicy | undefined;
 let pairing: RemoteCommunityPairingService | undefined;
 let db: Db | undefined;
 let enrollments: CommunityAgentEnrollmentStore | undefined;
@@ -85,6 +87,14 @@ export interface RemoteCommunityLifecycle {
 /** The encrypted credential and owner-scoped metadata store for remote communities. */
 export function getRemoteConnectionStore(): RemoteConnectionStore {
   return (store ??= new RemoteConnectionStore(resolveDorkHome()));
+}
+
+/**
+ * Who in each space may wake this install's agents, over the same connection store (spec
+ * `official-community-space` D9). Load it with `reload()` before streams start.
+ */
+export function getRemoteWakePolicy(): RemoteWakePolicy {
+  return (wakePolicy ??= new RemoteWakePolicy(getRemoteConnectionStore()));
 }
 
 /** The production pairing service over the same protected connection store. */

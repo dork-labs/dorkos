@@ -229,6 +229,18 @@ export const CommunityDisconnectResponseSchema = z.strictObject({
   agentsNotRemoved: z.array(CommunityInstallationAgentSchema),
 });
 
+/**
+ * Who in a space may wake this install's agents there, read and written by the owner only
+ * (spec `official-community-space` D9): `members` — anyone in the space who mentions one —
+ * or `me`, only the owner's own account.
+ */
+export const CommunityWakeAgentsFromSchema = z.strictObject({
+  wakeAgentsFrom: z.enum(['me', 'members']),
+});
+
+/** Who in a space may wake this install's agents there. */
+export type CommunityWakeAgentsFrom = z.infer<typeof CommunityWakeAgentsFromSchema>;
+
 /** Inputs for connecting this install to a community. */
 export type CommunityConnectionStartRequest = z.infer<typeof CommunityConnectionStartRequestSchema>;
 /** Public approval URL and the pending local connection. */
