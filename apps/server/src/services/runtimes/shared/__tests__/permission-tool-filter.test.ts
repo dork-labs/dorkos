@@ -27,7 +27,6 @@ import { permissionActions } from '../../../core/permissions/index.js';
 import { composeCapabilityRegistryForDocs } from '../../../core/self-description/dorkos-registry.js';
 import { registerCapabilitiesAsMcpTools } from '../../../core/external-mcp/capability-mcp-tools.js';
 import { createDorkOsToolServer } from '../../claude-code/mcp-tools/index.js';
-import { NotifyBudget } from '../../../relay/notify-budget.js';
 import type { McpToolDeps } from '../../claude-code/mcp-tools/types.js';
 
 /** The seven tools in the Rooms area. */
@@ -153,7 +152,6 @@ describe('the builders', () => {
       extensionManager: stub,
       runtimeRegistry: stub,
       activityService: stub,
-      notifyBudget: new NotifyBudget(),
     };
     const hidden = resolveToolVisibility({ areas: { rooms: 'blocked' } }).hiddenToolNames;
     const blocked = createDorkOsToolServer(deps, undefined, undefined, undefined, registry, hidden);

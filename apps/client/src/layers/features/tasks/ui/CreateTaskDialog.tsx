@@ -67,8 +67,7 @@ export function CreateTaskDialog({
   // Flattened to `agents` alone, an in-flight read and a failed one both look
   // exactly like "this machine has no agents" — and the edit form then tells
   // somebody their perfectly healthy task points at an agent that is gone
-  // (DOR-1694). `useAgentRuntimes` splits the same three worlds for the same
-  // reason.
+  // (DOR-1694).
   const { data: agentsData, isError: agentsUnreadable } = useMeshAgentPaths();
   const roster: TaskAgentRoster = {
     agents: agentsData?.agents ?? [],

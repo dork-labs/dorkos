@@ -26,7 +26,6 @@ import { DORKOS_MCP_TOOL_TIMEOUT_MS, RELAY_SEND_AND_WAIT_MAX_MS } from '../tool-
 import { CAPABILITY_APPROVAL_HOLD_CAP_MS } from '../../../../core/capabilities/capability-approval-hold.js';
 import { CAPABILITY_HOLD_PAUSE_GRACE_MS } from '../../../../session/session-state-projector.js';
 import { CONNECTOR_REQUEST_LIVE_HOLD_MS } from '../../../../connectors/runtime-capability-scope.js';
-import { NotifyBudget } from '../../../../relay/notify-budget.js';
 import type { McpToolDeps } from '../types.js';
 
 /** Minimal deps — this file builds the server only to read its config. */
@@ -48,7 +47,6 @@ function createDeps(): McpToolDeps {
     extensionManager: stub,
     runtimeRegistry: stub,
     activityService: stub,
-    notifyBudget: new NotifyBudget(),
   };
 }
 

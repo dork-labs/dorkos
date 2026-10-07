@@ -1,8 +1,8 @@
 /**
  * Control Center widget — the one always-present place to see and change the
  * fleet's power posture at a glance (spec `full-power-defaults`, D7): the global
- * Trust Dial, the power switches, an overrides ledger with deep links, and an
- * unattended-status line.
+ * Trust Dial, the power switches, an overrides ledger with deep links, and a
+ * keep-awake line.
  *
  * Opened from a persistent ⚡ glyph, a command-palette entry, a keyboard
  * shortcut, and the full-power consent door — all through the `controlCenterOpen`

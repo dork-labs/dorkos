@@ -8,12 +8,9 @@
  * live cascade rather than minting a fresh one, and that an agent which has
  * already spoken deliberately does not also get its narration posted.
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { Db } from '@dorkos/db';
+import { describe, it, expect, beforeEach } from 'vitest';
 import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
-import { logger } from '../../../lib/logger.js';
 import type { AuthorRegistry } from '../author-registry.js';
-import { ReactionBudget } from '../reactions/reaction-budget.js';
 import type { RoomService } from '../room-service.js';
 import type { RoomStore } from '../room-store.js';
 import {
@@ -39,15 +36,12 @@ describe('the room tool hand', () => {
   let human: string;
   let ana: string;
   let bo: string;
-  /** The harness database, for the tests that build a SECOND budget over it. */
-  let harnessDb: Db;
   /** Sweep the message index, so what has been posted is findable. */
   let index: () => Promise<void>;
 
   /** Wire a harness whose runner answers with `reply`, and open a channel in it. */
   function harness(runnerOverride?: ScriptedTurnRunner): void {
     ({
-      db: harnessDb,
       service,
       store,
       authors,
@@ -516,71 +510,18 @@ describe('the room tool hand', () => {
       expect(runner.turns).toEqual([]);
     });
 
-    it('stops an agent after its hourly ceiling in this room, and says so', () => {
+    it('lets an agent react as often as a person can — no hourly count (DOR-2739)', () => {
       const entries = Array.from({ length: 40 }, (_, n) =>
         service.post(channel.id, { authorId: human, text: `line ${n}` })
       );
 
-      let landed = 0;
-      let refusal: unknown;
+      // Forty is twice the retired 20-an-hour ceiling: every one lands.
       for (const entry of entries) {
-        try {
-          service.toggleReaction(channel.id, entry.id, ana, '👍');
-          landed += 1;
-        } catch (err) {
-          refusal = err;
-          break;
-        }
+        expect(service.toggleReaction(channel.id, entry.id, ana, '👍').reacted).toBe(true);
       }
-
-      expect(landed).toBe(20);
-      expect(refusal).toMatchObject({ code: 'REACTION_RATE_LIMITED' });
-    });
-
-    it('bounds each agent in each room separately, and never bounds a person', () => {
-      const entries = Array.from({ length: 25 }, (_, n) =>
-        service.post(channel.id, { authorId: human, text: `line ${n}` })
-      );
-      for (const entry of entries.slice(0, 20)) {
-        service.toggleReaction(channel.id, entry.id, ana, '👍');
-      }
-
-      // Ana is spent here; Bo is not, and neither is the person.
-      expect(() => service.toggleReaction(channel.id, entries[20]!.id, ana, '🎉')).toThrow(
-        expect.objectContaining({ code: 'REACTION_RATE_LIMITED' })
-      );
-      expect(service.toggleReaction(channel.id, entries[20]!.id, bo, '👍').reacted).toBe(true);
-      expect(service.toggleReaction(channel.id, entries[20]!.id, human, '👍').reacted).toBe(true);
-    });
-
-    it('charges an addition and never a retraction or a no-op', () => {
-      const entries = Array.from({ length: 22 }, (_, n) =>
-        service.post(channel.id, { authorId: human, text: `line ${n}` })
-      );
-
-      // One pill, put on and taken back ten times over. If a RETRACTION spent,
-      // this alone would be twenty and would exhaust the hour on its own; only
-      // the ten additions count.
-      for (let n = 0; n < 10; n += 1) {
-        expect(service.toggleReaction(channel.id, entries[0]!.id, ana, '👍').reacted).toBe(true);
-        expect(service.toggleReaction(channel.id, entries[0]!.id, ana, '👍').reacted).toBe(false);
-      }
-
-      // A no-op re-assert, twice — what a retrying client sends. The first LANDS
-      // (nothing is standing after the loop above) and so does spend; the second
-      // finds it already there and must not.
-      service.toggleReaction(channel.id, entries[0]!.id, ana, '👍', true);
-      service.toggleReaction(channel.id, entries[0]!.id, ana, '👍', true);
-      // Naming the off state is a removal, and removals are free.
-      service.toggleReaction(channel.id, entries[0]!.id, ana, '👍', false);
-
-      // Eleven additions spent, so nine remain — and the tenth is refused.
-      for (const entry of entries.slice(1, 10)) {
-        expect(service.toggleReaction(channel.id, entry.id, ana, '🎉').reacted).toBe(true);
-      }
-      expect(() => service.toggleReaction(channel.id, entries[10]!.id, ana, '🎉')).toThrow(
-        expect.objectContaining({ code: 'REACTION_RATE_LIMITED' })
-      );
+      expect(service.reactionsFor(channel.id, entries[39]!.id)).toEqual([
+        { emoji: '👍', authorIds: [ana], firstAt: expect.any(String) },
+      ]);
     });
 
     it('still refuses an agent that is not a member of the room', () => {
@@ -593,57 +534,6 @@ describe('the room tool hand', () => {
       expect(() => service.toggleReaction(private_.id, entry.id, ana, '👍')).toThrow(
         expect.objectContaining({ code: 'ROOM_NOT_FOUND' })
       );
-    });
-  });
-
-  // ── The rate bound itself, over the durable rows ────────────────────────
-
-  describe('the reaction budget survives a restart', () => {
-    /** A fresh budget over the same database — what a restart produces. */
-    function restart(now?: () => number): ReactionBudget {
-      return new ReactionBudget({ db: harnessDb, ...(now && { now }) });
-    }
-
-    it('comes back spent, because it counts the reactions themselves', () => {
-      const entries = Array.from({ length: 21 }, (_, n) =>
-        service.post(channel.id, { authorId: human, text: `line ${n}` })
-      );
-      for (const entry of entries.slice(0, 20)) {
-        service.toggleReaction(channel.id, entry.id, ana, '👍');
-      }
-
-      // The process this budget lived in is gone; the rows are not.
-      expect(restart().tryReserve(channel.id, ana)).toBe(false);
-    });
-
-    it('lets the hour roll over without anything having to sweep it', () => {
-      const entries = Array.from({ length: 20 }, (_, n) =>
-        service.post(channel.id, { authorId: human, text: `line ${n}` })
-      );
-      for (const entry of entries) {
-        service.toggleReaction(channel.id, entry.id, ana, '👍');
-      }
-
-      const anHourOn = Date.now() + 61 * 60_000;
-      expect(restart(() => anHourOn).tryReserve(channel.id, ana)).toBe(true);
-    });
-
-    it('fails OPEN when it cannot read its own rows, and says so', () => {
-      const broken = {
-        select: () => {
-          throw new Error('database is locked');
-        },
-      } as unknown as Db;
-      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
-
-      // Open, not closed: refusing an emoji because a counter is unreadable is
-      // the worse trade, and this process still bounds itself from here on.
-      expect(new ReactionBudget({ db: broken }).tryReserve(channel.id, ana)).toBe(true);
-      expect(warn).toHaveBeenCalledWith(
-        expect.stringContaining('already spent this hour'),
-        expect.objectContaining({ error: 'database is locked' })
-      );
-      warn.mockRestore();
     });
   });
 });

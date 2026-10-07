@@ -76,11 +76,9 @@ vi.mock('fs/promises', () => ({
 }));
 
 import { createCreateAgentHandler } from '../../runtimes/claude-code/mcp-tools/agent-tools.js';
-import { NotifyBudget } from '../../relay/notify-budget.js';
 
 function createMockDeps(): McpToolDeps {
   return {
-    notifyBudget: new NotifyBudget(),
     transcriptReader: {} as McpToolDeps['transcriptReader'],
     defaultCwd: '/test',
     dorkHome: '/tmp/dorkos-test-home',

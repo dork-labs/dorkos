@@ -248,8 +248,7 @@ describe('createCanUseTool — approval gate', () => {
   // group, somebody else's chat, or (chat filter left empty, the default) every
   // chat that has messaged that adapter. That is a bound on the SCOPE, not a
   // promise that only the operator reads it, and the card that went away was the
-  // per-call one, never the setup consent. Frequency is bounded by
-  // `NotifyBudget` instead of by a card.
+  // per-call one, never the setup consent.
   //
   // But the auto-allow is only honest while the session HAS an identity. Without
   // one, `callerAuthor` falls back to the person who owns the install — who sees

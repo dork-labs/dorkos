@@ -107,8 +107,7 @@ export type RoomErrorCode =
    * room ({@link RoomVisibility.requirePersonAuthor}).
    *
    * It used to guard reactions too. It does not any more: an agent may put an
-   * emoji on a message, bounded by {@link ReactionBudget} rather than by kind
-   * (ADR 260814-195522, which reverses etiquette E16b).
+   * emoji on a message (ADR 260814-195522, which reverses etiquette E16b).
    */
   | 'PEOPLE_ONLY'
   /**
@@ -161,38 +160,6 @@ export type RoomErrorCode =
    * narrower branch (`.claude/rules/room-conduct.md`).
    */
   | 'TOOL_RENAME_NOT_IN_DM'
-  /**
-   * One turn tried to post more messages into one room than
-   * `rooms.maxPostsPerTurn` allows (spec `tool-only-room-replies` §D9).
-   *
-   * **A mechanism, because a bound has to be one.** Nothing counted an agent's
-   * posts before this: multiple posts inside a turn cost ONE turn against the
-   * cascade budget (DOR-1434, deliberately — being legible is not a thing the
-   * room charges for), and etiquette E8's "one message, not three" is a prompt.
-   * `.claude/rules/room-conduct.md` is unambiguous that a prompt is not a bound,
-   * and posting is not an extra an agent rarely reaches for: it is the only
-   * voice it has.
-   *
-   * Counted per `(room, agent, turn)` on the live claim, so an agent that posts
-   * into a different room mid-turn spends nothing here, and a post made with no
-   * turn behind it is not bounded at all — it already costs a turn of its own.
-   *
-   * The message names the remedy rather than the rule: consolidate.
-   */
-  | 'TOO_MANY_POSTS_THIS_TURN'
-  /**
-   * An agent tried to change a room's shared canvas more times in one turn than
-   * `rooms.maxCanvasOpsPerTurn` allows (spec `room-canvas` §3.4).
-   *
-   * The twin of {@link RoomErrorCode.TOO_MANY_POSTS_THIS_TURN}, on the other
-   * thing an agent can do a lot of in one turn, and bounded for the same reason:
-   * a shared table buried under a dozen tabs nobody asked for is the
-   * over-participation the room bounds exist to damp. Counted inside
-   * `RoomCanvasService.apply` against the room turn's dispatch id, synchronously,
-   * so the refusal reaches the model that asked instead of dropping an operation
-   * the tool has already called successful.
-   */
-  | 'TOO_MANY_CANVAS_OPS_THIS_TURN'
   /**
    * A canvas document was named that this room's table does not hold.
    *
@@ -317,16 +284,6 @@ export type RoomErrorCode =
    * a working token is exactly what would change the answer.
    */
   | 'AGENT_IDENTITY_UNVERIFIED'
-  /**
-   * One agent has used up its hourly reaction allowance in one room
-   * ({@link ReactionBudget}).
-   *
-   * A bound rather than a ban, and it is the whole price of letting agents react
-   * at all: a reaction is free, so nothing else in the system would stop a loop
-   * that sprays one on every message. People are never counted — a person
-   * clicking pills is the behaviour the feature is for.
-   */
-  | 'REACTION_RATE_LIMITED'
   /**
    * A Telegram broadcast channel (`chat.type === 'channel'`) was offered to
    * `RoomService.createBridgedRoom` (chats-as-channels spec §3.3). A broadcast

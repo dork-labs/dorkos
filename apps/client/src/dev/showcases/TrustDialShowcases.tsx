@@ -21,12 +21,7 @@ import {
   useSessionPermissionPicker,
 } from '@/layers/features/status';
 import { GlobalTrustRow, TrustRow, type GlobalTrustRowRuntime } from '@/layers/features/settings';
-import {
-  InfoTip,
-  ScheduledRunConsequence,
-  TrustDial,
-  UnattendedAutonomyDialog,
-} from '@/layers/shared/ui';
+import { InfoTip, TrustDial, UnattendedAutonomyDialog } from '@/layers/shared/ui';
 import { actsWithoutAsking } from '@/layers/shared/lib';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
@@ -197,9 +192,9 @@ function LiveDial({
 
 /**
  * The same dial on a surface nobody is watching — a relay binding or a scheduled
- * task. Two things change and nothing else does: a stored mode with no stop is
- * kept until somebody picks one and SAVES, and any stop that never asks asks first
- * — with copy about what stops happening on this particular surface.
+ * task. A stored mode with no stop is kept until somebody picks one and SAVES.
+ * A binding also asks first at any stop that never asks, because strangers can
+ * message it; a task applies every stop on the click (ADR 261006-225605).
  */
 function UnattendedDial({
   descriptors,
@@ -211,7 +206,8 @@ function UnattendedDial({
   initial: string;
   /** How this surface names itself in the stranded sentence. */
   subject: 'This integration' | 'This task';
-  consequence: ReactNode;
+  /** What stops happening on a binding; absent for a task, which never asks. */
+  consequence?: ReactNode;
 }) {
   const [mode, setMode] = useState(initial);
   const [pending, setPending] = useState<PermissionModeDescriptor | null>(null);
@@ -232,25 +228,27 @@ function UnattendedDial({
           </>
         }
         onChangeMode={(next) => {
-          // The same rule the real callers apply, so the playground shows the
-          // dialog on Codex's never-asking middle stop exactly as they do.
+          // The same rule the binding applies, so the playground shows the
+          // dialog on Codex's never-asking middle stop exactly as it does.
           const descriptor = descriptors.find((d) => d.id === next);
-          if (descriptor && actsWithoutAsking(descriptor)) {
+          if (consequence !== undefined && descriptor && actsWithoutAsking(descriptor)) {
             setPending(descriptor);
             return;
           }
           setMode(next);
         }}
       />
-      <UnattendedAutonomyDialog
-        descriptor={pending}
-        consequence={consequence}
-        onCancel={() => setPending(null)}
-        onConfirm={() => {
-          if (pending) setMode(pending.id);
-          setPending(null);
-        }}
-      />
+      {consequence !== undefined && (
+        <UnattendedAutonomyDialog
+          descriptor={pending}
+          consequence={consequence}
+          onCancel={() => setPending(null)}
+          onConfirm={() => {
+            if (pending) setMode(pending.id);
+            setPending(null);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -281,9 +279,6 @@ const BINDING_CONSEQUENCE = (
     </InfoTip>
   </>
 );
-
-/** What a scheduled run gives up at a stop that never asks. */
-const TASK_CONSEQUENCE = <ScheduledRunConsequence />;
 
 /** The three runtimes the settings surfaces below talk about, with their modes. */
 const SETTINGS_RUNTIMES = [
@@ -458,7 +453,7 @@ export function TrustDialShowcases() {
 
       <PlaygroundSection
         title="Trust Dial — the surfaces nobody is watching"
-        description="An integration binding and a scheduled task ask the same question with the same control. Two things differ: a stored mode with no stop is kept until somebody picks one AND saves, and the confirmation for a stop that never asks names what stops happening HERE — the approval that would have arrived in a chat, the card a run would have waited on."
+        description="An integration binding and a scheduled task ask the same question with the same control. A stored mode with no stop is kept until somebody picks one AND saves. A binding also confirms a stop that never asks, naming what stops happening in the chat, because strangers can message it; a task does not."
       >
         <ShowcaseLabel>
           A binding saved at Plan — kept and named, never quietly widened
@@ -478,7 +473,6 @@ export function TrustDialShowcases() {
             descriptors={CLAUDE.filter((d) => d.id !== 'auto')}
             initial="auto"
             subject="This task"
-            consequence={TASK_CONSEQUENCE}
           />
         </ShowcaseDemo>
 
@@ -492,16 +486,6 @@ export function TrustDialShowcases() {
             initial="default"
             subject="This integration"
             consequence={BINDING_CONSEQUENCE}
-          />
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>The task’s door — an unattended run is never shown a card</ShowcaseLabel>
-        <ShowcaseDemo>
-          <UnattendedDial
-            descriptors={CLAUDE}
-            initial="acceptEdits"
-            subject="This task"
-            consequence={TASK_CONSEQUENCE}
           />
         </ShowcaseDemo>
       </PlaygroundSection>

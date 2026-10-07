@@ -35,7 +35,6 @@ import { ensureHandles } from './handles/ensure-handles.js';
 import type { EngagedWindow } from './engagement.js';
 import type { CollectWindow } from './room-collect.js';
 import type { ResponseGateMode } from './response-gate/routing-rules.js';
-import { ReactionBudget } from './reactions/reaction-budget.js';
 import { ReactionStore } from './reactions/reaction-store.js';
 import {
   CanvasDocumentStore,
@@ -317,24 +316,6 @@ function readMaxAttachmentsPerEntry(): number {
 }
 
 /**
- * How many times one agent may change a room's shared canvas inside one turn,
- * read live from `rooms.maxCanvasOpsPerTurn` and degrading to the shipped
- * default the same way {@link readMaxPostsPerTurn} does (spec `room-canvas`
- * §3.4).
- *
- * Failing to the default keeps the limit BOUNDED, which is the only safe
- * direction here too: an unreadable config must never let one turn bury a room's
- * table under tabs nobody asked for.
- */
-function readMaxCanvasOpsPerTurn(): number {
-  try {
-    return configManager.get('rooms').maxCanvasOpsPerTurn;
-  } catch {
-    return USER_CONFIG_DEFAULTS.rooms.maxCanvasOpsPerTurn;
-  }
-}
-
-/**
  * How many conversations one agent may work in at once, read live from
  * `rooms.maxConcurrentTurnsPerAgent` (DOR-2104).
  *
@@ -353,23 +334,6 @@ function readMaxConcurrentTurnsPerAgent(): number {
     return configManager.get('rooms').maxConcurrentTurnsPerAgent;
   } catch {
     return 1;
-  }
-}
-
-/**
- * How many messages one agent may post into a room inside one turn, read live
- * from `rooms.maxPostsPerTurn` and degrading to the shipped default the same way
- * {@link readMaxAgentDepth} does (spec `tool-only-room-replies` §D9).
- *
- * Failing to the default keeps the limit BOUNDED, which is the only safe
- * direction here: an unreadable config must never let one turn serialise an
- * essay across the room.
- */
-function readMaxPostsPerTurn(): number {
-  try {
-    return configManager.get('rooms').maxPostsPerTurn;
-  } catch {
-    return USER_CONFIG_DEFAULTS.rooms.maxPostsPerTurn;
   }
 }
 
@@ -591,10 +555,6 @@ export function createRoomSubsystem(opts: {
     // hour of uptime (DOR-1205).
     budget:
       opts.budget ?? new RoomTurnBudget({ limits: createTurnBudgetLimits(limitsFor), db: opts.db }),
-    // Recovered from the reactions themselves rather than a counter table, so an
-    // agent that spent its hour and met a restart comes back spent
-    // (ADR 260814-195522).
-    reactionBudget: new ReactionBudget({ db: opts.db }),
     // The message index, behind its port. Composed here rather than imported by
     // the service so the rooms domain neither knows the index is FTS5 nor which
     // `sourceId` its own rows carry.
@@ -642,14 +602,6 @@ export function createRoomSubsystem(opts: {
     // Read per post, for the same reason: lowering the limit in Settings has to
     // bind the very next message.
     maxAttachmentsPerEntry: readMaxAttachmentsPerEntry,
-    // Read per post, for the same reason and one more: posting is the agent's
-    // only voice in a room, so an operator who feels this number is wrong must
-    // be able to move it without waiting for anything to restart.
-    maxPostsPerTurn: readMaxPostsPerTurn,
-    // Read per operation, for the same reason and one more: a room's canvas is
-    // a shared surface, so an operator who feels one agent is taking too much of
-    // it must be able to narrow the bound without waiting for a restart.
-    maxCanvasOpsPerTurn: readMaxCanvasOpsPerTurn,
     // Resolved per read rather than captured: the repo service is registered
     // later in bootstrap, and an install with no repo machinery answers `null`
     // forever — which is exactly right, because then no room has a shared tree

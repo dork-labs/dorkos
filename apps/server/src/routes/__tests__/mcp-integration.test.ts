@@ -50,7 +50,6 @@ import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createExternalMcpServer } from '../../services/core/mcp-server.js';
 import { createMcpAuth } from '../../middleware/mcp-auth.js';
 import type { McpToolDeps } from '../../services/runtimes/claude-code/mcp-tools/types.js';
-import { NotifyBudget } from '../../services/relay/notify-budget.js';
 
 /**
  * ONE listener for the whole file, with the app behind it swapped per test
@@ -71,7 +70,6 @@ const TOKEN_PATH = '/tmp/dork/mcp-local-token';
  */
 function createMinimalDeps(): McpToolDeps {
   return {
-    notifyBudget: new NotifyBudget(),
     transcriptReader: {
       listSessions: vi.fn().mockResolvedValue([]),
     } as unknown as McpToolDeps['transcriptReader'],

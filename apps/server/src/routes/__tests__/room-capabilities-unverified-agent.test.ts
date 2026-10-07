@@ -115,7 +115,6 @@ import { createExternalMcpServer } from '../../services/core/mcp-server.js';
 import { capabilityMcpTools } from '../../services/runtimes/claude-code/mcp-tools/capability-mcp-tools.js';
 import type { AgentIdentity } from '../../services/core/agent-identity/agent-identity-service.js';
 import type { McpToolDeps } from '../../services/runtimes/claude-code/mcp-tools/types.js';
-import { NotifyBudget } from '../../services/relay/notify-budget.js';
 import { resolveAgentIdentity } from '../../middleware/agent-identity.js';
 import {
   initAgentIdentityService,
@@ -155,7 +154,6 @@ const agents = agentLookupFor({
 /** Minimal deps for the external MCP server — the shape `mcp-integration` uses. */
 function minimalMcpDeps(): McpToolDeps {
   return {
-    notifyBudget: new NotifyBudget(),
     transcriptReader: {
       listSessions: vi.fn().mockResolvedValue([]),
     } as unknown as McpToolDeps['transcriptReader'],

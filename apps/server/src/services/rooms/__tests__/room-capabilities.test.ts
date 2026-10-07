@@ -659,19 +659,6 @@ describe('the rooms capability domain', () => {
       ).resolves.toEqual({ reacted: false });
       expect(service.reactionsFor(channel.id, entry.id)).toEqual([]);
     });
-
-    it('surfaces the rate bound as a typed refusal once the hour is spent', async () => {
-      const entries = Array.from({ length: 21 }, (_, n) =>
-        service.post(channel.id, { authorId: human, text: `line ${n}` })
-      );
-      for (const entry of entries.slice(0, 20)) {
-        await call('rooms.react', { roomId: channel.id, entryId: entry.id, emoji: '👍' });
-      }
-
-      await expect(
-        call('rooms.react', { roomId: channel.id, entryId: entries[20]!.id, emoji: '👍' })
-      ).rejects.toMatchObject({ payload: { code: 'REACTION_RATE_LIMITED' } });
-    });
   });
 
   describe('the history tools', () => {

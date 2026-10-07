@@ -8,26 +8,16 @@
  * "answered, and it is not in there" is how a healthy task gets told its agent
  * is gone.
  *
- * The pairing between this row and the form's own consent machinery is driven
- * end to end in `TaskRunsOn.test.tsx`; this file is the component's own
- * vocabulary.
- *
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { TaskAgentField, type TaskAgentRoster } from '../ui/TaskAgentField';
-import type { AgentPick } from '../ui/use-agent-pick';
 
 const AGENTS = [
   { id: 'agent-1', name: 'api-bot', projectPath: '/projects/api', icon: '🤖', color: '#6366f1' },
   { id: 'agent-2', name: 'test-bot', projectPath: '/projects/test', icon: '🧪', color: '#22c55e' },
 ];
-
-/** A pick that nobody drives — the locked row never touches it. */
-function idlePick(overrides: Partial<AgentPick> = {}): AgentPick {
-  return { pick: vi.fn(), isWaiting: false, wasDropped: false, ...overrides };
-}
 
 /** The roster as it reads once the list has landed. */
 function answered(agents = AGENTS): TaskAgentRoster {
@@ -44,7 +34,7 @@ const UNREADABLE: TaskAgentRoster = { agents: [], answered: false, unreadable: t
 const CLAIMS = [/no longer/i, /isn’t registered/i, /not found/i, /^No agent$/];
 
 function renderLocked(roster: TaskAgentRoster, value = 'agent-1') {
-  render(<TaskAgentField roster={roster} value={value} locked pick={idlePick()} />);
+  render(<TaskAgentField roster={roster} value={value} locked onChange={vi.fn()} />);
 }
 
 beforeAll(() => {
@@ -149,41 +139,17 @@ describe('the task form agent row', () => {
 
   describe('when the choice is still open', () => {
     it('offers the picker, and none of the settled row', () => {
-      const pick = idlePick();
-      render(<TaskAgentField roster={answered()} value="agent-1" locked={false} pick={pick} />);
+      const onChange = vi.fn();
+      render(
+        <TaskAgentField roster={answered()} value="agent-1" locked={false} onChange={onChange} />
+      );
 
       fireEvent.click(screen.getByRole('button', { expanded: false }));
       fireEvent.click(screen.getByText('test-bot'));
 
-      expect(pick.pick).toHaveBeenCalledWith('agent-2');
+      expect(onChange).toHaveBeenCalledWith('agent-2');
       expect(screen.queryByTestId('settled-agent')).toBeNull();
       expect(screen.queryByTestId('agent-locked-note')).toBeNull();
-    });
-
-    it('says a pick is being priced, and says when one was let go', () => {
-      const { rerender } = render(
-        <TaskAgentField
-          roster={answered()}
-          value="agent-1"
-          locked={false}
-          pick={idlePick({ isWaiting: true })}
-        />
-      );
-      expect(screen.getByTestId('agent-pick-waiting')).toHaveTextContent(
-        /Checking what that agent runs on/
-      );
-
-      rerender(
-        <TaskAgentField
-          roster={answered()}
-          value="agent-1"
-          locked={false}
-          pick={idlePick({ wasDropped: true })}
-        />
-      );
-      expect(screen.getByTestId('agent-pick-waiting')).toHaveTextContent(
-        /Couldn’t check that agent, so nothing changed/
-      );
     });
   });
 });

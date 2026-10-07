@@ -28,8 +28,8 @@ question be the only thing bounding cost or loops.
 
 ## Bounds are mechanisms, never prompts
 
-The cascade guard (depth + the per-agent turn counter), the two-ceiling turn budget, the hourly
-reaction ceiling (`reaction-budget.ts`), and the halt path are **mechanisms**. Do not replace any of them with an instruction in a
+The cascade guard (depth + the per-agent turn counter), the two-ceiling turn budget, and the halt
+path are **mechanisms**. Do not replace any of them with an instruction in a
 prompt, and do not weaken one because a prompt "already says" not to do the
 thing. Block's Buzz learned this from a real 21-reply agent storm and wrote down
 why:
@@ -575,23 +575,24 @@ them holds. Do not loosen one ahead of it.
   outlives its answer under RP8's park-and-resume and a standing mark would
   swallow the next one. `reactedViaTool` is its sibling, taken the same way for
   the same reason.
-  **How many times it may post in ONE turn is a mechanism**
-  (`rooms.maxPostsPerTurn`, default 3, refused with `TOO_MANY_POSTS_THIS_TURN`).
-  Nothing counted an agent's posts before DOR-1613, deliberately — several posts
-  inside one turn cost ONE turn against the cascade budget, because being legible
-  is not a thing the room charges for. But etiquette E8's "one message, not
-  three" is a prompt, and posting is no longer an extra an agent rarely reaches
-  for: it is the only voice it has. Do not weaken the ceiling because a prompt
-  already says not to do the thing.
+  **Nothing counts an agent's posts, reactions, canvas changes or notes**
+  (ADR `261006-225605`, DOR-2739). An agent may do what a person may do, and the
+  per-turn post and canvas ceilings, the hourly reaction ceiling and the hourly
+  note ceiling are retired. Etiquette E8/E16b/E18a still ask for one message,
+  not three; what holds an agent to them is review plus notice — everything it
+  did is on the record for anyone to read, and a person can step in — never a
+  count that refuses it. Do not bring a per-agent count back to enforce
+  etiquette. The loop guards above are a different thing: they stop agents
+  answering each other forever and bound the bill, and they stay mechanisms.
+  Limits that protect against outsiders (strangers on a bound chat, remote
+  community members) are also unaffected.
   **Who is calling is resolved, never assumed.** An agent token names an agent; a
   verified `userId` names a person; neither present means the surface could name
   nobody, and on a login-on install that is a refusal (`UNIDENTIFIED_CALLER`),
   never a fallback to the owner. Falling back is how an invited person's API key
   read the owner's direct messages.
-- **Agents may react, bounded by a rate** (ADR `260814-195522`, reversing
-  etiquette E16b's second half). The bound is `ReactionBudget` — 20 per agent per
-  room per rolling hour, recovered from the reaction rows themselves so a restart
-  cannot clear it — and it is a mechanism, not a line in a prompt. **Reactions
+- **Agents may react** (ADR `260814-195522`, reversing etiquette E16b's second
+  half; its hourly rate bound was retired by ADR `261006-225605`). **Reactions
   still never cascade**: they live outside `room_entries` and take no turn, write
   no entry, send no notice and do not move a room in the activity order. Keep it
   that way; a reaction that became an entry would be a message wearing a pill.

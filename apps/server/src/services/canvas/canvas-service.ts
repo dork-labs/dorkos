@@ -17,15 +17,10 @@ import type { CanvasChannelDeclaration } from '@dorkos/shared/canvas-channel-sch
  *
  * Everything here is about the table: dedupe, the LRU, the edit lock, `rev`
  * ordering, and publishing. Everything a ROOM adds on top lives in
- * `RoomCanvasService` and reaches this class through two callbacks —
- * `chargeCeiling` (the per-turn ceiling) and `record` (the ledger that composes
- * one coalesced line per turn). A session scope passes neither, and that is a
- * decision rather than an omission:
+ * `RoomCanvasService` and reaches this class through one callback — `record`
+ * (the ledger that composes one coalesced line per turn). A session scope
+ * passes none, and that is a decision rather than an omission:
  *
- * - **No per-turn ceiling.** A canvas change in a room costs every other
- *   member's attention. A session canvas has an audience of one, who asked for
- *   the turn, and whose window has never had a per-turn cap. The LRU is the only
- *   bound it needs, which is the bound it has always had.
  * - **No ledger.** A room composes one durable line per turn so its history
  *   records what happened. A session's history is its transcript, which already
  *   records every `control_ui` call as a tool call with its result. Inventing a
@@ -294,9 +289,6 @@ export class CanvasService {
    * @param input.command - The validated `control_ui` command.
    * @param input.tree - Where a file path resolved, when the caller knows.
    * @param input.defaultTarget - Which document a verb naming none acts on.
-   * @param input.chargeCeiling - A room's per-turn ceiling. Returns a refusal
-   *   when this operation would exceed it, and `null` when it may proceed. A
-   *   session passes none, because it has no audience to protect.
    * @param input.record - A room's ledger. Called once per applied operation. A
    *   session passes none: its transcript already records the call.
    * @returns What was written, or the sentence explaining why nothing was.
@@ -308,7 +300,6 @@ export class CanvasService {
     principal?: ServerPrincipalProof;
     tree?: CanvasTreePlacement;
     defaultTarget?: CanvasDefaultTarget;
-    chargeCeiling?: () => { code: RoomErrorCode; reason: string } | null;
     record?: (entry: CanvasLedgerEntry) => void;
   }): CanvasApplyResult {
     const { scope, authorId, command } = input;
@@ -331,11 +322,6 @@ export class CanvasService {
     );
     if ('reason' in plan) {
       return { applied: false, code: 'CANVAS_NO_DEFAULT_DOCUMENT', reason: plan.reason };
-    }
-
-    const overCeiling = input.chargeCeiling?.() ?? null;
-    if (overCeiling !== null) {
-      return { applied: false, code: overCeiling.code, reason: overCeiling.reason };
     }
 
     const held = this.lockHeldByAnother(plan.existing, authorId);

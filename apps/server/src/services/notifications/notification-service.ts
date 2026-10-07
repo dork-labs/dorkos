@@ -111,12 +111,9 @@ export interface NotifyResult {
  * Channel refusals that mean the notification does not happen AT ALL, rather
  * than happening in the app and not reaching a phone.
  *
- * Both are about an agent's own note, and both would otherwise leave a row that
- * the thing refusing was supposed to prevent:
+ * It is about an agent's own note, and would otherwise leave a row that the
+ * thing refusing was supposed to prevent:
  *
- * - `RATE_LIMITED` — the agent has said as much as it may this hour. A ceiling
- *   that bounded only the chat leg would let a looping agent fill the inbox
- *   instead, which is the same interruption by a quieter route.
  * - `INITIATE_NOT_ALLOWED` — the operator switched "Agent can start
  *   conversations" OFF on the binding this resolved to. That is a person saying
  *   "do not start conversations with me", and honouring it on Telegram while
@@ -126,7 +123,7 @@ export interface NotifyResult {
  * Every other refusal is a delivery problem, not a decision: the news still
  * happened, so the row is still written and the inbox is where it is found.
  */
-const SILENCES_EVERY_SURFACE = new Set<string>(['RATE_LIMITED', 'INITIATE_NOT_ALLOWED']);
+const SILENCES_EVERY_SURFACE = new Set<string>(['INITIATE_NOT_ALLOWED']);
 
 /** What the service needs wired at boot. */
 export interface NotificationServiceDeps {
@@ -349,11 +346,9 @@ export class NotificationService {
    * The shared body of both entry points: dedupe, dispatch, store, announce.
    *
    * **The channel goes first, and that ordering is load-bearing.** An agent's
-   * own note is bounded by an hourly allowance, and a note refused by that
-   * allowance must leave nothing behind — a row in the inbox is still the agent
-   * talking, so storing one anyway would turn a bound into a formality. Every
-   * other kind carries no allowance, so `RATE_LIMITED` cannot arise for it and
-   * the rule is inert. The relay publish is an in-process hand-off to the
+   * own note refused by the operator's "Agent can start conversations" switch
+   * must leave nothing behind — a row in the inbox is still the agent talking.
+   * The relay publish is an in-process hand-off to the
    * message bus rather than a wait on a chat network, so nothing is delayed by
    * asking first.
    *
@@ -364,10 +359,10 @@ export class NotificationService {
    * entry synchronously and only then calls `notify()` — so a client watching
    * both the room's SSE stream and the notification stream can, for a few
    * milliseconds, see the new room entry before the inbox row that explains
-   * it. This is not reordered to close that gap: the RATE_LIMITED rule above
+   * it. This is not reordered to close that gap: the refusal rule above
    * requires the channel dispatch to run and settle before the row is even
    * decided, so an insert-first order would either lose that guarantee or
-   * require a second write to retract a row the allowance then refused. The
+   * require a second write to retract a row the switch then refused. The
    * gap is eventual consistency, not a correctness bug — every reader
    * converges once `notify()`'s promise resolves — and is deliberately left
    * as a documented trade-off rather than a `TODO`.

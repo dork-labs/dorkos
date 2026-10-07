@@ -323,10 +323,9 @@ export const DORKOS_AGENT_TOOLS = new Set(
  * asked in a channel to send a proactive note, the agent's room turn parked on
  * `awaiting_approval` and no message was ever sent, twice on two days.
  *
- * What bounds the frequency instead is a mechanism, per
- * `.claude/rules/room-conduct.md`: `NotifyBudget` (`relay/notify-budget.ts`),
- * ten notes per agent per hour, with a refusal that tells the agent to say it in
- * the conversation it is already in.
+ * Nothing bounds the frequency by count any more (ADR 261006-225605): a note
+ * goes only where the operator configured, and every note lands in the inbox
+ * where it can be read back.
  *
  * Without an identity the tool refuses itself — the handler answers
  * `NOT_AN_AGENT` — so the qualifier costs a call nothing today. It is still
@@ -404,9 +403,8 @@ export const DORKOS_AGENT_TOOLS = new Set(
  * It is also what the rooms domain already asks for: "A card on every message
  * an agent posts into its own room would be the over-tiering that teaches
  * people to click through", with the writes bounded by mechanisms instead — the
- * cascade guard and the two-ceiling turn budget for a post, the hourly
- * `ReactionBudget` for a reaction, the hourly `NotifyBudget` for a note. This
- * list was the one place not told.
+ * cascade guard and the two-ceiling turn budget for a post. This list was the
+ * one place not told.
  */
 export const IDENTITY_SCOPED_TOOLS = new Set(
   [

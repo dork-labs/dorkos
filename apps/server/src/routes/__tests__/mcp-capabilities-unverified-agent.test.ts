@@ -70,7 +70,6 @@ import { mcpDomain } from '../../services/mesh/mcp-capabilities.js';
 import type { McpCapabilityDeps } from '../../services/mesh/mcp-capability-deps.js';
 import { createExternalMcpServer } from '../../services/core/mcp-server.js';
 import type { McpToolDeps } from '../../services/runtimes/claude-code/mcp-tools/types.js';
-import { NotifyBudget } from '../../services/relay/notify-budget.js';
 import { resolveAgentIdentity } from '../../middleware/agent-identity.js';
 import {
   initAgentIdentityService,
@@ -136,7 +135,6 @@ function fakeMcpDeps(): McpCapabilityDeps {
 /** Minimal deps for the external MCP server — the shape `mcp-integration` uses. */
 function minimalMcpDeps(): McpToolDeps {
   return {
-    notifyBudget: new NotifyBudget(),
     transcriptReader: {
       listSessions: vi.fn().mockResolvedValue([]),
     } as unknown as McpToolDeps['transcriptReader'],

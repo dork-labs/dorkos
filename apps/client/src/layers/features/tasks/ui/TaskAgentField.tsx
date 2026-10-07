@@ -9,7 +9,6 @@ import { getAgentDisplayName } from '@/layers/shared/lib';
 import { AgentAvatar, resolveAgentVisual } from '@/layers/entities/agent';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 import { AgentPicker } from './AgentPicker';
-import type { AgentPick } from './use-agent-pick';
 
 /**
  * The agents this machine can file a task against, and whether that list is an
@@ -19,8 +18,7 @@ import type { AgentPick } from './use-agent-pick';
  * flattening the query to `data?.agents ?? []` throws away the difference
  * between "nobody has answered", "the read failed" and "there are none" — and a
  * surface that reads an empty list as an answer then says something false about
- * a healthy task. `AgentRuntimeLookup` splits the same three worlds one file
- * over, for the same reason and with the same two words.
+ * a healthy task.
  */
 export interface TaskAgentRoster {
   /** The agents this machine knows about — empty until {@link TaskAgentRoster.answered}. */
@@ -53,22 +51,17 @@ export interface TaskAgentFieldProps {
    * `UpdateTaskRequestSchema` carries no target at all and the form's edit
    * branch sends none, so a pick there could never change what runs. It only
    * LOOKED like it did, and everything downstream priced against that phantom:
-   * the trust dial re-captioned to the picked agent's runtime, and its OWN
-   * consent gate then asked in that runtime's vocabulary. A task on Codex at
-   * `plan`, moved to the Claude Code agent, walked to the middle stop with no
-   * door and saved `acceptEdits` — a mode Codex never asks in — onto a task
-   * still running on Codex (DOR-1694). A control that cannot do the thing it
+   * the trust dial re-captioned to the picked agent's runtime, so a task on
+   * Codex at `plan`, moved to the Claude Code agent, could save `acceptEdits` —
+   * a mode Codex never asks in — onto a task still running on Codex (DOR-1694). A control that cannot do the thing it
    * appears to do is the defect; not appearing to is the fix.
    */
   locked: boolean;
   /**
-   * The held-pick state machine that prices a change before it commits.
-   *
-   * Unused while {@link TaskAgentFieldProps.locked}, and still required: a pick
-   * that cannot be made has no state to report, and an optional prop would
-   * invite a create form to forget it.
+   * Choose an agent: its id, or `''` for none. Unused while
+   * {@link TaskAgentFieldProps.locked}.
    */
-  pick: AgentPick;
+  onChange: (agentId: string) => void;
 }
 
 /**
@@ -142,7 +135,7 @@ function SettledAgent({ roster, value }: { roster: TaskAgentRoster; value: strin
  * @param props - The roster, the current pick, and whether the choice is
  *   settled; see {@link TaskAgentFieldProps}.
  */
-export function TaskAgentField({ roster, value, locked, pick }: TaskAgentFieldProps) {
+export function TaskAgentField({ roster, value, locked, onChange }: TaskAgentFieldProps) {
   return (
     <div className="space-y-2">
       <Label>Agent</Label>
@@ -157,31 +150,11 @@ export function TaskAgentField({ roster, value, locked, pick }: TaskAgentFieldPr
           </p>
         </>
       ) : (
-        <>
-          <AgentPicker
-            agents={roster.agents}
-            value={value || undefined}
-            // Picking an agent moves the runtime this task INHERITS, and a mode
-            // id means whatever the runtime running it says it means — so this
-            // is the runtime picker's widening reached by a different road
-            // (DOR-1637). Same door, same rule, and the candidate's runtime is
-            // resolved BEFORE the pick commits.
-            onValueChange={(id) => pick.pick(id ?? '')}
-          />
-          {/* Said out loud, because the alternative is a click that appears to
-              do nothing. The agent is unchanged in both cases; what differs is
-              whether waiting will fix it, so each says which. */}
-          {(pick.isWaiting || pick.wasDropped) && (
-            <p
-              data-testid="agent-pick-waiting"
-              className="text-muted-foreground text-xs leading-relaxed"
-            >
-              {pick.wasDropped
-                ? 'Couldn’t check that agent, so nothing changed. Choose it again.'
-                : 'Checking what that agent runs on…'}
-            </p>
-          )}
-        </>
+        <AgentPicker
+          agents={roster.agents}
+          value={value || undefined}
+          onValueChange={(id) => onChange(id ?? '')}
+        />
       )}
     </div>
   );

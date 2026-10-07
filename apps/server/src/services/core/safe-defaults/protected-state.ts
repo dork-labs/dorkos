@@ -264,18 +264,6 @@ export const PROTECTIVE_CARRYOVERS: readonly ProtectiveCarryover[] = [
       'The most messages one gathered-up answer covers. Higher is the tightened bound for the same reason: raising it folds more of a busy room into one turn, and a wipe that lowered it would split that turn back into several.',
   },
   {
-    path: 'rooms.maxPostsPerTurn',
-    direction: 'lower',
-    reason:
-      'The most messages one agent may post into a room inside one turn. Lower is the tightened bound, and it is the one a person reaches for when a turn has been chatty at them.',
-  },
-  {
-    path: 'rooms.maxCanvasOpsPerTurn',
-    direction: 'lower',
-    reason:
-      "The most times one agent may change a room's shared canvas inside one turn. Lower is the tightened bound, the same way it is for posts, and it is what a person reaches for when a turn has buried the table under tabs nobody asked for.",
-  },
-  {
     path: 'rooms.maxConcurrentTurnsPerAgent',
     direction: 'lower',
     reason:

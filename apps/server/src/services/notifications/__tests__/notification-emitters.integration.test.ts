@@ -10,7 +10,6 @@ import { NotificationService, setNotificationService } from '../notification-ser
 import { notifyRunCompleted } from '../emitters/run-completed.js';
 import { watchAskResolution } from '../emitters/ask-resolution.js';
 import { watchSessionLifecycle } from '../emitters/session-lifecycle.js';
-import { NotifyBudget } from '../../relay/notify-budget.js';
 import { createRelayNotifyUserHandler } from '../../runtimes/claude-code/mcp-tools/relay-notify-tools.js';
 import {
   clearTestHomes,
@@ -159,12 +158,10 @@ describe('a finished run', () => {
   });
 });
 
-describe('an agent that will not stop talking', () => {
+describe('an agent that talks a lot', () => {
   /** The tool, wired so nothing external resolves — the stock-install shape. */
-  function notifyUserHandler(limit: number) {
-    const budget = new NotifyBudget({ limit: () => limit, now: () => 0 });
+  function notifyUserHandler() {
     const deps = {
-      notifyBudget: budget,
       relayCore: { publish: vi.fn() },
       bindingStore: { getAll: () => [] },
       bindingRouter: { getSessionsByBinding: () => [] },
@@ -178,29 +175,23 @@ describe('an agent that will not stop talking', () => {
     });
   }
 
-  it('cannot write more inbox rows than its hourly allowance, however varied the notes', async () => {
-    // The hole this closes: every one of these fails to reach any transport, so
-    // before DOR-1383 each was refunded and none was ever rate-limited. Varying
-    // the text defeats dedupe, which leaves the allowance as the only thing
-    // standing between a looping agent and an unbounded inbox.
-    const limit = 10;
-    const handler = notifyUserHandler(limit);
+  it('keeps every note as an inbox row: nothing caps how often an agent speaks (DOR-2739)', async () => {
+    // Every one of these reaches no transport. Each is still recorded, which is
+    // what the review that replaced the hourly count reads from.
+    const handler = notifyUserHandler();
 
     const codes: string[] = [];
-    for (let i = 0; i < 200; i += 1) {
+    for (let i = 0; i < 15; i += 1) {
       const result = await handler({ message: `note number ${i}` });
       codes.push(JSON.parse(result.content[0].text).code as string);
     }
 
-    expect(codes.filter((c) => c === 'NO_BINDING')).toHaveLength(limit);
-    expect(codes.filter((c) => c === 'NOTIFY_RATE_LIMITED')).toHaveLength(200 - limit);
-    expect(service.list({ limit: 100, unread: false }).notifications).toHaveLength(limit);
+    expect(codes.filter((c) => c === 'NO_BINDING')).toHaveLength(15);
+    expect(service.list({ limit: 100, unread: false }).notifications).toHaveLength(15);
   });
 
   it('writes no row at all when the operator switched initiating off', async () => {
-    const budget = new NotifyBudget({ limit: () => 10, now: () => 0 });
     const deps = {
-      notifyBudget: budget,
       relayCore: { publish: vi.fn() },
       bindingStore: {
         getAll: () => [
@@ -234,9 +225,6 @@ describe('an agent that will not stop talking', () => {
     expect(JSON.parse(result.content[0].text).code).toBe('INITIATE_NOT_ALLOWED');
     expect(service.list({ limit: 25, unread: false }).notifications).toHaveLength(0);
     expect(announced()).toHaveLength(0);
-    // A switch the operator set costs the agent nothing — it is a decision, not
-    // a missing integration.
-    expect(budget.tryReserve('agent-1')).toBe(true);
   });
 });
 

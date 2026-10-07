@@ -45,7 +45,6 @@ import { useCapabilitiesSync } from '@/layers/entities/permissions';
 import { useDevLinkReloadSync } from '@/layers/entities/marketplace';
 import { useBindingsSync } from '@/layers/entities/binding';
 import { useRelayAdaptersSync } from '@/layers/entities/relay';
-import { useUnattendedAutonomySync } from '@/layers/entities/unattended-autonomy';
 import { useKeepAwakeSync } from '@/layers/entities/keep-awake';
 import { useTasksSync } from '@/layers/entities/tasks';
 import { useTunnelSync, useRemoteAccessAnnouncer } from '@/layers/entities/tunnel';
@@ -334,10 +333,6 @@ export function AppShell() {
   // mutations and slow polling.
   useBindingsSync();
   useRelayAdaptersSync();
-  // Keep the standing unattended-autonomy banner honest the moment a binding or
-  // a task changes: dialling one up to Full autonomy has to raise the banner as
-  // the form closes, not on the next reload.
-  useUnattendedAutonomySync();
   useKeepAwakeSync();
   // Live task list (DOR-1380): a schedule an agent proposes via MCP parks at
   // pending_approval and otherwise sits invisible until the next reload.

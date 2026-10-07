@@ -10,8 +10,7 @@
  * there, not here, since this component's own props carry no `benchReason` to
  * leak in the first place). What is pinned here is the half a person actually
  * meets: it names the backend, branches its wording on `benched`, reads as a
- * warning rather than a flat note, and cannot be dismissed away — the same
- * things the unattended-autonomy banner's own test pins for its own tone.
+ * warning rather than a flat note, and cannot be dismissed away.
  */
 import { describe, it, expect, beforeAll, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';

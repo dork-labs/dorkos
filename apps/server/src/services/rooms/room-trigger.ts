@@ -1908,7 +1908,6 @@ export class RoomTriggerDispatcher {
       aside: false,
       spokeViaTool: false,
       reactedViaTool: false,
-      postsThisTurn: 0,
       claimedAt: new Date().toISOString(),
       pastDeadline: false,
       // Zero rather than `Date.now()`: the turn's FIRST tool call should reach
@@ -2053,36 +2052,16 @@ export class RoomTriggerDispatcher {
     const claim = this.claimed.get(agentKey(roomId, authorId));
     if (!claim) return;
     claim.spokeViaTool = true;
-    claim.postsThisTurn += 1;
-  }
-
-  /**
-   * How many messages this agent has already posted into this room from inside
-   * its live turn here, or `undefined` when it holds no claim here.
-   *
-   * The read half of `rooms.maxPostsPerTurn` (spec `tool-only-room-replies` §D9).
-   * `undefined` is not zero and the difference is load-bearing: a post made with
-   * no turn behind it — an agent posting by hand from a shell — is not part of a
-   * turn, so the per-turn ceiling has nothing to bound and does not apply. It
-   * already costs a turn against the cascade budget on its own.
-   *
-   * @param roomId - The room being posted into.
-   * @param authorId - The agent posting.
-   * @returns The count so far, or `undefined` when no turn is running here.
-   */
-  postsThisTurn(roomId: string, authorId: string): number | undefined {
-    return this.claimed.get(agentKey(roomId, authorId))?.postsThisTurn;
   }
 
   /**
    * Everything `post_to_room` needs to know about the turn it is being called
    * from inside, or `undefined` when this agent holds no claim in this room.
    *
-   * One read for four questions, all of them about the SAME live claim, so they
-   * cannot disagree with each other: which message the turn is answering, which
-   * session it is running on, and how many posts it has already spent. Asking
-   * them one at a time would be three map lookups that a release between any two
-   * of them could split.
+   * One read for two questions about the SAME live claim, so they cannot
+   * disagree with each other: which message the turn is answering, and which
+   * session it is running on. Asking them one at a time would be two map lookups
+   * that a release between them could split.
    *
    * `undefined` is not "a turn with nothing in it" — it means no turn is running
    * here, which is a real and supported state: an agent may post by hand with
@@ -2096,14 +2075,10 @@ export class RoomTriggerDispatcher {
   activeTurnHere(
     roomId: string,
     authorId: string
-  ): { entryId: string; sessionId: string | undefined; postsThisTurn: number } | undefined {
+  ): { entryId: string; sessionId: string | undefined } | undefined {
     const claim = this.claimed.get(agentKey(roomId, authorId));
     if (claim === undefined) return undefined;
-    return {
-      entryId: claim.entryId,
-      sessionId: claim.sessionId,
-      postsThisTurn: claim.postsThisTurn,
-    };
+    return { entryId: claim.entryId, sessionId: claim.sessionId };
   }
 
   /**
@@ -2826,7 +2801,6 @@ export class RoomTriggerDispatcher {
       aside: true,
       spokeViaTool: false,
       reactedViaTool: false,
-      postsThisTurn: 0,
       claimedAt: new Date().toISOString(),
       pastDeadline: false,
       // Zero rather than `Date.now()`: the turn's FIRST tool call should reach

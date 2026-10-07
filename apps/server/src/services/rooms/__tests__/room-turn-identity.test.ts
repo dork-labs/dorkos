@@ -77,7 +77,6 @@ import type { McpServerLaunch } from '../../runtimes/claude-code/messaging/messa
 import type { AgentSession } from '../../runtimes/claude-code/agent-types.js';
 import { createDorkOsToolServer } from '../../runtimes/claude-code/mcp-tools/index.js';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
-import { NotifyBudget } from '../../relay/notify-budget.js';
 import { roomsDomain } from '../room-capabilities.js';
 import {
   agentLookupFor,
@@ -119,7 +118,6 @@ const agents = agentLookupFor({
 /** Deps for the in-session tool server — only the rooms verbs are driven. */
 function toolDeps(): McpToolDeps {
   return {
-    notifyBudget: new NotifyBudget(),
     transcriptReader: {
       listSessions: vi.fn().mockResolvedValue([]),
     } as unknown as McpToolDeps['transcriptReader'],

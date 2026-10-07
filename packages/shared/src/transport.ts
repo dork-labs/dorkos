@@ -87,7 +87,6 @@ import type { CapabilityCatalog, CapabilityTier } from './capabilities.js';
 import type { RuntimeCapabilities, SystemRequirements } from './agent-runtime.js';
 import type { MemoryProviderStatus } from './memory-provider.js';
 import type { AccountEligibilityResponse, OnlyProjectsResponse } from './project-schemas.js';
-import type { UnattendedAutonomyState } from './permission-semantics.js';
 import type { RuntimeCommandIntentId } from './command-intents.js';
 import type {
   CredentialCheckResult,
@@ -1856,15 +1855,6 @@ export interface Transport
   provisionOllama(
     onProgress?: (progress: RuntimeProvisionProgress) => void
   ): Promise<OllamaProvisionResult>;
-  /**
-   * Every live binding and scheduled task currently set to run an agent without
-   * asking anyone — the one read behind the standing unattended-autonomy banner.
-   *
-   * Cheap by construction — two small filters and one synchronous SELECT, no
-   * awaiting anything — so an app-wide banner can hold the answer for the life
-   * of the page instead of asking per route.
-   */
-  getUnattendedAutonomy(): Promise<UnattendedAutonomyState>;
   /**
    * Whether DorkOS is keeping this computer awake right now, and for what
    * (spec `keep-awake`). Kept current afterwards by the `keep_awake_status`

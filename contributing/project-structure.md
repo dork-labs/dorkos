@@ -376,7 +376,7 @@ apps/server/src/
 │   │   ├── capabilities/        # Capability defs, MCP/OpenAPI projection, permission enforcement
 │   │   ├── cloud/               # DorkOS Cloud client (credits-inference, hosted-communities, plan)
 │   │   ├── agent-identity/, auth/, external-mcp/, operator/, permissions/, safe-defaults/,
-│   │   │   unattended-autonomy/, usage/   # Narrower core sub-domains, one folder each
+│   │   │   usage/               # Narrower core sub-domains, one folder each
 │   │   ├── file-lister.ts       # Directory file listing
 │   │   ├── git-status.ts        # Git status/branch info
 │   │   ├── tunnel-manager.ts    # ngrok tunnel lifecycle

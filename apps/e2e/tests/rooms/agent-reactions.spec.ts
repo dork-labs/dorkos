@@ -7,10 +7,9 @@ import { SERVER_ROUND_TRIP_MS } from '../../fixtures/rooms-api';
  * ADR `260814-195522`, which reverses etiquette E16b's sending half).
  *
  * A reaction is the cheapest thing an agent can do in a room: it takes no turn,
- * writes no entry, sends no notice, and costs a token from a small hourly
- * budget. That is the whole design — "I saw this" without a paragraph about it.
- * `reactions.test.ts` and `rooms-reactions.test.ts` pin the budget, the toggle
- * and the route below the browser. What only a browser can add is the half that
+ * writes no entry and sends no notice. That is the whole design — "I saw this"
+ * without a paragraph about it. `reactions.test.ts` and `rooms-reactions.test.ts`
+ * pin the toggle and the route below the browser. What only a browser can add is the half that
  * has no unit test at all: that an agent's pill LANDS ON THE MESSAGE a reader is
  * looking at, and reads as that agent.
  *
@@ -30,7 +29,7 @@ import { SERVER_ROUND_TRIP_MS } from '../../fixtures/rooms-api';
  * test-mode leg grew one seam, `POST /api/test/agent-token`, that mints through
  * the production path and hands the token over. Everything after that is
  * shipped code: the header middleware, `resolveCaller`, the non-human branch of
- * `toggleReaction`, the `ReactionBudget`, the store, the room's live stream, and
+ * `toggleReaction`, the store, the room's live stream, and
  * the row the cockpit draws.
  *
  * ## What is NOT claimed here

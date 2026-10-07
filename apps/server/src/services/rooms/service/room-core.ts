@@ -28,7 +28,6 @@ import {
 } from '../../relay/chat-bridge/room-context-framing.js';
 import type { AuthorRecord, AuthorRegistry } from '../author-registry.js';
 import type { RoomLimitsResolver } from '../limits/room-limits.js';
-import type { ReactionBudget } from '../reactions/reaction-budget.js';
 import type { ReactionStore } from '../reactions/reaction-store.js';
 import { roomScope, type CanvasDocumentStore, type CanvasService } from '../../canvas/index.js';
 import type { AttachmentRowStore } from '../attachments/attachment-row-store.js';
@@ -58,8 +57,6 @@ export interface RoomCore {
   readonly canvasDocuments: CanvasDocumentStore;
   /** The one writer every canvas on this machine goes through. */
   readonly canvas: CanvasService;
-  /** How many emoji an agent may still land in one room this hour. */
-  readonly reactionBudget: ReactionBudget;
   /** Words in, entry coordinates out. The message index, behind its port. */
   readonly findMessages: RoomMessageFinder;
   /** Entries out, the moment they are committed. The write half of that port. */
@@ -77,9 +74,6 @@ export interface RoomCore {
   readonly limitsFor: RoomLimitsResolver;
   /** The live `uploads.maxFiles`. Read per post, so a change takes effect. */
   readonly maxAttachmentsPerEntry: () => number;
-  readonly maxPostsPerTurn: () => number;
-  /** The live `rooms.maxCanvasOpsPerTurn`. Read per operation, never captured. */
-  readonly maxCanvasOpsPerTurn: () => number;
   /** The room's own shared checkout, or `null` when it has no files. */
   readonly roomRepoPath: (roomId: string) => string | null;
   /** The clock a canvas edit lock is judged against. Absent means `Date.now`. */
@@ -256,7 +250,6 @@ export function createRoomCore(deps: RoomServiceDeps, writeBack: RoomWriteBack):
     reactions: deps.reactions,
     canvasDocuments: deps.canvasDocuments,
     canvas: deps.canvas,
-    reactionBudget: deps.reactionBudget,
     findMessages: deps.findMessages,
     indexEntry: deps.indexEntry,
     attachments: deps.attachments,
@@ -266,8 +259,6 @@ export function createRoomCore(deps: RoomServiceDeps, writeBack: RoomWriteBack):
     triggers,
     limitsFor: deps.limitsFor,
     maxAttachmentsPerEntry: deps.maxAttachmentsPerEntry,
-    maxPostsPerTurn: deps.maxPostsPerTurn,
-    maxCanvasOpsPerTurn: deps.maxCanvasOpsPerTurn,
     roomRepoPath: deps.roomRepoPath,
     ...(deps.canvasNow ? { canvasNow: deps.canvasNow } : {}),
     isOwnerAuthor: deps.isOwnerAuthor,

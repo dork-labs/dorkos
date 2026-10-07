@@ -24,8 +24,8 @@ const STALE_TIME_MS = 60_000;
  * calls right now, and why they differ.
  *
  * Returns `undefined` until the first answer lands, which the banner treats as
- * "nothing to report" — the same convention `useUnattendedAutonomy` uses, so a
- * page load never flashes a false warning before the real answer arrives.
+ * "nothing to report", so a page load never flashes a false warning before the
+ * real answer arrives.
  */
 export function useMemoryProviderStatus(): MemoryProviderStatus | undefined {
   const transport = useTransport();

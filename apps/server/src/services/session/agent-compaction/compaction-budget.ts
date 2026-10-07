@@ -5,7 +5,8 @@
  * A summary throws detail away for good. An agent that asks in a loop — or one
  * that misreads its own gauge every turn — would keep summarizing away the work
  * it was doing, so the bound is a mechanism rather than a line in the tool's
- * description, the same reasoning `NotifyBudget` and `ReactionBudget` apply.
+ * description. Unlike a count on how often an agent may speak, this bounds a
+ * loss of the agent's own work, which is a bug guard rather than a cap.
  *
  * Keyed by the session's PRIMARY id, so the request UUID a conversation was
  * born under and the canonical id it was renamed to spend one allowance between

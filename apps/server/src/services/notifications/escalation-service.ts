@@ -61,9 +61,9 @@
  * one HISTORY row they write when they resolve — "your ask expired" does not
  * belong on Telegram. Escalation is the opposite case and a separately decided
  * one: the ADR says Blocking conditions reach the phone after the delay, so this
- * sends under its own `'always'` policy. The consent gates the channel owns —
- * the binding's "Agent can start conversations" switch and the hourly budget —
- * are untouched and still decide whether it may.
+ * sends under its own `'always'` policy. The consent gate the channel owns —
+ * the binding's "Agent can start conversations" switch — is untouched and still
+ * decides whether it may.
  *
  * ## Restarts
  *
@@ -175,14 +175,6 @@ export interface EscalationServiceDeps {
   relay?: () => RelayChannelDeps | undefined;
   /** The one knob, read live so a change takes effect without a restart. */
   readDelay: () => EscalationDelay;
-  /**
-   * Take one off an agent's hourly allowance.
-   *
-   * Present because an escalation IS an interruption, and the ceiling bounds how
-   * often an agent may interrupt somebody however good its reason. Omitted in
-   * tests that are not about the budget.
-   */
-  reserveNote?: (agentId: string) => boolean;
   /** Clock, injectable so a test can age a condition without waiting. */
   now?: () => number;
 }
@@ -424,7 +416,6 @@ export class EscalationService {
     const agentId = pickRelayAgent(subjectAgentId, relayDeps);
     if (!agentId) return undefined;
 
-    const reserve = this.deps.reserveNote;
     return deliverOverRelay(
       {
         agentId,
@@ -432,7 +423,6 @@ export class EscalationService {
         policy: 'always',
         fromPrincipal: ESCALATION_PRINCIPAL,
         publishBudget: { ...PUBLISH_BUDGET, ttl: this.now() + PUBLISH_TTL_MS },
-        ...(reserve ? { reserve: () => reserve(agentId) } : {}),
       },
       relayDeps
     );

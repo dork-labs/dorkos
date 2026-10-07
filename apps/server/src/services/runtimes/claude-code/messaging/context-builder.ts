@@ -230,8 +230,8 @@ IMPORTANT — Outbound messaging rules:
   posts into your direct message with them inside DorkOS, so a stock install is never
   silent; the reply's "surface" says which one it used. The bound chat may be a GROUP or a
   conversation with someone other than your operator, so write the message to be read by
-  whoever is in that chat, never as a private aside. You get a limited number of these per
-  hour — anything you could say in the conversation you are already in belongs there
+  whoever is in that chat, never as a private aside. Send one only when something needs
+  the person — anything you could say in the conversation you are already in belongs there
   instead. Naming a channel (channel="{adapter type or ID}") means that channel or nothing.
   Do NOT try to reach a human by publishing a raw relay.human.* subject with ${T}relay_send:
   that path enforces the same permission and will be denied.

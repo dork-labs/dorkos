@@ -37,7 +37,7 @@ import { uiTurnFacts } from '../../../session/browser-seat/ui-turn-facts.js';
 import { reachesPastTheScreen } from '../../../session/browser-seat/ui-surface-consent.js';
 import { setRoomService } from '../../index.js';
 import { peekCanvasService, sessionScope, SESSION_OWNER_AUTHOR } from '../../../canvas/index.js';
-import { NOT_IN_A_ROOM_MESSAGE, tooManyCanvasOpsMessage } from '../room-canvas-service.js';
+import { NOT_IN_A_ROOM_MESSAGE } from '../room-canvas-service.js';
 import {
   agentLookupFor,
   createRoomHarness,
@@ -140,25 +140,16 @@ describe('the `ui.control` handler, inside a room turn', () => {
     expect(harness.service.canvas.list(roomId)).toEqual([]);
   });
 
-  it('refuses the fourth change of a turn in the result the model reads', async () => {
-    for (const n of [1, 2, 3]) {
-      await control({
+  it('applies a fourth change of a turn — there is no per-turn count (DOR-2739)', async () => {
+    for (const n of [1, 2, 3, 4]) {
+      const result = await control({
         action: 'open_canvas',
         content: { type: 'json', data: { n }, title: `doc ${n}` },
       });
+      expect(result, `change ${n}`).toMatchObject({ success: true, target: 'room' });
     }
-    const fourth = await control({
-      action: 'open_canvas',
-      content: { type: 'json', data: { n: 4 }, title: 'doc 4' },
-    });
-    expect(fourth).toEqual({
-      success: false,
-      target: 'room',
-      reason: tooManyCanvasOpsMessage(3),
-    });
-    // Three rows and three events, not four of either.
-    expect(harness.service.canvas.list(roomId)).toHaveLength(3);
-    expect(reach.emitted).toHaveLength(3);
+    expect(harness.service.canvas.list(roomId)).toHaveLength(4);
+    expect(reach.emitted).toHaveLength(4);
   });
 
   it('is byte-identical to today outside a room turn', async () => {

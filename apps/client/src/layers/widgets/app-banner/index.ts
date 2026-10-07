@@ -8,10 +8,6 @@
 export { AppBannerSlot } from './ui/AppBannerSlot';
 export { useAppBanners } from './model/use-app-banners';
 export {
-  UnattendedAutonomyBanner,
-  type UnattendedAutonomyBannerProps,
-} from './ui/UnattendedAutonomyBanner';
-export {
   MemoryProviderBenchedBanner,
   type MemoryProviderBenchedBannerProps,
 } from './ui/MemoryProviderBenchedBanner';

@@ -498,15 +498,15 @@ Usage: `import { toast } from 'sonner'` then `toast('message')` or `toast.error(
 
 ### Banners
 
-Full-width app banner from `shared/ui/banner.tsx` (`Banner`), for a **standing condition** that stays until it resolves — an agent running unattended, a waiting update, connection lost. A banner is not a toast: a toast fires once for a transient event and fades; a banner persists while the condition is true.
+Full-width app banner from `shared/ui/banner.tsx` (`Banner`), for a **standing condition** that stays until it resolves — a sign-in that stopped working, a waiting update, connection lost. A banner is not a toast: a toast fires once for a transient event and fades; a banner persists while the condition is true.
 
-**A banner states a fact; it does not ask a question.** The first-run telemetry invitation used to live here and was moved off it (spec `full-power-defaults` D5): a yes/no question in a slot built for standing conditions just sits above every route until someone answers it. One-time questions belong on the moments rail below. The canonical banner today is the unattended-autonomy one (`UnattendedAutonomyBanner`) — a condition that is true right now and stops being true on its own.
+**A banner states a fact; it does not ask a question.** The first-run telemetry invitation used to live here and was moved off it (spec `full-power-defaults` D5): a yes/no question in a slot built for standing conditions just sits above every route until someone answers it. One-time questions belong on the moments rail below. The canonical banner today is the runtime sign-in one (`RuntimeSigninBanner`) — a condition that is true right now and stops being true once it is fixed. (The unattended-autonomy banner was retired by DOR-2739: full power is the normal way agents work, so it was not a condition worth a second voice.)
 
 **A banner is the second voice, so it needs the fact to be worth two.** The all-permissions-bypassed banner was retired for this reason (spec `trust-dial`, decision 3A): the status strip already carried the word and the tint for a session the person was sitting in front of, and two alarms about one fact teach people to read neither. Ask what the banner says that the surface the person is looking at does not.
 
 **Banner vs toast:**
 
-- **Banner** — a condition that is _still true_ right now (an agent running unattended, an update waiting, the connection lost). Persistent, dismiss only when it makes sense.
+- **Banner** — a condition that is _still true_ right now (a sign-in that stopped working, an update waiting, the connection lost). Persistent, dismiss only when it makes sense.
 - **Toast** — a moment that just _happened_ (run triggered, save failed). Transient, auto-dismisses.
 - **Moment** — a one-time question that has to be answered once and then never again (see below). Modal, at most one per app launch.
 

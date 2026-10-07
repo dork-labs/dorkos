@@ -14,7 +14,7 @@ amends: null
 
 Accepted — extracted from spec `full-power-defaults`.
 
-Amended by [261006-225605](261006-225605-agents-are-trusted-by-default-outsiders-and-third-party-code-are-not.md) (agents are trusted by default): The per-instance unattended confirm dialog, and tying `canInitiate` pre-selection to the consent door, are retired. Following the operator's level and the clamp on file- and package-sourced schedules stand; the banner stays for outsider-fed bindings.
+Amended by [261006-225605](261006-225605-agents-are-trusted-by-default-outsiders-and-third-party-code-are-not.md) (agents are trusted by default): The per-instance unattended confirm dialog for tasks and schedules, the app-wide unattended banner, and tying `canInitiate` pre-selection to the consent door, are retired (DOR-2739). Following the operator's level and the clamp on file- and package-sourced schedules stand; the Full-autonomy confirm stays for outsider-fed bindings (Telegram, Slack), because strangers can message them.
 
 **Amended by ADR `260908-170643`**, which adds the surface this decision's
 enumeration left out. "Scheduled tasks and relay bindings" below is the list of

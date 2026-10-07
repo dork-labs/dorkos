@@ -66,15 +66,6 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   // table is total by type. 400 because a direct message is the wrong kind of
   // room to ask this of, and no retry fixes it.
   TOOL_RENAME_NOT_IN_DM: 400,
-  // Same story: an MCP-only verb, mapped because the table is total by type. A
-  // 429 rather than a 400 — the request is perfectly well formed and would have
-  // been accepted a moment earlier, and the remedy is to say less rather than to
-  // say it differently, which is exactly what a rate answer means.
-  TOO_MANY_POSTS_THIS_TURN: 429,
-  // The canvas twin of the line above, and the same 429 for the same reason: the
-  // request is well formed and would have been accepted a moment earlier, and
-  // the remedy is to change less rather than to ask differently.
-  TOO_MANY_CANVAS_OPS_THIS_TURN: 429,
   // A document this room's canvas does not hold. 404 beside `ENTRY_NOT_FOUND`,
   // and scoped to the room for the same reason: an id from elsewhere must not
   // answer differently from an id that never existed.
@@ -106,12 +97,6 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   // 409 rather than a 400 — the request is well formed and the room is right,
   // but somebody stopped this turn while it was being written.
   TURN_WAS_STOPPED: 409,
-  // This one IS reachable over HTTP today, and the comment above it used to say
-  // otherwise: `POST /api/rooms/:id/entries/:entryId/reactions` resolves an
-  // agent from `X-DorkOS-Agent` and goes through the same `toggleReaction`, so
-  // an agent that has spent its hour gets this from the route as readily as from
-  // the tool. The canonical 429.
-  REACTION_RATE_LIMITED: 429,
   // A 401 rather than a 403: the caller presented nothing this surface could
   // resolve, so a credential IS what would change the answer. It belongs to the
   // capability surfaces, where "nobody" is a real answer; the room routes reach
@@ -196,8 +181,7 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   SUBMODULE_NOT_ALLOWED: 409,
   // The exception, and the canonical status for it: the caller waited its turn
   // and the room is still busy. A 429 says "ask again", which is exactly the
-  // remedy, and is the same answer `REACTION_RATE_LIMITED` gives for the same
-  // shape of refusal.
+  // remedy.
   MERGE_IN_FLIGHT: 429,
 };
 

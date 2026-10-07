@@ -419,8 +419,8 @@ describe('agentPostCount', () => {
   });
 
   it('fails when the agent said it in three messages instead of one', async () => {
-    // The shape `rooms.maxPostsPerTurn` bounds, and the one an oracle can see
-    // without a judge model.
+    // The shape etiquette E8 asks agents to avoid, and the one an oracle can
+    // see without a judge model.
     const frames = [
       ...ONE_TURN,
       entry({ id: 'e3', authorId: ADA, text: 'Also: the CSV fix shipped.' }),

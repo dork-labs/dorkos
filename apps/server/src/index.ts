@@ -244,7 +244,6 @@ import {
 } from './services/relay/initiate-consent.js';
 import { makeChatNoticeTargetResolver } from './services/relay/binding-subsystem.js';
 import { TraceStore } from './services/relay/trace-store.js';
-import { NotifyBudget } from './services/relay/notify-budget.js';
 import { MeshCore, type AdoptedAgent } from '@dorkos/mesh';
 import { createMeshRouter } from './routes/mesh.js';
 import { setMeshInitError } from './services/mesh/mesh-state.js';
@@ -430,7 +429,6 @@ import { ApprovalService, resolveApprovalTtlMs } from './services/core/approvals
 import { createApprovalsRouter } from './routes/approvals.js';
 import type { DeepHealthDeps } from './services/observability/deep-health/index.js';
 import type { DebugDeps } from './routes/debug.js';
-import type { UnattendedAutonomyDeps } from './services/core/unattended-autonomy/unattended-autonomy.js';
 import { createCapabilitiesCatalogRouter } from './routes/capabilities-catalog.js';
 import { createCapabilitiesInvokeRouter } from './routes/capabilities-invoke.js';
 import {
@@ -1446,12 +1444,6 @@ async function start() {
   });
   setNotificationService(notificationService);
 
-  // The hourly allowance that bounds how often an agent may interrupt a person.
-  // Built HERE rather than beside the MCP tool deps it used to live in, because
-  // two things spend it now: `relay_notify_user` and the escalation ladder. Two
-  // budgets would be two ceilings, which is one ceiling too many.
-  const notifyBudget = new NotifyBudget();
-
   // The escalation ladder (spec `notification-system` task 4.3,
   // ADR 260819-234829): what happens when nobody answers. Built beside the
   // pipeline for the same boot-order reason — a session that errors during
@@ -1469,7 +1461,6 @@ async function start() {
       readDelay: () =>
         configManager.get('notifications')?.escalation?.phoneAfterMinutes ??
         NOTIFICATION_PREFS_DEFAULTS.escalation.phoneAfterMinutes,
-      reserveNote: (agentId) => notifyBudget.tryReserve(agentId),
     })
   );
 
@@ -4122,15 +4113,6 @@ async function start() {
       // The approval primitive the in-session hold (DOR-939) waits on, so a fresh
       // destructive capability call holds inline and resumes on the operator's yes.
       approvals: approvalService,
-      // What bounds `relay_notify_user` now that an identified agent is no longer
-      // asked for a card it could not get answered (DOR-1265). Constructed once
-      // near the top of `start()`, because the tool server below is rebuilt per
-      // session and a budget with that lifetime would be a ceiling an agent
-      // resets by opening a new session — the same reason `ReactionBudget` is
-      // built in the rooms composition root rather than beside a request. It is
-      // the SAME instance the escalation ladder spends, so an agent's hourly
-      // allowance is one ceiling across both ways it can reach a person.
-      notifyBudget,
       ...(taskStore && { taskStore }),
       // A getter, not the registrar: these deps are assembled ~120 lines before
       // `TaskRegistrar` is constructed, so the value read here would be
@@ -4782,30 +4764,6 @@ async function start() {
     transcriptProjectRoots: () => claudeRuntime?.getTranscriptReader().getProjectsRootSet() ?? [],
     ...(relayCore ? { relayTraceStore: traceStore } : {}),
   } satisfies DebugDeps;
-
-  // The standing unattended-autonomy banner's one read. A third narrow bag
-  // rather than a widening of either above, for the reason they are already two:
-  // this one answers a product question ("is anything running without asking
-  // where nobody can see it?") from the same live stores, and it is served on
-  // every install — including one with relay and Tasks both off, where every
-  // reader below answers empty and so does the banner.
-  //
-  // Every reader resolves its store AT REQUEST TIME rather than closing over
-  // one now. The binding store is created inside `adapterManager.initialize()`,
-  // which is awaited on a different path from this one — capturing it here
-  // would bake in whichever of the two happened to run first and leave the
-  // banner permanently blind to integrations on the losing ordering.
-  app.locals.unattendedAutonomyDeps = {
-    bindings: () => adapterManager?.getBindingStore()?.getAll() ?? [],
-    tasks: () => taskStore?.getTasks() ?? [],
-    adapterName: (adapterId: string) => adapterManager?.resolveAdapterName(adapterId) ?? adapterId,
-    // The REGISTRY, not the config's `enabled` flag — see the reader's doc.
-    // `disable()` clears the flag before it unregisters and warns that a failed
-    // unregister may leave the bot answering, so the registry is the half that
-    // tells the truth about whether a message can still arrive.
-    adapterLive: (adapterId: string) => adapterManager?.getRegistry().get(adapterId) !== undefined,
-    agentLive: (agentId: string) => meshCore?.getProjectPath(agentId) !== undefined,
-  } satisfies UnattendedAutonomyDeps;
 
   // Shape schedule service — file-first schedule creator + re-binder the Shape
   // apply flow and the agent-create seam share. Built here (not just inside the

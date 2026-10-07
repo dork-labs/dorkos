@@ -128,3 +128,30 @@ describe('memory-provider-benched descriptor', () => {
     expect(banner).not.toHaveTextContent('10.0.0.5');
   });
 });
+
+describe('the retired unattended-autonomy banner', () => {
+  it('never raises a banner for a full-power binding or schedule', async () => {
+    // Trusted by default (ADR 261006-225605): full power is the expected
+    // state, so nothing standing is drawn for it. The old descriptor read this
+    // aggregate and raised an `unattended-autonomy` banner for any driver; the
+    // stub is here so that this test would fail against it.
+    const transport = createMockTransport();
+    const getUnattendedAutonomy = vi.fn().mockResolvedValue({
+      drivers: [{ kind: 'task', id: 't1', name: 'Nightly sweep' }],
+    });
+    Object.assign(transport, { getUnattendedAutonomy });
+    transport.getMemoryProviderStatus = vi.fn().mockResolvedValue({
+      configuredId: 'mem0',
+      activeId: 'builtin',
+      benched: true,
+      benchReason: null,
+    });
+
+    const { result } = renderHook(() => useAppBanners(null), { wrapper: harness(transport) });
+
+    // A positive control: the hook has settled once the memory banner shows.
+    await waitFor(() => expect(findMemoryDescriptor(result.current)).toBeDefined());
+    expect(result.current.map((d) => d.id)).toEqual(['memory-provider-benched']);
+    expect(getUnattendedAutonomy).not.toHaveBeenCalled();
+  });
+});

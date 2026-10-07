@@ -65,7 +65,6 @@ function buildService(
   overrides: {
     push?: WebPushChannel;
     relay?: () => RelayChannelDeps | undefined;
-    reserveNote?: (agentId: string) => boolean;
     now?: () => number;
   } = {}
 ): EscalationService {
@@ -74,7 +73,6 @@ function buildService(
     push: overrides.push ?? pushChannel(),
     relay: overrides.relay ?? (() => relayDeps()),
     readDelay: () => delay,
-    ...(overrides.reserveNote ? { reserveNote: overrides.reserveNote } : {}),
     ...(overrides.now ? { now: overrides.now } : {}),
   });
 }
@@ -294,10 +292,27 @@ describe('firing', () => {
     });
   });
 
-  it('still pushes when the chat leg is refused by the hourly allowance', async () => {
-    // The two legs exist so that one being shut does not silence the other. A
-    // budget that took the push leg with it would make the ceiling a gag.
-    const service = buildService({ reserveNote: () => false });
+  it('still pushes when the chat leg is refused', async () => {
+    // The two legs exist so that one being shut does not silence the other.
+    // "Agent can start conversations" OFF shuts the chat leg only.
+    const service = buildService({
+      relay: () =>
+        relayDeps({
+          bindingStore: {
+            getAll: () => [
+              {
+                id: 'binding-1',
+                agentId: 'agent-1',
+                adapterId: 'telegram-main',
+                enabled: true,
+                canInitiate: false,
+                chatId: 'chat-1',
+                updatedAt: '2026-08-19T00:00:00.000Z',
+              },
+            ],
+          } as unknown as RelayChannelDeps['bindingStore'],
+        }),
+    });
     service.arm('ask.pending', ask());
 
     await vi.advanceTimersByTimeAsync(ONE_MINUTE + 1);
@@ -305,16 +320,6 @@ describe('firing', () => {
     expect(publish).not.toHaveBeenCalled();
     expect(sendToAll).toHaveBeenCalledTimes(1);
     expect(ledgerFor('ask:int-1')).toEqual([{ channel: 'web_push', escalated: true }]);
-  });
-
-  it('spends the allowance on the agent the condition names', async () => {
-    const reserveNote = vi.fn().mockReturnValue(true);
-    const service = buildService({ reserveNote });
-    service.arm('ask.pending', ask());
-
-    await vi.advanceTimersByTimeAsync(ONE_MINUTE + 1);
-
-    expect(reserveNote).toHaveBeenCalledWith('agent-1');
   });
 
   it('still reaches chat when no device is subscribed', async () => {

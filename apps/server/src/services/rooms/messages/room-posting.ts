@@ -75,7 +75,6 @@ export class RoomPosting {
   private readonly triggers: RoomTriggerDispatcher;
   /** The live `uploads.maxFiles`. Read per post, so a change takes effect. */
   private readonly maxAttachmentsPerEntry: () => number;
-  private readonly maxPostsPerTurn: () => number;
 
   constructor(
     core: RoomCore,
@@ -86,7 +85,6 @@ export class RoomPosting {
     this.attachments = core.attachments;
     this.triggers = core.triggers;
     this.maxAttachmentsPerEntry = core.maxAttachmentsPerEntry;
-    this.maxPostsPerTurn = core.maxPostsPerTurn;
   }
 
   /**
@@ -169,12 +167,6 @@ export class RoomPosting {
    *   resolved reply mode rather than removed, and it is still spelled
    *   `!== 'channel'` — `rooms.kind` is a text column narrowed by an unchecked
    *   cast, and an unknown kind never gets more reach than a DM.
-   * - **A per-turn post ceiling** — `TOO_MANY_POSTS_THIS_TURN`,
-   *   `rooms.maxPostsPerTurn` (§D9). Under the flip, posting is the only voice an
-   *   agent has and nothing else bounds how often it uses it;
-   *   `.claude/rules/room-conduct.md` says a bound is a mechanism, never a
-   *   prompt. Asked AFTER the stop mark and BEFORE the write, so a refusal never
-   *   costs a claim mark and never spends a post.
    * - **A turn somebody STOPPED is refused** — `TURN_WAS_STOPPED`, DOR-1313. An
    *   interrupt is delivered rather than obeyed, so a stopped turn may still be
    *   running and reach for this; the room already throws away its narration and
@@ -257,33 +249,6 @@ export class RoomPosting {
         'TURN_WAS_STOPPED',
         'This conversation was stopped, so nothing more from this turn is posted. Wait for the next message before answering here.'
       );
-    }
-    // **The per-turn ceiling** (spec `tool-only-room-replies` §D9). Read per call
-    // rather than captured, like every other live bound this service is handed,
-    // so moving the number in Settings takes effect on the very next post.
-    //
-    // Asked AFTER the stop mark, so a turn that was going to be refused anyway
-    // does not spend a post on the way out — the same ordering the reaction
-    // budget keeps — and BEFORE the write, so a refusal never leaves a claim
-    // marked as having spoken.
-    //
-    // `postsThisTurn` is `undefined` when this agent holds no claim here, and
-    // that is not zero: a post with no turn behind it is not part of one, so
-    // there is no per-turn ceiling to apply. It already costs a turn against the
-    // cascade budget on its own.
-    if (turn !== undefined) {
-      const ceiling = this.maxPostsPerTurn();
-      if (turn.postsThisTurn >= ceiling) {
-        logger.info('[rooms] refused a turn a further post', {
-          roomId,
-          authorId: input.authorId,
-          ceiling,
-        });
-        throw new RoomError(
-          'TOO_MANY_POSTS_THIS_TURN',
-          `You have already posted ${ceiling} ${ceiling === 1 ? 'message' : 'messages'} in this conversation during this turn, which is the limit. Consolidate the rest into one message next turn.`
-        );
-      }
     }
     // The level the turns this post starts are held to. Both sessions vouch:
     // the one that made the call, and the author's turn in this room, which

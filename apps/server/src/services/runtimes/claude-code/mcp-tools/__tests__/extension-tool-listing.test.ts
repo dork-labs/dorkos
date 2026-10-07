@@ -33,7 +33,6 @@ vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn().mockResolvedVa
 import { createDorkOsToolServer } from '../index.js';
 import { inSessionToolName } from '../tool-exposure.js';
 import { composeCapabilityRegistryForDocs } from '../../../../core/self-description/dorkos-registry.js';
-import { NotifyBudget } from '../../../../relay/notify-budget.js';
 import type { McpToolDeps } from '../types.js';
 import type { CapabilityRegistry } from '../../../../core/capabilities/index.js';
 import { checkDeclaredTools } from '@dorkos/extension-api/tool-check';
@@ -69,7 +68,6 @@ function createFullDeps(): McpToolDeps {
     extensionManager: stub,
     runtimeRegistry: stub,
     activityService: stub,
-    notifyBudget: new NotifyBudget(),
   };
 }
 

@@ -828,8 +828,7 @@ export function getRelayTools(
         'direct message. This always INITIATES a message — replying to an inbound chat ' +
         'message happens automatically and does not need this tool. Fails with code ' +
         'INITIATE_NOT_ALLOWED when the resolved binding has "Agent can start conversations" ' +
-        'turned off. You have a limited number of these per hour, so send one when something ' +
-        'actually needs the person — anything you could say in the conversation you are ' +
+        'turned off. Send one when something actually needs the person — anything you could say in the conversation you are ' +
         'already in belongs there instead. The chat you are bound to may be a GROUP or a ' +
         'conversation with someone other than your operator: write the message to be read by ' +
         'whoever is in that chat, never as a private aside.',

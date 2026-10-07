@@ -24,7 +24,6 @@ import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
 import type { EngagedWindow } from '../engagement.js';
 import type { ResponseGateMode } from '../response-gate/routing-rules.js';
 import type { CollectWindow } from '../room-collect.js';
-import { ReactionBudget } from '../reactions/reaction-budget.js';
 import { ReactionStore } from '../reactions/reaction-store.js';
 import {
   CanvasDocumentStore,
@@ -690,9 +689,6 @@ export interface RoomHarness {
  *   `held-too-long` line. Defaults to the shipped hour, so a test that is not
  *   about the bound never trips it; a test that IS about it pins a short one.
  * @param opts.maxAttachmentsPerEntry - How many files one message may carry.
- * @param opts.maxPostsPerTurn - How many messages one turn may post into a room.
- *   A literal for the same reason the ceilings above are: a test that read the
- *   same config the code reads could only prove the two agree.
  * @param opts.ownerUserId - The account that owns this install, when the test is
  *   about one. Omitted means "no accounts", which is the default posture and the
  *   one where the `'local'` author is the owner. Resolved through the real
@@ -728,17 +724,6 @@ export function createRoomHarness(opts: {
    */
   maxConcurrentTurnsPerAgent?: number | (() => number);
   maxAttachmentsPerEntry?: number;
-  /** How many messages one agent may post into a room inside one turn. */
-  maxPostsPerTurn?: number;
-  /**
-   * How many times one agent may change a room's canvas inside one turn.
-   *
-   * A FUNCTION as well as a number, because the shipped wiring reads it per
-   * operation: a test that has to prove "moving it in Settings binds the very
-   * next change" needs to move it mid-test, and a captured number could only
-   * ever prove the code agrees with itself.
-   */
-  maxCanvasOpsPerTurn?: number | (() => number);
   /**
    * The clock the canvas judges an edit lock against.
    *
@@ -891,14 +876,6 @@ export function createRoomHarness(opts: {
       },
       ...(opts.budgetNow && { now: opts.budgetNow }),
     }),
-    // The real budget over the real reaction rows, on the same clock the turn
-    // budget takes — so a test can roll an hour without sleeping for one. The
-    // ceiling is deliberately NOT overridable here: a reaction test that set its
-    // own would only ever prove the code agrees with itself.
-    reactionBudget: new ReactionBudget({
-      db,
-      ...(opts.budgetNow && { now: opts.budgetNow }),
-    }),
     // The REAL index reader over the REAL index, composed exactly as
     // `createRoomSubsystem` composes it. A fake finder here would make every
     // `search_room_history` test a test of the fake — including the scope rules,
@@ -937,12 +914,6 @@ export function createRoomHarness(opts: {
       return option ?? 1;
     },
     maxAttachmentsPerEntry: () => maxAttachmentsPerEntry,
-    maxPostsPerTurn: () => opts.maxPostsPerTurn ?? 3,
-    maxCanvasOpsPerTurn: () => {
-      const option = opts.maxCanvasOpsPerTurn;
-      if (typeof option === 'function') return option();
-      return option ?? 3;
-    },
     // No repo machinery by default, which is an install where no room has a
     // shared tree — so every file document on a canvas belongs to whoever opened
     // it, and §8.1's reader rule is exercised in its narrow form.

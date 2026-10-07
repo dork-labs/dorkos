@@ -135,7 +135,6 @@ import {
   OPENCODE_DORKOS_TOOL_PREFIX,
 } from '../../../shared/dorkos-tool-names.js';
 import { buildAgentContextAppend } from '../../../shared/agent-context.js';
-import { NotifyBudget } from '../../../../relay/notify-budget.js';
 import type { McpToolDeps } from '../../mcp-tools/types.js';
 import type { AgentRegistryPort } from '@dorkos/shared/agent-runtime';
 import type { RelayContextDeps } from '../context-builder.js';
@@ -178,7 +177,6 @@ function createFullDeps(): McpToolDeps {
     extensionManager: stub,
     runtimeRegistry: stub,
     activityService: stub,
-    notifyBudget: new NotifyBudget(),
   };
 }
 

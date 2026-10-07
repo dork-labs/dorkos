@@ -200,9 +200,8 @@ export interface InteractiveSession {
    * card is answerable and gets the ordinary wait. `task-scheduler-service.ts`
    * sets the flag only for `trigger === 'scheduled'`.
    *
-   * A relay-bound turn is not this either. `core/unattended-autonomy` counts two
-   * unattended drivers, a binding and a scheduled task, and only the scheduler
-   * passes this flag — because the question is not "is a person present" but
+   * A relay-bound turn is not this either: only the scheduler passes this
+   * flag — because the question is not "is a person present" but
    * "can anybody answer this", and a bridged agent's approval is published to
    * the chat the room is talking to (DOR-1440, and see
    * `relay/adapters/claude-code/publish.ts` and `chat-bridge/ask-card.ts` for

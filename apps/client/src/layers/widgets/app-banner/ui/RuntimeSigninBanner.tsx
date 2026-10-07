@@ -70,8 +70,7 @@ export interface RuntimeSigninBannerProps {
  * "A sign-in stopped working" sends a person hunting. "Your Claude sign-in
  * stopped working" tells them which of the runtimes they run is down, which is
  * the whole action. Past {@link NAMED_LIMIT}, the remainder becomes a count
- * rather than a wall of names, the same way the unattended-autonomy row
- * truncates.
+ * rather than a wall of names.
  *
  * ## What the button does NOT do, on a phone
  *

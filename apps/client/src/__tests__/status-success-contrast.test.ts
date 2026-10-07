@@ -3,8 +3,8 @@
  * The green success token clears WCAG AA (4.5:1 for normal text) in light mode,
  * and dark mode stays comfortably above it (DOR-1431).
  *
- * Green carries meaning as TEXT (the dial caption, the status word, the "running
- * unattended at full power" notes, session-row marks) and as the inverted white
+ * Green carries meaning as TEXT (the dial caption, the status word, session-row
+ * marks) and as the inverted white
  * label on a green fill (the full-power door's CTA). At `152 69% 31%` those
  * surfaces measured 4.2-4.5:1 — under the bar — so two reviews flagged them. The
  * light token was darkened to `152 69% 24%`; this guard is what keeps it there.

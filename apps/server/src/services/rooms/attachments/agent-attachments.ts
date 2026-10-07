@@ -222,8 +222,8 @@ async function readOwnFile(
  * Undo staging: take the bytes and the unbound rows back.
  *
  * **Exported because the caller needs it too.** Staging happens before the
- * entry is written, and the write can still refuse — a mistyped `roomId`, the
- * per-turn post ceiling, a stopped turn, an archived room. Without this the
+ * entry is written, and the write can still refuse — a mistyped `roomId`, a
+ * stopped turn, an archived room. Without this the
  * files stay on disk with nothing referencing them, in a room where the only
  * sweep runs on the person's upload route, which an agent-only room never
  * reaches. So the caller runs the same cleanup this module runs on its own

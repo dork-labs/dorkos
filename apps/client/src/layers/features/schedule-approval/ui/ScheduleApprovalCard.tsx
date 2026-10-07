@@ -8,7 +8,6 @@ import { ChevronRight, FileCode2 } from 'lucide-react';
 import type { Task } from '@dorkos/shared/types';
 import {
   cn,
-  actsWithoutAsking,
   permissionModeLabel,
   isBypassPermissionMode,
   formatCompactAge,
@@ -22,9 +21,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
   PermissionModeScopeNote,
-  ScheduledRunConsequence,
   stopLabel,
-  UnattendedAutonomyDialog,
 } from '@/layers/shared/ui';
 import { useDeleteTask, useUpdateTask } from '@/layers/entities/tasks';
 import { useSessionDetail } from '@/layers/entities/session';
@@ -141,12 +138,6 @@ function ChangeValue({ value, unbroken }: { value: string; unbroken: boolean }) 
  * Approve stays the primary answer and keeps the keyboard shortcut, so the
  * safe level is what a fast hand lands on.
  *
- * **And the raise goes through the consent door.** It is the fourth route into
- * a never-asking posture on an unattended surface, and it meets the same
- * `UnattendedAutonomyDialog` the task form and the relay binding open — see
- * {@link requestRaise}, which also says why the rule is the door's and not the
- * dial's top position.
- *
  * Neither answer toasts on success. The receipt is the confirmation, where the
  * decision was made; the app's one failure toast (`query-client.ts`) already
  * speaks for both mutations when they fail.
@@ -168,8 +159,6 @@ export function ScheduleApprovalCard({
   // The raise that was actually granted, so the receipt can confirm the LEVEL
   // and not merely the yes. Null for a plain approval and for a rejection.
   const [granted, setGranted] = useState<ScheduleApprovalRaise | null>(null);
-  // A raise waiting at the consent door. Nothing is sent while it sits here.
-  const [pendingRaise, setPendingRaise] = useState<ScheduleApprovalRaise | null>(null);
   // A raise the server turned down, kept so the card can say which half failed.
   const [refusedRaise, setRefusedRaise] = useState<ScheduleApprovalRaise | null>(null);
   const [revealed, setRevealed] = useState(false);
@@ -295,44 +284,6 @@ export function ScheduleApprovalCard({
    */
   const approveAtProposedLevel = () => approve();
 
-  /**
-   * Ask for the raise — through the consent door when the level it grants is
-   * one nobody would be there to be asked by.
-   *
-   * **The fourth route into a never-asking posture, and it gets the same gate
-   * as the other three.** A scheduled run has nobody watching, so a mode that
-   * never asks is something a person agrees to rather than arrives at
-   * (`use-posture-consent.ts`: "a gate on one path is not a gate";
-   * `actsWithoutAsking` is the rule). The rule is not the dial's top position: a runtime can
-   * file a never-asking mode at the MIDDLE stop — Codex's does — and
-   * "Approve at Act" would otherwise hand a schedule a level that cannot pause,
-   * with no dialog anywhere (adversarial review).
-   *
-   * The door is not composed from `usePostureConsent`: that hook lives in
-   * `features/tasks` and a feature may not import a sibling's internals. What is
-   * shared is the RULE and the dialog, both of which are below this layer.
-   *
-   * Plain Approve stays ungated — it grants nothing, so there is nothing to
-   * consent to.
-   *
-   * @param raised - The raise the person clicked.
-   */
-  const requestRaise = (raised: ScheduleApprovalRaise) => {
-    if (answered !== null) return;
-    if (actsWithoutAsking(raised.descriptor)) {
-      setPendingRaise(raised);
-      return;
-    }
-    approve(raised);
-  };
-
-  /** Apply what the door held, and close it. */
-  const confirmRaise = () => {
-    const held = pendingRaise;
-    setPendingRaise(null);
-    if (held) approve(held);
-  };
-
   const reject = () => {
     if (answered !== null) return;
     setDecision('rejected');
@@ -372,33 +323,12 @@ export function ScheduleApprovalCard({
     };
   };
 
-  /**
-   * Whether the card's own `A`/`D` shortcuts are live.
-   *
-   * **False while the consent door stands open**, and that is not a nicety.
-   * `UnattendedAutonomyDialog` is a React CHILD of `AskCard.Root`; Radix
-   * portals its content out of the card's DOM subtree, but a React synthetic
-   * event bubbles the REACT tree, so a keystroke typed into the dialog still
-   * reaches `AskCard.Root`'s `onKeyDown` — whose only guard is `typingInto`,
-   * which answers no for the Cancel button Radix focuses. Measured: with the
-   * door open, `a` PATCHed the approval at the CLAMPED level and drew its
-   * receipt behind the modal (and the confirm then no-opped, because `approve`
-   * returns early once answered), and `d` armed the timed DELETE with its Undo
-   * button stranded under the overlay (re-review).
-   *
-   * Guarded on the PROP rather than by stopping propagation in the dialog: the
-   * prop is what `AskCard.Root` reads to decide whether it is answerable at
-   * all, so this covers any portalled child a later edit puts inside this card,
-   * not only the one that exposed it.
-   */
-  const shortcutsLive = answered === null && pendingRaise === null;
-
   return (
     <AskCard.Root
       isActive={isActive}
       isResolved={answered !== null}
-      onAllow={shortcutsLive ? approveAtProposedLevel : undefined}
-      onDeny={shortcutsLive ? reject : undefined}
+      onAllow={answered === null ? approveAtProposedLevel : undefined}
+      onDeny={answered === null ? reject : undefined}
       data-testid="schedule-approval-card"
       data-task-id={task.id}
       className={cn('flex min-w-0 flex-col gap-2', className)}
@@ -533,7 +463,7 @@ export function ScheduleApprovalCard({
           </CollapsibleTrigger>
           {/* Never omitted, and never the smallest thing on the card. How much
               power an unattended run has is the most consequential fact here —
-              it is half of what consent is being given to — so it reads at the
+              it is half of what is being approved — so it reads at the
               card's body size, beside the instructions rather than behind them.
               A mode that acts without asking says so in words: the mode's NAME
               is not something a person should have to already know the meaning
@@ -633,7 +563,7 @@ export function ScheduleApprovalCard({
               data-slot="schedule-approve-elevated"
               aria-label={`Approve ${name} at ${stopLabel(raise.stop)}`}
               className="h-7 px-2.5 text-xs"
-              onClick={() => requestRaise(raise)}
+              onClick={() => approve(raise)}
             >
               Approve at {stopLabel(raise.stop)}
             </Button>
@@ -693,17 +623,6 @@ export function ScheduleApprovalCard({
           )}
         </AskCard.Actions>
       )}
-
-      {/* The door itself. `descriptor: null` keeps it shut, the same open/closed
-          convention the task form and the relay binding use, and the
-          consequence sentence is the one written once for this surface — a
-          schedule reads the same warning wherever its level is chosen. */}
-      <UnattendedAutonomyDialog
-        descriptor={pendingRaise?.descriptor ?? null}
-        consequence={<ScheduledRunConsequence />}
-        onCancel={() => setPendingRaise(null)}
-        onConfirm={confirmRaise}
-      />
     </AskCard.Root>
   );
 }

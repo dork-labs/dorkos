@@ -74,7 +74,6 @@ import {
   CONNECTOR_RUNTIME_KIND_HEADER,
 } from '../../../connector-tools.js';
 import { createServerPrincipal } from '../../../../connectors/principal/server-principal.js';
-import { NotifyBudget } from '../../../../relay/notify-budget.js';
 import type { McpToolDeps } from '../types.js';
 import type { CapabilityRegistry } from '../../../../core/capabilities/index.js';
 import {
@@ -133,7 +132,6 @@ function createFullDeps(): McpToolDeps {
     extensionManager: stub,
     runtimeRegistry: stub,
     activityService: stub,
-    notifyBudget: new NotifyBudget(),
   };
 }
 

@@ -2644,39 +2644,6 @@ export const UserConfigSchema = z.object({
        */
       responseGate: z.enum(['off', 'routing']).default('routing'),
       /**
-       * How many messages one agent may post into a room inside a single turn.
-       *
-       * Three is room for "on it", the answer, and a correction — and a refusal
-       * for the tenth, so one turn cannot serialise an essay across nine bubbles.
-       * It counts only what an agent posts through the tool while a turn of its
-       * own is running here; nothing you write is ever counted.
-       *
-       * Posting is the only voice an agent has in a room, which is what makes
-       * this a bound worth having. Like every number in this area, it is a
-       * judgement rather than a measurement — see `meta/agent-etiquette.md` §9.
-       *
-       * Every declaration of this value has to agree — here and in the `rooms`
-       * section literal below — for the reason above.
-       */
-      maxPostsPerTurn: z.number().int().min(1).max(10).default(3),
-      /**
-       * How many times one agent may change a room's shared canvas inside a
-       * single turn — opening a document, updating one, closing one.
-       *
-       * Three is the same judgement `maxPostsPerTurn` above makes, for the same
-       * reason: room for the thing you meant to show, a second thing beside it,
-       * and a correction — and a refusal after that, so one turn cannot bury the
-       * table under a dozen tabs nobody asked for. The refusal reaches the agent
-       * in the tool result, so it can put the rest in one change next turn.
-       *
-       * Nothing you do yourself is counted; this bounds agents only.
-       *
-       * Every declaration of this value has to agree — here and in the `rooms`
-       * section literal below — because `conf` merges top-level defaults
-       * shallowly.
-       */
-      maxCanvasOpsPerTurn: z.number().int().min(1).max(10).default(3),
-      /**
        * How many conversations one agent may work in at the same time.
        *
        * An agent's rooms and chats all run in its own folder, so two turns at
@@ -2793,15 +2760,9 @@ export const UserConfigSchema = z.object({
       collectDebounceMs: 500,
       collectMaxEntries: 20,
       responseGate: 'routing' as const,
-      // How much one agent may say in one room turn. Two declarations carry
-      // this value — the per-field one above and this — and both have to agree
-      // or the shallow defaults-merge lands somebody on the other value.
-      maxPostsPerTurn: 3,
-      // How many canvas changes one agent may make in one turn, same judgement
-      // and same both-sites rule as the line above it.
-      maxCanvasOpsPerTurn: 3,
-      // How many conversations one agent may work in at once, same both-sites
-      // rule as the lines above it.
+      // How many conversations one agent may work in at once. Two declarations
+      // carry this value — the per-field one above and this — and both have to
+      // agree or the shallow defaults-merge lands somebody on the other value.
       maxConcurrentTurnsPerAgent: MAX_CONCURRENT_TURNS_PER_AGENT_DEFAULT,
       repo: {
         enabled: true,

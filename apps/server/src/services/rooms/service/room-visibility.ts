@@ -212,10 +212,8 @@ export class RoomVisibility {
    *
    * **One verb takes it now, and it used to be two.** Reactions were the other,
    * on the strength of etiquette E16b; ADR 260814-195522 reverses that, so an
-   * agent may put an emoji on a message and {@link ReactionBudget} — not this
-   * gate — is what bounds it. The kind check moved because the thing being
-   * protected turned out to be volume, not authorship: an acknowledgment from a
-   * colleague is worth having, and a hundred of them are not.
+   * agent may put an emoji on a message (and, since ADR 261006-225605, with no
+   * count on how many).
    *
    * **Agents do not stop each other.** A halt cuts every in-flight turn in a
    * room; an agent reaching for it would be electing itself referee over its

@@ -1124,14 +1124,12 @@ describe('retireToolOnlyReplies migration (tool-only-room-replies §A2, DOR-2099
     }
   });
 
-  it('seeds the ceiling that outlived the experiment when it is absent', () => {
-    // The surviving half of the removed `'0.72.0'`'s job. `maxPostsPerTurn` is a
-    // nested leaf, conf's defaults merge is shallow, and this is now the only
-    // body that writes it — so an install that never ran `'0.72.0'` gets it here
-    // or not at all.
+  it('seeds nothing for the ceiling now that it is retired (DOR-2739)', () => {
+    // The frozen body still names `maxPostsPerTurn`'s default, which no longer
+    // exists, so it writes no value; `'0.102.0'` deletes the leaf regardless.
     const store = createMockStore({ rooms: { maxAgentDepth: 12, toolOnlyReplies: true } });
     retireToolOnlyReplies(store);
-    expect(store.data.rooms).toEqual({ maxAgentDepth: 12, maxPostsPerTurn: 3 });
+    expect(JSON.parse(JSON.stringify(store.data.rooms))).toEqual({ maxAgentDepth: 12 });
   });
 
   it('never overwrites a ceiling somebody chose', () => {
@@ -1160,7 +1158,7 @@ describe('retireToolOnlyReplies migration (tool-only-room-replies §A2, DOR-2099
     expect(store.data.rooms).toBeUndefined();
   });
 
-  it('a real config file loses the leaf and gains the ceiling on disk (full conf path)', () => {
+  it('a real config file loses the leaf on disk (full conf path)', () => {
     // The half neither the mock store nor a `getDot` assertion can reach (see
     // `seedRoomRepoDefaults` above for the DOR-1496 measurement this shape comes
     // from). Suppress the body and this goes red.
@@ -1196,9 +1194,9 @@ describe('retireToolOnlyReplies migration (tool-only-room-replies §A2, DOR-2099
         rooms: Record<string, unknown>;
       };
       expect('toolOnlyReplies' in onDisk.rooms).toBe(false);
-      expect(onDisk.rooms.maxPostsPerTurn).toBe(3);
-      // The upgrade removes one leaf and adds one; it changes nothing the person
-      // had set.
+      // The ceiling it once seeded is retired (DOR-2739), so nothing is added.
+      expect('maxPostsPerTurn' in onDisk.rooms).toBe(false);
+      // It changes nothing the person had set.
       expect(onDisk.rooms.maxAgentDepth).toBe(12);
       expect(onDisk.rooms.replyWaitMinutes).toBe(25);
       expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
@@ -1228,13 +1226,13 @@ describe('retireToolOnlyReplies migration (tool-only-room-replies §A2, DOR-2099
       );
 
       initConfigManager(dir);
-      expect(applyConfigPatch({ rooms: { maxPostsPerTurn: 2 } }).ok).toBe(true);
+      expect(applyConfigPatch({ rooms: { replyWaitMinutes: 25 } }).ok).toBe(true);
 
       const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
         rooms: Record<string, unknown>;
       };
       expect('toolOnlyReplies' in onDisk.rooms).toBe(false);
-      expect(onDisk.rooms.maxPostsPerTurn).toBe(2);
+      expect(onDisk.rooms.replyWaitMinutes).toBe(25);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -1242,17 +1240,12 @@ describe('retireToolOnlyReplies migration (tool-only-room-replies §A2, DOR-2099
 });
 
 describe('seedRoomCanvasOps migration (room-canvas §3.4, DOR-1999)', () => {
-  it('reserves the leaf on a `rooms` block that predates the room canvas', () => {
-    // What this catches: conf merges top-level defaults SHALLOWLY, so an
-    // upgrading install with a stored `rooms` block never inherits the new leaf
-    // on its own. Drop the body and it reads `undefined`.
-    const store = createMockStore({ rooms: { maxAgentDepth: 12, maxPostsPerTurn: 1 } });
+  it('reserves no value now that the leaf is retired (DOR-2739)', () => {
+    // The frozen body names a default that no longer exists, so the value it
+    // writes is empty; `'0.102.0'` deletes the leaf regardless.
+    const store = createMockStore({ rooms: { maxAgentDepth: 12 } });
     seedRoomCanvasOps(store);
-    expect(store.data.rooms).toEqual({
-      maxAgentDepth: 12,
-      maxPostsPerTurn: 1,
-      maxCanvasOpsPerTurn: 3,
-    });
+    expect(JSON.parse(JSON.stringify(store.data.rooms))).toEqual({ maxAgentDepth: 12 });
   });
 
   it('never overwrites a ceiling somebody tightened (idempotent)', () => {
@@ -1273,7 +1266,7 @@ describe('seedRoomCanvasOps migration (room-canvas §3.4, DOR-1999)', () => {
     expect(store.data.rooms).toBeUndefined();
   });
 
-  it('a real pre-0.79.0 config file gains the leaf on disk (full conf path)', () => {
+  it('a real pre-0.79.0 config file runs it cleanly on disk (full conf path)', () => {
     // The half neither the mock store nor a `getDot` assertion can reach: conf's
     // `store` getter re-reads and re-parses the file and hands back a copy Ajv
     // has already filled the default into, and that copy is discarded. Suppress
@@ -1310,10 +1303,10 @@ describe('seedRoomCanvasOps migration (room-canvas §3.4, DOR-1999)', () => {
       const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
         rooms: Record<string, unknown>;
       };
-      expect(onDisk.rooms.maxCanvasOpsPerTurn).toBe(3);
-      // The upgrade adds one leaf; it changes nothing the person had set.
+      // The retired leaf is never added (DOR-2739); nothing the person had set
+      // changes.
+      expect('maxCanvasOpsPerTurn' in onDisk.rooms).toBe(false);
       expect(onDisk.rooms.maxAgentDepth).toBe(12);
-      expect(onDisk.rooms.maxPostsPerTurn).toBe(1);
       expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -3974,7 +3967,7 @@ describe('CONFIG_MIGRATIONS append-only pins (DOR-1222 regression guard)', () =>
     // pass this having scanned nothing. The count is the knowable bound; the
     // table is append-only, so raising it is the deliberate act of adding a
     // migration, which is exactly when this check should be re-read.
-    expect(Object.keys(bodies)).toHaveLength(44);
+    expect(Object.keys(bodies)).toHaveLength(45);
 
     const reaching = Object.keys(bodies).filter((key) =>
       reachedDeclarations(bodies[key]!, pool).includes('describeLoadError')

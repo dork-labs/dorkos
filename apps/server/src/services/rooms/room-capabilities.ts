@@ -92,10 +92,11 @@
  * The two conversation writes are `act`, not `destructive`. A card on every message an agent
  * posts into its own room would be the over-tiering that teaches people to click
  * through, and nothing either verb does is irreversible in the sense
- * `destructive` means. What bounds them instead is a mechanism apiece, and both
- * live below this file, in the service: the cascade guard and the two-ceiling turn
- * budget for a post, {@link ReactionBudget} for a reaction. `I2` — bounds are
- * mechanisms, never prompts, and never tiers pretending to be one.
+ * `destructive` means. What stops a runaway exchange lives below this file, in
+ * the service: the cascade guard and the two-ceiling turn budget for a post. A
+ * reaction starts no turn, so it needs none (ADR 261006-225605 removed the
+ * agent-only hourly count). Bounds are mechanisms, never tiers pretending to be
+ * one.
  *
  * ## The CONVERSATION verbs have no switch; the verbs that arrange rooms sit in
  * the Rooms permission area
@@ -832,7 +833,7 @@ export const roomsDomain: CapabilityDomain = {
               });
         // **The write can still refuse after the bytes are on disk**, and a
         // refusal is the ordinary case rather than the exotic one: a mistyped
-        // `roomId`, the per-turn post ceiling, a stopped turn, an archived room.
+        // `roomId`, a stopped turn, an archived room.
         // The rules that decide those live inside
         // `postFromTool` and must stay there — a dry run here would be the
         // second write path that file exists to refuse — so the files are taken
@@ -899,8 +900,8 @@ export const roomsDomain: CapabilityDomain = {
         'the work is done: a ✅ that replaced your own 👀 means finished. ' +
         'Nobody is interrupted by it: it starts no turn and notifies no one. ' +
         'Calling it again with the same emoji takes the reaction back. ' +
-        'You have a limited number of these per room per hour, so spend them where a word would ' +
-        'otherwise be noise — and when something needs saying, say it.',
+        'Spend them where a word would otherwise be noise — and when something needs saying, ' +
+        'say it.',
       tier: 'act',
       area: null,
       areaNote: 'conversation verbs never get a switch',

@@ -97,8 +97,7 @@ function heldRoomTurn(say: string | null, finishRequested: FinishRequested): Sce
  * the membership check and the message would simply never appear, so this fails
  * closed and says so in what it returns.
  *
- * Every bound the product applies applies here: the per-turn post ceiling, the
- * stopped-turn refusal, the cascade stamp the live claim carries, and the
+ * Every bound the product applies applies here: the stopped-turn refusal, the cascade stamp the live claim carries, and the
  * `answersEntryId`/`sessionId` pointers the claim fills in. That is the point of
  * calling the real thing.
  *

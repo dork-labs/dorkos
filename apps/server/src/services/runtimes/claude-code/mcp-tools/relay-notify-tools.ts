@@ -10,43 +10,24 @@
  * operator's inbox as history rather than only passing through a chat window.
  * Nothing about the tool's surface, its scope or its bounds changed: the same
  * arguments, the same JSON answers, the same binding resolution, the same
- * `canInitiate` consent gate, the same hourly budget spent at the same moment.
+ * `canInitiate` consent gate.
  *
  * **An external integration is still first preference**, unchanged: if a bound
  * Telegram or Slack chat resolves, the message goes there under exactly the
  * rules it always did. The DM is what happens instead of nothing (DOR-1209).
  *
- * **What bounds it is an hourly count, not a card** (DOR-1265). This verb does
- * not raise an approval prompt for an agent-identified session — one raised
- * during a room turn parked the turn on a card nobody was watching — so
- * {@link NotifyBudget} is what stands between a looping agent and a person's
- * evening. Be precise about what that gave up and what it did not: the note goes
- * only inside a scope the OPERATOR configured — their own DorkOS DM, or a
- * binding they switched "Agent can start conversations" on for (`canInitiate`,
- * default false, so setup consent is untouched). That scope is frequently WIDER
- * than one person: a binding may name a group or somebody else's chat, and one
- * with the chat filter left empty (the cockpit's default) covers every chat that
- * has messaged the adapter. What the auto-allow removed is the per-call card an
- * operator watching a DIRECT session could have denied — not the scope, and not
- * the switch.
- *
- * **Two things about that ceiling changed when notes started leaving inbox rows
- * behind** (DOR-1383), and both make it a real bound rather than a chat-only
- * one. A note the budget refuses now writes no row either — otherwise a looping
- * agent simply interrupts by a quieter route. And a note that reaches no
- * transport at all now COSTS the hour, where it used to be refunded: on a stock
- * install nothing external resolves, so every note took the refunded path and
- * the ceiling could never be reached. The two refusals that are the operator's
- * own decision are still free — `INITIATE_NOT_ALLOWED`, which also writes no
- * row, and the per-binding task opt-in — because charging for a switch somebody
- * set would be billing them for their own preference.
+ * **No count bounds it** (ADR 261006-225605, DOR-2739). The hourly note
+ * allowance an agent once had was a cap on our own agent, not a guard against a
+ * stranger, and it is gone: a note goes only inside a scope the OPERATOR
+ * configured — their own DorkOS DM, or a binding they switched "Agent can start
+ * conversations" on for (`canInitiate`) — and every note is recorded in the
+ * inbox. Etiquette (`meta/agent-etiquette.md`) is held by review, not refusal.
  *
  * @module services/runtimes/claude-code/mcp-tools/relay-notify-tools
  */
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
 import { requireRelay, type SenderIdentity } from './relay-helpers.js';
-import { logRefusal } from '../../../observability/refusals.js';
 import { notify } from '../../../notifications/notification-service.js';
 import {
   deliverOverRelay,
@@ -138,15 +119,6 @@ function answerFor(outcome: RelayDeliveryOutcome | undefined, channel: string | 
         },
         true
       );
-    case 'RATE_LIMITED':
-      return jsonContent(
-        {
-          sent: false,
-          error: 'You have sent as many notes as you can for now — say it here instead, or wait.',
-          code: 'NOTIFY_RATE_LIMITED',
-        },
-        true
-      );
     case 'SEND_FAILED':
       return jsonContent({ sent: false, error: outcome.error, code: 'SEND_FAILED' }, true);
     case 'RELAY_DISABLED':
@@ -167,14 +139,11 @@ function answerFor(outcome: RelayDeliveryOutcome | undefined, channel: string | 
  * Send a message to a user — on a bound external integration when one can carry
  * it, and otherwise in the caller's direct message with the operator.
  *
- * @param deps - Tool dependencies, including the install's hourly note budget
- *   (`notifyBudget`, DOR-1265) — built once at boot and shared by every session,
- *   which is what makes the ceiling a ceiling rather than a per-session reset.
+ * @param deps - Tool dependencies.
  * @param identity - Server-injected sender identity; its `agentId` selects the
  *   caller's own integration bindings (never taken from tool args)
  */
 export function createRelayNotifyUserHandler(deps: McpToolDeps, identity: SenderIdentity) {
-  const budget = deps.notifyBudget;
   return async (args: { message: string; channel?: string }) => {
     const err = requireRelay(deps);
     if (err) return err;
@@ -212,19 +181,6 @@ export function createRelayNotifyUserHandler(deps: McpToolDeps, identity: Sender
         fromPrincipal: identity.subject,
         ...(args.channel ? { channel: args.channel } : {}),
         dmFallback: true,
-        reserve: () => {
-          if (budget.tryReserve(agentId)) return true;
-          // Nobody is told but the agent. There is no room notice for this —
-          // the tool is not a room verb and the person it would be about is the
-          // one being protected from it — so this line is the only record a
-          // person could later find.
-          logRefusal('[relay] an agent has sent as many proactive notes as it may this hour', {
-            reason: 'notify_budget',
-            visibility: 'silent',
-            detail: { agentId, tool: 'relay_notify_user' },
-          });
-          return false;
-        },
       },
       {
         relayCore: deps.relayCore,

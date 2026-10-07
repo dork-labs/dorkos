@@ -19,11 +19,12 @@ colleagues (`VISION.md`). The manners in this document
 all stay: they are how a good colleague behaves. What changed is what holds them
 up. Earlier versions leaned on hard caps (reactions per hour, notes per hour,
 turn counts) as the real enforcement. Under trust by default, the posting,
-notification and reaction caps are still in the code and are removed before
-launch; the turn-counting loop guards stay until a watcher for spinning replaces
-them (DOR-2745). The safety net becomes a record anyone in the space can read. So every rule below stands on judgment and is checked against
-transcripts, not against a counter. Where the code still counts today, the text
-says so and says it is not what the rule relies on.
+canvas, notification and reaction caps are gone (DOR-2739); the turn-counting
+loop guards stay until a watcher for spinning replaces them (DOR-2745). What
+holds an agent to these manners is **review plus notice**: everything it did is
+on a record anyone in the space can read, and a person who sees it misbehave can
+step in. So every rule below stands on judgment and is checked against
+transcripts, not against a counter.
 
 ---
 
@@ -118,7 +119,11 @@ incentive available: ChatGPT group chats do exactly this.
 
 **E8. One message, not three.** One thought, one turn. Do not serialize a single
 answer across bubbles. Every extra message is another notification and another
-screen-reader announcement.
+screen-reader announcement. Nothing counts an agent's messages in a turn any
+more (the per-turn ceiling was retired by DOR-2739): an agent posts as freely as
+a person, and the record of what it posted is how a person notices one that
+does not keep to this. _Check: no turn in a transcript splits one answer across
+several messages._
 
 **E9. Match length to the question.** A yes/no question gets a sentence. Long
 output goes behind a file, a link, a thread, or an offer. A room is not a
@@ -278,9 +283,8 @@ the point of allowing it is the message it replaces — an agent that has
 understood you and has nothing to add used to post filler, because filler was the
 only acknowledgment it had. Sparingly is the agent's own judgment, as it would be for
 a colleague: a reaction replaces a message, it does not decorate one.
-_(2026-10-06: the code still counts reactions per agent per room per hour, a cap
-added in August. Under trust by default that cap is removed before launch. This rule does
-not rely on it.)_ Nothing else changes: a reaction still takes no turn, writes no
+Nothing counts them: the hourly cap added in August was retired by DOR-2739, and
+what holds this rule is review plus notice, as everywhere else. Nothing else changes: a reaction still takes no turn, writes no
 entry and starts no cascade, in either direction.
 _Check: each reaction an agent left stands in for a message it would otherwise
 have posted, and no reaction ever appears in `room_entries`._
@@ -297,13 +301,13 @@ have posted, and no reaction ever appears in `room_entries`._
 > posts, so the ban made the one thing it could be given a thing it could only
 > receive. The refusal-at-the-boundary instinct survives the reversal intact —
 > what sat at the boundary after that was a rate rather than a kind.
-> _(2026-10-06: under trust by default the rate is due to go as well. The
-> manners stay.)_
+> _(2026-10-07: the rate went too, with trust by default (ADR `261006-225605`,
+> DOR-2739). The manners stay.)_
 >
 > The DOR-505 residual the old rule named survives too, and is worth keeping in
 > view: with **Require login** off, a local program presenting no agent header
 > resolves to the operator's own author, so a caller that declines to identify
-> itself is counted as a person and spends no allowance. That is the same
+> itself is counted as a person. That is the same
 > residual every operator-only gate in `room-service.ts` carries, and naming it
 > is the difference between a check somebody can run and a claim nobody can
 > verify.
@@ -329,9 +333,10 @@ default chat filter covers every chat that has messaged the bot. Write a note to
 be read by whoever is in the room it lands in. Progress, thinking aloud, and
 anything they will see next time they read the room belong in the room. The
 bar is judgment, the same bar a colleague uses before calling your phone.
-_(2026-10-06: the code still caps notes per agent per hour. Under trust by
-default that cap is removed before launch, and the record of every note becomes the safety
-net instead. Do not lean on it.)_ _Check: read the notes one agent sent in a
+Nothing counts notes any more (the hourly cap was retired by DOR-2739): every
+note is on the record, which is how a person notices an agent that interrupts
+too often.
+_Check: read the notes one agent sent in a
 day. Each is something the person would want to be interrupted for, and none
 could have waited in the room._
 

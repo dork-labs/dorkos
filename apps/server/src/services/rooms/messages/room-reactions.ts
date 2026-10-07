@@ -13,7 +13,6 @@
  */
 import type { RoomEntryReaction, RoomReactionEvent } from '@dorkos/shared/room-schemas';
 import { logger } from '../../../lib/logger.js';
-import type { ReactionBudget } from '../reactions/reaction-budget.js';
 import type { ReactionStore } from '../reactions/reaction-store.js';
 import type { AuthorRegistry } from '../author-registry.js';
 import type { RoomCore } from '../service/room-core.js';
@@ -28,8 +27,6 @@ export class RoomReactions {
   private readonly store: RoomStore;
   private readonly authors: AuthorRegistry;
   private readonly reactions: ReactionStore;
-  /** How many emoji an agent may still land in one room this hour. */
-  private readonly reactionBudget: ReactionBudget;
   private readonly triggers: RoomTriggerDispatcher;
 
   constructor(
@@ -40,7 +37,6 @@ export class RoomReactions {
     this.store = core.store;
     this.authors = core.authors;
     this.reactions = core.reactions;
-    this.reactionBudget = core.reactionBudget;
     this.triggers = core.triggers;
   }
 
@@ -69,10 +65,6 @@ export class RoomReactions {
    *   `post` draws the same line and this one is no looser.
    * - **Archived** → `ROOM_ARCHIVED`. Archiving promises a room gains nothing
    *   more, and a pill is something it would gain.
-   * - **An agent out of allowance** → `REACTION_RATE_LIMITED`. Agents may react
-   *   (ADR 260814-195522, reversing etiquette E16b); what they may not do is
-   *   react without a bound, because a reaction costs nothing and so nothing else
-   *   in the system would ever slow one down. People are not counted.
    * - **No such entry here** → `ENTRY_NOT_FOUND`, scoped to this room so an id
    *   from elsewhere cannot attach a reaction to a message in a room the caller
    *   cannot see.
@@ -128,29 +120,9 @@ export class RoomReactions {
         'This conversation was stopped, so nothing more from this turn lands here. Wait for the next message before reacting.'
       );
     }
-    // Asked LAST of the refusals, and after the entry check, because it is the
-    // only one that SPENDS something: a caller that was going to be refused for
-    // any other reason must not have an allowance taken off it on the way out.
-    //
-    // **Only an ADDITION spends.** Taking a reaction back is never refused and
-    // never charged, because a retraction is the remedy for a reaction somebody
-    // regrets and an agent that cannot take one back is an agent whose mistakes
-    // are permanent — and because it makes the ceiling honest to describe:
-    // twenty an hour means twenty pills, not twenty clicks. Which way this call
-    // goes is settled before the write, from the row state: `on: false` removes,
-    // a flip removes what is standing, and `on: true` on a reaction already there
-    // is a no-op a retrying client must not be charged for.
-    if (this.authors.getById(viewerAuthorId)?.kind !== 'human') {
-      const standing = this.reactions.has({ roomId, entryId, authorId: viewerAuthorId, emoji });
-      const lands = on === false ? false : !standing;
-      if (lands && !this.reactionBudget.tryReserve(roomId, viewerAuthorId)) {
-        throw new RoomError(
-          'REACTION_RATE_LIMITED',
-          'You have used up your reactions in this room for now — say something instead, or wait.'
-        );
-      }
-    }
-
+    // No count: an agent's reactions are not capped (ADR 261006-225605). A
+    // reaction starts no turn and no cascade, so it cannot feed a loop, and the
+    // pill carries the agent's id for anyone reviewing what it did.
     const reacted = this.reactions.set(
       { roomId, entryId, authorId: viewerAuthorId, emoji },
       new Date().toISOString(),

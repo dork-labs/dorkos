@@ -314,18 +314,6 @@ You do not have to edit the file for these. **Settings → Advanced → Room lim
       type: "'off' | 'routing'",
       default: "'routing'",
     },
-    'rooms.maxPostsPerTurn': {
-      description:
-        'How many messages one agent may post into a room during a single turn. Three is room for "on it", the answer, and a correction; the fourth is refused and the agent is told to say it in one message. Nothing you write is ever counted. Only you can change this.',
-      type: 'integer (1--10)',
-      default: '3',
-    },
-    'rooms.maxCanvasOpsPerTurn': {
-      description:
-        "How many times one agent may change a room's shared canvas during a single turn — putting a document on it, changing one, taking one off. Three is room for the thing it meant to show you, a second thing beside it, and a correction; the fourth is refused and the agent is told to put the rest in one change next turn. Nothing you do yourself is ever counted. Only you can change this.",
-      type: 'integer (1--10)',
-      default: '3',
-    },
     'rooms.maxConcurrentTurnsPerAgent': {
       description:
         'How many conversations one agent may work in at the same time. Higher is faster, but turns that change the same files can collide. A message sent while the agent is at the limit waits and starts when one of its conversations finishes; you never have to send it again. One agent never runs two turns in the same room, whatever this says. Set it to 1 to have each agent work on one thing at a time. Only you can change this.',

@@ -32,7 +32,6 @@ export {
   documentBeingEditedMessage,
   roomScope,
   targetedTurnId,
-  tooManyCanvasOpsMessage,
   type CanvasApplyResult,
   type CanvasLedgerEntry,
   type CanvasOpenOptions,

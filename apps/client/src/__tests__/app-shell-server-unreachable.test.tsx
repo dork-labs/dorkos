@@ -180,11 +180,6 @@ vi.mock('@/layers/entities/relay', async (importOriginal) => ({
   useRelayAdaptersSync: () => {},
 }));
 
-vi.mock('@/layers/entities/unattended-autonomy', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/layers/entities/unattended-autonomy')>()),
-  useUnattendedAutonomySync: () => {},
-}));
-
 // The keep-awake status sync (spec `keep-awake`) subscribes to the event stream
 // too; no-op it like the other syncs.
 vi.mock('@/layers/entities/keep-awake', async (importOriginal) => ({

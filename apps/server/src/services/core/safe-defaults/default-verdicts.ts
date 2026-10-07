@@ -362,14 +362,6 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'rooms.collectDebounceMs': 500,
   'rooms.collectMaxEntries': 20,
   'rooms.responseGate': 'routing',
-  // How many messages one agent may post into a room inside one turn. A real
-  // bound — there was none before it — and the tightest a person might want is
-  // lower, which is why it carries.
-  'rooms.maxPostsPerTurn': 3,
-  // How many times one agent may change a room's shared canvas inside one turn.
-  // A real bound of the same kind, and the tightest a person might want is
-  // lower, which is why it carries.
-  'rooms.maxCanvasOpsPerTurn': 3,
   // How many conversations one agent may work in at once. A bound that starts
   // on — well short of the six writers per folder DOR-500 measured as damaging —
   // and the tightest a person might want is `1`, which is why it carries.

@@ -349,7 +349,6 @@ describe('claimsWorkingIn keeps its ordering promise', () => {
       aside: false,
       spokeViaTool: false,
       reactedViaTool: false,
-      postsThisTurn: 0,
       claimedAt,
       pastDeadline: false,
       activityPublishedAt: 0,

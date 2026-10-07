@@ -106,7 +106,6 @@ const { createTestDb } = await import('@dorkos/test-utils/db');
 const { setRoomService } = await import('../../index.js');
 const { agentLookupFor, createRoomHarness, scriptedRunner } =
   await import('../../__tests__/room-test-harness.js');
-const { tooManyCanvasOpsMessage } = await import('../room-canvas-service.js');
 
 type Harness = ReturnType<typeof createRoomHarness>;
 
@@ -640,7 +639,9 @@ describe('a room turn’s canvas commands', () => {
     expect(log().filter((entry) => entry.body.canvas !== undefined)).toEqual([]);
   });
 
-  it('refuses past the ceiling and names only what it applied', async () => {
+  it('applies every change a turn makes and names them all in one line (DOR-2739)', async () => {
+    // The retired ceiling was three per turn. Four now all land, and the
+    // turn's one canvas line names all four.
     turnBehaviour = (opts) => {
       openTurn(opts);
       for (const n of [1, 2, 3, 4]) {
@@ -651,29 +652,16 @@ describe('a room turn’s canvas commands', () => {
     };
     await createSessionRoomTurnRunner().run(turnRequest());
 
-    // Three rows, and a line naming three. An operation nothing applied is
-    // claimed nowhere — which is the honest guarantee on this path, where a
-    // refusal cannot reach the model.
-    expect(harness.service.canvas.list(room.id)).toHaveLength(3);
+    expect(harness.service.canvas.list(room.id)).toHaveLength(4);
     const canvasLines = log().filter((entry) => entry.body.canvas !== undefined);
     expect(canvasLines).toHaveLength(1);
-    expect(canvasLines[0].body.canvas?.ops).toHaveLength(3);
-    // And the sentence a refused operation would have carried is the one the
-    // handler path returns, not something this path invents.
-    expect(tooManyCanvasOpsMessage(3)).toContain('3 times');
+    expect(canvasLines[0].body.canvas?.ops).toHaveLength(4);
   });
 
-  it('does not hand a finished turn a fresh ceiling', async () => {
-    // The ceiling is a per-TURN budget, and ending is not how a turn earns a new
-    // one. Counting only the OPEN ledger reads zero for every turn that has
-    // closed, so an agent still running past its own line could spend three,
-    // three, three, forever — measured, before this stood, as eight more
-    // applied operations and nine canvas lines for one turn.
+  it('gives a change that lands after its turn closed a line of its own', async () => {
     turnBehaviour = (opts) => {
       openTurn(opts);
-      for (const n of [1, 2, 3, 4]) {
-        opts.projector.ingest({ type: 'ui_command', command: jsonCommand(`doc ${n}`) });
-      }
+      opts.projector.ingest({ type: 'ui_command', command: jsonCommand('doc 1') });
       opts.projector.ingest({ type: 'turn_end' });
       return { accepted: true, canonicalId: opts.sessionId };
     };
@@ -688,10 +676,10 @@ describe('a room turn’s canvas commands', () => {
       command: jsonCommand('one more, after the line went out'),
     });
 
-    // Refused exactly as the in-turn fourth was, with the same sentence.
-    expect(late).toMatchObject({ applied: false, code: 'TOO_MANY_CANVAS_OPS_THIS_TURN' });
-    // And a refusal writes nothing: no row, and no line announcing one.
-    expect(harness.service.canvas.list(room.id)).toHaveLength(3);
-    expect(log().filter((entry) => entry.body.canvas !== undefined)).toHaveLength(1);
+    // Applied, and named exactly once: by a second line, never folded into a
+    // ledger nothing will close again.
+    expect(late).toMatchObject({ applied: true });
+    expect(harness.service.canvas.list(room.id)).toHaveLength(2);
+    expect(log().filter((entry) => entry.body.canvas !== undefined)).toHaveLength(2);
   });
 });

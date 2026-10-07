@@ -75,15 +75,15 @@ export default defineConfig({
     //   negative assertions (no "Advanced" heading for a manifest with no setup
     //   steps) stay green while the shipped rule regresses.
     // - `permission-semantics` backs the unattended-door drift tests: the
-    //   surfaces that must open the same dialog for the same mode —
-    //   `binding/ui/__tests__/BindingAdvancedSection.test.tsx`,
-    //   `tasks/__tests__/CreateTaskDialog.test.tsx` and the scope note's own
-    //   suite — all decide by `actsWithoutAsking`, whose whole job is to say
+    //   surfaces that decide by the same rule —
+    //   `binding/ui/__tests__/BindingAdvancedSection.test.tsx` and the scope
+    //   note's own suite — both use `actsWithoutAsking`, whose whole job is to say
     //   that a mode nobody thought about (a runtime that never asks at the
     //   MIDDLE stop) still acts without asking. Same family as the rest: a rule whose
     //   source text is the subject. Measured: narrowing the predicate back to
     //   `isAutonomyStop` in `src/` with a stale dist reddened 0 of those tests —
-    //   they read yesterday's rule and passed — and 6 with this entry.
+    //   they read yesterday's rule and passed — and 6 with this entry, when a
+    //   task-form gate still shared the rule.
     //
     // Scoped to these six on purpose — see the same note in
     // `apps/server/vitest.config.ts` for what widening to all 43 subpaths cost.

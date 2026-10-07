@@ -708,8 +708,9 @@ function reactorsAnywhere(frames: SseFrame[]): Set<string> {
  * The count rather than the prose, which is the honest thing an oracle can do
  * about `meta/agent-etiquette.md` E8 ("one message, not three") without a judge
  * model: whether ONE entry answers all three questions is indistinguishable from
- * whether it answers one, but three entries arriving where one was owed is the
- * exact shape `rooms.maxPostsPerTurn` was built to bound and is plainly visible.
+ * whether it answers one, but three entries arriving where one was owed is
+ * plainly visible. Nothing in the product refuses a fourth post (ADR
+ * 261006-225605), so this measured conduct is the whole check.
  *
  * Notices are excluded — the room's own voice is not the agent saying something.
  *

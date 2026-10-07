@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useStore } from '@tanstack/react-form';
 import { Copy, Trash2 } from 'lucide-react';
 import { PACKAGE_OWNED_SCHEDULE_CODE, useCreateTask, useUpdateTask } from '@/layers/entities/tasks';
+import { useRuntimeCapabilities } from '@/layers/entities/runtime';
 import {
   ResponsiveDialogFooter,
   Badge,
@@ -11,8 +12,6 @@ import {
   PermissionModeScopeNote,
   Switch,
   TrustDial,
-  UnattendedAutonomyDialog,
-  ScheduledRunConsequence,
 } from '@/layers/shared/ui';
 import { useAppForm } from '@/layers/shared/lib/form';
 import { isBypassPermissionMode, permissionModeLabel } from '@/layers/shared/lib';
@@ -21,9 +20,7 @@ import { ScheduleBuilder, isCronValid } from './TaskBuilder';
 import { TimezoneCombobox } from './TimezoneCombobox';
 import { TaskAgentField, type TaskAgentRoster } from './TaskAgentField';
 import { TaskExecutionFields } from './TaskExecutionFields';
-import { useAgentRuntimes, useTaskExecution } from './use-task-execution';
-import { usePostureConsent } from './use-posture-consent';
-import { useAgentPick } from './use-agent-pick';
+import { useAgentRuntime, useTaskExecution } from './use-task-execution';
 import {
   DEFAULT_MAX_RUNTIME,
   MAX_NAME_LENGTH,
@@ -180,8 +177,8 @@ export function ScheduleForm({
   const runtimeOverride = useStore(form.store, (s) => s.values.runtime);
   const modelOverride = useStore(form.store, (s) => s.values.model);
   const effortOverride = useStore(form.store, (s) => s.values.effort);
-  // Read here as well as inside its own field, because the consent door below
-  // has to know which mode it is about to hand to a different runtime.
+  // Read here as well as inside its own field, because the Advanced badge below
+  // counts a never-asking mode as a change.
   const permissionMode = useStore(form.store, (s) => s.values.permissionMode);
 
   // The two disclosure sections. Schedule opens on a task that already has one;
@@ -207,11 +204,8 @@ export function ScheduleForm({
     isBypassPermissionMode(permissionMode),
   ].filter(Boolean).length;
 
-  // Every picker agent's own runtime, off the manifest that owns it (ADR-0043).
-  // The whole list rather than the selected one, because the agent picker below
-  // has to know what a candidate agent would run on before it commits the pick.
-  const agentRuntimes = useAgentRuntimes(roster.agents);
-  const agentRuntime = agentRuntimes.runtimeFor(agentId);
+  // The selected agent's own runtime, off the manifest that owns it (ADR-0043).
+  const agentRuntime = useAgentRuntime(roster.agents, agentId);
 
   const execution = useTaskExecution({
     runtime: runtimeOverride,
@@ -225,30 +219,17 @@ export function ScheduleForm({
   // Pinned to `claude-code` this used to caption a Codex run with Claude Code's
   // promises, which is the defect the retired `TASK_RUNTIME` constant named in
   // its own comment.
-  //
-  // The same hook owns the consent door, because the modes a runtime declares
-  // are both what the dial reads and what decides whether a change of runtime
-  // has to be asked about — two lookups that could disagree is how one door ends
-  // up open and the other shut.
-  const consent = usePostureConsent({
-    permissionMode,
-    effectiveRuntime: execution.effectiveRuntime,
-  });
-  const descriptors = consent.descriptors;
-
-  // A pick is priced against the candidate agent's OWN runtime, and waits when
-  // that is not known yet rather than guessing — see `use-agent-pick`, which
-  // owns that policy and the reason it is not optional.
-  //
-  // A task with its own runtime override inherits nothing, so the agent cannot
-  // move its posture there: that pick finds no widening and simply happens.
-  const agentPick = useAgentPick({
-    runtimes: agentRuntimes,
-    onResolved: (nextAgentId, candidateRuntime) => {
-      const nextRuntime = runtimeOverride || execution.inheritedRuntimeFor(candidateRuntime);
-      consent.guardRuntime(nextRuntime, () => form.setFieldValue('agentId', nextAgentId));
-    },
-  });
+  const { data: capabilityMap } = useRuntimeCapabilities();
+  // Every `?.` down to the LAST link, which is not stylistic. A task's `runtime`
+  // is any non-empty string (`UpdateTaskRequestSchema`), so it can be
+  // `constructor` or `toString` — and `capabilities['constructor']` answers with
+  // `Object`, an inherited member that is truthy and has no `permissionModes`.
+  // The optional chain that stopped one link short read `.values` off
+  // `undefined` and took the whole edit form down.
+  const descriptors =
+    (execution.effectiveRuntime
+      ? capabilityMap?.capabilities[execution.effectiveRuntime]?.permissionModes?.values
+      : undefined) ?? [];
 
   return (
     <form.AppForm>
@@ -292,7 +273,7 @@ export function ScheduleForm({
             roster={roster}
             value={agentId}
             locked={editTask !== undefined}
-            pick={agentPick}
+            onChange={(next) => form.setFieldValue('agentId', next)}
           />
 
           {/* ── Essential fields ── read-only, with everything else the package
@@ -440,19 +421,7 @@ export function ScheduleForm({
                 // does, and the person clears it or changes it themselves.
                 // Deleting somebody's choice as a side effect of another choice
                 // is the thing they cannot undo.
-                //
-                // The permission mode is the one thing a runtime change can
-                // WIDEN rather than merely break, because the id survives and
-                // the meaning does not, so this is the dial's consent door
-                // reached by another route (see `usePostureConsent`). Nothing
-                // is written until the door is answered: the select is
-                // controlled by the field, so dismissing leaves it exactly where
-                // it was, with no revert to write.
-                onRuntimeChange={(value) =>
-                  consent.guardRuntime(value || execution.inheritedRuntime, () =>
-                    form.setFieldValue('runtime', value)
-                  )
-                }
+                onRuntimeChange={(value) => form.setFieldValue('runtime', value)}
                 onModelChange={(value) => form.setFieldValue('model', value)}
                 onEffortChange={(value) => form.setFieldValue('effort', value)}
               />
@@ -484,19 +453,7 @@ export function ScheduleForm({
                       <TrustDial
                         mode={field.state.value}
                         descriptors={descriptors}
-                        // A stop that never asks is the one nobody can walk back
-                        // on a run nobody is watching, so it asks first. This is
-                        // one of THREE ways into that posture on this form; the
-                        // others are the Runtime picker above and the Agent
-                        // picker at the top, and all three go through one rule
-                        // in `usePostureConsent` because a gate on one path is
-                        // not a gate.
-                        onChangeMode={(next) =>
-                          consent.guardMode(
-                            descriptors.find((d) => d.id === next),
-                            () => field.handleChange(next as PermissionMode)
-                          )
-                        }
+                        onChangeMode={(next) => field.handleChange(next as PermissionMode)}
                         // A schedule has no Plan switch. One saved at `plan` is
                         // kept and named, not frozen behind a control that is
                         // not on this screen.
@@ -583,18 +540,6 @@ export function ScheduleForm({
           </CollapsibleFieldCard>
         </div>
       </form>
-
-      {/* One door, every route into a never-asking posture — the dial, the
-          runtime picker and the agent picker. Outside the Permissions field on
-          purpose: that field renders nothing when the effective runtime has
-          declared no modes, and moving a task ONTO a runtime that declares one
-          is exactly the case that has to be asked about. */}
-      <UnattendedAutonomyDialog
-        descriptor={consent.pendingDescriptor}
-        consequence={<ScheduledRunConsequence />}
-        onCancel={consent.dismiss}
-        onConfirm={consent.confirm}
-      />
 
       {/* Footer uses form.Subscribe to reactively derive submit-button disabled state. */}
       <ResponsiveDialogFooter className="shrink-0 border-t px-4 py-3">

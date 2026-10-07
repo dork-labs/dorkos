@@ -1,5 +1,4 @@
 import { describe, it, expect, vi } from 'vitest';
-import { NotifyBudget } from '../../relay/notify-budget.js';
 import {
   createRelayListAdaptersHandler,
   createRelayEnableAdapterHandler,
@@ -33,7 +32,6 @@ function makeMockDeps(
   adapterManager?: ReturnType<typeof makeMockAdapterManager> | undefined
 ): McpToolDeps {
   return {
-    notifyBudget: new NotifyBudget(),
     transcriptReader: {} as McpToolDeps['transcriptReader'],
     defaultCwd: '/test',
     dorkHome: '/tmp/dorkos-test-home',

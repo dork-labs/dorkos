@@ -144,8 +144,9 @@ PR2, retiring the acknowledgement (no default changes):
 - As built: `needsConsentRitual` is renamed `actsWithoutAsking` rather than deleted, because four readers outlive the ritual (the conformance rule that no runtime is born at such a mode, the Always-allow card that may not adopt one, `session_start`'s rule that such a level is named rather than inherited, the scope notes). The `0.101.0` key deletes `ui.autonomyAcknowledgedAt` (`dropAutonomyAcknowledgement`); the frozen `0.57.0` body that once seeded it is untouched. Request fields `acknowledgedAutonomy` / `acknowledgeAutonomy` leave every schema; an old client sending them is ignored.
 - Delete `services/core/approvals/autonomy-consent.ts` and every 428: `routes/sessions.ts:813`, `permission-service.ts:585,695`, `permission-undo.ts:330`, `config-write-policy.ts`, `operator/config-write.ts`, `session-store.ts`, `session-start-permission.ts` (`hasStandingAutonomyAck`), OpenAPI (`openapi-registry.ts`), `packages/shared/src/permission-semantics.ts` (`needsConsentRitual` and its four consumers), `packages/cli/src/{config-write.ts,config-commands.ts,commands/permissions.ts}` (the `acknowledge-autonomy` command is removed), client `features/chat/.../AutonomyConfirmDialog.tsx`, `use-autonomy-consent.ts`, `use-autonomy-acknowledgement.ts`, `use-trust-stop-writes.ts`, `use-set-permission.ts`, `use-session-status.ts`, `ChatStatusSection.tsx`, `FullPowerDoor.tsx` (stops writing the ack).
 - Config: `ui.autonomyAcknowledgedAt` leaves the schema, is declared retired so the first write drops it, and leaves `SAFE_DEFAULTS`. PR2's migration deletes the key from disk.
-- The relay binding dialog and the schedule form stop opening a consent dialog before Full autonomy; picking it is a normal choice, recorded by the audit trail.
-- The unattended-autonomy banner and its creation confirm are removed in PR3 (§5.10).
+- The relay binding dialog and the schedule form stop opening the Full-autonomy acknowledgement; picking it is a normal choice, recorded by the audit trail.
+- The unattended-autonomy banner and the schedule/task confirm are removed in PR3 (§5.10). The confirm on a Telegram/Slack **binding** set to Full autonomy stays (coordinator decision after PR2 review, 2026-10-07): strangers drive that session, so it protects against outsiders.
+- As built (review follow-up): the stale `onError` mention in `ChatStatusSection.tsx` and an unused `ConfigStore` import in `packages/cli/src/config-write.ts` are cleaned up on the PR2 branch.
 
 PR4, the flip:
 
@@ -192,7 +193,7 @@ Cancel window for `connectors.execute_destructive`:
 
 ### 5.7 Config migration (PR4)
 
-Key: the next free key above the newest `v*` tag at landing time (today `0.102.0`; PR2 takes `0.101.0`). Pin it in `merged-migration-hashes.ts`. Body `applyTrustedPosture(store)` in `config-manager.ts`:
+Key: the next free key above the newest `v*` tag at landing time (today `0.103.0`; PR2 takes `0.101.0`, PR3 takes `0.102.0`). Pin it in `merged-migration-hashes.ts`. Body `applyTrustedPosture(store)` in `config-manager.ts`:
 
 1. **Careful intent** = `permissions.preset === 'careful'`, or `preset == null && ui.fullPowerChoice === 'supervised'`. Then: set `preset: 'careful'` if it was `null`, set `ui.trustNoticeSeenAt` to now, change nothing else.
 2. **Otherwise** (`null`, `'balanced'`, `'full'`, or a hand-written unknown):
@@ -236,7 +237,9 @@ Control Center (`widgets/control-center`) shows the posture as "Trusted" or "Car
 
 ### 5.10 Agent-only caps and the unattended alarm come off (PR3)
 
-Operator scope addition, 2026-10-06 (DOR-2753 is cancelled and folded in here). Full power is assumed for agents, tasks and schedules, so the alarm that says so and the caps that apply only to our own agents go.
+Operator scope addition, 2026-10-06 (DOR-2753 is cancelled and folded in here).
+
+As built (PR3): the per-turn post and canvas refusals, `ReactionBudget`, `NotifyBudget` (with the `RATE_LIMITED` relay outcome, the escalation `reserveNote` and the `notify_budget` refusal reason) are deleted; the `0.102.0` key (`dropAgentTurnCaps`) removes `rooms.maxPostsPerTurn` and `rooms.maxCanvasOpsPerTurn` from disk, and `tolerateRetiredRoomKeys` lets conf load a file that still has them. The frozen helpers that once seeded them (`seedRoomCanvasOps` under `0.79.0`, `retireToolOnlyReplies` under `0.81.0`) keep their text (the append-only guards hash them) and carry `@ts-expect-error` comments. The tool descriptions for `react_to_room_entry` and `relay_notify_user` no longer say "a limited number per hour". Full power is assumed for agents, tasks and schedules, so the alarm that says so and the caps that apply only to our own agents go.
 
 Caps removed (each is a refusal that applies to our agents only; none protects against an outsider):
 
@@ -250,8 +253,8 @@ Caps removed (each is a refusal that applies to our agents only; none protects a
 The unattended alarm removed entirely:
 
 - Server: `services/core/unattended-autonomy/` and the route or event that feeds the banner.
-- Client: `widgets/app-banner/ui/UnattendedAutonomyBanner.tsx` and its entry in `widgets/app-banner/model/use-app-banners.tsx`, `shared/ui/unattended-autonomy-dialog.tsx`, `features/unattended-autonomy`, `entities/unattended-autonomy`, the confirm in `TaskFormInner.tsx`, `ScheduleApprovalCard.tsx`, `use-schedule-approval-power.ts`, `BindingAdvancedSection.tsx`, `scheduled-run-consequence.tsx`, `consent-ritual-copy.ts` (whatever is left after PR2), the Control Center line (`widgets/control-center/ui/ControlCenterBody.tsx`), and the dev showcases (`BannerShowcases.tsx`, `TrustDialShowcases.tsx`).
-- No outsider-fed binding notice is kept: the banner never stopped anything, and what protects a binding from strangers is its prompting default and the chat allowlists, both pinned by the outsider tests.
+- Client: `widgets/app-banner/ui/UnattendedAutonomyBanner.tsx` and its entry in `widgets/app-banner/model/use-app-banners.tsx`, `entities/unattended-autonomy`, the confirm in the task/schedule form (`TaskFormInner.tsx`, `use-posture-consent.ts`) and `ScheduleApprovalCard.tsx`, `use-schedule-approval-power.ts`, `scheduled-run-consequence.tsx`, the Control Center line (`widgets/control-center/ui/ControlCenterBody.tsx`), and the dev showcases (`BannerShowcases.tsx`, `TrustDialShowcases.tsx`).
+- **Kept: the confirm when a person sets a Telegram/Slack binding to Full autonomy** (`BindingAdvancedSection.tsx` and the dialog it opens). Strangers drive a bound chat's session, so that confirm protects against outsiders, which is the one reason Dorian's rule keeps a notice (coordinator decision, 2026-10-07). The app-wide banner goes regardless: it never stopped anything.
 
 Agents create agents like people do:
 

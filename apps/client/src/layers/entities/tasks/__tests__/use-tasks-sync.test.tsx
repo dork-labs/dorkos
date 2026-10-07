@@ -8,8 +8,7 @@
  * `pending_approval`, and before this the list had no way to notice: no SSE,
  * no activity entry, nothing until the next full page reload. This pins the
  * client half of the fix — that `useTasksSync` invalidates the shared tasks
- * query when the server's `tasks_changed` broadcast arrives, the same
- * contract `entities/unattended-autonomy` already pins for the banner.
+ * query when the server's `tasks_changed` broadcast arrives.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { renderHook, waitFor, cleanup } from '@testing-library/react';

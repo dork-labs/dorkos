@@ -38,7 +38,6 @@ function makeDeps(publish: ReturnType<typeof vi.fn>): McpToolDeps {
   return {
     transcriptReader: {} as McpToolDeps['transcriptReader'],
     defaultCwd: '/test',
-    notifyBudget: {} as McpToolDeps['notifyBudget'],
     dorkHome: '/test/.dork',
     relayCore: {
       publish,

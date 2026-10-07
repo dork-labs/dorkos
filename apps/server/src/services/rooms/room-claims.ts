@@ -135,9 +135,9 @@ export interface ActiveClaim {
    * says nothing has still put something in front of the reader, so it is
    * `'answered'` and it must not earn an `agent_declined` line.
    *
-   * **Only a SUCCESSFUL reaction sets it.** One refused by the hourly
-   * `ReactionBudget`, or by the `stoppedIn` mark, put nothing on any message and
-   * must not buy silence — both refuse by throwing, so the mark is set after the
+   * **Only a SUCCESSFUL reaction sets it.** One refused by the `stoppedIn`
+   * mark put nothing on any message and
+   * must not buy silence — it refuses by throwing, so the mark is set after the
    * write rather than before it. A retraction does not set it either: taking a
    * pill back leaves the entry with nothing on it, which is not an answer.
    *
@@ -147,23 +147,6 @@ export interface ActiveClaim {
    * swallow the next one.
    */
   reactedViaTool: boolean;
-  /**
-   * How many messages this agent has posted into this room from inside this turn
-   * (spec `tool-only-room-replies` §D9).
-   *
-   * The counter behind `rooms.maxPostsPerTurn`, and it is a MECHANISM rather than
-   * a prompt on purpose: posting is the only voice an agent has in a room, and
-   * `.claude/rules/room-conduct.md` is unambiguous that a bound belongs in
-   * code. Etiquette E8 ("one message, not three") is exactly the kind of prompt
-   * that does not hold.
-   *
-   * Counted on the claim, so its grain is `(room, agent, dispatch)`: an agent
-   * mid-turn here that posts a note into a DIFFERENT room holds no claim there
-   * and spends nothing against this, and the count starts over with the next
-   * turn. A post made with no claim at all is not counted and not bounded — it
-   * already costs a turn against the cascade budget on its own.
-   */
-  postsThisTurn: number;
   /**
    * The session this turn is actually running on, once the runtime has named it.
    *

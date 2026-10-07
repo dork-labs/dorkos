@@ -196,7 +196,7 @@ vi.mock('@/layers/entities/agent', async (importOriginal) => {
 });
 
 // AppShell mounts useCommandsSync (UX-12), useBindingsSync, useRelayAdaptersSync,
-// useUnattendedAutonomySync, and usePulseFreshness — each subscribes via the
+// and usePulseFreshness — each subscribes via the
 // event stream and so needs an EventStreamProvider. This slot test isolates AppShell and provides no such
 // provider, so no-op the subscriptions here.
 // The live extension-tools subscriber (DOR-2685) reads the event stream this
@@ -253,14 +253,6 @@ vi.mock('@/layers/entities/relay', async (importOriginal) => {
   return {
     ...actual,
     useRelayAdaptersSync: () => {},
-  };
-});
-
-vi.mock('@/layers/entities/unattended-autonomy', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/layers/entities/unattended-autonomy')>();
-  return {
-    ...actual,
-    useUnattendedAutonomySync: () => {},
   };
 });
 

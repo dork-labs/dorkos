@@ -8,7 +8,6 @@ import {
   isNoLooserThan,
   isSilentReadOnly,
   isTightening,
-  isUnattendedAutonomy,
   isWorkingMode,
   actsWithoutAsking,
   resolveTrustStops,
@@ -242,15 +241,14 @@ describe('actsWithoutAsking', () => {
     ).toBe(false);
   });
 
-  it('is strictly wider than the door it replaced and than the banner’s rule', () => {
+  it('is strictly wider than the door it replaced', () => {
     // The predicates are allowed to disagree, and this is the disagreement that
     // matters: the never-asking middle stop is gated by the door, and reported
-    // by none of the others.
+    // by neither of the others.
     const neverAskingMiddle = descriptor({ stop: 'act', asks: 'never', reach: 'workspace' });
     expect(actsWithoutAsking(neverAskingMiddle)).toBe(true);
     expect(isAutonomyStop(neverAskingMiddle)).toBe(false);
     expect(isBypassSemantics(neverAskingMiddle)).toBe(false);
-    expect(isUnattendedAutonomy(neverAskingMiddle)).toBe(false);
   });
 });
 

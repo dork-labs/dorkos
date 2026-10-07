@@ -2,8 +2,9 @@
 /**
  * The Control Center's keep-awake line: present while DorkOS is keeping this
  * computer awake for work, saying the same thing the top-bar cup says, and
- * absent otherwise. The dial, switches and ledger have their own tests and are
- * stubbed here.
+ * absent otherwise. And the line it no longer carries: nothing about bindings
+ * or schedules running unattended at full power (ADR 261006-225605). The dial,
+ * switches and ledger have their own tests and are stubbed here.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
@@ -13,9 +14,6 @@ import type { KeepAwakeStatus } from '@dorkos/shared/schemas';
 vi.mock('../ui/ControlCenterDial', () => ({ ControlCenterDial: () => null }));
 vi.mock('../ui/ControlCenterSwitches', () => ({ ControlCenterSwitches: () => null }));
 vi.mock('../ui/OverridesLedger', () => ({ OverridesLedger: () => null }));
-vi.mock('@/layers/entities/unattended-autonomy', () => ({
-  useUnattendedAutonomy: () => undefined,
-}));
 
 const keepAwake = vi.hoisted(() => ({ status: undefined as KeepAwakeStatus | undefined }));
 vi.mock('@/layers/entities/keep-awake', async (importOriginal) => ({
@@ -53,5 +51,17 @@ describe('ControlCenterBody keep-awake line', () => {
     keepAwake.status = status({ asserted: false });
     render(<ControlCenterBody />);
     expect(screen.queryByTestId('control-center-keep-awake')).not.toBeInTheDocument();
+  });
+});
+
+describe('ControlCenterBody without the unattended alarm', () => {
+  it('says nothing about running unattended at full power', () => {
+    // The body used to read the unattended-autonomy aggregate and draw
+    // "Running unattended at full power: …". It reads nothing of the kind now,
+    // which is also why this render needs no transport at all.
+    keepAwake.status = status({});
+    render(<ControlCenterBody />);
+    expect(screen.getByTestId('control-center-body')).not.toHaveTextContent(/unattended/i);
+    expect(screen.queryByTestId('control-center-unattended')).not.toBeInTheDocument();
   });
 });
