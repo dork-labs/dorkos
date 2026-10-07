@@ -1,8 +1,8 @@
 {
   "spec": "specs/official-community-space/02-specification.md",
   "slug": "official-community-space",
-  "generatedAt": "2026-10-07T00:14:20.982Z",
-  "mode": "full",
+  "generatedAt": "2026-10-07T07:24:34.660Z",
+  "mode": "incremental",
   "lastDecomposeDate": null,
   "tasks": [
     {
@@ -180,6 +180,39 @@
       ],
       "issue": null,
       "parentIssue": null
+    },
+    {
+      "id": "2.5",
+      "phase": 2,
+      "phaseName": "Moderation and the official space",
+      "subject": "[official-community-space] [P2] Add the DecisionModel port with rules, OpenAI-compatible and Jev bridges",
+      "description": "Read specs/official-community-space/02-specification.md first; the decision numbers (D1..D15) are binding. Read research/20261006_decision-models.md §5 and §7 (the design this follows).\n- packages/shared/src/decision-model.ts: DecisionQuestion (choice/score/yesno), DecisionRequest, DecisionAnswer, DecisionResult, DecisionModel with capabilities, DecisionPolicy; Zod schemas; types only, no network.\n- New packages/decisions: rules bridge (pure TS checks, confidence 0/1), OpenAI-compatible chat bridge (forced JSON answer; logprob confidence where offered, else ask twice and lower confidence on disagreement), Jev bridge (System One endpoint via OpenRouter or TypeSafe; yes/no confidence = |p-0.5|*2). Timeouts, unknown labels, outages and refusals all return confidence 0. Circuit breaker per bridge.\n- decisionModelConformance in @dorkos/test-utils, run against every bridge with a stubbed fetch. No real network in any test.\n- Register the package in the root vitest projects list and turbo. TSDoc on exports. Coordinate: DOR-2745 (loop judge) will reuse this port.\nAcceptance: conformance passes for all three bridges; a test pins that DecisionResult types are never accepted by any permission/tool API (type-level or a grep test); changelog fragment only if user-visible (likely none).",
+      "activeForm": "Adding the decision model port",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [
+        "2.1"
+      ],
+      "issue": "DOR-2776",
+      "parentIssue": "DOR-2764"
+    },
+    {
+      "id": "2.6",
+      "phase": 2,
+      "phaseName": "Moderation and the official space",
+      "subject": "[official-community-space] [P2] Run spam and rule checks on Community posts in watch-only mode",
+      "description": "Read specs/official-community-space/02-specification.md first; the decision numbers (D1..D15) are binding. Read research/20261006_decision-models.md §5 and §7 (the design this follows).\n- In apps/community: after a post commits (never in the post request path), run the ladder: rules (rate, links, repeats) then the configured decision models for two questions, spam and rule-breaking (labels from the space rules, neutral codes). Write one decision.* row per rung to audit_events (use case, rung, pinned model id, policy hash, entry id + input hash, answers, confidence, latency, cost).\n- Watch-only: nothing is hidden, held or removed. Owners/admins see the decision as a hint on reports and in a small flagged list in the moderation queue (from 2.1).\n- Side by side: Jev and one OpenAI-format model on the same posts; a comparison (agreement with moderator actions, cost, latency per model) readable from /metrics and a host API read route.\n- Money rule: paid calls need COMMUNITY_DECISIONS_PAID=1 beside each key; a key alone arms nothing; daily call cap per model; past the cap behave as unsure. Add the path to the money table in AGENTS.md with the same shape as the others, and make sure no CI/test task sees the flag (turbo strict env).\n- Decisions only narrow: a test pins that no decision result reaches a permission check.\nAcceptance: pg integration tests with stubbed bridges; a post is never delayed by the checks; changelog fragment.",
+      "activeForm": "Running watch-only spam checks",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "2.5",
+        "2.1"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-2777",
+      "parentIssue": "DOR-2764"
     }
   ]
 }
