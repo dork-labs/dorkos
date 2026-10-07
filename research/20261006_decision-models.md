@@ -33,7 +33,7 @@ No earlier report in `research/` covers this. The closest are `20260228_adapter_
 - **Jev is real.** It is a hosted model from TypeSafe AI, released in early access on 2026-09-15. It answers questions with a label and a confidence number, never with free text. TypeSafe says it takes 70 to 500 milliseconds and costs $0.042 per million input tokens, with output free. TypeSafe's own access is waitlisted, but OpenRouter offers it today with no waitlist.
 - **Jev can be fooled, and stay confident while wrong.** An independent paper (JevOut, 2026-09-24) flipped 61% of Jev's correct answers with short, natural-sounding additions to the input. So a decision model is a filter, never a gate that grants anything.
 - **"Level 1 thinking" is not a term anyone uses.** The real phrase is **"System One model"**, TypeSafe's own name, borrowed from Kahneman's _Thinking, Fast and Slow_ (System 1 is fast gut calls, System 2 is slow careful thought). "Decision model" is what the explainer articles call it. Both phrases are about three weeks old and come from one company.
-- **"Astro" is almost certainly OpenAI's Astra** (often listed as "GPT-6 Astra"), launched 2026-09-03. I found no frontier model named "Astro". **Fable** is Anthropic's Claude Fable 5.1.
+- **The second frontier model is OpenAI's Astra** (listed as "GPT-6 Astra"), launched 2026-09-03. The brief's "Astro" was a typo, confirmed by Dorian. **Fable** is Anthropic's Claude Fable 5.1.
 - **Jev is not alone.** There are three other families that make the same kind of quick call: safety "guard" models (many free and open), small cheap chat models asked to answer in a fixed format, and specialist routers and judges.
 - **There is no shared standard for the answer.** There is a shared _pipe_: most of these speak the OpenAI chat format. Jev does not; it has its own format.
 - **Recommendation:** DorkOS adds one small port, `DecisionModel`, with a fixed question shape (choice, score, yes/no) and a fixed answer shape (label, probabilities, confidence, reason). Every use case runs a ladder: free rules first, then the chosen decision model, then a frontier model, then a person or agent with authority. Every rung writes one row to the audit trail.
@@ -182,8 +182,7 @@ So DorkOS should own the shape. Defining our own small question and answer types
 ## 4. Fable and Astra
 
 - **Fable 5.1** is Anthropic's Claude frontier model (model id `claude-fable-5-1`). DorkOS users already reach Claude through Claude Code.
-- **Astra** is OpenAI's most capable model, launched 2026-09-03, aimed at using computers and browsers and at security and coding work. It drew criticism because its reasoning is harder to inspect. Third-party listings call it "GPT-6 Astra". ([TechCrunch](https://techcrunch.com/2026/09/03/openai-launches-astra-its-powerful-and-controversial-new-model/), [OpenRouter](https://openrouter.ai/openai/gpt-6-astra))
-- I found **no frontier model named "Astro"**. The only other hit was an unrelated spacecraft model.
+- **Astra** is OpenAI's most capable model, launched 2026-09-03, aimed at using computers and browsers and at security and coding work. It drew criticism because its reasoning is harder to inspect. OpenAI's own price list calls it "GPT-6 Astra" (`gpt-6-astra`). ([TechCrunch](https://techcrunch.com/2026/09/03/openai-launches-astra-its-powerful-and-controversial-new-model/), [OpenRouter](https://openrouter.ai/openai/gpt-6-astra))
 
 ## 5. Design for DorkOS
 
