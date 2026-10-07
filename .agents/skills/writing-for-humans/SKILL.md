@@ -100,21 +100,15 @@ Gloss on first use only; after that the reader knows it.
 
 ## Telling the DorkOS story
 
-When a sentence says what DorkOS is, who it is for, or what agents are, use the fixed words in `meta/positioning-202610/00-overview.md`. The short version:
+What DorkOS is, who it is for, the message stack, the words we use and the words and claims we never use all live in one place: `meta/VOICE.md`. Read it before you write a sentence about DorkOS itself. This skill is how to write; that file is what to say. Do not copy its lists into a page or a skill; link to it.
 
-- **What it is:** a workspace for people and agents. That is table stakes, so it never leads. Lead with what sets DorkOS apart, in this order: mini apps (ask for a tool, and your agents build it inside DorkOS), built for founders, and ownership (your computer, your files, your AI plan, free and open source).
-- **Who reads it:** the founder first, a semi-technical person running a business mostly with agents (`meta/personas/the-ai-native-founder.md`). Kai, the developer running many agents, comes second (`meta/personas/the-autonomous-builder.md`). Write for the founder unless the page is plainly for developers.
-- **Agents are co-workers, not assistants.** Describe an agent by its job: "Scout reviews your pull requests," not "your AI assistant." "Co-workers" and "teammates" are fine. Never write that agents are equal to people, are "peers," or can run the business.
-- **Runtimes are a docs fact.** Claude Code, Codex and OpenCode belong on setup and reference pages, not in an opening line.
-- **Mini apps** are the apps your agents build inside DorkOS. The app calls them extensions today, so a docs page may say "mini apps (the app calls them extensions)". A Shape is a different thing, a setup bundle, and keeps its name.
-- **Say "ownership" or "yours," not "local first."**
-- **No Discord.** The DorkOS Community Space is coming and is not built yet. Never link it or say it works.
+Two things to keep in your head while you write:
+
+- **The reader is the founder first**, a semi-technical person running a business mostly with agents (`meta/personas/the-ai-native-founder.md`). Kai, the developer running many agents, comes second (`meta/personas/the-autonomous-builder.md`). Write for the founder unless the page is plainly for developers.
+- **Agents are co-workers.** Describe an agent by its job: "Scout reviews your pull requests."
 
 ## The honesty gate
 
-Plain language never means overclaiming. Follow the demo-claim gate in `meta/positioning-202610/00-overview.md` ("The demo-claim gate", restated in `AGENTS.md`): never say an unverified surface or feature works. Describe what a user can actually do today. Two traps are live right now:
-
-- **Trusted by default** is decided but not built. State the principle ("agents are trusted colleagues; the Activity page shows what each one did"). Never claim there are no permission prompts, that agents have full power by default, or that every action is recorded.
-- **Roadmap items** (more than one person on a server, access levels, goals, the vault, agents with their own computer, publishing, live shared docs) are "coming" or left out.
+Plain language never means overclaiming. The demo-claim gate in `meta/ROADMAP.md` lists what may be described as working today; everything else is "coming" or left out. Describe what a person can actually do now.
 
 No hype words ("powerful," "seamless," "effortless"): show the outcome instead.

@@ -4,6 +4,8 @@ paths: 'apps/desktop/**'
 
 # Desktop App Rules
 
+Strings the desktop app shows a person (menus, dialogs, notifications, the installer, the package `description`) are app copy: follow `app-copy.md`, and take every word about DorkOS itself from `meta/VOICE.md`.
+
 The Electron desktop app (`apps/desktop`) is a thin shell around the same server + React client the CLI app runs. Full reference: `contributing/desktop-app-development.md`. The load-bearing facts:
 
 ## Packaging model
