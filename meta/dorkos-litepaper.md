@@ -35,7 +35,7 @@ The picture to hold in your head is **an office and its workers.**
 
 DorkOS is not an agent and does not contain a model; even its own engine calls a model from outside. The intelligence comes from the agents. The office comes from DorkOS.
 
-The agents in this office are **co-workers, not assistants.** They are co-creators working toward shared goals, each with a job of its own (roadmap: a role and responsibilities on every profile), and the founder leads them the way a founder leads a team.
+The agents in this office are **co-workers, not assistants.** They are co-creators working toward shared goals, each with a job of its own (roadmap: a role and responsibilities on every profile), and the founder leads them the way a founder leads a team. They do not wait to be asked: each one keeps working toward its goals between conversations and reports up like any colleague (see "Proactive and persistent" below).
 
 ---
 
@@ -122,6 +122,19 @@ Every profile, person or agent, has a **role and responsibilities**: a job descr
 
 - **Agents create and own their own outside accounts** where it makes sense: their own Linear account, not a person's. **Roadmap.**
 - **Agents can create agents,** exactly as people can, if their access level allows it. **Roadmap.**
+
+### Proactive and persistent
+
+A co-worker who only acts when spoken to is not a co-worker. DorkOS agents take initiative by default.
+
+- **Schedules.** Agents run work on a timer today: the morning report, the weekly invoice run. **Built.**
+- **A regular beat.** Every agent wakes on a regular rhythm (every half hour in working hours by default), looks at what changed in the work it owns, and does the next useful thing inside its job. Plain code gathers the changes, a small decision model decides whether anything needs doing, and the agent's full brain runs only when there is work. Most beats end quietly, as a line in the record. **Roadmap** (DOR-2788).
+- **Act, ask, tell or stay quiet.** Inside its job, an agent acts. It asks only when a call belongs to someone else: taste, strategy, a relationship, money past its budget, or work outside its role. It tells people after anything they would want to know soon. **Roadmap.**
+- **Reporting up.** Every agent reports to someone, person or agent, with a regular report: done, in progress, at risk, needed. A manager should never learn of an agent's important action from somewhere else. **Roadmap.**
+- **Proactive in work, quiet in speech.** Initiative shows up as finished work and the record, not as more messages. In shared rooms agents stay present, useful and mostly quiet ([`agent-etiquette.md`](agent-etiquette.md)).
+- **Measured.** We judge a proactive agent by what it moves forward and what attention it costs: actions kept, how often its messages are useful, interruptions per useful outcome, and surprises (target: none). **Roadmap.**
+
+The full guide is [`PROACTIVE-AGENTS.md`](PROACTIVE-AGENTS.md).
 
 ### Trusted by default
 
@@ -226,7 +239,7 @@ After launch, the server moves from Express to Hono and merges with the space se
 
 ## Design principles
 
-How DorkOS decides (trusted by default, co-workers, ownership, DorkOS first and ready in under a minute, local first and cloud optional, claim only what works, the quality bar) is in [`PRINCIPLES.md`](PRINCIPLES.md).
+How DorkOS decides (trusted by default, proactive co-workers, ownership, DorkOS first and ready in under a minute, local first and cloud optional, claim only what works, build for the world that is coming, the quality bar) is in [`PRINCIPLES.md`](PRINCIPLES.md).
 
 ---
 
@@ -235,7 +248,7 @@ How DorkOS decides (trusted by default, co-workers, ownership, DorkOS first and 
 - **Not an agent and not a model.** It does not do inference. It is where agents and people work.
 - **Not a chatbot wrapper.** A wrapper puts a face on one model. DorkOS is the shared workplace: conversations, docs, access levels, records and outside tools.
 - **Not a cloud you have to rent.** The full app runs on your computer, free. The cloud is optional.
-- **Not an assistant tool.** The agents in it are co-workers with jobs and goals, not helpers waiting for the next instruction.
+- **Not an assistant tool.** The agents in it are co-workers with jobs and goals, not helpers waiting for the next instruction. They take initiative, keep working between conversations, and report up.
 - **Not a babysitter.** It does not make you approve every step your agents take. It gives you a record and the means to act on it.
 
 ---

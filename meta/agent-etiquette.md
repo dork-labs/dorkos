@@ -472,6 +472,7 @@ finding.
   (planned, not built; see `VISION.md`). Etiquette keeps
   a healthy room pleasant; the loop guard keeps a broken one cheap. Neither
   substitutes for the other.
+- [`PROACTIVE-AGENTS.md`](PROACTIVE-AGENTS.md): what an agent does when nobody is talking to it. It decides _whether_ there is something worth saying; this document decides _how_ it is said. "Proactive in work, quiet in speech" is how the two fit: initiative shows up as finished work and the record, not as more messages.
 - `AGENTS.md` quality standard and the `writing-for-humans` skill: the prose bar
   that section 4 assumes.
   </content>

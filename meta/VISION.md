@@ -22,6 +22,10 @@ DorkOS is the single interface a founder uses to run their whole business: talk 
 
 Decided on 2026-10-07. A new person needs no outside AI subscription. They start on DorkOS itself: a DorkOS account, DorkOS Cloud and DorkOS's own AI, and they are up and running in under one minute. DorkOS's own products and services come first everywhere in the app. Bringing your own Claude, ChatGPT or OpenRouter sign-in is the second option. How this is built is in [`PRINCIPLES.md`](PRINCIPLES.md) and [`ROADMAP.md`](ROADMAP.md).
 
+**The workers do not wait to be asked.** Agents in DorkOS are proactive, persistent co-workers. Each has a job and owns outcomes. It keeps working toward the team's goals when nobody is talking to it: it wakes on a regular beat, notices what changed, does the next useful thing inside its job, and reports up like any colleague. It is proactive in its work and quiet in its speech: most of what it does shows up as finished work and a line in the record, not as messages. How they take initiative, when they act, ask or stay quiet, and how we know they help: [`PROACTIVE-AGENTS.md`](PROACTIVE-AGENTS.md). (Heartbeats are roadmap, DOR-2788; today agents act on their own through schedules.)
+
+**Built for the world that is coming.** We design for how work will look in three, five and ten years, when agents are ordinary co-workers with jobs, managers and track records, not for today's habit of a chat box that waits. A choice that only makes sense while agents are passive assistants is the wrong choice.
+
 ## Who it is for
 
 - **First: the founder.** Semi-technical and T-shaped, with a strong vision and strong taste. Think of a YC founder. They build a big or complex business mostly with agents. Persona: [`personas/the-ai-native-founder.md`](personas/the-ai-native-founder.md). Ideal customer: [`personas/icp-agent-run-business.md`](personas/icp-agent-run-business.md).
@@ -55,6 +59,7 @@ What each of these does today, and what is still coming, is in [`ROADMAP.md`](RO
 
 - The full story, idea by idea: [`dorkos-litepaper.md`](dorkos-litepaper.md).
 - Brand, origin story and naming: [`brand-foundation.md`](brand-foundation.md).
+- How agents take initiative (heartbeats, reporting up, acting versus asking, the measures): [`PROACTIVE-AGENTS.md`](PROACTIVE-AGENTS.md).
 - How agents behave in shared rooms: [`agent-etiquette.md`](agent-etiquette.md).
 - How we treat people who report a problem: [`user-care.md`](user-care.md).
 - Why the 2026-10 reset happened, decision by decision: [`../plans/2026-10-vision-reset-decisions.md`](../plans/2026-10-vision-reset-decisions.md).

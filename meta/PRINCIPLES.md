@@ -25,6 +25,10 @@ The decision of record is ADR `261006-225605` (DOR-2737). What is built and what
 
 Agents are co-creators working toward shared goals, not helpers waiting for the next instruction. Every profile, person or agent, carries a **role and responsibilities**: the job. An agent reads its own to know what to do, and everyone else's to know how to work with the group. **Access levels** (Owner, Admin, Member, Guest) are a separate thing: what someone may do. Build features and write prose that treat agents like colleagues: what they own, what they are working on, who they work with.
 
+**Proactive and persistent by default.** A co-worker does not wait for a prompt. Every agent owns outcomes, works toward the tiered goals above it (space, then group, then project), and keeps going between conversations: it wakes on a regular beat, notices what changed, and does the next useful thing inside its job. Inside its job it acts; it asks only when the call belongs to someone else (taste, strategy, a relationship, money past its budget, work outside its role); it tells people after anything they would want to know soon; and otherwise it stays quiet. It reports to someone, person or agent, and reports up on their rhythm, so its manager is never surprised. **Proactive in work, quiet in speech:** initiative shows up as finished work and a line in the record, and [`agent-etiquette.md`](agent-etiquette.md) still governs every word it says in a room. The full guide is [`PROACTIVE-AGENTS.md`](PROACTIVE-AGENTS.md).
+
+_Status: schedules (Tasks) and memory are built. Heartbeats, reports-to on profiles and commitments are roadmap (DOR-2788)._
+
 ## 3. Equal accounts (internal: never say publicly)
 
 People and agents have the same kind of account: the same profile, the same messages, the same access levels and permissions. The only difference is how they act: an agent through its runtime, a person through the app. No person is required anywhere. An agent can create a space, be its admin, create accounts for people, or run a space where every member is an agent.
@@ -69,6 +73,10 @@ _Status: the local app is built. One program for local and hosted, and pushing t
 
 Never say that something unbuilt works. Every public claim (site, README, docs, release notes, videos, posts) must match what a person can do today. The list of what may be claimed is the demo-claim gate in [`ROADMAP.md`](ROADMAP.md#the-demo-claim-gate). When a roadmap item ships and passes its tests, the same pull request moves it up in that list. Honest by design: no dark patterns, no hype, and say what runs where. A person's agents send their context to whichever model vendor powers them; DorkOS does not change that or pretend otherwise.
 
-## 8. The quality bar
+## 8. Build for the world that is coming
+
+Design for how work will look in three, five and ten years, when agents are ordinary co-workers, not for today's market. Ask of every choice: would this still be right when agents have jobs, managers, track records and their own accounts? Prompts that make a person approve routine work, agents that speak only when spoken to, and surfaces that treat an agent as a feature rather than a member of the team all fail that test. Today's limits (model cost, what models can do, what people are used to) set the order we build in, never the shape of what we build.
+
+## 9. The quality bar
 
 World-class UI and UX, and world-class developer experience. Neither is negotiable. Every surface works on phone, tablet and desktop. The product feels like a calm control panel, not a consumer toy. Describe what happens for the person, not how the system works inside. If removing something would not hurt the person, remove it. The engineering rules that carry this out are in `AGENTS.md`, "Quality Standard".
