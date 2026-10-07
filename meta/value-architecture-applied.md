@@ -3,7 +3,7 @@
 > **2026-10-06 vision reset:** read the 2026-10 Addendum below first (the hero there was replaced on 2026-10-07 by the message stack). The strategy is `VISION.md`. Priya and Lil are retired personas (`archive/personas/`); every Priya column, job map and persona reading in the 1.0 body below is history. _(Earlier note, 2026-09-25: the Obsidian plugin is retired, so in-vault journeys below are historical research. See [retirement and migration](../docs/guides/obsidian-plugin.mdx).)_
 
 **Version**: 1.3
-**Created**: 2026-02-27 (1.0) · **Amended**: 2026-07-06 (positioning review, `positioning-202607/`) · 2026-07-09 (hero reframe: "You, multiplied." roof; personas expanded) · 2026-10-06 (vision reset: new pillars and personas, `positioning-202610/`; pillars re-cut the same day to mini apps, built for founders, ownership) · 2026-10-07 (the message stack replaces the 2026-10-06 hero)
+**Created**: 2026-02-27 (1.0) · **Amended**: 2026-07-06 (positioning review, `archive/positioning-202607/`) · 2026-07-09 (hero reframe: "You, multiplied." roof; personas expanded) · 2026-10-06 (vision reset: new pillars and personas, now in `VISION.md`; pillars re-cut the same day to mini apps, built for founders, ownership) · 2026-10-07 (the message stack replaces the 2026-10-06 hero)
 **Framework**: `meta/value-architecture.md` + `meta/value-architecture-handbook.md`
 **Personas**: `meta/personas/`
 **Brand Foundation**: `meta/brand-foundation.md`
