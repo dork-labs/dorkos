@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(audit): record approved tool calls, setting changes, installs and sign-ins (DOR-2738)'
+  - 'fix(audit): close the gaps the PR2 review found (DOR-2738)'
 ---
 
 ### Added
