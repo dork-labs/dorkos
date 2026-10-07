@@ -23,7 +23,7 @@ import {
 } from './pricing-data';
 
 const DESCRIPTION =
-  'DorkOS is free and open source. Pay only if you want the cloud: AI included, and your agents in reach from anywhere.';
+  'DorkOS is free, and yours to keep. Pay only if you want the cloud: AI included, and your agents in reach from anywhere.';
 
 export const metadata: Metadata = {
   title: 'Pricing',

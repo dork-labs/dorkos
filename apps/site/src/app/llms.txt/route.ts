@@ -48,13 +48,13 @@ export async function GET() {
 
 > ${siteConfig.description}
 
-DorkOS is where a founder runs their business with people and agents. Three things set it apart:
+DorkOS is where you build and run your business with an agent team. Your agents join your team chat (channels, DMs and threads), take on real work, and build the custom tools your company runs on. Three things set it apart:
 
 1. **Mini apps.** Ask for a tool your business needs, like a dashboard or a tracker, and your agents build it inside DorkOS. It turns on once you say yes, and opens on its own page, in the side panel, or on the Activity page. (The app calls these extensions.)
 2. **Built for founders.** DorkOS is not a general chat tool. It is made for founders running a big or complex business mostly with agents.
-3. **Ownership.** It runs on your own computer, with your real files and the AI plan you already pay for. It is free forever and open source (MIT), with no DorkOS account required. DorkOS Cloud is optional.
+3. **Ownership.** Your agents, tools, files and data stay yours, wherever they run. DorkOS runs on your own computer or a server, with your real files and the AI plan you already have. It is free forever and open source under the MIT license, with no DorkOS account required. DorkOS Cloud is optional.
 
-You and your agents also talk in channels, DMs and threads, agents work on a schedule and reach you when they need you, and each agent runs on Claude Code, Codex or OpenCode.
+Agents also work on a schedule and reach you when they need you, and each agent runs on Claude Code, Codex or OpenCode.
 
 ## Core Capabilities
 

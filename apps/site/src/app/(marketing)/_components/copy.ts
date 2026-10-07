@@ -11,9 +11,11 @@ export interface Block {
  * Every word on the home page, in one file.
  *
  * The page's whole argument is about six sentences long, and several of them
- * are settled: "Ask for a tool. Your agents build it." is the lead line of the
- * 2026-10-06 positioning (mini apps first, then founders, then ownership), and
- * "You, multiplied." is the product's tagline. Keeping them here rather than
+ * are settled. The 2026-10-07 message stack is three levels: the tagline
+ * ("You, multiplied.", which closes this page), the headline "Build and run
+ * your business with an agent team.", and the supporting line under it. The
+ * beats below the hero then carry the three differentiators in order (mini
+ * apps, built for founders, ownership). Keeping them here rather than
  * scattered through the components means the word budget is one thing you can
  * read end to end, and `__tests__/home-copy.test.ts` can hold the settled
  * lines still while the rest stays editable.
@@ -25,10 +27,18 @@ export interface Block {
  * re-theming the section in two places. The copy test sweeps that object into
  * the same checks as everything here, so nothing escapes the gates.
  */
+/**
+ * The hero: the headline and supporting line of the message stack.
+ *
+ * The eyebrow stays "for founders" rather than repeating the tagline: "You,
+ * multiplied." is the close's headline, and saying it at both ends of a page
+ * this short spends it. The eyebrow is also the one place above the fold that
+ * names the audience, the second differentiator, which no beat carries.
+ */
 export const HERO: Block = {
   eyebrow: 'for founders',
-  title: 'Ask for a tool. Your agents build it.',
-  lede: 'Your agents build the dashboards and trackers your business needs, right inside DorkOS. On your computer, with your files. Free and open source.',
+  title: 'Build and run your business with an agent team.',
+  lede: 'Your agents join your team chat, take on real work, and build the custom tools your company runs on.',
 };
 
 /**
@@ -38,7 +48,9 @@ export const HERO: Block = {
  * channels and DMs, so it says what happens and claims no edge. The other two
  * carry the differentiators in order. "yours" is mini apps (an agent builds
  * an extension and it opens only after a person says yes, which is what the
- * chat shows), and "computer" is ownership.
+ * chat shows), and "computer" is ownership. The ownership headline says
+ * "yours", never where DorkOS runs, because DorkOS Cloud runs it on a server
+ * too; the laptop the stage draws is the one place the page shows a computer.
  */
 export const BEATS: Record<Beat, Block> = {
   talk: {
@@ -53,8 +65,8 @@ export const BEATS: Record<Beat, Block> = {
   },
   computer: {
     eyebrow: 'all yours',
-    title: 'Your computer. Your files. Your AI plan.',
-    lede: 'Use the AI plan you already pay for. Open source, free forever, and no DorkOS account needed.',
+    title: 'Yours to keep.',
+    lede: 'Your agents, tools, files and data stay yours, wherever they run. Use the AI plan you already have. No DorkOS account needed.',
   },
 };
 

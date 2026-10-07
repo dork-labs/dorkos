@@ -108,18 +108,30 @@ const NAMED_IN_CHAT: DockAppId[] = CHAT_SCRIPT.map((line) => line.dockApp).filte
 
 describe('the settled lines', () => {
   // These are not editorial choices a passing build should be free to
-  // change. The hero is the 2026-10-06 positioning, decided word for word:
-  // mini apps lead, founders are the audience, ownership closes. It replaced
-  // "A workspace for people and agents.", which every rival can say too, so
-  // it is now a fact further down rather than the headline. "You,
-  // multiplied." is the tagline; the rest were approved in the design
-  // session this page came out of. Anything else is fair game to rewrite.
+  // change. The hero is the 2026-10-07 message stack, decided word for word:
+  // the headline and its supporting line, under a "for founders" eyebrow.
+  // The beats below it carry the differentiators (mini apps, then
+  // ownership). "You, multiplied." is the tagline and closes the page; the
+  // rest were approved in the design session this page came out of.
+  // Anything else is fair game to rewrite.
   it('says the decided hero, unedited', () => {
     expect(HERO.eyebrow).toBe('for founders');
-    expect(HERO.title).toBe('Ask for a tool. Your agents build it.');
+    expect(HERO.title).toBe('Build and run your business with an agent team.');
     expect(HERO.lede).toBe(
-      'Your agents build the dashboards and trackers your business needs, right inside DorkOS. On your computer, with your files. Free and open source.'
+      'Your agents join your team chat, take on real work, and build the custom tools your company runs on.'
     );
+  });
+
+  it('never says where DorkOS runs, or "open source", in a headline', () => {
+    // DorkOS Cloud runs it on a server too, so ownership is phrased as
+    // "yours". The download terms line under the button is a fact, not a
+    // headline, and is exempt.
+    const headlines = [
+      ...Object.values(HERO),
+      ...Object.values(BEATS).flatMap((beat) => [beat.eyebrow, beat.title]),
+      CLOSE.title,
+    ];
+    expect(headlines.filter((line) => /computer|open source/i.test(line))).toEqual([]);
   });
 
   it('keeps the runtime names out of the hero', () => {
@@ -132,7 +144,7 @@ describe('the settled lines', () => {
     // Talk is table stakes and claims no edge; then mini apps, then ownership.
     expect(BEATS.talk.title).toBe('Talk to your team.');
     expect(BEATS.yours.title).toBe('Ask for the tool you need.');
-    expect(BEATS.computer.title).toBe('Your computer. Your files. Your AI plan.');
+    expect(BEATS.computer.title).toBe('Yours to keep.');
   });
 
   it('keeps the localhost caption and the tagline', () => {
@@ -172,8 +184,8 @@ describe('the demo-claim gate', () => {
     // The page shows each dock tile being used. `DockApp.feature` names the
     // catalog entry each one depicts, and this resolves every one of them.
     // Connections is the catalog's single `beta` entry, so nothing here may
-    // point at it, which is also what keeps "Your computer. Your files."
-    // true, since its sign-in is held in a third party's vault.
+    // point at it, which is also what keeps "Yours to keep." true, since its
+    // sign-in is held in a third party's vault.
     const bySlug = new Map(features.map((feature) => [feature.slug, feature]));
 
     for (const app of DOCK) {
