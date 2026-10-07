@@ -89,6 +89,15 @@ export const EXPERIMENTS: readonly ExperimentEntry[] = [
     costNote: 'Unavailable while safety checks continue.',
     graduationIssue: 'DOR-2671',
   },
+  {
+    // Every space surface reads this one leaf (DOR-2740): the launch ships
+    // without spaces, and the code keeps moving behind the switch.
+    path: 'spaces.enabled',
+    title: 'Spaces',
+    description: 'Join or start a shared space for people and their agents.',
+    costNote: 'Early and still changing. Your own channels work either way.',
+    graduationIssue: 'DOR-2735',
+  },
   // `runtimes.claudeCode.persistentSession` GRADUATED here (DOR-1290, spec
   // `full-power-defaults`): warm agents ship on by default, so the entry went
   // out in the same change that flipped the default, exactly as the contract

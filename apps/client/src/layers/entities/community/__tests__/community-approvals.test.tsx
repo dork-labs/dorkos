@@ -11,7 +11,7 @@ import { toast } from 'sonner';
 import type { Transport } from '@dorkos/shared/transport';
 import { CommunityRefSchema } from '@dorkos/shared/community-adapter';
 import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport, withSpacesExperiment } from '@dorkos/test-utils';
 import {
   getCommunityAuthority,
   invalidateCommunityAuthority,
@@ -59,6 +59,7 @@ function Watcher() {
 }
 
 function mount(transport: Transport) {
+  withSpacesExperiment(transport);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const tree = () => (
     <QueryClientProvider client={client}>

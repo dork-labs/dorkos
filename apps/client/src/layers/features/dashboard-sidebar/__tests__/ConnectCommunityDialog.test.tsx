@@ -14,7 +14,7 @@ import { toast } from 'sonner';
 import type { Transport } from '@dorkos/shared/transport';
 import { CommunityRefSchema } from '@dorkos/shared/community-adapter';
 import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport, withSpacesExperiment } from '@dorkos/test-utils';
 import { invalidateCommunityAuthority } from '@/layers/shared/lib';
 import { TransportProvider } from '@/layers/shared/model';
 import {
@@ -126,16 +126,18 @@ function mount(transport: Transport, request: ConnectCommunityRequest | null): M
 describe('ConnectCommunityDialog', () => {
   it('connects through Transport, then offers the approval page and focuses it', async () => {
     const user = userEvent.setup();
-    const transport = createMockTransport({
-      listCommunityConnections: vi.fn().mockResolvedValueOnce([]).mockResolvedValue([pending]),
-      startCommunityConnection: vi.fn().mockResolvedValue({
-        connection: pending,
-        approvalUrl: 'https://a.example/pair?code=public',
-      }),
-      pollCommunityConnection: vi
-        .fn()
-        .mockResolvedValue({ status: 'pending', connection: pending }),
-    });
+    const transport = withSpacesExperiment(
+      createMockTransport({
+        listCommunityConnections: vi.fn().mockResolvedValueOnce([]).mockResolvedValue([pending]),
+        startCommunityConnection: vi.fn().mockResolvedValue({
+          connection: pending,
+          approvalUrl: 'https://a.example/pair?code=public',
+        }),
+        pollCommunityConnection: vi
+          .fn()
+          .mockResolvedValue({ status: 'pending', connection: pending }),
+      })
+    );
     mount(transport, { ref: null });
     // The installation's own name is offered, and the form waits for the owner.
     expect(screen.getByLabelText('Name for this installation')).toHaveValue('Studio Mac');
@@ -160,10 +162,12 @@ describe('ConnectCommunityDialog', () => {
 
   it('says so when the address does not lead to a community', async () => {
     const user = userEvent.setup();
-    const transport = createMockTransport({
-      listCommunityConnections: vi.fn().mockResolvedValue([]),
-      startCommunityConnection: vi.fn().mockRejectedValue(new Error('not a community')),
-    });
+    const transport = withSpacesExperiment(
+      createMockTransport({
+        listCommunityConnections: vi.fn().mockResolvedValue([]),
+        startCommunityConnection: vi.fn().mockRejectedValue(new Error('not a community')),
+      })
+    );
     mount(transport, { ref: null });
     const address = screen.getByLabelText('Space address or invitation link');
     await waitFor(() => expect(address).toBeEnabled());
@@ -181,10 +185,12 @@ describe('ConnectCommunityDialog', () => {
       new Error('That address has more than one space on it. Use the link for the one you want.'),
       { status: 409, code: 'COMMUNITY_SELECTION_REQUIRED' }
     );
-    const transport = createMockTransport({
-      listCommunityConnections: vi.fn().mockResolvedValue([]),
-      startCommunityConnection: vi.fn().mockRejectedValue(selectionRequired),
-    });
+    const transport = withSpacesExperiment(
+      createMockTransport({
+        listCommunityConnections: vi.fn().mockResolvedValue([]),
+        startCommunityConnection: vi.fn().mockRejectedValue(selectionRequired),
+      })
+    );
     mount(transport, { ref: null });
     const address = screen.getByLabelText('Space address or invitation link');
     await waitFor(() => expect(address).toBeEnabled());
@@ -201,15 +207,17 @@ describe('ConnectCommunityDialog', () => {
 
   it('falls back to a general example when the typed address cannot be read', async () => {
     const user = userEvent.setup();
-    const transport = createMockTransport({
-      listCommunityConnections: vi.fn().mockResolvedValue([]),
-      startCommunityConnection: vi.fn().mockRejectedValue(
-        Object.assign(new Error('Choose a community.'), {
-          status: 409,
-          code: 'COMMUNITY_SELECTION_REQUIRED',
-        })
-      ),
-    });
+    const transport = withSpacesExperiment(
+      createMockTransport({
+        listCommunityConnections: vi.fn().mockResolvedValue([]),
+        startCommunityConnection: vi.fn().mockRejectedValue(
+          Object.assign(new Error('Choose a community.'), {
+            status: 409,
+            code: 'COMMUNITY_SELECTION_REQUIRED',
+          })
+        ),
+      })
+    );
     mount(transport, { ref: null });
     const address = screen.getByLabelText('Space address or invitation link');
     await waitFor(() => expect(address).toBeEnabled());
@@ -231,10 +239,12 @@ describe('ConnectCommunityDialog', () => {
   ])('refuses a join link with %s, without sending it', async (_label, link) => {
     const user = userEvent.setup();
     const start = vi.fn();
-    const transport = createMockTransport({
-      listCommunityConnections: vi.fn().mockResolvedValue([]),
-      startCommunityConnection: start,
-    });
+    const transport = withSpacesExperiment(
+      createMockTransport({
+        listCommunityConnections: vi.fn().mockResolvedValue([]),
+        startCommunityConnection: start,
+      })
+    );
     mount(transport, { ref: null });
     const address = screen.getByLabelText('Space address or invitation link');
     await waitFor(() => expect(address).toBeEnabled());
@@ -253,10 +263,12 @@ describe('ConnectCommunityDialog', () => {
   /** Submit an address and return the alert the refusal leaves behind. */
   async function refusedWith(refusal: unknown, typed = 'https://spaces.example.com/acme') {
     const user = userEvent.setup();
-    const transport = createMockTransport({
-      listCommunityConnections: vi.fn().mockResolvedValue([]),
-      startCommunityConnection: vi.fn().mockRejectedValue(refusal),
-    });
+    const transport = withSpacesExperiment(
+      createMockTransport({
+        listCommunityConnections: vi.fn().mockResolvedValue([]),
+        startCommunityConnection: vi.fn().mockRejectedValue(refusal),
+      })
+    );
     mount(transport, { ref: null });
     const address = screen.getByLabelText('Space address or invitation link');
     await waitFor(() => expect(address).toBeEnabled());
@@ -344,15 +356,17 @@ describe('ConnectCommunityDialog', () => {
   });
 
   it('closes and hands over the Community once it is approved', async () => {
-    const transport = createMockTransport({
-      listCommunityConnections: vi
-        .fn()
-        .mockResolvedValueOnce([pending])
-        .mockResolvedValue([connected]),
-      pollCommunityConnection: vi
-        .fn()
-        .mockResolvedValue({ status: 'connected', connection: connected }),
-    });
+    const transport = withSpacesExperiment(
+      createMockTransport({
+        listCommunityConnections: vi
+          .fn()
+          .mockResolvedValueOnce([pending])
+          .mockResolvedValue([connected]),
+        pollCommunityConnection: vi
+          .fn()
+          .mockResolvedValue({ status: 'connected', connection: connected }),
+      })
+    );
     const view = mount(transport, { ref: pending.ref });
     await waitFor(() => expect(view.onConnected).toHaveBeenCalledWith(pending.ref));
     expect(view.onOpenChange).toHaveBeenCalledWith(false);
@@ -360,10 +374,12 @@ describe('ConnectCommunityDialog', () => {
   });
 
   it('returns to the form, saying why, when the approval expires', async () => {
-    const transport = createMockTransport({
-      listCommunityConnections: vi.fn().mockResolvedValueOnce([pending]).mockResolvedValue([]),
-      pollCommunityConnection: vi.fn().mockResolvedValue({ status: 'expired', connection: null }),
-    });
+    const transport = withSpacesExperiment(
+      createMockTransport({
+        listCommunityConnections: vi.fn().mockResolvedValueOnce([pending]).mockResolvedValue([]),
+        pollCommunityConnection: vi.fn().mockResolvedValue({ status: 'expired', connection: null }),
+      })
+    );
     mount(transport, { ref: pending.ref });
     await waitFor(() =>
       expect(screen.getByRole('status')).toHaveTextContent(
@@ -378,13 +394,15 @@ describe('ConnectCommunityDialog', () => {
     const user = userEvent.setup();
     // Another window's check found it expired, or it was cancelled elsewhere:
     // the list the start re-reads no longer has it.
-    const transport = createMockTransport({
-      listCommunityConnections: vi.fn().mockResolvedValue([]),
-      startCommunityConnection: vi.fn().mockResolvedValue({
-        connection: pending,
-        approvalUrl: 'https://a.example/pair?code=public',
-      }),
-    });
+    const transport = withSpacesExperiment(
+      createMockTransport({
+        listCommunityConnections: vi.fn().mockResolvedValue([]),
+        startCommunityConnection: vi.fn().mockResolvedValue({
+          connection: pending,
+          approvalUrl: 'https://a.example/pair?code=public',
+        }),
+      })
+    );
     mount(transport, { ref: null });
     const address = screen.getByLabelText('Space address or invitation link');
     await waitFor(() => expect(address).toBeEnabled());
@@ -401,16 +419,18 @@ describe('ConnectCommunityDialog', () => {
 
   it('hides the approval link and notice once the owner changes', async () => {
     const user = userEvent.setup();
-    const transport = createMockTransport({
-      listCommunityConnections: vi.fn().mockResolvedValueOnce([]).mockResolvedValue([pending]),
-      startCommunityConnection: vi.fn().mockResolvedValue({
-        connection: pending,
-        approvalUrl: 'https://a.example/pair?code=public',
-      }),
-      pollCommunityConnection: vi
-        .fn()
-        .mockResolvedValue({ status: 'pending', connection: pending }),
-    });
+    const transport = withSpacesExperiment(
+      createMockTransport({
+        listCommunityConnections: vi.fn().mockResolvedValueOnce([]).mockResolvedValue([pending]),
+        startCommunityConnection: vi.fn().mockResolvedValue({
+          connection: pending,
+          approvalUrl: 'https://a.example/pair?code=public',
+        }),
+        pollCommunityConnection: vi
+          .fn()
+          .mockResolvedValue({ status: 'pending', connection: pending }),
+      })
+    );
     mount(transport, { ref: null });
     const address = screen.getByLabelText('Space address or invitation link');
     await waitFor(() => expect(address).toBeEnabled());
@@ -435,13 +455,15 @@ describe('ConnectCommunityDialog', () => {
       .fn()
       .mockResolvedValue({ ownerKey: 'owner-a', order: [], destinations: [] });
     const list = vi.fn().mockResolvedValue([pending]);
-    const transport = createMockTransport({
-      getCommunityNavigation: navigation,
-      listCommunityConnections: list,
-      pollCommunityConnection: vi
-        .fn()
-        .mockResolvedValue({ status: 'pending', connection: pending }),
-    });
+    const transport = withSpacesExperiment(
+      createMockTransport({
+        getCommunityNavigation: navigation,
+        listCommunityConnections: list,
+        pollCommunityConnection: vi
+          .fn()
+          .mockResolvedValue({ status: 'pending', connection: pending }),
+      })
+    );
     mount(transport, { ref: pending.ref });
     expect(await screen.findByRole('dialog', { name: 'Approve on Community A' })).toBeVisible();
 
@@ -466,12 +488,14 @@ describe('ConnectCommunityDialog', () => {
         urls: { [pending.ref]: 'https://a.example/pair?code=theirs' },
       },
     });
-    const transport = createMockTransport({
-      listCommunityConnections: vi.fn().mockResolvedValue([pending]),
-      pollCommunityConnection: vi
-        .fn()
-        .mockResolvedValue({ status: 'pending', connection: pending }),
-    });
+    const transport = withSpacesExperiment(
+      createMockTransport({
+        listCommunityConnections: vi.fn().mockResolvedValue([pending]),
+        pollCommunityConnection: vi
+          .fn()
+          .mockResolvedValue({ status: 'pending', connection: pending }),
+      })
+    );
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     // No watcher here, so nothing clears the store: the dialog's own check is all there is.
     render(
@@ -493,13 +517,15 @@ describe('ConnectCommunityDialog', () => {
 
   it('discards a start that finished after the owner changed', async () => {
     const user = userEvent.setup();
-    const transport = createMockTransport({
-      listCommunityConnections: vi.fn().mockResolvedValue([]),
-      startCommunityConnection: vi.fn().mockImplementation(async () => {
-        invalidateCommunityAuthority();
-        return { connection: pending, approvalUrl: 'https://a.example/pair?code=public' };
-      }),
-    });
+    const transport = withSpacesExperiment(
+      createMockTransport({
+        listCommunityConnections: vi.fn().mockResolvedValue([]),
+        startCommunityConnection: vi.fn().mockImplementation(async () => {
+          invalidateCommunityAuthority();
+          return { connection: pending, approvalUrl: 'https://a.example/pair?code=public' };
+        }),
+      })
+    );
     mount(transport, { ref: null });
     const address = screen.getByLabelText('Space address or invitation link');
     await waitFor(() => expect(address).toBeEnabled());
@@ -519,10 +545,12 @@ describe('ConnectCommunityDialog', () => {
       .fn()
       .mockRejectedValueOnce(busy)
       .mockResolvedValue({ status: 'pending', connection: pending });
-    const transport = createMockTransport({
-      listCommunityConnections: vi.fn().mockResolvedValue([pending]),
-      pollCommunityConnection: poll,
-    });
+    const transport = withSpacesExperiment(
+      createMockTransport({
+        listCommunityConnections: vi.fn().mockResolvedValue([pending]),
+        pollCommunityConnection: poll,
+      })
+    );
     mount(transport, { ref: pending.ref });
     await waitFor(() => expect(poll).toHaveBeenCalledTimes(2), { timeout: 5_000 });
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
@@ -530,12 +558,14 @@ describe('ConnectCommunityDialog', () => {
   });
 
   it('opened on a wait from an earlier visit, says where to approve without a link', async () => {
-    const transport = createMockTransport({
-      listCommunityConnections: vi.fn().mockResolvedValue([pending]),
-      pollCommunityConnection: vi
-        .fn()
-        .mockResolvedValue({ status: 'pending', connection: pending }),
-    });
+    const transport = withSpacesExperiment(
+      createMockTransport({
+        listCommunityConnections: vi.fn().mockResolvedValue([pending]),
+        pollCommunityConnection: vi
+          .fn()
+          .mockResolvedValue({ status: 'pending', connection: pending }),
+      })
+    );
     mount(transport, { ref: pending.ref });
     expect(await screen.findByRole('dialog', { name: 'Approve on Community A' })).toBeVisible();
     expect(screen.getByText('https://a.example')).toBeInTheDocument();
@@ -547,12 +577,14 @@ describe('ConnectCommunityDialog', () => {
 
   it('cancels a wait, and closes', async () => {
     const user = userEvent.setup();
-    const transport = createMockTransport({
-      listCommunityConnections: vi.fn().mockResolvedValueOnce([pending]).mockResolvedValue([]),
-      pollCommunityConnection: vi
-        .fn()
-        .mockResolvedValue({ status: 'pending', connection: pending }),
-    });
+    const transport = withSpacesExperiment(
+      createMockTransport({
+        listCommunityConnections: vi.fn().mockResolvedValueOnce([pending]).mockResolvedValue([]),
+        pollCommunityConnection: vi
+          .fn()
+          .mockResolvedValue({ status: 'pending', connection: pending }),
+      })
+    );
     const view = mount(transport, { ref: pending.ref });
     await user.click(await screen.findByRole('button', { name: 'Cancel approval' }));
     await waitFor(() =>
@@ -569,10 +601,12 @@ describe('ConnectCommunityDialog', () => {
       .fn()
       .mockRejectedValueOnce(new Error('offline'))
       .mockResolvedValue({ status: 'pending', connection: pending });
-    const transport = createMockTransport({
-      listCommunityConnections: vi.fn().mockResolvedValue([pending]),
-      pollCommunityConnection: poll,
-    });
+    const transport = withSpacesExperiment(
+      createMockTransport({
+        listCommunityConnections: vi.fn().mockResolvedValue([pending]),
+        pollCommunityConnection: poll,
+      })
+    );
     mount(transport, { ref: pending.ref });
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Couldn’t check approval. Try again.'
@@ -584,12 +618,14 @@ describe('ConnectCommunityDialog', () => {
 
   it('removes a withdrawn connection, then offers the form to connect again', async () => {
     const user = userEvent.setup();
-    const transport = createMockTransport({
-      listCommunityConnections: vi
-        .fn()
-        .mockResolvedValueOnce([reconnectRequired])
-        .mockResolvedValue([]),
-    });
+    const transport = withSpacesExperiment(
+      createMockTransport({
+        listCommunityConnections: vi
+          .fn()
+          .mockResolvedValueOnce([reconnectRequired])
+          .mockResolvedValue([]),
+      })
+    );
     mount(transport, { ref: reconnectRequired.ref });
     expect(await screen.findByRole('dialog', { name: 'Reconnect Community A' })).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Disconnect' }));
@@ -606,15 +642,17 @@ describe('ConnectCommunityDialog', () => {
 
   it('says so when this DorkOS disconnected but the Community could not be told', async () => {
     const user = userEvent.setup();
-    const transport = createMockTransport({
-      listCommunityConnections: vi
-        .fn()
-        .mockResolvedValueOnce([reconnectRequired])
-        .mockResolvedValue([]),
-      disconnectCommunity: vi
-        .fn()
-        .mockResolvedValue({ remoteRevoked: false, agentsNotRemoved: [] }),
-    });
+    const transport = withSpacesExperiment(
+      createMockTransport({
+        listCommunityConnections: vi
+          .fn()
+          .mockResolvedValueOnce([reconnectRequired])
+          .mockResolvedValue([]),
+        disconnectCommunity: vi
+          .fn()
+          .mockResolvedValue({ remoteRevoked: false, agentsNotRemoved: [] }),
+      })
+    );
     mount(transport, { ref: reconnectRequired.ref });
     await user.click(await screen.findByRole('button', { name: 'Disconnect' }));
     await waitFor(() =>
@@ -629,16 +667,18 @@ describe('ConnectCommunityDialog', () => {
   it('names the agents it removes, and any the Community could not be told to remove', async () => {
     const user = userEvent.setup();
     const scout = { localAgentId: 'scout', displayName: 'Scout' };
-    const transport = createMockTransport({
-      listCommunityConnections: vi
-        .fn()
-        .mockResolvedValueOnce([reconnectRequired])
-        .mockResolvedValue([]),
-      getCommunityDisconnectImpact: vi.fn().mockResolvedValue({ agents: [scout] }),
-      disconnectCommunity: vi
-        .fn()
-        .mockResolvedValue({ remoteRevoked: true, agentsNotRemoved: [scout] }),
-    });
+    const transport = withSpacesExperiment(
+      createMockTransport({
+        listCommunityConnections: vi
+          .fn()
+          .mockResolvedValueOnce([reconnectRequired])
+          .mockResolvedValue([]),
+        getCommunityDisconnectImpact: vi.fn().mockResolvedValue({ agents: [scout] }),
+        disconnectCommunity: vi
+          .fn()
+          .mockResolvedValue({ remoteRevoked: true, agentsNotRemoved: [scout] }),
+      })
+    );
     mount(transport, { ref: reconnectRequired.ref });
     expect(
       await screen.findByText(
@@ -656,10 +696,12 @@ describe('ConnectCommunityDialog', () => {
 
   it('keeps a withdrawn connection on screen when disconnecting fails', async () => {
     const user = userEvent.setup();
-    const transport = createMockTransport({
-      listCommunityConnections: vi.fn().mockResolvedValue([reconnectRequired]),
-      disconnectCommunity: vi.fn().mockRejectedValue(new Error('offline')),
-    });
+    const transport = withSpacesExperiment(
+      createMockTransport({
+        listCommunityConnections: vi.fn().mockResolvedValue([reconnectRequired]),
+        disconnectCommunity: vi.fn().mockRejectedValue(new Error('offline')),
+      })
+    );
     mount(transport, { ref: reconnectRequired.ref });
     await user.click(await screen.findByRole('button', { name: 'Disconnect' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Couldn’t disconnect.');
@@ -668,9 +710,11 @@ describe('ConnectCommunityDialog', () => {
 
   it('starts every opening fresh, on what it was opened for', async () => {
     const user = userEvent.setup();
-    const transport = createMockTransport({
-      listCommunityConnections: vi.fn().mockResolvedValue([reconnectRequired]),
-    });
+    const transport = withSpacesExperiment(
+      createMockTransport({
+        listCommunityConnections: vi.fn().mockResolvedValue([reconnectRequired]),
+      })
+    );
     const view = mount(transport, { ref: null });
     const address = screen.getByLabelText('Space address or invitation link');
     await waitFor(() => expect(address).toBeEnabled());

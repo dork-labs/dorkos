@@ -115,7 +115,13 @@ vi.mock('../../services/core/cloud/community-move-upload.js', async (importOrigi
 const posture = vi.hoisted(() => ({ authEnabled: false }));
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: {
-    get: (key: string) => (key === 'auth' ? { enabled: posture.authEnabled } : undefined),
+    // Spaces on (DOR-2740): the hosted-community routes exist only then.
+    get: (key: string) =>
+      key === 'auth'
+        ? { enabled: posture.authEnabled }
+        : key === 'spaces'
+          ? { enabled: true }
+          : undefined,
     onChange: () => () => {},
   },
 }));

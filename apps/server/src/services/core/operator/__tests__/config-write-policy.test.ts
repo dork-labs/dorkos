@@ -192,6 +192,7 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'runtimes.opencode.provider',
       'scheduler.maxConcurrentRuns',
       'server.boundary',
+      'spaces.enabled',
       'telemetry.aiMetadata',
       'telemetry.errorReporting',
       'telemetry.heartbeat',

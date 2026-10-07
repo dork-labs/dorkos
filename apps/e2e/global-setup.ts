@@ -228,6 +228,9 @@ async function readConfigWhenReady(
  * suite keeps its safe defaults; the opt-in `full-power-door.spec.ts` re-opens it
  * deliberately on a serial run.
  *
+ * The spaces experiment is switched ON here too (DOR-2740): it ships off, and
+ * the space specs prove surfaces that only exist while it is on.
+ *
  * Reads before it writes so a re-run against a persistent `DORK_HOME` is a no-op
  * rather than a redundant write.
  *
@@ -237,16 +240,18 @@ async function dismissOnboarding(baseURL: string): Promise<void> {
   const context = await request.newContext({ baseURL });
   try {
     const current = await readConfigWhenReady(context, baseURL);
-    const { onboarding, profile, telemetry, ui, dorkHome } = (await current.json()) as {
-      onboarding?: { dismissedAt?: string };
-      profile?: {
-        rolePromptDismissedAt?: string | null;
-        identityPromptDismissedAt?: string | null;
+    const { onboarding, profile, telemetry, ui, experiments, dorkHome } =
+      (await current.json()) as {
+        onboarding?: { dismissedAt?: string };
+        experiments?: { key: string; enabled: boolean }[];
+        profile?: {
+          rolePromptDismissedAt?: string | null;
+          identityPromptDismissedAt?: string | null;
+        };
+        telemetry?: { userHasDecided?: boolean };
+        ui?: { fullPowerDecidedAt?: string | null; fullPowerChoice?: string | null };
+        dorkHome?: string;
       };
-      telemetry?: { userHasDecided?: boolean };
-      ui?: { fullPowerDecidedAt?: string | null; fullPowerChoice?: string | null };
-      dorkHome?: string;
-    };
     // Before the first write, and on the same read that was already happening.
     assertThrowawayHome(baseURL, dorkHome);
     // Ordered: the throwaway check comes first, so a leg pointed at somebody's
@@ -259,7 +264,8 @@ async function dismissOnboarding(baseURL: string): Promise<void> {
       profile?.rolePromptDismissedAt &&
       profile?.identityPromptDismissedAt &&
       telemetry?.userHasDecided &&
-      ui?.fullPowerDecidedAt
+      ui?.fullPowerDecidedAt &&
+      experiments?.some(({ key, enabled }) => key === 'spaces.enabled' && enabled)
     ) {
       return;
     }
@@ -307,6 +313,11 @@ async function dismissOnboarding(baseURL: string): Promise<void> {
               // fields settle together, so they defer together.)
               fullPowerChoice: ui?.fullPowerChoice ?? 'supervised',
             },
+            // Spaces are an experiment, off by default (DOR-2740). The suite's
+            // space specs prove the surfaces themselves, so the suite runs with
+            // it ON, exactly as it ran before the switch existed. The switch's
+            // OFF state is proven by unit tests on both sides of the wire.
+            spaces: { enabled: true },
           },
         }),
       'dismiss first-run prompts',

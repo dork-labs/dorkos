@@ -3,6 +3,7 @@ import { QueryClient } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import { confirmCommunityAuthority, invalidateCommunityAuthority } from '@/layers/shared/lib';
+import { configKeys, getCommunityRouteEpoch } from '@/layers/shared/model';
 import { createCommunityRouteMemory } from '../community-route-memory';
 
 /**
@@ -12,13 +13,23 @@ import { createCommunityRouteMemory } from '../community-route-memory';
  */
 describe('community route memory', () => {
   let transport: Transport;
+  let queryClient: QueryClient;
   let remember: ReturnType<typeof createCommunityRouteMemory>;
+
+  /** Put the server's answer for the spaces experiment in the config cache. */
+  function setSpaces(enabled: boolean) {
+    queryClient.setQueryData(configKeys.current(), {
+      experiments: [{ key: 'spaces.enabled', title: 'Spaces', description: '', enabled }],
+    });
+  }
 
   beforeEach(() => {
     const authority = invalidateCommunityAuthority();
     confirmCommunityAuthority(authority.epoch, 'local-owner');
     transport = createMockTransport() as Transport;
-    remember = createCommunityRouteMemory(new QueryClient(), transport);
+    queryClient = new QueryClient();
+    setSpaces(true);
+    remember = createCommunityRouteMemory(queryClient, transport);
   });
   afterEach(() => {
     invalidateCommunityAuthority();
@@ -79,5 +90,42 @@ describe('community route memory', () => {
     remember({ pathname: '/tasks', search: {} });
     await settle();
     expect(transport.rememberCommunityInstallationDestination).toHaveBeenCalledTimes(2);
+  });
+  describe('while the spaces experiment is off (DOR-2740)', () => {
+    it('sends nothing for a local route or a space room', async () => {
+      setSpaces(false);
+      remember({ pathname: '/tasks', search: {} });
+      remember({ pathname: '/channels', search: { community: 'a', id: 'room-1' } });
+      await settle();
+      expect(transport.getCommunityNavigation).not.toHaveBeenCalled();
+      expect(transport.rememberCommunityInstallationDestination).not.toHaveBeenCalled();
+      expect(transport.rememberCommunityNavigation).not.toHaveBeenCalled();
+    });
+
+    it('sends nothing before the config has been read at all', async () => {
+      queryClient.removeQueries({ queryKey: configKeys.current() });
+      remember({ pathname: '/tasks', search: {} });
+      await settle();
+      expect(transport.rememberCommunityInstallationDestination).not.toHaveBeenCalled();
+    });
+
+    it('still commits the route epoch, which is local bookkeeping', () => {
+      setSpaces(false);
+      remember({ pathname: '/channels', search: { community: 'a', id: 'room-1' } });
+      expect(getCommunityRouteEpoch().destination).toBe(
+        JSON.stringify(['community', 'a', 'room-1', null])
+      );
+      remember({ pathname: '/tasks', search: {} });
+      expect(getCommunityRouteEpoch().destination).toBe('installation');
+    });
+
+    it('starts saving again the moment it is turned on', async () => {
+      setSpaces(false);
+      remember({ pathname: '/tasks', search: {} });
+      setSpaces(true);
+      remember({ pathname: '/tasks', search: { view: 'board' } });
+      await settle();
+      expect(transport.rememberCommunityInstallationDestination).toHaveBeenCalledTimes(1);
+    });
   });
 });

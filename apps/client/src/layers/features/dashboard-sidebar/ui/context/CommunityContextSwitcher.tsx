@@ -12,6 +12,7 @@ import {
   getCommunityRouteEpoch,
   useIsMobile,
 } from '@/layers/shared/model';
+import { useSpacesEnabled } from '@/layers/entities/config';
 import { cn, formatRelativeTime, openExternalLink } from '@/layers/shared/lib';
 import {
   ResponsiveDropdownMenu,
@@ -102,9 +103,14 @@ export function CommunityContextSwitcher({
 }: CommunityContextSwitcherProps) {
   const isMobile = useIsMobile();
   const navigate = useNavigate();
-  const selectedRef = useRouterState({
+  // Spaces are an experiment, off by default (DOR-2740). Off, this is only
+  // the "You" menu: no space rows, no Join or Start, and a `?community=` left
+  // in the address is not a place you can be.
+  const spaces = useSpacesEnabled();
+  const routeRef = useRouterState({
     select: (state) => (state.location.search as { community?: string }).community,
   });
+  const selectedRef = spaces ? routeRef : undefined;
   const navigation = useCommunityNavigation();
   const moveNavigation = useMoveCommunityNavigation();
   const connections = useCommunityConnections();
@@ -150,7 +156,7 @@ export function CommunityContextSwitcher({
     );
   }
 
-  const contextNodes = buildCommunityContextNodes({
+  const spaceNodes = buildCommunityContextNodes({
     selected: selected
       ? {
           connection: selected,
@@ -178,6 +184,7 @@ export function CommunityContextSwitcher({
         }
       : null,
   });
+  const contextNodes = spaces ? spaceNodes : [];
   const menu = useHeaderBlockMenu(contextNodes);
   // One guard over both runs of rows, so a row above the destinations and a
   // row below them spend the same one-shot hold.
@@ -311,7 +318,11 @@ export function CommunityContextSwitcher({
         >
           {/* On a phone the label is the sheet's title, so it stays first;
               on desktop it heads the destinations, under the identity rows. */}
-          {isMobile && <ResponsiveDropdownMenuLabel>Switch context</ResponsiveDropdownMenuLabel>}
+          {isMobile && (
+            <ResponsiveDropdownMenuLabel>
+              {spaces ? 'Switch context' : 'Menu'}
+            </ResponsiveDropdownMenuLabel>
+          )}
           {/* You, your DorkOS account and Settings come first (DOR-2628):
               who you are before where you are. */}
           <SheetActionsMenu sheet={isMobile} label="You">
@@ -321,9 +332,11 @@ export function CommunityContextSwitcher({
               onSheetClose={() => handleOpenChange(false)}
             />
           </SheetActionsMenu>
-          <ResponsiveDropdownMenuSeparator />
-          {!isMobile && <ResponsiveDropdownMenuLabel>Switch context</ResponsiveDropdownMenuLabel>}
-          {isMobile && destinations.length >= 8 && (
+          {spaces && <ResponsiveDropdownMenuSeparator />}
+          {spaces && !isMobile && (
+            <ResponsiveDropdownMenuLabel>Switch context</ResponsiveDropdownMenuLabel>
+          )}
+          {spaces && isMobile && destinations.length >= 8 && (
             <div className="px-4 pb-2">
               <Input
                 type="search"
@@ -334,80 +347,82 @@ export function CommunityContextSwitcher({
               />
             </div>
           )}
-          <ResponsiveDropdownMenuRadioGroup
-            value={selectedRef ? `community:${selectedRef}` : 'installation'}
-            onValueChange={selectDestination}
-          >
-            <ResponsiveDropdownMenuRadioItem
-              value="installation"
-              icon={HardDrive}
-              disabled={pendingRef !== null}
-              itemRef={selectedRef === undefined ? selectedItem : undefined}
-              className={pendingRef !== null ? 'opacity-50' : undefined}
+          {spaces && (
+            <ResponsiveDropdownMenuRadioGroup
+              value={selectedRef ? `community:${selectedRef}` : 'installation'}
+              onValueChange={selectDestination}
             >
-              <span className="min-w-0 flex-1 truncate">{installationLabel}</span>
-            </ResponsiveDropdownMenuRadioItem>
-            {visibleDestinations.map((connection) => {
-              const descriptor = navigationDescriptor(connection);
-              const mentions = descriptor.mentionCount ?? 0;
-              const otherUnread = Math.max(0, (descriptor.unreadCount ?? 0) - mentions);
-              const attention = [
-                mentions > 0 ? `${mentions} ${mentions === 1 ? 'mention' : 'mentions'}` : null,
-                otherUnread > 0 ? `${otherUnread} other unread` : null,
-                // The Community did not answer in time, so these are the last
-                // counts it confirmed; say when, rather than pass them off as now.
-                connection.attention?.state === 'stale'
-                  ? `last checked ${lowerFirst(formatRelativeTime(connection.attention.verifiedAt))}`
-                  : null,
-              ]
-                .filter(Boolean)
-                .join(', ');
-              return (
-                <ResponsiveDropdownMenuRadioItem
-                  key={connection.ref}
-                  value={`community:${connection.ref}`}
-                  icon={UsersRound}
-                  disabled={pendingRef !== null}
-                  itemRef={connection.ref === selectedRef ? selectedItem : undefined}
-                  description={
-                    [communityRowState(connection), attention].filter(Boolean).join(' · ') ||
-                    undefined
-                  }
-                  className={pendingRef !== null ? 'opacity-50' : undefined}
-                >
-                  <span className="flex min-w-0 items-center gap-1.5">
-                    <span className="min-w-0 truncate">{connection.label}</span>
-                    {/* Only the owner's connection carries a notice (DOR-2543): the
+              <ResponsiveDropdownMenuRadioItem
+                value="installation"
+                icon={HardDrive}
+                disabled={pendingRef !== null}
+                itemRef={selectedRef === undefined ? selectedItem : undefined}
+                className={pendingRef !== null ? 'opacity-50' : undefined}
+              >
+                <span className="min-w-0 flex-1 truncate">{installationLabel}</span>
+              </ResponsiveDropdownMenuRadioItem>
+              {visibleDestinations.map((connection) => {
+                const descriptor = navigationDescriptor(connection);
+                const mentions = descriptor.mentionCount ?? 0;
+                const otherUnread = Math.max(0, (descriptor.unreadCount ?? 0) - mentions);
+                const attention = [
+                  mentions > 0 ? `${mentions} ${mentions === 1 ? 'mention' : 'mentions'}` : null,
+                  otherUnread > 0 ? `${otherUnread} other unread` : null,
+                  // The Community did not answer in time, so these are the last
+                  // counts it confirmed; say when, rather than pass them off as now.
+                  connection.attention?.state === 'stale'
+                    ? `last checked ${lowerFirst(formatRelativeTime(connection.attention.verifiedAt))}`
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(', ');
+                return (
+                  <ResponsiveDropdownMenuRadioItem
+                    key={connection.ref}
+                    value={`community:${connection.ref}`}
+                    icon={UsersRound}
+                    disabled={pendingRef !== null}
+                    itemRef={connection.ref === selectedRef ? selectedItem : undefined}
+                    description={
+                      [communityRowState(connection), attention].filter(Boolean).join(' · ') ||
+                      undefined
+                    }
+                    className={pendingRef !== null ? 'opacity-50' : undefined}
+                  >
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <span className="min-w-0 truncate">{connection.label}</span>
+                      {/* Only the owner's connection carries a notice (DOR-2543): the
                         community's page says what it is and what they can do. */}
-                    {openOwnerNotice(connection) && (
-                      <span
-                        role="img"
-                        className="bg-status-warning-dot size-2 shrink-0 rounded-full"
-                        aria-label="Someone asked to take over this space"
-                        title="Someone asked to take over this space"
-                      />
-                    )}
-                    {mentions > 0 && (
-                      <span
-                        className="bg-primary text-primary-foreground shrink-0 rounded-full px-1.5 text-xs"
-                        aria-label={`${mentions} ${mentions === 1 ? 'mention' : 'mentions'}`}
-                      >
-                        @{mentions}
-                      </span>
-                    )}
-                    {otherUnread > 0 && (
-                      <span
-                        className="bg-muted text-muted-foreground shrink-0 rounded-full px-1.5 text-xs"
-                        aria-label={`${otherUnread} other unread`}
-                      >
-                        {otherUnread}
-                      </span>
-                    )}
-                  </span>
-                </ResponsiveDropdownMenuRadioItem>
-              );
-            })}
-          </ResponsiveDropdownMenuRadioGroup>
+                      {openOwnerNotice(connection) && (
+                        <span
+                          role="img"
+                          className="bg-status-warning-dot size-2 shrink-0 rounded-full"
+                          aria-label="Someone asked to take over this space"
+                          title="Someone asked to take over this space"
+                        />
+                      )}
+                      {mentions > 0 && (
+                        <span
+                          className="bg-primary text-primary-foreground shrink-0 rounded-full px-1.5 text-xs"
+                          aria-label={`${mentions} ${mentions === 1 ? 'mention' : 'mentions'}`}
+                        >
+                          @{mentions}
+                        </span>
+                      )}
+                      {otherUnread > 0 && (
+                        <span
+                          className="bg-muted text-muted-foreground shrink-0 rounded-full px-1.5 text-xs"
+                          aria-label={`${otherUnread} other unread`}
+                        >
+                          {otherUnread}
+                        </span>
+                      )}
+                    </span>
+                  </ResponsiveDropdownMenuRadioItem>
+                );
+              })}
+            </ResponsiveDropdownMenuRadioGroup>
+          )}
           {actionNodes.length > 0 && (
             <>
               <ResponsiveDropdownMenuSeparator />

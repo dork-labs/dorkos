@@ -20,6 +20,7 @@ import roomRoutes from './routes/rooms.js';
 import canvasDocEventRoutes, { canvasDocJsonParser } from './routes/canvas-doc-events.js';
 import { createCommunityConnectionsRouter } from './routes/community-connections.js';
 import { createRemoteCommunitiesRouter } from './routes/remote-communities.js';
+import { requireSpacesEnabled } from './middleware/spaces-enabled.js';
 import readCursorRoutes from './routes/read-cursors.js';
 import tunnelRoutes from './routes/tunnel.js';
 import cloudRoutes from './routes/cloud.js';
@@ -322,8 +323,10 @@ export function createApp(options: {
   app.use('/api/projects', projectRoutes);
   app.use('/api/rooms', roomRoutes);
   app.use('/api/canvas/docs', canvasDocEventRoutes);
-  app.use('/api/community-connections', createCommunityConnectionsRouter());
-  app.use('/api/communities', createRemoteCommunitiesRouter());
+  // Spaces are an experiment, off by default (DOR-2740): both refuse until a
+  // person turns `spaces.enabled` on. This machine's own rooms are above.
+  app.use('/api/community-connections', requireSpacesEnabled, createCommunityConnectionsRouter());
+  app.use('/api/communities', requireSpacesEnabled, createRemoteCommunitiesRouter());
   app.use('/api/read-cursors', readCursorRoutes);
   app.use('/api/tunnel', tunnelRoutes);
   app.use('/api/cloud', cloudRoutes);

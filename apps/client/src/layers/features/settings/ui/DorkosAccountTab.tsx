@@ -1,6 +1,7 @@
 import { CloudEligibilityNote, CloudLinkPanel } from '@/layers/features/cloud-link';
 import { CloudPlanPanel, creditsRuntimesOnOffer } from '@/layers/features/cloud-plan';
 import { useCloudCredits } from '@/layers/shared/model';
+import { useSpacesEnabled } from '@/layers/entities/config';
 
 /**
  * Settings › DorkOS account — the hosted account's one home in the app
@@ -36,6 +37,7 @@ export function DorkosAccountTab() {
 function SignedOutPage() {
   const { data: credits } = useCloudCredits();
   const runtimes = creditsRuntimesOnOffer(credits);
+  const spaces = useSpacesEnabled();
 
   return (
     <div className="space-y-2">
@@ -59,7 +61,7 @@ function SignedOutPage() {
         </>
       )}
       {/* Said before anybody links in order to buy, not after. */}
-      <CloudEligibilityNote />
+      <CloudEligibilityNote withSpaces={spaces} />
     </div>
   );
 }
