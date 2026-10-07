@@ -464,8 +464,11 @@ describe('in-session tool exposure', () => {
     // from the docs registry, which composes no extension. Extension tools are
     // guarded separately, against a contributed fixture, in
     // `extension-tools-every-list.test.ts`.
-    expect(tools).toHaveLength(120);
-    expect(deferred).toHaveLength(109);
+    // 120 -> 121 for `audit_verify` (spec `audit-trail`), DEFERRED: checking
+    // the audit log is a deliberate step a turn can search for. Both counts
+    // move by the same one.
+    expect(tools).toHaveLength(121);
+    expect(deferred).toHaveLength(110);
     for (const name of [
       'configure_doc_channel',
       'approve_doc_route',
