@@ -100,6 +100,6 @@ Retired taglines nobody should re-propose: "All Your Agents. One Place.", "Every
 - `scripts/check-banned-words.sh` scans READMEs, `AGENTS.md`, docs, blog posts and the operating skills for retired words and phrases.
 - `scripts/check-vocab-gate.ts` scans the strings the app and site actually render, plus docs prose, with a reasoned allowlist in `scripts/vocab-gate/allowlist.json`.
 - `pnpm check:copy-length` caps app copy at 15 words per block.
-- A weekly drift check (coming) will report retired phrasing and stale positioning that no machine rule can catch.
+- The weekly `vision-drift-check` scheduled skill (`scripts/check-vision-drift.sh` plus judgment) reports retired phrasing and stale positioning that no machine rule can catch. It runs once the operator approves it on the Schedules page.
 
 A legitimate use of a retired word (a quote, GitHub's Mission Control) gets a `vocab-allow` marker on the same line, with a reason.
