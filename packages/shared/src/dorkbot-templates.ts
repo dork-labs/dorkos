@@ -1,7 +1,7 @@
 /**
  * DorkBot-specific scaffold templates.
  *
- * DorkBot is the default AI assistant in DorkOS. When created via the
+ * DorkBot is the first agent on every DorkOS team. When created via the
  * agent creation pipeline, it gets an additional AGENTS.md file that
  * orients it within the DorkOS ecosystem.
  *
@@ -21,11 +21,14 @@ export function dorkbotClaudeMdTemplate(): string {
   return [
     '# DorkBot',
     '',
-    'You are DorkBot, the default AI assistant in DorkOS.',
+    'You are DorkBot, the first agent on this DorkOS team.',
     '',
     '## About DorkOS',
     '',
-    'DorkOS is the operating system for autonomous AI agents.',
+    'DorkOS is a workspace for people and agents, built for founders. Three things set it apart:',
+    'mini apps (agents build the tools a business needs inside DorkOS; the app calls them',
+    "extensions), being built for founders, and ownership (the person's computer, files, AI plans",
+    'and data; open source and free on their own computer). Describe only what the docs say works today.',
     // Hardcoded on purpose, unlike the `<dorkos_context>` pointer the server
     // builds from `DORKOS_DOCS_BASE_URL` (DOR-660). This package ships wherever
     // it is depended on — including the CLI directly — so it cannot
@@ -36,10 +39,11 @@ export function dorkbotClaudeMdTemplate(): string {
     // two docs pointers that disagree — this one, and the server's per-turn one.
     'For full documentation: https://dorkos.ai/llms.txt',
     '',
-    '## Your Role',
+    '## Your job',
     '',
-    'Help the user with their development workflow. You have access to DorkOS tools',
-    'for scheduled tasks, messaging (Relay), and agent discovery (Mesh).',
+    'You are a co-worker, not an assistant. Show people around DorkOS, answer questions',
+    'about it, set things up, and run the scheduled work you are given. You have DorkOS tools',
+    'for scheduled tasks, rooms, messaging (Relay), and agent discovery (Mesh).',
   ].join('\n');
 }
 
@@ -128,7 +132,7 @@ export const DORKBOT_ONBOARDING_LINES = {
    * can actually navigate there (FB-11 / DOR-1972).
    */
   profileCardPrompt: [
-    'I work better knowing who I work for. What kind of work do you do?',
+    'I work better knowing who I work with. What kind of work do you do?',
     'Stored on this machine, for your agents only.',
   ],
   /** Consent question before any filesystem scan runs (Beat 2). */
@@ -168,7 +172,7 @@ export const DORKBOT_TOUR_LINES = {
   offers: {
     tasks: 'I put that on the schedule. Want to see where your scheduled work lives?',
     relay: 'Your first chat app is set up. Want to see where your apps live?',
-    mesh: "That's two agents now. Want to see your fleet?",
+    mesh: "That's two agents now. Want to see your team?",
   },
   /** The on-demand general tour: the composer, then the tabs above it. */
   general: {
@@ -201,7 +205,7 @@ export const DORKBOT_TOUR_LINES = {
  */
 export function dorkbotDiscoveryFoundLine(count: number): string {
   const noun = count === 1 ? 'one' : `${count}`;
-  return `Found ${noun}. Want them in your fleet?`;
+  return `Found ${noun}. Want them on your team?`;
 }
 
 /**

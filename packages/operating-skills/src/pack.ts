@@ -322,8 +322,13 @@ export interface OperatingSkill {
  *   destructive action that runs a package from a folder, and that install,
  *   update and uninstall refuse a dev-linked package. An agent seeded at 35
  *   would read `package_is_dev_linked` as a fault to retry around.
+ * - 37: `operating-dorkos` describes DorkOS as a workspace for people and agents
+ *   and the agent as a co-worker trusted with routine work it finishes and
+ *   reports (DOR-2736), replacing "the control layer a person uses to run many
+ *   AI agents". An agent seeded at 36 would describe itself as a tool a person
+ *   runs rather than a member of the team.
  */
-export const OPERATING_SKILLS_VERSION = 36;
+export const OPERATING_SKILLS_VERSION = 37;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the
