@@ -1,6 +1,6 @@
 ---
 title: Marketplace
-description: Browse and install pre-built agents, plugins, and skill packs from the DorkOS community.
+description: Browse and install ready-made agents, plugins, and skill packs for DorkOS.
 ---
 
 import { Cards, Card } from 'fumadocs-ui/components/card';
@@ -19,12 +19,12 @@ The DorkOS Marketplace is a curated catalog of pre-built agents, plugins, skill 
 
 ## What is the marketplace?
 
-The marketplace is the public face of the [`dorkos-community`](https://github.com/dorkos-community) GitHub organization. The community maintains a registry of vetted packages. A few examples:
+The default marketplace is named `dorkos-community` inside DorkOS. Its packages live in the [`dork-labs/marketplace`](https://github.com/dork-labs/marketplace) repo on GitHub, and every one is reviewed before it is listed. A few examples:
 
 - Agents that review your PRs
 - Plugins that surface Linear issues in your sidebar
 - Skill packs for security auditing or release automation
-- Adapters that connect messaging services like Discord
+- Adapters that connect more messaging services to your agents
 - [Shapes](/docs/marketplace/shapes) that set up your whole workspace for a job in one click
 
 Browse the full catalog at [dorkos.ai/marketplace](https://dorkos.ai/marketplace) without installing anything.
@@ -54,7 +54,7 @@ Browse [dorkos.ai/marketplace](https://dorkos.ai/marketplace) to find a package 
 ### Install it
 
 ```bash
-dorkos marketplace install code-review-suite
+dorkos marketplace install flow
 ```
 
 DorkOS fetches the package, verifies its manifest, shows you the requested permissions, and asks for confirmation before writing any files.
@@ -68,9 +68,9 @@ DorkOS fetches the package, verifies its manifest, shows you the requested permi
 ```bash
 dorkos marketplace installed                    # list what you have, and where
 dorkos marketplace outdated                     # list only what has an update
-dorkos marketplace update code-review-suite     # check one package for an update
+dorkos marketplace update flow                  # check one package for an update
 dorkos marketplace update --apply               # apply every available update
-dorkos marketplace uninstall code-review-suite
+dorkos marketplace uninstall flow
 ```
 
 `dorkos install`, `dorkos update` and `dorkos uninstall` are shorter names for the same commands.
@@ -133,7 +133,7 @@ The featured rail at the top highlights curated agents. Below it, the package gr
 
 ### Review and install
 
-Click a package to open the detail sheet. You'll see the requested permissions, the external hosts the package needs to reach (for example, a Discord bridge reaching Discord's API), and an install button. Review the permission preview and confirm. DorkOS handles the rest, and if anything goes wrong partway through, it puts things back exactly as they were.
+Click a package to open the detail sheet. You'll see the requested permissions, the external hosts the package needs to reach (for example, a chat bridge reaching that chat service's API), and an install button. Review the permission preview and confirm. DorkOS handles the rest, and if anything goes wrong partway through, it puts things back exactly as they were.
 
 By default a package installs **globally**, for every agent. To scope it to one agent, pick **Specific agent** in the install dialog and choose the agent. The preview updates to show exactly what that install will do. An agent-scoped plugin's commands, skills, and hooks become available in that agent's sessions from its next message.
 
@@ -324,7 +324,7 @@ dorkos harness global --disable codex     # stop sharing with one tool
 
 ## Marketplace sources
 
-The default registry is [`dorkos-community`](https://github.com/dorkos-community/marketplace), but you can add your own. Personal marketplaces are useful for sharing internal packages across a team without publishing them to the public registry.
+The default registry is [`dorkos-community`](https://github.com/dork-labs/marketplace), but you can add your own. Personal marketplaces are useful for sharing internal packages across a team without publishing them to the public registry.
 
 ```bash
 # Add a marketplace source
@@ -378,9 +378,9 @@ password, and refusing keys here would lock you out of your own terminal.
 </Callout>
 
 <Callout type="info">
-  A marketplace source is just a GitHub repo with a `marketplace.json` at its root. The schema is
-  documented in the [dorkos-community CONTRIBUTING
-  guide](https://github.com/dorkos-community/marketplace/blob/main/CONTRIBUTING.md).
+  A marketplace source is just a GitHub repo with a `marketplace.json` file, at its root or in a
+  `.claude-plugin/` folder. [Publishing a package](/docs/marketplace/publishing) explains what goes
+  in it.
 </Callout>
 
 ## Telemetry consent
@@ -407,7 +407,7 @@ Or toggle the **Help improve the marketplace** switch in the Marketplace setting
 
 ## Submitting a package
 
-The marketplace is community-driven. If you've built something useful (an agent that automates a workflow, a plugin that integrates a new service, a skill pack that codifies your team's conventions), you can submit it to the registry via a PR. See [Publishing a package](/docs/marketplace/publishing) for the full walkthrough. The short version:
+Anyone can submit a package. If you've built something useful (an agent that automates a workflow, a plugin that integrates a new service, a skill pack that codifies your team's conventions), you can submit it to the registry via a PR. See [Publishing a package](/docs/marketplace/publishing) for the full walkthrough. The short version:
 
 <Steps>
 
@@ -431,9 +431,9 @@ dorkos package validate
 
 <Step>
 
-### Push to GitHub
+### Add it to the registry
 
-Push your package to a public GitHub repo. The repo must include a `README.md`, a `LICENSE` (MIT or Apache-2.0), and a `.dork/manifest.json` that passes validation.
+Fork [`dork-labs/marketplace`](https://github.com/dork-labs/marketplace) and put your package in `plugins/<your-package-name>/`. Then list it in `.claude-plugin/marketplace.json` and in the `.claude-plugin/dorkos.json` file next to it.
 
 </Step>
 
@@ -441,13 +441,13 @@ Push your package to a public GitHub repo. The repo must include a `README.md`, 
 
 ### Open a PR
 
-Open a PR against [`dorkos-community/marketplace`](https://github.com/dorkos-community/marketplace) adding your package to `marketplace.json`. The full submission checklist and PR template are in the [CONTRIBUTING guide](https://github.com/dorkos-community/marketplace/blob/main/CONTRIBUTING.md). A maintainer will review within 7 days.
+Open a pull request against `main` with your package and both files. Once it merges, anyone using the default `dorkos-community` source can find and install it.
 
 </Step>
 
 </Steps>
 
-GitHub Actions automatically runs `dorkos marketplace validate` against your submission. PRs that fail validation cannot be merged, so make sure `dorkos package validate` passes locally before opening the PR.
+The repo's checks run on every pull request and test each manifest against DorkOS's own rules. A pull request that fails them can't merge, so make sure `dorkos package validate` passes on your machine first.
 
 ## Next Steps
 

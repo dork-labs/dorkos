@@ -1,5 +1,5 @@
 import { motion, useReducedMotion } from 'motion/react';
-import { Plus, Clock, Radio } from 'lucide-react';
+import { AppWindow, Radio, Users } from 'lucide-react';
 import { DorkLogo } from '@dorkos/icons/logos';
 import { Button, HoverBorderGradient } from '@/layers/shared/ui';
 
@@ -12,8 +12,8 @@ interface WelcomeStepProps {
 const HEADING_WORDS = ['Welcome', 'to', 'DorkOS'];
 
 const PREVIEW_ITEMS = [
-  { icon: Plus, label: 'Create agents' },
-  { icon: Clock, label: 'Schedule tasks' },
+  { icon: Users, label: 'Build your team' },
+  { icon: AppWindow, label: 'Ask for tools' },
   { icon: Radio, label: 'Connect services' },
 ] as const;
 
@@ -75,7 +75,7 @@ export function WelcomeStep({ onGetStarted, onSkipAll }: WelcomeStepProps) {
         animate={{ opacity: 1 }}
         transition={{ delay: 0.4, duration: 0.5 }}
       >
-        Your agents are minutes away.
+        Build and run your business with an agent team.
       </motion.p>
 
       {/* Preview items */}

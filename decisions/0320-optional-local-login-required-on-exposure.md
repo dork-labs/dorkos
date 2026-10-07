@@ -14,6 +14,8 @@ supersedes: 0103
 
 Accepted
 
+Amended by [261006-235239](261006-235239-people-and-agents-hold-equal-accounts.md) (equal accounts; 2026-10-06 vision reset): retires "registration auto-closes after the first user" and the single-person trust domain behind it. People and agents get equal accounts with Owner, Admin, Member and Guest access levels. Optional local login, login required on exposure, and per-account API keys stand.
+
 ## Context
 
 Zero-config local startup is a core DorkOS value, but the current protection for exposed instances is a 6-digit tunnel passcode (strictly weaker than real credentials) plus a single global MCP Bearer key, and n8n-style mandatory first-run logins add a signup wall a local single-user dev tool does not need. Verified industry norm (n8n, Metabase, Grafana, PostHog): login and multi-user stay free; the open-core gates are features (SSO/SCIM/RBAC), not headcount. A DorkOS-specific constraint: anyone who can drive agents effectively holds the server process's filesystem access and spends the owner's Claude quota, so multi-user access is a trust-domain decision, not a UI toggle.

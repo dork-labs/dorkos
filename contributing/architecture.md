@@ -311,11 +311,11 @@ All types defined in `packages/shared/src/schemas.ts`, re-exported from `package
 
 ### Files
 
-| File                                                                  | Purpose                                                                             |
-| --------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `packages/shared/src/schemas.ts`                                      | `UiStateSchema`, `UiCommandSchema`, `UiCommandEventSchema`, `UiCanvasContentSchema` |
-| `apps/server/src/services/runtimes/claude-code/mcp-tools/ui-tools.ts` | `control_ui` and `get_ui_state` MCP tool definitions                                |
-| `apps/client/src/layers/shared/lib/ui-action-dispatcher.ts`           | `executeUiCommand()` — pure dispatcher, no React deps                               |
+| File                                                               | Purpose                                                                                            |
+| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| `packages/shared/src/schemas.ts`                                   | `UiStateSchema`, `UiCommandSchema`, `UiCommandEventSchema`, `UiCanvasContentSchema`                |
+| `apps/server/src/services/session/browser-seat/ui-capabilities.ts` | `ui.control` / `ui.state` capabilities, projected as the `control_ui` and `get_ui_state` MCP tools |
+| `apps/client/src/layers/shared/lib/ui-action-dispatcher.ts`        | `executeUiCommand()` — pure dispatcher, no React deps                                              |
 
 ## Runtime Registry
 
@@ -486,7 +486,7 @@ No other server code imports a runtime SDK directly.
 When the main agent spawns a subagent via the `Task` tool, the subagent's output is streamed live into that task's inline block. Two non-obvious facts make this work:
 
 - **The SDK forwards whole messages, not deltas.** With `forwardSubagentText` (SDK 0.3.168+), a subagent's output arrives as complete `assistant` messages tagged with `parent_tool_use_id` — _not_ as token-level stream deltas. `sdk/event-mappers/message-event-mapper.ts` detects the tag, extracts each text block, and emits a `subagent_text_delta` stream event carrying `{ parentToolUseId, text }`. Non-text blocks (tool_use / thinking) are dropped — v1 is text only.
-- **The client correlates back to the spawning task.** `handleSubagentTextDelta` (`apps/client/src/layers/features/chat/model/stream/stream-tool-handlers.ts`) resolves the event's `parentToolUseId` to the spawning `Task` part via `findBackgroundTaskPartByToolUseId` (the `toolUseId` retained when the background task started), then appends `text` to that part's `subagentText`. The text renders inside the task's block (`SubagentBlock.tsx`). Deltas that arrive before the task is known are dropped.
+- **The client side is not wired today.** The client handler that appended each delta to the spawning `Task` part's `subagentText` (`handleSubagentTextDelta`) was retired with the client stream model in spec 255. `SubagentBlock.tsx` still renders a part's `subagentText`, and `subagentText` is still in the part schema (`packages/shared/src/schemas.ts`), but no current code sets it. Check this before you describe live subagent text as working.
 
 ### Extension MCP Tools
 
@@ -870,7 +870,7 @@ Key sub-modules composed by RelayCore:
 | `DeadLetterQueue`       | O(1) SQLite-backed dead-letter lookup; separate from message history           |
 | `AccessControl`         | Per-subject access control rules (allow/deny by sender pattern)                |
 | `DeliveryPipeline`      | Staged delivery: rate limit → circuit breaker → backpressure → Maildir write   |
-| `AdapterDelivery`       | Adapter delivery with 30-second timeout protection                             |
+| `AdapterDelivery`       | Adapter delivery: `relay.agent.*` detached, other subjects awaited (120 s)     |
 | `SignalEmitter`         | Lifecycle signal broadcasting for Mesh bridge integration                      |
 | `RateLimiter`           | Per-sender sliding window rate limiting                                        |
 | `CircuitBreakerManager` | Per-endpoint circuit breaker (CLOSED / OPEN / HALF_OPEN states)                |
@@ -886,7 +886,7 @@ Pipeline steps:
 3. Rate limit check (per-sender)
 4. Build envelope with budget
 5. Deliver to matching Maildir endpoints (may be zero)
-6. Deliver to matching adapter via `deliverToAdapter()` (timeout-protected, 30s)
+6. Deliver to matching adapter via `deliverToAdapter()` (`relay.agent.*` detached; other subjects awaited under a 120 s timeout)
 7. Dead-letter only when `deliveredTo === 0` and no matching endpoints exist
 
 Adapter delivery includes SQLite indexing (with `adapter:` prefixed endpoint hash) for audit trail completeness.
@@ -924,7 +924,7 @@ Loading errors are non-fatal: the loader warns and skips the failing adapter.
 
 - Loads config from `~/.dork/relay/adapters.json` and watches for changes via chokidar (hot-reload)
 - Delegates adapter instantiation to `adapter-factory.ts` and `adapter-plugin-loader.ts`
-- Masks sensitive fields (via `AdapterManifest.configFields[].sensitive`) in API responses
+- Masks password fields (`configFields[].type === 'password'`) in API responses (`maskSensitiveFields`)
 - Initializes and owns the `BindingStore` and `BindingRouter` subsystems (when `relayCore` is provided)
 - Preserves password fields across config updates (`mergeWithPasswordPreservation`)
 
@@ -940,6 +940,7 @@ Outbound: RelayCore.publish() → AdapterRegistry.deliver() → Adapter.deliver(
 | Adapter             | Library                  | Transport               | Subject Prefix                          |
 | ------------------- | ------------------------ | ----------------------- | --------------------------------------- |
 | `TelegramAdapter`   | grammY                   | Long polling / webhook  | `relay.human.telegram.*`                |
+| `SlackAdapter`      | Slack Bolt               | Socket Mode             | `relay.human.slack.*`                   |
 | `WebhookAdapter`    | Native HTTP              | HTTP POST + HMAC-SHA256 | `relay.webhook.*`                       |
 | `ClaudeCodeAdapter` | Every registered runtime | In-process              | `relay.agent.>`, `relay.system.tasks.>` |
 
@@ -958,44 +959,9 @@ It also **subscribes** to two control subjects — `relay.system.approval.>` (to
 
 On deliver, it extracts payload content via shared `extractPayloadContent()` utilities, streams the SDK response back to the `replyTo` subject as individual `StreamEvent` chunks, and records delivery spans in `TraceStore`.
 
-### Adapter Catalog Management
+### Adapter catalog and bindings
 
-The adapter catalog allows users to discover available adapter types and configure instances without editing JSON files directly.
-
-`AdapterManifest` (in `@dorkos/shared/relay-schemas`) describes each adapter type with:
-
-- `configFields: ConfigField[]` — typed field definitions (text, password, number, boolean) with `required`, `default`, `description`, and `sensitive` flags
-- `multiInstance` — whether multiple instances of the type are allowed
-- `builtin` — whether the adapter ships with DorkOS or is user-installed
-- `category` — adapter grouping (`internal` | `messaging` | `webhook` | `custom`)
-
-`GET /api/relay/adapters/catalog` returns `CatalogEntry[]` — the full manifest plus all configured instances, with sensitive fields masked. The UI (`AdapterSetupWizard`, `AdapterCard`, `CatalogCard`, `ConfigFieldInput`) uses this catalog for guided setup without requiring JSON editing.
-
-### Adapter-Agent Binding Router
-
-The `BindingRouter` (`apps/server/src/services/relay/binding-router.ts`) routes inbound messages from external adapters to the correct agent session. It subscribes to `relay.human.>` and resolves a binding for each message.
-
-**Binding resolution** uses most-specific-first scoring against the `BindingStore`:
-
-1. `adapterId + chatId + channelType` (score 7)
-2. `adapterId + chatId` (score 5)
-3. `adapterId + channelType` (score 3)
-4. `adapterId` only / wildcard (score 1)
-5. No match → message silently dropped (no dead-letter)
-
-**Session strategies** (configured per binding):
-
-- `per-chat` (default) — one agent session per `chatId`; reuses existing sessions
-- `per-user` — one session per user identity extracted from envelope metadata
-- `stateless` — creates a fresh session for every message
-
-**Session persistence** — the session map is written atomically to `{relayDir}/sessions.json` on every new session creation and on shutdown. On startup, `BindingRouter` loads this file to recover session mappings across server restarts. The map uses LRU eviction when it exceeds 10,000 entries.
-
-**Subject parsing** handles both DM subjects (`relay.human.{platformType}.{chatId}`) and group chat subjects (`relay.human.{platformType}.group.{chatId}`). The platform type (e.g., `telegram`) is resolved to the actual adapter instance ID via `resolveAdapterInstanceId`.
-
-**`BindingStore`** (`apps/server/src/services/relay/binding-store.ts`) persists bindings to `~/.dork/relay/bindings.json`. It uses chokidar with mtime-based self-write detection to distinguish external edits from its own saves, triggering hot-reload only for the former.
-
-See `contributing/relay-adapters.md` for the full developer guide on creating custom adapters.
+The adapter catalog (`AdapterManifest`, `ConfigField`, `GET /api/relay/adapters/catalog`) lets people set up adapter instances without editing JSON, and the binding subsystem (`BindingStore` + `BindingRouter`, most-specific-first resolution, `per-chat` / `per-user` / `stateless` session strategies, bridged bindings into rooms) routes inbound chat messages to the right agent session. Both are documented in full in [relay-adapters.md](relay-adapters.md#adapter-catalog), alongside the delivery pipeline and its timeouts.
 
 ## Relay Message Routing (on by default)
 

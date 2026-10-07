@@ -36,6 +36,9 @@ vi.mock('@/layers/entities/config', () => ({
   useUpdateSidebarPrefs: () => ({ update: vi.fn() }),
   setSectionCollapsed: (prefs: unknown) => prefs,
   setGroupCollapsed: (prefs: unknown) => prefs,
+  // The local zone stack is what this file is about, and spaces ship off
+  // (DOR-2740), so no space's channels can take the panel over here.
+  useSpacesEnabled: () => false,
 }));
 
 // Remote groups have their own transport-backed tests; this fixture exercises

@@ -37,6 +37,7 @@ import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
 import { logger, createTaggedLogger } from '../../lib/logger.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 import { createLateTurnSource } from '../session/runtime-turns/late-turns.js';
+import { relayTurnOrigin } from '../session/origin/turn-origin.js';
 import { resolveTurnRuntimeType } from '../runtimes/shared/resolve-agent-runtime-type.js';
 import { AdapterError } from './adapter-error.js';
 import { createTurnExecutionSettingsResolver } from './turn-execution-settings.js';
@@ -207,11 +208,11 @@ export async function createAdapter(
           // The origin seeds no permission mode: an agent-to-agent DM carries
           // the grant it arrived under, and an absent grant is not consent
           // (DOR-604, DOR-2105).
-          bindSessionRuntime: async ({ sessionId, runtimeType, agentDirectory }) => {
+          bindSessionRuntime: async ({ sessionId, runtimeType, agentDirectory, from }) => {
             await runtimeRegistry.persistSessionRuntime(
               sessionId,
               runtimeType,
-              { kind: 'agent-dm' },
+              relayTurnOrigin(from),
               agentDirectory
             );
           },

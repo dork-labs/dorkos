@@ -93,6 +93,7 @@ import {
 import { resolveThinkingOptions } from './thinking-config.js';
 import { createEditBaselineCapture, detectSlashCommandName } from './message-sender-shared.js';
 import type { MessageSenderOpts } from './message-sender-shared.js';
+import { turnPermissionMode } from '../turn-permission.js';
 
 /**
  * Whether DorkOS attaches host context to auto mode's permission classifier,
@@ -637,11 +638,19 @@ export async function resolveLaunch(args: {
   // no way to learn why. The note is user-facing and says what changes for them;
   // the log line beside it carries the id, which is the half a person cannot use
   // and an operator reading logs needs.
-  const declaredMode = narrowToClaudeCodeMode(session.permissionMode, 'default');
-  if (declaredMode !== session.permissionMode) {
+  //
+  // The turn's ceiling is applied FIRST, for the same reason and in the same
+  // per-query way: a turn another agent's post or a stranger's message started
+  // runs no looser than its sender, and the session's own choice is never
+  // rewritten (spec `trusted-by-default-flip` §4). On a warm process the mode
+  // this resolves is what the fingerprint compares, so the live process is moved
+  // down for this turn and back up for the next one.
+  const turnMode = turnPermissionMode(session);
+  const declaredMode = narrowToClaudeCodeMode(turnMode, 'default');
+  if (declaredMode !== turnMode) {
     logger.warn('[sendMessage] saved permission mode is not one this runtime offers', {
       session: sessionId,
-      stored: session.permissionMode,
+      stored: turnMode,
       running: declaredMode,
     });
     statusEvents.push({ type: 'system_status', data: { message: UNKNOWN_MODE_STATUS } });

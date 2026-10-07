@@ -4,11 +4,14 @@ import { cleanup, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { ChannelsPage } from '../ui/ChannelsPage';
 
-const { redirect, remote, local, navigate, address } = vi.hoisted(() => ({
+const { redirect, remote, local, navigate, sentTo, spaces, address } = vi.hoisted(() => ({
   redirect: vi.fn(() => 'show'),
   remote: vi.fn(),
   local: vi.fn(),
   navigate: vi.fn(),
+  sentTo: vi.fn(),
+  /** The spaces experiment (DOR-2740) as the config read reports it. */
+  spaces: { enabled: true, isLoading: false },
   address: { id: 'same-as-local-team', community: 'remote-a', thread: 'remote-thread' } as {
     id?: string;
     community?: string;
@@ -18,6 +21,10 @@ const { redirect, remote, local, navigate, address } = vi.hoisted(() => ({
 vi.mock('@tanstack/react-router', () => ({
   useSearch: () => address,
   useNavigate: () => navigate,
+  Navigate: (props: unknown) => {
+    sentTo(props);
+    return null;
+  },
 }));
 vi.mock('../model/use-team-room-redirect', () => ({ useTeamRoomRedirect: redirect }));
 vi.mock('../ui/RemoteCommunitySurface', () => ({
@@ -42,6 +49,9 @@ vi.mock('@/layers/shared/model', () => ({
   useIsMobile: () => false,
   useCommunityAuthority: () => ({ epoch: 1, ownerKey: 'owner' }),
 }));
+vi.mock('@/layers/entities/config', () => ({
+  useSpacesState: () => spaces,
+}));
 const { connections } = vi.hoisted(() => ({
   connections: { data: [] as Array<Record<string, unknown>> },
 }));
@@ -62,6 +72,8 @@ afterEach(() => {
   address.id = 'same-as-local-team';
   address.community = 'remote-a';
   address.thread = 'remote-thread';
+  spaces.enabled = true;
+  spaces.isLoading = false;
 });
 
 describe('qualified channel route', () => {
@@ -117,6 +129,40 @@ describe('qualified channel route', () => {
     // The same element, so focus the switcher put on it survives the second hop.
     expect(screen.getByRole('heading', { level: 1 })).toBe(before);
     expect(before).toHaveTextContent('remote-a heading for general');
+  });
+});
+
+// Purpose: spaces ship off (DOR-2740), so a space's address leads to the channel
+// list instead, and nothing of the space is asked for or drawn on the way. Fails
+// if the page stops reading the experiment, or decides before the config answers.
+describe('a space address while spaces are off', () => {
+  it('goes to the channel list and draws no space', () => {
+    spaces.enabled = false;
+    const { container } = render(<ChannelsPage />);
+    expect(sentTo).toHaveBeenCalledWith(
+      expect.objectContaining({ to: '/channels', search: {}, replace: true })
+    );
+    expect(remote).not.toHaveBeenCalled();
+    expect(local).not.toHaveBeenCalled();
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('draws nothing, and goes nowhere, until the config has answered', () => {
+    spaces.enabled = false;
+    spaces.isLoading = true;
+    const { container } = render(<ChannelsPage />);
+    expect(container).toBeEmptyDOMElement();
+    expect(sentTo).not.toHaveBeenCalled();
+    expect(remote).not.toHaveBeenCalled();
+  });
+
+  it('leaves a local room’s address alone', () => {
+    spaces.enabled = false;
+    address.community = undefined;
+    address.id = 'general';
+    render(<ChannelsPage />);
+    expect(screen.getByText('Local channel')).toBeInTheDocument();
+    expect(sentTo).not.toHaveBeenCalled();
   });
 });
 

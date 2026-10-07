@@ -51,7 +51,7 @@ export async function maybeShowNewsletterTip(): Promise<void> {
     if (await alreadyShown()) return;
 
     console.log('');
-    console.log('  📬  Release notes + fleet reports, about twice a month:');
+    console.log('  📬  Release notes and agent reports, about twice a month:');
     console.log(`      ${NEWSLETTER_URL}`);
     console.log(`      (shown once; set ${SUPPRESS_ENV}=1 to always skip)`);
     console.log('');

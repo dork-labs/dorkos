@@ -7,22 +7,14 @@ This is the "why we build it and how we talk about it" layer, not a product-API
 source of truth. For current product behavior, see the docs site (`docs/`) and
 the internal developer guides (`contributing/`).
 
-**Start here:** [`positioning-202610/00-overview.md`](positioning-202610/00-overview.md),
-the canonical strategy statement since the 2026-10-06 vision reset. DorkOS is a
-workspace for people and agents, built first for founders who run a business
-with agents. The chat workspace is table stakes; what sets DorkOS apart is mini
-apps (your agents build the tools your business needs), built for founders, and
-ownership. Its [demo-claim gate](positioning-202610/00-overview.md#the-demo-claim-gate)
-decides what any public surface may claim. Where an older file in this folder
-disagrees with it, the overview wins; older files carry a banner saying so.
+## Start here: the north-star set
 
-## Current strategy (`positioning-202610/`)
+Read these four first. Where anything else in the repo disagrees with them, they win.
 
-- [`positioning-202610/00-overview.md`](positioning-202610/00-overview.md): vision,
-  mission, what sets us apart (mini apps, built for founders, ownership, and the
-  hero), audience, category, core ideas, trust by default, local first and
-  cloud optional, launch scope, roadmap order, the demo-claim gate, open risks,
-  and what it supersedes.
+- [`VISION.md`](VISION.md): vision, mission, the office-and-workers picture, who it is for, the message stack and what sets us apart.
+- [`PRINCIPLES.md`](PRINCIPLES.md): how we decide. Trusted by default, co-workers, equal accounts (internal), ownership, local first and cloud optional, claim only what works, the quality bar.
+- [`VOICE.md`](VOICE.md): the single source for language. Headline rules, words we use, words and claims we never use.
+- [`ROADMAP.md`](ROADMAP.md): built, before launch and after launch, with tickets, plus the demo-claim gate and open risks.
 
 ## Strategy and brand (root)
 
@@ -30,7 +22,7 @@ disagrees with it, the overview wins; older files carry a banner saying so.
   the workers), with every capability labelled built, before launch or roadmap,
   plus the architecture that carries over. Rewritten 2026-10-06.
 - [`brand-foundation.md`](brand-foundation.md): category, positioning, audience,
-  origin story, voice, naming and taglines. Brought current 2026-10-06.
+  origin story, voice, naming and taglines. Brought current 2026-10-07.
 - [`agent-etiquette.md`](agent-etiquette.md): how an agent conducts itself in a
   room, DM or channel it shares with people and other agents. Present, useful
   and mostly quiet. Updated 2026-10-06 so its rules rest on judgment and the
@@ -91,8 +83,9 @@ material, not the current spec: for how `/flow` behaves today see
 The working sessions behind the marketing-site copy.
 
 - [`website-copy/decisions.md`](website-copy/decisions.md): the copy decisions of
-  record. Decision 19 records the 2026-10 category, tagline and story; Decision 3
-  is retired; Decision 18 is updated.
+  record. Decision 19 records the 2026-10 category, tagline and story; Decision 21
+  records the message stack and headline rules; Decision 3 is retired;
+  Decision 18 is updated.
 - [`website-copy/process.md`](website-copy/process.md): how the copy was produced.
 - `website-copy/brief/`: the February 2026 creative brief (superseded) and its
   supplement.

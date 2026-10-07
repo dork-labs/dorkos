@@ -14,6 +14,8 @@ supersedes: 260707-122350
 
 Accepted. **Supersedes [260707-122350](260707-122350-admin-console-lives-in-site.md)** (The admin console lives in `apps/site` now, extracted to its own app only on a trigger).
 
+(2026-10-06 audit) Still governs; the old admin pages in `apps/site` (`src/app/admin/*`, `src/lib/admin-service.ts`) are still in this repo and still wired; removing them is follow-up work.
+
 ## Context
 
 `260707-122350` kept the admin console as a guarded route group inside `apps/site`, extracting it only when a concrete trigger fired — non-founder staff needing admin access, dashboards outgrowing the marketing app, or a compliance need to move admin off the public domain. As documented in `AGENTS.md`'s "DorkOS Cloud" section, the hosted, paid layer's control plane is a separate, closed-source service that the public app talks to only through the public wire-contract package, `packages/cloud-api`. Building out that hosted layer is now moving account management, device link, the instance registry, and managed connections into the control plane as a unit, so the admin console that sits on top of them moves with them rather than staying stranded on the public site.

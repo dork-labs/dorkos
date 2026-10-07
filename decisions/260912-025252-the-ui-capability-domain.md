@@ -14,6 +14,8 @@ amends: null
 
 Accepted (extracted from spec `canvas-agent-seat`).
 
+(2026-10-06 audit) Still governs; the module lives at `apps/server/src/services/session/browser-seat/ui-capabilities.ts`.
+
 ## Context
 
 `control_ui`, `get_ui_state` and the three `browser_*` tools are hand-registered in

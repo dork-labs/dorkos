@@ -128,7 +128,7 @@ DORKOS_TEST_RUNTIME=true DORKOS_PORT=4243 VITE_PORT=4248 \
 DORKOS_PORT=4243 VITE_PORT=4248 dotenv -- turbo dev --filter=@dorkos/client
 ```
 
-A never-onboarded `DORK_HOME` renders the **first-run wizard instead of the cockpit**, so every wait for the app shell times out. Dismiss it once, exactly as `apps/e2e/global-setup.ts` does:
+A never-onboarded `DORK_HOME` renders the **first-run wizard instead of the app**, so every wait for the app shell times out. Dismiss it once, exactly as `apps/e2e/global-setup.ts` does:
 
 ```bash
 NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -161,7 +161,7 @@ done
 
 ### Name the install before you drive it — and get a yes for the real one
 
-**The probe above falls through to 4242, which is the operator's installed cockpit on their real `~/.dork`.** That is the accident case, not a choice: it is what answers whenever the dev server is simply not running. This test then creates sessions, writes files, and changes settings there, and nothing it does is undone afterwards. So identify the install first — the server says so itself, and it is the only thing that knows:
+**The probe above falls through to 4242, which is the operator's installed app on their real `~/.dork`.** That is the accident case, not a choice: it is what answers whenever the dev server is simply not running. This test then creates sessions, writes files, and changes settings there, and nothing it does is undone afterwards. So identify the install first — the server says so itself, and it is the only thing that knows:
 
 ```bash
 curl -s "http://localhost:$API_PORT/api/config" > /tmp/st-config.json
@@ -185,7 +185,7 @@ echo "DORK_DIR=$DORK_DIR"
 | `dorkHome`                | What it is                                             |
 | ------------------------- | ------------------------------------------------------ |
 | `/tmp/dorkos-*`           | throwaway — go ahead                                   |
-| `~/.dork`                 | the installed cockpit (what port 4242 means)           |
+| `~/.dork`                 | the installed app (what port 4242 means)               |
 | `apps/server/.temp/.dork` | the dev stack's own data — real work lives here        |
 | anything else             | a `DORK_HOME` override, a Docker mount, someone's copy |
 
@@ -219,7 +219,7 @@ Name the snapshot path in the report, with the one-line restore beside it:
 cp "$CONFIG_SNAPSHOT" "$DORK_DIR/config.json"   # then reload the browser tab
 ```
 
-The server re-reads `config.json` on every access, so a restore takes effect without a restart; the reload is only to drop the cockpit's cached copy. **Offer that restore explicitly in the final report** — say which settings the run changed, and that the snapshot puts back the exact file, including keys the run added that were never there before (a `PATCH` cannot: writing a schema default is a stored key, not an absent one).
+The server re-reads `config.json` on every access, so a restore takes effect without a restart; the reload is only to drop the app's cached copy. **Offer that restore explicitly in the final report** — say which settings the run changed, and that the snapshot puts back the exact file, including keys the run added that were never there before (a `PATCH` cannot: writing a schema default is a stored key, not an absent one).
 
 Check server config for Pulse status:
 

@@ -1,3 +1,4 @@
+import { captureTurnLevelOptions } from '../../core/turn-power/turn-levels.js';
 import { createRunOutcomeTracker } from '@dorkos/shared/run-outcome';
 import {
   requireOriginalSessionProjection,
@@ -434,7 +435,7 @@ import {
 } from '../../core/runtime-registry.js';
 const originalClaudeLockedStreams = new WeakMap<
   object,
-  { runtime: object; sessionId: string; current(): boolean }
+  { runtime: object; sessionId: string; options: Readonly<MessageOpts>; current(): boolean }
 >();
 /** Fixed constructor-created stream identity plus the original live acquisition; never a supplied stream matcher. */
 export function readClaudeOriginalLockedStream(
@@ -444,6 +445,17 @@ export function readClaudeOriginalLockedStream(
 ): boolean {
   const own = originalClaudeLockedStreams.get(stream);
   return !!own && own.runtime === runtime && own.sessionId === sessionId && own.current();
+}
+/** Exact original opened turn DATA; a supplied observer cannot replace these options. */
+export function readClaudeOriginalLockedTurnOptions(
+  runtime: object,
+  sessionId: string,
+  stream: object
+) {
+  const own = originalClaudeLockedStreams.get(stream);
+  return own && own.runtime === runtime && own.sessionId === sessionId && own.current()
+    ? { options: own.options }
+    : undefined;
 }
 import { isNonFatalErrorCode, isAbsolvingTerminalReason } from '@dorkos/shared/run-outcome';
 import { isInterruptedTerminalReason } from '@dorkos/shared/schemas';
@@ -1933,6 +1945,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       originalClaudeLockedStreams.set(returned, {
         runtime: this,
         sessionId,
+        options: captureTurnLevelOptions(opts),
         current: () => {
           if (lifetime.closed) return false;
           const at = Date.now(),
@@ -2534,6 +2547,12 @@ export class ClaudeCodeRuntime implements AgentRuntime {
         // Per turn too, for the same reason: an automatic carry-over's first turn
         // has nobody to ask, and the person who opens it next does.
         session.unattendedTurn = opts?.unattended === true;
+        // Bound each turn by its sender, clearing a prior ceiling for the next direct turn.
+        if (opts?.permissionCeiling !== undefined) {
+          session.turnPermissionCeiling = opts.permissionCeiling;
+        } else {
+          delete session.turnPermissionCeiling;
+        }
         const accessContext =
           connectorTurn &&
           this.connectorRuntimeTools &&

@@ -60,6 +60,7 @@ export type OriginalNativeLaunchCase =
   | 'runner-bound-halt'
   | 'runner-canonical-halt'
   | 'runner-canonical-owner'
+  | 'runner-canonical-level'
   | 'runner-confirmed-stop'
   | 'runner-unconfirmed-stop'
   | 'runner-owner-write-failure'

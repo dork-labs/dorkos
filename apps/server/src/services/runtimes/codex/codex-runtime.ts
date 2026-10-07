@@ -1,10 +1,11 @@
+import { captureTurnLevelOptions } from '../../core/turn-power/turn-levels.js';
 import {
   readOriginalRegisteredNativeStream,
   readOriginalRegisteredRuntime,
 } from '../../core/runtime-registry.js';
 const originalCodexLockedStreams = new WeakMap<
   object,
-  { runtime: object; sessionId: string; current(): boolean }
+  { runtime: object; sessionId: string; options: Readonly<MessageOpts>; current(): boolean }
 >();
 /** Fixed constructor-created stream identity plus the original live acquisition; never a supplied stream matcher. */
 export function readCodexOriginalLockedStream(
@@ -14,6 +15,17 @@ export function readCodexOriginalLockedStream(
 ): boolean {
   const own = originalCodexLockedStreams.get(stream);
   return !!own && own.runtime === runtime && own.sessionId === sessionId && own.current();
+}
+/** Exact original opened turn DATA; a supplied observer cannot replace these options. */
+export function readCodexOriginalLockedTurnOptions(
+  runtime: object,
+  sessionId: string,
+  stream: object
+) {
+  const own = originalCodexLockedStreams.get(stream);
+  return own && own.runtime === runtime && own.sessionId === sessionId && own.current()
+    ? { options: own.options }
+    : undefined;
 }
 import { isNonFatalErrorCode, isAbsolvingTerminalReason } from '@dorkos/shared/run-outcome';
 import { isInterruptedTerminalReason } from '@dorkos/shared/schemas';
@@ -235,7 +247,7 @@ import {
   type CodexThreadMetadataPatch,
   type CodexThreadRecord,
 } from './thread-map.js';
-import { tightensDeclaredMode } from '@dorkos/shared/permission-semantics';
+import { clampModeToCeiling, tightensDeclaredMode } from '@dorkos/shared/permission-semantics';
 import { CODEX_CAPABILITIES } from './runtime-constants.js';
 import {
   ExecCodexTransport,
@@ -1276,6 +1288,7 @@ export class CodexRuntime implements AgentRuntime {
       originalCodexLockedStreams.set(returned, {
         runtime: this,
         sessionId,
+        options: captureTurnLevelOptions(opts),
         current: () => {
           if (lifetime.closed) return false;
           const at = Date.now(),
@@ -2034,8 +2047,20 @@ export class CodexRuntime implements AgentRuntime {
     const model = opts?.model ?? tracked.model;
     const effort = opts?.effort ?? tracked.effort;
     const fastMode = opts?.fastMode ?? tracked.fastMode;
+    const chosen = opts?.permissionMode ?? tracked.permissionMode;
     return {
-      permissionMode: opts?.permissionMode ?? tracked.permissionMode,
+      // Held to the turn's ceiling, for this turn only: a turn another agent's
+      // post or a stranger's message started runs no looser than its sender,
+      // and the tracked mode is left as the person chose it (spec
+      // `trusted-by-default-flip` §4).
+      permissionMode:
+        opts?.permissionCeiling !== undefined
+          ? clampModeToCeiling(
+              this.getCapabilities().permissionModes,
+              chosen,
+              opts.permissionCeiling
+            )
+          : chosen,
       ...(model !== undefined ? { model } : {}),
       ...(effort !== undefined ? { effort } : {}),
       ...(fastMode !== undefined ? { fastMode } : {}),
@@ -2587,6 +2612,9 @@ function wakeContextOf(opts: MessageOpts | undefined, cwd: string): CodexWakeCon
     ...(opts?.unattendedApprovals !== undefined
       ? { unattendedApprovals: opts.unattendedApprovals }
       : {}),
+    // The bound travels with the work it bounds: a wake turn after background
+    // work an outsider's turn started runs no looser than that turn did.
+    ...(opts?.permissionCeiling !== undefined ? { permissionCeiling: opts.permissionCeiling } : {}),
   } as MessageOpts;
   return { opts: carried };
 }

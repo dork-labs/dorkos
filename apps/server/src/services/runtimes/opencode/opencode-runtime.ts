@@ -1,10 +1,11 @@
+import { captureTurnLevelOptions } from '../../core/turn-power/turn-levels.js';
 import {
   readOriginalRegisteredNativeStream,
   readOriginalRegisteredRuntime,
 } from '../../core/runtime-registry.js';
 const originalOpenCodeLockedStreams = new WeakMap<
   object,
-  { runtime: object; sessionId: string; current(): boolean }
+  { runtime: object; sessionId: string; options: Readonly<MessageOpts>; current(): boolean }
 >();
 /** Fixed constructor-created stream identity plus the original live acquisition; never a supplied stream matcher. */
 export function readOpenCodeOriginalLockedStream(
@@ -14,6 +15,17 @@ export function readOpenCodeOriginalLockedStream(
 ): boolean {
   const own = originalOpenCodeLockedStreams.get(stream);
   return !!own && own.runtime === runtime && own.sessionId === sessionId && own.current();
+}
+/** Exact original opened turn DATA; a supplied observer cannot replace these options. */
+export function readOpenCodeOriginalLockedTurnOptions(
+  runtime: object,
+  sessionId: string,
+  stream: object
+) {
+  const own = originalOpenCodeLockedStreams.get(stream);
+  return own && own.runtime === runtime && own.sessionId === sessionId && own.current()
+    ? { options: own.options }
+    : undefined;
 }
 import { isNonFatalErrorCode, isAbsolvingTerminalReason } from '@dorkos/shared/run-outcome';
 import { isInterruptedTerminalReason } from '@dorkos/shared/schemas';
@@ -161,6 +173,7 @@ import type {
   AgentRegistryPort,
   ManagedMcpServerResolver,
   SessionUpdateResult,
+  TurnPermissionCeiling,
 } from '@dorkos/shared/agent-runtime';
 import type {
   SessionSnapshot,
@@ -808,6 +821,7 @@ export class OpenCodeRuntime implements AgentRuntime {
       originalOpenCodeLockedStreams.set(returned, {
         runtime: this,
         sessionId,
+        options: captureTurnLevelOptions(opts),
         current: () => {
           if (lifetime.closed) return false;
           const at = Date.now(),
@@ -991,6 +1005,9 @@ export class OpenCodeRuntime implements AgentRuntime {
           lifetime,
           ...(forAgent !== undefined ? { forAgent } : {}),
           grants: validatedGrants(opts?.additionalDirectories, cwd),
+          ...(opts?.permissionCeiling !== undefined
+            ? { permissionCeiling: opts.permissionCeiling }
+            : {}),
         }
       );
     } catch (cause) {
@@ -1368,6 +1385,7 @@ export class OpenCodeRuntime implements AgentRuntime {
       connectorTurn?: boolean;
       forAgent?: string;
       grants?: readonly DirectoryGrant[];
+      permissionCeiling?: TurnPermissionCeiling;
       lifetime?: {
         closed: boolean;
         retire?: () => void;
@@ -1651,6 +1669,9 @@ export class OpenCodeRuntime implements AgentRuntime {
         cwd,
         permissions: ctx,
         ...(opts?.grants ? { grants: opts.grants } : {}),
+        ...(opts?.permissionCeiling !== undefined
+          ? { permissionCeiling: opts.permissionCeiling }
+          : {}),
       };
       for await (const mapped of mapOpenCodeTurn(queue, ctx)) {
         // On credits, a refused token is the credits card, never an OpenCode

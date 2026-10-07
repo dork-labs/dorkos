@@ -58,6 +58,9 @@ test.describe('Packaged Community local-agent proof @integration', () => {
           profile: { rolePromptDismissedAt: now, identityPromptDismissedAt: now },
           telemetry: { userHasDecided: true },
           ui: { fullPowerDecidedAt: now, fullPowerChoice: 'supervised' },
+          // Spaces are an experiment, off by default (DOR-2740). This proof is
+          // about spaces, so it turns them on the way a person would.
+          spaces: { enabled: true },
         }),
       });
       await bootstrapCommunity(pageA, {

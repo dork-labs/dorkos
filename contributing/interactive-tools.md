@@ -265,7 +265,7 @@ Full walkthrough for a mode that asks (every mode but `bypassPermissions`).
 
 **1. SDK triggers `canUseTool`**
 
-For any tool that is not `AskUserQuestion`, and is not in the auto-approved sets (read-only Claude Code tools and DorkOS agent tools), the `createCanUseTool` callback consults `resolveModeDecision(session.permissionMode)`; when it returns `'ask'`, the callback calls `handleToolApproval`. Only `bypassPermissions` returns `'allow'` — every other mode (`default`, `acceptEdits`, `auto`, `plan`, `dontAsk`) asks, each for its own reason (see the TSDoc on `resolveModeDecision`). The auto-approved tool sets are defined as module-level `Set` constants (`READ_ONLY_TOOLS` and `DORKOS_AGENT_TOOLS`) to avoid per-call reconstruction. Read-only tools (`Read`, `Grep`, `Glob`, `LS`, `NotebookRead`, `WebSearch`, `WebFetch`) are always auto-approved regardless of permission mode.
+For any tool that is not `AskUserQuestion`, and is not in the auto-approved sets (read-only Claude Code tools and DorkOS agent tools), the `createCanUseTool` callback consults `resolveModeDecision(turnPermissionMode(session))`: the session's mode held to the current turn's `permissionCeiling` (`claude-code/turn-permission.ts`; spec `trusted-by-default-flip` §4), so a turn another agent's post or a stranger's message started is never auto-allowed on the session's own level; when it returns `'ask'`, the callback calls `handleToolApproval`. Only `bypassPermissions` returns `'allow'` — every other mode (`default`, `acceptEdits`, `auto`, `plan`, `dontAsk`) asks, each for its own reason (see the TSDoc on `resolveModeDecision`). The auto-approved tool sets are defined as module-level `Set` constants (`READ_ONLY_TOOLS` and `DORKOS_AGENT_TOOLS`) to avoid per-call reconstruction. Read-only tools (`Read`, `Grep`, `Glob`, `LS`, `NotebookRead`, `WebSearch`, `WebFetch`) are always auto-approved regardless of permission mode.
 
 `DORKOS_AGENT_TOOLS` is **not** `mcp__dorkos__*`. It is a hand-written set of exactly **29** prefixed names, listed in `interactive-handlers.ts`: the eight room CONVERSATION-and-lookup verbs (`post_to_room`, `react_to_room_entry`, `read_room_history`, `search_room_history`, `list_member_rooms`, `search_member_rooms`, `get_room`, `find_room`), the six that ARRANGE rooms (`create_room`, `add_room_members`, `remove_room_members`, `update_room`, `leave_room`, `archive_room` — these six sit in the Rooms permission area, so the permission gate inside `registry.invoke` still refuses or asks about them whatever this set says), five Relay tools (`relay_notify_user`, `relay_send`, `relay_inbox`, `relay_list_endpoints`, `relay_register_endpoint`), six Mesh tools (`mesh_list`, `mesh_inspect`, `mesh_discover`, `mesh_register`, `mesh_status`, `mesh_query_topology`), `get_agent`, `memory_write`, and the two UI-control tools (`control_ui`, `get_ui_state`). Every other DorkOS tool prompts like any other MCP tool. The exclusions are deliberate: all five destructive actions are absent (`tasks_delete`, `mesh_unregister`, `marketplace.uninstall` via its `marketplace_uninstall` tool, `marketplace.link` via `marketplace_link`, `operator.update_agent_boundaries`, and `operator.update_agent_execution`), and so are `config_patch` and the other eight `marketplace_*` tools. `core/__tests__/mcp-tool-gate.test.ts` asserts every name in the set is a real tool and that none is `destructive`, so promoting a tool in `mcp-tool-tiers.ts` without removing it here fails. Do not widen the set to a prefix, and do not derive it from `act` + `observe`: either change would auto-approve tools nobody chose, which is fail-open on the one axis that costs something. The `interactive-handlers.ts` TSDoc has the full argument.
 
@@ -555,7 +555,7 @@ await transport.submitElicitation(sessionId, elicitationId, { action: 'cancel' }
 | `services/runtimes/claude-code/messaging/interactive-handlers.ts` | `handleElicitation()` — deferred promise, event queue push                  |
 | `services/runtimes/claude-code/messaging/interaction-wait.ts`     | The pending-entry shapes, the park/refusal timers, the notices and the logs |
 | `apps/server/src/routes/sessions.ts`                              | `POST /:id/submit-elicitation` route                                        |
-| `apps/client/src/layers/features/chat/ui/ElicitationPrompt.tsx`   | Dynamic form renderer from JSON Schema                                      |
+| `apps/client/src/layers/features/ask/ui/ElicitationPrompt.tsx`    | Dynamic form renderer from JSON Schema                                      |
 | `packages/shared/src/schemas.ts`                                  | `ElicitationPromptEventSchema`, `ElicitationResultSchema`                   |
 
 ## Adding a New Interactive Tool
@@ -834,7 +834,8 @@ Agent calls control_ui (a `ui` capability, on any runtime)
 The session's /events stream carries it to every window on that session
   |
   v
-Client stream-event-handler.ts receives 'ui_command' event
+Client StreamManager (shared/lib/transport/stream-manager.ts) receives 'ui_command'
+  |  (attached session only) and hands it to the subscriber main.tsx registered
   |
   |  Extracts the UiCommand from event data
   |  Gets the current Zustand store state
@@ -881,13 +882,13 @@ This two-way channel -- `uiState` in (client tells agent what is visible) and `u
 
 ### Implementation Files
 
-| File                                                                 | Purpose                                                                  |
-| -------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `packages/shared/src/schemas.ts`                                     | `UiCommandSchema`, `UiStateSchema`, `UiCanvasContentSchema` definitions  |
-| `apps/server/src/services/session/browser-seat/ui-control.ts`        | `control_ui` and `get_ui_state` handlers, shared by every runtime        |
-| `apps/server/src/services/session/browser-seat/ui-capabilities.ts`   | The `ui` domain: every verb's name, tier, schema and description         |
-| `apps/client/src/layers/shared/lib/ui-action-dispatcher.ts`          | `executeUiCommand()` -- pure dispatcher, no React dependencies           |
-| `apps/client/src/layers/features/chat/model/stream-event-handler.ts` | Processes `ui_command` SSE events and dispatches to `executeUiCommand()` |
+| File                                                               | Purpose                                                                                                                          |
+| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/shared/src/schemas.ts`                                   | `UiCommandSchema`, `UiStateSchema`, `UiCanvasContentSchema` definitions                                                          |
+| `apps/server/src/services/session/browser-seat/ui-control.ts`      | `control_ui` and `get_ui_state` handlers, shared by every runtime                                                                |
+| `apps/server/src/services/session/browser-seat/ui-capabilities.ts` | The `ui` domain: every verb's name, tier, schema and description                                                                 |
+| `apps/client/src/layers/shared/lib/ui-action-dispatcher.ts`        | `executeUiCommand()` -- pure dispatcher, no React dependencies                                                                   |
+| `apps/client/src/layers/shared/lib/transport/stream-manager.ts`    | Gates `ui_command` events to the attached session and notifies subscribers; `main.tsx` subscribes and calls `executeUiCommand()` |
 
 ## Capability Approval Holds
 
@@ -987,7 +988,7 @@ The `ApprovalPrompt` component makes the server-side timeout visible to users vi
 - Screen reader announcements via `aria-live="assertive"` fire only at threshold crossings (2 min, 1 min, timeout)
 - `prefers-reduced-motion` respected via `motion-safe:` Tailwind prefix — animation disabled, color transitions remain
 
-**Data flow:** Server `handleToolApproval()` → `approval_required` event on the session stream (server-authoritative `startedAt`/`remainingMs`, seeded from `SESSIONS.INTERACTION_TIMEOUT_MS`) → stream-event-handler passes to tool call part → `ApprovalPrompt` renders the countdown, resuming at the true offset on recovery.
+**Data flow:** Server `handleToolApproval()` → `approval_required` event on the session stream (server-authoritative `startedAt`/`remainingMs`, seeded from `SESSIONS.INTERACTION_TIMEOUT_MS`) → the client turn projection (`features/chat/model/stream/project-session-turn.ts`) folds it onto the tool call part → `ApprovalPrompt` renders the countdown, resuming at the true offset on recovery.
 
 ### Recovering Pending Interactions
 
@@ -1095,7 +1096,7 @@ When users configure hooks in Claude Code, DorkOS surfaces their execution:
 - **Session-level hooks** (SessionStart, UserPromptSubmit, etc.) show in SystemStatusZone
 - **Hook failures** are always visible — tool card stays expanded, session failures escalate to error banner
 
-Hook events flow through the standard pipeline: `sdk-event-mapper.ts` → SSE → `stream-event-handler.ts` → `ToolCallCard`.
+Hook events flow through the standard pipeline: `sdk-event-mapper.ts` → session stream → client turn projection (`project-session-turn.ts`) → `ToolCallCard`.
 
 ### Routing Logic
 

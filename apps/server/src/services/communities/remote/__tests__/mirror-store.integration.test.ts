@@ -279,6 +279,55 @@ describe('RemoteMirrorStore', () => {
     expect(harness.runner.turns).toHaveLength(2);
   });
 
+  it('mirrors but never wakes a local agent while the spaces experiment is off (DOR-2740)', async () => {
+    const agents = agentLookupFor({ '/agents/ana': { name: 'Ana', responseMode: 'always' } });
+    const { harness, mirrors } = wired(agents);
+    const agent = harness.authors.resolveAgent('/agents/ana', 'Ana');
+    const room = {
+      ...roomInput(REF_A, 'general', harness.human),
+      accessors: [{ authorId: agent.id, responseMode: 'always' as const }],
+    };
+    const enrollments = new CommunityAgentEnrollmentStore(harness.db);
+    enrollments.activate({
+      communityRef: REF_A,
+      localAgentId: 'local-ana',
+      remoteMemberId: 'remote-ana',
+      ownerAuthorId: harness.human,
+    });
+    let spaces = false;
+    const bridge = new RemoteRoomSubscriptionBridge(
+      mirrors,
+      harness.service,
+      enrollments,
+      (localAgentId) => (localAgentId === 'local-ana' ? agent.id : null),
+      () => Date.parse('2026-09-16T01:00:00.000Z'),
+      undefined,
+      undefined,
+      () => spaces
+    );
+    const live = (seq: number) => {
+      const entry = nativeEntry(REF_A, 'general', seq);
+      return {
+        ...entry,
+        entry: { ...entry.entry, mentions: ['remote-ana'] },
+        author: { ...entry.author, kind: 'human' as const },
+        serverCreatedAt: '2026-09-16T01:00:00.000Z',
+      };
+    };
+    const opts = { reconnect: false, wasActiveBeforeDisconnect: false, readOnly: false };
+
+    const off = live(1);
+    bridge.importLive(room, off, opts);
+    await harness.service.triggersIdle();
+    expect(harness.runner.turns).toHaveLength(0);
+    expect(mirrors.cachedEntryForOwner(REF_A, 'general', off.entry.id, harness.human)).toBeTruthy();
+
+    spaces = true;
+    bridge.importLive(room, live(2), opts);
+    await harness.service.triggersIdle();
+    expect(harness.runner.turns).toHaveLength(1);
+  });
+
   it('does not refresh a stale owner mirror from a live frame before dispatching it', async () => {
     const agents = agentLookupFor({ '/agents/ana': { name: 'Ana', responseMode: 'always' } });
     const { harness, mirrors } = wired(agents);

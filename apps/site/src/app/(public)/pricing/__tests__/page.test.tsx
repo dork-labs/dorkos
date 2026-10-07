@@ -65,3 +65,38 @@ describe('the plan buttons', () => {
     expect(free.getAttribute('href')).toBe('/install');
   });
 });
+
+describe('coming soon marks on cloud agents', () => {
+  // Cloud agents aren't built yet. Fails if the badge goes missing, or if it starts changing the
+  // text beside it rather than sitting next to it.
+  it('badges the hosted space on Free and the cloud agents on Pro and Max', () => {
+    render(<PricingPage />);
+    const plans = screen.getByRole('region', { name: 'Plans' });
+
+    const freeBenefit = within(plans).getByText(
+      'One space we run for you, for up to 50 people, with 1 GB of storage (United States, 18 or older)'
+    );
+    expect(within(freeBenefit.closest('li') as HTMLElement).getByText('Coming soon')).toBeTruthy();
+
+    const proBenefit = within(plans).getByText(
+      'Room for 3 agents in the cloud, each with its own email address'
+    );
+    expect(within(proBenefit.closest('li') as HTMLElement).getByText('Coming soon')).toBeTruthy();
+
+    const maxBenefit = within(plans).getByText('Room for 10 agents in the cloud');
+    expect(within(maxBenefit.closest('li') as HTMLElement).getByText('Coming soon')).toBeTruthy();
+  });
+
+  it('badges the extra agent add-on and the comparison table’s "In the cloud" row', () => {
+    const { container } = render(<PricingPage />);
+
+    const extraDetail = screen.getByText(
+      'One more agent in the cloud, with its own email address. On any paid plan.'
+    );
+    expect(within(extraDetail.closest('li') as HTMLElement).getByText('Coming soon')).toBeTruthy();
+
+    const compare = container.querySelector('#compare') as HTMLElement;
+    const row = within(compare).getByText('In the cloud').closest('tr') as HTMLElement;
+    expect(within(row).getAllByText('Coming soon')).toHaveLength(4);
+  });
+});

@@ -19,7 +19,7 @@ export interface DockApp {
    * anything other than `ga`. That is why Connections is absent — it is the
    * catalog's one `beta` entry, and its sign-in is brokered by a third party
    * that holds the credential in its own vault, which is also the one thing
-   * that would make "Your computer. Your files." untrue.
+   * that would make "Yours to keep." untrue.
    */
   feature: string;
   color: string;

@@ -9,6 +9,7 @@ import type {
   InterruptReason,
   InterruptReceipt,
   Task,
+  ServerConfig,
   TaskRun,
   UiCanvasContent,
 } from '@dorkos/shared/types';
@@ -438,6 +439,46 @@ const UNLINKED_CREDITS = {
   defaults: {},
   notices: [],
 } as const;
+
+/**
+ * The `experiments` block of a server config holding only the spaces switch
+ * (`spaces.enabled`, DOR-2740), on or off. The key mirrors the client's
+ * `SPACES_EXPERIMENT`; this package cannot import the client to read it.
+ *
+ * {@link createMockTransport} lists no experiments, so spaces read as off there,
+ * exactly as they ship. A test about a space surface turns them on with
+ * {@link withSpacesExperiment}, or puts this array in its own config mock.
+ *
+ * @param enabled - Whether the spaces experiment is on.
+ */
+export function spacesExperiment(enabled: boolean): NonNullable<ServerConfig['experiments']> {
+  return [
+    {
+      key: 'spaces.enabled',
+      title: 'Spaces',
+      description: 'Join or start a shared space for people and their agents.',
+      enabled,
+      lockedByEnv: false,
+    },
+  ];
+}
+
+/**
+ * Make a mock transport's config answer carry the spaces experiment, keeping
+ * everything else that answer says, including a test's own `getConfig` override.
+ * Replaces `getConfig` on the transport it is given and returns that transport.
+ *
+ * @param transport - A transport from {@link createMockTransport}.
+ * @param enabled - Whether the spaces experiment is on. Defaults to on.
+ */
+export function withSpacesExperiment<T extends Transport>(transport: T, enabled = true): T {
+  const answer = transport.getConfig.bind(transport);
+  transport.getConfig = vi.fn(async () => ({
+    ...(await answer()),
+    experiments: spacesExperiment(enabled),
+  }));
+  return transport;
+}
 
 /** Create a mock Transport with all methods stubbed via `vi.fn()`. */
 export function createMockTransport(overrides: Partial<Transport> = {}): Transport {

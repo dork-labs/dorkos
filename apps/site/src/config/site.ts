@@ -9,20 +9,21 @@ import { company } from '@dorkos/shared/company';
 export const siteConfig = {
   name: 'DorkOS',
   /**
-   * The lead line, as it reads in titles and card alt text, so it is a noun
-   * phrase that survives being lowercased after "DorkOS: ". The 2026-10-06
-   * positioning leads with mini apps (the hero says "Ask for a tool. Your
-   * agents build it."); a chat workspace with agents in it is table stakes,
-   * so it describes what DorkOS is further down and never leads a title.
+   * The headline of the 2026-10-07 message stack, as it reads in titles after
+   * "DorkOS: " (so the page title is exactly "DorkOS: Build and run your
+   * business with an agent team"). Card alt text lowercases it, so it must
+   * survive that too. No trailing period: it sits inside a title.
    */
-  category: 'The workspace where agents build your tools',
+  category: 'Build and run your business with an agent team',
   /**
-   * The site-wide description: the three differentiators in order (mini
-   * apps, built for founders, ownership). Feeds the root metadata, the web
-   * manifest, JSON-LD and the top of llms.txt.
+   * The site-wide description: the stack's supporting line, then the
+   * audience and ownership. Mini apps are "the custom tools your company runs
+   * on". Never "on your computer" or "open source" here: DorkOS Cloud runs on
+   * a server too, so ownership is said as "yours". Feeds the root metadata,
+   * the web manifest, JSON-LD and the top of llms.txt.
    */
   description:
-    'Ask for a tool, and your agents build it inside DorkOS. Made for founders. Your computer, your files, your AI plan. Free and open source.',
+    'Your agents join your team chat, take on real work, and build the custom tools your company runs on. Made for founders, and yours to keep.',
   url: 'https://dorkos.ai',
   /** The company's published contact address; owned by `@dorkos/shared/company`. */
   contactEmail: company.contactEmail,

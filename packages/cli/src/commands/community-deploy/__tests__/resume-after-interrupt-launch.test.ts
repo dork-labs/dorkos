@@ -20,7 +20,8 @@ vi.mock('../runtime/default-owner.js', async (importOriginal) => ({
   confirmOwnerClipboardWrite: vi.fn(async () => undefined),
 }));
 
-const { runCommunityDispatcher } = await import('../community-dispatcher.js');
+const { runCommunityDispatcher, COMMUNITY_EXPERIMENTAL_NOTICE } =
+  await import('../community-dispatcher.js');
 const consent = await import('../consent.js');
 
 const APP = 'dorkos-community-test';
@@ -224,7 +225,7 @@ describe('a run stopped right after it saved the Neon create intent (DOR-2701)',
     expect(forgotten.printed).toContain('it no longer shows in --list-incomplete');
     expect(await journals()).toEqual([]);
     expect((await run(['--list-incomplete'])).printed).toBe(
-      'No incomplete space server launches were found.\n'
+      `No incomplete space server launches were found.\n${COMMUNITY_EXPERIMENTAL_NOTICE}`
     );
   }, 60_000);
 });

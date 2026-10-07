@@ -37,7 +37,7 @@ export function JustPromptsSection({ slideId = 'prompts' }: JustPromptsSectionPr
             Platforms will just be prompts.
           </motion.h2>
           <motion.p variants={REVEAL} className="text-cream-tertiary/60 text-[13px]">
-            All open source. Here’s what it actually is.
+            All of it MIT licensed. Here’s what it actually is.
           </motion.p>
         </motion.div>
 

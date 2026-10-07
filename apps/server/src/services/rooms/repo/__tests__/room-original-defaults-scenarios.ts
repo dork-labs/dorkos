@@ -97,4 +97,27 @@ export const originalClaudeDefaultsScenarios = {
     expectedSettings: { model: 'opus' },
     expectedMode: 'bypassPermissions',
   },
+  'power-stranger-existing': {
+    runtimes: stop('autonomy'),
+    existing: { permissionMode: 'bypassPermissions' },
+    external: true,
+    priorFullTurn: true,
+    expectedCeiling: 'runtime-default',
+    expectedLevel: { asks: 'always', reach: 'edit' },
+    expectedSettings: {},
+  },
+  'power-agent-bound': {
+    runtimes: stop('autonomy'),
+    existing: { permissionMode: 'bypassPermissions' },
+    agentAuthor: true,
+    expectedCeiling: { asks: 'when-risky', reach: 'edit' },
+    expectedLevel: { asks: 'when-risky', reach: 'edit' },
+    expectedSettings: {},
+  },
+  'power-human-unbounded': {
+    runtimes: stop('autonomy'),
+    existing: { permissionMode: 'bypassPermissions' },
+    expectedLevel: { asks: 'never', reach: 'everything' },
+    expectedSettings: {},
+  },
 } as const satisfies Record<string, OriginalDefaultsScenario>;

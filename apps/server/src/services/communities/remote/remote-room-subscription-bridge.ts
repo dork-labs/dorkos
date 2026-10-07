@@ -87,7 +87,15 @@ export class RemoteRoomSubscriptionBridge {
     private readonly resolveLocalAgentAuthor: LocalAgentAuthorResolver,
     private readonly now: () => number = () => Date.now(),
     private readonly outbox?: CommunityOutboxStore,
-    private readonly outboxAborter?: CommunityOutboxInFlightAborter
+    private readonly outboxAborter?: CommunityOutboxInFlightAborter,
+    /**
+     * Whether a space message may start a local agent's turn right now. The
+     * spaces experiment (DOR-2740) answers it: while spaces are off, messages
+     * are still mirrored, so nothing is lost, but no agent here is woken by a
+     * space the person can no longer see or stop. Read per message, so turning
+     * spaces back on resumes without a restart.
+     */
+    private readonly dispatchEnabled: () => boolean = () => true
   ) {}
 
   /**
@@ -184,6 +192,9 @@ export class RemoteRoomSubscriptionBridge {
     // The persisted cache state is the final authorization answer immediately
     // before dispatch; revocation and a stale owner grant therefore fail closed.
     if (!this.mirrors.isActivelyAuthorized(target.id, room.ownerAuthorId)) return;
+    // Unclaimed on purpose: only a fresh live frame dispatches, so a message
+    // that arrived while spaces were off never starts a turn later either.
+    if (!this.dispatchEnabled()) return;
     const dispatchEntry = this.dispatchEntry(target.id, room, saved);
     if (!dispatchEntry.mentions.length) return;
     if (

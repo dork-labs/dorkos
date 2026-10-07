@@ -98,6 +98,17 @@ Some terms have no plain replacement. Name the term, then gloss it in the same b
 
 Gloss on first use only; after that the reader knows it.
 
+## Telling the DorkOS story
+
+What DorkOS is, who it is for, the message stack, the words we use and the words and claims we never use all live in one place: `meta/VOICE.md`. Read it before you write a sentence about DorkOS itself. This skill is how to write; that file is what to say. Do not copy its lists into a page or a skill; link to it.
+
+Two things to keep in your head while you write:
+
+- **The reader is the founder first**, a semi-technical person running a business mostly with agents (`meta/personas/the-ai-native-founder.md`). Kai, the developer running many agents, comes second (`meta/personas/the-autonomous-builder.md`). Write for the founder unless the page is plainly for developers.
+- **Agents are co-workers.** Describe an agent by its job: "Scout reviews your pull requests."
+
 ## The honesty gate
 
-Plain language never means overclaiming. Follow the demo-claim gate in `AGENTS.md`: never say an unverified surface or feature works. Describe what a user can actually do today. No hype words ("powerful," "seamless," "effortless"): show the outcome instead.
+Plain language never means overclaiming. The demo-claim gate in `meta/ROADMAP.md` lists what may be described as working today; everything else is "coming" or left out. Describe what a person can actually do now.
+
+No hype words ("powerful," "seamless," "effortless"): show the outcome instead.

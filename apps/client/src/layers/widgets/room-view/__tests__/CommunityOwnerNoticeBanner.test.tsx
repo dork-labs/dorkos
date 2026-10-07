@@ -13,7 +13,7 @@ import type {
   CommunityConnectionDescriptor,
   CommunityConnectionOwnerNotice,
 } from '@dorkos/shared/community-connections';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport, withSpacesExperiment } from '@dorkos/test-utils';
 import { invalidateCommunityAuthority } from '@/layers/shared/lib';
 import { TransportProvider } from '@/layers/shared/model';
 import { ChannelsPage } from '../ui/ChannelsPage';
@@ -77,7 +77,9 @@ function renderPage() {
   const list = vi.fn().mockResolvedValue(connections);
   render(
     <QueryClientProvider client={client}>
-      <TransportProvider transport={createMockTransport({ listCommunityConnections: list })}>
+      <TransportProvider
+        transport={withSpacesExperiment(createMockTransport({ listCommunityConnections: list }))}
+      >
         <ChannelsPage />
       </TransportProvider>
     </QueryClientProvider>

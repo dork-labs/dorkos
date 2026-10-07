@@ -46,7 +46,7 @@ There is no exception marker. A block that "has to" be long has not been split y
 - **No blame words:** failed, invalid, illegal, fatal, abort, kill. Say what did not happen: "Couldn’t save".
 - **Plain words.** Gloss a technical term in the same sentence or cut it.
 - **No code names.** Relay, Mesh, Pulse, Harness Sync and "runtime" never appear. Say what it does: "Messages can’t be delivered right now", "Runs on: Codex". A name the person chose, like an agent's name, is fine. One carve-out: "Runtimes" stays as the name of its Settings tab and rows (`plans/language-ia-simplification.md` D3, kept by the operator on 2026-10-02). A sentence still says "Runs on: Codex", never "Runtime: codex".
-- **One word per idea.** Once a thing has a name in the app, use that name everywhere. The banned-term list in `scripts/vocab-gate/banned-terms.json` holds the retired ones.
+- **One word per idea.** Once a thing has a name in the app, use that name everywhere. The words to use and the retired ones are in `meta/VOICE.md`; `scripts/vocab-gate/banned-terms.json` is the machine copy the gate enforces.
 
 | Before                                                                    | After                                        |
 | ------------------------------------------------------------------------- | -------------------------------------------- |
@@ -59,6 +59,8 @@ There is no exception marker. A block that "has to" be long has not been split y
 - Call an agent by its name. Without one, say "your agent". The pronoun is "it".
 - Describe what an agent did, as fact: "Scout changed 3 files". No feelings or mind verbs: not "thinking hard", "confused", "happy to help".
 - Be honest about limits: "Scout stopped. It hit its turn limit."
+- Agents are co-workers, not assistants. Name the job, not a service: "Scout reviews pull requests", never "your AI assistant" or "How can I help?".
+- Treat agents as trusted colleagues. Copy never casts one as a suspect: "Scout wants to delete the build folder", not "Scout is trying to delete…". The asks that exist today stay plain and neutral (see Approvals).
 
 ## Buttons
 

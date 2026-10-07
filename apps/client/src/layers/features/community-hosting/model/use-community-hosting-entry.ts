@@ -5,6 +5,7 @@
  * @module features/community-hosting/model/use-community-hosting-entry
  */
 import type { CloudCommunityAllowance } from '@dorkos/shared/cloud-schemas';
+import { useSpacesEnabled } from '@/layers/entities/config';
 import { useCloudLinked, useHostedCommunities } from './hosted-communities';
 import { isUnfinishedMove } from './use-move-community';
 
@@ -27,9 +28,11 @@ export interface CommunityHostingEntry {
  * dialogs say so in words.
  */
 export function useCommunityHostingEntry(): CommunityHostingEntry | null {
+  const spaces = useSpacesEnabled();
   const linked = useCloudLinked();
   const list = useHostedCommunities(linked);
-  if (!linked || list.isPending || list.data?.available === false) return null;
+  // Spaces off (DOR-2740): no Start or Your spaces rows, even from a cached list.
+  if (!spaces || !linked || list.isPending || list.data?.available === false) return null;
   const data = list.data?.available === true ? list.data : null;
   const moves = data?.moves ?? [];
   return {

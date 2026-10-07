@@ -5,11 +5,21 @@ import {
   onOriginalSigninRuntimeRelease,
 } from '../observability/runtime-signin-watch.js';
 import { observeRuntimeTurn } from '../observability/ai-metadata.js';
-import { readClaudeOriginalLockedStream } from '../runtimes/claude-code/claude-code-runtime.js';
-import { readCodexOriginalLockedStream } from '../runtimes/codex/codex-runtime.js';
-import { readOpenCodeOriginalLockedStream } from '../runtimes/opencode/opencode-runtime.js';
+import {
+  readClaudeOriginalLockedStream,
+  readClaudeOriginalLockedTurnOptions,
+} from '../runtimes/claude-code/claude-code-runtime.js';
+import {
+  readCodexOriginalLockedStream,
+  readCodexOriginalLockedTurnOptions,
+} from '../runtimes/codex/codex-runtime.js';
+import {
+  readOpenCodeOriginalLockedStream,
+  readOpenCodeOriginalLockedTurnOptions,
+} from '../runtimes/opencode/opencode-runtime.js';
 import {
   readTestModeOriginalNativeStream,
+  readTestModeOriginalNativeTurnOptions,
   readTestModeOriginalStopTerminalData,
 } from '../runtimes/test-mode/test-mode-runtime.js';
 import type { AgentRuntime, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
@@ -57,6 +67,7 @@ import { withSessionLimitStore } from '../session/fleet/session-limit-store.js';
 import { getSessionStartedByStore } from '../session/origin/session-started-by-store.js';
 import { moveDurableSessionIdentity } from '../session/turn-identity/durable-rekey.js';
 import { traceRuntime, watchRuntimeSignin } from '../observability/index.js';
+import { recordTurnLevels, recordRuntimeTurnLevel } from './turn-power/turn-levels.js';
 import {
   holdAwakeDuringTurns,
   observeOriginalAwakeRoomRuntimeStream,
@@ -71,6 +82,8 @@ const originalRegisteredRuntimes = new WeakMap<
     raw: AgentRuntime;
     wrapped: AgentRuntime;
     retired: boolean;
+    storedModeOf(sessionId: string): string | null | undefined;
+    recorded: WeakMap<object, 'recording' | 'recorded'>;
     acquire(
       sessionId: string,
       clientId: string,
@@ -88,6 +101,7 @@ const originalRuntimeRegistryOwners = new WeakMap<
     slots: Map<string, AgentRuntime>;
     db?: Db;
     releaseHints: Set<() => void>;
+    storedModeOf(sessionId: string): string | null | undefined;
     rekeySettings(principals: object, fromId: string, toId: string): Promise<void>;
   }
 >();
@@ -213,6 +227,33 @@ export function observeOriginalRegisteredRuntimeStream(
   const own = originalRegisteredRuntimes.get(selection);
   if (!own || !originalStreamCurrent(selection, sessionId, stream))
     throw new Error('Current original registered native stream required.');
+  const opened =
+    readClaudeOriginalLockedTurnOptions(own.raw, sessionId, stream) ??
+    readCodexOriginalLockedTurnOptions(own.raw, sessionId, stream) ??
+    readOpenCodeOriginalLockedTurnOptions(own.raw, sessionId, stream) ??
+    readTestModeOriginalNativeTurnOptions(own.raw, sessionId, stream);
+  if (!opened) throw new Error('Original native turn options required.');
+  if (own.recorded.get(stream) === 'recording')
+    throw new Error('Original native turn recording reentered.');
+  if (!own.recorded.has(stream)) {
+    own.recorded.set(stream, 'recording');
+    try {
+      let stored: string | null | undefined;
+      try {
+        stored = own.storedModeOf(sessionId);
+      } catch {
+        stored = undefined;
+      }
+      recordRuntimeTurnLevel(own.raw, stored, sessionId, opened.options, () => {
+        if (!originalStreamCurrent(selection, sessionId, stream))
+          throw new Error('Original runtime selection retired during turn recording.');
+      });
+      own.recorded.set(stream, 'recorded');
+    } catch (cause) {
+      own.recorded.delete(stream);
+      throw cause;
+    }
+  }
   const observed = own.observe(sessionId, stream);
   const returned: AsyncGenerator<StreamEvent> = {
     next: async (value) => {
@@ -493,6 +534,17 @@ export class RuntimeRegistry {
     originalRuntimeRegistryOwners.set(this, {
       slots: this.runtimes,
       releaseHints: new Set(),
+      storedModeOf: (sessionId) => {
+        const db = originalRuntimeRegistryOwners.get(this)?.db;
+        if (!db) return undefined;
+        return (
+          db
+            .select({ permissionMode: sessionMetadata.permissionMode })
+            .from(sessionMetadata)
+            .where(eq(sessionMetadata.sessionId, sessionId))
+            .get()?.permissionMode ?? null
+        );
+      },
       rekeySettings: async (principals, fromId, toId) => {
         const own = originalRuntimeRegistryOwners.get(this);
         if (!own?.db || own.db !== this.db)
@@ -523,11 +575,14 @@ export class RuntimeRegistry {
     // composer, a room reply, a scheduled run and a relay delivery all resolve
     // their runtime from here (DOR-1654).
     const type = runtime.type;
-    const traced = traceRuntime(runtime);
-    const signed = watchRuntimeSignin(traced);
-    const wrapped = holdAwakeDuringTurns(signed);
+    // Preserve the upstream innermost turn-level record while retaining the
+    // exact decorator results used to observe an already opened native stream.
     const construction = originalRuntimeRegistryOwners.get(this);
     if (!construction) throw new Error('Original runtime registry required.');
+    const leveled = recordTurnLevels(runtime, construction.storedModeOf);
+    const traced = traceRuntime(leveled);
+    const signed = watchRuntimeSignin(traced);
+    const wrapped = holdAwakeDuringTurns(signed);
     onOriginalSigninRuntimeRelease(signed, () => {
       for (const hint of construction.releaseHints) {
         try {
@@ -547,6 +602,8 @@ export class RuntimeRegistry {
       raw: runtime,
       wrapped,
       retired: false,
+      storedModeOf: construction.storedModeOf,
+      recorded: new WeakMap(),
       acquire: runtime.acquireLock.bind(runtime),
       release: wrapped.releaseLock.bind(wrapped),
       observe: (sessionId, stream) =>
@@ -556,7 +613,7 @@ export class RuntimeRegistry {
           observeOriginalSigninRuntimeStream(
             signed,
             sessionId,
-            traced === runtime ? stream : observeRuntimeTurn(type, sessionId, stream)
+            traced === leveled ? stream : observeRuntimeTurn(type, sessionId, stream)
           )
         ),
     });
@@ -961,6 +1018,23 @@ export class RuntimeRegistry {
         set: { lastAutoResumeFor: episode },
       })
       .run();
+  }
+
+  /**
+   * A session's stored permission mode, read synchronously, or null when there
+   * is no row or no mode. For the turn-level record at the registration seam,
+   * which must not add an await between a dispatch and its turn.
+   *
+   * @param sessionId - Session identifier
+   */
+  storedPermissionModeOf(sessionId: string): string | null {
+    const db = this.requireDb('storedPermissionModeOf');
+    const row = db
+      .select({ permissionMode: sessionMetadata.permissionMode })
+      .from(sessionMetadata)
+      .where(eq(sessionMetadata.sessionId, sessionId))
+      .get();
+    return row?.permissionMode ?? null;
   }
 
   /**

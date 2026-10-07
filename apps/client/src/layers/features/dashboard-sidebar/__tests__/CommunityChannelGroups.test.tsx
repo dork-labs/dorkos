@@ -9,7 +9,7 @@ import {
   createRouter,
   RouterProvider,
 } from '@tanstack/react-router';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport, withSpacesExperiment } from '@dorkos/test-utils';
 import { CommunityConnectionDescriptorSchema } from '@dorkos/shared/community-connections';
 import { RemoteCommunityRoomSchema } from '@dorkos/shared/community-views';
 import { TransportProvider } from '@/layers/shared/model';
@@ -67,7 +67,7 @@ const room = (community: string) =>
   });
 
 function mount(community?: string, failFirst = false) {
-  const transport = createMockTransport();
+  const transport = withSpacesExperiment(createMockTransport());
   vi.mocked(transport.listCommunityConnections).mockResolvedValue([
     connection('a'),
     connection('b'),

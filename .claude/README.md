@@ -114,23 +114,23 @@ Skills load their description into every session (the retrieval index) and their
 
 Rules inject context when Claude edits matching files (`paths:` frontmatter — a single comma-separated scalar; individually-quoted lists are invalid YAML and break loading).
 
-| Rule                     | Applies To                                        | Key Guidance                                                                     |
-| ------------------------ | ------------------------------------------------- | -------------------------------------------------------------------------------- |
-| `agent-storage.md`       | mesh package, manifest, agents/mesh routes        | File-first write-through (ADR-0043)                                              |
-| `api.md`                 | `apps/server/src/routes/**/*.ts`                  | Zod validation, thin routes, error shapes                                        |
-| `app-copy.md`            | `apps/client/src/**/*.{ts,tsx}`                   | In-app copy pointer to `writing-app-copy`: voice + length cap                    |
-| `ci-pipeline.md`         | workflows, lefthook, turbo, hooks, `ci/`, scripts | Pipeline change protocol: hypothesis, ledger, deadlock, fence                    |
-| `components.md`          | `apps/client/src/**/*.tsx`                        | Radix/shadcn patterns, a11y, which utilities exist                               |
-| `conventions.md`         | `**/*.ts, **/*.tsx`                               | TSDoc format, file-size thresholds, DRY/complexity                               |
-| `desktop.md`             | `apps/desktop/**`                                 | Electron shell facts, packaging + native-module rebuilds                         |
-| `dork-home.md`           | server + packages src                             | dorkHome parameter convention, no `os.homedir()`                                 |
-| `fsd-layers.md`          | `apps/client/src/layers/**`                       | FSD layer dependency rules, barrel imports                                       |
-| `room-conduct.md`        | rooms services/UI, relay adapters, room schemas   | Agent etiquette in shared rooms; spec over ideation                              |
-| `safe-defaults.md`       | config + manifest/task schemas, config-manager    | Absence is not consent; verdict + carryover registries                           |
-| `server-structure.md`    | `apps/server/src/{services,routes}/**`            | Domain placement for new services, thin routes                                   |
-| `site-marketing-copy.md` | marketing layer + `(marketing)` routes            | workspace-for-people-and-agents voice, DorkOS-is certainty, /compare conventions |
-| `testing.md`             | `**/__tests__/**, **/*.test.{ts,tsx}`             | Vitest patterns, mock Transport, FakeAgentRuntime                                |
-| `user-facing-writing.md` | changelog, docs MDX, READMEs, marketing features  | Plain-language pointer to `writing-for-humans` + 5 self-checks                   |
+| Rule                     | Applies To                                                           | Key Guidance                                                                              |
+| ------------------------ | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `agent-storage.md`       | mesh package, manifest, agents/mesh routes                           | File-first write-through (ADR-0043)                                                       |
+| `api.md`                 | `apps/server/src/routes/**/*.ts`                                     | Zod validation, thin routes, error shapes                                                 |
+| `app-copy.md`            | `apps/client/src/**/*.{ts,tsx}`                                      | In-app copy pointer to `writing-app-copy` + `meta/VOICE.md`: voice, words, length cap     |
+| `ci-pipeline.md`         | workflows, lefthook, turbo, hooks, `ci/`, scripts                    | Pipeline change protocol: hypothesis, ledger, deadlock, fence                             |
+| `components.md`          | `apps/client/src/**/*.tsx`                                           | Radix/shadcn patterns, a11y, which utilities exist                                        |
+| `conventions.md`         | `**/*.ts, **/*.tsx`                                                  | TSDoc format, file-size thresholds, DRY/complexity                                        |
+| `desktop.md`             | `apps/desktop/**`                                                    | Electron shell facts, packaging + native-module rebuilds                                  |
+| `dork-home.md`           | server + packages src                                                | dorkHome parameter convention, no `os.homedir()`                                          |
+| `fsd-layers.md`          | `apps/client/src/layers/**`                                          | FSD layer dependency rules, barrel imports                                                |
+| `room-conduct.md`        | rooms services/UI, relay adapters, room schemas                      | Agent etiquette in shared rooms; spec over ideation                                       |
+| `safe-defaults.md`       | config + manifest/task schemas, config-manager                       | Absence is not consent; verdict + carryover registries                                    |
+| `server-structure.md`    | `apps/server/src/{services,routes}/**`                               | Domain placement for new services, thin routes                                            |
+| `site-marketing-copy.md` | marketing layer + `(marketing)` routes                               | Points at `meta/VOICE.md`; site-specific voice, DorkOS-is certainty, /compare conventions |
+| `testing.md`             | `**/__tests__/**, **/*.test.{ts,tsx}`                                | Vitest patterns, mock Transport, FakeAgentRuntime                                         |
+| `user-facing-writing.md` | changelog, docs MDX, READMEs, package descriptions, operating skills | Pointer to `writing-for-humans` + `meta/VOICE.md` + 5 self-checks                         |
 
 ## Hooks (Event-Triggered)
 
@@ -183,7 +183,7 @@ Naming: commands `verb`/`noun`; agents `domain-expert`; skills `verb-ing-noun` (
 
 **Harness maintenance**: `/system:ask` (how do I…), `/system:learn` (experiment, then codify), `/system:update` (add/change a process), `/system:review` (audit for staleness/consistency/Opus-fit), `/system:release` (release + harness-maintenance phase).
 
-**Parallel execution**: fan out independent work as multiple Agent calls in one message; `run_in_background: true` for long tasks (completion notifies automatically). Patterns and decision framework: `contributing/parallel-execution.md` + the `orchestrating-parallel-work` skill.
+**Parallel execution**: fan out independent work as multiple Agent calls in one message; `run_in_background: true` for long tasks (completion notifies automatically). Patterns, decision framework and the landing playbook: the `orchestrating-parallel-work` skill.
 
 ## Maintaining the Harness
 

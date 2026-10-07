@@ -1,4 +1,5 @@
 import { FieldCard, FieldCardContent } from '@/layers/shared/ui';
+import { useSpacesEnabled } from '@/layers/entities/config';
 import { dorkosAccountApps, useConnectorConnections } from '@/layers/entities/connectors';
 import { useHostedCommunities } from '@/layers/features/community-hosting';
 import { useCreditsFor } from '../model/use-credits-for';
@@ -19,10 +20,12 @@ export function AccountContents() {
   // Rendered only inside the signed-in account tab, so the link check the
   // switcher needs has already been made by the tab around it.
   const hosted = useHostedCommunities(true);
+  // Spaces are an experiment, off by default (DOR-2740): no list, no mention.
+  const spaces = useSpacesEnabled();
 
   const runtimes = rows.filter((row) => row.on).map((row) => row.name);
   const apps = connections.data ? dorkosAccountApps(connections.data.connections) : [];
-  const communities = hosted.data?.available ? hosted.data.communities : [];
+  const communities = spaces && hosted.data?.available ? hosted.data.communities : [];
   const empty = runtimes.length === 0 && apps.length === 0 && communities.length === 0;
 
   return (
@@ -33,7 +36,9 @@ export function AccountContents() {
         </p>
         {empty ? (
           <p className="text-muted-foreground text-sm">
-            Nothing uses this account yet. Agents on credits, connected apps and spaces show here.
+            {spaces
+              ? 'Nothing uses this account yet. Agents on credits, connected apps and spaces show here.'
+              : 'Nothing uses this account yet. Agents on credits and connected apps show here.'}
           </p>
         ) : (
           <dl className="space-y-3 text-sm">

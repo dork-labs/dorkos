@@ -292,7 +292,8 @@ describe('buildAgentBlock conventions', () => {
 
     const result = (await buildAgentBlock('/test')).text;
     expect(result).toContain('<dorkos_context>');
-    expect(result).toContain('DorkOS is the operating system');
+    expect(result).toContain('DorkOS is a workspace for people and agents.');
+    expect(result).toContain('not an assistant');
     expect(result).toContain('</dorkos_context>');
   });
 

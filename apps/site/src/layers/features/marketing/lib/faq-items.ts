@@ -9,7 +9,7 @@ export const faqItems: FaqItem[] = [
     id: 'what-is-dorkos',
     question: 'What is DorkOS?',
     answer:
-      'DorkOS is a workspace for people and agents. You and your AI agents talk in channels, DMs and threads, and the agents do real work on your computer. Ask for a tool your business needs, and your agents build it right inside DorkOS.',
+      'DorkOS is where you build and run your business with an agent team. Your agents join your team chat, in channels, DMs and threads. They take on real work in your files and the apps you connect, and they build the custom tools your company runs on, right inside DorkOS.',
   },
   {
     id: 'how-different',

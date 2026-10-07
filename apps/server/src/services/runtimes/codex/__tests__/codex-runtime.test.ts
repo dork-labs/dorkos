@@ -963,6 +963,23 @@ describe('CodexRuntime', () => {
       );
     });
 
+    // Power flows downstream, never up (spec `trusted-by-default-flip` §4).
+    it('runs a Full autonomy thread read-only for a turn held to the runtime default, then not', async () => {
+      const { runtime } = makeRuntime();
+      const sessionId = crypto.randomUUID();
+      runtime.ensureSession(sessionId, { permissionMode: 'bypassPermissions' });
+      await drain(runtime.sendMessage(sessionId, 'hi', { permissionCeiling: 'runtime-default' }));
+      expect(sdkMocks.startThread).toHaveBeenLastCalledWith(
+        expect.objectContaining({ sandboxMode: 'read-only' })
+      );
+      const fresh = crypto.randomUUID();
+      runtime.ensureSession(fresh, { permissionMode: 'bypassPermissions' });
+      await drain(runtime.sendMessage(fresh, 'hi'));
+      expect(sdkMocks.startThread).toHaveBeenLastCalledWith(
+        expect.objectContaining({ sandboxMode: 'danger-full-access' })
+      );
+    });
+
     it('RT-MOD-01: projects session model and effort into ThreadOptions', async () => {
       const { runtime } = makeRuntime();
       const sessionId = crypto.randomUUID();
@@ -1888,6 +1905,26 @@ describe('CodexRuntime — the transport seam (ADR 261005-113107)', () => {
       wake({ sessionId: 's1', completions: [finished(context)], startTurn: true, notices: [] });
       await turns[2];
       expect(requests[3]!.settings.permissionMode).toBe('acceptEdits');
+    });
+
+    // Power flows downstream (spec `trusted-by-default-flip` §4): background
+    // work a stranger's turn started wakes no looser than that turn ran.
+    it('wakes a turn held to a ceiling at no looser than the ceiling', async () => {
+      const { runtime, requests, wake } = backgroundRuntime();
+      runtime.ensureSession('s1', { permissionMode: 'bypassPermissions', cwd: '/project' });
+      await drain(
+        runtime.sendMessage('s1', 'go', { cwd: '/project', permissionCeiling: 'runtime-default' })
+      );
+      expect(requests[0]!.settings.permissionMode).toBe('default');
+      const turns = project(runtime);
+      wake({
+        sessionId: 's1',
+        completions: [finished(requests[0]!.wakeContext)],
+        startTurn: true,
+        notices: [],
+      });
+      await turns[0];
+      expect(requests[1]!.settings.permissionMode).toBe('default');
     });
 
     it('lets only the wake that holds the turn start a model turn; a drained one starts none and spends nothing', async () => {

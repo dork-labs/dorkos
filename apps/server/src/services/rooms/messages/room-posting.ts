@@ -8,6 +8,8 @@
  *
  * @module server/services/rooms/messages/room-posting
  */
+import type { TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
+import { postLevelFor } from '../../core/turn-power/turn-levels.js';
 import type { RoomAttachment, RoomMoment } from '@dorkos/shared/room-schemas';
 import { logger } from '../../../lib/logger.js';
 import type { AttachmentRowStore } from '../attachments/attachment-row-store.js';
@@ -104,10 +106,12 @@ export class RoomPosting {
    * @param roomId - The room.
    * @param input - The post itself; see {@link RoomPostInput}, which documents
    *   each field.
+   * @param authorLevel - The level the turns this post starts are held to, for
+   *   a tool post a verified session made; see {@link RoomPosting.postFromTool}.
    * @returns The committed entry, carrying what writing it asked of the room —
    *   see {@link PostedEntry}.
    */
-  post(roomId: string, input: RoomPostInput): PostedEntry {
+  post(roomId: string, input: RoomPostInput, authorLevel?: TurnPermissionLevel): PostedEntry {
     const room = this.visibility.requireVisibleRoom(roomId, input.authorId);
     if (room.archived) throw new RoomError('ROOM_ARCHIVED', 'This room is archived');
     // Seeing a room is not being in it. The owner can see every room but still
@@ -120,6 +124,7 @@ export class RoomPosting {
     const attachments = this.resolveAttachments(roomId, input.authorId, input.attachmentIds);
     const attachmentIds = attachments.map((file) => file.id);
     return this.writer.writePost(room, input, undefined, {
+      ...(authorLevel !== undefined ? { authorLevel } : {}),
       bind: (entryId, tx) => {
         const bound = this.attachments.bind(roomId, attachmentIds, entryId, tx);
         // **Asserted, not assumed.** `bind` re-checks `entry_id IS NULL`, so a
@@ -212,6 +217,14 @@ export class RoomPosting {
        * land together or neither does.
        */
       attachmentIds?: readonly string[];
+      /**
+       * The session that made the tool call, as the in-session server verified
+       * it (`CapabilityHandlerContext.sessionId`), never as a caller claimed it.
+       * With the author's turn in THIS room, it decides the level the post is
+       * kept with (spec `trusted-by-default-flip` §4): the stricter of the two,
+       * and nothing at all when the caller is unknown.
+       */
+      callerSessionId?: string;
     }
   ): PostedEntry {
     const room = this.visibility.requireVisibleRoom(roomId, input.authorId);
@@ -272,28 +285,41 @@ export class RoomPosting {
         );
       }
     }
-    const entry = this.post(roomId, {
-      ...input,
-      // **What a tool post has never carried, and now must** (spec
-      // `tool-only-room-replies` §D8). The turn-text path passes both; a tool
-      // post passed neither, so `sessionId` fell to `null` and the "answers
-      // this" pointer was simply absent. That was survivable while a deliberate
-      // post was rare. Under the flip it is EVERY agent reply in the product:
-      // the room would stop drawing the pointer, and no entry could be traced
-      // back to the session that wrote it.
-      //
-      // Both facts are in hand at write time — the live claim knows the entry it
-      // is answering, and the `(room, agent)` binding is the session that turn
-      // runs on — so they are filled from there rather than trusted from the
-      // caller. Only for a post made INSIDE a turn: a post with no claim behind
-      // it is answering nothing and belongs to no session here.
-      ...(turn !== undefined
-        ? {
-            answersEntryId: turn.entryId,
-            ...(turn.sessionId !== undefined ? { sessionId: turn.sessionId } : {}),
-          }
-        : {}),
-    });
+    // The level the turns this post starts are held to. Both sessions vouch:
+    // the one that made the call, and the author's turn in this room, which
+    // differ when an agent posts from one room's turn into another. A caller
+    // nobody verified keeps nothing, and its post is held to the default.
+    const authorLevel =
+      input.callerSessionId !== undefined
+        ? postLevelFor([input.callerSessionId, turn?.sessionId])
+        : undefined;
+    const { callerSessionId: _caller, ...postInput } = input;
+    const entry = this.post(
+      roomId,
+      {
+        ...postInput,
+        // **What a tool post has never carried, and now must** (spec
+        // `tool-only-room-replies` §D8). The turn-text path passes both; a tool
+        // post passed neither, so `sessionId` fell to `null` and the "answers
+        // this" pointer was simply absent. That was survivable while a deliberate
+        // post was rare. Under the flip it is EVERY agent reply in the product:
+        // the room would stop drawing the pointer, and no entry could be traced
+        // back to the session that wrote it.
+        //
+        // Both facts are in hand at write time — the live claim knows the entry it
+        // is answering, and the `(room, agent)` binding is the session that turn
+        // runs on — so they are filled from there rather than trusted from the
+        // caller. Only for a post made INSIDE a turn: a post with no claim behind
+        // it is answering nothing and belongs to no session here.
+        ...(turn !== undefined
+          ? {
+              answersEntryId: turn.entryId,
+              ...(turn.sessionId !== undefined ? { sessionId: turn.sessionId } : {}),
+            }
+          : {}),
+      },
+      authorLevel
+    );
     this.triggers.noteDeliberatePost(roomId, input.authorId);
     return entry;
   }

@@ -845,6 +845,9 @@ export const roomsDomain: CapabilityDomain = {
               text: input.text,
               ...(input.replyTo !== undefined ? { replyTo: input.replyTo } : {}),
               ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
+              // The session the in-session server verified, never an argument:
+              // it vouches for the level this post's turns are held to.
+              ...(context.sessionId !== undefined ? { callerSessionId: context.sessionId } : {}),
             })
           );
         } catch (err) {

@@ -221,6 +221,8 @@ export const CONFIG_DISCLOSURE = {
   'relay.maxAgentTurnsTotalPerHour': 'expose',
 
   'browser.enabled': 'expose',
+  // Whether the spaces experiment is on (DOR-2740): a plain boolean, no host.
+  'spaces.enabled': 'expose',
   // Whether outside agents may reach the ones here over A2A. A plain boolean:
   // it names no credential and no host, and an agent that learns the gate is
   // shut is no closer to opening it — the write side is where that is decided.

@@ -69,7 +69,7 @@ Each type adds its own fields on top of the base manifest:
 
 - **`plugin`** adds `extensions`: an array of extension IDs your package registers with the DorkOS extension API (for sidebar widgets, Activity tab sections, and similar UI slots).
 - **`agent`** adds `agentDefaults`: an optional `persona` string describing the agent, a `capabilities` list, and `traits` (each scored 1 to 5): `verbosity`, `autonomy`, `chaos`, `creativity`, `humor`, and `spice`.
-- **`adapter`** adds `adapterType`, required: a short identifier for what it bridges to, like `"discord"` or `"slack"`.
+- **`adapter`** adds `adapterType`, required: a short identifier for what it bridges to, like `"matrix"` or `"slack"`.
 - **`skill-pack`** adds nothing. The manifest is the whole story.
 
 Packages of every type except `agent` also need a `.claude-plugin/plugin.json`, the manifest Claude Code itself reads:
@@ -163,9 +163,9 @@ Files written:
 dorkos package init my-adapter \
   --type adapter \
   --parent-dir ./packages \
-  --description "Bridges DorkOS to Discord" \
+  --description "Bridges DorkOS to Matrix" \
   --author "Your Name" \
-  --adapter-type discord
+  --adapter-type matrix
 ```
 
 `--parent-dir` chooses where the package folder is created (defaults to your current directory). `--adapter-type` only matters for adapter packages; it defaults to the package name if you skip it.
@@ -218,7 +218,7 @@ dorkos marketplace list
 dorkos install my-package@your-team
 ```
 
-A source is just a git repo with a `marketplace.json` at its root, listing one or more packages. `dorkos install <name>@<marketplace>` looks up `<name>` in that specific source; leave off the `@<marketplace>` part and DorkOS searches every source you have enabled.
+A source is just a git repo with a `marketplace.json` file, at its root or in a `.claude-plugin/` folder, listing one or more packages. `dorkos install <name>@<marketplace>` looks up `<name>` in that specific source; leave off the `@<marketplace>` part and DorkOS searches every source you have enabled.
 
 ## Publishing to the public registry
 

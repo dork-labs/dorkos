@@ -305,8 +305,8 @@
     {
       "path": "docs/marketplace/index.mdx",
       "terms": ["adapter", "adapters"],
-      "contains": "Adapters that connect messaging services like Discord",
-      "reason": "DOR-2508, third review round. Same marketplace-facet carve-out and same reason for dropping the marker as the entry above. `contains` pins this entry to the Discord bullet."
+      "contains": "Adapters that connect more messaging services to your agents",
+      "reason": "DOR-2508, third review round. Same marketplace-facet carve-out and same reason for dropping the marker as the entry above. `contains` pins this entry to the messaging-services bullet."
     },
     {
       "path": "docs/concepts/relay.mdx",

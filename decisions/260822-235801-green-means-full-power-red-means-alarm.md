@@ -14,6 +14,8 @@ amends: null
 
 Accepted — extracted from spec `full-power-defaults`.
 
+Amended by [261006-225605](261006-225605-agents-are-trusted-by-default-outsiders-and-third-party-code-are-not.md) (agents are trusted by default; 2026-10-06 vision reset): retires "The unattended-autonomy banner survives": full power is the assumed default, so it gets no banner. The tint map (green for full power, red only for alarms) stands. The banner for bindings fed by outsiders stays, per 261006-225605.
+
 ## Context
 
 The Trust Dial shipped with autonomy styled as the danger tier: red caption and status word, `ShieldOff` iconography, red confirm buttons, an amber warning banner. Under the full-power-by-default posture that styling tells users the recommended state is the dangerous one. The operator brief asked for the inverse ("full autonomy green; not-autonomous is the locked, red mode"). The codebase already carries the alarm-economy lesson (the Auto-mode dialog's comment: spending red on non-alarms teaches people to stop reading it).

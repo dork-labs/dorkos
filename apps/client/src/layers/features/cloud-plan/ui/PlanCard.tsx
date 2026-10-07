@@ -1,5 +1,6 @@
 import { FieldCard, FieldCardContent } from '@/layers/shared/ui';
 import { CloudEligibilityNote } from '@/layers/features/cloud-link';
+import { useSpacesEnabled } from '@/layers/entities/config';
 import type { Entitlements } from '@dork-labs/cloud-api';
 import { formatCreditsWithMoney } from '@dork-labs/cloud-api/display';
 import { isReadableDenomination } from '../lib/credits';
@@ -59,6 +60,7 @@ export function PlanCard() {
   // renders this at all, so a second skeleton would be unreachable — and two
   // components deciding what "still loading" looks like is how they drift.
   const { data } = useCloudPlan();
+  const spaces = useSpacesEnabled();
 
   if (!data?.available) return null;
 
@@ -109,7 +111,7 @@ export function PlanCard() {
           </p>
           {/* Who can buy, on the card that describes the plan, just below the
               upgrade nudge that suggests another one. */}
-          <CloudEligibilityNote />
+          <CloudEligibilityNote withSpaces={spaces} />
         </div>
       </FieldCardContent>
     </FieldCard>

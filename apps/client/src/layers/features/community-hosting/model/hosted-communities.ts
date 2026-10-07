@@ -12,6 +12,7 @@
 import { useQuery } from '@tanstack/react-query';
 import type { CloudHostedCommunitiesResponse } from '@dorkos/shared/cloud-schemas';
 import { useTransport } from '@/layers/shared/model';
+import { useSpacesEnabled } from '@/layers/entities/config';
 import { cloudStatusKey } from '@/layers/features/cloud-link';
 
 /** Query keys for hosted communities. Never holds a claim link or an upload token. */
@@ -41,14 +42,18 @@ export function useCloudLinked(): boolean {
 /**
  * The account's hosted communities, moves and allowance.
  *
+ * Never asked while the spaces experiment is off (DOR-2740): the server
+ * refuses the route then, and nothing would show the answer anyway.
+ *
  * @param enabled - Only true once the link check says linked.
  */
 export function useHostedCommunities(enabled: boolean) {
   const transport = useTransport();
+  const spaces = useSpacesEnabled();
   return useQuery<CloudHostedCommunitiesResponse>({
     queryKey: hostedCommunityKeys.list(),
     queryFn: () => transport.listHostedCommunities(),
-    enabled,
+    enabled: enabled && spaces,
     staleTime: 15_000,
   });
 }

@@ -25,8 +25,9 @@ import { Settings } from 'lucide-react';
 import { toast } from 'sonner';
 import { OPERATOR_FALLBACK_DISPLAY_NAME } from '@dorkos/shared/team-schemas';
 import type { CommunityConnectionOwnerNotice } from '@dorkos/shared/community-connections';
+import { spacesExperiment } from '@dorkos/test-utils';
 import { confirmCommunityAuthority, invalidateCommunityAuthority } from '@/layers/shared/lib';
-import { commitCommunityRouteEpoch } from '@/layers/shared/model';
+import { commitCommunityRouteEpoch, configKeys } from '@/layers/shared/model';
 import { PageHeading, type SidebarMenuNode } from '@/layers/shared/ui';
 import {
   buildHeaderBlockIdentityNodes,
@@ -113,10 +114,16 @@ let mockConnections: Array<{
   };
 }> = [];
 let mockCommunityOrder: string[] = [];
-let mockConfig: { version?: string; latestVersion?: string | null; isDevMode?: boolean } = {
+let mockConfig: {
+  version?: string;
+  latestVersion?: string | null;
+  isDevMode?: boolean;
+  experiments?: ReturnType<typeof spacesExperiment>;
+} = {
   version: '0.58.0',
   latestVersion: null,
   isDevMode: false,
+  experiments: spacesExperiment(true),
 };
 const mockGetConfig = vi.fn(() => Promise.resolve(mockConfig));
 const mockOpenExternalLink = vi.fn((_href: string) => true);
@@ -239,7 +246,12 @@ beforeEach(() => {
   };
   vi.clearAllMocks();
   mockSelf = { id: 'me', displayName: 'Dorian', isSelf: true };
-  mockConfig = { version: '0.58.0', latestVersion: null, isDevMode: false };
+  mockConfig = {
+    version: '0.58.0',
+    latestVersion: null,
+    isDevMode: false,
+    experiments: spacesExperiment(true),
+  };
   mockMenuNodes = null;
   mockRosterPending = false;
   mockIsMobile = false;
@@ -269,8 +281,22 @@ beforeEach(() => {
 
 afterEach(() => cleanup());
 
+/** The query client of the last render, so a test can wait on its config read. */
+let renderedClient: QueryClient | null = null;
+
+/**
+ * Wait for the config read to answer. Space rows wait for it (DOR-2740), so a
+ * test about them opens the menu once it has, as anyone in the app would.
+ */
+async function configAnswered() {
+  await waitFor(() =>
+    expect(renderedClient?.getQueryState(configKeys.current())?.status).toBe('success')
+  );
+}
+
 function renderBlock() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  renderedClient = client;
   return render(
     <QueryClientProvider client={client}>
       <SidebarHeaderBlock />
@@ -280,6 +306,7 @@ function renderBlock() {
 
 function renderMobileSwitcher() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  renderedClient = client;
   mockIsMobile = true;
   return render(
     <QueryClientProvider client={client}>
@@ -426,6 +453,7 @@ describe('SidebarHeaderBlock', () => {
       },
     ];
     renderMobileSwitcher();
+    await configAnswered();
     fireEvent.click(screen.getByTestId('sidebar-header-block'));
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: /Dorian’s team/ })).toHaveAttribute(
@@ -715,6 +743,7 @@ describe('SidebarHeaderBlock', () => {
       },
     ];
     renderBlock();
+    await configAnswered();
     const trigger = screen.getByTestId('sidebar-header-block');
     expect(trigger).toHaveAccessibleName('Alpha menu');
     fireEvent.pointerDown(trigger);
@@ -1184,6 +1213,7 @@ describe('SidebarHeaderBlock', () => {
     // Three rows.
     mockMenuNodes = rows(3);
     renderBlock();
+    await configAnswered();
     fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
     await screen.findByRole('menuitem', { name: 'Row 0' });
     // 3 rows + the installation + the add-a-community row + you, DorkOS
@@ -1195,6 +1225,7 @@ describe('SidebarHeaderBlock', () => {
     // Six — what "communities shipped" looks like from out here.
     mockMenuNodes = rows(6);
     renderBlock();
+    await configAnswered();
     fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
     await screen.findByRole('menuitem', { name: 'Row 5' });
     // The menu really did get longer — otherwise the comparison below is a
@@ -1300,6 +1331,7 @@ function alpha(
 async function openManageAlpha() {
   mockSearch = { community: 'a' };
   renderMobileSwitcher();
+  await configAnswered();
   fireEvent.click(screen.getByTestId('sidebar-header-block'));
   await screen.findByRole('dialog');
   return screen.getByRole('group', { name: 'Manage Alpha' });
@@ -1397,6 +1429,7 @@ describe('the context switcher’s lifecycle actions', () => {
   it('shows no Community actions while this DorkOS is selected', async () => {
     mockConnections = [alpha()];
     renderMobileSwitcher();
+    await configAnswered();
     fireEvent.click(screen.getByTestId('sidebar-header-block'));
     await screen.findByRole('dialog');
     expect(screen.queryByRole('group', { name: /Manage/ })).not.toBeInTheDocument();
@@ -2107,5 +2140,63 @@ describe('focus after a phone choice', () => {
     await idle();
     await settle();
     expect(heading()).not.toHaveFocus();
+  });
+});
+
+// Purpose: the launch ships without spaces (DOR-2740). With the experiment off
+// the menu is only "You": no space rows, no Join or Start, nothing hosted asked
+// for, even with connections on file. Fails if any space surface leaks through.
+describe('the switcher while the spaces experiment is off (DOR-2740)', () => {
+  const alpha = {
+    ref: 'a',
+    remoteCommunityId: 'remote-a',
+    label: 'Alpha',
+    pinnedOrigin: 'https://a.example.com',
+    connectedHumanMemberId: 'person-a',
+    status: 'connected' as const,
+    expiresAt: null,
+  };
+
+  it('shows you, your account and Settings, and no space at all', async () => {
+    mockConfig = { ...mockConfig, experiments: spacesExperiment(false) };
+    mockConnections = [alpha];
+    mockCloudLinked = true;
+    renderBlock();
+    await configAnswered();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    expect(await screen.findByRole('menuitem', { name: /Settings/ })).toBeInTheDocument();
+    expect(screen.queryByRole('menuitemradio')).not.toBeInTheDocument();
+    expect(screen.queryByText('Alpha')).not.toBeInTheDocument();
+    expect(screen.queryByText('Switch context')).not.toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: 'Add a space' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/space/i)).not.toBeInTheDocument();
+    expect(mockListHostedCommunities).not.toHaveBeenCalled();
+  });
+
+  it('ignores a space address and names this DorkOS', async () => {
+    mockConfig = { ...mockConfig, experiments: spacesExperiment(false) };
+    mockConnections = [alpha];
+    mockSearch = { community: 'a' };
+    renderBlock();
+    await configAnswered();
+    expect(screen.getByRole('button', { name: 'Dorian’s team menu' })).toBeInTheDocument();
+  });
+
+  it('hides space rows while the config has not answered yet', () => {
+    mockGetConfig.mockReturnValueOnce(new Promise(() => {}));
+    mockConnections = [alpha];
+    renderBlock();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    expect(screen.queryByText('Alpha')).not.toBeInTheDocument();
+  });
+
+  it('shows them again once it is on (the control)', async () => {
+    mockConnections = [alpha];
+    renderBlock();
+    await configAnswered();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    expect(await screen.findByText('Alpha')).toBeInTheDocument();
+    // On desktop "Add a space" is a submenu, so its trigger is a menu item.
+    expect(screen.getByRole('menuitem', { name: 'Add a space' })).toBeInTheDocument();
   });
 });

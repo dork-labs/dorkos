@@ -12,6 +12,8 @@ import { peekProjector } from '../../../session/session-state-projector.js';
 import { isTurnInFlight } from '../../../session/message-dispatcher.js';
 import { createTurnExecutionSettingsResolver } from '../../../relay/turn-execution-settings.js';
 import { permissionSeedForOrigin, type TurnOrigin } from '../../../session/origin/turn-origin.js';
+import { lastTurnLevelOf, entryLevelOf } from '../../../core/turn-power/turn-levels.js';
+import type { TurnPermissionLevel, MessageOpts } from '@dorkos/shared/agent-runtime';
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
 import { initPermissionGate, resetPermissionGate } from '../../../core/capabilities/index.js';
 import { CodexRuntime } from '../../../runtimes/codex/codex-runtime.js';
@@ -20,7 +22,10 @@ import { ClaudeCodeRuntime } from '../../../runtimes/claude-code/claude-code-run
 import { LocalSessionAttachmentStore } from '../../../session/attachments/local-session-attachment-store.js';
 import type { OriginalRoomRunnerObservation } from '../../room-turn-runner.js';
 import { createOriginalNativeLaunchFixture } from './room-original-native-launch-fixture.js';
-import { observeOriginalClaudeSession } from '../../../runtimes/claude-code/__tests__/room-original-claude-sdk-data.js';
+import {
+  observeOriginalClaudeSession,
+  observeOriginalClaudeQueryMessage,
+} from '../../../runtimes/claude-code/__tests__/room-original-claude-sdk-data.js';
 
 export interface OriginalDefaultsScenario {
   readonly history?: 'boundaries' | 'no-text';
@@ -35,6 +40,10 @@ export interface OriginalDefaultsScenario {
   };
   readonly existing?: { model?: string; permissionMode?: string };
   readonly external?: boolean;
+  readonly agentAuthor?: boolean;
+  readonly priorFullTurn?: boolean;
+  readonly expectedCeiling?: MessageOpts['permissionCeiling'];
+  readonly expectedLevel?: TurnPermissionLevel;
   readonly compareRelay?: boolean;
   readonly permission?: 'discard' | 'keep';
   readonly expectedSettings: Readonly<Record<string, string>>;
@@ -44,10 +53,12 @@ export interface OriginalDefaultsScenario {
 export async function prepareOriginalClaudeDefaultsControl(scenario: OriginalDefaultsScenario) {
   let observation: OriginalRoomRunnerObservation | undefined;
   let observedEntry: string | undefined;
+  let detachedCeilingChecked = false;
   const persisted: { id: string; runtime: string; origin: TurnOrigin; agentPath?: string }[] = [];
   const originalPersist = runtimeRegistry.persistSessionRuntime;
   let owning: Awaited<ReturnType<typeof createOriginalNativeLaunchFixture>> | undefined;
   let target: Awaited<ReturnType<NonNullable<typeof owning>['bootNativeAgent']>> | undefined;
+  let sender: typeof target;
   let closing: Promise<void> | undefined;
   let failed = false;
   let first: unknown;
@@ -83,6 +94,33 @@ export async function prepareOriginalClaudeDefaultsControl(scenario: OriginalDef
       observeRun(entryId, current) {
         observedEntry = entryId;
         observation = current;
+      },
+      observeBeforeDispatch(entryId) {
+        if (
+          !scenario.expectedLevel ||
+          observation?.computedDefaults?.permissionCeiling === undefined
+        )
+          return;
+        try {
+          assert.equal(observedEntry, entryId);
+          const copied = observation.computedDefaults.permissionCeiling;
+          const bounds =
+            typeof copied === 'string' ? [copied] : 'asks' in copied ? [copied] : copied;
+          for (const bound of bounds)
+            if (typeof bound !== 'string') {
+              assert.equal(Object.isFrozen(bound), true);
+              assert.equal(Reflect.set(bound, 'asks', 'never'), false);
+              assert.equal(Reflect.set(bound, 'reach', 'everything'), false);
+            }
+          if (Array.isArray(copied)) {
+            assert.equal(Object.isFrozen(copied), true);
+            assert.equal(Reflect.set(copied, '0', { asks: 'never', reach: 'everything' }), false);
+          }
+          detachedCeilingChecked = true;
+        } catch (cause) {
+          // Runner intentionally swallows passive observer errors; retain the real test cause.
+          remember(cause);
+        }
       },
       createNativeRuntime({ dir, db, principals, mesh, targets }) {
         if (scenario.runtime === 'codex') {
@@ -141,7 +179,11 @@ export async function prepareOriginalClaudeDefaultsControl(scenario: OriginalDef
       ...runtimes,
       claudeCode: { ...runtimes.claudeCode, defaultAccount: account, persistentSession: false },
     });
-    target = await owning.bootNativeAgent();
+    if (scenario.agentAuthor) {
+      const pair = await owning.bootNativePair();
+      target = pair[0]!;
+      sender = pair[1]!;
+    } else target = await owning.bootNativeAgent();
     const currentTarget = target;
     const agent = owning.db
       .select()
@@ -194,8 +236,9 @@ export async function prepareOriginalClaudeDefaultsControl(scenario: OriginalDef
         .get();
       assert.ok(row);
       assert.equal(row.runtime, args[1]);
-      assert.equal(row.agentPath, currentTarget.agentPath);
-      persisted.push({ id: args[0], runtime: args[1], origin: args[2], agentPath: args[3] });
+      assert.ok(row.agentPath === currentTarget.agentPath || row.agentPath === sender?.agentPath);
+      if (row.agentPath === currentTarget.agentPath)
+        persisted.push({ id: args[0], runtime: args[1], origin: args[2], agentPath: args[3] });
       if (args[1] === 'claude-code')
         observeOriginalClaudeSession(args[0], scenario.providerFragments);
       return result;
@@ -214,6 +257,36 @@ export async function prepareOriginalClaudeDefaultsControl(scenario: OriginalDef
     async run() {
       assert.ok(owning && target);
       try {
+        const seed = async (session: NonNullable<typeof target>, permissionMode: string) => {
+          const selectedBefore = runtimeRegistry.get('claude-code');
+          observeOriginalClaudeSession(session.sessionId);
+          const original = selectedBefore.sendMessage(
+            session.sessionId,
+            'seed actual upstream turn level',
+            {
+              cwd: session.agentPath,
+              permissionMode,
+            }
+          );
+          for await (const _event of original) {
+            /* Drain the real runtime's finite provider DATA. */
+          }
+        };
+        if (scenario.priorFullTurn) {
+          await seed(target, 'bypassPermissions');
+          assert.deepEqual(lastTurnLevelOf(target.sessionId), {
+            asks: 'never',
+            reach: 'everything',
+          });
+        }
+        if (scenario.agentAuthor) {
+          assert.ok(sender);
+          owning.db
+            .update(sessionMetadata)
+            .set({ permissionMode: 'acceptEdits' })
+            .where(eq(sessionMetadata.sessionId, sender.sessionId))
+            .run();
+        }
         let authorId = owning.operator.id;
         if (scenario.external) {
           const external = owning.subsystem.authors.resolveExternal({
@@ -234,12 +307,32 @@ export async function prepareOriginalClaudeDefaultsControl(scenario: OriginalDef
               .where(eq(sessionMetadata.sessionId, target.sessionId))
               .get()
           : undefined;
-        const entry = owning.subsystem.service.post(owning.roomId, {
-          authorId,
-          text: 'is the build green?',
-          mentions: [target.authorId],
-        });
+        let entry: ReturnType<typeof owning.subsystem.service.post> | undefined;
+        if (scenario.agentAuthor) {
+          assert.ok(sender);
+          const actualSender = sender;
+          observeOriginalClaudeQueryMessage(actualSender.sessionId, () => {
+            assert.deepEqual(lastTurnLevelOf(actualSender.sessionId), scenario.expectedCeiling);
+            entry = owning!.subsystem.service.postFromTool(owning!.roomId, {
+              authorId: actualSender.authorId,
+              callerSessionId: actualSender.sessionId,
+              text: '@Ana is the build green?',
+            });
+            assert.deepEqual(entryLevelOf(entry.id), scenario.expectedCeiling);
+          });
+          owning.subsystem.service.post(owning.roomId, {
+            authorId: owning.operator.id,
+            text: '@Bo ask Ana whether the build is green',
+            mentions: [actualSender.authorId],
+          });
+        } else
+          entry = owning.subsystem.service.post(owning.roomId, {
+            authorId,
+            text: 'is the build green?',
+            mentions: [target.authorId],
+          });
         await owning.subsystem.service.triggersIdle();
+        assert.ok(entry, 'The actual owning turn must have posted the target entry');
         assert.equal(observedEntry, entry.id);
         assert.ok(observation);
         const completion = await observation.completion;
@@ -273,6 +366,20 @@ export async function prepareOriginalClaudeDefaultsControl(scenario: OriginalDef
             );
         }
         assert.ok(observation.computedDefaults);
+        if (scenario.expectedLevel && scenario.expectedCeiling !== undefined)
+          assert.equal(detachedCeilingChecked, true);
+        if (failed) throw first;
+        if (scenario.expectedLevel) {
+          if (scenario.expectedCeiling === undefined)
+            assert.equal(Object.hasOwn(observation.computedDefaults, 'permissionCeiling'), false);
+          else
+            assert.deepEqual(
+              observation.computedDefaults.permissionCeiling,
+              scenario.expectedCeiling
+            );
+        }
+        if (scenario.expectedLevel)
+          assert.deepEqual(lastTurnLevelOf(completion.result.sessionId), scenario.expectedLevel);
         assert.deepEqual(observation.computedDefaults.settings, scenario.expectedSettings);
         if (scenario.expectedMode === undefined)
           assert.equal(

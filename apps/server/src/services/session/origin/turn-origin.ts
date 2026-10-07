@@ -88,6 +88,16 @@ export type TurnOrigin =
    */
   | { readonly kind: 'agent-dm' }
   /**
+   * A message on the relay addressed to an agent, from a sender that is NOT one
+   * of our agents: the A2A gateway (another company's agent), an external MCP
+   * client, or a hand-built publish. It arrives on the same agent subject an
+   * agent's `relay_send` does, so the stamped sender is the only fact that
+   * tells it apart, and it gets its own member so that a later change letting
+   * our own agents' DMs follow a configured level can never carry it along
+   * (spec `trusted-by-default-flip` §4).
+   */
+  | { readonly kind: 'outside-sender' }
+  /**
    * A connector event woke an agent up (`services/connectors/events/`). Same
    * rule as a binding: the subscription a person approved is the grant, so the
    * row seeds no operator stop.
@@ -252,6 +262,7 @@ export function permissionSeedForOrigin(origin: TurnOrigin): OriginPermissionSee
     case 'schedule':
     case 'relay-binding':
     case 'agent-dm':
+    case 'outside-sender':
     case 'connector-event':
     case 'agent-launch':
     case 'account-handoff':
@@ -263,4 +274,18 @@ export function permissionSeedForOrigin(origin: TurnOrigin): OriginPermissionSee
       throw new Error(`unhandled turn origin: ${JSON.stringify(unhandled)}`);
     }
   }
+}
+
+/** The subject prefix the server stamps on a message one of our agents sends. */
+const AGENT_SENDER_PREFIX = 'relay.agent.';
+
+/**
+ * The origin of a conversation a relay message addressed to an agent started,
+ * from the sender the server stamped on it: `agent-dm` for one of our agents,
+ * `outside-sender` for anybody else (the A2A gateway, an external MCP client).
+ *
+ * @param from - The envelope's server-stamped sender.
+ */
+export function relayTurnOrigin(from: string): TurnOrigin {
+  return from.startsWith(AGENT_SENDER_PREFIX) ? { kind: 'agent-dm' } : { kind: 'outside-sender' };
 }

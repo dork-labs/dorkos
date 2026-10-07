@@ -138,7 +138,7 @@ export const futureCards: FutureCard[] = [
     label: 'Ownership',
     title: 'Yours to keep',
     description:
-      'Already shipping. Your computer, your files, your AI plan. Open source and free forever.',
+      'Already shipping. Your agents, tools, files and data stay yours, wherever they run. MIT licensed and free forever.',
     color: 'green',
   },
 ];

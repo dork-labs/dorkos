@@ -14,6 +14,8 @@ superseded-by: null
 
 Accepted (from spec `community-host-operator-api`, section "Legal hold", DOR-2299).
 
+Amended by [261001-150212](261001-150212-host-account-closure-ends-access-now-erases-after-the-window.md) (a host may close someone's account; accepted 2026-10-06): for one case only, member erasure is no longer unblocked by a legal hold: a hold now holds an erasure the host started. A person's own erasure is still not held.
+
 ## Context
 
 A host can be required to preserve a community: a court order, a regulator's request, or pending litigation. The lifecycle hold (ADR `260923-121712`) stops growth but lets the owner request deletion, which the tenant deletion worker carries out after seven days. A takedown (ADR `260923-214421`) also deletes through that worker. Nothing on the host could stop a permanent deletion while a preservation duty applied, short of editing the database by hand.

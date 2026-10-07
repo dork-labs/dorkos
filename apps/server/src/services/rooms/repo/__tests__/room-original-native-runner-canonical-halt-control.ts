@@ -3,9 +3,14 @@ import assert from 'node:assert/strict';
 import { agents, eq, sessionMetadata } from '@dorkos/db';
 import { AgentManifestSchema } from '@dorkos/shared/mesh-schemas';
 import { writeManifest } from '@dorkos/shared/manifest';
-import { runtimeRegistry, readOriginalRegisteredRuntime } from '../../../core/runtime-registry.js';
+import {
+  runtimeRegistry,
+  readOriginalRegisteredRuntime,
+  observeOriginalRegisteredRuntimeStream,
+} from '../../../core/runtime-registry.js';
 import { CodexRuntime } from '../../../runtimes/codex/codex-runtime.js';
 import { CodexThreadMap } from '../../../runtimes/codex/thread-map.js';
+import { lastTurnLevelOf } from '../../../core/turn-power/turn-levels.js';
 import { interactionGate } from '../../../runtimes/test-mode/interaction-gate.js';
 import { readTestModeOriginalActiveStream } from '../../../runtimes/test-mode/test-mode-runtime.js';
 import { isTurnInFlight } from '../../../session/message-dispatcher.js';
@@ -27,7 +32,10 @@ export function makeOriginalRunnerCanonicalHaltControl() {
     },
     async run(
       owning: OriginalNativeLaunchFixture,
-      mode: 'runner-canonical-halt' | 'runner-canonical-owner' = 'runner-canonical-halt'
+      mode:
+        | 'runner-canonical-halt'
+        | 'runner-canonical-owner'
+        | 'runner-canonical-level' = 'runner-canonical-halt'
     ) {
       target = await owning.bootNativeAgent();
       const actual = target;
@@ -89,7 +97,7 @@ export function makeOriginalRunnerCanonicalHaltControl() {
         if (queryingHalt) haltGets.push(args[0]);
         return Reflect.apply(originalGet, this, args);
       };
-      if (mode === 'runner-canonical-owner') {
+      if (mode === 'runner-canonical-owner' || mode === 'runner-canonical-level') {
         runtimeRegistry.persistSessionRuntime = function (...args) {
           if (args[3] === actual.agentPath) writes.push(args);
           return Reflect.apply(originalPersist, this, args);
@@ -112,10 +120,57 @@ export function makeOriginalRunnerCanonicalHaltControl() {
         }
         assert.equal(settled, true);
         writes.length = 0;
+        if (mode === 'runner-canonical-level') {
+          assert.deepEqual(lastTurnLevelOf(actual.sessionId), {
+            asks: 'never',
+            reach: 'everything',
+          });
+          owning.db
+            .update(sessionMetadata)
+            .set({ permissionMode: 'always-deny' })
+            .where(eq(sessionMetadata.sessionId, actual.sessionId))
+            .run();
+        }
         owning.holdCanonicalSession(actual.sessionId);
         const entry = post('@native establish canonical halt target');
         idle = owning.subsystem.service.triggersIdle();
         void idle.catch(remember);
+        if (mode === 'runner-canonical-level') {
+          // Read only the exact current native stream; never consume a second observer.
+          let currentStream: ReturnType<typeof readTestModeOriginalActiveStream> = undefined;
+          for (
+            let i = 0;
+            i < 1000 &&
+            !(currentStream = readTestModeOriginalActiveStream(selected, actual.sessionId));
+            i++
+          )
+            await new Promise((resolve) => setTimeout(resolve, 1));
+          assert.ok(currentStream);
+          const capturedLevel = lastTurnLevelOf(actual.sessionId);
+          assert.deepEqual(capturedLevel, { asks: 'always', reach: 'read' });
+          const originalStoredModeOf = runtimeRegistry.storedPermissionModeOf;
+          try {
+            runtimeRegistry.storedPermissionModeOf = () => 'always-allow';
+            assert.ok(
+              Reflect.apply(observeOriginalRegisteredRuntimeStream, undefined, [
+                selected,
+                actual.sessionId,
+                currentStream,
+                {
+                  permissionMode: 'always-allow',
+                  permissionCeiling: { asks: 'never', reach: 'everything' },
+                },
+              ])
+            );
+            assert.deepEqual(lastTurnLevelOf(actual.sessionId), capturedLevel);
+            assert.ok(
+              observeOriginalRegisteredRuntimeStream(selected, actual.sessionId, currentStream)
+            );
+            assert.deepEqual(lastTurnLevelOf(actual.sessionId), capturedLevel);
+          } finally {
+            runtimeRegistry.storedPermissionModeOf = originalStoredModeOf;
+          }
+        }
         let released = false;
         for (let i = 0; i < 1000 && !released; i++) {
           released = owning.stepCanonicalSession(actual.sessionId);
@@ -126,6 +181,9 @@ export function makeOriginalRunnerCanonicalHaltControl() {
           await new Promise((resolve) => setTimeout(resolve, 1));
         const canonical = owning.readCanonicalSession(actual.sessionId);
         assert.ok(canonical && canonical !== actual.sessionId);
+        const originalLevel = lastTurnLevelOf(actual.sessionId);
+        assert.ok(originalLevel, 'The actual native turn records its permission level');
+        assert.deepEqual(lastTurnLevelOf(canonical), originalLevel);
         assert.equal(
           owning.subsystem.store.getRoomSession(owning.roomId, actual.authorId),
           canonical
@@ -155,7 +213,7 @@ export function makeOriginalRunnerCanonicalHaltControl() {
         const completion = await observation.completion;
         if (completion.kind !== 'returned') throw completion.cause;
         assert.equal(completion.kind, 'returned');
-        if (mode === 'runner-canonical-owner') {
+        if (mode === 'runner-canonical-owner' || mode === 'runner-canonical-level') {
           assert.equal(completion.result.sessionId, canonical);
           assert.equal(
             owning.subsystem.store.getRoomSession(owning.roomId, actual.authorId),

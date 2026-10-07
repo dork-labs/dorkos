@@ -164,6 +164,7 @@ import type {
   MessageOpts,
   RuntimeCapabilities,
   RuntimeDeliveryResult,
+  TurnPermissionCeiling,
 } from '@dorkos/shared/agent-runtime';
 import type {
   DispositionDowngradeReason,
@@ -1048,6 +1049,11 @@ export interface DispatchMessageOpts {
    * authority on the one condition it may be sent under.
    */
   newSessionPermissionMode?: PermissionModeId;
+  /**
+   * The loosest level this turn may run at. Passed straight through;
+   * `MessageOpts.permissionCeiling` is the authority on what it means.
+   */
+  permissionCeiling?: TurnPermissionCeiling;
   /** The projector for `sessionId` (keyed by the stable client-facing id). */
   projector: SessionStateProjector;
   /** The runtime this session resolves to. */
@@ -1322,6 +1328,7 @@ interface DispatchPlan {
     | 'accountHint'
     | 'settings'
     | 'newSessionPermissionMode'
+    | 'permissionCeiling'
     | 'stallTimeoutMs'
     | 'onError'
     | 'onSettled'
@@ -1674,6 +1681,9 @@ function launchDispatchInner(
       ...(turn.settings ? { settings: turn.settings } : {}),
       ...(turn.newSessionPermissionMode !== undefined
         ? { newSessionPermissionMode: turn.newSessionPermissionMode }
+        : {}),
+      ...(turn.permissionCeiling !== undefined
+        ? { permissionCeiling: turn.permissionCeiling }
         : {}),
       ...(turn.stallTimeoutMs !== undefined ? { stallTimeoutMs: turn.stallTimeoutMs } : {}),
       ...(turn.privateReceiptId !== undefined ? { privateReceiptId: turn.privateReceiptId } : {}),

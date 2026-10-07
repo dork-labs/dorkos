@@ -127,7 +127,11 @@ async function scenario(): Promise<void> {
     await stopReceiptControl!.run(owning, caseName);
     return;
   }
-  if (caseName === 'runner-canonical-halt' || caseName === 'runner-canonical-owner') {
+  if (
+    caseName === 'runner-canonical-halt' ||
+    caseName === 'runner-canonical-owner' ||
+    caseName === 'runner-canonical-level'
+  ) {
     await canonicalHaltControl!.run(owning, caseName);
     return;
   }
@@ -505,6 +509,7 @@ if (
     'runner-bound-halt',
     'runner-canonical-halt',
     'runner-canonical-owner',
+    'runner-canonical-level',
     'runner-confirmed-stop',
     'runner-unconfirmed-stop',
     'runner-owner-write-failure',
@@ -551,7 +556,9 @@ const stopReceiptControl =
       ).makeOriginalRunnerStopReceiptControl()
     : undefined;
 const canonicalHaltControl =
-  caseName === 'runner-canonical-halt' || caseName === 'runner-canonical-owner'
+  caseName === 'runner-canonical-halt' ||
+  caseName === 'runner-canonical-owner' ||
+  caseName === 'runner-canonical-level'
     ? (
         await import('./room-original-native-runner-canonical-halt-control.js')
       ).makeOriginalRunnerCanonicalHaltControl()
@@ -686,7 +693,9 @@ const owning = await createOriginalNativeLaunchFixture(
                   observeRun: stopReceiptControl!.observeRun,
                   releaseProvider: stopReceiptControl!.releaseProvider,
                 }
-              : caseName === 'runner-canonical-halt' || caseName === 'runner-canonical-owner'
+              : caseName === 'runner-canonical-halt' ||
+                  caseName === 'runner-canonical-owner' ||
+                  caseName === 'runner-canonical-level'
                 ? {
                     observeRun: canonicalHaltControl!.observeRun,
                     releaseProvider: canonicalHaltControl!.releaseProvider,
@@ -757,6 +766,7 @@ const setup: {
 } = {};
 let started = false;
 let running: Promise<void> | undefined;
+let setupPending: Promise<void> | undefined;
 let closing: Promise<void> | undefined;
 process.on('message', (message: unknown) => {
   if (message === 'run' && !started && !closing) {
@@ -779,8 +789,16 @@ function close(): void {
   // Stop the actual Trigger/runtime before waiting for a held scenario.
   closing = (async () => {
     const stop = Promise.resolve().then(() => owning.stopNative());
-    for (const result of await Promise.allSettled([stop, running]))
+    for (const result of await Promise.allSettled([stop, setupPending, running]))
       if (result.status === 'rejected') remember(result.reason);
+    // Setup may finish acquiring its original native owner after the first stop.
+    // Stop that exact owner again before the enclosing Db/root can close; its
+    // original memo joins the same cancellation when it was already acquired.
+    try {
+      await owning.stopNative();
+    } catch (cause) {
+      remember(cause);
+    }
     try {
       await owning.close();
     } catch (cause) {
@@ -796,35 +814,40 @@ function close(): void {
 process.on('disconnect', close);
 originalConstructionPhase('setup-start');
 try {
-  if (caseName === 'second-bound-dispatcher-busy' || caseName === 'second-bound-runtime-lock') {
-    const repo = owning.repos.repoPath(owning.roomId);
-    const ceiling = owning.repos.homeDir(owning.roomId);
-    setup.secondBound = await (
-      await import('./room-original-native-second-bound-controls.js')
-    ).prepareOriginalNativeSecondBoundBusyControl(
-      owning,
-      (args, cwd = repo) => fixtureGit(args, cwd, ceiling),
-      caseName === 'second-bound-runtime-lock'
-    );
-  } else if (caseName === 'retired-id-busy' || caseName === 'busy-read-unknown') {
-    const repo = owning.repos.repoPath(owning.roomId);
-    const ceiling = owning.repos.homeDir(owning.roomId);
-    setup.retiredBusy = await (
-      await import('./room-original-native-placement-controls.js')
-    ).prepareOriginalNativeRetiredIdBusyControl(
-      owning,
-      (args, cwd = repo) => fixtureGit(args, cwd, ceiling),
-      caseName === 'busy-read-unknown'
-    );
-  } else if (caseName === 'refresh-story') {
-    const repo = owning.repos.repoPath(owning.roomId);
-    const ceiling = owning.repos.homeDir(owning.roomId);
-    setup.refreshStory = await (
-      await import('./room-original-native-refresh-story.js')
-    ).prepareOriginalNativeRefreshStory(owning, (args, cwd = repo) =>
-      fixtureGit(args, cwd, ceiling)
-    );
-  }
+  setupPending = (async () => {
+    if (caseName === 'second-bound-dispatcher-busy' || caseName === 'second-bound-runtime-lock') {
+      const repo = owning.repos.repoPath(owning.roomId);
+      const ceiling = owning.repos.homeDir(owning.roomId);
+      setup.secondBound = await (
+        await import('./room-original-native-second-bound-controls.js')
+      ).prepareOriginalNativeSecondBoundBusyControl(
+        owning,
+        (args, cwd = repo) => fixtureGit(args, cwd, ceiling),
+        caseName === 'second-bound-runtime-lock'
+      );
+    } else if (caseName === 'retired-id-busy' || caseName === 'busy-read-unknown') {
+      const repo = owning.repos.repoPath(owning.roomId);
+      const ceiling = owning.repos.homeDir(owning.roomId);
+      setup.retiredBusy = await (
+        await import('./room-original-native-placement-controls.js')
+      ).prepareOriginalNativeRetiredIdBusyControl(
+        owning,
+        (args, cwd = repo) => fixtureGit(args, cwd, ceiling),
+        caseName === 'busy-read-unknown'
+      );
+    } else if (caseName === 'refresh-story') {
+      const repo = owning.repos.repoPath(owning.roomId);
+      const ceiling = owning.repos.homeDir(owning.roomId);
+      setup.refreshStory = await (
+        await import('./room-original-native-refresh-story.js')
+      ).prepareOriginalNativeRefreshStory(owning, (args, cwd = repo) =>
+        fixtureGit(args, cwd, ceiling)
+      );
+    }
+  })();
+  // Observe setup refusal immediately; close joins the original promise below.
+  void setupPending.catch(remember);
+  await setupPending;
 } catch (cause) {
   remember(cause);
   close();

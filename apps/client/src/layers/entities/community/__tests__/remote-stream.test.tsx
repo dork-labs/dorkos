@@ -2,14 +2,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import type { PropsWithChildren } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport, spacesExperiment } from '@dorkos/test-utils';
 import {
   RemoteCommunityEntrySchema,
   RemoteCommunityRoomSchema,
   type RemoteCommunityEvent,
 } from '@dorkos/shared/community-views';
 import type { Transport } from '@dorkos/shared/transport';
-import { getCommunityRouteEpoch, TransportProvider } from '@/layers/shared/model';
+import { configKeys, getCommunityRouteEpoch, TransportProvider } from '@/layers/shared/model';
 import { confirmCommunityAuthority, invalidateCommunityAuthority } from '@/layers/shared/lib';
 import { communityKeys } from '../model/use-community-connections';
 import { communityNavigationKeys } from '../model/use-community-navigation';
@@ -99,6 +99,9 @@ function setup() {
       .mockResolvedValue({ ownerKey: 'owner-a', order: [], destinations: [] }),
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  // Spaces are an experiment, off by default (DOR-2740); these reads are space
+  // reads, so the config they wait on already says spaces are on.
+  client.setQueryData(configKeys.current(), { experiments: spacesExperiment(true) });
   const authority = invalidateCommunityAuthority();
   confirmCommunityAuthority(authority.epoch, 'owner-a');
   const confirmed = {

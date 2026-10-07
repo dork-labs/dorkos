@@ -17,9 +17,9 @@ import {
   FOOTER_SOCIAL_LINKS,
 } from '@/layers/features/marketing';
 
-const storyTitle = 'The Story — DorkOS';
+const storyTitle = 'The Story | DorkOS';
 const storyDescription =
-  'How DorkOS started: one founder, a team of agents, and the bet that one person with good help can run a whole business.';
+  'How DorkOS started: one founder, an agent team, and the bet that one person with good help can build and run a whole business.';
 
 export const metadata: Metadata = {
   title: 'The Story',

@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, render, renderHook, screen, waitFor } from '@testing-library/react';
 import type { PropsWithChildren } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport, spacesExperiment } from '@dorkos/test-utils';
 import type {
   CommunityConnectionDescriptor,
   CommunityDisconnectResponse,
@@ -17,7 +17,7 @@ import {
   invalidateCommunityAuthority,
   type ConfirmedCommunityAuthority,
 } from '@/layers/shared/lib';
-import { commitCommunityRouteEpoch, TransportProvider } from '@/layers/shared/model';
+import { commitCommunityRouteEpoch, configKeys, TransportProvider } from '@/layers/shared/model';
 import { endCommunityConnection, useEndCommunityConnection } from '../model/community-lifecycle';
 import {
   communityKeys,
@@ -99,6 +99,9 @@ beforeEach(() => {
   confirmCommunityAuthority(pending.epoch, 'owner-a');
   authority = { epoch: pending.epoch, ownerKey: 'owner-a' };
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  // Spaces are an experiment, off by default (DOR-2740); these reads are space
+  // reads, so the config they wait on already says spaces are on.
+  client.setQueryData(configKeys.current(), { experiments: spacesExperiment(true) });
   client.setQueryData(communityNavigationKeys.authority(pending.epoch), {
     ownerKey: 'owner-a',
     order: [],

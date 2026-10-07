@@ -1,3 +1,4 @@
+import { captureTurnLevelOptions } from '../../core/turn-power/turn-levels.js';
 import { randomUUID } from 'node:crypto';
 import type { Db } from '@dorkos/db';
 import { RoomContextDataSchema, type RoomContextData } from '@dorkos/shared/additional-context';
@@ -138,6 +139,8 @@ const testModeOriginalStreams = new WeakMap<
   {
     runtime: TestModeRuntime;
     own: TestModeInstalled;
+    sessionId: string;
+    options: Readonly<MessageOpts>;
     stopContinuation(): boolean;
     stopEvents: WeakSet<object>;
     resolve(): Promise<
@@ -202,6 +205,20 @@ export function readTestModeOriginalNativeStream(runtime: object, stream: object
   if (!own || own.runtime !== runtime || !readTestModeNativeOperation(own.own.operation))
     return undefined;
   return Object.freeze({ operation: own.own.operation });
+}
+/** Lookup original construction-captured turn DATA without reopening retired native authority. */
+export function readTestModeOriginalNativeTurnOptions(
+  runtime: object,
+  sessionId: string,
+  stream: object
+) {
+  const own = testModeOriginalStreams.get(stream);
+  return own &&
+    own.runtime === runtime &&
+    own.sessionId === sessionId &&
+    readTestModeNativeOperation(own.own.operation)
+    ? { options: own.options }
+    : undefined;
 }
 /** Read only the exact original Stop terminal DATA; retired native authority remains unavailable. */
 export function readTestModeOriginalStopTerminalData(
@@ -1164,6 +1181,8 @@ export class TestModeRuntime implements AgentRuntime {
     testModeOriginalStreams.set(returned, {
       runtime: this,
       own,
+      sessionId,
+      options: captureTurnLevelOptions(opts),
       stopContinuation,
       stopEvents,
       resolve: async () => {

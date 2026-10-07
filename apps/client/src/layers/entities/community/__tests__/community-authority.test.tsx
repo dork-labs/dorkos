@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, render, renderHook, screen, waitFor } from '@testing-library/react';
 import type { PropsWithChildren } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport, spacesExperiment, withSpacesExperiment } from '@dorkos/test-utils';
 import type { CommunityNavigationState } from '@dorkos/shared/community-navigation';
 import { RemoteCommunityRoomSchema } from '@dorkos/shared/community-views';
 import {
@@ -10,7 +10,7 @@ import {
   getCommunityAuthority,
   invalidateCommunityAuthority,
 } from '@/layers/shared/lib';
-import { commitCommunityRouteEpoch, TransportProvider } from '@/layers/shared/model';
+import { commitCommunityRouteEpoch, configKeys, TransportProvider } from '@/layers/shared/model';
 import { communityNavigationKeys, useCommunityNavigation } from '../model/use-community-navigation';
 import { communityAccessState, withinCommunityAuthority } from '../model/use-community-connections';
 import { useRemoteCommunityRoom } from '../model/use-remote-community';
@@ -102,7 +102,7 @@ describe('Community authority bootstrap', () => {
       .fn()
       .mockReturnValueOnce(first.promise)
       .mockReturnValueOnce(second.promise);
-    const transport = createMockTransport({ getCommunityNavigation });
+    const transport = withSpacesExperiment(createMockTransport({ getCommunityNavigation }));
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const wrapper = ({ children }: PropsWithChildren) => (
       <QueryClientProvider client={client}>
@@ -163,12 +163,14 @@ describe('Community authority bootstrap', () => {
       if (refName === 'b') return roomB.promise;
       return aReads++ === 0 ? firstA.promise : finalA.promise;
     });
-    const transport = createMockTransport({
-      getRemoteCommunityRoom,
-      getCommunityNavigation: vi
-        .fn()
-        .mockResolvedValue({ ownerKey: 'owner-a', order: [], destinations: [] }),
-    });
+    const transport = withSpacesExperiment(
+      createMockTransport({
+        getRemoteCommunityRoom,
+        getCommunityNavigation: vi
+          .fn()
+          .mockResolvedValue({ ownerKey: 'owner-a', order: [], destinations: [] }),
+      })
+    );
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const pending = invalidateCommunityAuthority();
     confirmCommunityAuthority(pending.epoch, 'owner-a');
@@ -261,5 +263,56 @@ describe('Community authority bootstrap', () => {
       await finalA.promise;
     });
     expect(await screen.findByText('final A')).toBeInTheDocument();
+  });
+});
+
+// Purpose: spaces ship off (DOR-2740), and every space read hangs off this
+// hook. Off, it must ask the server nothing and hand back nothing, even when an
+// answer for the confirmed owner is already cached. Fails if either half of its
+// gate goes.
+describe('useCommunityNavigation while spaces are off', () => {
+  function mountWith(spaces: boolean) {
+    const getCommunityNavigation = vi
+      .fn()
+      .mockResolvedValue({ ownerKey: 'owner-a', order: [], destinations: [] });
+    const transport = withSpacesExperiment(createMockTransport({ getCommunityNavigation }), spaces);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    // The config has answered, so "off" below is a decision, not a wait.
+    client.setQueryData(configKeys.current(), { experiments: spacesExperiment(spaces) });
+    const pending = invalidateCommunityAuthority();
+    confirmCommunityAuthority(pending.epoch, 'owner-a');
+    client.setQueryData(communityNavigationKeys.authority(pending.epoch), {
+      ownerKey: 'owner-a',
+      installationDestination: { path: '/', search: {} },
+      order: [],
+      destinations: [],
+    });
+    // Stale, so a gate that let the read through would refetch it on mount.
+    void client.invalidateQueries({
+      queryKey: communityNavigationKeys.authority(pending.epoch),
+      refetchType: 'none',
+    });
+    const wrapper = ({ children }: PropsWithChildren) => (
+      <QueryClientProvider client={client}>
+        <TransportProvider transport={transport}>{children}</TransportProvider>
+      </QueryClientProvider>
+    );
+    const hook = renderHook(() => useCommunityNavigation(), { wrapper });
+    return { hook, getCommunityNavigation };
+  }
+
+  it('asks nothing and hands back nothing, even with an answer cached', async () => {
+    const { hook, getCommunityNavigation } = mountWith(false);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(getCommunityNavigation).not.toHaveBeenCalled();
+    expect(hook.result.current.data).toBeUndefined();
+  });
+
+  it('asks and answers once spaces are on (the control)', async () => {
+    const { hook, getCommunityNavigation } = mountWith(true);
+    expect(hook.result.current.data?.ownerKey).toBe('owner-a');
+    await waitFor(() => expect(getCommunityNavigation).toHaveBeenCalled());
   });
 });

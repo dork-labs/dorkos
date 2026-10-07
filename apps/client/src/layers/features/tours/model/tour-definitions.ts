@@ -86,7 +86,7 @@ export const TOUR_DEFINITIONS: Record<TourId, TourDefinition> = {
     occasion: 'mesh',
     offerLine: DORKBOT_TOUR_LINES.offers.mesh,
     // Onto the Team page, rather than spotlighting the sidebar button that opens
-    // it. The offer promises to show the fleet, and the sidebar is a sheet on a
+    // it. The offer promises to show the team, and the sidebar is a sheet on a
     // phone: unmounted while closed, so a step anchored in it would have shown a
     // phone nothing at all.
     deepLink: { kind: 'route', to: '/team' },

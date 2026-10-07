@@ -274,6 +274,24 @@ than waiting for a whole wave to drain. Two conditions on that:
 > can drive several sessions at once parallelizes the same method without
 > changing any of it.
 
+## Worktrees vs Subagents
+
+They solve different isolation problems and compose: a subagent with `isolation: "worktree"` gets a throwaway worktree for collision-free parallel edits.
+
+| Scenario                            | Worktree | Subagent         |
+| ----------------------------------- | -------- | ---------------- |
+| Different branches                  | Yes      | No               |
+| Full build isolation                | Yes      | No               |
+| Mutating files in a shared checkout | Yes      | No               |
+| Long-running dev server needed      | Yes      | No               |
+| Same branch, parallel reads         | No       | Yes              |
+| Quick analysis or research          | No       | Yes              |
+| Shared mutable state is fine        | N/A      | Yes (sequential) |
+
+Rule of thumb: worktrees give process-level isolation for code work; subagents give an isolated _context_ for reads, research and analysis on the same tree. The worktree decision rule, mechanics, port model and cleanup safety live in the `working-in-worktrees` skill and `AGENTS.md` → Worktrees.
+
+An agent that stops mid-work on a context error was handed too much: split the task, give the aspects to separate agents, and pass only the context each one needs.
+
 ## Agent Selection Guide
 
 | Task Type               | Recommended Agent       |
@@ -303,6 +321,8 @@ Agents report their own outcome in their final message — treat it as a claim, 
 4. **Too many agents** — batch in groups of 3-5, not 20 at once
 5. **Re-spawning instead of continuing** — use `SendMessage` for follow-ups; a new `Agent` call loses the prior context
 6. **Trusting success reports** — check the diff or output evidence
+7. **Vague output asks** — tell each agent the exact format to report back in
+8. **Parallelizing chatty work** — work that needs rapid back-and-forth with the person stays in one thread
 
 ## Progress Display
 

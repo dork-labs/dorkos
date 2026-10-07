@@ -248,7 +248,7 @@ dorkos debug refusals --json | jq 'group_by(.reason)'
 
 ### Deliberately not built
 
-**A cockpit debug panel or in-app log viewer.** It is a user-facing surface subject to the demo-claim gate, it duplicates what these routes plus `--json` already answer, and the same idea has sat at "FUTURE" in `research/20260301_logging_review.md` for five months without anyone needing it. The condition that reopens it: operators writing their own scripts against `/api/debug` often enough that a UI is owed.
+**An in-app debug panel or log viewer.** It is a user-facing surface subject to the demo-claim gate, it duplicates what these routes plus `--json` already answer, and the same idea has sat at "FUTURE" in `research/20260301_logging_review.md` for five months without anyone needing it. The condition that reopens it: operators writing their own scripts against `/api/debug` often enough that a UI is owed.
 
 ## 6. Recipes
 

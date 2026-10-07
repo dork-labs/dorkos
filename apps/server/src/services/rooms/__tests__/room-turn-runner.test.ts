@@ -623,3 +623,23 @@ describe('a room turn is recorded durably', () => {
     'still stores a log-backed runtime in full, because there the rows ARE the history'
   );
 });
+
+// Upstream power-flow subjects run through the same real isolated native construction.
+describe('upstream Room turn permission bounds with original ownership', () => {
+  registerOriginalNativeLaunchCase(
+    'runner-canonical-level',
+    'carries the turn’s recorded level to the id the runtime renamed it to'
+  );
+  registerOriginalNativeDefaultsCase(
+    'power-stranger-existing',
+    'holds a stranger’s turn in an existing Full autonomy conversation to its bound'
+  );
+  registerOriginalNativeDefaultsCase(
+    'power-agent-bound',
+    'holds a turn another agent’s post started to that agent’s level'
+  );
+  registerOriginalNativeDefaultsCase(
+    'power-human-unbounded',
+    'sends no bound for a person’s own message'
+  );
+});

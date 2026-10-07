@@ -14,6 +14,13 @@ import type {
 let acquired = false;
 let selectedSession: string | undefined;
 let selectedFragments: readonly string[] = Object.freeze(['green']);
+const originalObservedSessions = new Map<string, readonly string[]>();
+const originalQueryMessages = new Map<string, () => void>();
+/** Observe the real provider prompt while its owning Room claim is current. */
+export function observeOriginalClaudeQueryMessage(sessionId: string, observed: () => void) {
+  assert.equal(originalQueryMessages.has(sessionId), false);
+  originalQueryMessages.set(sessionId, observed);
+}
 const homeInputs: Readonly<{ sessionId: string; cwd?: string; resume?: string }>[] = [];
 /** Copied external query DATA; no request, stream, or issuer escapes. */
 export function readOriginalClaudeSdkHomeInputs() {
@@ -90,13 +97,13 @@ export function observeOriginalClaudeSession(
   fragments: readonly string[] = ['green']
 ) {
   assert.ok(sessionId);
-  if (selectedSession !== undefined) {
-    assert.equal(sessionId, selectedSession);
-    assert.deepEqual(fragments, selectedFragments);
-  } else {
-    selectedSession = sessionId;
-    selectedFragments = Object.freeze([...fragments]);
-  }
+  const previous = originalObservedSessions.get(sessionId);
+  if (previous) assert.deepEqual(fragments, previous);
+  else originalObservedSessions.set(sessionId, Object.freeze([...fragments]));
+  // Each original query snapshots this selected external DATA at construction.
+  // Completed ordinary turns may precede a different genuine native session.
+  selectedSession = sessionId;
+  selectedFragments = originalObservedSessions.get(sessionId)!;
 }
 
 export function query(input: { prompt: string | AsyncIterable<unknown>; options: Options }): Query {
@@ -165,6 +172,9 @@ export function query(input: { prompt: string | AsyncIterable<unknown>; options:
             })
           );
           assert.ok(input.options.cwd, 'The actual native query supplies its owned cwd');
+          const observed = originalQueryMessages.get(sessionId);
+          originalQueryMessages.delete(sessionId);
+          observed?.();
           yield {
             type: 'system',
             subtype: 'init',

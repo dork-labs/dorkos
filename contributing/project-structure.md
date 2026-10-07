@@ -2,7 +2,7 @@
 
 ## Overview
 
-DorkOS uses Feature-Sliced Design (FSD) to organize frontend code by business domains with clear layer boundaries. The server uses a layered architecture (routes + services) with size-aware guidance for when to adopt domain grouping. The monorepo structure (Turborepo + npm workspaces) is orthogonal to FSD — FSD applies _within_ each app.
+DorkOS uses Feature-Sliced Design (FSD) to organize frontend code by business domains with clear layer boundaries. The server uses a layered architecture (routes + services) with size-aware guidance for when to adopt domain grouping. The monorepo structure (Turborepo + pnpm workspaces) is orthogonal to FSD — FSD applies _within_ each app.
 
 ## Monorepo Layout
 
@@ -97,7 +97,7 @@ src/
 │   │   │   │   ├── tasks/    # TaskListPanel, TaskDetail, AgentRunner, BackgroundTaskBar
 │   │   │   │   └── tools/    # ToolCallCard (the prompts live in features/ask)
 │   │   │   ├── model/
-│   │   │   │   └── stream/   # StreamManager, stream-event-handler, classify-transport-error
+│   │   │   │   └── stream/   # turn projection (project-session-turn), approval and sign-in folds, announcers
 │   │   │   ├── api/
 │   │   │   └── index.ts
 │   │   ├── composer/    # The one message box — Composer.Root/.Input/.OverlayLane/.Attachments/.ClearArmedHint, composed by chat, rooms, and the dashboard

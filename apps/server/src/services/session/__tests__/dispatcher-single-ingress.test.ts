@@ -64,6 +64,12 @@ const ALLOWED = new Map<string, string>([
     'The command-intent half of the same launcher, on the same terms.',
   ],
   [
+    'apps/server/src/services/core/turn-power/turn-levels.ts',
+    'A decorator at the registration seam, on the terms `trace-runtime.ts` is ' +
+      'one: it records the level the turn runs at and hands back the generator ' +
+      'the caller asked for, starting nothing of its own.',
+  ],
+  [
     'apps/server/src/services/observability/trace-runtime.ts',
     'A decorator around an already-resolved runtime. It starts nothing; it wraps ' +
       'the generator the dispatcher asked for so the span covers the real turn.',

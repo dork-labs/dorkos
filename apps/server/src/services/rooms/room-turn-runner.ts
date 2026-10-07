@@ -45,9 +45,14 @@ import {
  *
  * @module server/services/rooms/room-turn-runner
  */
+import { aliasTurnLevel } from '../core/turn-power/turn-levels.js';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
-import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
+import type {
+  AgentRuntime,
+  TurnPermissionBound,
+  TurnPermissionCeiling,
+} from '@dorkos/shared/agent-runtime';
 import type { Room } from '@dorkos/shared/room-schemas';
 import { RoomContextDataSchema, type RoomContextData } from '@dorkos/shared/additional-context';
 import {
@@ -118,8 +123,22 @@ export type OriginalRoomRunnerCompletion =
   | Readonly<{ kind: 'returned'; result: RoomTurnResult }>
   | Readonly<{ kind: 'threw'; cause: unknown }>;
 /** Immutable computed preference/posture DATA; omission is preserved. */
+/** Detached fixed-field DATA; observers cannot mutate the original dispatch bound. */
+function copyOriginalRoomPermissionCeiling(ceiling: TurnPermissionCeiling): TurnPermissionCeiling {
+  const copyBound = (bound: TurnPermissionBound): TurnPermissionBound =>
+    typeof bound === 'string'
+      ? bound
+      : Object.freeze({
+          asks: bound.asks,
+          reach: bound.reach,
+          ...(bound.auto === true ? { auto: true as const } : {}),
+        });
+  if (typeof ceiling === 'string' || 'asks' in ceiling) return copyBound(ceiling);
+  return Object.freeze(ceiling.map(copyBound));
+}
 export interface OriginalRoomRunnerComputedDefaults {
   readonly whenBusy: DispatchMessageOpts['whenBusy'];
+  readonly permissionCeiling?: DispatchMessageOpts['permissionCeiling'];
   readonly settings: Readonly<Awaited<ReturnType<typeof resolveUnattendedSessionDefaults>>>;
   readonly newSessionPermissionMode?: ReturnType<typeof resolveUnattendedPermissionMode>;
 }
@@ -1088,6 +1107,7 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         }
         canonicalId = newId;
         stopState.alias(newId, inFlight);
+        aliasTurnLevel(oldId, newId);
       });
 
       // Taken back only for an id this run minted, and only while this process
@@ -1234,6 +1254,12 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         // for the one condition it may ride under is what keeps a future caller
         // from sending it for a session that already has a row (DOR-1917).
         ...(unattendedMode !== undefined ? { newSessionPermissionMode: unattendedMode } : {}),
+        // And the bound on THIS turn, from who wrote the message: applied by the
+        // runtime on top of whatever the conversation is set to, and never
+        // stored (spec `trusted-by-default-flip` §4).
+        ...(request.permissionCeiling !== undefined
+          ? { permissionCeiling: request.permissionCeiling }
+          : {}),
         projector,
         runtime,
         // **Refuse a stranger AT ACCEPTANCE**, unlike a person's own message: a
@@ -1300,6 +1326,13 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
           observed.defaults.value = Object.freeze({
             settings,
             whenBusy: dispatchOpts.whenBusy,
+            ...(dispatchOpts.permissionCeiling !== undefined
+              ? {
+                  permissionCeiling: copyOriginalRoomPermissionCeiling(
+                    dispatchOpts.permissionCeiling
+                  ),
+                }
+              : {}),
             ...(unattendedMode !== undefined ? { newSessionPermissionMode: unattendedMode } : {}),
           });
           observeBeforeDispatch?.(request.entry.id);
@@ -1370,6 +1403,7 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         (stopState.current(sessionId) === inFlight || stopState.current(canonicalId) === inFlight)
       ) {
         stopState.alias(canonicalId, inFlight);
+        aliasTurnLevel(sessionId, canonicalId);
       }
       // **As early as admission knows it, and before the answer is collected.** The
       // room bound a `(room, agent)` session before the claim, but on a first

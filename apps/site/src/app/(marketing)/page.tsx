@@ -5,8 +5,7 @@ import { rssFeedAlternateTypes, twitterFromOpenGraph } from '@/lib/metadata';
 import { HomeExperience, HomeNav } from './_components';
 
 const TITLE = `${siteConfig.name}: ${siteConfig.category}`;
-const DESCRIPTION =
-  'Your agents build the dashboards and trackers you need, inside DorkOS. Made for founders. On your computer, with your files. Free and open source.';
+const DESCRIPTION = siteConfig.description;
 
 /**
  * The home page's own metadata, declared here rather than inherited.

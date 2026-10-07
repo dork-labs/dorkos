@@ -33,6 +33,28 @@ const { working, teamRoomId } = vi.hoisted(() => ({
   teamRoomId: { current: 'team-room' as string | null },
 }));
 const halt = vi.hoisted(() => vi.fn());
+/** The address the bar reads, and whether the spaces experiment is on (DOR-2740). */
+const route = vi.hoisted(() => ({
+  search: {} as { community?: string; id?: string },
+  spaces: false,
+}));
+
+// No router is mounted here, so the address is stated per test.
+vi.mock('@/layers/shared/model', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/model')>()),
+  useSafeSearch: () => route.search,
+}));
+// Off unless a test turns it on, as spaces ship.
+vi.mock('@/layers/entities/config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/config')>()),
+  useSpacesEnabled: () => route.spaces,
+}));
+// A space's own reads, answered so the space bar has something to name.
+vi.mock('@/layers/entities/community', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/community')>()),
+  useCommunityConnections: () => ({ data: [{ ref: 'acme', label: 'Acme' }] }),
+  useRemoteCommunityRoom: () => ({ data: { title: 'design-review' } }),
+}));
 
 vi.mock('@/layers/entities/room', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/entities/room')>();
@@ -77,6 +99,8 @@ afterEach(() => {
   faces.current = new Map();
   working.count = 0;
   teamRoomId.current = 'team-room';
+  route.search = {};
+  route.spaces = false;
   vi.clearAllMocks();
 });
 
@@ -270,5 +294,26 @@ describe('ChannelsBar', () => {
     expect(screen.getByLabelText('3 agents working')).toHaveTextContent('3');
     await user.click(screen.getByRole('button', { name: 'Stop all agents in #general' }));
     expect(halt).toHaveBeenCalledWith({ roomId: 'room-1' });
+  });
+
+  // Purpose: spaces ship off (DOR-2740), so a space's address must not draw a
+  // space's bar. Fails if the bar stops reading the experiment.
+  it('draws no space bar for a space address while spaces are off', () => {
+    route.search = { community: 'acme', id: 'remote-room' };
+    renderBar(room());
+
+    expect(screen.getByRole('heading', { level: 1 })).toHaveAccessibleName('#general');
+    expect(screen.queryByText('design-review')).not.toBeInTheDocument();
+    expect(screen.queryByText('Acme')).not.toBeInTheDocument();
+  });
+
+  it('draws the space bar for the same address once spaces are on (the control)', () => {
+    route.search = { community: 'acme', id: 'remote-room' };
+    route.spaces = true;
+    renderBar(room());
+
+    expect(screen.getByText('design-review')).toBeInTheDocument();
+    expect(screen.getByText('Acme')).toBeInTheDocument();
+    expect(screen.queryByTitle('#general')).not.toBeInTheDocument();
   });
 });

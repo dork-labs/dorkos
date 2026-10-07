@@ -562,6 +562,7 @@ export class RoomService {
       text: string;
       replyTo?: string;
       attachmentIds?: readonly string[];
+      callerSessionId?: string;
     }
   ): PostedEntry {
     return this.parts.posting.postFromTool(roomId, input);
