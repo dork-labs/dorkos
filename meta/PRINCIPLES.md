@@ -38,11 +38,22 @@ This is how DorkOS is being built, because it lets agents do far more as models 
 A founder's agents, tools, files and data stay theirs, wherever they run. That shapes design, not just copy:
 
 - The app is open source (MIT) and complete without DorkOS Cloud. It clones, builds, tests and runs on its own.
-- Model sign-in stays the person's own, through each vendor's own flow. DorkOS never holds or passes on a Claude login.
+- When a person brings their own model sign-in, it stays theirs, through each vendor's own flow. DorkOS never holds or passes on a Claude login.
 - DorkOS depends on no one agent vendor. That is enforced in code, not promised in copy.
 - Nothing a person makes is trapped. They can move it, push it elsewhere, or leave.
 
-## 5. Local first, cloud optional
+## 5. DorkOS first, ready in under a minute
+
+_Status: decided 2026-10-07, not built yet (DOR-2782, DOR-2783, DOR-2784)._
+
+- **No outside subscription needed.** A new person runs on DorkOS: a DorkOS account, DorkOS Cloud and DorkOS's own AI. DorkOS's own products and services come first everywhere in the app; bringing your own Claude, ChatGPT or OpenRouter sign-in is the second option.
+- **Our own engine.** DorkOS ships its own agent engine before launch. Its developer name is Doe; the app only ever says "Runs on: DorkOS". While getting started, a person never sees a runtime name, a model name or a new concept.
+- **The account is the default, and it can be skipped.** Free local use with no account stays true.
+- **A card is required for DorkOS's own AI.** There are no free starter credits, so checkout has to be quick.
+- **DorkOS picks the model.** People can change it in Settings and in the agent status bar, where the model item is hidden by default.
+- **The bar:** up and running in under one minute.
+
+## 6. Local first, cloud optional
 
 This is the architecture principle. Marketing says "ownership" instead (see [`VOICE.md`](VOICE.md)).
 
@@ -53,10 +64,10 @@ _Status: the local app is built. One program for local and hosted, and pushing t
 - Anything made locally can be pushed to another DorkOS, ours or one you host, the way git pushes to a remote. Only one place runs an agent at a time.
 - DorkOS Cloud is an optional layer on top. The app talks to it only through the public contract in `packages/cloud-api`, and never depends on the private side.
 
-## 6. Claim only what works
+## 7. Claim only what works
 
 Never say that something unbuilt works. Every public claim (site, README, docs, release notes, videos, posts) must match what a person can do today. The list of what may be claimed is the demo-claim gate in [`ROADMAP.md`](ROADMAP.md#the-demo-claim-gate). When a roadmap item ships and passes its tests, the same pull request moves it up in that list. Honest by design: no dark patterns, no hype, and say what runs where. A person's agents send their context to whichever model vendor powers them; DorkOS does not change that or pretend otherwise.
 
-## 7. The quality bar
+## 8. The quality bar
 
 World-class UI and UX, and world-class developer experience. Neither is negotiable. Every surface works on phone, tablet and desktop. The product feels like a calm control panel, not a consumer toy. Describe what happens for the person, not how the system works inside. If removing something would not hurt the person, remove it. The engineering rules that carry this out are in `AGENTS.md`, "Quality Standard".

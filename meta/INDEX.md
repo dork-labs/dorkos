@@ -6,8 +6,8 @@
 
 Read these four first. Where anything else in the repo disagrees with them, they win.
 
-- [`VISION.md`](VISION.md): vision, mission, the office-and-workers picture, who it is for, the message stack and what sets us apart.
-- [`PRINCIPLES.md`](PRINCIPLES.md): how we decide. Trusted by default, co-workers, equal accounts (internal), ownership, local first and cloud optional, claim only what works, the quality bar.
+- [`VISION.md`](VISION.md): vision, mission, the office-and-workers picture, DorkOS first, who it is for, the message stack and what sets us apart.
+- [`PRINCIPLES.md`](PRINCIPLES.md): how we decide. Trusted by default, co-workers, equal accounts (internal), ownership, DorkOS first and ready in under a minute, local first and cloud optional, claim only what works, the quality bar.
 - [`VOICE.md`](VOICE.md): the single source for language. Headline rules, words we use, words and claims we never use, plain-word swaps.
 - [`ROADMAP.md`](ROADMAP.md): before launch and after launch, with tickets, plus the demo-claim gate and open risks.
 
