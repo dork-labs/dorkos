@@ -32,6 +32,10 @@ const retained = new Set<State>();
 /** Controller facade owns its original supervisor; IPC results are data, never reuse capabilities. */
 export async function startDarwinSupervisorClient(
   options: Parameters<typeof launchDarwinSupervisorBrowser>[0] & {
+    launcher?: Readonly<{
+      executable: string;
+      nodeRuntime: 'node' | 'electron-node';
+    }>;
     workerPath: string;
     browserId: string;
     generation: number;
@@ -42,7 +46,7 @@ export async function startDarwinSupervisorClient(
   originalChild?: (original: SupervisorOriginalChild) => Promise<void>
 ) {
   const nonce = randomUUID();
-  const { workerPath, ...input } = options;
+  const { workerPath, launcher, ...input } = options;
   const seed = SupervisorSeedSchema.parse({
     kind: 'launch',
     nonce,
@@ -57,7 +61,7 @@ export async function startDarwinSupervisorClient(
   const observeBaseline = baselineObserver?.observeTerminated.bind(baselineObserver);
   if (Buffer.byteLength(JSON.stringify(seed)) > 65536) throw new Error('SUPERVISOR_SEED_EXCEEDED');
   const child = spawn(
-    process.execPath,
+    launcher?.executable ?? process.execPath,
     [AbsolutePathSchema.parse(workerPath), '--private-darwin-browser-supervisor'],
     {
       shell: false,
@@ -68,6 +72,7 @@ export async function startDarwinSupervisorClient(
         HOME: options.profileDir,
         LANG: 'C',
         LC_ALL: 'C',
+        ...(launcher?.nodeRuntime === 'electron-node' ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
       },
     }
   );

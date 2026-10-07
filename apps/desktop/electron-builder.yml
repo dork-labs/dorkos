@@ -8,6 +8,7 @@ directories:
   buildResources: build
 
 mac:
+  sign: dist/browser/sign-browser-app.cjs
   category: public.app-category.developer-tools
   # zip must accompany dmg: electron-updater (Squirrel.Mac) can only install
   # updates from the zip artifact; the dmg is the human-facing installer.
@@ -162,6 +163,15 @@ files:
 
 asar: true
 asarUnpack:
+  # Browser controller/verifier/workers and pinned library execute/read as one real-file copy.
+  - 'package.json'
+  - 'dist/server/server-entry.mjs'
+  - 'dist/drizzle/**'
+  # The real server entry resolves its complete production tree from this real root.
+  # Electron-as-Node verifier/workers cannot resolve virtual asar JS dependencies.
+  - '**/node_modules/**'
+  - 'dist/browser/**'
+  - '**/node_modules/playwright-core/**'
   - '**/node_modules/better-sqlite3/**'
   # node-pty backs the embedded terminal (services/terminal/); like
   # better-sqlite3 its .node binary must be a real file for dlopen.
@@ -299,3 +309,6 @@ asarUnpack:
 # Disabled here so electron-builder packages that already-correct binary
 # as-is instead of redoing (and re-breaking) the work.
 npmRebuild: false
+
+# Restore the verifier-pinned SDK in its original unpacked location before signing.
+afterPack: dist/browser/restore-library.cjs

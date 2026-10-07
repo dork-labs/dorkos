@@ -411,6 +411,7 @@ export function createProductionBrowserRuntimeOwner() {
         const policy = configuration.policy;
         const nativeJournal = configuration.nativeJournal;
         const recovery = configuration.recordedRecovery;
+        const captureMinimumIntervalMilliseconds = configuration.captureMinimumIntervalMilliseconds;
         // Optional fields must remain absent: the canonical validator rejects own undefined values.
         const browserWorkerPath = nativeJournal?.browserWorkerPath;
         const continuous = nativeJournal?.continuous;
@@ -433,6 +434,9 @@ export function createProductionBrowserRuntimeOwner() {
           ...(nativeJournal
             ? {
                 nativeJournal: Object.freeze({
+                  ...(nativeJournal.launcher
+                    ? { launcher: Object.freeze({ ...nativeJournal.launcher }) }
+                    : {}),
                   workerPath: nativeJournal.workerPath,
                   ...(browserWorkerPath === undefined ? {} : { browserWorkerPath }),
                   artifact: Object.freeze({ ...nativeJournal.artifact }),
@@ -446,6 +450,9 @@ export function createProductionBrowserRuntimeOwner() {
               }
             : {}),
           ...(recovery ? { recordedRecovery: recovery } : {}),
+          ...(captureMinimumIntervalMilliseconds === undefined
+            ? {}
+            : { captureMinimumIntervalMilliseconds }),
         });
         const registerInput = input.registerDispatcher;
         const registerCapture = capture.registerDispatcher;

@@ -1,4 +1,9 @@
 import { execFileSync } from 'child_process';
+import { assertDesktopBrowserPackaging } from './browser-packaging';
+import {
+  buildBrowserRuntimeAssets,
+  buildBrowserNativeAssets,
+} from '../../../packages/cli/scripts/build';
 import {
   build,
   formatMessages,
@@ -176,7 +181,10 @@ function requireExternalNativesPlugin(packages: Record<string, string[]>): Plugi
       const filter = new RegExp(
         `^(${packageNames.map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})$`
       );
-      build.onResolve({ filter }, (args) => ({ path: args.path, namespace: 'require-external' }));
+      build.onResolve({ filter }, (args) => ({
+        path: args.path,
+        namespace: 'require-external',
+      }));
       build.onLoad({ filter: /.*/, namespace: 'require-external' }, (args) => {
         const namedExports = packages[args.path]
           .map((k) => `export const ${k} = __mod[${JSON.stringify(k)}];`)
@@ -456,7 +464,10 @@ function verifyBundleLoadable(outfile: string, metafile: Metafile): void {
     execFileSync(process.execPath, ['--input-type=module', '-e', RESOLVE_SPECIFIERS_HARNESS], {
       cwd: path.dirname(outfile),
       stdio: 'inherit',
-      env: { ...process.env, DORKOS_BUNDLE_SPECIFIERS: JSON.stringify(specifiers) },
+      env: {
+        ...process.env,
+        DORKOS_BUNDLE_SPECIFIERS: JSON.stringify(specifiers),
+      },
     });
   } catch (err) {
     throw new Error(
@@ -670,12 +681,15 @@ const TARGET_PLATFORMS = [
 ] as const;
 
 /**
- * The shape of electron-builder.yml this build reads. Only the two keys the
- * gates below need — everything else in that file is electron-builder's.
+ * The shape of electron-builder.yml consumed by this build and its packaging
+ * assertions. Other configuration remains owned by electron-builder.
  */
 interface BuilderConfig {
+  files?: string[];
   asarUnpack?: string[];
-  mac?: { target?: { arch?: string[] }[] };
+  extraResources?: unknown;
+  afterPack?: string;
+  mac?: { target?: { arch?: string[] }[]; sign?: string | boolean };
   win?: { target?: { arch?: string[] }[] };
   linux?: { target?: { arch?: string[] }[] };
 }
@@ -882,6 +896,8 @@ async function buildServer() {
   console.log('[1/2] Bundling server...');
   assertPlatformBinariesLocked();
   assertPlatformBinariesWired();
+  assertDesktopBrowserPackaging(readDesktopManifest(), readBuilderConfig());
+  rmSync(path.join(OUT, 'browser'), { recursive: true, force: true });
   rmSync(path.join(OUT, 'server'), { recursive: true, force: true });
 
   // ESM, not CJS, and `.mjs` (not `.js`): apps/server's source is ESM
@@ -1008,16 +1024,46 @@ async function buildServer() {
   });
   try {
     await assertNoUnexpectedWarnings(childResult.warnings);
-    execFileSync(process.execPath, ['--check', childOutfile], { stdio: 'inherit' });
+    execFileSync(process.execPath, ['--check', childOutfile], {
+      stdio: 'inherit',
+    });
   } catch (err) {
     rmSync(path.join(OUT, 'server'), { recursive: true, force: true });
     throw err;
   }
 
+  // Same source/hash producers as the CLI, bound to this exact server controller.
+  await buildBrowserRuntimeAssets(ROOT, OUT, 'server/server-entry.mjs');
+  await buildBrowserNativeAssets(ROOT, OUT, 'server/server-entry.mjs');
+  const restoreResult = await build({
+    entryPoints: [path.join(DESKTOP_PKG, 'scripts/restore-browser-library.ts')],
+    outfile: path.join(OUT, 'browser/restore-library.cjs'),
+    bundle: true,
+    platform: 'node',
+    target: 'node22.22',
+    format: 'cjs',
+    plugins: [dorkosSourcePlugin()],
+    logLevel: 'silent',
+  });
+  await assertNoUnexpectedWarnings(restoreResult.warnings);
+  const signerResult = await build({
+    entryPoints: [path.join(DESKTOP_PKG, 'scripts/sign-browser-app.ts')],
+    outfile: path.join(OUT, 'browser/sign-browser-app.cjs'),
+    bundle: true,
+    platform: 'node',
+    target: 'node22.22',
+    format: 'cjs',
+    plugins: [dorkosSourcePlugin()],
+    logLevel: 'silent',
+  });
+  await assertNoUnexpectedWarnings(signerResult.warnings);
+
   // Copy Drizzle migration files alongside the bundled server — see the
   // dist/server/ layout note above.
   rmSync(path.join(OUT, 'drizzle'), { recursive: true, force: true });
-  cpSync(path.join(ROOT, 'packages/db/drizzle'), path.join(OUT, 'drizzle'), { recursive: true });
+  cpSync(path.join(ROOT, 'packages/db/drizzle'), path.join(OUT, 'drizzle'), {
+    recursive: true,
+  });
   console.log('  ✓ Copied Drizzle migrations to dist/drizzle/');
 
   // Copy bundled core-extension source (hello-world, linear-issues,
@@ -1028,9 +1074,9 @@ async function buildServer() {
   const coreExtensionsDest = path.join(DESKTOP_PKG, 'core-extensions');
   rmSync(coreExtensionsDest, { recursive: true, force: true });
   cpSync(coreExtensionsSource, coreExtensionsDest, { recursive: true });
-  const stagedExtensions = readdirSync(coreExtensionsDest, { withFileTypes: true }).filter(
-    (entry) => entry.isDirectory()
-  );
+  const stagedExtensions = readdirSync(coreExtensionsDest, {
+    withFileTypes: true,
+  }).filter((entry) => entry.isDirectory());
   if (stagedExtensions.length === 0) {
     throw new Error(
       `Core extensions copy produced an empty directory: ${coreExtensionsDest} ` +
@@ -1049,5 +1095,12 @@ async function buildServer() {
 buildServer().catch((err: unknown) => {
   console.error(`\n[build-server] Server bundle FAILED:\n`);
   console.error(err instanceof Error ? (err.stack ?? err.message) : err);
+  for (const directory of ['server', 'browser']) {
+    try {
+      rmSync(path.join(OUT, directory), { recursive: true, force: true });
+    } catch (cleanupCause) {
+      console.error('Could not remove rejected desktop runtime output:', cleanupCause);
+    }
+  }
   process.exit(1);
 });

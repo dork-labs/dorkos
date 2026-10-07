@@ -65,6 +65,9 @@ async function approved(
 }
 
 const nativeCaptures = new WeakMap<TabRecord, Set<Promise<Uint8Array>>>();
+// Admission is per original canonical Tab, shared by all its viewers. There is no
+// extra request queue: only the already admitted serialized front may own one timer.
+const captureStarts = new WeakMap<TabRecord, number>();
 /** Join exact original native screenshot work; a caller deadline never substitutes its return. */
 export async function joinTabCaptureOriginals(tab: TabRecord): Promise<void> {
   await Promise.allSettled([...(nativeCaptures.get(tab) ?? [])]);
@@ -168,8 +171,47 @@ async function acquire(
     if (!valid()) refuse();
     const originals = nativeCaptures.get(tab) ?? new Set<Promise<Uint8Array>>();
     nativeCaptures.set(tab, originals);
-    const encodingStarted = captureNow();
+    let encodingStarted = captureNow();
     if (!valid()) refuse();
+    const interval = config.captureMinimumIntervalMilliseconds;
+    if (interval !== undefined) {
+      if (!Number.isFinite(encodingStarted) || encodingStarted < 0)
+        throw new BrowserLifecycleError('CAPTURE_FAILED');
+      const prior = captureStarts.get(tab);
+      if (prior !== undefined && encodingStarted - prior < interval) {
+        const remaining = interval - (encodingStarted - prior);
+        if (remaining > 2000) throw new BrowserLifecycleError('CAPTURE_FAILED');
+        await new Promise<void>((resolve) => {
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          let remove: (() => void) | null = null;
+          const finish = () => {
+            if (timer !== undefined) clearTimeout(timer);
+            remove?.();
+            resolve();
+          };
+          // Original parent stop wakes the wait; it does not authorize a screenshot.
+          remove = record.lifetime.gate.register(command.binding, finish);
+          try {
+            if (!remove || !valid()) {
+              finish();
+              return;
+            }
+            timer = setTimeout(finish, Math.min(2000, Math.ceil(remaining) + 1));
+          } catch (value) {
+            if (timer !== undefined) clearTimeout(timer);
+            remove?.();
+            throw value;
+          }
+        });
+        if (!valid()) refuse();
+        encodingStarted = captureNow();
+        if (!valid()) refuse();
+        if (!Number.isFinite(encodingStarted) || encodingStarted - prior < interval)
+          throw new BrowserLifecycleError('CAPTURE_FAILED');
+      }
+      // A failed native attempt consumed work. All viewers share this original Tab.
+      captureStarts.set(tab, encodingStarted);
+    }
     const original = ownCaptureOperation(
       record,
       () =>

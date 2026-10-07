@@ -187,6 +187,8 @@ async function verifyRequest(
     libraryRoot: request.libraryRoot,
     nodeExecutable: request.nodeExecutable,
     nodeExecutableSHA256: request.nodeExecutableSHA256,
+    nodeRuntime: request.nodeRuntime,
+    electronFramework: request.electronFramework,
     controllerEntry: request.controllerEntry,
     verifierEntry: request.verifierEntry,
     sourceManifestPath: request.sourceManifestPath,
@@ -203,12 +205,17 @@ async function verifyRequest(
   );
   requireFact(
     resolve(process.execPath) === request.nodeExecutable &&
+      (request.nodeRuntime === 'electron-node'
+        ? !!process.versions.electron && process.env.ELECTRON_RUN_AS_NODE === '1'
+        : !process.versions.electron) &&
       !!process.argv[1] &&
       resolve(process.argv[1]) === request.verifierEntry,
     'SOURCE_MISMATCH'
   );
   const filesystem = createInstallationFilesystem(configuration);
-  const jobs = createInstallationJobs(configuration, { ownerKind: 'fresh-verifier' });
+  const jobs = createInstallationJobs(configuration, {
+    ownerKind: 'fresh-verifier',
+  });
   const owner = Object.freeze({ filesystem, jobs });
   retainedOwners.add(owner);
   const admitted = await filesystem.inspectFreshRequest(request);

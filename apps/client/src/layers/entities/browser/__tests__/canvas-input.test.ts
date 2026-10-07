@@ -1260,3 +1260,63 @@ it('keeps the owned candidate anchor inside the viewport when the canvas is part
   expect(ime.style.top).toBe('0px');
   expect(f.port.inputBrowser).not.toHaveBeenCalled();
 });
+
+it('keeps the original displayed frame through a held move and immediately queued click before drawing its successor', async () => {
+  const f = fixture();
+  let release!: () => void;
+  const held = new Promise<void>((yes) => {
+    release = yes;
+  });
+  f.releases.push(release);
+  vi.mocked(f.port.inputBrowser).mockImplementationOnce(async (command) => {
+    await held;
+    return { requestId: command.requestId, binding: command.binding, outcome: 'completed' };
+  });
+  const move = new MouseEvent('pointermove', { clientX: 420, clientY: 230, bubbles: true });
+  Object.defineProperty(move, 'pointerType', { value: 'mouse' });
+  f.canvas.dispatchEvent(move);
+  await vi.waitFor(() => expect(f.port.inputBrowser).toHaveBeenCalledTimes(1));
+  click(f.canvas);
+  const drawn = vi.fn(() => f.set(successor(f.context)));
+  const originalDraw = f.adapter.drawAfterOriginalInput(drawn, f.signal.signal);
+  await Promise.resolve();
+  expect(drawn).not.toHaveBeenCalled();
+  expect(f.context.presentation.frame.sequence).toBe(1);
+  release();
+  await originalDraw;
+  expect(f.port.inputBrowser).toHaveBeenCalledTimes(2);
+  expect(
+    vi.mocked(f.port.inputBrowser).mock.calls.map(([command]) => command.steps[0]?.kind)
+  ).toEqual(['mouseMove', 'click']);
+  expect(drawn).toHaveBeenCalledTimes(1);
+  expect(f.failure).not.toHaveBeenCalled();
+});
+it.each([false, undefined])(
+  'retires a deferred original draw on viewer loss without waiting for held input (%s)',
+  async (cause) => {
+    const f = fixture();
+    let release!: () => void;
+    const held = new Promise<void>((yes) => {
+      release = yes;
+    });
+    f.releases.push(release);
+    vi.mocked(f.port.inputBrowser).mockImplementationOnce(async (command) => {
+      await held;
+      return { requestId: command.requestId, binding: command.binding, outcome: 'completed' };
+    });
+    click(f.canvas);
+    await vi.waitFor(() => expect(f.port.inputBrowser).toHaveBeenCalledTimes(1));
+    const viewer = new AbortController(),
+      drawn = vi.fn();
+    const originalDraw = f.adapter.drawAfterOriginalInput(drawn, viewer.signal);
+    void originalDraw.catch(() => undefined);
+    // AbortController substitutes its built-in reason for undefined. Preserve a genuine
+    // absent original reason through this controlled signal descriptor, not a truthy check.
+    if (cause === undefined) Object.defineProperty(viewer.signal, 'reason', { value: undefined });
+    viewer.abort(cause);
+    await expect(originalDraw).rejects.toBe(cause);
+    expect(drawn).not.toHaveBeenCalled();
+    expect(f.port.inputBrowser).toHaveBeenCalledTimes(1);
+    release();
+  }
+);

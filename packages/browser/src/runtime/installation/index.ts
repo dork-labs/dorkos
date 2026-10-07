@@ -33,6 +33,9 @@ export function createRuntimeInstallation(
   const config = Object.freeze({
     ...parsed.data,
     sourceVintage: Object.freeze(parsed.data.sourceVintage),
+    electronFramework: parsed.data.electronFramework
+      ? Object.freeze(parsed.data.electronFramework)
+      : undefined,
   });
   const status = createRuntimeStatus(config);
   let active: Promise<InstallResult> | null = null;
@@ -74,7 +77,10 @@ export function createRuntimeInstallation(
             state: 'refused',
             cause: 'OWNERSHIP_UNCERTAIN',
             publicationMayHaveChanged: false,
-            readiness: Object.freeze({ state: 'unavailable', cause: 'VERIFICATION_UNAVAILABLE' }),
+            readiness: Object.freeze({
+              state: 'unavailable',
+              cause: 'VERIFICATION_UNAVAILABLE',
+            }),
           })
         );
       const ownerGeneration = ++generation;

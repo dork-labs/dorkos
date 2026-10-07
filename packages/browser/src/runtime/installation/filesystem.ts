@@ -88,7 +88,12 @@ type Duty = {
   state: 'acquiring' | 'open' | 'closing' | 'closed' | 'uncertain';
   lease: boolean;
 };
-type DirectoryLease = { path: string; identity: FileIdentity; duty: Duty; handle: FileHandle };
+type DirectoryLease = {
+  path: string;
+  identity: FileIdentity;
+  duty: Duty;
+  handle: FileHandle;
+};
 type Reservation = {
   handle: ReservationHandle;
   bounds: AttemptBounds;
@@ -102,7 +107,11 @@ type Reservation = {
   diagnosticBudget: { bytes: number; reserved: number };
   candidate: CandidateHandle | null;
 };
-type Attempt = { reservation: Reservation; handle: AttemptHandle; diagnostics: string };
+type Attempt = {
+  reservation: Reservation;
+  handle: AttemptHandle;
+  diagnostics: string;
+};
 type Candidate = {
   handle: CandidateHandle;
   reservation: Reservation;
@@ -240,6 +249,9 @@ class NodeInstallationFilesystem implements InstallationFilesystem {
     this.configuration = Object.freeze({
       ...parsed.data,
       sourceVintage: Object.freeze(parsed.data.sourceVintage),
+      electronFramework: parsed.data.electronFramework
+        ? Object.freeze(parsed.data.electronFramework)
+        : undefined,
     });
   }
 
@@ -306,7 +318,12 @@ class NodeInstallationFilesystem implements InstallationFilesystem {
     }
   }
   private async acquire(name: string, flags: number, lease = false, mode = 0o600): Promise<Duty> {
-    const duty: Duty = { path: name, original: null, state: 'acquiring', lease };
+    const duty: Duty = {
+      path: name,
+      original: null,
+      state: 'acquiring',
+      lease,
+    };
     this.duties.add(duty);
     try {
       duty.original = await fs.open(name, flags, mode);
@@ -497,7 +514,12 @@ class NodeInstallationFilesystem implements InstallationFilesystem {
   }
   private async names(name: string, cap: number): Promise<string[]> {
     const directory = await this.directory(name),
-      duty: Duty = { path: name, original: null, state: 'acquiring', lease: false };
+      duty: Duty = {
+        path: name,
+        original: null,
+        state: 'acquiring',
+        lease: false,
+      };
     this.duties.add(duty);
     return this.closeAfter([duty, directory.duty], async () => {
       try {
@@ -578,7 +600,13 @@ class NodeInstallationFilesystem implements InstallationFilesystem {
   }
   private async tree(root: string, library = false): Promise<Tree> {
     const parents = await this.ancestors(root);
-    const result: Tree = { rows: [], files: [], directories: [], entries: 0, bytes: 0 };
+    const result: Tree = {
+      rows: [],
+      files: [],
+      directories: [],
+      entries: 0,
+      bytes: 0,
+    };
     const entryLimit = library ? LIMIT.libraryEntries : LIMIT.payloadEntries;
     const totalLimit = library ? LIMIT.libraryBytes : LIMIT.payloadBytes;
     let first: Readonly<{ value: unknown }> | undefined;
@@ -717,6 +745,14 @@ class NodeInstallationFilesystem implements InstallationFilesystem {
       node.file.sha256 === c.nodeExecutableSHA256 && (node.file.identity.mode & 0o111) !== 0,
       'SOURCE_MISMATCH'
     );
+    if (c.electronFramework) {
+      const framework = await this.read(c.electronFramework.path, LIMIT.executableBytes);
+      requireFact(
+        framework.file.sha256 === c.electronFramework.sha256 &&
+          (framework.file.identity.mode & 0o111) !== 0,
+        'SOURCE_MISMATCH'
+      );
+    }
     const controller = await this.read(c.controllerEntry, LIMIT.controllerBytes);
     const verifier = await this.read(c.verifierEntry, LIMIT.libraryFileBytes);
     const vintage = await this.read(c.sourceManifestPath, LIMIT.manifestBytes, LIMIT.manifestBytes);
@@ -769,7 +805,10 @@ class NodeInstallationFilesystem implements InstallationFilesystem {
           browsers.file.sha256 === find('browsers.json').sha256,
         'ROOT_CHANGED'
       );
-      const packageJSON = scanJSON(pkg.bytes) as { name?: unknown; version?: unknown };
+      const packageJSON = scanJSON(pkg.bytes) as {
+        name?: unknown;
+        version?: unknown;
+      };
       const browsersJSON = scanJSON(browsers.bytes) as { browsers?: unknown };
       requireFact(
         packageJSON?.name === TARGET.packageName &&
@@ -1077,7 +1116,12 @@ class NodeInstallationFilesystem implements InstallationFilesystem {
         payloadRoot,
         reuse: false,
       });
-      this.candidates.set(candidate, { handle: candidate, reservation, attempt, durable: null });
+      this.candidates.set(candidate, {
+        handle: candidate,
+        reservation,
+        attempt,
+        durable: null,
+      });
       reservation.candidate = candidate;
       return candidate;
     });
@@ -1105,7 +1149,12 @@ class NodeInstallationFilesystem implements InstallationFilesystem {
         payloadRoot: installation.candidate.payloadRoot,
         reuse: true,
       });
-      this.candidates.set(candidate, { handle: candidate, reservation, attempt, durable: null });
+      this.candidates.set(candidate, {
+        handle: candidate,
+        reservation,
+        attempt,
+        durable: null,
+      });
       await this.revalidateCandidate(candidate, installation.candidate);
       reservation.candidate = candidate;
       return candidate;
@@ -1192,7 +1241,11 @@ class NodeInstallationFilesystem implements InstallationFilesystem {
       let current: CurrentObservation = { state: 'unknown' };
       if (this.configuration.platform !== 'darwin' || this.configuration.arch !== 'arm64')
         return {
-          status: { ...common, state: 'unsupported', cause: 'PLATFORM_UNSUPPORTED' },
+          status: {
+            ...common,
+            state: 'unsupported',
+            cause: 'PLATFORM_UNSUPPORTED',
+          },
           current,
           installation: null,
         };
@@ -1292,7 +1345,11 @@ class NodeInstallationFilesystem implements InstallationFilesystem {
         return {
           status: invalid
             ? { ...common, state: 'invalid', cause: 'INSTALLATION_INVALID' }
-            : { ...common, state: 'unverified', cause: 'VERIFICATION_UNAVAILABLE' },
+            : {
+                ...common,
+                state: 'unverified',
+                cause: 'VERIFICATION_UNAVAILABLE',
+              },
           current,
           installation: null,
         };
@@ -1481,7 +1538,11 @@ class NodeInstallationFilesystem implements InstallationFilesystem {
         requireFact(compareCurrent(before, await this.current()), 'ROOT_CHANGED');
         this.checkEnd(reservation);
         const pointer = recordBytes(
-          { schemaVersion: 1, installationId: parsedManifest.installationId, manifestDigest },
+          {
+            schemaVersion: 1,
+            installationId: parsedManifest.installationId,
+            manifestDigest,
+          },
           LIMIT.pointerBytes
         );
         const temporary = path.join(
@@ -1879,7 +1940,10 @@ class NodeInstallationFilesystem implements InstallationFilesystem {
             const births = [...reservation.jobs.values()].flatMap((item) =>
               item.birth ? [item.birth] : []
             );
-            await this.writeOwner(reservation.handle, attempt, { ...reservation.owner, births });
+            await this.writeOwner(reservation.handle, attempt, {
+              ...reservation.owner,
+              births,
+            });
           }
         }),
       receipt: (facts: JobFacts): Promise<void> =>

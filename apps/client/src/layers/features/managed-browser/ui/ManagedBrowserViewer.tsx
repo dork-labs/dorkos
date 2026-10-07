@@ -28,6 +28,7 @@ export interface ManagedBrowserViewerLifetime {
 type PumpSetup = { settle?: BrowserViewerPump['settleForSuccessor'] };
 type LifetimeBank = {
   closed: boolean;
+  drawAfterOriginalInput?: BrowserCanvasInput['drawAfterOriginalInput'];
   closes: Array<() => Promise<void>>;
   setups: Promise<void>[];
   pumpSetups: Map<Promise<void>, PumpSetup>;
@@ -249,6 +250,11 @@ export function ManagedBrowserViewer({
                   : undefined;
               setVisual({ inputs, presentation, viewer, stopped: !presentation });
             }
+          },
+          async (draw, signal) => {
+            if (!active || bank?.closed || signal.aborted) throw signal.reason;
+            if (bank?.drawAfterOriginalInput) await bank.drawAfterOriginalInput(draw, signal);
+            else draw();
           }
         );
         closeOriginal = pump.close.bind(pump);
@@ -287,6 +293,7 @@ export function ManagedBrowserViewer({
     const bank = lifetime.current;
     let active = true;
     let closeOriginal: BrowserCanvasInput['close'] | undefined;
+    let originalDraw: BrowserCanvasInput['drawAfterOriginalInput'] | undefined;
     const setup = (async () => {
       await Promise.allSettled(precedingOriginal ? [precedingOriginal] : []);
       if (!active || bank?.closed) return;
@@ -326,6 +333,8 @@ export function ManagedBrowserViewer({
               );
           }
         );
+        originalDraw = adapter.drawAfterOriginalInput.bind(adapter);
+        if (bank) bank.drawAfterOriginalInput = originalDraw;
         closeOriginal = adapter.close.bind(adapter);
         const dispose = adapter.disposeForNavigation.bind(adapter);
         bank?.closes.push(dispose);
@@ -342,6 +351,8 @@ export function ManagedBrowserViewer({
     void setup.catch(() => undefined);
     return () => {
       active = false;
+      if (bank && bank.drawAfterOriginalInput === originalDraw)
+        bank.drawAfterOriginalInput = undefined;
       if (closeOriginal) {
         const original = closeOriginal();
         previousInputClose.current = original;

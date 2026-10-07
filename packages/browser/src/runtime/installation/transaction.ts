@@ -53,6 +53,9 @@ export function createInstallationTransaction(
   const config = Object.freeze({
     ...parsed.data,
     sourceVintage: Object.freeze(parsed.data.sourceVintage),
+    electronFramework: parsed.data.electronFramework
+      ? Object.freeze(parsed.data.electronFramework)
+      : undefined,
   });
   const { filesystem: fs, jobs } = dependencies;
   // Capture trusted producer receivers once; no public arbitrary-port constructor uses this seam.
@@ -281,7 +284,11 @@ export function createInstallationTransaction(
           '--no-shell',
           '--no-remove',
         ]);
-        installer = { kind: 'invoked', jobId: facts.jobId, receiptDigest: canonicalDigest(facts) };
+        installer = {
+          kind: 'invoked',
+          jobId: facts.jobId,
+          receiptDigest: canonicalDigest(facts),
+        };
         check(bounds, options.signal);
       }
       const snapshot = await fs.observeCandidate(candidate);
@@ -300,6 +307,8 @@ export function createInstallationTransaction(
         attemptIdentity: attempt.identity,
         nodeExecutable: config.nodeExecutable,
         nodeExecutableSHA256: config.nodeExecutableSHA256,
+        nodeRuntime: config.nodeRuntime ?? 'node',
+        electronFramework: config.electronFramework,
         controllerEntry: config.controllerEntry,
         verifierEntry: config.verifierEntry,
         sourceManifestPath: config.sourceManifestPath,

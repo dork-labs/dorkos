@@ -1,3 +1,4 @@
+import type { MeasuredBrowserResourceAdmission } from './admission/measured-resource.js';
 import { mintBrowserIdentityChoicePermit } from './activation/identity-choice-permit.js';
 import { readOriginalProcessNativeProjection } from './private-native-projection.js';
 import { readPrivateBrowserAcceptance } from './private-acceptance.js';
@@ -22,7 +23,12 @@ import {
 import { createBrowserActivationRoutes } from './activation/activation-routes.js';
 
 /** Passive listener + owner-authenticated lifecycle remain available Off; native imports do not. */
-export function createExperimentalBrowserStartup() {
+export function createExperimentalBrowserStartup(
+  options: {
+    measuredResources?: MeasuredBrowserResourceAdmission;
+  } = {}
+) {
+  const measuredResources = options.measuredResources;
   const privateBrowserAcceptance = readPrivateBrowserAcceptance();
   const privateProjection = privateBrowserAcceptance
     ? undefined
@@ -452,6 +458,7 @@ export function createExperimentalBrowserStartup() {
                 config,
                 inventory,
                 installationId,
+                ...(measuredResources ? { measuredResources } : {}),
                 ...(privateObservers
                   ? {
                       resourceAcceptance: privateObservers.resources,

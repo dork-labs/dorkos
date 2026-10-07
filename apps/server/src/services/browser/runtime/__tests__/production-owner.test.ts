@@ -1054,3 +1054,26 @@ it('refuses an unsupported private identity selection before original installati
   expect(f.verify).not.toHaveBeenCalled();
   expect(originals.construct).not.toHaveBeenCalled();
 });
+
+it.each([undefined, 2000])(
+  'preserves the captured measured capture interval %s through actual owner construction',
+  async (interval) => {
+    const f = owned();
+    const read = vi.fn(() => interval);
+    Object.defineProperty(f.settings, 'captureMinimumIntervalMilliseconds', {
+      enumerable: true,
+      get: read,
+    });
+    await f.open();
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(originals.construct).toHaveBeenCalledTimes(1);
+    const actual = originals.construct.mock.calls[0]![0] as EngineConfiguration;
+    if (interval === undefined) {
+      expect(Object.hasOwn(actual, 'captureMinimumIntervalMilliseconds')).toBe(false);
+    } else {
+      expect(actual.captureMinimumIntervalMilliseconds).toBe(interval);
+    }
+    expect(validateEngineConfiguration(actual)).toEqual(actual);
+    await f.owner.close();
+  }
+);

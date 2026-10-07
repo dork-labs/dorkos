@@ -83,7 +83,11 @@ export class BrowserViewerPump {
       presentation: BrowserPixelPresentation | undefined,
       viewer: BrowserViewer | undefined,
       receipt?: BrowserRenderReceipt
-    ) => void = () => undefined
+    ) => void = () => undefined,
+    private readonly drawAfterOriginalInput: (
+      draw: () => void,
+      signal: AbortSignal
+    ) => Promise<void> = async (draw) => draw()
   ) {
     const context = readContext();
     if (!context || typeof context.identity !== 'object' || context.identity === null)
@@ -286,7 +290,9 @@ export class BrowserViewerPump {
               this.current();
               return this.viewer;
             },
-            (error) => this.leaseCleanupFailure(error)
+            (error) => this.leaseCleanupFailure(error),
+            (draw, signal) =>
+              this.drawAfterOriginalInput(draw, AbortSignal.any([signal, this.controller.signal]))
           );
           this.renderOriginal = renderer.render.bind(renderer);
           this.closeRendererOriginal = renderer.close.bind(renderer);

@@ -43,6 +43,10 @@ export async function startDarwinEngineJournal(
   options: Readonly<{
     parentDirectory: string;
     binding: Omit<JournalBinding, 'bootScope'>;
+    launcher?: Readonly<{
+      executable: string;
+      nodeRuntime: 'node' | 'electron-node';
+    }>;
     workerPath: string;
     artifact: Readonly<{ path: string; sha256: string }>;
     duration: number;
@@ -106,6 +110,7 @@ export async function startDarwinEngineJournal(
     firstCause: null,
   });
   const worker = await startDarwinJournalWorker({
+    launcher: options.launcher,
     workerPath: options.workerPath,
     artifact: options.artifact,
     duration: options.duration,

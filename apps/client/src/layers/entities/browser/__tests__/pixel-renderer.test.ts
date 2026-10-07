@@ -92,7 +92,9 @@ function envelope(
   };
 }
 
-function fixture() {
+function fixture(
+  drawAfterOriginalInput?: (draw: () => void, signal: AbortSignal) => Promise<void>
+) {
   const calls: string[] = [],
     releases: Array<() => void> = [],
     additional: BrowserPixelRenderer[] = [],
@@ -191,7 +193,13 @@ function fixture() {
     static revokeObjectURL = revokeUrl;
   }
   vi.stubGlobal('URL', FixtureURL);
-  const renderer = (original.renderer = new BrowserPixelRenderer(canvas, viewer, () => current));
+  const renderer = (original.renderer = new BrowserPixelRenderer(
+    canvas,
+    viewer,
+    () => current,
+    undefined,
+    drawAfterOriginalInput
+  ));
   const acceptFailure = (error: unknown) => {
     expectedFailure = true;
     expected = error;
@@ -222,6 +230,7 @@ function fixture() {
     naturalHeight,
     acceptFailure,
     heldDecode,
+    releases,
     another: (value: BrowserViewer = viewer) => {
       const originalCanvas = document.createElement('canvas');
       vi.spyOn(originalCanvas, 'getContext').mockReturnValue({
@@ -881,3 +890,51 @@ it.each([1, 2] as const)(
     expect(f.revokeUrl).toHaveBeenCalledTimes(2);
   }
 );
+
+it('holds an already decoded frame at the actual draw boundary and publishes no undrawn receipt', async () => {
+  let release!: () => void;
+  const held = new Promise<void>((yes) => {
+    release = yes;
+  });
+  const gate = vi.fn(async (draw: () => void) => {
+    await held;
+    draw();
+  });
+  const f = fixture(gate);
+  f.releases.push(release);
+  const original = f.renderer.render(envelope(), encoded());
+  void original.catch(() => undefined);
+  await vi.waitFor(() => expect(gate).toHaveBeenCalledTimes(1));
+  expect(f.decode).toHaveBeenCalledTimes(1);
+  expect(f.draw).not.toHaveBeenCalled();
+  expect(f.renderer.presentation()).toBeUndefined();
+  release();
+  expect((await original).stage).toBe('drawn');
+  expect(f.draw).toHaveBeenCalledTimes(1);
+  expect(f.renderer.presentation()?.frame.sequence).toBe(0);
+});
+it('original renderer close cancels its deferred draw independently of an input producer', async () => {
+  let lost!: unknown;
+  const gate = vi.fn(
+    (_draw: () => void, signal: AbortSignal) =>
+      new Promise<void>((_, reject) => {
+        const abort = () => {
+          lost = signal.reason;
+          reject(lost);
+        };
+        signal.addEventListener('abort', abort, { once: true });
+        if (signal.aborted) abort();
+      })
+  );
+  const f = fixture(gate);
+  const original = f.renderer.render(envelope(), encoded());
+  void original.catch(() => undefined);
+  await vi.waitFor(() => expect(gate).toHaveBeenCalledTimes(1));
+  const closing = f.renderer.close();
+  void closing.catch(() => undefined);
+  await expect(original).rejects.toBe(lost);
+  f.acceptFailure(lost);
+  await expect(closing).rejects.toBe(lost);
+  expect(f.draw).not.toHaveBeenCalled();
+  expect(f.renderer.presentation()).toBeUndefined();
+});

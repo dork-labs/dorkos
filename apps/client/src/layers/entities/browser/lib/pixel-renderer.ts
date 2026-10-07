@@ -58,6 +58,7 @@ export class BrowserPixelRenderer {
   private lastFrameId?: string;
   private entered?: Promise<BrowserRenderReceipt>;
   private closed = false;
+  private readonly drawController = new AbortController();
   private closing?: Promise<void>;
   private failed = false;
   private first: unknown;
@@ -69,7 +70,11 @@ export class BrowserPixelRenderer {
     canvas: HTMLCanvasElement,
     viewerValue: BrowserViewer,
     readCurrent: () => BrowserViewer | undefined,
-    observeCleanupFailure: (reason: unknown) => void = () => undefined
+    observeCleanupFailure: (reason: unknown) => void = () => undefined,
+    private readonly drawAfterOriginalInput: (
+      draw: () => void,
+      signal: AbortSignal
+    ) => Promise<void> = async (draw) => draw()
   ) {
     const parsed = BrowserViewerSchema.parse(viewerValue);
     this.viewer = Object.freeze({
@@ -264,23 +269,26 @@ export class BrowserPixelRenderer {
       const decoded = this.dimensions(image);
       if (decoded.width !== geometry.raster.width || decoded.height !== geometry.raster.height)
         throw new BrowserPixelRenderRefusal('dimensions');
-      this.current();
-      this.resizeWidth(geometry.raster.width);
-      this.current();
-      this.resizeHeight(geometry.raster.height);
-      this.current();
-      this.draw(image, geometry.raster.width, geometry.raster.height);
-      this.current();
-      this.sequence = frame.sequence;
-      this.lastFrameId = frame.frameId;
-      receipt = BrowserRenderReceiptSchema.parse({
-        binding: frame.binding,
-        viewerId: frame.viewerId,
-        frameId: frame.frameId,
-        sequence: frame.sequence,
-        stage: 'drawn',
-        drawnAt: new Date().toISOString(),
-      });
+      const decodedImage = image;
+      await this.drawAfterOriginalInput(() => {
+        this.current();
+        this.resizeWidth(geometry.raster.width);
+        this.current();
+        this.resizeHeight(geometry.raster.height);
+        this.current();
+        this.draw(decodedImage, geometry.raster.width, geometry.raster.height);
+        this.current();
+        this.sequence = frame.sequence;
+        this.lastFrameId = frame.frameId;
+        receipt = BrowserRenderReceiptSchema.parse({
+          binding: frame.binding,
+          viewerId: frame.viewerId,
+          frameId: frame.frameId,
+          sequence: frame.sequence,
+          stage: 'drawn',
+          drawnAt: new Date().toISOString(),
+        });
+      }, this.drawController.signal);
     } catch (error) {
       failure(error);
       this.closed = true;
@@ -345,6 +353,7 @@ export class BrowserPixelRenderer {
       resolve = yes;
       reject = no;
     });
+    this.drawController.abort(new BrowserPixelRenderRefusal('stale'));
     // Clear both original backing-store dimensions independently; never skip the retained decoder.
     this.clearPixels();
     void Promise.allSettled(entered ? [entered] : []).then((results) => {

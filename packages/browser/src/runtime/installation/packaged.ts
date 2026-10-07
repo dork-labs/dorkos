@@ -110,13 +110,77 @@ async function packageRoot(controller: string): Promise<string> {
     }
     if (named) {
       const file = await inspectFile(candidate, 65_536, true);
-      const record = JSON.parse(file.bytes.toString('utf8')) as { name?: unknown };
-      if (record.name === 'dorkos') return directory;
+      const record = JSON.parse(file.bytes.toString('utf8')) as {
+        name?: unknown;
+      };
+      if (record.name === 'dorkos' || record.name === '@dorkos/desktop') return directory;
     }
     const parent = dirname(directory);
     if (parent === directory) throw new Error('The installed DorkOS package could not be found.');
     directory = parent;
   }
+}
+
+/** Exact installed controller placement distinguishes CLI Node from the packaged macOS utility. */
+async function controllerLayout(controllerEntry: string) {
+  const root = await packageRoot(controllerEntry);
+  const pkg = JSON.parse(
+    (await inspectFile(join(root, 'package.json'), 65_536, true)).bytes.toString('utf8')
+  ) as { name?: unknown };
+  if (
+    pkg.name === 'dorkos' &&
+    controllerEntry === join(root, 'dist/bin/cli.js') &&
+    !process.versions.electron
+  )
+    return Object.freeze({
+      root,
+      nodeRuntime: 'node' as const,
+      nodeExecutable: await realpath(process.execPath),
+      electronFramework: undefined,
+    });
+  if (
+    pkg.name !== '@dorkos/desktop' ||
+    controllerEntry !== join(root, 'dist/server/server-entry.mjs') ||
+    root !== join(dirname(root), 'app.asar.unpacked') ||
+    process.platform !== 'darwin' ||
+    process.arch !== 'arm64' ||
+    !process.versions.electron
+  )
+    throw new Error('The managed browser needs its packaged DorkOS controller.');
+  // No operator PATH/npm cache or virtual asar executable. The main process passes its original executable.
+  const originalExecutable = process.env.DORKOS_BROWSER_DESKTOP_NODE_EXECUTABLE;
+  if (!originalExecutable) throw new Error('The original desktop browser launcher is missing.');
+  const nodeExecutable = await realpath(originalExecutable);
+  const expected = join(dirname(dirname(root)), 'MacOS', 'DorkOS');
+  if (
+    nodeExecutable !== expected ||
+    (Reflect.get(process, 'type') !== 'utility' && process.env.ELECTRON_RUN_AS_NODE !== '1')
+  )
+    throw new Error('The original desktop browser launcher does not match this installed app.');
+  const frameworkPath = await realpath(
+    join(
+      dirname(dirname(root)),
+      'Frameworks/Electron Framework.framework/Versions/A/Electron Framework'
+    )
+  );
+  if (
+    frameworkPath !==
+    join(
+      dirname(dirname(root)),
+      'Frameworks/Electron Framework.framework/Versions/A/Electron Framework'
+    )
+  )
+    throw new Error('The original desktop framework must be a real file in this installed app.');
+  const framework = await inspectFile(frameworkPath, INSTALLATION_LIMITS.executableBytes);
+  return Object.freeze({
+    root,
+    nodeRuntime: 'electron-node' as const,
+    nodeExecutable,
+    electronFramework: Object.freeze({
+      path: frameworkPath,
+      sha256: framework.digest,
+    }),
+  });
 }
 
 /** Lazy packaged composition; this resolves files without downloading or starting a browser. */
@@ -125,12 +189,10 @@ export async function resolveInstalledRuntimeConfiguration(
   dataDirectory: string
 ): Promise<InstallationConfiguration> {
   const controllerEntry = await realpath(fileURLToPath(controllerURL));
-  const root = await packageRoot(controllerEntry);
-  if (controllerEntry !== join(root, 'dist/bin/cli.js'))
-    throw new Error('The managed browser needs the packaged DorkOS command.');
+  const { root, nodeRuntime, nodeExecutable, electronFramework } =
+    await controllerLayout(controllerEntry);
   const verifierEntry = join(root, BROWSER_VERIFIER_ASSET);
   const sourceManifestPath = join(root, BROWSER_SOURCE_MANIFEST);
-  const nodeExecutable = await realpath(process.execPath);
   const node = await inspectFile(nodeExecutable, 268_435_456);
   const controller = await inspectFile(controllerEntry, INSTALLATION_LIMITS.controllerBytes);
   const verifier = await inspectFile(verifierEntry, 67_108_864);
@@ -157,6 +219,11 @@ export async function resolveInstalledRuntimeConfiguration(
     name?: unknown;
     version?: unknown;
   };
+  if (
+    nodeRuntime === 'electron-node' &&
+    !libraryPackage.startsWith(join(root, 'node_modules') + '/')
+  )
+    throw new Error('The desktop browser library must be unpacked inside this original app.');
   if (packageRecord.name !== 'playwright-core' || packageRecord.version !== '1.63.0')
     throw new Error('The pinned browser library is missing.');
   if (
@@ -165,10 +232,17 @@ export async function resolveInstalledRuntimeConfiguration(
   )
     throw new Error('Managed browser installation is not supported on this computer.');
   return Object.freeze({
-    cacheRoot: resolve(dataDirectory, 'browser/runtime/playwright-1.63.0'),
+    // Desktop upgrades retain separate exact publications; the existing CLI cache contract stays literal.
+    cacheRoot: resolve(
+      dataDirectory,
+      'browser/runtime/playwright-1.63.0',
+      ...(nodeRuntime === 'electron-node' ? [manifest.digest] : [])
+    ),
     libraryRoot: dirname(libraryPackage),
     nodeExecutable,
     nodeExecutableSHA256: node.digest,
+    nodeRuntime,
+    electronFramework,
     controllerEntry,
     verifierEntry,
     sourceManifestPath,
@@ -195,9 +269,16 @@ export async function resolveInstalledNativeJournal(configuration: InstallationC
   )
     throw new Error('Managed browser native workers are unavailable on this computer.');
   const controllerEntry = await realpath(configuration.controllerEntry);
-  const root = await packageRoot(controllerEntry);
-  if (controllerEntry !== join(root, 'dist/bin/cli.js'))
-    throw new Error('The native browser needs the packaged DorkOS command.');
+  const { root, nodeRuntime, nodeExecutable, electronFramework } =
+    await controllerLayout(controllerEntry);
+  if (
+    configuration.nodeExecutable !== nodeExecutable ||
+    (configuration.nodeRuntime ?? 'node') !== nodeRuntime ||
+    JSON.stringify(configuration.electronFramework ?? null) !==
+      JSON.stringify(electronFramework ?? null) ||
+    (await inspectFile(nodeExecutable, 268_435_456)).digest !== configuration.nodeExecutableSHA256
+  )
+    throw new Error('Browser native launcher changed.');
   const controller = await inspectFile(controllerEntry, INSTALLATION_LIMITS.controllerBytes);
   if (controller.digest !== configuration.sourceVintage.controllerSHA256)
     throw new Error('Browser native package changed.');
@@ -348,6 +429,7 @@ export async function resolveInstalledNativeJournal(configuration: InstallationC
   )
     throw new Error('Browser native package changed.');
   return Object.freeze({
+    launcher: Object.freeze({ executable: nodeExecutable, nodeRuntime }),
     workerPath: paths[0]!,
     browserWorkerPath: paths[1]!,
     artifact: Object.freeze({ path: artifact, sha256: binary.sha256 }),

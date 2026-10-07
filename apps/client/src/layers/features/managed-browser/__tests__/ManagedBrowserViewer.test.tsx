@@ -7,6 +7,7 @@ import {
   BrowserCanvasInput,
   BrowserCanvasInputRefusal,
   BrowserViewerPumpRefusal,
+  BrowserPixelRenderRefusal,
   type BrowserViewerContext,
   type BrowserViewerDeliveryPort,
 } from '@/layers/entities/browser';
@@ -123,6 +124,8 @@ function fixture() {
     return original;
   });
   const acceptedCloseFailures = new Set<unknown>();
+  let expectedHeldDecoderRetirement = false;
+  let originalDecoderRetirement: BrowserPixelRenderRefusal | undefined;
   let finalizing: Promise<void> | undefined;
   const finalize = () => {
     if (finalizing) return finalizing;
@@ -135,6 +138,19 @@ function fixture() {
         async () => {
           // cleanup fenced every live effect before this snapshot; late setup cannot enter a pump.
           for (const result of await Promise.allSettled([...originals])) {
+            if (
+              expectedHeldDecoderRetirement &&
+              result.status === 'rejected' &&
+              result.reason instanceof BrowserPixelRenderRefusal &&
+              result.reason.reason === 'stale'
+            ) {
+              // Only the explicitly held-decoder disposal control accepts this exact
+              // original renderer-close refusal; no draw or success is inferred.
+              expect(decode).toHaveBeenCalledTimes(1);
+              expect(draw).not.toHaveBeenCalled();
+              originalDecoderRetirement ??= result.reason;
+              continue;
+            }
             if (
               result.status === 'rejected' &&
               !acceptedCloseFailures.has(result.reason) &&
@@ -188,6 +204,10 @@ function fixture() {
     finalize,
     originals,
     acceptCloseFailure: (cause: unknown) => acceptedCloseFailures.add(cause),
+    expectHeldDecoderRetirement: () => {
+      expectedHeldDecoderRetirement = true;
+    },
+    readOriginalDecoderRetirement: () => originalDecoderRetirement,
   };
 }
 it('uses original pump drawing and exact ACK with canonical CSS pointer over the raster canvas', async () => {
@@ -316,6 +336,7 @@ it('early fixture cleanup joins the original held decoder before restoring globa
   await vi.waitFor(() => expect(f.decode).toHaveBeenCalledTimes(1));
   const restore = vi.spyOn(vi, 'restoreAllMocks');
   let settled = false;
+  f.expectHeldDecoderRetirement();
   const finalizing = f.finalize().finally(() => {
     settled = true;
   });
@@ -329,6 +350,9 @@ it('early fixture cleanup joins the original held decoder before restoring globa
     await finalizing;
   }
   expect(settled).toBe(true);
+  expect(f.readOriginalDecoderRetirement()).toBeInstanceOf(BrowserPixelRenderRefusal);
+  expect(f.readOriginalDecoderRetirement()?.reason).toBe('stale');
+  expect(f.draw).not.toHaveBeenCalled();
 });
 it('early fixture cleanup joins a late original reader cancellation despite disconnect already entering', async () => {
   const f = fixture(),

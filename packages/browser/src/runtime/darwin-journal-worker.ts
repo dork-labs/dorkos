@@ -159,6 +159,10 @@ const originals = new Set<ChildProcess>();
 /** Start the private packaged supervisor before browser launch; it has its own process lifetime. */
 export async function startDarwinJournalWorker(
   options: Readonly<{
+    launcher?: Readonly<{
+      executable: string;
+      nodeRuntime: 'node' | 'electron-node';
+    }>;
     workerPath: string;
     location: JournalLocation;
     initial: JournalSnapshot;
@@ -184,12 +188,21 @@ export async function startDarwinJournalWorker(
   const originalClock = process.hrtime.bigint.bind(process.hrtime);
   const monotonicNow = () => Number(originalClock() / 1000000n);
   if (seed.continuous && seed.ownedLaunch) throw new Error('CONTINUOUS_ROOT_UNSUPPORTED');
-  const child = spawn(process.execPath, [options.workerPath, '--private-darwin-journal-worker'], {
-    shell: false,
-    detached: false,
-    stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
-    env: { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' },
-  });
+  const child = spawn(
+    options.launcher?.executable ?? process.execPath,
+    [options.workerPath, '--private-darwin-journal-worker'],
+    {
+      shell: false,
+      detached: false,
+      stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+      env: {
+        PATH: '/usr/bin:/bin',
+        LANG: 'C',
+        LC_ALL: 'C',
+        ...(options.launcher?.nodeRuntime === 'electron-node' ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
+      },
+    }
+  );
   originals.add(child);
   let failure = false,
     used = false,

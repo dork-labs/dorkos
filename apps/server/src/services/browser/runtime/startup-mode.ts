@@ -1,3 +1,8 @@
+import {
+  captureMeasuredBrowserResourceAdmission,
+  isMeasuredResourceAdmissionRefusal,
+  type MeasuredBrowserResourceAdmission,
+} from './admission/measured-resource.js';
 import { createOriginalBrowserViewerDiagnostic } from '../stream/viewer-diagnostic.js';
 import { selectOriginalBrowserIdentity } from './select-original-browser.js';
 import type {
@@ -117,6 +122,8 @@ type Proof = {
  * it confers no workspace grant, Page, controller, view/capture/input or broker forwarding rights.
  * Every actual browser open still needs the separately owned production composition. */
 export function createProductionBrowserStartupMode(options: {
+  /** Reviewed supported envelope, supplied only by the original startup constructor. */
+  measuredResources?: MeasuredBrowserResourceAdmission;
   resourceAcceptance?: PrivateBrowserResourceOwner;
   viewerSamples?: PrivateViewerSampleObserver;
   db: Db;
@@ -127,6 +134,19 @@ export function createProductionBrowserStartupMode(options: {
   installationId?: string;
 }) {
   const admissionDiagnostic = createOriginalBrowserViewerDiagnostic();
+  const requestedResources = options.measuredResources;
+  const measuredResources =
+    requestedResources === undefined
+      ? undefined
+      : captureMeasuredBrowserResourceAdmission(requestedResources);
+  const resourceCheck = (check: () => void) => {
+    try {
+      check();
+    } catch (value) {
+      if (isMeasuredResourceAdmissionRefusal(value)) throw modeRefusal('QUOTA');
+      throw value;
+    }
+  };
   const resourceAcceptance = options.resourceAcceptance,
     viewerSamples = options.viewerSamples;
   const db = options.db,
@@ -774,6 +794,7 @@ export function createProductionBrowserStartupMode(options: {
           const actor = await captureOwner(headers, signal);
           const profiles = readProfiles(actor.ownerId);
           if (profiles.length >= 64) throw modeRefusal('QUOTA');
+          if (measuredResources) resourceCheck(() => measuredResources.profiles(profiles.length));
           if (
             !current() ||
             !actor() ||
@@ -956,6 +977,11 @@ export function createProductionBrowserStartupMode(options: {
         )
           throw modeRefusal('AUTHORITY_REFUSED');
         if (browsers.size >= 16) throw modeRefusal('QUOTA');
+        if (measuredResources) {
+          // Capture from the actually verified arm before crossing the callback boundary.
+          const executableSHA256 = owned.verified.executableSHA256;
+          resourceCheck(() => measuredResources.browser(executableSHA256, browsers.size));
+        }
         if (originalRequest.mode === 'persistent') {
           const profile = readProfiles(actorCurrent.ownerId).find(
             (value) => value.profileId === originalRequest.profileId
@@ -1003,6 +1029,12 @@ export function createProductionBrowserStartupMode(options: {
             wallNow: Date.now,
             monotonicNow: () => Number(process.hrtime.bigint() / 1000000n),
           },
+          ...(measuredResources
+            ? {
+                captureMinimumIntervalMilliseconds:
+                  measuredResources.captureMinimumIntervalMilliseconds,
+              }
+            : {}),
           processes: owned.native.processes,
           nativeJournal: owned.journal,
           // The production composition installs its original grant/lease decisions before construction.
@@ -1026,6 +1058,10 @@ export function createProductionBrowserStartupMode(options: {
             configuration: { ...configured, network: configured.network },
           })
         );
+        if (measuredResources) {
+          resourceCheck(() => measuredResources.browserCount(browsers.size));
+          if (!valid()) throw modeRefusal('AUTHORITY_REFUSED');
+        }
         const browser = createProductionBrowserSession({
           db: db,
           auth: auth,

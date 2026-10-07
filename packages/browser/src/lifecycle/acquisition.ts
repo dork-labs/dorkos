@@ -22,7 +22,7 @@ import { ownDirectory, assertDirectory } from '../profiles/owned-directory.js';
 import { prepareDataRoot } from '../profiles/paths.js';
 import { reserveProfile } from '../profiles/reservation.js';
 import { startFixtureProxy } from '../network/fixture-proxy.js';
-import { trackPage } from '../tabs/registry.js';
+import { trackPage, isOriginalTabLimitRefusal } from '../tabs/registry.js';
 import type { BrowserRecord } from './records.js';
 import { BrowserLifecycleError } from './errors.js';
 import { deadline } from './deadline.js';
@@ -272,6 +272,7 @@ export async function acquireBrowser(
       () =>
         startDarwinSupervisorClient(
           {
+            launcher: config.nativeJournal!.launcher,
             workerPath: config.nativeJournal!.browserWorkerPath!,
             artifact: config.nativeJournal!.artifact,
             runtime: originalRuntime,
@@ -441,13 +442,18 @@ export async function acquireBrowser(
       record.lifetime.uncertain = true;
       return;
     }
-    const tab = trackPage(record, page, config.network.origin, diagnosticNow, context);
-    if (ordinaryRecord(record) && record.status === 'running' && !record.lifetime.gate.stopped) {
-      try {
-        composeInput(config, record, tab);
-      } catch {
-        record.lifetime.requestRetirement('engineFault');
+    try {
+      const tab = trackPage(record, page, config.network.origin, diagnosticNow, context);
+      if (ordinaryRecord(record) && record.status === 'running' && !record.lifetime.gate.stopped) {
+        try {
+          composeInput(config, record, tab);
+        } catch {
+          record.lifetime.requestRetirement('engineFault');
+        }
       }
+    } catch (value) {
+      // The registration producer already fenced and entered original retirement.
+      if (!isOriginalTabLimitRefusal(value)) throw value;
     }
   });
   await register('close', () => {

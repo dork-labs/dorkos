@@ -371,6 +371,38 @@ export class BrowserCanvasInput {
       () => undefined
     );
   }
+  /** Keep the original displayed coordinates stable until the entered serial input batch returns.
+   * This never rebases a queued command or acknowledges an undrawn frame. Loss independently
+   * cancels the waiting draw; the original input remains owned by its ordinary close bank. */
+  async drawAfterOriginalInput(draw: () => void, signal: AbortSignal): Promise<void> {
+    const signals = [signal, this.controller.signal];
+    const current = () => {
+      for (const original of signals) if (original.aborted) throw original.reason;
+      if (this.closed) throw new BrowserCanvasInputRefusal('stale');
+    };
+    current();
+    while (this.active) {
+      const original = this.active;
+      const removals: Array<() => void> = [];
+      try {
+        const lost = new Promise<never>((_, reject) => {
+          for (const source of signals) {
+            const abort = () => reject(source.reason);
+            source.addEventListener('abort', abort, { once: true });
+            removals.push(() => source.removeEventListener('abort', abort));
+            if (source.aborted) abort();
+          }
+        });
+        await Promise.race([original, lost]);
+      } finally {
+        for (const remove of removals) remove();
+      }
+      current();
+    }
+    // No asynchronous boundary separates the final original-batch check from the actual draw.
+    current();
+    draw();
+  }
   private pointer(event: MouseEvent, kind: 'click' | 'mouseMove' | 'wheel'): void {
     const clickScope = this.gesture?.clickScope(event, kind);
     if (clickScope === false) return;

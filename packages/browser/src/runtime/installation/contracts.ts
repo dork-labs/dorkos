@@ -144,6 +144,8 @@ export interface InstallationConfiguration {
   readonly libraryRoot: string;
   readonly nodeExecutable: string;
   readonly nodeExecutableSHA256: string;
+  readonly nodeRuntime?: 'node' | 'electron-node';
+  readonly electronFramework?: Readonly<{ path: string; sha256: string }>;
   readonly verifierEntry: string;
   readonly controllerEntry: string;
   readonly sourceManifestPath: string;
@@ -159,6 +161,8 @@ export const InstallationConfigurationSchema = z
     libraryRoot: trustedPath,
     nodeExecutable: trustedPath,
     nodeExecutableSHA256: DigestSchema,
+    nodeRuntime: z.enum(['node', 'electron-node']).default('node'),
+    electronFramework: z.object({ path: trustedPath, sha256: DigestSchema }).strict().optional(),
     verifierEntry: trustedPath,
     controllerEntry: trustedPath,
     sourceManifestPath: trustedPath,
@@ -168,7 +172,8 @@ export const InstallationConfigurationSchema = z
     workMilliseconds: z.number().int().positive().max(900_000),
     finalMilliseconds: z.number().int().positive().max(960_000),
   })
-  .refine((v) => v.workMilliseconds <= v.finalMilliseconds);
+  .refine((v) => v.workMilliseconds <= v.finalMilliseconds)
+  .refine((v) => (v.nodeRuntime === 'electron-node') === !!v.electronFramework);
 export interface InstallOptions {
   /** Refuse missing/invalid installations before reservation or installer entry; never download or repair. */
   readonly existingOnly?: boolean;
@@ -262,7 +267,11 @@ export interface CandidateSnapshot {
 }
 export type CurrentObservation =
   | Readonly<{ state: 'absent' }>
-  | Readonly<{ state: 'present'; file: FileSnapshot; pointer: z.infer<typeof PointerSchema> }>
+  | Readonly<{
+      state: 'present';
+      file: FileSnapshot;
+      pointer: z.infer<typeof PointerSchema>;
+    }>
   | Readonly<{ state: 'invalid'; file: FileSnapshot }>
   | Readonly<{ state: 'unknown' }>;
 export interface ExistingInstallation {
@@ -408,7 +417,9 @@ export const JobIntentSchema = z.strictObject({
   cwd: trustedPath,
   environmentDigest: DigestSchema,
 });
-export const JobBirthSchema = JobIntentSchema.extend({ pid: z.number().int().positive() }).strict();
+export const JobBirthSchema = JobIntentSchema.extend({
+  pid: z.number().int().positive(),
+}).strict();
 export interface RawWriter {
   /** F validates its local handle and writes retained chunks under a fixed per-stream cap. */
   write(bytes: Uint8Array): Promise<void>;
@@ -507,6 +518,8 @@ export const FreshVerifierRequestSchema = z.strictObject({
   attemptIdentity: FileIdentitySchema,
   nodeExecutable: trustedPath,
   nodeExecutableSHA256: DigestSchema,
+  nodeRuntime: z.enum(['node', 'electron-node']).optional(),
+  electronFramework: z.object({ path: trustedPath, sha256: DigestSchema }).strict().optional(),
   controllerEntry: trustedPath,
   verifierEntry: trustedPath,
   sourceManifestPath: trustedPath,

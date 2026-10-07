@@ -130,6 +130,9 @@ export function createInstallationJobs(
   const config = Object.freeze({
     ...parsed.data,
     sourceVintage: Object.freeze(parsed.data.sourceVintage),
+    electronFramework: parsed.data.electronFramework
+      ? Object.freeze(parsed.data.electronFramework)
+      : undefined,
   });
   const ownerKind = options.ownerKind ?? 'controller';
   requireFact(
@@ -370,6 +373,13 @@ export function createInstallationJobs(
       config.nodeExecutableSHA256,
       INSTALLATION_LIMITS.executableBytes
     );
+    if (config.electronFramework)
+      await readPinned(
+        slot,
+        config.electronFramework.path,
+        config.electronFramework.sha256,
+        INSTALLATION_LIMITS.executableBytes
+      );
     await readPinned(
       slot,
       config.controllerEntry,
@@ -471,6 +481,12 @@ export function createInstallationJobs(
       XDG_CACHE_HOME: join(home, '.cache'),
       XDG_DATA_HOME: join(home, '.local', 'share'),
       NODE_DISABLE_COMPILE_CACHE: '1',
+      ...(config.nodeRuntime === 'electron-node'
+        ? {
+            ELECTRON_RUN_AS_NODE: '1',
+            DORKOS_BROWSER_DESKTOP_NODE_EXECUTABLE: config.nodeExecutable,
+          }
+        : {}),
       ...(payload ? { PLAYWRIGHT_BROWSERS_PATH: payload } : {}),
       LC_ALL: 'C',
       LANG: 'C',
@@ -648,7 +664,10 @@ export function createInstallationJobs(
       });
       child.once('spawn', () => {
         if (Number.isSafeInteger(child.pid) && child.pid! > 0) {
-          const parsedBirth = JobBirthSchema.parse({ ...intent, pid: child.pid });
+          const parsedBirth = JobBirthSchema.parse({
+            ...intent,
+            pid: child.pid,
+          });
           slot.birth = Object.freeze({
             ...parsedBirth,
             binding: slot.binding,
@@ -865,6 +884,9 @@ export function createInstallationJobs(
               request.libraryRoot === config.libraryRoot &&
               request.nodeExecutable === config.nodeExecutable &&
               request.nodeExecutableSHA256 === config.nodeExecutableSHA256 &&
+              (request.nodeRuntime ?? 'node') === (config.nodeRuntime ?? 'node') &&
+              canonicalDigest(request.electronFramework ?? null) ===
+                canonicalDigest(config.electronFramework ?? null) &&
               request.controllerEntry === config.controllerEntry &&
               request.verifierEntry === config.verifierEntry &&
               request.sourceManifestPath === config.sourceManifestPath &&
