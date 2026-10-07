@@ -35,6 +35,8 @@ Decided by the founder on 2026-10-07. It replaces the 2026-10-06 hero ("Ask for 
 - Say ownership as "yours": "yours to keep", or "Your agents, tools, files and data stay yours, wherever they run."
 - Lower on the page (body text, FAQ, install details, the license section), plain facts such as "MIT license" or "runs on your computer or a server" are fine.
 
+**What backs the supporting line.** "Build the custom tools your company runs on" is mini apps as they ship today: an agent builds an extension, a person approves it, and it opens in fixed places (its own page, the side panel, the Activity page). "Take on real work" is files, code, schedules and messages, plus Connections to outside apps, which are in beta. Lower copy never promises more than that: no "any tool", no "builds anything", and Connections stay labelled beta.
+
 **Below the hero, the three differentiators stay the structure:** mini apps, built for founders, ownership, in that order, as the beats or sections. The chat workspace is still table stakes; the supporting line names it first, and that is fine.
 
 Agents may be called co-workers or teammates.

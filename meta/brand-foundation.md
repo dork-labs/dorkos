@@ -372,7 +372,7 @@ DorkOS should feel like:
 
 **Supporting line** _(added 2026-10-07)_: **Your agents join your team chat, take on real work, and build the custom tools your company runs on.**
 
-Together these are the message stack: tagline, headline, supporting line. Headline copy (hero, titles, meta descriptions, social cards, section headlines, README opening, npm description) never says "on your computer" or literally "open source"; ownership is said as "yours". The three differentiators stay the structure below the hero.
+Together these are the message stack: tagline, headline, supporting line. Headline copy (hero, titles, meta descriptions, social cards, section headlines, README opening, npm description, llms.txt summary line) never says "on your computer" or literally "open source"; ownership is said as "yours". The three differentiators stay the structure below the hero.
 
 **Retired 2026-10-07:** "Ask for a tool. Your agents build it." as the hero title (2026-10-06). It may still describe mini apps below the hero.
 
