@@ -2,7 +2,7 @@
 
 ## Overview
 
-DorkOS agents are not just chat partners: they can **operate DorkOS itself**. They read the activity feed, edit their own persona, change your settings, and install marketplace packages. This guide is the internal map of that agent-facing surface: how a capability is declared once and projected onto every surface an agent can reach, where the pieces live, and how to add a new capability.
+DorkOS agents are co-workers, not just chat partners: they can **operate DorkOS itself**. They read the activity feed, edit their own persona, change your settings, and install marketplace packages. This guide is the internal map of that agent-facing surface: how a capability is declared once and projected onto every surface an agent can reach, where the pieces live, and how to add a new capability.
 
 The one idea that explains the rest is the **Capability Registry**. A service domain declares a capability exactly once with `defineCapability` (id, model-facing description, permission tier, Zod input/output, a transport-neutral `invoke` handler, and the surfaces it projects onto). From that single declaration DorkOS generates:
 
@@ -105,6 +105,8 @@ A `CapabilityDefinition` carries a `surfaces` object with three optional project
 ### Permission tiers are enforced
 
 Every capability declares a `tier`: `observe` (pure read), `act` (mutates local state), or `destructive` (deletes or unregisters). Since spec `agent-trust` §3.2 the tier is a **real gate**, not metadata.
+
+**Where this is heading, and why it does not change your PR.** ADR `261006-225605` decides that our own agents are trusted by default: in-circle actions, destructive ones included, will run without a card and be recorded instead, while perimeter and third-party-code actions keep asking. That flip waits on the audit trail (DOR-2738) and lands with tests that pin the outsider protections first (DOR-2739). Until then the table below is current behavior. Do not open a tier, skip an approval or describe the gate as gone ahead of those changes.
 
 `enforceCapabilityTier` (`capabilities/tier-enforcement.ts`) runs INSIDE `registry.invoke` (DOR-467), so every surface that reaches a capability through the registry is gated by construction — the invoke route, both MCP adapters, and any adapter added later. A caller that owns its own effect and cannot route through the registry reaches the same gate through the one named seam, `authorizeCapability`. The **tier** decides whether to gate; identity is not part of that decision:
 
