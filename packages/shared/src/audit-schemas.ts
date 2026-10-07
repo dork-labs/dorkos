@@ -162,12 +162,22 @@ export const AUDIT_VERIFY_MAX_ROWS = 100_000;
 
 /**
  * Which part of the chain to check: from `fromSeq` (default the first row), at
- * most `limit` rows (default and ceiling {@link AUDIT_VERIFY_MAX_ROWS}).
+ * most `limit` rows (default and ceiling {@link AUDIT_VERIFY_MAX_ROWS}), linking
+ * the first row to `prevHash` when given.
  */
 export const AuditVerifyQuerySchema = z
   .object({
     fromSeq: z.coerce.number().int().positive().optional(),
     limit: z.coerce.number().int().positive().max(AUDIT_VERIFY_MAX_ROWS).optional(),
+    /**
+     * The `lastHash` the previous page answered, so the link across the page
+     * boundary is checked. Optional: without it the stored row before
+     * `fromSeq` is used.
+     */
+    prevHash: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/)
+      .optional(),
   })
   .openapi('AuditVerifyQuery');
 

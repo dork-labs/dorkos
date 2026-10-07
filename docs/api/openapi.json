@@ -76476,6 +76476,15 @@
             "required": false,
             "name": "limit",
             "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "required": false,
+            "name": "prevHash",
+            "in": "query"
           }
         ],
         "responses": {

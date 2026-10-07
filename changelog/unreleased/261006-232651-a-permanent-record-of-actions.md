@@ -2,6 +2,7 @@
 covers:
   - 'feat(audit): keep a permanent, checkable record of actions (DOR-2738)'
   - 'fix(audit): stronger redaction, bounded verify, honest tamper claims (DOR-2738)'
+  - 'fix(audit): linear redaction and gap-proof verify paging (DOR-2738)'
 ---
 
 ### Added

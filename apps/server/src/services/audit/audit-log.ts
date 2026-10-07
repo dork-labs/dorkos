@@ -34,7 +34,7 @@
  */
 import { createHash } from 'node:crypto';
 import { ulid } from 'ulidx';
-import { asc, auditEvents, desc, gte, type Db } from '@dorkos/db';
+import { asc, auditEvents, desc, eq, gte, type Db } from '@dorkos/db';
 import { redactCredentialTokens } from '@dorkos/shared/feedback';
 import { SENSITIVE_CONFIG_KEYS } from '@dorkos/shared/config-schema';
 import { AUDIT_VERIFY_MAX_ROWS } from '@dorkos/shared/audit-schemas';
@@ -107,44 +107,83 @@ type AuditRow = typeof auditEvents.$inferSelect;
 /** What a redacted value is replaced with. */
 const REDACTED = '[redacted]';
 
-/**
- * A name that says its value is a secret: a password, a token, a key, a
- * credential. `auth` counts on its own or as a prefix (`auth`, `authToken`,
- * `authorization`), never inside `author`.
- */
-const SECRET_NAME = String.raw`[A-Za-z0-9_.-]*(?:pass(?:word|wd)?|pwd|secret|token|api[-_]?key|apikey|access[-_]?key|private[-_]?key|credential|authorization|auth(?!or))[A-Za-z0-9_.-]*`;
+/** The longest stretch of a free-text field that is swept; the rest is cut. */
+const MAX_SWEPT = 16_000;
 
-/** An object key whose value is a secret, whatever the value looks like. */
-const SECRET_KEY = new RegExp(`^${SECRET_NAME}$`, 'i');
+/** Words that make any name a secret's name wherever they appear in it. */
+const SECRET_WORD =
+  /pass(?:word|wd)|pwd|secret|api[-_]?key|apikey|access[-_]?key|private[-_]?key|credential|authorization/i;
+
+/**
+ * Whether a name says its value is a secret.
+ *
+ * Written as a few plain checks rather than one pattern with open-ended runs
+ * on both sides, which backtracked quadratically: a 100,000-character name took
+ * seconds and blocked the server (DOR-2738 review). Each check here is linear.
+ *
+ * `token` counts as the whole name or its last part (`token`, `access_token`,
+ * `x-auth-token`, `accessToken`), never as a plural or a middle (`maxTokens`,
+ * `tokenizer`). `auth` likewise (`auth`, `basic_auth`, `authKey`), never
+ * `author`.
+ *
+ * @param name - A key, a setting path segment, or the name in `name=value`.
+ */
+function isSecretName(name: string): boolean {
+  return (
+    SECRET_WORD.test(name) ||
+    /(?:^|[_.-])token$/i.test(name) ||
+    /[a-z]Token$/.test(name) ||
+    /(?:^|[_.-])auth(?:$|[_.-])/i.test(name) ||
+    /^auth[A-Z]/.test(name)
+  );
+}
 
 /** Shapes a secret takes in free text, each with what to keep around it. */
-const SECRET_TEXT: readonly [RegExp, string][] = [
+const SECRET_TEXT: readonly [RegExp, (match: string, ...groups: string[]) => string][] = [
   // `"apiKey": "abcd1234"` — a JSON (or JSON-ish) member named like a secret.
-  [new RegExp(String.raw`("${SECRET_NAME}"\s*:\s*")[^"]*(")`, 'gi'), `$1${REDACTED}$2`],
+  // The name is bounded, so each quote costs a bounded amount.
+  [
+    /"([^"\\\n]{1,128})"(\s*:\s*")([^"]*)"/g,
+    (match, name, gap) => (isSecretName(name) ? `"${name}"${gap}${REDACTED}"` : match),
+  ],
   // `password=hunter2`, `OPENAI_API_KEY=abcd`, `?access_token=…`, `token: abc`.
-  [new RegExp(String.raw`(\b${SECRET_NAME}\s*[=:]\s*["']?)[^\s"'&,;]+`, 'gi'), `$1${REDACTED}`],
+  // The lookbehind lets a name start only where a run of name characters
+  // starts, which is what keeps this linear on one very long run.
+  [
+    /(?<![A-Za-z0-9_.-])([A-Za-z0-9_.-]{1,128})(\s*[=:]\s*["']?)([^\s"'&,;]+)/g,
+    (match, name, gap) => (isSecretName(name) ? `${name}${gap}${REDACTED}` : match),
+  ],
   // The password in a URL: `https://user:secret@host`.
-  [/(\b[a-z][a-z0-9+.-]*:\/\/[^\s/:@]+:)[^\s/@]+@/gi, `$1${REDACTED}@`],
+  [
+    /(\b[a-z][a-z0-9+.-]{0,31}:\/\/[^\s/:@]{1,256}:)[^\s/@]+@/gi,
+    (_m, head) => `${head}${REDACTED}@`,
+  ],
   // A JWT: three base64url segments, the first a JSON header.
-  [/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, REDACTED],
+  [/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, () => REDACTED],
   // Google, Notion, Stripe and Slack app tokens by their prefixes.
-  [/\b(?:AIza|ntn_|secret_|sk_live_|sk_test_|rk_live_|xapp-)[A-Za-z0-9_-]{10,}/g, REDACTED],
+  [/\b(?:AIza|ntn_|secret_|sk_live_|sk_test_|rk_live_|xapp-)[A-Za-z0-9_-]{10,}/g, () => REDACTED],
 ];
 
 /**
  * Sweep anything that looks like a password or key out of a string, and cap
  * its length. Best effort, as every pattern sweep is; the rule that makes it
  * enough is that callers never put a secret's value in an event on purpose.
+ *
+ * The input is cut to {@link MAX_SWEPT} before the sweep, so no caller can make
+ * one record expensive, and to {@link MAX_TEXT} after it. Sweeping before the
+ * final cut matters: cutting first can leave the start of a secret too short to
+ * be recognised.
  */
 function redactText(text: string): string {
-  let swept = redactSecretsInText(redactCredentialTokens(text));
-  for (const [pattern, replacement] of SECRET_TEXT) swept = swept.replace(pattern, replacement);
+  let swept = redactSecretsInText(redactCredentialTokens(text.slice(0, MAX_SWEPT)));
+  for (const [pattern, replace] of SECRET_TEXT) swept = swept.replace(pattern, replace);
   return swept.length <= MAX_TEXT ? swept : `${swept.slice(0, MAX_TEXT - 1)}…`;
 }
 
 /**
  * Redact every string inside a JSON-compatible value, and empty the value of
- * any member whose name says it is a secret.
+ * any member whose name says it is a secret (unless it is a number or a
+ * yes/no, which no secret is).
  */
 function redactDeep(value: unknown): unknown {
   if (typeof value === 'string') return redactText(value);
@@ -153,7 +192,11 @@ function redactDeep(value: unknown): unknown {
     return Object.fromEntries(
       Object.entries(value as Record<string, unknown>).map(([key, inner]) => [
         key,
-        SECRET_KEY.test(key) ? REDACTED : redactDeep(inner),
+        // A number or a yes/no under a secret-sounding name (`passwordMinLength:
+        // 8`) is a setting, not a secret, so it is kept.
+        isSecretName(key) && typeof inner !== 'number' && typeof inner !== 'boolean'
+          ? REDACTED
+          : redactDeep(inner),
       ])
     );
   }
@@ -167,7 +210,7 @@ const SENSITIVE = new Set<string>(SENSITIVE_CONFIG_KEYS);
  * any segment of its path is named like one (`connectors.composio.apiKey`).
  */
 function isSecretField(field: string): boolean {
-  return SENSITIVE.has(field) || field.split('.').some((segment) => SECRET_KEY.test(segment));
+  return SENSITIVE.has(field) || field.split('.').some(isSecretName);
 }
 
 /** A change list with secret fields emptied and every value swept. */
@@ -396,13 +439,35 @@ export class AuditLog {
    * @returns Whether the checked stretch is intact, the first break if not, and
    *   where to continue if rows remain.
    */
-  verify(opts: { fromSeq?: number; limit?: number } = {}): AuditVerifyResult {
+  verify(opts: { fromSeq?: number; limit?: number; prevHash?: string } = {}): AuditVerifyResult {
     const fromSeq = opts.fromSeq ?? 1;
     const limit = Math.min(opts.limit ?? AUDIT_VERIFY_MAX_ROWS, AUDIT_VERIFY_MAX_ROWS);
     let expectedSeq = fromSeq;
-    let prevHash: string | undefined;
+    // What the first row must link to. The genesis hash for the first row;
+    // otherwise the hash the caller carried over from the previous page, or
+    // failing that the stored row before `fromSeq` — so a page boundary is
+    // checked like any other link, and a row missing right before it is named.
+    let prevHash: string;
     if (fromSeq === 1) {
       prevHash = GENESIS_HASH;
+    } else if (opts.prevHash !== undefined) {
+      prevHash = opts.prevHash;
+    } else {
+      const before = this.db
+        .select({ hash: auditEvents.hash })
+        .from(auditEvents)
+        .where(eq(auditEvents.seq, fromSeq - 1))
+        .get();
+      if (!before) {
+        return {
+          ok: false,
+          checked: 0,
+          lastSeq: 0,
+          lastHash: GENESIS_HASH,
+          firstBreak: { seq: fromSeq - 1, reason: 'this row is missing' },
+        };
+      }
+      prevHash = before.hash;
     }
     let checked = 0;
     let lastSeq = 0;
@@ -428,9 +493,7 @@ export class AuditLog {
         if (row.seq !== expectedSeq) {
           return broken(expectedSeq, 'this row is missing');
         }
-        // When the walk starts mid-chain, the first row's own link is taken on
-        // trust: only the rows from there on are checked against each other.
-        if (prevHash !== undefined && row.prevHash !== prevHash) {
+        if (row.prevHash !== prevHash) {
           return broken(row.seq, 'it does not link to the row before it');
         }
         const { hash, ...unhashed } = row;
@@ -445,13 +508,16 @@ export class AuditLog {
       }
       cursor = expectedSeq;
     }
+    // Continue from the row that SHOULD come next, never from whichever row
+    // happens to exist: a page that stops just before a deleted row must hand
+    // the gap to the next page, which then reports it.
     const more = this.db
       .select({ seq: auditEvents.seq })
       .from(auditEvents)
       .where(gte(auditEvents.seq, expectedSeq))
       .limit(1)
       .get();
-    return { ok: true, checked, lastSeq, lastHash, ...(more ? { nextFromSeq: more.seq } : {}) };
+    return { ok: true, checked, lastSeq, lastHash, ...(more ? { nextFromSeq: expectedSeq } : {}) };
   }
 
   /**

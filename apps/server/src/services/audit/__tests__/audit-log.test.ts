@@ -198,9 +198,87 @@ describe('AuditLog', () => {
     );
   });
 
+  it('keeps settings that only sound secret: counts, limits and yes/no values', () => {
+    const event = log.record(
+      input({
+        change: [
+          {
+            field: 'runtimes.limits',
+            before: null,
+            after: {
+              maxTokens: 4096,
+              passwordMinLength: 8,
+              tokenizer: 'cl100k',
+              authRequired: true,
+            },
+          },
+        ],
+        summary: 'maxTokens=4096 tokenizer=cl100k',
+      })
+    )!;
+    expect(event.change).toEqual([
+      {
+        field: 'runtimes.limits',
+        before: null,
+        after: { maxTokens: 4096, passwordMinLength: 8, tokenizer: 'cl100k', authRequired: true },
+      },
+    ]);
+    expect(event.summary).toBe('maxTokens=4096 tokenizer=cl100k');
+  });
+
+  it.each([
+    ['one long name run', 'a.'.repeat(50_000)],
+    ['a long name before an equals sign', `${'a'.repeat(100_000)}=x`],
+    ['many quoted names', '"a":'.repeat(25_000)],
+    ['a long URL head', `https://${'u'.repeat(100_000)}`],
+  ])('redacts pathological text quickly: %s', (_shape, text) => {
+    const started = performance.now();
+    log.record(input({ summary: text, error: text, reason: text }));
+    // Three fields, each swept. Linear work is a few milliseconds; the old
+    // pattern took seconds on the first of these (DOR-2738 review).
+    expect(performance.now() - started).toBeLessThan(150);
+  });
+
   it('leaves ordinary words that only look close alone', () => {
     const event = log.record(input({ summary: 'author=Dorian changed the tokenizer docs' }))!;
     expect(event.summary).toBe('author=Dorian changed the tokenizer docs');
+  });
+
+  it('hands a gap at a page boundary to the next page, which reports it', () => {
+    for (let i = 0; i < 6; i += 1) log.record(input());
+    dropTriggers(db);
+    db.delete(auditEvents).where(eq(auditEvents.seq, 4)).run();
+
+    const first = log.verify({ limit: 3 });
+    expect(first).toMatchObject({ ok: true, checked: 3, lastSeq: 3, nextFromSeq: 4 });
+    expect(log.verify({ fromSeq: first.nextFromSeq, prevHash: first.lastHash })).toMatchObject({
+      ok: false,
+      firstBreak: { seq: 4, reason: 'this row is missing' },
+    });
+  });
+
+  it('checks the link across a page boundary', () => {
+    for (let i = 0; i < 4; i += 1) log.record(input());
+    const first = log.verify({ limit: 2 });
+    // The page carried over: the boundary link holds.
+    expect(log.verify({ fromSeq: 3, prevHash: first.lastHash })).toMatchObject({ ok: true });
+    // A page told the wrong predecessor names the first row of the page.
+    expect(log.verify({ fromSeq: 3, prevHash: 'e'.repeat(64) })).toMatchObject({
+      ok: false,
+      firstBreak: { seq: 3, reason: 'it does not link to the row before it' },
+    });
+    // With no hash carried over, the stored row before the page is used.
+    expect(log.verify({ fromSeq: 3 })).toMatchObject({ ok: true, checked: 2 });
+  });
+
+  it('names a missing row just before a page that starts mid-chain', () => {
+    for (let i = 0; i < 4; i += 1) log.record(input());
+    dropTriggers(db);
+    db.delete(auditEvents).where(eq(auditEvents.seq, 2)).run();
+    expect(log.verify({ fromSeq: 3 })).toMatchObject({
+      ok: false,
+      firstBreak: { seq: 2, reason: 'this row is missing' },
+    });
   });
 
   it('checks a long log in pages and says where to continue', () => {
