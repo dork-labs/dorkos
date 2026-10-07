@@ -7,9 +7,13 @@
 Read these four first. Where anything else in the repo disagrees with them, they win.
 
 - [`VISION.md`](VISION.md): vision, mission, the office-and-workers picture, DorkOS first, who it is for, the message stack and what sets us apart.
-- [`PRINCIPLES.md`](PRINCIPLES.md): how we decide. Trusted by default, co-workers, equal accounts (internal), ownership, DorkOS first and ready in under a minute, local first and cloud optional, claim only what works, the quality bar.
+- [`PRINCIPLES.md`](PRINCIPLES.md): how we decide. Trusted by default, co-workers, equal accounts (internal), ownership, DorkOS first and ready in under a minute, local first and cloud optional, claim only what works, build for the world that is coming, the quality bar.
 - [`VOICE.md`](VOICE.md): the single source for language. Headline rules, words we use, words and claims we never use, plain-word swaps.
 - [`ROADMAP.md`](ROADMAP.md): before launch and after launch, with tickets, plus the demo-claim gate and open risks.
+
+Then the guide that applies them to how agents take initiative:
+
+- [`PROACTIVE-AGENTS.md`](PROACTIVE-AGENTS.md): proactive persistent agents. Co-workers who wake on a regular beat, act inside their job, report up, and stay quiet unless something is worth saying. The heartbeat model, when to act, ask or stay quiet, the measures, a first draft of the prompts, and the anti-patterns. Evidence in `research/20261007_proactive-persistent-agents.md`.
 
 ## Current canon
 

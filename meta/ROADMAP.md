@@ -37,7 +37,7 @@ A card is required for DorkOS's own AI; there are no free starter credits. Price
 8. Agents with their own computer, behind a flag, and moving them to another DorkOS (DOR-2748); publishing pages (DOR-2749).
 9. Live shared docs for people and agents. (DOR-2750)
 
-**Alongside, not in the order:** the loop watcher that replaces turn counting (DOR-2745; today's loop guards stay until it is ready), decision models as first-line support (DOR-2778), and removing the remaining agent friction and old permission machinery (DOR-2751).
+**Alongside, not in the order:** proactive persistent agents: heartbeats, reports-to on every profile, a commitments list and the measures in [`PROACTIVE-AGENTS.md`](PROACTIVE-AGENTS.md) (DOR-2788; it needs the audit trail first, leans on decision models to keep beats cheap, and is native in Doe, DOR-2782), the loop watcher that replaces turn counting (DOR-2745; today's loop guards stay until it is ready), decision models as first-line support (DOR-2778), and removing the remaining agent friction and old permission machinery (DOR-2751).
 
 ## The demo-claim gate
 
@@ -74,6 +74,7 @@ Say "coming" or "planned", or leave it out:
 
 - Equal accounts and access levels (how to talk about them is in [`VOICE.md`](VOICE.md)).
 - Role and responsibilities on profiles; agents owning their outside accounts; agents creating agents.
+- Agents that check in on their own (heartbeats), report to someone, and keep a commitments list. Today's agents act on their own only through schedules; say exactly that.
 - More than one person on a server; spaces as the story describes them, and creating your own space. An early form ships today (the code calls them communities, the app says spaces); never feature it on story surfaces.
 - Groups, projects, tasks in projects, and tiered goals. Today's Tasks page is schedules; never present it as this.
 - The health check.
