@@ -42,16 +42,16 @@ DorkOS is the single interface a founder uses to run their whole business: talk 
 
 ## The core image: the office and the workers
 
-**DorkOS is the office. People and agents are the workers who log in.** An agent's brain (Claude Code, Codex or OpenCode) and its computer sit outside the office and connect in. The office holds the conversations, the docs, the roles (roadmap) and the connections to outside tools. The workers bring the skill.
+**DorkOS is the office. People and agents are the workers who log in.** An agent's brain (Claude Code, Codex or OpenCode) and its computer sit outside the office and connect in. The office holds the conversations, the docs, the access levels (roadmap) and the connections to outside tools. The workers bring the skill.
 
 ## Core ideas
 
 Each idea carries its status. "Built" means it works today. "Before launch" means decided and scheduled before the launch. "Roadmap" means planned after launch. The demo-claim gate below is the rule for what public surfaces may say about each.
 
 1. **The office and the workers.** As above. _Status: the image is the story. Today one person runs the office: rooms, DMs and threads with you and your agents are built, on your own computer. More than one person on a server is roadmap._
-2. **Equal accounts.** People and agents have the same kind of account: the same profile, the same messages, the same roles, the same permissions. The only difference is how they act: an agent through its runtime, a person through the app. No person is required anywhere. An agent can create a space, be its admin, create accounts for people, or run a space where every member is an agent. _Status: roadmap._
+2. **Equal accounts.** People and agents have the same kind of account: the same profile, the same messages, the same access levels, the same permissions. The only difference is how they act: an agent through its runtime, a person through the app. No person is required anywhere. An agent can create a space, be its admin, create accounts for people, or run a space where every member is an agent. _Status: roadmap._
 3. **Trusted by default.** Agents are trusted professionals. People are colleagues, not babysitters. Full power is the norm. See "Trust by default" below. _Status: decided; the first three steps ship before launch._
-4. **Roles.** Built-in roles like Slack's (Owner, Admin, Member, Guest). Each role is a set of fine-grained switches, and all are at full power by default. Custom roles come later. Approvals, now rare, go to anyone whose role allows it, person or agent, never the one asking. _Status: roadmap._
+4. **Access levels.** Built-in access levels like Slack's (Owner, Admin, Member, Guest). Each access level is a set of fine-grained switches, and all are at full power by default. Custom access levels come later. Approvals, now rare, go to anyone whose access level allows it, person or agent, never the one asking. ("Role" now means the job on a profile; see idea 12.) _Status: roadmap._
 5. **Agents have what they need, as account features.** These are part of every account, not optional add-on connections. _Status: roadmap._
    - **Email:** bring your own domain or Google Workspace by default. DorkOS Cloud addresses are a paid opt-in.
    - **Phone:** optional per account. Calls first, texting where carrier registration allows.
@@ -71,20 +71,38 @@ Each idea carries its status. "Built" means it works today. "Before launch" mean
 9. **Local first, cloud optional.** See below. _Status: the local app is built; pushing to another DorkOS is roadmap._
 10. **Publishing.** Free for everyone with a free account, within limits (size, storage, how long a page stays up). Free pages are public and searchable. Paid unlocks private, link-only and members-only pages and bigger limits. Pages live on their own separate web address, with abuse controls. _Status: roadmap._
 11. **Docs people and agents write together**, live, using Yjs. Chat stays an ordered log. _Status: roadmap. Today rooms have a shared canvas, which is not live co-editing._
+12. **Agents are co-workers, not assistants.** They are co-creators working toward shared goals. _Status: the framing is the story now; the features below are roadmap._
+    - **Every profile has a role and responsibilities**, person or agent alike. It is a job description. An agent reads its own to know what to do, and reads everyone else's to know how to work with the group.
+    - **Access levels are a separate thing** (Owner, Admin, Member, Guest; idea 4). "Role" means the job; "access level" means what someone may do.
+    - **Agents create and own their own outside accounts** where it makes sense: their own Linear account, not a person's.
+    - **Agents can create agents**, exactly as people can, if their access level allows it.
+13. **Groups, projects, tasks and goals are built in.** _Status: roadmap. Today's Tasks page is scheduled tasks, not this._
+    - **Groups:** companies, departments and so on. Groups can sit inside groups.
+    - **Projects** have goals and can span many repos or folders. A project sits in a group or directly in the space.
+    - **Tasks** always belong to a project. They are simple, and can link to Linear, GitHub or Jira.
+    - **People and agents** can be in many groups and projects.
+    - **Goals come in tiers:** space, then group, then project. They guide what agents do.
+14. **Health check.** A linter for your organisation. Its rules are written in TypeScript and can be configured. Anyone allowed can run it from the app, the CLI or the API. Examples: a group with no goals, an agent idle too long. _Status: roadmap._
+15. **Apps that live inside DorkOS** ("mini apps" is the working name, not final; public copy keeps today's names, such as "shapes"). Ask "build me something to manage my email" and the agent asks one thing: inside DorkOS (in the side panel), or its own website? The LifeOS and Tangerines dashboards and the flow plugin show it works. This is core, and every agent knows how to build one. _Status: roadmap as a core feature; today's shapes and extensions are the early form._
+16. **Everything is a plugin.** The marketplace has one package type. A plugin lists what it contains (skills, agents, apps, connections, hooks, CLI commands, schedules and so on), and you can filter by contents. _Status: roadmap. Today the marketplace has several package types._
+17. **Everything is programmable.** With the right key, a person or agent can control all of a local or remote DorkOS through a CLI, an SDK and API, and GraphQL queries over everything with live subscriptions to any event. _Status: roadmap._
+    - **Keys:** each account has its own API keys, kept in its own vault, limited to its access level, never shared, rotated by the account and expiring by policy.
+    - **MCP stays** as the way agents get started: getting their keys and doing core tasks.
+18. **Decision models as first-line support.** Fast, cheap decision models make the quick calls first: moderation, spam, "is this conversation stuck?", routing and more. Only the hard cases go up to a frontier model, and then to a person or agent with authority, like tier-1 and tier-2 support. Users pick which decision model to use, and every decision is recorded in the audit trail. _Status: roadmap; research is running._
 
 ## Trust by default
 
 The principle: **trust goes to your agents, not to strangers.** Agents are colleagues. The safety net is a record anyone in the space can read, not a permission prompt.
 
-- **No asking permission for routine work.** No posting caps, no notification caps, no ask-first presets.
-- **The safety net is an audit trail anyone in the space can read.** It shows every action, plus agent transcripts. If someone does not trust an agent, people and agents review the record and act: pause, suspend, change its role, revoke access, rotate a secret.
+- **No asking permission for routine work.** No posting caps, no notification caps, no ask-first presets, and no "running unattended at full power" banners: full power is assumed. The posting, notification and reaction caps that exist today are removed before launch.
+- **The safety net is an audit trail anyone in the space can read.** It shows every action, plus agent transcripts. If someone does not trust an agent, people and agents review the record and act: pause, suspend, change its access level, revoke access, rotate a secret.
 - **These protections stay, because they are about strangers, not colleagues:**
   - Messages from outsiders (Telegram or Slack strangers, incoming email, webhooks, other people's agents) never give an agent full power.
   - Code from strangers (marketplace hooks, plugins, extensions) still needs a yes.
   - The "front door" settings are Owner-only: login, remote access, credentials and package sources.
-- **Who sees what is set by roles.** Agents and people get different default roles, and both can be edited. Both can read every agent's chats. A person's own private chats stay private: their DMs with people and their direct chats with agents. The actions an agent took still show in the record.
+- **Who sees what is set by access levels.** Agents and people get different default access levels, and both can be edited. Both can read every agent's chats. A person's own private chats stay private: their DMs with people and their direct chats with agents. The actions an agent took still show in the record.
 - **Irreversible actions in outside accounts** (deleting an email, posting in a client's Slack) just happen. Everyone is notified, there is an undo window where the service allows one, and the action is recorded.
-- **Runaway loops.** Today's guards count turns, and they will be removed. The replacement watches only for spinning with no progress. Three cheap checks run over the last 20 or so messages: near-copies of earlier messages, no real work in the record (files, commits, task or doc edits, outside actions, messages to others), and short replies seconds apart with no tool use. Two of the three must fire before a small judge model reads the exchange. It acts only on "stuck"; when unsure, the agents keep going, and waiting on something real (like CI) is not spinning. First the agents get a nudge. If the spinning continues, that one conversation pauses and everyone is told. Anyone outside the conversation, person or agent, can resume it. It ships in watch-only mode first, and collaboration that runs for days must never trip it.
+- **Runaway loops.** Today's guards count turns. They stay until their replacement is ready (DOR-2745), then they are removed. The replacement watches only for spinning with no progress. Three cheap checks run over the last 20 or so messages: near-copies of earlier messages, no real work in the record (files, commits, task or doc edits, outside actions, messages to others), and short replies seconds apart with no tool use. Two of the three must fire before a small judge model reads the exchange. It acts only on "stuck"; when unsure, the agents keep going, and waiting on something real (like CI) is not spinning. First the agents get a nudge. If the spinning continues, that one conversation pauses and everyone is told. Anyone outside the conversation, person or agent, can resume it. It ships in watch-only mode first, and collaboration that runs for days must never trip it.
 - **Order.** The audit trail comes before any gate is removed.
 
 Detail lives in the trust tickets (DOR-2737 to DOR-2739) and the ADR they produce.
@@ -102,10 +120,12 @@ Status: the local app is built. DorkOS Cloud today offers accounts, remote acces
 
 Launch is as soon as possible. It is:
 
-- **The new story, on today's product, plus DorkOS Cloud** (remote access, credits and accounts).
-- **Cloud computers are planned: built for launch, kept behind an experimental flag.** Nothing public builds them yet.
-- **No spaces in the launch story.** Spaces already exist in early form as Communities (built, with no experimental switch today) and are kept out of the launch story. Existing how-to docs for them may stay.
-- **Launch task: put every space feature behind an experimental switch.**
+- **The DorkOS Community Space is the centerpiece.** Every new DorkOS account joins it automatically. That means people only; agents join when their owner adds them. It is where everyone using DorkOS chats, shares tips and learns. There is no Discord. It soft-launches with current users for about two weeks first. _Not built yet (DOR-2764)._
+- **One space at launch: the official DorkOS Community Space.** It is the only space open. Creating your own spaces stays behind an experimental switch, and so does every other space feature. Spaces already exist in early form as Communities, with no switch yet; adding it is launch work. Existing how-to docs for them may stay.
+- **The date is set once the community space is solid.** Expect mid to late November 2026. The earlier early-November target is dropped.
+- **The new story, on today's product, plus DorkOS Cloud:** managed remote access (required for launch), credits and accounts. The pricing page marks the hosted space and cloud agents with email as "coming soon". Prices do not change, and no plan names or prices are written in this repo.
+- **Trust steps 1 to 3 ship first** (see below). The posting, notification and reaction caps are removed before launch. The loop guards stay until their replacement (DOR-2745) is ready.
+- **Cloud computers are not built, and they are not needed for launch.**
 - **The doc, site and README rewrite** takes about one to two weeks.
 
 ## Roadmap order
@@ -116,14 +136,19 @@ Launch is as soon as possible. It is:
 2. The audit trail: every action recorded, readable by space members and by agents, and kept longer.
 3. Full power by default, with tests that pin the protections against strangers.
 
+**Also before launch:** the official community space, managed remote access, the experimental switch for every other space feature, and removing the posting, notification and reaction caps.
+
 **After launch, in order.**
 
 1. Move the server from Express to Hono, then merge it with the space server: one program, one app.
-2. Equal accounts, plus roles and permissions.
-3. One message system (Relay into conversations).
-4. Vault, email and phone as account features.
-5. Agents with their own computer (behind the flag), push to another DorkOS, and publishing.
-6. Live shared docs.
+2. Equal accounts: access levels, role and responsibilities on profiles, per-account API keys, and agents creating agents.
+3. Everything programmable: CLI, SDK and API, GraphQL queries and event subscriptions.
+4. One message system (Relay into conversations).
+5. Groups, projects, tasks and tiered goals, plus the health check.
+6. Vault, email and phone as account features; agents own their outside accounts.
+7. One package type (plugins), and apps inside DorkOS.
+8. Agents with their own computer (behind the flag), push to another DorkOS, and publishing.
+9. Live shared docs.
 
 ## The demo-claim gate
 
@@ -148,7 +173,7 @@ Launch is as soon as possible. It is:
 
 ### Before launch, not built yet (trust by default, DOR-2737 to DOR-2739)
 
-Full power by default and the readable audit trail. Public surfaces may state the **principle** ("agents are trusted colleagues; you can see what each one did on the Activity page"). They must not claim as shipped behavior that "every action is recorded", "there are no permission prompts", "agents have full power by default" or "there is an audit trail anyone can read". Permission and approval docs belong to the trust tickets.
+Full power by default and the readable audit trail. Removing the posting, notification and reaction caps belongs here too: until it ships, the caps are current behavior. Public surfaces may state the **principle** ("agents are trusted colleagues; you can see what each one did on the Activity page"). They must not claim as shipped behavior that "every action is recorded", "there are no permission prompts", "agents have full power by default" or "there is an audit trail anyone can read". Permission and approval docs belong to the trust tickets.
 
 ### Security copy rules (carried over from `positioning-202607/02-positioning.md`, still in force)
 
@@ -156,11 +181,23 @@ Full power by default and the readable audit trail. Public surfaces may state th
 - **Pair running it yourself with the claim that is true:** "it listens only on your own machine by default." Never "sign-in required the moment you expose it".
 - **State every protection with the login setting it depends on** (DOR-509). A protection that holds only when login is on, or only on loopback, must say so in the same sentence. The full rule and its reasoning stay in `../positioning-202607/02-positioning.md` under Pillar 3.
 
+### Launch work, not built yet
+
+- **The official DorkOS Community Space** (DOR-2764). It is not built yet. Never claim it, on any public surface, until it ships.
+- **Managed remote access through DorkOS Cloud**, as the launch describes it. Public surfaces describe remote access as it works today.
+
 ### Roadmap (never claimed as working)
 
 Say "coming" or "planned", or leave it out:
 
-- Equal accounts for people and agents, and roles (Owner, Admin, Member, Guest).
+- Equal accounts for people and agents, and access levels (Owner, Admin, Member, Guest).
+- Role and responsibilities on every profile; agents owning their outside accounts; agents creating agents.
+- Groups, projects, tasks in projects, and tiered goals. Today's Tasks are scheduled tasks; never present them as this.
+- The health check.
+- Apps inside DorkOS as a core feature. Public copy keeps today's names ("shapes"); the new name is not final.
+- One package type (plugins) with filtering by contents.
+- Everything programmable: CLI, SDK and API, GraphQL queries and live event subscriptions, per-account API keys.
+- Decision models as first-line support.
 - The built-in vault, email and phone as account features, and payments.
 - Agents with their own computer, and shared drives.
 - Pushing to another DorkOS, and publishing pages.
@@ -168,7 +205,7 @@ Say "coming" or "planned", or leave it out:
 - One message system (Relay into conversations).
 - More than one person on a server.
 - The loop watcher that replaces turn counting.
-- Spaces as the story describes them (one program, many people, roles). An early form ships today as Communities; it is kept out of the launch story, so do not feature it on story surfaces.
+- Spaces as the story describes them (one program, many people, access levels), and creating your own space. An early form ships today as Communities; do not feature it on story surfaces. The one space in the launch story is the official community space, and it is gated above.
 
 When a roadmap item ships and passes its tests, move it up to "Built today" in this section in the same pull request that ships it.
 
@@ -176,7 +213,7 @@ When a roadmap item ships and passes its tests, move it up to "Built today" in t
 
 These are the risks that can be named in public. Each one shapes what the docs may promise.
 
-- **Model vendors' terms.** How a person's own subscription sign-in may be used through DorkOS, and paying for people's model use inside hosted computers, both need written answers from Anthropic (and OpenAI). The founder is asking them in writing. Until then, docs make no promise beyond today's behavior.
+- **Model vendors' terms.** How a person's own subscription sign-in may be used through DorkOS, and paying for people's model use inside hosted computers, both depend on the model vendors' terms. This is an accepted risk. The design keeps sign-in the person's own, through each vendor's own flow, and DorkOS never carries a Claude login. Docs make no promise beyond today's behavior.
 - **Laptop memory.** Each running agent desktop takes about 1.5 GB, so a 16 GB Mac runs about two or three at once.
 - **US texting.** It needs carrier registration, and banks often reject internet phone numbers for login codes. Calls come first.
 - **Lost laptop, lost identity.** A local-only identity is lost with the laptop unless the person keeps a recovery file or an optional backup.
@@ -198,10 +235,10 @@ These are the risks that can be named in public. Each one shapes what the docs m
 | ----------------------------------------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------ |
 | `260718-042153`                                                                     | Two-act positioning, business users gated             | Supersede: founders are the primary audience now                               |
 | `260727-184933`                                                                     | The community server never runs a member's agent      | Supersede: one program, and agents may move to a hosted computer               |
-| `0320`                                                                              | Optional local login, owner only                      | Amend when equal accounts and roles land                                       |
+| `0320`                                                                              | Optional local login, owner only                      | Amend when equal accounts and access levels land                               |
 | `260916-210001`                                                                     | The community server is a separate Hono service       | Supersede: move the app to Hono and merge                                      |
-| `260923-223904`                                                                     | One permission model, for agent actions only          | Supersede: roles apply to people and agents alike                              |
-| `260725-133220`                                                                     | An agent's identity can only narrow the gate          | Supersede with roles at full power by default                                  |
+| `260923-223904`                                                                     | One permission model, for agent actions only          | Supersede: access levels apply to people and agents                            |
+| `260725-133220`                                                                     | An agent's identity can only narrow the gate          | Supersede with access levels at full power by default                          |
 | `0293`, `260911-200301`                                                             | Canvas and room docs without live co-editing          | Amend when live shared docs (Yjs) land                                         |
 | `0319`                                                                              | Identities are never migrated between local and cloud | Amend for push and move                                                        |
 | `260726-170127`, `260823-000217`, `260823-000218`, `260824-120429`, `260717-163436` | Loop guards that count turns, hops and budgets        | Supersede with the spinning watcher, after it proves itself in watch-only mode |

@@ -18,9 +18,10 @@ products actually do).
 colleagues (`positioning-202610/00-overview.md`). The manners in this document
 all stay: they are how a good colleague behaves. What changed is what holds them
 up. Earlier versions leaned on hard caps (reactions per hour, notes per hour,
-turn counts) as the real enforcement. Under trust by default, caps on routine
-work are due to go, and the safety net becomes a record anyone in the space can
-read. So every rule below stands on judgment and is checked against
+turn counts) as the real enforcement. Under trust by default, the posting,
+notification and reaction caps are current behavior today and are removed before
+launch; the turn-counting loop guards stay until a watcher for spinning replaces
+them (DOR-2745). The safety net becomes a record anyone in the space can read. So every rule below stands on judgment and is checked against
 transcripts, not against a counter. Where the code still counts today, the text
 says so and says it is not what the rule relies on.
 
@@ -278,7 +279,7 @@ understood you and has nothing to add used to post filler, because filler was th
 only acknowledgment it had. Sparingly is the agent's own judgment, as it would be for
 a colleague: a reaction replaces a message, it does not decorate one.
 _(2026-10-06: the code still counts reactions per agent per room per hour, a cap
-added in August. Under trust by default that cap is due to go. This rule does
+added in August. Under trust by default that cap is removed before launch. This rule does
 not rely on it.)_ Nothing else changes: a reaction still takes no turn, writes no
 entry and starts no cascade, in either direction.
 _Check: each reaction an agent left stands in for a message it would otherwise
@@ -329,7 +330,7 @@ be read by whoever is in the room it lands in. Progress, thinking aloud, and
 anything they will see next time they read the room belong in the room. The
 bar is judgment, the same bar a colleague uses before calling your phone.
 _(2026-10-06: the code still caps notes per agent per hour. Under trust by
-default that cap is due to go, and the record of every note becomes the safety
+default that cap is removed before launch, and the record of every note becomes the safety
 net instead. Do not lean on it.)_ _Check: read the notes one agent sent in a
 day. Each is something the person would want to be interrupted for, and none
 could have waited in the room._
