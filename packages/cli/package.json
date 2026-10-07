@@ -1,7 +1,7 @@
 {
   "name": "dorkos",
   "version": "0.98.0",
-  "description": "You, multiplied. Ask for a tool and your agents build it inside DorkOS. Built for founders, running on your own computer. Open source, free, no account needed.",
+  "description": "You, multiplied. Ask for a tool and your agents build it inside DorkOS. Built for founders. Runs on your own computer. Open source and free.",
   "license": "MIT",
   "author": "Dorian Collier",
   "repository": {
