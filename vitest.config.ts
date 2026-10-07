@@ -120,6 +120,7 @@ export default defineConfig({
       'packages/cloud-api',
       'packages/connector-providers',
       'packages/db',
+      'packages/decisions',
       'packages/evals',
       'packages/extension-api',
       'packages/harness',
