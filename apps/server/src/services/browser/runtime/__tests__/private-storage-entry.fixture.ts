@@ -1,3 +1,4 @@
+import { observeOriginalStartupPhase } from '../original-phase-diagnostic.js';
 import { mkdir, realpath, writeFile } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 import { z } from 'zod';
@@ -35,7 +36,9 @@ async function main() {
     reports.push(report);
   };
   try {
-    const input = await readPublicNativeInput(config.input, current);
+    const input = await observeOriginalStartupPhase('storage.read-input', () =>
+      readPublicNativeInput(config.input, current)
+    );
     await mkdir(config.artifacts, { mode: 0o700 });
     created = true;
     if ((await realpath(config.artifacts)) !== config.artifacts)

@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import { originalInstallationPhases } from './phase-diagnostic.js';
 import { randomBytes, createHash } from 'node:crypto';
 import { constants, type BigIntStats } from 'node:fs';
 import { lstat, open, realpath } from 'node:fs/promises';
@@ -593,6 +594,8 @@ export function createInstallationJobs(
     let prepared: Awaited<ReturnType<typeof prepare>> | null = null;
     const pumping = { stdout: false, stderr: false };
     let childClosed: Promise<void> | null = null;
+    let finishBirth: ((state: 'settled' | 'failed') => void) | undefined;
+    let finishReturn: ((state: 'settled' | 'failed') => void) | undefined;
     const parsedIntent = JobIntentSchema.parse({
       schemaVersion: 1,
       jobId: slot.handle.jobId,
@@ -612,12 +615,15 @@ export function createInstallationJobs(
     });
     try {
       check(slot, request.signal);
-      await intake();
+      await originalInstallationPhases.observe(slot.handle.role, 'intake', intake);
       check(slot, request.signal);
-      const output = await prepare(intent);
+      const output = await originalInstallationPhases.observe(slot.handle.role, 'prepare', () =>
+        prepare(intent)
+      );
       prepared = output;
       check(slot, request.signal);
       // Pre-register observer promises/listeners immediately on the retained original spawn result.
+      finishBirth = originalInstallationPhases.begin(slot.handle.role, 'birth');
       const child = spawn(executable, [...argv], {
         cwd,
         env: { ...env },
@@ -725,6 +731,8 @@ export function createInstallationJobs(
       if (request.signal?.aborted) abort();
       await birthSink(slot.birth);
       slot.birthDurable = true;
+      finishBirth('settled');
+      finishReturn = originalInstallationPhases.begin(slot.handle.role, 'return');
       check(slot, request.signal);
       if (stdinBytes) {
         requireFact(child.stdin, 'CUSTODY_UNCERTAIN');
@@ -732,6 +740,7 @@ export function createInstallationJobs(
       }
     } catch (error) {
       note(slot, error);
+      finishBirth?.('failed');
       // A verifier must never receive request bytes before durable birth. Close that original
       // write end on failure, allowing its EOF refusal; no replacement child or stdin is created.
       try {
@@ -743,83 +752,89 @@ export function createInstallationJobs(
       else if (failureCode(error) === 'WORK_EXPIRED' || failureCode(error) === 'CLOCK_UNAVAILABLE')
         stop(slot, error);
     } finally {
-      // Classification ends never substitute for original exit/close, pipe EOF or raw close.
-      if (childClosed) await childClosed;
-      await Promise.all(pumps);
-      if (prepared) {
-        // Prepare acquired two raw originals even if spawn returned a child with missing pipes.
-        await Promise.all(
-          (
-            [
-              ['stdout', prepared.stdout],
-              ['stderr', prepared.stderr],
-            ] as const
-          ).map(async ([name, writer]) => {
-            if (pumping[name]) return; // That exact pump owns its single raw finish attempt.
-            try {
-              await writer.finish();
-              slot[name].rawFlushedClosed = true;
-            } catch (error) {
-              note(slot, error, true);
-            }
-          })
-        );
-      }
-      if (timer) clearTimeout(timer);
-      if (abort) request.signal?.removeEventListener('abort', abort);
-      if (slot.child) {
-        if (
-          !slot.exitObserved ||
-          !slot.closeObserved ||
-          !slot.birthDurable ||
-          !slot.stdinReturned ||
-          !slot.stdinClosed
-        )
-          note(slot, new InstallationFailure('CUSTODY_UNCERTAIN'));
-        if (slot.exitCode !== 0 || slot.signal !== null)
-          note(
-            slot,
-            new InstallationFailure(
-              slot.handle.role === 'official-install'
-                ? 'INSTALLER_FAILED'
-                : slot.handle.role === 'fresh-verifier'
-                  ? 'VERIFIER_FAILED'
-                  : 'PROBE_FAILED'
-            )
+      let returnJoined = false;
+      try {
+        // Classification ends never substitute for original exit/close, pipe EOF or raw close.
+        if (childClosed) await childClosed;
+        await Promise.all(pumps);
+        if (prepared) {
+          // Prepare acquired two raw originals even if spawn returned a child with missing pipes.
+          await Promise.all(
+            (
+              [
+                ['stdout', prepared.stdout],
+                ['stderr', prepared.stderr],
+              ] as const
+            ).map(async ([name, writer]) => {
+              if (pumping[name]) return; // That exact pump owns its single raw finish attempt.
+              try {
+                await writer.finish();
+                slot[name].rawFlushedClosed = true;
+              } catch (error) {
+                note(slot, error, true);
+              }
+            })
           );
+        }
+        if (timer) clearTimeout(timer);
+        if (abort) request.signal?.removeEventListener('abort', abort);
+        if (slot.child) {
+          if (
+            !slot.exitObserved ||
+            !slot.closeObserved ||
+            !slot.birthDurable ||
+            !slot.stdinReturned ||
+            !slot.stdinClosed
+          )
+            note(slot, new InstallationFailure('CUSTODY_UNCERTAIN'));
+          if (slot.exitCode !== 0 || slot.signal !== null)
+            note(
+              slot,
+              new InstallationFailure(
+                slot.handle.role === 'official-install'
+                  ? 'INSTALLER_FAILED'
+                  : slot.handle.role === 'fresh-verifier'
+                    ? 'VERIFIER_FAILED'
+                    : 'PROBE_FAILED'
+              )
+            );
+        }
+        try {
+          check(slot, request.signal, true);
+        } catch (error) {
+          note(slot, error);
+        }
+        try {
+          await receiptSink(facts(slot));
+          slot.receiptDurable = true;
+        } catch (error) {
+          note(slot, error, true);
+        }
+        // A receipt finish that crosses the same final end cannot earn a renewed budget.
+        try {
+          check(slot, request.signal, true);
+        } catch (error) {
+          note(slot, error);
+        }
+        slot.settled =
+          !!slot.child &&
+          slot.closeObserved &&
+          slot.exitObserved &&
+          slot.birthDurable &&
+          slot.receiptDurable &&
+          slot.stdinReturned &&
+          slot.stdinClosed &&
+          slot.stdout.eof &&
+          slot.stderr.eof &&
+          slot.stdout.closed &&
+          slot.stderr.closed &&
+          slot.stdout.rawFlushedClosed &&
+          slot.stderr.rawFlushedClosed &&
+          heldReads.size === 0;
+        returnJoined = true;
+      } finally {
+        finishReturn?.(returnJoined && slot.firstCause === null ? 'settled' : 'failed');
       }
-      try {
-        check(slot, request.signal, true);
-      } catch (error) {
-        note(slot, error);
-      }
-      try {
-        await receiptSink(facts(slot));
-        slot.receiptDurable = true;
-      } catch (error) {
-        note(slot, error, true);
-      }
-      // A receipt finish that crosses the same final end cannot earn a renewed budget.
-      try {
-        check(slot, request.signal, true);
-      } catch (error) {
-        note(slot, error);
-      }
-      slot.settled =
-        !!slot.child &&
-        slot.closeObserved &&
-        slot.exitObserved &&
-        slot.birthDurable &&
-        slot.receiptDurable &&
-        slot.stdinReturned &&
-        slot.stdinClosed &&
-        slot.stdout.eof &&
-        slot.stderr.eof &&
-        slot.stdout.closed &&
-        slot.stderr.closed &&
-        slot.stdout.rawFlushedClosed &&
-        slot.stderr.rawFlushedClosed &&
-        heldReads.size === 0;
     }
     return Object.freeze({
       handle: slot.handle,

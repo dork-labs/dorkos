@@ -1,3 +1,4 @@
+import { observeOriginalStartupPhase } from '../original-phase-diagnostic.js';
 import { captureOriginalQualificationGrant } from './qualification-grant.fixture.js';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { open, type FileHandle } from 'node:fs/promises';
@@ -165,7 +166,11 @@ export async function withOriginalInstalledBrowserRound(
           )
         )
       );
-    const qualificationGrant = await own(captureOriginalQualificationGrant(options.input, guard));
+    const qualificationGrant = await own(
+      observeOriginalStartupPhase('storage.qualification-grant', () =>
+        captureOriginalQualificationGrant(options.input, guard)
+      )
+    );
     cli = spawn(
       options.node,
       [
@@ -523,16 +528,23 @@ export async function runPrivateOriginalStorageWindow(options: {
     options.current();
     options.signal.throwIfAborted();
   };
-  await verifyPublicNativeEmits(options.input, guard);
-  const configuration = await resolveInstalledRuntimeConfiguration(
-    pathToFileURL(options.input.cliEntry),
-    options.input.home
+  await observeOriginalStartupPhase('storage.verify-build', () =>
+    verifyPublicNativeEmits(options.input, guard)
+  );
+  const configuration = await observeOriginalStartupPhase('storage.resolve-config', () =>
+    resolveInstalledRuntimeConfiguration(pathToFileURL(options.input.cliEntry), options.input.home)
   );
   if (
-    (await createRuntimeInstallation(configuration).inspectExisting()).state !== 'installed-files'
+    (
+      await observeOriginalStartupPhase('storage.inspect-installation', () =>
+        createRuntimeInstallation(configuration).inspectExisting()
+      )
+    ).state !== 'installed-files'
   )
     throw new Error('STORAGE_ORIGINAL_INSTALLATION_REQUIRED');
-  const native = await verifyInstalledNativeJournal(configuration),
+  const native = await observeOriginalStartupPhase('storage.native-journal', () =>
+      verifyInstalledNativeJournal(configuration)
+    ),
     fixture = await createOriginalStorageOrigin(options.signal);
   const profiles = new Map<'A' | 'B', string>(),
     httpHits = new Map<'A' | 'B', number>();

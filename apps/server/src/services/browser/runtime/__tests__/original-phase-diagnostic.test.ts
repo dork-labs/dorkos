@@ -3,6 +3,8 @@ const logging = vi.hoisted(() => {
   const sink = vi.fn();
   return { sink, current: { info: sink } };
 });
+const clock = vi.hoisted(() => vi.fn(() => 0));
+vi.mock('node:perf_hooks', () => ({ performance: { now: clock } }));
 const sink = logging.sink;
 vi.mock('../../../../lib/logger.js', () => ({
   get logger() {
@@ -11,6 +13,7 @@ vi.mock('../../../../lib/logger.js', () => ({
 }));
 beforeEach(() => {
   sink.mockReset();
+  clock.mockReset().mockReturnValue(0);
   logging.current = { info: sink };
 });
 import { observeOriginalStartupPhase } from '../original-phase-diagnostic.js';
@@ -87,6 +90,12 @@ it.each([
   'owner.verify-existing',
   'owner.inspect-existing',
   'owner.engine-open',
+  'storage.read-input',
+  'storage.verify-build',
+  'storage.resolve-config',
+  'storage.inspect-installation',
+  'storage.native-journal',
+  'storage.qualification-grant',
 ] as const)('retains the original held %s producer and its exact settlement', async (phase) => {
   let release!: (value: object) => void;
   const value = Object.freeze({ original: true });
@@ -99,11 +108,38 @@ it.each([
   void work.then(() => {
     settled = true;
   });
-  await Promise.resolve();
+  try {
+    await Promise.resolve();
+    expect(producer).toHaveBeenCalledTimes(1);
+    expect(settled).toBe(false);
+    expect(sink.mock.calls.map((call) => call[1].event)).toEqual(['start']);
+    release(value);
+    expect(await work).toBe(value);
+    expect(sink.mock.calls.map((call) => call[1].event)).toEqual(['start', 'settled']);
+  } finally {
+    release(value);
+    await work;
+  }
+});
+
+it.each([false, undefined])('unavailable diagnostic clock preserves original %s', async (value) => {
+  clock.mockImplementation(() => {
+    throw new Error('clock unavailable');
+  });
+  const producer = vi.fn(() => {
+    throw value;
+  });
+  await expect(observeOriginalStartupPhase('storage.read-input', producer)).rejects.toBe(value);
   expect(producer).toHaveBeenCalledTimes(1);
-  expect(settled).toBe(false);
-  expect(sink.mock.calls.map((call) => call[1].event)).toEqual(['start']);
-  release(value);
-  expect(await work).toBe(value);
-  expect(sink.mock.calls.map((call) => call[1].event)).toEqual(['start', 'settled']);
+  expect(sink).not.toHaveBeenCalled();
+});
+it('unavailable diagnostic clock preserves successful original settlement', async () => {
+  clock.mockImplementation(() => {
+    throw false;
+  });
+  const value = Object.freeze({ original: true });
+  const producer = vi.fn(() => value);
+  expect(await observeOriginalStartupPhase('storage.read-input', producer)).toBe(value);
+  expect(producer).toHaveBeenCalledTimes(1);
+  expect(sink).not.toHaveBeenCalled();
 });

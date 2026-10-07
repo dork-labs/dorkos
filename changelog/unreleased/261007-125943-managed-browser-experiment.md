@@ -11,6 +11,7 @@ covers:
   - 'fix(browser): preserve saved profiles during import upgrades'
   - 'feat(browser): qualify managed browser runtimes and selection copy'
   - 'fix(browser): release cancelled checks and retain process observers'
+  - 'fix(browser): preserve original work through diagnostic failures'
 ---
 
 ### Added

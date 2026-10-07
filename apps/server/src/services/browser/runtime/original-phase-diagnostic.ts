@@ -19,7 +19,13 @@ type OriginalPhase =
   | 'owner.resolve-package'
   | 'owner.verify-existing'
   | 'owner.inspect-existing'
-  | 'owner.engine-open';
+  | 'owner.engine-open'
+  | 'storage.read-input'
+  | 'storage.verify-build'
+  | 'storage.resolve-config'
+  | 'storage.inspect-installation'
+  | 'storage.native-journal'
+  | 'storage.qualification-grant';
 /** Fixed original stage timings only. Diagnostics confer no native/actor readiness and cannot heal failure. */
 export async function observeOriginalStartupPhase<T>(
   phase: OriginalPhase,
@@ -34,9 +40,15 @@ export async function observeOriginalStartupPhase<T>(
   } catch {
     /* Diagnostics have no authority over producer admission. */
   }
-  const started = performance.now();
+  let started: number | undefined;
+  try {
+    started = performance.now();
+  } catch {
+    /* An unavailable diagnostic clock cannot affect the original producer. */
+  }
   const emit = (event: 'start' | 'settled' | 'failed', failure?: Readonly<{ value: unknown }>) => {
     try {
+      if (started === undefined) return;
       originalInfo?.('Browser runtime original stage', {
         phase,
         event,
