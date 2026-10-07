@@ -51,6 +51,7 @@ export {
   SPACES_EXPERIMENT,
   isExperimentEnabled,
   readExperimentEnabled,
+  readSpacesEnabled,
 } from './server-config/experiments';
 export {
   useAccountUsage,

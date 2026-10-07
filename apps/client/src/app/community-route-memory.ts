@@ -19,10 +19,9 @@ import {
   isCommunityAuthorityCurrent,
 } from '@/layers/shared/lib';
 import {
-  SPACES_EXPERIMENT,
   commitCommunityRouteEpoch,
   getCommunityRouteEpoch,
-  readExperimentEnabled,
+  readSpacesEnabled,
 } from '@/layers/shared/model';
 import { communityNavigationKeys } from '@/layers/entities/community';
 
@@ -132,7 +131,7 @@ export function createCommunityRouteMemory(
     // is committed either way: the space surfaces read the experiment
     // themselves, and a cold load of a space link must not be fenced off by a
     // config answer that simply had not arrived.
-    const spaces = readExperimentEnabled(queryClient, SPACES_EXPERIMENT);
+    const spaces = readSpacesEnabled(queryClient);
     if (pathname !== '/channels') {
       commitCommunityRouteEpoch('installation');
       if (spaces) rememberInstallation(pathname, search);

@@ -46,13 +46,11 @@ vi.mock('../ui/CommunityPageHeading', () => ({
   ),
 }));
 vi.mock('@/layers/shared/model', () => ({
-  SPACES_EXPERIMENT: 'spaces.enabled',
   useIsMobile: () => false,
   useCommunityAuthority: () => ({ epoch: 1, ownerKey: 'owner' }),
 }));
 vi.mock('@/layers/entities/config', () => ({
-  useExperimentEnabledState: (path: string) =>
-    path === 'spaces.enabled' ? spaces : { enabled: false, isLoading: false },
+  useSpacesState: () => spaces,
 }));
 const { connections } = vi.hoisted(() => ({
   connections: { data: [] as Array<Record<string, unknown>> },

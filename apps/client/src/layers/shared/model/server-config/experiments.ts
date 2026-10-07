@@ -39,3 +39,13 @@ export function isExperimentEnabled(config: ServerConfig | undefined, path: stri
 export function readExperimentEnabled(queryClient: QueryClient, path: string): boolean {
   return isExperimentEnabled(queryClient.getQueryData<ServerConfig>(configKeys.current()), path);
 }
+
+/**
+ * Whether the spaces experiment is on, from the config cache, for code outside
+ * React. The single non-hook spaces check, beside `useSpacesEnabled`.
+ *
+ * @param queryClient - The app's query client.
+ */
+export function readSpacesEnabled(queryClient: QueryClient): boolean {
+  return readExperimentEnabled(queryClient, SPACES_EXPERIMENT);
+}

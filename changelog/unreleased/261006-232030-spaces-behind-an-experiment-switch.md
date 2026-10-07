@@ -4,6 +4,7 @@ covers:
   - 'fix(spaces): close the review gaps in the spaces experiment (DOR-2740)'
   - 'test(spaces): run the space specs with the spaces experiment on (DOR-2740)'
   - 'test(spaces): turn spaces on in the packaged community proof (DOR-2740)'
+  - 'fix(spaces): route every spaces check through one predicate per side (DOR-2740)'
 ---
 
 ### Changed

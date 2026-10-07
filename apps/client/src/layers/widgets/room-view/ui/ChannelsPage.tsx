@@ -1,7 +1,7 @@
 import { Navigate, useNavigate, useSearch } from '@tanstack/react-router';
 import { MessagesSquare } from 'lucide-react';
-import { SPACES_EXPERIMENT, useIsMobile } from '@/layers/shared/model';
-import { useExperimentEnabledState } from '@/layers/entities/config';
+import { useIsMobile } from '@/layers/shared/model';
+import { useSpacesState } from '@/layers/entities/config';
 import { PageHeading } from '@/layers/shared/ui';
 import { useTeamRoomRedirect } from '../model/use-team-room-redirect';
 import { RoomHistorySkeleton } from './RoomFlow';
@@ -42,7 +42,7 @@ import { useCommunityConnections } from '@/layers/entities/community';
  */
 export function ChannelsPage() {
   const { id, community } = useSearch({ from: '/_shell/channels' });
-  const spaces = useExperimentEnabledState(SPACES_EXPERIMENT);
+  const spaces = useSpacesState();
   if (community && !spaces.enabled)
     return spaces.isLoading ? null : <Navigate to="/channels" search={{}} replace />;
   return (

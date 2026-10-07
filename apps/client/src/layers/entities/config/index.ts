@@ -12,6 +12,7 @@ export { useConfig } from './model/use-config';
 export {
   useExperimentEnabledState,
   useSpacesEnabled,
+  useSpacesState,
   type ExperimentEnabledState,
 } from './model/use-experiment-enabled';
 export { useConfigSync } from './model/use-config-sync';

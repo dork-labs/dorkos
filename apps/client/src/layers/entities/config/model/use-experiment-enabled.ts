@@ -25,9 +25,18 @@ export function useExperimentEnabledState(path: string): ExperimentEnabledState 
 }
 
 /**
+ * The spaces experiment with its loading state (DOR-2740). Every space
+ * surface reads spaces through this or {@link useSpacesEnabled}, so a later
+ * exception (the official space, DOR-2764) has one place to plug in.
+ */
+export function useSpacesState(): ExperimentEnabledState {
+  return useExperimentEnabledState(SPACES_EXPERIMENT);
+}
+
+/**
  * Whether the spaces experiment is on (DOR-2740). False until the config
  * arrives, so a space surface stays hidden rather than flashing in.
  */
 export function useSpacesEnabled(): boolean {
-  return useExperimentEnabledState(SPACES_EXPERIMENT).enabled;
+  return useSpacesState().enabled;
 }
