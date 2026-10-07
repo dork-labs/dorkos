@@ -6,6 +6,8 @@ covers:
   - 'docs(community): document live-stream settings, readiness and metrics (DOR-2764)'
   - 'fix(community): a stream gives back its place, checks access at once, keeps its closed frame (DOR-2764)'
   - 'feat(community): per-member stream cap, a self-checking listener, readiness off the pool (DOR-2764)'
+  - 'fix(community): roomy per-member stream limit, batched reconnect wake, readiness checks both addresses (DOR-2764)'
+  - 'chore(changelog): fold the review fixes into the live-updates fragment (DOR-2764)'
 ---
 
 ### Changed
