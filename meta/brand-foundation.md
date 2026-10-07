@@ -1,6 +1,6 @@
 # DorkOS: Brand & Product Foundation
 
-> **Current as of 2026-10-07.** Brought up to date with the 2026-10 vision reset (`VISION.md`). DorkOS is now **a workspace for people and agents**, built first for founders who run a business with agents, with Kai (developers) second. The tagline **"You, Multiplied."** is unchanged. Retired: "operating system for AI agents" as the category, "one place for every AI agent you run" as the category line, the runtime trio as the headline, developer-first framing, and the personas Priya and Lil. Sections that were only history (the fleet-era tagline bank, the module-by-module architecture) are rewritten or pointed at the litepaper. The voice, the name and the Shapes naming addendum (§19) carry over. **Same-day update (2026-10-06): what sets DorkOS apart.** The chat workspace is table stakes, not the edge. The three differentiators, in order, are mini apps (your agents build the tools your business needs inside DorkOS), built for founders, and ownership. They now lead the positioning statement (§3), the big idea (§4), the hero (§13) and the taglines (§12); see `VISION.md`, "What sets us apart". **Update 2026-10-07: the message stack.** The hero is now three levels: the tagline "You, Multiplied.", the headline "Build and run your business with an agent team." and the supporting line "Your agents join your team chat, take on real work, and build the custom tools your company runs on." It replaces "Ask for a tool. Your agents build it." (§12, §13). Headline copy never says "your computer" or literally "open source"; ownership is "yours, wherever they run". The three differentiators stay the structure below the hero. Earlier amendment notes (2026-07-06 positioning review, 2026-07-09 hero reframe, 2026-08-24 retirement of two words, see §10) are kept inline where they still apply.
+> **Current as of 2026-10-07.** Brought up to date with the 2026-10 vision reset. The canon for what DorkOS is, how it decides, how it talks and what it may claim is the north-star set: [`VISION.md`](VISION.md), [`PRINCIPLES.md`](PRINCIPLES.md), [`VOICE.md`](VOICE.md) and [`ROADMAP.md`](ROADMAP.md). This file keeps the brand: origin story, position, the name, tone, aesthetic, messaging bank and site structure. Earlier amendment notes are kept inline where they still apply.
 
 ## 1. Executive Summary
 
@@ -84,7 +84,7 @@ Model intelligence is abundant: every few months it gets smarter and cheaper, an
 
 DorkOS is where that team works. One founder with the right workspace runs a business far bigger than its headcount, not because the agents replace what you do, but because they multiply what you can accomplish.
 
-_The underlying thesis, "intelligence doesn't scale; coordination does", remains the brand's argument for essays and anti-positioning surfaces (see §12). Hero surfaces lead with who the customer becomes, not with our theory of the world. (Reframed 2026-07-09; kept 2026-10-06.)_
+_The underlying thesis, "intelligence doesn't scale; coordination does", remains the brand's argument for essays and anti-positioning surfaces (see [`VOICE.md`](VOICE.md)). Hero surfaces lead with who the customer becomes, not with our theory of the world. (Reframed 2026-07-09; kept 2026-10-06.)_
 
 With DorkOS, your business gets:
 
@@ -290,12 +290,12 @@ The word list (plain-word swaps, retired words and claims) lives in [`VOICE.md`]
 #### Tone Guardrails
 
 - **Apple-style outcomes over mechanisms.** Describe what happens for the user, not how the system works internally. "Get a Telegram message when your agent finishes" not "Publish to a NATS-style hierarchical subject."
-- **No enterprise compliance language.** DorkOS is for founders and builders, not SOC 2 audits. Say "a record of what every agent did", not "compliance-grade audit logging." "Open source" not "auditable." _(Revised 2026-10-06: the readable record is now central to the trust story; see the "audit trail" row above.)_
+- **No enterprise compliance language.** DorkOS is for founders and builders, not SOC 2 audits. Say "a record of what every agent did", not "compliance-grade audit logging." "Open source" not "auditable." _(Revised 2026-10-06: the readable record is now central to the trust story; see "audit trail" in the plain-word swaps in [`VOICE.md`](VOICE.md).)_
 - **Ownership, cloud optional.** Most people start DorkOS on their own computer, free, with no account; DorkOS Cloud is an option, never a requirement. How to say it is in [`VOICE.md`](VOICE.md).
 - **Connectivity and flexibility over reliability.** When describing Relay, lead with "your agents can reach you on Telegram, notify each other, connect through any channel" — not "durable delivery, guaranteed message persistence."
 - **No "infrastructure" identity.** The brand identity is about running a business with a team of people and agents, not about running infrastructure. "I run my company with people and agents" not "I own my agent infrastructure."
 - **Guide, not hero** _(added 2026-07-06, StoryBrand)_. The user is the hero; DorkOS and its maker are the guide. In any asset, sentences whose subject is "you / your team" should outnumber sentences whose subject is "DorkOS / we." The founder story appears as empathy plus credentials ("I built this because I needed it"), never as the story's protagonist. DorkOS brags only through what the user's team did.
-- **Luxury codes, not luxury economics** _(added 2026-07-06)_. Premium feel is earned through craft, provenance, selectivity, and restraint (see `positioning-202607/02-positioning.md` §8.2). Brand surfaces (homepage, hero assets) never mention competitors: superlative, not comparative. Comparisons live only in docs/SEO evaluation surfaces. Copy test: would the sentence still work if we charged $200/month?
+- **Luxury codes, not luxury economics** _(added 2026-07-06)_. Premium feel is earned through craft, provenance, selectivity, and restraint (see `archive/positioning-202607/02-positioning.md` §8.2). Brand surfaces (homepage, hero assets) never mention competitors: superlative, not comparative. Comparisons live only in docs/SEO evaluation surfaces. Copy test: would the sentence still work if we charged $200/month?
 
 #### Human-Empowerment Positioning (Added 2026-03-02)
 
@@ -526,7 +526,7 @@ DorkOS is the shape-shifting **sidekick**. The user is always the hero — this 
 
 The 2026-07-17 decision was that **"Home Base" replaces "cockpit" and "mission control" in all future copy** — e.g., "your agents report back to base." It passed the hero test (§10, §12): the base is _yours_, not the product's.
 
-**Superseded 2026-08-24 (DOR-1517).** The retirement of "cockpit" and "mission control" stands and is now absolute (§10). The replacement is not "Home Base" but **"one place"**: "All your agents. One place." / "DorkOS is one place for every AI agent you run." It carries the same hero property — the place is the customer's, not the product's — while being plainer, and it survives translation into a sentence a non-developer says out loud. "Home Base" is retired as a candidate; the swap it called for is finished.
+**Superseded 2026-08-24 (DOR-1517).** The retirement of "cockpit" and "mission control" stands and is now absolute ([`VOICE.md`](VOICE.md)). The replacement is not "Home Base" but **"one place"**: "All your agents. One place." / "DorkOS is one place for every AI agent you run." It carries the same hero property — the place is the customer's, not the product's — while being plainer, and it survives translation into a sentence a non-developer says out loud. "Home Base" is retired as a candidate; the swap it called for is finished.
 
 ### Rejected
 

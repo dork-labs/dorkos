@@ -158,7 +158,7 @@ Tracking key creative decisions as they're made.
 
 ## Decision 19: The 2026-10 Story: A Workspace for People and Agents
 
-**Date:** 2026-10-06 (vision reset, agreed with the founder; strategy in ``meta/VISION.md` (and its siblings))
+**Date:** 2026-10-06 (vision reset, agreed with the founder; strategy in `meta/positioning-202610/00-overview.md`; since split into the north-star set, see `meta/INDEX.md`)
 **Decision:**
 
 - **Category:** **a workspace for people and agents.** Long form: "the workspace where founders run their business with people and agents." Replaces "one place for every AI agent you run" (Decision 18) and "operating system for AI agents" as category claims. The product name stays DorkOS.
@@ -170,7 +170,7 @@ Tracking key creative decisions as they're made.
 - **Co-workers, not assistants** _(added 2026-10-06, brief update)_: agents are co-workers and co-creators working toward shared goals. Never frame our agents as "AI assistants". Every profile will carry a "role and responsibilities", the job (roadmap). Describing other products as assistants, and technical uses such as "assistant message", are fine.
 - **Access levels** _(added 2026-10-06)_: Owner, Admin, Member and Guest are **access levels**, not roles. "Role" means the job on a profile. All of it is roadmap; copy does not claim it.
 - **Apps inside DorkOS** _(added 2026-10-06; superseded by Decision 20)_: ~~the new name is not final; public copy keeps "shapes"~~. "Mini apps" is now the public name; see Decision 20.
-- **Trust:** "trusted by default", "colleagues, not babysitters". Copy may state the principle now. It may not claim full power by default, an audit trail anyone can read, or the absence of permission prompts as shipped behavior until the trust work ships (the demo-claim gate, ``meta/VISION.md` (and its siblings)`).
+- **Trust:** "trusted by default", "colleagues, not babysitters". Copy may state the principle now. It may not claim full power by default, an audit trail anyone can read, or the absence of permission prompts as shipped behavior until the trust work ships (the demo-claim gate, `the north-star set in `meta/`(start at`meta/INDEX.md`)`).
 - **Runtime names:** "Claude Code, Codex and OpenCode side by side" leaves the headline. Runtimes are a docs fact; one plain mention lower down on a story surface is fine.
 - **Cloud:** local first, cloud optional. Free forever on your own computer with no required account; DorkOS Cloud is an option, never a requirement. _(Amended by Decision 20: marketing says "ownership", not "local first".)_
 
@@ -182,7 +182,7 @@ Tracking key creative decisions as they're made.
 
 ## Decision 20: What Sets Us Apart: Mini Apps, Built for Founders, Ownership
 
-**Date:** 2026-10-06 (decided by the founder the same day as Decision 19; canon in ``meta/VISION.md` (and its siblings), "What sets us apart")
+**Date:** 2026-10-06 (decided by the founder the same day as Decision 19; canon in `meta/positioning-202610/00-overview.md`, "What sets us apart"; since split into the north-star set, see `meta/INDEX.md`)
 **Decision:**
 
 - **Table stakes, not our edge:** a chat workspace with people and agents (channels, DMs, threads). Everyone will have it (Slack Code, Buzz, ChatGPT Space, Ando). Copy may state it plainly as what DorkOS is. It is never the lead, the headline or the reason to choose DorkOS. Decision 19's category line stands, but it no longer leads.
@@ -201,11 +201,11 @@ Tracking key creative decisions as they're made.
 
 **Why:** the competitive analysis (`research/20261006_competitive-analysis-2026-10-vision.md`) found that a chat workspace with agents is becoming common. What rivals do not combine is agents building the business's own tools inside the workspace, a product made for founders, and a system the founder owns.
 
-**Affected documents:** ``meta/VISION.md`(and its siblings),`brand-foundation.md`, `dorkos-litepaper.md`, `value-architecture-applied.md`, the personas, `.claude/rules/site-marketing-copy.md`and the writing skills. The site, READMEs and docs follow in their own changes. Deliberately left as history:`rounds/**`and`archive/**`.
+**Affected documents:** `meta/positioning-202610/00-overview.md` (since split into the north-star set), `brand-foundation.md`, `dorkos-litepaper.md`, `value-architecture-applied.md`, the personas, `.claude/rules/site-marketing-copy.md` and the writing skills. The site, READMEs and docs follow in their own changes. Deliberately left as history: `rounds/**` and `archive/**`.
 
 ## Decision 21: The Message Stack: Build and Run Your Business with an Agent Team
 
-**Date:** 2026-10-07 (decided by the founder; canon in ``meta/VISION.md` (and its siblings), "The message stack")
+**Date:** 2026-10-07 (decided by the founder; canon in `meta/positioning-202610/00-overview.md`, "The message stack"; since split into the north-star set, see `meta/INDEX.md`)
 **Amends:** Decision 20's homepage hero. The rest of Decision 20 stands.
 **Decision:**
 
@@ -224,4 +224,4 @@ Tracking key creative decisions as they're made.
 
 **Why:** the new headline says what a founder gets in one plain sentence, and the supporting line carries the chat, the work and the mini apps together. "Your computer" stops being true as a headline once DorkOS Cloud runs agents on our servers, so ownership is said as "yours".
 
-**Affected documents:** ``meta/VISION.md`(and its siblings),`brand-foundation.md`, `dorkos-litepaper.md`, `value-architecture-applied.md`, `website-copy/brief/creative-brief.md`, `INDEX.md`, `.claude/rules/site-marketing-copy.md`and the writing skills. The site, READMEs, npm copy and docs follow in their own changes. Deliberately left as history:`rounds/**`, `archive/**` and Decision 20's hero.
+**Affected documents:** `meta/positioning-202610/00-overview.md` (since split into the north-star set), `brand-foundation.md`, `dorkos-litepaper.md`, `value-architecture-applied.md`, `website-copy/brief/creative-brief.md`, `INDEX.md`, `.claude/rules/site-marketing-copy.md` and the writing skills. The site, READMEs, npm copy and docs follow in their own changes. Deliberately left as history:`rounds/**`, `archive/**` and Decision 20's hero.

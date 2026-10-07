@@ -35,7 +35,7 @@ A post argues from a position. A neutral explainer is a docs page, and we alread
 
 The position comes from four places:
 
-- **The thesis.** `meta/brand-foundation.md` §12: "Intelligence doesn't scale. Coordination does." Most posts here are an instance of it. The manifesto line is licensed on this surface and almost nowhere else (see Voice below), which makes an essay the one place the argument can be stated outright rather than implied.
+- **The thesis.** The manifesto line in `meta/VOICE.md`: "Intelligence doesn't scale. Coordination does." Most posts here are an instance of it. The manifesto line is licensed on this surface and almost nowhere else (see Voice below), which makes an essay the one place the argument can be stated outright rather than implied.
 - **What sets us apart.** `meta/VISION.md` names three differentiators, in order: mini apps (your agents build the tools your business needs inside DorkOS), built for founders, and ownership (your agents, tools, files and data stay yours, wherever they run). A feature post ties back to one of them. The chat workspace itself is table stakes, so never argue that it is the edge. A post title or social card is headline copy: the headline rules and the words to use are in `meta/VOICE.md`.
 - **The design filters.** The Decision filters line in `AGENTS.md` (Quality Standard) names Jobs, Ive and Rams as the design mentors and states what they imply: every element justifies its existence, so if a paragraph would not be missed, cut it. The product "feels like a control panel, not a consumer app," and `meta/brand-foundation.md` §11 (Brand Aesthetic) says the same. The prose is instrument-panel prose, not lifestyle copy.
 - **A named reader.** A post aimed at everyone reaches nobody. Name the persona before the first sentence.
@@ -171,7 +171,7 @@ Two limits:
 ## Voice and lines you may use
 
 - **"You, Multiplied." is hero-only.** Do not open a blog post with it.
-- **"Intelligence doesn't scale. Coordination does." is licensed here.** `meta/brand-foundation.md` §12 (Taglines) reserves the manifesto line for "essays, the litepaper, comparison/anti-positioning surfaces, and the Show HN comment thread." A blog essay is that surface, and the only writing surface here where the line belongs.
+- **"Intelligence doesn't scale. Coordination does." is licensed here.** `meta/VOICE.md` reserves the manifesto line for essays, the litepaper, comparison and anti-positioning surfaces and the Show HN thread. A blog essay is that surface, and the only writing surface here where the line belongs.
 - **Byline: a named human.** Every one of the 61 existing posts says `DorkOS Team`, which is right for a release note and wrong for an opinion piece. A corporate byline on an argument reads as content marketing. The evidence is a consistent pattern across every strong exemplar in the research rather than a controlled finding, and it is worth following anyway: no one signs an essay "the team."
 
 ## Humor

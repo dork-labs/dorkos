@@ -42,7 +42,7 @@ Lower on the page (body text, FAQ, install steps, the license section), plain fa
 | **Workspaces**                                  | A product noun already: the /workspaces page and project checkouts. When "workspace" is the category word, write "a workspace for people and agents" in full. Never rename or redefine the Workspaces page to fit the category. |
 | **the DorkOS app**, **the app**, **one window** | What to call the product's interface.                                                                                                                                                                                           |
 
-Lines with a fixed home: "Intelligence doesn't scale. Coordination does." is the manifesto line, for essays only and never a headline. "Teams needed Slack. AI agents need DorkOS." may explain the category to a first-time reader, only beside the differentiators and never as the lead.
+Lines with a fixed home: "Intelligence doesn't scale. Coordination does." is the manifesto line: for essays, the litepaper, comparison and anti-positioning surfaces and the Show HN thread, never a headline. "Teams needed Slack. AI agents need DorkOS." may explain the category to a first-time reader, only beside the differentiators and never as the lead.
 
 ## Words and claims we never use
 
@@ -91,7 +91,7 @@ Retired taglines nobody should re-propose: "All Your Agents. One Place.", "Every
 ## Safety claims
 
 - Pair running it yourself with the claim that is true: "it listens only on your own machine by default." Never "sign-in required the moment you expose it".
-- State every protection together with the login setting it depends on. A protection that holds only when login is on, or only on your own machine, says so in the same sentence. The full rule and its reasoning (DOR-509) are under Pillar 3 of [`positioning-202607/02-positioning.md`](archive/positioning-202607/02-positioning.md).
+- State every protection together with the login setting it depends on. A protection that holds only when login is on, or only on your own machine, says so in the same sentence. The full rule and its reasoning (DOR-509) are under Pillar 3 of [`archive/positioning-202607/02-positioning.md`](archive/positioning-202607/02-positioning.md).
 - Trust by default is a principle until it ships. Public copy may say "agents are trusted colleagues; you can see what each one did on the Activity page". It must not claim that every action is recorded, that there is an audit trail anyone can read, that there are no permission prompts, or that agents have full power by default, until [`ROADMAP.md`](ROADMAP.md#the-demo-claim-gate) lists them as built.
 
 ## How this is enforced
