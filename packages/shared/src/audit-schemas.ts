@@ -74,6 +74,10 @@ export const AuditSourceSchema = z
     turnId: z.string().optional(),
     taskRunId: z.string().optional(),
     toolCallId: z.string().optional(),
+    /** The network address, on `admins` rows only (sign-ins). */
+    ip: z.string().optional(),
+    /** The browser or client, on `admins` rows only (sign-ins). */
+    userAgent: z.string().optional(),
   })
   .openapi('AuditSource');
 

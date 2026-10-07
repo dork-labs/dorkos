@@ -19,11 +19,23 @@ Everything that shows in Activity is also in the record. That includes:
 - permission changes
 - messages delivered between agents and chat apps
 
+The record also holds things that never show in Activity:
+
+- every DorkOS tool an agent runs that changes something, after it ran, and whether it worked
+- every setting that changed, with its old and new value
+- packages installed, updated or removed, and updates that failed
+- work merged into a room's files, and who merged it
+- API keys created or revoked, and the sign-in tokens DorkOS gives agents
+- sign-ins, sign-outs, sign-ins that expired or were revoked, and failed sign-ins
+- any other change made through the app or its API that nothing above covers: who did it, which kind of change, and whether it worked. These lines can name what was changed, such as a package or a setting, but never what was sent with it. Chat messages and room posts are conversation, not changes, so they never appear here.
+
+Sign-in lines also note the device and network they came from, so they are marked as the owner's alone.
+
 Each line says who acted. An agent is named by an id that stays the same if you rename or move it. You are named by your account, or by this computer when you haven't made an account.
 
 The record never holds message text. A changed setting that holds a secret shows its name only. Anything in a line that looks like a password or key is replaced with `[redacted]` before it is saved. That last part is best effort: it catches the usual shapes, not every possible one.
 
-More kinds of actions will join the record in later releases.
+Tools an agent runs inside Claude Code, Codex or OpenCode will join the record in a later release.
 
 ## Activity and the record
 

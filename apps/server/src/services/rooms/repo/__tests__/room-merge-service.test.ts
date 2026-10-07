@@ -43,6 +43,11 @@ import { RoomWorktreeManager } from '../room-worktree-manager.js';
 import { RoomMergeService, symlinkLeavesRepo } from '../room-merge-service.js';
 import { mergeNoFf, runGit } from '../room-repo-git.js';
 import { removeFixtureTree, silenceGitAutoMaintenance } from './fixture-git.js';
+import { auditEvents } from '@dorkos/db';
+import { AuditLog } from '../../../audit/audit-log.js';
+import { AccountIds } from '../../../audit/account-ids.js';
+import { initAuditTrail, resetAuditTrail } from '../../../audit/audit-trail.js';
+import { runWithAuditActor } from '../../../audit/audit-context.js';
 
 const ROOM_ID = '01ROOMAAAAAAAAAAAAAAAAAAAA';
 const OPERATOR = 'author-operator';
@@ -564,6 +569,46 @@ describe('RoomMergeService', () => {
       // not write it.
       expect(announced[0]?.subjectAuthorId).toBe(BEN);
       expect(announced[0]?.text).toContain('Ben merged');
+    });
+
+    // Spec `audit-trail` PR2: the commit is authored as the agent, so the
+    // audit log is where the person who MERGED it is named.
+    it('records who merged it in the audit log, not the agent whose work it is', async () => {
+      const auditDb = createTestDb();
+      initAuditTrail({
+        log: new AuditLog(auditDb),
+        accounts: new AccountIds({
+          db: auditDb,
+          installId: 'inst-1',
+          readOwnerAccount: () => null,
+        }),
+      });
+      try {
+        await enableRepo();
+        await commitIn(BEN, 'ben.md', 'ben\n');
+        const owner = {
+          actor: { accountId: 'install:inst-1', kind: 'person' as const, name: 'Owner' },
+          surface: 'app' as const,
+        };
+        const result = await runWithAuditActor(owner, () =>
+          merges.merge(ROOM_ID, OPERATOR, { summary: 'Land Ben’s work', worktree: slugOf(BEN) })
+        );
+
+        const rows = auditDb.select().from(auditEvents).all();
+        expect(rows).toMatchObject([
+          {
+            action: 'room.merged',
+            actorId: 'install:inst-1',
+            targetId: `room/${slugOf(BEN)}`,
+            containerId: ROOM_ID,
+          },
+        ]);
+        expect(JSON.parse(rows[0]!.change!)).toEqual([
+          { field: 'main', after: result.commit.slice(0, 12) },
+        ]);
+      } finally {
+        resetAuditTrail();
+      }
     });
 
     it('tells the operator there is nothing to merge when they name nothing', async () => {

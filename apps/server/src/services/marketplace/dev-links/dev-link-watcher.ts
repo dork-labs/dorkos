@@ -85,6 +85,7 @@
  *
  * @module services/marketplace/dev-links/dev-link-watcher
  */
+import { outsideAuditScope } from '../../audit/audit-context.js';
 import {
   DevLinkReloadActionSchema,
   type DevLinkRecord,
@@ -279,7 +280,10 @@ export class DevLinkWatcher {
   async start(): Promise<void> {
     const rearmMs = this.deps.rearmMs ?? DEV_LINK_REARM_MS;
     if (rearmMs > 0 && !this.sweeper) {
-      this.sweeper = setInterval(() => void this.sweep(), rearmMs);
+      this.sweeper = setInterval(
+        outsideAuditScope(() => void this.sweep()),
+        rearmMs
+      );
       this.sweeper.unref?.();
     }
     await this.sync();

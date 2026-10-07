@@ -72,6 +72,7 @@
  *
  * @module services/tasks/task-file-watcher
  */
+import { outsideAuditScope } from '../audit/audit-context.js';
 import chokidar, { type FSWatcher } from 'chokidar';
 import path from 'node:path';
 import fs from 'node:fs/promises';
@@ -527,7 +528,10 @@ export class TaskFileWatcher implements TaskWatchHealth {
   /** Start the re-arm timer, unless it is already running or switched off. */
   private startRearming(): void {
     if (this.rearmTimer || this.rearmMs <= 0) return;
-    this.rearmTimer = setInterval(() => this.rearm(), this.rearmMs);
+    this.rearmTimer = setInterval(
+      outsideAuditScope(() => this.rearm()),
+      this.rearmMs
+    );
     this.rearmTimer.unref?.();
   }
 

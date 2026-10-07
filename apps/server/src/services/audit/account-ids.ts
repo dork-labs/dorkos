@@ -56,6 +56,11 @@ const OWNER_NAME = 'Owner';
 export class AccountIds {
   constructor(private readonly deps: AccountIdDeps) {}
 
+  /** The id the owner is known by before any account exists: `install:<install id>`. */
+  installAccountId(): string {
+    return `install:${this.deps.installId}`;
+  }
+
   /**
    * The person who owns this install: their account when there is one, else
    * the install itself.
@@ -64,7 +69,7 @@ export class AccountIds {
     const account = this.deps.readOwnerAccount();
     return account
       ? { accountId: account.id, kind: 'person', name: account.name || OWNER_NAME }
-      : { accountId: `install:${this.deps.installId}`, kind: 'person', name: OWNER_NAME };
+      : { accountId: this.installAccountId(), kind: 'person', name: OWNER_NAME };
   }
 
   /**
@@ -85,6 +90,32 @@ export class AccountIds {
    */
   agent(ref: string, name: string): AuditActor {
     return { accountId: this.agentAccountId(ref), kind: 'agent', name };
+  }
+
+  /**
+   * A signed-in account: the owner (with their name) when it is theirs, else a
+   * person known only by id. A local install has one account, so the second
+   * branch is for spaces with more than one.
+   *
+   * @param userId - The account id the request proved.
+   */
+  forUser(userId: string): AuditActor {
+    const owner = this.deps.readOwnerAccount();
+    return owner && owner.id === userId
+      ? this.owner()
+      : { accountId: userId, kind: 'person', name: 'Person' };
+  }
+
+  /**
+   * An agent caller: the agent its token named, or `unidentified` when the token
+   * named nobody.
+   *
+   * @param identity - What the token resolved to, if anything.
+   */
+  forAgentIdentity(identity: { agentPath: string; displayName: string } | undefined): AuditActor {
+    return identity
+      ? this.agent(identity.agentPath, identity.displayName || path.basename(identity.agentPath))
+      : this.unidentified('Unidentified caller');
   }
 
   /** DorkOS itself, under the name a reader should see. */
@@ -114,4 +145,18 @@ export class AccountIds {
     const digest = createHash('sha256').update(ref, 'utf8').digest('hex').slice(0, 16);
     return `unregistered:${digest}`;
   }
+}
+
+/**
+ * A credential as the log names it: its kind and a short, one-way hash of its
+ * id. Never the credential itself.
+ *
+ * @param kind - What kind of credential acted.
+ * @param id - A stable id for it (an API key record id, a token digest).
+ */
+export function credentialRef(
+  kind: 'cookie' | 'api-key' | 'agent-token' | 'mcp-local',
+  id: string
+): { kind: string; idHash: string } {
+  return { kind, idHash: createHash('sha256').update(id, 'utf8').digest('hex').slice(0, 12) };
 }

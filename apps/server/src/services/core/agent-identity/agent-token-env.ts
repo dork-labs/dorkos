@@ -14,6 +14,8 @@
  *
  * @module services/core/agent-identity/agent-token-env
  */
+import { auditTrail, recordAudit } from '../../audit/audit-trail.js';
+import { credentialRef } from '../../audit/account-ids.js';
 import { readManifest } from '@dorkos/shared/manifest';
 
 import { logger } from '../../../lib/logger.js';
@@ -59,6 +61,21 @@ export async function resolveAgentTokenEnv(
       agentPath,
       displayName: displayName?.trim() || agentPath,
     });
+    // The token's lifecycle in the audit log (spec `audit-trail` PR2): DorkOS
+    // minted it, for this agent. Named by a short one-way hash, never itself.
+    const trail = auditTrail();
+    if (trail) {
+      const agent = trail.accounts.agent(agentPath, displayName?.trim() || agentPath);
+      recordAudit({
+        actor: trail.accounts.system(),
+        credential: credentialRef('agent-token', token),
+        action: 'agent_token.minted',
+        operation: 'create',
+        target: { type: 'agent', id: agent.accountId, name: agent.name },
+        outcome: 'ok',
+        summary: `Gave ${agent.name} a sign-in token for a new session`,
+      });
+    }
     return { [AGENT_TOKEN_ENV_VAR]: token };
   } catch (err) {
     // Log the agent, never the token, and let the spawn proceed unattributed.

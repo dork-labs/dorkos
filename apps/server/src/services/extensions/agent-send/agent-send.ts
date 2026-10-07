@@ -64,6 +64,7 @@
  *
  * @module services/extensions/agent-send/agent-send
  */
+import { outsideAuditScope } from '../../audit/audit-context.js';
 import crypto from 'node:crypto';
 import type { MeshCore } from '@dorkos/mesh';
 import {
@@ -255,7 +256,10 @@ export class AgentSendService {
       );
     }
     const retryMs = this.deps.retryMs ?? HELD_RETRY_MS;
-    this.retryTimer = setInterval(() => void this.drainHeld(), retryMs);
+    this.retryTimer = setInterval(
+      outsideAuditScope(() => void this.drainHeld()),
+      retryMs
+    );
     this.retryTimer.unref?.();
   }
 

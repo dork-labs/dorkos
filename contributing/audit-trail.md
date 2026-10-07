@@ -25,6 +25,39 @@ The audit log is one append-only, hash-chained table, `audit_events`, that recor
 5. **Redaction is the writer's job.** `record` sweeps every free-text field for anything that looks like a password or key (known prefixes, long hex, JWTs, URL passwords, `name=value` and `"name": "value"` where the name says secret), empties any member whose name says secret, and empties the values of any `change` on a `SENSITIVE_CONFIG_KEYS` field or a field whose path names a secret. It is best effort, and it is linear: free text is cut to 16,000 characters before the sweep and every pattern is bounded, because a quadratic pattern let one long string block the server for seconds. A test pins that. Numbers and yes/no values are never blanked (`maxTokens: 4096` is a setting, not a secret). Pass raw values; do not pre-redact. Redaction is a net, not a licence: never put a secret's value in `summary`; write "used secret X".
 6. **`record` never throws.** It logs a warn and returns `undefined`, so a failing audit write cannot fail the action it records.
 
+## Who acted: the audit scope
+
+`services/audit/audit-context.ts` carries the actor across one async chain (an `AsyncLocalStorage`, like `lib/dispatch-context.ts`). Deep writers call `recordAudit(...)` from `services/audit/audit-trail.ts`, which takes the actor, surface, session and credential from the scope and falls back to DorkOS itself. Three edges enter a scope:
+
+- `middleware/audit-actor.ts`, per request, after `sessionGate` and `resolveAgentIdentity`: the agent a token names (or `unidentified`), the account an API key or cookie proves, or the owner with login off.
+- `core/mcp-tool-gate.ts`, per allowed hand-registered tool call, in session always (the scope there would otherwise be the person whose message started the turn) and on `/mcp` when the call carries an identity.
+- `core/capabilities/registry.ts`, per invocation with an identity (`runAsAgent`).
+
+A turn runs detached from the request that started it, so anything a tool does without one of the last two edges is recorded as the PERSON. When you add a new way for an agent to act, enter a scope for it. An in-session call with no identity is named `unidentified`, never the person (`runAsAgent(..., { inSession })`).
+
+The request scope is lazy: the actor and credential are read the first time something asks, and remembered, so a read that records nothing costs nothing, and a gate that runs after the middleware (the `/mcp` authorizer) is still seen. Credential kinds: `agent-token` (hash of the presented token, matching its `agent_token.minted` row), `api-key`, `cookie`, `mcp-local`.
+
+**Timers and loops inherit the scope they were created in.** A cron registered inside a person's request would name that person for every firing. Start long-lived work with `outsideAuditScope(callback)` / `runOutsideAuditScope(fn)` from `services/audit/audit-context.ts`; the scheduler's cron, the reconcilers, the sweeps and the lazily started loops already do (`services/tasks/__tests__/scheduler-audit-scope.test.ts` proves it with a real firing). A new `setInterval`/`Cron` that can be started from a request needs the same wrap.
+
+## The request fallback
+
+`middleware/audit-request-fallback.ts`, mounted right after `auditActor`, records `http.<method>` (route pattern with ids as `:id`, outcome from the status; never body or query) for any mutating `/api` request that finished with nothing recorded under its scope. Every successful `AuditLog.record` marks its scope and every enclosing scope as recorded (`markAuditScopeRecorded`), so a request a choke point covered, even in a narrower agent scope, adds nothing. A precise choke point is always better than this line: when you see `http.*` rows for a route that matters, add one. Conversation is never recorded here (`CONVERSATION`: chat messages, queued-message edits, room entries, reactions, threads, message attachments): it is speech, not action, and a person's private chat must not surface as rows the space can read. Requests that change nothing (`/read`, `/preview`, `/check`, `/probe`, `/heartbeat`, devtools ingest, …) are listed in `NOT_ACTIONS`. A row keeps the route with only id-shaped segments masked, so non-id segments such as a package name or the NAME of a secret setting do appear; values never do, because the body and query are never read.
+
+`recordAudit` does nothing before `initAuditTrail` (set by `wireAuditTrail` at startup), so a unit test that does not set one up is unaffected.
+
+## What PR2 records, and where
+
+| Action                                                                                                                                                                  | Choke point                                                                                          |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `mcp.<tool>` (act/destructive tools that ran; `links.approvalId` when a granted token was spent)                                                                        | `core/mcp-tool-gate.ts` `invokeAudited`                                                              |
+| `capability.invoked/failed` by an unidentified caller (act tier)                                                                                                        | `core/agent-identity/capability-attribution.ts`, audit only, not Activity                            |
+| `config.changed` with per-leaf before/after                                                                                                                             | `core/operator/config-write.ts` (both the guarded write and `logConfigWrite`)                        |
+| `marketplace.installed/updated/uninstalled` (version and short commit before/after), `marketplace.update_failed` (`remove` when the old version is gone, else `modify`) | `MarketplaceInstaller.install/update`, `UninstallFlow.uninstall` (not the removal half of an update) |
+| `auth.signed_in/signed_out/session_revoked/session_expired/session_ended/sign_in_failed/sign_in_rate_limited` (admins), `account.linked`, `api_key.created/revoked`     | `core/auth/auth-audit.ts`, Better Auth hooks, `middleware/auth-rate-limit.ts`                        |
+| `agent_token.minted/revoked`                                                                                                                                            | `agent-identity/agent-token-env.ts`, `unregister-cascade.ts`                                         |
+| `room.merged` (the merger, not the commit author)                                                                                                                       | `rooms/repo/room-merge-service.ts`                                                                   |
+| `http.<method>` for any mutating `/api` request nothing else recorded                                                                                                   | `middleware/audit-request-fallback.ts`                                                               |
+
 ## One or the other, never both
 
 A choke point records an action in ONE of two ways:
@@ -33,6 +66,10 @@ A choke point records an action in ONE of two ways:
 - It calls `auditLog.record(...)` directly, for actions that have no place in the human feed.
 
 Doing both records the action twice. If you add a direct `record` call next to an existing `emit`, remove one of them.
+
+The one deliberate layering: the MCP gate's `mcp.<tool>` row says a TOOL ran, and the domain may also record what that tool changed (`tasks_delete` writes `tasks.task_deleted` to Activity). Those are two facts at two levels, both under the same actor and session, not one fact twice.
+
+Long hex is redacted as a possible secret, so record a commit or digest by its 12-character short form.
 
 ## Adding a choke point
 

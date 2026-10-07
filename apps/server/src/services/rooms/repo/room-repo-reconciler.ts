@@ -50,6 +50,7 @@
  *
  * @module server/services/rooms/repo/room-repo-reconciler
  */
+import { outsideAuditScope } from '../../audit/audit-context.js';
 import { logger } from '../../../lib/logger.js';
 import type { RoomRepoStore } from './room-repo-store.js';
 import type { RoomWorktreeManager } from './room-worktree-manager.js';
@@ -157,7 +158,10 @@ export class RoomRepoReconciler {
   /** Start the periodic timer (unref'd so it never blocks process exit). */
   start(): void {
     if (this.timer) return;
-    this.timer = setInterval(() => this.runTick(), this.intervalMs);
+    this.timer = setInterval(
+      outsideAuditScope(() => this.runTick()),
+      this.intervalMs
+    );
     this.timer.unref();
   }
 

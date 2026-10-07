@@ -37,6 +37,7 @@
  *
  * @module services/extensions/extension-inbox
  */
+import { outsideAuditScope } from '../../audit/audit-context.js';
 import fs from 'fs';
 import { monotonicFactory } from 'ulidx';
 import { and, eq, isNull, isNotNull, lt, extensionDecisions, type Db } from '@dorkos/db';
@@ -1176,7 +1177,10 @@ export class ExtensionInboxService {
   /** Start the folder sweep once something is running. */
   private startSweep(): void {
     if (this.sweep) return;
-    this.sweep = setInterval(() => this.sweepFolders(), FOLDER_SWEEP_MS);
+    this.sweep = setInterval(
+      outsideAuditScope(() => this.sweepFolders()),
+      FOLDER_SWEEP_MS
+    );
     this.sweep.unref?.();
   }
 
