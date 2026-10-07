@@ -176,3 +176,24 @@ describe('dates', () => {
     expect(PAID_FROM).toBe('October 27, 2026');
   });
 });
+
+describe('coming soon marks on whole comparison rows', () => {
+  it('marks the hosted-space and agent-seat rows, and only those', () => {
+    const marked = COMPARE.flatMap((group) => group.rows)
+      .filter((row) => row.comingSoon)
+      .map((row) => row.label);
+    expect(marked).toEqual([
+      'Extra agents',
+      'An email address for each seat',
+      'Spaces you can start',
+      'People in each space',
+      'Storage for spaces',
+    ]);
+  });
+
+  it('marks the Team seat benefit like the other plans’ agent rooms', () => {
+    const team = PLANS.find((plan) => plan.id === 'team');
+    const seat = team?.benefits.find((b) => itemText(b).startsWith('A seat for each person'));
+    expect(seat && isComingSoon(seat)).toBe(true);
+  });
+});

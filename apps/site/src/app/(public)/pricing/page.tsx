@@ -305,7 +305,9 @@ function CompareTable() {
             {group.rows.map((row) => (
               <tr key={row.label} className="border-charcoal/10 border-t">
                 <th scope="row" className="w-[26%] p-3 align-top font-normal">
-                  <span className="text-charcoal block">{row.label}</span>
+                  <span className="text-charcoal block">
+                    {row.label} {row.comingSoon ? <ComingSoonBadge /> : null}
+                  </span>
                   {row.hint ? (
                     <span className="text-warm-gray block text-xs">{row.hint}</span>
                   ) : null}

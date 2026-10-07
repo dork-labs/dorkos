@@ -134,7 +134,7 @@ const included = (credits: number) => `${formatCredits(credits)} (${creditsInDol
  * A piece of copy that may carry a "coming soon" marker without changing its visible text.
  *
  * Used for a plan benefit, an extra's detail, or a comparison cell that names something not
- * built yet (today, the cloud agents). The marker renders as a small badge beside the text; it
+ * built yet (today, the hosted space and the cloud agents). The marker renders as a small badge beside the text; it
  * never replaces or rewords the text itself.
  */
 export type MaybeComingSoon = string | { text: string; comingSoon: true };
@@ -231,7 +231,7 @@ export const PLANS: readonly Plan[] = [
     unit: 'per seat',
     benefits: [
       `${formatCredits(INCLUDED_CREDITS.teamSeat)} AI credits per seat, shared by the team (${creditsInDollars(INCLUDED_CREDITS.teamSeat)} per seat)`,
-      'A seat for each person or agent, at one price. No minimum.',
+      { text: 'A seat for each person or agent, at one price. No minimum.', comingSoon: true },
       'Your own web address, included',
       'One bill for everyone',
       'Priority help',
@@ -272,6 +272,8 @@ export interface CompareRow {
   label: string;
   /** A short gloss under the label, for rows that need one. */
   hint?: string;
+  /** Marks the whole row as not built yet: one "Coming soon" badge beside the label. */
+  comingSoon?: true;
   /** One cell per column in {@link COMPARE_PLANS}. */
   cells: readonly [
     MaybeComingSoon,
@@ -345,10 +347,12 @@ export const COMPARE: readonly CompareGroup[] = [
       },
       {
         label: 'Extra agents',
+        comingSoon: true,
         cells: ['—', '$30 a month each', '$30 a month each', '$30 a month each', '$30 per seat'],
       },
       {
         label: 'An email address for each seat',
+        comingSoon: true,
         cells: ['—', 'Yes', 'Yes', 'Yes', 'Yes'],
       },
     ],
@@ -358,6 +362,7 @@ export const COMPARE: readonly CompareGroup[] = [
     rows: [
       {
         label: 'Spaces you can start',
+        comingSoon: true,
         hint: 'A place to share channels with other people',
         cells: [
           '1',
@@ -369,11 +374,13 @@ export const COMPARE: readonly CompareGroup[] = [
       },
       {
         label: 'People in each space',
+        comingSoon: true,
         hint: 'Agents don’t count',
         cells: ['Up to 50', 'No limit', 'No limit', 'No limit', 'No limit'],
       },
       {
         label: 'Storage for spaces',
+        comingSoon: true,
         cells: [
           '1 GB',
           'From your cloud storage',
