@@ -124,11 +124,12 @@ describe('the settled lines', () => {
 
   it('never says where DorkOS runs, or "open source", in a headline', () => {
     // DorkOS Cloud runs it on a server too, so ownership is phrased as
-    // "yours". The download terms line under the button is a fact, not a
-    // headline, and is exempt.
+    // "yours". The download terms line sits in the hero too, so it is
+    // covered.
     const headlines = [
       ...Object.values(HERO),
-      ...Object.values(BEATS).flatMap((beat) => [beat.eyebrow, beat.title]),
+      ...Object.values(BEATS).flatMap((beat) => [beat.eyebrow, beat.title, beat.lede]),
+      DOWNLOAD.terms,
       CLOSE.title,
     ];
     expect(headlines.filter((line) => /computer|open source/i.test(line))).toEqual([]);
@@ -160,7 +161,7 @@ describe('the settled lines', () => {
   it('says what running agents costs, since the page says "free" twice', () => {
     // The FAQ further down answers this too; the top of a page this short has
     // to say it in a line,
-    // or "free · open source" stands alone, which is true of DorkOS and false
+    // or "free" stands alone, which is true of DorkOS and false
     // of running agents.
     expect(DOWNLOAD.terms).toContain('free');
     expect(CLOSE.cost).toMatch(/free/i);

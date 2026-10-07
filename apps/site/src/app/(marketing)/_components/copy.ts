@@ -64,7 +64,7 @@ export const BEATS: Record<Beat, Block> = {
     lede: 'Your agents build it right inside DorkOS. It opens once you say yes.',
   },
   computer: {
-    eyebrow: 'all yours',
+    eyebrow: 'ownership',
     title: 'Yours to keep.',
     lede: 'Your agents, tools, files and data stay yours, wherever they run. Use the AI plan you already have. No DorkOS account needed.',
   },
@@ -116,8 +116,8 @@ export const CLOSE = {
   /**
    * The bill, said once and plainly.
    *
-   * "free · open source" is true of DorkOS and false of running agents, and
-   * this page says the first part twice. `/` can afford to answer it in a FAQ
+   * "free" is true of DorkOS and false of running agents, and this page
+   * says it more than once. `/` can afford to answer it in a FAQ
    * entry; a page with a word budget this small has to answer it in a line,
    * or the cheerful half stands alone.
    */
@@ -143,7 +143,7 @@ export const CLOSE = {
 /** What the download button offers, and what it costs. */
 export const DOWNLOAD = {
   label: 'Download for Mac',
-  terms: 'free · open source · apple silicon',
+  terms: 'free · mit license · apple silicon',
 } as const;
 
 /** Introduces the terminal install, wherever the download button appears. */
