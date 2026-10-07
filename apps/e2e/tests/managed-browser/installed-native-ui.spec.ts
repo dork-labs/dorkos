@@ -1,6 +1,7 @@
-import { test, expect } from '../../fixtures/managed-browser-receiver';
+import { test, expect } from '../../fixtures/managed-browser-copy-permission';
 import { ManagedBrowserPage } from '../../pages/ManagedBrowserPage';
 import { writeFile } from 'node:fs/promises';
+import { BrowserInputRequestSchema } from '@dorkos/shared/browser-schemas';
 import type { Locator, Page, Request, Response } from '@playwright/test';
 
 /** Join the original UI action and every matching save, including on failure. */
@@ -95,6 +96,7 @@ test('Installed saved and clean browsers draw frames, show caret and pointer, ty
   page,
   settingsPage,
   managedReceiver,
+  copyPermissionRefusal,
 }, testInfo) => {
   test.setTimeout(180_000);
   // Bound genuine locator actions; the original runtime-enable wait keeps its existing total budget.
@@ -405,6 +407,49 @@ test('Installed saved and clean browsers draw frames, show caret and pointer, ty
       .poll(async () => (await pixels(view, metrics.width, metrics.height))?.whiteColumns ?? 0)
       .toBeGreaterThan(4);
     await page.screenshot({ path: testInfo.outputPath('native-typed.png') });
+    // Select only this fixture's typed marker through original native keyboard delivery.
+    for (let index = 0; index < marker.length; index++) {
+      const selecting = page.waitForResponse(
+        (response) => {
+          if (
+            response.status() !== 200 ||
+            response.request().method() !== 'POST' ||
+            new URL(response.url()).pathname !== '/api/browser/input'
+          )
+            return false;
+          try {
+            const command = BrowserInputRequestSchema.safeParse(
+              response.request().postDataJSON()?.command
+            );
+            return (
+              command.success &&
+              command.data.steps.some((step) => step.kind === 'keyDown' && step.key === 'Shift') &&
+              command.data.steps.some((step) => step.kind === 'keyDown' && step.key === 'ArrowLeft')
+            );
+          } catch {
+            return false;
+          }
+        },
+        { timeout: 10_000 }
+      );
+      void selecting.catch(() => {});
+      try {
+        await page.keyboard.press('Shift+ArrowLeft');
+        await selecting;
+      } finally {
+        await Promise.allSettled([selecting]);
+      }
+    }
+    await copyPermissionRefusal.verify(marker, async () => {
+      await page.getByRole('textbox', { name: 'Browser typing', exact: true }).focus();
+      await page.keyboard.press('r');
+      await expect.poll(() => managedReceiver.observations.at(-1)?.value).toBe('r');
+      await expect.poll(() => managedReceiver.observations.at(-1)?.focused).toBe(true);
+      await expect(
+        page.getByRole('button', { name: 'You have control', exact: true })
+      ).toBeVisible();
+    });
+
     expect(managedReceiver.visits[0]?.cookieReturned).toBe(false);
     await view.closeSaved(label);
     await view.openSaved();

@@ -151,6 +151,7 @@ export async function runPrivateOriginalFrameWindow(options: {
           LC_ALL: 'C',
           NODE_ENV: 'production',
           DORK_HOME: options.input.home,
+          DORKOS_SEARCH_NO_EXTERNAL_HISTORY: 'true',
           DORKOS_HOST: '127.0.0.1',
           DORKOS_TELEMETRY_DISABLED: '1',
           OTEL_SDK_DISABLED: 'true',

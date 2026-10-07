@@ -295,7 +295,12 @@ export async function createOriginalStorageOrigin(signal: AbortSignal) {
         else yes();
       })
     );
-    for (const socket of sockets.keys()) socket.destroy();
+    for (const socket of sockets.keys())
+      try {
+        socket.destroy();
+      } catch (value) {
+        retain(value);
+      }
     for (const result of await Promise.allSettled([...jobs, ...socketReturns, returned]))
       if (result.status === 'rejected') retain(result.reason);
     server.removeListener('error', errors);

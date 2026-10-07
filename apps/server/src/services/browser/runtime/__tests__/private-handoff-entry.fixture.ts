@@ -21,6 +21,7 @@ async function main() {
   const input = await readPublicNativeInput(inputPath, current);
   // Set before importing the genuine original index/env/config constructors.
   process.env.DORK_HOME = input.home;
+  process.env.DORKOS_SEARCH_NO_EXTERNAL_HISTORY = 'true';
   process.env.DORKOS_PORT = String(input.port);
   process.env.DORKOS_HOST = '127.0.0.1';
   process.env.DORKOS_DEFAULT_CWD = input.home;

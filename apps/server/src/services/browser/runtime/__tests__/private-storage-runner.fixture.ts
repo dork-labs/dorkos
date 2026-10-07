@@ -189,6 +189,7 @@ export async function withOriginalInstalledBrowserRound(
           LC_ALL: 'C',
           NODE_ENV: 'production',
           DORK_HOME: options.input.home,
+          DORKOS_SEARCH_NO_EXTERNAL_HISTORY: 'true',
           DORKOS_HOST: '127.0.0.1',
           DORKOS_TELEMETRY_DISABLED: '1',
           OTEL_SDK_DISABLED: 'true',
@@ -200,7 +201,11 @@ export async function withOriginalInstalledBrowserRound(
     const stop = () => {
       fail(signal.reason);
       stopping = true;
-      if (original.exitCode === null && original.signalCode === null) original.kill('SIGTERM');
+      try {
+        if (original.exitCode === null && original.signalCode === null) original.kill('SIGTERM');
+      } catch (value) {
+        fail(value);
+      }
     };
     // Body failure fences its work; only the existing parent lifetime can stop
     // the CLI before authenticated Off cleanup has had its original turn.
@@ -421,7 +426,11 @@ export async function withOriginalInstalledBrowserRound(
           options.signal.removeEventListener('abort', abortOff);
         }
         stopping = true;
-        if (cli && cli.exitCode === null && cli.signalCode === null) cli.kill('SIGTERM');
+        try {
+          if (cli && cli.exitCode === null && cli.signalCode === null) cli.kill('SIGTERM');
+        } catch (value) {
+          fail(value);
+        }
         for (const original of [returned, ...pipes])
           if (original)
             try {

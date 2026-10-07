@@ -635,6 +635,7 @@ it.skipIf(!fixturePath || process.platform !== 'darwin' || process.arch !== 'arm
             LC_ALL: 'C',
             NODE_ENV: 'production',
             DORK_HOME: input.home,
+            DORKOS_SEARCH_NO_EXTERNAL_HISTORY: 'true',
             DORKOS_HOST: '127.0.0.1',
             DORKOS_BROWSER_PRIVATE_NATIVE_ACCEPTANCE: '1',
             DORKOS_TELEMETRY_DISABLED: '1',

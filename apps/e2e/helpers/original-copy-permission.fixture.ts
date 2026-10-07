@@ -1,4 +1,10 @@
-import { expect, type Page, type Route } from '@playwright/test';
+import { expect, type Page, type Route, type Response } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
+import {
+  BrowserInputRequestSchema,
+  BrowserReferenceSchema,
+  BrowserCopySelectionReceiptSchema,
+} from '@dorkos/shared/browser-schemas';
 
 /** Install before the original outer app navigation, on a disposable frontend only.
  * This denies clipboard writes in the browser; it never reads the operator clipboard. */
@@ -40,12 +46,50 @@ export async function retainOriginalCopyPermissionRefusal(page: Page) {
       .finally(() => originals.delete(operation));
     return operation;
   };
-  const pattern = '**/browser';
-  await route(pattern, handler);
+  const pattern = (url: URL) => url.pathname === '/browser';
+  let originalInput:
+    | { controllerId: string; command: ReturnType<typeof BrowserInputRequestSchema.parse> }
+    | undefined;
+  const observeInput = (response: Response) => {
+    if (
+      response.status() !== 200 ||
+      response.request().method() !== 'POST' ||
+      new URL(response.url()).pathname !== '/api/browser/input'
+    )
+      return;
+    try {
+      const body: unknown = response.request().postDataJSON();
+      if (!body || typeof body !== 'object') throw new Error('COPY_ORIGINAL_INPUT_REQUIRED');
+      const value = body as Record<string, unknown>;
+      if (Object.keys(value).sort().join(',') !== 'command,controllerId')
+        throw new Error('COPY_ORIGINAL_OWNER_INPUT_REQUIRED');
+      originalInput = {
+        controllerId: BrowserReferenceSchema.parse(value.controllerId),
+        command: BrowserInputRequestSchema.parse(value.command),
+      };
+    } catch (value) {
+      first ??= { value };
+    }
+  };
+  page.on('response', observeInput);
+  try {
+    await route(pattern, handler);
+  } catch (value) {
+    first ??= { value };
+    closed = true;
+    page.off('response', observeInput);
+    try {
+      await unroute(pattern, handler);
+    } catch {
+      /* Original installation failure retains precedence. */
+    }
+    await Promise.allSettled([...originals]);
+    throw first.value;
+  }
   let closing: Promise<void> | undefined;
   return Object.freeze({
-    /** Caller supplies the genuine qualified viewer; no selected text or OS content is read here. */
-    async verify(recoverOriginalInput: () => Promise<void>) {
+    /** Read only the fixture marker through the public owner API; never access the OS clipboard. */
+    async verify(expectedText: string, recoverOriginalInput: () => Promise<void>) {
       const recover = recoverOriginalInput.bind(undefined);
       requireOriginalFailureFree();
       if (closed) throw new Error('COPY_PERMISSION_FIXTURE_CLOSED');
@@ -56,13 +100,38 @@ export async function retainOriginalCopyPermissionRefusal(page: Page) {
         return policy?.allowsFeature('clipboard-write') === false;
       });
       if (!denied) throw new Error('COPY_PERMISSION_REFUSAL_UNAVAILABLE');
+      if (!originalInput || !expectedText || expectedText.length > 64)
+        throw new Error('COPY_ORIGINAL_SELECTION_REQUIRED');
+      const input = originalInput;
+      const requestId = randomUUID();
+      // A genuine authenticated preflight proves selection before the denied gesture can abort its own read.
+      const selected = await page.request.post(
+        new URL('/api/browser/copy-selection', page.url()).href,
+        {
+          headers: { Origin: new URL(page.url()).origin },
+          data: {
+            controllerId: input.controllerId,
+            command: { requestId, binding: input.command.binding },
+          },
+          timeout: 10_000,
+        }
+      );
+      expect(selected.status()).toBe(200);
+      const receipt = BrowserCopySelectionReceiptSchema.parse(await selected.json());
+      expect(receipt.requestId).toBe(requestId);
+      expect(receipt.binding).toEqual(input.command.binding);
+      expect(receipt.outcome).toBe('selected');
+      if (receipt.outcome !== 'selected')
+        throw new Error('COPY_ORIGINAL_NONEMPTY_SELECTION_REQUIRED');
+      expect(receipt.text).toBe(expectedText);
+      requireOriginalFailureFree();
       const button = page.getByRole('button', { name: 'Copy selected text', exact: true });
       await expect(button).toBeVisible();
       await button.click();
       await expect(
         page.getByRole('status').filter({ hasText: 'Clipboard permission was denied.' })
       ).toHaveCount(1);
-      await expect(page.getByRole('img', { name: 'Browser view', exact: true })).toHaveCount(1);
+      await expect(page.getByRole('img', { name: 'Shared browser', exact: true })).toHaveCount(1);
       await expect(button).toBeEnabled();
       // The surrounding original UI fixture supplies its actual typing/receiver assertion.
       await recover();
@@ -79,6 +148,11 @@ export async function retainOriginalCopyPermissionRefusal(page: Page) {
       closed = true;
       void (async () => {
         let failure = first;
+        try {
+          page.off('response', observeInput);
+        } catch (value) {
+          failure ??= { value };
+        }
         try {
           await unroute(pattern, handler);
         } catch (value) {
