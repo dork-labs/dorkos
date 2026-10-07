@@ -8,6 +8,7 @@ covers:
   - 'refactor(browser): isolate lifecycle tracking and acceptance checks'
   - 'feat(browser): expose granted agent diagnostics and trace proxy refusals'
   - 'feat(browser): import sign-ins into isolated managed profiles'
+  - 'fix(browser): preserve saved profiles during import upgrades'
 ---
 
 ### Added
@@ -21,3 +22,4 @@ covers:
 
 - Wait for an in-flight browser frame to finish before renewing the view, so renewal does not start overlapping captures.
 - Keep browser work running when an observed helper exits during a process check.
+- Preserve saved profiles and their session links when updating to a version that supports sign-in imports.
