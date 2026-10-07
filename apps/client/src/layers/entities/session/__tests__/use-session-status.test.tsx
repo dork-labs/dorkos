@@ -160,36 +160,7 @@ describe('useSessionStatus', () => {
     });
   });
 
-  it('hands a failure to the caller, after the rollback and without throwing', async () => {
-    // The Trust Dial needs this: a Full-autonomy write the server refuses is a
-    // question to re-ask, not a fault to report. It sees the refusal only if the
-    // hook offers it one — and only after the optimistic mode is already back to
-    // what the server says, so whatever it draws is drawn over settled state.
-    const refusal = Object.assign(new Error('needs consent'), {
-      code: 'AUTONOMY_ACK_REQUIRED',
-    });
-    const transport = createMockTransport({
-      getSession: vi
-        .fn()
-        .mockResolvedValue({ id: 's1', model: 'server', permissionMode: 'default' }),
-      updateSession: vi.fn().mockRejectedValue(refusal),
-    });
-
-    const { result } = renderHook(() => useSessionStatus('s1', null, false), {
-      wrapper: createWrapper(transport),
-    });
-    await waitFor(() => expect(result.current.permissionMode).toBe('default'));
-
-    const onError = vi.fn();
-    await act(async () => {
-      await result.current.updateSession({ permissionMode: 'bypassPermissions' }, { onError });
-    });
-
-    expect(onError).toHaveBeenCalledWith(refusal);
-    expect(result.current.permissionMode).toBe('default');
-  });
-
-  it('swallows a failure when the caller asked for nothing', async () => {
+  it('swallows a failure rather than rethrowing', async () => {
     // The default stays fire-and-forget. Rethrowing would turn every dropped
     // connection on a fire-and-forget write into an unhandled rejection.
     const transport = createMockTransport({

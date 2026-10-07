@@ -35,12 +35,6 @@ vi.mock('../../../../core/cloud/credits-model-gate.js', () => ({
     model === 'opus' ? 'DorkOS credits don’t cover that model. Pick one from the model menu.' : null
   ),
 }));
-// Whether the person has a standing Full autonomy acknowledgement on file.
-const consent = vi.hoisted(() => ({ acknowledged: true }));
-vi.mock('../../../../core/approvals/autonomy-consent.js', async (importOriginal) => ({
-  ...(await importOriginal<object>()),
-  hasStandingAutonomyAck: vi.fn(() => consent.acknowledged),
-}));
 /** The stored settings rows `getSessionSettings` answers from, by session id. */
 const storedSettings = vi.hoisted(() => new Map<string, { permissionMode?: string }>());
 vi.mock('../../../../core/runtime-registry.js', () => ({
@@ -276,7 +270,6 @@ beforeEach(() => {
     ...codex.getCapabilities(),
     permissionModes: CODEX_CAPABILITIES.permissionModes,
   });
-  consent.acknowledged = true;
   storedSettings.clear();
   runtimes.set('claude-code', claude);
   runtimes.set('codex', codex);
@@ -1159,28 +1152,21 @@ describe("session_start runs at the calling chat's level or lower (spec inherite
     });
   });
 
-  describe('Full autonomy still needs the standing acknowledgement', () => {
-    it('refuses Bypass permissions, asked for by name, with none on file', async () => {
-      consent.acknowledged = false;
-      expect(
-        await expectRefused(fromChatAt('bypassPermissions'), {
-          ...BASE,
-          permissionMode: 'bypassPermissions',
-        })
-      ).toMatchObject({ code: 'AUTONOMY_ACK_REQUIRED' });
-    });
-
-    it('refuses a never-asking Codex mode too, and grants a lower one', async () => {
-      consent.acknowledged = false;
-      expect(
-        await expectRefused(fromChatAt('bypassPermissions'), {
-          ...BASE,
-          runtime: 'codex',
-          permissionMode: 'acceptEdits',
-        })
-      ).toMatchObject({ code: 'AUTONOMY_ACK_REQUIRED' });
+  // The Full-autonomy acknowledgement is retired (ADR 261006-225605,
+  // DOR-2739): a level named by the caller and within its ceiling is granted.
+  describe('Full autonomy, named and within the ceiling', () => {
+    it('grants Bypass permissions asked for by name from a chat at that level', async () => {
       const result = await fromChatAt('bypassPermissions')({
         ...BASE,
+        permissionMode: 'bypassPermissions',
+      });
+      expect(result.isError).toBeUndefined();
+    });
+
+    it('grants a never-asking Codex mode asked for by name', async () => {
+      const result = await fromChatAt('bypassPermissions')({
+        ...BASE,
+        runtime: 'codex',
         permissionMode: 'acceptEdits',
       });
       expect(result.isError).toBeUndefined();

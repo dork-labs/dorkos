@@ -1,3 +1,4 @@
+import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
 import { describe, it, expect, vi } from 'vitest';
 import {
   parseConfigValue,
@@ -10,9 +11,8 @@ import {
   handleConfigValidate,
   handleConfigCommand,
 } from '../config-commands.js';
-import { handleConfigAcknowledgeAutonomy } from '../config-write.js';
 import type { ConfigStore } from '../config-commands.js';
-import type { CliConfigWriter, ConsentPrompt } from '../config-write.js';
+import type { CliConfigWriter } from '../config-write.js';
 import type { GuardedConfigWriteResult } from '../../server/services/core/operator/config-write.js';
 import type { UserConfig } from '@dorkos/shared/config-schema';
 
@@ -253,9 +253,8 @@ describe('handleConfigSet', () => {
   });
 
   it('prints the refusal and writes nothing when the guarded step says no', async () => {
-    // The shape the Full-autonomy consent door produces. The CLI has to show
-    // the server's own sentence — a refusal worded differently in the terminal
-    // teaches people they are two different rules.
+    // The CLI has to show the server's own sentence — a refusal worded
+    // differently in the terminal teaches people they are two different rules.
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
@@ -264,24 +263,18 @@ describe('handleConfigSet', () => {
     const store = createMockStore();
     const writer = createMockWriter({
       refusal: {
-        status: 428,
-        code: 'AUTONOMY_ACK_REQUIRED',
-        error:
-          'Starting every new session in Full autonomy needs you to confirm what it means first.',
-        message:
-          'Starting every new session in Full autonomy needs you to confirm what it means first.',
-        paths: ['runtimes.claudeCode.defaultTrustStop'],
+        status: 403,
+        code: 'OPERATOR_ONLY',
+        error: 'Only you can change this setting.',
+        message: 'Only you can change this setting.',
+        paths: ['auth.enabled'],
       },
     });
 
-    await expect(
-      handleConfigSet(store, 'runtimes.claudeCode.defaultTrustStop', 'autonomy', writer)
-    ).rejects.toThrow('exit');
+    await expect(handleConfigSet(store, 'auth.enabled', 'false', writer)).rejects.toThrow('exit');
 
-    expect(errorSpy.mock.calls[0][0]).toContain('confirm what it means first');
-    // A sentence with no next step is a dead end at a terminal: the cockpit can
-    // open its own dialog, a shell cannot.
-    expect(errorSpy.mock.calls[1][0]).toContain('dorkos config acknowledge-autonomy');
+    expect(errorSpy.mock.calls[0][0]).toContain('Only you can change this setting.');
+    expect(errorSpy).toHaveBeenCalledTimes(1);
     expect(logSpy).not.toHaveBeenCalled();
     expect(exitSpy).toHaveBeenCalledWith(1);
     vi.restoreAllMocks();
@@ -355,111 +348,32 @@ describe('handleConfigSet', () => {
   });
 });
 
-describe('handleConfigAcknowledgeAutonomy', () => {
-  /** A store whose acknowledgement record can be posed. */
-  function storeWithAck(ack: string | null): ConfigStore {
-    const store = createMockStore();
-    (store.getDot as ReturnType<typeof vi.fn>).mockImplementation((key: string) =>
-      key === 'ui.autonomyAcknowledgedAt' ? ack : 'something'
-    );
-    return store;
-  }
-
-  it('prints what is being agreed to before it asks', async () => {
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const asked: string[] = [];
+describe('the retired Full-autonomy acknowledgement (DOR-2739)', () => {
+  it('writes a Full autonomy default straight through, with nothing to acknowledge first', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const store = createMockStore({
+      runtimes: { ...USER_CONFIG_DEFAULTS.runtimes, defaultTrustStop: 'autonomy' },
+    });
     const writer = createMockWriter();
 
-    await handleConfigAcknowledgeAutonomy(storeWithAck(null), writer, {
-      available: () => true,
-      ask: async (message: string) => {
-        asked.push(message);
-        // The text has to be on screen BEFORE the question, or it is a dialog
-        // whose body renders after the button.
-        expect(logSpy.mock.calls.map((c) => String(c[0])).join('\n')).toContain(
-          'turns off the approval prompts'
-        );
-        return false;
-      },
-    });
-
-    expect(asked).toHaveLength(1);
-    logSpy.mockRestore();
-  });
-
-  it('records nothing when the answer is no', async () => {
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const writer = createMockWriter();
-
-    await handleConfigAcknowledgeAutonomy(storeWithAck(null), writer, {
-      available: () => true,
-      ask: async () => false,
-    });
-
-    expect(writer.guarded).not.toHaveBeenCalled();
-    expect(logSpy.mock.calls.map((c) => String(c[0]))).toContain('Nothing changed.');
-    logSpy.mockRestore();
-  });
-
-  it('writes the record through the guarded step when the answer is yes', async () => {
-    // Through the guarded step, not straight to the store: agreeing to this is
-    // itself a change worth finding in the log later.
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const writer = createMockWriter();
-
-    await handleConfigAcknowledgeAutonomy(storeWithAck(null), writer, {
-      available: () => true,
-      ask: async () => true,
-    });
+    await handleConfigSet(store, 'runtimes.defaultTrustStop', 'autonomy', writer);
 
     expect(writer.guarded).toHaveBeenCalledTimes(1);
-    const [patch, source] = writer.guarded.mock.calls[0] as [Record<string, unknown>, string];
-    const ui = patch.ui as { autonomyAcknowledgedAt: string };
-    expect(Number.isNaN(Date.parse(ui.autonomyAcknowledgedAt))).toBe(false);
-    expect(source).toBe('dorkos config acknowledge-autonomy');
-    logSpy.mockRestore();
+    const [patch] = vi.mocked(writer.guarded).mock.calls[0]!;
+    expect(patch).toEqual({ runtimes: { defaultTrustStop: 'autonomy' } });
+    vi.restoreAllMocks();
   });
 
-  it('refuses rather than signing itself when nothing is attached to answer', async () => {
-    // A ritual needs somebody to perform it. A `--yes` here would be a consent
-    // form that signs itself, which is the thing the door exists to prevent.
+  it('no longer has an acknowledge-autonomy subcommand', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.spyOn(process, 'exit').mockImplementation(() => {
       throw new Error('exit');
     });
-    const writer = createMockWriter();
-
     await expect(
-      handleConfigAcknowledgeAutonomy(storeWithAck(null), writer, {
-        available: () => false,
-        ask: async () => true,
-      })
+      handleConfigCommand(createMockStore(), ['acknowledge-autonomy'], createMockWriter())
     ).rejects.toThrow('exit');
-
-    expect(errorSpy.mock.calls[0][0]).toContain('nothing is attached to answer it');
-    expect(writer.guarded).not.toHaveBeenCalled();
+    expect(errorSpy.mock.calls[0]![0]).toContain('Unknown config subcommand');
     vi.restoreAllMocks();
-  });
-
-  it('does not ask again once the record exists', async () => {
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const writer = createMockWriter();
-    let asked = false;
-
-    await handleConfigAcknowledgeAutonomy(storeWithAck('2026-08-16T09:00:00.000Z'), writer, {
-      available: () => true,
-      ask: async () => {
-        asked = true;
-        return true;
-      },
-    });
-
-    expect(asked).toBe(false);
-    expect(writer.guarded).not.toHaveBeenCalled();
-    expect(logSpy.mock.calls.map((c) => String(c[0])).join('\n')).toContain(
-      '2026-08-16T09:00:00.000Z'
-    );
-    logSpy.mockRestore();
   });
 });
 

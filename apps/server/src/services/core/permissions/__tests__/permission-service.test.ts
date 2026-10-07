@@ -129,7 +129,6 @@ describe('PermissionService.setPreset', () => {
     const world = createPermissionWorld({
       preset: null,
       defaults: { areas: { rooms: 'ask' }, actions: {} },
-      autonomyAcknowledged: true,
     });
 
     await world.service.setPreset({ preset: 'full', surface: 'first-run' }, LOCAL);
@@ -155,7 +154,6 @@ describe('PermissionService.setPreset', () => {
     const world = createPermissionWorld({
       preset: 'full',
       trustStop: 'autonomy',
-      autonomyAcknowledged: true,
     });
     await world.service.setPreset({ preset: 'full', surface: 'first-run' }, LOCAL);
     expect(world.events).toEqual([]);
@@ -257,7 +255,7 @@ describe('PermissionService reads', () => {
 
 describe('attribution', () => {
   it('labels an upgrade step "Upgrade"', async () => {
-    const world = createPermissionWorld({ autonomyAcknowledged: true });
+    const world = createPermissionWorld();
     await world.service.setPreset({ preset: 'full', surface: 'upgrade' }, UPGRADE_WRITER);
     expect(world.events[0]).toMatchObject({ actorType: 'system', actorLabel: 'Upgrade' });
   });

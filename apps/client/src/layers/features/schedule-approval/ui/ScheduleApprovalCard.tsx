@@ -9,7 +9,7 @@ import { ChevronRight, FileCode2 } from 'lucide-react';
 import type { Task } from '@dorkos/shared/types';
 import {
   cn,
-  needsConsentRitual,
+  actsWithoutAsking,
   permissionModeLabel,
   isBypassPermissionMode,
   formatCompactAge,
@@ -304,8 +304,7 @@ export function ScheduleApprovalCard({
    * as the other three.** A scheduled run has nobody watching, so a mode that
    * never asks is something a person agrees to rather than arrives at
    * (`use-posture-consent.ts`: "a gate on one path is not a gate";
-   * `needsConsentRitual` is the rule the server's session door and every dial
-   * apply). The rule is the DOOR's, not the dial's top position: a runtime can
+   * `actsWithoutAsking` is the rule). The rule is not the dial's top position: a runtime can
    * file a never-asking mode at the MIDDLE stop — Codex's does — and
    * "Approve at Act" would otherwise hand a schedule a level that cannot pause,
    * with no dialog anywhere (adversarial review).
@@ -321,7 +320,7 @@ export function ScheduleApprovalCard({
    */
   const requestRaise = (raised: ScheduleApprovalRaise) => {
     if (answered !== null) return;
-    if (needsConsentRitual(raised.descriptor)) {
+    if (actsWithoutAsking(raised.descriptor)) {
       setPendingRaise(raised);
       return;
     }

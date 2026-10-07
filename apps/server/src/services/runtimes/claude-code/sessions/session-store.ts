@@ -28,7 +28,7 @@ import type {
   SessionUpdateResult,
   ToolDecisionOptions,
 } from '@dorkos/shared/agent-runtime';
-import { tightensDeclaredMode, needsConsentRitual } from '@dorkos/shared/permission-semantics';
+import { tightensDeclaredMode, actsWithoutAsking } from '@dorkos/shared/permission-semantics';
 import type { AgentSession } from '../agent-types.js';
 import { CLAUDE_CODE_CAPABILITIES, narrowToClaudeCodeMode } from '../runtime-constants.js';
 import { SESSIONS } from '../../../../config/constants.js';
@@ -132,16 +132,16 @@ function sessionScopedMode(suggestions: PermissionUpdate[]): PermissionMode | un
  * Two questions, both asked of the runtime's own declaration rather than of the
  * id's name. Does claude-code declare this mode at all — persisting an
  * undeclared id would make the settings overlay display a posture the runtime
- * never adopted (`PATCH /api/sessions/:id`, same check). And does it need the
- * consent ritual — `needsConsentRitual` is the single rule behind the route's
- * `428 AUTONOMY_ACK_REQUIRED` door, and a card that says "Always Allow" over one
- * Write is not a person agreeing to a session that never asks again.
+ * never adopted (`PATCH /api/sessions/:id`, same check). And does it act
+ * without asking (`actsWithoutAsking`): a card that says "Always Allow" over one
+ * Write is not a person choosing a session that never asks again; that is a
+ * choice made on the dial.
  *
  * @param mode - The mode an accepted suggestion asks for.
  */
 function isAdoptableMode(mode: PermissionMode): boolean {
   const descriptor = CLAUDE_CODE_CAPABILITIES.permissionModes.values.find((d) => d.id === mode);
-  return descriptor !== undefined && !needsConsentRitual(descriptor);
+  return descriptor !== undefined && !actsWithoutAsking(descriptor);
 }
 
 /**
@@ -782,13 +782,12 @@ export class SessionStore {
    * What DorkOS refuses is to make an unconsented escalation DURABLE.
    *
    * Which modes may be adopted is {@link isAdoptableMode}: declared by this
-   * runtime, and not one the consent ritual gates. Anything else is logged and
+   * runtime, and not one that acts without asking. Anything else is logged and
    * dropped, because writing it to the session row would carry it into every
    * later launch (`launch-resolver` reads `session.permissionMode` straight
-   * into `sdkOptions.permissionMode`) — past a door whose whole point is that
-   * it cannot be walked around by a client (`routes/sessions.ts`, `428
-   * AUTONOMY_ACK_REQUIRED`). Rules (`addRules` and friends) are not modes and
-   * are left to the SDK entirely.
+   * into `sdkOptions.permissionMode`), and a session that never asks again is
+   * chosen on the dial, not by answering one card. Rules (`addRules` and
+   * friends) are not modes and are left to the SDK entirely.
    *
    * Write-through is best-effort in the same spirit as {@link updateSession}:
    * the in-memory mode changes immediately (the launch resolver reads it), and

@@ -189,13 +189,8 @@ export const CONFIG_DISCLOSURE = {
   'ui.communityNavigation.owners[].destinations[].scrollAnchorEntryId': 'withhold',
   'ui.communityNavigation.owners[].installationDestination.path': 'withhold',
   'ui.communityNavigation.owners[].installationDestination.search': 'withhold',
-  // A timestamp saying the person read what Full autonomy means. Names nothing
-  // and unlocks nothing on being read — an agent that learns the date is no
-  // closer to anything than one that does not.
-  'ui.autonomyAcknowledgedAt': 'expose',
-  // The power-door answer, for the same reason as the acknowledgement above: a
-  // date and the word `'full'` or `'supervised'` name nothing and unlock
-  // nothing on being read. An agent that knows the operator chose supervised
+  // The power-door answer: a date and the word `'full'` or `'supervised'` name
+  // nothing and unlock nothing on being read. An agent that knows the operator chose supervised
   // learns something genuinely useful — that it should expect to be asked.
   'ui.fullPowerDecidedAt': 'expose',
   'ui.fullPowerChoice': 'expose',

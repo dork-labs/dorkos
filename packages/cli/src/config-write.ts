@@ -1,11 +1,9 @@
 /**
- * How `dorkos config` writes, and the consent ritual that guards the one setting
- * a person must be told about before they choose it.
+ * How `dorkos config` writes.
  *
  * Split out of `config-commands.ts` because it is a different job: that file
  * routes subcommands and formats what they print, while this one owns the seam
- * to the server's guarded write and the terminal's version of the cockpit's
- * consent dialog.
+ * to the server's guarded write.
  *
  * @module config-write
  */
@@ -16,27 +14,11 @@ import type { GuardedConfigWriteResult } from '../server/services/core/operator/
 import type { ConfigStore } from './config-commands.js';
 
 /**
- * The refusal code the Full-autonomy consent door answers with, as a literal.
- *
- * It cannot be imported: the constant lives in the server bundle, which this
- * file only reaches through a specifier esbuild rewrites at bundle time, and a
- * value import would have to be awaited inside the refusal path. So it is
- * duplicated here — the same way the cockpit duplicates it (`ChatStatusSection`)
- * — and pinned by value in
- * `apps/server/src/services/core/approvals/__tests__/autonomy-consent.test.ts`,
- * which names both copies.
- */
-export const AUTONOMY_ACK_REQUIRED_CODE = 'AUTONOMY_ACK_REQUIRED';
-
-/**
  * The refusal code for a permissions key sent through `dorkos config set`, as a
- * literal for the same reason as {@link AUTONOMY_ACK_REQUIRED_CODE}; pinned by
- * value in `apps/server/src/services/core/operator/__tests__/config-write.test.ts`.
+ * literal: the constant lives in the server bundle, which this file only reaches
+ * through a specifier esbuild rewrites at bundle time. Pinned by value in `apps/server/src/services/core/operator/__tests__/config-write.test.ts`.
  */
 export const USE_PERMISSIONS_API_CODE = 'USE_PERMISSIONS_API';
-
-/** The command that gives the terminal the acknowledgement the door asks for. */
-export const ACKNOWLEDGE_AUTONOMY_COMMAND = 'dorkos config acknowledge-autonomy';
 
 /**
  * How `dorkos config` reaches the server's config-write code.
@@ -51,7 +33,7 @@ export const ACKNOWLEDGE_AUTONOMY_COMMAND = 'dorkos config acknowledge-autonomy'
 export interface CliConfigWriter {
   /**
    * Write through the same guarded step `PATCH /api/config` uses: the write
-   * policy, the Full-autonomy consent door, and the audit line.
+   * policy and the audit line.
    *
    * @param patch - The partial config to merge.
    * @param source - How this write should read in the audit line.
@@ -170,152 +152,3 @@ export async function writeOrExplain(
     process.exit(1);
   }
 }
-
-/**
- * What a person reads before they agree to start every new session in Full
- * autonomy.
- *
- * The wording tracks the cockpit's own consent dialog rather than inventing a
- * second version: the middle paragraph is the scope note the dialog renders
- * verbatim (`permission-mode-scope-note.tsx`), because a person who reads one
- * sentence in the app and a different one in a terminal has been told two
- * things about one setting.
- *
- * What it deliberately does NOT copy is the per-runtime promise the dialog puts
- * at the top. That sentence comes off a runtime's own profile, which a terminal
- * with no server cannot read — a stand-in would be wrong for somebody's agent.
- */
-const AUTONOMY_CONSENT_TEXT = [
-  'Starting every new session in Full autonomy turns off the approval prompts.',
-  '',
-  'A session that starts this way runs its tools without stopping for your OK on',
-  'each action — no pause, no chance to say no per action — for every new session',
-  'from now on until you change it back. Your agents still ask when something',
-  'genuinely needs your call, and they still follow anything you tell them to',
-  'check with you about.',
-  '',
-  'This covers what an agent does in a session: editing files, running commands,',
-  'and working outside this project. DorkOS’s own risky actions still stop for',
-  'you, like deleting a schedule or removing an agent. To stop being asked about',
-  'one, choose Always allow on its card, or change it in Settings under',
-  'Permissions.',
-  '',
-  'DorkOS records that you agreed, with today’s date, so it stops asking you this.',
-  'You can take that back at any time in Settings, or with',
-  '`dorkos config set ui.autonomyAcknowledgedAt null` — which also puts any',
-  'standing Full-autonomy default back to asking.',
-].join('\n');
-
-/**
- * `dorkos config acknowledge-autonomy` — read what Full autonomy means, say yes,
- * and record it.
- *
- * ## Why the terminal needs its own door (DOR-1247)
- *
- * The consent record is what the config door asks for, and the cockpit gives it
- * through a dialog. A terminal had no way to produce one: `dorkos config set
- * runtimes.claudeCode.defaultTrustStop autonomy` was refused with a sentence and
- * no next step, which is a dead end for anyone who does not already know that
- * `ui.autonomyAcknowledgedAt` exists.
- *
- * So this is the terminal's version of that dialog, and it is deliberately the
- * same shape: it PRINTS what the person is agreeing to, then asks once, with no
- * as the default. Writing the record without reading it is still possible
- * (`config set ui.autonomyAcknowledgedAt <date>`), and that is a stated part of
- * the trust model rather than a hole this closes — a person with a shell can
- * sign their own form. See `config-write.ts` and
- * `contributing/configuration.md`.
- *
- * ## Why it refuses when nothing is attached
- *
- * A ritual needs somebody to perform it. With no TTY there is nobody to read the
- * text or answer, so a `--yes`-style flag here would be a consent form that
- * signs itself — the exact thing the door exists to prevent. A script that
- * genuinely means it can still write the record directly, which at least says
- * plainly what it is doing.
- *
- * The write goes through the guarded step like every other, so it lands in the
- * audit log: agreeing to this is itself a change worth being able to find later.
- *
- * @param store - Config storage instance
- * @param writer - How to reach the server's guarded write.
- * @param prompt - How the question reaches a person; injected for tests.
- */
-export async function handleConfigAcknowledgeAutonomy(
-  store: ConfigStore,
-  writer: CliConfigWriter,
-  prompt: ConsentPrompt = terminalConsentPrompt
-): Promise<void> {
-  const existing = store.getDot('ui.autonomyAcknowledgedAt');
-  if (typeof existing === 'string' && existing.length > 0) {
-    console.log(`You already confirmed this on ${existing}.`);
-    console.log(
-      'To take it back, run `dorkos config set ui.autonomyAcknowledgedAt null`, or use Settings.'
-    );
-    return;
-  }
-
-  if (!prompt.available()) {
-    console.error('This needs to ask you a question, and nothing is attached to answer it.');
-    console.error('Run it in a terminal, or confirm it in DorkOS under Settings.');
-    process.exit(1);
-  }
-
-  console.log(`\n${AUTONOMY_CONSENT_TEXT}\n`);
-  const agreed = await prompt.ask('Start every new session in Full autonomy?');
-  if (!agreed) {
-    console.log('Nothing changed.');
-    return;
-  }
-
-  const acknowledgedAt = new Date().toISOString();
-  const result = await writeOrExplain(
-    writer,
-    { ui: { autonomyAcknowledgedAt: acknowledgedAt } },
-    ACKNOWLEDGE_AUTONOMY_COMMAND
-  );
-  if (!result.ok) {
-    const reason = result.kind === 'invalid' ? result.error : result.refusal.message;
-    console.error(`Could not record your answer: ${reason}`);
-    process.exit(1);
-  }
-
-  console.log(`Recorded on ${acknowledgedAt}.`);
-  console.log(
-    'You can now set a Full-autonomy default, for example: `dorkos config set runtimes.defaultTrustStop autonomy`.'
-  );
-}
-
-/**
- * How a consent question reaches a person.
- *
- * Two methods rather than one, because "is there anybody there?" and "what did
- * they say?" are different questions and the first has no honest boolean answer
- * from inside the second. Injected so the consent verb can be driven both ways
- * in a test — a vitest worker has no TTY, so a bare `process.stdin.isTTY` check
- * inside the handler made every path untestable except the refusal.
- */
-export interface ConsentPrompt {
-  /** Whether there is a person attached who could read the text and answer. */
-  available(): boolean;
-  /**
-   * Ask the yes/no question.
-   *
-   * @param message - The question.
-   */
-  ask(message: string): Promise<boolean>;
-}
-
-/**
- * The real terminal: a TTY on stdin, and a yes/no that defaults to no.
- *
- * The prompt library is a lazy import so `dorkos config get` never pays to load
- * it.
- */
-const terminalConsentPrompt: ConsentPrompt = {
-  available: () => process.stdin.isTTY === true,
-  async ask(message) {
-    const { confirm } = await import('@inquirer/prompts');
-    return confirm({ message, default: false });
-  },
-};

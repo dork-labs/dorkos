@@ -17,7 +17,7 @@ import {
   isBypassSemantics,
   isDivergent,
   isSilentReadOnly,
-  needsConsentRitual,
+  actsWithoutAsking,
   resolveTrustStops,
 } from '@dorkos/shared/permission-semantics';
 import { PermissionModeIdSchema } from '@dorkos/shared/schemas';
@@ -89,7 +89,7 @@ describe('declared permission-mode semantics', () => {
     // The safety invariant the conformance suite enforces per runtime, asserted
     // here across the whole set so a new profile cannot slip in unnoticed.
     //
-    // Asserted through `needsConsentRitual`, NOT against the set of stops. A
+    // Asserted through `actsWithoutAsking`, NOT against the set of stops. A
     // session born at its runtime's default never PATCHes and so never meets the
     // consent door — this is the only thing standing between a person and an
     // agent that starts without asking. Checking `stop` instead left the exact
@@ -108,7 +108,7 @@ describe('declared permission-mode semantics', () => {
         continue;
       }
       expect(
-        needsConsentRitual(descriptor!),
+        actsWithoutAsking(descriptor!),
         `${caps.type} defaults to '${declaredDefault}', a mode that never asks — a session ` +
           'born there passes no door and consents to nothing'
       ).toBe(false);
@@ -125,7 +125,7 @@ describe('declared permission-mode semantics', () => {
     );
     expect(codexDefault?.asks).toBe('never');
     expect(codexDefault?.reach).toBe('read');
-    expect(needsConsentRitual(codexDefault!)).toBe(false);
+    expect(actsWithoutAsking(codexDefault!)).toBe(false);
   });
 
   it('marks Codex’s default as the one dead end a person has to be told about', () => {
@@ -206,7 +206,7 @@ describe('the consent door’s reach across every runtime', () => {
       // default, and the birth invariant — which name an answer this line
       // cannot follow.
       const expected = d.stop === 'autonomy' || (d.asks === 'never' && d.reach !== 'read');
-      expect(needsConsentRitual(d)).toBe(expected);
+      expect(actsWithoutAsking(d)).toBe(expected);
     }
   );
 
@@ -215,18 +215,18 @@ describe('the consent door’s reach across every runtime', () => {
     // shell commands with no way to pause and ask; before the widening it
     // entered with no ritual at all, disclosed only by the amber caption.
     const [readOnly, workspaceWrite, fullAccess] = CODEX_CAPABILITIES.permissionModes.values;
-    expect(needsConsentRitual(workspaceWrite!)).toBe(true);
+    expect(actsWithoutAsking(workspaceWrite!)).toBe(true);
     expect(isAutonomyStop(workspaceWrite!), 'it is not at the autonomy stop').toBe(false);
     // The other two, for contrast: read-only never asks and is left alone
     // because it has nothing to ask about; full access was always gated.
-    expect(needsConsentRitual(readOnly!)).toBe(false);
-    expect(needsConsentRitual(fullAccess!)).toBe(true);
+    expect(actsWithoutAsking(readOnly!)).toBe(false);
+    expect(actsWithoutAsking(fullAccess!)).toBe(true);
   });
 
   it('leaves every mode that still stops for the person alone', () => {
     for (const [runtime, d] of declaredModes()) {
       if (d.asks === 'never') continue;
-      expect(needsConsentRitual(d), `${runtime}/${d.id}`).toBe(false);
+      expect(actsWithoutAsking(d), `${runtime}/${d.id}`).toBe(false);
     }
   });
 

@@ -71,7 +71,6 @@ export {
   useSessionMessages,
   useSessionChatStatus,
   useHasConfirmedAuto,
-  useHasConfirmedAutonomy,
   useHasDismissedDefaultStopOffer,
   useReadOnlyHintProgress,
   useModeBeforePlan,

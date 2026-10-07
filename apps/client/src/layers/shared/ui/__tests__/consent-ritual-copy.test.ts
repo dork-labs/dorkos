@@ -67,7 +67,7 @@ describe('consentAsksNote', () => {
     // It "never asks" because it cannot write, run, or reach the network.
     // Telling somebody it does whatever it decides to do is the opposite of
     // true, and it is the safest setting the runtime offers. This is the
-    // guard `needsConsentRitual` supplies; plain `asks === 'never'` failed it.
+    // guard `actsWithoutAsking` supplies; plain `asks === 'never'` failed it.
     expect(consentAsksNote(descriptor({ stop, asks: 'never', reach: 'read' }))).toBeNull();
   });
 

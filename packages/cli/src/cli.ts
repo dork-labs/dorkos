@@ -543,8 +543,6 @@ Commands:
   config edit          Open in $EDITOR
   config path          Print config file location
   config validate      Check config validity
-  config acknowledge-autonomy
-                       Read what Full autonomy means, and confirm it
   init                 Interactive setup wizard
   init --yes           Accept all defaults
   package init <name>  Scaffold a new marketplace package

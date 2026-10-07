@@ -220,12 +220,6 @@ export const SetPermissionPresetBodySchema = z
     preset: PermissionPresetSchema,
     applyToAgents: z.array(z.string().min(1)).max(500).optional(),
     surface: PermissionSurfaceSchema,
-    /**
-     * The person read what Full autonomy means and said yes, recorded with the
-     * preset in one write. Needed only when the preset moves Files & commands to
-     * Full autonomy and no acknowledgement is on file (428 otherwise).
-     */
-    acknowledgeAutonomy: z.literal(true).optional(),
   })
   .openapi('SetPermissionPresetBody');
 
@@ -253,8 +247,6 @@ export const PatchAgentPermissionsBodySchema = z
     /** This agent's own Files & commands stop; `null` = back to the default. */
     filesAndCommands: PermissionStopSchema.nullable().optional(),
     surface: PermissionSurfaceSchema,
-    /** As on the preset body: the acknowledgement Full autonomy needs, in the same write. */
-    acknowledgeAutonomy: z.literal(true).optional(),
   })
   .openapi('PatchAgentPermissionsBody');
 
@@ -325,8 +317,6 @@ export const UndoPermissionChangeBodySchema = z
      * for a change that reached several.
      */
     force: z.boolean().optional(),
-    /** As on the preset body: the Full autonomy acknowledgement, in the same write. */
-    acknowledgeAutonomy: z.literal(true).optional(),
   })
   .openapi('UndoPermissionChangeBody');
 
