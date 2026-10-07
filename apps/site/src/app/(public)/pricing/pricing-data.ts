@@ -130,6 +130,25 @@ const included = (credits: number) => `${formatCredits(credits)} (${creditsInDol
 
 // ── Plans ────────────────────────────────────────────────────────────────────
 
+/**
+ * A piece of copy that may carry a "coming soon" marker without changing its visible text.
+ *
+ * Used for a plan benefit, an extra's detail, or a comparison cell that names something not
+ * built yet (today, the cloud agents). The marker renders as a small badge beside the text; it
+ * never replaces or rewords the text itself.
+ */
+export type MaybeComingSoon = string | { text: string; comingSoon: true };
+
+/** The plain text of a {@link MaybeComingSoon} value, ignoring any "coming soon" marker. */
+export function itemText(item: MaybeComingSoon): string {
+  return typeof item === 'string' ? item : item.text;
+}
+
+/** Whether a {@link MaybeComingSoon} value carries the "coming soon" marker. */
+export function isComingSoon(item: MaybeComingSoon): boolean {
+  return typeof item !== 'string' && item.comingSoon;
+}
+
 export interface Plan {
   id: string;
   name: string;
@@ -142,7 +161,7 @@ export interface Plan {
   /** Printed after the price, e.g. "per seat". */
   unit?: string;
   /** Three to five outcomes, in plain words. */
-  benefits: readonly string[];
+  benefits: readonly MaybeComingSoon[];
   /** A quiet line under the benefits, when the plan needs one. */
   note?: string;
   cta: { label: string; href: string };
@@ -164,7 +183,10 @@ export const PLANS: readonly Plan[] = [
       'Unlimited people and agents on your own machines',
       'Use your own AI account',
       'Reach your agents from your phone through a link you set up',
-      'One space we run for you, for up to 50 people, with 1 GB of storage (United States, 18 or older)',
+      {
+        text: 'One space we run for you, for up to 50 people, with 1 GB of storage (United States, 18 or older)',
+        comingSoon: true,
+      },
       'Help from the community',
     ],
     note: `Want AI without a plan? From ${PAID_FROM}, buy ${formatCredits(TOP_UP_MIN_CREDITS)} or more credits (${creditsInDollars(TOP_UP_MIN_CREDITS)}) any time.`,
@@ -179,7 +201,7 @@ export const PLANS: readonly Plan[] = [
     benefits: [
       `${formatCredits(INCLUDED_CREDITS.pro)} AI credits every month (${creditsInDollars(INCLUDED_CREDITS.pro)})`,
       'Reach your agents from your phone, no setup',
-      'Room for 3 agents in the cloud, each with its own email address',
+      { text: 'Room for 3 agents in the cloud, each with its own email address', comingSoon: true },
       'Help from the community',
     ],
     cta: PAID_CTA,
@@ -194,7 +216,7 @@ export const PLANS: readonly Plan[] = [
     benefits: [
       `${formatCredits(INCLUDED_CREDITS.max)} AI credits every month (${creditsInDollars(INCLUDED_CREDITS.max)})`,
       'Your agents are always reachable',
-      'Room for 10 agents in the cloud',
+      { text: 'Room for 10 agents in the cloud', comingSoon: true },
       'Priority help from a real person',
     ],
     note: `Need more? Max 2× is $200 a month, with ${formatCredits(INCLUDED_CREDITS.max2x)} AI credits a month (${creditsInDollars(INCLUDED_CREDITS.max2x)}) and room for 25 agents.`,
@@ -219,11 +241,14 @@ export const PLANS: readonly Plan[] = [
 ];
 
 /** Things you can add. Each says who can add it. */
-export const EXTRAS: readonly { name: string; price: string; detail: string }[] = [
+export const EXTRAS: readonly { name: string; price: string; detail: MaybeComingSoon }[] = [
   {
     name: 'Extra agent',
     price: '$30 a month',
-    detail: 'One more agent in the cloud, with its own email address. On any paid plan.',
+    detail: {
+      text: 'One more agent in the cloud, with its own email address. On any paid plan.',
+      comingSoon: true,
+    },
   },
   {
     name: 'Your own web address',
@@ -248,7 +273,13 @@ export interface CompareRow {
   /** A short gloss under the label, for rows that need one. */
   hint?: string;
   /** One cell per column in {@link COMPARE_PLANS}. */
-  cells: readonly [string, string, string, string, string];
+  cells: readonly [
+    MaybeComingSoon,
+    MaybeComingSoon,
+    MaybeComingSoon,
+    MaybeComingSoon,
+    MaybeComingSoon,
+  ];
 }
 
 export interface CompareGroup {
@@ -306,10 +337,10 @@ export const COMPARE: readonly CompareGroup[] = [
         hint: 'A seat is a cloud account for one person or one agent',
         cells: [
           'None',
-          'You + 3 agents',
-          'You + 10 agents',
-          'You + 25 agents',
-          'One seat per person or agent. No minimum.',
+          { text: 'You + 3 agents', comingSoon: true },
+          { text: 'You + 10 agents', comingSoon: true },
+          { text: 'You + 25 agents', comingSoon: true },
+          { text: 'One seat per person or agent. No minimum.', comingSoon: true },
         ],
       },
       {

@@ -5,12 +5,14 @@ import { ChevronDown } from 'lucide-react';
 import { company } from '@dorkos/shared/company';
 import { siteConfig } from '@/config/site';
 import { rssFeedAlternateTypes, twitterFromOpenGraph } from '@/lib/metadata';
-import { PlanCards } from './PlanCards';
+import { ComingSoonBadge, PlanCards } from './PlanCards';
 import {
   COMPARE,
   COMPARE_PLANS,
   ELIGIBILITY_NOTE,
   EXTRAS,
+  isComingSoon,
+  itemText,
   LAST_UPDATED,
   MODEL_PRICES,
   NOTICE_DAYS,
@@ -79,7 +81,10 @@ export default function PricingPage() {
                 <span className="font-medium">{extra.name}</span>{' '}
                 <span className="text-warm-gray">{extra.price}</span>
               </p>
-              <p className="text-warm-gray mt-1 text-pretty">{extra.detail}</p>
+              <p className="text-warm-gray mt-1 text-pretty">
+                <span>{itemText(extra.detail)}</span>{' '}
+                {isComingSoon(extra.detail) ? <ComingSoonBadge /> : null}
+              </p>
             </li>
           ))}
         </ul>
@@ -305,18 +310,29 @@ function CompareTable() {
                     <span className="text-warm-gray block text-xs">{row.hint}</span>
                   ) : null}
                 </th>
-                {row.cells.map((cell, i) => (
-                  <td key={COMPARE_PLANS[i]} className="text-warm-gray p-3 align-top">
-                    {cell === '—' ? (
-                      <>
-                        <span aria-hidden="true">—</span>
-                        <span className="sr-only">Not included</span>
-                      </>
-                    ) : (
-                      cell
-                    )}
-                  </td>
-                ))}
+                {row.cells.map((cell, i) => {
+                  const text = itemText(cell);
+                  return (
+                    <td key={COMPARE_PLANS[i]} className="text-warm-gray p-3 align-top">
+                      {text === '—' ? (
+                        <>
+                          <span aria-hidden="true">—</span>
+                          <span className="sr-only">Not included</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>{text}</span>
+                          {isComingSoon(cell) ? (
+                            <>
+                              {' '}
+                              <ComingSoonBadge />
+                            </>
+                          ) : null}
+                        </>
+                      )}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>

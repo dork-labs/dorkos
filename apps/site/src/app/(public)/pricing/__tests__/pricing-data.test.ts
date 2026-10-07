@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   COMPARE,
   EXTRAS,
+  isComingSoon,
+  itemText,
   MODEL_PRICES,
   NOTICE_DAYS,
   PAID_FROM,
@@ -87,7 +89,7 @@ describe('the page states one credit unit', () => {
 describe('plan figures', () => {
   it('prints the published price and allowance in every figure row', () => {
     const rows = Object.fromEntries(
-      COMPARE.flatMap((g) => g.rows).map((r) => [r.label, r.cells.join(' | ')])
+      COMPARE.flatMap((g) => g.rows).map((r) => [r.label, r.cells.map(itemText).join(' | ')])
     );
     expect(rows).toMatchObject({
       Monthly: '$0 | $20 | $100 | $200 | $30 per seat',
@@ -114,6 +116,56 @@ describe('plan figures', () => {
       ['team', 30, 300],
     ]);
     expect(EXTRAS.map((e) => e.price)).toEqual(['$30 a month', '$10 a month', '$29, once']);
+  });
+});
+
+describe('coming soon marks on cloud agents', () => {
+  // Cloud agents aren't built yet, so every place that names them carries the marker, and only
+  // those places: the free plan's hosted space, the room for agents on Pro and Max, the extra
+  // agent add-on, and the comparison table's "In the cloud" row. The visible text never changes.
+  it('marks the free plan’s hosted space', () => {
+    const free = PLANS.find((p) => p.id === 'free');
+    const benefit = free?.benefits.find(
+      (b) =>
+        itemText(b) ===
+        'One space we run for you, for up to 50 people, with 1 GB of storage (United States, 18 or older)'
+    );
+    expect(benefit).toBeDefined();
+    expect(isComingSoon(benefit!)).toBe(true);
+  });
+
+  it('marks the cloud agents on Pro and Max', () => {
+    const pro = PLANS.find((p) => p.id === 'pro');
+    const proBenefit = pro?.benefits.find(
+      (b) => itemText(b) === 'Room for 3 agents in the cloud, each with its own email address'
+    );
+    expect(proBenefit).toBeDefined();
+    expect(isComingSoon(proBenefit!)).toBe(true);
+
+    const max = PLANS.find((p) => p.id === 'max');
+    const maxBenefit = max?.benefits.find((b) => itemText(b) === 'Room for 10 agents in the cloud');
+    expect(maxBenefit).toBeDefined();
+    expect(isComingSoon(maxBenefit!)).toBe(true);
+  });
+
+  it('marks the extra agent add-on', () => {
+    const extraAgent = EXTRAS.find((e) => e.name === 'Extra agent');
+    expect(itemText(extraAgent!.detail)).toBe(
+      'One more agent in the cloud, with its own email address. On any paid plan.'
+    );
+    expect(isComingSoon(extraAgent!.detail)).toBe(true);
+  });
+
+  it('marks every paid cell of the comparison table’s "In the cloud" row, and none other', () => {
+    const row = COMPARE.flatMap((g) => g.rows).find((r) => r.label === 'In the cloud');
+    expect(row?.cells.map(itemText)).toEqual([
+      'None',
+      'You + 3 agents',
+      'You + 10 agents',
+      'You + 25 agents',
+      'One seat per person or agent. No minimum.',
+    ]);
+    expect(row?.cells.map(isComingSoon)).toEqual([false, true, true, true, true]);
   });
 });
 
