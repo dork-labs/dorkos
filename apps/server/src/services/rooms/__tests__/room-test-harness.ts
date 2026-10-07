@@ -119,6 +119,12 @@ export interface RecordedTurn {
    * caller where it is not: the welcome-back offer (DOR-1046).
    */
   prompt: string;
+  /**
+   * Whether the message that triggered this turn came from off this machine —
+   * the fact the turn runner holds a stranger's turn to the mode that asks by.
+   * Optional so a hand-written runner that records less still fits.
+   */
+  externalAuthor?: boolean;
   /** What the agent was told about the room — derived by the real dispatcher. */
   roomContext: RoomContextData;
   /**
@@ -298,6 +304,7 @@ export function outcomeRunner(
         prepareLaunch: request.prepareLaunch,
         sessionId: request.sessionId,
         prompt: request.prompt,
+        externalAuthor: request.externalAuthor,
         roomContext: request.roomContext,
         attachmentProjection: request.attachmentProjection,
       });
@@ -471,6 +478,7 @@ export function gatedRunner({
         prepareLaunch: request.prepareLaunch,
         sessionId: request.sessionId,
         prompt: request.entry.body.text,
+        externalAuthor: request.externalAuthor,
         roomContext: request.roomContext,
         attachmentProjection: request.attachmentProjection,
       });

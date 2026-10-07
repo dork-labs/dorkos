@@ -63,6 +63,7 @@ function wired(
     hasMirrors: () => state.mirrors?.hasMirrors() ?? false,
     isRevokedMirrorOf: (roomId: string, ownerAuthorId: string) =>
       state.mirrors?.isRevokedMirrorOf(roomId, ownerAuthorId) ?? false,
+    isMirror: (roomId: string) => state.mirrors?.isMirror(roomId) ?? false,
   };
   const harness = createRoomHarness({ agents, mirrorAccess: access, ...opts });
   const mirrors = new RemoteMirrorStore(harness.db, harness.store, harness.authors);

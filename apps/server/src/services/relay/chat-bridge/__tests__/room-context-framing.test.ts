@@ -62,8 +62,8 @@ describe('bridgedRoomFraming (spec §8, §15)', () => {
 
   it('carries the SAME formatting rules the adapter puts on an inbound envelope — never a second copy', () => {
     const framing = bridgedRoomFraming(bridge());
-    expect(framing.formatting.instructions).toBe(TELEGRAM_FORMATTING_RULES);
-    expect(framing.formatting.maxLength).toBe(MAX_MESSAGE_LENGTH);
+    expect(framing.formatting?.instructions).toBe(TELEGRAM_FORMATTING_RULES);
+    expect(framing.formatting?.maxLength).toBe(MAX_MESSAGE_LENGTH);
   });
 
   it('formats a group and a private bridge with the same guidance — phase 1 is Telegram-only regardless of chat type', () => {
