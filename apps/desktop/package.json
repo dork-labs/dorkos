@@ -1,7 +1,7 @@
 {
   "name": "@dorkos/desktop",
   "version": "0.98.0",
-  "description": "DorkOS desktop app: ask for a tool and your agents build it, right on your computer",
+  "description": "You, multiplied. Build and run your business with an agent team. The DorkOS desktop app for your team chat, real work, and custom tools.",
   "author": "144 Studio, LLC",
   "private": true,
   "main": "dist/main/index.js",
