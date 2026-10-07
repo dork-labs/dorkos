@@ -13,7 +13,7 @@ import { capabilityMcpTools } from '../../../runtimes/claude-code/mcp-tools/capa
 import { toolSurfaceDigest } from '../../../runtimes/claude-code/mcp-tools/tool-surface.js';
 import { createAgentRuntimeMcpServer } from '../../../runtimes/connector-mcp/agent-runtime-server.js';
 import { managedBrowserDomain, managedBrowserOptionalDomain } from '../browser-capabilities.js';
-import { expect, it, onTestFinished, vi } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import type {
   BrowserLifecycleEngine,
   PrivateBrowserRetirementReceiver,
@@ -105,6 +105,15 @@ function fixture(
       if (result.status === 'rejected' && !expected.has(result.reason)) throw result.reason;
   });
   const listTabs = vi.fn(() => [binding]);
+  const diagnostics = vi.fn(() => ({
+    binding,
+    interval: { startOffsetMs: 0, endOffsetMs: 0 },
+    entries: [],
+    counts: { dropped: 0, truncated: 0, correlationDropped: 0, unmatchedCallbacks: 0 },
+    terminal: 'none' as const,
+    lastAccountedSequence: 0,
+    subsequentEventsUncounted: false,
+  }));
   let resetting: Promise<{ binding: typeof binding; status: 'ready' }> | undefined;
   const resetInput = vi.fn(() => {
     // The actual engine shares an in-flight reset; the double must not advance
@@ -124,7 +133,7 @@ function fixture(
     });
     return original;
   });
-  const engine = { listTabs, resetInput } as unknown as BrowserLifecycleEngine;
+  const engine = { listTabs, resetInput, diagnostics } as unknown as BrowserLifecycleEngine;
   grants.bindEngine(engine);
   grants.birthOwner('owner_tools___________', { mode: 'ephemeral' }).registerBirth({
     browserId: binding.browserId,
@@ -260,6 +269,7 @@ function fixture(
     grants,
     grant,
     listTabs,
+    diagnostics,
     resetInput,
     dispatch,
     principals,
@@ -491,6 +501,7 @@ it.each(['claude-code', 'codex', 'opencode'] as const)(
       [
         'managed_browser_close',
         'managed_browser_control',
+        'managed_browser_diagnostics',
         'managed_browser_download',
         'managed_browser_file_access',
         'managed_browser_input',
@@ -1246,4 +1257,106 @@ it('an original tool input getter throwing a fresh ZodError is sticky, not a loc
   expect(f.principals.revalidatePrincipal).not.toHaveBeenCalled();
   expect(f.listTabs).not.toHaveBeenCalled();
   await expect(f.tools.close()).rejects.toBe(originalFailure);
+});
+
+describe('actor-derived managed browser diagnostics', () => {
+  it.each(['claude-code', 'codex', 'opencode'] as const)(
+    'requires the original separate diagnostics grant for %s',
+    async (runtime) => {
+      const f = fixture(runtime);
+      const view = f.grant(['browser.view']);
+      await expect(
+        f.tools.diagnostics(f.context, { binding: f.binding(), grant: view })
+      ).rejects.toBeInstanceOf(BrowserApiRefusal);
+      expect(f.diagnostics).not.toHaveBeenCalled();
+      const granted = f.grant(['browser.diagnostics']);
+      const summary = await f.tools.diagnostics(f.context, {
+        binding: f.binding(),
+        grant: granted,
+      });
+      expect(summary.binding).toEqual(f.binding());
+      expect(f.diagnostics).toHaveBeenCalledExactlyOnceWith(f.binding());
+      f.grants.revoke(f.owner, granted.grantId, granted.revision);
+      await expect(
+        f.tools.diagnostics(f.context, { binding: f.binding(), grant: granted })
+      ).rejects.toBeInstanceOf(BrowserApiRefusal);
+      expect(f.diagnostics).toHaveBeenCalledTimes(1);
+    }
+  );
+  it('refuses delivery when the original read revokes its grant', async () => {
+    const f = fixture();
+    const grant = f.grant(['browser.diagnostics']);
+    const summary = f.diagnostics();
+    f.diagnostics.mockClear();
+    f.diagnostics.mockImplementation(() => {
+      f.grants.revoke(f.owner, grant.grantId, grant.revision);
+      return summary;
+    });
+    await expect(
+      f.tools.diagnostics(f.context, { binding: f.binding(), grant })
+    ).rejects.toBeInstanceOf(BrowserApiRefusal);
+    expect(f.diagnostics).toHaveBeenCalledTimes(1);
+  });
+  it('refuses a summary for another whole binding', async () => {
+    const f = fixture();
+    const grant = f.grant(['browser.diagnostics']);
+    const summary = f.diagnostics();
+    f.diagnostics.mockReturnValue({
+      ...summary,
+      binding: { ...summary.binding, navigationGeneration: 1 },
+    });
+    await expect(
+      f.tools.diagnostics(f.context, { binding: f.binding(), grant })
+    ).rejects.toBeInstanceOf(BrowserApiRefusal);
+  });
+  it.each([false, undefined])(
+    'retains an original producer failure %s through close',
+    async (reason) => {
+      const f = fixture();
+      const grant = f.grant(['browser.diagnostics']);
+      f.expected.add(reason);
+      f.diagnostics.mockImplementation(() => {
+        throw reason;
+      });
+      const original = f.tools.diagnostics(f.context, { binding: f.binding(), grant });
+      f.pending.push(original);
+      await expect(original).rejects.toBe(reason);
+      await expect(f.tools.close()).rejects.toBe(reason);
+    }
+  );
+  it('rejects caller-declared actor fields before the original diagnostic read', async () => {
+    const f = fixture();
+    const grant = f.grant(['browser.diagnostics']);
+    await expect(
+      f.tools.diagnostics(f.context, {
+        binding: f.binding(),
+        grant,
+        actor: { owner: f.author.id },
+      })
+    ).rejects.toBeInstanceOf(z.ZodError);
+    expect(f.diagnostics).not.toHaveBeenCalled();
+  });
+  it('refuses delivery after the read revokes the genuine runtime principal', async () => {
+    const f = fixture();
+    const grant = f.grant(['browser.diagnostics']);
+    const summary = f.diagnostics();
+    f.diagnostics.mockClear();
+    f.diagnostics.mockImplementation(() => {
+      f.revokePrincipal();
+      return summary;
+    });
+    await expect(
+      f.tools.diagnostics(f.context, { binding: f.binding(), grant })
+    ).rejects.toBeInstanceOf(BrowserApiRefusal);
+    expect(f.diagnostics).toHaveBeenCalledTimes(1);
+  });
+  it('refuses cached diagnostics after Off without reading the producer', async () => {
+    const f = fixture();
+    const grant = f.grant(['browser.diagnostics']);
+    f.disable();
+    await expect(
+      f.tools.diagnostics(f.context, { binding: f.binding(), grant })
+    ).rejects.toBeInstanceOf(BrowserApiRefusal);
+    expect(f.diagnostics).not.toHaveBeenCalled();
+  });
 });

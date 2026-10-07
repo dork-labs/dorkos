@@ -6,6 +6,8 @@ import {
   type BrowserOpenRequest,
   BrowserBindingSchema,
   BrowserControlSchema,
+  BrowserDiagnosticSummarySchema,
+  BrowserDiagnosticsRequestSchema,
   BrowserActionReceiptSchema,
   BrowserReferenceSchema,
   type BrowserBinding,
@@ -92,6 +94,20 @@ export const managedBrowserDomain: CapabilityDomain = {
     return deps.managedBrowserDeps?.current() === true;
   },
   capabilities: [
+    defineCapability({
+      id: 'browser.diagnostics',
+      title: 'Read granted browser diagnostics',
+      description:
+        'Read bounded browser diagnostics using the current explicit browser.diagnostics grant.',
+      tier: 'observe',
+      area: null,
+      areaNote,
+      input: BrowserDiagnosticsRequestSchema,
+      output: BrowserDiagnosticSummarySchema,
+      surfaces: { mcp: { toolName: 'managed_browser_diagnostics', servers: ['in-session'] } },
+      invoke: (deps, input, context) =>
+        deps.managedBrowserDeps!.resolve(input.binding).diagnostics(context, input),
+    }),
     defineCapability({
       id: 'browser.file_access',
       title: 'Allow this agent to transfer a browser file',

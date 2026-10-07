@@ -17,7 +17,8 @@ export function createControllerProxyAuthentication(
   originalDefault: Readonly<{
     context: string;
     targets: readonly Readonly<{ id: string; type: string; context: string | undefined }>[];
-  }>
+  }>,
+  diagnosticWrite?: (value: string) => unknown
 ) {
   const defaultContext = originalDefault.context;
   const initialTargets = originalDefault.targets;
@@ -45,6 +46,41 @@ export function createControllerProxyAuthentication(
     closeOriginal = original.close.bind(original),
     isCurrent = current,
     failOriginal = failed;
+  type Decision =
+    | 'provide'
+    | 'repeat'
+    | 'session'
+    | 'authority'
+    | 'source'
+    | 'origin-type'
+    | 'origin-mismatch'
+    | 'origin-invalid'
+    | 'challenge-invalid'
+    | 'ack-observed'
+    | 'ack-refused'
+    | 'original-fault'
+    | 'send-refused'
+    | 'ack-unobserved';
+  const emitted = new Set<Decision>();
+  let diagnosticSink: ((value: string) => unknown) | undefined;
+  try {
+    diagnosticSink = diagnosticWrite ?? process.stderr.write.bind(process.stderr);
+  } catch {
+    /* Diagnostics have no authority. */
+  }
+  const emit = (decision: Decision) => {
+    try {
+      if (emitted.has(decision) || emitted.size >= 16) return;
+      emitted.add(decision);
+      diagnosticSink?.(
+        'Browser original controller proxy authentication diagnostic ' +
+          JSON.stringify({ ordinal: emitted.size, decision }) +
+          '\n'
+      );
+    } catch {
+      /* The original decision and producer cause stay unchanged. */
+    }
+  };
   const sessions = new Map<string, Session>();
   const targets = new Map<string, Target>();
   for (const info of initialTargets) {
@@ -172,6 +208,7 @@ export function createControllerProxyAuthentication(
       const value = new Error('CONTROLLER_AUTH_ACK_UNOBSERVED');
       reject(value);
       note(value);
+      emit('ack-unobserved');
     }, 3000);
     pending.set(id, { session, resolve, reject, timer });
     try {
@@ -181,6 +218,7 @@ export function createControllerProxyAuthentication(
       clearTimeout(timer);
       reject(value);
       note(value);
+      emit('send-refused');
     }
   };
   const transport: ConnectOverCDPTransport = {
@@ -229,7 +267,11 @@ export function createControllerProxyAuthentication(
         if (Object.prototype.hasOwnProperty.call(value, 'error')) {
           task.reject(value.error);
           note(value.error);
-        } else task.resolve();
+          emit('ack-refused');
+        } else {
+          task.resolve();
+          emit('ack-observed');
+        }
         return;
       }
       if (value.method === 'Target.targetCreated' || value.method === 'Target.targetInfoChanged')
@@ -284,16 +326,28 @@ export function createControllerProxyAuthentication(
       const challenge = record(params.authChallenge) ? params.authChallenge : undefined;
       const admitted = isCurrent();
       let exact = false;
+      let decision: Decision = 'repeat';
       try {
-        exact =
-          initial &&
-          sessions.get(session)?.admitted === true &&
-          admitted &&
-          challenge?.source === 'Proxy' &&
-          typeof challenge.origin === 'string' &&
-          new URL(challenge.origin).origin === proxy.origin;
+        if (initial) {
+          decision = 'session';
+          if (sessions.get(session)?.admitted === true) {
+            decision = 'authority';
+            if (admitted) {
+              decision = 'source';
+              if (challenge?.source === 'Proxy') {
+                decision = 'origin-type';
+                if (typeof challenge.origin === 'string') {
+                  decision = 'origin-mismatch';
+                  exact = new URL(challenge.origin).origin === proxy.origin;
+                  if (exact) decision = 'provide';
+                }
+              }
+            }
+          }
+        }
       } catch {
         exact = false;
+        decision = decision === 'origin-mismatch' ? 'origin-invalid' : 'challenge-invalid';
       }
       ownSend(session, {
         requestId: params.requestId,
@@ -301,8 +355,10 @@ export function createControllerProxyAuthentication(
           ? { response: 'ProvideCredentials', ...credentials }
           : { response: 'CancelAuth' },
       });
+      emit(decision);
     } catch (value) {
       note(value);
+      emit('original-fault');
     }
   };
   original.onclose = (...args) => {

@@ -489,13 +489,14 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // composes no extension. `extension-tools-every-list.test.ts` guards those.
     // 119 -> 120 for `compact_my_session` (DOR-2732): the `<context_warning>`
     // note names it, with each runtime's prefix, so it is always loaded.
-    // 120 -> 133: exact complete managed-browser vocabulary from the docs registry.
+    // 120 -> 134: exact complete managed-browser vocabulary from the docs registry.
     // These deferred tools add no prompt instructions; the exact prefix count and
     // bare/unknown-name guards below stay unchanged.
-    expect(advertised.size).toBe(133);
+    expect(advertised.size).toBe(134);
     expect([...advertised].filter((name) => name.startsWith('managed_browser_')).sort()).toEqual([
       'managed_browser_close',
       'managed_browser_control',
+      'managed_browser_diagnostics',
       'managed_browser_download',
       'managed_browser_file_access',
       'managed_browser_input',

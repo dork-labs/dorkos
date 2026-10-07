@@ -25,9 +25,15 @@ export interface RuntimeBrowserActorCapabilities {
 }
 import type { AuthorRegistry } from '../../rooms/author-registry.js';
 import { z } from 'zod';
-import type { BrowserLifecycleEngine, OwnedInputAuthorization } from '@dorkos/browser/server-owner';
+import {
+  isOriginalBrowserDiagnosticRefusal,
+  type BrowserLifecycleEngine,
+  type OwnedInputAuthorization,
+} from '@dorkos/browser/server-owner';
 import {
   BrowserBindingSchema,
+  BrowserDiagnosticSummarySchema,
+  BrowserDiagnosticsRequestSchema,
   BrowserControlSchema,
   BrowserInputRequestSchema,
   BrowserNavigateRequestSchema,
@@ -118,7 +124,7 @@ export function createManagedBrowserRuntimeTools(options: {
   grants: Pick<OwnedBrowserGrants, 'admit' | 'controllerGrant'>;
   controller: Pick<OwnedBrowserController, 'takeover' | 'authorization'>;
   input: Pick<BrowserControllerInput, 'captureAuthorization'>;
-  engine: Pick<BrowserLifecycleEngine, 'listTabs'>;
+  engine: Pick<BrowserLifecycleEngine, 'listTabs' | 'diagnostics'>;
   owners?: BrowserRuntimeOwnerResolution;
   enabled(): boolean;
   actorCapabilities?: RuntimeBrowserActorCapabilities;
@@ -145,6 +151,7 @@ export function createManagedBrowserRuntimeTools(options: {
   const authorization = options.controller.authorization.bind(options.controller);
   const input = options.input.captureAuthorization.bind(options.input);
   const tabs = options.engine.listTabs.bind(options.engine);
+  const readDiagnostics = options.engine.diagnostics.bind(options.engine);
   const enabled = options.enabled.bind(options);
   const controllers = new Map<string, { identity: object; principal: ServerPrincipalProof }>();
   const pending = new Set<Promise<unknown>>();
@@ -373,6 +380,45 @@ export function createManagedBrowserRuntimeTools(options: {
         );
         if (!call.read()) throw refuse();
         return [binding];
+      });
+    },
+    diagnostics(context: CapabilityHandlerContext, value: unknown) {
+      return retain(async (refuse, denial, parse) => {
+        const request = parse(BrowserDiagnosticsRequestSchema, value),
+          call = await capture(context, refuse);
+        const check = () => {
+          if (context.signal?.aborted || !current()) throw refuse();
+          admit(
+            call.read,
+            request.grant.grantId,
+            request.grant.revision,
+            request.binding,
+            'browser.diagnostics',
+            denial
+          );
+          if (!call.read()) throw refuse();
+        };
+        check();
+        let original: unknown;
+        try {
+          original = readDiagnostics(request.binding);
+        } catch (reason) {
+          if (isOriginalBrowserDiagnosticRefusal(reason)) denial(reason);
+          throw reason;
+        }
+        const summary = BrowserDiagnosticSummarySchema.parse(original);
+        if (
+          Object.keys(request.binding).some(
+            (key) =>
+              summary.binding[key as keyof typeof request.binding] !==
+              request.binding[key as keyof typeof request.binding]
+          )
+        )
+          throw refuse();
+        if (Buffer.byteLength(JSON.stringify(summary), 'utf8') > 266240) throw refuse();
+        await call.refresh();
+        check();
+        return summary;
       });
     },
     control(context: CapabilityHandlerContext, value: unknown) {

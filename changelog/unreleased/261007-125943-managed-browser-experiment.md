@@ -6,6 +6,7 @@ covers:
   - 'fix(browser): finish viewer capture before renewing its lease'
   - 'fix(browser): distinguish observed helper exits from tracking gaps'
   - 'refactor(browser): isolate lifecycle tracking and acceptance checks'
+  - 'feat(browser): expose granted agent diagnostics and trace proxy refusals'
 ---
 
 ### Added

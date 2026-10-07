@@ -11,7 +11,7 @@ const deferred = () => {
   });
   return { promise, resolve };
 };
-function fixture(emptyCatalog = false) {
+function fixture(emptyCatalog = false, diagnosticWrite: (value: string) => unknown = vi.fn()) {
   const sent: Array<Record<string, unknown>> = [];
   const returned = deferred();
   let closing: Promise<void> | undefined;
@@ -31,13 +31,14 @@ function fixture(emptyCatalog = false) {
   };
   const fault = vi.fn<(value: unknown) => void>();
   let current = true;
+  const currentRead = vi.fn(() => current);
   const owner = createControllerProxyAuthentication(
     original,
     {
       url: 'http://127.0.0.1:32199',
       credentials: { username: 'dorkos', password: 'a'.repeat(43) },
     },
-    () => current,
+    currentRead,
     fault,
     Object.freeze({
       context: 'original-default-context',
@@ -52,7 +53,8 @@ function fixture(emptyCatalog = false) {
               }),
             ]
       ),
-    })
+    }),
+    diagnosticWrite
   );
   const sdk = vi.fn();
   owner.transport.onmessage = sdk;
@@ -99,6 +101,7 @@ function fixture(emptyCatalog = false) {
     sent,
     sdk,
     fault,
+    currentRead,
     attach,
     challenge,
     ack,
@@ -445,3 +448,144 @@ it('admits only the later genuine default-context attachment from an empty origi
     await f.finish();
   }
 });
+
+it('observes exact original challenge decisions and ACKs without retaining credentials or target data', async () => {
+  const sink = vi.fn<(value: string) => unknown>();
+  const f = fixture(false, sink);
+  try {
+    f.challenge('unowned', 'unowned-request');
+    f.ack();
+    f.attach();
+    f.challenge();
+    f.ack();
+    f.challenge();
+    f.ack();
+    f.challenge('actual-page', 'server-request', 'Server');
+    f.ack();
+    f.challenge('actual-page', 'foreign-proxy', 'Proxy', 'http://127.0.0.1:32200');
+    f.ack();
+    f.challenge('actual-page', 'malformed-origin', 'Proxy', 'not a URL');
+    f.ack();
+    f.revoke();
+    f.challenge('actual-page', 'revoked-request');
+    f.ack();
+    await f.owner.prepareClose();
+    const text = sink.mock.calls.map(([line]) => line).join('');
+    for (const decision of [
+      'session',
+      'provide',
+      'repeat',
+      'source',
+      'origin-mismatch',
+      'origin-invalid',
+      'authority',
+      'ack-observed',
+    ])
+      expect(text).toContain('"decision":"' + decision + '"');
+    for (const privateValue of [
+      'a'.repeat(43),
+      '127.0.0.1',
+      'actual-page',
+      'original-request',
+      'original-default-context',
+    ])
+      expect(text).not.toContain(privateValue);
+    expect(f.fault).not.toHaveBeenCalled();
+    expect(f.currentRead).toHaveBeenCalledTimes(7);
+  } finally {
+    await f.finish();
+  }
+});
+
+it.each([false, undefined])(
+  'isolates a throwing diagnostic sink while preserving original ACK failure %s',
+  async (original) => {
+    let entries = 0;
+    const f = fixture(false, () => {
+      entries++;
+      throw original;
+    });
+    try {
+      f.attach();
+      f.challenge();
+      expect((f.sent.at(-1)?.params as Record<string, unknown>).authChallengeResponse).toEqual({
+        response: 'ProvideCredentials',
+        username: 'dorkos',
+        password: 'a'.repeat(43),
+      });
+      f.ack(undefined, { value: original });
+      await expect(f.owner.prepareClose()).rejects.toBe(original);
+      expect(f.fault).toHaveBeenCalledExactlyOnceWith(original);
+      expect(entries).toBe(2);
+    } finally {
+      await f.finish();
+    }
+  }
+);
+
+it('reserves the diagnostic code before a reentrant challenge without replaying credentials', async () => {
+  const sink = vi.fn<(value: string) => unknown>(() => {
+    if (sink.mock.calls.length === 1) f.challenge();
+  });
+  const f: ReturnType<typeof fixture> = fixture(false, sink);
+  try {
+    f.attach();
+    f.challenge();
+    expect(f.sent).toHaveLength(2);
+    expect((f.sent[0]!.params as Record<string, unknown>).authChallengeResponse).toMatchObject({
+      response: 'ProvideCredentials',
+    });
+    expect((f.sent[1]!.params as Record<string, unknown>).authChallengeResponse).toEqual({
+      response: 'CancelAuth',
+    });
+    f.ack(f.sent[0]!);
+    f.ack(f.sent[1]!);
+    await f.owner.prepareClose();
+    expect(sink.mock.calls.filter(([line]) => line.includes('"decision":"provide"'))).toHaveLength(
+      1
+    );
+    expect(f.fault).not.toHaveBeenCalled();
+  } finally {
+    await f.finish();
+  }
+});
+
+it.each([false, undefined])(
+  'does not reread a faulting original challenge getter %s',
+  async (reason) => {
+    const sink = vi.fn<(value: string) => unknown>(() => {
+      throw new Error('DIAGNOSTIC_ONLY');
+    });
+    const f = fixture(false, sink);
+    const getter = vi.fn(() => {
+      throw reason;
+    });
+    try {
+      f.attach();
+      f.original.onmessage?.({
+        method: 'Fetch.authRequired',
+        sessionId: 'actual-page',
+        params: {
+          requestId: 'original-request',
+          authChallenge: {
+            get source() {
+              return getter();
+            },
+            origin: 'http://127.0.0.1:32199',
+          },
+        },
+      });
+      // The original challenge classifier catches URL/source failures and sends CancelAuth.
+      expect(getter).toHaveBeenCalledTimes(1);
+      expect(f.currentRead).toHaveBeenCalledTimes(1);
+      expect((f.sent.at(-1)?.params as Record<string, unknown>).authChallengeResponse).toEqual({
+        response: 'CancelAuth',
+      });
+      f.ack();
+      await f.owner.prepareClose();
+      expect(f.fault).not.toHaveBeenCalled();
+    } finally {
+      await f.finish();
+    }
+  }
+);
