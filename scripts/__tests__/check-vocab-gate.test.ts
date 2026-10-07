@@ -323,6 +323,50 @@ describe('scanSource — punctuation in copy positions', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Wave 6 (DOR-2736): retired positioning PHRASES, read from the shipped data
+//
+// Unlike the fixtures above, these load the real banned-terms.json, so they
+// fail if wave 6 is ever dropped or a family loses its terms — the data is
+// the thing under test here, and the matcher is pinned separately.
+// ---------------------------------------------------------------------------
+
+describe('wave 6 — retired positioning phrases in copy positions', () => {
+  const wave6 = loadBannedTerms().filter((t) => t.wave === 'wave-6');
+
+  it.each([
+    ['the old category line', 'DorkOS is the operating system for autonomous AI agents.'],
+    ['the short form', 'An OS for AI agents.'],
+    ['the 2026-08 category line', 'One place for every agent you run.'],
+    ['an equal-accounts claim', 'Agents are equal to people here.'],
+    ['a Discord invite link', 'Join us at discord.gg/dorkos'],
+  ])('catches %s', (_name, copy) => {
+    const violations = scanSource('Hero.tsx', `const x = <p>${copy}</p>;`, wave6);
+    expect(violations.length).toBeGreaterThan(0);
+    expect(violations[0]?.wave).toBe('wave-6');
+  });
+
+  it('catches a phrase Prettier wrapped across two lines of JSX text', () => {
+    const src = `const x = (
+      <p>
+        DorkOS is the operating system
+        for AI agents.
+      </p>
+    );`;
+    expect(scanSource('Hero.tsx', src, wave6).map((v) => v.wave)).toEqual(['wave-6']);
+  });
+
+  it('leaves the bare word "Discord" alone — it is a real app people connect', () => {
+    const src = `const x = <Field label="Discord bot token" description="Connect Discord to reach your agents." />;`;
+    expect(scanSource('DiscordSetup.tsx', src, wave6)).toEqual([]);
+  });
+
+  it('leaves the current category line alone', () => {
+    const src = `const x = <p>A workspace for people and agents.</p>;`;
+    expect(scanSource('Hero.tsx', src, wave6)).toEqual([]);
+  });
+});
+
 describe('isAllowlisted', () => {
   const entries: AllowlistEntry[] = [
     { path: 'features/connections/', terms: ['connection'], reason: 'The Connections page.' },
@@ -872,6 +916,18 @@ describe('runVocabGate — docs scan wired end to end', () => {
 
     const violations = runVocabGate(root, ['apps/client/src'], ['docs']);
     expect(violations.map((v) => v.term)).toEqual(['integration']);
+  });
+
+  // Purpose: a docs hit for a wave-6 positioning line is reported ONCE, by
+  // check-banned-words.sh (pinned in test-check-banned-words.sh). Fails if
+  // wave 6 joins MDX_SCANNED_WAVES without that script giving the docs up.
+  it('leaves wave 6 out of the docs scan — check-banned-words.sh owns docs prose for it', () => {
+    const root = makeTempDir();
+    const docPath = join(root, 'docs/guides/fixture-guide.mdx');
+    mkdirSync(join(docPath, '..'), { recursive: true });
+    writeFileSync(docPath, 'DorkOS is the operating system for AI agents.\n');
+
+    expect(runVocabGate(root, ['apps/client/src'], ['docs'])).toEqual([]);
   });
 
   it('applies the real allowlist to docs the same way it does to source', () => {

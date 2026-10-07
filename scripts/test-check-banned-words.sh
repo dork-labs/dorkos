@@ -110,7 +110,70 @@ run_case 'the shared tool-name note says "mission control"' 1 'packages/operatin
   'export const TOOL_NAME_NOTE = `> Call it from mission control.`;'
 
 echo ""
+echo "== the 2026-10 positioning lines (DOR-2736) must go RED, one per family =="
+
+# Family 1: the retired category line, in the spellings people actually wrote.
+run_case 'README says "operating system for AI agents"' 1 'README.md' \
+  'DorkOS is the operating system for AI agents.'
+
+run_case 'a docs page says "operating system for autonomous AI agents"' 1 'docs/index.mdx' \
+  'An open-source operating system for autonomous AI agents.'
+
+run_case 'a blog post says "OS for AI agents"' 1 'blog/launch.mdx' \
+  'Think of it as an OS for AI agents.'
+
+# Family 2: the 2026-08 category line the reset replaced.
+run_case 'a docs page says "one place for every agent"' 1 'docs/guides/z.mdx' \
+  'One place for every agent you run.'
+
+# Family 3: equal-accounts claims, an internal principle public copy never states.
+run_case 'an operating skill says agents are "equal to people"' 1 'packages/operating-skills/src/skills/team.ts' \
+  '  Agents here are equal to people: same account, same rights.'
+
+run_case 'CONTRIBUTING says "equal accounts"' 1 'CONTRIBUTING.md' \
+  'People and agents hold equal accounts.'
+
+# Family 4: a Discord invite link, in prose and in the two surfaces only this
+# group reaches — a package manifest and app source, where an href is
+# invisible to check-vocab-gate.ts.
+run_case 'a docs page links discord.gg' 1 'docs/community.mdx' \
+  'Join the chat at [Discord](https://discord.gg/dorkos).'
+
+run_case 'app source links a discord.com invite' 1 'apps/site/src/components/Footer.tsx' \
+  '  <a href="https://discord.com/invite/abc123">Chat</a>'
+
+run_case 'a package manifest description says "operating system for agents"' 1 'packages/cli/package.json' \
+  '{ "description": "The operating system for agents." }'
+
+echo ""
 echo "== the guard must stay GREEN on everything we deliberately kept =="
+
+# The bare word "Discord" is a real app people connect (the relay adapter type
+# is literally "discord"). Only an invite link is banned.
+run_case 'the bare word "Discord" is fine in prose' 0 'docs/guides/relay.mdx' \
+  'Connect Discord, Telegram or Slack so your agents can reach you.'
+
+run_case 'the bare word "Discord" is fine in app source' 0 'apps/client/src/features/discord/Setup.tsx' \
+  "  label: 'Discord bot token',"
+
+# "DorkOS" contains "OS"; the short-form branch needs a non-word character in
+# front, so the product name followed by "for agents" must not fire.
+run_case '"DorkOS for agents" is not the short form' 0 'README.md' \
+  'Install DorkOS for agents and the people who run them.'
+
+# Source is scanned for links ONLY. A positioning phrase in a code comment is
+# not prose; check-vocab-gate.ts judges render paths in app source.
+run_case 'a positioning phrase in a source comment is not flagged' 0 'apps/server/src/x.ts' \
+  '// The old headline was one place for every agent you run.'
+
+# The root manifest names a `cockpit` script: code, not copy. Manifests are
+# read for the positioning group only, never wave 2.
+run_case 'a manifest script named cockpit is not flagged' 0 'package.json' \
+  '{ "scripts": { "capture:cockpit": "node x.js" } }'
+
+# A line that quotes a retired phrase to state the rule carries the marker.
+run_case 'a marked line quoting the rule is allowed' 0 'AGENTS.md' \
+  'Never write "operating system for AI agents" or "equal accounts". <!-- vocab-allow: states the rule -->'
 
 # Carve-out 1: the compiled changelog is generated from CHANGELOG.md, which
 # AGENTS.md forbids editing. It keeps its historical wording.
