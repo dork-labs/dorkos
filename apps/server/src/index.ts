@@ -473,6 +473,7 @@ import {
   getRemoteCommunityAdapter,
   getRemoteConnectionStore,
   getRemotePairingService,
+  getRemoteWakePolicy,
   publishRemoteCommunityDeliveryChanges,
   setRemoteCommunityDb,
   setRemoteCommunityDeliveryProjection,
@@ -2085,6 +2086,9 @@ async function start() {
     remoteCommunityRuntime,
     spacesEnabled
   );
+  // Who in each space may wake an agent here (spec `official-community-space` D9). Loaded
+  // before the streams start below; until then the gate wakes nobody.
+  remoteCommunityBridge.current.useWakeGate(getRemoteWakePolicy());
   remoteRedactionSync = new RemoteRedactionSync({
     db,
     mirrors: remoteCommunityRuntime.mirrors,
@@ -2702,6 +2706,7 @@ async function start() {
     }
     if (meshStartupReconciled) {
       remoteCommunityRuntime?.start();
+      await getRemoteWakePolicy().reload();
       remoteCommunitySubscriptions?.start();
       // Copies left behind by a connection that no longer exists (DOR-2334).
       const subscriptions = remoteCommunitySubscriptions;

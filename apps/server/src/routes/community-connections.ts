@@ -16,6 +16,7 @@ import {
   CommunityConnectionDescriptorSchema,
   CommunityDisconnectImpactSchema,
   CommunityDisconnectResponseSchema,
+  CommunityWakeAgentsFromSchema,
   type CommunityConnectionDescriptor,
   describeCommunityRetryWait,
 } from '@dorkos/shared/community-connections';
@@ -50,7 +51,9 @@ import {
 import {
   getRemoteCommunityAdapter,
   getRemotePairingService,
+  getRemoteWakePolicy,
 } from '../services/communities/remote/state.js';
+import type { RemoteWakePolicy } from '../services/communities/remote/wake-policy.js';
 import { CommunityNavigationPreferenceService } from '../services/communities/community-navigation-preferences.js';
 import { CommunityAttentionCache } from '../services/communities/remote/community-attention-cache.js';
 import { CommunityOwnerNoticeCache } from '../services/communities/remote/community-owner-notice-cache.js';
@@ -241,7 +244,8 @@ export function createCommunityConnectionsRouter(
   ),
   attentionCache: CommunityAttentionCache = new CommunityAttentionCache(),
   ownerNoticeCache: CommunityOwnerNoticeCache = new CommunityOwnerNoticeCache(),
-  announcer: CommunityOwnerNoticeAnnouncer = new CommunityOwnerNoticeAnnouncer(resolveDorkHome())
+  announcer: CommunityOwnerNoticeAnnouncer = new CommunityOwnerNoticeAnnouncer(resolveDorkHome()),
+  wakePolicy: Pick<RemoteWakePolicy, 'get' | 'set'> = getRemoteWakePolicy()
 ): Router {
   const router = Router();
   const caches: ActivityCaches = {
@@ -441,6 +445,48 @@ export function createCommunityConnectionsRouter(
           await connectionService.disconnectImpact(ref.data, owner)
         )
       );
+    } catch (error) {
+      failure(res, error);
+    }
+  });
+  // Who in this space may wake the owner's agents (spec `official-community-space` D9).
+  // Owner-only, like every route here: `resolveCommunityOwner` refuses an agent's identity, a
+  // remote caller and anyone but this install's owner, so nothing a stranger can say and no
+  // agent's tool can widen who wakes an agent.
+  router.get('/:ref/wake-agents-from', async (req, res) => {
+    const owner = resolveCommunityOwner(req, res);
+    if (!owner) return;
+    const ref = CommunityRefSchema.safeParse(req.params.ref);
+    if (!ref.success) {
+      res.status(404).json({ error: 'Space connection not found.' });
+      return;
+    }
+    try {
+      res.json(
+        CommunityWakeAgentsFromSchema.parse({
+          wakeAgentsFrom: await wakePolicy.get(ref.data, owner),
+        })
+      );
+    } catch (error) {
+      failure(res, error);
+    }
+  });
+  router.put('/:ref/wake-agents-from', async (req, res) => {
+    const owner = resolveCommunityOwner(req, res);
+    if (!owner) return;
+    const ref = CommunityRefSchema.safeParse(req.params.ref);
+    if (!ref.success) {
+      res.status(404).json({ error: 'Space connection not found.' });
+      return;
+    }
+    const body = CommunityWakeAgentsFromSchema.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: 'Choose who can wake your agents: me or members.' });
+      return;
+    }
+    try {
+      await wakePolicy.set(ref.data, owner, body.data.wakeAgentsFrom);
+      res.json(body.data);
     } catch (error) {
       failure(res, error);
     }

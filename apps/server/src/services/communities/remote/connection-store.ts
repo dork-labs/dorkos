@@ -46,9 +46,10 @@ type ConnectionRecord = z.infer<typeof RecordSchema>;
 
 /**
  * The small records kept beside connections.json, each keyed by owner and ref:
- * `not-found-since.json` holds the ISO time of the first `404 NOT_FOUND`, and
+ * `not-found-since.json` holds the ISO time of the first `404 NOT_FOUND`,
  * `undelivered-when-gone.json` how many agent posts never arrived when the community was found
- * deleted or taken down.
+ * deleted or taken down, and `wake-agents-from.json` who in a space may wake this owner's
+ * agents (spec `official-community-space` D9).
  */
 const SIDE_RECORDS = {
   'not-found': {
@@ -59,12 +60,37 @@ const SIDE_RECORDS = {
     file: 'undelivered-when-gone.json',
     schema: z.record(z.string(), z.number().int().positive()),
   },
+  wake: {
+    file: 'wake-agents-from.json',
+    schema: z.record(z.string(), z.enum(['me', 'members'])),
+  },
 } as const;
 type SideRecordName = keyof typeof SIDE_RECORDS;
 type SideEntries<Name extends SideRecordName> = z.infer<(typeof SIDE_RECORDS)[Name]['schema']>;
 
 /** Non-secret status handed to the browser through the local route. */
 export type RemoteConnectionDescriptor = CommunityConnectionDescriptor;
+
+/**
+ * Who in a space may wake this owner's agents there (spec `official-community-space` D9):
+ * `'members'`, anyone in the space who mentions one, or `'me'`, only the owner's own account.
+ */
+export type WakeAgentsFrom = 'me' | 'members';
+
+/** What a connection's wake setting is when nobody chose one: today's behaviour. */
+export const DEFAULT_WAKE_AGENTS_FROM: WakeAgentsFrom = 'members';
+
+/** One connection's wake setting beside the owner's own member id in that space. */
+export interface ConnectionWakeSetting {
+  /** The local connection ref. */
+  ref: CommunityRef;
+  /** The local owner the connection belongs to. */
+  ownerKey: string;
+  /** The owner's own member id in the space, or `null` before pairing completes. */
+  connectedHumanMemberId: string | null;
+  /** Who may wake this owner's agents there. */
+  wakeAgentsFrom: WakeAgentsFrom;
+}
 
 /** A local ref that is absent or belongs to another local owner. */
 export class RemoteConnectionNotFoundError extends Error {
@@ -295,13 +321,53 @@ export class RemoteConnectionStore {
 
   /** Forget one connection's entry in one side record; a missing entry writes nothing. */
   private async clearSide(name: SideRecordName, ref: CommunityRef, ownerKey: string) {
+    await this.exclusive(() => this.clearSideHeld(name, ref, ownerKey));
+  }
+
+  /** {@link clearSide} for a caller already inside {@link exclusive}. */
+  private async clearSideHeld(name: SideRecordName, ref: CommunityRef, ownerKey: string) {
+    const entries: Record<string, unknown> = await this.readSide(name);
+    const key = `${ownerKey}\0${ref}`;
+    if (!(key in entries)) return;
+    delete entries[key];
+    await this.writeSide(name, entries);
+  }
+
+  /**
+   * Who in this space may wake the owner's agents; {@link DEFAULT_WAKE_AGENTS_FROM} when
+   * nobody chose. Throws {@link RemoteConnectionNotFoundError} for another owner's connection.
+   */
+  async wakeAgentsFrom(ref: CommunityRef, ownerKey: string): Promise<WakeAgentsFrom> {
+    await this.get(ref, ownerKey);
+    return (await this.readSide('wake'))[`${ownerKey}\0${ref}`] ?? DEFAULT_WAKE_AGENTS_FROM;
+  }
+
+  /**
+   * Record who in this space may wake the owner's agents. Owner-only by construction: the one
+   * route that calls it refuses every caller but this install's owner, and no agent tool or
+   * config path reaches this file.
+   */
+  async setWakeAgentsFrom(
+    ref: CommunityRef,
+    ownerKey: string,
+    value: WakeAgentsFrom
+  ): Promise<void> {
     await this.exclusive(async () => {
-      const entries: Record<string, unknown> = await this.readSide(name);
-      const key = `${ownerKey}\0${ref}`;
-      if (!(key in entries)) return;
-      delete entries[key];
-      await this.writeSide(name, entries);
+      await this.get(ref, ownerKey);
+      const entries = await this.readSide('wake');
+      await this.writeSide('wake', { ...entries, [`${ownerKey}\0${ref}`]: value });
     });
+  }
+
+  /** Every owner's connection with its wake setting, for the in-memory gate a live stream reads. */
+  async wakeSettings(): Promise<ConnectionWakeSetting[]> {
+    const [records, wake] = await Promise.all([this.read(), this.readSide('wake')]);
+    return records.map((record) => ({
+      ref: record.ref,
+      ownerKey: record.ownerKey,
+      connectedHumanMemberId: record.connectedHumanMemberId,
+      wakeAgentsFrom: wake[`${record.ownerKey}\0${record.ref}`] ?? DEFAULT_WAKE_AGENTS_FROM,
+    }));
   }
 
   /**
@@ -646,6 +712,7 @@ export class RemoteConnectionStore {
       await this.credentials.delete(`community:${ref}:personal`);
       const records = (await this.read()).filter((item) => item.ref !== ref);
       await this.write(records);
+      await this.clearSideHeld('wake', ref, ownerKey);
       this.announce([{ ownerKey, ref, status: 'removed' }]);
       await rm(path.join(this.directory, 'cache', ref), { recursive: true, force: true });
     });
