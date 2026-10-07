@@ -300,6 +300,20 @@ function parseMail(value: {
 
 const schema = z.object({
   COMMUNITY_DATABASE_URL: z.url().startsWith('postgres'),
+  // The one connection that waits for live notices. It must reach Postgres directly: a
+  // transaction-mode pooler accepts LISTEN and then delivers nothing. Defaults to the main URL.
+  COMMUNITY_LISTEN_DATABASE_URL: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z.url().startsWith('postgres').optional()
+  ),
+  // Connections requests share. Each running export adds two more on top.
+  COMMUNITY_DATABASE_POOL_SIZE: between(2, 10, 500),
+  // Live streams one server holds at once, and the most one community may hold of them. Past
+  // either a new stream is refused with 503 and Retry-After.
+  COMMUNITY_STREAMS_MAX: between(1, 25_000, 1_000_000),
+  COMMUNITY_STREAMS_PER_COMMUNITY: between(1, 20_000, 1_000_000),
+  // How long a quiet live stream waits before it re-reads anyway, in case a notice was lost.
+  COMMUNITY_STREAM_FALLBACK_MS: between(250, 15_000, 300_000),
   COMMUNITY_AUTH_SECRET: z.string().min(32),
   COMMUNITY_INVITE_SECRET: z.string().min(32),
   COMMUNITY_INVITE_KEY_ID: z
@@ -661,6 +675,17 @@ export function parseConfig(env: Record<string, unknown>) {
   };
   return {
     databaseUrl: value.COMMUNITY_DATABASE_URL,
+    /** Request pool size and the direct address live notices are received on. */
+    database: {
+      poolSize: value.COMMUNITY_DATABASE_POOL_SIZE,
+      listenUrl: value.COMMUNITY_LISTEN_DATABASE_URL ?? value.COMMUNITY_DATABASE_URL,
+    },
+    /** Live channel streams: the per-server cap, the per-community quota, the fallback re-read. */
+    streams: {
+      max: value.COMMUNITY_STREAMS_MAX,
+      perCommunity: value.COMMUNITY_STREAMS_PER_COMMUNITY,
+      fallbackMs: value.COMMUNITY_STREAM_FALLBACK_MS,
+    },
     authSecret: value.COMMUNITY_AUTH_SECRET,
     inviteSecret: value.COMMUNITY_INVITE_SECRET,
     inviteKeyId: value.COMMUNITY_INVITE_KEY_ID,

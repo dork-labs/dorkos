@@ -42,6 +42,8 @@ export const COMMUNITY_RESERVED_SHORT_NAMES: readonly string[] = [
   'join',
   'pairing',
   'health',
+  // The host's monitoring scrape.
+  'metrics',
   'auth',
   'login',
   'logout',

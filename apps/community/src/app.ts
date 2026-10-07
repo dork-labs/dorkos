@@ -21,6 +21,8 @@ import { mintHandle } from './handles.js';
 import { registerChannelRoutes } from './routes/community/channels.js';
 import { registerEntryRoutes } from './routes/community/entries.js';
 import { registerEventRoutes } from './routes/community/events.js';
+import { LiveHub } from './live/hub.js';
+import { registerMonitoringRoutes } from './live/monitoring.js';
 import { registerInviteRoutes } from './routes/community/invites.js';
 import { registerMemberRoutes } from './routes/community/members.js';
 import { registerPairingRoutes } from './routes/community/pairings.js';
@@ -80,6 +82,16 @@ import { EMAIL_LINK_CAPS, emailLinksOn } from './email-links/model.js';
 import { queueEmailConfirmation, registerEmailLinkRequestRoutes } from './email-links/requests.js';
 import { registerEmailLinkUseRoutes } from './email-links/confirm.js';
 
+/** Build the live-stream hub the configuration describes. */
+export function createLiveHub(config: CommunityConfig): LiveHub {
+  return new LiveHub({
+    listenUrl: config.database.listenUrl,
+    maxStreams: config.streams.max,
+    maxStreamsPerCommunity: config.streams.perCommunity,
+    fallbackMs: config.streams.fallbackMs,
+  });
+}
+
 /** Assemble the injectable HTTP app without reading environment variables. */
 export function createCommunityApp({
   config,
@@ -87,9 +99,16 @@ export function createCommunityApp({
   hooks,
   blobStore = createBlobStore(config),
   noticeComposers = {},
+  live = createLiveHub(config),
 }: {
   config: CommunityConfig;
   pool: Pool;
+  /**
+   * Live-stream fan-out. `main.ts` passes one it started (pinned open, self-tested) so it can
+   * stop it on shutdown; without one the app makes its own, which listens only while a stream
+   * is open.
+   */
+  live?: LiveHub;
   /**
    * The mail composers the running mail worker has, by notice kind. A feature that must reach a
    * person by mail refuses to start while its notice cannot be composed, so a queued notice is
@@ -406,6 +425,7 @@ export function createCommunityApp({
     limitKeyMiss: (c) =>
       limitAttempts(`host-key:${peer(c)}`, config.limits.hostKeyAttemptsPerMinute),
   });
+  registerMonitoringRoutes(app, { pool, hub: live, authority });
   registerHostLinkRoutes(app, { config });
   registerMinimumAgeRoutes(app, { config, now });
   const hostApi = new Hono();
@@ -563,7 +583,7 @@ export function createCommunityApp({
   registerChannelRoutes(communityApi, { pool, auth });
   registerEntryRoutes(communityApi, { pool, auth, config, receiptGate });
   if (receiptGate) registerCommunityTestControlRoutes(app, receiptGate);
-  registerEventRoutes(communityApi, { pool, auth, config, hooks });
+  registerEventRoutes(communityApi, { pool, auth, config, hub: live, hooks });
   registerInviteRoutes(communityApi, {
     pool,
     auth,

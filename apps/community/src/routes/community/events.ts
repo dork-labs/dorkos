@@ -1,4 +1,4 @@
-import type { Hono } from 'hono';
+import type { Context, Hono } from 'hono';
 import type { Pool } from 'pg';
 import {
   CommunityWireChannelSchema,
@@ -21,7 +21,8 @@ import {
   transaction,
   type Principal,
 } from '../../data.js';
-import { ApiError, json, readJson } from '../../http.js';
+import { ApiError, ServiceBusy, json, readJson } from '../../http.js';
+import { LiveStreamLimit, type LiveHub, type LiveStream } from '../../live/hub.js';
 import { entryProjection, originKeyForPrincipal } from './entries.js';
 import { attachmentsForEntries } from './attachments.js';
 import { communityGoneReason, isReadOnlyLifecycle } from '../../tenant-context.js';
@@ -108,24 +109,37 @@ function streamCloseReason(
   return state.active && isReadOnlyLifecycle(state.lifecycle) ? 'archived' : 'removed';
 }
 
-/** Register durable SSE replay and monotonic per-member read positions. */
+/** A quiet stream sends a comment this often so proxies keep the connection open. */
+const HEARTBEAT_MS = 15_000;
+/** What a refused stream is told to wait, in seconds, before it opens again. */
+const STREAM_RETRY_SECONDS = 15;
+
+/**
+ * Register durable SSE replay and monotonic per-member read positions.
+ *
+ * Live streams wake on notices through `hub` rather than polling: each reads the channel once
+ * per notice that names it, and rechecks its access once per notice that may have changed it.
+ */
 export function registerEventRoutes(
   app: Hono,
   {
     pool,
     auth,
     config,
+    hub,
     hooks,
   }: {
     pool: Pool;
     auth: CommunityAuth;
     config: CommunityConfig;
+    hub: LiveHub;
     hooks?: {
       afterSnapshotWatermark?: () => Promise<void>;
       afterEntryAttachmentLookup?: () => Promise<void>;
     };
   }
 ) {
+  const fallbackMs = hub.options.fallbackMs;
   app.get('/attention', async (c) => {
     const principal = await requirePrincipal(c, auth, pool, 'read');
     if (principal.kind !== 'human')
@@ -244,6 +258,35 @@ export function registerEventRoutes(
     if (!principal.credentialHash && !openedSession)
       throw new ApiError(401, 'UNAUTHENTICATED', 'Sign in to continue.');
     const channel = await liveChannel(pool, c.req.param('id'), principal);
+    let live: LiveStream;
+    try {
+      live = await hub.open({
+        communityId: principal.community_id,
+        channelId: channel.id,
+        memberId: principal.kind === 'agent' ? principal.ownerMemberId : principal.id,
+        agentId: principal.kind === 'agent' ? principal.id : undefined,
+        userId: openedSession?.user.id,
+      });
+    } catch (error) {
+      if (error instanceof LiveStreamLimit)
+        throw new ServiceBusy('Live updates are busy. Try again shortly.', STREAM_RETRY_SECONDS);
+      throw error;
+    }
+    try {
+      return await openStream(c, principal, openedSession, channel, live);
+    } catch (error) {
+      live.release();
+      throw error;
+    }
+  });
+
+  async function openStream(
+    c: Context,
+    principal: Principal,
+    openedSession: Awaited<ReturnType<CommunityAuth['api']['getSession']>>,
+    channel: LiveChannel,
+    live: LiveStream
+  ): Promise<Response> {
     const resume = c.req.header('last-event-id');
     let position = resume
       ? decodeCursor(
@@ -283,7 +326,6 @@ export function registerEventRoutes(
         throw new ApiError(401, 'UNAUTHENTICATED', 'This session is unavailable.');
     }
     const encoder = new TextEncoder();
-    let revocationTimer: ReturnType<typeof setInterval> | undefined;
     let closed = false;
     let replayComplete = false;
     let lastHeartbeat = Date.now();
@@ -311,15 +353,24 @@ export function registerEventRoutes(
       );
     };
     const stop = () => {
+      if (closed) return;
       closed = true;
-      if (revocationTimer) clearInterval(revocationTimer);
+      live.release();
+      // Wake both loops so each sees `closed` and returns instead of waiting out its timer.
+      live.entries.raise();
+      live.access.raise();
     };
+    // A quiet stream re-reads anyway after the fallback interval, in case a notice was lost or
+    // access ended in a way no notice announces (a session simply expiring). Jitter spreads the
+    // re-reads of streams that opened together.
+    const fallbackWait = () => Math.round(fallbackMs * (0.8 + Math.random() * 0.4));
     const checkAccess = async () => {
       // The opening request already verified the cookie signature or bearer.
       // Revalidate that exact credential and the channel in ONE fresh database
       // snapshot. Calling Better Auth twice per entry repeats unrelated account
       // hydration and makes durable catch-up slower than incoming traffic.
-      // Nothing is cached: this query also runs after attachment enrichment.
+      // A quiet stream runs this only when a notice says its access may have changed, or after
+      // the fallback interval; every entry is still checked fresh before it is sent.
       const credential =
         principal.kind === 'agent'
           ? `EXISTS (SELECT 1 FROM agent_credentials ac WHERE ac.agent_id=a.id
@@ -396,30 +447,32 @@ export function registerEventRoutes(
               cursor: currentCursor(),
             });
           }
-          revocationTimer = setInterval(() => {
-            void checkAccess()
-              .then(closeReason)
-              .then((reason) => {
-                if (closed || !reason) return;
-                stop();
-                if (controller.desiredSize !== null && controller.desiredSize > 0) {
-                  writeEvent(controller, {
-                    type: 'closed',
-                    reason,
-                    cursor: currentCursor(),
-                  });
-                  controller.close();
-                } else {
-                  controller.error(new Error('Community stream access ended'));
-                }
-              })
-              .catch(() => {
-                if (!closed) {
-                  stop();
-                  controller.error(new Error('Community stream unavailable'));
-                }
-              });
-          }, 250);
+          // Watches access while the stream is quiet, whether or not the reader is pulling:
+          // a notice from any revocation source, or the fallback interval, rechecks it once.
+          void (async () => {
+            while (!closed) {
+              await live.access.wait(fallbackWait());
+              if (closed) return;
+              const reason = await closeReason(await checkAccess());
+              if (closed || !reason) continue;
+              stop();
+              if (controller.desiredSize !== null && controller.desiredSize > 0) {
+                writeEvent(controller, {
+                  type: 'closed',
+                  reason,
+                  cursor: currentCursor(),
+                });
+                controller.close();
+              } else {
+                controller.error(new Error('Community stream access ended'));
+              }
+            }
+          })().catch(() => {
+            if (!closed) {
+              stop();
+              controller.error(new Error('Community stream unavailable'));
+            }
+          });
           c.req.raw.signal.addEventListener(
             'abort',
             () => {
@@ -444,18 +497,6 @@ export function registerEventRoutes(
                 });
                 return;
               }
-              const reason = await closeReason(await checkAccess());
-              if (closed) return;
-              if (reason) {
-                stop();
-                writeEvent(controller, {
-                  type: 'closed',
-                  reason,
-                  cursor: currentCursor(),
-                });
-                controller.close();
-                return;
-              }
               const result = await pool.query(
                 `SELECT e.id,e.channel_id,e.seq,COALESCE(e.author_member_id,e.author_agent_id) AS author_member_id,e.author_agent_id,e.author_display_name,e.text,COALESCE((SELECT array_agg(COALESCE(em.mentioned_member_id,em.mentioned_agent_id) ORDER BY em.position) FROM entry_mentions em WHERE em.entry_id=e.id),'{}'::uuid[]) AS mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at,e.idempotency_key,a.owner_member_id AS agent_owner_member_id
                FROM entries e LEFT JOIN agents a ON a.id=e.author_agent_id WHERE e.channel_id=$1 AND e.seq>$2 ORDER BY e.seq LIMIT 1`,
@@ -467,6 +508,8 @@ export function registerEventRoutes(
                 position = Number(row.seq);
                 const attachmentMap = await attachmentsForEntries(pool, [row.id]);
                 await hooks?.afterEntryAttachmentLookup?.();
+                // Fresh, never cached: a notice arrives a moment after its commit, and an entry
+                // must not slip out in that moment after access ended.
                 const afterEnrichment = await closeReason(await checkAccess());
                 if (closed) return;
                 if (afterEnrichment) {
@@ -488,14 +531,17 @@ export function registerEventRoutes(
                   originKeyForPrincipal(row, principal)
                 );
                 writeEvent(controller, { type: 'entry', entry, cursor: entry.cursor });
+                if (replayComplete)
+                  hub.observeLag((Date.now() - new Date(row.created_at).getTime()) / 1000);
                 return;
               }
-              if (Date.now() - lastHeartbeat >= 15_000) {
+              const sinceHeartbeat = Date.now() - lastHeartbeat;
+              if (sinceHeartbeat >= HEARTBEAT_MS) {
                 controller.enqueue(encoder.encode(': keepalive\n\n'));
                 lastHeartbeat = Date.now();
                 return;
               }
-              await new Promise((resolve) => setTimeout(resolve, 250));
+              await live.entries.wait(Math.min(fallbackWait(), HEARTBEAT_MS - sinceHeartbeat));
             }
           } catch {
             if (!closed) {
@@ -517,5 +563,5 @@ export function registerEventRoutes(
         connection: 'keep-alive',
       },
     });
-  });
+  }
 }

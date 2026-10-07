@@ -31,6 +31,20 @@ export class RateLimited extends ApiError {
   }
 }
 
+/**
+ * The server is at a capacity limit right now: `503 UNAVAILABLE` with a `Retry-After` header, so
+ * a client waits and tries again instead of hammering a full server.
+ */
+export class ServiceBusy extends ApiError {
+  constructor(
+    message: string,
+    /** Whole seconds a client should wait before trying again, at least 1. */
+    public readonly retryAfterSeconds: number
+  ) {
+    super(503, 'UNAVAILABLE', message);
+  }
+}
+
 /** An authorized administrative edit conflicted with the current safe settings. */
 export class AdminSettingsConflict extends ApiError {
   constructor(
@@ -75,7 +89,8 @@ export function handleError(error: unknown, c: Context): Response {
     );
   }
   if (error instanceof ApiError) {
-    if (error instanceof RateLimited) c.header('Retry-After', String(error.retryAfterSeconds));
+    if (error instanceof RateLimited || error instanceof ServiceBusy)
+      c.header('Retry-After', String(error.retryAfterSeconds));
     return c.json(
       CommunityWireErrorSchema.parse({ code: error.code, message: error.message }),
       error.status as 400
