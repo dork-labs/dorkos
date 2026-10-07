@@ -1,5 +1,6 @@
 import { ExternalLinkAnchor } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
+import { useSpacesEnabled } from '@/layers/entities/config';
 
 /**
  * Who DorkOS Cloud is for, word for word as the pricing page's first sentence says it. Kept here
@@ -8,6 +9,13 @@ import { cn } from '@/layers/shared/lib';
  */
 export const CLOUD_ELIGIBILITY_TEXT =
   'Paid plans and hosted spaces are for people in the United States, 18 or older.';
+
+/**
+ * The same fact without spaces, for while the spaces experiment is off
+ * (DOR-2740): a sentence about a feature nobody can see would only confuse.
+ */
+export const CLOUD_ELIGIBILITY_TEXT_WITHOUT_SPACES =
+  'Paid plans are for people in the United States, 18 or older.';
 
 /**
  * Where the full answer lives: the pricing page's questions, which include
@@ -30,9 +38,10 @@ export interface CloudEligibilityNoteProps {
  * names no plan and no price, because the app knows neither.
  */
 export function CloudEligibilityNote({ className }: CloudEligibilityNoteProps) {
+  const spaces = useSpacesEnabled();
   return (
     <p className={cn('text-muted-foreground text-xs', className)}>
-      {CLOUD_ELIGIBILITY_TEXT}{' '}
+      {spaces ? CLOUD_ELIGIBILITY_TEXT : CLOUD_ELIGIBILITY_TEXT_WITHOUT_SPACES}{' '}
       <ExternalLinkAnchor
         href={CLOUD_ELIGIBILITY_URL}
         className="text-foreground underline underline-offset-2"

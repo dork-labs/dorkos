@@ -152,7 +152,7 @@ describe('Space routes while the spaces experiment is off (DOR-2740)', () => {
         method === 'GET' ? await request(app).get(path) : await request(app).post(path).send({});
       expect(res.status).toBe(404);
       expect(res.body).toEqual({
-        error: 'Spaces are switched off. Turn them on in Settings → Experiments.',
+        error: 'Spaces are switched off. Turn them on in Settings → Advanced → Experiments.',
         code: 'SPACES_DISABLED',
       });
       expect(JSON.stringify(config.values.ui)).toBe(before);

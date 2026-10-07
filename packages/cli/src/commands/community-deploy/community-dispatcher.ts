@@ -65,7 +65,7 @@ import { COMMUNITY_SERVICE_TIMEOUT_MS } from './provider-process.js';
  * space server says the same thing before it does anything.
  */
 export const COMMUNITY_EXPERIMENTAL_NOTICE =
-  'Experimental: spaces are still changing. To use one in the app, turn on Spaces in Settings → Experiments.\n';
+  'Experimental: spaces are still changing. To use one in the app, turn on Spaces in Settings → Advanced → Experiments.\n';
 
 /** Human-facing help for the guided deployment command. */
 export const COMMUNITY_DEPLOY_HELP = `

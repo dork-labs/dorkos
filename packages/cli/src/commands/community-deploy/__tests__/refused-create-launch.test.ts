@@ -20,7 +20,8 @@ vi.mock('../runtime/default-owner.js', async (importOriginal) => ({
   confirmOwnerClipboardWrite: vi.fn(async () => undefined),
 }));
 
-const { runCommunityDispatcher } = await import('../community-dispatcher.js');
+const { runCommunityDispatcher, COMMUNITY_EXPERIMENTAL_NOTICE } =
+  await import('../community-dispatcher.js');
 
 const MARK = 'dor2656_refusal_sentinel';
 const APP = 'dorkos-community-test';
@@ -145,7 +146,9 @@ describe('a create the service refuses (DOR-2656)', () => {
     expect(await journals()).toEqual([]);
 
     const listed = await run(['--list-incomplete']);
-    expect(listed.printed).toBe('No incomplete space server launches were found.\n');
+    expect(listed.printed).toBe(
+      `No incomplete space server launches were found.\n${COMMUNITY_EXPERIMENTAL_NOTICE}`
+    );
   });
 
   // Catches the refusal wording reaching a run that already made something: that run must keep
@@ -238,7 +241,7 @@ describe('an ambiguous create stays uncertain, and --remove-uncertain can clear 
 
     expect(await journals()).toEqual([]);
     expect((await run(['--list-incomplete'])).printed).toBe(
-      'No incomplete space server launches were found.\n'
+      `No incomplete space server launches were found.\n${COMMUNITY_EXPERIMENTAL_NOTICE}`
     );
   });
 });

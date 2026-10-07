@@ -30,7 +30,7 @@ export function spacesEnabled(): boolean {
 export function requireSpacesEnabled(_req: Request, res: Response, next: NextFunction): void {
   if (!spacesEnabled()) {
     res.status(404).json({
-      error: 'Spaces are switched off. Turn them on in Settings → Experiments.',
+      error: 'Spaces are switched off. Turn them on in Settings → Advanced → Experiments.',
       code: SPACES_DISABLED_CODE,
     });
     return;
