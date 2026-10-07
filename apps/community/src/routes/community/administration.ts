@@ -37,6 +37,7 @@ import { prepareCommunityDeletionInventory } from '../../deletion-worker.js';
 import { resolveCommunityContext } from '../../tenant-context.js';
 import { revokeTenantAccess } from '../../host/communities.js';
 import { endOwnerReplacement } from '../../owner-replacement/end.js';
+import { notifyLive } from '../../live/notices.js';
 
 interface SettingsRow {
   id: string;
@@ -471,6 +472,7 @@ export function registerAdministrationRoutes(
              lifecycle_version=lifecycle_version+1 WHERE id=$1`,
           [current.id]
         );
+        await notifyLive(client, { k: 'community', c: current.id });
       } else {
         if (current.lifecycle !== 'archived') {
           throw new ApiError(409, 'STATE_CONFLICT', 'Only an archived space can be restored.');
@@ -480,6 +482,7 @@ export function registerAdministrationRoutes(
              lifecycle_version=lifecycle_version+1 WHERE id=$1`,
           [current.id]
         );
+        await notifyLive(client, { k: 'community', c: current.id });
       }
       await client.query(
         `INSERT INTO audit_events(
@@ -611,6 +614,7 @@ export function registerAdministrationRoutes(
          WHERE id=$1 RETURNING lifecycle_version`,
         [current.id, requestedAt, deleteAfter, currentActor.id]
       );
+      await notifyLive(client, { k: 'community', c: current.id });
       await client.query(
         `INSERT INTO community_deletion_jobs(
            community_id,requested_by_member_id,lifecycle_version,delete_after,next_attempt_at
@@ -713,6 +717,7 @@ export function registerAdministrationRoutes(
            lifecycle_version=lifecycle_version+1 WHERE id=$1 RETURNING lifecycle_version`,
         [row.id, restored.lifecycle, restored.suspendedFrom]
       );
+      await notifyLive(client, { k: 'community', c: row.id });
       await client.query('DELETE FROM community_deletion_jobs WHERE community_id=$1', [row.id]);
       await client.query(
         `INSERT INTO audit_events(

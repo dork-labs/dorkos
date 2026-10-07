@@ -34,6 +34,7 @@ import { mintHandle } from '../../handles.js';
 import { readmissionBlocked } from '../../erasure/guards.js';
 import { clearFormerMembership } from './members.js';
 import { resolveCommunityContext } from '../../tenant-context.js';
+import { notifyLive } from '../../live/notices.js';
 
 interface InviteRow {
   id: string;
@@ -527,12 +528,14 @@ export function registerInviteRoutes(
           'INSERT INTO community_handles(community_id,handle,member_id) VALUES($1,$2,$3)',
           [invite.community_id, handle, member.rows[0].id]
         );
+        await notifyLive(client, { k: 'join', c: invite.community_id });
       } else if (!member.rows[0].active) {
         await clearFormerMembership(client, member.rows[0].id, invite.community_id);
         await client.query(
           "UPDATE members SET active=true,removed_at=NULL,role='member' WHERE id=$1",
           [member.rows[0].id]
         );
+        await notifyLive(client, { k: 'join', c: invite.community_id });
       }
       if (invite.channel_id)
         await client.query(

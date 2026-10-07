@@ -15,6 +15,7 @@ import { MENTION_ADDRESS, MENTION_TRAILING_STRIP, maskedText } from '../content/
 import { remove } from '../routes/community/members.js';
 import { erasureHeldByLegalHold } from './guards.js';
 import { appendJournalRow, type ErasureJournalRecord } from './journal.js';
+import { notifyAccountAccess, notifyLive } from '../live/notices.js';
 
 /** Hours between a request and the erasure it schedules. A constant, not configuration. */
 export const ERASURE_WINDOW_HOURS = 72;
@@ -198,6 +199,7 @@ async function endAccess(target: Target): Promise<void> {
     );
     await client.query('DELETE FROM channel_members WHERE member_id=$1 AND community_id=$2', ids);
     await client.query('DELETE FROM read_cursors WHERE member_id=$1 AND community_id=$2', ids);
+    await notifyLive(client, { k: 'member', c: member.community_id, m: member.id });
     await client.query(
       'DELETE FROM owner_quota_windows WHERE owner_member_id=$1 AND community_id=$2',
       ids
@@ -524,6 +526,7 @@ async function applyHusk(
        WHERE id=$2 AND community_id=$1`,
       [target.communityId, target.memberId, ERASED_MEMBER_NAME, handle]
     );
+    await notifyLive(client, { k: 'member', c: target.communityId, m: target.memberId });
     for (const agent of agents.rows) {
       const agentHandle = randomHuskHandle();
       await client.query(
@@ -715,6 +718,8 @@ export async function eraseAccount(
          WHERE user_id=$1 AND state='closed'`,
         [userId]
       );
+      // Before the delete: its sessions go with the account row.
+      await notifyAccountAccess(client, userId);
       await client.query('DELETE FROM "user" WHERE id=$1', [userId]);
       await writeLine(client, options, line, { kind: 'account', userId });
       return 'erased' as const;

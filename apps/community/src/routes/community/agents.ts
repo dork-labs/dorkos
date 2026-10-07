@@ -23,6 +23,7 @@ import { mintHandle } from '../../handles.js';
 import { ApiError, json, readJson } from '../../http.js';
 import { agentLimitReached, effectiveAgentLimit } from '../../host/limits.js';
 import { hashSecret, randomToken } from '../../security.js';
+import { notifyLive } from '../../live/notices.js';
 
 const uuid = z.uuid();
 interface AgentRow {
@@ -182,6 +183,7 @@ export function registerAgentRoutes(
         'UPDATE agent_credentials SET revoked_at=now() WHERE agent_id=$1 AND community_id=$2 AND revoked_at IS NULL',
         [agent.rows[0].id, member.community_id]
       );
+      await notifyLive(client, { k: 'agent', c: member.community_id, a: agent.rows[0].id });
       const token = randomToken();
       await client.query(
         'INSERT INTO agent_credentials(community_id,agent_id,token_hash) VALUES($1,$2,$3)',
@@ -247,6 +249,7 @@ export function registerAgentRoutes(
         'UPDATE agent_credentials SET revoked_at=now() WHERE agent_id=$1 AND community_id=$2 AND revoked_at IS NULL',
         [agent.rows[0].id, member.community_id]
       );
+      await notifyLive(client, { k: 'agent', c: member.community_id, a: agent.rows[0].id });
       const token = randomToken();
       await client.query(
         'INSERT INTO agent_credentials(community_id,agent_id,token_hash) VALUES($1,$2,$3)',
@@ -286,6 +289,7 @@ export function registerAgentRoutes(
         'UPDATE agent_credentials SET revoked_at=now() WHERE agent_id=$1 AND community_id=$2 AND revoked_at IS NULL',
         [id, member.community_id]
       );
+      await notifyLive(client, { k: 'agent', c: member.community_id, a: id });
       const token = randomToken();
       await client.query(
         'INSERT INTO agent_credentials(community_id,agent_id,token_hash) VALUES($1,$2,$3)',
@@ -411,6 +415,7 @@ export function registerAgentRoutes(
         'UPDATE agent_credentials SET revoked_at=now() WHERE agent_id=$1 AND community_id=$2 AND revoked_at IS NULL',
         [id, actor.community_id]
       );
+      await notifyLive(client, { k: 'agent', c: actor.community_id, a: id });
       await client.query(
         'DELETE FROM agent_channel_members WHERE agent_id=$1 AND community_id=$2',
         [id, actor.community_id]
@@ -492,6 +497,7 @@ export function registerAgentRoutes(
         channel.id,
         agentId,
       ]);
+      await notifyLive(client, { k: 'agent', c: actor.community_id, a: agentId });
     });
     return c.body(null, 204);
   });

@@ -16,6 +16,7 @@ import {
   resolveCommunityContext,
   type CommunityContext,
 } from './tenant-context.js';
+import { notifyLive } from './live/notices.js';
 
 /** Live human identity derived from a session and member row. */
 export interface Member {
@@ -188,6 +189,7 @@ export async function revokeCallingConnectionGrant(c: Context, pool: Pool): Prom
         'INSERT INTO audit_events(community_id,actor_member_id,action,subject_id) VALUES($1,$2,$3,$4)',
         [tenant.communityId, grant.member_id, 'grant.revoke', grant.id]
       );
+      await notifyLive(client, { k: 'member', c: tenant.communityId, m: grant.member_id });
       return;
     }
     const known = await client.query(

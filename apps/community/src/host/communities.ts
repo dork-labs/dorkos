@@ -6,6 +6,7 @@ import { ApiError } from '../http.js';
 import type { HostActor } from './authority.js';
 import type { BlobStore } from '../storage/index.js';
 import { withReconciledTenantNamespace } from '../storage/tenant-reconciliation.js';
+import { notifyLive } from '../live/notices.js';
 
 /** One community row as the host plane reads it: metadata and state, never content. */
 export interface HostCommunityRow {
@@ -141,6 +142,7 @@ export async function revokeTenantAccess(client: PoolClient, communityId: string
     'UPDATE agents SET active=false,revoked_at=COALESCE(revoked_at,now()) WHERE community_id=$1',
     [communityId]
   );
+  await notifyLive(client, { k: 'community', c: communityId });
 }
 
 /**
