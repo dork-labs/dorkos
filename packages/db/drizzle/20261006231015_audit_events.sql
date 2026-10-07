@@ -55,7 +55,7 @@ CREATE TRIGGER `audit_events_chain_link`
 BEFORE INSERT ON `audit_events`
 WHEN NEW.`seq` IS NOT COALESCE((SELECT MAX(`seq`) FROM `audit_events`), 0) + 1
 	OR NEW.`prev_hash` IS NOT COALESCE(
-		(SELECT `hash` FROM `audit_events` ORDER BY `seq` DESC LIMIT 1),
+		(SELECT `hash` FROM `audit_events` WHERE `seq` = (SELECT MAX(`seq`) FROM `audit_events`)),
 		'0000000000000000000000000000000000000000000000000000000000000000'
 	)
 BEGIN

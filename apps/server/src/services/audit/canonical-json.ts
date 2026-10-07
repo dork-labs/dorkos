@@ -12,7 +12,9 @@
  * - object keys sorted by UTF-16 code unit order, at every depth;
  * - keys whose value is `undefined` dropped, as `JSON.stringify` drops them;
  * - `null`, booleans, numbers and strings spelled as `JSON.stringify` spells them;
- * - arrays keep their order; no whitespace anywhere.
+ * - arrays keep their order; no whitespace anywhere;
+ * - only plain objects: a `Date`, `Map` or class instance is refused, never
+ *   flattened to `{}`.
  *
  * @module services/audit/canonical-json
  */
@@ -42,6 +44,13 @@ export function canonicalJson(value: unknown): string {
       .join(',')}]`;
   }
   if (typeof value === 'object') {
+    // A Date, Map, class instance or the like has no single JSON spelling
+    // (`Object.keys` of a Date is empty, so it would hash as `{}` and two
+    // different dates would collide). Refused, so a caller converts it first.
+    const proto = Object.getPrototypeOf(value) as unknown;
+    if (proto !== Object.prototype && proto !== null) {
+      throw new TypeError('canonicalJson: only plain objects are serializable');
+    }
     const record = value as Record<string, unknown>;
     const keys = Object.keys(record)
       .filter((key) => record[key] !== undefined)

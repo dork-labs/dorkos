@@ -37,6 +37,7 @@ import { ulid } from 'ulidx';
 import { asc, auditEvents, desc, gte, type Db } from '@dorkos/db';
 import { redactCredentialTokens } from '@dorkos/shared/feedback';
 import { SENSITIVE_CONFIG_KEYS } from '@dorkos/shared/config-schema';
+import { AUDIT_VERIFY_MAX_ROWS } from '@dorkos/shared/audit-schemas';
 import type {
   AuditActor,
   AuditChange,
@@ -103,13 +104,48 @@ export type AuditObserver = (event: AuditEvent) => void;
 
 type AuditRow = typeof auditEvents.$inferSelect;
 
-/** Sweep credential shapes out of a string and cap its length. */
+/** What a redacted value is replaced with. */
+const REDACTED = '[redacted]';
+
+/**
+ * A name that says its value is a secret: a password, a token, a key, a
+ * credential. `auth` counts on its own or as a prefix (`auth`, `authToken`,
+ * `authorization`), never inside `author`.
+ */
+const SECRET_NAME = String.raw`[A-Za-z0-9_.-]*(?:pass(?:word|wd)?|pwd|secret|token|api[-_]?key|apikey|access[-_]?key|private[-_]?key|credential|authorization|auth(?!or))[A-Za-z0-9_.-]*`;
+
+/** An object key whose value is a secret, whatever the value looks like. */
+const SECRET_KEY = new RegExp(`^${SECRET_NAME}$`, 'i');
+
+/** Shapes a secret takes in free text, each with what to keep around it. */
+const SECRET_TEXT: readonly [RegExp, string][] = [
+  // `"apiKey": "abcd1234"` — a JSON (or JSON-ish) member named like a secret.
+  [new RegExp(String.raw`("${SECRET_NAME}"\s*:\s*")[^"]*(")`, 'gi'), `$1${REDACTED}$2`],
+  // `password=hunter2`, `OPENAI_API_KEY=abcd`, `?access_token=…`, `token: abc`.
+  [new RegExp(String.raw`(\b${SECRET_NAME}\s*[=:]\s*["']?)[^\s"'&,;]+`, 'gi'), `$1${REDACTED}`],
+  // The password in a URL: `https://user:secret@host`.
+  [/(\b[a-z][a-z0-9+.-]*:\/\/[^\s/:@]+:)[^\s/@]+@/gi, `$1${REDACTED}@`],
+  // A JWT: three base64url segments, the first a JSON header.
+  [/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, REDACTED],
+  // Google, Notion, Stripe and Slack app tokens by their prefixes.
+  [/\b(?:AIza|ntn_|secret_|sk_live_|sk_test_|rk_live_|xapp-)[A-Za-z0-9_-]{10,}/g, REDACTED],
+];
+
+/**
+ * Sweep anything that looks like a password or key out of a string, and cap
+ * its length. Best effort, as every pattern sweep is; the rule that makes it
+ * enough is that callers never put a secret's value in an event on purpose.
+ */
 function redactText(text: string): string {
-  const swept = redactSecretsInText(redactCredentialTokens(text));
+  let swept = redactSecretsInText(redactCredentialTokens(text));
+  for (const [pattern, replacement] of SECRET_TEXT) swept = swept.replace(pattern, replacement);
   return swept.length <= MAX_TEXT ? swept : `${swept.slice(0, MAX_TEXT - 1)}…`;
 }
 
-/** Redact every string inside a JSON-compatible value. */
+/**
+ * Redact every string inside a JSON-compatible value, and empty the value of
+ * any member whose name says it is a secret.
+ */
 function redactDeep(value: unknown): unknown {
   if (typeof value === 'string') return redactText(value);
   if (Array.isArray(value)) return value.map(redactDeep);
@@ -117,7 +153,7 @@ function redactDeep(value: unknown): unknown {
     return Object.fromEntries(
       Object.entries(value as Record<string, unknown>).map(([key, inner]) => [
         key,
-        redactDeep(inner),
+        SECRET_KEY.test(key) ? REDACTED : redactDeep(inner),
       ])
     );
   }
@@ -126,12 +162,25 @@ function redactDeep(value: unknown): unknown {
 
 const SENSITIVE = new Set<string>(SENSITIVE_CONFIG_KEYS);
 
-/** A change list with secret fields emptied and every string swept. */
+/**
+ * Whether a changed field is a secret: listed in `SENSITIVE_CONFIG_KEYS`, or
+ * any segment of its path is named like one (`connectors.composio.apiKey`).
+ */
+function isSecretField(field: string): boolean {
+  return SENSITIVE.has(field) || field.split('.').some((segment) => SECRET_KEY.test(segment));
+}
+
+/** A change list with secret fields emptied and every value swept. */
 function redactChange(change: AuditChange[]): AuditChange[] {
   return change.map((entry) =>
-    SENSITIVE.has(entry.field)
+    isSecretField(entry.field)
       ? { field: entry.field, redacted: true }
-      : (redactDeep(entry) as AuditChange)
+      : {
+          field: entry.field,
+          ...('before' in entry ? { before: redactDeep(entry.before) } : {}),
+          ...('after' in entry ? { after: redactDeep(entry.after) } : {}),
+          ...(entry.redacted ? { redacted: true } : {}),
+        }
   );
 }
 
@@ -337,13 +386,19 @@ export class AuditLog {
    * the row's own columns hash to. The first failure stops the walk and is
    * named; nothing after a break can be trusted to mean what it says.
    *
+   * One call walks at most {@link AUDIT_VERIFY_MAX_ROWS} rows, because the walk
+   * is synchronous and anyone may ask for it: an unbounded check of a long log
+   * would hold the server. When rows remain, the answer carries `nextFromSeq`
+   * and the caller asks again from there.
+   *
    * @param opts - Where to start (`fromSeq`, default 1) and how many rows to
-   *   check at most (`limit`, default all).
-   * @returns Whether the checked stretch is intact, and the first break if not.
+   *   check at most (`limit`, default and ceiling the page size).
+   * @returns Whether the checked stretch is intact, the first break if not, and
+   *   where to continue if rows remain.
    */
   verify(opts: { fromSeq?: number; limit?: number } = {}): AuditVerifyResult {
     const fromSeq = opts.fromSeq ?? 1;
-    const limit = opts.limit ?? Number.POSITIVE_INFINITY;
+    const limit = Math.min(opts.limit ?? AUDIT_VERIFY_MAX_ROWS, AUDIT_VERIFY_MAX_ROWS);
     let expectedSeq = fromSeq;
     let prevHash: string | undefined;
     if (fromSeq === 1) {
@@ -390,7 +445,13 @@ export class AuditLog {
       }
       cursor = expectedSeq;
     }
-    return { ok: true, checked, lastSeq, lastHash };
+    const more = this.db
+      .select({ seq: auditEvents.seq })
+      .from(auditEvents)
+      .where(gte(auditEvents.seq, expectedSeq))
+      .limit(1)
+      .get();
+    return { ok: true, checked, lastSeq, lastHash, ...(more ? { nextFromSeq: more.seq } : {}) };
   }
 
   /**

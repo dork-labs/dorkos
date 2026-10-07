@@ -26,5 +26,9 @@ describe('canonicalJson', () => {
     expect(() => canonicalJson(Number.NaN)).toThrow();
     expect(() => canonicalJson([undefined])).toThrow();
     expect(() => canonicalJson(() => 1)).toThrow();
+    // A Date would otherwise hash as `{}`, so two different dates would collide.
+    expect(() => canonicalJson({ at: new Date(0) })).toThrow(/plain objects/);
+    expect(() => canonicalJson(new Map())).toThrow(/plain objects/);
+    expect(canonicalJson(Object.create(null) as object)).toBe('{}');
   });
 });

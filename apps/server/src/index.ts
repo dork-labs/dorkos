@@ -410,7 +410,7 @@ import {
 import { currentRecordOwner } from './services/marketplace/lib/records/record-owner.js';
 import { createActivityRouter } from './routes/activity.js';
 import { createAuditRouter } from './routes/audit.js';
-import { AccountIds, AuditLog, createActivityTee } from './services/audit/index.js';
+import { wireAuditTrail } from './services/audit/index.js';
 import { createExtensionRoutesMiddleware } from './middleware/extension-routes.js';
 import { createExternalMcpServer } from './services/core/mcp-server.js';
 import { composeDorkOsCapabilityRegistry } from './services/core/self-description/dorkos-registry.js';
@@ -1315,14 +1315,12 @@ async function start() {
   // until an account exists. The startup check walks the recent end of the
   // chain and only warns: a broken chain is evidence to keep, not a reason to
   // refuse to start.
-  const auditLog = new AuditLog(db);
-  const auditAccounts = new AccountIds({
+  const { log: auditLog } = wireAuditTrail({
     db,
+    activity: activityService,
     installId: connectorInstallationId,
     readOwnerAccount,
   });
-  activityService.observe(createActivityTee(auditLog, auditAccounts));
-  auditLog.verifyTail();
 
   // Who started a chat that no person typed into, and the seam that starts
   // one for an extension (`api.startWork`, `ctx.sessions.start`, spec

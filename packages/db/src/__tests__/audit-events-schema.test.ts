@@ -119,4 +119,30 @@ describe('audit_events', () => {
     ).toThrow();
     db.$client.close();
   });
+
+  it('finds the chain tail by key lookup, never a scan, so inserts stay cheap as the log grows', () => {
+    const db = migrated();
+    // The two lookups the chain-link trigger runs on every insert.
+    const plans = [
+      'SELECT MAX(`seq`) FROM `audit_events`',
+      'SELECT `hash` FROM `audit_events` WHERE `seq` = (SELECT MAX(`seq`) FROM `audit_events`)',
+    ].map((sql) =>
+      (db.$client.prepare(`EXPLAIN QUERY PLAN ${sql}`).all() as { detail: string }[])
+        .map((row) => row.detail)
+        .join(' | ')
+    );
+    for (const plan of plans) {
+      expect(plan).toMatch(/SEARCH audit_events/);
+      expect(plan).not.toMatch(/SCAN audit_events|TEMP B-TREE/);
+    }
+    // And the trigger really is written with those lookups.
+    const trigger = db.$client
+      .prepare(
+        "SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'audit_events_chain_link'"
+      )
+      .get() as { sql: string };
+    expect(trigger.sql).toContain('WHERE `seq` = (SELECT MAX(`seq`) FROM `audit_events`)');
+    expect(trigger.sql).not.toContain('ORDER BY');
+    db.$client.close();
+  });
 });

@@ -160,6 +160,58 @@ describe('AuditLog', () => {
     expect(event.summary).toBe('Pushed with [redacted]');
   });
 
+  // Every shape a review found passing through unchanged (DOR-2738 PR1 review).
+  it.each([
+    ['a password assignment', 'login with password=hunter2 now', 'hunter2'],
+    ['a JSON api key', '{"apiKey":"abcd1234efgh5678"}', 'abcd1234efgh5678'],
+    ['a token assignment', 'token=abc123def456', 'abc123def456'],
+    ['URL user info', 'cloned https://u:secretpass@host/x', 'secretpass'],
+    ['an access_token query', 'GET /cb?access_token=zz99yy88xx77&state=1', 'zz99yy88xx77'],
+    ['an env assignment', 'OPENAI_API_KEY=abcd1234 node run.js', 'abcd1234'],
+    [
+      'a JWT',
+      'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1gFWFOEjXk',
+      'dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1gFWFOEjXk',
+    ],
+    ['a Google key', 'key AIzaSyA1234567890abcdefghijklmnopqrstu', 'AIzaSyA1234567890'],
+    ['a Notion token', 'ntn_abcdefghij1234567890XYZ', 'ntn_abcdefghij'],
+  ])('sweeps %s out of free text', (_shape, text, secret) => {
+    log.record(input({ summary: text, error: text, reason: text }));
+    expect(JSON.stringify(db.select().from(auditEvents).all())).not.toContain(secret);
+  });
+
+  it('empties a changed value whose member, or whose field, is named like a secret', () => {
+    const event = log.record(
+      input({
+        change: [
+          { field: 'profile.prefs', before: null, after: { password: 'hunter2', theme: 'dark' } },
+          { field: 'connectors.composio.apiKey', before: 'old-key-1', after: 'new-key-2' },
+        ],
+      })
+    )!;
+    expect(event.change).toEqual([
+      { field: 'profile.prefs', before: null, after: { password: '[redacted]', theme: 'dark' } },
+      { field: 'connectors.composio.apiKey', redacted: true },
+    ]);
+    expect(JSON.stringify(db.select().from(auditEvents).all())).not.toMatch(
+      /hunter2|old-key-1|new-key-2/
+    );
+  });
+
+  it('leaves ordinary words that only look close alone', () => {
+    const event = log.record(input({ summary: 'author=Dorian changed the tokenizer docs' }))!;
+    expect(event.summary).toBe('author=Dorian changed the tokenizer docs');
+  });
+
+  it('checks a long log in pages and says where to continue', () => {
+    for (let i = 0; i < 5; i += 1) log.record(input());
+    expect(log.verify({ limit: 2 })).toMatchObject({ ok: true, checked: 2, nextFromSeq: 3 });
+    expect(log.verify({ fromSeq: 3, limit: 2 })).toMatchObject({ checked: 2, nextFromSeq: 5 });
+    const last = log.verify({ fromSeq: 5, limit: 2 });
+    expect(last).toMatchObject({ ok: true, checked: 1, lastSeq: 5 });
+    expect(last.nextFromSeq).toBeUndefined();
+  });
+
   it('defaults to space visibility and refuses a participants row with nobody named', () => {
     expect(log.record(input())!.visibility).toBe('space');
     expect(log.record(input({ visibility: 'participants' }))).toBeUndefined();

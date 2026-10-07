@@ -22,7 +22,7 @@ The audit log is one append-only, hash-chained table, `audit_events`, that recor
 2. **The chain is enforced on insert.** A `BEFORE INSERT` trigger refuses a row whose `seq` is not `max + 1` or whose `prev_hash` is not the last row's `hash`. Only `AuditLog.record` computes those, inside one `IMMEDIATE` transaction. Do not insert into `audit_events` any other way.
 3. **The hash contract.** `hash = sha256(prev_hash + canonicalJson(hashInput(row)))`. `hashInput` lists every column except `hash`, keyed by SQL column name, with NULL as `null`. Adding a column to `hashInput` changes what every existing row hashes to, so `verify` would call the whole log tampered. A new column must leave old rows hashing exactly as before (for example, include its key only when it is not NULL), and a test must prove an old row still verifies.
 4. **Actors are stable ids.** Never record an agent's path or the word "You". Use `AccountIds`: an agent is its mesh ULID (read from the `agents` table, so it works before the mesh boots), an unregistered agent is `unregistered:<hash>`, the owner is their account id or `install:<install id>`.
-5. **Redaction is the writer's job.** `record` sweeps every free-text field for credential shapes and empties the values of any `change` on a `SENSITIVE_CONFIG_KEYS` field. Pass raw values; do not pre-redact. Redaction is a net, not a licence: never put a secret's value in `summary`; write "used secret X".
+5. **Redaction is the writer's job.** `record` sweeps every free-text field for anything that looks like a password or key (known prefixes, long hex, JWTs, URL passwords, `name=value` and `"name": "value"` where the name says secret), empties any member whose name says secret, and empties the values of any `change` on a `SENSITIVE_CONFIG_KEYS` field or a field whose path names a secret. It is best effort. Pass raw values; do not pre-redact. Redaction is a net, not a licence: never put a secret's value in `summary`; write "used secret X".
 6. **`record` never throws.** It logs a warn and returns `undefined`, so a failing audit write cannot fail the action it records.
 
 ## One or the other, never both
@@ -43,9 +43,11 @@ Doing both records the action twice. If you add a direct `record` call next to a
 
 ## Checking the chain
 
-`AuditLog.verify({ fromSeq?, limit? })` walks the chain and names the first break. It is exposed as the `audit.verify` capability (`audit_verify` on both MCP servers, `dorkos call audit.verify`, `GET /api/audit/verify`). The server also checks the last 1,000 rows at startup and warns if they break.
+`AuditLog.verify({ fromSeq?, limit? })` walks the chain and names the first break. One call walks at most 100,000 rows (`AUDIT_VERIFY_MAX_ROWS`), because the walk is synchronous and any agent may ask for it; when rows remain, the answer carries `nextFromSeq`. It is exposed as the `audit.verify` capability (`audit_verify` on both MCP servers, `dorkos call audit.verify`, `GET /api/audit/verify`). The server also checks the last 1,000 rows at startup and warns if they break.
 
-The triggers stop the app, not somebody with `sqlite3` and the file; the chain makes such an edit detectable afterwards. Proving it needs a checkpoint stored somewhere a local agent cannot write, which is a follow-up in the spec.
+The triggers stop the app, not somebody with `sqlite3` and the file; the chain makes such an edit detectable afterwards, with two gaps: rows removed from the END, and a forged row followed by every later row rehashed, both verify clean. Closing them needs a checkpoint (last seq and hash) stored somewhere a local agent cannot write, which is a follow-up in the spec. Never describe the check as catching more than that.
+
+One more `sqlite3` caveat: the app's connection sets `recursive_triggers = ON` (`packages/db/src/index.ts`), but the `sqlite3` shell defaults it to OFF, and with it off an `INSERT OR REPLACE` that collides on `id` deletes the old row without firing the delete trigger. The chain-link trigger still refuses any row that is not `max + 1`, so such a replace leaves a hole `verify` reports as a missing row: not a silent bypass, but a way round the delete trigger.
 
 ## Activity retention
 

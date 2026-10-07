@@ -157,11 +157,17 @@ export const AuditEventSchema = z
 /** One audit event. */
 export type AuditEvent = z.infer<typeof AuditEventSchema>;
 
-/** Which part of the chain to check. Omit both to check all of it. */
+/** The most rows one chain check walks; a longer log is checked in pages. */
+export const AUDIT_VERIFY_MAX_ROWS = 100_000;
+
+/**
+ * Which part of the chain to check: from `fromSeq` (default the first row), at
+ * most `limit` rows (default and ceiling {@link AUDIT_VERIFY_MAX_ROWS}).
+ */
 export const AuditVerifyQuerySchema = z
   .object({
     fromSeq: z.coerce.number().int().positive().optional(),
-    limit: z.coerce.number().int().positive().max(1_000_000).optional(),
+    limit: z.coerce.number().int().positive().max(AUDIT_VERIFY_MAX_ROWS).optional(),
   })
   .openapi('AuditVerifyQuery');
 
@@ -176,6 +182,8 @@ export const AuditVerifyResultSchema = z
     lastSeq: z.number().int().nonnegative(),
     lastHash: z.string(),
     firstBreak: z.object({ seq: z.number().int(), reason: z.string() }).optional(),
+    /** Set when rows remain past this page: check again from here. */
+    nextFromSeq: z.number().int().positive().optional(),
   })
   .openapi('AuditVerifyResult');
 

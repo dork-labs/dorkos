@@ -16634,6 +16634,10 @@
               "seq",
               "reason"
             ]
+          },
+          "nextFromSeq": {
+            "type": "integer",
+            "exclusiveMinimum": 0
           }
         },
         "required": [
@@ -76467,7 +76471,7 @@
             "schema": {
               "type": "integer",
               "exclusiveMinimum": 0,
-              "maximum": 1000000
+              "maximum": 100000
             },
             "required": false,
             "name": "limit",
