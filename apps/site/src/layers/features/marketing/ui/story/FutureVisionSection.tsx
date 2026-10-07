@@ -17,7 +17,7 @@ const LABEL_COLOR: Record<FutureCard['color'], string> = {
 
 /**
  * Permanent-page-only section. Hidden in ?present=true via CSS.
- * Shows where DorkOS is heading, as its three differentiators in order:
+ * Shows what sets DorkOS apart: its three differentiators in order:
  * mini apps -> built for founders -> ownership.
  */
 export function FutureVisionSection({ slideId = 'vision' }: FutureVisionSectionProps) {
@@ -35,13 +35,13 @@ export function FutureVisionSection({ slideId = 'vision' }: FutureVisionSectionP
             variants={REVEAL}
             className="text-brand-orange mb-3 font-mono text-[9px] tracking-[0.2em] uppercase"
           >
-            Where This Is Going
+            What Sets It Apart
           </motion.div>
           <motion.h2
             variants={REVEAL}
             className="text-charcoal text-[clamp(20px,2.5vw,28px)] font-semibold tracking-tight"
           >
-            The next layer is already building.
+            Three things DorkOS is built around.
           </motion.h2>
         </motion.div>
 

@@ -6,7 +6,7 @@ import { HomeExperience, HomeNav } from './_components';
 
 const TITLE = `${siteConfig.name}: ${siteConfig.category}`;
 const DESCRIPTION =
-  'Your agents build the dashboards and trackers your business needs, inside DorkOS. Made for founders. On your computer, with your files. Free and open source.';
+  'Your agents build the dashboards and trackers you need, inside DorkOS. Made for founders. On your computer, with your files. Free and open source.';
 
 /**
  * The home page's own metadata, declared here rather than inherited.

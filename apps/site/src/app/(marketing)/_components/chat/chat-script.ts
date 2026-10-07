@@ -23,14 +23,17 @@ export interface ChatLine {
  *
  * Four things in here are load-bearing rather than flavour:
  *
- *  1. **Dave asks, the agents do.** Twice, an agent asks and Dave answers
- *     before anything happens. The second time, Dave asked for a tool and
- *     Otto built it: a mini app (an extension) only turns on once a person
- *     says yes, so the question before it is the real approval, not flavour. The film makes the same promise in its own chat
- *     ("Wanna buy flowers?" then "Oh, nice! Yeah — do that."), Tool Approval
- *     and Action Approvals are what actually ships, and a script of completed
- *     actions off one instruction would sell autonomy the product does not
- *     claim.
+ *  1. **Dave asks, the agents do.** Twice, Dave asks for something and
+ *     nothing happens without him. The first time, Otto asks before it
+ *     deploys and Dave says go. The second time, Dave asks for a tool and
+ *     Otto builds it a minute later, then points him to Activity: a mini app
+ *     (the app calls it an extension) runs none of its code until a person
+ *     approves it there or in Settings. Typing yes in chat approves nothing,
+ *     and an agent can never approve its own, so Dave's "Approved." reports
+ *     what he did in Activity. The film makes the same promise in its own
+ *     chat ("Wanna buy flowers?" then "Oh, nice! Yeah — do that."), and a
+ *     script of completed actions off one instruction would sell autonomy
+ *     the product does not claim.
  *  2. **Every capability named here ships.** Each `dockApp` resolves to a `ga`
  *     entry in the feature catalog, checked by `__tests__/home-copy.test.ts`.
  *     The film can show email and calendar; this page cannot, because those run
@@ -52,11 +55,11 @@ export const CHAT_SCRIPT: readonly ChatLine[] = [
   { from: 'dave', text: 'Can you build me a launch tracker?', time: '9:43' },
   {
     from: 'otto',
-    text: 'Built it. Want me to turn it on?',
-    time: '9:43',
+    text: 'Built it. Approve it in Activity and it opens.',
+    time: '9:44',
     dockApp: 'tracker',
   },
-  { from: 'dave', text: 'Yes.', time: '9:43' },
+  { from: 'dave', text: 'Approved.', time: '9:44' },
   {
     from: 'pip',
     text: 'Morning checks are on the schedule now!',

@@ -185,30 +185,32 @@ describe('the demo-claim gate', () => {
 
   it('shows the agents asking before they act', () => {
     // The promo film this page hosts promises the agents suggest and the
-    // person approves, and Tool Approval / Action Approvals are what actually
-    // ships. A script of completed actions with no approval would oversell it.
-    const daveSpoke = CHAT_SCRIPT.filter((line) => line.from === 'dave');
-    const daveAsked = daveSpoke.filter((line) => line.text.includes('?'));
-    const daveSaidGo = daveSpoke.filter((line) => !line.text.includes('?'));
-    const askedFirst = CHAT_SCRIPT.filter(
-      (line) => line.from !== 'dave' && line.text.includes('?')
-    );
+    // person approves. Here that happens twice, and both exchanges are pinned
+    // word for word, because their shape is the claim. Otto asks before it
+    // deploys, and Dave says go. Then Dave asks for a tool, Otto builds it and
+    // sends him to Activity, because a mini app runs no code until a person
+    // approves it there or in Settings, never by a reply in chat.
+    const texts = CHAT_SCRIPT.map((line) => `${line.from}: ${line.text}`);
+    const exchange = (lines: string[]) => {
+      const at = texts.indexOf(lines[0]);
+      expect(at, `"${lines[0]}" is missing`).toBeGreaterThanOrEqual(0);
+      expect(texts.slice(at, at + lines.length)).toEqual(lines);
+    };
 
-    // Exact, because the script is fixed and the shape of it is the claim:
-    // Dave asks twice (to ship the page, then for a tracker), the agents ask
-    // twice before they act, and Dave answers each of those once. A floor
-    // would stay green if an approval lost the question above it and a new
-    // one appeared elsewhere.
-    expect(daveAsked).toHaveLength(2);
-    expect(askedFirst).toHaveLength(2);
-    expect(daveSaidGo).toHaveLength(2);
+    exchange(['otto: Morning, Dave. Tests are green. Want me to deploy?', 'dave: Go ahead.']);
+    exchange([
+      'dave: Can you build me a launch tracker?',
+      'otto: Built it. Approve it in Activity and it opens.',
+      'dave: Approved.',
+    ]);
 
-    // Each approval must follow a question, not float free.
-    for (const approval of daveSaidGo) {
-      const at = CHAT_SCRIPT.indexOf(approval);
-      const before = CHAT_SCRIPT[at - 1];
-      expect(before.text, `"${approval.text}" answers nothing`).toContain('?');
-    }
+    // No build is instant: the tool lands at least a minute after the ask.
+    const asked = CHAT_SCRIPT.find((line) => line.text === 'Can you build me a launch tracker?');
+    const built = CHAT_SCRIPT.find((line) => line.text.startsWith('Built it.'));
+    expect(built?.time).not.toBe(asked?.time);
+
+    // Dave says nothing else, so no approval floats free of an ask.
+    expect(CHAT_SCRIPT.filter((line) => line.from === 'dave')).toHaveLength(4);
   });
 
   it('leaves the film’s own joke to the film', () => {

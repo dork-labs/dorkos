@@ -54,7 +54,7 @@ export const BEATS: Record<Beat, Block> = {
   computer: {
     eyebrow: 'all yours',
     title: 'Your computer. Your files. Your AI plan.',
-    lede: 'Use the AI plan you already pay for. Open source, free forever, and no account needed.',
+    lede: 'Use the AI plan you already pay for. Open source, free forever, and no DorkOS account needed.',
   },
 };
 

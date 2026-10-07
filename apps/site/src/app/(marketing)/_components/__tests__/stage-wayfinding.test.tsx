@@ -155,8 +155,8 @@ describe('the stage still tells its story under the rail', () => {
     expect(said).toContain('Want me to deploy?');
     expect(said).toContain('Go ahead.');
     expect(said).toContain('Can you build me a launch tracker?');
-    expect(said).toContain('Want me to turn it on?');
-    expect(said).toContain('Yes.');
+    expect(said).toContain('Approve it in Activity and it opens.');
+    expect(said).toContain('Approved.');
   });
 
   it('ends on the beat that says where the work happens', async () => {

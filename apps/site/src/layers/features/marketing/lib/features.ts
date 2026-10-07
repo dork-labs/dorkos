@@ -258,10 +258,10 @@ export const features: Feature[] = [
     category: 'agent-control',
     tagline: 'Each agent thinks with Claude Code, Codex, or OpenCode, on your own plan',
     description:
-      'Claude Code, Codex, and OpenCode are three different AI tools. Each agent runs on the one you pick, signed in with your own plan, so no company owns your work.',
+      'Claude Code, Codex, and OpenCode are three different AI tools. Each agent runs on the one you pick, signed in with your own account.',
     status: 'ga',
     benefits: [
-      'Use the Claude or ChatGPT plan you already pay for',
+      'Sign in with your own Claude Code or Codex account',
       'Pick a different tool for each job, not just at setup',
       'One list shows every session and how much room it has left',
       'They write the code, send the email, and plan the week',
@@ -315,7 +315,7 @@ export const features: Feature[] = [
       'Ask in plain words for the tool you need',
       'Your agent writes the code and builds it for you',
       'Nothing runs until you say yes',
-      'Opens as its own page, a side panel, or a dashboard section',
+      'Opens on its own page, in the side panel, or on the Activity page',
       'In the app and the docs, mini apps are called extensions',
     ],
     moment:

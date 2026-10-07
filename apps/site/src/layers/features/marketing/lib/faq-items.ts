@@ -39,7 +39,7 @@ export const faqItems: FaqItem[] = [
     id: 'ownership',
     question: 'Who owns my data and my AI plans?',
     answer:
-      "You do. DorkOS runs on your own computer, and your chats and files stay there, in DorkOS's own files and each AI tool's. Your agents think with your own Claude Code, Codex or OpenCode sign-in, so the plan you already pay for does the work. You need no account, and nothing phones home to check in. Your agents still send their work to the AI company that powers them. DorkOS Cloud is optional, and you can leave it any time.",
+      "You do. DorkOS runs on your own computer, and your chats and files stay there, in DorkOS's own files and each AI tool's. Your agents think with your own Claude Code, Codex or OpenCode sign-in, so the plan you already pay for does the work. You need no DorkOS account. Nothing about you or your work goes to DorkOS. The app only checks for updates. Your agents still send their work to the AI company that powers them. DorkOS Cloud is optional, and you can leave it any time.",
   },
   {
     id: 'cost',
