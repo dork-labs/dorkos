@@ -3,15 +3,14 @@
 #
 # WHY THIS EXISTS. DOR-1517 swept "mission control" and "cockpit" out of every
 # surface a user can read, after the operator retired both words for good (the
-# category phrase became "one place" then, meta/website-copy/decisions.md
-# Decision 18; since 2026-10 it is "a workspace for people and agents",
-# meta/positioning-202610/00-overview.md). A sweep with no guard rots: the
+# category phrase became "one place" then; since 2026-10 it is "a workspace
+# for people and agents", meta/VOICE.md). A sweep with no guard rots: the
 # next person to write a README paragraph or a release post has no idea those
 # two words were spent, and the repo carries ~2,000 legitimate internal uses of
 # "cockpit" in comments and identifiers for them to copy the habit from.
 #
 # A SECOND WORD GROUP: THE 2026-10 POSITIONING LINES (DOR-2736). The vision
-# reset of 2026-10-06/07 (meta/positioning-202610/00-overview.md) retired more
+# reset of 2026-10-06/07 (meta/VISION.md, meta/VOICE.md) retired more
 # than words. Three lines a writer reaches for out of habit, and one link, must
 # never reach public prose again:
 #
@@ -117,7 +116,7 @@
 #     comment or HTML comment on the same line, with a reason.
 #   - meta/ is not scanned at all: the brand, positioning and voice files
 #     quote every retired line to state the rule, and meta/archive/ and
-#     meta/website-copy/rounds/ are a historical record. Neither are research/,
+#     its archive/ is a historical record. Neither are research/,
 #     specs/, decisions/ or plans/, which are working notes, not public prose.
 #   - AGENTS.md states the prohibition, so it has to quote both words to say
 #     what they are (and, since 2026-10, the retired positioning lines too). It is scanned anyway — it loads into every agent session as
@@ -311,7 +310,7 @@ if [ "$violations" -gt 0 ]; then
       echo "The words \"mission control\" and \"cockpit\" are retired (DOR-1517)."
       echo "The category phrase is \"a workspace for people and agents\"."
       echo "Write \"the DorkOS app\", \"the app\" or \"one window\" instead."
-      echo "See meta/brand-foundation.md section 10 for the rule and its two carve-outs."
+      echo "See meta/VOICE.md for the rule and its two carve-outs."
       echo ""
       echo "If this is a genuine reference to GitHub's product named \"Mission Control\","
       echo "add 'vocab-allow' plus a reason in a comment on the same line."
