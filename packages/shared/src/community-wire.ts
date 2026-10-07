@@ -1317,14 +1317,20 @@ export const CommunityExportAgentChannelMemberRowSchema = z.strictObject({
 });
 /**
  * One `bans/NNNNNN.ndjson` line (owner and evidence exports only). `email` is the banned
- * account's address, as the members collection already carries it, so an import can key the ban
- * again on its new host; null once that account is gone.
+ * account's address when the account confirmed it, so an import can key the ban again on its new
+ * host; null for an unconfirmed address or an account that is gone. `email_hash` is the key the
+ * exporting host stored, which only that same host (same auth secret) can match.
  */
 export const CommunityExportBanRowSchema = z.strictObject({
   id,
   member_id: nullableId,
   actor_member_id: nullableId,
   email: z.string().max(320).nullable(),
+  email_hash: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .nullable()
+    .optional(),
   reason: z.string().min(1).max(500).nullable(),
   created_at: timestamp,
   lifted_at: timestamp.nullable(),

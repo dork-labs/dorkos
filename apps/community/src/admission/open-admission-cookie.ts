@@ -11,6 +11,11 @@ export function openAdmissionAvailable(config: CommunityConfig): boolean {
   return config.openAdmission && config.oidc !== null;
 }
 
+/** What the cookie says, before it is signed: a prefix no other signed cookie value carries. */
+export function openAdmissionValue(communityId: string, expiresAt: Date): string {
+  return `open-admission:${communityId}.${expiresAt.getTime()}`;
+}
+
 /**
  * The community an open-admission cookie names, if it is signed by this server and unexpired.
  * It proves only that this browser asked to join that community a moment ago; the sign-up gate
@@ -21,8 +26,16 @@ export function readOpenAdmission(
   config: CommunityConfig,
   now = Date.now()
 ): string | null {
-  const value = verifyValue(readCookie(cookieHeader, OPEN_ADMISSION_COOKIE), config.authSecret);
-  const match = value?.match(/^([0-9a-f-]{36})\.([0-9]{1,15})$/);
+  // The prefix's colon reaches the browser percent-encoded.
+  const raw = readCookie(cookieHeader, OPEN_ADMISSION_COOKIE);
+  let decoded: string | undefined;
+  try {
+    decoded = raw === undefined ? undefined : decodeURIComponent(raw);
+  } catch {
+    return null;
+  }
+  const value = verifyValue(decoded, config.authSecret);
+  const match = value?.match(/^open-admission:([0-9a-f-]{36})\.([0-9]{1,15})$/);
   if (!match || Number(match[2]) <= now) return null;
   return match[1];
 }

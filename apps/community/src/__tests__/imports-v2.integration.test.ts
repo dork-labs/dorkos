@@ -290,7 +290,7 @@ async function expectNothingLeft(communityId: string): Promise<void> {
   await drainCleanup(h);
   expect(await count('SELECT 1 FROM communities WHERE id=$1', [communityId])).toBe(0);
   expect(await count('SELECT 1 FROM managed_blobs WHERE community_id=$1', [communityId])).toBe(0);
-  for (const table of ['channels', 'entries', 'members', 'attachments', 'audit_events'])
+  for (const table of ['channels', 'entries', 'members', 'attachments', 'audit_events', 'bans'])
     expect(await count(`SELECT 1 FROM ${table} WHERE community_id=$1`, [communityId])).toBe(0);
 }
 
@@ -402,9 +402,11 @@ beforeAll(async () => {
   await h.pool.query('UPDATE channels SET auto_join=true WHERE id=$1', [channels.general]);
   const bo = await exportMember(h, source, 'Banned Bo');
   banned.memberId = bo.memberId;
+  // Confirmed: only a confirmed email is keyed, exported, and keyed again on import.
   banned.email = (
     await h.pool.query<{ email: string }>(
-      'SELECT u.email FROM members m JOIN "user" u ON u.id=m.user_id WHERE m.id=$1',
+      `UPDATE "user" u SET "emailVerified"=true FROM members m
+       WHERE m.id=$1 AND u.id=m.user_id RETURNING u.email`,
       [bo.memberId]
     )
   ).rows[0].email;
@@ -419,8 +421,9 @@ beforeAll(async () => {
   banned.ban = (await ban.json()).ban.id;
   banned.lifted = (
     await h.pool.query<{ id: string }>(
-      `INSERT INTO bans(community_id,member_id,actor_member_id,lifted_at,lifted_by_member_id)
-       VALUES($1,$2,$3,now(),$3) RETURNING id`,
+      // No account behind it any more, only the key this host stored: it travels as that key.
+      `INSERT INTO bans(community_id,member_id,actor_member_id,lifted_at,lifted_by_member_id,
+         email_hash) VALUES($1,$2,$3,now(),$3,repeat('ab',32)) RETURNING id`,
       [source.communityId, pat.memberId, source.owner.memberId]
     )
   ).rows[0].id;
@@ -813,7 +816,7 @@ it('restores a version 2 export uploaded in parts, across a cut-off upload and a
       id: derive(banned.lifted),
       member_id: derive(pat.memberId),
       user_id: null,
-      email_hash: null,
+      email_hash: 'ab'.repeat(32),
       reason: null,
       origin: 'imported',
       lifted: true,
@@ -1250,6 +1253,28 @@ it('imports an agent log that compresses far over, and tears a failed one down f
   ).toContain('entries_thread_root_ref_idx');
 }, 1_200_000);
 
+// Purpose: a restore that fails after its bans are written tears them down with the rest, so a
+// failed import leaves no ban behind in a community that no longer exists (DOR-2764).
+it('tears down the bans a failed restore already wrote', async () => {
+  const doomed = await importInParts(archive, 4 * MIB, { autoCommit: true });
+  const failOnceBanned = {
+    afterBatch: async () => {
+      if ((await count('SELECT 1 FROM bans WHERE community_id=$1', [doomed.communityId])) > 0)
+        throw new Error('stop');
+    },
+  };
+  for (let round = 0; round < 200; round++) {
+    await h.pool.query('UPDATE community_imports SET next_attempt_at=now() WHERE id=$1', [
+      doomed.importId,
+    ]);
+    await sweepImports(h.pool, h.blobStore, limits(), new Date(), failOnceBanned);
+    if ((await readImport(h, doomed.importId, key)).state === 'failed') break;
+  }
+  expect(await readImport(h, doomed.importId, key)).toMatchObject({ state: 'failed' });
+  expect(await count('SELECT 1 FROM bans WHERE community_id=$1', [doomed.communityId])).toBe(2);
+  await expectNothingLeft(doomed.communityId);
+}, 600_000);
+
 describe('a tampered version 2 export fails with its named code and leaves nothing', () => {
   const firstFile = () => opened.names.find((name) => name.startsWith('files/'))!;
   const channelsFile = () => opened.manifest.files.channels[0];
@@ -1280,6 +1305,18 @@ describe('a tampered version 2 export fails with its named code and leaves nothi
         rebuilt(
           withLines(entriesFile(), (lines) => {
             lines[0].extra = true;
+          })
+        ),
+      'IMPORT_ARCHIVE_INVALID',
+    ],
+    [
+      // An export cannot carry a standing ban on the owner who made it.
+      'a standing ban on the exporting owner',
+      () =>
+        rebuilt(
+          withLines(opened.manifest.files.bans![0], (lines) => {
+            lines[0].member_id = source.owner.memberId;
+            lines[0].lifted_at = null;
           })
         ),
       'IMPORT_ARCHIVE_INVALID',

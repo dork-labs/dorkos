@@ -192,13 +192,15 @@ function specs(scope: ExportJobScope): CollectionSpec[] {
         }),
     });
   // Bans are the moderators' record, so owner and evidence exports carry them and a personal
-  // export does not. The email is the account's, as the members collection already shows it,
-  // so an import can key the ban again; the keyed hash itself means nothing on another host.
+  // export does not. A confirmed email is the account's, as the members collection already shows
+  // it, so an import elsewhere can key the ban again. The stored key goes too, for a ban whose
+  // account is gone: it matches only on this same host, with this same auth secret.
   if (owner)
     list.push({
       key: 'bans',
       prefix: 'bans',
-      select: `SELECT b.id,b.member_id,b.actor_member_id,u.email,b.reason,b.created_at,b.lifted_at
+      select: `SELECT b.id,b.member_id,b.actor_member_id,b.email_hash,b.reason,b.created_at,
+          b.lifted_at,CASE WHEN u."emailVerified" THEN u.email END AS email
         FROM bans b LEFT JOIN "user" u ON u.id=b.user_id WHERE b.community_id=$1`,
       keys: [uuidKey('b.id', 'id')],
       line: (row) =>
@@ -207,6 +209,7 @@ function specs(scope: ExportJobScope): CollectionSpec[] {
           member_id: row.member_id,
           actor_member_id: row.actor_member_id,
           email: row.email ?? null,
+          email_hash: row.email_hash ?? null,
           reason: row.reason,
           created_at: iso(row.created_at),
           lifted_at: iso(row.lifted_at),

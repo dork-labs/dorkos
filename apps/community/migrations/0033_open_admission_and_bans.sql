@@ -14,7 +14,13 @@
 -- hash says nothing, and a new account on the same address still meets the ban. `member_id`
 -- names the membership the ban ended, for the moderators' list. Erasing that membership clears
 -- `user_id` and `reason` and keeps the keyed email, so erasing an account is not a way back in.
--- An import restores a ban with `origin='imported'`, keyed again from the exported email.
+-- Only an email the account has confirmed is keyed: anyone can type another person's address
+-- into a password sign-up. A ban on an account with no confirmed email holds by account alone.
+-- An import restores a ban with `origin='imported'`. An owner export carries the confirmed email,
+-- which the importing host keys again with its own secret, and the stored key, which only the
+-- same host with the same auth secret can match. So a ban whose account is gone moves with the
+-- space only within one host; on another host, or after the auth secret is rotated, it keeps its
+-- record and keeps out no email.
 --
 -- Backout: revert the code first. Older code never reads `bans` or `auto_join`, and treats
 -- `open` as an unknown policy only if a community was set to it; set every such community back

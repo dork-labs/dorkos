@@ -108,6 +108,19 @@ async function join(cookie: string, url = baseUrl) {
   return call('/api/v1/open-admission/join', 'POST', {}, cookie, url);
 }
 
+async function waitForBlocked(fragment: string) {
+  for (let attempt = 0; attempt < 200; attempt++) {
+    const result = await pool.query<{ blocked: boolean }>(
+      `SELECT EXISTS(SELECT 1 FROM pg_stat_activity
+       WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE $1) AS blocked`,
+      [`%${fragment}%`]
+    );
+    if (result.rows[0].blocked) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`Request did not block on ${fragment}`);
+}
+
 async function userIdFor(email: string) {
   const { rows } = await pool.query<{ id: string }>(
     'SELECT id FROM "user" WHERE lower(email)=lower($1)',
@@ -305,6 +318,8 @@ describe('open admission', () => {
     // or if it puts the person in a channel nobody marked.
     const arrived = await arrive({ sub: 'sam', email: 'Sam.Smith+space@gmail.com', name: 'Sam' });
     expect(arrived.location.pathname).toBe('/signed-in');
+    // The account it made spent the open-admission cookie: one click, one account.
+    expect(arrived.cookie.split('; ')).toContain('community_open_admission=');
     const joined = await join(arrived.cookie);
     expect(joined.status).toBe(200);
     const { memberId } = (await joined.json()) as { memberId: string };
@@ -405,6 +420,11 @@ describe('open admission', () => {
     const perHost = await start({
       limits: { ...config.limits, openJoinsPerMinute: 100, openJoinsPerHostPerMinute: 1 },
     });
+    // A preflight needs no account, so it never spends the host's budget.
+    for (let attempt = 0; attempt < 3; attempt++)
+      expect((await call('/api/v1/open-admission/preflight', 'POST', {}, '', perHost)).status).toBe(
+        200
+      );
     expect((await join(arrived.cookie, perHost)).status).toBe(200);
     const refused = await join(arrived.cookie, perHost);
     expect(refused.status).toBe(429);
@@ -480,7 +500,8 @@ describe('bans', () => {
     const twin = await arrive({ sub: 'sam-twin', email: 'samsmith@googlemail.com', name: 'Sam' });
     expect(twin.location.searchParams.get('error')).toBe('admission_refused');
     expect(await userIdFor('samsmith@googlemail.com')).toBeNull();
-    // A new password account on the same mailbox, through an invitation.
+    // A password sign-up only types an email, so the email ban does not meet it until the
+    // address is confirmed: anyone could type someone else's. The account is checked instead.
     const inviteForTwin = await call('/api/v1/invites/preflight', 'POST', {
       token: await invitePreflight(),
     });
@@ -490,8 +511,14 @@ describe('bans', () => {
       { name: 'Sam', email: 'SAM.smith+other@gmail.com', password: 'password1234' },
       cookieOf(inviteForTwin)
     );
-    expect(passwordTwin.status).toBe(403);
-    expect(await userIdFor('sam.smith+other@gmail.com')).toBeNull();
+    expect(passwordTwin.status).toBe(200);
+    // Confirmed, the same mailbox is refused at redeem.
+    await pool.query(
+      `UPDATE "user" SET "emailVerified"=true WHERE lower(email)='sam.smith+other@gmail.com'`
+    );
+    const twinCookie = cookies(cookieOf(inviteForTwin), cookieOf(passwordTwin));
+    expect((await call('/api/v1/invites/bind', 'POST', {}, twinCookie)).status).toBe(200);
+    expect((await call('/api/v1/invites/redeem', 'POST', {}, twinCookie)).status).toBe(403);
     // Approving a pairing needs a membership the ban ended.
     expect(
       (await call('/api/v1/pairings/approve', 'POST', { pairingId: randomUUID() }, sam.cookie))
@@ -559,5 +586,97 @@ describe('bans', () => {
         email_hash: banEmailKey('dee@example.com', config.authSecret),
       },
     ]);
+  });
+  it('keys no email the account never confirmed, and bans the account alone', async () => {
+    // Purpose: fails if an unconfirmed address (anyone's to type) is keyed into a ban.
+    const { userId } = await passwordAccount('typed@example.com', 'Typed');
+    await pool.query(`UPDATE "user" SET "emailVerified"=false WHERE id=$1`, [userId]);
+    const member = await pool.query<{ id: string }>(
+      `INSERT INTO members(community_id,user_id,display_name,handle,role)
+       VALUES($1,$2,'Typed','typed','member') RETURNING id`,
+      [communityId, userId]
+    );
+    const banned = await call(`/api/v1/members/${member.rows[0].id}/ban`, 'POST', {}, ownerCookie);
+    expect(banned.status).toBe(201);
+    const row = await pool.query('SELECT user_id,email_hash FROM bans WHERE member_id=$1', [
+      member.rows[0].id,
+    ]);
+    expect(row.rows).toEqual([{ user_id: userId, email_hash: null }]);
+  });
+
+  it('checks an unconfirmed email by account only, so a typed address bans nobody', async () => {
+    // Purpose: fails if an address someone merely typed (never confirmed) meets an email ban at
+    // redeem: anyone could otherwise lock a person out by typing their address.
+    const ivy = await arrive({ sub: 'ivy', email: 'ivy@example.com', name: 'Ivy' });
+    const ivyId = ((await (await join(ivy.cookie)).json()) as { memberId: string }).memberId;
+    expect((await call(`/api/v1/members/${ivyId}/ban`, 'POST', {}, ownerCookie)).status).toBe(201);
+    const typed = await passwordAccount('ivy+typed@example.com', 'Not Ivy');
+    await pool.query(`UPDATE "user" SET "emailVerified"=false WHERE id=$1`, [typed.userId]);
+    const preflight = await call('/api/v1/invites/preflight', 'POST', {
+      token: await invitePreflight(),
+    });
+    const cookie = cookies(typed.cookie, cookieOf(preflight));
+    expect((await call('/api/v1/invites/bind', 'POST', {}, cookie)).status).toBe(200);
+    expect((await call('/api/v1/invites/redeem', 'POST', {}, cookie)).status).toBe(200);
+  });
+
+  it('lets only the owner lift a ban on an admin', async () => {
+    // Purpose: fails if an admin can undo the owner's ban of another admin.
+    const eve = await arrive({ sub: 'eve', email: 'eve@example.com', name: 'Eve' });
+    const eveId = ((await (await join(eve.cookie)).json()) as { memberId: string }).memberId;
+    const fay = await arrive({ sub: 'fay', email: 'fay@example.com', name: 'Fay' });
+    const fayId = ((await (await join(fay.cookie)).json()) as { memberId: string }).memberId;
+    for (const id of [eveId, fayId])
+      expect(
+        (await call(`/api/v1/members/${id}/role`, 'PATCH', { role: 'admin' }, ownerCookie)).status
+      ).toBe(200);
+    const ban = await call(`/api/v1/members/${eveId}/ban`, 'POST', {}, ownerCookie);
+    const banId = ((await ban.json()) as { ban: { id: string } }).ban.id;
+    expect((await call(`/api/v1/bans/${banId}`, 'DELETE', undefined, fay.cookie)).status).toBe(403);
+    expect((await call(`/api/v1/bans/${banId}`, 'DELETE', undefined, ownerCookie)).status).toBe(
+      204
+    );
+  });
+
+  it('never lets a ban and a join that overlap leave the banned person in', async () => {
+    // Purpose: fails if a ban can commit between a join's ban check and its membership write,
+    // which would leave a banned person active (MAJOR from review). The join is held just
+    // before its membership write; the ban is fired; then the join is let go.
+    const gus = await arrive({ sub: 'gus', email: 'gus@example.com', name: 'Gus' });
+    const gusId = ((await (await join(gus.cookie)).json()) as { memberId: string }).memberId;
+    expect((await call(`/api/v1/members/${gusId}`, 'DELETE', undefined, ownerCookie)).status).toBe(
+      204
+    );
+    // A member limit row makes the join take its lock right before the membership write.
+    await pool.query(
+      'INSERT INTO community_limits(community_id,max_active_members) VALUES($1,1000000)',
+      [communityId]
+    );
+    const holder = await pool.connect();
+    try {
+      await holder.query('BEGIN');
+      await holder.query('SELECT 1 FROM community_limits WHERE community_id=$1 FOR UPDATE', [
+        communityId,
+      ]);
+      const joining = join(gus.cookie);
+      await waitForBlocked('community_limits');
+      const banning = call(`/api/v1/members/${gusId}/ban`, 'POST', {}, ownerCookie);
+      // Give the ban every chance to commit first, as it would without the community lock.
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      await holder.query('COMMIT');
+      await Promise.all([joining, banning]);
+    } finally {
+      holder.release();
+      await pool.query('DELETE FROM community_limits WHERE community_id=$1', [communityId]);
+    }
+    const state = await pool.query<{ active: boolean }>('SELECT active FROM members WHERE id=$1', [
+      gusId,
+    ]);
+    expect(state.rows[0].active).toBe(false);
+    const standing = await pool.query(
+      'SELECT 1 FROM bans WHERE member_id=$1 AND lifted_at IS NULL',
+      [gusId]
+    );
+    expect(standing.rowCount).toBe(1);
   });
 });

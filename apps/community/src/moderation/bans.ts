@@ -76,9 +76,15 @@ export async function isBanned(
 }
 
 /**
- * Refuse a banned account, reading its email from the account itself.
+ * Refuse a banned account, reading its email from the account itself. The email counts only
+ * once it is confirmed: anyone can type someone else's address into a password sign-up, so an
+ * unconfirmed one is not evidence of who the person is, and the account itself is checked.
  *
- * @throws {ApiError} 403 when a standing ban names the account or its email.
+ * Call it after locking the member row the admission will write: a ban takes the community row
+ * for update (`routes/community/bans.ts`), and every admission holds that row for share, so a
+ * ban either commits before this read or waits for the admission to commit and then removes it.
+ *
+ * @throws {ApiError} 403 when a standing ban names the account or its confirmed email.
  */
 export async function refuseBannedAccount(
   db: Queryable,
@@ -86,9 +92,11 @@ export async function refuseBannedAccount(
   userId: string,
   secret: string
 ): Promise<void> {
-  const account = await db.query<{ email: string }>('SELECT email FROM "user" WHERE id=$1', [
-    userId,
-  ]);
-  if (await isBanned(db, communityId, { userId, email: account.rows[0]?.email }, secret))
+  const account = await db.query<{ email: string; verified: boolean }>(
+    'SELECT email,"emailVerified" AS verified FROM "user" WHERE id=$1',
+    [userId]
+  );
+  const row = account.rows[0];
+  if (await isBanned(db, communityId, { userId, email: row?.verified ? row.email : null }, secret))
     throw bannedRefusal();
 }

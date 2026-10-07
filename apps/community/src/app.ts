@@ -589,7 +589,11 @@ export function createCommunityApp({
     pool,
     auth,
     config,
-    // Per caller and per host, so neither one address nor many can flood the host with joins.
+    // A preflight needs no account, so it spends only its caller's budget: anyone could
+    // otherwise drain the host's. A join is signed in and spends both, so neither one address
+    // nor many can flood the host with joins.
+    limitPreflight: (c) =>
+      limitAttempts(`open-preflight:${peer(c)}`, config.limits.openJoinsPerMinute),
     limitJoin: (c) => {
       limitAttempts(`open-join:${peer(c)}`, config.limits.openJoinsPerMinute);
       limitAttempts('open-join-host', config.limits.openJoinsPerHostPerMinute);

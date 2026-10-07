@@ -31,6 +31,7 @@ import {
 import { ApiError, json, readJson } from '../../http.js';
 import { hashSecret, randomToken, readCookie, signValue, verifyValue } from '../../security.js';
 import { joinAutoJoinChannels, lockAutoJoinChannels } from '../../admission/auto-join.js';
+import { refuseBannedAccount } from '../../moderation/bans.js';
 
 /**
  * Refuse an owner claim for a community whose import has not finished: until it is `ready`,
@@ -234,6 +235,8 @@ export function registerOwnerClaimRoutes(
           'STATE_CONFLICT',
           'This account is being deleted, so it cannot claim a space.'
         );
+      // A ban an import carried in still holds: a banned person cannot claim the space.
+      await refuseBannedAccount(client, community.rows[0].id, user.id, config.authSecret);
       // An imported community's owner adopts the row of the owner who made the export, so
       // their own history stays theirs; every other past author stays historical.
       const adopted = await client.query<{ id: string }>(

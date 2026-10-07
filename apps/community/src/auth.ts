@@ -21,14 +21,18 @@ import { withRequestStart, writtenBeforeClearing } from './sign-in/request-start
 import { communityEmailLinks } from './email-links/plugin.js';
 import { queueEmailConfirmation } from './email-links/requests.js';
 import { isBanned } from './moderation/bans.js';
-import { openAdmissionAvailable, readOpenAdmission } from './admission/open-admission-cookie.js';
+import {
+  OPEN_ADMISSION_COOKIE,
+  openAdmissionAvailable,
+  readOpenAdmission,
+} from './admission/open-admission-cookie.js';
 
 /**
  * What let a new account in: an owner grant or an invitation (with the community it admits to,
  * for an invitation), a live claim to replace a community's owner, which may name the one
  * account it admits, or a space open to anyone who signs in through the host's single sign-on.
  */
-type Admission =
+export type Admission =
   | { by: 'grant'; communityId?: string }
   | ({ by: 'owner_replacement' } & OwnerReplacementAdmission)
   | { by: 'open'; communityId: string };
@@ -233,12 +237,8 @@ export function createCommunityAuth(
           // A claim that names an account admits only that account, made through the host's
           // sign-in service, never a password sign-up. An open space is the same: it never
           // turns this gate into public password sign-up.
-          if (admission.by === 'open') {
-            throw new APIError('FORBIDDEN', {
-              code: 'single_sign_on_required',
-              message: 'Join this space through its single sign-on.',
-            });
-          }
+          const passwordRefusal = openPasswordSignUpRefusal(admission);
+          if (passwordRefusal) throw passwordRefusal;
           if (admission.by === 'owner_replacement' && admission.claimant) {
             throw new APIError('FORBIDDEN', {
               code: 'single_sign_on_required',
@@ -279,17 +279,16 @@ export function createCommunityAuth(
                 });
               namedSubjects.set(ctx, admission.claimant.subject);
             }
-            // An open space admits only a sign-up through the host's single sign-on callback,
-            // whose email the issuer verified (checked above for every provider callback).
-            if (admission.by === 'open' && (!ctx || !isOidcCallback(ctx)))
-              throw new APIError('FORBIDDEN', {
-                code: 'single_sign_on_required',
-                message: 'Join this space through its single sign-on.',
-              });
-            // A space that banned this email refuses a new account made to join it.
+            const creationRefusal = openAccountCreationRefusal(admission, ctx);
+            if (creationRefusal) throw creationRefusal;
+            // A space that banned this email refuses a new account made to join it, when a
+            // provider vouched for the email. A password sign-up's email is only typed: it is
+            // checked by account at redeem, and by email once confirmed.
             if (
               (admission.by === 'open' || admission.by === 'grant') &&
               admission.communityId &&
+              isProviderCallback(ctx) &&
+              user.emailVerified === true &&
               (await isBanned(
                 pool,
                 admission.communityId,
@@ -312,6 +311,15 @@ export function createCommunityAuth(
                 userId: user.id,
                 email: user.email,
                 authSecret: config.authSecret,
+              });
+            // One open-admission click makes at most one account, like the age confirmation.
+            if (ctx && readOpenAdmission(ctx.headers?.get('cookie') ?? null, config))
+              ctx.setCookie(OPEN_ADMISSION_COOKIE, '', {
+                path: '/',
+                maxAge: 0,
+                httpOnly: true,
+                sameSite: 'lax',
+                secure: config.publicUrl.startsWith('https:'),
               });
             if (config.minimumAge === null || !ctx) return;
             ctx.setCookie(AGE_CONFIRMATION_COOKIE, '', {
@@ -456,6 +464,34 @@ export function createCommunityAuth(
       ? handler(request)
       : withRequestStart(pool, () => handler(request));
   return auth;
+}
+
+/**
+ * The first of an open space's two password gates, at the sign-up endpoints: a browser that
+ * asked to join an open space may not sign up with a password. `null` lets the sign-up go on.
+ */
+export function openPasswordSignUpRefusal(admission: Admission): APIError | null {
+  if (admission.by !== 'open') return null;
+  return new APIError('FORBIDDEN', {
+    code: 'single_sign_on_required',
+    message: 'Join this space through its single sign-on.',
+  });
+}
+
+/**
+ * The second, where every account is created: an open space admits a new account only on the
+ * host's single sign-on callback, whose email the issuer verified (checked for every provider
+ * callback). It holds even for a path the first gate never sees. `null` lets the creation go on.
+ */
+export function openAccountCreationRefusal(
+  admission: Admission,
+  ctx: { path?: string; params?: unknown } | null | undefined
+): APIError | null {
+  if (admission.by !== 'open' || (ctx && isOidcCallback(ctx))) return null;
+  return new APIError('FORBIDDEN', {
+    code: 'single_sign_on_required',
+    message: 'Join this space through its single sign-on.',
+  });
 }
 
 /** Whether this Better Auth request is a provider's redirect back (Google, GitHub, single sign-on). */

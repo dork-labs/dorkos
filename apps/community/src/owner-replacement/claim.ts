@@ -8,6 +8,7 @@ import { queueNotice } from '../mail/outbox.js';
 import { OIDC_PROVIDER_ID } from '../oidc.js';
 import { clearFormerMembership } from '../routes/community/members.js';
 import { joinAutoJoinChannels, lockAutoJoinChannels } from '../admission/auto-join.js';
+import { refuseBannedAccount } from '../moderation/bans.js';
 import { formatReplacementDate } from './dates.js';
 import type { OwnerReplacementState } from './records.js';
 
@@ -120,6 +121,8 @@ export async function claimOwnerReplacement(
     claimant: OwnerReplacementClaimant;
     /** The issuer the host's single sign-on uses now, or null when it has none. */
     oidcIssuer: string | null;
+    /** The deployment's auth secret, which keys a banned email. */
+    authSecret: string;
     now: Date;
   }
 ): Promise<OwnerReplacementClaimed> {
@@ -188,6 +191,8 @@ export async function claimOwnerReplacement(
      ORDER BY id FOR UPDATE`,
     [found.community_id, claimant.userId]
   );
+  // Someone banned from the space cannot come back as its owner either.
+  await refuseBannedAccount(client, found.community_id, claimant.userId, input.authSecret);
   const owner = members.rows.find((member) => member.role === 'owner' && member.active);
   const own = members.rows.find((member) => member.user_id === claimant.userId);
   if (!owner?.user_id)

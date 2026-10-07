@@ -468,10 +468,12 @@ const writeAuditEvents: BatchWriter<'auditEvents'> = async (client, rows, scope)
 };
 
 /**
- * Bans keep `origin='imported'`. Each names a member of this export; its email, when the export
- * has one, is keyed again with this host's secret, so the ban keeps out the same address here.
- * No account here is the banned one, so `user_id` stays empty. The adopted owner cannot be
- * banned: an export that says otherwise is refused.
+ * Bans keep `origin='imported'`. Each names a member of this export; its confirmed email, when
+ * the export has one, is keyed again with this host's secret, so the ban keeps out the same
+ * address here. Without one, the exporting host's own key is kept: it matches only if this is
+ * that host, with the same auth secret, and is inert anywhere else. No account here is the
+ * banned one, so `user_id` stays empty. The adopted owner cannot be banned: an export that says
+ * otherwise is refused.
  */
 const writeBans: BatchWriter<'bans'> = async (client, rows, scope) => {
   invalid(rows.some((ban) => ban.member_id === scope.ownerSourceId && ban.lifted_at === null));
@@ -493,7 +495,8 @@ const writeBans: BatchWriter<'bans'> = async (client, rows, scope) => {
         id: scope.derive(ban.id),
         member_id: ban.member_id && scope.derive(ban.member_id),
         actor_member_id: ban.actor_member_id && scope.derive(ban.actor_member_id),
-        email_hash: ban.email && scope.banEmailKey ? scope.banEmailKey(ban.email) : null,
+        email_hash:
+          ban.email && scope.banEmailKey ? scope.banEmailKey(ban.email) : (ban.email_hash ?? null),
         reason: ban.reason,
         created_at: ban.created_at,
         lifted_at: ban.lifted_at,

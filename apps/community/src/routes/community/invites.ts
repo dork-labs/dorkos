@@ -478,8 +478,6 @@ export function registerInviteRoutes(
           'STATE_CONFLICT',
           'This account is being erased here. Try again later.'
         );
-      // A ban on this account, or on its email, outlasts any invitation.
-      await refuseBannedAccount(client, tenant.communityId, user.id, config.authSecret);
       // Lock order: the invitation's channel before any member row, as every channel write
       // (posting, uploading, issuing a channel invitation) takes them. The channel_members insert
       // below needs the channel row; taking it only after the issuer's member row let the
@@ -524,6 +522,9 @@ export function registerInviteRoutes(
         'SELECT id,active FROM members WHERE community_id=$1 AND user_id=$2 FOR UPDATE',
         [invite.community_id, user.id]
       );
+      // A ban on this account, or on its confirmed email, outlasts any invitation. Read after the
+      // member lock, under the community lock a ban waits on (see refuseBannedAccount).
+      await refuseBannedAccount(client, invite.community_id, user.id, config.authSecret);
       // Someone already in the space keeps the channels they chose; only an arrival is placed.
       const arriving = !member.rows[0]?.active;
       if (!member.rows[0]) {

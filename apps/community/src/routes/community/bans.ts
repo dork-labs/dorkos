@@ -44,6 +44,17 @@ interface TargetRow {
   role: Member['role'];
   active: boolean;
   email: string | null;
+  email_verified: boolean | null;
+}
+
+/**
+ * Take the community row for update before anything else, as the first lock of a ban or an
+ * unban. Every admission (invitation, open join, owner claim) holds the row for share until it
+ * commits, so a ban and an admission never interleave: the admission commits first and the ban
+ * then removes the person, or the ban commits first and the admission reads it.
+ */
+async function lockCommunityForBan(client: PoolClient, communityId: string): Promise<void> {
+  await client.query('SELECT 1 FROM communities WHERE id=$1 FOR UPDATE', [communityId]);
 }
 
 /**
@@ -75,6 +86,7 @@ export function registerBanRoutes(
     const body = await readJson(c, CommunityWireBanRequestSchema);
     const targetId = z.uuid().parse(c.req.param('id'));
     const { ban, created } = await transaction(pool, async (client) => {
+      await lockCommunityForBan(client, actor.community_id);
       const role = await requireLiveRole(client, actor, ['owner', 'admin']);
       const target = await lockTarget(client, targetId, actor.community_id);
       if (!target) throw new ApiError(404, 'NOT_FOUND', 'Member not found.');
@@ -100,7 +112,11 @@ export function registerBanRoutes(
           actor.community_id,
           target.id,
           target.user_id,
-          target.email ? banEmailKey(target.email, config.authSecret) : null,
+          // Only an email the account has confirmed is the person's; an unconfirmed one could be
+          // anyone's address, and keying it would ban whoever really owns it.
+          target.email && target.email_verified
+            ? banEmailKey(target.email, config.authSecret)
+            : null,
           body.reason ?? null,
           actor.id,
         ]
@@ -127,13 +143,27 @@ export function registerBanRoutes(
     const actor = await requireMember(c, auth, pool);
     const banId = z.uuid().parse(c.req.param('id'));
     await transaction(pool, async (client) => {
-      await requireLiveRole(client, actor, ['owner', 'admin']);
+      await lockCommunityForBan(client, actor.community_id);
+      const role = await requireLiveRole(client, actor, ['owner', 'admin']);
+      // A removed member keeps the role they had, so a banned admin still reads as one here.
+      const standing = await client.query<{ target_role: Member['role'] | null }>(
+        `SELECT m.role AS target_role FROM bans b
+         LEFT JOIN members m ON m.id=b.member_id AND m.community_id=b.community_id
+         WHERE b.id=$1 AND b.community_id=$2 AND b.lifted_at IS NULL FOR UPDATE OF b`,
+        [banId, actor.community_id]
+      );
+      if (!standing.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Ban not found.');
+      if (
+        standing.rows[0].target_role !== 'member' &&
+        standing.rows[0].target_role !== null &&
+        role !== 'owner'
+      )
+        throw new ApiError(403, 'FORBIDDEN', 'Only the owner can lift a ban on an admin.');
       const lifted = await client.query<{ member_id: string | null }>(
         `UPDATE bans SET lifted_at=now(),lifted_by_member_id=$3
          WHERE id=$1 AND community_id=$2 AND lifted_at IS NULL RETURNING member_id`,
         [banId, actor.community_id, actor.id]
       );
-      if (!lifted.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Ban not found.');
       await client.query(
         `INSERT INTO audit_events(community_id,actor_member_id,action,subject_id)
          VALUES($1,$2,'member.unban',$3)`,
@@ -151,7 +181,8 @@ async function lockTarget(
   communityId: string
 ): Promise<TargetRow | undefined> {
   const result = await client.query<TargetRow>(
-    `SELECT m.id,m.community_id,m.user_id,m.role,m.active,u.email
+    `SELECT m.id,m.community_id,m.user_id,m.role,m.active,u.email,
+            u."emailVerified" AS email_verified
      FROM members m LEFT JOIN "user" u ON u.id=m.user_id
      WHERE m.id=$1 AND m.community_id=$2 AND m.erased_at IS NULL FOR UPDATE OF m`,
     [id, communityId]

@@ -17,12 +17,13 @@ import { readmissionBlocked } from '../../erasure/guards.js';
 import { OIDC_PROVIDER_ID } from '../../oidc.js';
 import { signValue } from '../../security.js';
 import { resolveCommunityContext } from '../../tenant-context.js';
-import { bannedRefusal, isBanned } from '../../moderation/bans.js';
+import { refuseBannedAccount } from '../../moderation/bans.js';
 import { joinAutoJoinChannels, lockAutoJoinChannels } from '../../admission/auto-join.js';
 import {
   OPEN_ADMISSION_COOKIE,
   OPEN_ADMISSION_MS,
   openAdmissionAvailable,
+  openAdmissionValue,
 } from '../../admission/open-admission-cookie.js';
 import { clearFormerMembership } from './members.js';
 
@@ -57,11 +58,14 @@ export function registerOpenAdmissionRoutes(
     pool,
     auth,
     config,
+    limitPreflight,
     limitJoin,
   }: {
     pool: Pool;
     auth: CommunityAuth;
     config: CommunityConfig;
+    /** Spend one preflight from this caller's budget; throws `429` past it. */
+    limitPreflight: (c: Context) => void;
     /** Spend one open-join attempt for this caller and for the host; throws `429` past either. */
     limitJoin: (c: Context) => void;
   }
@@ -84,14 +88,14 @@ export function registerOpenAdmissionRoutes(
   });
 
   app.post('/open-admission/preflight', async (c) => {
-    limitJoin(c);
+    limitPreflight(c);
     const tenant = await resolveCommunityContext(c, pool);
     await assertOpen(pool, tenant.communityId, config, false);
     const expiresAt = new Date(Date.now() + OPEN_ADMISSION_MS);
     setCookie(
       c,
       OPEN_ADMISSION_COOKIE,
-      signValue(`${tenant.communityId}.${expiresAt.getTime()}`, config.authSecret),
+      signValue(openAdmissionValue(tenant.communityId, expiresAt), config.authSecret),
       {
         httpOnly: true,
         sameSite: 'Lax',
@@ -116,8 +120,8 @@ export function registerOpenAdmissionRoutes(
       await lockActiveCommunity(client, tenant.communityId);
       await assertOpen(client, tenant.communityId, config, true);
       // Only an account the host's single sign-on vouches for, with an email it verified.
-      const account = await client.query<{ email: string; verified: boolean; sso: boolean }>(
-        `SELECT u.email,u."emailVerified" AS verified,
+      const account = await client.query<{ verified: boolean; sso: boolean }>(
+        `SELECT u."emailVerified" AS verified,
            EXISTS(SELECT 1 FROM account a WHERE a."userId"=u.id AND a."providerId"=$2) AS sso
          FROM "user" u WHERE u.id=$1 FOR SHARE`,
         [user.id, OIDC_PROVIDER_ID]
@@ -131,15 +135,6 @@ export function registerOpenAdmissionRoutes(
         );
       if (!found.verified)
         throw new ApiError(403, 'FORBIDDEN', 'Confirm your email before joining this space.');
-      if (
-        await isBanned(
-          client,
-          tenant.communityId,
-          { userId: user.id, email: found.email },
-          config.authSecret
-        )
-      )
-        throw bannedRefusal();
       if (await readmissionBlocked(client, tenant.communityId, user.id))
         throw new ApiError(
           409,
@@ -153,6 +148,8 @@ export function registerOpenAdmissionRoutes(
         'SELECT id,active FROM members WHERE community_id=$1 AND user_id=$2 FOR UPDATE',
         [tenant.communityId, user.id]
       );
+      // After the member lock, under the community lock a ban waits on (see refuseBannedAccount).
+      await refuseBannedAccount(client, tenant.communityId, user.id, config.authSecret);
       if (member.rows[0]?.active) return member.rows[0].id;
       if (!member.rows[0]) {
         const handle = await mintHandle(client, tenant.communityId, user.name);
