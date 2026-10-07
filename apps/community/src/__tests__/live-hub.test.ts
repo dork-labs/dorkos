@@ -119,6 +119,20 @@ describe('LiveHub routing', () => {
     expect(streams.filter((stream) => stream.access.raised)).toHaveLength(1_000);
   });
 
+  it('releases a reconnect wake-up in batches too', async () => {
+    // Purpose: fails if a reconnect makes every stream on the server read at the same moment.
+    const made = hub({ maxStreams: 2_000, maxStreamsPerCommunity: 2_000 });
+    const streams: LiveStream[] = [];
+    for (let n = 0; n < 1_000; n += 1)
+      streams.push(await made.open({ communityId: 'big', channelId: 'x', memberId: `m${n}` }));
+    made.wakeAll();
+    expect(streams.filter((stream) => stream.entries.raised)).toHaveLength(200);
+    expect(streams.filter((stream) => stream.access.raised)).toHaveLength(200);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(streams.filter((stream) => stream.entries.raised)).toHaveLength(1_000);
+    expect(streams.filter((stream) => stream.access.raised)).toHaveLength(1_000);
+  });
+
   it('wakes every stream once after a reconnect', async () => {
     const made = hub();
     const all = await streams(made);

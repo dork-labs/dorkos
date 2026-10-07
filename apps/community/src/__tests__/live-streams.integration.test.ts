@@ -849,7 +849,8 @@ describe('stream lifetime', () => {
         200,
         'remove from channel'
       );
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      // Its access ended, so its place is free before the reader ever comes back for the frame.
+      await expect.poll(() => h.live.snapshot().streams).toBe(0);
       expect(await frame()).toBe('entry');
       expect(await frame()).toBe('closed');
     } finally {
@@ -912,6 +913,35 @@ describe('limits', () => {
 });
 
 describe('per-member limit', () => {
+  it('lets one agent hold a stream on each of 17 rooms at the default limit', async () => {
+    // Purpose: fails if the default per-member limit is below what a DorkOS app opens for one
+    // agent: one stream per room it is in, all on that agent's own credential.
+    const s = await space();
+    const bob = await member(s, 'Bob');
+    const helper = await agent(s, bob);
+    const rooms = [s.channelId];
+    for (let n = 1; n < 17; n += 1) {
+      const channelId = await createChannel(h, s.communityId, s.owner.cookie, `agent-room-${n}`);
+      await expectStatus(
+        await h.call(`${s.base}/channels/${channelId}/agents`, {
+          bearer: helper.grant,
+          body: { agentId: helper.agentId },
+        }),
+        200,
+        `add agent to room ${n}`
+      );
+      rooms.push(channelId);
+    }
+    const opened: Opened[] = [];
+    try {
+      for (const channelId of rooms)
+        opened.push(await open({ base: s.base, channelId }, { bearer: helper.token }));
+      expect(opened).toHaveLength(17);
+    } finally {
+      for (const stream of opened) await stream.close();
+    }
+  });
+
   it('answers 503 once one person holds as many streams as one may', async () => {
     const capped = await startTenancyHarness('live-member-cap', {
       sharesDatabaseOf: h,
@@ -1073,6 +1103,22 @@ describe('the listener at boot', () => {
       await expect(elsewhere.start(h.pool)).rejects.toThrow('the notice never arrived');
     } finally {
       await elsewhere.stop();
+    }
+  });
+
+  it('reports not ready when requests use another address that does not answer', async () => {
+    // Purpose: fails if readiness only proves the listen address, while every request goes to a
+    // different one that is down.
+    const live = hubFor(h.config.databaseUrl);
+    try {
+      await live.start(h.pool);
+      const config = { ...h.config, databaseUrl: 'postgres://nobody@127.0.0.1:1/none' };
+      const app = createCommunityApp({ config, pool: h.pool, live });
+      const ready = await app.fetch(new Request('http://localhost/health/ready'));
+      expect(ready.status).toBe(503);
+      expect(await ready.json()).toMatchObject({ database: 'unavailable', listener: 'listening' });
+    } finally {
+      await live.stop();
     }
   });
 

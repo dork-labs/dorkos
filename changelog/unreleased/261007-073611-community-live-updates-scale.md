@@ -10,7 +10,7 @@ covers:
 
 ### Changed
 
-- A Community server now sends a new message to open channels as soon as it is posted, instead of asking the database four times a second for every open channel. One server can hold many more people at once. When someone is removed, signs out, or loses access in any other way, their open channels close within a moment. A sign-in that simply runs out is noticed within 15 seconds (DOR-2764)
+- A Community server now sends a new message to open channels as soon as it is posted, instead of asking the database four times a second for every open channel. One server can hold many more people at once. When someone is removed, signs out, or loses access in any other way, their open channels close within a moment. A sign-in that simply runs out is noticed within about 15 seconds (DOR-2764)
 
 ### Added
 

@@ -313,8 +313,9 @@ const schema = z.object({
   COMMUNITY_STREAMS_MAX: between(1, 25_000, 1_000_000),
   COMMUNITY_STREAMS_PER_COMMUNITY: between(1, 20_000, 1_000_000),
   // Live streams one person, or one agent, may hold at once: a stuck client that keeps
-  // reconnecting cannot take a community's whole quota.
-  COMMUNITY_STREAMS_PER_MEMBER: between(1, 16, 1_000),
+  // reconnecting cannot take a community's whole quota. Generous by default, because a DorkOS
+  // app holds one stream per room it shows, and one per room for each agent it runs here.
+  COMMUNITY_STREAMS_PER_MEMBER: between(1, 256, 10_000),
   // How long a quiet live stream waits before it re-reads anyway, in case a notice was lost.
   COMMUNITY_STREAM_FALLBACK_MS: between(250, 15_000, 300_000),
   COMMUNITY_AUTH_SECRET: z.string().min(32),

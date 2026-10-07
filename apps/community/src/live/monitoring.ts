@@ -90,15 +90,10 @@ export function renderMetrics(hub: LiveHub, pool: Pool): string {
   return `${lines.join('\n')}\n`;
 }
 
-/**
- * One database round trip that never queues behind the request pool, so a storm of live-stream
- * rechecks cannot fail readiness. It uses the listen connection when that is up, and otherwise a
- * short-lived connection of its own.
- */
-async function databaseAnswers(hub: LiveHub, databaseUrl: string): Promise<boolean> {
-  if (hub.listenerState === 'listening') return hub.ping();
+/** One round trip on a short-lived connection of its own, never one from the request pool. */
+async function directAnswers(url: string): Promise<boolean> {
   const client = new Client({
-    connectionString: databaseUrl,
+    connectionString: url,
     connectionTimeoutMillis: READY_DATABASE_MS,
     query_timeout: READY_DATABASE_MS,
   });
@@ -112,6 +107,19 @@ async function databaseAnswers(hub: LiveHub, databaseUrl: string): Promise<boole
   } finally {
     await client.end().catch(() => undefined);
   }
+}
+
+/**
+ * Whether the database answers, without queueing behind the request pool, so a storm of
+ * live-stream rechecks cannot fail readiness. The listen connection answers for its own address
+ * when it is up. When requests use another address (COMMUNITY_LISTEN_DATABASE_URL set apart),
+ * that address is checked too, on a short-lived connection.
+ */
+async function databaseAnswers(hub: LiveHub, databaseUrl: string): Promise<boolean> {
+  const listening = hub.listenerState === 'listening';
+  const checks = [listening ? hub.ping(READY_DATABASE_MS) : directAnswers(databaseUrl)];
+  if (listening && hub.options.listenUrl !== databaseUrl) checks.push(directAnswers(databaseUrl));
+  return (await Promise.all(checks)).every(Boolean);
 }
 
 /**

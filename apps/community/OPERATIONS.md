@@ -385,7 +385,7 @@ The app needs long-lived HTTP streams. A function deployment with bounded reques
 
 Check process restarts, HTTP failures, PostgreSQL connections and disk space.
 
-`GET /health` only says the process is running. `GET /health/ready` answers `200` when a database query works and the live-update connection is listening, and `503` when either is not. Its query never waits behind the connections requests share, so a busy server still answers it. Point your load balancer's readiness check at it.
+`GET /health` only says the process is running. `GET /health/ready` answers `200` when a database query works and the live-update connection is listening, and `503` when either is not. Its check never waits behind the connections requests share, so a busy server still answers it. When `COMMUNITY_LISTEN_DATABASE_URL` differs from `COMMUNITY_DATABASE_URL`, it checks both addresses. Point your load balancer's readiness check at it.
 
 `GET /metrics` serves Prometheus text to a host API key with the `communities:read` scope, or a signed-in server admin. It reports open live streams (in total and per community), streams refused by `COMMUNITY_STREAMS_MAX`, `COMMUNITY_STREAMS_PER_COMMUNITY` or `COMMUNITY_STREAMS_PER_MEMBER`, posts and joins in the last minute, requests waiting for a database connection, whether the live-update connection is up and how often it reconnected, and how long a new message takes to reach an open stream. Alert on `community_live_listener_up 0` and on a growing `community_db_pool_waiting`.
 

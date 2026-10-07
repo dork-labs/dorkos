@@ -477,6 +477,8 @@ export function registerEventRoutes(
                 // The reader is behind: `pull` sends the closed frame once it reads again, and
                 // sends nothing else first.
                 closeWhenRead = reason;
+                // Its access has ended, so it gives back its place now, not when the frame goes.
+                live.release();
                 live.entries.raise();
               }
               return;

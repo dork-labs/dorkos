@@ -201,8 +201,8 @@ export class LiveHub {
   }
 
   /** One database round trip on the listen connection; see {@link LiveListener.ping}. */
-  ping(): Promise<boolean> {
-    return this.listener.ping();
+  ping(timeoutMs?: number): Promise<boolean> {
+    return this.listener.ping(timeoutMs);
   }
 
   /** Whether readiness depends on the listener: true once {@link start} pinned it. */
@@ -305,19 +305,18 @@ export class LiveHub {
 
   /** Raise access on `streams`, the first batch now and the rest spread out; see ACCESS_BATCH. */
   private recheck(streams: Iterable<LiveStream>): void {
-    const all = [...streams];
-    const release = (from: number) => {
-      for (const stream of all.slice(from, from + ACCESS_BATCH)) stream.access.raise();
-      if (from + ACCESS_BATCH < all.length)
-        setTimeout(() => release(from + ACCESS_BATCH), ACCESS_BATCH_GAP_MS).unref();
-    };
-    release(0);
+    inBatches([...streams], (stream) => stream.access.raise());
   }
 
-  /** Make every stream re-read its channel and recheck its access once, as after a reconnect. */
+  /**
+   * Make every stream re-read its channel and recheck its access once, as after a reconnect.
+   * Both are released in batches: a reconnect touches every stream on the server at once.
+   */
   wakeAll(): void {
-    for (const stream of this.streams) stream.entries.raise();
-    this.recheck(this.streams);
+    inBatches([...this.streams], (stream) => {
+      stream.entries.raise();
+      stream.access.raise();
+    });
   }
 
   /** Record how long one live entry took from being written to being sent. */
@@ -355,6 +354,16 @@ export class LiveHub {
       },
     };
   }
+}
+
+/** Run `raise` on each stream, the first batch now and the rest spread out; see ACCESS_BATCH. */
+function inBatches(streams: LiveStream[], raise: (stream: LiveStream) => void): void {
+  const release = (from: number) => {
+    for (const stream of streams.slice(from, from + ACCESS_BATCH)) raise(stream);
+    if (from + ACCESS_BATCH < streams.length)
+      setTimeout(() => release(from + ACCESS_BATCH), ACCESS_BATCH_GAP_MS).unref();
+  };
+  release(0);
 }
 
 function holderOf(keys: LiveStreamKeys): string {
