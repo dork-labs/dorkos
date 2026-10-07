@@ -123,12 +123,12 @@ Muse is Meta's consumer agent, launched in the US on 2026-09-08 as an app and in
 
 Every product uses some of the same four triggers, which line up with Paperclip's four wakeup kinds:
 
-| Trigger | Examples | Good for |
-| --- | --- | --- |
-| **Timer (a beat)** | OpenClaw heartbeat, Paperclip `timer`, Claude Code `/loop` | A regular look around: "does anything need me?" |
-| **Exact schedule** | ChatGPT Tasks, Hermes cron, Gemini scheduled actions, DorkOS Tasks | A known job at a known time |
-| **Event** | Lindy on a new email, Manus automations, Paperclip `assignment` | Reacting fast to something that just happened |
-| **Goal loop** | Gemini goal scheduled actions, Manus tasks that carry state | Working toward an objective across many runs |
+| Trigger            | Examples                                                           | Good for                                        |
+| ------------------ | ------------------------------------------------------------------ | ----------------------------------------------- |
+| **Timer (a beat)** | OpenClaw heartbeat, Paperclip `timer`, Claude Code `/loop`         | A regular look around: "does anything need me?" |
+| **Exact schedule** | ChatGPT Tasks, Hermes cron, Gemini scheduled actions, DorkOS Tasks | A known job at a known time                     |
+| **Event**          | Lindy on a new email, Manus automations, Paperclip `assignment`    | Reacting fast to something that just happened   |
+| **Goal loop**      | Gemini goal scheduled actions, Manus tasks that carry state        | Working toward an objective across many runs    |
 
 Always-on workers (Dots, Muse, Instinct, Manus Cloud Computer) are not a different trigger. They are a place to run, with a computer that keeps state between wake-ups. Everyone prices "always on" as its own cost.
 
@@ -241,13 +241,13 @@ Gartner (September 2025) found only 15% of IT application leaders were consideri
 
 ### 7.1 Benchmarks from other fields
 
-| Field | Number | Source |
-| --- | --- | --- |
-| Code suggestions | about 30% of Copilot suggestions accepted | [GitHub and Accenture](https://github.blog/news-insights/research/research-quantifying-github-copilots-impact-in-the-enterprise-with-accenture/) |
-| Proactive coding help | 69 of 75 offered suggestions accepted in the CHI 2025 study (narrow, in-context) | [arXiv 2410.04596](https://arxiv.org/html/2410.04596) |
-| Site reliability alerts | about 3% of alerts need action in a typical company; 30 to 50% actionable called healthy | [incident.io](https://incident.io/blog/sre-alerting-best-practices) (vendor) |
-| Google SRE | no more than two actionable pages per shift; alerts that rarely lead to action should be tuned or removed | [SRE Workbook](https://sre.google/workbook/alerting-on-slos/) |
-| Hospital alarms | 72 to 99% of ICU alarms reported false | [Nurse.org](https://nurse.org/articles/alarm-fatigue-statistics-patient-safety/) (secondary) |
+| Field                   | Number                                                                                                    | Source                                                                                                                                           |
+| ----------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Code suggestions        | about 30% of Copilot suggestions accepted                                                                 | [GitHub and Accenture](https://github.blog/news-insights/research/research-quantifying-github-copilots-impact-in-the-enterprise-with-accenture/) |
+| Proactive coding help   | 69 of 75 offered suggestions accepted in the CHI 2025 study (narrow, in-context)                          | [arXiv 2410.04596](https://arxiv.org/html/2410.04596)                                                                                            |
+| Site reliability alerts | about 3% of alerts need action in a typical company; 30 to 50% actionable called healthy                  | [incident.io](https://incident.io/blog/sre-alerting-best-practices) (vendor)                                                                     |
+| Google SRE              | no more than two actionable pages per shift; alerts that rarely lead to action should be tuned or removed | [SRE Workbook](https://sre.google/workbook/alerting-on-slos/)                                                                                    |
+| Hospital alarms         | 72 to 99% of ICU alarms reported false                                                                    | [Nurse.org](https://nurse.org/articles/alarm-fatigue-statistics-patient-safety/) (secondary)                                                     |
 
 What this says: real alerting systems run far noisier than anyone wants, and "healthy" is a third to a half of alerts being useful. A proactive agent's unasked messages should beat that clearly, because they come from a co-worker, not a monitor.
 
