@@ -34,7 +34,7 @@ The client will be available at `http://localhost:6241` and the server at `http:
 
 ## Monorepo Structure
 
-This is a Turborepo monorepo with six apps and seventeen shared packages:
+This is a Turborepo monorepo with five apps and nineteen shared packages:
 
 | Directory                    | Package                     | Description                                          |
 | ---------------------------- | --------------------------- | ---------------------------------------------------- |

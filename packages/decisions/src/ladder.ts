@@ -10,25 +10,35 @@
  *
  * How one rung's answer is read, using the request's LEAST confident answer:
  *
- * - any answer naming a `serious` label → a person decides, however confident;
- * - confidence at or above `actAbove` → act on this rung's answers;
+ * - any answer naming a `serious` label at a confidence of at least
+ *   `escalateBelow` → `person`: a person or agent with authority decides,
+ *   however confident the model was. A serious label below `escalateBelow` is
+ *   just an unsure answer and goes up a rung like any other, so a model that
+ *   barely leans toward "threat" cannot by itself page a person;
+ * - confidence at or above `actAbove` → `act` on this rung's answers;
  * - confidence below `escalateBelow` → go up one rung;
- * - in between → stop and ask for review, with this rung's answers as a hint.
+ * - in between → `review`: a PERSON decides, with this rung's answers as a
+ *   hint, and the rungs above (the frontier model included) are skipped. The
+ *   middle band is "a model leaned but not enough to act", and a costlier model
+ *   leaning the same way would not change who has to look.
  *
  * A rung whose least confident answer is 0 (a failure or an abstention) always
- * goes up, whatever the thresholds. When every rung is unsure, or a rung's daily call cap is reached, the policy's
- * `whenUnsure` default applies. Rung 0 (rules) is free and has no cap; a cap of
- * 0 switches a rung off.
+ * goes up, whatever the thresholds. When every rung is unsure, or a rung's daily
+ * call cap is reached, the policy's `whenUnsure` default applies. Rung 0 (rules)
+ * is free and has no cap; a cap of 0 switches a rung off. When the caller's
+ * signal has fired, the ladder stops before the next rung without calling it or
+ * counting it against a cap.
  *
  * @module decisions/ladder
  */
 import { createHash } from 'node:crypto';
-import type {
-  DecisionAnswer,
-  DecisionModel,
-  DecisionPolicy,
-  DecisionRequest,
-  DecisionResult,
+import {
+  DecisionPolicySchema,
+  type DecisionAnswer,
+  type DecisionModel,
+  type DecisionPolicy,
+  type DecisionRequest,
+  type DecisionResult,
 } from '@dorkos/shared/decision-model';
 import { unsureResult } from './answers.js';
 
@@ -63,8 +73,11 @@ export interface DailyCallCounter {
 
 /** Settings for {@link runLadder}. */
 export interface LadderOptions {
-  /** Where daily call counts live. Default: a fresh in-memory counter (so no cap ever carries over). */
-  counter?: DailyCallCounter;
+  /**
+   * Where daily call counts live. Required: a cap only holds if the counter
+   * outlives one call, so the caller owns one per process (or a shared store).
+   */
+  counter: DailyCallCounter;
   /** Clock, for the UTC day key. Default `Date.now`. */
   now?: () => number;
   /** The caller's signal, passed to every bridge. */
@@ -85,12 +98,13 @@ export type LadderStep =
 /** What the policy recommends. */
 export type LadderVerdict =
   | { kind: 'act'; rung: LadderRung; answers: Record<string, DecisionAnswer> }
+  /** A person decides, with these answers as a hint; the rungs above were skipped. */
   | { kind: 'review'; rung: LadderRung; answers: Record<string, DecisionAnswer> }
   | { kind: 'person'; reason: 'serious'; rung: LadderRung; answers: Record<string, DecisionAnswer> }
   | {
       kind: 'unsure';
       whenUnsure: DecisionPolicy['whenUnsure'];
-      reason: 'every-rung-unsure' | 'cap-reached' | 'no-rungs';
+      reason: 'every-rung-unsure' | 'cap-reached' | 'no-rungs' | 'aborted';
     };
 
 /** Everything one run of the ladder did, for the audit row. */
@@ -150,10 +164,14 @@ function minConfidence(result: DecisionResult, req: DecisionRequest): number {
   return Object.keys(req.questions).length === 0 ? 0 : min;
 }
 
-/** True when any answer names one of the policy's serious labels. */
-function namesSerious(result: DecisionResult, serious: readonly string[]): boolean {
+/** True when any answer names one of the policy's serious labels at a confidence of at least `floor`. */
+function namesSerious(result: DecisionResult, serious: readonly string[], floor: number): boolean {
   return Object.values(result.answers).some(
-    (a) => typeof a.value === 'string' && serious.includes(a.value)
+    (a) =>
+      typeof a.value === 'string' &&
+      serious.includes(a.value) &&
+      a.confidence > 0 &&
+      a.confidence >= floor
   );
 }
 
@@ -163,6 +181,10 @@ function namesSerious(result: DecisionResult, serious: readonly string[]): boole
  * Never throws for a bridge's sake: a bridge that throws anyway (breaking the
  * port's contract) counts as unsure on its rung.
  *
+ * @throws When `policy` fails {@link DecisionPolicySchema} — thresholds out of
+ *   order, or a `serious` label no choice question offers. That is a
+ *   configuration mistake, and a silent pass would mean a serious label that can
+ *   never fire.
  * @param policy - The use case's policy: questions, thresholds, caps.
  * @param bridges - The bridge for each rung; absent rungs are skipped.
  * @param request - The item and its context.
@@ -172,8 +194,9 @@ export async function runLadder(
   policy: DecisionPolicy,
   bridges: LadderBridges,
   request: LadderRequest,
-  opts: LadderOptions = {}
+  opts: LadderOptions
 ): Promise<LadderOutcome> {
+  DecisionPolicySchema.parse(policy);
   const req: DecisionRequest = {
     useCase: policy.useCase,
     policyVersion: policyVersion(policy),
@@ -182,7 +205,7 @@ export async function runLadder(
     ...(request.context !== undefined ? { context: request.context } : {}),
     questions: policy.questions,
   };
-  const counter = opts.counter ?? createMemoryCallCounter();
+  const counter = opts.counter;
   const day = new Date((opts.now ?? Date.now)()).toISOString().slice(0, 10);
   const signal = opts.signal ?? new AbortController().signal;
   const steps: LadderStep[] = [];
@@ -194,6 +217,13 @@ export async function runLadder(
 
   for (const [rung, model] of rungs) {
     if (!model) continue;
+    if (signal.aborted) {
+      return {
+        request: req,
+        steps,
+        verdict: { kind: 'unsure', whenUnsure: policy.whenUnsure, reason: 'aborted' },
+      };
+    }
     if (rung !== 0) {
       const cap = rung === 1 ? policy.dailyCallCap.rung1 : policy.dailyCallCap.rung2;
       if (counter.count(policy.useCase, rung, day) >= cap) {
@@ -217,7 +247,7 @@ export async function runLadder(
     const confidence = minConfidence(result, req);
     steps.push({ rung, modelId: model.id, result, confidence });
 
-    if (namesSerious(result, policy.serious)) {
+    if (namesSerious(result, policy.serious, policy.escalateBelow)) {
       return {
         request: req,
         steps,
@@ -241,7 +271,7 @@ export async function runLadder(
     verdict: {
       kind: 'unsure',
       whenUnsure: policy.whenUnsure,
-      reason: steps.length === 0 ? 'no-rungs' : 'every-rung-unsure',
+      reason: signal.aborted ? 'aborted' : steps.length === 0 ? 'no-rungs' : 'every-rung-unsure',
     },
   };
 }

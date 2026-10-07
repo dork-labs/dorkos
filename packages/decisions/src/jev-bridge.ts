@@ -98,6 +98,11 @@ function toState(req: DecisionRequest): unknown {
   return req.context === undefined ? req.item : { item: req.item, context: req.context };
 }
 
+/** True for a non-empty string or an object: a field that really says something. */
+function isPresent(x: unknown): boolean {
+  return (typeof x === 'string' && x.length > 0) || isRecord(x);
+}
+
 /** Probabilities, kept only when every entry is a number. */
 function readProbabilities(raw: unknown): Record<string, number> | undefined {
   if (!isRecord(raw)) return undefined;
@@ -173,13 +178,10 @@ export function createJevModel(opts: JevModelOptions): DecisionModel {
       const elapsed = () => performance.now() - started;
       if (!outcome.ok) return unsureResult(req, model, outcome.failure, elapsed());
       const body = outcome.body;
-      if (isRecord(body) && (body.refusal !== undefined || body.error !== undefined)) {
-        return unsureResult(
-          req,
-          model,
-          body.refusal !== undefined ? 'refused' : 'outage',
-          elapsed()
-        );
+      // Only a real refusal or error counts: `null`, `false` or an empty string
+      // in either field means "none", as in the chat bridge.
+      if (isRecord(body) && (isPresent(body.refusal) || isPresent(body.error))) {
+        return unsureResult(req, model, isPresent(body.refusal) ? 'refused' : 'outage', elapsed());
       }
       if (!isRecord(body) || !isRecord(body.answers)) {
         return unsureResult(req, model, 'invalid-answer', elapsed());

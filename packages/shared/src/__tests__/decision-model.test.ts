@@ -61,4 +61,21 @@ describe('decision-model schemas', () => {
     expect(DecisionPolicySchema.safeParse(policy).success).toBe(false);
     expect(DecisionPolicySchema.safeParse({ ...policy, escalateBelow: 0.5 }).success).toBe(true);
   });
+
+  it('refuses a serious label that no choice question offers', () => {
+    const policy = {
+      useCase: 'u',
+      rules: '',
+      questions: {
+        kind: { kind: 'choice', instructions: 'q?', labels: { k7: 'fine', x9: 'threat' } },
+      },
+      actAbove: 0.9,
+      escalateBelow: 0.7,
+      whenUnsure: 'hold',
+      serious: ['x9'],
+      dailyCallCap: { rung1: 10, rung2: 1 },
+    };
+    expect(DecisionPolicySchema.safeParse(policy).success).toBe(true);
+    expect(DecisionPolicySchema.safeParse({ ...policy, serious: ['threat'] }).success).toBe(false);
+  });
 });

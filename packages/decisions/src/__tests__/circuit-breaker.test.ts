@@ -91,6 +91,48 @@ describe('withCircuitBreaker', () => {
     expect(inner.decide).toHaveBeenCalledTimes(6);
   });
 
+  it('lets exactly one trial call through when half-open; the rest answer circuit-open until it settles', async () => {
+    let now = 0;
+    let release: (() => void) | undefined;
+    let calls = 0;
+    const inner: DecisionModel = {
+      ...scripted(['ok']),
+      decide: async (req: DecisionRequest) => {
+        calls += 1;
+        if (calls <= 2) return unsureResult(req, 'm', 'outage');
+        if (calls === 3) await new Promise<void>((resolve) => (release = resolve));
+        return { answers: { q: { value: true, confidence: 1 } }, modelId: 'm', latencyMs: 1 };
+      },
+    };
+    const model = withCircuitBreaker(inner, {
+      failureThreshold: 2,
+      cooldownMs: 100,
+      now: () => now,
+    });
+    await model.decide(REQ, signal());
+    await model.decide(REQ, signal()); // open
+    now = 100;
+    const trial = model.decide(REQ, signal());
+    const concurrent = await Promise.all([
+      model.decide(REQ, signal()),
+      model.decide(REQ, signal()),
+    ]);
+    for (const r of concurrent) expect(r.answers.q!.failure).toBe('circuit-open');
+    expect(calls).toBe(3);
+    release!();
+    expect((await trial).answers.q!.value).toBe(true);
+    // Closed again: calls go straight through.
+    await model.decide(REQ, signal());
+    expect(calls).toBe(4);
+  });
+
+  it('counts a run of unreadable replies as a service failure, so a wrong reply shape is loud', async () => {
+    const inner = scripted(['invalid-answer']);
+    const model = withCircuitBreaker(inner, { failureThreshold: 3, now: () => 0 });
+    for (let i = 0; i < 5; i++) await model.decide(REQ, signal());
+    expect(inner.decide).toHaveBeenCalledTimes(3);
+  });
+
   it('keeps the wrapped id and capabilities', () => {
     const inner = scripted(['ok']);
     const model = withCircuitBreaker(inner);

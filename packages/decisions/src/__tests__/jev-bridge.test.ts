@@ -212,6 +212,29 @@ describe('createJevModel', () => {
     });
   });
 
+  it('reads a null or empty refusal and error as absent', async () => {
+    const model = createJevModel({
+      apiKey: 'k',
+      fetch: stubFetch(() => ({
+        status: 200,
+        json: { refusal: null, error: '', answers: { harm: { probability: 0.9 } } },
+      })).fetch,
+    });
+    const req = { ...REQ, questions: { harm: REQ.questions.harm! } };
+    const result = await model.decide(req, new AbortController().signal);
+    expect(result.answers.harm).toMatchObject({ value: true });
+    expect(result.answers.harm!.confidence).toBeCloseTo(0.8, 6);
+  });
+
+  it('opens its circuit after a run of replies it cannot read, so a wrong shape guess is loud', async () => {
+    const stub = stubFetch(() => ({ status: 200, json: { result: 'a shape we do not know' } }));
+    const model = createJevModel({ apiKey: 'k', fetch: stub.fetch });
+    for (let i = 0; i < 3; i++) await model.decide(REQ, new AbortController().signal);
+    const result = await model.decide(REQ, new AbortController().signal);
+    expect(stub.calls).toHaveLength(3);
+    expect(result.answers.spam!.failure).toBe('circuit-open');
+  });
+
   it('declares itself cloud-only and uncalibrated', () => {
     const model = createJevModel({ apiKey: 'k', fetch: stubFetch(() => 'throw').fetch });
     expect(model.capabilities).toMatchObject({

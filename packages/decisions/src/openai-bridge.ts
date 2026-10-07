@@ -14,7 +14,9 @@
  * that spell each answer. Several servers return no logprobs alongside a JSON
  * schema (OpenAI among them, per the research), so when none come back it asks
  * a second time and compares: agreement keeps a moderate confidence,
- * disagreement lowers it. Neither number is calibrated until our own test set
+ * disagreement lowers it, and a second ask that fails makes the answer unsure.
+ * That second ask has its own time limit, so such a call can take up to twice
+ * `timeoutMs`. Neither number is calibrated until our own test set
  * says so, which is why `capabilities.calibrated` is false.
  *
  * **The item is data.** It travels in its own user message as JSON, never inside
@@ -55,11 +57,18 @@ export interface OpenAiCompatibleModelOptions {
   apiKey?: string;
   /** The fetch to call. Injected so tests never touch the network. */
   fetch: FetchLike;
-  /** Give up on one call after this many milliseconds. Default 15000. */
+  /**
+   * Give up on one ask after this many milliseconds. Default 15000. The limit is
+   * per ask: when the server returns no logprobs the bridge asks twice, so one
+   * `decide` can take up to twice this long.
+   */
   timeoutMs?: number;
   /** Ask for token probabilities. Default true; turn off for servers that reject the field. */
   logprobs?: boolean;
-  /** Confidence when two asks agree, and when they disagree (or the second fails). Default 0.8 and 0.4. */
+  /**
+   * Confidence when the two asks agree, and when they disagree. Default 0.8 and
+   * 0.4. A second ask that fails makes the answer unsure (confidence 0).
+   */
   askTwiceConfidence?: { agree: number; disagree: number };
   /** Set for a server on this computer (Ollama), so the picker can say nothing leaves it. */
   runsLocally?: boolean;
@@ -311,12 +320,12 @@ export function createOpenAiCompatibleModel(opts: OpenAiCompatibleModelOptions):
       let second: ReturnType<typeof readAnswers> | undefined;
       if (!first.tokens) {
         const again = await ask(req, signal);
-        if (again.ok) {
-          second = readAnswers(req, again.answer);
-          if (again.usage) usages.push(again.usage);
-        } else if (again.failure === 'aborted') {
-          return unsureResult(req, opts.model, 'aborted', elapsed());
-        }
+        // A second ask that fails (refused, timed out, unreachable, aborted)
+        // leaves the first answer unconfirmed, and an unconfirmed answer from a
+        // model with no logprobs is no better than a guess: unsure.
+        if (!again.ok) return unsureResult(req, opts.model, again.failure, elapsed());
+        second = readAnswers(req, again.answer);
+        if (again.usage) usages.push(again.usage);
       }
 
       const answers: Record<string, DecisionAnswer> = {};

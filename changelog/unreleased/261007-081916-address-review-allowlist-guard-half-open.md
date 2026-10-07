@@ -1,10 +1,10 @@
 ---
 covers:
-  - 'feat(shared): add the DecisionModel port (choice, score and yes/no questions)'
+  - 'fix(decisions): address review: allowlist guard, half-open breaker, ladder abort and serious floor'
 ---
 
-### Added
+### Fixed
 
 <!-- dorkos-changelog:seeded — rewrite this bullet for a human, then delete this comment. If the change needs no changelog entry, delete the whole fragment instead. See changelog/README.md#seeded-fragments. -->
 
-- Add the DecisionModel port (choice, score and yes/no questions)
+- Address review: allowlist guard, half-open breaker, ladder abort and serious floor

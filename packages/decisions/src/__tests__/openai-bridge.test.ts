@@ -154,15 +154,39 @@ describe('createOpenAiCompatibleModel', () => {
     expect(result.costMicroUsd).toBe(220);
   });
 
-  it('keeps the first answer at the lowered confidence when the second ask fails', async () => {
-    const stub = stubFetch((n) => (n === 0 ? completion('{"spam":"m2","harm":true}') : 'throw'));
-    const model = createOpenAiCompatibleModel({
-      baseUrl: 'http://x/v1',
-      model: 'm',
-      fetch: stub.fetch,
+  it('makes every answer unsure when the second ask fails, is refused or times out', async () => {
+    const second = async (reply: StubReply | 'throw' | 'hang') => {
+      const stub = stubFetch((n) =>
+        n === 0 ? completion('{"spam":"m2","harm":true}') : (reply as StubReply)
+      );
+      const model = createOpenAiCompatibleModel({
+        baseUrl: 'http://x/v1',
+        model: 'm',
+        fetch: stub.fetch,
+        timeoutMs: 100,
+      });
+      const result = await model.decide(REQ, new AbortController().signal);
+      expect(stub.calls).toHaveLength(2);
+      return result;
+    };
+    expect((await second('throw')).answers.spam).toEqual({
+      value: null,
+      confidence: 0,
+      failure: 'outage',
     });
-    const result = await model.decide(REQ, new AbortController().signal);
-    expect(result.answers.spam).toEqual({ value: 'm2', confidence: 0.4 });
+    expect(
+      (
+        await second({
+          status: 200,
+          json: { choices: [{ message: { content: null, refusal: 'No.' } }] },
+        })
+      ).answers.harm
+    ).toEqual({ value: null, confidence: 0, failure: 'refused' });
+    expect((await second('hang')).answers.spam).toEqual({
+      value: null,
+      confidence: 0,
+      failure: 'timeout',
+    });
   });
 
   it('treats a content filter stop, unreadable JSON and a missing answer as unsure', async () => {

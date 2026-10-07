@@ -256,11 +256,15 @@ export const DecisionPolicySchema = z
     questions: DecisionQuestionsSchema,
     /** At or above this confidence, act without anyone looking. */
     actAbove: z.number().min(0).max(1),
-    /** Below this confidence, go up one rung. Between the two, ask for review. */
+    /** Below this confidence, go up one rung. Between the two, a person reviews and higher rungs are skipped. */
     escalateBelow: z.number().min(0).max(1),
     /** What happens once every rung is unsure, or a call cap is reached. */
     whenUnsure: z.enum(['allow', 'hold']),
-    /** Labels that always go to a person or agent with authority, however confident. */
+    /**
+     * Labels that go to a person or agent with authority whenever a model names
+     * one at a confidence of at least `escalateBelow`, however far above it. Each
+     * must be a label of one of the choice questions.
+     */
     serious: z.array(z.string().min(1)),
     /** Calls per UTC day, per rung. Past it, the ladder behaves as unsure. */
     dailyCallCap: z.object({
@@ -271,6 +275,22 @@ export const DecisionPolicySchema = z
   .refine((policy) => policy.escalateBelow <= policy.actAbove, {
     message: 'escalateBelow must not be above actAbove',
     path: ['escalateBelow'],
-  });
+  })
+  .refine(
+    (policy) => {
+      const offered = new Set(
+        Object.values(policy.questions).flatMap((q) =>
+          q.kind === 'choice' ? Object.keys(q.labels) : []
+        )
+      );
+      return policy.serious.every((label) => offered.has(label));
+    },
+    {
+      // A serious label no question offers can never fire: a silent hole in the
+      // one rule that always sends an item to a person.
+      message: 'Every serious label must be a label of one of the choice questions',
+      path: ['serious'],
+    }
+  );
 /** One use case's policy. See {@link DecisionPolicySchema}. */
 export type DecisionPolicy = z.infer<typeof DecisionPolicySchema>;
