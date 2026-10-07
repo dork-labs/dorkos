@@ -7,9 +7,14 @@ export interface Subsystem {
 
 export const subsystems: Subsystem[] = [
   {
+    id: 'console',
+    name: 'Console',
+    benefit: 'Talk with your agents in channels, DMs and threads.',
+  },
+  {
     id: 'tasks',
     name: 'Tasks',
-    benefit: 'Hand off the work. It runs on schedule.',
+    benefit: 'Hand off the work. It runs on a schedule.',
   },
   {
     id: 'relay',
@@ -20,10 +25,5 @@ export const subsystems: Subsystem[] = [
     id: 'mesh',
     name: 'Mesh',
     benefit: 'Your agents find each other.',
-  },
-  {
-    id: 'console',
-    name: 'Console',
-    benefit: 'See and steer every agent you run.',
   },
 ];

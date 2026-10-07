@@ -48,7 +48,7 @@ export async function GET() {
 
 > ${siteConfig.description}
 
-DorkOS is an OS-layer for AI agents that provides the scheduling, memory, communication, and coordination infrastructure that agents themselves don't provide. It runs on your machine, wraps the Claude Agent SDK, and gives your agents a web-based command center.
+DorkOS is a workspace for people and agents, where a founder runs their business. You and your agents talk in channels, DMs and threads. Agents work on a schedule, reach you when they need you, and act in the outside apps you connect. It runs on your own computer, free and open source, with no account required; DorkOS Cloud is optional. Each agent runs on Claude Code, Codex or OpenCode.
 
 ## Core Capabilities
 
@@ -64,7 +64,7 @@ ${buildFeatureCategoriesSection()}
 
 ## Comparisons
 
-How DorkOS compares to other ways of running coding agents. Each page carries the date its facts were last checked.
+How DorkOS compares to other tools for working with AI agents. Each page carries the date its facts were last checked.
 
 ${buildComparisonLinks()}
 

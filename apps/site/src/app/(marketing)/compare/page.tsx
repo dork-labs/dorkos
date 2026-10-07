@@ -13,7 +13,7 @@ import { rssFeedAlternateTypes, twitterFromOpenGraph } from '@/lib/metadata';
 
 const TITLE = 'Compare DorkOS — DorkOS';
 const DESCRIPTION =
-  'How DorkOS stacks up against the other tools for running coding agents. Honest comparisons, with the date we last checked and where every fact came from.';
+  'How DorkOS stacks up against other tools for working with AI agents. Honest comparisons, with the date we last checked and where every fact came from.';
 
 export const metadata: Metadata = {
   title: TITLE,
@@ -85,16 +85,16 @@ export default function ComparePage() {
           <div>
             <h1 className="text-charcoal font-mono text-4xl font-bold tracking-tight">Compare</h1>
             <p className="text-warm-gray mt-3 max-w-2xl text-lg">
-              How DorkOS stacks up against the other ways to run coding agents. Every page says
-              where the other tool is better, when we last checked the facts, and where they came
-              from.
+              How DorkOS stacks up against other tools for working with AI agents, from coding
+              agents to team chat. Every page says where the other tool is better, when we last
+              checked the facts, and where they came from.
             </p>
           </div>
 
           {/* The thing being compared, shown rather than described */}
           <ProductFrame
             surface="cockpit"
-            alt="DorkOS: every coding agent you run, in one place"
+            alt="The DorkOS #team room, where you and your agents work together"
             size="hero"
             priority
           />

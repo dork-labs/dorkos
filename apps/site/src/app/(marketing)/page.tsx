@@ -4,9 +4,9 @@ import { FOOTER_SOCIAL_LINKS, MarketingFooter } from '@/layers/features/marketin
 import { rssFeedAlternateTypes, twitterFromOpenGraph } from '@/lib/metadata';
 import { HomeExperience, HomeNav } from './_components';
 
-const TITLE = 'DorkOS — All your agents. One place.';
+const TITLE = `${siteConfig.name}: ${siteConfig.category}`;
 const DESCRIPTION =
-  'One place for every AI agent you run: Claude Code, Codex, and OpenCode. Put them on a schedule, get a message when they finish, and keep everything on your own computer. Open source, MIT.';
+  'The workspace where founders run their business with people and agents. Talk in channels and DMs, schedule work, and keep it on your computer. Open source.';
 
 /**
  * The home page's own metadata, declared here rather than inherited.
@@ -39,7 +39,7 @@ export const metadata: Metadata = {
         url: '/opengraph-image',
         width: 1200,
         height: 630,
-        alt: 'DorkOS: one place for every AI agent you run',
+        alt: `${siteConfig.name}: ${siteConfig.category.toLowerCase()}`,
       },
     ],
   },

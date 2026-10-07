@@ -115,7 +115,12 @@
       ]
     },
     "@dorkos/site#test": {
-      "dependsOn": ["^build", "@dorkos/relay#build", "@dorkos/extension-api#build"],
+      "dependsOn": [
+        "^build",
+        "@dorkos/relay#build",
+        "@dorkos/extension-api#build",
+        "@dorkos/keep-awake#build"
+      ],
       "cache": true
     },
     "test:watch": {

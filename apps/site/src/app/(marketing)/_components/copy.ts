@@ -11,7 +11,7 @@ export interface Block {
  * Every word on the home page, in one file.
  *
  * The page's whole argument is about six sentences long, and several of them
- * are settled: "All your agents. One place." is the category line, and
+ * are settled: "A workspace for people and agents." is the category line, and
  * "You, multiplied." is the product's tagline. Keeping them here rather than
  * scattered through the components means the word budget is one thing you can
  * read end to end, and `__tests__/home-copy.test.ts` can hold the settled
@@ -25,9 +25,9 @@ export interface Block {
  * the same checks as everything here, so nothing escapes the gates.
  */
 export const HERO: Block = {
-  eyebrow: 'claude code · codex · opencode',
-  title: 'All your agents. One place.',
-  lede: 'DorkOS puts every AI agent you run in one window. Watch them work.',
+  eyebrow: 'for founders',
+  title: 'A workspace for people and agents.',
+  lede: 'You and your agents talk in channels and DMs. Hand them the work, and get on with yours.',
 };
 
 /** What the pinned stage says at each of its three moments. */
@@ -45,7 +45,7 @@ export const BEATS: Record<Beat, Block> = {
   computer: {
     eyebrow: 'yours alone',
     title: 'It all happens on your computer.',
-    lede: 'Your files stay home. You pick what your agents can touch, and what needs your say-so.',
+    lede: 'Your files stay home. It is free, with no account to make. DorkOS Cloud is optional.',
   },
 };
 

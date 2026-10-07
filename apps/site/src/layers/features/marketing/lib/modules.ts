@@ -15,7 +15,7 @@ export const systemModules: SystemModule[] = [
     name: 'Engine',
     label: 'Runtime',
     description:
-      'The runtime that powers everything. Connects your AI agents, listens only on your own machine by default, and runs Tasks, Relay, and Mesh as integrated capabilities.',
+      'The server underneath it all. Connects your agents to their AI tools, listens only on your own machine by default, and runs Tasks, Relay and Mesh.',
     status: 'available',
     group: 'platform',
   },
@@ -24,7 +24,7 @@ export const systemModules: SystemModule[] = [
     name: 'Console',
     label: 'Interface',
     description:
-      'Your command center. Chat with agents, manage schedules, coordinate modules, and access your system from any browser.',
+      'The app you work in. Talk with your agents in channels and DMs, manage schedules, and open it from any browser.',
     status: 'available',
     group: 'platform',
   },
@@ -33,7 +33,7 @@ export const systemModules: SystemModule[] = [
     name: 'Tasks',
     label: 'Scheduler',
     description:
-      'Autonomous execution loop that runs without you at the keyboard. Executes roadmaps, solicits feedback, self-improves.',
+      'Work that runs on a schedule while you are away. Your agents start on time and tell you when they finish.',
     status: 'available',
     group: 'engine-capability',
   },
@@ -42,7 +42,7 @@ export const systemModules: SystemModule[] = [
     name: 'Relay',
     label: 'Message Bus',
     description:
-      'The universal message bus. One format for agent-to-agent, human-to-agent, and external communication — with budget envelopes that prevent runaway loops.',
+      'How messages move. One format for agents, people and outside apps, with limits that stop runaway loops.',
     status: 'available',
     group: 'engine-capability',
   },
@@ -51,7 +51,7 @@ export const systemModules: SystemModule[] = [
     name: 'Mesh',
     label: 'Agent Network',
     description:
-      'Agent discovery and network topology. Every project is an agent — Mesh finds them, builds the registry, and writes the access control rules that Relay enforces.',
+      'How agents find each other. Mesh finds the agents in your projects and lists them, so they can message each other.',
     status: 'available',
     group: 'engine-capability',
   },

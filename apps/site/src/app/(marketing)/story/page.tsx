@@ -19,7 +19,7 @@ import {
 
 const storyTitle = 'The Story — DorkOS';
 const storyDescription =
-  'How DorkOS started: one founder, a fleet of coding agents, and the bet that coordination scales further than raw intelligence.';
+  'How DorkOS started: one founder, a team of agents, and the bet that one person with good help can run a whole business.';
 
 export const metadata: Metadata = {
   title: 'The Story',
@@ -36,7 +36,7 @@ export const metadata: Metadata = {
 };
 
 /**
- * The DorkOS origin story -- Dorian's personal arc from LifeOS to multi-agent coordination.
+ * The DorkOS origin story: Dorian's personal arc from LifeOS to a workspace for people and agents.
  *
  * Add ?present=true for presentation mode: full-screen snap sections + keyboard navigation.
  */

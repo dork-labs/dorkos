@@ -8,7 +8,7 @@ import { FeatureCatalog, MarketingChrome, InstallMoment } from '@/layers/feature
 export const metadata: Metadata = {
   title: 'Features — DorkOS',
   description:
-    'The complete DorkOS feature catalog: scheduling, messaging, agent discovery, and more. Built for developers who ship.',
+    'The complete DorkOS feature catalog: rooms for you and your agents, schedules, your phone, connections to outside apps, and more.',
   alternates: { canonical: '/features', types: rssFeedAlternateTypes },
   openGraph: {
     title: 'Features — DorkOS',

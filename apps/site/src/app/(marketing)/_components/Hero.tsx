@@ -8,7 +8,7 @@ import { DownloadMacButton } from './DownloadMacButton';
 import { Eyebrow } from './Eyebrow';
 import { InstallCommand } from './InstallCommand';
 
-/** The headline is two sentences and reads as two lines, one each. */
+/** One line per sentence, so a two-sentence headline breaks where it pauses. */
 const HERO_LINES = HERO.title.split(/(?<=\.)\s+/);
 
 /**

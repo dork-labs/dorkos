@@ -2,15 +2,15 @@
  * Lifecycle stage — drives badge rendering and catalog filtering.
  *
  * `alpha` marks a surface that is built but not yet verified by real users
- * (the demo-claim gate, `meta/positioning-202607/09-gtm-plan.md` §2.0):
+ * ("The demo-claim gate" in `meta/positioning-202610/00-overview.md`):
  * earlier than `beta`, honest about it on the badge.
  */
 export type FeatureStatus = 'ga' | 'beta' | 'alpha' | 'coming-soon';
 
 /**
  * DorkOS product subsystem — used for tab filtering on /features.
- * `runtimes` leads because running every agent tool in one place is the headline
- * story; `marketplace` is the distribution flywheel.
+ * `console` leads because the rooms where people and agents talk are the
+ * headline story; `marketplace` is the distribution flywheel.
  */
 export type FeatureProduct =
   'runtimes' | 'console' | 'tasks' | 'relay' | 'marketplace' | 'mesh' | 'core';
@@ -20,10 +20,10 @@ export type FeatureProduct =
  * Insertion order is the tab order — lead with the headline subsystems.
  */
 export const PRODUCT_LABELS: Record<FeatureProduct, string> = {
-  runtimes: 'Runtimes',
   console: 'Console',
   tasks: 'Tasks',
   relay: 'Relay',
+  runtimes: 'Runtimes',
   marketplace: 'Marketplace',
   mesh: 'Mesh',
   core: 'Core',
@@ -253,14 +253,13 @@ export const features: Feature[] = [
   // === RUNTIMES ===
   {
     slug: 'every-agent-one-place',
-    name: 'Every Agent, One Place',
+    name: 'Claude Code, Codex, and OpenCode',
     product: 'runtimes',
     category: 'agent-control',
-    tagline: 'Claude Code, Codex, and OpenCode, all on one screen',
+    tagline: 'Each agent thinks with Claude Code, Codex, or OpenCode: your pick',
     description:
-      'Claude Code, Codex, and OpenCode are three different AI coding tools. DorkOS puts all three in one place, so you pick the right one for each job.',
+      'Claude Code, Codex, and OpenCode are three different AI tools. Each agent runs on the one you pick, so one team can mix all three.',
     status: 'ga',
-    featured: true,
     benefits: [
       'Run Claude Code, Codex, and OpenCode side by side',
       'Pick a different tool for each job, not just at setup',
@@ -307,10 +306,11 @@ export const features: Feature[] = [
     name: 'Team Room',
     product: 'console',
     category: 'messaging',
-    tagline: 'Open DorkOS and land in one room with every agent you run',
+    tagline: 'Open DorkOS and land in #team, the room you share with your agents',
     description:
-      'A dashboard of tiles tells you nothing. DorkOS opens on #team, a room holding you and every agent you run, so you start by talking, not hunting.',
+      'A dashboard of tiles tells you nothing. DorkOS opens on #team, a room holding you and every agent you work with, so you start by talking, not hunting.',
     status: 'ga',
+    featured: true,
     benefits: [
       'Open DorkOS and land in a room with your whole team',
       'The sidebar leads with whatever is waiting on you',
@@ -1219,14 +1219,17 @@ export const features: Feature[] = [
 ];
 
 /**
- * Slug of the catalog's flagship feature — one place for every coding agent you
- * run, which is the headline story the whole site leads with. It earns the wide,
- * living hero tile in the bento.
+ * Slug of the catalog's flagship feature: the #team room, where you and your
+ * agents work together. It is the screen DorkOS opens on and the clearest
+ * picture of "a workspace for people and agents", the story the whole site
+ * leads with, so it earns the wide hero tile in the bento.
  *
- * The slug is deliberately older than the name it renders: renaming it means
- * redirecting a published URL, which is scoped to DOR-1517.
+ * It took the tile from `every-agent-one-place` in the 2026-10 story rewrite
+ * (DOR-2736), when the runtime choice moved from the headline to a fact.
+ * That entry's slug is older than the name it renders; renaming it would
+ * mean redirecting a published URL.
  */
-export const FLAGSHIP_SLUG = 'every-agent-one-place';
+export const FLAGSHIP_SLUG = 'team-room';
 
 /**
  * Bento tile footprint for a feature card. A *presentation hint derived from

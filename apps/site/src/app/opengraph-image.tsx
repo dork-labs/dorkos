@@ -1,7 +1,7 @@
 import { ImageResponse } from 'next/og';
 import { OG_COLORS, OG_FONT_SANS, OG_SIZE, OgAccentStripes, loadOgFonts } from '@/lib/og';
 
-export const alt = 'DorkOS: one place for every AI agent you run';
+export const alt = 'DorkOS: a workspace for people and agents';
 export const size = OG_SIZE;
 export const contentType = 'image/png';
 
@@ -87,7 +87,7 @@ export default async function Image() {
             marginTop: '8px',
           }}
         >
-          Every agent you run. One place.
+          A workspace for people and agents.
         </span>
       </div>
 
@@ -101,7 +101,7 @@ export default async function Image() {
           fontWeight: 400,
         }}
       >
-        Claude Code · Codex · OpenCode
+        Free · open source · runs on your computer
       </span>
 
       {OgAccentStripes({ thickness: 4 })}
