@@ -46,7 +46,7 @@
     "@dorkos/relay": "workspace:*",
     "@dorkos/shared": "workspace:*",
     "@dorkos/skills": "workspace:*",
-    "@modelcontextprotocol/sdk": "1.30.1",
+    "@modelcontextprotocol/sdk": "1.31.0",
     "@ngrok/ngrok": "^1.7.0",
     "@noble/curves": "^2.4.0",
     "@openai/codex": "0.154.0",
