@@ -11,7 +11,6 @@ import path from 'path';
 // Types only — erased before the bundle, and resolved for tsc by the
 // declaration mirror in `packages/cli/server/`.
 import type { GuardedConfigWriteResult } from '../server/services/core/operator/config-write.js';
-import type { ConfigStore } from './config-commands.js';
 
 /**
  * The refusal code for a permissions key sent through `dorkos config set`, as a

@@ -224,7 +224,7 @@ export function ChatStatusSection({
    *
    * The promise is RETURNED, not swallowed, so a caller can tell a landed write
    * from a refused one: `updateSession` answers with the updated session on
-   * success and `undefined` after it has handed the failure to `onError`. Only
+   * success and `undefined` after a failed write (rolled back and logged). Only
    * one caller needs that today — nothing should offer to make a stop the
    * default when the stop itself did not take.
    */
