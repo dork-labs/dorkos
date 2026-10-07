@@ -13,8 +13,6 @@ superseded-by: null
 
 Accepted. Implemented by the runtime-neutral store `apps/server/src/services/core/usage/account-usage-store.ts`, which persists `<dorkHome>/runtimes/<runtime>/usage/<id>.json` under the shared lock-and-rename contract; the store generalised from Claude Code to every runtime, the decision is unchanged.
 
-(2026-10-06 audit) Still governs; the ledger now serves every runtime, under `apps/server/src/services/core/usage/` (`<dorkHome>/runtimes/<runtime>/usage/`); Claude-only parts stay under `runtimes/claude-code`.
-
 ## Context
 
 DorkOS saw usage on every turn but kept it per session and lost it on restart. flow reads usage from files so it works without DorkOS, and the operator needs one number per account.
