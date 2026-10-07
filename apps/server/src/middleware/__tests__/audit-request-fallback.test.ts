@@ -121,6 +121,24 @@ describe('auditRequestFallback', () => {
     expect(await rows()).toEqual([]);
   });
 
+  it('records nothing for conversation: chat messages, room posts, reactions, threads', async () => {
+    for (const path of [
+      '/api/sessions/3f2b8c1e-1d2a-4c9b-9e7f-0a1b2c3d4e5f/messages',
+      '/api/sessions/3f2b8c1e-1d2a-4c9b-9e7f-0a1b2c3d4e5f/queue/q1',
+      '/api/rooms/general/entries',
+      '/api/rooms/general/entries/e1/reactions',
+      '/api/rooms/general/threads',
+      '/api/rooms/general/attachments',
+      '/api/communities/c1/rooms/r1/entries',
+    ]) {
+      app.post(path, (_req, res) => {
+        res.json({ ok: true });
+      });
+      await request(server).post(path).send({ text: 'private thoughts' });
+    }
+    expect(await rows()).toEqual([]);
+  });
+
   it('writes id-shaped segments as :id', () => {
     expect(routePatternOf('/api/sessions/3f2b8c1e-1d2a-4c9b-9e7f-0a1b2c3d4e5f/messages')).toBe(
       '/api/sessions/:id/messages'

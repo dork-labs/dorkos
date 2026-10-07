@@ -14,9 +14,19 @@
  * Deduplication rides the request's audit scope: `AuditLog.record` marks the
  * scope `recorded`, so a request a choke point already covered adds nothing.
  *
- * A short list of requests that change nothing anybody would look for (a
- * read marker, a preview, a check, a heartbeat, the devtools stream) is left
- * out, so the log stays the record of actions rather than of traffic.
+ * Two kinds of request are left out, so the log stays a record of actions:
+ *
+ * - **Conversation.** Sending a chat message, posting in a room, reacting,
+ *   starting a thread, attaching a file to a message, editing what is queued.
+ *   Those are things said, not things done, and a person's private chat must
+ *   not surface as rows anyone in the space can read. The ACTIONS an agent
+ *   takes in a conversation are recorded where they happen.
+ * - **Requests that change nothing anybody would look for**: a read marker, a
+ *   preview, a check, a heartbeat, the devtools stream.
+ *
+ * What a row does keep: the route with id-shaped segments written as `:id`.
+ * Other segments stay as they are, so a package name or the NAME of a secret
+ * setting can appear; a secret's value never travels in a path.
  *
  * @module middleware/audit-request-fallback
  */
@@ -32,6 +42,18 @@ const MUTATING: Record<string, AuditOperation> = {
   PATCH: 'modify',
   DELETE: 'remove',
 };
+
+/**
+ * Conversation: what people and agents say, not what they do (see the module
+ * doc). Matched on the raw path, before ids are masked.
+ */
+const CONVERSATION: readonly RegExp[] = [
+  /^\/api\/sessions\/[^/]+\/messages$/,
+  /^\/api\/sessions\/[^/]+\/queue(?:\/[^/]+)?$/,
+  /^\/api\/rooms\/[^/]+\/(?:entries|threads|attachments)$/,
+  /^\/api\/rooms\/[^/]+\/entries\/[^/]+\/reactions$/,
+  /^\/api\/communities\/[^/]+\/rooms\/[^/]+\/(?:entries|attachments)$/,
+];
 
 /**
  * Requests that change nothing anybody would look for in an audit log. Each
@@ -91,6 +113,7 @@ export function auditRequestFallback(req: Request, res: Response, next: NextFunc
     !operation ||
     !scope ||
     !path.startsWith('/api/') ||
+    CONVERSATION.some((re) => re.test(path)) ||
     NOT_ACTIONS.some((re) => re.test(path))
   ) {
     return next();
