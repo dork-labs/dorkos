@@ -78,7 +78,7 @@ for the same package commands. Run \`dorkos marketplace <subcommand> --help\`
 for a package command's options.
 
 Examples:
-  dorkos marketplace install code-review-suite
+  dorkos marketplace install flow
   dorkos marketplace outdated
   dorkos marketplace update --apply
   dorkos marketplace installed --project .
@@ -113,8 +113,8 @@ Options:
       --approval <token>    Retry an install a person approved in DorkOS
 
 Examples:
-  dorkos marketplace install code-review-suite
-  dorkos marketplace install code-review-suite@dorkos-community
+  dorkos marketplace install flow
+  dorkos marketplace install flow@dorkos-community
   dorkos marketplace install --yes --force my-package
 `,
   update: `
@@ -136,7 +136,7 @@ Options:
 
 Examples:
   dorkos marketplace update                       # check every installed package
-  dorkos marketplace update code-review-suite     # check a single package
+  dorkos marketplace update flow                  # check a single package
   dorkos marketplace update --apply               # review and apply every available update
 `,
   'held-back': `
@@ -176,9 +176,9 @@ Options:
       --approval <token>  Approval token from a previous run that was waiting on a person
 
 Examples:
-  dorkos marketplace uninstall code-review-suite
-  dorkos marketplace uninstall --purge code-review-suite
-  dorkos marketplace uninstall code-review-suite --approval appr_tok_...
+  dorkos marketplace uninstall flow
+  dorkos marketplace uninstall --purge flow
+  dorkos marketplace uninstall flow --approval appr_tok_...
 `,
   link: `
 Usage: dorkos marketplace link <path> [options]

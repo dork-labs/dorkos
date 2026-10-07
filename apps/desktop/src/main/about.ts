@@ -13,6 +13,6 @@ export function setupAboutPanel(): void {
     applicationName: 'DorkOS',
     applicationVersion: app.getVersion(),
     copyright: COPYRIGHT_NOTICE,
-    credits: 'All your coding agents. One place.',
+    credits: 'Build and run your business with an agent team.',
   });
 }

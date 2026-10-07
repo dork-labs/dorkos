@@ -532,7 +532,7 @@ if (values.help) {
   console.log(`
 Usage: dorkos [command] [options]
 
-Web-based interface and REST/SSE API for Claude Code
+Build and run your business with an agent team.
 
 Commands:
   config               Show all effective settings

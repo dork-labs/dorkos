@@ -30,7 +30,7 @@ describe('setupAboutPanel (B3)', () => {
       applicationName: 'DorkOS',
       applicationVersion: '1.2.3',
       copyright: '© 2026 144 Studio, LLC',
-      credits: 'All your coding agents. One place.',
+      credits: 'Build and run your business with an agent team.',
     });
   });
 });
