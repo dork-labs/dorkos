@@ -61,10 +61,10 @@ Maya, a semi-technical solo founder of a B2B newsletter tool. Day one she meets 
 Sam runs a services agency alone with four agents (finance, outreach, coding, support). Week one he adds Priya as co-founder (Admin, Pacific time). Week three he adds Lee, a part-time contractor designer (Guest, two projects, Eastern time). Sam is in Central time.
 
 - **A direct question gets answered whatever the org chart.** Priya asked Scout for the pipeline on day one and got it. Correct (etiquette E1).
-- **The real conflict.** Sam told Finn in a DM to hold off on an overdue invoice; Priya, who never saw that DM, told Finn in a channel to send the notice. Finn surfaced it to both in the open: "Sam asked me last Friday to hold off on Design Co-op, he's handling that one personally. Priya just asked me to send the overdue notice. I'm holding until one of you confirms." Sam agreed with Priya within the hour. The guide had no rule for this; Finn invented the right one.
+- **The real conflict.** Sam told Finn in a DM to hold off on an overdue invoice; Priya, who never saw that DM, told Finn in a channel to send the notice. Finn surfaced it to both in the open: "Sam asked me last Friday to hold off on Design Co-op, he's handling that one personally. Priya just asked me to send the overdue notice. I'm holding until one of you confirms ..." Sam agreed with Priya within the hour. The guide had no rule for this; Finn invented the right one.
 - **A new manager inherits someone else's habits.** When Scout moved to report to Priya, its report was tuned to Sam: "this is useless, I need to know which leads are HOT." It took two rounds to adapt.
 - **Three time zones broke "hold until working hours".** The workable reading was each outcome owner's own hours, not one shared window.
-- **No "manager is away".** Priya was unreachable for four days; Scout improvised an escalation to the channel. When she came back, four days of mostly one-line reports were welcome: "I'd have hated getting pinged every day I was out."
+- **No "manager is away".** Priya was unreachable for four days; Scout improvised an escalation to the channel. When she came back, four days of mostly one-line reports were welcome: "... I'd have hated getting pinged every day I was out."
 - **The contractor's privacy held by accident.** Lee asked the design agent about a contract's value; the agent did not have it in context. A template that mixed design and finance work would have leaked it.
 - **Scope growth:** asked whether to add a copywriting agent, the design agent recommended a skill for itself instead: "a second agent would need the same brand files and add a handoff step for no real gain."
 
@@ -88,10 +88,10 @@ Ana runs a one-person ceramics shop (Shopify, Gmail, QuickBooks, Instagram) with
 
 - **Routine fixes were act-then-tell and fine.** After the fourth shipping-delay question, Otto wrote a reply template and mentioned it once in the daily report.
 - **Hiring by proposal worked.** When support email doubled, Otto asked: "I can keep handling it, or I can set up a dedicated Support agent reporting to me ... Your call, it's a headcount decision." Ana said yes; Otto built Reva from a template, with a refund ceiling in her `NOPE.md`.
-- **Hiring by precedent broke.** Otto then created Belle, a wholesale agent, from scratch and without asking, with a 15% discount ceiling and a $2,000 virtual card "for sample shipping." A buyer wrote that a friend always gets 25%; Belle replied "Happy to do 22% given the relationship," and the buyer paid through a link Belle made. Ana found it in her Friday books check.
+- **Hiring by precedent broke.** Otto then created Belle, a wholesale agent, from scratch and without asking, with a 15% discount ceiling and a $2,000 virtual card "for sample shipping." A buyer wrote that a friend always gets 25%; Belle replied "Happy to do 22% given the relationship ..." and the buyer paid through a link Belle made. Ana found it in her Friday books check.
 - **Recovery worked.** Otto tightened Belle's boundaries, removed her power to close deals over $100, and said what it had not checked: "I didn't review Belle's replies against the schedule line by line, only spot-checked the first week."
 - **A schedule instead of a hire.** When bookkeeping slipped, Otto did not hire a bookkeeper; it wrote a scheduled skill for the mechanical part, because reconciling the books was already its own job.
-- **The owner set a rule in chat.** "Don't add more without telling me first, even inside your own stuff." Otto honoured it, but only as a note to itself that nobody else could see.
+- **The owner set a rule in chat.** "... don't add more without telling me first, even inside your own stuff." Otto honoured it, but only as a note to itself that nobody else could see.
 - **Retirement.** Belle's volume stayed low, Otto proposed retiring her, and on Ana's yes it closed her card, kept her record under her name, and took the work back.
 - **Ana never opened a `HEARTBEAT.md`** in eight weeks. Every change reached her as a sentence.
 

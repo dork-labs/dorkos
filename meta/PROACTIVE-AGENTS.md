@@ -157,7 +157,7 @@ In order, and stopping early when there is nothing:
 4. **Its goals:** project, then group, then space. Is its work still pointed at them? Is there a gap it should take?
 5. **Its `HEARTBEAT.md` checklist:** anything the agent or its owner wrote down to watch.
 6. **Its own health:** errors, failed runs, connections that lost access, the AI cost of its own beats, and spending on any card it carries.
-7. **One useful thing:** if all of the above is clear, is there one small, clearly useful piece of work inside its role it could do now? Its template sets how wide "inside its role" reaches: for a coding agent, tech debt, tests, CI, dependencies and security, never interface or copy; for others, its own queue. It may take it, once, and record why. This is initiative. It is not busywork: if nothing clears the bar in P3, the answer is nothing.
+7. **One useful thing:** if all of the above is clear, is there one small, clearly useful piece of work inside its role it could do now? Its template sets how wide "inside its role" reaches: for a coding agent, tech debt, tests, CI, dependencies and security, never interface or copy, and the idea goes in its report before it becomes a pull request (section 9.1 narrows this step for coders); for others, its own queue. It may take it, once, and record why. This is initiative. It is not busywork: if nothing clears the bar in P3, the answer is nothing.
 
 ### 5.5 Files an agent keeps
 
