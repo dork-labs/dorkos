@@ -74,7 +74,7 @@ dorkos/
 ├── decisions/            # ADRs                          ├── plans/     # Implementation plans
 ├── docs/                 # User-facing MDX (Fumadocs)    ├── research/  # 350+ research reports
 ├── specs/                # Feature specs with manifest.json
-└── contributing/         # 43 internal dev guides (see contributing/INDEX.md)
+└── contributing/         # 48 internal dev guides + capabilities/ contracts (see contributing/INDEX.md)
 ```
 
 ## Commands

@@ -195,4 +195,4 @@ Better still: start the work in a worktree from the outset (the steps above, min
 - Execution gate: the `/flow:execute` stage, the workspace-choice phase of the flow plugin's `executing-specs` skill
 - Cleanup: the `/flow:done` stage (`closing-work` skill)
 - Strategy + industry failure modes: `research/20260611_workspace_strategy_runtimes_symphony.md`
-- Parallel-vs-isolation tradeoffs: `contributing/parallel-execution.md`
+- Parallel-vs-isolation tradeoffs: the `orchestrating-parallel-work` skill → "Worktrees vs Subagents"

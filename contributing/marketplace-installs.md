@@ -558,7 +558,7 @@ A concrete recipe for a hypothetical `theme` package type.
 
 **Step 1 — Update the package type schema in `@dorkos/marketplace`.**
 
-Add `'theme'` to the `PackageType` union in `packages/marketplace/src/schemas/package-manifest.ts` and define a `ThemePackageManifest` extending the base schema with any theme-specific fields.
+Add `'theme'` to `PackageTypeSchema` in `packages/marketplace/src/package-types.ts` and define a `ThemeManifestSchema` in `packages/marketplace/src/manifest-schema.ts` extending `BasePackageManifestSchema` with any theme-specific fields.
 
 **Step 2 — Create `services/marketplace/flows/install-theme.ts`.**
 

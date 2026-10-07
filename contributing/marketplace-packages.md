@@ -2,13 +2,13 @@
 
 A marketplace package is a directory containing a `.dork/manifest.json` that declares its type, version, and dependencies. DorkOS supports five package types:
 
-| Type         | Purpose                                                                                             |
-| ------------ | --------------------------------------------------------------------------------------------------- |
-| `plugin`     | General-purpose: extensions, skills, commands, hooks, MCP servers                                   |
-| `agent`      | A complete agent template — scaffolds a new agent workspace on install                              |
-| `skill-pack` | Lightweight: only SKILL.md files (skills, tasks, commands)                                          |
-| `adapter`    | A relay channel adapter (e.g., Discord, Slack)                                                      |
-| `shape`      | A complete cockpit setup — extensions, layout, a suggested agent, and schedules; install/apply/fork |
+| Type         | Purpose                                                                                  |
+| ------------ | ---------------------------------------------------------------------------------------- |
+| `plugin`     | General-purpose: extensions, skills, commands, hooks, MCP servers                        |
+| `agent`      | A complete agent template — scaffolds a new agent workspace on install                   |
+| `skill-pack` | Lightweight: only SKILL.md files (skills, tasks, commands)                               |
+| `adapter`    | A relay channel adapter (e.g., Discord, Slack)                                           |
+| `shape`      | A setup bundle: extensions, layout, a suggested agent, and schedules; install/apply/fork |
 
 ## Creating a Package
 
@@ -37,7 +37,7 @@ Every skill is a directory containing a `SKILL.md` (the agentskills.io format �
 
 ### Widget templates (`ui/*.widget.json`)
 
-A skill may ship reusable generative-UI widgets: each `ui/*.widget.json` file is `{ name, description, document }` where `document` is a widget document (`@dorkos/shared/ui-widget`) whose string fields may contain `{{placeholder}}` slots. Agents read a template, fill the placeholders, and emit the result as a ` ```dorkos-ui ` fence — the `<gen_ui>` system-prompt block teaches this to every runtime.
+A skill may ship reusable chat widgets (generative UI): each `ui/*.widget.json` file is `{ name, description, document }` where `document` is a widget document (`@dorkos/shared/ui-widget`) whose string fields may contain `{{placeholder}}` slots. Agents read a template, fill the placeholders, and emit the result as a ` ```dorkos-ui ` fence — the `<gen_ui>` system-prompt block teaches this to every runtime.
 
 Placeholder rules (`WidgetTemplateSchema` in `packages/skills/src/ui-template.ts` enforces them):
 
@@ -99,11 +99,9 @@ so it persists across sessions and projects.
 
 ## Related
 
+- `contributing/marketplace-installs.md`: the install, update and uninstall pipeline
+- `contributing/shapes.md`: the Shape lifecycle (install vs apply)
 - `packages/marketplace/README.md` — Package API
 - `decisions/0220-adopt-skill-md-open-standard.md` — SKILL.md format (+ addendum on optional `kind` field)
 - `decisions/0228-marketplace-manifest-filename.md` — Why `.dork/manifest.json`
 - `decisions/0230-marketplace-package-type-agent-naming.md` — Why `agent` not `agent-template`
-
-## Install Workflows
-
-Install machinery ships in `marketplace-02-install`. This guide will be expanded when that spec lands.

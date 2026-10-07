@@ -7,6 +7,7 @@ Extensions add UI components, commands, and behavior to DorkOS. This guide cover
 DorkOS reuses a few words that sound interchangeable but name different things. Keep them straight:
 
 - **Extension** (what this guide is about) — a runtime module: a flat directory with an `extension.json` manifest and an `index.ts` exporting `activate()`, compiled on demand by esbuild and discovered by scanning. Identified by its manifest **`id`**, never an npm package name. It is **not** a workspace package and never lives in `packages/`.
+- **Mini app**: the product-story name for an extension, above all one an agent builds for a person (the first of the three differentiators in `AGENTS.md`). The code, the API and this guide keep the word **extension** (`create_extension`, `/x/<id>` pages); docs say "mini apps (the app calls them extensions)". Built today: an agent builds one and a person approves it before it runs. A **Shape** is a different thing: a setup bundle that can carry extensions (see `contributing/shapes.md`).
 - **Package** — a build-time npm unit in `packages/` (e.g. `@dorkos/extension-api`, `@dorkos/relay`). Extensions _import_ packages; they are not packages. The shared contract every extension imports is **`@dorkos/extension-api`**.
 - **Core extension** — a first-party extension that ships in the repo at `apps/server/src/core-extensions/<id>/` and is staged to `~/.dork/extensions/<id>/` at startup (ADR-0271). Same manifest, compiler, and lifecycle as a user extension — only the origin differs. Today: `hello-world`, `linear-issues`, `marketplace`.
 - **Marketplace package** — a _distributable_ unit with a `.dork/manifest.json` whose `type` is one of five: `agent`, `plugin`, `skill-pack`, `adapter`, `shape` (ADR-0230). **"Extension" is not one of the five.** A `plugin`-type package can _bundle_ extensions, declared via the `.claude-plugin/dorkos.json` sidecar (ADR-0236) — so an extension is a _layer inside_ a plugin, not a package type.
@@ -351,7 +352,7 @@ api.id: string
 
 Pages are not a slot: `registerPage` mounts a route (see [Pages](#pages-x)).
 
-> The `sidebar.tabs` and `header.actions` slots were removed when the web cockpit
+> The `sidebar.tabs` and `header.actions` slots were removed when the web app
 > retired the sidebar tab strip. Contribute a contextual inspector tab via
 > `right-panel`, or a card via `dashboard.sections`, instead.
 
@@ -1583,14 +1584,14 @@ The `create_extension` tool handles scaffolding, compilation, and enabling in a 
 An extension runs in two places, and the approval covers both:
 
 - **In the server process.** `test_extension` and the server half of `reload_extensions --id` execute the extension's code with the server's own privileges, outside the tier gate.
-- **In the cockpit page.** `GET /api/extensions/:id/bundle` serves the client bundle the browser `import()`s and `activate()`s. That is same-origin JavaScript carrying the person's session, so it is not a lesser place to run — it can call the API as the operator, including the route that approves the server half.
+- **In the app page.** `GET /api/extensions/:id/bundle` serves the client bundle the browser `import()`s and `activate()`s. That is same-origin JavaScript carrying the person's session, so it is not a lesser place to run — it can call the API as the operator, including the route that approves the server half.
 
 So a person allows each extension once, before any of its code runs anywhere, and after that the loop above is unprompted.
 
 What this looks like in practice:
 
 - The **first** `test_extension` or server-entry load for a new extension is refused, with a message naming the extension and telling you to ask the person to allow it in **Settings > Extensions**. Retrying without that is refused identically.
-- Its client bundle is not served either, so the extension contributes nothing to the cockpit until the person answers. `GET /api/extensions/:id/bundle` returns 404, the same as an extension that has not compiled.
+- Its client bundle is not served either, so the extension contributes nothing to the app until the person answers. `GET /api/extensions/:id/bundle` returns 404, the same as an extension that has not compiled.
 - The person turns it on, once: **Turn it on** on the extension's card in Settings > Extensions, or 👍 on its row in the Activity inbox (below). Both halves start immediately; no restart, no page reload.
 - **Every** later call goes through: editing, testing, reloading, a compile error, and the fix after it. Turning the extension off and on again does not re-ask. Approval is recorded per extension id **and copy** — the directory, plus the plugin that carries it when it came inside one (`extensions.approvedSources`, DOR-2383) — and is never spent by use. It is not tied to file contents, so edits never re-ask; another plugin or path carrying the same id does.
 - A marketplace **uninstall clears it**, and any "Not now" for the removed copy, so a reinstall re-asks. An **update from the same plugin keeps it** for every extension the new version still carries (the same copy at the same path, like an edit); an extension the new version drops loses it and asks again if it returns (DOR-2383). What an approval must not survive is different code from somewhere else arriving under a familiar name. Removing a package leaves alone an approval recorded for a copy of the same id outside that package.
