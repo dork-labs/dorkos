@@ -108,6 +108,19 @@ Unchanged and pinned (not touched by any PR here): `dmPolicy` allowlist, approve
 - A chat binding's own conversation can be set looser in the app than the binding's mode; a binding turn is not ceilinged (its mode is a person's choice on the binding). Revisit with the binding UI.
 - A message that joins a live turn as a steer runs at that turn's level. Rooms queue rather than steer, so a stranger's room message does not reach this.
 - `POST /api/relay` lets a local caller claim a `relay.agent.*` sender (the local-trust residual; login is the boundary).
+- A marketplace extension's message into a person's own Full autonomy chat (`extension-message` into an existing chat) runs uncapped. Bound it with the extension-trust work (PR4 §5.5).
+- Claude Code `updateSession` (a person loosening a live session) moves a running, ceilinged query to the looser mode until the turn ends; the next turn re-applies the ceiling only if its sender sends one.
+- The room context window shows earlier messages, strangers' included, to an agent answering a person; those are fenced as untrusted text, not ceilinged.
+- Codex and OpenCode reach DorkOS tools over the external `/mcp` server, where the agent token names the agent but not the session. Their room posts therefore keep no level (held to the runtime default downstream), and their `session_start` keeps the `acceptEdits` no-chat cap. PR4 uses the agent's own configured stop for a registered agent token; a session-bound token would close it exactly.
+
+### 4.6 Review round 1 (adversarial, 2026-10-07), fixed in PR1
+
+- A gathered burst is decided over every message it answers (`TriggerTarget.answers`, `ceilingForEntries`), so a person writing last does not lift a stranger's bound; same for `externalAuthor`.
+- A post's level is the stricter of the session that MADE the call (in-session `CapabilityHandlerContext.sessionId`) and the author's turn in the target room (`postLevelFor`), and nothing when the caller is unverified. A request body's `sessionId` is never a source.
+- Codex carries the ceiling into background-work wake turns.
+- `stricterLevel` combines unordered pairs; `clampModeToCeiling` never falls back to a mode looser than the ceiling; a list ceiling holds every bound.
+- A runtime renaming a first room turn's session carries its level across (`aliasTurnLevel`).
+- The registration-seam decorators moved to `core/runtime-seam/decorate-runtime.ts`.
 
 ## 5. Technical design for the flip
 
@@ -250,7 +263,7 @@ Tests (PR3): the post and canvas refusals are gone (an agent posts a fourth time
 
 Each PR carries the prose for what it changes (`writing-for-humans`; app strings `writing-app-copy`), plus a changelog fragment.
 
-- PR1: `docs/self-hosting/threat-model.mdx` (power flows downstream), `docs/concepts/rooms.mdx` (bridged messages), `docs/guides/relay-messaging.mdx`, `contributing/interactive-tools.md`.
+- PR1 (done): `docs/self-hosting/threat-model.mdx`, `docs/concepts/rooms.mdx`, `docs/guides/relay-messaging.mdx`, `contributing/interactive-tools.md`.
 - PR2: `docs/guides/cli-usage.mdx` (remove `acknowledge-autonomy`, :120-125), `docs/guides/tool-approval.mdx`, `docs/getting-started/configuration.mdx`, `contributing/configuration.md` (the 428 sections, :211-236, :1195), `contributing/api-reference.md` (three 428s), `packages/cli/README.md`.
 - PR4: `docs/guides/permissions.mdx` (rewritten around Trusted vs Careful, the perimeter, a "What changed" section), `docs/guides/action-approvals.mdx` (shrinks to perimeter and third-party code), `docs/guides/tool-approval.mdx` (when agents still stop: outsider messages, AskUserQuestion, plan mode, Careful), `docs/guides/task-scheduler.mdx` (agent schedules run at once; package and file schedules wait), `docs/getting-started/configuration.mdx` (defaults), `docs/self-hosting/threat-model.mdx` and `securing-your-instance.mdx` (trusted agents, guarded perimeter), `docs/concepts/mesh.mdx`, `docs/guides/agent-coordination.mdx`, `docs/guides/agent-discovery.mdx` (open by default), `docs/integrations/extensions.mdx` (agent-made extensions run), `docs/integrations/mcp-server.mdx` (:135-158, which actions still ask), `docs/guides/agents.mdx` (:92), `docs/glossary.mdx`, `docs/getting-started/quickstart.mdx`, `README.md`, `meta/brand-foundation.md` (:61 security posture, :182 pending-approval line, :227), `meta/dorkos-litepaper.md` (:95, :158, :165), `contributing/agent-operator-surface.md`, `contributing/configuration.md`, `contributing/extension-authoring.md`, `contributing/architecture.md` (namespace isolation section), `contributing/shapes.md` (Shape schedules still park, unchanged wording checked), `contributing/INDEX.md`.
 - PR5: `docs/connections/index.mdx` (:57-69, every agent by default, the cancel window), `docs/connections/composio.mdx` (:81-84), `contributing/managed-connections-operations.md`.

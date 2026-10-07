@@ -39,6 +39,7 @@ import type {
   PermissionModeDescriptor,
   PermissionReach,
   PermissionStop,
+  TurnPermissionBound,
   TurnPermissionCeiling,
   TurnPermissionLevel,
 } from './agent-runtime.js';
@@ -592,7 +593,12 @@ export function resolveCeilingLevel(
   declared: DeclaredModes,
   ceiling: TurnPermissionCeiling
 ): TurnPermissionLevel {
-  if (ceiling !== 'runtime-default') return ceiling;
+  if (Array.isArray(ceiling)) {
+    const bounds = ceiling as readonly TurnPermissionBound[];
+    if (bounds.length === 0) return READ_ONLY_LEVEL;
+    return bounds.map((bound) => resolveCeilingLevel(declared, bound)).reduce(stricterLevel);
+  }
+  if (ceiling !== 'runtime-default') return ceiling as TurnPermissionLevel;
   return levelOfMode(declared, declared.default) ?? READ_ONLY_LEVEL;
 }
 
@@ -606,20 +612,23 @@ function admits(level: TurnPermissionLevel, mode: PermissionModeDescriptor): boo
 }
 
 /**
- * The stricter of two levels: the one no looser than the other. On a tie the
- * first wins; between two levels neither of which bounds the other (one asks
- * less, the other reaches less), the one that reaches less, because reach is
- * what a turn can damage.
+ * The stricter of two levels: one that is no looser than either. When one
+ * bounds the other it is returned as is; when neither does (one asks less, the
+ * other reaches further — Codex's read-only default against Claude's Default),
+ * the two are combined: the more frequent asking and the shorter reach, and
+ * Auto only when both are Auto.
  *
  * @param a - One level.
  * @param b - The other.
  */
 export function stricterLevel(a: TurnPermissionLevel, b: TurnPermissionLevel): TurnPermissionLevel {
-  const aFitsB = isNoLooserThan(b, a) && (!a.auto || b.auto === true || b.asks === 'never');
-  if (aFitsB) return a;
-  const bFitsA = isNoLooserThan(a, b) && (!b.auto || a.auto === true || a.asks === 'never');
-  if (bFitsA) return b;
-  return REACH_RANK[a.reach] <= REACH_RANK[b.reach] ? a : b;
+  const fits = (inner: TurnPermissionLevel, outer: TurnPermissionLevel) =>
+    isNoLooserThan(outer, inner) && (!inner.auto || outer.auto === true || outer.asks === 'never');
+  if (fits(a, b)) return a;
+  if (fits(b, a)) return b;
+  const asks = ASKS_RANK[a.asks] >= ASKS_RANK[b.asks] ? a.asks : b.asks;
+  const reach = REACH_RANK[a.reach] <= REACH_RANK[b.reach] ? a.reach : b.reach;
+  return a.auto && b.auto ? { asks, reach, auto: true } : { asks, reach };
 }
 
 /**
@@ -627,8 +636,8 @@ export function stricterLevel(a: TurnPermissionLevel, b: TurnPermissionLevel): T
  * the session's own mode when the ceiling admits it; otherwise the loosest
  * trust-axis mode the ceiling admits (reaching furthest, then asking least), so
  * a turn another agent's post started runs at that agent's level rather than
- * below it; otherwise the runtime's default, which `'runtime-default'` always
- * admits.
+ * below it; otherwise a working-axis mode it admits; otherwise the strictest
+ * mode the runtime declares.
  *
  * Never writes anything: the caller runs one turn at the answer and leaves the
  * session's stored mode alone. An id the runtime does not declare never fits,
@@ -658,8 +667,13 @@ export function clampModeToCeiling(
         Number(a.id === AUTO_MODE_ID) - Number(b.id === AUTO_MODE_ID)
     )[0];
   if (loosest) return loosest.id;
-  // Unreachable for a runtime that declares a default ('runtime-default' always
-  // admits it). For one that declares nothing usable, its default is still the
-  // least surprising answer, and the session's own mode the last resort.
-  return declared.default ?? modeId;
+  // A ceiling below every trust-axis mode (a sender in Plan, say): a
+  // working-axis mode it admits, and failing that the strictest mode the
+  // runtime declares, never the default, which would be looser than asked.
+  const working = declared.values.find((m) => admits(level, m));
+  if (working) return working.id;
+  const strictest = [...declared.values].sort(
+    (a, b) => REACH_RANK[a.reach] - REACH_RANK[b.reach] || ASKS_RANK[b.asks] - ASKS_RANK[a.asks]
+  )[0];
+  return strictest?.id ?? modeId;
 }

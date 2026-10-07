@@ -60,6 +60,14 @@ describe('another agent’s level as the ceiling', () => {
     expect(clampModeToCeiling(CLAUDE, 'acceptEdits', full)).toBe('acceptEdits');
   });
 
+  it('never falls back to a mode looser than a ceiling below every trust stop', () => {
+    // A sender in Plan reads only; Default edits, so it is not admitted.
+    const plan = levelOfMode(CLAUDE, 'plan')!;
+    expect(clampModeToCeiling(CLAUDE, 'bypassPermissions', plan)).toBe('plan');
+    // OpenCode declares nothing that only reads: its strictest mode stands.
+    expect(clampModeToCeiling(OPENCODE, 'bypassPermissions', plan)).toBe('default');
+  });
+
   it('holds across runtimes by declared level, not by id', () => {
     // Claude's Accept edits reaches only the workspace's files with a check;
     // Codex's Accept edits writes the workspace without asking, so it is above.
@@ -81,6 +89,40 @@ describe('the level helpers', () => {
     expect(stricterLevel(def, full)).toEqual(def);
     const codexWrite = levelOfMode(CODEX, 'acceptEdits')!; // never asks, workspace
     expect(stricterLevel(codexWrite, def)).toEqual(def);
+  });
+
+  it('combines two levels neither of which bounds the other', () => {
+    // "Asks less but reaches less" against "asks more but reaches further":
+    // neither bounds the other, so the stricter asks more AND reaches less.
+    const asksLessReachesLess = { asks: 'when-risky', reach: 'edit' } as const;
+    const asksMoreReachesFurther = { asks: 'always', reach: 'workspace' } as const;
+    expect(stricterLevel(asksLessReachesLess, asksMoreReachesFurther)).toEqual({
+      asks: 'always',
+      reach: 'edit',
+    });
+    expect(stricterLevel(asksMoreReachesFurther, asksLessReachesLess)).toEqual({
+      asks: 'always',
+      reach: 'edit',
+    });
+  });
+
+  it('reads a level that only reads as no looser than any, so Codex’s default holds Claude to Plan', () => {
+    // `isNoLooserThan` judges a read-only level on reach alone (it never asks
+    // because it has nothing to ask about), so this pair is ordered.
+    const codexDefault = levelOfMode(CODEX, 'default')!;
+    const claudeDefault = levelOfMode(CLAUDE, 'default')!;
+    expect(stricterLevel(codexDefault, claudeDefault)).toEqual(codexDefault);
+    expect(clampModeToCeiling(CLAUDE, 'bypassPermissions', codexDefault)).toBe('plan');
+  });
+
+  it('resolves a list ceiling to the strictest of its bounds', () => {
+    const full = levelOfMode(CLAUDE, 'bypassPermissions')!;
+    expect(resolveCeilingLevel(CLAUDE, [full, 'runtime-default'])).toEqual(
+      levelOfMode(CLAUDE, 'default')
+    );
+    expect(clampModeToCeiling(CLAUDE, 'bypassPermissions', [full, 'runtime-default'])).toBe(
+      'default'
+    );
   });
 
   it('marks Auto, the one mode its declaration understates', () => {

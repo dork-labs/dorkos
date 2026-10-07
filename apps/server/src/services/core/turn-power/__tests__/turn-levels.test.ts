@@ -9,19 +9,20 @@
  * must be held to that default too — not to the poster's Full autonomy row,
  * which would launder the stranger's message into a shell one hop later.
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import type { AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
 import {
   entryLevelOf,
   lastTurnLevelOf,
+  aliasTurnLevel,
   noteEntryLevel,
+  postLevelFor,
   recordTurnLevels,
-  resetTurnLevelsForTests,
   TURN_LEVEL_MEMORY,
 } from '../turn-levels.js';
-import { ceilingForEntry } from '../../../rooms/room-trigger.js';
+import { ceilingForEntries, ceilingForEntry } from '../../../rooms/room-trigger.js';
 import type { AuthorRegistry } from '../../../rooms/author-registry.js';
 
 const DEFAULT = { asks: 'always', reach: 'edit' };
@@ -62,57 +63,98 @@ const REGISTRY = authors({
   stranger: { kind: 'human', naturalKey: 'platform:telegram:4242' },
 });
 
-beforeEach(() => resetTurnLevelsForTests());
+/** A fresh id per call: the record is process-wide, so tests never share keys. */
+let counter = 0;
+const fresh = (name: string) => `${name}-${(counter += 1)}`;
 
 describe('the level a turn runs at', () => {
   it('is the stored mode when the turn carries no ceiling', async () => {
-    await send(wrapped({ s1: 'bypassPermissions' }), 's1');
-    expect(lastTurnLevelOf('s1')).toEqual(FULL);
+    const s1 = fresh('s');
+    await send(wrapped({ [s1]: 'bypassPermissions' }), s1);
+    expect(lastTurnLevelOf(s1)).toEqual(FULL);
   });
 
   it('is held to the turn’s ceiling, whatever is stored', async () => {
-    await send(wrapped({ s1: 'bypassPermissions' }), 's1', {
+    const s1 = fresh('s');
+    await send(wrapped({ [s1]: 'bypassPermissions' }), s1, {
       permissionCeiling: 'runtime-default',
     });
-    expect(lastTurnLevelOf('s1')).toEqual(DEFAULT);
+    expect(lastTurnLevelOf(s1)).toEqual(DEFAULT);
+  });
+
+  it('is held to every bound of a list ceiling at once', async () => {
+    const s1 = fresh('s');
+    await send(wrapped({ [s1]: 'bypassPermissions' }), s1, {
+      permissionCeiling: [FULL as never, 'runtime-default'],
+    });
+    expect(lastTurnLevelOf(s1)).toEqual(DEFAULT);
   });
 
   it('reads an unconfirmed Auto as Default, and nothing stored as the runtime default', async () => {
-    const runtime = wrapped({ auto: 'auto' });
-    await send(runtime, 'auto');
-    await send(runtime, 'none');
-    expect(lastTurnLevelOf('auto')).toEqual(DEFAULT);
-    expect(lastTurnLevelOf('none')).toEqual(DEFAULT);
+    const auto = fresh('auto');
+    const none = fresh('none');
+    const runtime = wrapped({ [auto]: 'auto' });
+    await send(runtime, auto);
+    await send(runtime, none);
+    expect(lastTurnLevelOf(auto)).toEqual(DEFAULT);
+    expect(lastTurnLevelOf(none)).toEqual(DEFAULT);
   });
 
   it('takes the stricter of the stored mode and a per-send one', async () => {
-    await send(wrapped({ s1: 'bypassPermissions' }), 's1', { permissionMode: 'acceptEdits' });
-    expect(lastTurnLevelOf('s1')).toEqual(ACCEPT_EDITS);
+    const s1 = fresh('s');
+    await send(wrapped({ [s1]: 'bypassPermissions' }), s1, { permissionMode: 'acceptEdits' });
+    expect(lastTurnLevelOf(s1)).toEqual(ACCEPT_EDITS);
+  });
+
+  it('follows a session the runtime renamed mid-turn', async () => {
+    const placeholder = fresh('placeholder');
+    const canonical = fresh('canonical');
+    await send(wrapped({ [placeholder]: 'acceptEdits' }), placeholder);
+    aliasTurnLevel(placeholder, canonical);
+    expect(lastTurnLevelOf(canonical)).toEqual(ACCEPT_EDITS);
   });
 
   it('remembers a bounded number of conversations, oldest forgotten first', async () => {
     const runtime = wrapped({});
-    for (let i = 0; i <= TURN_LEVEL_MEMORY; i += 1) await send(runtime, `s${i}`);
-    expect(lastTurnLevelOf('s0')).toBeUndefined();
-    expect(lastTurnLevelOf(`s${TURN_LEVEL_MEMORY}`)).toEqual(DEFAULT);
+    const prefix = fresh('bound');
+    for (let i = 0; i <= TURN_LEVEL_MEMORY; i += 1) await send(runtime, `${prefix}-${i}`);
+    expect(lastTurnLevelOf(`${prefix}-0`)).toBeUndefined();
+    expect(lastTurnLevelOf(`${prefix}-${TURN_LEVEL_MEMORY}`)).toEqual(DEFAULT);
   });
 });
 
-describe('a room post keeps its author’s level', () => {
+describe('the level a post is kept with', () => {
   it('keeps the level of the turn that wrote it, not of a later one', async () => {
-    const runtime = wrapped({ ana: 'bypassPermissions' });
-    await send(runtime, 'ana', { permissionCeiling: 'runtime-default' });
-    noteEntryLevel('entry-1', 'ana');
+    const ana = fresh('ana');
+    const entry = fresh('entry');
+    const runtime = wrapped({ [ana]: 'bypassPermissions' });
+    await send(runtime, ana, { permissionCeiling: 'runtime-default' });
+    noteEntryLevel(entry, postLevelFor([ana]));
     // A person then talks to the same conversation at its own level.
-    await send(runtime, 'ana');
-    expect(entryLevelOf('entry-1')).toEqual(DEFAULT);
+    await send(runtime, ana);
+    expect(entryLevelOf(entry)).toEqual(DEFAULT);
   });
 
-  it('keeps nothing for a post with no session, or one this process never ran', () => {
-    noteEntryLevel('entry-1', null);
-    noteEntryLevel('entry-2', 'never-ran');
-    expect(entryLevelOf('entry-1')).toBeUndefined();
-    expect(entryLevelOf('entry-2')).toBeUndefined();
+  it('is the stricter of the calling session and the author’s turn in the room', async () => {
+    // Ana has a Full turn in R2 and a stranger-held turn in R1; posting from
+    // R1's turn into R2 must not borrow R2's Full level.
+    const inR1 = fresh('ana-r1');
+    const inR2 = fresh('ana-r2');
+    const runtime = wrapped({ [inR1]: 'bypassPermissions', [inR2]: 'bypassPermissions' });
+    await send(runtime, inR1, { permissionCeiling: 'runtime-default' });
+    await send(runtime, inR2);
+    expect(postLevelFor([inR1, inR2])).toEqual(DEFAULT);
+  });
+
+  it('vouches for nothing when a session is unknown or none is named', async () => {
+    const known = fresh('known');
+    await send(wrapped({ [known]: 'bypassPermissions' }), known);
+    expect(postLevelFor([])).toBeUndefined();
+    expect(postLevelFor([undefined, null])).toBeUndefined();
+    expect(postLevelFor([known, fresh('never-ran')])).toBeUndefined();
+    const entry = fresh('entry');
+    noteEntryLevel(entry, undefined);
+    expect(entryLevelOf(entry)).toBeUndefined();
   });
 });
 
@@ -134,9 +176,11 @@ describe('the ceiling a room entry puts on the turn it starts', () => {
   });
 
   it('holds an agent’s post to the level its turn ran at', async () => {
-    await send(wrapped({ ana: 'acceptEdits' }), 'ana');
-    noteEntryLevel('e-ana', 'ana');
-    expect(ceilingForEntry(REGISTRY, { id: 'e-ana', authorId: 'ana' })).toEqual({
+    const session = fresh('ana');
+    const entry = fresh('e-ana');
+    await send(wrapped({ [session]: 'acceptEdits' }), session);
+    noteEntryLevel(entry, postLevelFor([session]));
+    expect(ceilingForEntry(REGISTRY, { id: entry, authorId: 'ana' })).toEqual({
       permissionCeiling: ACCEPT_EDITS,
     });
   });
@@ -151,11 +195,41 @@ describe('the ceiling a room entry puts on the turn it starts', () => {
     // Ana's conversation is at Full autonomy. A stranger's message wakes it:
     // that turn runs at the default. Ana posts; Ben's turn is held to that
     // default, never to Ana's Full autonomy row.
-    const runtime = wrapped({ ana: 'bypassPermissions' });
-    await send(runtime, 'ana', ceilingForEntry(REGISTRY, { id: 'e0', authorId: 'stranger' }));
-    noteEntryLevel('e-ana', 'ana');
-    expect(ceilingForEntry(REGISTRY, { id: 'e-ana', authorId: 'ana' })).toEqual({
+    const session = fresh('ana');
+    const entry = fresh('e-ana');
+    const runtime = wrapped({ [session]: 'bypassPermissions' });
+    await send(runtime, session, ceilingForEntry(REGISTRY, { id: 'e0', authorId: 'stranger' }));
+    noteEntryLevel(entry, postLevelFor([session]));
+    expect(ceilingForEntry(REGISTRY, { id: entry, authorId: 'ana' })).toEqual({
       permissionCeiling: DEFAULT,
     });
+  });
+});
+
+describe('the ceiling of a turn answering several messages', () => {
+  it('holds every author’s bound at once, so a person writing last does not lift a stranger’s', () => {
+    expect(
+      ceilingForEntries(REGISTRY, [
+        { id: 'e1', authorId: 'stranger' },
+        { id: 'e2', authorId: 'dorian' },
+      ])
+    ).toEqual({ permissionCeiling: 'runtime-default' });
+  });
+
+  it('lists several bounds when more than one author is bounded', async () => {
+    const session = fresh('ana');
+    const entry = fresh('e-ana');
+    await send(wrapped({ [session]: 'acceptEdits' }), session);
+    noteEntryLevel(entry, postLevelFor([session]));
+    expect(
+      ceilingForEntries(REGISTRY, [
+        { id: entry, authorId: 'ana' },
+        { id: 'e2', authorId: 'stranger' },
+      ])
+    ).toEqual({ permissionCeiling: [ACCEPT_EDITS, 'runtime-default'] });
+  });
+
+  it('puts no bound on a burst only people on this machine wrote', () => {
+    expect(ceilingForEntries(REGISTRY, [{ id: 'e1', authorId: 'dorian' }])).toEqual({});
   });
 });

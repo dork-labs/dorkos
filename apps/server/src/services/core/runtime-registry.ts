@@ -41,9 +41,7 @@ import {
 import { logger } from '../../lib/logger.js';
 import { withSessionLimitStore } from '../session/fleet/session-limit-store.js';
 import { getSessionStartedByStore } from '../session/origin/session-started-by-store.js';
-import { traceRuntime, watchRuntimeSignin } from '../observability/index.js';
-import { holdAwakeDuringTurns } from './keep-awake/hold-during-turn.js';
-import { recordTurnLevels } from './turn-power/turn-levels.js';
+import { decorateRuntime } from './runtime-seam/decorate-runtime.js';
 
 /** Columns read from `session_metadata` for the settings projection. */
 type SettingsRow = {
@@ -237,34 +235,11 @@ export class RuntimeRegistry {
    * @param runtime - The runtime to register. Replaces any existing registration for the same type.
    */
   register(runtime: AgentRuntime): void {
-    // Wrap at the one registration seam so every runtime call is traced when
-    // debug tracing is on, and left untouched (zero overhead) when off — no
-    // span code leaks into the runtime adapters.
-    //
-    // The sign-in watch wraps OUTSIDE the tracing one so it is always present:
-    // tracing returns the runtime untouched when it is off, and a credential
-    // failure has to reach the operator whether or not anybody turned tracing
-    // on. This is the one seam every turn passes through — the interactive
-    // composer, a room reply, a scheduled run and a relay delivery all resolve
-    // their runtime from here (DOR-1654).
-    //
-    // Keep-awake wraps OUTERMOST so its hold spans everything inside it: the
-    // computer stays awake for as long as the caller is consuming the turn,
-    // whoever the caller is (spec `keep-awake`).
-    //
-    // The turn-level record wraps INNERMOST: it reads nothing the others add,
-    // and it must see every send, so a turn another agent's post starts can be
-    // held to the level its author's turn ran at (spec
-    // `trusted-by-default-flip` §4).
+    // Every decorator at this one seam, in its order and with its reasons, is
+    // `decorateRuntime`'s to state (`runtime-seam/decorate-runtime.ts`).
     this.runtimes.set(
       runtime.type,
-      holdAwakeDuringTurns(
-        watchRuntimeSignin(
-          traceRuntime(
-            recordTurnLevels(runtime, (sessionId) => this.storedPermissionModeOf(sessionId))
-          )
-        )
-      )
+      decorateRuntime(runtime, (sessionId) => this.storedPermissionModeOf(sessionId))
     );
   }
 

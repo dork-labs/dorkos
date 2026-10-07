@@ -9,6 +9,7 @@
  *
  * @module server/services/rooms/messages/room-entry-writer
  */
+import type { TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
 import { noteEntryLevel } from '../../core/turn-power/turn-levels.js';
 import { ulid } from 'ulidx';
 import type { DbTransaction } from '@dorkos/db';
@@ -233,6 +234,13 @@ export class RoomEntryWriter {
       recordRef?: (entryId: string, tx: DbTransaction) => void;
       bind?: (entryId: string, tx: DbTransaction) => void;
       attachments?: RoomAttachment[];
+      /**
+       * The level the author's turn ran at, from `postLevelFor`, kept with the
+       * post so the turns it starts are held to it. Only a tool post a verified
+       * session made carries one; never derived from `input.sessionId`, which a
+       * request body can name.
+       */
+      authorLevel?: TurnPermissionLevel;
     }
   ): PostedEntry {
     const roomId = room.id;
@@ -351,7 +359,7 @@ export class RoomEntryWriter {
     // The level the author's turn runs at, kept with the post BEFORE anything
     // it triggers is dispatched: a turn this post starts runs no looser than
     // the turn that wrote it (spec `trusted-by-default-flip` §4).
-    noteEntryLevel(entry.id, entry.sessionId);
+    noteEntryLevel(entry.id, opts?.authorLevel);
     this.publisher.publishEntry(entry, opts?.attachments ?? []);
     // Never on the transaction, never before the entry is durable: a
     // notification is the least important thing this write does, and it must

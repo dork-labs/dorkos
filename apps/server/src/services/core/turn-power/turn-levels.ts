@@ -71,18 +71,51 @@ export function lastTurnLevelOf(sessionId: string): TurnPermissionLevel | undefi
 }
 
 /**
- * Keep, with a room post, the level its author's current turn runs at. Called
- * as the post is written, so a later turn of the same author cannot change it.
- * A post with no session, or whose session this process never ran, keeps
- * nothing.
+ * The level a post written from these sessions is kept with: the stricter of
+ * every session's latest turn, or `undefined` when any of them is unknown or
+ * none is named. Unknown is not a level: a post that cannot be vouched for
+ * keeps nothing, and the turn it starts is held to the runtime's default.
+ *
+ * Callers name the session that MADE the call (the in-session tool's own
+ * session) and the author's turn in the room it posts into. They can differ:
+ * an agent with turns in several rooms posts from one into another, and the
+ * post must not borrow a looser turn's level. Never a session id a request
+ * body supplied; that would let anybody name a Full autonomy conversation.
+ *
+ * @param sessionIds - The sessions that vouch for the post.
+ */
+export function postLevelFor(
+  sessionIds: readonly (string | null | undefined)[]
+): TurnPermissionLevel | undefined {
+  const named = sessionIds.filter((id): id is string => typeof id === 'string' && id !== '');
+  if (named.length === 0) return undefined;
+  const levels = named.map((id) => turnLevels.get(id));
+  if (levels.some((level) => level === undefined)) return undefined;
+  return (levels as TurnPermissionLevel[]).reduce(stricterLevel);
+}
+
+/**
+ * Keep a level with a room post. Called as the post is written, before
+ * anything it triggers is dispatched, so a later turn of the same author
+ * cannot change it.
  *
  * @param entryId - The post's id.
- * @param sessionId - The session that wrote it.
+ * @param level - The level from {@link postLevelFor}; `undefined` keeps nothing.
  */
-export function noteEntryLevel(entryId: string, sessionId: string | null | undefined): void {
-  if (!sessionId) return;
-  const level = turnLevels.get(sessionId);
+export function noteEntryLevel(entryId: string, level: TurnPermissionLevel | undefined): void {
   if (level !== undefined) remember(entryLevels, entryId, level);
+}
+
+/**
+ * Carry a conversation's level to the id a runtime renamed it to mid-turn, so
+ * a post made under the new id finds the turn it belongs to.
+ *
+ * @param from - The id the turn was sent under.
+ * @param to - The id the runtime renamed the session to.
+ */
+export function aliasTurnLevel(from: string, to: string): void {
+  const level = turnLevels.get(from);
+  if (level !== undefined && from !== to) remember(turnLevels, to, level);
 }
 
 /**
@@ -165,10 +198,4 @@ export function recordTurnLevels(
       return typeof value === 'function' ? value.bind(target) : value;
     },
   });
-}
-
-/** Forget everything. For tests only. */
-export function resetTurnLevelsForTests(): void {
-  turnLevels.clear();
-  entryLevels.clear();
 }

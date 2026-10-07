@@ -123,13 +123,17 @@ export interface TurnPermissionLevel {
   readonly auto?: true;
 }
 
+/** One bound on a turn: a level, or the receiving runtime's own default. */
+export type TurnPermissionBound = TurnPermissionLevel | 'runtime-default';
+
 /**
  * The loosest level a turn may run at (`MessageOpts.permissionCeiling`): a
- * level, or `'runtime-default'` for the mode the receiving runtime starts in
- * when nobody chose one, which is how a stranger's message is bounded without
- * the sender having to know which runtime answers.
+ * level, `'runtime-default'` for the mode the receiving runtime starts in when
+ * nobody chose one (how a stranger's message is bounded without the sender
+ * knowing which runtime answers), or several bounds that ALL hold, for a turn
+ * answering a batch of messages from different senders.
  */
-export type TurnPermissionCeiling = TurnPermissionLevel | 'runtime-default';
+export type TurnPermissionCeiling = TurnPermissionBound | readonly TurnPermissionBound[];
 
 /**
  * Describes a single permission mode a runtime supports. Runtimes enumerate

@@ -1907,6 +1907,26 @@ describe('CodexRuntime — the transport seam (ADR 261005-113107)', () => {
       expect(requests[3]!.settings.permissionMode).toBe('acceptEdits');
     });
 
+    // Power flows downstream (spec `trusted-by-default-flip` §4): background
+    // work a stranger's turn started wakes no looser than that turn ran.
+    it('wakes a turn held to a ceiling at no looser than the ceiling', async () => {
+      const { runtime, requests, wake } = backgroundRuntime();
+      runtime.ensureSession('s1', { permissionMode: 'bypassPermissions', cwd: '/project' });
+      await drain(
+        runtime.sendMessage('s1', 'go', { cwd: '/project', permissionCeiling: 'runtime-default' })
+      );
+      expect(requests[0]!.settings.permissionMode).toBe('default');
+      const turns = project(runtime);
+      wake({
+        sessionId: 's1',
+        completions: [finished(requests[0]!.wakeContext)],
+        startTurn: true,
+        notices: [],
+      });
+      await turns[0];
+      expect(requests[1]!.settings.permissionMode).toBe('default');
+    });
+
     it('lets only the wake that holds the turn start a model turn; a drained one starts none and spends nothing', async () => {
       const { runtime, requests, wake } = backgroundRuntime();
       await drain(runtime.sendMessage('s1', 'go', { cwd: '/project' }));

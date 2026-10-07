@@ -1857,6 +1857,9 @@ function wakeContextOf(opts: MessageOpts | undefined, cwd: string): CodexWakeCon
     ...(opts?.unattendedApprovals !== undefined
       ? { unattendedApprovals: opts.unattendedApprovals }
       : {}),
+    // The bound travels with the work it bounds: a wake turn after background
+    // work an outsider's turn started runs no looser than that turn did.
+    ...(opts?.permissionCeiling !== undefined ? { permissionCeiling: opts.permissionCeiling } : {}),
   } as MessageOpts;
   return { opts: carried };
 }

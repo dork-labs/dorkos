@@ -34,6 +34,7 @@
  *
  * @module server/services/rooms/room-turn-runner
  */
+import { aliasTurnLevel } from '../core/turn-power/turn-levels.js';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
@@ -1098,6 +1099,10 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       if (canonicalId !== sessionId) {
         turnIds.add(canonicalId);
         runtimeRunningTheTurn.set(canonicalId, inFlight);
+        // The level this turn runs at was recorded under the placeholder; the
+        // posts it makes are vouched for under the canonical id, so carry it
+        // across or a first turn's every post would fall to the default.
+        aliasTurnLevel(sessionId, canonicalId);
       }
       // **As early as it is knowable, and before the answer is collected.** The
       // room bound a `(room, agent)` session before the claim, but on a first

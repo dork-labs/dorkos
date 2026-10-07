@@ -5,5 +5,5 @@ covers:
 
 ### Fixed
 
-- A message from a stranger can no longer get one of your agents to work at the power level you set for yourself. That covers someone in a bridged Telegram or Slack chat, or another company's agent. The agent answers at the level a brand-new chat starts at, even in a conversation set to Full autonomy, and even when the message reaches it through another agent. Your own next message runs at the level you chose (DOR-2739)
+- A message from someone in a bridged Telegram or Slack chat in a room, or from another company's agent, now gets an answer at the level a brand-new chat starts at. That holds even in a conversation you set to Full autonomy, and when such a message arrives in the same moment as yours. Your own next message runs at the level you chose (DOR-2739)
 - When one of your agents asks another for help in a room, the second agent works with no more power than the first one had at that moment (DOR-2739)

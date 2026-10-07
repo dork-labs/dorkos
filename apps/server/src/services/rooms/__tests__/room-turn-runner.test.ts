@@ -14,6 +14,9 @@
  * - Dropping the desk guard reddens "refuses a turn that would stand anywhere
  *   but the agent's home": the runtime is called in a room's folder.
  */
+import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
+import { lastTurnLevelOf, recordTurnLevels } from '../../core/turn-power/turn-levels.js';
+import { CLAUDE_CODE_CAPABILITIES } from '../../runtimes/claude-code/runtime-constants.js';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { InterruptReceipt } from '@dorkos/shared/types';
 import { mockInterruptReceipt } from '@dorkos/test-utils';
@@ -882,6 +885,37 @@ describe('createSessionRoomTurnRunner', () => {
       await runner.interrupt({ sessionId: 'canonical-sess', agentPath: '/repo/ana' });
 
       expect(interruptsDeliveredTo).toEqual(['claude-code']);
+
+      opened?.projector.ingest({ type: 'turn_end' });
+      await answered;
+    });
+
+    // Power flows downstream (spec `trusted-by-default-flip` §4): the level a
+    // first turn ran at was recorded under the placeholder; the posts it makes
+    // are vouched for under the canonical id, so the level must follow.
+    it('carries the turn’s recorded level to the id the runtime renamed it to', async () => {
+      const placeholder = `placeholder-level-${Date.now()}`;
+      const canonical = `canonical-level-${Date.now()}`;
+      const recorder = recordTurnLevels(
+        {
+          type: 'claude-code',
+          getCapabilities: () => CLAUDE_CODE_CAPABILITIES,
+          async *sendMessage() {},
+        } as unknown as AgentRuntime,
+        () => 'acceptEdits'
+      );
+      recorder.sendMessage(placeholder, 'hi');
+      const runner = createSessionRoomTurnRunner({ waitMs: () => 200, ceilingMs: () => 200 });
+      let opened: TriggerCall | undefined;
+      turnBehaviour = (opts) => {
+        opened = opts;
+        openTurn(opts);
+        return { accepted: true, canonicalId: canonical };
+      };
+      const answered = runner.run(request({ sessionId: placeholder }));
+      await settle();
+
+      expect(lastTurnLevelOf(canonical)).toEqual({ asks: 'when-risky', reach: 'edit' });
 
       opened?.projector.ingest({ type: 'turn_end' });
       await answered;
