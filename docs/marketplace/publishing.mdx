@@ -218,7 +218,7 @@ dorkos marketplace list
 dorkos install my-package@your-team
 ```
 
-A source is just a git repo with a `marketplace.json` at its root, listing one or more packages. `dorkos install <name>@<marketplace>` looks up `<name>` in that specific source; leave off the `@<marketplace>` part and DorkOS searches every source you have enabled.
+A source is just a git repo with a `marketplace.json` file, at its root or in a `.claude-plugin/` folder, listing one or more packages. `dorkos install <name>@<marketplace>` looks up `<name>` in that specific source; leave off the `@<marketplace>` part and DorkOS searches every source you have enabled.
 
 ## Publishing to the public registry
 
