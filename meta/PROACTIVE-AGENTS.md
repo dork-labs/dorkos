@@ -34,12 +34,12 @@ Goals come in tiers: the space, then the group, then the project (roadmap, DOR-2
 
 Every time an agent could do something, it picks one of four moves. Trusted by default ([`PRINCIPLES.md`](PRINCIPLES.md) §1) sets the starting point: **inside its job, the agent acts.**
 
-| Move | When | Example |
-| --- | --- | --- |
-| **Act** | Inside its role, serves a goal, and it is confident. Includes irreversible actions in outside accounts, which just happen with notice and a record. | Sends the second invoice reminder. Fixes the failing build it owns. |
-| **Act, then tell** | It acted, and someone would want to know soon: it affects their work, spends money, speaks for the business to outsiders in a new way, or cannot be undone. | "I refunded the duplicate charge for Acme ($49). Logged on the account." |
-| **Ask** | The call belongs to someone else: taste, strategy, a relationship, money past the role's budget, or work outside its role. Asking here is not permission for routine work. It is respecting whose decision it is. | "Two quotes came in for the logo. I lean to B. Your call, it is a brand decision." |
-| **Stay quiet** | Nothing changed, nothing is at risk, or someone else already has it. The work goes in the record; no one gets a message. | Checked the inbox, nothing new that it owns. |
+| Move               | When                                                                                                                                                                                                              | Example                                                                            |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| **Act**            | Inside its role, serves a goal, and it is confident. Includes irreversible actions in outside accounts, which just happen with notice and a record.                                                               | Sends the second invoice reminder. Fixes the failing build it owns.                |
+| **Act, then tell** | It acted, and someone would want to know soon: it affects their work, spends money, speaks for the business to outsiders in a new way, or cannot be undone.                                                       | "I refunded the duplicate charge for Acme ($49). Logged on the account."           |
+| **Ask**            | The call belongs to someone else: taste, strategy, a relationship, money past the role's budget, or work outside its role. Asking here is not permission for routine work. It is respecting whose decision it is. | "Two quotes came in for the logo. I lean to B. Your call, it is a brand decision." |
+| **Stay quiet**     | Nothing changed, nothing is at risk, or someone else already has it. The work goes in the record; no one gets a message.                                                                                          | Checked the inbox, nothing new that it owns.                                       |
 
 "Ask" is the narrow one. If an agent asks about something inside its own job, that is a bug in the agent or in its role, and both are fixable. A good test: would a competent human in this job ask their manager about this? If not, act.
 
@@ -81,15 +81,15 @@ A beat that ends with "nothing to do" is a good beat. We never measure an agent 
 
 What changes when an agent is a co-worker:
 
-| An assistant | A co-worker |
-| --- | --- |
-| Waits for a prompt | Has standing responsibilities and works on them |
-| Is idle between chats | Wakes on a beat, checks its outcomes, picks the next useful thing |
-| Asks before doing | Acts inside its job; asks only about calls that belong to others |
-| Answers to whoever is typing | Reports to a manager; works with peers by their roles |
-| Forgets between chats | Keeps memory, commitments and a record it builds on |
-| Is judged per answer | Is judged by outcomes over weeks |
-| Is either on or off | Can be paused, redirected, given a new role, or moved |
+| An assistant                 | A co-worker                                                       |
+| ---------------------------- | ----------------------------------------------------------------- |
+| Waits for a prompt           | Has standing responsibilities and works on them                   |
+| Is idle between chats        | Wakes on a beat, checks its outcomes, picks the next useful thing |
+| Asks before doing            | Acts inside its job; asks only about calls that belong to others  |
+| Answers to whoever is typing | Reports to a manager; works with peers by their roles             |
+| Forgets between chats        | Keeps memory, commitments and a record it builds on               |
+| Is judged per answer         | Is judged by outcomes over weeks                                  |
+| Is either on or off          | Can be paused, redirected, given a new role, or moved             |
 
 For the founder this means leading, not operating. They set goals, give each agent a job, read the reports, and step in where their judgment matters. They stop being the person who starts every piece of work.
 
@@ -107,7 +107,7 @@ Beats complement, not replace, the other ways an agent starts work:
 - **Events (partly built):** something happened that the agent watches. A message mentioning it, a failed payment, a new support email, a failing build.
 - **Beats (roadmap):** a regular look around for everything else. "Is anything I own at risk? Is there something useful I should start?"
 
-A schedule says *when*. An event says *what*. A beat says *what now?*
+A schedule says _when_. An event says _what_. A beat says _what now?_
 
 ### 5.2 One beat, step by step
 
@@ -119,7 +119,7 @@ wake ──► gather ──► triage ──► work ──► decide how loud 
 
 1. **Wake.** A timer or an event. Default rhythm in section 5.3.
 2. **Gather, with no model.** Plain code collects what changed since the last beat: new messages that mention the agent or touch its work, changes to its goals and projects, events from its connections, schedule results, its own open commitments and their due dates, and anything its `HEARTBEAT.md` checklist names. If nothing changed and no commitment is due, the beat ends here at no model cost.
-3. **Triage, with a decision model.** A small, cheap model from the ladder in `packages/decisions` reads the gathered changes and answers one question: *nothing*, *handle it*, or *raise it*. It has to be confident to say *nothing* about anything touching money, customers or security; when it is unsure, the beat goes up a rung to the runtime. Every triage answer is recorded, as research `20261006_decision-models.md` requires. Most beats should end here.
+3. **Triage, with a decision model.** A small, cheap model from the ladder in `packages/decisions` reads the gathered changes and answers one question: _nothing_, _handle it_, or _raise it_. It has to be confident to say _nothing_ about anything touching money, customers or security; when it is unsure, the beat goes up a rung to the runtime. Every triage answer is recorded, as research `20261006_decision-models.md` requires. Most beats should end here.
 4. **Work, with the runtime.** Only when there is something to do does the agent run a real turn on its runtime: Doe by default (DOR-2782), or Claude Code, Codex or OpenCode. It works with its full tools and full power, inside its role.
 5. **Decide how loud.** Pick the lowest rung on the ladder in P5 that gets the job done. Hold non-urgent messages for the person's working hours. Batch several things into one message.
 6. **Record.** One line in the audit trail for every beat, including quiet ones: what it checked, what it found, what it did, what it cost. Update `MEMORY.md` with anything durable and the commitments list with anything promised.
@@ -128,12 +128,12 @@ wake ──► gather ──► triage ──► work ──► decide how loud 
 
 Starting defaults, to tune by measurement (section 6). No study gives a right number, so we pick, measure and adjust, the same honesty as etiquette §10.
 
-| Situation | Default beat |
-| --- | --- |
-| The agent's working hours (by default, its manager's) | every 30 minutes |
-| Outside working hours | every 2 hours, gather and triage only; work only on urgent items |
-| Something it owns is in flight (a deploy, a campaign, a deadline today) | every 5 to 10 minutes until it settles |
-| Nothing has changed for a day | back off to every 2 hours until something does |
+| Situation                                                               | Default beat                                                     |
+| ----------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| The agent's working hours (by default, its manager's)                   | every 30 minutes                                                 |
+| Outside working hours                                                   | every 2 hours, gather and triage only; work only on urgent items |
+| Something it owns is in flight (a deploy, a campaign, a deadline today) | every 5 to 10 minutes until it settles                           |
+| Nothing has changed for a day                                           | back off to every 2 hours until something does                   |
 
 Events wake an agent at once whatever the rhythm. The owner can change any of these per agent. An agent can ask for a faster beat for a while ("I am watching the launch; checking every 5 minutes until 6pm") and that request goes in the record.
 
@@ -176,13 +176,13 @@ Why these numbers. Alerting fields treat 30 to 50% of alerts being actionable as
 
 ### 6.1 The core five
 
-| Measure | What it is | Starting target |
-| --- | --- | --- |
-| **Kept rate** | Share of an agent's actions not undone, reverted or redone by someone else within 7 days | 95% or more |
-| **Useful-raise rate** | Share of things an agent raised (posts, DMs, notes, asks) that the person acted on, replied to, or marked useful | 60% or more |
-| **Interruptions per useful outcome** | Messages that reached a person, divided by actions kept plus raises acted on | 1 or less |
-| **Surprises** | Times a manager learned of an agent's important action from somewhere other than the agent | 0 |
-| **Mutes and pauses** | Times a person muted, paused or demoted an agent | trending to 0; every one gets read |
+| Measure                              | What it is                                                                                                       | Starting target                    |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| **Kept rate**                        | Share of an agent's actions not undone, reverted or redone by someone else within 7 days                         | 95% or more                        |
+| **Useful-raise rate**                | Share of things an agent raised (posts, DMs, notes, asks) that the person acted on, replied to, or marked useful | 60% or more                        |
+| **Interruptions per useful outcome** | Messages that reached a person, divided by actions kept plus raises acted on                                     | 1 or less                          |
+| **Surprises**                        | Times a manager learned of an agent's important action from somewhere other than the agent                       | 0                                  |
+| **Mutes and pauses**                 | Times a person muted, paused or demoted an agent                                                                 | trending to 0; every one gets read |
 
 ### 6.2 Supporting measures
 
@@ -287,7 +287,7 @@ Recorded so we decide them once:
 ## 10. Related
 
 - [`research/20261007_proactive-persistent-agents.md`](../research/20261007_proactive-persistent-agents.md): the evidence: OpenClaw, Hermes Agent, Instinct, Meta, OpenAI, Paperclip and others, what users love and hate, and how to measure.
-- [`agent-etiquette.md`](agent-etiquette.md): how an agent talks in shared rooms. This guide decides *whether* there is something to say; etiquette decides *how*.
+- [`agent-etiquette.md`](agent-etiquette.md): how an agent talks in shared rooms. This guide decides _whether_ there is something to say; etiquette decides _how_.
 - [`PRINCIPLES.md`](PRINCIPLES.md): trusted by default, co-workers, equal accounts.
 - `research/20261006_decision-models.md`: the triage ladder.
 - `research/20261006_trust-by-default-audit.md`: what trust by default changes in the code.
