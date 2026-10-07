@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(cloud-api): publish the remote enrolment request, edge proof and self-revoke (DOR-2763)'
+  - 'fix(cloud-api): tighten the remote edge proof and enrolment rows after review (DOR-2763)'
 ---
 
 ### Added
