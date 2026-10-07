@@ -89,6 +89,7 @@ import {
   AUTO_DOWNGRADE_STATUS,
   UNKNOWN_MODE_STATUS,
   resolveEffectivePermissionMode,
+  turnPermissionMode,
 } from './permission-mode-guard.js';
 import { resolveThinkingOptions } from './thinking-config.js';
 import { createEditBaselineCapture, detectSlashCommandName } from './message-sender-shared.js';
@@ -637,11 +638,19 @@ export async function resolveLaunch(args: {
   // no way to learn why. The note is user-facing and says what changes for them;
   // the log line beside it carries the id, which is the half a person cannot use
   // and an operator reading logs needs.
-  const declaredMode = narrowToClaudeCodeMode(session.permissionMode, 'default');
-  if (declaredMode !== session.permissionMode) {
+  //
+  // The mode read here is the TURN's (`turnPermissionMode`): the session's own,
+  // held to the ceiling a turn from off this machine carries (spec
+  // `official-community-space` D10). Clamping here, at the one place the SDK's
+  // mode is built, is what makes the ceiling reach a warm process too — its
+  // live-settable `permissionMode` pin compares against this value, so the
+  // stranger's turn moves the live query down and the next turn moves it back.
+  const turnMode = turnPermissionMode(session);
+  const declaredMode = narrowToClaudeCodeMode(turnMode, 'default');
+  if (declaredMode !== turnMode) {
     logger.warn('[sendMessage] saved permission mode is not one this runtime offers', {
       session: sessionId,
-      stored: session.permissionMode,
+      stored: turnMode,
       running: declaredMode,
     });
     statusEvents.push({ type: 'system_status', data: { message: UNKNOWN_MODE_STATUS } });

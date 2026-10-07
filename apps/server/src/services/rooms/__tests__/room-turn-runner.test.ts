@@ -283,6 +283,11 @@ interface TriggerCall {
    * that already has a row (DOR-1917).
    */
   newSessionPermissionMode?: string;
+  /**
+   * The loosest mode THIS turn may run at, sent for a turn somebody from off
+   * this machine started (spec `official-community-space` D10).
+   */
+  permissionCeiling?: string;
   /** The runtime the real dispatcher resolves the canonical id through. */
   runtime: { getInternalSessionId: (sessionId: string) => string | undefined };
   /**
@@ -2718,6 +2723,88 @@ describe('what power a room turn runs at (DOR-1917)', () => {
 
     expect(triggered[0].settings).toEqual({ model: 'opus' });
     expect(triggered[0].newSessionPermissionMode).toBe('bypassPermissions');
+  });
+});
+
+/**
+ * A stranger's turn runs at the mode that asks, whatever the session holds (spec
+ * `official-community-space` D10).
+ *
+ * Everything in the block above decides what a NEW session is born with. A room
+ * conversation the owner started at their own level used to hand that level to
+ * the next person from off this machine who mentioned the agent there — a space
+ * member, or a sender on a bridged chat — because the stranger's turn simply ran
+ * on the row the owner's turn left. The ceiling is per turn: it rides the
+ * dispatch, and the runtime clamps to it where it reads the mode a turn runs at
+ * (pinned per runtime beside each adapter).
+ */
+describe("a stranger's turn runs at the mode that asks (D10)", () => {
+  beforeEach(() => {
+    triggered.length = 0;
+    persistSessionRuntime.mockClear();
+    turnBehaviour = saysAndCloses('ok');
+    storedSettings = null;
+    runtimesConfig = { ...USER_CONFIG_DEFAULTS.runtimes, defaultTrustStop: 'autonomy' };
+    agentManifest = null;
+    registeredRuntimes = ['claude-code', 'codex', 'opencode', 'test-mode'];
+    sessionOwners.clear();
+  });
+
+  it('owner mentions first, stranger second: the stranger’s turn runs at the ceiling', async () => {
+    const runner = createSessionRoomTurnRunner();
+
+    // The owner's message starts the room's session at the operator's level.
+    await runner.run(request());
+    expect(triggered[0].newSessionPermissionMode).toBe('bypassPermissions');
+    expect(triggered[0].permissionCeiling).toBeUndefined();
+
+    // The row is now born at that level; the stranger's mention lands on it.
+    storedSettings = { permissionMode: 'bypassPermissions' };
+    await runner.run(request({ sessionId: 'room-session-1', externalAuthor: true }));
+
+    expect(triggered[1].permissionCeiling).toBe('default');
+    // Nothing new is seeded, and the row's origin still says "from off this machine".
+    expect(triggered[1].newSessionPermissionMode).toBeUndefined();
+    expect(permissionSeedForOrigin(persistSessionRuntime.mock.lastCall?.[2] as TurnOrigin)).toBe(
+      'none'
+    );
+  });
+
+  it('holds a brand-new session’s first stranger turn to the ceiling too', async () => {
+    await createSessionRoomTurnRunner().run(request({ externalAuthor: true }));
+
+    expect(triggered[0].permissionCeiling).toBe('default');
+    expect(triggered[0].newSessionPermissionMode).toBeUndefined();
+  });
+
+  it('gives the owner’s next turn no ceiling, so the session runs at its own level again', async () => {
+    storedSettings = { permissionMode: 'bypassPermissions' };
+    const runner = createSessionRoomTurnRunner();
+
+    await runner.run(request({ sessionId: 'room-session-2', externalAuthor: true }));
+    await runner.run(request({ sessionId: 'room-session-2' }));
+
+    expect(triggered.map((call) => call.permissionCeiling)).toEqual(['default', undefined]);
+  });
+
+  it('reads the ceiling off the runtime’s own Ask stop, never a mode id', async () => {
+    getCapabilities.mockReturnValue({
+      ...DECLARED_CAPABILITIES,
+      permissionModes: {
+        supported: true,
+        default: 'read-only',
+        values: [
+          { id: 'read-only', label: 'Read only', description: '', stop: 'ask' },
+          { id: 'workspace', label: 'Workspace', description: '', stop: 'act' },
+        ],
+      },
+    });
+    try {
+      await createSessionRoomTurnRunner().run(request({ externalAuthor: true }));
+      expect(triggered[0].permissionCeiling).toBe('read-only');
+    } finally {
+      getCapabilities.mockReturnValue(DECLARED_CAPABILITIES);
+    }
   });
 });
 

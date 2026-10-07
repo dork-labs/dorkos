@@ -119,7 +119,7 @@ import {
   type CodexThreadMetadataPatch,
   type CodexThreadRecord,
 } from './thread-map.js';
-import { tightensDeclaredMode } from '@dorkos/shared/permission-semantics';
+import { clampToCeiling, tightensDeclaredMode } from '@dorkos/shared/permission-semantics';
 import { CODEX_CAPABILITIES } from './runtime-constants.js';
 import {
   ExecCodexTransport,
@@ -1305,8 +1305,20 @@ export class CodexRuntime implements AgentRuntime {
     const model = opts?.model ?? tracked.model;
     const effort = opts?.effort ?? tracked.effort;
     const fastMode = opts?.fastMode ?? tracked.fastMode;
+    const permissionMode = opts?.permissionMode ?? tracked.permissionMode;
     return {
-      permissionMode: opts?.permissionMode ?? tracked.permissionMode,
+      // A turn from off this machine runs no higher than its ceiling, whatever
+      // the session tracks (spec `official-community-space` D10). Applied to
+      // the returned settings only, never tracked, so the next turn runs at the
+      // session's own mode again.
+      permissionMode:
+        opts?.permissionCeiling === undefined
+          ? permissionMode
+          : clampToCeiling(
+              this.getCapabilities().permissionModes.values,
+              permissionMode,
+              opts.permissionCeiling
+            ),
       ...(model !== undefined ? { model } : {}),
       ...(effort !== undefined ? { effort } : {}),
       ...(fastMode !== undefined ? { fastMode } : {}),

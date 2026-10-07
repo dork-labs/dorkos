@@ -571,6 +571,18 @@ export interface TriggerTurnOpts {
    */
   newSessionPermissionMode?: PermissionModeId;
   /**
+   * The loosest mode THIS turn may run at, whatever the session has stored
+   * (spec `official-community-space` D10). Handed to the runtime as
+   * `MessageOpts.permissionCeiling`, which clamps the turn to it and stores
+   * nothing.
+   *
+   * The opposite of {@link TriggerTurnOpts.newSessionPermissionMode} in every
+   * way that matters: that one may only fill a session with no settings, this
+   * one applies to every session and may only LOWER what it runs at. The room
+   * turn runner sends it for a turn somebody from off this machine started.
+   */
+  permissionCeiling?: PermissionModeId;
+  /**
    * The dispatcher's id for this message, handed to the runtime so a `result`
    * can be correlated back to the message that caused it.
    *
@@ -961,6 +973,9 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
         // permission key. See the field's docblock for why it is not in there.
         ...(opts.newSessionPermissionMode !== undefined
           ? { permissionMode: opts.newSessionPermissionMode }
+          : {}),
+        ...(opts.permissionCeiling !== undefined
+          ? { permissionCeiling: opts.permissionCeiling }
           : {}),
         ...(dispatchHold !== undefined ? { dispatchHold } : {}),
       });

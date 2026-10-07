@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { PermissionModeDescriptor } from '../agent-runtime.js';
 import {
+  clampToCeiling,
   findWorkingMode,
   isAutonomyStop,
   isBypassSemantics,
@@ -155,6 +156,30 @@ describe('tightensDeclaredMode', () => {
 
   it('is quiet when the same declared mode is re-picked', () => {
     expect(tightensDeclaredMode(declared, 'default', 'default')).toBe(false);
+  });
+});
+
+describe('clampToCeiling', () => {
+  const declared = [
+    descriptor({ id: 'default', asks: 'always', reach: 'edit' }),
+    descriptor({ id: 'acceptEdits', stop: 'act', asks: 'when-risky', reach: 'edit' }),
+    descriptor({ id: 'plan', asks: 'always', reach: 'read' }),
+    descriptor({ id: 'bypassPermissions', stop: 'autonomy', asks: 'never', reach: 'everything' }),
+  ];
+
+  it('brings a looser mode down to the ceiling', () => {
+    expect(clampToCeiling(declared, 'bypassPermissions', 'default')).toBe('default');
+    expect(clampToCeiling(declared, 'acceptEdits', 'default')).toBe('default');
+  });
+
+  it('never raises a mode that already sits at or below the ceiling', () => {
+    expect(clampToCeiling(declared, 'default', 'default')).toBe('default');
+    expect(clampToCeiling(declared, 'plan', 'default')).toBe('plan');
+  });
+
+  it('answers the ceiling for a mode it cannot weigh', () => {
+    expect(clampToCeiling(declared, 'a-mode-nobody-declares', 'default')).toBe('default');
+    expect(clampToCeiling([], 'bypassPermissions', 'default')).toBe('default');
   });
 });
 

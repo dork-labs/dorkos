@@ -154,6 +154,14 @@ export interface AgentSession {
    * outlives the turn that asked for it.
    */
   unattendedTurn?: boolean;
+  /**
+   * The loosest mode THIS turn may run at (`MessageOpts.permissionCeiling`),
+   * set for a room turn somebody from off this machine started. Assigned on
+   * every send, so it never outlives the turn that carried it; every reader of
+   * the mode a turn runs at goes through `turnPermissionMode`, which clamps
+   * {@link permissionMode} to it without rewriting the session's own choice.
+   */
+  turnPermissionCeiling?: PermissionModeId;
   /** True when auto-created by updateSession — sendMessage should check transcript before first query. */
   needsTranscriptCheck?: boolean;
   /**

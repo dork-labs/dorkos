@@ -110,6 +110,17 @@ describe('the launch options every Claude Code turn is given', () => {
     }
   });
 
+  it('launches a stranger’s turn at its ceiling, not the session’s Full autonomy (official-community-space D10)', async () => {
+    const session = { ...makeSession(), permissionMode: 'bypassPermissions' as const };
+    session.turnPermissionCeiling = 'default';
+
+    const options = await captureSdkOptions(undefined, session);
+
+    expect(options.permissionMode).toBe('default');
+    // Never rewritten: the next turn, with no ceiling, launches at the session's own mode.
+    expect(session.permissionMode).toBe('bypassPermissions');
+  });
+
   it('turns the task and todo tools on, which no newer model gets by default', async () => {
     const options = await captureSdkOptions();
 

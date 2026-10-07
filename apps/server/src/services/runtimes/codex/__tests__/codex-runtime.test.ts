@@ -963,6 +963,24 @@ describe('CodexRuntime', () => {
       );
     });
 
+    it('runs a stranger’s turn at its ceiling without tracking it (official-community-space D10)', async () => {
+      const { runtime } = makeRuntime();
+      const sessionId = crypto.randomUUID();
+      runtime.ensureSession(sessionId, { permissionMode: 'bypassPermissions' });
+
+      await drain(
+        runtime.sendMessage(sessionId, 'from a stranger', { permissionCeiling: 'default' })
+      );
+      expect(sdkMocks.startThread).toHaveBeenLastCalledWith(
+        expect.objectContaining({ sandboxMode: 'read-only' })
+      );
+
+      // The owner's next turn carries no ceiling and runs at the session's own mode.
+      await drain(runtime.sendMessage(sessionId, 'from the owner'));
+      const calls = [...sdkMocks.startThread.mock.calls, ...sdkMocks.resumeThread.mock.calls];
+      expect(JSON.stringify(calls.at(-1))).toContain('danger-full-access');
+    });
+
     it('RT-MOD-01: projects session model and effort into ThreadOptions', async () => {
       const { runtime } = makeRuntime();
       const sessionId = crypto.randomUUID();

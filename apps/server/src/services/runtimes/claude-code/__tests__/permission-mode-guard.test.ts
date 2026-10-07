@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   resolveEffectivePermissionMode,
   AUTO_DOWNGRADE_STATUS,
+  turnPermissionMode,
 } from '../messaging/permission-mode-guard.js';
 
 describe('resolveEffectivePermissionMode', () => {
@@ -68,5 +69,26 @@ describe('AUTO_DOWNGRADE_STATUS', () => {
     expect(message).not.toContain("isn't available");
     // Scoped to this turn, so it never promises Auto is coming back.
     expect(message).toContain('this turn');
+  });
+});
+
+describe('turnPermissionMode (official-community-space D10)', () => {
+  it('is the session’s own mode for a turn with no ceiling', () => {
+    expect(turnPermissionMode({ permissionMode: 'bypassPermissions' })).toBe('bypassPermissions');
+  });
+
+  it('holds a looser mode to the ceiling', () => {
+    expect(
+      turnPermissionMode({ permissionMode: 'bypassPermissions', turnPermissionCeiling: 'default' })
+    ).toBe('default');
+    expect(
+      turnPermissionMode({ permissionMode: 'acceptEdits', turnPermissionCeiling: 'default' })
+    ).toBe('default');
+  });
+
+  it('never raises a session that sits lower', () => {
+    expect(turnPermissionMode({ permissionMode: 'plan', turnPermissionCeiling: 'default' })).toBe(
+      'plan'
+    );
   });
 });

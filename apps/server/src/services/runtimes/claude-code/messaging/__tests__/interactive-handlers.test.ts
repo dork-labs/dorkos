@@ -63,6 +63,26 @@ describe('createCanUseTool — approval gate', () => {
     expect(session.pendingInteractions.has('tool-1')).toBe(true);
   });
 
+  // Spec `official-community-space` D10: a turn somebody from off this machine
+  // started is held to its ceiling at the tool gate too, whatever the session
+  // is set to. Without it a session at Full autonomy runs the stranger's Bash.
+  it('asks before a stranger’s turn runs Bash, even on a session at Full autonomy', async () => {
+    const session = {
+      ...makeSession('bypassPermissions'),
+      turnPermissionCeiling: 'default' as const,
+    };
+    const canUseTool = createCanUseTool(session, noopLog);
+
+    const result = canUseTool(NON_SAFE_TOOL, { command: 'ls' }, makeContext('tool-ceiling'));
+    const settled = await Promise.race([
+      result.then(() => 'settled' as const),
+      Promise.resolve('pending' as const),
+    ]);
+
+    expect(settled).toBe('pending');
+    expect(session.eventQueue[0]?.type).toBe('approval_required');
+  });
+
   it('routes a non-safe tool to approval (not auto-allow) in auto mode', async () => {
     const session = makeSession('auto');
     const canUseTool = createCanUseTool(session, noopLog);

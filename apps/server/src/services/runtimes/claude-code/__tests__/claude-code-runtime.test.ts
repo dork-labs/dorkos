@@ -266,6 +266,31 @@ describe('ClaudeCodeRuntime', () => {
       expect(seen).toEqual([true, false]);
     });
 
+    it('runs a stranger’s turn at its ceiling and the next turn at the session’s own mode', async () => {
+      // Spec `official-community-space` D10: a room turn somebody from off this
+      // machine started carries a ceiling. The SDK is launched at it, the
+      // session's own choice is left alone, and the owner's next turn is not
+      // held down by it.
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      const launched: unknown[] = [];
+      (mockedQuery as ReturnType<typeof vi.fn>).mockImplementation(
+        (args: { options: { permissionMode?: string } }) => {
+          launched.push(args.options.permissionMode);
+          return wrapSdkQuery(sdkSimpleText('ok'));
+        }
+      );
+
+      agentManager.ensureSession('owned', { permissionMode: 'bypassPermissions' });
+      for await (const event of agentManager.sendMessage('owned', 'from a stranger', {
+        permissionCeiling: 'default',
+      }))
+        void event;
+      for await (const event of agentManager.sendMessage('owned', 'from the owner')) void event;
+
+      // The second launch is the proof the session's own choice was never rewritten.
+      expect(launched).toEqual(['default', 'bypassPermissions']);
+    });
+
     it.each(['hello', '  /help'])(
       'opens lazily and keeps slash commands free of Accounts context: %s',
       async (content) => {

@@ -183,6 +183,39 @@ export function tightensDeclaredMode(
 }
 
 /**
+ * The mode ONE turn runs at when it may go no higher than `ceiling`: the
+ * session's own `mode` when that is {@link isNoLooserThan} the ceiling, and the
+ * ceiling otherwise. It never raises anything — a session sitting lower (Plan,
+ * a read-only sandbox) keeps its own mode.
+ *
+ * The rule a turn somebody from off this machine started is held to (spec
+ * `official-community-space` D10): whatever the session's row holds, that turn
+ * runs at the mode that asks. Each runtime applies it where it reads the mode
+ * a turn runs at, so it holds for a session that already ran at a higher level.
+ *
+ * **An id the runtime does not declare cannot be weighed, so it loses.** A
+ * `mode` nothing describes answers the ceiling, the same "cannot tell reads as
+ * the careful answer" rule {@link tightensDeclaredMode} follows. A `ceiling`
+ * nothing describes is still the answer: the caller resolved it from this same
+ * runtime's declaration, and the runtime's own check of an unknown id falls
+ * back to asking.
+ *
+ * @param declared - Every mode the runtime declares, in any order.
+ * @param mode - The mode the session would otherwise run this turn at.
+ * @param ceiling - The loosest mode this turn may run at.
+ */
+export function clampToCeiling(
+  declared: readonly PermissionModeDescriptor[],
+  mode: string,
+  ceiling: string
+): string {
+  const current = declared.find((d) => d.id === mode);
+  const limit = declared.find((d) => d.id === ceiling);
+  if (!current || !limit) return ceiling;
+  return isNoLooserThan(limit, current) ? mode : ceiling;
+}
+
+/**
  * Whether this runtime's mode asks LESS than its dial position promises —
  * Codex's workspace-write sitting at "act, ask when risky" while never asking at
  * all, because Codex has no way to pause mid-turn.

@@ -2396,6 +2396,25 @@ describe('systemPromptAppend reaches the runtime, or is absent entirely', () => 
   });
 });
 
+describe('a turn’s permission ceiling reaches the runtime (official-community-space D10)', () => {
+  // The room runner sends a ceiling for a turn somebody from off this machine
+  // started; the dispatcher picks it onto its plan and the trigger forwards it.
+  // Either layer dropping it would leave that turn at the session's own level.
+  it('carries the ceiling through both layers, and none when the caller sent none', async () => {
+    runtime.withScenarios([quickTurn(), quickTurn()]);
+
+    await send('from a stranger', { permissionCeiling: 'default' });
+    await settle();
+    const first = runtime.sendMessage.mock.calls.at(-1)![2] as Record<string, unknown>;
+    expect(first.permissionCeiling).toBe('default');
+
+    await send('from the owner');
+    await settle();
+    const second = runtime.sendMessage.mock.calls.at(-1)![2] as Record<string, unknown>;
+    expect('permissionCeiling' in second).toBe(false);
+  });
+});
+
 describe('folder grants reach the runtime, including from the queue (spec `agent-home-desk` §4.1)', () => {
   // A grant absent from `sendMessage` means the turn runs WITHOUT that folder,
   // so a field dropped by either the plan's whitelist or the launch spread is a

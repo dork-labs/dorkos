@@ -1063,6 +1063,23 @@ export interface MessageOpts extends SessionSettings {
    */
   unattended?: boolean;
   /**
+   * The loosest permission mode THIS turn may run at, as an id this runtime
+   * declares (spec `official-community-space` D10).
+   *
+   * Sent for a room turn that somebody from off this machine started — a
+   * person in a space, or on a bridged Telegram or Slack chat. Whatever the
+   * session's stored mode is, the turn runs at it only when it is no looser
+   * than this one, and at this one otherwise (`clampToCeiling` in
+   * `@dorkos/shared/permission-semantics`). It never raises a mode and is
+   * never stored: a runtime that honours it reads it on every send, so the
+   * session's next turn runs at the session's own mode again.
+   *
+   * NOT advisory, unlike the two fields above: every runtime with a
+   * permission behaviour of its own applies it wherever it reads the mode a
+   * turn runs at — the launch, and any approval decision made mid-turn.
+   */
+  permissionCeiling?: PermissionModeId;
+  /**
    * The caller can wait rather than have this send end the agent's background
    * work (spec `warm-process-lifecycle` D2, DOR-2065). Present only when the
    * caller has not shown the turn yet and can put the message back in line.

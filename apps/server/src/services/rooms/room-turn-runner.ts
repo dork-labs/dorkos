@@ -37,6 +37,7 @@
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
+import { resolveStopMode, type DeclaredPermissionModes } from '@dorkos/shared/permission-semantics';
 import type { Room } from '@dorkos/shared/room-schemas';
 import type { RoomContextData } from '@dorkos/shared/additional-context';
 import {
@@ -205,6 +206,24 @@ export async function warnIfTurnCannotPost(opts: {
       error: err instanceof Error ? err.message : String(err),
     });
   }
+}
+
+/**
+ * The loosest mode a turn somebody from off this machine started may run at,
+ * on one runtime: the mode at the dial's Ask stop, the one that stops and asks
+ * before acting (spec `official-community-space` D10).
+ *
+ * Read off the runtime's own declaration, never a mode id, so Codex's
+ * read-only default and Claude Code's ask-first default are each their own
+ * runtime's answer. A runtime that declares no Ask stop falls back to its own
+ * default, and one declaring neither leaves nothing to clamp to — which no
+ * shipped runtime does, and which the runtime's own unknown-id fallback would
+ * read as asking anyway.
+ *
+ * @param modes - The runtime's declared permission modes.
+ */
+function strangerCeiling(modes: DeclaredPermissionModes): string | undefined {
+  return resolveStopMode('ask', modes.values) ?? modes.default;
 }
 
 /** The shipped wait, used when a caller supplies no reader. */
@@ -648,6 +667,20 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
               ...(agentStop ? { agent: { filesAndCommands: agentStop } } : {}),
             })
           : undefined;
+      // **And a stranger's turn runs at the mode that asks, whatever the row
+      // holds** (spec `official-community-space` D10). Everything above only
+      // decides what a NEW session is born with, so a room conversation the
+      // owner started at their own level used to hand that level to the next
+      // person from off this machine who mentioned the agent there: a space
+      // member, or a bridged Telegram or Slack sender. The ceiling is per
+      // TURN and stores nothing; the runtime clamps to it wherever it reads
+      // the mode a turn runs at, so a session already sitting lower (Plan, a
+      // read-only sandbox) keeps its own, and the owner's next turn runs at
+      // the session's own level again. Nothing here or downstream can raise
+      // it: not the operator's level, not the agent's own stop.
+      const permissionCeiling = request.externalAuthor
+        ? strangerCeiling(runtime.getCapabilities().permissionModes)
+        : undefined;
       const seed = isNewSession
         ? await resolveUnattendedSessionDefaults({
             runtimeType,
@@ -999,6 +1032,7 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         // for the one condition it may ride under is what keeps a future caller
         // from sending it for a session that already has a row (DOR-1917).
         ...(unattendedMode !== undefined ? { newSessionPermissionMode: unattendedMode } : {}),
+        ...(permissionCeiling !== undefined ? { permissionCeiling } : {}),
         projector,
         runtime,
         // **Refuse a stranger AT ACCEPTANCE**, unlike a person's own message: a

@@ -20,6 +20,7 @@ import {
 } from '../../../core/approvals/autonomy-consent.js';
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
 import type { McpToolSession } from './types.js';
+import { turnPermissionMode } from '../messaging/permission-mode-guard.js';
 
 /**
  * The ceiling for a caller that has no chat (the external `/mcp` server): Claude
@@ -67,9 +68,23 @@ const AUTO_FALLBACK_MODE_ID = 'default';
  * @param session - The live session, or undefined when there is none.
  */
 export function runningPermissionMode(
-  session: Pick<McpToolSession, 'permissionMode' | 'model' | 'autoModeConfirmedFor'> | undefined
+  session:
+    | Pick<
+        McpToolSession,
+        'permissionMode' | 'model' | 'autoModeConfirmedFor' | 'turnPermissionCeiling'
+      >
+    | undefined
 ): string | undefined {
-  const mode = session?.permissionMode;
+  const stored = session?.permissionMode;
+  // A turn from off this machine runs at its ceiling, so that is the most a
+  // chat it starts may have (spec `official-community-space` D10).
+  const mode =
+    stored !== undefined && session?.turnPermissionCeiling !== undefined
+      ? turnPermissionMode({
+          permissionMode: stored,
+          turnPermissionCeiling: session.turnPermissionCeiling,
+        })
+      : stored;
   if (mode !== AUTO_MODE_ID) return mode;
   const confirmed =
     session?.autoModeConfirmedFor !== undefined &&

@@ -33,7 +33,9 @@
  *
  * @module services/runtimes/claude-code/messaging/permission-mode-guard
  */
-import type { PermissionMode } from '@dorkos/shared/types';
+import type { PermissionMode, PermissionModeId } from '@dorkos/shared/types';
+import { clampToCeiling } from '@dorkos/shared/permission-semantics';
+import { CLAUDE_CODE_CAPABILITIES } from '../runtime-constants.js';
 
 /** Why `'auto'` was coerced to `'default'` for one send. */
 export type AutoDowngradeReason =
@@ -106,4 +108,29 @@ export function resolveEffectivePermissionMode(args: {
     };
   }
   return { permissionMode: args.permissionMode, autoDowngrade: null };
+}
+
+/**
+ * The mode THIS turn runs at, before the Auto check below: the session's own
+ * mode, held to the turn's ceiling when it carries one (spec
+ * `official-community-space` D10).
+ *
+ * The one reading every consumer of a turn's mode goes through — the launch,
+ * the tool gate, and `session_start`'s ceiling — so a turn somebody from off
+ * this machine started cannot run at a level the session reached for its
+ * owner. The session's own choice is never rewritten: the next turn, which
+ * carries no ceiling, runs at it again.
+ *
+ * @param session - The live session's stored mode and this turn's ceiling.
+ */
+export function turnPermissionMode(session: {
+  permissionMode: PermissionModeId;
+  turnPermissionCeiling?: PermissionModeId;
+}): PermissionModeId {
+  if (session.turnPermissionCeiling === undefined) return session.permissionMode;
+  return clampToCeiling(
+    CLAUDE_CODE_CAPABILITIES.permissionModes.values,
+    session.permissionMode,
+    session.turnPermissionCeiling
+  );
 }

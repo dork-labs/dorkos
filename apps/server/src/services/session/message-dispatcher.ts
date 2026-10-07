@@ -967,6 +967,11 @@ export interface DispatchMessageOpts {
    * authority on the one condition it may be sent under.
    */
   newSessionPermissionMode?: PermissionModeId;
+  /**
+   * The loosest mode this turn may run at. Passed straight through;
+   * `TriggerTurnOpts.permissionCeiling` is the authority on what it means.
+   */
+  permissionCeiling?: PermissionModeId;
   /** The projector for `sessionId` (keyed by the stable client-facing id). */
   projector: SessionStateProjector;
   /** The runtime this session resolves to. */
@@ -1192,6 +1197,7 @@ interface DispatchPlan {
     | 'accountHint'
     | 'settings'
     | 'newSessionPermissionMode'
+    | 'permissionCeiling'
     | 'stallTimeoutMs'
     | 'onError'
     | 'onSettled'
@@ -1544,6 +1550,9 @@ function launchDispatchInner(
       ...(turn.settings ? { settings: turn.settings } : {}),
       ...(turn.newSessionPermissionMode !== undefined
         ? { newSessionPermissionMode: turn.newSessionPermissionMode }
+        : {}),
+      ...(turn.permissionCeiling !== undefined
+        ? { permissionCeiling: turn.permissionCeiling }
         : {}),
       ...(turn.stallTimeoutMs !== undefined ? { stallTimeoutMs: turn.stallTimeoutMs } : {}),
       ...(turn.privateReceiptId !== undefined ? { privateReceiptId: turn.privateReceiptId } : {}),

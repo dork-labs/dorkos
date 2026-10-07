@@ -40,6 +40,7 @@ import type {
   CommandRegistry,
   SessionSettings,
   InterruptReceipt,
+  PermissionModeId,
 } from '@dorkos/shared/types';
 import type {
   AgentRuntime,
@@ -470,6 +471,9 @@ export class OpenCodeRuntime implements AgentRuntime {
         connectorTurn: true,
         ...(forAgent !== undefined ? { forAgent } : {}),
         grants: validatedGrants(opts?.additionalDirectories, cwd),
+        ...(opts?.permissionCeiling !== undefined
+          ? { permissionCeiling: opts.permissionCeiling }
+          : {}),
       }
     );
   }
@@ -588,7 +592,12 @@ export class OpenCodeRuntime implements AgentRuntime {
       connectionsApplied: boolean,
       plan: OpenCodeSidecarPlan
     ) => Promise<void>,
-    opts?: { connectorTurn?: boolean; forAgent?: string; grants?: readonly DirectoryGrant[] }
+    opts?: {
+      connectorTurn?: boolean;
+      forAgent?: string;
+      grants?: readonly DirectoryGrant[];
+      permissionCeiling?: PermissionModeId;
+    }
   ): AsyncGenerator<StreamEvent> {
     // **Who pays** (ADR 261001-000811), decided before anything is sent: the
     // sidecar is made right for OpenCode's recorded choice, and a credits turn
@@ -750,6 +759,9 @@ export class OpenCodeRuntime implements AgentRuntime {
         cwd,
         permissions: ctx,
         ...(opts?.grants ? { grants: opts.grants } : {}),
+        ...(opts?.permissionCeiling !== undefined
+          ? { permissionCeiling: opts.permissionCeiling }
+          : {}),
       };
       for await (const mapped of mapOpenCodeTurn(queue, ctx)) {
         // On credits, a refused token is the credits card, never an OpenCode

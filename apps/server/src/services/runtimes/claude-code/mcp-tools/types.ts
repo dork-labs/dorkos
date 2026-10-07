@@ -61,6 +61,12 @@ export interface McpToolSession {
    * `'default'`; this is how a reader tells the two apart. Read at call time.
    */
   autoModeConfirmedFor?: string;
+  /**
+   * The loosest mode THIS turn may run at (`AgentSession`'s field of the same
+   * name), set for a turn somebody from off this machine started. Read at call
+   * time, so `session_start` cannot start a chat above it.
+   */
+  turnPermissionCeiling?: string;
 }
 
 /**

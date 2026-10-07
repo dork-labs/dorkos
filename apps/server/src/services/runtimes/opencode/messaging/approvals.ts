@@ -50,6 +50,8 @@ import type { OpenCodePermissionState } from '../events/session-event-mapper.js'
 import type { OpenCodeClientProvider } from '../sessions/session-mapper.js';
 import type { OpenCodeSessionRegistry } from '../sessions/session-registry.js';
 import { resolveGrantVerdict } from './directory-grants.js';
+import { clampToCeiling } from '@dorkos/shared/permission-semantics';
+import { OPENCODE_CAPABILITIES } from '../runtime-constants.js';
 
 /** How a permission request should be resolved under a DorkOS mode. */
 export type ApprovalDecision = 'ask' | 'auto-approve';
@@ -260,6 +262,13 @@ export interface ApprovalRouting {
    * a `read` one is refused in every mode (`directory-grants.ts`).
    */
   grants?: readonly DirectoryGrant[];
+  /**
+   * The loosest mode THIS turn may run at (`MessageOpts.permissionCeiling`),
+   * for a turn somebody from off this machine started (spec
+   * `official-community-space` D10). The live mode read below is clamped to
+   * it, so a session at Full autonomy still asks before that turn acts.
+   */
+  permissionCeiling?: PermissionModeId;
 }
 
 /**
@@ -388,7 +397,15 @@ export async function* enforceApprovals(
         );
       }
     }
-    const mode = deps.registry.get(sessionId)?.permissionMode;
+    const liveMode = deps.registry.get(sessionId)?.permissionMode;
+    const mode =
+      turn.permissionCeiling === undefined
+        ? liveMode
+        : clampToCeiling(
+            OPENCODE_CAPABILITIES.permissionModes.values,
+            liveMode ?? turn.permissionCeiling,
+            turn.permissionCeiling
+          );
     if (
       grantVerdict !== 'deny' &&
       resolveApprovalDecision(mode, approval.toolName) === 'auto-approve'
