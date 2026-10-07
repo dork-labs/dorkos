@@ -23,6 +23,8 @@ import { registerEntryRoutes } from './routes/community/entries.js';
 import { registerEventRoutes } from './routes/community/events.js';
 import { registerInviteRoutes } from './routes/community/invites.js';
 import { registerMemberRoutes } from './routes/community/members.js';
+import { registerBanRoutes } from './routes/community/bans.js';
+import { registerOpenAdmissionRoutes } from './routes/community/open-admission.js';
 import { registerPairingRoutes } from './routes/community/pairings.js';
 import { registerRedactionRoutes } from './routes/community/redactions.js';
 import { registerRemovalRoutes } from './routes/community/removals.js';
@@ -582,6 +584,17 @@ export function createCommunityApp({
     },
   });
   registerMemberRoutes(communityApi, { pool, auth, confirmPassword, now });
+  registerBanRoutes(communityApi, { pool, auth, config });
+  registerOpenAdmissionRoutes(communityApi, {
+    pool,
+    auth,
+    config,
+    // Per caller and per host, so neither one address nor many can flood the host with joins.
+    limitJoin: (c) => {
+      limitAttempts(`open-join:${peer(c)}`, config.limits.openJoinsPerMinute);
+      limitAttempts('open-join-host', config.limits.openJoinsPerHostPerMinute);
+    },
+  });
   registerPairingRoutes(communityApi, {
     pool,
     auth,
@@ -600,7 +613,13 @@ export function createCommunityApp({
   registerRemovalRoutes(communityApi, { pool, auth, config });
   registerRedactionRoutes(communityApi, { pool, auth, config });
   registerExportRoutes(communityApi, { pool, auth, blobStore, confirmPassword });
-  registerAdministrationRoutes(communityApi, { pool, auth, blobStore, confirmPassword });
+  registerAdministrationRoutes(communityApi, {
+    pool,
+    auth,
+    blobStore,
+    confirmPassword,
+    singleSignOn: config.oidc !== null,
+  });
   registerOwnerErasureRoutes(communityApi, { pool, auth });
   registerHistoryOriginRoute(communityApi, { pool, auth });
   registerTakedownNoticeRoutes(communityApi, { pool, auth });

@@ -42,7 +42,7 @@ interface SettingsRow {
   id: string;
   name: string;
   description: string | null;
-  admission_policy: 'invite_only' | 'closed';
+  admission_policy: 'invite_only' | 'closed' | 'open';
   icon_blob_key: string | null;
   icon_content_type: string | null;
   settings_version: number;
@@ -206,7 +206,15 @@ export function registerAdministrationRoutes(
     auth,
     blobStore,
     confirmPassword,
-  }: { pool: Pool; auth: CommunityAuth; blobStore: BlobStore; confirmPassword: ConfirmPassword }
+    singleSignOn,
+  }: {
+    pool: Pool;
+    auth: CommunityAuth;
+    blobStore: BlobStore;
+    confirmPassword: ConfirmPassword;
+    /** Whether this host has single sign-on, which an `open` space admits people through. */
+    singleSignOn: boolean;
+  }
 ): void {
   app.get('/settings', async (c) => {
     const actor = await requireMember(c, auth, pool);
@@ -245,6 +253,15 @@ export function registerAdministrationRoutes(
         (body.name !== undefined || body.admissionPolicy !== undefined)
       ) {
         throw new ApiError(403, 'FORBIDDEN', 'Only the owner can change identity or access.');
+      }
+      // An open space admits people only through the host's single sign-on; without one it
+      // could admit no one, so say so instead of saving a setting that does nothing.
+      if (body.admissionPolicy === 'open' && !singleSignOn) {
+        throw new ApiError(
+          409,
+          'STATE_CONFLICT',
+          'This server has no single sign-on, so the space can’t be open.'
+        );
       }
       const changed = Object.keys(body);
       const updated = await client.query<SettingsRow>(

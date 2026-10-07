@@ -20,12 +20,26 @@ import { gateAccountLink, settleTrustedLink, SIGN_IN_REFUSED_CODE } from './sign
 import { withRequestStart, writtenBeforeClearing } from './sign-in/request-start.js';
 import { communityEmailLinks } from './email-links/plugin.js';
 import { queueEmailConfirmation } from './email-links/requests.js';
+import { isBanned } from './moderation/bans.js';
+import { openAdmissionAvailable, readOpenAdmission } from './admission/open-admission-cookie.js';
 
 /**
- * What let a new account in: an owner grant or an invitation, or only a live claim to replace
- * a community's owner, which may name the one account it admits.
+ * What let a new account in: an owner grant or an invitation (with the community it admits to,
+ * for an invitation), a live claim to replace a community's owner, which may name the one
+ * account it admits, or a space open to anyone who signs in through the host's single sign-on.
  */
-type Admission = { by: 'grant' } | ({ by: 'owner_replacement' } & OwnerReplacementAdmission);
+type Admission =
+  | { by: 'grant'; communityId?: string }
+  | ({ by: 'owner_replacement' } & OwnerReplacementAdmission)
+  | { by: 'open'; communityId: string };
+
+/** The refusal a sign-up for a space that banned its email gets; the code names no ban. */
+function admissionRefused() {
+  return new APIError('FORBIDDEN', {
+    code: 'admission_refused',
+    message: "You can't join this space.",
+  });
+}
 
 /** Create one independent Better Auth instance for a community deployment. */
 export function createCommunityAuth(
@@ -84,8 +98,8 @@ export function createCommunityAuth(
     }
     const pending = verifyValue(readCookie(cookieHeader, 'community_admission'), config.authSecret);
     if (pending) {
-      const result = await pool.query(
-        `SELECT 1 FROM pending_admissions p JOIN invites i ON i.id=p.invite_id
+      const result = await pool.query<{ community_id: string }>(
+        `SELECT i.community_id FROM pending_admissions p JOIN invites i ON i.id=p.invite_id
          JOIN members m ON m.id=i.issuer_member_id
          JOIN communities c ON c.id=i.community_id
          WHERE p.token_hash=$1 AND p.expires_at>now() AND i.expires_at>now()
@@ -93,7 +107,7 @@ export function createCommunityAuth(
            AND c.lifecycle='active' AND m.active AND m.role IN ('owner','admin')`,
         [hashSecret(pending)]
       );
-      if (result.rowCount) return { by: 'grant' };
+      if (result.rows[0]) return { by: 'grant', communityId: result.rows[0].community_id };
     }
     // A claim to replace an owner admits a new account only while it can be claimed.
     const replacement = await ownerReplacementAdmission(
@@ -102,7 +116,17 @@ export function createCommunityAuth(
       config.authSecret,
       now()
     );
-    return replacement ? { by: 'owner_replacement', ...replacement } : null;
+    if (replacement) return { by: 'owner_replacement', ...replacement };
+    // Last, and weakest: this browser asked to join a space open to single sign-on.
+    const open = readOpenAdmission(cookieHeader, config, now().getTime());
+    if (open && openAdmissionAvailable(config)) {
+      const result = await pool.query(
+        "SELECT 1 FROM communities WHERE id=$1 AND admission_policy='open' AND lifecycle='active'",
+        [open]
+      );
+      if (result.rowCount) return { by: 'open', communityId: open };
+    }
+    return null;
   };
   /**
    * The subject each OIDC sign-up admitted only by a claim that names an account must carry,
@@ -207,7 +231,14 @@ export function createCommunityAuth(
             });
           }
           // A claim that names an account admits only that account, made through the host's
-          // sign-in service, never a password sign-up.
+          // sign-in service, never a password sign-up. An open space is the same: it never
+          // turns this gate into public password sign-up.
+          if (admission.by === 'open') {
+            throw new APIError('FORBIDDEN', {
+              code: 'single_sign_on_required',
+              message: 'Join this space through its single sign-on.',
+            });
+          }
           if (admission.by === 'owner_replacement' && admission.claimant) {
             throw new APIError('FORBIDDEN', {
               code: 'single_sign_on_required',
@@ -248,6 +279,25 @@ export function createCommunityAuth(
                 });
               namedSubjects.set(ctx, admission.claimant.subject);
             }
+            // An open space admits only a sign-up through the host's single sign-on callback,
+            // whose email the issuer verified (checked above for every provider callback).
+            if (admission.by === 'open' && (!ctx || !isOidcCallback(ctx)))
+              throw new APIError('FORBIDDEN', {
+                code: 'single_sign_on_required',
+                message: 'Join this space through its single sign-on.',
+              });
+            // A space that banned this email refuses a new account made to join it.
+            if (
+              (admission.by === 'open' || admission.by === 'grant') &&
+              admission.communityId &&
+              (await isBanned(
+                pool,
+                admission.communityId,
+                { email: user.email },
+                config.authSecret
+              ))
+            )
+              throw admissionRefused();
             refuseUnconfirmedAge(ctx?.headers?.get('cookie') ?? null);
             if (ctx) creatingUser.add(ctx);
             return { data: user };

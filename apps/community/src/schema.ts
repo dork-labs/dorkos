@@ -71,7 +71,7 @@ export const communities = pgTable(
     check('communities_settings_version', sql`${table.settingsVersion} > 0`),
     check(
       'communities_admission_policy',
-      sql`${table.admissionPolicy} IN ('invite_only','closed')`
+      sql`${table.admissionPolicy} IN ('invite_only','closed','open')`
     ),
     check(
       'communities_name_length',
@@ -765,6 +765,8 @@ export const channels = pgTable(
     lastSeq: bigint('last_seq', { mode: 'number' }).notNull().default(0),
     epoch: integer('epoch').notNull().default(1),
     createdAt: time('created_at'),
+    /** Every newly admitted person joins this channel, when it is public and not archived (0033). */
+    autoJoin: boolean('auto_join').notNull().default(false),
   },
   (table) => [uniqueIndex('channels_community_id_unique').on(table.communityId, table.id)]
 );
@@ -1546,6 +1548,79 @@ export const auditEvents = pgTable(
     }),
     check('audit_events_actor_kind', sql`${table.actorKind} IN ('member','system','host')`),
     check('audit_events_changed_fields', sql`cardinality(${table.changedFields}) <= 16`),
+  ]
+);
+
+/**
+ * A ban: refuses every way back into one community for an account and for its email (0033).
+ * `email_hash` is keyed with the auth secret (`moderation/bans.ts`); a ban is lifted, never
+ * deleted, so the moderators' record stays.
+ */
+export const bans = pgTable(
+  'bans',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
+    memberId: uuid('member_id'),
+    userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+    emailHash: text('email_hash'),
+    reason: text('reason'),
+    actorMemberId: uuid('actor_member_id'),
+    liftedByMemberId: uuid('lifted_by_member_id'),
+    /** `imported` for a ban an import restored from an owner export. */
+    origin: text('origin').notNull().default('native'),
+    createdAt: time('created_at'),
+    liftedAt: timestamp('lifted_at', { withTimezone: true }),
+  },
+  (table) => [
+    check(
+      'bans_email_hash_check',
+      sql`${table.emailHash} IS NULL OR ${table.emailHash} ~ '^[a-f0-9]{64}$'`
+    ),
+    check(
+      'bans_reason_check',
+      sql`${table.reason} IS NULL OR char_length(${table.reason}) BETWEEN 1 AND 500`
+    ),
+    check('bans_origin_check', sql`${table.origin} IN ('native','imported')`),
+    check(
+      'bans_lifted_shape',
+      sql`${table.liftedByMemberId} IS NULL OR ${table.liftedAt} IS NOT NULL`
+    ),
+    uniqueIndex('bans_community_id_unique').on(table.communityId, table.id),
+    uniqueIndex('bans_standing_member_unique')
+      .on(table.communityId, table.memberId)
+      .where(sql`${table.liftedAt} IS NULL AND ${table.memberId} IS NOT NULL`),
+    index('bans_community_user_idx').on(table.communityId, table.userId),
+    index('bans_community_email_idx').on(table.communityId, table.emailHash),
+    index('bans_user_idx')
+      .on(table.userId)
+      .where(sql`${table.userId} IS NOT NULL`),
+    index('bans_member_idx')
+      .on(table.memberId)
+      .where(sql`${table.memberId} IS NOT NULL`),
+    index('bans_actor_idx')
+      .on(table.actorMemberId)
+      .where(sql`${table.actorMemberId} IS NOT NULL`),
+    index('bans_lifted_by_idx')
+      .on(table.liftedByMemberId)
+      .where(sql`${table.liftedByMemberId} IS NOT NULL`),
+    foreignKey({
+      name: 'bans_member_tenant_fk',
+      columns: [table.communityId, table.memberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
+    foreignKey({
+      name: 'bans_actor_tenant_fk',
+      columns: [table.communityId, table.actorMemberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
+    foreignKey({
+      name: 'bans_lifted_by_tenant_fk',
+      columns: [table.communityId, table.liftedByMemberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
   ]
 );
 

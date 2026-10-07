@@ -21,6 +21,7 @@ import { ERASURE_POLL_MS, pruneErasureRequests, sweepErasures } from './erasure/
 import { pruneErasureJournal } from './erasure/journal.js';
 import { sweepExpiredPairings } from './routes/community/pairings.js';
 import { IMPORT_POLL_MS, pruneImports, sweepImports } from './imports/worker.js';
+import { banEmailKey } from './moderation/bans.js';
 import { IMPORT_UPLOAD_LEASE_MS } from './imports/store.js';
 import { sweepImportTempDirs } from './imports/upload.js';
 import { configureServerTimeouts } from './http.js';
@@ -266,13 +267,18 @@ const exports = startExportWorker({
   concurrency: config.exports.concurrency,
 });
 let importing = false;
+// Imports are held to this host's content limits, and key a carried-over ban with its secret.
+const importLimits = {
+  ...config.limits,
+  banEmailKey: (email: string) => banEmailKey(email, config.authSecret),
+};
 const imports = setInterval(() => {
   if (importing) return;
   importing = true;
   void (async () => {
     // One import at a time on this replica, a bounded number per tick.
     for (let claimed = 0; claimed < 10; claimed++) {
-      const result = await sweepImports(pool, blobStore, config.limits);
+      const result = await sweepImports(pool, blobStore, importLimits);
       if (!result.claimed) break;
     }
   })()

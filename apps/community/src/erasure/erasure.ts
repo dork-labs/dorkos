@@ -524,6 +524,12 @@ async function applyHusk(
        WHERE id=$2 AND community_id=$1`,
       [target.communityId, target.memberId, ERASED_MEMBER_NAME, handle]
     );
+    // A ban on this membership loses the account and the moderator's words about the person,
+    // and keeps its keyed email, so erasing an account is not a way back in (0033).
+    await client.query(
+      'UPDATE bans SET user_id=NULL,reason=NULL WHERE community_id=$1 AND member_id=$2',
+      [target.communityId, target.memberId]
+    );
     for (const agent of agents.rows) {
       const agentHandle = randomHuskHandle();
       await client.query(

@@ -7,6 +7,7 @@ import { ApiError } from '../http.js';
 import { queueNotice } from '../mail/outbox.js';
 import { OIDC_PROVIDER_ID } from '../oidc.js';
 import { clearFormerMembership } from '../routes/community/members.js';
+import { joinAutoJoinChannels, lockAutoJoinChannels } from '../admission/auto-join.js';
 import { formatReplacementDate } from './dates.js';
 import type { OwnerReplacementState } from './records.js';
 
@@ -169,6 +170,8 @@ export async function claimOwnerReplacement(
     throw new ApiError(409, 'STATE_CONFLICT', 'This space is not open to a new owner now.');
   await assertNamedAccount(client, replacement, claimant.userId, input.oidcIssuer);
 
+  // Channels before any member row, as every channel write takes them (DOR-2277).
+  const autoJoin = await lockAutoJoinChannels(client, found.community_id);
   const account = await client.query('SELECT 1 FROM "user" WHERE id=$1 FOR SHARE', [
     claimant.userId,
   ]);
@@ -210,6 +213,7 @@ export async function claimOwnerReplacement(
       own.id,
     ]);
     memberId = own.id;
+    await joinAutoJoinChannels(client, found.community_id, memberId, autoJoin);
   } else {
     const handle = await mintHandle(client, found.community_id, claimant.name);
     const inserted = await client.query<{ id: string }>(
@@ -222,6 +226,7 @@ export async function claimOwnerReplacement(
       'INSERT INTO community_handles(community_id,handle,member_id) VALUES($1,$2,$3)',
       [found.community_id, handle, memberId]
     );
+    await joinAutoJoinChannels(client, found.community_id, memberId, autoJoin);
   }
   await client.query('UPDATE communities SET lifecycle_version=lifecycle_version+1 WHERE id=$1', [
     found.community_id,

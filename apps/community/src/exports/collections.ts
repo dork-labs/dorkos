@@ -9,7 +9,13 @@ const PAGE_ROWS = 1_000;
 
 /** The manifest's name for each collection. */
 export type CollectionKey =
-  'channels' | 'members' | 'agents' | 'channelMembers' | 'agentChannelMembers' | 'auditEvents';
+  | 'channels'
+  | 'members'
+  | 'agents'
+  | 'channelMembers'
+  | 'agentChannelMembers'
+  | 'auditEvents'
+  | 'bans';
 
 /** Files and rows written for one collection. */
 export interface CollectionTally {
@@ -29,6 +35,7 @@ export function emptyTallies(): CollectionTallies {
     channelMembers: { files: [], count: 0 },
     agentChannelMembers: { files: [], count: 0 },
     auditEvents: { files: [], count: 0 },
+    bans: { files: [], count: 0 },
   };
 }
 
@@ -67,8 +74,8 @@ function specs(scope: ExportJobScope): CollectionSpec[] {
     {
       key: 'channels',
       prefix: 'channels',
-      select: `SELECT c.id,c.name,c.description,c.visibility,c.archived,c.created_at FROM channels c
-        WHERE c.community_id=$1 ${owner ? '' : 'AND c.id=ANY($3::uuid[])'}`,
+      select: `SELECT c.id,c.name,c.description,c.visibility,c.archived,c.created_at,c.auto_join
+        FROM channels c WHERE c.community_id=$1 ${owner ? '' : 'AND c.id=ANY($3::uuid[])'}`,
       keys: [uuidKey('c.id', 'id')],
       line: (row) =>
         JSON.stringify({
@@ -78,6 +85,7 @@ function specs(scope: ExportJobScope): CollectionSpec[] {
           visibility: row.visibility,
           archived: row.archived,
           created_at: iso(row.created_at),
+          auto_join: row.auto_join,
         }),
     },
     {
@@ -181,6 +189,27 @@ function specs(scope: ExportJobScope): CollectionSpec[] {
           next_state: row.next_state,
           changed_fields: row.changed_fields,
           created_at: iso(row.created_at),
+        }),
+    });
+  // Bans are the moderators' record, so owner and evidence exports carry them and a personal
+  // export does not. The email is the account's, as the members collection already shows it,
+  // so an import can key the ban again; the keyed hash itself means nothing on another host.
+  if (owner)
+    list.push({
+      key: 'bans',
+      prefix: 'bans',
+      select: `SELECT b.id,b.member_id,b.actor_member_id,u.email,b.reason,b.created_at,b.lifted_at
+        FROM bans b LEFT JOIN "user" u ON u.id=b.user_id WHERE b.community_id=$1`,
+      keys: [uuidKey('b.id', 'id')],
+      line: (row) =>
+        JSON.stringify({
+          id: row.id,
+          member_id: row.member_id,
+          actor_member_id: row.actor_member_id,
+          email: row.email ?? null,
+          reason: row.reason,
+          created_at: iso(row.created_at),
+          lifted_at: iso(row.lifted_at),
         }),
     });
   return list;

@@ -6,12 +6,15 @@ import { describeError, RequestError, request, tenantApiPath } from '../api.js';
 import { ExportPanel } from './ExportPanel.js';
 import { describeReauthenticationError } from '../account-controls.js';
 import type { Member } from '../types.js';
+import { useSignInOptions } from '../sign-in-options.js';
+
+type AdmissionPolicy = 'invite_only' | 'closed' | 'open';
 
 type Settings = {
   communityId: string;
   name: string;
   description: string | null;
-  admissionPolicy: 'invite_only' | 'closed';
+  admissionPolicy: AdmissionPolicy;
   hasIcon: boolean;
   settingsVersion: number;
   lifecycle: 'pending_owner' | 'active' | 'archived' | 'suspended' | 'held' | 'deletion_pending';
@@ -184,7 +187,9 @@ export function CommunityAdministration({
   const [etag, setEtag] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [admissionPolicy, setAdmissionPolicy] = useState<'invite_only' | 'closed'>('invite_only');
+  const [admissionPolicy, setAdmissionPolicy] = useState<AdmissionPolicy>('invite_only');
+  // Open admission runs through the host's single sign-on; without one it is not offered.
+  const singleSignOn = useSignInOptions().oidc;
   const [dialog, setDialog] = useState<DialogKind | null>(null);
   const [password, setPassword] = useState('');
   const [confirmName, setConfirmName] = useState('');
@@ -628,17 +633,25 @@ export function CommunityAdministration({
               Closing access revokes every open invitation and pending admission. No one new can
               join until you reopen it.
             </p>
+            {admissionPolicy === 'open' && (
+              <p className="small muted">
+                Anyone who signs in with {singleSignOn?.label ?? 'single sign-on'} can join.
+              </p>
+            )}
             <Label className="field" htmlFor="community-admission">
               Admission policy
               <select
                 id="community-admission"
                 value={admissionPolicy}
                 disabled={!editable || busy}
-                onChange={(event) =>
-                  setAdmissionPolicy(event.target.value as 'invite_only' | 'closed')
-                }
+                onChange={(event) => setAdmissionPolicy(event.target.value as AdmissionPolicy)}
               >
                 <option value="invite_only">Invite only</option>
+                {(singleSignOn || admissionPolicy === 'open') && (
+                  <option value="open">
+                    Open to anyone who signs in with {singleSignOn?.label ?? 'single sign-on'}
+                  </option>
+                )}
                 <option value="closed">Closed</option>
               </select>
             </Label>

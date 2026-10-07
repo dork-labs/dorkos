@@ -396,6 +396,16 @@ const schema = z.object({
     100
   ),
   COMMUNITY_PAIRING_ATTEMPTS_PER_MINUTE: integer('COMMUNITY_PAIRING_ATTEMPTS_PER_MINUTE', 5, 100),
+  // `0` refuses every open join on this host at once, whatever each space's policy says.
+  COMMUNITY_OPEN_ADMISSION: z.enum(['0', '1']).default('1'),
+  // Open joins (and their preflights) one caller address may make a minute.
+  COMMUNITY_OPEN_JOINS_PER_MINUTE: integer('COMMUNITY_OPEN_JOINS_PER_MINUTE', 5, 100),
+  // Open joins the whole host takes a minute, so a flood of new accounts cannot swamp it.
+  COMMUNITY_OPEN_JOINS_PER_HOST_PER_MINUTE: integer(
+    'COMMUNITY_OPEN_JOINS_PER_HOST_PER_MINUTE',
+    120,
+    10_000
+  ),
   COMMUNITY_HOST_KEY_ATTEMPTS_PER_MINUTE: integer(
     'COMMUNITY_HOST_KEY_ATTEMPTS_PER_MINUTE',
     20,
@@ -703,6 +713,11 @@ export function parseConfig(env: Record<string, unknown>) {
      * password, Google, GitHub or single sign-on; `null` when the host set none.
      */
     minimumAge: value.COMMUNITY_MINIMUM_AGE ?? null,
+    /**
+     * Whether a space set to `open` admits people who sign in through the host's single sign-on.
+     * `COMMUNITY_OPEN_ADMISSION=0` turns every open join off at once; invitations still work.
+     */
+    openAdmission: value.COMMUNITY_OPEN_ADMISSION === '1',
     /** The header a trusted proxy puts the caller's address in; per-caller limits read it. */
     trustedProxyHeader: value.COMMUNITY_TRUSTED_PROXY_HEADER?.toLowerCase(),
     /** Every short name no community may take: the built-in paths and this host's additions. */
@@ -746,6 +761,10 @@ export function parseConfig(env: Record<string, unknown>) {
       bootstrapAttemptsPerMinute: value.COMMUNITY_BOOTSTRAP_ATTEMPTS_PER_MINUTE,
       invitePreviewAttemptsPerMinute: value.COMMUNITY_INVITE_PREVIEW_ATTEMPTS_PER_MINUTE,
       pairingAttemptsPerMinute: value.COMMUNITY_PAIRING_ATTEMPTS_PER_MINUTE,
+      /** Open joins one caller address may make a minute. */
+      openJoinsPerMinute: value.COMMUNITY_OPEN_JOINS_PER_MINUTE,
+      /** Open joins the whole host takes a minute. */
+      openJoinsPerHostPerMinute: value.COMMUNITY_OPEN_JOINS_PER_HOST_PER_MINUTE,
       hostKeyAttemptsPerMinute: value.COMMUNITY_HOST_KEY_ATTEMPTS_PER_MINUTE,
       reauthAttemptsPerMinute: value.COMMUNITY_REAUTH_ATTEMPTS_PER_MINUTE,
       /** Requests for a mailed link one caller address (an IPv6 /64) may make a minute. */

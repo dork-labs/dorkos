@@ -78,6 +78,7 @@ const TENANT_TABLES = [
   'agents',
   'attachments',
   'audit_events',
+  'bans',
   'bootstrap_grants',
   'channel_members',
   'channels',
@@ -812,6 +813,13 @@ it('rejects foreign objects on every id-taking community route, even for an owne
       `isolation-${foreignReplacement}`,
     ]
   );
+  // A standing ban in B, written directly so B's member stays for the other probes.
+  const foreignBan = (
+    await pool.query<{ id: string }>(
+      'INSERT INTO bans(community_id,actor_member_id) VALUES($1,$2) RETURNING id',
+      [otherId, otherOwner]
+    )
+  ).rows[0].id;
   // Community A's own public channel, for probes that pair it with a foreign id.
   const home = await jsonRequest(`${own}/channels`, 'POST', {
     name: 'Isolation home',
@@ -867,6 +875,7 @@ it('rejects foreign objects on every id-taking community route, even for an owne
     archive: string;
     admission: string;
     replacement: string;
+    ban: string;
   };
   const foreign: Ids = {
     channel,
@@ -883,6 +892,7 @@ it('rejects foreign objects on every id-taking community route, even for an owne
     archive,
     admission: foreignAdmission,
     replacement: foreignReplacement,
+    ban: foreignBan,
   };
   const foreignPublic: Ids = { ...foreign, channel: publicChannel };
   // The same shapes with ids that exist nowhere: a foreign id must be refused
@@ -903,6 +913,7 @@ it('rejects foreign objects on every id-taking community route, even for an owne
     // Correctly signed, so it reaches the lookup, but matches no join attempt.
     admission: `community_admission=${signValue(randomToken(), 'a'.repeat(32))}`,
     replacement: randomUUID(),
+    ban: randomUUID(),
   };
   const { lifecycle_version: ownLifecycleVersion } = (
     await pool.query<{ lifecycle_version: number }>(
@@ -970,6 +981,11 @@ it('rejects foreign objects on every id-taking community route, even for an owne
       call: (x) => ({ path: `/members/${x.member}/role`, body: { role: 'admin' } }),
     },
     { route: 'DELETE /members/:id', call: (x) => ({ path: `/members/${x.member}`, body: {} }) },
+    {
+      route: 'POST /members/:id/ban',
+      call: (x) => ({ path: `/members/${x.member}/ban`, body: {} }),
+    },
+    { route: 'DELETE /bans/:id', call: (x) => ({ path: `/bans/${x.ban}`, body: {} }) },
     {
       route: 'POST /owner/transfer',
       call: (x) => ({
@@ -1172,6 +1188,11 @@ it('rejects foreign objects on every id-taking community route, even for an owne
     'POST /pairings/start': 'creates a new pairing; references nothing',
     'GET /takedowns': "lists the URL community's takedowns the caller may see",
     'GET /owner-replacement': "reads the URL community's open or completed replacement only",
+    'GET /bans': 'lists the URL community',
+    'GET /channels/auto-join': 'lists the URL community',
+    'GET /open-admission': 'reads the URL community only',
+    'POST /open-admission/preflight': 'the URL community only; references nothing',
+    'POST /open-admission/join': 'admits the caller to the URL community only; no body',
   };
 
   const scoped = '/api/v1/communities/:communityId';

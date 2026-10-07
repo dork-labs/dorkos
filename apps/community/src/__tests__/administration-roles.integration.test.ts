@@ -2616,7 +2616,13 @@ it('classifies every registered route, and puts every host and settings route in
     confirmPassword: unused,
     hasPassword: async () => true,
   });
-  registerAdministrationRoutes(modules, { pool, auth, blobStore, confirmPassword: unused });
+  registerAdministrationRoutes(modules, {
+    pool,
+    auth,
+    blobStore,
+    confirmPassword: unused,
+    singleSignOn: false,
+  });
   const administration = [
     ...new Set(modules.routes.map((route) => `${route.method} ${route.path}`)),
   ];

@@ -1324,8 +1324,8 @@ export const CommunityExportBanRowSchema = z.strictObject({
   id,
   member_id: nullableId,
   actor_member_id: nullableId,
-  email: z.string().nullable(),
-  reason: z.string().max(500).nullable(),
+  email: z.string().max(320).nullable(),
+  reason: z.string().min(1).max(500).nullable(),
   created_at: timestamp,
   lifted_at: timestamp.nullable(),
 });

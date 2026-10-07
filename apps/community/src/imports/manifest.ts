@@ -68,6 +68,11 @@ export interface ImportLimits {
   textBytes: number;
   /** `COMMUNITY_ATTACHMENT_BYTES`: the largest file one attachment may be. */
   attachmentBytes: number;
+  /**
+   * How this host keys a banned email (`banEmailKey` with its auth secret), so a ban the export
+   * carries holds here too. Without it, a restored ban keeps its record and keys nothing.
+   */
+  banEmailKey?: (email: string) => string;
 }
 /** The most attachment bytes one import restores. */
 export const MAX_IMPORT_ATTACHMENTS_BYTES = 1024 * 1024 * 1024;
