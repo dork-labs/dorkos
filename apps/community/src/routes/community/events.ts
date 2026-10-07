@@ -258,6 +258,8 @@ export function registerEventRoutes(
     if (!principal.credentialHash && !openedSession)
       throw new ApiError(401, 'UNAUTHENTICATED', 'Sign in to continue.');
     const channel = await liveChannel(pool, c.req.param('id'), principal);
+    // A caller already gone holds no place: nothing would ever release it.
+    if (c.req.raw.signal.aborted) return new Response(null, { status: 499 });
     let live: LiveStream;
     try {
       live = await hub.open({
@@ -272,6 +274,9 @@ export function registerEventRoutes(
         throw new ServiceBusy('Live updates are busy. Try again shortly.', STREAM_RETRY_SECONDS);
       throw error;
     }
+    // Check access once as soon as the stream starts: a revocation that committed while this
+    // request was being authorized sent its notice before the stream was in the hub.
+    live.access.raise();
     try {
       return await openStream(c, principal, openedSession, channel, live);
     } catch (error) {
@@ -327,6 +332,11 @@ export function registerEventRoutes(
     }
     const encoder = new TextEncoder();
     let closed = false;
+    /**
+     * Access ended while the reader was not taking events. The closed frame waits for its next
+     * pull rather than being dropped: the reader learns why the stream ended.
+     */
+    let closeWhenRead: Exclude<Awaited<ReturnType<typeof streamCloseReason>>, null> | null = null;
     let replayComplete = false;
     let lastHeartbeat = Date.now();
     const currentCursor = () =>
@@ -455,8 +465,8 @@ export function registerEventRoutes(
               if (closed) return;
               const reason = await closeReason(await checkAccess());
               if (closed || !reason) continue;
-              stop();
               if (controller.desiredSize !== null && controller.desiredSize > 0) {
+                stop();
                 writeEvent(controller, {
                   type: 'closed',
                   reason,
@@ -464,8 +474,12 @@ export function registerEventRoutes(
                 });
                 controller.close();
               } else {
-                controller.error(new Error('Community stream access ended'));
+                // The reader is behind: `pull` sends the closed frame once it reads again, and
+                // sends nothing else first.
+                closeWhenRead = reason;
+                live.entries.raise();
               }
+              return;
             }
           })().catch(() => {
             if (!closed) {
@@ -473,6 +487,12 @@ export function registerEventRoutes(
               controller.error(new Error('Community stream unavailable'));
             }
           });
+          if (c.req.raw.signal.aborted) {
+            // The caller left while the snapshot was read: no abort event is coming.
+            stop();
+            controller.close();
+            return;
+          }
           c.req.raw.signal.addEventListener(
             'abort',
             () => {
@@ -488,6 +508,13 @@ export function registerEventRoutes(
           if (closed) return;
           try {
             while (!closed) {
+              if (closeWhenRead) {
+                const reason = closeWhenRead;
+                stop();
+                writeEvent(controller, { type: 'closed', reason, cursor: currentCursor() });
+                controller.close();
+                return;
+              }
               if (!replayComplete && position >= capturedSeq) {
                 replayComplete = true;
                 writeEvent(controller, {
@@ -556,6 +583,8 @@ export function registerEventRoutes(
       },
       { highWaterMark: 1 }
     );
+    // Left during the last await: `start` saw it, but make sure the place is given back.
+    if (c.req.raw.signal.aborted) stop();
     return new Response(stream, {
       headers: {
         'content-type': 'text/event-stream',
