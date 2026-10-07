@@ -2,7 +2,7 @@
 
 > **Canon, and a design guide.** How a DorkOS agent takes initiative: what it does when nobody is talking to it, when it acts, when it asks, when it stays quiet, and how it reports up. It sits beside the north-star set ([`VISION.md`](VISION.md), [`PRINCIPLES.md`](PRINCIPLES.md), [`VOICE.md`](VOICE.md), [`ROADMAP.md`](ROADMAP.md)) and follows them. Written 2026-10-07 at Dorian's request. The evidence behind it is [`research/20261007_proactive-persistent-agents.md`](../research/20261007_proactive-persistent-agents.md).
 >
-> **Status: decided direction, mostly not built.** Schedules (Tasks), agent memory (`MEMORY.md`), rooms, notes to a person (`relay_notify_user`) and the decision-model ladder (`packages/decisions`) exist today. The heartbeat, `HEARTBEAT.md`, reporting lines, agent templates, the commitments list and the measures below are roadmap (DOR-2788). Section 9 and the decisions in section 10 were added on 2026-10-07 after Dorian answered the open questions and four role-plays tested the design ([`research/20261007_agent-teams-role-play.md`](../research/20261007_agent-teams-role-play.md)). Public copy follows the demo-claim gate in [`ROADMAP.md`](ROADMAP.md#the-demo-claim-gate): never say an agent checks in on its own until heartbeats ship.
+> **Status: decided direction, mostly not built.** Schedules (Tasks), agent memory (`MEMORY.md`), rooms, notes to a person (`relay_notify_user`) and the decision-model ladder (`packages/decisions`) exist today. The heartbeat and `HEARTBEAT.md` ship before launch and are not built yet (DOR-2788); reporting lines, agent templates, the commitments list and the measures below are roadmap. Section 9 and the decisions in section 10 were added on 2026-10-07 after Dorian answered the open questions and four role-plays tested the design ([`research/20261007_agent-teams-role-play.md`](../research/20261007_agent-teams-role-play.md)). Public copy follows the demo-claim gate in [`ROADMAP.md`](ROADMAP.md#the-demo-claim-gate): never say an agent checks in on its own until heartbeats ship.
 
 ---
 
@@ -369,7 +369,7 @@ Decided with Dorian on 2026-10-07:
 1. **Reports-to on every profile, optional.** Defaults in section 9.2.
 2. **Proactive by default for every agent,** with how it wakes, how far it reaches and what it asks about set by its type (section 9.1).
 3. **Heartbeats need the audit trail first** (to record beats) and decision models (to make beats cheap). Doe carries them natively. Heartbeat content is a skill; the beat runner is platform (section 5.7).
-4. **No built-in spending caps.** Money limits live on the card an agent is given, plus its instructions and budgeting skills. Giving an agent money power is an ask (P3). AI usage (DorkOS credits or a person's own plan) is not capped and not built; the only planned visibility is each beat's cost in the record, and for bring-your-own runtimes its share of the plan's limit.
+4. **No built-in spending caps.** Money limits live on the card an agent is given, plus its instructions and budgeting skills. Giving an agent money power is an ask (P3). AI usage (DorkOS credits or a person's own plan) is not capped and not built; the planned visibility is each beat's cost in the record and the agent's settings (where the cost of triage on DorkOS credits shows), and for bring-your-own runtimes its share of the plan's limit.
 
 ## 11. Related
 
