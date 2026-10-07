@@ -183,7 +183,7 @@ Naming: commands `verb`/`noun`; agents `domain-expert`; skills `verb-ing-noun` (
 
 **Harness maintenance**: `/system:ask` (how do I…), `/system:learn` (experiment, then codify), `/system:update` (add/change a process), `/system:review` (audit for staleness/consistency/Opus-fit), `/system:release` (release + harness-maintenance phase).
 
-**Parallel execution**: fan out independent work as multiple Agent calls in one message; `run_in_background: true` for long tasks (completion notifies automatically). Patterns and decision framework: `contributing/parallel-execution.md` + the `orchestrating-parallel-work` skill.
+**Parallel execution**: fan out independent work as multiple Agent calls in one message; `run_in_background: true` for long tasks (completion notifies automatically). Patterns, decision framework and the landing playbook: the `orchestrating-parallel-work` skill.
 
 ## Maintaining the Harness
 

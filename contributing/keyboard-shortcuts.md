@@ -164,7 +164,7 @@ drive is a desktop-app feature: a browser already has tabs, and a browser's tab 
 its business and varies by platform — `Cmd+Shift+[`/`]` is a macOS Chrome/Safari binding, while
 Chrome and Firefox on Windows and Linux step tabs with `Ctrl+PageUp`/`Ctrl+PageDown` — so on those
 two of the four do nothing at all, and that is fine. The claim we can make is the one about us: the
-browser cockpit registers nothing and cancels nothing. Do not "fix" this by `preventDefault`ing
+browser app registers nothing and cancels nothing. Do not "fix" this by `preventDefault`ing
 harder, and do not re-enable the strip in the browser to give the chords something to do — that is
 the regression this gate exists to prevent.
 
@@ -217,7 +217,7 @@ highlighted one, so the pair is learned by using the palette rather than by read
 The agent sub-menu offers **Open Here**, **Open in New Tab** (`openLink(href, { target: 'tab' })`)
 and — in the desktop app only — **Open in New Window** (`openLink(href, { target: 'window' })`).
 "Tab" and "window" are separate `LinkTarget`s on purpose: folding the second into the first deletes
-the only way to ask for a second cockpit window. They resolve the same `?session=` up front
+the only way to ask for a second app window. They resolve the same `?session=` up front
 (`agentHref`), so they agree on which session an agent is on, and neither inherits the `?session=`
 you were already reading.
 

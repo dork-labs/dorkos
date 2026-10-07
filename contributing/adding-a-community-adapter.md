@@ -2,7 +2,7 @@
 
 ## Overview
 
-This guide walks through adding a backend behind the `CommunityAdapter` port: the fourth swappable seam beside `AgentRuntime`, `Transport` and `ConnectorProvider`. A community adapter lets one local DorkOS server read and write rooms **somewhere other than this machine** — without the cockpit, the router or the session spine learning that more than one place exists.
+This guide walks through adding a backend behind the `CommunityAdapter` port: the fourth swappable seam beside `AgentRuntime`, `Transport` and `ConnectorProvider`. A community adapter lets one local DorkOS server read and write rooms **somewhere other than this machine** — without the app, the router or the session spine learning that more than one place exists.
 
 ```
 client ──Transport──▶ your local DorkOS server ──CommunityAdapter──▶ ┌ local rooms   (SQLite, shipped today)
@@ -58,7 +58,7 @@ Spec: [`specs/community-adapter/02-specification.md`](../specs/community-adapter
 | `signals`        | `none` / `both`                             | `publishSignal`                                                                                |
 | `credential`     | `none` / `machine-managed` / `user-account` | What holding a credential means for this backend                                               |
 
-**Presence crossing the port carries the verb and never the target.** A room's own presence signal can say what the turn is doing — `SessionActivity`, the tool's name plus its one human-relevant argument. That argument is a file's basename, a command's first line, a search pattern or a host: it is one person's work, and it stays inside the cockpit that person is looking at. `CommunityPresencePayloadSchema` has **no field for it**, and that is the enforcement rather than an oversight — a community backend cannot honestly do anything with a verb today, and adding the field would be the first half of a leak somebody completes later. `toCommunitySignal` in the local adapter is where the same rule is applied on the way out, with a test that fails if the projection ever starts carrying one (ADR `260819-022127`).
+**Presence crossing the port carries the verb and never the target.** A room's own presence signal can say what the turn is doing — `SessionActivity`, the tool's name plus its one human-relevant argument. That argument is a file's basename, a command's first line, a search pattern or a host: it is one person's work, and it stays inside the app that person is looking at. `CommunityPresencePayloadSchema` has **no field for it**, and that is the enforcement rather than an oversight — a community backend cannot honestly do anything with a verb today, and adding the field would be the first half of a leak somebody completes later. `toCommunitySignal` in the local adapter is where the same rule is applied on the way out, with a test that fails if the projection ever starts carrying one (ADR `260819-022127`).
 
 Two flags people reach for and will not find. There is **no resume flag**: a gap-free resume is a property of the port that every adapter owes (see below). There is **no roster flag**: all three backends enumerate members, so `listMembers` is universal — what differs is roles, and those have one.
 

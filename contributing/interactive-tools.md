@@ -555,7 +555,7 @@ await transport.submitElicitation(sessionId, elicitationId, { action: 'cancel' }
 | `services/runtimes/claude-code/messaging/interactive-handlers.ts` | `handleElicitation()` — deferred promise, event queue push                  |
 | `services/runtimes/claude-code/messaging/interaction-wait.ts`     | The pending-entry shapes, the park/refusal timers, the notices and the logs |
 | `apps/server/src/routes/sessions.ts`                              | `POST /:id/submit-elicitation` route                                        |
-| `apps/client/src/layers/features/chat/ui/ElicitationPrompt.tsx`   | Dynamic form renderer from JSON Schema                                      |
+| `apps/client/src/layers/features/ask/ui/ElicitationPrompt.tsx`    | Dynamic form renderer from JSON Schema                                      |
 | `packages/shared/src/schemas.ts`                                  | `ElicitationPromptEventSchema`, `ElicitationResultSchema`                   |
 
 ## Adding a New Interactive Tool
@@ -834,7 +834,8 @@ Agent calls control_ui (a `ui` capability, on any runtime)
 The session's /events stream carries it to every window on that session
   |
   v
-Client stream-event-handler.ts receives 'ui_command' event
+Client StreamManager (shared/lib/transport/stream-manager.ts) receives 'ui_command'
+  |  (attached session only) and hands it to the subscriber main.tsx registered
   |
   |  Extracts the UiCommand from event data
   |  Gets the current Zustand store state
@@ -881,13 +882,13 @@ This two-way channel -- `uiState` in (client tells agent what is visible) and `u
 
 ### Implementation Files
 
-| File                                                                 | Purpose                                                                  |
-| -------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `packages/shared/src/schemas.ts`                                     | `UiCommandSchema`, `UiStateSchema`, `UiCanvasContentSchema` definitions  |
-| `apps/server/src/services/session/browser-seat/ui-control.ts`        | `control_ui` and `get_ui_state` handlers, shared by every runtime        |
-| `apps/server/src/services/session/browser-seat/ui-capabilities.ts`   | The `ui` domain: every verb's name, tier, schema and description         |
-| `apps/client/src/layers/shared/lib/ui-action-dispatcher.ts`          | `executeUiCommand()` -- pure dispatcher, no React dependencies           |
-| `apps/client/src/layers/features/chat/model/stream-event-handler.ts` | Processes `ui_command` SSE events and dispatches to `executeUiCommand()` |
+| File                                                               | Purpose                                                                                                                          |
+| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/shared/src/schemas.ts`                                   | `UiCommandSchema`, `UiStateSchema`, `UiCanvasContentSchema` definitions                                                          |
+| `apps/server/src/services/session/browser-seat/ui-control.ts`      | `control_ui` and `get_ui_state` handlers, shared by every runtime                                                                |
+| `apps/server/src/services/session/browser-seat/ui-capabilities.ts` | The `ui` domain: every verb's name, tier, schema and description                                                                 |
+| `apps/client/src/layers/shared/lib/ui-action-dispatcher.ts`        | `executeUiCommand()` -- pure dispatcher, no React dependencies                                                                   |
+| `apps/client/src/layers/shared/lib/transport/stream-manager.ts`    | Gates `ui_command` events to the attached session and notifies subscribers; `main.tsx` subscribes and calls `executeUiCommand()` |
 
 ## Capability Approval Holds
 
@@ -987,7 +988,7 @@ The `ApprovalPrompt` component makes the server-side timeout visible to users vi
 - Screen reader announcements via `aria-live="assertive"` fire only at threshold crossings (2 min, 1 min, timeout)
 - `prefers-reduced-motion` respected via `motion-safe:` Tailwind prefix — animation disabled, color transitions remain
 
-**Data flow:** Server `handleToolApproval()` → `approval_required` event on the session stream (server-authoritative `startedAt`/`remainingMs`, seeded from `SESSIONS.INTERACTION_TIMEOUT_MS`) → stream-event-handler passes to tool call part → `ApprovalPrompt` renders the countdown, resuming at the true offset on recovery.
+**Data flow:** Server `handleToolApproval()` → `approval_required` event on the session stream (server-authoritative `startedAt`/`remainingMs`, seeded from `SESSIONS.INTERACTION_TIMEOUT_MS`) → the client turn projection (`features/chat/model/stream/project-session-turn.ts`) folds it onto the tool call part → `ApprovalPrompt` renders the countdown, resuming at the true offset on recovery.
 
 ### Recovering Pending Interactions
 
@@ -1095,7 +1096,7 @@ When users configure hooks in Claude Code, DorkOS surfaces their execution:
 - **Session-level hooks** (SessionStart, UserPromptSubmit, etc.) show in SystemStatusZone
 - **Hook failures** are always visible — tool card stays expanded, session failures escalate to error banner
 
-Hook events flow through the standard pipeline: `sdk-event-mapper.ts` → SSE → `stream-event-handler.ts` → `ToolCallCard`.
+Hook events flow through the standard pipeline: `sdk-event-mapper.ts` → session stream → client turn projection (`project-session-turn.ts`) → `ToolCallCard`.
 
 ### Routing Logic
 
