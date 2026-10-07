@@ -88,6 +88,7 @@ export function createLiveHub(config: CommunityConfig): LiveHub {
     listenUrl: config.database.listenUrl,
     maxStreams: config.streams.max,
     maxStreamsPerCommunity: config.streams.perCommunity,
+    maxStreamsPerMember: config.streams.perMember,
     fallbackMs: config.streams.fallbackMs,
   });
 }
@@ -425,7 +426,7 @@ export function createCommunityApp({
     limitKeyMiss: (c) =>
       limitAttempts(`host-key:${peer(c)}`, config.limits.hostKeyAttemptsPerMinute),
   });
-  registerMonitoringRoutes(app, { pool, hub: live, authority });
+  registerMonitoringRoutes(app, { pool, hub: live, authority, databaseUrl: config.databaseUrl });
   registerHostLinkRoutes(app, { config });
   registerMinimumAgeRoutes(app, { config, now });
   const hostApi = new Hono();

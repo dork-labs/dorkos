@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { REMOVED_ENTRY_TEXT, type RemovedBy } from './content/tombstones.js';
 import { ApiError } from './http.js';
-import { notifyLive } from './live/notices.js';
 
 /** A named, content-free reason a content change could not be made. */
 export class ContentChangeError extends Error {
@@ -125,13 +124,8 @@ export async function recordRedactions(
      FROM unnest($2::uuid[],$3::uuid[]) AS changed(id,channel_id)`,
     [communityId, changed.map((row) => row.entryId), changed.map((row) => row.channelId)]
   );
-  // Every removal, redaction and erasure passes through here: wake the channels it touched.
-  await notifyLive(
-    client,
-    ...[...new Set(changed.map((row) => row.channelId))].map(
-      (channelId) => ({ k: 'content', c: communityId, ch: channelId }) as const
-    )
-  );
+  // No live notice: a stream sends new entries by sequence, and a removal or redaction adds
+  // none. Readers learn of it from the redaction feed, which this row is.
 }
 
 /**

@@ -312,6 +312,9 @@ const schema = z.object({
   // either a new stream is refused with 503 and Retry-After.
   COMMUNITY_STREAMS_MAX: between(1, 25_000, 1_000_000),
   COMMUNITY_STREAMS_PER_COMMUNITY: between(1, 20_000, 1_000_000),
+  // Live streams one person, or one agent, may hold at once: a stuck client that keeps
+  // reconnecting cannot take a community's whole quota.
+  COMMUNITY_STREAMS_PER_MEMBER: between(1, 16, 1_000),
   // How long a quiet live stream waits before it re-reads anyway, in case a notice was lost.
   COMMUNITY_STREAM_FALLBACK_MS: between(250, 15_000, 300_000),
   COMMUNITY_AUTH_SECRET: z.string().min(32),
@@ -684,6 +687,7 @@ export function parseConfig(env: Record<string, unknown>) {
     streams: {
       max: value.COMMUNITY_STREAMS_MAX,
       perCommunity: value.COMMUNITY_STREAMS_PER_COMMUNITY,
+      perMember: value.COMMUNITY_STREAMS_PER_MEMBER,
       fallbackMs: value.COMMUNITY_STREAM_FALLBACK_MS,
     },
     authSecret: value.COMMUNITY_AUTH_SECRET,

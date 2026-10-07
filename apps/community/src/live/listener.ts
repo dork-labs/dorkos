@@ -16,6 +16,11 @@ export const LIVE_SELF_TEST_MS = 5_000;
 /** How the listener's connection names itself in `pg_stat_activity`. */
 export const LIVE_LISTENER_APPLICATION_NAME = 'dorkos-community-live';
 const CONNECT_TIMEOUT_MS = 5_000;
+/** How often the listener proves its connection still answers, and how long it waits. */
+export const LIVE_PROBE_MS = 30_000;
+const PROBE_TIMEOUT_MS = 5_000;
+/** TCP keepalive starts this long after the connection goes quiet. */
+const KEEPALIVE_DELAY_MS = 10_000;
 const RECONNECT_FIRST_MS = 250;
 const RECONNECT_MAX_MS = 5_000;
 
@@ -32,7 +37,12 @@ export interface LiveListenerOptions {
   onReconnect: () => void;
   /** Where connection trouble is reported. IDs and error names only. */
   log?: (message: string, detail: string) => void;
+  /** How often to probe the connection, and how long a probe may take. Tests shorten both. */
+  probe?: { everyMs: number; timeoutMs: number };
 }
+
+/** The socket under a `pg` client, which its types do not expose. */
+type WithSocket = { connection?: { stream?: { destroy(): void } } };
 
 /**
  * The single `LISTEN` connection for this process. It holds one dedicated connection outside the
@@ -46,6 +56,7 @@ export class LiveListener {
   private retryMs = RECONNECT_FIRST_MS;
   private connecting: Promise<void> | null = null;
   private everListened = false;
+  private probeTimer: ReturnType<typeof setInterval> | null = null;
   private readonly probes = new Map<string, () => void>();
   private readonly log: (message: string, detail: string) => void;
   /** Where the connection stands now. */
@@ -74,6 +85,10 @@ export class LiveListener {
       application_name: LIVE_LISTENER_APPLICATION_NAME,
       // A stream waits for this connection before its first read; never let it wait forever.
       connectionTimeoutMillis: CONNECT_TIMEOUT_MS,
+      // A connection that silently died (a NAT or proxy dropped it) delivers nothing and raises
+      // no error. Keepalive notices that at the TCP level; the probe below at the query level.
+      keepAlive: true,
+      keepAliveInitialDelayMillis: KEEPALIVE_DELAY_MS,
     });
     client.on('notification', (message) => {
       if (message.channel !== LIVE_NOTICE_CHANNEL) return;
@@ -91,6 +106,7 @@ export class LiveListener {
     client.on('end', () => {
       if (this.client !== client) return;
       this.client = null;
+      this.stopProbe();
       if (!this.wanted) {
         this.state = 'idle';
         return;
@@ -120,6 +136,7 @@ export class LiveListener {
     this.client = client;
     this.state = 'listening';
     this.retryMs = RECONNECT_FIRST_MS;
+    this.startProbe();
     if (this.everListened) {
       this.reconnects += 1;
       this.options.onReconnect();
@@ -166,9 +183,62 @@ export class LiveListener {
     }
   }
 
+  /** Whether this listener has ever been listening: a later connect is then a reconnect. */
+  get hasListened(): boolean {
+    return this.everListened;
+  }
+
+  /**
+   * One round trip on the listen connection, outside the request pool, so a busy pool cannot
+   * make it look down. False when it is not listening, fails, or takes too long.
+   */
+  async ping(timeoutMs = PROBE_TIMEOUT_MS): Promise<boolean> {
+    const client = this.client;
+    if (!client) return false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        client.query('SELECT 1').then(() => true),
+        new Promise<boolean>((resolve) => {
+          timer = setTimeout(() => resolve(false), timeoutMs);
+        }),
+      ]);
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  private startProbe(): void {
+    this.stopProbe();
+    const { everyMs, timeoutMs } = this.options.probe ?? {
+      everyMs: LIVE_PROBE_MS,
+      timeoutMs: PROBE_TIMEOUT_MS,
+    };
+    this.probeTimer = setInterval(() => {
+      const client = this.client;
+      if (!client) return;
+      void this.ping(timeoutMs).then((alive) => {
+        if (alive || this.client !== client) return;
+        this.log('Community live updates connection stopped answering', 'probe');
+        // `end` would wait for a reply that never comes; cutting the socket emits `end` at once,
+        // which reconnects and wakes every stream to re-read what it missed.
+        (client as unknown as WithSocket).connection?.stream?.destroy();
+      });
+    }, everyMs);
+    this.probeTimer.unref();
+  }
+
+  private stopProbe(): void {
+    if (this.probeTimer) clearInterval(this.probeTimer);
+    this.probeTimer = null;
+  }
+
   /** Drop the connection and stop reconnecting. `open` starts it again. */
   async close(): Promise<void> {
     this.wanted = false;
+    this.stopProbe();
     if (this.retryTimer) clearTimeout(this.retryTimer);
     this.retryTimer = null;
     const client = this.client;

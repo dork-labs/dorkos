@@ -1,5 +1,5 @@
 import type { Hono } from 'hono';
-import type { Pool } from 'pg';
+import { Client, type Pool } from 'pg';
 import type { HostAuthority } from '../host/authority.js';
 import type { LiveHub } from './hub.js';
 
@@ -43,6 +43,7 @@ export function renderMetrics(hub: LiveHub, pool: Pool): string {
     [
       ['{limit="host"}', figures.refused.host],
       ['{limit="community"}', figures.refused.community],
+      ['{limit="member"}', figures.refused.member],
     ]
   );
   metric('community_posts_per_minute', 'gauge', 'Messages posted in the last minute.', [
@@ -90,6 +91,30 @@ export function renderMetrics(hub: LiveHub, pool: Pool): string {
 }
 
 /**
+ * One database round trip that never queues behind the request pool, so a storm of live-stream
+ * rechecks cannot fail readiness. It uses the listen connection when that is up, and otherwise a
+ * short-lived connection of its own.
+ */
+async function databaseAnswers(hub: LiveHub, databaseUrl: string): Promise<boolean> {
+  if (hub.listenerState === 'listening') return hub.ping();
+  const client = new Client({
+    connectionString: databaseUrl,
+    connectionTimeoutMillis: READY_DATABASE_MS,
+    query_timeout: READY_DATABASE_MS,
+  });
+  client.on('error', () => undefined);
+  try {
+    await client.connect();
+    await client.query('SELECT 1');
+    return true;
+  } catch {
+    return false;
+  } finally {
+    await client.end().catch(() => undefined);
+  }
+}
+
+/**
  * Register `/health/ready` and `/metrics`. `/health` stays a pure liveness probe elsewhere.
  *
  * Readiness needs a database round trip and, once the server pinned it at boot, a listening
@@ -98,19 +123,15 @@ export function renderMetrics(hub: LiveHub, pool: Pool): string {
  */
 export function registerMonitoringRoutes(
   app: Hono,
-  { pool, hub, authority }: { pool: Pool; hub: LiveHub; authority: HostAuthority }
+  {
+    pool,
+    hub,
+    authority,
+    databaseUrl,
+  }: { pool: Pool; hub: LiveHub; authority: HostAuthority; databaseUrl: string }
 ): void {
   app.get('/health/ready', async (c) => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const database = await Promise.race([
-      pool.query('SELECT 1').then(
-        () => 'ok' as const,
-        () => 'unavailable' as const
-      ),
-      new Promise<'unavailable'>((resolve) => {
-        timer = setTimeout(() => resolve('unavailable'), READY_DATABASE_MS);
-      }),
-    ]).finally(() => clearTimeout(timer));
+    const database = (await databaseAnswers(hub, databaseUrl)) ? 'ok' : 'unavailable';
     const listener = hub.listenerState;
     const ready = database === 'ok' && (listener === 'listening' || !hub.listenerRequired);
     c.header('Cache-Control', 'no-store');

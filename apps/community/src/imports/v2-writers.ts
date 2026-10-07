@@ -303,6 +303,9 @@ const writeEntries: BatchWriter<'entries'> = async (client, rows, scope) => {
       erased_at: entry.removal === 'erased' ? entry.created_at : null,
     };
   });
+  // No live notice: an import writes only into a community still waiting for its owner
+  // (imports/job.ts refuses any other), and nobody can open a stream there until the claim
+  // makes it active. Every stream opened after that reads the imported history from the start.
   wroteAll(
     await insertRows(
       client,

@@ -127,6 +127,9 @@ export async function insertImportedRows(
       ? sequences.get(a.id)! - sequences.get(b.id)!
       : a.channel_id.localeCompare(b.channel_id)
   );
+  // No live notice: an import writes only into a community still waiting for its owner
+  // (imports/job.ts refuses any other), and nobody can open a stream there until the claim
+  // makes it active. Every stream opened after that reads the imported history from the start.
   await insert(
     `INSERT INTO entries(id,community_id,channel_id,seq,author_member_id,author_agent_id,
        author_display_name,text,parent_entry_id,thread_root_entry_id,idempotency_key,payload_hash,

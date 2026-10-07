@@ -12,8 +12,6 @@ const id = z.string().min(1).max(64);
  * what it needs itself.
  *
  * - `entry`: a new message in a channel. Wakes that channel's streams and counts as a post.
- * - `content`: messages in a channel were removed, redacted or restored in bulk. Wakes the
- *   channel's streams without counting as posts.
  * - `channel`: a channel was archived, reopened, deleted or had its history reset. Rechecks
  *   every stream on the channel.
  * - `community`: the space's lifecycle changed (held, suspended, archived, taken down, deleted).
@@ -27,7 +25,6 @@ const id = z.string().min(1).max(64);
  */
 export const LiveNoticeSchema = z.discriminatedUnion('k', [
   z.object({ k: z.literal('entry'), c: id, ch: id }),
-  z.object({ k: z.literal('content'), c: id, ch: id }),
   z.object({ k: z.literal('channel'), c: id, ch: id }),
   z.object({ k: z.literal('community'), c: id }),
   z.object({ k: z.literal('member'), c: id, m: id }),
