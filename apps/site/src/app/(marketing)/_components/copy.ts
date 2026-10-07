@@ -11,7 +11,8 @@ export interface Block {
  * Every word on the home page, in one file.
  *
  * The page's whole argument is about six sentences long, and several of them
- * are settled: "A workspace for people and agents." is the category line, and
+ * are settled: "Ask for a tool. Your agents build it." is the lead line of the
+ * 2026-10-06 positioning (mini apps first, then founders, then ownership), and
  * "You, multiplied." is the product's tagline. Keeping them here rather than
  * scattered through the components means the word budget is one thing you can
  * read end to end, and `__tests__/home-copy.test.ts` can hold the settled
@@ -26,11 +27,19 @@ export interface Block {
  */
 export const HERO: Block = {
   eyebrow: 'for founders',
-  title: 'A workspace for people and agents.',
-  lede: 'You and your agents talk in channels and DMs. Hand them the work, and get on with yours.',
+  title: 'Ask for a tool. Your agents build it.',
+  lede: 'Your agents build the dashboards and trackers your business needs, right inside DorkOS. On your computer, with your files. Free and open source.',
 };
 
-/** What the pinned stage says at each of its three moments. */
+/**
+ * What the pinned stage says at each of its three moments.
+ *
+ * The talk beat is table stakes: every workspace for people and agents has
+ * channels and DMs, so it says what happens and claims no edge. The other two
+ * carry the differentiators in order. "yours" is mini apps (an agent builds
+ * an extension and it opens only after a person says yes, which is what the
+ * chat shows), and "computer" is ownership.
+ */
 export const BEATS: Record<Beat, Block> = {
   talk: {
     eyebrow: 'people + agents',
@@ -38,14 +47,14 @@ export const BEATS: Record<Beat, Block> = {
     lede: 'You talk to them. They talk to each other. Work happens out loud.',
   },
   yours: {
-    eyebrow: 'what you add',
-    title: 'Make it yours.',
-    lede: 'Add a skill. Set a schedule. Pick where they reach you.',
+    eyebrow: 'mini apps',
+    title: 'Ask for the tool you need.',
+    lede: 'Your agents build it right inside DorkOS. It opens once you say yes.',
   },
   computer: {
-    eyebrow: 'yours alone',
-    title: 'It all happens on your computer.',
-    lede: 'Your files stay home. It is free, with no account to make. DorkOS Cloud is optional.',
+    eyebrow: 'all yours',
+    title: 'Your computer. Your files. Your AI plan.',
+    lede: 'Use the AI plan you already pay for. Open source, free forever, and no DorkOS account needed.',
   },
 };
 

@@ -36,7 +36,9 @@ export const metadata: Metadata = {
 };
 
 /**
- * The DorkOS origin story: Dorian's personal arc from LifeOS to a workspace for people and agents.
+ * The DorkOS origin story: Dorian's personal arc from LifeOS to DorkOS. The closing
+ * vision cards frame its value as the three differentiators (mini apps, built for
+ * founders, ownership).
  *
  * Add ?present=true for presentation mode: full-screen snap sections + keyboard navigation.
  */

@@ -9,8 +9,8 @@ export type FeatureStatus = 'ga' | 'beta' | 'alpha' | 'coming-soon';
 
 /**
  * DorkOS product subsystem — used for tab filtering on /features.
- * `console` leads because the rooms where people and agents talk are the
- * headline story; `marketplace` is the distribution flywheel.
+ * `console` leads because it holds the headline story: mini apps, and the
+ * rooms where people and agents talk; `marketplace` is the distribution flywheel.
  */
 export type FeatureProduct =
   'runtimes' | 'console' | 'tasks' | 'relay' | 'marketplace' | 'mesh' | 'core';
@@ -256,22 +256,22 @@ export const features: Feature[] = [
     name: 'Claude Code, Codex, and OpenCode',
     product: 'runtimes',
     category: 'agent-control',
-    tagline: 'Each agent thinks with Claude Code, Codex, or OpenCode: your pick',
+    tagline: 'Each agent thinks with Claude Code, Codex, or OpenCode, on your own plan',
     description:
-      'Claude Code, Codex, and OpenCode are three different AI tools. Each agent runs on the one you pick, so one team can mix all three.',
+      'Claude Code, Codex, and OpenCode are three different AI tools. Each agent runs on the one you pick, signed in with your own account.',
     status: 'ga',
     benefits: [
-      'Run Claude Code, Codex, and OpenCode side by side',
+      'Sign in with your own Claude Code or Codex account',
       'Pick a different tool for each job, not just at setup',
       'One list shows every session and how much room it has left',
       'They write the code, send the email, and plan the week',
       "Never build your week around one company's tool",
     ],
     moment:
-      'You open the same screen you always do. One session runs on Claude Code, the next on Codex, a third on OpenCode, and you never had to leave the tab to switch.',
+      'Your writing agent runs on Claude Code and your coding agent on Codex, each on your own sign-in. When a better tool comes along, you move one agent to it and keep everything else.',
     media: {
       surface: 'multi-session',
-      alt: "Four DorkOS sessions running side by side, each showing whether it's working or done",
+      alt: "Four DorkOS sessions in one list, each showing whether it's working or done",
       loop: true,
     },
     docsUrl: '/docs/guides/runtimes',
@@ -302,6 +302,30 @@ export const features: Feature[] = [
 
   // === CONSOLE ===
   {
+    slug: 'mini-apps',
+    name: 'Mini Apps',
+    product: 'console',
+    category: 'visualization',
+    tagline: 'Ask for a tool your business needs. Your agents build it inside DorkOS.',
+    description:
+      'Ask an agent for a tool, like a dashboard or a tracker. It builds a mini app, you say yes, and the app opens inside DorkOS, right next to your work.',
+    status: 'ga',
+    featured: true,
+    benefits: [
+      'Ask in plain words for the tool you need',
+      'Your agent writes the code and builds it for you',
+      'Nothing runs until you say yes',
+      'Opens on its own page, in the side panel, or on the Activity page',
+      'In the app and the docs, mini apps are called extensions',
+    ],
+    moment:
+      'You ask your agent for a simple tracker for the people you are hiring. It builds one, DorkOS asks you before it runs, and once you say yes the tracker opens in the side panel beside the chat.',
+    docsUrl: '/docs/integrations/extensions',
+    relatedFeatures: ['generative-ui', 'shapes', 'marketplace', 'canvas'],
+    // First in the Console tab and the catalog's flagship: mini apps lead the story.
+    sortOrder: 0,
+  },
+  {
     slug: 'team-room',
     name: 'Team Room',
     product: 'console',
@@ -327,8 +351,8 @@ export const features: Feature[] = [
     },
     docsUrl: '/docs/concepts/rooms',
     relatedFeatures: ['rooms', 'chat-interface', 'agent-identity', 'agent-attribution'],
-    // First in the Console tab: it is the screen you land on.
-    sortOrder: 0,
+    // Right after Mini Apps in the Console tab: it is the screen you land on.
+    sortOrder: 1,
   },
   {
     slug: 'chat-interface',
@@ -392,7 +416,6 @@ export const features: Feature[] = [
     description:
       'Refresh the tab, swap to your phone, restart the server: nothing is lost. Every message replays in order, so a live session survives the interruption.',
     status: 'ga',
-    featured: true,
     benefits: [
       'Every message replays in the order it happened',
       'Refresh or reconnect with nothing lost',
@@ -591,9 +614,9 @@ export const features: Feature[] = [
     name: 'Generative UI',
     product: 'console',
     category: 'visualization',
-    tagline: 'Your agent replies with charts and buttons you can click, not walls of text',
+    tagline: 'The quick kind of mini app: live charts and buttons, right in the chat',
     description:
-      'Long replies are slow to read. Generative UI lets your agent answer with a live card instead: stats, a chart, a timeline, and buttons you can click.',
+      'Long replies are slow to read. Your agent can answer with a live widget in the chat instead: a chart, a table, a checklist, or buttons you can click.',
     status: 'ga',
     benefits: [
       'Compose widgets from a 24-piece catalog: stats, charts, tables, timelines',
@@ -609,7 +632,7 @@ export const features: Feature[] = [
       loop: true,
     },
     docsUrl: '/docs/guides/generative-ui',
-    relatedFeatures: ['chat-interface', 'canvas'],
+    relatedFeatures: ['mini-apps', 'chat-interface', 'canvas'],
     sortOrder: 9,
   },
   {
@@ -650,7 +673,7 @@ export const features: Feature[] = [
       'An Exceptions list links straight to what to fix',
     ],
     moment:
-      "You open Control Center to check who's running at full power. Two sessions show up in Exceptions, each one a click from the setting that put them there.",
+      'You open Control Center to check which sessions skip approval. Two show up in Exceptions, each one a click from the setting that put them there.',
     media: {
       surface: 'control-center',
       alt: 'The DorkOS Control Center panel open over the main screen, showing where new sessions stop for approval and the switches under it',
@@ -969,19 +992,19 @@ export const features: Feature[] = [
     category: 'marketplace',
     tagline: 'Install a whole DorkOS setup, not just one piece of it',
     description:
-      'Setting DorkOS up the way someone else did takes ages. A Shape packs the layout, the add-ons, the suggested agents and the schedules into one install.',
+      'Setting DorkOS up the way someone else did takes ages. A Shape packs the layout, the mini apps, the suggested agents and the schedules into one install.',
     status: 'ga',
     benefits: [
-      'One install brings a layout, add-ons, agents, and schedules',
+      'One install brings a layout, mini apps, agents, and schedules',
       'Installing changes nothing until you choose to apply it',
       'Agents are offered to you, never created behind your back',
       'Schedules arrive switched off, so nothing runs by surprise',
       'Make your own version of any Shape, and pass it on',
     ],
     moment:
-      'You install a Shape someone built for writing. Nothing changes until you apply it. Then the panels and add-ons land, two agents are offered, and you take the one you want.',
+      'You install a Shape someone built for writing. Nothing changes until you apply it. Then the panels and mini apps land, two agents are offered, and you take the one you want.',
     docsUrl: '/docs/marketplace/shapes',
-    relatedFeatures: ['marketplace', 'control-center', 'task-scheduler'],
+    relatedFeatures: ['mini-apps', 'marketplace', 'control-center', 'task-scheduler'],
     sortOrder: 2,
   },
 
@@ -1219,17 +1242,18 @@ export const features: Feature[] = [
 ];
 
 /**
- * Slug of the catalog's flagship feature: the #team room, where you and your
- * agents work together. It is the screen DorkOS opens on and the clearest
- * picture of "a workspace for people and agents", the story the whole site
- * leads with, so it earns the wide hero tile in the bento.
+ * Slug of the catalog's flagship feature: mini apps, the tools your agents
+ * build for you inside DorkOS. It is the first of the three things that set
+ * DorkOS apart (positioning of 2026-10-06), so it earns the wide hero tile in
+ * the bento.
  *
- * It took the tile from `every-agent-one-place` in the 2026-10 story rewrite
- * (DOR-2736), when the runtime choice moved from the headline to a fact.
- * That entry's slug is older than the name it renders; renaming it would
- * mean redirecting a published URL.
+ * The #team room held the tile before that. Rooms where people and agents
+ * talk are what DorkOS is, but every rival in the category has them now, so
+ * they no longer lead. The room took the tile from `every-agent-one-place` in
+ * the earlier 2026-10 rewrite (DOR-2736); that entry's slug is older than the
+ * name it renders, and renaming it would mean redirecting a published URL.
  */
-export const FLAGSHIP_SLUG = 'team-room';
+export const FLAGSHIP_SLUG = 'mini-apps';
 
 /**
  * Bento tile footprint for a feature card. A *presentation hint derived from

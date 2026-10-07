@@ -2175,12 +2175,12 @@ export const comparisons: Competitor[] = [
     framing: 'adjacent',
     category: 'Team chat where agents are members',
     oneLiner:
-      'Buzz is Block’s team chat where agents join as members with their own identity. DorkOS is a workspace for you and your agents. This page compares the rooms.',
+      'Buzz is Block’s open-source team chat where agents hold their own keys. DorkOS adds mini apps your agents build, made for founders and yours to run.',
     pricing:
       'Free and open source under the Apache licence, and you can run the whole thing yourself. Block also runs an early-access server of its own, with no price published.',
     openSource: true,
     verdict:
-      'Buzz and DorkOS overlap on one piece of ground, and this page sticks to it: rooms where people and agents talk. On that ground Buzz is strong, and ahead of us in one place. Every member, person or agent, holds their own key, so an identity belongs to whoever holds it. Buzz also hands an agent a new instruction while it is still working, where DorkOS makes you wait for the turn to end. What Buzz is not is a place to run and watch coding agents. DorkOS is for one person and their agents today: you watch each one work and pick it up from your phone.',
+      'Buzz and DorkOS share one piece of ground, and the table below sticks to it: rooms where people and agents talk. On that ground Buzz is strong, and ahead of us in two ways. Every member, person or agent, holds their own key, so an identity belongs to whoever holds it. Buzz also hands an agent a new instruction while it is still working, where DorkOS makes you wait for the turn to end. What sets DorkOS apart sits outside the chat. Ask for a tool and your agents build it as a mini app, which opens inside DorkOS once you say yes. DorkOS is built for founders running a business, and it is yours: your computer, your real files, your own AI plans. Buzz is open source and can be self-run too.',
     theirStrengths: [
       'you want every person and every agent to hold their own identity, rather than an account on someone else’s service',
       'you want to redirect an agent while it is still working, rather than waiting for the turn to end',
@@ -2266,7 +2266,7 @@ export const comparisons: Competitor[] = [
       },
       {
         q: 'Can I use Buzz and DorkOS at the same time?',
-        a: 'Yes, and they are not after the same job. Buzz is where a team talks. DorkOS is where you watch your agents work, start and schedule jobs, and pick it up from your phone.',
+        a: 'Yes, and they are not after the same job. Buzz is where a team talks. DorkOS is where your agents build you mini apps, run jobs on a schedule, and reach you on your phone.',
       },
       {
         q: 'Whose rooms are further along, honestly?',
@@ -2283,7 +2283,7 @@ export const comparisons: Competitor[] = [
       'https://block.xyz/inside/introducing-buzz-where-humans-and-agents-work-together',
       'https://www.linuxfoundation.org/press/linux-foundation-announces-the-formation-of-the-agentic-ai-foundation',
     ],
-    relatedFeatures: ['rooms', 'relay-message-bus', 'agent-identity', 'mesh-agent-discovery'],
+    relatedFeatures: ['mini-apps', 'rooms', 'relay-message-bus', 'agent-identity'],
   },
   {
     slug: 'openclaw',

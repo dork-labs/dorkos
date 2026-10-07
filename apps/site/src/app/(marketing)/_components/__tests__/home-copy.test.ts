@@ -107,14 +107,19 @@ const NAMED_IN_CHAT: DockAppId[] = CHAT_SCRIPT.map((line) => line.dockApp).filte
 );
 
 describe('the settled lines', () => {
-  // These six are not editorial choices a passing build should be free to
-  // change. "A workspace for people and agents." is the category line of the
-  // 2026-10 story (DOR-2736, replacing DOR-1517's "All your agents. One
-  // place.") and "You, multiplied." is the tagline; the rest were approved
-  // word for word in the design session this page came out of. Anything else
-  // on the page is fair game to rewrite.
-  it('says the category line, unedited', () => {
-    expect(HERO.title).toBe('A workspace for people and agents.');
+  // These are not editorial choices a passing build should be free to
+  // change. The hero is the 2026-10-06 positioning, decided word for word:
+  // mini apps lead, founders are the audience, ownership closes. It replaced
+  // "A workspace for people and agents.", which every rival can say too, so
+  // it is now a fact further down rather than the headline. "You,
+  // multiplied." is the tagline; the rest were approved in the design
+  // session this page came out of. Anything else is fair game to rewrite.
+  it('says the decided hero, unedited', () => {
+    expect(HERO.eyebrow).toBe('for founders');
+    expect(HERO.title).toBe('Ask for a tool. Your agents build it.');
+    expect(HERO.lede).toBe(
+      'Your agents build the dashboards and trackers your business needs, right inside DorkOS. On your computer, with your files. Free and open source.'
+    );
   });
 
   it('keeps the runtime names out of the hero', () => {
@@ -123,10 +128,11 @@ describe('the settled lines', () => {
     expect(Object.values(HERO).join(' ')).not.toMatch(/claude|codex|opencode/i);
   });
 
-  it('keeps the three beat headlines', () => {
+  it('keeps the three beat headlines, in the order of the differentiators', () => {
+    // Talk is table stakes and claims no edge; then mini apps, then ownership.
     expect(BEATS.talk.title).toBe('Talk to your team.');
-    expect(BEATS.yours.title).toBe('Make it yours.');
-    expect(BEATS.computer.title).toBe('It all happens on your computer.');
+    expect(BEATS.yours.title).toBe('Ask for the tool you need.');
+    expect(BEATS.computer.title).toBe('Your computer. Your files. Your AI plan.');
   });
 
   it('keeps the localhost caption and the tagline', () => {
@@ -166,8 +172,8 @@ describe('the demo-claim gate', () => {
     // The page shows each dock tile being used. `DockApp.feature` names the
     // catalog entry each one depicts, and this resolves every one of them.
     // Connections is the catalog's single `beta` entry, so nothing here may
-    // point at it — which is also what keeps "It all happens on your
-    // computer." true, since its sign-in is held in a third party's vault.
+    // point at it, which is also what keeps "Your computer. Your files."
+    // true, since its sign-in is held in a third party's vault.
     const bySlug = new Map(features.map((feature) => [feature.slug, feature]));
 
     for (const app of DOCK) {
@@ -179,26 +185,32 @@ describe('the demo-claim gate', () => {
 
   it('shows the agents asking before they act', () => {
     // The promo film this page hosts promises the agents suggest and the
-    // person approves, and Tool Approval / Action Approvals are what actually
-    // ships. A script of completed actions with no approval would oversell it.
-    const daveSaidGo = CHAT_SCRIPT.filter((line) => line.from === 'dave');
-    const askedFirst = CHAT_SCRIPT.filter(
-      (line) => line.from !== 'dave' && line.text.includes('?')
-    );
+    // person approves. Here that happens twice, and both exchanges are pinned
+    // word for word, because their shape is the claim. Otto asks before it
+    // deploys, and Dave says go. Then Dave asks for a tool, Otto builds it and
+    // sends him to Activity, because a mini app runs no code until a person
+    // approves it there or in Settings, never by a reply in chat.
+    const texts = CHAT_SCRIPT.map((line) => `${line.from}: ${line.text}`);
+    const exchange = (lines: string[]) => {
+      const at = texts.indexOf(lines[0]);
+      expect(at, `"${lines[0]}" is missing`).toBeGreaterThanOrEqual(0);
+      expect(texts.slice(at, at + lines.length)).toEqual(lines);
+    };
 
-    // Exact, because the script is fixed and the shape of it is the claim:
-    // the agents ask twice, and Dave speaks three times — once to open the
-    // conversation, then once for each answer. A floor would stay green if an
-    // approval lost the question above it and a new one appeared elsewhere.
-    expect(askedFirst).toHaveLength(2);
-    expect(daveSaidGo).toHaveLength(3);
+    exchange(['otto: Morning, Dave. Tests are green. Want me to deploy?', 'dave: Go ahead.']);
+    exchange([
+      'dave: Can you build me a launch tracker?',
+      'otto: Built it. Approve it in Activity and it opens.',
+      'dave: Approved.',
+    ]);
 
-    // Each approval must follow a question, not float free.
-    for (const approval of daveSaidGo.slice(1)) {
-      const at = CHAT_SCRIPT.indexOf(approval);
-      const before = CHAT_SCRIPT[at - 1];
-      expect(before.text, `"${approval.text}" answers nothing`).toContain('?');
-    }
+    // No build is instant: the tool lands at least a minute after the ask.
+    const asked = CHAT_SCRIPT.find((line) => line.text === 'Can you build me a launch tracker?');
+    const built = CHAT_SCRIPT.find((line) => line.text.startsWith('Built it.'));
+    expect(built?.time).not.toBe(asked?.time);
+
+    // Dave says nothing else, so no approval floats free of an ask.
+    expect(CHAT_SCRIPT.filter((line) => line.from === 'dave')).toHaveLength(4);
   });
 
   it('leaves the film’s own joke to the film', () => {
@@ -657,7 +669,7 @@ describe('the chat script and the dock', () => {
   });
 
   it('holds the dock back until the second beat', () => {
-    // Part one is the conversation; the tiles arrive with "Make it yours."
+    // Part one is the conversation; the tiles arrive with the mini apps beat.
     const early = CHAT_SCRIPT.slice(0, PART_ONE_COUNT).filter((line) => line.dockApp);
     expect(early).toEqual([]);
   });

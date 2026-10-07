@@ -33,8 +33,9 @@ export const metadata: Metadata = {
   keywords: [
     'dorkos',
     'ai agents',
-    'workspace for people and agents',
+    'mini apps',
     'founders',
+    'workspace for people and agents',
     'claude code',
     'codex',
     'opencode',

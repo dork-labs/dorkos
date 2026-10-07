@@ -9,7 +9,7 @@ export const subsystems: Subsystem[] = [
   {
     id: 'console',
     name: 'Console',
-    benefit: 'Talk with your agents in channels, DMs and threads.',
+    benefit: 'Ask for a tool and your agents build it. Talk with them in channels and DMs.',
   },
   {
     id: 'tasks',
