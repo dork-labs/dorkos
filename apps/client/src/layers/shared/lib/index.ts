@@ -158,7 +158,7 @@ export {
   // semantics rather than compared as ids, for the reason that module exists:
   // an id table is right until a runtime ships a mode nobody added to it.
   isTightening,
-  needsConsentRitual,
+  actsWithoutAsking,
   isSilentReadOnly,
   isWorkingMode,
   resolveTrustStops,

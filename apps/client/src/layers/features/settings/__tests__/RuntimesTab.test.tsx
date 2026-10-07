@@ -245,24 +245,16 @@ describe('RuntimesTab — the writes the tab owns', () => {
     );
   });
 
-  it('asks for Full autonomy through ONE dialog, and sends the answer with the stop', async () => {
+  it('writes Full autonomy straight through: no dialog, no acknowledgement', async () => {
+    // ADR 261006-225605: Full autonomy is a normal choice. The whole patch is
+    // compared, so an acknowledgement riding along would fail it.
     const { updateConfig } = renderTab();
     const row = await screen.findByTestId('global-trust-row');
     await userEvent.click(within(row).getByRole('radio', { name: 'Full autonomy' }));
 
-    // One door for the whole tab, whichever control opened it.
-    const dialogs = await screen.findAllByRole('alertdialog');
-    expect(dialogs).toHaveLength(1);
-    expect(updateConfig).not.toHaveBeenCalled();
-
-    await userEvent.click(
-      within(dialogs[0]!).getByRole('button', { name: /turn on|full access|bypass/i })
-    );
     await waitFor(() => expect(updateConfig).toHaveBeenCalledTimes(1));
-    expect(updateConfig.mock.calls[0]![0]).toMatchObject({
-      ui: { autonomyAcknowledgedAt: expect.any(String) },
-      runtimes: { defaultTrustStop: 'autonomy' },
-    });
+    expect(updateConfig).toHaveBeenCalledWith({ runtimes: { defaultTrustStop: 'autonomy' } });
+    expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 });
 

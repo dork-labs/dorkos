@@ -24,7 +24,6 @@ export {
   type ResetAgentPermissionInput,
 } from './model/use-reset-agent-permission';
 export {
-  isAutonomyAckRefusal,
   useSetPermission,
   type PermissionScope,
   type SetPermissionInput,

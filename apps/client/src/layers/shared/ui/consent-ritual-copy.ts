@@ -1,13 +1,9 @@
 /**
- * The words both consent dialogs use, written once.
+ * The words the unattended consent dialog uses, written once.
  *
- * Two surfaces ask a person to confirm a mode that will not stop to ask — the
- * session's `AutonomyConfirmDialog` and this folder's
- * {@link UnattendedAutonomyDialog} — and they must say the same thing, or the
- * product has two spellings of one promise. The shape of each dialog still
- * differs (one offers "don't show this again", the other says what stops
- * happening on a surface nobody is watching); only the copy that is ABOUT THE
- * MODE lives here.
+ * {@link UnattendedAutonomyDialog} asks a person to confirm a mode that will
+ * not stop to ask on a surface nobody is watching. The copy that is ABOUT THE
+ * MODE lives here; the consequence for each surface stays with its caller.
  *
  * Everything is derived from the descriptor the runtime declared. No mode ids,
  * no runtime names (spec `trust-dial`, decision 2A).
@@ -15,7 +11,7 @@
  * @module shared/ui/consent-ritual-copy
  */
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
-import { isAutonomyStop, needsConsentRitual } from '@dorkos/shared/permission-semantics';
+import { actsWithoutAsking, isAutonomyStop } from '@dorkos/shared/permission-semantics';
 import { stopLabel } from './trust-dial';
 
 /**
@@ -53,16 +49,16 @@ export function consentActionLabel(descriptor: PermissionModeDescriptor): string
  * `reach: 'read'`), which never asks because it has nothing to ask about.
  * Telling somebody that mode does whatever it decides to do is the opposite of
  * true, and it is the safest setting on offer. No call site can reach that today
- * — all four resolve a mode the door already accepted — but this is exported
+ * — every caller resolves a mode the door already accepted — but this is exported
  * from the barrel, so the guard belongs in the function rather than in the
- * habits of its callers. {@link needsConsentRitual} is the same rule the server
- * and every dial apply, which is what keeps this sentence appearing exactly
- * where the door opens and nowhere else.
+ * habits of its callers. {@link actsWithoutAsking} is the same rule that opens
+ * the door, which keeps this sentence appearing exactly where the door opens
+ * and nowhere else.
  *
  * @param descriptor - The mode being confirmed, as its runtime declared it.
  */
 export function consentAsksNote(descriptor: PermissionModeDescriptor): string | null {
-  if (!needsConsentRitual(descriptor) || isAutonomyStop(descriptor)) return null;
+  if (!actsWithoutAsking(descriptor) || isAutonomyStop(descriptor)) return null;
   return 'This stop never pauses to ask. It acts without checking with you.';
 }
 

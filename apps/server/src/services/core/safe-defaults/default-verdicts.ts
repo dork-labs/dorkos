@@ -129,12 +129,9 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'ui.composer.richText',
   // The power-door answer, both halves (spec `full-power-defaults`, D1). Records
   // of an ANSWER and nothing more: they send nothing off the machine, grant no
-  // capability, and no gate reads them. That is what separates them from
-  // `ui.autonomyAcknowledgedAt` next door, which is classified `safe` because the
-  // server's autonomy gate really does read it — a value there decides whether a
-  // 428 is raised, and a value here decides whether a modal is shown. A wipe that
-  // lands both back on `null` simply puts the question again, which is the right
-  // outcome and costs one dialog.
+  // capability, and no gate reads them. A wipe that lands both back on `null`
+  // simply puts the question again, which is the right outcome and costs one
+  // dialog.
   'ui.fullPowerDecidedAt',
   'ui.fullPowerChoice',
   // Bookkeeping for the one-shot permission upgrade sweep: which server version
@@ -456,11 +453,6 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'runtimes.claudeCode.defaultTrustStop': null,
   'runtimes.codex.defaultTrustStop': null,
   'runtimes.opencode.defaultTrustStop': null,
-  // Nobody has been told what Full autonomy means, so DorkOS still tells them:
-  // `null` is the value that keeps the door asking. A wipe landing here is the
-  // right outcome — losing a consent record only costs one dialog, while keeping
-  // one through a reset would silence a question nobody re-answered.
-  'ui.autonomyAcknowledgedAt': null,
   // No account link, so no identity leaves the machine.
   'cloud.instanceToken': null,
   'cloud.instanceName': null,

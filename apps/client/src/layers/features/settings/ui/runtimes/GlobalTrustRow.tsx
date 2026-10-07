@@ -15,12 +15,8 @@
  * nothing else unless something is running without asking.
  *
  * Presentational on purpose (design decision 7): stops in, a change out, no
- * query and no config write anywhere in it. The consent choreography around Full
- * autonomy is genuinely about the server — the config route refuses that write
- * without an acknowledgement — so it stays with the container, which holds the
- * single `useTrustStopWrites` call and the single `AutonomyConfirmDialog` for
- * the whole tab. A row that confirmed as well would be a second consent
- * contract.
+ * query and no config write anywhere in it. The write stays with the container,
+ * which holds the single `useTrustStopWrites` call for the whole tab.
  *
  * @module features/settings/ui/runtimes/GlobalTrustRow
  */

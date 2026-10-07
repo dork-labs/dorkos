@@ -16,20 +16,18 @@ import { useState, type ReactNode } from 'react';
 import type { PermissionModeDescriptor, PermissionStop } from '@dorkos/shared/agent-runtime';
 import {
   PlanModeItem,
-  AutonomyConfirmDialog,
   MakeDefaultStopLine,
   ReadOnlyModeNotice,
   useSessionPermissionPicker,
 } from '@/layers/features/status';
 import { GlobalTrustRow, TrustRow, type GlobalTrustRowRuntime } from '@/layers/features/settings';
 import {
-  Button,
   InfoTip,
   ScheduledRunConsequence,
   TrustDial,
   UnattendedAutonomyDialog,
 } from '@/layers/shared/ui';
-import { needsConsentRitual } from '@/layers/shared/lib';
+import { actsWithoutAsking } from '@/layers/shared/lib';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -237,7 +235,7 @@ function UnattendedDial({
           // The same rule the real callers apply, so the playground shows the
           // dialog on Codex's never-asking middle stop exactly as they do.
           const descriptor = descriptors.find((d) => d.id === next);
-          if (descriptor && needsConsentRitual(descriptor)) {
+          if (descriptor && actsWithoutAsking(descriptor)) {
             setPending(descriptor);
             return;
           }
@@ -391,50 +389,6 @@ function LivePlanChip() {
   );
 }
 
-/**
- * The consent door, opened on demand.
- *
- * Two modes reach it and they must not look identical: Codex's full access is
- * green and names itself, while its middle stop is amber, keeps the dial's word
- * ("Act"), and carries the sentence that says what the word does not.
- */
-function LiveAutonomyDialog({
-  descriptor,
-  trigger,
-}: {
-  descriptor: PermissionModeDescriptor;
-  trigger: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const [lastAnswer, setLastAnswer] = useState<string | null>(null);
-  const autonomy = descriptor;
-  return (
-    <div className="flex items-center gap-3">
-      <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
-        {trigger}
-      </Button>
-      {/* The playground shows what the checkbox ANSWERS rather than acting on
-          it: writing the real acknowledgement here would silence the dialog for
-          whoever opened the playground to look at it. */}
-      {lastAnswer && <span className="text-muted-foreground text-xs">{lastAnswer}</span>}
-      <AutonomyConfirmDialog
-        canRemember
-        descriptor={open ? autonomy : null}
-        onCancel={() => {
-          setOpen(false);
-          setLastAnswer('Cancelled');
-        }}
-        onConfirm={(rememberChoice) => {
-          setOpen(false);
-          setLastAnswer(
-            rememberChoice ? 'Confirmed — and asked not to be shown again' : 'Confirmed once'
-          );
-        }}
-      />
-    </div>
-  );
-}
-
 /** Trust Dial showcases for the dev playground. */
 export function TrustDialShowcases() {
   return (
@@ -499,25 +453,6 @@ export function TrustDialShowcases() {
         <ShowcaseLabel>Before the runtime has answered — no stops, no claims</ShowcaseLabel>
         <ShowcaseDemo>
           <LiveDial descriptors={[]} initial="default" />
-        </ShowcaseDemo>
-      </PlaygroundSection>
-
-      <PlaygroundSection
-        title="Trust Dial — the door into a mode that never asks"
-        description="A stop that stops the asking cannot be walked back, so it asks twice — and that is not only the top of the dial. On a runtime that cannot pause mid-turn, the MIDDLE stop never asks either, and it goes through the same door in its own words. The consequence sentence is always the runtime's own; the scope note says what it does not cover."
-      >
-        <ShowcaseLabel>
-          Full autonomy, on a Codex session — green, and it names itself
-        </ShowcaseLabel>
-        <ShowcaseDemo>
-          <LiveAutonomyDialog descriptor={CODEX[2]!} trigger="Choose Full autonomy (Codex)" />
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>
-          Codex’s middle stop — amber, keeps the dial’s word, says what the word hides
-        </ShowcaseLabel>
-        <ShowcaseDemo>
-          <LiveAutonomyDialog descriptor={CODEX[1]!} trigger="Choose Act (Codex)" />
         </ShowcaseDemo>
       </PlaygroundSection>
 

@@ -1978,23 +1978,10 @@ describe('GET /api/config', () => {
     expect(res.body.ui.statusBar).toEqual({ pins: [] });
   });
 
-  it('includes the standing Full-autonomy acknowledgement, unset by default', async () => {
+  it('carries no Full-autonomy acknowledgement any more (DOR-2739)', async () => {
     const res = await request(server).get('/api/config').expect(200);
 
-    expect(res.body.ui.autonomyAcknowledgedAt).toBeNull();
-  });
-
-  it('records the standing acknowledgement, and reads it back on the next GET', async () => {
-    // The round trip the cockpit relies on: the dialog's "don't show this again"
-    // writes here, and every later autonomy PATCH is answered from this read.
-    const acknowledgedAt = '2026-08-01T09:30:00.000Z';
-    await request(server)
-      .patch('/api/config')
-      .send({ ui: { autonomyAcknowledgedAt: acknowledgedAt } })
-      .expect(200);
-
-    const res = await request(server).get('/api/config').expect(200);
-    expect(res.body.ui.autonomyAcknowledgedAt).toBe(acknowledgedAt);
+    expect(res.body.ui).not.toHaveProperty('autonomyAcknowledgedAt');
   });
 
   it('reports the power door unanswered on a fresh install', async () => {
@@ -2028,35 +2015,23 @@ describe('GET /api/config', () => {
       .expect(200);
 
     const res = await request(server).get('/api/config').expect(200);
-    expect(res.body.ui.autonomyAcknowledgedAt).toBeNull();
     expect(res.body.executionDefaults.trustStop).toBeNull();
   });
 
-  it('refuses Full autonomy as a default until the person has acknowledged it', async () => {
-    // The set-time door (spec `trust-dial`, decision 6). Making autonomy the
-    // stop new sessions START at is a wider claim than putting one session
-    // there — durable, and a session born from it opens already bypassed with
-    // no dialog to show — so the asking happens at the moment of choosing.
-    const res = await request(server)
+  // The Full-autonomy acknowledgement is retired (ADR 261006-225605,
+  // DOR-2739): a Full autonomy default is a setting like any other.
+  it('takes Full autonomy as a default with nothing to acknowledge first', async () => {
+    await request(server)
       .patch('/api/config')
-      .send({ runtimes: { defaultTrustStop: 'autonomy' } })
-      .expect(428);
+      .send({ runtimes: { defaultTrustStop: 'autonomy', codex: { defaultTrustStop: 'autonomy' } } })
+      .expect(200);
 
-    expect(res.body.code).toBe('AUTONOMY_ACK_REQUIRED');
-    expect(res.body.paths).toEqual(['runtimes.defaultTrustStop']);
-
-    // A refusal changes nothing.
-    const after = await request(server).get('/api/config').expect(200);
-    expect(after.body.executionDefaults.trustStop).toBeNull();
-  });
-
-  it('refuses a per-runtime autonomy default the same way, naming the leaf', async () => {
-    const res = await request(server)
-      .patch('/api/config')
-      .send({ runtimes: { codex: { defaultTrustStop: 'autonomy' } } })
-      .expect(428);
-
-    expect(res.body.paths).toEqual(['runtimes.codex.defaultTrustStop']);
+    const res = await request(server).get('/api/config').expect(200);
+    expect(res.body.executionDefaults.trustStop).toBe('autonomy');
+    expect(
+      res.body.executionDefaults.perRuntime.find((e: { runtime: string }) => e.runtime === 'codex')
+        .trustStop
+    ).toBe('autonomy');
   });
 
   it('lets the gentler stops through with no ritual at all', async () => {
@@ -2074,151 +2049,6 @@ describe('GET /api/config', () => {
         (e: { runtime: string }) => e.runtime === 'claude-code'
       ).trustStop
     ).toBe('ask');
-  });
-
-  it('accepts autonomy when the acknowledgement rides the SAME patch', async () => {
-    // What the Settings dialog sends: the consent record and the new default in
-    // one write, so there is no window where the stop landed without the consent
-    // and no two-request ordering for a client to get wrong.
-    await request(server)
-      .patch('/api/config')
-      .send({
-        ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' },
-        runtimes: { defaultTrustStop: 'autonomy' },
-      })
-      .expect(200);
-
-    const res = await request(server).get('/api/config').expect(200);
-    expect(res.body.executionDefaults.trustStop).toBe('autonomy');
-  });
-
-  it('accepts autonomy on a standing acknowledgement given earlier', async () => {
-    await request(server)
-      .patch('/api/config')
-      .send({ ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' } })
-      .expect(200);
-
-    await request(server)
-      .patch('/api/config')
-      .send({ runtimes: { defaultTrustStop: 'autonomy' } })
-      .expect(200);
-  });
-
-  it('starts refusing again the moment the acknowledgement is cleared', async () => {
-    await request(server)
-      .patch('/api/config')
-      .send({ ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' } })
-      .expect(200);
-    await request(server)
-      .patch('/api/config')
-      .send({ ui: { autonomyAcknowledgedAt: null } });
-
-    await request(server)
-      .patch('/api/config')
-      .send({ runtimes: { defaultTrustStop: 'autonomy' } })
-      .expect(428);
-  });
-
-  it('demotes a standing autonomy default when the acknowledgement is cleared', async () => {
-    // The record is that default's LICENCE (spec `trust-dial`, decision 6), so a
-    // Reset that left the default standing would keep birthing bypassed sessions
-    // with no consent on file — and the cockpit's first mode change for one of
-    // them would 428 against a door the person believed they had re-armed.
-    await request(server)
-      .patch('/api/config')
-      .send({
-        ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' },
-        runtimes: { defaultTrustStop: 'autonomy', codex: { defaultTrustStop: 'autonomy' } },
-      })
-      .expect(200);
-
-    await request(server)
-      .patch('/api/config')
-      .send({ ui: { autonomyAcknowledgedAt: null } })
-      .expect(200);
-
-    const res = await request(server).get('/api/config').expect(200);
-    expect(res.body.ui.autonomyAcknowledgedAt).toBeNull();
-    expect(res.body.executionDefaults.trustStop).toBeNull();
-    expect(
-      res.body.executionDefaults.perRuntime.find((e: { runtime: string }) => e.runtime === 'codex')
-        .trustStop
-    ).toBeNull();
-  });
-
-  it('leaves the gentler standing defaults alone when the acknowledgement is cleared', async () => {
-    // Only the stop whose justification was the record goes. "Act" needed no
-    // acknowledgement, so a Reset has nothing to say about it.
-    await request(server)
-      .patch('/api/config')
-      .send({
-        ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' },
-        runtimes: { defaultTrustStop: 'act', codex: { defaultTrustStop: 'ask' } },
-      })
-      .expect(200);
-
-    await request(server)
-      .patch('/api/config')
-      .send({ ui: { autonomyAcknowledgedAt: null } });
-
-    const res = await request(server).get('/api/config').expect(200);
-    expect(res.body.executionDefaults.trustStop).toBe('act');
-    expect(
-      res.body.executionDefaults.perRuntime.find((e: { runtime: string }) => e.runtime === 'codex')
-        .trustStop
-    ).toBe('ask');
-  });
-
-  it('answers a patch that clears the record AND asks for autonomy with the clear', async () => {
-    await request(server)
-      .patch('/api/config')
-      .send({ ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' } })
-      .expect(200);
-
-    // Contradictory, and not argued with: the clear wins and the stop lands null.
-    await request(server)
-      .patch('/api/config')
-      .send({
-        ui: { autonomyAcknowledgedAt: null },
-        runtimes: { defaultTrustStop: 'autonomy' },
-      })
-      .expect(200);
-
-    const res = await request(server).get('/api/config').expect(200);
-    expect(res.body.ui.autonomyAcknowledgedAt).toBeNull();
-    expect(res.body.executionDefaults.trustStop).toBeNull();
-  });
-
-  it('touches nothing when a patch says nothing about the acknowledgement', async () => {
-    await request(server)
-      .patch('/api/config')
-      .send({
-        ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' },
-        runtimes: { defaultTrustStop: 'autonomy' },
-      })
-      .expect(200);
-
-    await request(server)
-      .patch('/api/config')
-      .send({ logging: { level: 'debug' } })
-      .expect(200);
-
-    const res = await request(server).get('/api/config').expect(200);
-    expect(res.body.executionDefaults.trustStop).toBe('autonomy');
-  });
-
-  it('lets Settings clear the acknowledgement, which brings the dialog back', async () => {
-    await request(server)
-      .patch('/api/config')
-      .send({ ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' } })
-      .expect(200);
-
-    await request(server)
-      .patch('/api/config')
-      .send({ ui: { autonomyAcknowledgedAt: null } });
-
-    const res = await request(server).get('/api/config').expect(200);
-    expect(res.body.ui.autonomyAcknowledgedAt).toBeNull();
   });
 });
 

@@ -83,10 +83,9 @@
  *   rather than folded into this one: neither is an unchecked write today.
  * - **Consent about what leaves the machine.** All of `telemetry.*`, which is
  *   consent-gated by design.
- * - **Whether a person is asked at all.** `permissions`, the four
- *   `defaultTrustStop` leaves, and `ui.autonomyAcknowledgedAt`: the switches that
- *   decide whether an approval card ever appears, and the record of the consent
- *   behind them.
+ * - **Whether a person is asked at all.** `permissions` and the four
+ *   `defaultTrustStop` leaves: the switches that decide whether an approval card
+ *   ever appears.
  *
  * ### The one group that is not security-shaped
  *
@@ -318,17 +317,8 @@ export const CONFIG_WRITE_POLICY = {
   // slot offers, exactly like `ui.sidebar.gettingStarted.retired` above; nothing
   // it gates is a security control.
   'ui.promos.dismissedIds': 'agent-writable',
-  // A record of what a PERSON read and agreed to. Writing it stops DorkOS ever
-  // explaining Full autonomy to them again, and an agent forging that record
-  // would be signing a consent form on somebody else's behalf. It is the only
-  // `ui.*` leaf that is not a preference.
-  //
-  // It buys the agent no new REACH — anything that can reach `PATCH
-  // /api/sessions/:id` can put `acknowledgedAutonomy: true` on the request and
-  // open the same door once. What this stops is the durable, silent version.
-  'ui.autonomyAcknowledgedAt': 'operator-only',
-  // The power-door answer, refused for exactly the reason above: these record
-  // that a PERSON was asked a consent question and what they said. An agent that
+  // The power-door answer: these record that a PERSON was asked a consent
+  // question and what they said. An agent that
   // could write them could close the door on a question nobody ever saw — and
   // then, having recorded `'full'`, hand the binding form a pre-selected
   // `canInitiate`. They grant nothing by themselves, which is why they are
@@ -346,7 +336,7 @@ export const CONFIG_WRITE_POLICY = {
   // exactly the line this table draws.
   //
   // `browserPermissionPrimerDismissed` is refused for the sibling reason
-  // `ui.autonomyAcknowledgedAt` above is: it records that a PERSON answered a
+  // the power-door answer above is: it records that a PERSON answered a
   // question, and an agent writing it would be answering on their behalf —
   // permanently, since the card is asked once.
   'notifications.escalation.phoneAfterMinutes': 'operator-only',
@@ -705,15 +695,11 @@ export const CONFIG_WRITE_POLICY = {
   // agent can already ask for. It is DURABLE — nothing sweeps it, so it keeps
   // applying to sessions the person starts tomorrow — and it is SILENT, because a
   // new session simply opens already bypassed, with no dialog and nothing on
-  // screen saying a setting changed. `ui.autonomyAcknowledgedAt` is operator-only
-  // for the sibling reason (forging the consent record), and an agent that could
-  // write both would hold the whole door.
+  // screen saying a setting changed.
   //
   // The stops below autonomy are the same leaf and get the same verdict: this
   // table classifies paths, not values, and a per-value rule would mean an agent
   // could write `'ask'` today and nothing would notice the day the enum grew.
-  // The route enforces a second, value-shaped gate on top for `'autonomy'` (428
-  // `AUTONOMY_ACK_REQUIRED`), which is about consent rather than about who asks.
   'runtimes.defaultTrustStop': 'operator-only',
   'runtimes.claudeCode.defaultTrustStop': 'operator-only',
   'runtimes.codex.defaultTrustStop': 'operator-only',
@@ -1075,7 +1061,6 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'runtimes.claudeCode.defaultTrustStop',
       'runtimes.codex.defaultTrustStop',
       'runtimes.opencode.defaultTrustStop',
-      'ui.autonomyAcknowledgedAt',
       // The power-door answer. Filed under `approvals` rather than a stake of
       // its own because that is what the question was about: whether the person
       // is asked before work happens. The record grants nothing by itself, but

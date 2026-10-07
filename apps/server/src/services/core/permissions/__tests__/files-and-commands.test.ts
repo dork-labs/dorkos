@@ -7,7 +7,6 @@
 import { describe, it, expect } from 'vitest';
 import type { PermissionChangedMetadata, PermissionPreset } from '@dorkos/shared/permissions';
 
-import { PermissionError } from '../permission-service.js';
 import { personWriter } from '../permission-history.js';
 import { TWO_AGENTS, createPermissionWorld } from './permission-fixtures.js';
 
@@ -19,7 +18,7 @@ describe('choosing a preset sets the Files & commands stop', () => {
     ['balanced', 'act'],
     ['full', 'autonomy'],
   ] as const)('%s sets the global stop to %s', async (preset, stop) => {
-    const world = createPermissionWorld({ trustStop: null, autonomyAcknowledged: true });
+    const world = createPermissionWorld({ trustStop: null });
     await world.service.setPreset(
       { preset: preset as PermissionPreset, surface: 'settings' },
       LOCAL
@@ -34,28 +33,14 @@ describe('choosing a preset sets the Files & commands stop', () => {
     });
   });
 
-  it('refuses Full power with no acknowledgement, and writes nothing at all', async () => {
+  // The Full-autonomy acknowledgement is retired (ADR 261006-225605, DOR-2739):
+  // choosing Full power is a choice like any other, recorded in the history.
+  it('writes Full power straight away, with nothing to acknowledge first', async () => {
     const world = createPermissionWorld({ preset: 'careful', trustStop: 'ask' });
-    const refusal = await world.service
-      .setPreset({ preset: 'full', surface: 'settings' }, LOCAL)
-      .catch((err: unknown) => err);
-    expect(refusal).toBeInstanceOf(PermissionError);
-    expect(refusal).toMatchObject({ code: 'AUTONOMY_ACK_REQUIRED', status: 428 });
-    // All or nothing: the preset did not move either.
-    expect(world.config.preset).toBe('careful');
-    expect(world.stops.global).toBe('ask');
-    expect(world.events).toEqual([]);
-  });
-
-  it('writes Full power and records the acknowledgement sent with it', async () => {
-    const world = createPermissionWorld({ preset: 'careful', trustStop: 'ask' });
-    await world.service.setPreset(
-      { preset: 'full', surface: 'settings', acknowledgeAutonomy: true },
-      LOCAL
-    );
+    await world.service.setPreset({ preset: 'full', surface: 'settings' }, LOCAL);
     expect(world.config.preset).toBe('full');
     expect(world.stops.global).toBe('autonomy');
-    expect(world.autonomy.acknowledgedAt).not.toBeNull();
+    expect(world.events).toHaveLength(1);
   });
 
   it('leaves per-runtime stops alone, and snapshots the stop it replaced', async () => {
@@ -136,27 +121,14 @@ describe("an agent's own Files & commands stop", () => {
     });
   });
 
-  it('refuses Full autonomy without an acknowledgement (428), and writes nothing', async () => {
-    const world = createPermissionWorld({ agents: TWO_AGENTS });
-    await expect(
-      world.service.setAgent(
-        'agent-test',
-        { filesAndCommands: 'autonomy', surface: 'agent-page' },
-        LOCAL
-      )
-    ).rejects.toMatchObject({ code: 'AUTONOMY_ACK_REQUIRED', status: 428 });
-    expect(world.agents.get('agent-test')?.permissions).toBeUndefined();
-  });
-
-  it('takes Full autonomy with the acknowledgement sent in the same request', async () => {
+  it('gives an agent Full autonomy straight away, with nothing to acknowledge first', async () => {
     const world = createPermissionWorld({ agents: TWO_AGENTS });
     await world.service.setAgent(
       'agent-test',
-      { filesAndCommands: 'autonomy', surface: 'agent-page', acknowledgeAutonomy: true },
+      { filesAndCommands: 'autonomy', surface: 'agent-page' },
       LOCAL
     );
     expect(world.agents.get('agent-test')?.permissions?.filesAndCommands).toBe('autonomy');
-    expect(world.autonomy.acknowledgedAt).not.toBeNull();
   });
 
   it("goes back to the default on null, keeping the agent's other settings", async () => {

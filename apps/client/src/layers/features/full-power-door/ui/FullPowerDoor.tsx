@@ -82,17 +82,13 @@ const FULL_POWER_POINTS: ReadonlyArray<{ lead: string; rest: string }> = [
  *
  * ## What "Unlock full power" writes (invariant A1)
  *
- * Full power is consent-gated, so nothing here flips silently — this is the
- * surface whose ACCEPT does the flipping. Accept is two steps in order:
+ * Nothing here flips silently — this is the surface whose ACCEPT does the
+ * flipping. Accept is two steps in order:
  *
- * 1. **One** `PATCH /api/config` carrying the acknowledgement, both decision
- *    fields and the stop, together. The acknowledgement must ride in the SAME request as
- *    `runtimes.defaultTrustStop: 'autonomy'`: the server refuses that stop
- *    without a recorded acknowledgement (`428 AUTONOMY_ACK_REQUIRED`), so two
- *    requests would race and the stop could land first and bounce. This mirrors
- *    `confirmAutonomy` in `features/settings/model/use-trust-stop-writes` — which
- *    cannot be imported across feature model boundaries, so the one-patch shape
- *    is re-created and pinned by a test here. Then `PUT /api/permissions/preset`
+ * 1. **One** `PATCH /api/config` carrying both decision fields and the stop,
+ *    together, so the decision and what it decided cannot land apart. No
+ *    acknowledgement rides with it: the consent ritual is retired (ADR
+ *    261006-225605). Then `PUT /api/permissions/preset`
  *    with Full power (spec `agent-permissions` D5), so what agents may do
  *    follows the answer on every install; a failure here reports like a config
  *    failure and the mesh step never fires.
@@ -140,10 +136,9 @@ export function FullPowerDoor({ heading, onClose, onCustomize }: FullPowerDoorPr
     setSubmitting(true);
     const now = new Date().toISOString();
     try {
-      // Step 1 — the acknowledgement rides WITH the stop. One request, not two.
+      // Step 1 — the decision rides WITH the stop. One request, not two.
       await updateConfig.mutateAsync({
         ui: {
-          autonomyAcknowledgedAt: now,
           fullPowerDecidedAt: now,
           fullPowerChoice: 'full',
         },

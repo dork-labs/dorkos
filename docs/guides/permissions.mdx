@@ -72,7 +72,7 @@ An action that deletes or removes something asks even when its area is Allowed. 
 
 For Codex, the three positions are Codex's own levels. **Ask first** asks before any change. **Workspace write** changes the project freely and asks before going further or online. **Full access** never asks. A conversation can start another one only at its own level or a safer one, so a Claude Code conversation in Ask first can start a Codex conversation in Ask first, but not in Workspace write or Full access.
 
-The first time you move something to Full autonomy, DorkOS asks you to confirm what that means, and remembers that you did. DorkOS's own risky actions, like deleting a schedule or removing an agent, still stop for you whatever this is set to. The areas above decide those.
+DorkOS's own risky actions, like deleting a schedule or removing an agent, still stop for you whatever this is set to. The areas above decide those.
 
 An agent's own Files & commands setting beats everything else for that agent: its conversations, its scheduled runs, and its turns in rooms. Without one, the agent follows the setting for its runtime in **Settings → Runtimes**, if you set one, and otherwise the setting everyone has.
 
@@ -164,8 +164,6 @@ dorkos agent permissions dorkbot set files ask  # its own Files & commands
 dorkos agent permissions dorkbot reset files    # back to the setting everyone has
 ```
 
-Choosing Full power or Full autonomy from a terminal needs the same confirmation as in the app. If you haven't given it yet, the command tells you to run `dorkos config acknowledge-autonomy`, which shows you what it means and asks.
-
 ## Who can change them
 
 In DorkOS, only a person can. The permission pages, the `dorkos permissions` command, and your answer on a request card are the ways in. An agent can ask you to change a permission, or one of the settings only you may change, like turning on remote access. That always raises a card, and it never offers **Always allow**: the change happens only after you say yes, every time. An agent can ask you; it cannot answer for you.
@@ -193,7 +191,6 @@ Every change in the history has an **Undo**. It puts things back the way they we
 - **Undoing a preset switch** puts back the old preset, the changes you had on top of it, and its Files & commands position, together.
 - **Undo never makes a locked area Allowed**, or anything that always asks. If putting something back would do that, Undo leaves it alone and says so.
 - **The line saying DorkOS didn't apply a new agent's own settings has no Undo.** Those settings were never chosen in DorkOS; set any you want on the agent's page.
-- Undo that would put Files & commands back on **Full autonomy** asks you to confirm what that means first, like every other way to choose it.
 
 An answer on a request card has no Undo, because the action already happened. An **Always allow** answer also records the setting it created, and that line does have an Undo.
 

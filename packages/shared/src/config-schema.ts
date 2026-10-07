@@ -1921,10 +1921,6 @@ const DefaultEffortSchema = z.enum(EFFORT_LEVELS).nullable().default(null);
  * module is deliberately dependency-light (it is bridged to JSON Schema and read
  * by the CLI); the two are pinned together by
  * `packages/shared/src/__tests__/config-schema.test.ts`.
- *
- * Writing `'autonomy'` into one of these leaves is consent-gated at the config
- * route — see `AUTONOMY_ACK_REQUIRED` — because it decides how every future
- * session starts, not just this one.
  */
 const DefaultTrustStopSchema = z.enum(['ask', 'act', 'autonomy']).nullable().default(null);
 
@@ -2246,35 +2242,6 @@ export const UserConfigSchema = z.object({
         owners: [],
       })),
       /**
-       * When this person last read what Full autonomy means and said "don't ask
-       * me again", as an ISO 8601 UTC string. `null` until they do, which is the
-       * shipped state (spec `trust-dial`, decision 5).
-       *
-       * A timestamp rather than a boolean because the record is only worth
-       * keeping if it says WHEN: Settings shows the date back, and a person who
-       * cannot remember agreeing to anything can see the moment they did and
-       * clear it.
-       *
-       * ## This is a consent ritual, not a security boundary
-       *
-       * Read that sentence before building anything on this field. The server
-       * refuses to put an interactive session into Full autonomy unless the
-       * request carries an acknowledgement — either `acknowledgedAutonomy: true`
-       * on the PATCH, or this standing record. That closes the gap where a
-       * *client* could skip the dialog. It does NOT stop an API caller: anything
-       * that can reach the route can send `acknowledgedAutonomy: true` itself,
-       * and nothing here would know the difference. The boundary against agent
-       * callers is a separate piece of work (`agent-approval-settings`, DOR-501)
-       * and this field is not it. Do not describe it as one.
-       *
-       * Lives under `ui` because it decides what a dialog does, not what any
-       * gate enforces: requiring login to dismiss a dialog would make the
-       * feature unreachable on the default login-off install. It is still
-       * `operator-only` to write, so an agent cannot forge a person's consent
-       * record.
-       */
-      autonomyAcknowledgedAt: z.string().datetime().nullable().default(null),
-      /**
        * When this person answered the full-power door — **either way** (spec
        * `full-power-defaults`, D1).
        *
@@ -2284,15 +2251,9 @@ export const UserConfigSchema = z.object({
        * they answered, because re-asking a question somebody already answered is
        * the nagging this program exists to avoid.
        *
-       * Distinct from {@link UserConfig.ui}`.autonomyAcknowledgedAt`, which is a
-       * standing acknowledgement the server's autonomy gate reads. This one is
-       * only about the door: an answer of "keep asking me first" sets this and
-       * leaves that one null. Nothing here grants a capability — it records that
-       * a question was put and answered.
-       *
-       * `operator-only` to write, for exactly the reason the acknowledgement
-       * above is: a consent record an agent can write is a consent record an
-       * agent can forge.
+       * Nothing here grants a capability: it records that a question was put
+       * and answered. `operator-only` to write, because a consent record an
+       * agent can write is a consent record an agent can forge.
        */
       fullPowerDecidedAt: z.string().datetime().nullable().default(null),
       /**
@@ -2329,7 +2290,6 @@ export const UserConfigSchema = z.object({
       statusBar: { pins: [] },
       composer: { richText: true },
       communityNavigation: { version: 1 as const, owners: [] },
-      autonomyAcknowledgedAt: null,
       // Both halves of the power-door answer. Declared here as well as per-field
       // because `conf` merges top-level defaults SHALLOWLY: the per-field default
       // is what a fresh install lands on, this literal is what an upgrade whose

@@ -146,8 +146,6 @@ describe('the Always allow suggestion', () => {
         trustStops: () => ({ global: null, perRuntime: {} }),
         setGlobalTrustStop: () => {},
         setRuntimeTrustStop: () => false,
-        hasAutonomyAck: () => false,
-        recordAutonomyAck: () => {},
       },
       agents: {
         list: () => [],

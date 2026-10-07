@@ -7500,9 +7500,6 @@
             "minLength": 1,
             "maxLength": 200
           },
-          "acknowledgedAutonomy": {
-            "type": "boolean"
-          },
           "runtime": {
             "type": "string"
           },
@@ -11969,12 +11966,6 @@
           },
           "surface": {
             "$ref": "#/components/schemas/PermissionSurface"
-          },
-          "acknowledgeAutonomy": {
-            "type": "boolean",
-            "enum": [
-              true
-            ]
           }
         },
         "required": [
@@ -12661,12 +12652,6 @@
         "properties": {
           "force": {
             "type": "boolean"
-          },
-          "acknowledgeAutonomy": {
-            "type": "boolean",
-            "enum": [
-              true
-            ]
           }
         }
       },
@@ -12845,12 +12830,6 @@
           },
           "surface": {
             "$ref": "#/components/schemas/PermissionSurface"
-          },
-          "acknowledgeAutonomy": {
-            "type": "boolean",
-            "enum": [
-              true
-            ]
           }
         },
         "required": [
@@ -19384,7 +19363,7 @@
           "Sessions"
         ],
         "summary": "Update session settings",
-        "description": "Moving an interactive session to a permission mode that never stops to ask requires an acknowledgement. That means any mode the runtime declares at the `autonomy` stop, and any mode it declares with `asks: \"never\"` and a `reach` other than `\"read\"` — Codex files such a mode at the middle stop. Satisfy it with `acknowledgedAutonomy: true` on this request, or with the standing record in `ui.autonomyAcknowledgedAt`. Without one the response is `428 AUTONOMY_ACK_REQUIRED` and nothing is persisted — obtain consent and retry the identical request (spec `trust-dial`, decision 5). This is a consent ritual for a person, not a boundary against a caller.\n\nThe chosen mode is always saved. When it could not also be delivered to a reply already in flight AND it was a tightening (the agent must now ask more, or may reach less far), the answer is `202` with `permissionModePendingUntilNextTurn: true` — saved, in force from the next reply, and NOT governing the reply already running. A loosening in the same position stays a plain `200`: it costs a few extra approval prompts for the rest of one turn and corrects itself.\n\nA session with no recorded runtime is answered with the inference reads fall back to, which can differ from the `runtime` hint you sent — so that answer carries `runtimeUnbound: true` and you can tell a guess from a binding. This is not only a brand-new session: the binding is written by an interactive session's first turn and by nothing else, so a scheduled or room-driven session can have run many turns and still have no owner. The field is absent once one is recorded, and it never appears as `false`.",
+        "description": "The chosen mode is always saved. When it could not also be delivered to a reply already in flight AND it was a tightening (the agent must now ask more, or may reach less far), the answer is `202` with `permissionModePendingUntilNextTurn: true` — saved, in force from the next reply, and NOT governing the reply already running. A loosening in the same position stays a plain `200`: it costs a few extra approval prompts for the rest of one turn and corrects itself.\n\nA session with no recorded runtime is answered with the inference reads fall back to, which can differ from the `runtime` hint you sent — so that answer carries `runtimeUnbound: true` and you can tell a guess from a binding. This is not only a brand-new session: the binding is written by an interactive session's first turn and by nothing else, so a scheduled or room-driven session can have run many turns and still have no owner. The field is absent once one is recorded, and it never appears as `false`.",
         "parameters": [
           {
             "schema": {
@@ -19438,16 +19417,6 @@
           },
           "404": {
             "description": "Session not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "428": {
-            "description": "A mode that never stops to ask was requested without an acknowledgement (`AUTONOMY_ACK_REQUIRED`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -67396,7 +67365,7 @@
           "Permissions"
         ],
         "summary": "Undo one permission change",
-        "description": "Sets every key a recorded `permission.changed` event moved back to its value before, as one new change recorded with `surface: 'undo'` and `undoOf`. A key whose value changed since is a conflict: a change to one target is refused (409 `UNDO_CONFLICT`, listing each conflict) and writes nothing, while a change that reached several targets sets back the ones that still match and reports the rest in `skipped`. `force` sets every key back. A preset switch goes back as one unit. An Undo never writes Allowed in a locked area, and moving Files & commands to Full autonomy needs the acknowledgement (428). Undoing a \"Not now\" on the Always allow suggestion lets the suggestion come back (`suggestionRestored`). A key already back where the change found it is nothing to do.",
+        "description": "Sets every key a recorded `permission.changed` event moved back to its value before, as one new change recorded with `surface: 'undo'` and `undoOf`. A key whose value changed since is a conflict: a change to one target is refused (409 `UNDO_CONFLICT`, listing each conflict) and writes nothing, while a change that reached several targets sets back the ones that still match and reports the rest in `skipped`. `force` sets every key back. A preset switch goes back as one unit. An Undo never writes Allowed in a locked area. Undoing a \"Not now\" on the Always allow suggestion lets the suggestion come back (`suggestionRestored`). A key already back where the change found it is nothing to do.",
         "parameters": [
           {
             "schema": {
@@ -67473,16 +67442,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UndoConflictResponse"
-                }
-              }
-            }
-          },
-          "428": {
-            "description": "The Undo moves Files & commands to Full autonomy (`AUTONOMY_ACK_REQUIRED`)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }

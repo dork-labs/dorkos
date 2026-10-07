@@ -62,7 +62,6 @@ import {
   ARRIVAL_NOTE,
   ARRIVAL_WRITE_FAILED_NOTE,
   ARRIVAL_WRITER,
-  AUTONOMY_ACK_MESSAGE,
   EXTENSION_REMOVAL_WRITER,
   extensionRemovedNote,
   PermissionError,
@@ -72,12 +71,7 @@ import {
 } from './permission-values.js';
 import { narrowArrivedPermissions } from './arrival-narrowing.js';
 
-export {
-  ARRIVAL_NOTE,
-  ARRIVAL_WRITE_FAILED_NOTE,
-  AUTONOMY_ACK_MESSAGE,
-  PermissionError,
-} from './permission-values.js';
+export { ARRIVAL_NOTE, ARRIVAL_WRITE_FAILED_NOTE, PermissionError } from './permission-values.js';
 
 /** One action as the permission pages list it. */
 export interface PermissionActionInfo {
@@ -130,21 +124,13 @@ export interface PermissionServiceDeps {
     set: (next: PermissionConfigInput & { upgradeSweptVersion: string | null }) => void;
     /** The stored Files & commands stops. */
     trustStops: () => StoredTrustStops;
-    /**
-     * Write the global Files & commands stop (`null` = not set), recording the
-     * person's acknowledgement of Full autonomy in the same write when
-     * `acknowledge`.
-     */
-    setGlobalTrustStop: (stop: PermissionStop | null, acknowledge: boolean) => void;
+    /** Write the global Files & commands stop (`null` = not set). */
+    setGlobalTrustStop: (stop: PermissionStop | null) => void;
     /**
      * Write one runtime's own Files & commands stop (`null` = not set). Returns
      * false for a runtime this build does not know, which writes nothing.
      */
     setRuntimeTrustStop: (runtime: string, stop: PermissionStop | null) => boolean;
-    /** Whether an acknowledgement of Full autonomy is on file. */
-    hasAutonomyAck: () => boolean;
-    /** Record the acknowledgement on its own (an agent's own stop set to Full autonomy). */
-    recordAutonomyAck: () => void;
   };
   /** The registered agents and the manifest write-through. */
   agents: {
@@ -557,22 +543,15 @@ export class PermissionService {
    * stops are left alone and show as changes. `applyToAgents` removes every
    * setting those agents have of their own, so they follow the new preset.
    *
-   * All or nothing: a preset that moves the stop to Full autonomy with no
-   * acknowledgement on file, and none sent with it, is refused (428
-   * `AUTONOMY_ACK_REQUIRED`) before anything is written, preset included.
-   *
-   * @param input - The preset, the agents to bring along, where it came from,
-   *   and whether the person acknowledged Full autonomy in this request.
+   * @param input - The preset, the agents to bring along, and where it came from.
    * @param writer - Who is making the change.
    * @returns Every change the write made.
-   * @throws {PermissionError} `AUTONOMY_ACK_REQUIRED` (428).
    */
   async setPreset(
     input: {
       preset: PermissionPreset;
       applyToAgents?: string[];
       surface: PermissionSurface;
-      acknowledgeAutonomy?: boolean;
     },
     writer: PermissionWriter
   ): Promise<PermissionChange[]> {
@@ -580,10 +559,6 @@ export class PermissionService {
       const actions = this.actionIndex();
       const selected = this.agentsById(input.applyToAgents ?? []);
       const presetStop = PERMISSION_PRESET_TABLES[input.preset].filesStop;
-      const acknowledge = input.acknowledgeAutonomy === true;
-      if (presetStop === 'autonomy' && !acknowledge && !this.deps.config.hasAutonomyAck()) {
-        throw new PermissionError('AUTONOMY_ACK_REQUIRED', AUTONOMY_ACK_MESSAGE, 428);
-      }
       const config = this.deps.config.get();
       const stops = this.deps.config.trustStops();
       const changes: PermissionChange[] = [];
@@ -639,8 +614,8 @@ export class PermissionService {
           defaults: { areas: {}, actions: {} },
         });
       }
-      if (presetStop !== null && (stops.global !== presetStop || acknowledge)) {
-        this.deps.config.setGlobalTrustStop(presetStop, acknowledge);
+      if (presetStop !== null && stops.global !== presetStop) {
+        this.deps.config.setGlobalTrustStop(presetStop);
       }
       await cleared.write();
       const all = [...changes, ...cleared.changes];
@@ -673,8 +648,6 @@ export class PermissionService {
        * How a reversal avoids undoing a write it did not make.
        */
       expectActions?: Record<string, PermissionState | null>;
-      /** The person acknowledged Full autonomy in this request. */
-      acknowledgeAutonomy?: boolean;
     },
     writer: PermissionWriter
   ): Promise<PermissionChange[]> {
@@ -687,12 +660,6 @@ export class PermissionService {
           'INVALID_STOP',
           `"${String(files)}" is not a Files & commands stop.`
         );
-      }
-      // The same consent door the global stop has: an agent's own Full autonomy
-      // needs the acknowledgement on file, or sent with it (428 otherwise).
-      const acknowledge = input.acknowledgeAutonomy === true;
-      if (files === 'autonomy' && !acknowledge && !this.deps.config.hasAutonomyAck()) {
-        throw new PermissionError('AUTONOMY_ACK_REQUIRED', AUTONOMY_ACK_MESSAGE, 428);
       }
       const [agent] = this.agentsById([agentId]);
       const stored = (await this.deps.agents.readPermissions(agent!.projectPath)) ?? {};
@@ -710,7 +677,6 @@ export class PermissionService {
         nextFiles = files ?? undefined;
       }
       if (changes.length > 0) {
-        if (files === 'autonomy' && acknowledge) this.deps.config.recordAutonomyAck();
         const { filesAndCommands: _previous, ...rest } = stored;
         await this.deps.agents.writePermissions(
           agentId,
@@ -740,14 +706,14 @@ export class PermissionService {
    * `agent-permissions` D14). The rules live in `permission-undo.ts`.
    *
    * @param eventId - The `permission.changed` event to undo.
-   * @param input - `force`, and the Full autonomy acknowledgement when needed.
+   * @param input - `force` to set back keys that changed since.
    * @param writer - Who is undoing it.
    * @returns What the Undo changed, and what it left alone.
    * @throws {PermissionError} See {@link undoPermissionChange}.
    */
   async undo(
     eventId: string,
-    input: { force?: boolean; acknowledgeAutonomy?: boolean },
+    input: { force?: boolean },
     writer: PermissionWriter
   ): Promise<UndoPermissionChangeResponse> {
     return this.exclusive(async () => {

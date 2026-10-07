@@ -4,7 +4,7 @@ import { render, screen, cleanup, within, waitFor } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
-import { needsConsentRitual } from '@dorkos/shared/permission-semantics';
+import { actsWithoutAsking } from '@dorkos/shared/permission-semantics';
 import { CANONICAL_TRUST_STOPS, TrustDial } from '../trust-dial';
 
 afterEach(cleanup);
@@ -522,7 +522,7 @@ describe('CANONICAL_TRUST_STOPS', () => {
     // from the stop alone — which is only sound while `autonomy` is the one
     // canonical stop the note fires on. A second one here would make cards go
     // quiet at a stop nothing covers (DOR-2102).
-    expect(CANONICAL_TRUST_STOPS.filter(needsConsentRitual).map((stop) => stop.stop)).toEqual([
+    expect(CANONICAL_TRUST_STOPS.filter(actsWithoutAsking).map((stop) => stop.stop)).toEqual([
       'autonomy',
     ]);
   });

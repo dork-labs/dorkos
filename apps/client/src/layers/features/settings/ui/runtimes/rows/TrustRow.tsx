@@ -3,14 +3,13 @@
  * way back to the one shared setting.
  *
  * Presentational on purpose (design decision 7): stops in, a change out, no
- * query and no config write anywhere in it. The consent choreography around
- * Full autonomy is genuinely about the server, so it stays with the container
- * that owns the write.
+ * query and no config write anywhere in it. The write stays with the container
+ * that owns it.
  *
  * @module features/settings/ui/runtimes/rows/TrustRow
  */
 import type { PermissionModeDescriptor, PermissionStop } from '@dorkos/shared/agent-runtime';
-import { needsConsentRitual, resolveTrustStops } from '@/layers/shared/lib';
+import { actsWithoutAsking, resolveTrustStops } from '@/layers/shared/lib';
 import { Button, PermissionModeScopeNote, TrustDial } from '@/layers/shared/ui';
 import { SETTINGS_STOP_LABELS } from '../stop-labels';
 
@@ -68,7 +67,7 @@ export function TrustRow({
   const overridden = stop !== null;
   const resolved = stop ?? globalStop;
   // The descriptor, not just its id: the scope note below decides from what the
-  // mode DOES (`needsConsentRitual`), which is the only way a runtime that files
+  // mode DOES (`actsWithoutAsking`), which is the only way a runtime that files
   // a never-asking mode at the MIDDLE stop still gets the note (Codex).
   const resolvedMode = resolveTrustStops(descriptors).find((s) => s.stop === resolved)?.mode;
   const mode = resolvedMode?.id ?? '';
@@ -90,7 +89,7 @@ export function TrustRow({
   // it itself. Counted end to end in `__tests__/scope-note-placement.test.tsx`.
   const sharedRowSaysIt = resolved === 'autonomy' && (stop === null || stop === globalStop);
   const saysScope =
-    resolvedMode !== undefined && needsConsentRitual(resolvedMode) && !sharedRowSaysIt;
+    resolvedMode !== undefined && actsWithoutAsking(resolvedMode) && !sharedRowSaysIt;
 
   return (
     <section className="flex flex-col gap-1.5" data-testid={`runtime-trust-${runtimeType}`}>
@@ -144,10 +143,8 @@ export function TrustRow({
 
       {/* What this stop does NOT buy, on the card that sets it (DOR-2102).
           Settings was the last picker without it, and it is the one that matters
-          most: a person with a standing acknowledgement never sees the consent
-          dialog that used to be the only place this sentence appeared, so
-          choosing Full autonomy here said nothing about DorkOS's own cards at
-          all.
+          most: no dialog stands in front of Full autonomy, so without this line
+          choosing it here said nothing about DorkOS's own cards at all.
 
           Drawn unless the row beneath the cards is demonstrably already saying
           it for this stop — see `sharedRowSaysIt` above for why that is a

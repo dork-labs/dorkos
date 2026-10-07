@@ -5,30 +5,20 @@
  * The component that draws the line owns none of this, because none of it is
  * about drawing: whether an offer is warranted depends on what the effective
  * default already is (config, plus the runtime's own starting mode), on an
- * answer this session gave earlier, and — when the stop is Full autonomy — on
- * whether this person has ever been told what that means. The offer's few-second
- * life is owned here too, for a reason the browser showed: see {@link OFFER_MS}.
- *
- * ## Why this one still gates on the stop
- *
- * The session dial gates on `needsConsentRitual`, which is wider than the
- * autonomy position (DOR-816). This hook does not, and that is not an oversight:
- * what it writes is `defaultTrustStop`, a runtime-NEUTRAL stop resolved through
- * each runtime's own profile when a session is born. Only `'autonomy'` can mean
- * "does not ask" there — the same middle stop asks on one runtime and cannot on
- * another, so there is no never-asking value to gate. The per-runtime
- * consequence of the chosen stop is disclosed by Settings' living caption
- * instead (spec `trust-dial`, decisions 2A and 6).
+ * answer this session gave earlier. Every stop, Full autonomy included, is
+ * written straight through: the consent ritual is retired (ADR 261006-225605).
+ * The offer's few-second life is owned here too, for a reason the browser
+ * showed: see {@link OFFER_MS}.
  *
  * @module features/status/model/use-make-default-stop
  */
 import { useCallback, useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { PermissionModeDescriptor, PermissionStop } from '@dorkos/shared/agent-runtime';
-import { useAutonomyAcknowledgement, useConfig, useUpdateConfig } from '@/layers/entities/config';
+import { useConfig, useUpdateConfig } from '@/layers/entities/config';
 import { settingsForRuntime, useRuntimeCapabilities } from '@/layers/entities/runtime';
 import { useHasDismissedDefaultStopOffer, useSessionChatStore } from '@/layers/entities/session';
-import { isWorkingMode, resolveTrustStops } from '@/layers/shared/lib';
+import { isWorkingMode } from '@/layers/shared/lib';
 import type { MakeDefaultStopLineProps } from '../ui/MakeDefaultStopLine';
 import { configKeys } from '@/layers/entities/config';
 
@@ -38,11 +28,10 @@ import { configKeys } from '@/layers/entities/config';
  * The timer lives HERE rather than in the component that draws the line, and
  * that is a fix rather than a preference. Driven from the component's mount, an
  * offer made while the line was not on screen never started its clock: the
- * Full-autonomy path opens a modal dialog, the dialog's focus grab closes the
- * dial popover the line used to live in (observed in a browser, 2026-08-01), and
- * the offer then sat un-expired until somebody next opened the popover — where
- * it read as a fresh question about a change made ten minutes ago. An offer's
- * life belongs to the offer.
+ * popover the line lives in can close before the offer expires (observed in a
+ * browser, 2026-08-01), and the offer then sat un-expired until somebody next
+ * opened the popover — where it read as a fresh question about a change made
+ * ten minutes ago. An offer's life belongs to the offer.
  */
 const OFFER_MS = 6_000;
 
@@ -66,17 +55,6 @@ export interface MakeDefaultStop {
    * one whose stop is already the effective default, produces no offer.
    */
   offerFor: (mode: string) => void;
-  /**
-   * The mode the consent dialog should describe while a Full-autonomy default
-   * waits on it, or `null`. The dialog is rendered by the caller, beside the
-   * one it already renders for the session's own autonomy door — a different
-   * question, asked about a different scope.
-   */
-  pendingDescriptor: PermissionModeDescriptor | null;
-  /** The person confirmed: record the consent and write the default, in one patch. */
-  confirm: () => void;
-  /** The person backed out; the session keeps the stop they chose. */
-  cancel: () => void;
 }
 
 /**
@@ -110,11 +88,9 @@ export function useMakeDefaultStop(opts: {
   const { data: capabilityMap } = useRuntimeCapabilities();
   const updateConfig = useUpdateConfig();
   const queryClient = useQueryClient();
-  const autonomyAck = useAutonomyAcknowledgement();
   const dismissed = useHasDismissedDefaultStopOffer(sessionId);
   const dismissOffer = useSessionChatStore((s) => s.dismissDefaultStopOffer);
   const [offeredStop, setOfferedStop] = useState<PermissionStop | null>(null);
-  const [pendingDescriptor, setPendingDescriptor] = useState<PermissionModeDescriptor | null>(null);
   const [writeError, setWriteError] = useState<string | null>(null);
 
   // ## The offer belongs to the conversation it was made about (DOR-1237)
@@ -131,13 +107,12 @@ export function useMakeDefaultStop(opts: {
   // The dismissal was already session-scoped (`useHasDismissedDefaultStopOffer`),
   // which is the same rule stated for the "no" answer; this states it for the
   // offer itself. Adjusted during render on the change rather than in an effect
-  // — the same idiom `AutonomyConfirmDialog` uses to reset its checkbox — so
-  // there is never a paint in which the stale offer is on screen and clickable.
+  // (React's "adjusting state when a prop changes"), so there is never a paint
+  // in which the stale offer is on screen and clickable.
   const [offerSession, setOfferSession] = useState(sessionId);
   if (offerSession !== sessionId) {
     setOfferSession(sessionId);
     setOfferedStop(null);
-    setPendingDescriptor(null);
     setWriteError(null);
   }
 
@@ -169,7 +144,9 @@ export function useMakeDefaultStop(opts: {
   // exactly the bug this hook exists to prevent (see above).
   const targetSection =
     override != null ? settingsForRuntime(capabilityMap, forRuntime)?.configSection : undefined;
-  const canWrite = autonomyAck.canRemember;
+  // Undefined while the config query is in flight: nothing can store the answer
+  // yet, so nothing is offered.
+  const canWrite = config !== undefined;
 
   // The offer's own clock, started by the offer rather than by whatever draws
   // it. No synchronous setState in this body — the withdrawal happens on the
@@ -194,67 +171,36 @@ export function useMakeDefaultStop(opts: {
   );
 
   /**
-   * Write the default, optionally recording the acknowledgement in the SAME
-   * patch — the config route refuses a Full-autonomy default without one, and
-   * two requests would race.
+   * Write the default to the leaf the comparison was made against.
    *
-   * The offer SURVIVES a failure. A 428 (another tab pressed Reset between the
-   * read and the write) or a 403 (login came on) has to be sayable and
+   * The offer SURVIVES a failure. A 403 (login came on) has to be sayable and
    * retryable; dropping the line would leave a person who pressed a button with
    * nothing changed and nothing said.
    */
-  const persist = useCallback(
-    (stop: PermissionStop, withAck: boolean) => {
-      setWriteError(null);
-      updateConfig.mutate(
-        {
-          ...(withAck ? { ui: { autonomyAcknowledgedAt: new Date().toISOString() } } : {}),
-          runtimes: targetSection
-            ? { [targetSection]: { defaultTrustStop: stop } }
-            : { defaultTrustStop: stop },
-        },
-        {
-          onSuccess: () => {
-            void queryClient.invalidateQueries({ queryKey: configKeys.all });
-            setOfferedStop(null);
-          },
-          onError: (err) => setWriteError(describeWriteFailure(err)),
-        }
-      );
-    },
-    [updateConfig, queryClient, targetSection, setOfferedStop, setWriteError]
-  );
-
   const onMakeDefault = useCallback(() => {
     if (!offeredStop) return;
-    if (offeredStop === 'autonomy' && autonomyAck.acknowledgedAt === null) {
-      // Set-time is consent-time, here too. The person may have confirmed
-      // autonomy for THIS session a moment ago, but that answer was about one
-      // conversation; making it the standing default is the wider claim, and it
-      // is the one the server requires a durable record for.
-      const descriptor = resolveTrustStops(declaredModes).find((s) => s.stop === 'autonomy')?.mode;
-      if (descriptor) {
-        setPendingDescriptor(descriptor);
-        return;
+    const stop = offeredStop;
+    setWriteError(null);
+    updateConfig.mutate(
+      {
+        runtimes: targetSection
+          ? { [targetSection]: { defaultTrustStop: stop } }
+          : { defaultTrustStop: stop },
+      },
+      {
+        onSuccess: () => {
+          void queryClient.invalidateQueries({ queryKey: configKeys.all });
+          setOfferedStop(null);
+        },
+        onError: (err) => setWriteError(describeWriteFailure(err)),
       }
-    }
-    persist(offeredStop, false);
-  }, [offeredStop, autonomyAck.acknowledgedAt, declaredModes, persist, setPendingDescriptor]);
+    );
+  }, [offeredStop, updateConfig, queryClient, targetSection, setOfferedStop, setWriteError]);
 
   const onDismiss = useCallback(() => {
     dismissOffer(sessionId);
     setOfferedStop(null);
   }, [dismissOffer, sessionId, setOfferedStop]);
-
-  const confirm = useCallback(() => {
-    setPendingDescriptor(null);
-    persist('autonomy', true);
-  }, [persist, setPendingDescriptor]);
-
-  const cancel = useCallback(() => {
-    setPendingDescriptor(null);
-    setOfferedStop(null);
-  }, [setPendingDescriptor, setOfferedStop]);
 
   return {
     line: canWrite
@@ -267,8 +213,5 @@ export function useMakeDefaultStop(opts: {
         }
       : null,
     offerFor,
-    pendingDescriptor,
-    confirm,
-    cancel,
   };
 }

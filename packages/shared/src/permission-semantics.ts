@@ -139,7 +139,7 @@ export function isTightening(
  *
  * Both halves must hold, the same two ranks {@link isTightening} reads. One
  * deliberate exception, the one {@link isDivergent} and
- * {@link needsConsentRitual} already make: a mode that can only READ is judged
+ * {@link actsWithoutAsking} already make: a mode that can only READ is judged
  * on reach alone. It never asks because it has nothing to ask about — Codex's
  * read-only sandbox declares `asks: 'never'` for exactly that reason — and
  * ranking that as "asks less than Accept edits" would put the safest mode on
@@ -253,53 +253,34 @@ export function isAutonomyStop(descriptor: PermissionModeDescriptor): boolean {
 }
 
 /**
- * Whether choosing this mode should ask the person first — the rule the consent
- * door is built on (spec `trust-dial`, decision 5, widened 2026-08-01).
+ * Whether this mode acts without ever stopping to ask: the autonomy stop,
+ * whatever it can reach, or any mode that never asks and can do more than read.
  *
  * True for two shapes, and they are one question asked twice:
  *
- * 1. **The autonomy stop**, whatever it can reach. It is the position a person
- *    deliberately takes, and consent is about the position.
+ * 1. **The autonomy stop**, whatever it can reach.
  * 2. **Any mode that never asks and can do more than read**, wherever its
  *    runtime filed it. Codex's middle stop is the live case: `workspace-write`
- *    sits at "act, ask when risky" and runs shell commands with no way to pause
- *    and ask. Nothing about the dial's position makes that walk-back-able, so
- *    gating the position alone let it in through a door held open.
+ *    sits at "act, ask when risky" and runs shell commands with no way to pause.
  *
  * `reach: 'read'` is excluded for the reason {@link isDivergent} excludes it: a
- * mode that can only read never asks because it has nothing to ask about, and a
- * consent dialog in front of the safest setting on offer is how a consent dialog
- * stops being read.
+ * mode that can only read never asks because it has nothing to ask about.
  *
- * ## Why this is not composed from the predicates beside it
+ * It once decided which mode changes needed a consent ritual first; that
+ * ritual is retired (ADR 261006-225605: full power is the default, and the
+ * audit trail is the record). What still reads it: the rule that no runtime is
+ * BORN at such a mode (`runtimeConformance`), the "Always allow" card that may
+ * not adopt one for a whole session, `session_start`'s rule that such a level
+ * is named rather than inherited, and the scope notes that say what such a mode
+ * covers.
  *
- * {@link isBypassSemantics} is this same never-asking shape narrowed to
- * `reach: 'everything'` — a strict subset of clause 2, so OR-ing it in would add
- * a term that can never change the answer. Widening THAT predicate instead is
- * the tempting shortcut and the wrong one: it drives the standing banner and the
- * mark on a session's row, and a mode confined to the workspace earns neither.
- * {@link isUnattendedAutonomy} is
- * built on that one and was left where it stood for the same reason: widening a
- * door decides what a person is asked before choosing, and widening an always-on
- * banner decides what a standing alarm is for. Three questions, three answers,
- * allowed to disagree.
- *
- * ## Who consumes it
- *
- * The server's door (`PATCH /api/sessions/:id`, which answers `428
- * AUTONOMY_ACK_REQUIRED` without an acknowledgement) and every client surface
- * that opens a mode-change dialog before sending one: the session's Trust Dial,
- * the relay binding dialog, and the scheduled-task form. All four must apply the
- * same rule, or a mode is gated on one surface and slips through on another.
- *
- * Not consumed by the `defaultTrustStop` config door: that axis stores one of
- * the dial's three STOPS, not a runtime mode, so `'autonomy'` is the only value
- * there that can mean "never asks" and its own gate stays stop-shaped
- * (`services/core/approvals/autonomy-consent.ts`).
+ * {@link isBypassSemantics} is this same shape narrowed to `reach:
+ * 'everything'`, a strict subset of clause 2; it drives a different question
+ * and is not composed from this one.
  *
  * @param descriptor - A mode as its runtime declared it.
  */
-export function needsConsentRitual(descriptor: PermissionModeDescriptor): boolean {
+export function actsWithoutAsking(descriptor: PermissionModeDescriptor): boolean {
   if (isAutonomyStop(descriptor)) return true;
   return descriptor.asks === 'never' && descriptor.reach !== 'read';
 }
@@ -320,7 +301,7 @@ export function needsConsentRitual(descriptor: PermissionModeDescriptor): boolea
  * gains an approval channel stops matching on the day it declares `asks` as
  * anything but `never`, with no edit here.
  *
- * The mirror of {@link needsConsentRitual}'s `reach: 'read'` exclusion: that one
+ * The mirror of {@link actsWithoutAsking}'s `reach: 'read'` exclusion: that one
  * leaves this shape alone because it is the safest thing on offer, and this one
  * exists because being safe is not the same as being understood.
  *

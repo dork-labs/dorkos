@@ -81,8 +81,8 @@ export interface RuntimeCardProps {
   /** The stop the global row resolves to, which `null` above inherits. */
   globalStop: PermissionStop;
   /**
-   * Set or clear this runtime's override. The tab writes it, because a change to
-   * Full autonomy has to pass through the one consent dialog the tab owns.
+   * Set or clear this runtime's override. The tab writes it, so every trust row
+   * on the page shares one write path.
    */
   onChangeTrustStop: (stop: PermissionStop | null) => void;
   /**

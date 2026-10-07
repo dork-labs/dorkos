@@ -154,30 +154,26 @@ describe('FullPowerDoor', () => {
     expect(screen.queryByRole('button', { name: CUSTOMIZE })).not.toBeInTheDocument();
   });
 
-  it('accept sends ONE config PATCH carrying the acknowledgement WITH the stop, then opens the mesh', async () => {
+  it('accept sends ONE config PATCH carrying the decision WITH the stop, and no acknowledgement', async () => {
     const user = userEvent.setup();
     renderDoor();
 
     await user.click(screen.getByRole('button', { name: ACCEPT }));
 
-    // A1: the whole body, including `ui.autonomyAcknowledgedAt` — the ack the
-    // 428 gate demands rides in the SAME request as the autonomy stop. Standing
-    // permissions are retired (spec `agent-permissions` phase 2), so nothing
-    // under `approvals` rides it.
+    // A1: the whole body. The consent ritual is retired (ADR 261006-225605), so
+    // no acknowledgement rides it; standing permissions are retired too (spec
+    // `agent-permissions` phase 2), so nothing under `approvals` does.
+    // `toHaveBeenCalledWith` compares the whole object, so an extra key fails it.
     expect(configMutateAsync).toHaveBeenCalledTimes(1);
     expect(configMutateAsync).toHaveBeenCalledWith({
       ui: {
-        autonomyAcknowledgedAt: expect.any(String),
         fullPowerDecidedAt: expect.any(String),
         fullPowerChoice: 'full',
       },
       runtimes: { defaultTrustStop: 'autonomy' },
     });
-    const body = configMutateAsync.mock.calls[0][0] as {
-      ui: { autonomyAcknowledgedAt: string | null };
-      approvals?: unknown;
-    };
-    expect(body.ui.autonomyAcknowledgedAt).not.toBeNull();
+    const body = configMutateAsync.mock.calls[0][0] as { ui: object; approvals?: unknown };
+    expect(Object.keys(body.ui).sort()).toEqual(['fullPowerChoice', 'fullPowerDecidedAt']);
     expect(body).not.toHaveProperty('approvals');
 
     // Step 2 — the mesh opens `* -> *` only after the config write lands.

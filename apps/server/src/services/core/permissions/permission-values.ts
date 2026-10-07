@@ -39,11 +39,6 @@ export class PermissionError extends Error {
   }
 }
 
-/** The sentence a Full-autonomy write without an acknowledgement is refused with. */
-export const AUTONOMY_ACK_MESSAGE =
-  'Full autonomy lets agents edit files and run commands without asking. Confirm that in the ' +
-  'app first, then try again.';
-
 /**
  * True for a real state value.
  *
