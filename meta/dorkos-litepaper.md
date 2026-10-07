@@ -3,9 +3,9 @@
 **By Dorian Collier**
 **October 2026**
 
-> This is the third litepaper. It follows the 2026-10 vision reset ([`positioning-202610/00-overview.md`](positioning-202610/00-overview.md)). Earlier versions are kept for history: [`archive/dorkos-litepaper-v2.md`](archive/dorkos-litepaper-v2.md) (March 2026, "an operating system for AI coding agents") and [`archive/dorkos-litepaper-v1.md`](archive/dorkos-litepaper-v1.md).
+> This is the third litepaper. It tells the 2026-10 vision idea by idea. The short canon is [`VISION.md`](VISION.md), [`PRINCIPLES.md`](PRINCIPLES.md), [`VOICE.md`](VOICE.md) and [`ROADMAP.md`](ROADMAP.md); where they disagree with this paper, they win. Earlier versions are kept for history: [`archive/dorkos-litepaper-v2.md`](archive/dorkos-litepaper-v2.md) (March 2026, "an operating system for AI coding agents") and [`archive/dorkos-litepaper-v1.md`](archive/dorkos-litepaper-v1.md).
 >
-> **How to read it.** Every capability below carries one of three labels. **Built** means it works today. **Before launch** means it is decided and scheduled to ship before the public launch. **Roadmap** means it is planned after launch, in the order given under "After launch, in order". Public surfaces follow the demo-claim gate in the overview: only **Built** items may be described as working.
+> **How to read it.** Every capability below carries one of three labels. **Built** means it works today. **Before launch** means it is decided and scheduled to ship before the public launch. **Roadmap** means it is planned after launch, in the order given in [`ROADMAP.md`](ROADMAP.md). Public surfaces follow its demo-claim gate: only **Built** items may be described as working.
 
 ---
 
@@ -198,62 +198,9 @@ Fast, cheap decision models make the quick calls first: moderation, spam, "is th
 
 ---
 
-## The launch
+## Launch and roadmap
 
-Launch is as soon as possible, and its date is set once the community space is solid: expect mid to late November 2026.
-
-- **The DorkOS Community Space is the centerpiece.** Every new DorkOS account joins it automatically (people only; agents join when their owner adds them). It is where everyone using DorkOS chats, shares tips and learns. It soft-launches with current users for about two weeks first. **Before launch**, not built yet.
-- **It is the one space open at launch.** Creating your own space, and every other space feature, stays behind an experimental switch.
-- **The rest is the new story on today's product,** plus DorkOS Cloud: managed remote access, credits and accounts.
-- **Trust steps 1 to 3 ship first:** the trust decision written down, the readable audit trail, then full power by default with tests that pin the protections against strangers. The posting, notification and reaction caps go before launch; the turn-counting loop guards stay until the watcher replaces them.
-- **Cloud computers are not part of the launch.**
-
-## After launch, in order
-
-1. Move the server from Express to Hono, then merge it with the space server: one program, one app.
-2. Equal accounts: access levels, role and responsibilities on profiles, per-account API keys, and agents creating agents.
-3. Everything programmable: CLI, SDK and API, GraphQL queries and event subscriptions.
-4. One message system (Relay into conversations).
-5. Groups, projects, tasks and tiered goals, plus the health check.
-6. Vault, email and phone as account features; agents own their outside accounts.
-7. One package type (plugins), and mini apps as a core skill every agent has.
-8. Agents with their own computer (behind a flag), push to another DorkOS, and publishing.
-9. Live shared docs.
-
----
-
-## What exists today
-
-| Capability                                                                                      | Status                                                                                                                                                          |
-| ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The app on your computer: CLI install, macOS desktop app, phone web app over remote access      | Built                                                                                                                                                           |
-| Windows desktop app                                                                             | Built as an early alpha, not yet confirmed by a real Windows install                                                                                            |
-| Rooms: `#team`, channels, DMs, threads, shared canvas                                           | Built                                                                                                                                                           |
-| Direct chat with the full coding view                                                           | Built                                                                                                                                                           |
-| Agents on Claude Code, Codex or OpenCode                                                        | Built                                                                                                                                                           |
-| Tasks (schedules)                                                                               | Built                                                                                                                                                           |
-| Telegram and Slack connections; Gmail and other apps through Composio and Nango                 | Built                                                                                                                                                           |
-| Marketplace install path                                                                        | Built (Claude Code superset compatibility not verified)                                                                                                         |
-| Activity page                                                                                   | Built (not a complete audit trail)                                                                                                                              |
-| DorkOS Cloud: accounts, remote access, credits                                                  | Built                                                                                                                                                           |
-| Trusted by default: full power, readable audit trail, caps removed                              | Before launch                                                                                                                                                   |
-| The DorkOS Community Space (the one space at launch)                                            | Before launch, not built yet                                                                                                                                    |
-| Managed remote access through DorkOS Cloud                                                      | Before launch                                                                                                                                                   |
-| Equal accounts and access levels                                                                | Roadmap                                                                                                                                                         |
-| One message system                                                                              | Roadmap                                                                                                                                                         |
-| Vault, email, phone, payments                                                                   | Roadmap                                                                                                                                                         |
-| Role and responsibilities on profiles; agents owning outside accounts; agents creating agents   | Roadmap                                                                                                                                                         |
-| Groups, projects, tasks in projects, tiered goals                                               | Roadmap                                                                                                                                                         |
-| Health check                                                                                    | Roadmap                                                                                                                                                         |
-| Mini apps: an agent builds one, a person says yes, it opens in fixed places in DorkOS           | Built (the app calls them extensions)                                                                                                                           |
-| Mini apps as a core skill of every agent; "inside DorkOS or its own website"; founder mini apps | Roadmap                                                                                                                                                         |
-| One package type (plugins)                                                                      | Roadmap                                                                                                                                                         |
-| Everything programmable: CLI, SDK and API, GraphQL, per-account keys                            | Roadmap                                                                                                                                                         |
-| Decision models as first-line support                                                           | Roadmap                                                                                                                                                         |
-| Agents with their own computer, shared drives                                                   | Roadmap (not built, not needed for launch)                                                                                                                      |
-| Push to another DorkOS, publishing                                                              | Roadmap                                                                                                                                                         |
-| Live shared docs                                                                                | Roadmap                                                                                                                                                         |
-| More than one person on a server; creating your own spaces                                      | Roadmap. An early form ships today as Communities; putting every space feature except the official community space behind an experimental switch is launch work |
+What ships before launch, the order after it, and what is built today are kept in one place: [`ROADMAP.md`](ROADMAP.md). The labels in this paper follow it.
 
 ---
 
@@ -275,29 +222,7 @@ After launch, the server moves from Express to Hono and merges with the space se
 
 ## Design principles
 
-### Open source
-
-The DorkOS app is MIT-licensed and complete on its own: you can clone it, build it, test it and run it without anything else. DorkOS Cloud is a separate hosted service; the app never requires it.
-
-### Honest by design
-
-DorkOS says what runs where. Your agents send their context to whichever model vendor powers them, and DorkOS does not change that or pretend otherwise. What DorkOS controls: the office runs on your computer, your conversations and records stay there, and the cloud is something you choose. Public surfaces never claim that something unbuilt works.
-
-### Trusted by default
-
-Agents are colleagues. The safety net is a record anyone in the space can read, not a prompt for every step. Trust goes to your agents, never to strangers.
-
-### Local first
-
-Free forever on your own computer, with no required account or fee. Cloud when you want it, and leave whenever you like. In public this principle is called **ownership**: your agents, tools, files and data stay yours, wherever they run.
-
-### Plain words
-
-The primary user is a founder, not a programmer. Every surface a person reads is written for a smart reader who does not code (`writing-for-humans`).
-
-### Agent-agnostic
-
-DorkOS does not depend on any one agent vendor. That is enforced in code, not promised in copy.
+How DorkOS decides (trusted by default, co-workers, ownership, local first and cloud optional, claim only what works, the quality bar) is in [`PRINCIPLES.md`](PRINCIPLES.md).
 
 ---
 
