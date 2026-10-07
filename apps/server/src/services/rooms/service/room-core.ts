@@ -25,6 +25,7 @@ import type { BridgeStore } from '../../relay/chat-bridge/bridge-store.js';
 import {
   bridgedRoomFraming,
   topicNamesForEntries,
+  type BridgedRoomFraming,
 } from '../../relay/chat-bridge/room-context-framing.js';
 import type { AuthorRecord, AuthorRegistry } from '../author-registry.js';
 import type { RoomLimitsResolver } from '../limits/room-limits.js';
@@ -44,6 +45,13 @@ import type {
   RoomMirrorWritePolicy,
   RoomServiceDeps,
 } from './room-service-deps.js';
+
+/**
+ * What a turn in a space's channel copy is told about the room: people outside
+ * this machine post here, nothing about visibility is partial, and there are
+ * no far-end formatting rules (spec `official-community-space` D10).
+ */
+const SPACE_ROOM_FRAMING: BridgedRoomFraming = { visibility: null };
 
 /** Everything a room collaborator may read, resolved once at construction. */
 export interface RoomCore {
@@ -213,9 +221,15 @@ export function createRoomCore(deps: RoomServiceDeps, writeBack: RoomWriteBack):
     // already in the log, and a room whose history holds a stranger's words
     // should not quietly lose the sentence that says so — so this reads
     // `findBridgeByRoom`, not a live-only lookup.
+    //
+    // A space's channel copy is framed the same way (spec
+    // `official-community-space` D10): anyone who joined the space posts
+    // there, so the standing line about strangers belongs on every turn in it.
+    // It has no partial visibility to report and no far-end formatting rules.
     bridgedFraming: (roomId) => {
       const bridge = deps.bridges.findBridgeByRoom(roomId);
-      return bridge ? bridgedRoomFraming(bridge) : null;
+      if (bridge) return bridgedRoomFraming(bridge);
+      return deps.mirrorAccess?.isMirror(roomId) ? SPACE_ROOM_FRAMING : null;
     },
     topicNamesFor: (entryIds) => topicNamesForEntries(deps.bridges, entryIds),
     attachmentsFor: (roomId, entryIds) => deps.attachments.listFor(roomId, entryIds),
