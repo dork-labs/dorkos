@@ -2,6 +2,86 @@
   "version": 1,
   "decisions": [
     {
+      "id": "261006-235242",
+      "slug": "everything-is-a-plugin",
+      "title": "Everything is a plugin; the marketplace has one package type that lists what it contains",
+      "status": "accepted",
+      "created": "2026-10-06",
+      "extractedFrom": null,
+      "specSlug": null,
+      "supersedes": null,
+      "amends": ["260721-221810", 230],
+      "affects": ["packages/marketplace/**", "apps/server/src/services/marketplace/**"]
+    },
+    {
+      "id": "261006-235241",
+      "slug": "shared-docs-are-yjs-documents",
+      "title": "Docs people and agents write together are Yjs documents; chat stays a server-ordered log",
+      "status": "accepted",
+      "created": "2026-10-06",
+      "extractedFrom": null,
+      "specSlug": null,
+      "supersedes": null,
+      "amends": [293, "260911-200301"],
+      "affects": ["apps/server/src/services/canvas/**", "apps/client/src/layers/features/canvas/**"]
+    },
+    {
+      "id": "261006-235240",
+      "slug": "one-message-system",
+      "title": "One message system; Relay becomes the delivery engine of conversations, and anyone in a space may message anyone",
+      "status": "accepted",
+      "created": "2026-10-06",
+      "extractedFrom": null,
+      "specSlug": null,
+      "supersedes": null,
+      "amends": [13, 34, 170],
+      "affects": [
+        "packages/relay/**",
+        "apps/server/src/services/relay/**",
+        "apps/server/src/services/rooms/**"
+      ]
+    },
+    {
+      "id": "261006-235239",
+      "slug": "people-and-agents-hold-equal-accounts",
+      "title": "People and agents hold equal accounts with built-in access levels, and no person is required",
+      "status": "accepted",
+      "created": "2026-10-06",
+      "extractedFrom": null,
+      "specSlug": null,
+      "supersedes": null,
+      "amends": [320, "260814-025326"],
+      "affects": [
+        "apps/server/src/services/identity/**",
+        "apps/server/src/services/rooms/**",
+        "apps/community/src/**"
+      ]
+    },
+    {
+      "id": "261006-235238",
+      "slug": "one-dorkos-server-in-every-size",
+      "title": "One DorkOS server in every size; a space is a DorkOS server, and work moves between servers by push",
+      "status": "accepted",
+      "created": "2026-10-06",
+      "extractedFrom": null,
+      "specSlug": null,
+      "supersedes": null,
+      "amends": ["260727-184933", "260916-210001", 319],
+      "affects": ["apps/server/**", "apps/community/**", "packages/shared/src/community-adapter.ts"]
+    },
+    {
+      "id": "261006-235237",
+      "slug": "a-workspace-for-people-and-agents-built-first-for-the-founder",
+      "title": "DorkOS is a workspace for people and agents, built first for the founder",
+      "status": "accepted",
+      "created": "2026-10-06",
+      "extractedFrom": null,
+      "specSlug": null,
+      "supersedes": "260718-042153",
+      "amends": null,
+      "affects": ["meta/**", "apps/site/src/**", "docs/**"]
+    },
+    {
       "id": "261005-113107",
       "slug": "codex-runs-on-app-server",
       "title": "Codex runs on one supervised app-server process per home, not one exec process per turn",
@@ -1168,10 +1248,11 @@
       "id": "260718-042153",
       "slug": "two-act-positioning-gated-business-user-act-2",
       "title": "Two-act positioning: launch on operator/dev framing now, gate business-user Act 2 on evidence triggers",
-      "status": "accepted",
+      "status": "superseded",
       "created": "2026-07-17",
       "lastVerified": "2026-08-06",
-      "affects": ["meta/positioning-202607/**"]
+      "affects": ["meta/positioning-202607/**"],
+      "supersededBy": "261006-235237"
     },
     {
       "id": "260717-180706",
@@ -7224,7 +7305,9 @@
         "261004-235818",
         "260818-002803",
         "260819-022912",
-        "260923-223910"
+        "260923-223910",
+        "260821-190444",
+        "260822-235801"
       ],
       "supersedes": ["260822-235759", "0033"],
       "affects": [

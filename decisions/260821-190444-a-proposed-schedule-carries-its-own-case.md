@@ -18,6 +18,8 @@ Accepted 2026-08-22 — implemented in DOR-1394/DOR-1398 (PRs #1160, #1168).
 provenance is stamped by `task-store.ts`, and the test run is
 `POST /api/tasks/:id/trigger` (`services/tasks/__tests__/trigger-pending-schedule.test.ts`).
 
+Amended by [261006-225605](261006-225605-agents-are-trusted-by-default-outsiders-and-third-party-code-are-not.md) (agents are trusted by default; 2026-10-06 vision reset): retires "Approving remains the only action that makes a schedule run on its own", for schedules our own agents propose: in-circle schedules run without asking. The required reason, the stamped provenance and the test run stand, and become part of the audit trail. Schedules that arrive inside a package keep their approval.
+
 ## Context
 
 An agent proposes a scheduled run through the `tasks_create` MCP tool, and

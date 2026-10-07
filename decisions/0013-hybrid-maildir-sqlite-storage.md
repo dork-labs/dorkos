@@ -15,6 +15,8 @@ Accepted
 
 (2026-08-06 audit) The maildir-as-truth + rebuildable derived index decision stands; the standalone relay index.db was consolidated into @dorkos/db (packages/db/src/schema/relay.ts) via Drizzle.
 
+Amended by [261006-235240](261006-235240-one-message-system.md) (one message system; 2026-10-06 vision reset): retires Maildir as the source of truth for Relay messages. Relay merges into conversations and the Maildir store retires when that work lands; until then this decision, and its amendment by 261001-201108, still govern Relay's store.
+
 ## Context
 
 Relay needs both durable message storage and efficient querying (by subject, status, expiry). A single storage system would compromise one concern: pure Maildir lacks query capability, pure SQLite lacks atomic delivery guarantees and file inspectability. DorkOS already uses this dual pattern: JSONL transcript files as truth with programmatic reading on top.

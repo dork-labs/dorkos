@@ -14,6 +14,8 @@ amends: null
 
 Accepted (extracted from spec `room-canvas`).
 
+Amended by [261006-235241](261006-235241-shared-docs-are-yjs-documents.md) (shared docs are Yjs documents; 2026-10-06 vision reset): retires whole-document state as the way a shared doc's text changes travel; those docs become Yjs documents. The server-owned table, the no-`seq` canvas frame and the resync stand for every other document kind.
+
 ## Context
 
 A session's canvas lives in one browser's `localStorage`, keyed by session id

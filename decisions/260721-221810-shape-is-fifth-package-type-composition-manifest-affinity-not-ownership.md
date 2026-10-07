@@ -15,6 +15,8 @@ superseded-by: null
 
 Accepted
 
+Amended by [261006-235242](261006-235242-everything-is-a-plugin.md) (everything is a plugin; 2026-10-06 vision reset): retires Shape as a fifth package type; there will be one package type, the plugin, and Shapes become mini apps a plugin can contain. The `shape` type still ships, and this still governs it, until that work lands.
+
 ## Context
 
 The Shapes program (`plans/shapes-program.md` D2) needed to ratify what a Shape _is_ before Linear Ops (P1) and Flow Board (P2) could be described in a manifest. A Shape bundles extensions, a saved layout, suggested agents, skills, MCP connections, and schedules into one installable, forkable unit — a "place" you switch into. The open question was the disk model. A **monolithic bundle** would re-embed each part (core extensions, agent definitions, skills) inside the Shape package; a **composition manifest** would instead reference and activate already-installed packages and carry only the shape-specific glue. The harness-derived-shapes principle set the constraint: the first Shapes are an _assembly_ of already-shipped parts, so the format must compose existing pieces rather than require new greenfield primitives. A second, entangled question was ownership: does a Shape _own_ its agents (an agent belongs to one Shape) or merely _suggest_ them?
