@@ -2418,8 +2418,20 @@ export const UserConfigSchema = z.object({
    * turns this on in Settings → Experiments. This machine's own rooms and
    * #team are not spaces and never read it. Read on every request, so a change
    * takes effect at once.
+   *
+   * `official.url` is the one exception (spec `official-community-space` D4):
+   * the public link of the official DorkOS space. Its row shows, and it can be
+   * joined, even with the experiment off. `''` turns the exception off, which
+   * is the shipped default until that space exists. `DORKOS_OFFICIAL_SPACE_URL`
+   * overrides it. Only a person may change it: it decides which outside server
+   * this install talks to with spaces off.
    */
-  spaces: z.object({ enabled: z.boolean().default(false) }).default(() => ({ enabled: false })),
+  spaces: z
+    .object({
+      enabled: z.boolean().default(false),
+      official: z.object({ url: z.string().max(2048).default('') }).default(() => ({ url: '' })),
+    })
+    .default(() => ({ enabled: false, official: { url: '' } })),
   /**
    * Letting agents on other systems talk to the agents on this one.
    *

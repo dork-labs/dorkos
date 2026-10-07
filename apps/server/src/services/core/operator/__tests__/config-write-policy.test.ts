@@ -193,6 +193,7 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'scheduler.maxConcurrentRuns',
       'server.boundary',
       'spaces.enabled',
+      'spaces.official.url',
       'telemetry.aiMetadata',
       'telemetry.errorReporting',
       'telemetry.heartbeat',

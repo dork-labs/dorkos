@@ -62,7 +62,7 @@ describe('UserConfigSchema', () => {
       version: 1,
       server: { port: 4242, cwd: null, boundary: null, open: true },
       browser: { enabled: false },
-      spaces: { enabled: false },
+      spaces: { enabled: false, official: { url: '' } },
       tunnel: {
         enabled: false,
         domain: null,
@@ -456,7 +456,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
       version: 1,
       server: { port: 4242, cwd: null, boundary: null, open: true },
       browser: { enabled: false },
-      spaces: { enabled: false },
+      spaces: { enabled: false, official: { url: '' } },
       tunnel: {
         enabled: false,
         domain: null,

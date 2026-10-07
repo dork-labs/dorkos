@@ -223,6 +223,9 @@ export const CONFIG_DISCLOSURE = {
   'browser.enabled': 'expose',
   // Whether the spaces experiment is on (DOR-2740): a plain boolean, no host.
   'spaces.enabled': 'expose',
+  // The official space's public link (spec `official-community-space` D4): a
+  // public address, never a credential, and the same for every install.
+  'spaces.official.url': 'expose',
   // Whether outside agents may reach the ones here over A2A. A plain boolean:
   // it names no credential and no host, and an agent that learns the gate is
   // shut is no closer to opening it — the write side is where that is decided.

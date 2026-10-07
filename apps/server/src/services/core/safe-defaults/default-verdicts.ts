@@ -309,6 +309,9 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'browser.enabled': false,
   // Spaces stay hidden until a person opts in (DOR-2740).
   'spaces.enabled': false,
+  // No official space until a release or a person names one (spec
+  // `official-community-space` D4).
+  'spaces.official.url': '',
   // The external A2A surface starts unmounted, so no agent outside DorkOS can
   // reach the ones inside it until a person opens that door (DOR-1304).
   'a2a.enabled': false,

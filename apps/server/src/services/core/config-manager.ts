@@ -930,6 +930,39 @@ export function seedCodexTransport(store: {
 }
 
 /**
+ * Migration body: seed `spaces.official: { url: '' }` for configs persisted
+ * before the official DorkOS space had a setting (spec
+ * `official-community-space` D4).
+ *
+ * `''` is the only honest seed: it means "no official space", which is what a
+ * config that predates the setting had. A link reaches an install through a
+ * release default or a person, never through this body. Additive and
+ * idempotent: writes only when `official.url` is not already a string, and
+ * keeps every other `spaces` member (`enabled` above all). A config with no
+ * `spaces` object is skipped: a whole missing section is written by conf's own
+ * defaults merge before any key runs.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function seedSpacesOfficial(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const spaces = store.get('spaces');
+  if (!spaces || typeof spaces !== 'object' || Array.isArray(spaces)) return;
+  const official = (spaces as { official?: unknown }).official;
+  if (
+    official &&
+    typeof official === 'object' &&
+    !Array.isArray(official) &&
+    typeof (official as { url?: unknown }).url === 'string'
+  )
+    return;
+  store.set('spaces', { ...(spaces as Record<string, unknown>), official: { url: '' } });
+}
+
+/**
  * Migration body: seed `extensions.trustedSources: []` for configs persisted
  * before a person could trust a code source outright (spec `flow-multiproject`
  * §9.3).
@@ -4851,6 +4884,20 @@ export const CONFIG_MIGRATIONS = {
     // `runtimes.codex.transport` — how DorkOS runs Codex (ADR 261005-113107).
     // See `seedCodexTransport`.
     seedCodexTransport(store);
+  },
+  // 0.100.0 has merged (the Codex transport above), so 0.101.0 is the next
+  // key. Frozen from merge, for the reason `'0.60.0'` above states; anything
+  // further opens `'0.102.0'`.
+  //
+  // Disjoint from every other key here: it adds one nested leaf under
+  // `spaces`, beside `enabled`, which it preserves.
+  '0.101.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `spaces.official.url` — the official DorkOS space's link (spec
+    // `official-community-space` D4). See `seedSpacesOfficial`.
+    seedSpacesOfficial(store);
   },
 } as const;
 
