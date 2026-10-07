@@ -82,9 +82,9 @@ The auth instance is always mounted (even when `auth.enabled` is `false`) so the
 
 **This holds until equal accounts land.** Spec `community-server` decision D6 (cited in code as "ADR 260727-184933 D6") keeps the local install single-user today: nobody else holds an account on the machine that runs your agents and spends your model quota, and multi-user lives in `apps/community`. ADR 261006-235239 (equal accounts, Owner/Admin/Member/Guest) retires that rule as after-launch work, and ADR 261006-235238 merges the two servers. Do not reopen registration piecemeal; it reopens with access levels.
 
-### There are no roles here, and there is no gate for them
+### There are no access levels here, and there is no gate for them
 
-A local install has exactly one person, so it has nothing to grant and nothing to withhold. `sessionGate` answers the only question there is — "is this the owner" — and every route behind it is the owner's. Roles (`owner` / `admin` / `member`) belong to `apps/community`, which has a roster; see D7. Do not add a role model to this app.
+A local install has exactly one person, so it has nothing to grant and nothing to withhold. `sessionGate` answers the only question there is ("is this the owner"), and every route behind it is the owner's. Community roles (`owner` / `admin` / `member`, the code names for what the vision now calls access levels) belong to `apps/community`, which has a roster; see D7. Do not add a role or access-level model to this app. ("Role" in the vision now means the job on a profile, its role and responsibilities, which is also roadmap.)
 
 ### The owner is an identity, not a column
 

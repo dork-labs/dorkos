@@ -40,6 +40,14 @@ why:
 Their prompt-only fix was verified once and then observed to fail on a different
 model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavior.md`.
 
+**Loop guards and output caps are not the same kind of bound.** ADR `261006-225605` (our
+agents are trusted by default) splits them. The cascade guard, the turn budget and the halt path
+are accident guards: they stay exactly as they are until DOR-2745 replaces turn counting with a
+no-progress check. The per-turn post cap (`rooms.maxPostsPerTurn`) and the reaction ceiling are
+caps on routine output: that ADR retires them as refusals, and DOR-2753 removes them once the
+audit trail lands. Until that change merges they are live mechanisms and every rule below about
+them holds. Do not loosen one ahead of it.
+
 ## Invariants
 
 - **A room that holds two or more agents holds the person too** — the three-way
