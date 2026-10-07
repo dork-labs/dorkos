@@ -116,8 +116,9 @@ Here's the full list, in case you're scripting a deployment or writing a systemd
     },
     DORKOS_ACTIVITY_RETENTION_DAYS: {
       type: 'number',
-      description: 'How many days of activity history to keep before old events are pruned.',
-      default: "'30'",
+      description:
+        'How many days of Activity history to keep. Overrides the activity.retentionDays setting (365 by default). The record keeps every action whatever this says.',
+      default: 'Not set',
     },
     NODE_ENV: {
       type: 'string',

@@ -37,6 +37,16 @@
       ]
     },
     {
+      "guide": "audit-trail.md",
+      "description": "The audit log: append-only triggers, hash chain contract, stable actor ids, the Activity tee, adding a choke point",
+      "patterns": [
+        "services/audit/",
+        "schema/audit/",
+        "audit-schemas",
+        "routes/audit.ts"
+      ]
+    },
+    {
       "guide": "system-architecture.md",
       "description": "Deployment boundaries, protocols, ports, Projects/extensions, account eligibility, main request admission, Spaces recovery, Cloud and marketplace; diagrams",
       "patterns": [
@@ -843,6 +853,15 @@
         "services/core/permissions/",
         "permission-enforcement",
         "features/permissions/"
+      ]
+    },
+    {
+      "doc": "docs/guides/audit-trail.mdx",
+      "description": "The record: what is in it, Activity retention, checking nobody edited it, what the check can't prove",
+      "patterns": [
+        "services/audit/",
+        "schema/audit/",
+        "services/activity/"
       ]
     },
     {

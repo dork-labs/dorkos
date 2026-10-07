@@ -238,6 +238,9 @@ export const CONFIG_DISCLOSURE = {
   'keepAwake.whileAgentsWork': 'expose',
   'keepAwake.wakeForScheduledTasks': 'expose',
 
+  // How long the Activity feed keeps its rows (spec `audit-trail` §3.5).
+  'activity.retentionDays': 'expose',
+
   'mesh.scanRoots': 'expose',
 
   // Which backend holds an agent's memory. A provider id, not a credential and

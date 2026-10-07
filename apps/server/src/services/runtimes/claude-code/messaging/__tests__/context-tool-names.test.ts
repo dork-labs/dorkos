@@ -489,7 +489,9 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // composes no extension. `extension-tools-every-list.test.ts` guards those.
     // 119 -> 120 for `compact_my_session` (DOR-2732): the `<context_warning>`
     // note names it, with each runtime's prefix, so it is always loaded.
-    expect(advertised.size).toBe(120);
+    // 120 -> 121 for `audit_verify` (DOR-2738): no prompt block names it, so it
+    // stays deferred and unprefixed.
+    expect(advertised.size).toBe(121);
     for (const name of [
       'configure_doc_channel',
       'approve_doc_route',

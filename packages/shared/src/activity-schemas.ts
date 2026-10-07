@@ -17,7 +17,7 @@ extendZodWithOpenApiOnce();
 /**
  * Event category for filtering activity events by subsystem. `permissions` holds
  * every change to what agents may do (spec `agent-permissions` D14), and is kept
- * past the 30-day prune: a permission history that forgets cannot answer "who
+ * past the retention prune: a permission history that forgets cannot answer "who
  * allowed this".
  */
 export const ActivityCategorySchema = z

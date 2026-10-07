@@ -39,6 +39,7 @@
  * @module services/core/external-mcp/tool-security
  */
 import { readOnlyCarveOutToolNames } from '../capabilities/index.js';
+import { auditDomain } from '../../audit/audit-capabilities.js';
 import { operatorDomain } from '../operator/operator-capabilities.js';
 import { marketplaceDomain } from '../../marketplace-mcp/marketplace-capabilities.js';
 import { connectorDomain } from '../../connectors/connector-capabilities.js';
@@ -213,5 +214,8 @@ export const READ_ONLY_MCP_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
     // Listed for the same reason as rooms: it contributes nothing, and naming it
     // puts `list_my_permissions` under the drift guard.
     ...permissionsDomain.capabilities,
+    // Listed for the same reason: `audit_verify` withholds `readOnlyCarveOut`,
+    // because a tokenless health check has no need to walk the audit log.
+    ...auditDomain.capabilities,
   ]),
 ]);

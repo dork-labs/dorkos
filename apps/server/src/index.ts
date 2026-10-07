@@ -409,6 +409,8 @@ import {
 } from './services/marketplace/recovery/backup-janitor.js';
 import { currentRecordOwner } from './services/marketplace/lib/records/record-owner.js';
 import { createActivityRouter } from './routes/activity.js';
+import { createAuditRouter } from './routes/audit.js';
+import { wireAuditTrail } from './services/audit/index.js';
 import { createExtensionRoutesMiddleware } from './middleware/extension-routes.js';
 import { createExternalMcpServer } from './services/core/mcp-server.js';
 import { composeDorkOsCapabilityRegistry } from './services/core/self-description/dorkos-registry.js';
@@ -1307,6 +1309,19 @@ async function start() {
   // Initialize Activity Service and prune stale events
   const activityService = new ActivityService(db);
 
+  // The audit log (spec `audit-trail`): one append-only, hash-chained record of
+  // every action. Every Activity event is copied in, so the log is the
+  // superset; actors are keyed on stable ids, the owner on this install's id
+  // until an account exists. The startup check walks the recent end of the
+  // chain and only warns: a broken chain is evidence to keep, not a reason to
+  // refuse to start.
+  const { log: auditLog } = wireAuditTrail({
+    db,
+    activity: activityService,
+    installId: connectorInstallationId,
+    readOwnerAccount,
+  });
+
   // Who started a chat that no person typed into, and the seam that starts
   // one for an extension (`api.startWork`, `ctx.sessions.start`, spec
   // `flow-multiproject` §7.7). Before extensions start, so a `register()` that
@@ -1401,7 +1416,9 @@ async function start() {
     // read this catalog, per build, off the composed registry.
     listActions: () => permissionActions(capabilityRegistry),
   });
-  const retentionDays = env.DORKOS_ACTIVITY_RETENTION_DAYS ?? 30;
+  // The environment variable wins when set; otherwise the setting (default 365).
+  const retentionDays =
+    env.DORKOS_ACTIVITY_RETENTION_DAYS ?? configManager.get('activity').retentionDays;
   try {
     const pruned = await activityService.prune(retentionDays);
     if (pruned > 0) {
@@ -5087,6 +5104,7 @@ async function start() {
 
   // Activity feed — always available, not behind a feature flag.
   app.use('/api/activity', createActivityRouter(activityService));
+  app.use('/api/audit', createAuditRouter(auditLog));
   app.locals.activityService = activityService;
   mountedRouters.push('activity');
 
@@ -5732,6 +5750,8 @@ async function start() {
       // An agent asking for its own conversation to be summarized (DOR-2732).
       // Built here, once: its once-an-hour budget must outlive the per-session
       // tool servers that reach it.
+      // `audit.verify`: anyone may check the audit log's chain (spec `audit-trail`).
+      auditDeps: { log: auditLog },
       sessionCompactionDeps: {
         compaction: new AgentCompactionService({
           resolveRuntime: (sessionId: string) => runtimeRegistry.resolveForSession(sessionId),
