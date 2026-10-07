@@ -20,11 +20,30 @@
  */
 
 import { useEffect } from 'react';
+import type { RemoteAccessReport } from '@dorkos/shared/types';
 import { useConfig } from '@/layers/entities/config';
 import { LAUNCH_STARTED_AT } from '@/layers/shared/lib';
 import { tunnelHost } from '../lib/tunnel-host';
 import { readTunnelReport, type TunnelReport } from './tunnel-report';
 import { useRemoteAccessStore, type TunnelState } from './remote-access-store';
+import { isManagedReport, useRemoteAccessReport } from './remote-access-report';
+
+/**
+ * Managed remote access, as the report describes it (DOR-2086). Present only
+ * while the server offers it here; see {@link RemoteAccessSnapshot.managed}.
+ */
+export interface ManagedRemoteAccess {
+  /** The mode the person selected: `off`, `byo` (their own ngrok) or `managed`. */
+  selected: RemoteAccessReport['mode'];
+  /** Where this computer's approval stands. */
+  enrolment: RemoteAccessReport['enrolment'];
+  /** Whether DorkOS keeps the address open on its own. Only ever what Cloud reports. */
+  alwaysAvailable: boolean;
+  /** True when DorkOS Cloud did not answer just now, so this is its last word. */
+  cloudStale: boolean;
+  /** Why it is blocked, in words a person can read; `null` otherwise. */
+  reason: string | null;
+}
 
 /** Remote access as the shared store holds it — no server read involved. */
 export interface RemoteAccessSnapshot {
@@ -38,6 +57,23 @@ export interface RemoteAccessSnapshot {
   error: string | null;
   /** Whether an ngrok auth token is saved on the server — the one-time setup. */
   tokenConfigured: boolean;
+  /**
+   * Which kind of remote access the state above describes: the person's own
+   * tunnel (`byo`), or an address from DorkOS (`managed`). Always `byo` while
+   * managed access is not offered here.
+   */
+  mode: 'byo' | 'managed';
+  /**
+   * Whether a switch has something to turn on: the ngrok token is saved, or
+   * this computer is approved for managed access. When false, a switch opens
+   * setup instead.
+   */
+  isSetUp: boolean;
+  /**
+   * Managed access, while the server offers it here; `null` otherwise. `null`
+   * means every surface draws exactly what it drew before DOR-2086.
+   */
+  managed: ManagedRemoteAccess | null;
   /**
    * Whether the server has told us anything THIS launch.
    *
@@ -94,8 +130,14 @@ export function useRemoteAccessSnapshot(): RemoteAccessSnapshot {
   const error = useRemoteAccessStore((s) => s.error);
   const tokenConfigured = useRemoteAccessStore((s) => s.tokenConfigured);
   const hasServerReport = useRemoteAccessStore((s) => s.lastReport !== null);
+  const report = useRemoteAccessStore((s) => s.report);
 
   const isTransitioning = state === 'starting' || state === 'stopping';
+  const enrolled = report?.enrolment.status === 'enrolled';
+  // On, but not at its best or not open right now: the person did not turn
+  // any of these off. `asleep` and `draining` only managed access reaches.
+  const on =
+    state === 'connected' || state === 'reconnecting' || state === 'asleep' || state === 'draining';
 
   return {
     state,
@@ -105,10 +147,22 @@ export function useRemoteAccessSnapshot(): RemoteAccessSnapshot {
     tokenConfigured,
     hasServerReport,
     isTransitioning,
+    mode: isManagedReport(report) ? 'managed' : 'byo',
+    isSetUp: tokenConfigured || enrolled,
+    managed: report
+      ? {
+          selected: report.mode,
+          enrolment: report.enrolment,
+          alwaysAvailable: report.alwaysAvailable,
+          cloudStale: report.cloudStale,
+          reason: report.reason ?? null,
+        }
+      : null,
     // Reconnecting counts as ON — the listener is open and the person did not
-    // turn anything off.
-    isChecked: isTransitioning || state === 'connected' || state === 'reconnecting',
-    isLive: isTransitioning || state === 'connected' || state === 'reconnecting',
+    // turn anything off. So does `blocked`: managed access is still selected,
+    // and the switch is how a person turns that off.
+    isChecked: isTransitioning || on || state === 'blocked',
+    isLive: isTransitioning || on,
   };
 }
 
@@ -164,6 +218,15 @@ export function useRemoteAccessReducer(): { tunnel: TunnelReport | undefined } {
 
   const applyServerReport = useRemoteAccessStore((s) => s.applyServerReport);
   const noteTokenConfigured = useRemoteAccessStore((s) => s.noteTokenConfigured);
+  const applyRemoteReport = useRemoteAccessStore((s) => s.applyRemoteReport);
+
+  // The managed report (DOR-2086). Not on the boot cache, so any answer is an
+  // answer from this launch; `dataUpdatedAt` is 0 until there is one.
+  const { data: remoteReport, dataUpdatedAt: remoteReportAt } = useRemoteAccessReport();
+  useEffect(() => {
+    if (remoteReportAt === 0) return;
+    applyRemoteReport(remoteReport ?? null, remoteReportAt);
+  }, [applyRemoteReport, remoteReport, remoteReportAt]);
 
   // `dataUpdatedAt` is in the dependencies on purpose, so this re-runs when the
   // server ANSWERS AGAIN even if it says the same thing. That repetition is the

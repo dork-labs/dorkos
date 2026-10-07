@@ -11,11 +11,34 @@
 
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import type { RemoteAccessMode } from '@dorkos/shared/config-schema';
+import type { RemoteAccessReport } from '@dorkos/shared/types';
 import { useTransport } from '@/layers/shared/model';
 import { requestOwnerSetup } from '@/layers/shared/lib';
 import { configKeys } from '@/layers/entities/config';
 import { broadcastTunnelChange } from './use-tunnel-sync';
 import { useRemoteAccessStore } from './remote-access-store';
+import { isManagedReport, remoteAccessKeys } from './remote-access-report';
+
+/**
+ * Which mode a switch turned ON should use.
+ *
+ * Managed when it is already selected, or when nothing is selected and this
+ * computer is approved for it: approval was the person's explicit choice. In
+ * every other case, the person's own ngrok tunnel, exactly as before. Never
+ * BYO merely because managed access has no ngrok token.
+ */
+function startTarget(report: RemoteAccessReport | null): 'byo' | 'managed' {
+  if (!report) return 'byo';
+  if (report.mode === 'managed') return 'managed';
+  if (report.mode === 'off' && report.enrolment.status === 'enrolled') return 'managed';
+  return 'byo';
+}
+
+/** The sentence a refusal carries, or a fallback when it carries none. */
+function messageOf(err: unknown, fallback: string): string {
+  return err instanceof Error && err.message ? err.message : fallback;
+}
 
 /** Stable handlers returned by {@link useRemoteAccessActions}. */
 export interface RemoteAccessActionHandlers {
@@ -27,6 +50,17 @@ export interface RemoteAccessActionHandlers {
   toggle: (on: boolean) => Promise<void>;
   /** Forget a failure that something else has answered. */
   clearError: () => void;
+  /**
+   * Select how this computer is reachable (DOR-2086). Rejects with the
+   * server's sentence, for the caller to show beside the choice.
+   */
+  chooseMode: (mode: RemoteAccessMode) => Promise<void>;
+  /** Start managed setup: get a code to approve on the person's DorkOS account. Rejects on refusal. */
+  enrol: () => Promise<void>;
+  /** Close the managed tunnel now; the address reopens it when used. Rejects on refusal. */
+  closeNow: () => Promise<void>;
+  /** Remove managed access from this computer, or cancel a pending setup. Rejects on refusal. */
+  withdraw: () => Promise<void>;
 }
 
 /**
@@ -42,6 +76,25 @@ export function useRemoteAccessActions(): RemoteAccessActionHandlers {
   // start closure without making the callback depend on itself.
   const startRef = useRef<() => Promise<void>>(undefined);
 
+  /**
+   * Take a report a write answered with, and tell every other reader.
+   *
+   * A transport that resolves no report (the Dev Playground's) is not news:
+   * the refetch below asks again.
+   */
+  const settleReport = useCallback(
+    (report: RemoteAccessReport | null | undefined) => {
+      if (report && typeof report === 'object') {
+        useRemoteAccessStore.getState().applyRemoteReport(report, Date.now());
+        queryClient.setQueryData(remoteAccessKeys.report(), report);
+      }
+      queryClient.invalidateQueries({ queryKey: remoteAccessKeys.all });
+      queryClient.invalidateQueries({ queryKey: configKeys.all });
+      broadcastTunnelChange();
+    },
+    [queryClient]
+  );
+
   // One clock, and it belongs to the request. An earlier version armed a 15s
   // timer of its own over a call the transport already times out at 30s, so a
   // start that took longer than 15s showed "Tunnel timed out after 15 seconds"
@@ -50,8 +103,15 @@ export function useRemoteAccessActions(): RemoteAccessActionHandlers {
   // transport's timeout is the honest answer, so it is the only one anything
   // here hears.
   const start = useCallback(async () => {
+    const managed = startTarget(useRemoteAccessStore.getState().report) === 'managed';
     useRemoteAccessStore.getState().beginStart();
     try {
+      if (managed) {
+        // Selecting managed access opens nothing here: DorkOS opens the tunnel
+        // when the address is used. The report says where it stands.
+        settleReport(await transport.setRemoteAccessMode('managed'));
+        return;
+      }
       const result = await transport.startTunnel();
       useRemoteAccessStore.getState().settleStart(result.url);
       queryClient.invalidateQueries({ queryKey: configKeys.all });
@@ -76,7 +136,8 @@ export function useRemoteAccessActions(): RemoteAccessActionHandlers {
       // an error over a live tunnel is how a person ends up turning off working
       // remote access to fix it. Reachable for real now that ngrok reconnects
       // are reported (DOR-1738): a start pressed during one is a no-op.
-      if (refusal.status === 409) {
+      // Managed access has no such refusal; a 409 there is an ordinary failure.
+      if (!managed && refusal.status === 409) {
         useRemoteAccessStore.getState().convergeStart(refusal.body?.url ?? null);
         queryClient.invalidateQueries({ queryKey: configKeys.all });
         broadcastTunnelChange();
@@ -87,7 +148,7 @@ export function useRemoteAccessActions(): RemoteAccessActionHandlers {
         .getState()
         .failStart(err instanceof Error ? err.message : 'Couldn’t open your link. Try again.');
     }
-  }, [transport, queryClient]);
+  }, [transport, queryClient, settleReport]);
 
   // Keep the retry ref pointing at the latest closure (the exposure retry fires
   // long after render, once owner setup completes).
@@ -96,8 +157,15 @@ export function useRemoteAccessActions(): RemoteAccessActionHandlers {
   }, [start]);
 
   const stop = useCallback(async () => {
+    const managed = isManagedReport(useRemoteAccessStore.getState().report);
     useRemoteAccessStore.getState().beginStop();
     try {
+      if (managed) {
+        // Off means off: the address stops reaching this computer, not just
+        // the tunnel closing until the next visit.
+        settleReport(await transport.setRemoteAccessMode('off'));
+        return;
+      }
       await transport.stopTunnel();
       useRemoteAccessStore.getState().settleStop();
       queryClient.invalidateQueries({ queryKey: configKeys.all });
@@ -111,7 +179,7 @@ export function useRemoteAccessActions(): RemoteAccessActionHandlers {
             : 'Couldn’t close your link. DorkOS can’t tell if it’s still on.'
         );
     }
-  }, [transport, queryClient]);
+  }, [transport, queryClient, settleReport]);
 
   const toggle = useCallback(
     async (on: boolean) => {
@@ -125,9 +193,52 @@ export function useRemoteAccessActions(): RemoteAccessActionHandlers {
     useRemoteAccessStore.getState().clearError();
   }, []);
 
+  // The managed-only writes. Each rejects with the server's sentence so the
+  // Settings control that asked can say it in place; none of them touches the
+  // shared `error`, which belongs to the switch.
+  const chooseMode = useCallback(
+    async (mode: RemoteAccessMode) => {
+      try {
+        settleReport(await transport.setRemoteAccessMode(mode));
+      } catch (err) {
+        throw new Error(messageOf(err, 'Couldn’t change remote access. Try again.'), {
+          cause: err,
+        });
+      }
+    },
+    [transport, settleReport]
+  );
+
+  const enrol = useCallback(async () => {
+    try {
+      settleReport(await transport.startRemoteEnrolment());
+    } catch (err) {
+      throw new Error(messageOf(err, 'Couldn’t start setup. Try again.'), { cause: err });
+    }
+  }, [transport, settleReport]);
+
+  const closeNow = useCallback(async () => {
+    try {
+      settleReport(await transport.closeRemoteAccess());
+    } catch (err) {
+      throw new Error(messageOf(err, 'Couldn’t close the tunnel. Try again.'), { cause: err });
+    }
+  }, [transport, settleReport]);
+
+  const withdraw = useCallback(async () => {
+    try {
+      settleReport(await transport.withdrawRemoteAccess());
+    } catch (err) {
+      throw new Error(messageOf(err, 'Couldn’t remove access. Try again.'), { cause: err });
+    }
+  }, [transport, settleReport]);
+
   // The OBJECT is memoized, not just the callbacks in it. Two consumers put this
   // straight into a dependency array — `useTunnelActions` and the palette's
   // dispatcher — and a fresh literal every render would defeat their `useCallback`s
   // as surely as an unstable callback would.
-  return useMemo(() => ({ start, stop, toggle, clearError }), [start, stop, toggle, clearError]);
+  return useMemo(
+    () => ({ start, stop, toggle, clearError, chooseMode, enrol, closeNow, withdraw }),
+    [start, stop, toggle, clearError, chooseMode, enrol, closeNow, withdraw]
+  );
 }

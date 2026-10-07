@@ -32,7 +32,14 @@
 
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
+import type { RemoteAccessReport } from '@dorkos/shared/types';
 import type { ReportedStatus } from './tunnel-report';
+import {
+  isManagedReport,
+  stateFromReport,
+  urlFromReport,
+  usableReport,
+} from './remote-access-report';
 
 /**
  * Remote access as the app currently understands it.
@@ -41,8 +48,27 @@ import type { ReportedStatus } from './tunnel-report';
  * side and have no server counterpart at all. The server reports connected or
  * not; everything else here is the app's own account of what the person just
  * did.
+ *
+ * Three states only managed access reaches (DOR-2086), each read straight from
+ * the remote access report:
+ *
+ * - `asleep` — the tunnel is closed and the address still answers; the next
+ *   visit reopens it. Calm, never a failure, and never a claim about the
+ *   computer itself.
+ * - `draining` — closing; requests already accepted are finishing.
+ * - `blocked` — something must be fixed before it can open. The report's
+ *   `reason` says what.
  */
-export type TunnelState = 'off' | 'starting' | 'connected' | 'reconnecting' | 'stopping' | 'error';
+export type TunnelState =
+  | 'off'
+  | 'starting'
+  | 'connected'
+  | 'reconnecting'
+  | 'stopping'
+  | 'error'
+  | 'asleep'
+  | 'draining'
+  | 'blocked';
 
 /**
  * The states the SERVER has no word for.
@@ -119,6 +145,18 @@ export interface RemoteAccessState {
    * never reports cannot leave the next genuine drop silent.
    */
   userInitiated: boolean;
+  /**
+   * The last remote access report, while managed access is offered here
+   * (DOR-2086); `null` otherwise.
+   *
+   * `null` is the whole compatibility story: with no report, every surface
+   * reads the person's own ngrok tunnel exactly as before. With one whose mode
+   * is `managed`, the report owns {@link state} and {@link url}, and the
+   * config's tunnel block is noted but no longer moves them.
+   */
+  report: RemoteAccessReport | null;
+  /** When the server produced {@link report} (`dataUpdatedAt`): the same change gate as {@link lastReport}. */
+  reportFetchedAt: number;
 }
 
 /** Every way the reduced state moves. */
@@ -153,6 +191,18 @@ export interface RemoteAccessActions {
    *   case 2 from case 3; a caller that passes a constant collapses them.
    */
   applyServerReport: (status: ReportedStatus, url: string | null, fetchedAt: number) => void;
+  /**
+   * Reduce a remote access report (DOR-2086), with the same three cases as
+   * {@link applyServerReport}: new facts apply, a replay is ignored, and a
+   * re-confirmation leaves a local-only state standing.
+   *
+   * A report that is not `available` is stored as `null`. When managed access
+   * stops being in charge, the last tunnel block takes over again.
+   *
+   * @param report - The server's report, or `null` when it gave none.
+   * @param fetchedAt - When the server answered.
+   */
+  applyRemoteReport: (report: RemoteAccessReport | null, fetchedAt: number) => void;
   /** Record whether the one-time ngrok setup is done. */
   noteTokenConfigured: (configured: boolean) => void;
   /** A start the person asked for is in flight. */
@@ -206,7 +256,14 @@ const INITIAL: RemoteAccessState = {
   lastReport: null,
   tokenConfigured: false,
   userInitiated: false,
+  report: null,
+  reportFetchedAt: 0,
 };
+
+/** Whether two reports say the same thing, field for field. */
+function sameReport(a: RemoteAccessReport | null, b: RemoteAccessReport | null): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
 
 /**
  * The remote-access store.
@@ -221,6 +278,13 @@ export const useRemoteAccessStore = create<RemoteAccessState & RemoteAccessActio
       ...INITIAL,
 
       applyServerReport: (status, url, fetchedAt) => {
+        // Managed access owns the state while it is selected. The tunnel block
+        // is still noted, so switching back to the person's own tunnel finds
+        // the latest word on it rather than a stale one.
+        if (isManagedReport(get().report)) {
+          set({ lastReport: { status, url, fetchedAt } }, false, 'remoteAccess/notedWhileManaged');
+          return;
+        }
         const previous = get().lastReport;
         const sameFacts = previous !== null && previous.status === status && previous.url === url;
 
@@ -276,6 +340,52 @@ export const useRemoteAccessStore = create<RemoteAccessState & RemoteAccessActio
         }
       },
 
+      applyRemoteReport: (incoming, fetchedAt) => {
+        const report = usableReport(incoming);
+        const previous = get().report;
+        const sameFacts = sameReport(previous, report);
+        if (sameFacts && fetchedAt <= get().reportFetchedAt) return;
+
+        if (isManagedReport(report)) {
+          // Re-confirmed facts leave the person's own in-flight action, or its
+          // failure, standing, exactly like the tunnel block's case 3.
+          if (sameFacts && LOCAL_ONLY_STATES.has(get().state)) {
+            set({ reportFetchedAt: fetchedAt }, false, 'remoteAccess/reportReconfirmed');
+            return;
+          }
+          set(
+            {
+              report,
+              reportFetchedAt: fetchedAt,
+              state: stateFromReport(report.state),
+              url: urlFromReport(report),
+              error: null,
+            },
+            false,
+            { type: 'remoteAccess/applyRemoteReport', state: report.state }
+          );
+          return;
+        }
+
+        // Managed access is not in charge (hidden, or another mode selected).
+        // If it just stopped being in charge, hand the state back to the last
+        // tunnel block rather than leaving a managed state behind.
+        const handBack = isManagedReport(previous);
+        const last = get().lastReport;
+        set(
+          handBack
+            ? {
+                report,
+                reportFetchedAt: fetchedAt,
+                state: last ? impliedState(last.status, last.url) : 'off',
+                url: last?.status === 'on' || last?.status === 'reconnecting' ? last.url : null,
+              }
+            : { report, reportFetchedAt: fetchedAt },
+          false,
+          'remoteAccess/applyRemoteReport'
+        );
+      },
+
       noteTokenConfigured: (configured) =>
         set(
           (state) =>
@@ -315,7 +425,14 @@ export const useRemoteAccessStore = create<RemoteAccessState & RemoteAccessActio
         }),
 
       abandonStart: () =>
-        set({ userInitiated: false, state: 'off' }, false, 'remoteAccess/abandonStart'),
+        set(
+          (state) => ({
+            userInitiated: false,
+            state: isManagedReport(state.report) ? stateFromReport(state.report.state) : 'off',
+          }),
+          false,
+          'remoteAccess/abandonStart'
+        ),
 
       beginStop: () =>
         set(
@@ -327,15 +444,30 @@ export const useRemoteAccessStore = create<RemoteAccessState & RemoteAccessActio
       settleStop: () =>
         set({ state: 'off', url: null, error: null }, false, 'remoteAccess/settleStop'),
 
+      // The stop did not happen, so remote access is where it was: for managed
+      // access that is whatever the report last said, not necessarily `connected`.
       failStop: (message) =>
-        set({ userInitiated: false, state: 'connected', error: message }, false, {
-          type: 'remoteAccess/failStop',
-          message,
-        }),
+        set(
+          (state) => ({
+            userInitiated: false,
+            state: isManagedReport(state.report)
+              ? stateFromReport(state.report.state)
+              : 'connected',
+            error: message,
+          }),
+          false,
+          { type: 'remoteAccess/failStop', message }
+        ),
 
       clearError: () =>
         set(
-          (state) => ({ error: null, state: state.state === 'error' ? 'off' : state.state }),
+          (state) => {
+            if (state.state !== 'error') return { error: null };
+            return {
+              error: null,
+              state: isManagedReport(state.report) ? stateFromReport(state.report.state) : 'off',
+            };
+          },
           false,
           'remoteAccess/clearError'
         ),

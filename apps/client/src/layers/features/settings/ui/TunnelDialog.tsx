@@ -90,6 +90,12 @@ function TunnelStatusDot({ state, pulsing }: { state: TunnelMachine['state']; pu
     reconnecting: 'bg-status-warning-dot',
     stopping: 'bg-muted-foreground/40',
     error: 'bg-status-error',
+    // Managed access only (DOR-2086). A closed tunnel whose address still
+    // answers is the design working, so it is neutral, never red.
+    asleep: 'bg-muted-foreground/60',
+    draining: 'bg-muted-foreground/40',
+    // Needs attention, not broken: the reason is on the panel below.
+    blocked: 'bg-status-warning-dot',
   }[state];
 
   return (
