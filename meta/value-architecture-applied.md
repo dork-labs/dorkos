@@ -25,7 +25,7 @@ The 2026-10 vision reset replaces this document's outputs again, without rerunni
 
 **Vocabulary (2026-10-06 update):** "role" now means the job on a profile ("role and responsibilities"). Owner, Admin, Member and Guest are **access levels**. Apps that live inside DorkOS have a working name ("mini apps") that is not final; public copy keeps today's name, "shapes".
 
-**Launch proof point:** the official DorkOS Community Space, the one space open at launch, where everyone using DorkOS chats, shares tips and learns. It is **not built yet**: no copy may claim it until it ships.
+**Launch centerpiece:** the official DorkOS Community Space, the one space open at launch, where everyone using DorkOS chats, shares tips and learns. It is **not built yet**: no copy may claim it until it ships.
 
 **Retired pillars (v2):** "All your agents, one place" (the runtime trio is a docs fact now, not a pillar), "A team, not tabs" (folded into Pillars 1 and 2), and "Yours, and safe to run" (split into Pillars 3 and 4).
 

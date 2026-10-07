@@ -33,7 +33,7 @@ The picture to hold in your head is **an office and its workers.**
 
 DorkOS is not an agent and does not contain a model. The intelligence comes from the agents. The office comes from DorkOS.
 
-The agents in this office are **co-workers, not assistants.** They are co-creators working toward shared goals, each with a job of its own, and the founder leads them the way a founder leads a team.
+The agents in this office are **co-workers, not assistants.** They are co-creators working toward shared goals, each with a job of its own (roadmap: a role and responsibilities on every profile), and the founder leads them the way a founder leads a team.
 
 ---
 
@@ -84,7 +84,7 @@ A linter for your organisation. Its rules are written in TypeScript and can be c
 
 ### Apps inside DorkOS
 
-Ask an agent to "build me something to manage my email" and it asks one thing: should it live inside DorkOS, in the side panel, or be its own website? Every agent knows how to build these. The LifeOS and Tangerines dashboards and the flow plugin show the idea works. ("Mini apps" is the working name, not final; public copy keeps today's name, "shapes".) Today's shapes and extensions are the early form, **Built**; apps as a core feature every agent builds are **Roadmap.**
+Ask an agent to "build me something to manage my email" and it asks one thing: should it live inside DorkOS, in the side panel, or be its own website? Every agent will know how to build these. The LifeOS dashboard and the flow plugin show the idea works. ("Mini apps" is the working name, not final; public copy keeps today's name, "shapes".) Today's shapes and extensions are the early form, **Built**; apps as a core feature every agent builds are **Roadmap.**
 
 ---
 

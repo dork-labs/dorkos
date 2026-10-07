@@ -19,7 +19,7 @@ colleagues (`positioning-202610/00-overview.md`). The manners in this document
 all stay: they are how a good colleague behaves. What changed is what holds them
 up. Earlier versions leaned on hard caps (reactions per hour, notes per hour,
 turn counts) as the real enforcement. Under trust by default, the posting,
-notification and reaction caps are current behavior today and are removed before
+notification and reaction caps are still in the code and are removed before
 launch; the turn-counting loop guards stay until a watcher for spinning replaces
 them (DOR-2745). The safety net becomes a record anyone in the space can read. So every rule below stands on judgment and is checked against
 transcripts, not against a counter. Where the code still counts today, the text
