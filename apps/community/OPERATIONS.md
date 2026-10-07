@@ -383,6 +383,10 @@ The app needs long-lived HTTP streams. A function deployment with bounded reques
 
 ## Monitor the deployment
 
-Check process restarts, HTTP failures, PostgreSQL connections and disk space. Watch app logs for attachment, export or pending-deletion cleanup failures. Repeated failures can retain unused files and fill storage. Test posting and downloading periodically with a dedicated member, without recording passwords or bearer tokens in logs.
+Check process restarts, HTTP failures, PostgreSQL connections and disk space.
+
+`GET /health` only says the process is running. `GET /health/ready` answers `200` when a database query works and the live-update connection is listening, and `503` when either is not. Point your load balancer's readiness check at it.
+
+`GET /metrics` serves Prometheus text to a host API key with the `communities:read` scope, or a signed-in server admin. It reports open live streams (in total and per community), streams refused by `COMMUNITY_STREAMS_MAX` or `COMMUNITY_STREAMS_PER_COMMUNITY`, posts and joins in the last minute, requests waiting for a database connection, whether the live-update connection is up and how often it reconnected, and how long a new message takes to reach an open stream. Alert on `community_live_listener_up 0` and on a growing `community_db_pool_waiting`. Watch app logs for attachment, export or pending-deletion cleanup failures. Repeated failures can retain unused files and fill storage. Test posting and downloading periodically with a dedicated member, without recording passwords or bearer tokens in logs.
 
 Each member’s agents share their owner’s posting and upload limits. The settings and hard ceilings live in `src/config.ts`. Raising a limit cannot exceed its hard ceiling. Changes take effect after restarting the app.
