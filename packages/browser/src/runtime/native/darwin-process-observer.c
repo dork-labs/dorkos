@@ -166,7 +166,8 @@ int dorkos_darwin_children(pid_t parent, struct dorkos_darwin_children *result) 
   int error = boot_time(&before_boot);
   if (error) return error;
   struct proc_bsdinfo before_parent, after_parent;
-  result->have_parent_before = read_process(parent, &before_parent) == 0;
+  result->parent_before_error = read_process(parent, &before_parent);
+  result->have_parent_before = result->parent_before_error == 0;
   if (result->have_parent_before) parent_fact(&before_parent, &result->parent_before);
   pid_t before[DORKOS_DARWIN_REQUEST_MAX + 2], after[DORKOS_DARWIN_REQUEST_MAX + 2];
   size_t before_count = 0, after_count = 0;
@@ -193,7 +194,8 @@ int dorkos_darwin_children(pid_t parent, struct dorkos_darwin_children *result) 
   const int after_error = child_pids(parent, after, &after_count);
   if (before_error || after_error || before_count != after_count ||
       memcmp(before, after, before_count * sizeof(pid_t))) complete = 0;
-  result->have_parent_after = read_process(parent, &after_parent) == 0;
+  result->parent_after_error = read_process(parent, &after_parent);
+  result->have_parent_after = result->parent_after_error == 0;
   if (result->have_parent_after) parent_fact(&after_parent, &result->parent_after);
   /* The retained parent may reparent after its manager dies. Its own ppid is
    * not the parent-to-child relationship sampled above; only its lifetime
@@ -242,6 +244,13 @@ int main(int argc, char **argv) {
     printf(",\"parentAfter\":");
     if (result.have_parent_after) print_identity(&result.parent_after); else printf("null");
     printf(",\"complete\":%s", result.complete ? "true" : "false");
+    printf(",\"parentObservation\":{\"beforeError\":%d,\"afterError\":%d,\"beforeZombie\":%s,\"afterZombie\":%s,\"identityChanged\":%s}",
+      result.parent_before_error, result.parent_after_error,
+      !result.have_parent_before ? "null" : result.parent_before.zombie ? "true" : "false",
+      !result.have_parent_after ? "null" : result.parent_after.zombie ? "true" : "false",
+      !result.have_parent_before || !result.have_parent_after ? "null" :
+        result.parent_before.seconds != result.parent_after.seconds ||
+        result.parent_before.microseconds != result.parent_after.microseconds ? "true" : "false");
   }
   printf(",\"processes\":[");
   for (size_t i = 0; i < batch.count; i++) {

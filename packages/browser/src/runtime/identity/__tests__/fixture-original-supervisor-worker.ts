@@ -11,6 +11,7 @@ const seed = z
     nativeRuntime: RuntimeDescriptorSchema,
     compatibleRuntime: RuntimeDescriptorSchema,
     runtimeInput: AbsolutePathSchema,
+    profileHome: AbsolutePathSchema,
     manager: z
       .object({ pid: z.number().int().positive(), birth: z.string().min(1).max(128) })
       .strict(),

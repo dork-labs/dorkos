@@ -71,6 +71,17 @@ const childrenSchema = replySchema
     parentBefore: identity.nullable(),
     parentAfter: identity.nullable(),
     complete: z.boolean(),
+    // Optional private native evidence; older exact producer replies remain parseable.
+    parentObservation: z
+      .object({
+        beforeError: z.number().int().min(0).max(2147483647),
+        afterError: z.number().int().min(0).max(2147483647),
+        beforeZombie: z.boolean().nullable(),
+        afterZombie: z.boolean().nullable(),
+        identityChanged: z.boolean().nullable(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 export type DarwinChildrenBatch = z.infer<typeof childrenSchema>;
@@ -84,6 +95,21 @@ export function parseDarwinChildrenBatch(
     JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))
   );
   if (BigInt(batch.bootMicroseconds) >= 1000000n)
+    throw new Error('PROCESS_OBSERVATION_UNAVAILABLE');
+  const parentObservation = batch.parentObservation;
+  if (
+    parentObservation &&
+    ((parentObservation.beforeError === 0) !== (batch.parentBefore !== null) ||
+      (parentObservation.afterError === 0) !== (batch.parentAfter !== null) ||
+      (parentObservation.beforeZombie === null) !== (batch.parentBefore === null) ||
+      (parentObservation.afterZombie === null) !== (batch.parentAfter === null) ||
+      (parentObservation.identityChanged === null) !==
+        (!batch.parentBefore || !batch.parentAfter) ||
+      (batch.parentBefore &&
+        batch.parentAfter &&
+        parentObservation.identityChanged !==
+          (darwinBirth(batch.parentBefore).birth !== darwinBirth(batch.parentAfter).birth)))
+  )
     throw new Error('PROCESS_OBSERVATION_UNAVAILABLE');
   const pids = new Set<number>();
   for (const fact of batch.processes) {

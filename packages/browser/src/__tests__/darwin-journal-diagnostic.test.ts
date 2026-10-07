@@ -16,6 +16,13 @@ const packet = {
     parentBefore: { pid: 123, seconds: '21', microseconds: '0' },
     parentAfter: null,
     complete: false,
+    parentObservation: {
+      beforeError: 0,
+      afterError: 3,
+      beforeZombie: false,
+      afterZombie: null,
+      identityChanged: null,
+    },
     processes: [],
   },
 };
@@ -74,4 +81,42 @@ it('refuses oversized or arbitrary diagnostic properties before the original wri
       'journal'
     )
   ).toThrow();
+});
+
+it('retains original parent read errors without changing incomplete child admission', () => {
+  const original = {
+    kind: packet.kind,
+    sequence: packet.sequence,
+    reason: packet.reason,
+    parent: packet.parent,
+    batch: packet.batch,
+  };
+  const record = readDarwinJournalDiagnostic(
+    Buffer.from(JSON.stringify(original) + '\n'),
+    'journal'
+  );
+  expect(record?.batch.parentObservation).toEqual(packet.batch.parentObservation);
+  expect(record?.batch.complete).toBe(false);
+  expect(Object.isFrozen(record?.batch.parentObservation)).toBe(true);
+  const legacy = { ...original, batch: { ...packet.batch } };
+  Reflect.deleteProperty(legacy.batch, 'parentObservation');
+  expect(
+    readDarwinJournalDiagnostic(Buffer.from(JSON.stringify(legacy) + '\n'), 'journal')?.batch
+      .complete
+  ).toBe(false);
+});
+
+it('refuses contradictory parent read evidence before publishing a diagnostic', async () => {
+  const write = vi.fn();
+  const sink = createOriginalChildBatchDiagnosticSink(write);
+  await expect(
+    sink({
+      ...packet,
+      batch: {
+        ...packet.batch,
+        parentObservation: { ...packet.batch.parentObservation, afterError: 0 },
+      },
+    })
+  ).rejects.toBeDefined();
+  expect(write).not.toHaveBeenCalled();
 });

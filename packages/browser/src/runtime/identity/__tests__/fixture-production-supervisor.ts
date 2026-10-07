@@ -27,9 +27,21 @@ export function createFixtureProductionChromeSupervisor(
     manager: ProcessIdentity;
     fixtureURL: string;
     certificateSPKI: string;
+    profileHome?: string;
     mutant?: 'missing-first-init-ack';
   }>
 ) {
+  const requestedProfileHome = options.profileHome;
+  const profileHome = requestedProfileHome ?? tmpdir();
+  if (requestedProfileHome !== undefined) {
+    const originalHome = lstatSync(profileHome);
+    if (
+      !originalHome.isDirectory() ||
+      originalHome.isSymbolicLink() ||
+      realpathSync(profileHome) !== profileHome
+    )
+      throw new Error('PRODUCTION_ACCEPTANCE_PROFILE_HOME_UNOWNED');
+  }
   const native = createDarwinEngineProcesses(options.artifact);
   const known = new Map<string, ProcessIdentity>();
   const baseline = new Map<string, ProcessIdentity>();
@@ -138,7 +150,7 @@ export function createFixtureProductionChromeSupervisor(
       opening = track('whole.production.open', async () => {
         guard();
         const path = await track('profile.mkdtemp', () =>
-          mkdtemp(join(tmpdir(), 'production-chrome-matrix-'))
+          mkdtemp(join(profileHome, 'production-chrome-matrix-'))
         );
         // Capture the no-follow canonical identity before any native launch/removal.
         const raw = lstatSync(path);

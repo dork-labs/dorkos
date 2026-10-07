@@ -7,6 +7,7 @@ import { join, basename, dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { performance } from 'node:perf_hooks';
 import {
+  type InstallResult,
   createRuntimeInstallation,
   resolveInstalledRuntimeConfiguration,
   verifyInstalledNativeJournal,
@@ -27,7 +28,8 @@ import {
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
 const InputSchema = z
   .object({
-    home: z.string().startsWith('/'),
+    cacheHome: z.string().startsWith('/'),
+    campaignHome: z.string().startsWith('/'),
     cliEntry: z.string().startsWith('/'),
     cliSHA256: digest,
     workerEntry: z.string().startsWith('/'),
@@ -120,6 +122,42 @@ it.each([false, undefined, new Error('original preparation failure')])(
     expect(acquisitions).toBe(0);
   }
 );
+function requireOriginalMatrixReuse(value: InstallResult) {
+  if (value.state !== 'verified-reused' || value.platform !== 'darwin' || value.arch !== 'arm64')
+    throw new Error('CHROME_MATRIX_ORIGINAL_VERIFICATION_REQUIRED');
+  return value;
+}
+it.each(['verified-installed', 'refused'] as const)(
+  'refuses a non-reused installation result before matrix acquisition: %s',
+  (state) => {
+    const result: InstallResult =
+      state === 'refused'
+        ? {
+            state,
+            cause: 'VERIFICATION_UNAVAILABLE',
+            publicationMayHaveChanged: false,
+            readiness: { state: 'unavailable', cause: 'VERIFICATION_UNAVAILABLE' },
+          }
+        : {
+            state,
+            cause: null,
+            installationId: 'original',
+            attemptId: 'original',
+            generation: 1,
+            observedVersion: '153.0.7998.0',
+            executableSHA256: 'a'.repeat(64),
+            platform: 'darwin',
+            arch: 'arm64',
+            currentManifestDigest: 'b'.repeat(64),
+            journalDigest: 'c'.repeat(64),
+            readiness: { state: 'unavailable', cause: 'VERIFICATION_UNAVAILABLE' },
+          };
+    expect(() => requireOriginalMatrixReuse(result)).toThrow(
+      'CHROME_MATRIX_ORIGINAL_VERIFICATION_REQUIRED'
+    );
+  }
+);
+
 /** Explicit installed-package campaign only. Public Chrome mode remains unavailable even on pass. */
 it.skipIf(!fixturePath || process.platform !== 'darwin' || process.arch !== 'arm64')(
   'original installed Chrome context/HTTPS matrix and genuine missing-ACK refusal',
@@ -231,11 +269,16 @@ it.skipIf(!fixturePath || process.platform !== 'darwin' || process.arch !== 'arm
       const input = InputSchema.parse(JSON.parse(await readFile(fixturePath!, 'utf8')));
       guard();
       if (
-        (await realpath(input.home)) !== input.home ||
-        !input.home.includes('/T/') ||
-        !basename(input.home).startsWith('chrome-matrix-')
+        (await realpath(input.campaignHome)) !== input.campaignHome ||
+        !input.campaignHome.includes('/T/') ||
+        !basename(input.campaignHome).startsWith('chrome-matrix-')
       )
         throw new Error('CHROME_MATRIX_EXCLUSIVE_HOME_REQUIRED');
+      if (
+        (await realpath(input.cacheHome)) !== input.cacheHome ||
+        input.cacheHome === input.campaignHome
+      )
+        throw new Error('CHROME_MATRIX_DISTINCT_INSTALLED_CACHE_HOME_REQUIRED');
       guard();
       const guardBytes = await readFile(input.emittedGuard);
       guard();
@@ -273,13 +316,13 @@ it.skipIf(!fixturePath || process.platform !== 'darwin' || process.arch !== 'arm
       };
       await checkEmits();
       guard();
-      // Installation work is the original finite installer contract; the 90s matrix starts afterwards.
+      // Fresh existing-only verification uses the retained installation cache. The
+      // campaign scratch/profiles are separate; the unchanged 90s matrix starts afterwards.
       const configuration = await own(() =>
-        resolveInstalledRuntimeConfiguration(pathToFileURL(input.cliEntry), input.home)
+        resolveInstalledRuntimeConfiguration(pathToFileURL(input.cliEntry), input.cacheHome)
       );
       guard();
       const installation = createRuntimeInstallation(configuration),
-        install = installation.install.bind(installation),
         verify = installation.verifyExisting.bind(installation),
         inspect = installation.inspectExisting.bind(installation);
       guard();
@@ -289,18 +332,10 @@ it.skipIf(!fixturePath || process.platform !== 'darwin' || process.arch !== 'arm
           installationAbort.abort();
         }, 900000);
         try {
-          const installed = await own(() => install({ signal: installationAbort.signal }));
+          const verified = requireOriginalMatrixReuse(
+            await own(() => verify({ signal: installationAbort.signal }))
+          );
           guard();
-          if (installed.state !== 'verified-installed')
-            throw new Error('CHROME_MATRIX_FRESH_INSTALLATION_REQUIRED');
-          const verified = await own(() => verify({ signal: installationAbort.signal }));
-          guard();
-          if (
-            verified.state !== 'verified-reused' ||
-            verified.platform !== 'darwin' ||
-            verified.arch !== 'arm64'
-          )
-            throw new Error('CHROME_MATRIX_ORIGINAL_VERIFICATION_REQUIRED');
           const current = await own(() => inspect({ signal: installationAbort.signal }));
           guard();
           if (
@@ -348,7 +383,7 @@ it.skipIf(!fixturePath || process.platform !== 'darwin' || process.arch !== 'arm
         ...runtime,
         identity: { mode: 'chrome-compatible', policyRevision: 1 },
       });
-      const runtimeInput = join(input.home, 'matrix-runtime.json');
+      const runtimeInput = join(input.campaignHome, 'matrix-runtime.json');
       await own(() =>
         writeFile(
           runtimeInput,
@@ -361,8 +396,8 @@ it.skipIf(!fixturePath || process.platform !== 'darwin' || process.arch !== 'arm
         )
       );
       guard();
-      const keyPath = join(input.home, 'matrix-key.pem'),
-        certPath = join(input.home, 'matrix-cert.pem');
+      const keyPath = join(input.campaignHome, 'matrix-key.pem'),
+        certPath = join(input.campaignHome, 'matrix-cert.pem');
       const cert = spawn(
         '/usr/bin/openssl',
         [
@@ -527,6 +562,7 @@ it.skipIf(!fixturePath || process.platform !== 'darwin' || process.arch !== 'arm
             nativeRuntime: runtime,
             compatibleRuntime: compatible,
             runtimeInput,
+            profileHome: input.campaignHome,
             manager: native.manager,
             artifact: native.journal.artifact,
             fixtureURL: `https://identity-alpha.test:${port}/baseline`,

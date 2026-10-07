@@ -636,3 +636,201 @@ it('bounds retained navigation cleanup originals and reuses only an actually con
   expect(f.bank.viewerCount()).toBe(1);
   f.bank.disconnectFor(viewer.token, f.proof.actorIdentity);
 });
+
+it('joins the old viewer capture before acknowledged renewal admits its successor', async () => {
+  const f = fixture();
+  const originalCapture = f.capture.getMockImplementation()!;
+  let entered!: () => void, release!: () => void;
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  f.capture.mockImplementationOnce(async (...args) => {
+    entered();
+    await held;
+    return originalCapture(...args);
+  });
+  const viewer = f.bank.issue(f.proof, origin);
+  const old = f.bank.next(viewer.token, origin, f.proof.actorIdentity);
+  const oldResult = old.then(
+    () => ({ rejected: false }),
+    () => ({ rejected: true })
+  );
+  let renewed = false;
+  const duties: Promise<unknown>[] = [oldResult];
+  onTestFinished(async () => {
+    release();
+    await Promise.allSettled(duties);
+    await f.bank.close();
+  });
+  await started;
+  const peer = f.bank.issue(f.proof, origin);
+  await f.bank.next(peer.token, origin, f.proof.actorIdentity);
+  const disconnected = Promise.resolve(f.bank.disconnectFor(viewer.token, f.proof.actorIdentity));
+  const successor = disconnected.then(async () => {
+    renewed = true;
+    const fresh = f.bank.issue(f.proof, origin);
+    return f.bank.next(fresh.token, origin, f.proof.actorIdentity);
+  });
+  duties.push(disconnected, successor);
+  expect(f.bank.ownsTicket(viewer.token)).toBe(false);
+  await Promise.resolve();
+  expect(renewed).toBe(false);
+  expect(f.capture).toHaveBeenCalledTimes(2);
+  release();
+  await successor;
+  expect((await oldResult).rejected).toBe(true);
+  expect(renewed).toBe(true);
+  expect(f.capture).toHaveBeenCalledTimes(3);
+});
+
+it.each([false, undefined])(
+  'retains original capture rejection %s through disconnect join',
+  async (cause) => {
+    const f = fixture();
+    let entered!: () => void, release!: () => void;
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    f.capture.mockImplementationOnce(async () => {
+      entered();
+      await held;
+      throw cause;
+    });
+    const viewer = f.bank.issue(f.proof, origin);
+    const old = f.bank.next(viewer.token, origin, f.proof.actorIdentity);
+    const oldResult = old.then(
+      () => ({ rejected: false, value: null }),
+      (value: unknown) => ({ rejected: true, value })
+    );
+    const duties: Promise<unknown>[] = [oldResult];
+    onTestFinished(async () => {
+      release();
+      await Promise.allSettled(duties);
+      const close = await f.bank.close().then(
+        () => ({ rejected: false, value: null }),
+        (value: unknown) => ({ rejected: true, value })
+      );
+      if (close.rejected) expect(close.value).toBe(cause);
+    });
+    await started;
+    const disconnected = Promise.resolve(f.bank.disconnectFor(viewer.token, f.proof.actorIdentity));
+    const result = disconnected.then(
+      () => ({ rejected: false, value: null }),
+      (value: unknown) => ({ rejected: true, value })
+    );
+    duties.push(result);
+    release();
+    expect(await result).toEqual({ rejected: true, value: cause });
+    expect(await oldResult).toEqual({ rejected: true, value: cause });
+  }
+);
+
+it('keeps only original terminal cleanup after actual lease expiry during a held capture', async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2026-10-07T00:00:00.000Z'));
+  const f = fixture();
+  const originalCapture = f.capture.getMockImplementation()!;
+  let entered!: () => void, release!: () => void;
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const duties: Promise<unknown>[] = [];
+  onTestFinished(async () => {
+    release();
+    try {
+      await Promise.allSettled(duties);
+      await f.bank.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  f.capture.mockImplementationOnce(async (...args) => {
+    entered();
+    await held;
+    return originalCapture(...args);
+  });
+  const viewer = f.bank.issue(f.proof, origin);
+  const old = f.bank.next(viewer.token, origin, f.proof.actorIdentity);
+  const oldResult = old.then(
+    () => ({ rejected: false }),
+    () => ({ rejected: true })
+  );
+  duties.push(oldResult);
+  await started;
+  vi.advanceTimersByTime(30_000);
+  expect(f.bank.viewerCount()).toBe(0);
+  expect(f.bank.ownsTicket(viewer.token)).toBe(true);
+  expect(() => f.bank.disconnectFor(viewer.token, {})).toThrow('authority');
+  await expect(f.bank.next(viewer.token, origin, f.proof.actorIdentity)).rejects.toThrow(
+    'authority'
+  );
+  let acknowledged = false;
+  const disconnected = Promise.resolve(
+    f.bank.disconnectFor(viewer.token, f.proof.actorIdentity)
+  ).then(() => {
+    acknowledged = true;
+  });
+  duties.push(disconnected);
+  await Promise.resolve();
+  expect(acknowledged).toBe(false);
+  expect(f.capture).toHaveBeenCalledOnce();
+  release();
+  await disconnected;
+  expect((await oldResult).rejected).toBe(true);
+  expect(f.bank.ownsTicket(viewer.token)).toBe(false);
+  const successor = f.bank.issue(f.proof, origin);
+  await f.bank.next(successor.token, origin, f.proof.actorIdentity);
+  expect(f.capture).toHaveBeenCalledTimes(2);
+});
+
+it('automatically removes expired terminal custody only after its original capture returns', async () => {
+  vi.useFakeTimers();
+  const f = fixture();
+  const originalCapture = f.capture.getMockImplementation()!;
+  let entered!: () => void, release!: () => void;
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const duties: Promise<unknown>[] = [];
+  onTestFinished(async () => {
+    release();
+    try {
+      await Promise.allSettled(duties);
+      await f.bank.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  f.capture.mockImplementationOnce(async (...args) => {
+    entered();
+    await held;
+    return originalCapture(...args);
+  });
+  const viewer = f.bank.issue(f.proof, origin);
+  const old = f.bank.next(viewer.token, origin, f.proof.actorIdentity);
+  const result = old.then(
+    () => ({ rejected: false }),
+    () => ({ rejected: true })
+  );
+  duties.push(result);
+  await started;
+  vi.advanceTimersByTime(30_000);
+  expect(f.bank.ownsTicket(viewer.token)).toBe(true);
+  release();
+  await result;
+  await Promise.resolve();
+  expect(f.bank.ownsTicket(viewer.token)).toBe(false);
+  expect(() => f.bank.disconnectFor(viewer.token, f.proof.actorIdentity)).toThrow('authority');
+});

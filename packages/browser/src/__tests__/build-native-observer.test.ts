@@ -145,6 +145,7 @@ it.skipIf(process.platform !== 'darwin')(
       `
 #include "darwin-process-observer.h"
 #include <libproc.h>
+#include <errno.h>
 #include <sys/proc.h>
 #include <sys/proc_info.h>
 #include <sys/sysctl.h>
@@ -164,11 +165,16 @@ int control_listpids(uint32_t type, uint32_t parent, void *buffer, int capacity)
   const pid_t child = 43; memcpy(buffer, &child, sizeof(child)); return sizeof(child);
 }
 int control_pidinfo(int pid, int flavor, uint64_t arg, void *buffer, int capacity) {
-  if (flavor != PROC_PIDTBSDINFO || arg != 1 || capacity != sizeof(struct proc_bsdinfo)) return -1;
+  if (flavor != PROC_PIDTBSDINFO || arg != 1 || capacity != (int)sizeof(struct proc_bsdinfo)) return -1;
   struct proc_bsdinfo value; memset(&value, 0, sizeof(value));
   value.pbi_pid = pid; value.pbi_status = SSLEEP; value.pbi_start_tvsec = pid * 10; value.pbi_start_tvusec = 5;
   if (pid == 42) {
     value.pbi_ppid = parent_reads++ ? 1 : 100;
+    if ((scenario == 4 && parent_reads == 1) || (scenario == 5 && parent_reads == 2)) { errno = ESRCH; return 0; }
+    if (scenario == 6) { errno = EPERM; return 0; }
+    if (scenario == 7 && parent_reads == 1) { errno = EIO; return 0; }
+    if (scenario == 8 && parent_reads == 2) { errno = EACCES; return 0; }
+    if (scenario == 9 && parent_reads == 2) value.pbi_status = SZOMB;
     if (scenario == 1 && parent_reads == 2) value.pbi_start_tvsec++;
   } else if (pid == 43) {
     value.pbi_ppid = 42; child_reads++;
@@ -178,11 +184,12 @@ int control_pidinfo(int pid, int flavor, uint64_t arg, void *buffer, int capacit
   memcpy(buffer, &value, sizeof(value)); return sizeof(value);
 }
 int main(void) {
-  for (scenario = 0; scenario < 4; scenario++) {
+  for (scenario = 0; scenario < 10; scenario++) {
     parent_reads = child_reads = 0; struct dorkos_darwin_children result;
     if (dorkos_darwin_children(42, &result)) return 2;
-    printf("%d %d %d %d %d\\n", scenario, result.complete, result.parent_before.parent_pid,
-      result.parent_after.parent_pid, result.batch.processes[0].kind);
+    printf("%d %d %d %d %d %d %d %d %d\\n", scenario, result.complete, result.parent_before.parent_pid,
+      result.parent_after.parent_pid, result.batch.processes[0].kind, result.parent_before_error,
+      result.parent_after_error, parent_reads, child_reads);
   }
   return 0;
 }
@@ -218,10 +225,16 @@ int main(void) {
     expect(
       execFileSync(binary, [], { encoding: 'utf8', maxBuffer: 8192 }).trim().split('\n')
     ).toEqual([
-      '0 1 100 1 0', // Stable original parent can move to launchd; its child relation still holds.
-      '1 0 100 1 0', // A different parent birth cannot certify the same parent lifetime.
-      '2 0 100 1 2', // The child's current parent must match on both observations.
-      '3 0 100 1 2', // A child lifetime change is unknown, even with unchanged PID sets.
+      '0 1 100 1 0 0 0 2 2', // Stable original parent can move to launchd; its child relation still holds.
+      '1 0 100 1 0 0 0 2 2', // A different parent birth cannot certify the same parent lifetime.
+      '2 0 100 1 2 0 0 2 2', // The child's current parent must match on both observations.
+      '3 0 100 1 2 0 0 2 2', // A child lifetime change is unknown, even with unchanged PID sets.
+      '4 0 0 1 0 3 0 2 2', // Original first parent read ESRCH remains incomplete.
+      '5 0 100 0 0 0 3 2 2', // Original second parent read ESRCH is distinct.
+      '6 0 0 0 0 1 1 2 2', // Permission failure is not absence.
+      '7 0 0 1 0 5 0 2 2', // Original IO failure is retained.
+      '8 0 100 0 0 0 13 2 2', // Later permission failure stays distinct.
+      '9 0 100 1 0 0 0 2 2', // Same-birth terminal transition remains incomplete here.
     ]);
   }
 );

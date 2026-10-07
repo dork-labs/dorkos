@@ -1,3 +1,9 @@
+import {
+  ViewerTerminalCustody,
+  retainViewerCaptureTerminal,
+  joinViewerCaptureTerminal,
+  joinViewerCaptureTerminals,
+} from './viewer-terminal-custody.js';
 import type {
   PrivateViewerSampleObserver,
   PrivateViewerCensusObserver,
@@ -48,6 +54,7 @@ type Viewer = {
   readonly timer: ReturnType<typeof setTimeout>;
   sequence: number;
   busy: boolean;
+  work?: Promise<void>;
   closed: boolean;
   pending?: Frame;
   encodingMs: number | null;
@@ -83,11 +90,7 @@ function freezeEnvelope(value: BrowserFramePointerEnvelope): BrowserFramePointer
 /** Disposable pull subscriptions: one unacknowledged frame per viewer, no durable replay. */
 export class BrowserPixelSubscriptions {
   private readonly viewers = new Map<string, Viewer>();
-  // Navigation-only terminal custody: exact identity/token, no pixels, refresh or admission.
-  private readonly navigationRetired = new Map<
-    string,
-    Readonly<{ actorIdentity: object; binding: BrowserBinding }>
-  >();
+  private readonly terminals = new ViewerTerminalCustody();
   private readonly work = new Set<Promise<Frame>>();
   private readonly navigationFences = new Map<string, BrowserBinding>();
   private readonly workBindings = new Map<Promise<Frame>, BrowserBinding>();
@@ -150,17 +153,13 @@ export class BrowserPixelSubscriptions {
 
   /** Private dispatch correlation only. Membership does not admit a viewer or bypass original proof. */
   ownsTicket(token: string): boolean {
-    return !this.closed && (this.viewers.has(token) || this.navigationRetired.has(token));
+    return !this.closed && (this.viewers.has(token) || this.terminals.has(token));
   }
 
   /** Called only by the private authenticated host after genuine origin/CSRF admission. */
   issue(proof: OriginalViewerAdmission, admittedOrigin: string) {
     if (this.observationFailure) throw this.observationFailure.value;
-    if (
-      this.closed ||
-      this.viewers.size >= 16 ||
-      this.viewers.size + this.navigationRetired.size >= 64
-    )
+    if (this.closed || this.viewers.size >= 16 || this.viewers.size + this.terminals.size >= 64)
       throw new ViewerRefusal('capacity');
     const binding = Object.freeze(BrowserBindingSchema.parse(proof.binding));
     const refresh = proof.refresh.bind(proof),
@@ -181,7 +180,7 @@ export class BrowserPixelSubscriptions {
       this.closed ||
       !this.navigationAdmitted(binding) ||
       this.viewers.size >= 16 ||
-      this.viewers.size + this.navigationRetired.size >= 64 ||
+      this.viewers.size + this.terminals.size >= 64 ||
       finalActorIdentity !== actorIdentity ||
       finalGrantIdentity !== grantIdentity
     )
@@ -270,17 +269,20 @@ export class BrowserPixelSubscriptions {
     }
     // Enter retained original work before any asynchronous or fallible acquisition callback.
     const operation = Promise.resolve().then(() => this.acquire(viewer, origin, priorReceipt));
+    const terminal = retainViewerCaptureTerminal(operation);
+    viewer.work = terminal;
     this.work.add(operation);
     this.workBindings.set(operation, viewer.binding);
     void operation.then(
-      () => this.settled(viewer, operation),
-      () => this.settled(viewer, operation)
+      () => this.settled(viewer, operation, terminal),
+      () => this.settled(viewer, operation, terminal)
     );
     return operation;
   }
 
-  private settled(viewer: Viewer, operation: Promise<Frame>): void {
+  private settled(viewer: Viewer, operation: Promise<Frame>, terminal: Promise<void>): void {
     viewer.busy = false;
+    if (viewer.work === terminal) viewer.work = undefined;
     this.work.delete(operation);
     this.workBindings.delete(operation);
   }
@@ -439,16 +441,20 @@ export class BrowserPixelSubscriptions {
   }
 
   /** Private host has freshly verified this incoming original identity before disconnect. */
-  disconnectFor(token: string, authenticatedIdentity: object): void {
+  disconnectFor(token: string, authenticatedIdentity: object): Promise<void> {
     const viewer = this.viewers.get(token),
-      retired = this.navigationRetired.get(token);
+      retired = this.terminals.get(token);
     const original = viewer ?? retired;
     if (this.closed || !original || original.actorIdentity !== authenticatedIdentity)
       throw new ViewerRefusal('authority');
     // A fresh original host identity was verified before this call. Only exact terminal
     // cleanup is consumed here; next/publication still require the original live viewer.
+    const pending = original.work;
     if (viewer) this.disconnect(token);
-    else this.navigationRetired.delete(token);
+    this.terminals.consume(token);
+    // Renewal may admit a successor only after this viewer's exact original capture
+    // returns. Internal disconnect remains synchronous so acquisition cannot join itself.
+    return joinViewerCaptureTerminal(pending);
   }
 
   /** Disconnect clears only viewer pixels/timer; it never revokes a grant or controller. */
@@ -456,6 +462,7 @@ export class BrowserPixelSubscriptions {
     const viewer = this.viewers.get(token);
     if (!viewer) return;
     viewer.closed = true;
+    if (!this.closed) this.terminals.retainCapture(token, viewer);
     if (viewer.pending) viewer.droppedFrames++;
     viewer.pending = undefined;
     this.viewers.delete(token);
@@ -507,13 +514,7 @@ export class BrowserPixelSubscriptions {
     for (const viewer of this.viewers.values()) {
       const original = viewer.binding;
       if (matching(original)) {
-        this.navigationRetired.set(
-          viewer.token,
-          Object.freeze({
-            actorIdentity: viewer.actorIdentity,
-            binding: viewer.binding,
-          })
-        );
+        this.terminals.retainNavigation(viewer.token, viewer);
         this.disconnect(viewer.token);
       }
     }
@@ -539,7 +540,7 @@ export class BrowserPixelSubscriptions {
     if (this.closing) return this.closing;
     this.closed = true;
     if (this.sampleTimer) clearInterval(this.sampleTimer);
-    this.navigationRetired.clear();
+    this.terminals.clear();
     let resolve!: () => void, reject!: (error: unknown) => void;
     this.closing = new Promise<void>((yes, no) => {
       resolve = yes;
@@ -547,14 +548,7 @@ export class BrowserPixelSubscriptions {
     });
     const pending = [...this.work];
     for (const token of this.viewers.keys()) this.disconnect(token);
-    void Promise.allSettled(pending).then((results) => {
-      const first = results.find(
-        (result) => result.status === 'rejected' && !isOriginalCaptureCancellation(result.reason)
-      );
-      if (this.observationFailure) reject(this.observationFailure.value);
-      else if (first?.status === 'rejected') reject(first.reason);
-      else resolve();
-    });
+    void joinViewerCaptureTerminals(pending, () => this.observationFailure).then(resolve, reject);
     return this.closing;
   }
 }

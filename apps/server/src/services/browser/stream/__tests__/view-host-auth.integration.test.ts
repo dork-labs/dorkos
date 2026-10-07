@@ -10,6 +10,7 @@ import { verifyRequestAuth } from '../../../core/auth/session-gate.js';
 import { BrowserControllerIdentities } from '../../api/controller-auth.js';
 import { BrowserViewHost } from '../view-host.js';
 import { logger } from '../../../../lib/logger.js';
+import { parseBrowserResult } from '@dorkos/browser';
 import { BrowserBindingSchema } from '@dorkos/shared/browser-schemas';
 // This isolates genuine session verification and pixel issue/publication; native
 // registry/grant ports are controlled unit ports, not installed ownership proof.
@@ -23,8 +24,12 @@ it('fresh post-control binding survives actual second cookie verification and st
   initConfigManager(home).set('auth', { enabled: true });
   const auth = initAuth(db, home),
     identities = new BrowserControllerIdentities();
-  const resources: { host?: BrowserViewHost } = {};
+  const resources: { host?: BrowserViewHost; release?: () => void; duties: Promise<unknown>[] } = {
+    duties: [],
+  };
   onTestFinished(async () => {
+    resources.release?.();
+    await Promise.allSettled(resources.duties);
     try {
       await resources.host?.close();
       await identities.close();
@@ -70,6 +75,9 @@ it('fresh post-control binding survives actual second cookie verification and st
   const info = vi.spyOn(logger, 'info');
   onTestFinished(() => info.mockRestore());
   type Ports = ConstructorParameters<typeof BrowserViewHost>;
+  const capture = vi.fn<Ports[4]['capture']>(() => {
+    throw new Error('not requested');
+  });
   const host = new BrowserViewHost(
     { instance: () => ({ status: 'running' }) } as unknown as Ports[0],
     { listTabs: () => [current] } as unknown as Ports[1],
@@ -84,9 +92,7 @@ it('fresh post-control binding survives actual second cookie verification and st
       ownerView,
     } as unknown as Ports[3],
     {
-      capture: () => {
-        throw new Error('not requested');
-      },
+      capture,
       close: async () => {},
     } as unknown as Ports[4],
     () => enabled
@@ -117,4 +123,56 @@ it('fresh post-control binding survives actual second cookie verification and st
     ordinal: 2,
   });
   enabled = true;
+  // The actual authenticated host response must join the old original capture;
+  // returning only its synchronous pixel fence would permit premature renewal.
+  let entered!: () => void, release!: () => void;
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  capture.mockImplementationOnce(async () => {
+    entered();
+    await held;
+    const original = parseBrowserResult({
+      kind: 'frame',
+      binding: current,
+      captureSequence: 1,
+      rasterWidth: 1,
+      rasterHeight: 1,
+      byteLength: 2,
+      format: 'jpeg',
+      width: 1,
+      height: 1,
+      pointer: null,
+    });
+    if (original.kind !== 'frame') throw new Error('Expected original capture receipt');
+    return { bytes: new Uint8Array([1, 2]), receipt: original };
+  });
+  const terminal = await host.issue(req, res, current);
+  const originalNext = host.next(req, res, terminal.token);
+  const nextResult = originalNext.then(
+    () => ({ rejected: false }),
+    () => ({ rejected: true })
+  );
+  resources.release = release;
+  resources.duties.push(nextResult);
+  await started;
+  let acknowledged = false;
+  const disconnected = host.disconnect(req, res, terminal.token).then(() => {
+    acknowledged = true;
+  });
+  const disconnectedResult = disconnected.then(
+    () => ({ rejected: false }),
+    (value: unknown) => ({ rejected: true, value })
+  );
+  resources.duties.push(disconnectedResult);
+  // Await the actual synchronous fence, independently of the held capture terminal.
+  await vi.waitFor(() => expect(host.ownsTicket(terminal.token)).toBe(false));
+  expect(acknowledged).toBe(false);
+  release();
+  expect(await disconnectedResult).toEqual({ rejected: false });
+  expect((await nextResult).rejected).toBe(true);
+  expect(acknowledged).toBe(true);
 });

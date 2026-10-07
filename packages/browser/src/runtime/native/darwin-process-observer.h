@@ -32,6 +32,7 @@ struct dorkos_darwin_children {
   struct dorkos_darwin_batch batch;
   struct dorkos_darwin_process parent_before, parent_after;
   int have_parent_before, have_parent_after, complete;
+  int parent_before_error, parent_after_error;
 };
 
 /* Read-only sampled evidence, not an atomic process tree or a signal authority.

@@ -293,7 +293,7 @@ export class BrowserViewHost {
         current.owner !== actor.owner
       )
         throw new ViewerRefusal('authority');
-      this.pixels.disconnectFor(ticket, actor.credential);
+      await this.pixels.disconnectFor(ticket, actor.credential);
     });
   }
 

@@ -98,6 +98,7 @@ export async function withOriginalInstalledBrowserRound(
     stopping = false,
     cookie = '',
     pipes: Promise<void>[] = [];
+  let offObservation: 'observed' | 'refused' = 'refused';
   const origin = 'http://127.0.0.1:' + options.input.port;
   const retainRetirement = options.retainRetirement?.bind(options);
   const guard = () => {
@@ -106,14 +107,19 @@ export async function withOriginalInstalledBrowserRound(
     signal.throwIfAborted();
     projection?.assertCurrent();
   };
-  const requestBytes = async (path: string, document?: unknown) => {
-    guard();
+  const requestBytes = async (
+    path: string,
+    document?: unknown,
+    requestSignal = signal,
+    check = guard
+  ) => {
+    check();
     const response = await own(
       fetch(origin + path, {
         method: document === undefined ? 'GET' : 'POST',
         headers: { Origin: origin, Cookie: cookie, 'Content-Type': 'application/json' },
         ...(document === undefined ? {} : { body: JSON.stringify(document) }),
-        signal,
+        signal: requestSignal,
       })
     );
     const reader = response.body?.getReader();
@@ -124,7 +130,7 @@ export async function withOriginalInstalledBrowserRound(
     try {
       for (;;) {
         const next = await own(reader.read());
-        guard();
+        check();
         if (next.done) break;
         chunks.push(next.value);
         size += next.value.length;
@@ -194,12 +200,14 @@ export async function withOriginalInstalledBrowserRound(
       stopping = true;
       if (original.exitCode === null && original.signalCode === null) original.kill('SIGTERM');
     };
-    signal.addEventListener('abort', stop, { once: true });
+    // Body failure fences its work; only the existing parent lifetime can stop
+    // the CLI before authenticated Off cleanup has had its original turn.
+    options.signal.addEventListener('abort', stop, { once: true });
     returned = own(
       new Promise<void>((yes, no) => {
         original.once('error', no);
         original.once('close', (code, originalStop) => {
-          signal.removeEventListener('abort', stop);
+          options.signal.removeEventListener('abort', stop);
           if (stopping && code === 0 && originalStop === null) yes();
           else no(new Error('STORAGE_ORIGINAL_CLI_RETURN_REFUSED'));
         });
@@ -372,11 +380,6 @@ export async function withOriginalInstalledBrowserRound(
       },
     });
     zero = false;
-    const disabled = BrowserProductionStatusSchema.parse(
-      await request('/api/browser/runtime/enable', { enabled: false })
-    );
-    if (disabled.state !== 'disabled' || disabled.enabled)
-      throw new Error('STORAGE_ORIGINAL_OFF_REQUIRED');
   } catch (value) {
     fail(value);
   } finally {
@@ -387,6 +390,33 @@ export async function withOriginalInstalledBrowserRound(
         if (first) throw first.value;
       })(),
       async close() {
+        // Body failure must not skip the genuine authenticated Off producer. This
+        // cleanup has no new deadline: the original lifetime still bounds it.
+        const off = new AbortController();
+        const abortOff = () => off.abort(options.signal.reason);
+        options.signal.addEventListener('abort', abortOff, { once: true });
+        try {
+          if (!cookie) throw new Error('STORAGE_ORIGINAL_OFF_OWNER_REQUIRED');
+          const original = requestBytes(
+            '/api/browser/runtime/enable',
+            { enabled: false },
+            off.signal,
+            () => {}
+          );
+          // Enter the original request even after body cancellation; an expired
+          // lifetime cannot authorize extra time or prove its delivery/success.
+          if (options.signal.aborted) abortOff();
+          const disabled = BrowserProductionStatusSchema.parse(
+            JSON.parse((await original).toString('utf8'))
+          );
+          if (disabled.state !== 'disabled' || disabled.enabled)
+            throw new Error('STORAGE_ORIGINAL_OFF_REQUIRED');
+          offObservation = 'observed';
+        } catch (value) {
+          fail(value);
+        } finally {
+          options.signal.removeEventListener('abort', abortOff);
+        }
         stopping = true;
         if (cli && cli.exitCode === null && cli.signalCode === null) cli.kill('SIGTERM');
         for (const original of [returned, ...pipes])
@@ -452,6 +482,7 @@ export async function withOriginalInstalledBrowserRound(
           await retainRetirement?.({
             kind: 'original-storage-retirement',
             round: options.round,
+            offCleanup: offObservation,
             knownBirths: originals,
             observed,
             entryManagerExcluded: options.native.manager,

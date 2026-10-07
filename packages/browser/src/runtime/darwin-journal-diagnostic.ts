@@ -47,6 +47,7 @@ export function readDarwinJournalDiagnostic(
     if (batch.parentBefore) Object.freeze(batch.parentBefore);
     if (batch.parentAfter) Object.freeze(batch.parentAfter);
     Object.freeze(batch.processes);
+    if (batch.parentObservation) Object.freeze(batch.parentObservation);
     value = Object.freeze({
       kind: 'incomplete-native-children',
       journalId,
