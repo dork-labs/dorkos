@@ -33,21 +33,30 @@ The audit log is one append-only, hash-chained table, `audit_events`, that recor
 - `core/mcp-tool-gate.ts`, per allowed hand-registered tool call, in session always (the scope there would otherwise be the person whose message started the turn) and on `/mcp` when the call carries an identity.
 - `core/capabilities/registry.ts`, per invocation with an identity (`runAsAgent`).
 
-A turn runs detached from the request that started it, so anything a tool does without one of the last two edges is recorded as the PERSON. When you add a new way for an agent to act, enter a scope for it.
+A turn runs detached from the request that started it, so anything a tool does without one of the last two edges is recorded as the PERSON. When you add a new way for an agent to act, enter a scope for it. An in-session call with no identity is named `unidentified`, never the person (`runAsAgent(..., { inSession })`).
+
+The request scope is lazy: the actor and credential are read the first time something asks, and remembered, so a read that records nothing costs nothing, and a gate that runs after the middleware (the `/mcp` authorizer) is still seen. Credential kinds: `agent-token` (hash of the presented token, matching its `agent_token.minted` row), `api-key`, `cookie`, `mcp-local`.
+
+**Timers and loops inherit the scope they were created in.** A cron registered inside a person's request would name that person for every firing. Start long-lived work with `outsideAuditScope(callback)` / `runOutsideAuditScope(fn)` from `services/audit/audit-context.ts`; the scheduler's cron, the reconcilers, the sweeps and the lazily started loops already do (`services/tasks/__tests__/scheduler-audit-scope.test.ts` proves it with a real firing). A new `setInterval`/`Cron` that can be started from a request needs the same wrap.
+
+## The request fallback
+
+`middleware/audit-request-fallback.ts`, mounted right after `auditActor`, records `http.<method>` (route pattern with ids as `:id`, outcome from the status; never body or query) for any mutating `/api` request that finished with nothing recorded under its scope. Every successful `AuditLog.record` marks its scope and every enclosing scope as recorded (`markAuditScopeRecorded`), so a request a choke point covered, even in a narrower agent scope, adds nothing. A precise choke point is always better than this line: when you see `http.*` rows for a route that matters, add one. Requests that change nothing (`/read`, `/preview`, `/check`, `/probe`, `/heartbeat`, devtools ingest, …) are listed in `NOT_ACTIONS`.
 
 `recordAudit` does nothing before `initAuditTrail` (set by `wireAuditTrail` at startup), so a unit test that does not set one up is unaffected.
 
 ## What PR2 records, and where
 
-| Action                                                                                           | Choke point                                                                                          |
-| ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| `mcp.<tool>` (act/destructive tools that ran)                                                    | `core/mcp-tool-gate.ts` `invokeAudited`                                                              |
-| `capability.invoked/failed` by an unidentified caller (act tier)                                 | `core/agent-identity/capability-attribution.ts`, audit only, not Activity                            |
-| `config.changed` with per-leaf before/after                                                      | `core/operator/config-write.ts` (both the guarded write and `logConfigWrite`)                        |
-| `marketplace.installed/updated/uninstalled`                                                      | `MarketplaceInstaller.install/update`, `UninstallFlow.uninstall` (not the removal half of an update) |
-| `auth.signed_in/signed_out/sign_in_failed` (admins), `account.linked`, `api_key.created/revoked` | `core/auth/auth-audit.ts`, Better Auth hooks                                                         |
-| `agent_token.minted/revoked`                                                                     | `agent-identity/agent-token-env.ts`, `unregister-cascade.ts`                                         |
-| `room.merged` (the merger, not the commit author)                                                | `rooms/repo/room-merge-service.ts`                                                                   |
+| Action                                                                                                                                                                  | Choke point                                                                                          |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `mcp.<tool>` (act/destructive tools that ran; `links.approvalId` when a granted token was spent)                                                                        | `core/mcp-tool-gate.ts` `invokeAudited`                                                              |
+| `capability.invoked/failed` by an unidentified caller (act tier)                                                                                                        | `core/agent-identity/capability-attribution.ts`, audit only, not Activity                            |
+| `config.changed` with per-leaf before/after                                                                                                                             | `core/operator/config-write.ts` (both the guarded write and `logConfigWrite`)                        |
+| `marketplace.installed/updated/uninstalled` (version and short commit before/after), `marketplace.update_failed` (`remove` when the old version is gone, else `modify`) | `MarketplaceInstaller.install/update`, `UninstallFlow.uninstall` (not the removal half of an update) |
+| `auth.signed_in/signed_out/session_revoked/session_expired/session_ended/sign_in_failed/sign_in_rate_limited` (admins), `account.linked`, `api_key.created/revoked`     | `core/auth/auth-audit.ts`, Better Auth hooks, `middleware/auth-rate-limit.ts`                        |
+| `agent_token.minted/revoked`                                                                                                                                            | `agent-identity/agent-token-env.ts`, `unregister-cascade.ts`                                         |
+| `room.merged` (the merger, not the commit author)                                                                                                                       | `rooms/repo/room-merge-service.ts`                                                                   |
+| `http.<method>` for any mutating `/api` request nothing else recorded                                                                                                   | `middleware/audit-request-fallback.ts`                                                               |
 
 ## One or the other, never both
 

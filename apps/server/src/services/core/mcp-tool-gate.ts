@@ -194,6 +194,8 @@ type GateOutcome =
       input: Record<string, unknown>;
       /** What the call acts on, when the tool declares an approval subject. */
       subject?: ApprovalSubject;
+      /** The approval a person granted for this call, when a token was spent. */
+      approvalId?: string;
     }
   | {
       allowed: false;
@@ -297,6 +299,7 @@ async function runGate(run: GateRun): Promise<GateOutcome> {
     allowed: true,
     input: (input ?? {}) as Record<string, unknown>,
     ...(subject ? { subject } : {}),
+    ...(decision.approval?.via === 'approval' ? { approvalId: decision.approval.approvalId } : {}),
   };
 }
 
@@ -323,15 +326,17 @@ interface AuditedCall {
  * Run an allowed call's handler inside its caller's audit scope, then record it.
  *
  * @param call - Who called which tool.
- * @param subject - What it acts on, when the tool declares that.
+ * @param allowed - What the gate allowed: the call's subject, and the approval
+ *   a spent token came from.
  * @param invoke - The real handler.
  * @returns The handler's result, unchanged.
  */
 async function invokeAudited(
   call: AuditedCall,
-  subject: ApprovalSubject | undefined,
+  allowed: { subject?: ApprovalSubject; approvalId?: string },
   invoke: () => Promise<CallToolResult>
 ): Promise<CallToolResult> {
+  const { subject, approvalId } = allowed;
   const trail = auditTrail();
   const scope =
     trail && (call.identity || call.inSession)
@@ -350,6 +355,7 @@ async function invokeAudited(
         target: subject ? { type: subject.kind, id: subject.id, name: subject.label } : null,
         outcome,
         ...(error ? { error } : {}),
+        ...(approvalId ? { links: { approvalId } } : {}),
         summary: `${outcome === 'ok' ? 'Ran' : 'Tried to run'} ${call.action.title}${
           subject ? ` on ${subject.label}` : ''
         }`,
@@ -432,8 +438,8 @@ interface HandlerRun {
 async function runGatedInSession(call: GateRun, run: HandlerRun): Promise<CallToolResult> {
   const outcome = await runGate(call);
   if (outcome.allowed) {
-    const { input, subject } = outcome;
-    return invokeAudited(run.audit, subject, () => run.invoke(input));
+    const { input } = outcome;
+    return invokeAudited(run.audit, outcome, () => run.invoke(input));
   }
   if (!run.hold || !outcome.fresh) return outcome.result;
 
@@ -468,8 +474,8 @@ async function runGatedInSession(call: GateRun, run: HandlerRun): Promise<CallTo
     approvalToken: outcome.fresh.approvalToken,
   });
   if (!retried.allowed) return retried.result;
-  const { input, subject } = retried;
-  return invokeAudited(run.audit, subject, () => run.invoke(input));
+  const { input } = retried;
+  return invokeAudited(run.audit, retried, () => run.invoke(input));
 }
 
 /**
@@ -677,7 +683,7 @@ export function createHandToolReach(
         ...(requestingSession ? { requestingSession } : {}),
       });
       if (!outcome.allowed) throw new CapabilityGateRefusal(outcome.decision);
-      const { input, subject } = outcome;
+      const { input } = outcome;
       const result = await invokeAudited(
         {
           name,
@@ -686,7 +692,7 @@ export function createHandToolReach(
           inSession: surface.origin === 'session',
           ...(requestingSession ? { sessionId: requestingSession.sessionId } : {}),
         },
-        subject,
+        outcome,
         () => tool.handler(input, undefined)
       );
       return unwrapToolResult(result);
@@ -801,10 +807,10 @@ export function gatedToolRegistrar(
           origin: 'external-mcp',
         });
         if (!outcome.allowed) return outcome.result;
-        const { input, subject } = outcome;
+        const { input } = outcome;
         return invokeAudited(
           { name, action, ...(identity ? { identity } : {}), inSession: false },
-          subject,
+          outcome,
           () => cb(input as never, extra)
         );
         // The SDK's `registerTool` is generic over the input and output shapes it

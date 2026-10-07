@@ -19,14 +19,57 @@ function request(path: string, headers: Record<string, string> = {}) {
 
 describe('auditActorForRequest', () => {
   let owner: { id: string; name: string } | null;
+  let ownerReads: number;
 
   beforeEach(() => {
     owner = null;
+    ownerReads = 0;
     const db = createTestDb();
     initAuditTrail({
       log: new AuditLog(db),
-      accounts: new AccountIds({ db, installId: 'inst-1', readOwnerAccount: () => owner }),
+      accounts: new AccountIds({
+        db,
+        installId: 'inst-1',
+        readOwnerAccount: () => {
+          ownerReads += 1;
+          return owner;
+        },
+      }),
     });
+  });
+
+  it('reads nothing until something asks who acted, then remembers', () => {
+    const scope = auditActorForRequest(request('/api/config'), { locals: {} });
+    expect(ownerReads).toBe(0);
+    expect(scope!.actor.accountId).toBe('install:inst-1');
+    void scope!.actor;
+    void scope!.credential;
+    expect(ownerReads).toBe(1);
+  });
+
+  it('sees an identity a later gate set, because it resolves on first use', () => {
+    const locals: Record<string, unknown> = {};
+    const scope = auditActorForRequest(request('/mcp'), { locals });
+    owner = { id: 'u1', name: 'Dorian' };
+    locals.user = { userId: 'u1', credential: 'api-key', credentialId: 'k1' };
+    expect(scope).toMatchObject({ actor: { accountId: 'u1' }, credential: { kind: 'api-key' } });
+  });
+
+  it('names the agent-token, cookie and local-token credentials, by reference', () => {
+    const agent = auditActorForRequest(request('/api/x', { 'x-dorkos-agent': 'tok-123' }), {
+      locals: { agentIdentity: AGENT },
+    });
+    expect(agent!.credential).toMatchObject({ kind: 'agent-token' });
+    expect(JSON.stringify(agent!.credential)).not.toContain('tok-123');
+
+    owner = { id: 'u1', name: 'Dorian' };
+    const cookie = auditActorForRequest(request('/api/x'), {
+      locals: { user: { userId: 'u1', credential: 'cookie' } },
+    });
+    expect(cookie!.credential).toMatchObject({ kind: 'cookie' });
+
+    const local = auditActorForRequest(request('/mcp'), { locals: { mcpLocalToken: true } });
+    expect(local).toMatchObject({ actor: { accountId: 'u1' }, credential: { kind: 'mcp-local' } });
   });
   afterEach(() => resetAuditTrail());
 
@@ -58,7 +101,7 @@ describe('auditActorForRequest', () => {
       surface: 'http',
       credential: { kind: 'api-key' },
     });
-    expect(JSON.stringify(scope)).not.toContain('key-123');
+    expect(JSON.stringify(scope!.credential)).not.toContain('key-123');
   });
 
   it('names a signed-in person in the app', () => {

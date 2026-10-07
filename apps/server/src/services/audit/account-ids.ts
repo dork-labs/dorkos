@@ -155,7 +155,7 @@ export class AccountIds {
  * @param id - A stable id for it (an API key record id, a token digest).
  */
 export function credentialRef(
-  kind: 'cookie' | 'api-key' | 'agent-token' | 'mcp-local' | 'bridge',
+  kind: 'cookie' | 'api-key' | 'agent-token' | 'mcp-local',
   id: string
 ): { kind: string; idHash: string } {
   return { kind, idHash: createHash('sha256').update(id, 'utf8').digest('hex').slice(0, 12) };

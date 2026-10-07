@@ -1,0 +1,119 @@
+/**
+ * The audit log's safety net for mutating HTTP requests (spec `audit-trail`
+ * §6.2, PR2 review).
+ *
+ * Every write DorkOS can be asked to do over HTTP should leave a line in the
+ * audit log. The choke points (the capability registry, config writes, package
+ * changes, room merges, …) write a precise one. A route with none of those
+ * behind it would write nothing, and an agent can call any route. So every
+ * `POST`, `PUT`, `PATCH` and `DELETE` under `/api` that finished WITHOUT
+ * anything being recorded under its audit scope gets one generic row: who,
+ * which method, which route, and how it came out. Never the body and never the
+ * query string, and id-shaped path segments are written as `:id`.
+ *
+ * Deduplication rides the request's audit scope: `AuditLog.record` marks the
+ * scope `recorded`, so a request a choke point already covered adds nothing.
+ *
+ * A short list of requests that change nothing anybody would look for (a
+ * read marker, a preview, a check, a heartbeat, the devtools stream) is left
+ * out, so the log stays the record of actions rather than of traffic.
+ *
+ * @module middleware/audit-request-fallback
+ */
+import type { NextFunction, Request, Response } from 'express';
+import type { AuditOperation, AuditOutcome } from '@dorkos/shared/audit-schemas';
+import type { AuditActorContext } from '../services/audit/audit-context.js';
+import { recordAudit } from '../services/audit/audit-trail.js';
+
+/** The methods that change something, and the operation each records as. */
+const MUTATING: Record<string, AuditOperation> = {
+  POST: 'execute',
+  PUT: 'modify',
+  PATCH: 'modify',
+  DELETE: 'remove',
+};
+
+/**
+ * Requests that change nothing anybody would look for in an audit log. Each
+ * is either a read sent as a POST, a check, or a marker of what a person has
+ * seen; listing them keeps the log a record of actions.
+ */
+const NOT_ACTIONS: readonly RegExp[] = [
+  /\/devtools\/ingest$/,
+  /\/preview$/,
+  /\/previews$/,
+  /\/check-files$/,
+  /\/check$/,
+  /\/probe$/,
+  /\/heartbeat$/,
+  /\/read$/,
+  /\/read-all$/,
+  /\/read-cursor$/,
+];
+
+/** A path segment that names one thing rather than a kind of thing. */
+const ID_SEGMENT =
+  /^(?:\d+|[0-9A-HJKMNP-TV-Z]{26}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{16,}|.{40,})$/i;
+
+/**
+ * A request path with its ids written as `:id`, so a row names the route
+ * without carrying whatever an id-shaped segment held.
+ *
+ * @param path - The request path, without its query string.
+ */
+export function routePatternOf(path: string): string {
+  return path
+    .split('/')
+    .map((segment) => (segment && ID_SEGMENT.test(segment) ? ':id' : segment))
+    .join('/');
+}
+
+/** How a response status reads as an outcome. */
+function outcomeOf(status: number): AuditOutcome {
+  if (status < 400) return 'ok';
+  if (status === 401 || status === 403 || status === 409 || status === 429) return 'refused';
+  return 'failed';
+}
+
+/**
+ * Express middleware: record a mutating `/api` request nothing else recorded.
+ * Mounted right after `auditActor`, whose scope it reads.
+ *
+ * @param req - The request.
+ * @param res - The response.
+ * @param next - The next handler.
+ */
+export function auditRequestFallback(req: Request, res: Response, next: NextFunction): void {
+  const operation = MUTATING[req.method];
+  const scope = res.locals.auditScope as AuditActorContext | undefined;
+  const path = req.originalUrl.split('?')[0] ?? req.originalUrl;
+  if (
+    !operation ||
+    !scope ||
+    !path.startsWith('/api/') ||
+    NOT_ACTIONS.some((re) => re.test(path))
+  ) {
+    return next();
+  }
+  res.on('finish', () => {
+    if (scope.recorded) return;
+    const route = routePatternOf(path);
+    // The scope is passed explicitly: `finish` fires from the socket, outside
+    // the request's own async chain.
+    recordAudit({
+      actor: scope.actor,
+      source: {
+        surface: scope.surface,
+        ...(scope.sessionId ? { sessionId: scope.sessionId } : {}),
+      },
+      ...(scope.credential ? { credential: scope.credential } : {}),
+      action: `http.${req.method.toLowerCase()}`,
+      operation,
+      target: { type: 'route', id: route, name: `${req.method} ${route}` },
+      outcome: outcomeOf(res.statusCode),
+      ...(res.statusCode >= 400 ? { error: `HTTP ${res.statusCode}` } : {}),
+      summary: `${req.method} ${route} (${res.statusCode})`,
+    });
+  });
+  next();
+}

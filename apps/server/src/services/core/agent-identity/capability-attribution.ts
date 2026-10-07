@@ -47,7 +47,7 @@
  */
 import type { ActivityService } from '../../activity/activity-service.js';
 import { activityActorForIdentity } from '../../activity/activity-actor.js';
-import { recordAudit } from '../../audit/audit-trail.js';
+import { auditTrail, recordAudit } from '../../audit/audit-trail.js';
 import {
   CapabilityGateRefusal,
   type CapabilityDefinition,
@@ -123,7 +123,15 @@ export function createCapabilityAttributionObserver(
     // registry never reports an anonymous read.
     if (!identity && capability.tier !== 'destructive') {
       if (capability.tier === 'observe') return;
+      // In session, the scope around this observer is the person whose message
+      // started the turn, and an in-session call with no identity is still an
+      // agent's: name it unidentified, the same as the call ran under.
+      const unidentifiedAgent =
+        context.mcpServer === 'in-session'
+          ? auditTrail()?.accounts.unidentified('Unidentified caller')
+          : undefined;
       recordAudit({
+        ...(unidentifiedAgent ? { actor: unidentifiedAgent } : {}),
         action: ok ? 'capability.invoked' : 'capability.failed',
         operation: 'execute',
         target: { type: 'capability', id: capability.id, name: capability.title },

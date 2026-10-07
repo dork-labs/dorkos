@@ -1,4 +1,5 @@
 import type { Request } from 'express';
+import { recordSignInRateLimited } from '../services/core/auth/auth-audit.js';
 import rateLimit, { type RateLimitRequestHandler } from 'express-rate-limit';
 import { rateLimitKey } from './rate-limit-key.js';
 
@@ -59,6 +60,12 @@ function isCredentialAttempt(req: Request): boolean {
   return path === '/api/auth/sign-in/email' || path === '/api/auth/sign-up/email';
 }
 
+/** What a refused attempt is answered with. */
+const RATE_LIMITED_BODY = {
+  error: 'Too many sign-in attempts. Try again in a few minutes.',
+  code: 'RATE_LIMITED',
+};
+
 /**
  * Build the app-level rate limiter for Better Auth's sign-in / sign-up endpoints.
  *
@@ -96,9 +103,13 @@ export function buildAuthRateLimiter(options: AuthRateLimitOptions = {}): RateLi
     // Count only sign-in/sign-up POSTs; benign session-check GETs and every
     // non-auth route pass through without consuming the budget.
     skip: (req) => !isCredentialAttempt(req),
-    message: {
-      error: 'Too many sign-in attempts. Try again in a few minutes.',
-      code: 'RATE_LIMITED',
+    // The refusal is a sign-in attempt like any other, so it goes in the audit
+    // log too (admins-only, naming nobody). Better Auth never sees it, so its
+    // own hooks cannot record it.
+    handler: (req, res, _next, limiterOptions) => {
+      const userAgent = req.headers['user-agent'];
+      recordSignInRateLimited(typeof userAgent === 'string' ? userAgent : undefined);
+      res.status(limiterOptions.statusCode).json(RATE_LIMITED_BODY);
     },
   });
 }

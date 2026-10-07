@@ -8,6 +8,7 @@
  *
  * @module server/services/search/indexer
  */
+import { outsideAuditScope } from '../audit/audit-context.js';
 import type { Db } from '@dorkos/db';
 import { logger } from '../../lib/logger.js';
 import { sweepFileSource } from './jsonl-frontier.js';
@@ -142,7 +143,10 @@ export class SearchIndexer {
   start(): void {
     if (this.timer) return;
     this.runSweep();
-    this.timer = setInterval(() => this.runSweep(), this.intervalMs);
+    this.timer = setInterval(
+      outsideAuditScope(() => this.runSweep()),
+      this.intervalMs
+    );
     this.timer.unref?.();
   }
 

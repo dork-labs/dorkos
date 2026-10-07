@@ -883,8 +883,11 @@ export function composeRegistry(
       // runs inside its own audit scope, so a write the capability makes further
       // down names the agent, never the person whose message started the turn.
       const run = () =>
-        runAsAgent(invocationContext.identity, supplied.sessionId, () =>
-          capability.invoke(deps, parsed, invocationContext)
+        runAsAgent(
+          invocationContext.identity,
+          supplied.sessionId,
+          () => capability.invoke(deps, parsed, invocationContext),
+          { inSession: supplied.mcpServer === 'in-session' }
         );
 
       // Reads with nobody named stay silent: there is nothing to attribute and a

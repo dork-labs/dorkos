@@ -132,6 +132,28 @@ describe('auth events in the audit log (integration)', () => {
     expect(rowsSince(from)).toEqual([['api_key.revoked', 'space']]);
   });
 
+  it('records revoking every other sign-in as a revocation, not a sign-out', async () => {
+    // A second sign-in, so there is another session to revoke.
+    await request(fixtureServer)
+      .post('/api/auth/sign-in/email')
+      .set('Origin', ORIGIN)
+      .send({ email: EMAIL, password: PASSWORD });
+    const from = lastSeq();
+    const res = await request(fixtureServer)
+      .post('/api/auth/revoke-other-sessions')
+      .set('Origin', ORIGIN)
+      .set('Cookie', cookies)
+      .send({});
+    expect(res.status).toBe(200);
+    // Every other session goes (the sign-up's own and the one just made), and
+    // each is a revocation.
+    const rows = rowsSince(from);
+    expect(rows.length).toBeGreaterThanOrEqual(1);
+    expect(new Set(rows.map(([action, visibility]) => `${action}:${visibility}`))).toEqual(
+      new Set(['auth.session_revoked:admins'])
+    );
+  });
+
   it('records a sign-out', async () => {
     const from = lastSeq();
     const res = await request(fixtureServer)
@@ -141,5 +163,17 @@ describe('auth events in the audit log (integration)', () => {
       .send({});
     expect(res.status).toBe(200);
     expect(rowsSince(from)).toEqual([['auth.signed_out', 'admins']]);
+  });
+
+  it('names an expired session as expired, whatever removed it', async () => {
+    const { sessionEndReason } = await import('../auth-audit.js');
+    const past = new Date(Date.now() - 1000);
+    expect(sessionEndReason({ userId: 'u', expiresAt: past }, '/get-session').action).toBe(
+      'auth.session_expired'
+    );
+    expect(sessionEndReason({ userId: 'u' }, '/revoke-session').action).toBe(
+      'auth.session_revoked'
+    );
+    expect(sessionEndReason({ userId: 'u' }, undefined).action).toBe('auth.session_ended');
   });
 });

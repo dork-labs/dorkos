@@ -40,7 +40,7 @@ import {
   authAuditAfterHook,
   recordAccountCreated,
   recordSignedIn,
-  recordSignedOut,
+  recordSessionEnded,
 } from './auth-audit.js';
 import { realpathSync } from 'node:fs';
 import { betterAuth, type BetterAuthOptions } from 'better-auth';
@@ -265,7 +265,7 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
       // Better Auth keeps sessions, not their history.
       session: {
         create: { after: async (created) => recordSignedIn(created) },
-        delete: { after: async (deleted) => recordSignedOut(deleted) },
+        delete: { after: async (deleted, ctx) => recordSessionEnded(deleted, ctx?.path) },
       },
     },
     // Failed sign-ins and API keys created or revoked, in the audit log.

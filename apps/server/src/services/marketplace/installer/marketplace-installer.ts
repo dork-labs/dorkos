@@ -43,7 +43,8 @@ import type { PluginInstallFlow } from '../flows/install-plugin.js';
 import type { ShapeInstallFlow } from '../flows/install-shape.js';
 import type { SkillPackInstallFlow } from '../flows/install-skill-pack.js';
 import type { UninstallFlow } from '../flows/uninstall/uninstall.js';
-import { recordPackageChange } from '../lib/record-package-change.js';
+import { readInstallMetadata } from '../installed-metadata.js';
+import { recordPackageChange, type PackageVersionFacts } from '../lib/record-package-change.js';
 import { locateInstallRoot } from '../lib/locate-install.js';
 import {
   hostOf,
@@ -139,25 +140,65 @@ export interface PreviewResult {
 }
 
 /**
- * Record an install or update that committed, in the audit log.
+ * Record an install or update that committed, in the audit log, with the
+ * version and commit either side.
  *
  * @param kind - Which it was.
  * @param req - What was asked for, for the source and project.
  * @param result - What landed.
+ * @param logger - Where a record that cannot be written is reported.
+ * @param before - What the package's sidecar said before an update.
  */
-function recordInstalled(
+async function recordInstalled(
   kind: 'installed' | 'updated',
   req: InstallRequest,
-  result: InstallResult
-): void {
+  result: InstallResult,
+  logger: Pick<Logger, 'warn'>,
+  before?: PackageVersionFacts | null
+): Promise<void> {
+  // The install already committed: recording it must never turn that into a
+  // failure the caller sees. A record that cannot be written is logged instead.
+  try {
+    await recordInstalledUnguarded(kind, req, result, before);
+  } catch (err) {
+    logger.warn('[marketplace] could not record an install in the audit log', {
+      packageName: result.packageName,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+/** {@link recordInstalled}'s body, which may throw. */
+async function recordInstalledUnguarded(
+  kind: 'installed' | 'updated',
+  req: InstallRequest,
+  result: InstallResult,
+  before?: PackageVersionFacts | null
+): Promise<void> {
   const source = req.source ?? req.marketplace;
+  const landed = await readInstallMetadata(result.installPath);
   recordPackageChange({
     kind,
     name: result.packageName,
-    version: result.version,
     ...(source ? { source } : {}),
     ...(req.projectPath ? { projectPath: req.projectPath } : {}),
+    ...(before ? { before } : {}),
+    after: {
+      version: result.version,
+      ...(landed?.commitSha ? { commitSha: landed.commitSha } : {}),
+    },
   });
+}
+
+/** The version facts in a package's sidecar, or `null` when there is none. */
+async function versionFactsAt(installRoot: string): Promise<PackageVersionFacts | null> {
+  const metadata = await readInstallMetadata(installRoot);
+  return metadata
+    ? {
+        ...(metadata.version ? { version: metadata.version } : {}),
+        ...(metadata.commitSha ? { commitSha: metadata.commitSha } : {}),
+      }
+    : null;
 }
 
 /**
@@ -211,7 +252,7 @@ export class MarketplaceInstaller implements InstallerLike {
    */
   async install(req: InstallRequest): Promise<InstallResult> {
     const result = await this.dispatcher.installStaged(req);
-    if (result.ok) recordInstalled('installed', req, result);
+    if (result.ok) await recordInstalled('installed', req, result, this.deps.logger);
     return result;
   }
 
@@ -262,11 +303,30 @@ export class MarketplaceInstaller implements InstallerLike {
     // Nothing of that name is installed: there is no target to serialise on,
     // and the uninstall half below raises the canonical
     // `PackageNotInstalledError` for the caller.
-    const result =
-      installRoot === null
-        ? await this.updater.applyUpdate(req, resolved)
-        : await withInstallTargetLock(installRoot, () => this.updater.applyUpdate(req, resolved));
-    if (result.ok) recordInstalled('updated', req, result);
+    const before = installRoot === null ? null : await versionFactsAt(installRoot);
+    let result: InstallResult;
+    try {
+      result =
+        installRoot === null
+          ? await this.updater.applyUpdate(req, resolved)
+          : await withInstallTargetLock(installRoot, () => this.updater.applyUpdate(req, resolved));
+    } catch (err) {
+      // The removal half can succeed and the install half fail. Record either
+      // way, and say which: a package must never disappear without a trace.
+      if (installRoot !== null) {
+        const after = await versionFactsAt(installRoot);
+        recordPackageChange({
+          kind: 'update_failed',
+          name: resolved.packageName,
+          ...(req.projectPath ? { projectPath: req.projectPath } : {}),
+          before,
+          removed: before !== null && after === null,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      throw err;
+    }
+    if (result.ok) await recordInstalled('updated', req, result, this.deps.logger, before);
     return result;
   }
 

@@ -51,6 +51,7 @@
  *
  * @module services/core/approvals/approval-expiry-sweep
  */
+import { outsideAuditScope } from '../../audit/audit-context.js';
 import { logger } from '../../../lib/logger.js';
 import type { ApprovalService } from './approval-service.js';
 
@@ -122,7 +123,10 @@ export function runApprovalExpiryTick(approvals: ExpirySource): ApprovalExpiryTi
  * @returns A function that stops the sweep. Safe to call repeatedly.
  */
 export function startApprovalExpirySweep(approvals: ExpirySource, intervalMs: number): () => void {
-  const timer = setInterval(() => runApprovalExpiryTick(approvals), intervalMs);
+  const timer = setInterval(
+    outsideAuditScope(() => runApprovalExpiryTick(approvals)),
+    intervalMs
+  );
   // An expiry sweep must never be the reason a CLI app refuses to exit — the same
   // reasoning `awaitDecision` and `EscalationService` both apply to their timers.
   timer.unref?.();

@@ -37,9 +37,23 @@ export interface AuditActorContext {
   readonly credential?: AuditEvent['credential'];
   /** The session the action belongs to, when there is one. */
   readonly sessionId?: string;
+  /**
+   * Set when anything was recorded under this scope. The request fallback
+   * (`middleware/audit-request-fallback.ts`) reads it to record a mutating
+   * request that no choke point recorded, and only that.
+   */
+  recorded?: boolean;
 }
 
 const storage = new AsyncLocalStorage<AuditActorContext>();
+
+/**
+ * Each scope's enclosing scope, so a record made in a narrower scope (an
+ * agent's tool call inside a request) also counts as recorded for the request
+ * around it. A WeakMap rather than a field, so a scope object is never copied
+ * (the request scope resolves its actor lazily through getters).
+ */
+const parents = new WeakMap<AuditActorContext, AuditActorContext>();
 
 /**
  * Run `fn` with `context` as the current actor. Whatever `fn` starts, sync or
@@ -50,7 +64,21 @@ const storage = new AsyncLocalStorage<AuditActorContext>();
  * @returns Whatever `fn` returns.
  */
 export function runWithAuditActor<T>(context: AuditActorContext, fn: () => T): T {
+  const enclosing = storage.getStore();
+  if (enclosing && enclosing !== context) parents.set(context, enclosing);
   return storage.run(context, fn);
+}
+
+/**
+ * Mark the current scope, and every scope around it, as having recorded
+ * something. Called by the audit writer after each successful write.
+ */
+export function markAuditScopeRecorded(): void {
+  let scope = storage.getStore();
+  while (scope) {
+    scope.recorded = true;
+    scope = parents.get(scope);
+  }
 }
 
 /**
@@ -59,4 +87,33 @@ export function runWithAuditActor<T>(context: AuditActorContext, fn: () => T): T
  */
 export function currentAuditActor(): AuditActorContext | undefined {
   return storage.getStore();
+}
+
+/**
+ * Run `fn` outside any audit scope, so what it does is DorkOS's own.
+ *
+ * ALS follows the call chain, and a timer or loop STARTED during a request
+ * keeps that request's scope for every later firing: a schedule a person
+ * created would name them as the actor of every run it ever made. Start
+ * long-lived work through this (or {@link outsideAuditScope}) wherever it can
+ * be started from a request.
+ *
+ * @param fn - The work.
+ * @returns Whatever `fn` returns.
+ */
+export function runOutsideAuditScope<T>(fn: () => T): T {
+  return storage.exit(fn);
+}
+
+/**
+ * Wrap a callback so each call runs outside any audit scope: the form for a
+ * timer or interval callback (`setInterval(outsideAuditScope(tick), ms)`).
+ *
+ * @param fn - The callback.
+ * @returns The same callback, detached from whatever scope it was created in.
+ */
+export function outsideAuditScope<A extends unknown[], R>(
+  fn: (...args: A) => R
+): (...args: A) => R {
+  return (...args: A) => storage.exit(() => fn(...args));
 }

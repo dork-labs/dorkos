@@ -7,6 +7,7 @@
  *
  * @module server/services/workspace/workspace-reconciler
  */
+import { outsideAuditScope } from '../audit/audit-context.js';
 import { logger } from '../../lib/logger.js';
 import type { WorkspaceStore } from './workspace-store.js';
 import { WorkspaceService } from './workspace-service.js';
@@ -50,10 +51,13 @@ export class WorkspaceReconciler {
   start(): void {
     if (this.disposed) throw new Error('WorkspaceReconciler is disposed');
     if (this.timer !== null) return;
-    const timer = setInterval(() => {
-      if (this.timer !== timer || this.pending) return;
-      this.reconcile().catch((err) => logger.error('[workspace] reconciliation failed:', err));
-    }, this.intervalMs);
+    const timer = setInterval(
+      outsideAuditScope(() => {
+        if (this.timer !== timer || this.pending) return;
+        this.reconcile().catch((err) => logger.error('[workspace] reconciliation failed:', err));
+      }),
+      this.intervalMs
+    );
     try {
       timer.unref();
       this.timer = timer;

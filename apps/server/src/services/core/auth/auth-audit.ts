@@ -26,6 +26,31 @@ interface SessionRow {
   userId: string;
   ipAddress?: string | null;
   userAgent?: string | null;
+  expiresAt?: Date | string | null;
+}
+
+/**
+ * Why a session row was deleted, as the log names it. Better Auth deletes a
+ * session for four reasons and fires the same hook for all of them: a person
+ * signed out, a session was revoked (one, all, or all others), or an expired
+ * session was cleaned up when it was next read.
+ *
+ * @param session - The deleted row.
+ * @param path - The Better Auth endpoint that deleted it, when there was one.
+ */
+export function sessionEndReason(
+  session: SessionRow,
+  path: string | undefined
+): { action: string; summary: string } {
+  const expiresAt = session.expiresAt ? new Date(session.expiresAt) : undefined;
+  if (expiresAt && expiresAt.getTime() <= Date.now()) {
+    return { action: 'auth.session_expired', summary: 'A sign-in expired' };
+  }
+  if (path === '/sign-out') return { action: 'auth.signed_out', summary: 'Signed out' };
+  if (path?.startsWith('/revoke')) {
+    return { action: 'auth.session_revoked', summary: 'A sign-in was revoked' };
+  }
+  return { action: 'auth.session_ended', summary: 'A sign-in ended' };
 }
 
 /** Where a session came from, for an `admins` row. */
@@ -57,21 +82,45 @@ export function recordSignedIn(session: SessionRow): void {
 }
 
 /**
- * Record a sign-out: a session row was deleted.
+ * Record a session ending: a session row was deleted, by a sign-out, a
+ * revocation, or the clean-up of an expired one ({@link sessionEndReason}).
  *
  * @param session - The ended session.
+ * @param path - The Better Auth endpoint that deleted it, when there was one.
  */
-export function recordSignedOut(session: SessionRow): void {
+export function recordSessionEnded(session: SessionRow, path?: string): void {
   const trail = auditTrail();
   if (!trail) return;
+  const { action, summary } = sessionEndReason(session, path);
   recordAudit({
     actor: trail.accounts.forUser(session.userId),
     source: { surface: 'app', ...whereFrom(session) },
-    action: 'auth.signed_out',
+    action,
     operation: 'auth',
     target: { type: 'account', id: session.userId },
     outcome: 'ok',
-    summary: 'Signed out',
+    summary,
+    visibility: 'admins',
+  });
+}
+
+/**
+ * Record a sign-in refused by DorkOS's own attempt limit, before Better Auth
+ * saw it (`middleware/auth-rate-limit.ts`). Names nobody, like any failed
+ * sign-in.
+ *
+ * @param userAgent - The client that tried, when it said.
+ */
+export function recordSignInRateLimited(userAgent?: string): void {
+  const trail = auditTrail();
+  if (!trail) return;
+  recordAudit({
+    actor: trail.accounts.unidentified('Someone signing in'),
+    source: { surface: 'app', ...(userAgent ? { userAgent } : {}) },
+    action: 'auth.sign_in_rate_limited',
+    operation: 'auth',
+    outcome: 'refused',
+    summary: 'A sign-in was refused: too many attempts',
     visibility: 'admins',
   });
 }

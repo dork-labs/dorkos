@@ -89,7 +89,25 @@ describe('capability calls in the audit log', () => {
       .all()
       .map((row) => [row.action, row.actorKind, row.actorId]);
 
-  it('records an unidentified change in the audit log, under the request actor, and not in Activity', async () => {
+  it('names an in-session call with no identity as unidentified, never the person whose turn it is', async () => {
+    const owner = {
+      actor: { accountId: 'install:inst-1', kind: 'person' as const, name: 'Owner' },
+      surface: 'app' as const,
+    };
+    // The person's message started the turn, so their scope surrounds the call;
+    // the session has no agent identity (not tied to one, or the mint failed).
+    await runWithAuditActor(owner, () =>
+      registry.invoke('demo.change', {}, { mcpServer: 'in-session', sessionId: 'session-9' })
+    );
+    await flush();
+
+    expect(audit()).toEqual([
+      ['demo.wrote', 'external', 'unidentified'],
+      ['capability.invoked', 'external', 'unidentified'],
+    ]);
+  });
+
+  it('records an unidentified change from the app or HTTP under the request actor, not in Activity', async () => {
     const owner = {
       actor: { accountId: 'install:inst-1', kind: 'person' as const, name: 'Owner' },
       surface: 'app' as const,

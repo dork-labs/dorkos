@@ -82,20 +82,27 @@ export function recordAudit(input: RecordAuditInput): AuditEvent | undefined {
 
 /**
  * Run `fn` as the named agent, so whatever it records names the agent rather
- * than whoever's scope it was called from. With no trail, or no identity, `fn`
- * runs in the scope it already had.
+ * than whoever's scope it was called from.
+ *
+ * An IN-SESSION call with no identity (the session is not tied to an agent, or
+ * its token could not be minted) still runs as an agent: it is named
+ * `unidentified`, never the person, because the scope it would otherwise
+ * inherit is the person whose message started the turn. Anywhere else, with
+ * no identity, `fn` runs in the scope it already had (a request's own caller).
  *
  * @param identity - The calling agent, if one was resolved.
  * @param sessionId - The session the call came from, if any.
  * @param fn - The work.
+ * @param opts - `inSession` when the call came through the in-session server.
  * @returns Whatever `fn` returns.
  */
 export function runAsAgent<T>(
   identity: { agentPath: string; displayName: string } | undefined,
   sessionId: string | undefined,
-  fn: () => T
+  fn: () => T,
+  opts: { inSession?: boolean } = {}
 ): T {
-  if (!active || !identity) return fn();
+  if (!active || (!identity && !opts.inSession)) return fn();
   return runWithAuditActor(
     {
       actor: active.accounts.forAgentIdentity(identity),

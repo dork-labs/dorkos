@@ -890,6 +890,8 @@ describe('hand-registered MCP tools carry a permission tier', () => {
             visibility: 'space',
           });
           expect(rows[0]!.actorId).toMatch(/^unregistered:/);
+          // Linked to the approval the person granted, so the two read as one story.
+          expect(JSON.parse(rows[0]!.links!)).toEqual({ approvalId: asked.approvalId });
           // The arguments themselves are never recorded: only what the tool
           // declares as its subject becomes the target.
           expect(rows[0]!.change).toBeNull();
