@@ -109,7 +109,7 @@ When the first Better Auth account is created, the auth hook (PR2) records `acco
 - `verify({fromSeq?, limit?}): {ok, checked, lastSeq, lastHash, firstBreak?: {seq, reason}, nextFromSeq?}` walks the chain and recomputes every hash, at most 100,000 rows per call (the walk is synchronous and any agent may ask), answering `nextFromSeq` (the next expected seq) when rows remain, and taking the previous page's `lastHash` as `prevHash` so the cross-page link is checked. It catches a changed row and a row removed from the middle; it does NOT catch rows removed from the end, or a forged row with every later row rehashed. Those need the off-machine checkpoint (follow-up), and no doc may claim otherwise.
 - On startup it verifies the last 1,000 rows and logs a warn naming the first break; it does not stop the server.
 
-**Actor context without threading.** `lib/audit-context.ts`: an `AsyncLocalStorage<AuditActorContext>` modelled on `lib/dispatch-context.ts`. A middleware mounted right after `resolveAgentIdentity` enters it per request (actor, credential, surface `http` or `app`); the MCP gate wrappers enter it per tool call (surface `mcp`); the runtime Proxy (PR3) enters it per turn (surface `runtime-tool`, session, runtime). Service-level choke points (config writes, marketplace transaction) read `currentAuditActor()` and fall back to `system` when there is none. The same three ALS boundaries `dispatch-context.ts` documents apply and are accepted the same way.
+**Actor context without threading.** `services/audit/audit-context.ts`: an `AsyncLocalStorage<AuditActorContext>` modelled on `lib/dispatch-context.ts`. A middleware mounted right after `resolveAgentIdentity` enters it per request (actor, credential, surface `http` or `app`); the MCP gate wrappers enter it per tool call (surface `mcp`); the runtime Proxy (PR3) enters it per turn (surface `runtime-tool`, session, runtime). Service-level choke points (config writes, marketplace transaction) read `currentAuditActor()` and fall back to `system` when there is none. The same three ALS boundaries `dispatch-context.ts` documents apply and are accepted the same way.
 
 ### 3.4 Visibility
 
@@ -163,7 +163,7 @@ Every PR: `pnpm verify` green, TSDoc on exports, a changelog fragment in `change
 - The chain-link trigger finds the tail with `WHERE seq = (SELECT MAX(seq))`, a key lookup; a schema test pins the query plan (no SCAN, no temp B-tree).
 - `packages/shared/src/config-schema.ts` (`activity.retentionDays`), `safe-defaults/default-verdicts.ts`, `operator/config-disclosure.ts`, `operator/config-write-policy.ts`.
 - `AGENTS.md` service census gains `audit`.
-- Moved to the PR that first reads them, so PR1 ships no unused code: the ALS actor context and its middleware (`lib/audit-context.ts`, `middleware/audit-actor.ts`) to PR2, `account.linked` to PR2's auth hook, `visibility.ts` and `AuditQuerySchema` to PR4.
+- Moved to the PR that first reads them, so PR1 ships no unused code: the ALS actor context and its middleware (`services/audit/audit-context.ts`, `middleware/audit-actor.ts`) to PR2, `account.linked` to PR2's auth hook, `visibility.ts` and `AuditQuerySchema` to PR4.
 
 **Tests**
 
@@ -184,14 +184,16 @@ Every PR: `pnpm verify` green, TSDoc on exports, a changelog fragment in `change
 
 **Files**
 
-- `apps/server/src/lib/audit-context.ts` (the ALS actor context, §3.3) + `apps/server/src/middleware/audit-actor.ts`, mounted after agent identity in `index.ts`; moved here from PR1 because these choke points are its first readers.
+- `apps/server/src/services/audit/audit-context.ts` (the ALS actor context, §3.3) + `apps/server/src/middleware/audit-actor.ts`, mounted after agent identity in `app.ts`; moved here from PR1 because these choke points are its first readers. `services/audit/audit-trail.ts` (`initAuditTrail`, `recordAudit`, `runAsAgent`) is the process-wide handle, set by `wireAuditTrail`.
+- `core/capabilities/registry.ts`: every invocation with an identity runs inside that agent's scope, so writes a capability makes name the agent.
 - The `account.linked` row on first account creation, in the Better Auth hook below.
 - `core/mcp-tool-gate.ts`: in both `gateHandRegisteredMcpTools` and `gatedToolRegistrar`, after the handler returns, record `mcp.<tool_name>` with operation from the tool's tier (`observe` → skip unless the tool reads private content; `act` → `execute`/`modify`; `destructive` → `remove`), outcome from `isError`, `links.approvalId` when an approval token was spent. Arguments are never recorded; a per-tool `auditTarget(input)` hook in `mcp-tool-metadata.ts` may name the target (e.g. `mesh_unregister` → the agent id). Rewrite the module doc's "What is audited" section. This one change covers `mesh_deny` and `mesh_unregister`.
 - `core/agent-identity/capability-attribution.ts`: unattributed `act` invocations write audit directly (not Activity, to keep the human feed as it is) under the context actor (§3.3). Identified and destructive paths keep writing Activity and reach audit by the tee.
 - `core/operator/config-write.ts` (`applyGuardedConfigWrite`, `logConfigWrite`): record `config.changed` with a per-leaf `change` diff from `result.before`/`result.config`; sensitive keys redacted by the writer.
 - `services/marketplace/transaction.ts` (the one place install/update/uninstall commit, reached by routes and MCP tools alike): `marketplace.installed/updated/uninstalled` with package name, version before/after, source, SHA.
-- Better Auth (`services/core/auth/index.ts`): `hooks.after` matcher for sign-in/out, sign-in failure, API key create/delete → `auth.*` (admins) and `api_key.created/revoked` (space). Agent identity tokens: `agent-identity-service.ts` `mint`/`revoke` → `agent_token.minted/revoked`.
-- `services/rooms/repo/room-merge-service.ts`: record `room.merged` with actor = the caller and target = the branch author, so the record names who merged even though the commit is authored as the agent.
+- Better Auth (`services/core/auth/auth-audit.ts`, wired in `index.ts`): `databaseHooks.session.create/delete.after` for sign-in/out (admins, with IP and user agent), `hooks.after` for failed sign-ins (admins, naming nobody) and API key create/delete (space). Agent identity tokens: `agent-token-env.ts` (each mint, by a hashed reference) and `unregister-cascade.ts` (revocation count) → `agent_token.minted/revoked`.
+- `AuditSource` gains `ip` and `userAgent`, set only on `admins` rows.
+- `services/rooms/repo/room-merge-service.ts`: record `room.merged` with actor = the caller and target = the agent's branch, so the record names who merged even though the commit is authored as the agent. The commit is recorded by its 12-character short id (a full id is long hex, which redaction hides).
 
 **Tests**
 

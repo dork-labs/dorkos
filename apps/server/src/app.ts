@@ -46,6 +46,7 @@ import {
 import { requestLogger } from './middleware/request-logger.js';
 import { buildAuthRateLimiter } from './middleware/auth-rate-limit.js';
 import { resolveAgentIdentity } from './middleware/agent-identity.js';
+import { auditActor } from './middleware/audit-actor.js';
 import { getAuth, toNodeHandler, sessionGate } from './services/core/auth/index.js';
 import { type BrowserOriginPolicy, isTrustedBrowserOrigin } from './lib/trusted-origins.js';
 import { resolveBrowserOriginFacts } from './middleware/browser-origin.js';
@@ -308,6 +309,9 @@ export function createApp(options: {
   // mount added later in `index.ts`. Never rejects: a request without a token
   // behaves exactly as it does today.
   app.use(resolveAgentIdentity);
+  // Who is acting, for the audit log (spec `audit-trail`). After both gates,
+  // so it reads what they decided rather than deciding again.
+  app.use(auditActor);
 
   // API routes
   app.use('/api/sessions', sessionRoutes);

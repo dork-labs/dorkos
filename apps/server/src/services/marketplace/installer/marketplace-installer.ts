@@ -43,6 +43,7 @@ import type { PluginInstallFlow } from '../flows/install-plugin.js';
 import type { ShapeInstallFlow } from '../flows/install-shape.js';
 import type { SkillPackInstallFlow } from '../flows/install-skill-pack.js';
 import type { UninstallFlow } from '../flows/uninstall/uninstall.js';
+import { recordPackageChange } from '../lib/record-package-change.js';
 import { locateInstallRoot } from '../lib/locate-install.js';
 import {
   hostOf,
@@ -138,6 +139,28 @@ export interface PreviewResult {
 }
 
 /**
+ * Record an install or update that committed, in the audit log.
+ *
+ * @param kind - Which it was.
+ * @param req - What was asked for, for the source and project.
+ * @param result - What landed.
+ */
+function recordInstalled(
+  kind: 'installed' | 'updated',
+  req: InstallRequest,
+  result: InstallResult
+): void {
+  const source = req.source ?? req.marketplace;
+  recordPackageChange({
+    kind,
+    name: result.packageName,
+    version: result.version,
+    ...(source ? { source } : {}),
+    ...(req.projectPath ? { projectPath: req.projectPath } : {}),
+  });
+}
+
+/**
  * Top-level orchestrator for marketplace installs. One instance is
  * constructed per server runtime and shared across every install path
  * (CLI, HTTP routes, and — via {@link InstallerLike} — the update flow).
@@ -187,7 +210,9 @@ export class MarketplaceInstaller implements InstallerLike {
    * @throws {ConflictError} When error-level conflicts are present and `req.force` is false.
    */
   async install(req: InstallRequest): Promise<InstallResult> {
-    return this.dispatcher.installStaged(req);
+    const result = await this.dispatcher.installStaged(req);
+    if (result.ok) recordInstalled('installed', req, result);
+    return result;
   }
 
   /**
@@ -237,8 +262,12 @@ export class MarketplaceInstaller implements InstallerLike {
     // Nothing of that name is installed: there is no target to serialise on,
     // and the uninstall half below raises the canonical
     // `PackageNotInstalledError` for the caller.
-    if (installRoot === null) return this.updater.applyUpdate(req, resolved);
-    return withInstallTargetLock(installRoot, () => this.updater.applyUpdate(req, resolved));
+    const result =
+      installRoot === null
+        ? await this.updater.applyUpdate(req, resolved)
+        : await withInstallTargetLock(installRoot, () => this.updater.applyUpdate(req, resolved));
+    if (result.ok) recordInstalled('updated', req, result);
+    return result;
   }
 
   /**

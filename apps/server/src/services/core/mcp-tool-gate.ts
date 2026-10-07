@@ -37,17 +37,20 @@
  * so passing the real server compiled, passed every test, and quietly ungated 20
  * tools. Read the {@link ToolRegistrar} TSDoc before touching that type.
  *
- * ## What is audited, and what is not
+ * ## What is audited
  *
- * This gate writes an Activity record for every attempt it REFUSES or parks for
- * approval, through the same observer the registry uses. It writes nothing when a
- * call is allowed — including a `destructive` call that a person approved and that
- * then RAN. The tier gate does not audit allowed calls (the registry's attribution
- * observer does that, and it only runs inside `registry.invoke`, which these tools
- * never reach). So the trail for an approved deletion is the durable approval
- * record of the grant, not a line saying it happened. Closing that gap means an
- * attribution observer on this path; it is not in scope here, and it is written
- * down rather than left for somebody to discover from an empty feed.
+ * Every attempt this gate REFUSES or parks for approval is written to Activity,
+ * through the same observer the registry uses. Every `act` or `destructive` call
+ * it ALLOWS is recorded in the audit log once its handler returns, as
+ * `mcp.<tool name>` with the outcome the handler reported and, when the tool
+ * declares an approval subject, what it acted on ({@link invokeAudited}, spec
+ * `audit-trail` PR2). Arguments are never recorded. `observe` calls are not
+ * recorded: a read changes nothing.
+ *
+ * The handler also runs inside the CALLER's audit scope (`services/audit/audit-context.ts`),
+ * so a write it makes further down — a config change, a package install — names
+ * the agent that called the tool, never the person whose message started the
+ * turn.
  *
  * ## The retry argument, which is the thing most likely to be missed
  *
@@ -104,7 +107,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult, ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 
-import type { ApprovalOrigin } from '@dorkos/shared/approval-schemas';
+import type { ApprovalOrigin, ApprovalSubject } from '@dorkos/shared/approval-schemas';
 
 import type { AgentIdentity } from './agent-identity/agent-identity-service.js';
 import { resolveApprovalSubject, type ApprovalRequestingSession } from './approvals/index.js';
@@ -128,6 +131,8 @@ import {
 } from './capabilities/tier-enforcement.js';
 import { CapabilityToolError } from './capabilities/mcp-envelope.js';
 import { gatedActionForMcpTool } from './mcp-tool-tiers.js';
+import { runWithAuditActor } from '../audit/audit-context.js';
+import { auditTrail, recordAudit } from '../audit/audit-trail.js';
 
 /**
  * The MCP text envelope the hand-registered handlers already return, reused here
@@ -184,7 +189,12 @@ interface GateRun {
  * handler with these arguments, or return this result instead.
  */
 type GateOutcome =
-  | { allowed: true; input: Record<string, unknown> }
+  | {
+      allowed: true;
+      input: Record<string, unknown>;
+      /** What the call acts on, when the tool declares an approval subject. */
+      subject?: ApprovalSubject;
+    }
   | {
       allowed: false;
       result: CallToolResult;
@@ -283,7 +293,79 @@ async function runGate(run: GateRun): Promise<GateOutcome> {
       ...(fresh ? { fresh } : {}),
     };
   }
-  return { allowed: true, input: (input ?? {}) as Record<string, unknown> };
+  return {
+    allowed: true,
+    input: (input ?? {}) as Record<string, unknown>,
+    ...(subject ? { subject } : {}),
+  };
+}
+
+/** Who made one gated call, for the audit log. */
+interface AuditedCall {
+  /** The tool's name, recorded as `mcp.<name>`. */
+  name: string;
+  /** The tool's tier declaration. */
+  action: GatedAction;
+  /** The calling agent, when the surface resolved one. */
+  identity?: AgentIdentity;
+  /**
+   * Whether this surface must name the agent even with no identity. True in
+   * session, where the scope otherwise inherited is the person who sent the
+   * message, never the caller (see `services/audit/audit-context.ts`). False on the
+   * external server, where the request's own scope already names the caller.
+   */
+  inSession: boolean;
+  /** The session the call arrived in, when there is one. */
+  sessionId?: string;
+}
+
+/**
+ * Run an allowed call's handler inside its caller's audit scope, then record it.
+ *
+ * @param call - Who called which tool.
+ * @param subject - What it acts on, when the tool declares that.
+ * @param invoke - The real handler.
+ * @returns The handler's result, unchanged.
+ */
+async function invokeAudited(
+  call: AuditedCall,
+  subject: ApprovalSubject | undefined,
+  invoke: () => Promise<CallToolResult>
+): Promise<CallToolResult> {
+  const trail = auditTrail();
+  const scope =
+    trail && (call.identity || call.inSession)
+      ? {
+          actor: trail.accounts.forAgentIdentity(call.identity),
+          surface: 'mcp' as const,
+          ...(call.sessionId ? { sessionId: call.sessionId } : {}),
+        }
+      : undefined;
+  const run = async (): Promise<CallToolResult> => {
+    if (call.action.tier === 'observe') return invoke();
+    const record = (outcome: 'ok' | 'failed', error?: string): void => {
+      recordAudit({
+        action: `mcp.${call.name}`,
+        operation: call.action.tier === 'destructive' ? 'remove' : 'execute',
+        target: subject ? { type: subject.kind, id: subject.id, name: subject.label } : null,
+        outcome,
+        ...(error ? { error } : {}),
+        summary: `${outcome === 'ok' ? 'Ran' : 'Tried to run'} ${call.action.title}${
+          subject ? ` on ${subject.label}` : ''
+        }`,
+      });
+    };
+    let result: CallToolResult;
+    try {
+      result = await invoke();
+    } catch (err) {
+      record('failed', err instanceof Error ? err.message : String(err));
+      throw err;
+    }
+    record(result.isError ? 'failed' : 'ok');
+    return result;
+  };
+  return scope ? runWithAuditActor(scope, run) : run();
 }
 
 /**
@@ -311,6 +393,8 @@ interface HandlerRun {
   hold?: CapabilityApprovalHold;
   /** The SDK's second handler argument, read for an abort signal. */
   extra: unknown;
+  /** Who is calling which tool, for the audit log. */
+  audit: AuditedCall;
 }
 
 /**
@@ -347,7 +431,10 @@ interface HandlerRun {
  */
 async function runGatedInSession(call: GateRun, run: HandlerRun): Promise<CallToolResult> {
   const outcome = await runGate(call);
-  if (outcome.allowed) return run.invoke(outcome.input);
+  if (outcome.allowed) {
+    const { input, subject } = outcome;
+    return invokeAudited(run.audit, subject, () => run.invoke(input));
+  }
   if (!run.hold || !outcome.fresh) return outcome.result;
 
   const signal = abortSignalOf(run.extra);
@@ -380,7 +467,9 @@ async function runGatedInSession(call: GateRun, run: HandlerRun): Promise<CallTo
     args: outcome.input,
     approvalToken: outcome.fresh.approvalToken,
   });
-  return retried.allowed ? run.invoke(retried.input) : retried.result;
+  if (!retried.allowed) return retried.result;
+  const { input, subject } = retried;
+  return invokeAudited(run.audit, subject, () => run.invoke(input));
 }
 
 /**
@@ -496,6 +585,13 @@ export function gateHandRegisteredMcpTools<T extends SdkMcpTool>(
             invoke: (input: Record<string, unknown>) => handler(input as never, extra),
             ...(hold ? { hold } : {}),
             extra,
+            audit: {
+              name: definition.name,
+              action,
+              ...(identity ? { identity } : {}),
+              inSession: true,
+              ...(requestingSession ? { sessionId: requestingSession.sessionId } : {}),
+            },
           }
         );
       },
@@ -581,7 +677,19 @@ export function createHandToolReach(
         ...(requestingSession ? { requestingSession } : {}),
       });
       if (!outcome.allowed) throw new CapabilityGateRefusal(outcome.decision);
-      return unwrapToolResult(await tool.handler(outcome.input, undefined));
+      const { input, subject } = outcome;
+      const result = await invokeAudited(
+        {
+          name,
+          action: gatedActionForMcpTool(name),
+          ...(options.identity ? { identity: options.identity } : {}),
+          inSession: surface.origin === 'session',
+          ...(requestingSession ? { sessionId: requestingSession.sessionId } : {}),
+        },
+        subject,
+        () => tool.handler(input, undefined)
+      );
+      return unwrapToolResult(result);
     },
   };
 }
@@ -693,7 +801,12 @@ export function gatedToolRegistrar(
           origin: 'external-mcp',
         });
         if (!outcome.allowed) return outcome.result;
-        return cb(outcome.input as never, extra);
+        const { input, subject } = outcome;
+        return invokeAudited(
+          { name, action, ...(identity ? { identity } : {}), inSession: false },
+          subject,
+          () => cb(input as never, extra)
+        );
         // The SDK's `registerTool` is generic over the input and output shapes it
         // is handed; this wrapper is deliberately shape-agnostic, so the two casts
         // bridge that and are confined to this factory.

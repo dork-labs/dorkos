@@ -78,6 +78,11 @@ import { UnsupportedSourceUrlError } from '../../sources/source-url-policy.js';
 import { reportInstallEvent } from '../../telemetry/telemetry-hook.js';
 import { writeInstallMetadata } from '../../installed-metadata.js';
 import { recordProjectInstall } from '../../lib/project-install-index.js';
+import { createTestDb } from '@dorkos/test-utils/db';
+import { auditEvents } from '@dorkos/db';
+import { AuditLog } from '../../../audit/audit-log.js';
+import { AccountIds } from '../../../audit/account-ids.js';
+import { initAuditTrail, resetAuditTrail } from '../../../audit/audit-trail.js';
 
 const mockedValidatePackage = vi.mocked(validatePackage);
 const mockedReportInstallEvent = vi.mocked(reportInstallEvent);
@@ -1614,6 +1619,73 @@ describe('MarketplaceInstaller', () => {
         'uninstall blew up'
       );
       expect(pluginFlow.install).not.toHaveBeenCalled();
+    });
+  });
+
+  // Spec `audit-trail` PR2: installs and updates are recorded once each,
+  // where they commit, so every door (app, HTTP, MCP) is covered by one call.
+  describe('the audit log', () => {
+    function withAudit() {
+      const db = createTestDb();
+      initAuditTrail({
+        log: new AuditLog(db),
+        accounts: new AccountIds({ db, installId: 'inst-1', readOwnerAccount: () => null }),
+      });
+      return () =>
+        db
+          .select()
+          .from(auditEvents)
+          .all()
+          .map((row) => [row.action, row.targetId, row.change && JSON.parse(row.change)]);
+    }
+    afterEach(() => resetAuditTrail());
+
+    it('records an install once, with its version and source', async () => {
+      const rows = withAudit();
+      const { deps, resolver, pluginFlow, previewBuilder } = buildDeps();
+      const manifest = buildPluginManifest({ name: 'hello-plugin' });
+      wireLocalResolution(resolver, 'hello-plugin', '/tmp/hello-plugin');
+      mockedValidatePackage.mockResolvedValue({ ok: true, issues: [], manifest });
+      previewBuilder.build.mockResolvedValue(buildEmptyPreview());
+      pluginFlow.install.mockResolvedValue(buildInstallResult(manifest));
+
+      await new MarketplaceInstaller(deps).install({
+        name: 'hello-plugin',
+        marketplace: 'dorkos-community',
+      });
+
+      expect(rows()).toEqual([
+        [
+          'marketplace.installed',
+          'hello-plugin',
+          [
+            { field: 'version', after: manifest.version },
+            { field: 'source', after: 'dorkos-community' },
+          ],
+        ],
+      ]);
+    });
+
+    it('records an update once, as an update', async () => {
+      const rows = withAudit();
+      const { deps, resolver, pluginFlow, previewBuilder, uninstallFlow } = buildDeps();
+      const manifest = buildPluginManifest({ name: 'updateable-plugin' });
+      wireLocalResolution(resolver, 'updateable-plugin', '/tmp/updateable-plugin');
+      mockedValidatePackage.mockResolvedValue({ ok: true, issues: [], manifest });
+      previewBuilder.build.mockResolvedValue(buildEmptyPreview());
+      pluginFlow.install.mockResolvedValue(buildInstallResult(manifest));
+      uninstallFlow.uninstall.mockResolvedValue({
+        ok: true,
+        packageName: 'updateable-plugin',
+        removedFiles: 1,
+        preservedData: [],
+      });
+
+      await new MarketplaceInstaller(deps).update({ name: 'updateable-plugin' });
+
+      expect(rows().map(([action, target]) => [action, target])).toEqual([
+        ['marketplace.updated', 'updateable-plugin'],
+      ]);
     });
   });
 

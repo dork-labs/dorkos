@@ -18,6 +18,7 @@
  * @module services/core/capabilities/registry
  */
 import { createHash } from 'node:crypto';
+import { runAsAgent } from '../../audit/audit-trail.js';
 import { z } from 'zod';
 import {
   EXTENSION_TOOL_UNAVAILABLE_CODE,
@@ -878,25 +879,28 @@ export function composeRegistry(
         if (change !== undefined) invocationContext.approvedChange = change;
       }
 
-      // No observer, or nothing to attribute: run the original path untouched so
-      // an unattributed call stays byte-identical to before this seam existed
-      // (spec §3.1 — absent identity is today's behavior).
-      //
-      // A `destructive` capability is the exception, and it is not optional: the
-      // tier gate deliberately does NOT audit an `allowed` call ("allowed calls
-      // are audited on invoke", `tier-enforcement.ts`), so skipping the observer
-      // for an unidentified caller meant an irreversible action that actually RAN
-      // produced an `approval_required` line and then silence. Two seams each
-      // correctly deferred to the other and the record fell between them.
-      const auditedWithoutIdentity = capability.tier === 'destructive';
-      if (!onInvocation || (!invocationContext.identity && !auditedWithoutIdentity)) {
-        return capability.invoke(deps, parsed, invocationContext);
-      }
+      // Run as the caller (spec `audit-trail` PR2): an identified agent's call
+      // runs inside its own audit scope, so a write the capability makes further
+      // down names the agent, never the person whose message started the turn.
+      const run = () =>
+        runAsAgent(invocationContext.identity, supplied.sessionId, () =>
+          capability.invoke(deps, parsed, invocationContext)
+        );
+
+      // Reads with nobody named stay silent: there is nothing to attribute and a
+      // read changes nothing. Every other call reaches the observer, identified
+      // or not. A `destructive` one always did — the tier gate deliberately does
+      // NOT audit an `allowed` call, so skipping it left an irreversible action
+      // that RAN with an `approval_required` line and then silence. An
+      // unidentified `act` now does too, because trusted-by-default makes it the
+      // common case; the observer sends it to the audit log rather than the feed.
+      const silent = !invocationContext.identity && capability.tier === 'observe';
+      if (!onInvocation || silent) return run();
 
       // Report the outcome either way: a failed attempt by a named agent is
       // exactly as interesting to an audit trail as a successful one.
       try {
-        const result = await capability.invoke(deps, parsed, invocationContext);
+        const result = await run();
         notify(onInvocation, capability, invocationContext, true);
         return result;
       } catch (err) {

@@ -16,6 +16,7 @@
  *
  * @module services/core/agent-identity/unregister-cascade
  */
+import { recordAudit } from '../../audit/audit-trail.js';
 import type { Logger } from '@dorkos/shared/logger';
 import type { AgentIdentityService } from './agent-identity-service.js';
 
@@ -47,6 +48,14 @@ export function createAgentIdentityUnregisterCascade(
       .revoke(agentPath)
       .then((count) => {
         if (count > 0) {
+          recordAudit({
+            action: 'agent_token.revoked',
+            operation: 'remove',
+            target: { type: 'agent', id: agentId },
+            outcome: 'ok',
+            change: [{ field: 'activeTokens', before: count, after: 0 }],
+            summary: `Revoked ${count} sign-in token${count === 1 ? '' : 's'} of a removed agent`,
+          });
           logger.info(`[AgentIdentity] Revoked ${count} token(s) for unregistered agent`, {
             agentId,
           });
