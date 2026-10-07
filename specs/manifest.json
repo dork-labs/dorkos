@@ -3595,6 +3595,14 @@
       "created": "2026-10-05",
       "status": "specified",
       "linearIssue": "DOR-2718"
+    },
+    {
+      "id": "261007-001135",
+      "slug": "official-community-space",
+      "title": "The DorkOS Community Space",
+      "created": "2026-10-07",
+      "status": "specified",
+      "linearIssue": "DOR-2764"
     }
   ]
 }
