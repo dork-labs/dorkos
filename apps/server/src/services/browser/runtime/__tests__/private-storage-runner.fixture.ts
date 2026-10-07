@@ -1,3 +1,4 @@
+import { captureOriginalQualificationGrant } from './qualification-grant.fixture.js';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { open, type FileHandle } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -164,6 +165,7 @@ export async function withOriginalInstalledBrowserRound(
           )
         )
       );
+    const qualificationGrant = await own(captureOriginalQualificationGrant(options.input, guard));
     cli = spawn(
       options.node,
       [
@@ -235,6 +237,7 @@ export async function withOriginalInstalledBrowserRound(
     });
     if (!original.pid) throw new Error('STORAGE_ORIGINAL_CLI_PID_REQUIRED');
     projection = createOriginalNativeProjectionReceiver({
+      qualification: qualificationGrant,
       pid: original.pid,
       channel: {
         send: (message, callback) => original.send(message, (error) => callback(error)),
@@ -301,7 +304,7 @@ export async function withOriginalInstalledBrowserRound(
     const enabled = BrowserProductionStatusSchema.parse(
       await request('/api/browser/runtime/enable', { enabled: true })
     );
-    if (enabled.state !== 'ready' || !enabled.enabled)
+    if (enabled.state !== 'qualification' || !enabled.enabled)
       throw new Error('STORAGE_ORIGINAL_ENGINE_UNAVAILABLE');
     await body({
       signal,

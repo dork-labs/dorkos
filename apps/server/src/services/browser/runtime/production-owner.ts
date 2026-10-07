@@ -1,3 +1,4 @@
+import { observeOriginalStartupPhase } from './original-phase-diagnostic.js';
 import { logger } from '../../../lib/logger.js';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
@@ -514,13 +515,17 @@ export function createProductionBrowserRuntimeOwner() {
             if (signal.aborted) lost();
             check();
           }
-          packaged = await resolveServerBrowserRuntimePackage();
+          packaged = await observeOriginalStartupPhase('owner.resolve-package', () =>
+            resolveServerBrowserRuntimePackage()
+          );
           check();
           const original = packaged.installation;
           const verify = original.verifyExisting;
           const inspect = original.inspectExisting;
           check();
-          const verified = await Reflect.apply(verify, original, [{ signal: abort.signal }]);
+          const verified = await observeOriginalStartupPhase('owner.verify-existing', () =>
+            Reflect.apply(verify, original, [{ signal: abort.signal }])
+          );
           check();
           if (
             verified.state !== 'verified-reused' ||
@@ -528,7 +533,9 @@ export function createProductionBrowserRuntimeOwner() {
             verified.arch !== 'arm64'
           )
             throw new ProductionRuntimeRefusal('VERIFICATION_UNAVAILABLE');
-          const current = await Reflect.apply(inspect, original, [{ signal: abort.signal }]);
+          const current = await observeOriginalStartupPhase('owner.inspect-existing', () =>
+            Reflect.apply(inspect, original, [{ signal: abort.signal }])
+          );
           check();
           if (
             current.state !== 'installed-files' ||
@@ -626,10 +633,12 @@ export function createProductionBrowserRuntimeOwner() {
             initialStorageState === undefined ? engine.open : engine.initializeProfile;
           if (typeof originalOpen !== 'function') throw new ProductionRuntimeRefusal('CLOSED');
           check();
-          const result = await Reflect.apply(
-            originalOpen,
-            engine,
-            initialStorageState === undefined ? [command] : [command, initialStorageState]
+          const result = await observeOriginalStartupPhase('owner.engine-open', () =>
+            Reflect.apply(
+              originalOpen,
+              engine,
+              initialStorageState === undefined ? [command] : [command, initialStorageState]
+            )
           );
           check();
           opened = true;

@@ -1,3 +1,7 @@
+import {
+  hasOriginalDesktopQualification,
+  transferOriginalDesktopQualification,
+} from './browser-qualification/bootstrap';
 import { app, utilityProcess } from 'electron';
 import { fork, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -409,6 +413,8 @@ export function spawnServer(port: number): ServerChild {
     delete env.DORKOS_PARENT_PID;
     delete env.DORKOS_PARENT_STARTED_AT;
   }
+  delete env.DORKOS_BROWSER_DESKTOP_QUALIFICATION_CHANNEL;
+  delete env.DORKOS_PRIVATE_DESKTOP_QUALIFICATION;
   const tail = createStderrTail();
 
   if (app.isPackaged) {
@@ -418,13 +424,18 @@ export function spawnServer(port: number): ServerChild {
     // inherits.
     // Original main executable is the qualified Electron-as-Node child launcher.
     env.DORKOS_BROWSER_DESKTOP_NODE_EXECUTABLE = app.getPath('exe');
+    if (hasOriginalDesktopQualification()) env.DORKOS_BROWSER_DESKTOP_QUALIFICATION_CHANNEL = '1';
     const proc = utilityProcess.fork(entryPath, [], {
       env,
       stdio: 'pipe',
       cwd: workingDirectory?.cwd,
     });
     forwardOutputToLog(proc.stdout, proc.stderr, tail);
-    return wrapUtilityProcess(proc, tail);
+    const wrapped = wrapUtilityProcess(proc, tail);
+    // Register only: this exact child must announce its installed private
+    // receiver before any port or grant is transferred.
+    transferOriginalDesktopQualification(proc);
+    return wrapped;
   }
 
   // Dev mode: system Node via child_process.fork. The entry file is

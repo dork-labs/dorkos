@@ -1,3 +1,9 @@
+import {
+  OriginalBrowserQualificationSchema,
+  qualifyOriginalBrowserProcess,
+  type OriginalBrowserQualification,
+} from './admission/qualification.js';
+import { resolveDorkHome } from '../../../lib/dork-home.js';
 import { egressPolicyCodes } from '../egress/errors.js';
 import type { OriginalConnectDenialObserver } from '../egress/broker/connect-denial.js';
 import { randomBytes } from 'node:crypto';
@@ -53,7 +59,12 @@ const hello = z
   })
   .strict();
 const ready = z
-  .object({ type: z.literal('original-native-ready'), version: z.literal(1), nonce })
+  .object({
+    type: z.literal('original-native-ready'),
+    version: z.literal(1),
+    nonce,
+    qualification: OriginalBrowserQualificationSchema.optional(),
+  })
   .strict();
 const projected = z
   .object({
@@ -221,6 +232,7 @@ export function createOriginalNativeProjectionSender(channel: OriginalNativeChan
     key = randomBytes(24).toString('hex');
   let sequence = 0,
     started = false;
+  let qualificationGrant: OriginalBrowserQualification | undefined;
   let resolveReady!: () => void, rejectReady!: (value: unknown) => void;
   const readyJob = original.own(
     new Promise<void>((yes, no) => {
@@ -245,6 +257,7 @@ export function createOriginalNativeProjectionSender(channel: OriginalNativeChan
       if (!started) {
         const value = ready.parse(raw);
         if (value.nonce !== key) throw new Error('ORIGINAL_NATIVE_READY_MISMATCH');
+        qualificationGrant = value.qualification;
         started = true;
         resolveReady();
         return;
@@ -414,6 +427,17 @@ export function createOriginalNativeProjectionSender(channel: OriginalNativeChan
     resources,
     viewerSamples,
     connectDenials,
+    async qualification() {
+      await initialSend;
+      await readyJob;
+      original.guard();
+      if (!qualificationGrant) return undefined;
+      const entry = process.argv[1];
+      if (!entry) throw new Error('ORIGINAL_BROWSER_QUALIFICATION_REFUSED');
+      return original.own(
+        qualifyOriginalBrowserProcess(qualificationGrant, resolveDorkHome(), entry, original.guard)
+      );
+    },
     assertCurrent: original.guard,
     beginClose,
     async close() {
@@ -446,12 +470,18 @@ export function createOriginalNativeProjectionReceiver(
   options: Readonly<{
     channel: OriginalNativeChannel;
     pid: number;
+    qualification?: OriginalBrowserQualification;
     retainBirth(value: OriginalNativeBirth): Promise<void>;
     retainViewerSample(value: OriginalViewerSample): Promise<void>;
     retainViewerCensus?(value: OriginalViewerCensus): Promise<void>;
     retainConnectDenial?(value: OriginalProjectedConnectDenial): Promise<void>;
   }>
 ) {
+  const rawQualification = options.qualification;
+  const qualification =
+    rawQualification === undefined
+      ? undefined
+      : Object.freeze(OriginalBrowserQualificationSchema.parse(rawQualification));
   const original = bank(options.channel),
     retainBirth = options.retainBirth.bind(options),
     retainViewerSample = options.retainViewerSample.bind(options),
@@ -476,7 +506,12 @@ export function createOriginalNativeProjectionReceiver(
           if (value.pid !== pid) throw new Error('ORIGINAL_NATIVE_MANAGER_MISMATCH');
           key = value.nonce;
           await original.emit(
-            ready.parse({ type: 'original-native-ready', version: 1, nonce: key })
+            ready.parse({
+              type: 'original-native-ready',
+              version: 1,
+              nonce: key,
+              ...(qualification ? { qualification } : {}),
+            })
           );
           original.guard();
           return;

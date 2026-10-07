@@ -34,3 +34,5 @@ export {
   SemanticOutlineSession,
   type SemanticOutlineState,
 } from './model/semantic-outline-session';
+
+export { CanvasSelectionCopy, type SelectionCopyPorts } from './lib/canvas-selection-copy';

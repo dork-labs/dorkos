@@ -1,3 +1,4 @@
+import { grantOriginalSignedDesktopQualification } from './signed-desktop/qualification.js';
 import { retainOriginalPackagedAppTerminal } from './signed-desktop/app-terminal.js';
 import { _electron, expect, type ElectronApplication } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
@@ -37,10 +38,13 @@ export async function runSignedPackagedManagedBrowser(
   config = SignedDesktopAcceptanceSchema.parse(config);
   if (process.platform !== 'darwin' || process.arch !== 'arm64')
     throw new Error('SIGNED_DESKTOP_PLATFORM_UNAVAILABLE');
+  if (!config.first.qualificationSubject || !config.upgrade.qualificationSubject)
+    throw new Error('SIGNED_DESKTOP_QUALIFICATION_SUBJECT_REQUIRED');
   if (config.first.treeSHA256 === config.upgrade.treeSHA256)
     throw new Error('TWO_SIGNED_VINTAGES_REQUIRED');
   await mkdir(config.artifacts, { recursive: false, mode: 0o700 });
   const home = await realpath(await mkdtemp(join(tmpdir(), 'dorkos-signed-managed-desktop-')));
+  await mkdir(join(home, '.dork'), { mode: 0o700 });
   const repo = join(home, 'fixture-project');
   await mkdir(repo, { mode: 0o700 });
   // Only supported environment inputs; no inherited account/key/application configuration.
@@ -51,6 +55,7 @@ export async function runSignedPackagedManagedBrowser(
     PATH: '/usr/bin:/bin:/usr/sbin:/sbin',
     LANG: 'en_US.UTF-8',
     DORKOS_DESKTOP_SUPPRESS_INSTALL_PROMPT: '1',
+    DORKOS_PRIVATE_DESKTOP_QUALIFICATION: '1',
     DORKOS_DEFAULT_CWD: repo,
     DORKOS_BOUNDARY: home,
   };
@@ -268,6 +273,8 @@ export async function runSignedPackagedManagedBrowser(
           appRoot = observedRoot;
           retain(appRoot);
           if (signal.aborted) abort();
+          signal.throwIfAborted();
+          await grantOriginalSignedDesktopQualification(originalChild, verified, home, signal);
           signal.throwIfAborted();
           const rawPage = await app.firstWindow({ timeout: 120_000 });
           signal.throwIfAborted();

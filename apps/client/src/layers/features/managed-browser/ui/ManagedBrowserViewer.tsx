@@ -10,6 +10,7 @@ import {
 import type { BrowserControl, BrowserRenderReceipt } from '@dorkos/shared/browser-schemas';
 import type { BrowserInputTransport } from '@dorkos/shared/transport';
 import { cn } from '@/layers/shared/lib';
+import { Button } from '@/layers/shared/ui';
 import { ManagedBrowserPointer } from './ManagedBrowserPointer';
 
 /** Existing owner/controller context. This does not request takeover or supply server permission. */
@@ -28,6 +29,7 @@ export interface ManagedBrowserViewerLifetime {
 type PumpSetup = { settle?: BrowserViewerPump['settleForSuccessor'] };
 type LifetimeBank = {
   closed: boolean;
+  copySelection?: BrowserCanvasInput['copySelection'];
   drawAfterOriginalInput?: BrowserCanvasInput['drawAfterOriginalInput'];
   closes: Array<() => Promise<void>>;
   setups: Promise<void>[];
@@ -75,6 +77,7 @@ export function ManagedBrowserViewer({
   onLifetime,
 }: ManagedBrowserViewerProps) {
   const lifetime = useRef<LifetimeBank | undefined>(undefined);
+  const [copyStatus, setCopyStatus] = useState('');
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const previousClose = useRef<Promise<void> | undefined>(undefined);
   const [visual, setVisual] = useState<Visual>();
@@ -294,6 +297,7 @@ export function ManagedBrowserViewer({
     let active = true;
     let closeOriginal: BrowserCanvasInput['close'] | undefined;
     let originalDraw: BrowserCanvasInput['drawAfterOriginalInput'] | undefined;
+    let originalCopy: BrowserCanvasInput['copySelection'] | undefined;
     const setup = (async () => {
       await Promise.allSettled(precedingOriginal ? [precedingOriginal] : []);
       if (!active || bank?.closed) return;
@@ -331,8 +335,13 @@ export function ManagedBrowserViewer({
               setInputFailure(
                 Object.freeze({ value, input, inputs: { context, delivery, lossSignal } })
               );
+          },
+          (message) => {
+            if (active && !bank?.closed) setCopyStatus(message);
           }
         );
+        originalCopy = adapter.copySelection.bind(adapter);
+        if (bank) bank.copySelection = originalCopy;
         originalDraw = adapter.drawAfterOriginalInput.bind(adapter);
         if (bank) bank.drawAfterOriginalInput = originalDraw;
         closeOriginal = adapter.close.bind(adapter);
@@ -351,6 +360,7 @@ export function ManagedBrowserViewer({
     void setup.catch(() => undefined);
     return () => {
       active = false;
+      if (bank && bank.copySelection === originalCopy) bank.copySelection = undefined;
       if (bank && bank.drawAfterOriginalInput === originalDraw)
         bank.drawAfterOriginalInput = undefined;
       if (closeOriginal) {
@@ -394,6 +404,21 @@ export function ManagedBrowserViewer({
             Browser input stopped. Reopen the view to try again.
           </p>
         )}
+      {input && presentation && !stopped && (
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={(event) => lifetime.current?.copySelection?.(event.nativeEvent)}
+          >
+            Copy selected text
+          </Button>
+          <span role="status" className="text-muted-foreground text-sm">
+            {copyStatus}
+          </span>
+        </div>
+      )}
       <div className="relative w-full">
         <canvas
           ref={canvasRef}

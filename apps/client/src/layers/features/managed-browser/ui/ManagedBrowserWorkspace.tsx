@@ -92,14 +92,17 @@ export function ManagedBrowserWorkspace(props: ManagedBrowserWorkspaceProps) {
     workspaceId,
   });
   const observedStatus = useRef<unknown>(status.data);
-  const renderedReady = !status.isError && status.data?.state === 'ready' && !lossSignal.aborted;
+  const renderedReady =
+    !status.isError &&
+    (status.data?.state === 'ready' || status.data?.state === 'qualification') &&
+    !lossSignal.aborted;
   const profiles = useBrowserProfiles(renderedReady ? cacheOwner : null);
   const selectedProfile = profiles.data?.find(
     (value) => value.profileId === profileId && value.status === 'available'
   );
   const renderedLaunchReady =
     renderedReady &&
-    status.data?.state === 'ready' &&
+    (status.data?.state === 'ready' || status.data?.state === 'qualification') &&
     status.data.workspaces.some((workspace) => workspace.workspaceId === workspaceId) &&
     (acquisitionMode === 'ephemeral' || (!!selectedProfile && !profiles.isError));
   function admitted(generation = admissionGeneration.current) {
@@ -109,7 +112,7 @@ export function ManagedBrowserWorkspace(props: ManagedBrowserWorkspaceProps) {
       !original.lossSignal.aborted &&
       generation === admissionGeneration.current &&
       !latest.failed &&
-      latest.data?.state === 'ready'
+      (latest.data?.state === 'ready' || latest.data?.state === 'qualification')
     );
   }
   useLayoutEffect(() => {
@@ -288,7 +291,7 @@ export function ManagedBrowserWorkspace(props: ManagedBrowserWorkspaceProps) {
     const selectedWorkspace = latest.workspaceId;
     if (
       latest.failed ||
-      latest.data?.state !== 'ready' ||
+      (latest.data?.state !== 'ready' && latest.data?.state !== 'qualification') ||
       !latest.data.workspaces.some((item) => item.workspaceId === selectedWorkspace)
     )
       return;
@@ -651,12 +654,17 @@ export function ManagedBrowserWorkspace(props: ManagedBrowserWorkspaceProps) {
         <select
           id="browser-workspace"
           value={workspaceId}
-          disabled={pending || status.data?.state !== 'ready'}
+          disabled={
+            pending || (status.data?.state !== 'ready' && status.data?.state !== 'qualification')
+          }
           onChange={(event) => setWorkspaceId(event.target.value)}
           className="bg-background rounded-md px-2 py-1 text-sm"
         >
           <option value="">Choose a workspace</option>
-          {(status.data?.state === 'ready' ? status.data.workspaces : []).map((workspace) => (
+          {(status.data?.state === 'ready' || status.data?.state === 'qualification'
+            ? status.data.workspaces
+            : []
+          ).map((workspace) => (
             <option key={workspace.workspaceId} value={workspace.workspaceId}>
               {workspace.label}
             </option>

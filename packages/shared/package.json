@@ -484,6 +484,10 @@
     "./browser-canvas-schemas": {
       "types": "./src/browser-canvas-schemas.ts",
       "default": "./dist/browser-canvas-schemas.js"
+    },
+    "./browser-desktop-qualification": {
+      "types": "./src/browser-desktop-qualification.ts",
+      "default": "./dist/browser-desktop-qualification.js"
     }
   },
   "scripts": {

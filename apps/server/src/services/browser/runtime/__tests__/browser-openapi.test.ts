@@ -36,6 +36,7 @@ it('exports the mounted browser owner routes with bounded wire schemas and disti
     '/viewers/next': 'post',
     '/viewers/disconnect': 'post',
     '/input': 'post',
+    '/copy-selection': 'post',
     ...Object.fromEntries(
       ['/semantic/', '/semantic/owner/'].flatMap((prefix) =>
         ['read', 'action', 'stream', 'next', 'close'].map(
@@ -59,6 +60,9 @@ it('exports the mounted browser owner routes with bounded wire schemas and disti
   expect(JSON.stringify(next.responses?.['200'])).toContain('application/vnd.dorkos.browser-frame');
   // Viewer tickets remain private bodies. API docs must not turn them into URL examples.
   expect(next.parameters ?? []).toEqual([]);
+  const copy = paths['/api/browser/copy-selection']!.post!;
+  expect(JSON.stringify(copy.requestBody)).toContain('controllerId');
+  expect(JSON.stringify(copy.responses?.['200'])).toContain('secret');
   const input = JSON.stringify(paths['/api/browser/input']!.post!.requestBody);
   expect(input).toContain('controllerId');
   expect(input).toContain('command');

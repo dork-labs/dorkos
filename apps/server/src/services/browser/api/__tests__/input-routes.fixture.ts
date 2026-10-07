@@ -389,6 +389,7 @@ export async function fixture(
     const originalRequest = authenticationPhase.getStore();
     if (originalRequest) originalRequest.inputCaptured = true;
     return Object.freeze({
+      copySelection: actual.copySelection.bind(actual),
       input: (...inputArgs: Parameters<typeof originalInput>) => {
         callerSignal = inputArgs[3];
         admission.push('original-input-enter');

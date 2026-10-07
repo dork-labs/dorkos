@@ -3,6 +3,8 @@ import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import {
   BrowserInputRequestSchema,
+  BrowserCopySelectionRequestSchema,
+  BrowserCopySelectionReceiptSchema,
   BrowserReferenceSchema,
   BrowserCounterSchema,
 } from '@dorkos/shared/browser-schemas';
@@ -30,6 +32,8 @@ const Input = z
   })
   .strict();
 
+const Copy = Input.extend({ command: BrowserCopySelectionRequestSchema }).strict();
+
 /** Private unmounted input delivery. Existing original controller/consent grants every native step.
  * The eventual owner supplies the real config/runtime policy; this router never takes over control. */
 export class BrowserInputRoutes {
@@ -51,18 +55,22 @@ export class BrowserInputRoutes {
     this.capture = input.capture.bind(input);
     this.captureController = controller.capture.bind(controller);
     this.closeInput = input.close.bind(input);
-    this.router.post('/input', (req, res) => {
-      if (this.closed || this.work.size >= 16) {
-        res.status(503).json({ error: 'Shared browser is unavailable' });
-        return;
-      }
-      const original = Promise.resolve().then(() => this.respond(req, res));
-      this.work.add(original);
-      void original.then(
-        () => this.work.delete(original),
-        () => this.work.delete(original)
-      );
-    });
+    for (const [path, copy] of [
+      ['/input', false],
+      ['/copy-selection', true],
+    ] as const)
+      this.router.post(path, (req, res) => {
+        if (this.closed || this.work.size >= 16) {
+          res.status(503).json({ error: 'Shared browser is unavailable' });
+          return;
+        }
+        const original = Promise.resolve().then(() => this.respond(req, res, copy));
+        this.work.add(original);
+        void original.then(
+          () => this.work.delete(original),
+          () => this.work.delete(original)
+        );
+      });
   }
 
   private policy(req: Request): string {
@@ -82,7 +90,7 @@ export class BrowserInputRoutes {
     return facts.origin;
   }
 
-  private async respond(req: Request, res: Response): Promise<void> {
+  private async respond(req: Request, res: Response, copy = false): Promise<void> {
     const abort = new AbortController();
     let gone = this.closed || req.aborted || res.destroyed;
     const destroy = res.destroy.bind(res),
@@ -176,28 +184,29 @@ export class BrowserInputRoutes {
       reqOn('aborted', eventFence);
       resOn('close', responseClosed);
       resOn('finish', responseFinished);
-      const body = Input.parse(req.body);
+      const body = copy ? Copy.parse(req.body) : Input.parse(req.body);
       const origin = this.policy(req);
       if (gone) {
         eventFence();
         return;
       }
       const client = this.capture(req, res, body.localTicket, () => publication);
-      const input = client.input.bind(client);
       // Retain the original auth/native operation through settlement; abort is only notification.
-      const result = await input(body.command, body.controllerId, body.grant, abort.signal);
+      const result = copy
+        ? await client.copySelection(body.command, body.controllerId, body.grant, abort.signal)
+        : await client.input(body.command, body.controllerId, body.grant, abort.signal);
       if (gone || req.aborted || res.destroyed || res.writableEnded || this.closed) return;
       if (this.policy(req) !== origin) throw new BrowserApiRefusal('inaccessible');
       // This second original incoming-request capture supplies publication authority only.
       // It never dispatches input, takes over a controller, or interprets a wire receipt as consent.
       const incoming = this.captureController(req, res, body.localTicket);
-      const authorization = await incoming.authorization(
-        body.command.binding,
-        body.controllerId,
-        body.grant
-      );
+      const authorization = await (
+        copy ? incoming.copyAuthorization.bind(incoming) : incoming.authorization.bind(incoming)
+      )(body.command.binding, body.controllerId, body.grant);
       const current = authorization.isCurrent.bind(authorization);
-      const receipt = projectBrowserActionReceipt(result);
+      const receipt = copy
+        ? BrowserCopySelectionReceiptSchema.parse(result)
+        : projectBrowserActionReceipt(result);
       if (
         receipt.requestId !== body.command.requestId ||
         (Object.keys(body.command.binding) as (keyof typeof body.command.binding)[]).some(

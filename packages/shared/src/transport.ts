@@ -3755,6 +3755,13 @@ export interface BrowserViewerTransport {
 
 /** Private input dispatch; server verifies actual controller ownership and original action policy. */
 export interface BrowserInputTransport {
+  /** Owner-only selection read. The caller's actual gesture owns clipboard writing. */
+  copyBrowserSelection?(
+    command: import('./browser-schemas.js').BrowserCopySelectionRequest,
+    controllerId: string,
+    signal: AbortSignal
+  ): Promise<import('./browser-schemas.js').BrowserCopySelectionReceipt>;
+
   inputBrowser(
     command: import('./browser-schemas.js').BrowserInputRequest,
     controllerId: string,

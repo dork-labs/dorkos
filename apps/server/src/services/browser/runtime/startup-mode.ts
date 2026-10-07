@@ -1,3 +1,17 @@
+import { readOriginalBrowserRuntimeClass } from './admission/runtime-class.js';
+import { createProductionBrowserResourceOwner } from './admission/production-resource-owner.js';
+import {
+  readQualificationProductionSubject,
+  acquireBrowserModeAdmission,
+  isBrowserModeAdmissionRefusal,
+  browserModeAdmissionCurrent,
+  browserModeAdmissionScope,
+  browserModeResourceEnvelope,
+  type BrowserModeAdmission,
+  type BrowserModeSubject,
+  type PrivateBrowserQualification,
+} from './admission/accepted-mode.js';
+declare const __BROWSER_PRODUCTION_SUBJECT__: string;
 import {
   captureMeasuredBrowserResourceAdmission,
   isMeasuredResourceAdmissionRefusal,
@@ -129,6 +143,7 @@ type Proof = {
 export function createProductionBrowserStartupMode(options: {
   /** Reviewed supported envelope, supplied only by the original startup constructor. */
   measuredResources?: MeasuredBrowserResourceAdmission;
+  qualification?(): Promise<PrivateBrowserQualification | undefined>;
   resourceAcceptance?: PrivateBrowserResourceOwner;
   viewerSamples?: PrivateViewerSampleObserver;
   db: Db;
@@ -138,9 +153,10 @@ export function createProductionBrowserStartupMode(options: {
   /** Actual canonical boot installation id; never a tool/request owner claim. */
   installationId?: string;
 }) {
+  const qualification = options.qualification?.bind(options);
   const admissionDiagnostic = createOriginalBrowserViewerDiagnostic();
   const requestedResources = options.measuredResources;
-  const measuredResources =
+  let measuredResources =
     requestedResources === undefined
       ? undefined
       : captureMeasuredBrowserResourceAdmission(requestedResources);
@@ -148,11 +164,15 @@ export function createProductionBrowserStartupMode(options: {
     try {
       check();
     } catch (value) {
-      if (isMeasuredResourceAdmissionRefusal(value)) throw modeRefusal('QUOTA');
+      if (isMeasuredResourceAdmissionRefusal(value) || productionResources?.isRefusal(value))
+        throw modeRefusal('QUOTA');
       throw value;
     }
   };
+  let productionResources: ReturnType<typeof createProductionBrowserResourceOwner> | undefined;
+  let productionResourceSubject: string | undefined;
   const resourceAcceptance = options.resourceAcceptance,
+    resourceObserver = resourceAcceptance?.onOriginalChild.bind(resourceAcceptance),
     viewerSamples = options.viewerSamples;
   const db = options.db,
     auth = options.auth,
@@ -202,7 +222,15 @@ export function createProductionBrowserStartupMode(options: {
     configGet('auth').enabled === true &&
     !closed &&
     !ownAbort.signal.aborted;
+  let modeAdmission: BrowserModeAdmission | undefined;
+  let admittedSubject: BrowserModeSubject | undefined;
+  const admissionCurrent = () =>
+    !!modeAdmission &&
+    !!admittedSubject &&
+    browserModeAdmissionCurrent(modeAdmission, admittedSubject);
   const current = () =>
+    // Profile metadata alone acquires no native authority; any installed mode proof requires its exact lease.
+    (!proof || admissionCurrent()) &&
     !requestsRefused &&
     authorityCurrent() &&
     configGet('browser').enabled === true &&
@@ -458,6 +486,70 @@ export function createProductionBrowserStartupMode(options: {
         return owned;
       })
     );
+  const admitMode = async (owned: Proof) => {
+    const selected = configGet('browser').chromeUserAgent === true ? 'chrome-compatible' : 'native';
+    const admittedEpoch = epoch;
+    const check = () =>
+      authorityCurrent() &&
+      epoch === admittedEpoch &&
+      proof === owned &&
+      (configGet('browser').chromeUserAgent === true ? 'chrome-compatible' : 'native') === selected;
+    const privateOriginal = qualification ? await retain(qualification()) : undefined;
+    if (!check()) throw modeRefusal('UNAVAILABLE');
+    const productionSubject =
+      typeof __BROWSER_PRODUCTION_SUBJECT__ === 'undefined'
+        ? privateOriginal
+          ? await retain(readQualificationProductionSubject(privateOriginal))
+          : undefined
+        : __BROWSER_PRODUCTION_SUBJECT__;
+    if (!check() || productionSubject === undefined || !/^[a-f0-9]{64}$/u.test(productionSubject))
+      throw modeRefusal('UNAVAILABLE');
+    const subject: BrowserModeSubject = {
+      executableSHA256:
+        owned.verified.state === 'verified-reused' ? owned.verified.executableSHA256 : '',
+      version: owned.verified.state === 'verified-reused' ? owned.verified.observedVersion : '',
+      revision: '1243',
+      libraryVersion: '1.63.0',
+      platform: owned.configuration.platform,
+      arch: owned.configuration.arch,
+      channel: owned.configuration.nodeRuntime === 'electron-node' ? 'desktop' : 'cli',
+      ...owned.configuration.sourceVintage,
+      nativeJournalSHA256: digest({
+        artifactSHA256: owned.journal.artifact.sha256,
+        sourceVintage: owned.configuration.sourceVintage,
+      }),
+      runtimeClass: readOriginalBrowserRuntimeClass(),
+      productionSubjectSHA256: productionSubject,
+      mode: selected,
+      identityPolicyRevision: 1,
+      networkPolicyRevision: 1,
+    };
+    try {
+      const admission = acquireBrowserModeAdmission(subject, check, privateOriginal);
+      if (!check()) throw modeRefusal('UNAVAILABLE');
+      modeAdmission = admission;
+      admittedSubject = Object.freeze(subject);
+      const resourceEnvelope = browserModeResourceEnvelope(admission);
+      const resourceSubject = JSON.stringify(subject);
+      if (resourceEnvelope && productionResourceSubject !== resourceSubject) {
+        if (browsers.size) throw modeRefusal('UNAVAILABLE');
+        if (productionResources) await retain(productionResources.close());
+        productionResources = createProductionBrowserResourceOwner({
+          executableSHA256: subject.executableSHA256,
+          envelope: resourceEnvelope,
+          processes: owned.native.processes,
+          signal: ownAbort.signal,
+          current,
+        });
+        measuredResources = captureMeasuredBrowserResourceAdmission(productionResources.admission);
+        productionResourceSubject = resourceSubject;
+      }
+      return admission;
+    } catch (value) {
+      if (isBrowserModeAdmissionRefusal(value)) throw modeRefusal('UNAVAILABLE');
+      throw value;
+    }
+  };
   const close = (): Promise<void> => {
     if (closing) return closing;
     let done!: () => void, reject!: (reason: unknown) => void;
@@ -466,6 +558,7 @@ export function createProductionBrowserStartupMode(options: {
       reject = no;
     });
     closed = true;
+    productionResources?.prepareClose();
     delegations.close();
     fileApprovals.close();
     proof = undefined;
@@ -482,6 +575,11 @@ export function createProductionBrowserStartupMode(options: {
     stopBrowsers();
     void (async () => {
       while (originals.size) await Promise.allSettled([...originals]);
+      try {
+        await productionResources?.close();
+      } catch (value) {
+        first ??= Object.freeze({ value });
+      }
       if (first) reject(first.value);
       else done();
     })();
@@ -498,12 +596,15 @@ export function createProductionBrowserStartupMode(options: {
         state: 'disabled',
         enabled: false,
       });
-    await inspectProof();
+    const owned = await inspectProof();
+    await admitMode(owned);
     const rows = db.select().from(workspaces).where(eq(workspaces.status, 'ready')).limit(65).all();
     if (rows.length > 64 || !actor() || !current()) throw modeRefusal('AUTHORITY_REFUSED');
+    const scope = browserModeAdmissionScope(modeAdmission!);
     const result = BrowserProductionStatusSchema.parse({
-      state: 'ready',
+      state: scope === 'qualification' ? 'qualification' : 'ready',
       enabled: true,
+      readiness: scope === 'qualification' ? 'unverified' : 'accepted',
       workspaces: rows.map((row) => ({ workspaceId: row.id, label: row.key })),
     });
     if (!actor() || !current()) throw modeRefusal('AUTHORITY_REFUSED');
@@ -529,11 +630,17 @@ export function createProductionBrowserStartupMode(options: {
         if (enabled) {
           const owned = await inspectProof(),
             admittedEpoch = epoch;
+          await admitMode(owned);
           if (!actor() || !authorityCurrent() || signal.aborted)
             throw modeRefusal('AUTHORITY_REFUSED');
           const permit = mintProductionBrowserEnablePermit(
             config,
-            () => authorityCurrent() && epoch === admittedEpoch && proof === owned && actor()
+            () =>
+              authorityCurrent() &&
+              epoch === admittedEpoch &&
+              proof === owned &&
+              admissionCurrent() &&
+              actor()
           );
           enableOwnedBrowser(permit);
         } else {
@@ -791,7 +898,8 @@ export function createProductionBrowserStartupMode(options: {
           const actor = await captureOwner(headers, signal);
           const profiles = readProfiles(actor.ownerId);
           if (profiles.length >= 64) throw modeRefusal('QUOTA');
-          if (measuredResources) resourceCheck(() => measuredResources.profiles(profiles.length));
+          const resources = measuredResources;
+          if (resources) resourceCheck(() => resources.profiles(profiles.length));
           const valid = () => current() && actor() && !signal.aborted && epoch === enteredEpoch;
           if (!valid()) throw modeRefusal('AUTHORITY_REFUSED');
           const profile = store.beginProfileImport(actor.ownerId, original.label);
@@ -874,7 +982,8 @@ export function createProductionBrowserStartupMode(options: {
           const actor = await captureOwner(headers, signal);
           const profiles = readProfiles(actor.ownerId);
           if (profiles.length >= 64) throw modeRefusal('QUOTA');
-          if (measuredResources) resourceCheck(() => measuredResources.profiles(profiles.length));
+          const resources = measuredResources;
+          if (resources) resourceCheck(() => resources.profiles(profiles.length));
           if (
             !current() ||
             !actor() ||
@@ -1057,6 +1166,7 @@ export function createProductionBrowserStartupMode(options: {
         const runtime = runtimeRequests.get(headers);
         const actorCurrent = runtime ? runtime.actor : await captureOwner(headers, signal),
           owned = await inspectProof();
+        await admitMode(owned);
         if (
           owned.verified.state !== 'verified-reused' ||
           !actorCurrent() ||
@@ -1064,10 +1174,13 @@ export function createProductionBrowserStartupMode(options: {
         )
           throw modeRefusal('AUTHORITY_REFUSED');
         if (browsers.size >= 16) throw modeRefusal('QUOTA');
-        if (measuredResources) {
+        if (productionResources) await retain(productionResources.refresh());
+        if (!current() || !actorCurrent()) throw modeRefusal('AUTHORITY_REFUSED');
+        const enteringResources = measuredResources;
+        if (enteringResources) {
           // Capture from the actually verified arm before crossing the callback boundary.
           const executableSHA256 = owned.verified.executableSHA256;
-          resourceCheck(() => measuredResources.browser(executableSHA256, browsers.size));
+          resourceCheck(() => enteringResources.browser(executableSHA256, browsers.size));
         }
         if (originalRequest.mode === 'persistent') {
           const profile = readProfiles(actorCurrent.ownerId).find(
@@ -1141,18 +1254,50 @@ export function createProductionBrowserStartupMode(options: {
         const admission = Object.freeze({
           kind: 'production-browser-mode' as const,
         });
+        const retainedResourceObserver = productionResources?.resources.onOriginalChild;
         modes.set(
           admission,
           Object.freeze({
             ownerId: actorCurrent.ownerId,
-            ...(resourceAcceptance ? { resourceAcceptance } : {}),
+            ...(productionResources
+              ? {
+                  resourceAcceptance: Object.freeze({
+                    onOriginalChild(
+                      receiver: Parameters<PrivateBrowserResourceOwner['onOriginalChild']>[0],
+                      original: Parameters<PrivateBrowserResourceOwner['onOriginalChild']>[1]
+                    ) {
+                      // Enter each retained original observer independently and latch actual first rejection.
+                      let first: { value: unknown } | undefined;
+                      const duties: Promise<void>[] = [];
+                      for (const observer of [retainedResourceObserver, resourceObserver]) {
+                        if (!observer) continue;
+                        try {
+                          const duty = observer(receiver, original);
+                          void duty.catch((value) => {
+                            first ??= { value };
+                          });
+                          duties.push(duty);
+                        } catch (value) {
+                          first ??= { value };
+                        }
+                      }
+                      return Promise.allSettled(duties).then(() => {
+                        if (first) throw first.value;
+                      });
+                    },
+                  }),
+                }
+              : resourceAcceptance
+                ? { resourceAcceptance }
+                : {}),
             ...(viewerSamples ? { viewerSamples } : {}),
             current: valid,
             configuration: { ...configured, network: configured.network },
           })
         );
-        if (measuredResources) {
-          resourceCheck(() => measuredResources.browserCount(browsers.size));
+        const returnedResources = measuredResources;
+        if (returnedResources) {
+          resourceCheck(() => returnedResources.browserCount(browsers.size));
           if (!valid()) throw modeRefusal('AUTHORITY_REFUSED');
         }
         const browser = createProductionBrowserSession({

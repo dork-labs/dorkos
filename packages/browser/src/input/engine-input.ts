@@ -1,3 +1,4 @@
+import type { SelectionCopy } from './selection-copy.js';
 import { observeOriginalNativeInput, observeOriginalReset } from './acceptance-observer.js';
 import type { NativeSemanticTarget } from '../semantic/native-target.js';
 import type { NativeSemanticState } from '../semantic/native-effect.js';
@@ -51,6 +52,7 @@ export interface EngineInputOptions {
 }
 /** Private fixture composition; no Page, protocol target or authority comes from command bodies. */
 export interface EngineTabInput {
+  copySelection?(signal: AbortSignal, current: () => boolean): Promise<SelectionCopy>;
   /** Existing original Page session only; never a request target selector. */
   semanticTarget?(signal: AbortSignal): Promise<string>;
   semanticEffect?(
@@ -81,6 +83,8 @@ export function createEngineInput(options: EngineInputOptions): EngineTabInput {
   const owner = new EngineInputOwner(options);
   const handle = Object.freeze({
     ready: owner.ready,
+    copySelection: (signal: AbortSignal, current: () => boolean) =>
+      owner.copySelection(signal, current),
     download: (sink: OwnedDownloadSink, current: () => boolean) => owner.download(sink, current),
     upload: (lease: OwnedUploadLease, current: () => boolean) => owner.upload(lease, current),
     semanticTarget: (signal: AbortSignal) => owner.semanticTarget(signal),
@@ -240,6 +244,17 @@ class EngineInputOwner {
     }
   }
 
+  copySelection(signal: AbortSignal, current: () => boolean): Promise<SelectionCopy> {
+    if (
+      !this.transport ||
+      !this.current() ||
+      navigationPending(this.options.tab) ||
+      initialNavigationInputFenced(this.options.tab) ||
+      popupPending(this.options.tab)
+    )
+      throw new Error('COPY_TARGET_REFUSED');
+    return this.transport.copySelection(signal, current);
+  }
   semanticEffect(
     target: NativeSemanticTarget,
     focus: boolean,

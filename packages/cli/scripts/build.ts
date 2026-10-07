@@ -1,3 +1,4 @@
+import { browserProductionSubject } from '../../../scripts/browser-production-subject.js';
 import { build, formatMessages, type Message, type Plugin } from 'esbuild';
 import { execSync } from 'child_process';
 import { createHash } from 'node:crypto';
@@ -461,6 +462,7 @@ async function buildCLI() {
     ],
     plugins: [dorkosSourcePlugin()],
     define: {
+      __BROWSER_PRODUCTION_SUBJECT__: JSON.stringify(await browserProductionSubject(ROOT)),
       __CLI_VERSION__: JSON.stringify(version),
       __COMMUNITY_MIGRATION_COMPATIBILITY_ID__: JSON.stringify(communityMigrationId),
     },

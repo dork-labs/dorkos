@@ -9,6 +9,7 @@ covers:
   - 'feat(browser): expose granted agent diagnostics and trace proxy refusals'
   - 'feat(browser): import sign-ins into isolated managed profiles'
   - 'fix(browser): preserve saved profiles during import upgrades'
+  - 'feat(browser): qualify managed browser runtimes and selection copy'
 ---
 
 ### Added
@@ -16,6 +17,7 @@ covers:
 - Add **Shared browser** to Settings → Advanced → Experiments, off by default. This setting stays under your control. The experiment targets Apple silicon Macs and stays unavailable when required safety checks fail.
 - Add choices for saved browser profiles and clean sessions, with a browser view, visible pointer and typing cursor, and controls for taking or releasing control. Further checks of these flows are still pending.
 - Add an option to import cookies and local storage from a file into a new saved profile. Interrupted or failed imports stay blocked after a restart. Checks with the installed browser are still pending.
+- Add **Copy selected text** while you control the browser. Passwords and other sensitive fields stay excluded. Checks with the installed browser are still pending.
 - Add **Use Chrome user agent** to choose a Chrome-compatible user agent. Change this choice only while Shared browser is off. Checks with the installed browser are still pending.
 
 ### Fixed

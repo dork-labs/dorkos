@@ -56,7 +56,9 @@ test('Actual viewer pixels: 100 local, 100 injected RTT and stalled second viewe
   const enabled = await enabling;
   expect(enabled.status()).toBe(200);
   const ready = await enabled.json();
-  expect(ready.state).toBe('ready');
+  if (ready.state !== 'qualification') throw new Error('ORIGINAL_BROWSER_QUALIFICATION_REQUIRED');
+  expect(ready.state).toBe('qualification');
+  expect(ready.readiness).toBe('unverified');
   expect(ready.workspaces.length).toBeGreaterThan(0);
   await settingsPage.close();
   const view = new ManagedBrowserPage(page);

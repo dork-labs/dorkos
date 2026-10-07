@@ -279,3 +279,11 @@ export type BrowserDownload = z.infer<typeof DownloadSchema>;
 export function parseBrowserDownload(value: unknown): BrowserDownload {
   return parseValidated(DownloadSchema, value, 'INVALID_COMMAND');
 }
+
+const CopySelectionSchema = z
+  .object({ requestId: RequestIdSchema, binding: BindingSchema })
+  .strict();
+/** Constructor-private read request; binding metadata supplies no authority. */
+export function parseCopySelectionRequest(value: unknown) {
+  return parseValidated(CopySelectionSchema, value, 'INVALID_COMMAND');
+}

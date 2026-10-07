@@ -1,3 +1,5 @@
+import { readOriginalBrowserRuntimeClass } from '../admission/runtime-class.js';
+import { createPrivateBrowserQualification } from '../admission/accepted-mode.js';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { EventEmitter } from 'node:events';
 import type { Request, Response as ExpressResponse } from 'express';
@@ -61,6 +63,20 @@ it.each(['off', 'aborted', 'unsigned', 'capacity'] as const)(
     expect(mode.store.rows()).toEqual([]);
   }
 );
+const readinessOriginals = vi.hoisted(() => ({
+  resolve: vi.fn(),
+  native: vi.fn(),
+  journal: vi.fn(),
+}));
+vi.mock('../installed-package.js', () => ({
+  resolveServerBrowserRuntimePackage: readinessOriginals.resolve,
+}));
+vi.mock('@dorkos/browser/runtime-installation', async (load) => ({
+  ...(await load<typeof import('@dorkos/browser/runtime-installation')>()),
+  verifyInstalledNativeJournal: readinessOriginals.native,
+  resolveInstalledNativeJournal: readinessOriginals.journal,
+}));
+
 function fixture() {
   type Result = {
     config: ConfigManager;
@@ -513,5 +529,138 @@ it.each(['unknown-binding', 'stale-generation', 'profile-capacity'] as const)(
     expect(await mode.captureOwner({ cookie: f.cookie }, new AbortController().signal)).toEqual(
       expect.any(Function)
     );
+  }
+);
+
+// Production consumer composition with real original auth/config/SQLite. Controlled installation
+// ports are sequencing fixtures, not native qualification or accepted catalogue entries.
+async function readinessFixture(
+  qualify?: () => Promise<ReturnType<typeof createPrivateBrowserQualification>>
+) {
+  const runtime = readOriginalBrowserRuntimeClass();
+  const f = await fixture();
+  vi.stubGlobal('__BROWSER_PRODUCTION_SUBJECT__', 'b'.repeat(64));
+  f.beforeDispose(() => {
+    vi.unstubAllGlobals();
+  });
+  const hash = 'a'.repeat(64);
+  const verified = {
+    state: 'verified-reused',
+    cause: null,
+    installationId: 'original-installation',
+    attemptId: 'original-attempt',
+    generation: 1,
+    observedVersion: '153.0.8010.12',
+    executableSHA256: hash,
+    platform: runtime.platform,
+    arch: runtime.arch,
+    currentManifestDigest: hash,
+    journalDigest: hash,
+    readiness: { state: 'unavailable', cause: 'VERIFICATION_UNAVAILABLE' },
+  };
+  const actual = {
+    schemaVersion: 1,
+    pinnedPackageVersion: '1.63.0',
+    chromiumRevision: '1243',
+    platform: runtime.platform,
+    arch: runtime.arch,
+    observation: 'files-only',
+    readiness: verified.readiness,
+    state: 'installed-files',
+    cause: null,
+    installationId: verified.installationId,
+    executableSHA256: hash,
+    currentManifestDigest: hash,
+    lastFreshVerifiedVersion: verified.observedVersion,
+    historicalAttemptId: 'original-history',
+    historicalGeneration: 1,
+    verificationDigest: hash,
+  };
+  const journal = Object.freeze({
+    artifact: { path: '/original/helper', sha256: hash },
+    launcher: { executable: '/original/node', nodeRuntime: 'node' },
+    workerPath: '/original/worker',
+    browserWorkerPath: '/original/browser-worker',
+    duration: 30000,
+    continuous: true,
+    maxGap: 5000,
+  });
+  const verify = vi.fn(async () => verified),
+    inspect = vi.fn(async () => actual);
+  readinessOriginals.resolve.mockResolvedValue({
+    configuration: {
+      cacheRoot: '/original/cache',
+      libraryRoot: '/original/library',
+      nodeExecutable: '/original/node',
+      nodeExecutableSHA256: hash,
+      nodeRuntime: 'node',
+      verifierEntry: '/original/verifier',
+      controllerEntry: '/original/controller',
+      sourceManifestPath: '/original/manifest',
+      sourceVintage: { sourceManifestSHA256: hash, controllerSHA256: hash, verifierSHA256: hash },
+      platform: runtime.platform,
+      arch: runtime.arch,
+      workMilliseconds: 100,
+      finalMilliseconds: 200,
+    },
+    installation: { verifyExisting: verify, inspectExisting: inspect },
+  });
+  readinessOriginals.native.mockResolvedValue({ journal });
+  readinessOriginals.journal.mockResolvedValue(journal);
+  const mode = createProductionBrowserStartupMode({
+    db: f.db,
+    auth: f.auth,
+    config: f.config,
+    inventory: {} as Parameters<typeof createProductionBrowserStartupMode>[0]['inventory'],
+    ...(qualify ? { qualification: qualify } : {}),
+  });
+  const accepted: unknown[] = [];
+  f.beforeDispose(async () => {
+    try {
+      await mode.close();
+    } catch (value) {
+      if (!isOriginalStartupRefusal(value) && !accepted.some((reason) => Object.is(reason, value)))
+        throw value;
+    }
+  });
+  return { ...f, mode, verify, inspect, hash, accepted };
+}
+it('fresh installed originals cannot enable production without a reviewed exact-mode record', async () => {
+  const f = await readinessFixture();
+  const enabled = vi.spyOn(f.config, 'enableOwnedBrowser');
+  f.beforeDispose(() => enabled.mockRestore());
+  await expect(
+    f.mode.setEnabled(true, { cookie: f.cookie }, new AbortController().signal)
+  ).rejects.toSatisfy(isOriginalStartupRefusal);
+  expect(f.verify).toHaveBeenCalledOnce();
+  expect(f.inspect).toHaveBeenCalled();
+  expect(enabled).not.toHaveBeenCalled();
+  expect(f.config.get('browser').enabled).toBe(false);
+});
+it('the original explicit fixture capability runs qualification without reporting accepted readiness', async () => {
+  const f = await readinessFixture(async () =>
+    createPrivateBrowserQualification({
+      current: () => true,
+      check: (subject) => subject.executableSHA256 === 'a'.repeat(64) && subject.mode === 'native',
+    })
+  );
+  const result = await f.mode.setEnabled(true, { cookie: f.cookie }, new AbortController().signal);
+  expect(result).toMatchObject({ state: 'qualification', enabled: true, readiness: 'unverified' });
+  expect(f.mode.modeCurrent()).toBe(true);
+  await f.mode.setEnabled(false, { cookie: f.cookie }, new AbortController().signal);
+  expect(f.config.get('browser').enabled).toBe(false);
+});
+it.each([false, undefined])(
+  'retains a genuine qualification producer fault %s without writing enabled',
+  async (reason) => {
+    const f = await readinessFixture(async () => {
+      throw reason;
+    });
+    f.accepted.push(reason);
+    await expect(
+      f.mode.setEnabled(true, { cookie: f.cookie }, new AbortController().signal)
+    ).rejects.toBe(reason);
+    expect(f.config.get('browser').enabled).toBe(false);
+    await expect(f.mode.close()).rejects.toBe(reason);
   }
 );

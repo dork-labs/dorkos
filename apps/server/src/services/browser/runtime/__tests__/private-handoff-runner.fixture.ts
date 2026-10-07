@@ -1,3 +1,7 @@
+import { fileURLToPath } from 'node:url';
+import { browserProductionSubject } from '../../../../../../../scripts/browser-production-subject.js';
+import { captureOriginalQualificationGrant } from './qualification-grant.fixture.js';
+import { qualifyOriginalBrowserProcess } from '../admission/qualification.js';
 import { BrowserProductionStatusSchema } from '@dorkos/shared/browser-schemas';
 import { randomUUID } from 'node:crypto';
 import { mkdir, realpath } from 'node:fs/promises';
@@ -136,7 +140,23 @@ export async function runPrivateOriginalHandoff(options: {
       own,
       current,
     });
+    const qualificationGrant = await own(captureOriginalQualificationGrant(input, current));
     owner = installPrivateBrowserAcceptance({
+      qualification: () =>
+        own(
+          qualifyOriginalBrowserProcess(
+            qualificationGrant,
+            input.home,
+            input.cliEntry,
+            current,
+            () =>
+              own(
+                browserProductionSubject(
+                  fileURLToPath(new URL('../../../../../../../', import.meta.url))
+                )
+              )
+          )
+        ),
       resources: resources.resources,
       viewerSamples: resources.viewerSamples,
       wrapOriginalCodexTransport(original) {
@@ -200,7 +220,7 @@ export async function runPrivateOriginalHandoff(options: {
       !enabled.value ||
       typeof enabled.value !== 'object' ||
       !('state' in enabled.value) ||
-      enabled.value.state !== 'ready'
+      enabled.value.state !== 'qualification'
     )
       throw new Error('HANDOFF_ORIGINAL_BROWSER_ENABLE_REFUSED');
     const originals = owner.originals(),

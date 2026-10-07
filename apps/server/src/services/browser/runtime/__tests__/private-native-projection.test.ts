@@ -632,3 +632,57 @@ it('held birth validation retains physical custody without admitting CONNECT den
   release();
   await expect(opening).rejects.toThrow();
 });
+
+it('ordinary observation READY alone does not grant private browser qualification', async () => {
+  const channel = pair();
+  const parent = createOriginalNativeProjectionReceiver({
+    channel: channel.parent,
+    pid: manager.pid,
+    retainBirth: async () => {},
+    retainViewerSample: async () => {},
+  });
+  const child = createOriginalNativeProjectionSender(channel.child, manager.pid);
+  onTestFinished(async () => {
+    const joined = await Promise.allSettled([child.close(), parent.close()]);
+    const failed = joined.find((result) => result.status === 'rejected');
+    if (failed?.status === 'rejected') throw failed.reason;
+  });
+  expect(await child.qualification()).toBeUndefined();
+  const ready = channel.sent.find(
+    (row) => (row.value as { type: string }).type === 'original-native-ready'
+  );
+  expect(ready?.value).not.toHaveProperty('qualification');
+});
+it('captures the explicit constructor grant once before original READY publication', async () => {
+  const channel = pair();
+  let reads = 0;
+  const grant = {
+    home: '/original/T/public-native-fixture',
+    cliSHA256: '1'.repeat(64),
+    executableSHA256: '2'.repeat(64),
+    mode: 'native' as const,
+  };
+  const parent = createOriginalNativeProjectionReceiver({
+    channel: channel.parent,
+    pid: manager.pid,
+    get qualification() {
+      reads++;
+      return grant;
+    },
+    retainBirth: async () => {},
+    retainViewerSample: async () => {},
+  });
+  grant.home = '/substituted/T/public-native-fixture';
+  const child = createOriginalNativeProjectionSender(channel.child, manager.pid);
+  onTestFinished(async () => {
+    const joined = await Promise.allSettled([child.close(), parent.close()]);
+    const failed = joined.find((result) => result.status === 'rejected');
+    if (failed?.status === 'rejected') throw failed.reason;
+  });
+  await child.resources.onOriginalChild(receiver(), original());
+  expect(reads).toBe(1);
+  const ready = channel.sent.find(
+    (row) => (row.value as { type: string }).type === 'original-native-ready'
+  );
+  expect(ready?.value).toHaveProperty('qualification.home', '/original/T/public-native-fixture');
+});

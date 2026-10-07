@@ -1,3 +1,4 @@
+import { observeOriginalStartupPhase } from './original-phase-diagnostic.js';
 import {
   createOriginalBrowserViewerDiagnostic,
   type BrowserViewerDiagnosticStage,
@@ -343,41 +344,47 @@ export function createProductionBrowserSession(options: {
             retainClose(network, 'close', () => closeInputLoss?.());
             localDestination = network.allowLocalDestination.bind(network);
             admit();
-            grant = runtime
-              ? await network.authorizeRuntimeWorkspace(
-                  runtime.principals,
-                  runtime.principal,
-                  workspaceId,
-                  signal,
-                  runtime.delegation,
-                  runtime.ownerResolution
-                )
-              : await network.authorizeWorkspace(headers, workspaceId, signal);
+            grant = await observeOriginalStartupPhase('session.authorize-workspace', () =>
+              runtime
+                ? network.authorizeRuntimeWorkspace(
+                    runtime.principals,
+                    runtime.principal,
+                    workspaceId,
+                    signal,
+                    runtime.delegation,
+                    runtime.ownerResolution
+                  )
+                : network.authorizeWorkspace(headers, workspaceId, signal)
+            );
             if (closed || !mode.current() || signal.aborted) throw new Error('BROWSER_UNAVAILABLE');
-            const original = await network.open(
-              grant,
-              { kind: 'open', ...request },
-              Object.freeze({
-                ...grants.birthOwner(
-                  mode.ownerId,
-                  request.mode === 'persistent'
-                    ? Object.freeze({
-                        mode: 'persistent',
-                        profileId: request.profileId,
-                      })
-                    : Object.freeze({ mode: 'ephemeral' }),
-                  undefined,
-                  input.owner,
-                  raster.owner
-                ),
-                bindEngine: grants.bindEngine.bind(grants),
-                navigation: navigation.owner,
-                ...(mode.resourceAcceptance ? { resources: mode.resourceAcceptance } : {}),
-                upload: capabilitySlots.uploadOwner,
-                download: capabilitySlots.downloadOwner,
-                semantic: capabilitySlots.semanticOwner,
-              }),
-              initialStorageState
+            const originalGrant = grant,
+              originalNavigation = navigation;
+            const original = await observeOriginalStartupPhase('session.network-open', () =>
+              network.open(
+                originalGrant,
+                { kind: 'open', ...request },
+                Object.freeze({
+                  ...grants.birthOwner(
+                    mode.ownerId,
+                    request.mode === 'persistent'
+                      ? Object.freeze({
+                          mode: 'persistent',
+                          profileId: request.profileId,
+                        })
+                      : Object.freeze({ mode: 'ephemeral' }),
+                    undefined,
+                    input.owner,
+                    raster.owner
+                  ),
+                  bindEngine: grants.bindEngine.bind(grants),
+                  navigation: originalNavigation.owner,
+                  ...(mode.resourceAcceptance ? { resources: mode.resourceAcceptance } : {}),
+                  upload: capabilitySlots.uploadOwner,
+                  download: capabilitySlots.downloadOwner,
+                  semantic: capabilitySlots.semanticOwner,
+                }),
+                initialStorageState
+              )
             );
             acquired = original;
             if (initialStorageState !== undefined) {

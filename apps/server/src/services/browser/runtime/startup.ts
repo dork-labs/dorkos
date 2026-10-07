@@ -1,3 +1,4 @@
+import { readOriginalDesktopQualification } from './admission/desktop-qualification.js';
 import type { MeasuredBrowserResourceAdmission } from './admission/measured-resource.js';
 import { mintBrowserIdentityChoicePermit } from './activation/identity-choice-permit.js';
 import { readOriginalProcessNativeProjection } from './private-native-projection.js';
@@ -34,6 +35,8 @@ export function createExperimentalBrowserStartup(
     ? undefined
     : readOriginalProcessNativeProjection();
   const privateObservers = privateBrowserAcceptance ?? privateProjection;
+  const qualification =
+    privateObservers?.qualification?.bind(privateObservers) ?? readOriginalDesktopQualification();
   let stopped = false,
     epoch = 0,
     work: Promise<void> | undefined,
@@ -458,6 +461,7 @@ export function createExperimentalBrowserStartup(
                 config,
                 inventory,
                 installationId,
+                ...(qualification ? { qualification } : {}),
                 ...(measuredResources ? { measuredResources } : {}),
                 ...(privateObservers
                   ? {
@@ -522,7 +526,11 @@ export function createExperimentalBrowserStartup(
                 graphs.delete(graph);
                 throw value;
               }
-              if (result.state !== 'ready' || !get('browser').enabled || !mode.modeCurrent())
+              if (
+                (result.state !== 'ready' && result.state !== 'qualification') ||
+                !get('browser').enabled ||
+                !mode.modeCurrent()
+              )
                 throw refuse();
               admit();
               active = graph;

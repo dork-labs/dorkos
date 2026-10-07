@@ -4,13 +4,18 @@ import type {
   PrivateBrowserInputDispatcher,
   OwnedInputAuthorization,
 } from '@dorkos/browser/server-owner';
-import { type BrowserBinding, BrowserInputRequestSchema } from '@dorkos/shared/browser-schemas';
+import {
+  type BrowserBinding,
+  BrowserInputRequestSchema,
+  BrowserCopySelectionRequestSchema,
+} from '@dorkos/shared/browser-schemas';
 import type { BrowserControllerHost } from './controller-host.js';
 import { BrowserApiRefusal } from './service.js';
 
 /** Private host dispatch bank; only the original engine constructor can supply this input path. */
 export class BrowserControllerInput {
   readonly owner: PrivateBrowserInputOwner;
+  private copy?: NonNullable<PrivateBrowserInputDispatcher['copySelection']>;
   private dispatch?: PrivateBrowserInputDispatcher['input'];
   private captureHost?: BrowserControllerHost['capture'];
   private closed = false;
@@ -25,6 +30,7 @@ export class BrowserControllerInput {
         if (this.closed || this.dispatch) throw new BrowserApiRefusal('inaccessible');
         const input = original.input.bind(original);
         if (this.closed || this.dispatch) throw new BrowserApiRefusal('inaccessible');
+        this.copy = original.copySelection?.bind(original);
         this.dispatch = input;
       },
     });
@@ -48,13 +54,78 @@ export class BrowserControllerInput {
       reference?: { grantId: string; revision: number },
       signal?: AbortSignal
     ): ReturnType<PrivateBrowserInputDispatcher['input']>;
+    copySelection(
+      value: unknown,
+      controllerId: string,
+      reference?: { grantId: string; revision: number },
+      signal?: AbortSignal
+    ): Promise<import('@dorkos/shared/browser-schemas').BrowserCopySelectionReceipt>;
   }> {
     if (this.closed || !this.captureHost || !this.dispatch)
       throw new BrowserApiRefusal('unavailable');
     if (publication !== undefined && typeof publication !== 'function')
       throw new BrowserApiRefusal('inaccessible');
     const client = this.captureHost(req, res, localTicket);
-    return this.captureAuthorization(client.authorization.bind(client), publication);
+    const authorize = client.copyAuthorization.bind(client),
+      copy = this.copy;
+    const original = this.captureAuthorization(client.authorization.bind(client), publication);
+    return Object.freeze({
+      ...original,
+      copySelection: (
+        value: unknown,
+        controllerId: string,
+        reference?: { grantId: string; revision: number },
+        signal: AbortSignal = new AbortController().signal
+      ) => {
+        if (this.closed || !copy) throw new BrowserApiRefusal('unavailable');
+        const command = BrowserCopySelectionRequestSchema.parse(value);
+        const lifetime = JSON.stringify([
+          command.binding.browserId,
+          command.binding.browserGeneration,
+          command.binding.tabId,
+        ]);
+        const prior = this.publicationFailures.get(lifetime);
+        if (prior) throw prior.reason;
+        if (this.publicationFailures.size >= 128) throw new BrowserApiRefusal('unavailable');
+        const wire = publication?.();
+        const operation = Promise.resolve().then(async () => {
+          if (this.closed) throw new BrowserApiRefusal('unavailable');
+          const authority = await authorize(command.binding, controllerId, reference);
+          const current = authority.isCurrent.bind(authority);
+          if (this.closed || !current()) throw new BrowserApiRefusal('inaccessible');
+          if (wire) {
+            this.publications.set(wire, Object.freeze({ ...command.binding }));
+            void wire.then(
+              () => this.publications.delete(wire),
+              (reason) => {
+                if (!this.publicationFailures.has(lifetime))
+                  this.publicationFailures.set(lifetime, { reason });
+                this.publications.delete(wire);
+              }
+            );
+          }
+          return copy(
+            command,
+            Object.freeze({
+              isCurrent: () => !this.closed && current() && !this.closed,
+              refresh: async () => {
+                if (this.closed || signal.aborted) return false;
+                const fresh = await authorize(command.binding, controllerId, reference);
+                const observed = fresh.isCurrent();
+                return observed && !this.closed && !signal.aborted;
+              },
+            }),
+            signal
+          );
+        });
+        this.operations.add(operation);
+        void operation.then(
+          () => this.operations.delete(operation),
+          () => this.operations.delete(operation)
+        );
+        return operation;
+      },
+    });
   }
 
   /** Constructor-private authenticated admission; runtime callers never synthesize HTTP credentials. */

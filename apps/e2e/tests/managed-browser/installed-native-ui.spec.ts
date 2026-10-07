@@ -308,7 +308,9 @@ test('Installed saved and clean browsers draw frames, show caret and pointer, ty
   }
   expect(enabled.status()).toBe(200);
   const ready = await enabled.json();
-  expect(ready.state).toBe('ready');
+  if (ready.state !== 'qualification') throw new Error('ORIGINAL_BROWSER_QUALIFICATION_REQUIRED');
+  expect(ready.state).toBe('qualification');
+  expect(ready.readiness).toBe('unverified');
   expect(ready.enabled).toBe(true);
   expect(ready.workspaces.length).toBeGreaterThan(0);
   const workspace = process.env.DORKOS_MANAGED_UI_WORKSPACE ?? ready.workspaces[0].workspaceId;

@@ -44,6 +44,7 @@ import {
 } from './runtime/darwin-generation-return.js';
 import { validateEngineConfiguration } from './configuration.js';
 import {
+  parseCopySelectionRequest,
   parseBrowserUpload,
   parseBrowserDownload,
   parseBrowserBinding,
@@ -134,6 +135,15 @@ export interface PrivateBrowserRetirementReceiver {
 }
 /** Constructor-private input dispatcher; tokens never cross the wire or public engine. */
 export interface PrivateBrowserInputDispatcher {
+  copySelection?(
+    value: unknown,
+    authorization: Readonly<{ isCurrent(): boolean; refresh(): Promise<boolean> }>,
+    signal: AbortSignal
+  ): Promise<
+    import('./input/selection-copy.js').SelectionCopy &
+      Readonly<{ requestId: string; binding: BrowserBinding }>
+  >;
+
   input(
     command: unknown,
     authorization: OwnedInputAuthorization,
@@ -1115,6 +1125,51 @@ function constructEngine(
   if (construction.kind === 'serverOwned' && construction.input) {
     const issuer = createOwnedInputIssuer();
     const dispatcher: PrivateBrowserInputDispatcher = Object.freeze({
+      copySelection(
+        value: unknown,
+        authorization: Readonly<{ isCurrent(): boolean; refresh(): Promise<boolean> }>,
+        signal: AbortSignal
+      ) {
+        const command = parseCopySelectionRequest(value);
+        if (stopping) throw new BrowserLifecycleError('ENGINE_STOPPED');
+        const record = find(command.binding.browserId, command.binding.browserGeneration);
+        const current = authorization.isCurrent.bind(authorization),
+          refresh = authorization.refresh.bind(authorization);
+        const guard = () => {
+          signal.throwIfAborted();
+          const slot = readyInput(record, command.binding);
+          if (
+            stopping ||
+            !current() ||
+            !ordinaryRecord(record) ||
+            initialNavigationPending(record) ||
+            !slot?.handle?.copySelection ||
+            slot.resetPromise
+          )
+            throw new BrowserLifecycleError('OPERATION_FAILED');
+          return slot;
+        };
+        guard();
+        return ownOperation(record, async () => {
+          const slot = guard(),
+            handle = slot.handle!;
+          const original = handle.copySelection!.bind(handle);
+          if (navigationPending(slot.tab)) throw new BrowserLifecycleError('OPERATION_FAILED');
+          if (!(await refresh())) throw new BrowserLifecycleError('OPERATION_FAILED');
+          guard();
+          const result = await original(signal, () => {
+            guard();
+            return true;
+          });
+          if (!(await refresh())) throw new BrowserLifecycleError('OPERATION_FAILED');
+          guard();
+          return Object.freeze({
+            ...result,
+            requestId: command.requestId,
+            binding: Object.freeze({ ...command.binding }),
+          });
+        });
+      },
       input(value: unknown, authorization: OwnedInputAuthorization, signal?: AbortSignal) {
         const command = parseBrowserCommand(value);
         if (command.kind !== 'input') throw new BrowserLifecycleError('COMMAND_UNSUPPORTED');

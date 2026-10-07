@@ -23,6 +23,8 @@ import {
   BrowserControlSchema,
   BrowserCounterSchema,
   BrowserInputRequestSchema,
+  BrowserCopySelectionRequestSchema,
+  BrowserCopySelectionReceiptSchema,
   BrowserInstanceSchema,
   BrowserNavigateRequestSchema,
   BrowserOpenRequestSchema,
@@ -322,7 +324,7 @@ export function registerBrowserOpenApi(registry: OpenAPIRegistry): void {
       responses: {
         200: { description: 'The original delivery result', content },
         400: error('The delivery request could not be read.'),
-        ...(path === '/input'
+        ...(path === '/input' || path === '/copy-selection'
           ? { 403: error('Controller authority was refused.') }
           : {
               401: error('Sign in to access the browser.'),
@@ -376,6 +378,19 @@ export function registerBrowserOpenApi(registry: OpenAPIRegistry): void {
       })
       .strict(),
     json(BrowserActionReceiptSchema)
+  );
+  delivery(
+    '/copy-selection',
+    'Copy a bounded non-secret selection through the current owner controller',
+    z
+      .object({
+        command: BrowserCopySelectionRequestSchema,
+        controllerId: BrowserReferenceSchema,
+        grant,
+        localTicket,
+      })
+      .strict(),
+    json(BrowserCopySelectionReceiptSchema)
   );
   const optional = (
     path: string,

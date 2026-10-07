@@ -79,3 +79,31 @@ it('unknown logger getter failure cannot replace an original producer rejection'
     })
   ).rejects.toBeUndefined();
 });
+
+it.each([
+  'session.authorize-workspace',
+  'session.network-open',
+  'owner.resolve-package',
+  'owner.verify-existing',
+  'owner.inspect-existing',
+  'owner.engine-open',
+] as const)('retains the original held %s producer and its exact settlement', async (phase) => {
+  let release!: (value: object) => void;
+  const value = Object.freeze({ original: true });
+  const held = new Promise<object>((resolve) => {
+    release = resolve;
+  });
+  const producer = vi.fn(() => held);
+  const work = observeOriginalStartupPhase(phase, producer);
+  let settled = false;
+  void work.then(() => {
+    settled = true;
+  });
+  await Promise.resolve();
+  expect(producer).toHaveBeenCalledTimes(1);
+  expect(settled).toBe(false);
+  expect(sink.mock.calls.map((call) => call[1].event)).toEqual(['start']);
+  release(value);
+  expect(await work).toBe(value);
+  expect(sink.mock.calls.map((call) => call[1].event)).toEqual(['start', 'settled']);
+});

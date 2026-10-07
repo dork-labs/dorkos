@@ -1,3 +1,4 @@
+import { captureOriginalQualificationGrant } from './qualification-grant.fixture.js';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { open as openLogFile, type FileHandle } from 'node:fs/promises';
@@ -610,6 +611,7 @@ it.skipIf(!fixturePath || process.platform !== 'darwin' || process.arch !== 'arm
       logs.push(stderrLog);
       guard();
       // Original child is captured synchronously, with terminal and both stream duties before HTTP/native work.
+      const qualificationGrant = await own(captureOriginalQualificationGrant(input, guard));
       const child = (originals.child = spawn(
         process.execPath,
         [
@@ -699,6 +701,7 @@ it.skipIf(!fixturePath || process.platform !== 'darwin' || process.arch !== 'arm
         })
       );
       originals.projection = createOriginalNativeProjectionReceiver({
+        qualification: qualificationGrant,
         pid: cliPid,
         channel: {
           send: child.send.bind(child),
@@ -870,7 +873,7 @@ it.skipIf(!fixturePath || process.platform !== 'darwin' || process.arch !== 'arm
         json((await request('/api/browser/runtime/enable', { enabled: true })).bytes)
       );
       if (
-        enabled.state !== 'ready' ||
+        enabled.state !== 'qualification' ||
         !enabled.workspaces.some((value) => value.workspaceId === input.workspaceId)
       )
         throw new Error('PUBLIC_NATIVE_ACTUAL_MODE_NOT_READY');

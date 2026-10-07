@@ -1,3 +1,7 @@
+import {
+  closeOriginalDesktopQualification,
+  prepareOriginalDesktopQualification,
+} from './browser-qualification/bootstrap';
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import log from 'electron-log';
 import { createWindow, isWebLink, makeRendererUrlAccessor } from './window-manager';
@@ -256,7 +260,20 @@ if (!gotTheLock) {
   armQuitGuard({
     countActiveAgents: getActiveAgentCount,
     getWindow: getMainWindow,
-    shutdown: stopServer,
+    shutdown: async () => {
+      let first: { value: unknown } | undefined;
+      try {
+        await stopServer();
+      } catch (value) {
+        first = { value };
+      }
+      try {
+        await closeOriginalDesktopQualification();
+      } catch (value) {
+        first ??= { value };
+      }
+      if (first) throw first.value;
+    },
     consumeUpdateRestart,
     recordUpdateInstallIntent,
   });
@@ -399,6 +416,7 @@ if (!gotTheLock) {
     try {
       // The accessor lets the supervisor anchor its crash dialog to whichever
       // window is current, the same way setupAutoUpdater does.
+      await prepareOriginalDesktopQualification();
       await startServer(getMainWindow);
     } catch (err) {
       dialog.showErrorBox("DorkOS couldn't start", startupFailureMessage(err));

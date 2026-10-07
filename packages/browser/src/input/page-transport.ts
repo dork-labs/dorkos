@@ -1,3 +1,4 @@
+import { readOriginalSelection, type SelectionCopy } from './selection-copy.js';
 import { semanticNativeEffect, type NativeSemanticState } from '../semantic/native-effect.js';
 import type { NativeSemanticTarget } from '../semantic/native-target.js';
 import { OwnedResponseDownload, type OwnedDownloadSink } from '../files/response-download.js';
@@ -34,6 +35,7 @@ export interface PageTransportOptions {
 }
 /** A preregistered acquisition with irreversible admission retirement and shared teardown. */
 export interface OwnedPageTransport {
+  copySelection(signal: AbortSignal, current: () => boolean): Promise<SelectionCopy>;
   /** Fixed private native Page target metadata from this lifetime-retained original session. */
   semanticTarget(signal: AbortSignal): Promise<string>;
   semanticEffect(
@@ -63,6 +65,8 @@ export function createPageTransport(options: PageTransportOptions): OwnedPageTra
   owner.acquire();
   return Object.freeze({
     native: owner.native,
+    copySelection: (signal: AbortSignal, current: () => boolean) =>
+      owner.copySelection(signal, current),
     download: (sink: OwnedDownloadSink, current: () => boolean) => owner.download(sink, current),
     upload: (lease: OwnedUploadLease, current: () => boolean) => owner.upload(lease, current),
     semanticTarget: (signal: AbortSignal) => owner.semanticTarget(signal),
@@ -147,6 +151,30 @@ class PageTransportOwner {
     });
   }
 
+  async copySelection(signal: AbortSignal, current: () => boolean): Promise<SelectionCopy> {
+    let result: SelectionCopy | undefined;
+    const end = performance.now() + INPUT_BUDGET_MS;
+    const original = this.call(
+      async (guard) => {
+        const session = this.session;
+        if (!session) throw new Error('COPY_SESSION_REFUSED');
+        const bounded = () => {
+          guard();
+          if (performance.now() >= end) throw new Error('COPY_READ_DEADLINE');
+        };
+        result = await readOriginalSelection(session, bounded);
+      },
+      signal,
+      undefined,
+      undefined,
+      undefined,
+      current
+    );
+    // The deadline bounds delivery; the original call stays retained by nativePending until return.
+    await within(original, end, signal);
+    if (!result) throw new Error('COPY_RESULT_REFUSED');
+    return result;
+  }
   /** Observe fixed native metadata using the already owned session; no new Page/session or action. */
   async semanticEffect(
     target: NativeSemanticTarget,

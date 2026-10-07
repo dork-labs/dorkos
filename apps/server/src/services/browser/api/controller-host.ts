@@ -212,6 +212,23 @@ export class BrowserControllerHost {
         }
         return state;
       },
+      copyAuthorization: async (
+        binding: BrowserBinding,
+        controllerId: string,
+        reference?: { grantId: string; revision: number }
+      ): Promise<OwnedInputAuthorization> => {
+        await auth.refresh();
+        if (!ownerPosture()) throw new BrowserApiRefusal('inaccessible');
+        const grant = issueGrant(binding, reference);
+        const original = this.authorization(auth.current, binding, controllerId, grant);
+        const current = original.isCurrent.bind(original),
+          authorize = original.authorize.bind(original);
+        if (!ownerPosture() || !current()) throw new BrowserApiRefusal('inaccessible');
+        return Object.freeze({
+          isCurrent: () => ownerPosture() && current() && ownerPosture(),
+          authorize,
+        });
+      },
       authorization: async (
         binding: BrowserBinding,
         controllerId: string,

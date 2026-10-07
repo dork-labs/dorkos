@@ -1,3 +1,4 @@
+import { captureOriginalQualificationGrant } from './qualification-grant.fixture.js';
 import {
   parseOriginalResourceStart,
   parseOriginalResourceCompletion,
@@ -126,6 +127,7 @@ export async function runPrivateOriginalFrameWindow(options: {
     );
     cliLogs.push(cliStderr);
     assert();
+    const qualificationGrant = await own(captureOriginalQualificationGrant(options.input, assert));
     cli = spawn(
       options.node,
       [
@@ -214,6 +216,7 @@ export async function runPrivateOriginalFrameWindow(options: {
     if (!originalCli.pid) throw new Error('FRAME_ORIGINAL_CLI_PID_REQUIRED');
     const queueSamples: Parameters<typeof publishQueue>[0]['samples'][number][] = [];
     projection = createOriginalNativeProjectionReceiver({
+      qualification: qualificationGrant,
       pid: originalCli.pid,
       channel: {
         send(message, callback) {

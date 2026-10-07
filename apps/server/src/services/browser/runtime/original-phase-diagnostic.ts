@@ -13,7 +13,13 @@ type OriginalPhase =
   | 'mode.resolve-journal-after'
   | 'mode.inspect-proof'
   | 'mode.native-proof'
-  | 'mode.resolve-proof-journal';
+  | 'mode.resolve-proof-journal'
+  | 'session.authorize-workspace'
+  | 'session.network-open'
+  | 'owner.resolve-package'
+  | 'owner.verify-existing'
+  | 'owner.inspect-existing'
+  | 'owner.engine-open';
 /** Fixed original stage timings only. Diagnostics confer no native/actor readiness and cannot heal failure. */
 export async function observeOriginalStartupPhase<T>(
   phase: OriginalPhase,

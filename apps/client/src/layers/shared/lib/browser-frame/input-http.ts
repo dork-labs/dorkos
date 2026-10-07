@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import {
   BrowserInputRequestSchema,
+  type BrowserCopySelectionRequest,
+  BrowserCopySelectionRequestSchema,
+  BrowserCopySelectionReceiptSchema,
   BrowserActionReceiptSchema,
   BrowserReferenceSchema,
   BrowserCounterSchema,
@@ -32,6 +35,69 @@ export function createBrowserInputHttp(
 ): BrowserInputTransport {
   const originalContext = readContext.bind(undefined);
   return Object.freeze({
+    async copyBrowserSelection(
+      value: BrowserCopySelectionRequest,
+      controllerIdValue: string,
+      signal: AbortSignal
+    ) {
+      const command = BrowserCopySelectionRequestSchema.parse(value),
+        controllerId = BrowserReferenceSchema.parse(controllerIdValue),
+        context = contextSchema.parse(originalContext());
+      signal.throwIfAborted();
+      const response = await fetchResponse(baseUrl, '/browser/copy-selection', {
+        method: 'POST',
+        body: JSON.stringify({ command, controllerId, ...context }),
+        signal,
+        timeout: null,
+      });
+      const stream = response.body;
+      if (!stream) throw new Error('Selected browser text is unavailable.');
+      const reader = stream.getReader();
+      const chunks: Uint8Array[] = [];
+      let count = 0;
+      let first: { value: unknown } | undefined;
+      try {
+        for (;;) {
+          signal.throwIfAborted();
+          const next = await reader.read();
+          signal.throwIfAborted();
+          if (next.done) break;
+          count += next.value.byteLength;
+          if (count > 16384) throw new Error('Selected browser text is too large.');
+          chunks.push(next.value);
+        }
+        const bytes = new Uint8Array(count);
+        let offset = 0;
+        for (const chunk of chunks) {
+          bytes.set(chunk, offset);
+          offset += chunk.byteLength;
+        }
+        const receipt = BrowserCopySelectionReceiptSchema.parse(
+          JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))
+        );
+        signal.throwIfAborted();
+        if (receipt.requestId !== command.requestId || !same(receipt.binding, command.binding))
+          throw new Error('Selected browser text changed.');
+        return Object.freeze({ ...receipt, binding: Object.freeze({ ...receipt.binding }) });
+      } catch (value) {
+        first = { value };
+      } finally {
+        if (first) {
+          try {
+            await reader.cancel(first.value);
+          } catch {
+            /* Original failure retains precedence. */
+          }
+        }
+        try {
+          reader.releaseLock();
+        } catch (value) {
+          first ??= { value };
+        }
+      }
+      if (first) throw first.value;
+      throw new Error('Selected browser text is unavailable.');
+    },
     async inputBrowser(value: BrowserInputRequest, controllerIdValue: string, signal: AbortSignal) {
       const command = BrowserInputRequestSchema.parse(value);
       const controllerId = BrowserReferenceSchema.parse(controllerIdValue);

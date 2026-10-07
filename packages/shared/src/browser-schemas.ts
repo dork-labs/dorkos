@@ -512,8 +512,19 @@ export const BrowserProductionStatusSchema = boundedBrowserJson(
       .strict(),
     z
       .object({
+        state: z.literal('qualification'),
+        enabled: z.literal(true),
+        readiness: z.literal('unverified'),
+        workspaces: z
+          .array(z.object({ workspaceId: ref, label: browserPlainText(512) }).strict())
+          .max(64),
+      })
+      .strict(),
+    z
+      .object({
         state: z.literal('ready'),
         enabled: z.literal(true),
+        readiness: z.literal('accepted').optional(),
         workspaces: z
           .array(z.object({ workspaceId: ref, label: browserPlainText(512) }).strict())
           .max(64),
@@ -827,3 +838,35 @@ export type BrowserHumanDownloadRequest = z.infer<typeof BrowserHumanDownloadReq
 export type BrowserHumanDownloadReceipt = z.infer<typeof BrowserHumanDownloadReceiptSchema>;
 export type BrowserHumanArtifactReadRequest = z.infer<typeof BrowserHumanArtifactReadRequestSchema>;
 export type BrowserHumanArtifactReceipt = z.infer<typeof BrowserHumanArtifactReceiptSchema>;
+
+/** Copy reads only a bounded, non-secret selection under the current controller. */
+export const BrowserCopySelectionRequestSchema = boundedBrowserJson(
+  z
+    .object({
+      requestId: ref,
+      binding: BrowserBindingSchema,
+    })
+    .strict()
+);
+export const BrowserCopySelectionReceiptSchema = boundedBrowserJson(
+  z.discriminatedUnion('outcome', [
+    z
+      .object({
+        requestId: ref,
+        binding: BrowserBindingSchema,
+        outcome: z.literal('selected'),
+        text: browserText(2048).refine((value) => value.length > 0),
+      })
+      .strict(),
+    z
+      .object({
+        requestId: ref,
+        binding: BrowserBindingSchema,
+        outcome: z.literal('refused'),
+        reason: z.enum(['secret', 'selection', 'unsupported', 'capacity']),
+      })
+      .strict(),
+  ])
+);
+export type BrowserCopySelectionRequest = z.infer<typeof BrowserCopySelectionRequestSchema>;
+export type BrowserCopySelectionReceipt = z.infer<typeof BrowserCopySelectionReceiptSchema>;

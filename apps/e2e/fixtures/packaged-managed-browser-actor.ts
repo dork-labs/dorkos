@@ -119,7 +119,8 @@ export async function exercisePackagedManagedBrowser(
   }
   expect(enabled.status()).toBe(200);
   const ready = await enabled.json();
-  expect(ready.state).toBe('ready');
+  expect(ready.state).toBe('qualification');
+  expect(ready.readiness).toBe('unverified');
   expect(ready.enabled).toBe(true);
   expect(ready.workspaces.length).toBeGreaterThan(0);
   const workspace = ready.workspaces[0].workspaceId;

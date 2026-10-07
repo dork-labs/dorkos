@@ -1,3 +1,4 @@
+import { browserProductionSubject } from '../../../scripts/browser-production-subject.js';
 import { execFileSync } from 'child_process';
 import { assertDesktopBrowserPackaging } from './browser-packaging';
 import {
@@ -966,7 +967,10 @@ async function buildServer() {
       // list above is pure JS and unaffected.
       requireExternalNativesPlugin(NATIVE_REQUIRE_EXTERNALS),
     ],
-    define: { __CLI_VERSION__: JSON.stringify(version) },
+    define: {
+      __CLI_VERSION__: JSON.stringify(version),
+      __BROWSER_PRODUCTION_SUBJECT__: JSON.stringify(await browserProductionSubject(ROOT)),
+    },
     sourcemap: true,
     // Consumed by verifyBundleLoadable below — the authoritative list of what
     // the emitted bundle still resolves at runtime.

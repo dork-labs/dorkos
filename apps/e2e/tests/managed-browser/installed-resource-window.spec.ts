@@ -123,7 +123,10 @@ test('Two original browsers and drawn viewers: separate idle and active resource
     const enabled = await enabling;
     expect(enabled.status()).toBe(200);
     const status = await enabled.json();
-    expect(status.state).toBe('ready');
+    if (status.state !== 'qualification')
+      throw new Error('ORIGINAL_BROWSER_QUALIFICATION_REQUIRED');
+    expect(status.state).toBe('qualification');
+    expect(status.readiness).toBe('unverified');
     expect(
       status.workspaces.some((w: { workspaceId: string }) => w.workspaceId === workspace)
     ).toBe(true);

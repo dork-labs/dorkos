@@ -435,6 +435,8 @@ describe('private browser package boundaries', () => {
             // Public Page/context types pin original popup viewport and navigation ownership.
             'tabs/popup-navigation.ts',
             'input/page-transport.ts',
+            // Fixed owner-only root-selection inspection on the existing original input session.
+            'input/selection-copy.ts',
             'input/engine-input.ts',
 
             'files/response-download.ts',

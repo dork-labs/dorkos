@@ -1,3 +1,4 @@
+import { createRenderedSelectionCopy, type CanvasSelectionCopy } from './canvas-selection-copy';
 import { CanvasGestureCollection } from './canvas-gesture';
 import { CanvasEditableInput } from './canvas-editable-input';
 import {
@@ -39,6 +40,7 @@ export class BrowserCanvasInputRefusal extends Error {
  * Drag collection has no native effect; it does not provide live remote dragging.
  * No local event sets the canonical pointer or caret; only original screenshot metadata does. */
 export class BrowserCanvasInput {
+  private readonly selectionCopy?: CanvasSelectionCopy;
   private readonly ime: HTMLTextAreaElement;
   private composing?: { controllerId: string; viewerId: string; binding: BrowserBinding };
   private readonly editableReceiver: CanvasEditableInput<ReturnType<BrowserCanvasInput['context']>>;
@@ -71,7 +73,8 @@ export class BrowserCanvasInput {
     private readonly identity: object,
     private readonly read: () => BrowserRenderedInputContext | undefined,
     signals: readonly AbortSignal[],
-    private readonly onFailure: (cause: unknown) => void = () => undefined
+    private readonly onFailure: (cause: unknown) => void = () => undefined,
+    onCopyStatus: (message: string) => void = () => undefined
   ) {
     this.ime = canvas.ownerDocument.createElement('textarea');
     this.ime.setAttribute('aria-label', 'Browser typing');
@@ -101,6 +104,16 @@ export class BrowserCanvasInput {
     );
     this.lossSignals = Object.freeze([...signals]);
     this.submit = port.inputBrowser.bind(port);
+    this.selectionCopy = createRenderedSelectionCopy(
+      canvas,
+      port,
+      () => this.context(),
+      this.drawAfterOriginalInput.bind(this),
+      () => this.uuid(),
+      () => this.closed,
+      () => !!this.composing,
+      onCopyStatus
+    );
     const random = crypto.getRandomValues.bind(crypto);
     this.uuid = () =>
       Array.from(random(new Uint8Array(16)), (value) => value.toString(16).padStart(2, '0')).join(
@@ -549,6 +562,10 @@ export class BrowserCanvasInput {
   private cancelComposition(): void {
     this.endComposition('');
   }
+  /** Only a trusted local gesture may enter the browser clipboard producer. */
+  copySelection(event: Pick<Event, 'isTrusted' | 'preventDefault'>): boolean {
+    return this.selectionCopy?.copy(event) ?? false;
+  }
   private keyboard(event: KeyboardEvent): void {
     if (
       this.closed ||
@@ -563,6 +580,10 @@ export class BrowserCanvasInput {
       return;
     try {
       this.gesture?.cancel(); // A keyboard operation replaces an unsubmitted local pointer gesture.
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === 'c') {
+        this.copySelection(event);
+        return;
+      }
       // Native paste stays local until its actual ClipboardEvent carries the user-selected data.
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'v') return;
       const context = event.target === this.ime ? this.editableReceiver.context() : this.context();
@@ -666,7 +687,10 @@ export class BrowserCanvasInput {
       reject = no;
     });
     this.fence();
-    void Promise.allSettled(this.active ? [this.active] : []).then((results) => {
+    void Promise.allSettled([
+      ...(this.active ? [this.active] : []),
+      ...(this.selectionCopy ? [this.selectionCopy.close()] : []),
+    ]).then((results) => {
       if (this.replacing) {
         const lost = this.lossSignals.find((signal) => signal.aborted);
         if (lost) this.failure(lost.reason);

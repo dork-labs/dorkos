@@ -1,3 +1,4 @@
+import type { PrivateBrowserQualification } from './admission/accepted-mode.js';
 import type { Server } from 'node:http';
 import type { Db } from '@dorkos/db';
 import type { AuthorRegistry } from '../../rooms/author-registry.js';
@@ -27,11 +28,13 @@ export type OriginalPrincipalComposition = Readonly<{
 let active: ReturnType<typeof createOriginalOwner> | undefined;
 function createOriginalOwner(
   options: Readonly<{
+    qualification?(): Promise<PrivateBrowserQualification | undefined>;
     resources: PrivateBrowserResourceOwner;
     viewerSamples: PrivateViewerSampleObserver;
     wrapOriginalCodexTransport(original: CodexTransport): CodexTransport;
   }>
 ) {
+  const qualification = options.qualification?.bind(options);
   const resources = options.resources,
     viewerSamples = options.viewerSamples;
   const wrapOriginal = options.wrapOriginalCodexTransport.bind(options);
@@ -67,6 +70,7 @@ function createOriginalOwner(
     }
   };
   const owner = Object.freeze({
+    ...(qualification ? { qualification } : {}),
     resources,
     viewerSamples,
     captureStartup(original: Promise<void>) {

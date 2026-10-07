@@ -1,3 +1,7 @@
+import {
+  DesktopQualificationSubjectSchema,
+  type DesktopQualificationGrant,
+} from '@dorkos/shared/browser-desktop-qualification';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { open, readdir, readFile, readlink, realpath, lstat } from 'node:fs/promises';
@@ -10,6 +14,7 @@ export interface Artifact {
   readonly bundleIdentifier: string;
   readonly version: string;
   readonly observerSHA256: string;
+  readonly qualificationSubject?: Readonly<DesktopQualificationGrant['subject']>;
 }
 export interface SignedDesktopAcceptance {
   readonly first: Artifact;
@@ -31,11 +36,20 @@ const text = (value: unknown, pattern: RegExp, cap = 4096): string => {
     throw new Error('SIGNED_DESKTOP_CONFIG_VALUE');
   return value;
 };
+/** Capture parsed nested metadata independently of the caller's mutable descriptor. */
+function immutableSubject(value: unknown) {
+  const subject = DesktopQualificationSubjectSchema.parse(value);
+  Object.freeze(subject.runtimeClass.surface);
+  Object.freeze(subject.runtimeClass);
+  return Object.freeze(subject);
+}
 /** Validate one supplied signed application descriptor. */
 export function parseSignedDesktopArtifact(value: unknown): Artifact {
   const input = object(
     value,
-    'appPath,bundleIdentifier,observerSHA256,teamIdentifier,treeSHA256,version'
+    value && typeof value === 'object' && 'qualificationSubject' in value
+      ? 'appPath,bundleIdentifier,observerSHA256,qualificationSubject,teamIdentifier,treeSHA256,version'
+      : 'appPath,bundleIdentifier,observerSHA256,teamIdentifier,treeSHA256,version'
   );
   const appPath = text(input.appPath, /^\//),
     treeSHA256 = text(input.treeSHA256, /^[a-f0-9]{64}$/),
@@ -52,6 +66,11 @@ export function parseSignedDesktopArtifact(value: unknown): Artifact {
     bundleIdentifier,
     version,
     observerSHA256,
+    ...(input.qualificationSubject === undefined
+      ? {}
+      : {
+          qualificationSubject: immutableSubject(input.qualificationSubject),
+        }),
   });
 }
 export const SignedDesktopAcceptanceSchema = Object.freeze({
@@ -208,12 +227,26 @@ export async function originalTool(
   return Buffer.concat(chunks).toString('utf8');
 }
 
+const originalVerifications = new WeakMap<
+  object,
+  Readonly<{ artifact: Artifact; executable: string }>
+>();
+/** Authenticate the original completed signature checks before inspecting a supplied value. */
+export function readOriginalSignedDesktopVerification(value: unknown) {
+  if (!value || (typeof value !== 'object' && typeof value !== 'function'))
+    throw new Error('SIGNED_DESKTOP_ORIGINAL_VERIFICATION_REQUIRED');
+  const original = originalVerifications.get(value);
+  if (!original) throw new Error('SIGNED_DESKTOP_ORIGINAL_VERIFICATION_REQUIRED');
+  return original;
+}
+
 /** Verify the exact original bundle signature, notarization and pinned native observer. */
 export async function verifySignedDesktop(
-  artifact: Artifact,
+  suppliedArtifact: Artifact,
   env: NodeJS.ProcessEnv,
   signal: AbortSignal
 ) {
+  const artifact = parseSignedDesktopArtifact(suppliedArtifact);
   const checks: OriginalToolReceipt[] = [];
   if ((await signedBundleTree(artifact.appPath)) !== artifact.treeSHA256)
     throw new Error('SIGNED_APP_TREE_CHANGED');
@@ -282,11 +315,13 @@ export async function verifySignedDesktop(
     throw new Error('SIGNED_OBSERVER_CHANGED');
   if ((await signedBundleTree(artifact.appPath)) !== artifact.treeSHA256)
     throw new Error('SIGNED_APP_CHANGED_DURING_VERIFICATION');
-  return Object.freeze({
+  const verified = Object.freeze({
     executable: join(artifact.appPath, 'Contents/MacOS', executable),
     native,
     signatureSHA256: sha(signature),
     gatekeeperSHA256: sha(gatekeeper),
     checks: Object.freeze(checks),
   });
+  originalVerifications.set(verified, Object.freeze({ artifact, executable: verified.executable }));
+  return verified;
 }
