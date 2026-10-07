@@ -15,6 +15,7 @@ import { ERASED_MEMBER_NAME } from '../erasure/erasure.js';
 import { uuidv5 } from '../imports/derived-id.js';
 import type { ImportWorkerHooks } from '../imports/process.js';
 import { sweepImports } from '../imports/worker.js';
+import { banEmailKey } from '../moderation/bans.js';
 import { responseCookies } from './bootstrap-test-helper.js';
 import {
   downloadArchive,
@@ -69,6 +70,8 @@ const channels: { general: string; hidden: string; elsewhere: string } = {
   hidden: '',
   elsewhere: '',
 };
+/** A member banned from the source, with the address the ban keys, and a lifted ban. */
+const banned = { memberId: '', email: '', ban: '', lifted: '' };
 const marked = {
   root: '',
   reply: '',
@@ -87,6 +90,14 @@ async function count(sql: string, params: unknown[] = []): Promise<number> {
     .rows[0].n;
 }
 
+/** This host's limits, keying a carried-over ban with its secret, as `main.ts` passes them. */
+function limits() {
+  return {
+    ...h.config.limits,
+    banEmailKey: (email: string) => banEmailKey(email, h.config.authSecret),
+  };
+}
+
 /** Run the import worker until nothing is due. */
 async function runImports(hooks: ImportWorkerHooks = {}): Promise<void> {
   for (let round = 0; round < 200; round++) {
@@ -94,7 +105,7 @@ async function runImports(hooks: ImportWorkerHooks = {}): Promise<void> {
       'UPDATE community_imports SET next_attempt_at=now() WHERE settled_at IS NULL'
     );
     await drainCleanup(h);
-    const result = await sweepImports(h.pool, h.blobStore, h.config.limits, new Date(), hooks);
+    const result = await sweepImports(h.pool, h.blobStore, limits(), new Date(), hooks);
     if (!result.claimed) return;
   }
   throw new Error('Import work did not settle');
@@ -387,6 +398,33 @@ beforeAll(async () => {
     source.owner.memberId,
   ]);
 
+  // New arrivals land in general; one member is banned (with their email), another ban lifted.
+  await h.pool.query('UPDATE channels SET auto_join=true WHERE id=$1', [channels.general]);
+  const bo = await exportMember(h, source, 'Banned Bo');
+  banned.memberId = bo.memberId;
+  banned.email = (
+    await h.pool.query<{ email: string }>(
+      'SELECT u.email FROM members m JOIN "user" u ON u.id=m.user_id WHERE m.id=$1',
+      [bo.memberId]
+    )
+  ).rows[0].email;
+  const ban = await expectStatus(
+    await h.call(`${source.base}/members/${bo.memberId}/ban`, {
+      cookie: source.owner.cookie,
+      body: { reason: 'Spam' },
+    }),
+    201,
+    'ban'
+  );
+  banned.ban = (await ban.json()).ban.id;
+  banned.lifted = (
+    await h.pool.query<{ id: string }>(
+      `INSERT INTO bans(community_id,member_id,actor_member_id,lifted_at,lifted_by_member_id)
+       VALUES($1,$2,$3,now(),$3) RETURNING id`,
+      [source.communityId, pat.memberId, source.owner.memberId]
+    )
+  ).rows[0].id;
+
   const general = await seedEntries(h, source, {
     authorMemberId: source.owner.memberId,
     count: 12_000,
@@ -510,6 +548,13 @@ beforeAll(async () => {
   await runExport(h, { segmentBytes: 256 * KIB });
   archive = await downloadArchive(h, source, requested.export.id);
   opened = await openArchive(archive);
+  // The owner export carries both bans and the auto-join mark.
+  expect(opened.manifest.counts.bans).toBe(2);
+  expect(
+    opened
+      .rows<{ id: string; auto_join: boolean }>('channels')
+      .find((row) => row.id === channels.general)?.auto_join
+  ).toBe(true);
   expect(opened.manifest.version).toBe(2);
   expect(opened.manifest.files.entries.length).toBeGreaterThan(3);
   expect(opened.manifest.files.attachments.length).toBeGreaterThan(2);
@@ -741,6 +786,39 @@ it('restores a version 2 export uploaded in parts, across a cut-off upload and a
     icon_content_type: 'image/png',
     icon: iconChecksum,
   });
+
+  // Auto-join comes across; each ban comes across as an import, keyed again with this host's
+  // secret from the exported email, never with the source's key or account.
+  const autoJoin = await h.pool.query(
+    'SELECT id FROM channels WHERE community_id=$1 AND auto_join',
+    [communityId]
+  );
+  expect(autoJoin.rows).toEqual([{ id: derive(channels.general) }]);
+  const bans = await h.pool.query(
+    `SELECT id,member_id,user_id,email_hash,reason,origin,lifted_at IS NOT NULL AS lifted
+     FROM bans WHERE community_id=$1 ORDER BY lifted`,
+    [communityId]
+  );
+  expect(bans.rows).toEqual([
+    {
+      id: derive(banned.ban),
+      member_id: derive(banned.memberId),
+      user_id: null,
+      email_hash: banEmailKey(banned.email, h.config.authSecret),
+      reason: 'Spam',
+      origin: 'imported',
+      lifted: false,
+    },
+    {
+      id: derive(banned.lifted),
+      member_id: derive(pat.memberId),
+      user_id: null,
+      email_hash: null,
+      reason: null,
+      origin: 'imported',
+      lifted: true,
+    },
+  ]);
 
   // The owner keeps their own channels, not every channel; nobody else's membership comes.
   const owner = await claim(communityId, 'Vera Again', 'vera-again@import-v2.test');

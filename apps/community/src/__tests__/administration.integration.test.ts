@@ -1609,6 +1609,14 @@ it('deletes only the due tenant after every owned blob is confirmed absent', asy
       })
     ).status
   ).toBe(201);
+  // A ban in each tenant: the deleted one's goes with it, the survivor's stays.
+  for (const id of [survivorId, communityId])
+    await pool.query(
+      `INSERT INTO bans(community_id,actor_member_id,reason)
+       SELECT $1,id,'Kept or deleted with its space' FROM members
+       WHERE community_id=$1 AND role='owner' AND active`,
+      [id]
+    );
   // Its tenant rows, its community row, and every account and session.
   const survivorManifest = () => isolationSnapshot([survivorId]);
   const survivorBefore = await survivorManifest();

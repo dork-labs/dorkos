@@ -1,6 +1,6 @@
 import { Button, Input, Label, Notice, Separator } from '@dork-labs/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Copy, KeyRound, Plus, Trash2, Unplug, UserPlus } from 'lucide-react';
+import { Ban, Copy, KeyRound, Plus, Trash2, Unplug, UserPlus } from 'lucide-react';
 import { describeError, download, request } from '../api.js';
 import { describeInstallAccess, describeReauthenticationError } from '../account-controls.js';
 import { SignOutButton } from './SignOut.js';
@@ -12,7 +12,7 @@ import { RemovedByHost } from '../takedowns/TakedownNotices.js';
 import { EraseMembershipPanel } from './Erasure.js';
 import { ExportPanel } from './ExportPanel.js';
 import type { Agent, Channel, Member } from '../types.js';
-import type { CommunitySettingsSection } from '@dorkos/shared/community-wire';
+import type { CommunitySettingsSection, CommunityWireBan } from '@dorkos/shared/community-wire';
 
 type Invite = {
   id: string;
@@ -104,6 +104,7 @@ export function Manage({
   const [admissionClosed, setAdmissionClosed] = useState(false);
   const [directory, setDirectory] = useState<Member[]>([]);
   const [directoryCursor, setDirectoryCursor] = useState<string | null>(null);
+  const [bans, setBans] = useState<CommunityWireBan[]>([]);
   const [roster, setRoster] = useState<Member[]>([]);
   const [selectedMember, setSelectedMember] = useState('');
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -141,6 +142,9 @@ export function Manage({
               setDirectoryCursor(body.nextCursor);
             })
           );
+          requests.push(
+            request<{ bans: CommunityWireBan[] }>('/api/v1/bans').then((body) => setBans(body.bans))
+          );
         }
         if (selectedChannel?.joined && !readOnly)
           requests.push(
@@ -162,7 +166,7 @@ export function Manage({
   // a closed community with a plain reason.
   const readAdmission = useCallback(
     () =>
-      request<{ admissionPolicy: 'invite_only' | 'closed' }>('/api/v1/settings')
+      request<{ admissionPolicy: 'invite_only' | 'closed' | 'open' }>('/api/v1/settings')
         .then((body) => {
           const closed = body.admissionPolicy === 'closed';
           setAdmissionClosed(closed);
@@ -664,6 +668,31 @@ export function Manage({
                           <Trash2 size={16} />
                         </Button>
                       )}
+                      {member.memberId !== me.memberId &&
+                        (member.role === 'member' ||
+                          (member.role === 'admin' && me.role === 'owner')) && (
+                          <Button
+                            variant="ghost"
+                            disabled={busy}
+                            aria-label={`Ban ${member.displayName} from space`}
+                            onClick={() => {
+                              // Cancel stops; an empty answer bans without a reason.
+                              const reason = window.prompt(
+                                `Ban ${member.displayName}? They can't rejoin with this account or email. Reason (optional):`
+                              );
+                              if (reason === null) return;
+                              void perform(
+                                () =>
+                                  request(`/api/v1/members/${member.memberId}/ban`, 'POST', {
+                                    ...(reason.trim() ? { reason: reason.trim() } : {}),
+                                  }),
+                                'Member banned.'
+                              );
+                            }}
+                          >
+                            <Ban size={16} />
+                          </Button>
+                        )}
                     </div>
                   </div>
                 ))}
@@ -672,6 +701,39 @@ export function Manage({
                     Show more members
                   </Button>
                 )}
+              </section>
+            )}
+            {moderator && bans.length > 0 && (
+              <section className="panel">
+                <h3>Banned</h3>
+                {bans.map((ban) => (
+                  <div
+                    className="row justify-between border-b border-[var(--line)] py-2"
+                    key={ban.id}
+                  >
+                    <div>
+                      <strong>{ban.displayName}</strong>
+                      <div className="small muted">
+                        {ban.handle ? `@${ban.handle}` : 'No account'}
+                        {ban.reason ? ` · ${ban.reason}` : ''}
+                      </div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      disabled={busy}
+                      aria-label={`Lift the ban on ${ban.displayName}`}
+                      onClick={() => {
+                        if (window.confirm(`Let ${ban.displayName} join again?`))
+                          void perform(
+                            () => request(`/api/v1/bans/${ban.id}`, 'DELETE'),
+                            'Ban lifted.'
+                          );
+                      }}
+                    >
+                      Lift ban
+                    </Button>
+                  </div>
+                ))}
               </section>
             )}
           </div>

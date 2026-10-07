@@ -2023,6 +2023,54 @@ const actions: Action<unknown>[] = [
       expect((await roleOf(target)).active).toBe(false);
     },
   }),
+  define<{ target: string }>({
+    rule: 'Ban a member: owner and admin (admin only plain members)',
+    route: 'POST /members/:id/ban',
+    allowed: MODERATORS,
+    status: 201,
+    prepare: async () => ({ target: await freshMember() }),
+    call: ({ target }) => ({ method: 'POST', path: scoped(`/members/${target}/ban`), body: {} }),
+    effect: async (_body, _role, { target }) => {
+      expect((await roleOf(target)).active).toBe(false);
+      const ban = await pool.query('SELECT 1 FROM bans WHERE member_id=$1 AND lifted_at IS NULL', [
+        target,
+      ]);
+      expect(ban.rowCount).toBe(1);
+    },
+  }),
+  define<{ ban: string }>({
+    rule: 'Lift a ban: owner and admin',
+    route: 'DELETE /bans/:id',
+    allowed: MODERATORS,
+    status: 204,
+    prepare: async () => {
+      const target = await freshMember();
+      const ban = await pool.query<{ id: string }>(
+        'INSERT INTO bans(community_id,member_id,actor_member_id) VALUES($1,$2,$3) RETURNING id',
+        [alphaId, target, ownerMemberId]
+      );
+      return { ban: ban.rows[0].id };
+    },
+    call: ({ ban }) => ({ method: 'DELETE', path: scoped(`/bans/${ban}`) }),
+    effect: async (_body, _role, { ban }) => {
+      const row = await pool.query('SELECT lifted_at FROM bans WHERE id=$1', [ban]);
+      expect(row.rows[0].lifted_at).not.toBeNull();
+    },
+  }),
+  define({
+    rule: 'List bans: owner and admin',
+    route: 'GET /bans',
+    allowed: MODERATORS,
+    status: 200,
+    call: () => ({ method: 'GET', path: scoped('/bans') }),
+  }),
+  define({
+    rule: 'List auto-join channels: owner and admin',
+    route: 'GET /channels/auto-join',
+    allowed: MODERATORS,
+    status: 200,
+    call: () => ({ method: 'GET', path: scoped('/channels/auto-join') }),
+  }),
   define({
     rule: 'Create an invitation: owner and admin',
     route: 'POST /invites',
@@ -2408,6 +2456,11 @@ const OUTSIDE_ADMINISTRATION: Record<string, string> = {
     'the emailed one-time claim token is the authority; owner-replacement-claim.integration.test.ts',
   'POST /owner-replacements/claim':
     'the claim cookie plus the account the host named; owner-replacement-claim.integration.test.ts',
+  'GET /open-admission': 'whether the URL community is open to single sign-on; public',
+  'POST /open-admission/preflight':
+    'this browser asks to join an open space; open-admission.integration.test.ts',
+  'POST /open-admission/join':
+    'the caller joins an open space themselves; open-admission.integration.test.ts',
 };
 
 function refusalStatus(action: Action<unknown>, role: Role): number {
