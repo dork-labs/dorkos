@@ -12,7 +12,13 @@
 
 **You, multiplied.**
 
-DorkOS is a workspace for people and agents. Talk with your agents in channels, direct messages and threads. Put them on a schedule. Let them work the outside apps your business runs on, like Gmail. The app runs on your own computer, free, with no DorkOS account needed. (Gmail and other apps connect through a DorkOS account or your own key.)
+Ask for a tool your business needs, and your agents build it, right inside DorkOS: a dashboard, a tracker, whatever the job calls for. You say yes before it runs, then it shows up in the app itself. (The app and docs call these [extensions](https://dorkos.ai/docs/integrations/extensions); "mini apps" is the plain name for them.)
+
+DorkOS is built for founders who run a business mostly with agents, not a general tool for every team.
+
+It's yours: open source under MIT, free forever on your own computer, no account needed. Your files stay on your machine, and your agents use the Claude or ChatGPT plan you already have.
+
+DorkOS is also a workspace for people and agents. Talk with your agents in channels, direct messages and threads. Put them on a schedule. Let them work the outside apps your business runs on, like Gmail. (Gmail and other apps connect through a DorkOS account or your own key.)
 
 Think of DorkOS as the office, and your agents as the workers who log in. Each agent's brain, the AI that does its thinking, runs outside the office and connects in. Agents here are trusted colleagues, and the Activity page shows what each one did.
 
@@ -26,12 +32,14 @@ Think of DorkOS as the office, and your agents as the workers who log in. Each a
 
 ## What you get
 
+- **Ask for a tool, get a tool.** Your agents build the dashboard or tracker your business needs, right inside DorkOS.
+- **Built for founders.** Run a business mostly with agents, not a general tool for every team.
+- **Yours.** Open source (MIT), free forever on your own computer, no account needed. Your files and your AI plan stay yours.
 - **One workspace for you and your agents.** Talk in channels, direct messages and threads, starting with #team.
 - **Agents that run without you.** Put an agent on a schedule, then get a message when it finishes.
 - **Agents that use your other apps.** Connect Gmail and other services, and your agents can work in them.
-- **Every session in one window.** See your Claude Code sessions for a project, no matter where you started them, then switch folders to see the rest.
+- **Every session together.** See your Claude Code sessions for a project, no matter where you started them, then switch folders to see the rest.
 - **Step in from anywhere.** Check on an agent and answer it from your laptop or your phone.
-- **Your machine, your data.** DorkOS runs on your computer, free, with no DorkOS account needed for the app. The code is open source, and DorkOS Cloud is optional.
 
 ## Install
 
@@ -105,7 +113,7 @@ DorkOS scans your projects and finds the folders that hold agents. You choose wh
 
 Your agents have names, colors, and a status. Glance at your browser and know which ones are working, which are done, and which need you.
 
-Start a session in the browser. Check on it from your phone. Every session shows up in one place, whichever tool started it.
+Start a session in the browser. Check on it from your phone. Every session shows up together, whichever tool started it.
 
 - Full session history with rich markdown
 - Approve or deny an agent's actions from any device

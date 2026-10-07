@@ -1,7 +1,7 @@
 {
   "name": "dorkos",
   "version": "0.98.0",
-  "description": "You, multiplied. A workspace for people and agents: talk with your agents in channels and threads, run them on a schedule, and let them work your other apps. Runs on your own computer, free. MIT.",
+  "description": "You, multiplied. Ask for a tool and your agents build it inside DorkOS. Built for founders, running on your own computer. Open source, free, no account needed.",
   "license": "MIT",
   "author": "Dorian Collier",
   "repository": {
