@@ -7,10 +7,17 @@
  * end promptly with no message posted to wake it.
  */
 import { randomUUID } from 'node:crypto';
+import { createServer, connect, type Server, type Socket } from 'node:net';
+import { Client } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createCommunityApp } from '../app.js';
 import { LiveHub } from '../live/hub.js';
 import { LIVE_LISTENER_APPLICATION_NAME } from '../live/listener.js';
+import { LIVE_NOTICE_CHANNEL, parseLiveNotice, type LiveNotice } from '../live/notices.js';
+import { clearAccountAccess } from '../sign-in/account-access.js';
+import { eraseMembership } from '../erasure/erasure.js';
+import { sweepCommunityDeletions } from '../deletion-worker.js';
+import { transaction } from '../data.js';
 import {
   TENANCY_PASSWORD,
   admit,
@@ -34,8 +41,14 @@ let h: TenancyHarness;
 let host: { cookie: string; communityId: string; memberId: string };
 let spaces = 0;
 
+/** Runs inside a stream's opening request, after its snapshot watermark; tests set it. */
+let afterSnapshot: (() => Promise<void>) | undefined;
+
 beforeAll(async () => {
-  h = await startTenancyHarness('live', { env: { COMMUNITY_STREAM_FALLBACK_MS: NO_FALLBACK_MS } });
+  h = await startTenancyHarness('live', {
+    env: { COMMUNITY_STREAM_FALLBACK_MS: NO_FALLBACK_MS },
+    hooks: { afterSnapshotWatermark: async () => afterSnapshot?.() },
+  });
   host = await bootstrapHost(h, 'Host', 'host@example.test');
 });
 afterAll(async () => {
@@ -208,6 +221,85 @@ async function insertQuietly(s: Space, text: string) {
   } finally {
     client.release();
   }
+}
+
+/** The id of the account behind a membership. */
+async function userOf(memberId: string) {
+  return (
+    await h.pool.query<{ user_id: string }>('SELECT user_id FROM members WHERE id=$1', [memberId])
+  ).rows[0].user_id;
+}
+
+/** Every live notice sent while `run` runs, read on a connection of its own. */
+async function noticesDuring(run: () => Promise<void>): Promise<LiveNotice[]> {
+  const listener = new Client({ connectionString: h.config.databaseUrl });
+  const seen: LiveNotice[] = [];
+  listener.on('notification', (message) => {
+    const notice = parseLiveNotice(message.payload);
+    if (notice) seen.push(notice);
+  });
+  await listener.connect();
+  try {
+    await listener.query(`LISTEN ${LIVE_NOTICE_CHANNEL}`);
+    await run();
+    await listener.query('SELECT 1');
+    return seen;
+  } finally {
+    await listener.end();
+  }
+}
+
+/**
+ * A TCP proxy in front of Postgres that can go silent, as a connection a NAT or load balancer
+ * dropped does: bytes stop flowing both ways and nothing closes.
+ */
+async function silentProxy() {
+  const port = Number(new URL(h.config.databaseUrl).port || 5432);
+  const pairs: Array<[Socket, Socket]> = [];
+  let mode: 'open' | 'silent' = 'open';
+  const server: Server = createServer((inbound) => {
+    if (mode === 'silent') {
+      // Accept and say nothing: a connect through here waits out its own timeout.
+      inbound.on('error', () => undefined);
+      pairs.push([inbound, inbound]);
+      return;
+    }
+    const outbound = connect(port, '127.0.0.1');
+    inbound.on('error', () => outbound.destroy());
+    outbound.on('error', () => inbound.destroy());
+    inbound.pipe(outbound).pipe(inbound);
+    pairs.push([inbound, outbound]);
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('Missing proxy address');
+  const url = new URL(h.config.databaseUrl);
+  url.hostname = '127.0.0.1';
+  url.port = String(address.port);
+  return {
+    url: url.toString(),
+    /** Stop every byte on every connection, and accept new ones without answering. */
+    silence() {
+      mode = 'silent';
+      for (const [inbound, outbound] of pairs) {
+        inbound.unpipe();
+        outbound.unpipe();
+        inbound.pause();
+        outbound.pause();
+      }
+    },
+    /** Let new connections through again; silenced ones stay silent. */
+    restore() {
+      mode = 'open';
+    },
+    async close() {
+      for (const [inbound, outbound] of pairs) {
+        inbound.destroy();
+        outbound.destroy();
+      }
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    },
+  };
 }
 
 async function lifecycleVersion(communityId: string) {
@@ -505,6 +597,281 @@ describe('every revocation source ends a stream promptly', () => {
   });
 });
 
+describe('more revocation sources end a stream promptly', () => {
+  it('a host closing the account', async () => {
+    const s = await space();
+    const bob = await member(s, 'Bob');
+    const stream = await open(s, { cookie: bob.cookie });
+    const closed = await h.call(`/api/v1/host/accounts/${await userOf(bob.memberId)}/closure`, {
+      cookie: host.cookie,
+      body: {
+        idempotencyKey: randomUUID(),
+        reason: 'under_minimum_age',
+        reference: null,
+        password: TENANCY_PASSWORD,
+      },
+    });
+    expect([200, 201], await closed.clone().text()).toContain(closed.status);
+    await expectClosed(stream, 'removed');
+    await stream.close();
+  });
+
+  it("clearing an account's access (password recovery and mailed links)", async () => {
+    const s = await space();
+    const bob = await member(s, 'Bob');
+    const stream = await open(s, { cookie: bob.cookie });
+    const userId = await userOf(bob.memberId);
+    await transaction(h.pool, (client) =>
+      clearAccountAccess(client, userId, [bob.memberId], { password: true, links: true }, 'system')
+    );
+    await expectClosed(stream, 'removed');
+    await stream.close();
+  });
+
+  it("erasing a member, through their connection's stream", async () => {
+    const s = await space();
+    const bob = await member(s, 'Bob');
+    const grant = await pairInstall(h, s.communityId, bob.cookie, ['read', 'post']);
+    const stream = await open(s, { bearer: grant });
+    await eraseMembership(h.pool, s.communityId, bob.memberId, { log: () => undefined });
+    await expectClosed(stream, 'removed');
+    await stream.close();
+  });
+
+  it('erasing a member who was already removed still announces the husk', async () => {
+    // Purpose: fails if the erasure's own steps send nothing, leaning on the removal's notice.
+    const s = await space();
+    const bob = await member(s, 'Bob');
+    await expectStatus(
+      await h.call(`${s.base}/members/${bob.memberId}`, {
+        method: 'DELETE',
+        cookie: s.owner.cookie,
+      }),
+      204,
+      'remove member'
+    );
+    const notices = await noticesDuring(async () => {
+      await eraseMembership(h.pool, s.communityId, bob.memberId, { log: () => undefined });
+    });
+    expect(notices).toContainEqual({ k: 'member', c: s.communityId, m: bob.memberId });
+  });
+
+  it('disconnecting every connection at once', async () => {
+    const s = await space();
+    const bob = await member(s, 'Bob');
+    const grant = await pairInstall(h, s.communityId, bob.cookie, ['read', 'post']);
+    const stream = await open(s, { bearer: grant });
+    await expectStatus(
+      await h.call(`${s.base}/me/grants`, {
+        method: 'DELETE',
+        cookie: bob.cookie,
+        body: { password: TENANCY_PASSWORD },
+      }),
+      204,
+      'disconnect all'
+    );
+    await expectClosed(stream, 'removed');
+    await stream.close();
+  });
+
+  it('the owner archiving the community', async () => {
+    const s = await space();
+    const stream = await open(s, { cookie: s.owner.cookie });
+    await expectStatus(
+      await h.call(`${s.base}/owner/lifecycle`, {
+        cookie: s.owner.cookie,
+        body: {
+          action: 'archive',
+          lifecycleVersion: await lifecycleVersion(s.communityId),
+          password: TENANCY_PASSWORD,
+          confirmName: s.name,
+        },
+      }),
+      200,
+      'archive'
+    );
+    await expectClosed(stream, 'archived');
+    await stream.close();
+  });
+
+  it('signing out everywhere (Better Auth ends every session itself)', async () => {
+    const s = await space();
+    const bob = await member(s, 'Bob');
+    const stream = await open(s, { cookie: bob.cookie });
+    await expectStatus(
+      await h.call('/api/auth/revoke-sessions', { cookie: bob.cookie, body: {} }),
+      200,
+      'revoke sessions'
+    );
+    await expectClosed(stream, 'removed');
+    await stream.close();
+  });
+
+  it('a host deleting a held community, and the deletion finishing', async () => {
+    // No stream can be open here: a hold already closed every stream and refuses new ones. So
+    // this checks the notices themselves, for a stream a lost earlier notice left open.
+    const s = await space();
+    await expectStatus(
+      await h.call(`/api/v1/host/communities/${s.communityId}/lifecycle`, {
+        method: 'PATCH',
+        cookie: host.cookie,
+        body: {
+          action: 'hold',
+          lifecycleVersion: await lifecycleVersion(s.communityId),
+          deletionNoticeAt: null,
+        },
+      }),
+      200,
+      'hold'
+    );
+    await h.pool.query(
+      "UPDATE communities SET deletion_notice_at=now()-interval '1 day' WHERE id=$1",
+      [s.communityId]
+    );
+    const requested = await noticesDuring(async () => {
+      const response = await h.call(`/api/v1/host/communities/${s.communityId}/deletion`, {
+        cookie: host.cookie,
+        body: {
+          lifecycleVersion: await lifecycleVersion(s.communityId),
+          confirmIdSuffix: s.communityId.slice(-8),
+        },
+      });
+      expect([200, 201, 202], await response.clone().text()).toContain(response.status);
+    });
+    expect(requested).toContainEqual({ k: 'community', c: s.communityId });
+
+    const finished = await noticesDuring(async () => {
+      await h.pool.query(
+        `UPDATE communities SET delete_requested_at=now()-interval '8 days',
+           delete_after=now()-interval '1 day' WHERE id=$1`,
+        [s.communityId]
+      );
+      await h.pool.query(
+        `UPDATE community_deletion_jobs SET delete_after=now()-interval '1 day',next_attempt_at=now()
+         WHERE community_id=$1`,
+        [s.communityId]
+      );
+      for (let pass = 0; pass < 20; pass++) {
+        const result = await sweepCommunityDeletions(h.pool, h.blobStore, 100);
+        expect(result.failed).toBe(0);
+        if (result.completed) break;
+        await h.pool.query('UPDATE community_deletion_jobs SET next_attempt_at=now()');
+        await h.pool.query('UPDATE community_deletion_blob_progress SET next_attempt_at=now()');
+      }
+    });
+    expect(finished).toContainEqual({ k: 'community', c: s.communityId });
+  });
+});
+
+describe('stream lifetime', () => {
+  it('gives back the place of a caller that left while the stream was opening', async () => {
+    // Purpose: fails if a request aborted before the stream started keeps its place forever:
+    // its abort event has already fired, and nothing reads the stream to cancel it.
+    const s = await space();
+    await expect.poll(() => h.live.snapshot().streams).toBe(0);
+    const controller = new AbortController();
+    afterSnapshot = async () => {
+      controller.abort();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    };
+    try {
+      await expect(
+        fetch(`${h.baseUrl}${s.base}/channels/${s.channelId}/events`, {
+          headers: { cookie: s.owner.cookie },
+          signal: controller.signal,
+        })
+      ).rejects.toThrow();
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    } finally {
+      afterSnapshot = undefined;
+    }
+    expect(h.live.snapshot().streams).toBe(0);
+  });
+
+  it('checks access once as soon as it starts', async () => {
+    // Purpose: fails if a revocation that committed before the stream joined the hub (so its
+    // notice reached nobody) leaves the stream open until the fallback re-read.
+    const s = await space();
+    const bob = await member(s, 'Bob');
+    afterSnapshot = async () => {
+      await h.pool.query('DELETE FROM channel_members WHERE channel_id=$1 AND member_id=$2', [
+        s.channelId,
+        bob.memberId,
+      ]);
+    };
+    let stream: Opened;
+    try {
+      stream = await open(s, { cookie: bob.cookie });
+    } finally {
+      afterSnapshot = undefined;
+    }
+    await expectClosed(stream, 'removed');
+    await stream.close();
+  });
+
+  it('keeps the closed frame for a reader that fell behind', async () => {
+    // Purpose: fails if access ending while the reader is not taking events errors the stream,
+    // which drops what was queued and never says why it ended.
+    const s = await space();
+    const bob = await member(s, 'Bob');
+    // The app's own stream object, with no socket buffer in between: not reading is backpressure.
+    const app = createCommunityApp({ config: h.config, pool: h.pool, live: h.live });
+    const response = await app.fetch(
+      new Request(`http://localhost${s.base}/channels/${s.channelId}/events`, {
+        headers: { cookie: bob.cookie },
+      })
+    );
+    expect(response.status).toBe(200);
+    const reader = response.body!.getReader();
+    let buffer = '';
+    const frame = async () => {
+      while (!buffer.includes('\n\n')) {
+        const { value, done } = await reader.read();
+        if (done) throw new Error('ended');
+        buffer += new TextDecoder().decode(value);
+      }
+      const at = buffer.indexOf('\n\n');
+      const text = buffer.slice(0, at);
+      buffer = buffer.slice(at + 2);
+      return /^event: (\w+)/m.exec(text)?.[1];
+    };
+    try {
+      expect(await frame()).toBe('snapshot');
+      expect(await frame()).toBe('replay_complete');
+      await post(s, s.owner.cookie, 'queued, unread');
+      // Let the stream queue the entry; the reader does not take it yet.
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      await expectStatus(
+        await h.call(`${s.base}/channels/${s.channelId}/members/${bob.memberId}`, {
+          method: 'DELETE',
+          cookie: s.owner.cookie,
+        }),
+        200,
+        'remove from channel'
+      );
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      expect(await frame()).toBe('entry');
+      expect(await frame()).toBe('closed');
+    } finally {
+      await reader.cancel().catch(() => undefined);
+    }
+  });
+
+  it('answers readiness while every pooled connection is busy', async () => {
+    // Purpose: fails if readiness waits behind the request pool, so a storm of stream rechecks
+    // would take the server out of rotation.
+    const held = await Promise.all(Array.from({ length: 10 }, () => h.pool.connect()));
+    try {
+      const started = Date.now();
+      const ready = await fetch(`${h.baseUrl}/health/ready`);
+      expect(ready.status).toBe(200);
+      expect(Date.now() - started).toBeLessThan(2_000);
+    } finally {
+      for (const client of held) client.release();
+    }
+  });
+});
+
 describe('limits', () => {
   it('answers 503 with Retry-After past the per-community quota and the server cap', async () => {
     const capped = await startTenancyHarness('live-caps', {
@@ -539,6 +906,30 @@ describe('limits', () => {
         .toBe(200);
     } finally {
       for (const stream of opened) await stream.close();
+      await capped.close();
+    }
+  });
+});
+
+describe('per-member limit', () => {
+  it('answers 503 once one person holds as many streams as one may', async () => {
+    const capped = await startTenancyHarness('live-member-cap', {
+      sharesDatabaseOf: h,
+      env: { COMMUNITY_STREAMS_PER_MEMBER: 1 },
+    });
+    const s = await space();
+    const second = await createChannel(h, s.communityId, s.owner.cookie, 'second');
+    const first = await open(s, { cookie: s.owner.cookie }, capped.baseUrl);
+    try {
+      const refused = await fetch(`${capped.baseUrl}${s.base}/channels/${second}/events`, {
+        headers: { cookie: s.owner.cookie },
+      });
+      expect(refused.status).toBe(503);
+      expect(refused.headers.get('retry-after')).not.toBeNull();
+      await refused.body?.cancel();
+      expect(capped.live.snapshot().refused.member).toBe(1);
+    } finally {
+      await first.close();
       await capped.close();
     }
   });
@@ -605,16 +996,61 @@ describe('monitoring', () => {
 });
 
 describe('the listener at boot', () => {
-  function hubFor(listenUrl: string) {
+  function hubFor(listenUrl: string, probe?: { everyMs: number; timeoutMs: number }) {
     return new LiveHub({
       listenUrl,
       maxStreams: 10,
       maxStreamsPerCommunity: 10,
+      maxStreamsPerMember: 10,
       fallbackMs: NO_FALLBACK_MS,
       selfTestMs: 1_000,
       log: () => undefined,
+      probe,
     });
   }
+
+  it('reconnects a connection that went silent, and wakes every stream to re-read', async () => {
+    // Purpose: fails if a half-open listen connection (no error, no close, no notices) is
+    // trusted forever: streams would wait for their fallback re-read and nothing would recover.
+    const proxy = await silentProxy();
+    const live = hubFor(proxy.url, { everyMs: 200, timeoutMs: 200 });
+    try {
+      await live.start(h.pool);
+      const stream = await live.open({ communityId: 'c', channelId: 'x', memberId: 'm' });
+      await stream.entries.wait(0);
+      proxy.silence();
+      proxy.restore();
+      await expect.poll(() => live.snapshot().listenerReconnects, { timeout: 5_000 }).toBe(1);
+      expect(stream.entries.raised).toBe(true);
+      // Listening again on a fresh connection: a notice arrives.
+      await stream.entries.wait(0);
+      await h.pool.query('SELECT pg_notify($1, \'{"k":"entry","c":"c","ch":"x"}\')', [
+        LIVE_NOTICE_CHANNEL,
+      ]);
+      expect(await stream.entries.wait(3_000)).toBe(true);
+    } finally {
+      await live.stop();
+      await proxy.close();
+    }
+  });
+
+  it('opens a stream without waiting for a listener that is reconnecting', async () => {
+    // Purpose: fails if every new stream waits out a connect timeout while the database is
+    // unreachable; the retry timer reconnects and its wake-up covers these streams.
+    const proxy = await silentProxy();
+    const live = hubFor(proxy.url, { everyMs: 200, timeoutMs: 200 });
+    try {
+      await live.start(h.pool);
+      proxy.silence();
+      await expect.poll(() => live.listenerState, { timeout: 5_000 }).not.toBe('listening');
+      const started = Date.now();
+      await live.open({ communityId: 'c', channelId: 'x', memberId: 'm' });
+      expect(Date.now() - started).toBeLessThan(500);
+    } finally {
+      await live.stop();
+      await proxy.close();
+    }
+  });
 
   it('passes its self-test on a direct connection, and readiness then needs it', async () => {
     const live = hubFor(h.config.databaseUrl);

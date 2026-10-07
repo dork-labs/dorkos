@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { serve } from '@hono/node-server';
 import { Pool } from 'pg';
-import { createCommunityApp } from '../app.js';
+import { createCommunityApp, createLiveHub } from '../app.js';
+import type { LiveHub } from '../live/hub.js';
 import { parseConfig, type CommunityConfig } from '../config.js';
 import { configureServerTimeouts } from '../http.js';
 import { migrate } from '../migrate.js';
@@ -25,6 +26,8 @@ export interface TenancyHarness {
   config: CommunityConfig;
   pool: Pool;
   blobStore: BlobStore;
+  /** The server's live-stream hub, so a test can see how many streams it holds. */
+  live: LiveHub;
   baseUrl: string;
   /** Issue one HTTP request against the running server. */
   call(
@@ -106,10 +109,12 @@ export async function startTenancyHarness(
     ...options.env,
   });
   const blobStore = options.blobStore ?? new FileSystemBlobStore(storagePath);
+  const live = createLiveHub(config);
   const app = createCommunityApp({
     config,
     pool,
     blobStore,
+    live,
     hooks: { ...options.hooks, now: options.now },
     noticeComposers: options.noticeComposers,
   });
@@ -131,6 +136,7 @@ export async function startTenancyHarness(
     config,
     pool,
     blobStore,
+    live,
     baseUrl,
     call(path, init = {}) {
       const headers: Record<string, string> = { ...init.headers };
@@ -154,6 +160,7 @@ export async function startTenancyHarness(
     },
     async close() {
       await new Promise<void>((resolve) => server.close(() => resolve()));
+      await live.stop();
       await pool.end();
       if (!shared) await admin.query(`DROP DATABASE IF EXISTS ${dbName}`);
       await admin.end();

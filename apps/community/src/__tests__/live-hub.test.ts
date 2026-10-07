@@ -7,11 +7,18 @@ import { renderMetrics } from '../live/monitoring.js';
 const UNREACHABLE = 'postgres://nobody@127.0.0.1:1/none';
 
 const hubs: LiveHub[] = [];
-function hub(limits: { maxStreams?: number; maxStreamsPerCommunity?: number } = {}) {
+function hub(
+  limits: {
+    maxStreams?: number;
+    maxStreamsPerCommunity?: number;
+    maxStreamsPerMember?: number;
+  } = {}
+) {
   const made = new LiveHub({
     listenUrl: UNREACHABLE,
     maxStreams: limits.maxStreams ?? 100,
     maxStreamsPerCommunity: limits.maxStreamsPerCommunity ?? 100,
+    maxStreamsPerMember: limits.maxStreamsPerMember ?? 100,
     fallbackMs: 15_000,
     log: () => undefined,
   });
@@ -95,8 +102,21 @@ describe('LiveHub routing', () => {
     made.dispatch({ k: 'community', c: B });
     expect(await woken(all, 'access')).toEqual(['elsewhere']);
     // A channel id is only meaningful inside its community.
-    made.dispatch({ k: 'content', c: B, ch: 'general' });
+    made.dispatch({ k: 'entry', c: B, ch: 'general' });
     expect(await woken(all, 'entries')).toEqual(['elsewhere']);
+  });
+
+  it('releases a large recheck in batches, every stream within about a second', async () => {
+    // Purpose: fails if one community-wide notice sends thousands of rechecks to the pool at
+    // once, or if batching ever drops a stream.
+    const made = hub({ maxStreams: 2_000, maxStreamsPerCommunity: 2_000 });
+    const streams: LiveStream[] = [];
+    for (let n = 0; n < 1_000; n += 1)
+      streams.push(await made.open({ communityId: 'big', channelId: 'x', memberId: `m${n}` }));
+    made.dispatch({ k: 'community', c: 'big' });
+    expect(streams.filter((stream) => stream.access.raised)).toHaveLength(200);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(streams.filter((stream) => stream.access.raised)).toHaveLength(1_000);
   });
 
   it('wakes every stream once after a reconnect', async () => {
@@ -133,7 +153,24 @@ describe('LiveHub limits', () => {
     );
     first.release();
     await made.open({ communityId: 'c', channelId: 'z', memberId: '5' });
-    expect(made.snapshot().refused).toEqual({ host: 1, community: 1 });
+    expect(made.snapshot().refused).toEqual({ host: 1, community: 1, member: 0 });
+  });
+
+  it('caps the streams one person holds, and counts each agent on its own', async () => {
+    // Purpose: fails if one client that keeps reconnecting can take a community's whole quota.
+    const made = hub({ maxStreamsPerMember: 2 });
+    await made.open({ communityId: 'a', channelId: 'x', memberId: 'ann' });
+    await made.open({ communityId: 'a', channelId: 'y', memberId: 'ann' });
+    await expect(made.open({ communityId: 'a', channelId: 'z', memberId: 'ann' })).rejects.toEqual(
+      new LiveStreamLimit('member')
+    );
+    // Ann's agent is its own holder: her limit does not count its streams, nor its hers.
+    await made.open({ communityId: 'a', channelId: 'x', memberId: 'ann', agentId: 'helper' });
+    await made.open({ communityId: 'a', channelId: 'y', memberId: 'ann', agentId: 'helper' });
+    await expect(
+      made.open({ communityId: 'a', channelId: 'z', memberId: 'ann', agentId: 'helper' })
+    ).rejects.toEqual(new LiveStreamLimit('member'));
+    expect(made.snapshot().refused.member).toBe(2);
   });
 });
 
@@ -154,13 +191,11 @@ describe('metrics text', () => {
     const made = hub();
     await made.open({ communityId: 'a"b', channelId: 'x', memberId: '1' });
     made.dispatch({ k: 'entry', c: 'a"b', ch: 'x' });
-    made.dispatch({ k: 'content', c: 'a"b', ch: 'x' });
     made.dispatch({ k: 'join', c: 'a"b' });
     made.observeLag(0.2);
     const text = renderMetrics(made, { waitingCount: 3, totalCount: 7, idleCount: 2 } as never);
     expect(text).toContain('community_live_streams 1\n');
     expect(text).toContain('community_live_streams_by_community{community_id="a\\"b"} 1\n');
-    // A removal wakes streams but is not a post.
     expect(text).toContain('community_posts_per_minute 1\n');
     expect(text).toContain('community_joins_per_minute 1\n');
     expect(text).toContain('community_db_pool_waiting 3\n');
