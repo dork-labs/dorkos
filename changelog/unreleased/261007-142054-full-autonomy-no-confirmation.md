@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(trust): retire the Full-autonomy acknowledgement (DOR-2739)'
+  - 'refactor(trust): drop a stale onError mention and an unused import (DOR-2739)'
 ---
 
 ### Changed
