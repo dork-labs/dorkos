@@ -531,6 +531,15 @@
         ".claude/rules/ci-pipeline",
         "creating-pull-requests/"
       ]
+    },
+    {
+      "guide": "document-channels.md",
+      "description": "App inputs, grants, bearer scope, receipt/state streams, widget bindings, owned cleanup and source-specific validation limits",
+      "patterns": [
+        "services/canvas/doc-channel/",
+        "routes/canvas-doc-token-events",
+        "canvas-channel-schemas"
+      ]
     }
   ],
   "externalDocs": [
@@ -1176,6 +1185,15 @@
       "patterns": [
         "contributing/flow-engine.md",
         "apps/e2e/tests/flow/"
+      ]
+    },
+    {
+      "doc": "docs/integrations/document-channels.mdx",
+      "description": "Document app retries, receipts, grants and standalone token access",
+      "patterns": [
+        "services/canvas/doc-channel/",
+        "canvas-channel-schemas",
+        "doc-channel"
       ]
     }
   ],

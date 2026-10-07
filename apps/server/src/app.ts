@@ -17,6 +17,10 @@ import gitRoutes from './routes/git.js';
 import workspaceRoutes from './routes/workspaces.js';
 import projectRoutes from './routes/projects.js';
 import roomRoutes from './routes/rooms.js';
+import {
+  isStandaloneDocTokenSurface,
+  standaloneDocTokenRouter,
+} from './routes/canvas-doc-token-events.js';
 import canvasDocEventRoutes, { canvasDocJsonParser } from './routes/canvas-doc-events.js';
 import { createCommunityConnectionsRouter } from './routes/community-connections.js';
 import { createRemoteCommunitiesRouter } from './routes/remote-communities.js';
@@ -37,7 +41,7 @@ import debugRoutes from './routes/debug.js';
 import eventsRouter from './routes/events.js';
 import { generateOpenAPISpec } from './services/core/openapi-registry.js';
 import { errorHandler } from './middleware/error-handler.js';
-import { hostGuard } from './middleware/host-guard.js';
+import { hostGuard, standaloneDocTokenHostGuard } from './middleware/host-guard.js';
 import {
   createConnectorSignedIngress,
   type ConnectorSignedIngress,
@@ -229,6 +233,22 @@ export function createApp(options: {
   // Vite origin) is the sole cross-origin surface; the web app is same-origin
   // via the Vite proxy. Credentials only ever ride an origin this server named,
   // because no branch of `buildCors` answers with a wildcard.
+  // Only fixed bearer leaf routes terminate here. They authenticate before body parsing,
+  // refuse cookies/agent credentials, and own credential-free CORS; host policy still runs first.
+  // Unmatched paths/methods fall through to ordinary CORS, parser and session gates.
+  app.use('/api/canvas/token/docs', (req, res, next) => {
+    if (!isStandaloneDocTokenSurface({ method: req.method, path: req.baseUrl + req.path })) {
+      next();
+      return;
+    }
+    standaloneDocTokenHostGuard(req, res, (error) => {
+      if (error) {
+        next(error);
+        return;
+      }
+      standaloneDocTokenRouter(req, res, next);
+    });
+  });
   app.use(buildCors());
 
   // Never let a browser guess the type of anything this server sends. Set

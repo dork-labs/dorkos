@@ -1,3 +1,14 @@
+import { createRoomLaunchOwnerRollback } from './turn/room-launch-owner-rollback.js';
+import {
+  createRoomReplyTurnGate,
+  shouldCancelUnstartedRoomReply,
+} from './turn/room-reply-turn-data.js';
+import { createRoomTurnStopState } from './turn/room-turn-stop-state.js';
+import { createRoomWaitingGrace } from './turn/room-waiting-grace.js';
+import {
+  createRoomReplyDeadline,
+  createRoomReplyElapsedClock,
+} from './turn/room-reply-deadline.js';
 /**
  * The production {@link RoomTurnRunner}: a room post becomes a real agent turn.
  *
@@ -38,7 +49,7 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { Room } from '@dorkos/shared/room-schemas';
-import type { RoomContextData } from '@dorkos/shared/additional-context';
+import { RoomContextDataSchema, type RoomContextData } from '@dorkos/shared/additional-context';
 import {
   isBlockingInteractionEvent,
   type BlockingInteractionEventType,
@@ -61,8 +72,9 @@ import { RoomTurnRuntimeGoneError } from './room-turn-port.js';
 import { resolveTurnRuntimeType } from '../runtimes/shared/resolve-agent-runtime-type.js';
 import { configManager } from '../core/config-manager.js';
 import {
-  dispatchMessage,
   getOrCreateProjector,
+  onProjectorRekey,
+  peekProjector,
   deriveSessionActivity,
   persistenceModeFor,
   resolveUnattendedSessionDefaults,
@@ -70,6 +82,16 @@ import {
   readAgentExecutionDefaults,
   type SessionStateProjector,
 } from '../session/index.js';
+import {
+  dispatchOriginalRoomMessage,
+  type DispatchMessageOpts,
+} from '../session/message-dispatcher.js';
+import {
+  readOriginalRoomDispatchRequest,
+  readOriginalRoomRequestCurrent,
+  readOriginalRoomSessionOwner,
+} from './service/room-core.js';
+import { RoomError } from './data/room-errors.js';
 import type {
   LateRoomReply,
   RoomTurnRequest,
@@ -77,6 +99,153 @@ import type {
   RoomTurnRunner,
   RoomTurnWaiting,
 } from './room-trigger.js';
+
+declare const originalRunnerBrand: unique symbol;
+export interface OriginalSessionRoomRunner {
+  readonly [originalRunnerBrand]: true;
+}
+const originalRunners = new WeakMap<
+  RoomTurnRunner,
+  {
+    identity: OriginalSessionRoomRunner;
+    run: RoomTurnRunner['run'];
+    interrupt: RoomTurnRunner['interrupt'];
+  }
+>();
+const originalPlacedContexts = new WeakMap<RoomTurnRunner, Map<string, RoomTurnRequest>>();
+/** Completion DATA only: neither a request nor a runtime/producer permission. */
+export type OriginalRoomRunnerCompletion =
+  | Readonly<{ kind: 'returned'; result: RoomTurnResult }>
+  | Readonly<{ kind: 'threw'; cause: unknown }>;
+/** Immutable computed preference/posture DATA; omission is preserved. */
+export interface OriginalRoomRunnerComputedDefaults {
+  readonly whenBusy: DispatchMessageOpts['whenBusy'];
+  readonly settings: Readonly<Awaited<ReturnType<typeof resolveUnattendedSessionDefaults>>>;
+  readonly newSessionPermissionMode?: ReturnType<typeof resolveUnattendedPermissionMode>;
+}
+export interface OriginalRoomRunnerObservation {
+  readonly completion: Promise<OriginalRoomRunnerCompletion>;
+  readonly computedDefaults: OriginalRoomRunnerComputedDefaults | undefined;
+}
+const originalCompletions = new WeakMap<
+  RoomTurnRunner,
+  {
+    request: RoomTurnRequest;
+    observation: OriginalRoomRunnerObservation;
+    defaults: { value?: OriginalRoomRunnerComputedDefaults };
+  }
+>();
+/**
+ * Acquire one read-only completion while this exact original request is current.
+ * Only the latest constructor run is retained; completion retires this lookup.
+ * A saved promise carries actual result DATA, never reusable native authority.
+ */
+export function readOriginalRoomRunnerObservation(
+  runner: RoomTurnRunner,
+  entryId: string
+): OriginalRoomRunnerObservation | undefined {
+  const current = originalCompletions.get(runner);
+  if (
+    !current ||
+    current.request.entry.id !== entryId ||
+    !readOriginalSessionRoomRunner(runner) ||
+    !readOriginalRoomDispatchRequest(current.request, runner) ||
+    !readOriginalRoomRequestCurrent(current.request, runner)
+  ) {
+    return undefined;
+  }
+  return originalCompletions.get(runner) === current &&
+    readOriginalSessionRoomRunner(runner) &&
+    readOriginalRoomDispatchRequest(current.request, runner) &&
+    readOriginalRoomRequestCurrent(current.request, runner)
+    ? current.observation
+    : undefined;
+}
+
+/** Historical placement DATA during the original conventions read; never a launch issuer. */
+export function readOriginalRoomRunnerPlacedContext(
+  runner: RoomTurnRunner,
+  sessionId: string
+): RoomContextData | undefined {
+  const requests = originalPlacedContexts.get(runner);
+  const request = requests?.get(sessionId);
+  if (
+    !request ||
+    !readOriginalSessionRoomRunner(runner) ||
+    !readOriginalRoomDispatchRequest(request, runner) ||
+    !readOriginalRoomRequestCurrent(request, runner)
+  )
+    return undefined;
+  const context = RoomContextDataSchema.parse(request.roomContext);
+  return requests?.get(sessionId) === request &&
+    readOriginalSessionRoomRunner(runner) &&
+    readOriginalRoomRequestCurrent(request, runner)
+    ? context
+    : undefined;
+}
+const originalLaunches = new WeakMap<
+  RoomTurnRequest,
+  {
+    runner: RoomTurnRunner;
+    sessionId: string;
+    prepare: NonNullable<RoomTurnRequest['prepareLaunch']>;
+    active: boolean;
+  }
+>();
+const originalPreparations = new WeakMap<
+  RoomTurnRequest,
+  {
+    runner: RoomTurnRunner;
+    sessionId: string;
+    prepare: RoomTurnRequest['prepareLaunch'];
+  }
+>();
+/** Lookup only: completion is recorded solely by this Runner's actual required preparation. */
+export function readOriginalRoomRunnerPreparation(
+  request: RoomTurnRequest,
+  runner: RoomTurnRunner,
+  sessionId: string
+): boolean {
+  const completed = originalPreparations.get(request);
+  return (
+    !!completed &&
+    completed.runner === runner &&
+    completed.sessionId === sessionId &&
+    !!readOriginalSessionRoomRunner(runner) &&
+    Object.getOwnPropertyDescriptor(request, 'prepareLaunch')?.value === completed.prepare &&
+    !!readOriginalRoomDispatchRequest(request, runner) &&
+    !!readOriginalRoomRequestCurrent(request, runner) &&
+    readOriginalRoomSessionOwner(request, runner, sessionId) &&
+    originalPreparations.get(request) === completed
+  );
+}
+/** Lookup-only actual awaited launch DATA. No caller can register a request or session. */
+export function readOriginalRoomRunnerLaunch(
+  request: RoomTurnRequest
+): Readonly<{ runner: RoomTurnRunner; sessionId: string }> | undefined {
+  const launch = originalLaunches.get(request);
+  if (
+    !launch?.active ||
+    !readOriginalSessionRoomRunner(launch.runner) ||
+    Object.getOwnPropertyDescriptor(request, 'prepareLaunch')?.value !== launch.prepare ||
+    !readOriginalRoomRequestCurrent(request, launch.runner) ||
+    originalLaunches.get(request) !== launch ||
+    !launch.active
+  )
+    return undefined;
+  return Object.freeze({ runner: launch.runner, sessionId: launch.sessionId });
+}
+/** Fixed constructor membership read. No caller can register or supply an origin. */
+export function readOriginalSessionRoomRunner(
+  runner: RoomTurnRunner
+): OriginalSessionRoomRunner | undefined {
+  const state = originalRunners.get(runner);
+  return state &&
+    Object.getOwnPropertyDescriptor(runner, 'run')?.value === state.run &&
+    Object.getOwnPropertyDescriptor(runner, 'interrupt')?.value === state.interrupt
+    ? state.identity
+    : undefined;
+}
 
 /**
  * Lock identity every room-triggered turn takes — see {@link ROOMS.CLIENT_ID},
@@ -114,6 +283,10 @@ const ROOM_CLIENT_ID = ROOMS.CLIENT_ID;
  * citation later.
  */
 export interface RoomTurnRunnerOptions {
+  /** Passive completion DATA, synchronously captured by this original constructor. */
+  observeRun?: (entryId: string, observation: OriginalRoomRunnerObservation) => void;
+  /** Passive scalar observation at the original pre-dispatch boundary. */
+  observeBeforeDispatch?: (entryId: string) => void;
   /** How long the room waits for the answer before continuing without it. */
   waitMs?: () => number;
   /** How long the late collector keeps listening before giving the turn up. */
@@ -238,19 +411,6 @@ async function readRoomConventions(room: Room): Promise<string | null> {
  * is a process-wide SINGLETON: two turns on one session share it, so only a
  * per-turn object can tell a turn's own cleanup from the next turn's entry.
  */
-interface InFlightTurn {
-  /** The runtime object the turn was dispatched to. */
-  runtime: AgentRuntime;
-  /**
-   * A Stop reached this turn before it could be stopped, and is still owed.
-   *
-   * On the TURN rather than in a session-keyed map, and that is what makes it
-   * safe to mark under either of the turn's two names: a mark is an edit to one
-   * turn's own object, so it cannot be found by the next turn on that session
-   * however the halt addressed it. Consumed once, by the turn's first output.
-   */
-  stopOwed: boolean;
-}
 
 /**
  * Build the runner that turns a room trigger into a real session turn.
@@ -259,6 +419,7 @@ interface InFlightTurn {
  * @returns A {@link RoomTurnRunner} bound to the process runtime registry.
  */
 export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {}): RoomTurnRunner {
+  const observeBeforeDispatch = options.observeBeforeDispatch;
   const readWaitMs = options.waitMs ?? (() => DEFAULT_REPLY_WAIT_MS);
   const readCeilingMs = options.ceilingMs ?? (() => DEFAULT_LATE_REPLY_CEILING_MS);
   const readGraceMs = options.waitingGraceMs ?? (() => WAITING_NOTICE_GRACE_MS);
@@ -291,9 +452,9 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
    * whether a stop is owed.
    *
    * **And it is now only for the window before a turn has been captured**, which
-   * is the narrowest this can be. Once {@link runtimeRunningTheTurn} holds an
+   * is the narrowest this can be. Once the current turn map holds an
    * entry, a stop is owed to that TURN and is marked there
-   * ({@link InFlightTurn.stopOwed}) — because the turn answers to two names and
+   * (the stop-state capture's stopOwed field) — because the turn answers to two names and
    * this set answers to one, so a halt arriving on a late answer, after
    * `onSessionBound` moved the room onto the canonical id, would be recorded
    * under a key the re-aim never reads. Marking the turn also makes the mark
@@ -343,7 +504,7 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
    * reachable. A future status event yielded before the boot would spend this
    * one shot on nothing, with every test still green.
    */
-  const stopsWaitingForATurn = new Set<string>();
+  const stopState = createRoomTurnStopState<AgentRuntime>();
   /**
    * The runtime each session's live turn is running on — captured the moment
    * that turn's runtime is chosen, and the ONLY answer the stop path accepts
@@ -385,7 +546,7 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
    * string key and a runtime SINGLETON, until the next turn on that session
    * overwrites it — which the delete at the top of `run` also does.
    */
-  const runtimeRunningTheTurn = new Map<string, InFlightTurn>();
+
   /**
    * Deliver one stop to a runtime that is known to be the right one, and latch
    * it if it landed on nothing.
@@ -423,7 +584,7 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
     }
     return receipt;
   };
-  return {
+  const runner: RoomTurnRunner = {
     async run(request: RoomTurnRequest): Promise<RoomTurnResult> {
       // The session this (room, agent) is bound to — unless it cannot be carried
       // to the agent's home (below), in which case this turn starts a fresh one.
@@ -433,12 +594,12 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // (DOR-1424). A stop that never found a turn is remembered until one shows
       // up; the one it was meant for is the turn that was already running when
       // it was pressed, never this one.
-      stopsWaitingForATurn.delete(sessionId);
+      stopState.begin(sessionId);
       // And no OLDER turn's capture stands for this session either: this one is
       // about to write its own a few lines down, and a `run` that threw before
       // it got there must not leave the stop path aiming at a turn that ended
-      // (see {@link runtimeRunningTheTurn}).
-      runtimeRunningTheTurn.delete(sessionId);
+      // (see the current turn map).
+
       // **The runtime that started this conversation is the one that finishes
       // it** (ADR-0255, DOR-764). Read off the session's binding, and off the
       // agent's manifest only for a session nobody owns yet — which is a first
@@ -479,7 +640,7 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         });
         boundSessionId = null;
         sessionId = randomUUID();
-        stopsWaitingForATurn.delete(sessionId);
+        stopState.clearPending(sessionId);
         runtimeType = await resolveTurnRuntimeType({
           sessionId: null,
           agentPath: request.agentPath,
@@ -535,15 +696,13 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // no longer be running `interrupt` reads it from here rather than asking
       // the manifest — which for a first turn is a question with a different
       // answer the moment somebody edits `.dork/agent.json`.
-      const inFlight: InFlightTurn = { runtime, stopOwed: false };
-      /** Every session id this turn answers a stop under. */
-      const turnIds = new Set<string>([sessionId]);
-      runtimeRunningTheTurn.set(sessionId, inFlight);
-      /** Forget this turn's runtime — but only while the map still holds OURS. */
+      const inFlight = stopState.capture(sessionId, runtime);
+      let canonicalId = sessionId;
+      let stopRekeys = (): void => {};
+      /** Retire this turn's exact rekey listener and all of its captured aliases. */
       const forgetTurnRuntime = (): void => {
-        for (const id of turnIds) {
-          if (runtimeRunningTheTurn.get(id) === inFlight) runtimeRunningTheTurn.delete(id);
-        }
+        stopRekeys();
+        stopState.forget(inFlight);
       };
 
       // **Whether this session can post at all, asked once and only to say so**
@@ -746,6 +905,12 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // and it fails the way the rest of this path does: the room still answers,
       // without its conventions.
       let roomConventions: string | null = null;
+      const placedContexts = originalPlacedContexts.get(runner)!;
+      if (
+        readOriginalRoomDispatchRequest(request, runner) &&
+        readOriginalRoomRequestCurrent(request, runner)
+      )
+        placedContexts.set(sessionId, request);
       try {
         roomConventions = await readRoomConventionsBlock(request.room);
       } catch (err) {
@@ -753,6 +918,8 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
           roomId: request.room.id,
           error: err instanceof Error ? err.message : String(err),
         });
+      } finally {
+        if (placedContexts.get(sessionId) === request) placedContexts.delete(sessionId);
       }
 
       const waitMs = readWaitMs();
@@ -816,10 +983,7 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
           // operation rather than two that can disagree — and it is evaluated
           // even when the turn is already marked, so a session mark cannot be
           // left standing for the next turn to find.
-          const owedToThisTurn = inFlight.stopOwed;
-          const owedToThisSession = stopsWaitingForATurn.delete(sessionId);
-          if (!owedToThisTurn && !owedToThisSession) return;
-          inFlight.stopOwed = false;
+          if (!stopState.consume(inFlight, sessionId)) return;
           logger.info('[rooms] a turn stopped while it was starting can be stopped now', {
             sessionId,
             roomId: request.room.id,
@@ -862,44 +1026,69 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
             });
         },
       });
-      // **The turn's runtime is remembered for exactly as long as the turn**,
-      // and this is the one place that knows when that is. The collector settles
-      // on every ending a turn has, and there are five: its own `turn_end`, the
-      // ceiling giving up on one that never closes, the read off its stream
-      // failing, a refused dispatch cancelling it below, and an ACCEPTED
-      // dispatch that is then dropped without ever starting (`onSettled`, the
-      // DOR-1242 case). The LATE window is inside all of that, so a halt pressed
-      // on an answer that outran the room's patience still finds the runtime it
-      // is running on.
-      //
-      // Never awaited: it outlives `run`. The `catch` is not decoration —
-      // `collectReply` calls `onActivity` from outside its own try, so a
-      // publisher that throws rejects this promise, and an unhandled rejection
-      // out of bookkeeping would be a process-level event for a turn that ended.
-      void collecting.afterDeadline.finally(forgetTurnRuntime).catch(() => undefined);
-
-      // Who owns this session, written where a failure is LOGGED rather than
-      // thrown: a `SQLITE_BUSY` on this one bookkeeping row must never fail a
-      // turn or escape `run` (see the late write below for why).
-      let mintedRowAtLaunch = false;
-      const recordSessionOwner = async (ownedId: string): Promise<boolean> => {
+      // Late canonical bookkeeping remains best effort. Required original
+      // launch preparation separately refuses a failed owner write.
+      const launchOwnerRollback = createRoomLaunchOwnerRollback();
+      const recordSessionOwner = async (
+        ownedId: string
+      ): Promise<{ ok: true; bound: boolean } | { ok: false; cause: unknown }> => {
         try {
-          return await runtimeRegistry.persistSessionRuntime(
+          const bound = await runtimeRegistry.persistSessionRuntime(
             ownedId,
             runtimeType,
             { kind: 'room', externalAuthor: request.externalAuthor },
             request.agentPath
           );
+          if (typeof bound !== 'boolean')
+            throw new Error('Original session owner write returned no binding outcome.');
+          return { ok: true, bound };
         } catch (err) {
-          logger.warn('[rooms] could not record which runtime owns this session', {
-            sessionId: ownedId,
-            roomId: request.room.id,
-            runtimeType,
-            error: err instanceof Error ? err.message : String(err),
-          });
-          return false;
+          try {
+            logger.warn('[rooms] could not record which runtime owns this session', {
+              sessionId: ownedId,
+              roomId: request.room.id,
+              runtimeType,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          } catch {
+            /* The actual owner-write failure, including undefined, remains first. */
+          }
+          return { ok: false, cause: err };
         }
       };
+
+      // Capture the actual terminal id before retiring this turn's exact aliases
+      // and rekey listener. Best-effort DB latency must not extend stop ownership.
+      // A real started error still owns its canonical session; an unstarted
+      // cancellation must not create a row. Late delivery keeps its original promise.
+      const attributedCompletion = collecting.afterDeadline
+        .then(async (reply) => {
+          const finalId = canonicalId;
+          const ownsFinalSession =
+            ownTurn.startSeq !== null &&
+            stopState.current(finalId) === inFlight &&
+            projector.sessionId === finalId &&
+            peekProjector(finalId) === projector;
+          forgetTurnRuntime();
+          if (ownsFinalSession) await recordSessionOwner(finalId);
+          return reply;
+        })
+        .finally(forgetTurnRuntime);
+      void attributedCompletion.catch(() => undefined);
+
+      // A rename may arrive after admission, or even before its response. Follow
+      // only this turn's actual captured projector and still-current runtime slot.
+      stopRekeys = onProjectorRekey((oldId, newId) => {
+        if (
+          stopState.current(oldId) !== inFlight ||
+          projector.sessionId !== newId ||
+          peekProjector(newId) !== projector
+        ) {
+          return;
+        }
+        canonicalId = newId;
+        stopState.alias(newId, inFlight);
+      });
 
       // Taken back only for an id this run minted, and only while this process
       // lives: a server that dies between the launch-time write and the turn
@@ -907,8 +1096,7 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // same exposure a person's first message has, and harmless (no room
       // points at it).
       const forgetLaunchRow = async (): Promise<void> => {
-        if (!mintedRowAtLaunch) return;
-        mintedRowAtLaunch = false;
+        if (!launchOwnerRollback.take()) return;
         await runtimeRegistry.forgetUnstartedSession(sessionId).catch((err: unknown) => {
           logger.warn('[rooms] could not take back the binding of a turn that never ran', {
             sessionId,
@@ -918,7 +1106,8 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         });
       };
 
-      const result = await dispatchMessage({
+      const originalPrepareLaunch = request.prepareLaunch;
+      const dispatchOpts: DispatchMessageOpts = {
         sessionId,
         clientId: ROOM_CLIENT_ID,
         content: prompt,
@@ -946,20 +1135,66 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         // ghost-row case the late write below was moved for stays closed. The
         // late write stays too, for the id a runtime renames the session to.
         //
-        // BEFORE the room's own launch step (the turn-start refresh), so a
-        // refresh that fails — which the dispatcher logs and launches past —
-        // can never leave the turn starting without its owner on record.
+        // BEFORE the room's own launch step. Original Room preparation must
+        // complete and retain its real native owner before provider entry;
+        // ordinary non-Room preparation still has its generic fallback.
         //
         // Then the room's step: its files section, which carries the
         // turn-start refresh's outcome and the counts measured after it,
         // replaces the one placement measured, so the model is told about the
         // files as they are when it starts (I8).
         prepareLaunch: async () => {
+          originalPreparations.delete(request);
           // Only a row for an id this run MINTED is ever taken back below.
-          mintedRowAtLaunch = (await recordSessionOwner(sessionId)) && boundSessionId === null;
-          if (request.prepareLaunch === undefined) return {};
-          const launched = await request.prepareLaunch(sessionId);
-          return launched.files ? { roomContext: { ...roomContext, files: launched.files } } : {};
+          const ownership = await recordSessionOwner(sessionId);
+          if (!ownership.ok) throw ownership.cause;
+          launchOwnerRollback.record(ownership.bound, boundSessionId === null);
+          if (!readOriginalRoomSessionOwner(request, runner, sessionId))
+            throw new RoomError('ROOM_NOT_FOUND', 'No such room');
+          // Native request lifetime is required even for an ordinary at-home
+          // turn whose unavailable files produced no prepareLaunch function.
+          if (
+            !readOriginalRoomDispatchRequest(request, runner) ||
+            !readOriginalRoomRequestCurrent(request, runner)
+          )
+            throw new RoomError('ROOM_NOT_FOUND', 'No such room');
+          if (originalPrepareLaunch === undefined) {
+            originalPreparations.set(request, {
+              runner,
+              sessionId,
+              prepare: originalPrepareLaunch,
+            });
+            return {};
+          }
+          if (
+            Object.getOwnPropertyDescriptor(request, 'prepareLaunch')?.value !==
+              originalPrepareLaunch ||
+            !readOriginalRoomDispatchRequest(request, runner) ||
+            !readOriginalRoomRequestCurrent(request, runner) ||
+            originalLaunches.has(request)
+          )
+            throw new RoomError('ROOM_NOT_FOUND', 'No such room');
+          const launch = { runner, sessionId, prepare: originalPrepareLaunch, active: true };
+          originalLaunches.set(request, launch);
+          try {
+            const launched = await originalPrepareLaunch.call(request, sessionId);
+            if (!readOriginalRoomRunnerLaunch(request))
+              throw new RoomError('ROOM_NOT_FOUND', 'No such room');
+            const prepared = launched.files
+              ? { roomContext: { ...roomContext, files: launched.files } }
+              : {};
+            if (!readOriginalRoomRunnerLaunch(request))
+              throw new RoomError('ROOM_NOT_FOUND', 'No such room');
+            originalPreparations.set(request, {
+              runner,
+              sessionId,
+              prepare: originalPrepareLaunch,
+            });
+            return prepared;
+          } finally {
+            launch.active = false;
+            originalLaunches.delete(request);
+          }
         },
         roomContext,
         // Routing metadata, never prompt context: the room, the acting member and
@@ -1041,7 +1276,7 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         // has a seq, keeps its existing path, and is reported by the collector
         // that watched it — this must not cut that short.
         onSettled: (outcome) => {
-          if (outcome === 'failed' && ownTurn.startSeq === null) collecting.cancel();
+          if (shouldCancelUnstartedRoomReply(outcome, ownTurn.startSeq)) collecting.cancel();
         },
         onError: (err) => {
           logger.warn('[rooms] triggered turn errored', {
@@ -1050,13 +1285,52 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
             error: err instanceof Error ? err.message : String(err),
           });
         },
-      }).catch(async (err: unknown) => {
-        // A launch that recorded this minted id and then produced no turn:
-        // nothing will ever bind that id, so its row is taken back rather than
-        // left as a ghost (the case the late write was once moved for).
-        await forgetLaunchRow();
-        throw err;
-      });
+      };
+      // Capture copied DATA only for this constructor's actual current request.
+      // Observation failure cannot replace the genuine dispatch or its cause.
+      try {
+        const observed = originalCompletions.get(runner);
+        if (
+          observed?.request === request &&
+          readOriginalSessionRoomRunner(runner) &&
+          readOriginalRoomDispatchRequest(request, runner) &&
+          readOriginalRoomRequestCurrent(request, runner)
+        ) {
+          const settings = Object.freeze({ ...seed });
+          observed.defaults.value = Object.freeze({
+            settings,
+            whenBusy: dispatchOpts.whenBusy,
+            ...(unattendedMode !== undefined ? { newSessionPermissionMode: unattendedMode } : {}),
+          });
+          observeBeforeDispatch?.(request.entry.id);
+        }
+      } catch {
+        // Passive DATA capture does not change turn behavior.
+      }
+      const result = await dispatchOriginalRoomMessage(request, runner, dispatchOpts).catch(
+        async (err: unknown) => {
+          // A launch that recorded this minted id and then produced no turn:
+          // nothing will ever bind that id, so its row is taken back rather than
+          // left as a ghost (the case the late write was once moved for).
+          // A refusing launch may reject without onSettled. Only a launch
+          // without an actual turn_start can cancel/retire its collector and
+          // roll back its minted row. A started turn keeps its real terminal path.
+          if (ownTurn.startSeq === null) {
+            try {
+              collecting.cancel();
+            } catch {
+              // The original launch rejection remains first, including undefined.
+            }
+            forgetTurnRuntime();
+            try {
+              await forgetLaunchRow();
+            } catch {
+              // A failed rollback must not replace the original launch rejection.
+            }
+          }
+          throw err;
+        }
+      );
 
       if (!result.accepted) {
         // Two ways to get here. The session's lock is held by somebody else,
@@ -1083,17 +1357,21 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         return { sessionId, text: null, unanswered: 'busy' };
       }
 
-      const canonicalId = result.canonicalId ?? sessionId;
+      // Do not replace a later observed rename with the admission response's
+      // earlier id. Without a rekey, retain the original accepted-id behavior.
+      if (canonicalId === sessionId) canonicalId = result.canonicalId ?? sessionId;
       // The runtime renamed the session, so the stop path has a second name to
       // find this turn under: the room asks with the placeholder until
       // `rebindRoomSession` runs and with the canonical id afterwards, and a
       // late halt arrives on the far side of that switch. Same entry, both keys,
       // dropped together (DOR-1721).
-      if (canonicalId !== sessionId) {
-        turnIds.add(canonicalId);
-        runtimeRunningTheTurn.set(canonicalId, inFlight);
+      if (
+        canonicalId !== sessionId &&
+        (stopState.current(sessionId) === inFlight || stopState.current(canonicalId) === inFlight)
+      ) {
+        stopState.alias(canonicalId, inFlight);
       }
-      // **As early as it is knowable, and before the answer is collected.** The
+      // **As early as admission knows it, and before the answer is collected.** The
       // room bound a `(room, agent)` session before the claim, but on a first
       // turn that id is a placeholder the runtime renames mid-flight — so a tool
       // post that read the binding would stamp an id nothing writes to again
@@ -1101,7 +1379,8 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // call inside the turn sees the real one.
       request.onSessionBound(canonicalId);
 
-      // The turn started, so the session is real: record which runtime owns it.
+      // Final ownership follows actual collector completion, when even a late
+      // native rename is known. The turn started, so the session is real.
       // The registry binds a session that has no runtime yet and leaves a bound
       // one untouched, so a resumed session is a no-op.
       //
@@ -1135,12 +1414,10 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // cursor and replayed the whole window to the next turn
       // (room-participation spec §8.3).
       //
-      // So the invariant this line protects is the dispatcher's, not its own: a
+      // So the invariant this bookkeeping protects is the dispatcher's, not its own: a
       // throw out of `run` must mean NOTHING RAN. Nothing that happens after the
       // model has spoken may throw past here. What is lost when this fails is one
       // runtime-attribution row, which the next turn on this session rewrites.
-      await recordSessionOwner(canonicalId);
-
       const reply = await collecting.beforeDeadline;
       if (!reply) {
         // The room stops WAITING here; the turn keeps running. Its answer is
@@ -1156,6 +1433,7 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         };
       }
 
+      await attributedCompletion;
       return {
         sessionId: canonicalId,
         text: reply.text,
@@ -1170,14 +1448,14 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // the turn, which is the only thing a stop can usefully reach. Asking the
       // ladder below instead is what a manifest edit landing inside a first turn
       // used to be able to change out from under the halt.
-      const inFlight = runtimeRunningTheTurn.get(sessionId);
+      const inFlight = stopState.current(sessionId);
       if (inFlight !== undefined) {
         // Marked on the TURN, under whichever of its two names this halt used.
         // A session-keyed mark could only ever be consumed under one of them, so
         // a halt that arrived after `onSessionBound` — which is every halt on a
         // late answer — was recorded where the re-aim does not look.
         return await deliverStop(inFlight.runtime, sessionId, () => {
-          inFlight.stopOwed = true;
+          stopState.oweTurn(inFlight);
         });
       }
 
@@ -1207,12 +1485,72 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         return { outcome: 'failed', reason: 'delivery-failed', runtime: runtimeType };
       }
       // No turn to mark, so the SESSION carries it — the pre-capture window,
-      // and the only thing {@link stopsWaitingForATurn} is still for.
+      // and the only thing the pending session marks is still for.
       return await deliverStop(runtimeRegistry.get(runtimeType), sessionId, () =>
-        stopsWaitingForATurn.add(sessionId)
+        stopState.oweSession(sessionId)
       );
     },
   };
+  // Capture this constructor's own implementation before its original method
+  // identity is registered. No caller wraps or replaces a registered runner.
+  const runOriginal = runner.run;
+  const observeRun = options.observeRun;
+  runner.run = async (request) => {
+    const finishing: { complete?: (completion: OriginalRoomRunnerCompletion) => void } = {};
+    let current:
+      | {
+          request: RoomTurnRequest;
+          observation: OriginalRoomRunnerObservation;
+          defaults: { value?: OriginalRoomRunnerComputedDefaults };
+        }
+      | undefined;
+    if (
+      readOriginalSessionRoomRunner(runner) &&
+      readOriginalRoomDispatchRequest(request, runner) &&
+      readOriginalRoomRequestCurrent(request, runner)
+    ) {
+      const completion = new Promise<OriginalRoomRunnerCompletion>((resolve) => {
+        finishing.complete = resolve;
+      });
+      const defaults: { value?: OriginalRoomRunnerComputedDefaults } = {};
+      current = {
+        request,
+        defaults,
+        observation: Object.freeze({
+          completion,
+          get computedDefaults() {
+            return defaults.value;
+          },
+        }),
+      };
+      originalCompletions.set(runner, current);
+      // The callback receives neither a request nor producer/placement authority.
+      // It cannot delay this turn or replace its original result/raw failure.
+      try {
+        observeRun?.(request.entry.id, current.observation);
+      } catch {
+        // Passive observer failures, including undefined, never alter the turn.
+      }
+    }
+    try {
+      const result = await runOriginal.call(runner, request);
+      finishing.complete?.(Object.freeze({ kind: 'returned', result }));
+      return result;
+    } catch (cause) {
+      finishing.complete?.(Object.freeze({ kind: 'threw', cause }));
+      throw cause;
+    } finally {
+      if (current && originalCompletions.get(runner) === current)
+        originalCompletions.delete(runner);
+    }
+  };
+  originalPlacedContexts.set(runner, new Map());
+  originalRunners.set(runner, {
+    identity: Object.freeze({}) as OriginalSessionRoomRunner,
+    run: runner.run,
+    interrupt: runner.interrupt,
+  });
+  return runner;
 }
 
 /**
@@ -1469,7 +1807,7 @@ function collectReply(
   }
 ): ReplyCollector {
   const abort = new AbortController();
-  const startedAt = Date.now();
+  const elapsed = createRoomReplyElapsedClock();
   const ceiling = setTimeout(() => abort.abort(), bounds.ceilingMs);
   // `unref` so a pending room turn never holds the process open on shutdown.
   ceiling.unref?.();
@@ -1482,19 +1820,11 @@ function collectReply(
    * Keyed by the interaction's own id so a turn stopped on two prompts at once
    * cancels exactly the one that was answered.
    */
-  const waitingOn = new Map<string, ReturnType<typeof setTimeout>>();
-  /** Forget one prompt's grace timer — it was answered, or the turn is over. */
-  const stopWaitingOn = (id: string): void => {
-    const grace = waitingOn.get(id);
-    if (grace === undefined) return;
-    clearTimeout(grace);
-    waitingOn.delete(id);
-  };
-  /** Drop every outstanding grace timer. The turn is over; the wait is too. */
-  const stopWaitingOnEverything = (): void => {
-    for (const grace of waitingOn.values()) clearTimeout(grace);
-    waitingOn.clear();
-  };
+  const waitingGrace = createRoomWaitingGrace<RoomTurnWaiting>(bounds.graceMs, (waiting) =>
+    bounds.onWaiting(waiting)
+  );
+  const stopWaitingOn = waitingGrace.resolve;
+  const stopWaitingOnEverything = waitingGrace.clear;
 
   /** Whether this turn has already said it is doing nothing. */
   let cleared = false;
@@ -1522,20 +1852,16 @@ function collectReply(
       if (collecting.trim() !== '') paragraphs.push(collecting.trim());
       collecting = '';
     };
-    let started = false;
+    const ownEvents = createRoomReplyTurnGate(() => bounds.ownTurn.startSeq);
     /** Whether the runtime behind this turn has produced anything yet. */
     let producing = false;
     let ended = false;
     let failed = false;
     try {
       for await (const event of projector.subscribe(sinceCursor, abort.signal)) {
-        if (!started) {
-          // Everything before our own turn opens belongs to somebody else's,
-          // and "our own" is an identity rather than a resemblance.
-          if (event.type !== 'turn_start' || event.seq !== bounds.ownTurn.startSeq) continue;
-          started = true;
-          continue;
-        }
+        // Ordinary sequence classification cannot issue a turn or stamp a projector.
+        // The start sequence is still read from this genuine dispatch's private holder.
+        if (!ownEvents.read(event.type, event.seq)) continue;
         // Past the synthesized `turn_start`, so this event came off the runtime:
         // the turn is really running, and a Stop that arrived while it was still
         // booting has something to aim at at last (DOR-1424).
@@ -1556,12 +1882,7 @@ function collectReply(
             kind: WAITING_KINDS[event.type],
             ...(event.type === 'approval_required' ? { toolName: event.toolName } : {}),
           };
-          const grace = setTimeout(() => {
-            waitingOn.delete(event.id);
-            bounds.onWaiting(waiting);
-          }, bounds.graceMs);
-          grace.unref?.();
-          waitingOn.set(event.id, grace);
+          waitingGrace.schedule(event.id, waiting);
         }
         // Answered, denied, cancelled or timed out — every ending arrives here
         // (`interaction_cancelled` is normalized into this event), so the room
@@ -1673,33 +1994,18 @@ function collectReply(
       // A stream that ends without a `turn_end` was aborted — the ceiling, or a
       // cancel. Either way nobody got an answer, which is a failure to report.
       failed: failed || !ended,
-      waitedMs: Date.now() - startedAt,
+      waitedMs: elapsed(),
     };
   })();
 
-  let deadline: ReturnType<typeof setTimeout> | undefined;
-  const passed = new Promise<null>((resolve) => {
-    deadline = setTimeout(() => resolve(null), bounds.waitMs);
-    deadline.unref?.();
-  });
-
+  const deadline = createRoomReplyDeadline(closed, bounds.waitMs);
   return {
-    beforeDeadline: Promise.race([
-      closed.then((turn) => {
-        clearTimeout(deadline);
-        return turn;
-      }),
-      passed,
-    ]),
-    afterDeadline: closed.then((turn) => ({
-      text: turn.text,
-      waitedMs: turn.waitedMs,
-      ...(turn.failed ? { unanswered: 'failed' as const } : {}),
-    })),
+    beforeDeadline: deadline.beforeDeadline,
+    afterDeadline: deadline.afterDeadline,
     cancel: () => {
       abort.abort();
       clearTimeout(ceiling);
-      clearTimeout(deadline);
+      deadline.clear();
       stopWaitingOnEverything();
     },
   };

@@ -1,4 +1,18 @@
 import type {
+  BrowserProfile,
+  BrowserInstance,
+  BrowserCloseRequest,
+  BrowserCloseReceipt,
+} from './browser-schemas.js';
+import type {
+  CanvasChannelDeclaration,
+  CanvasChannelRouteGrantRequest,
+  CanvasChannelRouteApprovalResult,
+  CanvasChannelManagementSnapshot,
+  CanvasChannelTokenRequest,
+  CanvasChannelTokenResponse,
+  CanvasChannelCheckboxRequest,
+  CanvasChannelCheckboxReceipt,
   PageEvent,
   CanvasChannelEventReceipt,
   CanvasChannelReplayResponse,
@@ -615,7 +629,12 @@ export interface ClaudePluginTransport {
  * throw.
  */
 export type WriteFileResult =
-  | { ok: true; hash: string; effect: 'changed' | 'no_op' }
+  | {
+      ok: true;
+      hash: string;
+      effect: 'changed' | 'no_op';
+      documentReceipt?: import('./canvas-channel-schemas.js').CanvasChannelEventReceipt;
+    }
   | { ok: false; conflict: { currentHash: string; currentContent: string } };
 
 /** A single progress frame emitted while a runtime binary is being provisioned on demand. */
@@ -1105,7 +1124,11 @@ export interface Transport
     cwd: string,
     filePath: string,
     content: string,
-    options?: { expectedHash?: string; expectedContent?: string }
+    options?: {
+      expectedHash?: string;
+      expectedContent?: string;
+      documentSave?: import('./schemas.js').CanvasDocumentSaveIdentity;
+    }
   ): Promise<WriteFileResult>;
   /**
    * Build a same-origin URL that streams a local media file (image or PDF) from
@@ -1121,12 +1144,53 @@ export interface Transport
   mediaUrl(cwd: string, filePath: string): string | null;
 
   /** Record a document event; its receipt does not imply a completed agent turn. */
+  askCanvasDocSelection(
+    request: import('./canvas-channel-schemas.js').CanvasChannelSelectionRequest
+  ): Promise<import('./canvas-channel-schemas.js').CanvasChannelEventReceipt>;
   ingestCanvasEvent(
     documentId: string,
     event: PageEvent,
     condition: { readonly expectedGeneration: string },
     signal: AbortSignal
   ): Promise<CanvasChannelEventReceipt>;
+  /** Replace explicit declarations without approving or replaying events. */
+  configureCanvasDocChannel(
+    documentId: string,
+    channel: CanvasChannelDeclaration,
+    openerAgentId?: string
+  ): Promise<{ configured: true }>;
+  /** Request or consume one exact operator route decision; retain the original request for a ticket retry. */
+  approveCanvasDocRoute(
+    request: CanvasChannelRouteGrantRequest,
+    routeApprovalToken?: string
+  ): Promise<CanvasChannelRouteApprovalResult>;
+  /** Stop a granted route without replaying previously accepted work. */
+  revokeCanvasDocRoute(documentId: string, grantId: string): Promise<{ revoked: true }>;
+  /** Explicit replay creates a new generation only for reviewed expired, never-admitted work. */
+  /** Authenticated per-mounted-view presence; viewer IDs cannot refresh another caller/document. */
+  updateCanvasDocPresence(
+    documentId: string,
+    request: import('./canvas-channel-schemas.js').CanvasChannelPresenceRequest
+  ): Promise<import('./canvas-channel-schemas.js').CanvasChannelPresenceResponse>;
+  replayCanvasDocBatch(
+    request: import('./canvas-channel-schemas.js').CanvasChannelBatchReplayRequest
+  ): Promise<import('./canvas-channel-schemas.js').CanvasChannelBatchReplayResult>;
+  /** Read bounded current operator DATA; metadata never supplies route authority. */
+  getCanvasDocManagement(documentId: string): Promise<CanvasChannelManagementSnapshot>;
+  /** Mint a standalone credential once through the authenticated original document owner. */
+  issueCanvasDocToken(
+    request: CanvasChannelTokenRequest,
+    approvedGrantIds: readonly string[]
+  ): Promise<CanvasChannelTokenResponse>;
+  /** Revoke a token without presenting the standalone credential as operator authority. */
+  revokeCanvasDocToken(
+    documentId: string,
+    tokenId: string
+  ): Promise<{ tokenId: string; revokedAt: string }>;
+  /** Save one native checkbox through the approved installed writer, retaining event identity on retry. */
+  toggleCanvasCheckbox(
+    request: CanvasChannelCheckboxRequest
+  ): Promise<CanvasChannelCheckboxReceipt>;
   /** Read a bounded document event page and current state. Honor resetRequired before retrying old inputs. */
   getCanvasChannel(
     documentId: string,
@@ -3692,4 +3756,21 @@ export interface Transport
     accountId: string,
     projects: string[] | null
   ): Promise<OnlyProjectsResponse>;
+  /** Owner-filtered nonsecret browser profile metadata. */
+  getBrowserProfiles(signal?: AbortSignal): Promise<BrowserProfile[]>;
+  /** Read one accessible profile; unavailable and inaccessible requests reject. */
+  getBrowserProfile(profileId: string, signal?: AbortSignal): Promise<BrowserProfile>;
+  /** Current original generation projections, never an authority token. */
+  getBrowserInstances(signal?: AbortSignal): Promise<BrowserInstance[]>;
+  /** Read the exact original generation without silently replacing it. */
+  getBrowserInstance(
+    browserId: string,
+    browserGeneration: number,
+    signal?: AbortSignal
+  ): Promise<BrowserInstance>;
+  /** Explicit stop; unverified cleanup remains an unverified receipt. */
+  closeBrowserInstance(
+    request: BrowserCloseRequest,
+    signal?: AbortSignal
+  ): Promise<BrowserCloseReceipt>;
 }

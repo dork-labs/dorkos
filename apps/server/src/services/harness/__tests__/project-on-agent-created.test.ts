@@ -29,7 +29,8 @@ vi.mock('../../core/config-manager.js', () => ({
 // `realpathSync` is the agent-home check's, not this module's: `isAgentHome`
 // canonicalizes both sides so a home reached through a symlink still matches.
 // Identity here, because the paths in this file are already canonical.
-vi.mock('node:fs', () => ({
+vi.mock('node:fs', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('node:fs')>()),
   existsSync: vi.fn(),
   realpathSync: (p: string) => p,
 }));

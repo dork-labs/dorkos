@@ -453,6 +453,65 @@ describe('native document widget actions', () => {
     };
     expect(text).toContain(expected[status]);
   });
+  it.each([
+    ['handled', 'The destination reported that it handled this action.'],
+    ['rejected', 'The destination could not handle this action.'],
+    ['turn_started', 'The destination started working.'],
+    ['turn_done', 'The destination finished. Handling is not confirmed yet.'],
+    ['waiting', 'Saved; waiting for the destination.'],
+  ] as const)(
+    'keeps historical %s neutral when same-document routing changes',
+    async (status, text) => {
+      vi.mocked(transport.ingestCanvasEvent).mockImplementation(async (_id, event) =>
+        receipt(event, status)
+      );
+      const doc: WidgetDocument = {
+        version: 1,
+        root: {
+          type: 'form',
+          children: [{ type: 'input', name: 'title', label: 'Title', required: true }],
+          submit: { label: 'Save', action: { kind: 'emit', type: 'task.changed' } },
+        },
+      };
+      const channel = port();
+      const view = draw(doc, channel);
+      const user = userEvent.setup();
+      const input = screen.getByRole('textbox') as HTMLInputElement;
+      await user.type(input, 'Original task');
+      await user.click(screen.getByRole('button', { name: 'Save' }));
+      const row = screen.getByTestId('widget-action-status');
+      expect(row).toHaveTextContent(text);
+      const originalId = row.getAttribute('data-event-id');
+      expect(transport.ingestCanvasEvent).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(transport.ingestCanvasEvent).mock.calls[0][1].payload).toMatchObject({
+        title: 'Original task',
+      });
+      await user.clear(input);
+      await user.type(input, 'Next draft');
+      input.setSelectionRange(3, 5);
+      for (const destinationLabel of ['Approval needed', 'Another destination']) {
+        view.rerender(
+          <TransportProvider transport={transport}>
+            <WidgetRenderer
+              document={doc}
+              channel={{ ...channel, enabled: false, destinationLabel }}
+            />
+          </TransportProvider>
+        );
+        expect(screen.getByTestId('widget-action-status')).toBe(row);
+        expect(row).toHaveTextContent(text);
+        expect(row).not.toHaveTextContent(destinationLabel);
+        expect(row).toHaveAttribute('data-event-id', originalId);
+        expect(screen.getByRole('textbox')).toBe(input);
+        expect(input).toHaveValue('Next draft');
+        expect(input).toHaveFocus();
+        expect(input.selectionStart).toBe(3);
+        expect(input.selectionEnd).toBe(5);
+        expect(transport.ingestCanvasEvent).toHaveBeenCalledTimes(1);
+        expect(transport.getCanvasEventReceipt).not.toHaveBeenCalled();
+      }
+    }
+  );
   it('does not assume complete history when the original receipt floor was unknown', async () => {
     vi.mocked(transport.ingestCanvasEvent).mockRejectedValueOnce(new Error('offline'));
     const channel = port();
@@ -853,15 +912,16 @@ it('leaves a reentrant newer same-owner inspection intact instead of accepting a
     const signal = vi.mocked(transport.getCanvasEventReceipt).mock.calls[0][3];
     expect(signal.aborted).toBe(false);
     expect(view.result.current.records[0].receipt).toBeUndefined();
-    const inspectedReceipt = receipt(original);
+    const inspected = receipt(original);
     await act(async () => {
-      resolve(inspectedReceipt);
+      resolve(inspected);
       await nested;
     });
     expect(view.result.current.records[0]).toMatchObject({
       phase: 'accepted',
-      receipt: inspectedReceipt,
+      receipt: inspected,
     });
+    expect(view.result.current.records[0].receipt).toEqual(inspected);
     expect(transport.ingestCanvasEvent).toHaveBeenCalledTimes(1);
   } finally {
     view.unmount();

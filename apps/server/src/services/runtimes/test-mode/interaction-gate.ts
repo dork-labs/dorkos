@@ -116,6 +116,8 @@ interface SessionGate {
   readonly elicitations: Map<string, (decision: ElicitationDecision) => void>;
   /** FIFO of scenarios parked on {@link ScenarioContext.awaitStep}. */
   readonly steps: (() => void)[];
+  /** Read-only observers of this exact turn registering a step barrier. */
+  readonly stepObservers: Set<() => void>;
   /** Every pending wait's rejecter, so an abort can clear them all at once. */
   readonly rejecters: Set<(err: Error) => void>;
 }
@@ -154,6 +156,7 @@ class InteractionGate {
       answers: new Map(),
       elicitations: new Map(),
       steps: [],
+      stepObservers: new Set(),
       rejecters: new Set(),
     };
     this.sessions.set(sessionId, gate);
@@ -224,6 +227,42 @@ class InteractionGate {
     return true;
   }
 
+  /**
+   * Observe an already-open turn registering its real step barrier, without
+   * releasing it. Replacement/stop or observer cancellation rejects the wait.
+   * No turn, token, native claim or queued step is created by this observer.
+   */
+  waitForStep(sessionId: string, signal: AbortSignal): Promise<void> {
+    const gate = this.sessions.get(sessionId);
+    if (!gate) return Promise.reject(new ScenarioAborted());
+    return new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const finish = (cause?: ScenarioAborted) => {
+        if (settled) return;
+        settled = true;
+        gate.stepObservers.delete(onStep);
+        gate.controller.signal.removeEventListener('abort', onAbort);
+        signal.removeEventListener('abort', onAbort);
+        if (cause) reject(cause);
+        else resolve();
+      };
+      const onAbort = () => finish(new ScenarioAborted());
+      const onStep = () => {
+        if (
+          this.sessions.get(sessionId) !== gate ||
+          gate.controller.signal.aborted ||
+          signal.aborted
+        )
+          onAbort();
+        else if (gate.steps.length > 0) finish();
+      };
+      gate.controller.signal.addEventListener('abort', onAbort, { once: true });
+      signal.addEventListener('abort', onAbort, { once: true });
+      gate.stepObservers.add(onStep);
+      onStep();
+    });
+  }
+
   /** Release ONE step barrier. Returns whether a scenario was parked on one. */
   step(sessionId: string): boolean {
     const gate = this.sessions.get(sessionId);
@@ -289,6 +328,7 @@ class InteractionGate {
     gate.answers.clear();
     gate.elicitations.clear();
     gate.steps.length = 0;
+    gate.stepObservers.clear();
     for (const reject of rejecters) reject(new ScenarioAborted());
   }
 
@@ -322,7 +362,11 @@ class InteractionGate {
         parked<Record<string, string>>((resolve) => gate.answers.set(toolCallId, resolve)),
       awaitElicitation: (interactionId) =>
         parked<ElicitationDecision>((resolve) => gate.elicitations.set(interactionId, resolve)),
-      awaitStep: () => parked<void>((resolve) => gate.steps.push(() => resolve())),
+      awaitStep: () =>
+        parked<void>((resolve) => {
+          gate.steps.push(() => resolve());
+          for (const observer of [...gate.stepObservers]) observer();
+        }),
       delay: (ms) =>
         parked<void>((resolve) => {
           const timer = setTimeout(() => resolve(), ms);

@@ -487,15 +487,20 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // which it does not use), so it stays deferred and unprefixed.
     // Unchanged by extension tools (DOR-2685): the docs registry this reads
     // composes no extension. `extension-tools-every-list.test.ts` guards those.
-    // 119 -> 120 for `compact_my_session` (DOR-2732): the `<context_warning>`
-    // note names it, with each runtime's prefix, so it is always loaded.
-    expect(advertised.size).toBe(120);
+    // Four operator management tools and one native task writer remain deferred.
+    // Upstream compact_my_session is also advertised and always loaded.
+    expect(advertised.size).toBe(125);
     for (const name of [
       'configure_doc_channel',
       'approve_doc_route',
       'revoke_doc_route',
       'canvas_send',
       'canvas_patch_state',
+      'replay_doc_batch',
+      'inspect_doc_channel',
+      'issue_doc_token',
+      'revoke_doc_token',
+      'canvas_set_checkbox',
     ])
       expect(advertised.has(name)).toBe(true);
     expect(advertised.has('react_to_room_entry')).toBe(true);

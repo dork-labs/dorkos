@@ -495,6 +495,33 @@ describe('TestModeRuntime.getMcpStatus', () => {
     expect(new TestModeRuntime().getMcpStatus('/projects/test')).toBeNull();
   });
 
+  it('reads resource configuration from the same current cwd-scoped resolver as membership', () => {
+    const runtime = new TestModeRuntime();
+    expect(runtime.getMcpServerConfig('/owned', 'app')).toBeNull();
+    const first: McpAppServerConnection = {
+      transport: 'stdio',
+      command: 'node',
+      args: ['first.mjs'],
+    };
+    const second: McpAppServerConnection = {
+      transport: 'stdio',
+      command: 'node',
+      args: ['second.mjs'],
+    };
+    let selected = first;
+    runtime.setManagedMcpServers({
+      injectableServersForCwd: (cwd) => (cwd === '/owned' ? { app: selected } : {}),
+    });
+    expect(runtime.getMcpStatus('/owned')).toEqual([
+      { name: 'app', type: 'stdio', status: 'connected', scope: 'managed' },
+    ]);
+    expect(runtime.getMcpServerConfig('/owned', 'app')).toBe(first);
+    expect(runtime.getMcpServerConfig('/foreign', 'app')).toBeNull();
+    expect(runtime.getMcpServerConfig('/owned', 'missing')).toBeNull();
+    selected = second;
+    expect(runtime.getMcpServerConfig('/owned', 'app')).toBe(second);
+  });
+
   it('maps every managed server, not just the first', () => {
     const servers = {
       granola: connection('http', {}),

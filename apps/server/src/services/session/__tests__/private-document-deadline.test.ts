@@ -53,6 +53,7 @@ vi.mock('../context-assembler.js', async (importOriginal) => ({
   assembleAdditionalContext: vi.fn(async () => []),
 }));
 
+const OriginalDate = Date;
 const SESSION = 'session-1';
 const databases: Db[] = [];
 const directories: string[] = [];
@@ -88,7 +89,15 @@ function install(f: BatchFixture) {
 }
 
 function fixture(policy: DocBeforeClaim = waitBudget, file = ':memory:') {
-  const f = batchFixture(file, null, undefined, 'boot-1', 'claude-code', () => new Date(), policy);
+  const f = batchFixture(
+    file,
+    null,
+    undefined,
+    'boot-1',
+    'claude-code',
+    () => new OriginalDate(Date.now()),
+    policy
+  );
   databases.push(f.db);
   f.input();
   const accepted = f.admission.admit(f.batchId());
@@ -355,7 +364,7 @@ describe('private document dispatch deadlines', () => {
       { db, documentId: f.documentId, grantId: f.grantId },
       'boot-2',
       'claude-code',
-      () => new Date(),
+      () => new OriginalDate(Date.now()),
       waitBudget
     );
     const next = install(reboot);

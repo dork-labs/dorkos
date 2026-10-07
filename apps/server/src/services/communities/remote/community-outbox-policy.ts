@@ -5,7 +5,7 @@
  */
 import { ulid } from 'ulidx';
 import type { AuthorRegistry } from '../../rooms/author-registry.js';
-import { RoomError } from '../../rooms/room-errors.js';
+import { RoomError } from '../../rooms/data/room-errors.js';
 import type {
   PreparedMirrorWrite,
   RoomMirrorWritePolicy,

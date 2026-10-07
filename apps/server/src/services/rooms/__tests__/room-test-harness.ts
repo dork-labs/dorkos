@@ -35,7 +35,7 @@ import {
   setCanvasService,
 } from '../../canvas/index.js';
 import { AttachmentRowStore } from '../attachments/attachment-row-store.js';
-import type { RoomAgent, RoomAgentLookup } from '../room-errors.js';
+import type { RoomAgent, RoomAgentLookup } from '../data/room-errors.js';
 import {
   RoomService,
   type RoomEntryIndexer,

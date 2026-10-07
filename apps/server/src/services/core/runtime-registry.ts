@@ -1,3 +1,17 @@
+import { requireNativePrincipalDatabase } from '../connectors/principal/runtime-principal-service.js';
+import type { StreamEvent } from '@dorkos/shared/types';
+import {
+  observeOriginalSigninRuntimeStream,
+  onOriginalSigninRuntimeRelease,
+} from '../observability/runtime-signin-watch.js';
+import { observeRuntimeTurn } from '../observability/ai-metadata.js';
+import { readClaudeOriginalLockedStream } from '../runtimes/claude-code/claude-code-runtime.js';
+import { readCodexOriginalLockedStream } from '../runtimes/codex/codex-runtime.js';
+import { readOpenCodeOriginalLockedStream } from '../runtimes/opencode/opencode-runtime.js';
+import {
+  readTestModeOriginalNativeStream,
+  readTestModeOriginalStopTerminalData,
+} from '../runtimes/test-mode/test-mode-runtime.js';
 import type { AgentRuntime, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import type { SessionSettings } from '@dorkos/shared/types';
 import { EffortLevelSchema } from '@dorkos/shared/schemas';
@@ -41,8 +55,256 @@ import {
 import { logger } from '../../lib/logger.js';
 import { withSessionLimitStore } from '../session/fleet/session-limit-store.js';
 import { getSessionStartedByStore } from '../session/origin/session-started-by-store.js';
+import { moveDurableSessionIdentity } from '../session/turn-identity/durable-rekey.js';
 import { traceRuntime, watchRuntimeSignin } from '../observability/index.js';
-import { holdAwakeDuringTurns } from './keep-awake/hold-during-turn.js';
+import {
+  holdAwakeDuringTurns,
+  observeOriginalAwakeRoomRuntimeStream,
+} from './keep-awake/hold-during-turn.js';
+
+const originalRegisteredRuntimes = new WeakMap<
+  object,
+  {
+    registry: RuntimeRegistry;
+    slots: Map<string, AgentRuntime>;
+    type: string;
+    raw: AgentRuntime;
+    wrapped: AgentRuntime;
+    retired: boolean;
+    acquire(
+      sessionId: string,
+      clientId: string,
+      holder: import('@dorkos/shared/agent-runtime').SseResponse,
+      token: symbol
+    ): boolean;
+    release(sessionId: string, clientId: string, token: symbol): void;
+    observe(sessionId: string, stream: AsyncGenerator<StreamEvent>): AsyncGenerator<StreamEvent>;
+  }
+>();
+const originalRuntimeMapGet = Map.prototype.get;
+const originalRuntimeRegistryOwners = new WeakMap<
+  object,
+  {
+    slots: Map<string, AgentRuntime>;
+    db?: Db;
+    releaseHints: Set<() => void>;
+    rekeySettings(principals: object, fromId: string, toId: string): Promise<void>;
+  }
+>();
+/** Captured original settings move. This updates DATA, never issues a principal or alias proof. */
+const originalRuntimeSettingOwners = new WeakMap<
+  object,
+  {
+    registry: RuntimeRegistry;
+    type: string;
+    wrapped: AgentRuntime;
+  }
+>();
+/** Rekey settings through the registered runtime's captured original implementation. */
+export function rekeyOriginalRuntimeSessionSettings(
+  runtime: object,
+  principals: object,
+  fromId: string,
+  toId: string
+): Promise<void> {
+  const binding = originalRuntimeSettingOwners.get(runtime);
+  const own = binding && originalRuntimeRegistryOwners.get(binding.registry);
+  if (
+    !binding ||
+    !own?.db ||
+    readOriginalRuntimeRegistrySelection(binding.registry, own.db, binding.type) !==
+      binding.wrapped ||
+    readOriginalRegisteredRuntime(binding.wrapped) !== runtime
+  )
+    throw new Error('Original registered runtime settings owner required');
+  return own.rekeySettings(principals, fromId, toId);
+}
+/** Actual registry/owning Db selection only. Returned wrapper remains subject to slot replacement guards. */
+export function readOriginalRuntimeRegistrySelection(
+  registry: RuntimeRegistry,
+  db: Db,
+  type: string
+) {
+  const own = originalRuntimeRegistryOwners.get(registry);
+  if (
+    !own ||
+    own.db !== db ||
+    Object.getOwnPropertyDescriptor(registry, 'runtimes')?.value !== own.slots
+  )
+    throw new Error('Original owning runtime registry required.');
+  const selected = originalRuntimeMapGet.call(own.slots, type) as AgentRuntime | undefined;
+  if (!selected || !readOriginalRegisteredRuntime(selected)) return undefined;
+  return selected;
+}
+/** Subscribe to release of the original registered runtime. */
+export function onOriginalRegisteredRuntimeRelease(
+  registry: RuntimeRegistry,
+  listener: () => void
+): () => void {
+  const own = originalRuntimeRegistryOwners.get(registry);
+  if (!own || Object.getOwnPropertyDescriptor(registry, 'runtimes')?.value !== own.slots)
+    throw new Error('Original runtime registry required.');
+  own.releaseHints.add(listener);
+  return () => {
+    own.releaseHints.delete(listener);
+  };
+}
+/** Acquire the original registered runtime's captured lifetime. */
+export function acquireOriginalRegisteredRuntime(
+  selection: object,
+  sessionId: string,
+  clientId: string,
+  holder: import('@dorkos/shared/agent-runtime').SseResponse,
+  token: symbol
+): boolean {
+  const own = originalRegisteredRuntimes.get(selection);
+  if (!own || !readOriginalRegisteredRuntime(selection)) return false;
+  const acquired = own.acquire(sessionId, clientId, holder, token);
+  if (acquired && !readOriginalRegisteredRuntime(selection)) {
+    own.release(sessionId, clientId, token);
+    return false;
+  }
+  return acquired;
+}
+/** Cleanup retains exact original registration capture even after its selected authority retires. */
+export function releaseOriginalRegisteredRuntime(
+  selection: object,
+  sessionId: string,
+  clientId: string,
+  token: symbol
+) {
+  const own = originalRegisteredRuntimes.get(selection);
+  if (!own) throw new Error('Original runtime release is foreign.');
+  own.release(sessionId, clientId, token);
+}
+/** Lookup-only genuine registration result. Replacement refuses the old wrapper; no copied proxy/type match. */
+export function readOriginalRegisteredRuntime(runtime: object): AgentRuntime | undefined {
+  const own = originalRegisteredRuntimes.get(runtime);
+  if (
+    !own ||
+    own.retired ||
+    Object.getOwnPropertyDescriptor(own.registry, 'runtimes')?.value !== own.slots ||
+    originalRuntimeMapGet.call(own.slots, own.type) !== own.wrapped
+  )
+    return undefined;
+  return own.raw;
+}
+
+const originalObservedStreams = new WeakMap<
+  object,
+  { selection: object; raw: AsyncGenerator<StreamEvent> }
+>();
+function originalStreamCurrent(selection: object, sessionId: string, stream: object): boolean {
+  const raw = readOriginalRegisteredRuntime(selection);
+  return (
+    !!raw &&
+    (readClaudeOriginalLockedStream(raw, sessionId, stream) ||
+      readCodexOriginalLockedStream(raw, sessionId, stream) ||
+      readOpenCodeOriginalLockedStream(raw, sessionId, stream) ||
+      !!readTestModeOriginalNativeStream(raw, stream))
+  );
+}
+/** Same registration observers over a genuine raw locked/native stream; no second provider entry. */
+export function observeOriginalRegisteredRuntimeStream(
+  selection: object,
+  sessionId: string,
+  stream: AsyncGenerator<StreamEvent>
+): AsyncGenerator<StreamEvent> {
+  const own = originalRegisteredRuntimes.get(selection);
+  if (!own || !originalStreamCurrent(selection, sessionId, stream))
+    throw new Error('Current original registered native stream required.');
+  const observed = own.observe(sessionId, stream);
+  const returned: AsyncGenerator<StreamEvent> = {
+    next: async (value) => {
+      try {
+        if (
+          !originalStreamCurrent(selection, sessionId, stream) &&
+          !(
+            readOriginalRegisteredRuntime(selection) &&
+            readTestModeOriginalStopTerminalData(readOriginalRegisteredRuntime(selection)!, stream)
+          )
+        )
+          throw new Error('Original runtime selection retired.');
+        const result = await observed.next(value);
+        // Natural end retires the raw entry; selection itself must remain current even at end.
+        if (
+          !readOriginalRegisteredRuntime(selection) ||
+          (!result.done &&
+            !originalStreamCurrent(selection, sessionId, stream) &&
+            !readTestModeOriginalStopTerminalData(
+              readOriginalRegisteredRuntime(selection)!,
+              stream,
+              result.value
+            ))
+        )
+          throw new Error('Original runtime selection retired during held stream.');
+        return result;
+      } catch (first) {
+        // The original read/refusal cause wins, including undefined; every cleanup duty is attempted.
+        try {
+          await stream.return(undefined);
+        } catch {}
+        try {
+          await observed.return(undefined);
+        } catch {}
+        throw first;
+      }
+    },
+    return: async (value) => {
+      let failed = false,
+        first: unknown;
+      let result: IteratorResult<StreamEvent, void> | undefined;
+      try {
+        await stream.return(value);
+      } catch (cause) {
+        failed = true;
+        first = cause;
+      }
+      try {
+        result = await observed.return(value);
+      } catch (cause) {
+        if (!failed) {
+          failed = true;
+          first = cause;
+        }
+      }
+      if (failed) throw first;
+      return result!;
+    },
+    throw: async (cause) => {
+      // The caller's original thrown value wins, including undefined; retirement still runs.
+      try {
+        await stream.return(undefined);
+      } catch {}
+      return observed.throw(cause);
+    },
+    async [Symbol.asyncDispose]() {
+      await disposeOriginalStream();
+    },
+    [Symbol.asyncIterator]() {
+      return this;
+    },
+  };
+  const disposeOriginalStream = returned.return.bind(returned, undefined);
+  originalObservedStreams.set(returned, { selection, raw: stream });
+  return returned;
+}
+/** Native consumers retain original stream identity; a retired selection cannot unwrap into authority. */
+export function readOriginalRegisteredRuntimeStream(
+  selection: object,
+  stream: object
+): object | undefined {
+  const own = originalObservedStreams.get(stream);
+  return own && own.selection === selection && readOriginalRegisteredRuntime(selection)
+    ? own.raw
+    : undefined;
+}
+
+/** Fixed lookup from an actual observed stream to its current selected original stream. */
+export function readOriginalRegisteredNativeStream(stream: object): object | undefined {
+  const own = originalObservedStreams.get(stream);
+  return own && readOriginalRegisteredRuntime(own.selection) ? own.raw : undefined;
+}
 
 /** Columns read from `session_metadata` for the settings projection. */
 type SettingsRow = {
@@ -227,6 +489,20 @@ export class RuntimeNotRegisteredError extends Error {
  */
 export class RuntimeRegistry {
   private runtimes = new Map<string, AgentRuntime>();
+  readonly #originalRuntimeSlots = (() => {
+    originalRuntimeRegistryOwners.set(this, {
+      slots: this.runtimes,
+      releaseHints: new Set(),
+      rekeySettings: async (principals, fromId, toId) => {
+        const own = originalRuntimeRegistryOwners.get(this);
+        if (!own?.db || own.db !== this.db)
+          throw new Error('Original runtime registry database unavailable');
+        requireNativePrincipalDatabase(principals, own.db);
+        await this.#rekeySessionSettings(fromId, toId);
+      },
+    });
+    return this.runtimes;
+  })();
   private defaultType: string = 'claude-code';
   private db: Db | undefined;
 
@@ -246,14 +522,44 @@ export class RuntimeRegistry {
     // on. This is the one seam every turn passes through — the interactive
     // composer, a room reply, a scheduled run and a relay delivery all resolve
     // their runtime from here (DOR-1654).
-    //
-    // Keep-awake wraps OUTERMOST so its hold spans everything inside it: the
-    // computer stays awake for as long as the caller is consuming the turn,
-    // whoever the caller is (spec `keep-awake`).
-    this.runtimes.set(
-      runtime.type,
-      holdAwakeDuringTurns(watchRuntimeSignin(traceRuntime(runtime)))
-    );
+    const type = runtime.type;
+    const traced = traceRuntime(runtime);
+    const signed = watchRuntimeSignin(traced);
+    const wrapped = holdAwakeDuringTurns(signed);
+    const construction = originalRuntimeRegistryOwners.get(this);
+    if (!construction) throw new Error('Original runtime registry required.');
+    onOriginalSigninRuntimeRelease(signed, () => {
+      for (const hint of construction.releaseHints) {
+        try {
+          hint();
+        } catch {}
+      }
+    });
+    const previous = this.runtimes.get(type);
+    const old = previous && originalRegisteredRuntimes.get(previous);
+    if (old) old.retired = true;
+    this.runtimes.set(type, wrapped);
+    originalRuntimeSettingOwners.set(runtime, { registry: this, type, wrapped });
+    originalRegisteredRuntimes.set(wrapped, {
+      registry: this,
+      slots: this.#originalRuntimeSlots,
+      type,
+      raw: runtime,
+      wrapped,
+      retired: false,
+      acquire: runtime.acquireLock.bind(runtime),
+      release: wrapped.releaseLock.bind(wrapped),
+      observe: (sessionId, stream) =>
+        observeOriginalAwakeRoomRuntimeStream(
+          wrapped,
+          sessionId,
+          observeOriginalSigninRuntimeStream(
+            signed,
+            sessionId,
+            traced === runtime ? stream : observeRuntimeTurn(type, sessionId, stream)
+          )
+        ),
+    });
   }
 
   /**
@@ -266,6 +572,9 @@ export class RuntimeRegistry {
    */
   setDb(db: Db): void {
     this.db = db;
+    const own = originalRuntimeRegistryOwners.get(this);
+    if (!own) throw new Error('Original runtime registry construction required.');
+    own.db = db;
   }
 
   /**
@@ -927,6 +1236,10 @@ export class RuntimeRegistry {
    * @param toId - The canonical id the session is now known by
    */
   async rekeySessionSettings(fromId: string, toId: string): Promise<void> {
+    return this.#rekeySessionSettings(fromId, toId);
+  }
+
+  async #rekeySessionSettings(fromId: string, toId: string): Promise<void> {
     if (fromId === toId) return;
     const db = this.requireDb('rekeySessionSettings');
     // A usage limit the session hit under its old id moves with it (spec
@@ -977,26 +1290,30 @@ export class RuntimeRegistry {
       .where(eq(sessionMetadata.sessionId, toId))
       .get();
     db.transaction((tx) => {
-      tx.delete(sessionMetadata).where(eq(sessionMetadata.sessionId, fromId)).run();
       if (!destination) {
         tx.insert(sessionMetadata)
           .values({ ...source, sessionId: toId })
           .run();
-        return;
+      } else {
+        tx.update(sessionMetadata)
+          .set({
+            runtime: destination.runtime ?? source.runtime,
+            permissionMode: destination.permissionMode ?? source.permissionMode,
+            model: destination.model ?? source.model,
+            effort: destination.effort ?? source.effort,
+            fastMode: destination.fastMode ?? source.fastMode,
+            agentPath: destination.agentPath ?? source.agentPath,
+            launchOrigin: destination.launchOrigin ?? source.launchOrigin,
+            lastAutoResumeFor: destination.lastAutoResumeFor ?? source.lastAutoResumeFor,
+          })
+          .where(eq(sessionMetadata.sessionId, toId))
+          .run();
       }
-      tx.update(sessionMetadata)
-        .set({
-          runtime: destination.runtime ?? source.runtime,
-          permissionMode: destination.permissionMode ?? source.permissionMode,
-          model: destination.model ?? source.model,
-          effort: destination.effort ?? source.effort,
-          fastMode: destination.fastMode ?? source.fastMode,
-          agentPath: destination.agentPath ?? source.agentPath,
-          launchOrigin: destination.launchOrigin ?? source.launchOrigin,
-          lastAutoResumeFor: destination.lastAutoResumeFor ?? source.lastAutoResumeFor,
-        })
-        .where(eq(sessionMetadata.sessionId, toId))
-        .run();
+      // Approved document/receipt moves verify BOTH real session rows. Run the
+      // existing synchronous durable participants before deleting the old row;
+      // the later projector rekey repeats an idempotent already-completed move.
+      moveDurableSessionIdentity(fromId, toId);
+      tx.delete(sessionMetadata).where(eq(sessionMetadata.sessionId, fromId)).run();
     });
     logger.debug(
       `[RuntimeRegistry] Re-keyed session_metadata '${fromId}' -> '${toId}'${destination ? ' (merged into existing row)' : ''}`

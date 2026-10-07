@@ -169,63 +169,66 @@ export async function createAdapter(
       // What answers a message that names no runtime; the adapter drives the
       // rest of the map per message (DOR-1614).
       const agentManager = defaultRuntimeFor(deps.agentRuntimes, config.id);
-      return new ClaudeCodeAdapter(config.id, config.config as Record<string, unknown>, {
-        agentManager,
-        agentRuntimes: deps.agentRuntimes,
-        traceStore: deps.traceStore,
-        taskStore: deps.taskStore,
-        onRefusedAsk: deps.onRefusedAsk,
-        agentSessionStore: deps.agentSessionStore,
-        // What the turn runs on. One resolver for every runtime: the adapter
-        // resolves which runtime a message belongs to and asks about THAT one,
-        // so the answer is per turn rather than per adapter (DOR-1614).
-        resolveExecutionSettings: createTurnExecutionSettingsResolver(),
-        // The desk guard for a folder a payload names (spec `agent-home-desk`
-        // §3.4): any agent can publish a `cwd`, so the answering agent stands
-        // there only when it is that agent's desk.
-        checkTurnDesk: createTurnDeskCheck({
-          sessionAgentPath: (sessionId) => runtimeRegistry.getSessionAgentPath(sessionId),
-          placementOf: (agentPath) => resolveSessionCwd({ agentPath }),
-        }),
-        // Who answers a message addressed to an AGENT rather than a session —
-        // the shape an agent-to-agent `relay_send` arrives on. The same single
-        // copy of the binding-then-manifest ladder rooms and the chat bindings
-        // ask, so one agent DM'ing another cannot get a different program than
-        // the same agent reached from Telegram would (DOR-1627), and a
-        // conversation that already has an owner keeps it (DOR-1774).
-        resolveTurnRuntimeType: ({ agentDirectory, sessionId }) =>
-          resolveTurnRuntimeType({ sessionId, agentPath: agentDirectory }),
-        // And where that owner gets written. The relay is the only thing that
-        // can record it for this shape: a mesh endpoint creates no session, so
-        // no session-creation path ever ran for it. First-write-wins inside the
-        // registry, so a turn on a conversation somebody already bound changes
-        // nothing (DOR-1774).
-        //
-        // The origin seeds no permission mode: an agent-to-agent DM carries
-        // the grant it arrived under, and an absent grant is not consent
-        // (DOR-604, DOR-2105).
-        bindSessionRuntime: async ({ sessionId, runtimeType, agentDirectory }) => {
-          await runtimeRegistry.persistSessionRuntime(
-            sessionId,
-            runtimeType,
-            { kind: 'agent-dm' },
-            agentDirectory
-          );
-        },
-        // Every approval that arrives on the relay bus is checked here too,
-        // before the runtime is touched (spec `ask-entitlement` §5.3).
-        approvalAuthorizer: deps.approvalAuthorizer,
-        inboundBudgets: deps.inboundBudgets,
-        // An agent that ends its turn while a helper still works reports back in
-        // a turn of its own; this is how that report reaches the inbox of the
-        // agent that asked (DOR-2717).
-        lateTurns: createLateTurnSource({
-          owner: 'relay',
-          runtimeFor: (type) => (runtimeRegistry.has(type) ? runtimeRegistry.get(type) : undefined),
-          windowMs: LATE_RESULT_WINDOW_MS,
-        }),
-        logger,
-      });
+      return ClaudeCodeAdapter.createInstalledDocumentAdapter(
+        config.id,
+        config.config as Record<string, unknown>,
+        {
+          agentManager,
+          agentRuntimes: deps.agentRuntimes,
+          traceStore: deps.traceStore,
+          taskStore: deps.taskStore,
+          onRefusedAsk: deps.onRefusedAsk,
+          agentSessionStore: deps.agentSessionStore,
+          // What the turn runs on. One resolver for every runtime: the adapter
+          // resolves which runtime a message belongs to and asks about THAT one,
+          // so the answer is per turn rather than per adapter (DOR-1614).
+          resolveExecutionSettings: createTurnExecutionSettingsResolver(),
+          // The desk guard for a folder a payload names (spec `agent-home-desk`
+          // §3.4): any agent can publish a `cwd`, so the answering agent stands
+          // there only when it is that agent's desk.
+          checkTurnDesk: createTurnDeskCheck({
+            sessionAgentPath: (sessionId) => runtimeRegistry.getSessionAgentPath(sessionId),
+            placementOf: (agentPath) => resolveSessionCwd({ agentPath }),
+          }),
+          // Who answers a message addressed to an AGENT rather than a session —
+          // the shape an agent-to-agent `relay_send` arrives on. The same single
+          // copy of the binding-then-manifest ladder rooms and the chat bindings
+          // ask, so one agent DM'ing another cannot get a different program than
+          // the same agent reached from Telegram would (DOR-1627), and a
+          // conversation that already has an owner keeps it (DOR-1774).
+          resolveTurnRuntimeType: ({ agentDirectory, sessionId }) =>
+            resolveTurnRuntimeType({ sessionId, agentPath: agentDirectory }),
+          // And where that owner gets written. The relay is the only thing that
+          // can record it for this shape: a mesh endpoint creates no session, so
+          // no session-creation path ever ran for it. First-write-wins inside the
+          // registry, so a turn on a conversation somebody already bound changes
+          // nothing (DOR-1774).
+          //
+          // The origin seeds no permission mode: an agent-to-agent DM carries
+          // the grant it arrived under, and an absent grant is not consent
+          // (DOR-604, DOR-2105).
+          bindSessionRuntime: async ({ sessionId, runtimeType, agentDirectory }) => {
+            await runtimeRegistry.persistSessionRuntime(
+              sessionId,
+              runtimeType,
+              { kind: 'agent-dm' },
+              agentDirectory
+            );
+          },
+          // Every approval that arrives on the relay bus is checked here too,
+          // before the runtime is touched (spec `ask-entitlement` §5.3).
+          approvalAuthorizer: deps.approvalAuthorizer,
+          inboundBudgets: deps.inboundBudgets,
+          // Continue original relay-owned late-result observation after the initiating turn.
+          lateTurns: createLateTurnSource({
+            owner: 'relay',
+            runtimeFor: (type) =>
+              runtimeRegistry.has(type) ? runtimeRegistry.get(type) : undefined,
+            windowMs: LATE_RESULT_WINDOW_MS,
+          }),
+          logger,
+        }
+      ).adapter;
     }
     case 'plugin':
       return loadPluginAdapter(config, configPath, onPluginManifest);

@@ -16,10 +16,63 @@
  */
 import type { Room, RoomMember } from '@dorkos/shared/room-schemas';
 import type { AuthorRegistry } from '../author-registry.js';
-import { RoomError } from '../room-errors.js';
-import type { RoomCore } from './room-core.js';
+import { RoomError } from '../data/room-errors.js';
+import {
+  readRoomCoreFileWritePolicyState,
+  requireRoomCoreFileWriteStore,
+  type RoomCore,
+} from './room-core.js';
+import type { Db } from '@dorkos/db';
 import type { RoomStore } from '../room-store.js';
 import type { RoomMirrorAccess } from './room-service-deps.js';
+
+const fileVisibility = new WeakMap<
+  RoomVisibility,
+  {
+    core: RoomCore;
+    require(exactDb: Db, roomId: string, authorId: string): void;
+    repo(
+      exactDb: Db,
+      roomId: string,
+      authorId: string,
+      operation: 'enable' | 'repair' | 'merge'
+    ): undefined;
+  }
+>();
+/** Fixed captured policy, preserving the original membership/archive/person ordering. */
+export function requireRoomVisibilityFileWriteCurrent(
+  visibility: RoomVisibility,
+  exactDb: Db,
+  roomId: string,
+  authorId: string
+): undefined {
+  const binding = fileVisibility.get(visibility);
+  if (!binding) throw new Error('Unknown original room file visibility.');
+  requireRoomCoreFileWriteStore(binding.core, exactDb);
+  binding.require(exactDb, roomId, authorId);
+  if (fileVisibility.get(visibility) !== binding)
+    throw new Error('Original room file visibility changed.');
+  requireRoomCoreFileWriteStore(binding.core, exactDb);
+  return undefined;
+}
+
+/** Fixed original owner/visible and member/archive policies for finite repo mutations. */
+export function requireRoomVisibilityRepoWriteCurrent(
+  visibility: RoomVisibility,
+  exactDb: Db,
+  roomId: string,
+  authorId: string,
+  operation: 'enable' | 'repair' | 'merge'
+): undefined {
+  const binding = fileVisibility.get(visibility);
+  if (!binding) throw new Error('Unknown original room repo visibility.');
+  requireRoomCoreFileWriteStore(binding.core, exactDb);
+  binding.repo(exactDb, roomId, authorId, operation);
+  if (fileVisibility.get(visibility) !== binding)
+    throw new Error('Original room repo visibility changed.');
+  requireRoomCoreFileWriteStore(binding.core, exactDb);
+  return undefined;
+}
 
 /** The visibility and read-access rules every room verb is gated on. */
 export class RoomVisibility {
@@ -29,7 +82,80 @@ export class RoomVisibility {
   private readonly isOwnerAuthor: (authorId: string) => boolean;
   private readonly mirrorAccess: RoomMirrorAccess | undefined;
 
+  readonly #fileCore: RoomCore;
+  readonly #fileIsOwner: (authorId: string) => boolean;
+  readonly #fileMirrorCanRead: ((roomId: string, authorId: string) => boolean | null) | undefined;
+  #requireFileWriteCurrent(exactDb: Db, roomId: string, authorId: string): void {
+    let state = readRoomCoreFileWritePolicyState(this.#fileCore, exactDb, roomId, authorId);
+    if (!state.room) throw new RoomError('ROOM_NOT_FOUND', 'No such room');
+    const mirrored = this.#fileMirrorCanRead?.(roomId, authorId);
+    requireRoomCoreFileWriteStore(this.#fileCore, exactDb);
+    const visible =
+      mirrored !== undefined && mirrored !== null
+        ? mirrored
+        : this.#fileIsOwner(authorId) || state.member !== null;
+    // Configured predicates can be observable. Repeat actual facts and native custody afterwards.
+    state = readRoomCoreFileWritePolicyState(this.#fileCore, exactDb, roomId, authorId);
+    if (!visible || !state.room || !state.member)
+      throw new RoomError('ROOM_NOT_FOUND', 'No such room');
+    if (state.room.archived) throw new RoomError('ROOM_ARCHIVED', 'This room is archived');
+    if (state.authorKind !== 'human')
+      throw new RoomError(
+        'PEOPLE_ONLY',
+        'Only people can save a room’s files. Merge your work instead.'
+      );
+    requireRoomCoreFileWriteStore(this.#fileCore, exactDb);
+  }
+
+  #requireRepoWriteCurrent(
+    exactDb: Db,
+    roomId: string,
+    authorId: string,
+    operation: 'enable' | 'repair' | 'merge'
+  ): undefined {
+    let state = readRoomCoreFileWritePolicyState(this.#fileCore, exactDb, roomId, authorId);
+    if (!state.room) throw new RoomError('ROOM_NOT_FOUND', 'No such room');
+    const mirrored = this.#fileMirrorCanRead?.(roomId, authorId);
+    const owner = this.#fileIsOwner(authorId);
+    requireRoomCoreFileWriteStore(this.#fileCore, exactDb);
+    state = readRoomCoreFileWritePolicyState(this.#fileCore, exactDb, roomId, authorId);
+    const visible =
+      mirrored !== undefined && mirrored !== null ? mirrored : owner || state.member !== null;
+    if (!visible || !state.room || (operation === 'merge' && !state.member))
+      throw new RoomError('ROOM_NOT_FOUND', 'No such room');
+    if (operation !== 'merge' && !owner)
+      throw new RoomError(
+        'OPERATOR_ONLY',
+        operation === 'repair'
+          ? 'Only you can decide what happens to those changes'
+          : 'Only you can give a room files of its own'
+      );
+    if (operation === 'merge' && state.room.archived)
+      throw new RoomError('ROOM_ARCHIVED', 'This room is archived');
+    requireRoomCoreFileWriteStore(this.#fileCore, exactDb);
+    return undefined;
+  }
+
   constructor(core: RoomCore) {
+    this.#fileCore = core;
+    const isOwnerAuthor = core.isOwnerAuthor;
+    this.#fileIsOwner = (authorId) => isOwnerAuthor.call(this, authorId);
+    const mirrorCanRead = core.mirrorAccess?.canRead;
+    this.#fileMirrorCanRead = mirrorCanRead?.bind(core.mirrorAccess);
+    fileVisibility.set(
+      this,
+      Object.freeze({
+        core,
+        require: (exactDb: Db, roomId: string, authorId: string) =>
+          this.#requireFileWriteCurrent(exactDb, roomId, authorId),
+        repo: (
+          exactDb: Db,
+          roomId: string,
+          authorId: string,
+          operation: 'enable' | 'repair' | 'merge'
+        ) => this.#requireRepoWriteCurrent(exactDb, roomId, authorId, operation),
+      })
+    );
     this.store = core.store;
     this.authors = core.authors;
     this.isOwnerAuthor = core.isOwnerAuthor;

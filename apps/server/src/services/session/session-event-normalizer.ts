@@ -1,3 +1,17 @@
+import { retireOriginalRoomResponderStream } from '../canvas/doc-channel/operations/room-current-operation.js';
+import {
+  ingestOriginalSessionProjection,
+  requireOriginalSessionProjection,
+} from './session-state-projector.js';
+import {
+  readOriginalClaudeRelayProjectionProjector,
+  observeOriginalClaudeRelayProjection,
+  observeOriginalClaudeRelayTerminalProjection,
+} from '../runtimes/claude-code/claude-code-runtime.js';
+import {
+  observeOriginalRoomResponderProjection,
+  settleOriginalRoomResponderProjection,
+} from '../canvas/doc-channel/operations/room-responder-operation.js';
 /**
  * Normalizer from a runtime's {@link StreamEvent} stream into the
  * runtime-neutral {@link RawSessionEvent} union the projector ingests.
@@ -995,6 +1009,64 @@ export const TURN_REOPENING_STREAM_EVENT_TYPES: ReadonlySet<StreamEvent['type']>
  *   treat "a `turn_start` arrived and I still have no identity" as proof the
  *   turn is somebody else's.
  */
+/** Opaque identity minted only by the actual feedProjector drive of an original Relay stream. */
+export interface OriginalSessionProjectionFeed {
+  readonly kind: 'original-session-projection-feed';
+}
+const originalSessionProjectionFeeds = new WeakMap<
+  OriginalSessionProjectionFeed,
+  {
+    stream: object;
+    projector: SessionStateProjector;
+    active: boolean;
+    closed: boolean;
+    start?: SessionEvent;
+    end?: SessionEvent;
+  }
+>();
+/** Require the original stream and projector association for a projection feed. */
+export function requireOriginalSessionProjectionFeed(
+  token: OriginalSessionProjectionFeed,
+  stream: object,
+  projector: SessionStateProjector,
+  event: SessionEvent
+): void {
+  const own = originalSessionProjectionFeeds.get(token);
+  if (
+    !own ||
+    !own.active ||
+    own.stream !== stream ||
+    own.projector !== projector ||
+    own.start !== event
+  )
+    throw new Error('Original active session projection feed required');
+  requireOriginalSessionProjection(projector, event);
+}
+
+/** Fixed original feed cleanup completed; inactive alone does not prove successful cleanup. */
+export function requireOriginalClosedSessionProjectionFeed(
+  token: OriginalSessionProjectionFeed,
+  stream: object,
+  projector: SessionStateProjector,
+  start: SessionEvent,
+  end: SessionEvent
+): void {
+  const own = originalSessionProjectionFeeds.get(token);
+  if (
+    !own ||
+    own.active ||
+    !own.closed ||
+    own.stream !== stream ||
+    own.projector !== projector ||
+    own.start !== start ||
+    own.end !== end
+  )
+    throw new Error('Original positively closed projection feed required');
+  requireOriginalSessionProjection(projector, start);
+  requireOriginalSessionProjection(projector, end);
+}
+
+/** Feed runtime events into the owning session projector. */
 export async function feedProjector(
   projector: SessionStateProjector,
   events: AsyncIterable<StreamEvent>,
@@ -1002,8 +1074,26 @@ export async function feedProjector(
     userMessage?: string;
     origin?: TurnOrigin;
     onTurnStart?: (seq: number) => void;
+    originalRoomStream?: object;
   } = {}
 ): Promise<void> {
+  const relayProjector = readOriginalClaudeRelayProjectionProjector(events);
+  if (relayProjector && relayProjector !== projector)
+    throw new Error('Original Relay projector differs');
+  const relayFeed: OriginalSessionProjectionFeed | undefined = relayProjector
+    ? Object.freeze({ kind: 'original-session-projection-feed' })
+    : undefined;
+  const relayOwn = relayFeed
+    ? {
+        stream: events as object,
+        projector,
+        active: true,
+        closed: false,
+        start: undefined as SessionEvent | undefined,
+        end: undefined as SessionEvent | undefined,
+      }
+    : undefined;
+  if (relayFeed && relayOwn) originalSessionProjectionFeeds.set(relayFeed, relayOwn);
   const start: RawOf<'turn_start'> = {
     type: 'turn_start',
     ...(opts.userMessage !== undefined ? { userMessage: opts.userMessage } : {}),
@@ -1013,10 +1103,12 @@ export async function feedProjector(
   // `opts.onTurnStart?.(projector.ingest(start).seq)` the optional CALL
   // short-circuits its own arguments, so a caller that passed no callback — which
   // is every caller but the room — never opened its turn at all.
-  const started = projector.ingest(start);
-  opts.onTurnStart?.(started.seq);
+  const ingest = (raw: RawSessionEvent) =>
+    opts.originalRoomStream || relayFeed
+      ? ingestOriginalSessionProjection(projector, raw)
+      : projector.ingest(raw);
   /** Whether a turn window is open right now — the thing `done` closes. */
-  let turnOpen = true;
+  let turnOpen = false;
   let terminalReason: TerminalReason | undefined;
   /**
    * The stop record that arrived WITH {@link terminalReason} — DorkOS's own
@@ -1046,7 +1138,7 @@ export async function feedProjector(
   // session then reported as a failed turn and escalated. Same denylist, same
   // direction, as the projector's frame test.
   let sawError = false;
-  const closeTurn = (): void => {
+  const closeTurn = (originalTerminal?: StreamEvent): void => {
     // No open window: a second `done`, or a `finally` after one already closed.
     // Silently nothing — a second `turn_end` would double-settle the lifecycle,
     // re-flush the turn to the store, and (once the pump lands) close a window
@@ -1054,7 +1146,7 @@ export async function feedProjector(
     if (!turnOpen) return;
     turnOpen = false;
     const reason = terminalReason ?? (sawError ? 'error' : undefined);
-    projector.ingest({
+    const stamped = ingest({
       type: 'turn_end',
       ...(reason !== undefined ? { terminalReason: reason } : {}),
       // Rides only when the runtime actually said. A latch-supplied `'error'`
@@ -1063,6 +1155,24 @@ export async function feedProjector(
       // pair an intent with a terminal the runtime did not name.
       ...(stopWasRequested !== undefined ? { stopWasRequested } : {}),
     });
+    if (relayFeed && relayOwn) {
+      relayOwn.end = stamped;
+      if (originalTerminal)
+        observeOriginalClaudeRelayTerminalProjection(
+          events,
+          projector,
+          stamped,
+          relayFeed,
+          originalTerminal
+        );
+    }
+    if (opts.originalRoomStream)
+      settleOriginalRoomResponderProjection(
+        opts.originalRoomStream,
+        projector,
+        stamped,
+        originalTerminal
+      );
   };
   /** Open a fresh window for runtime-initiated continuation work (DOR-1100). */
   const reopenTurn = (): void => {
@@ -1075,33 +1185,22 @@ export async function feedProjector(
     // nobody asked for from spending a sign-in card's grace, sounding the
     // turn-finished notification twice, or blanking the reply just produced.
     const reopened: RawOf<'turn_start'> = { type: 'turn_start', origin: 'runtime' };
-    projector.ingest(reopened);
+    ingest(reopened);
   };
-  try {
-    for await (const event of events) {
-      const raw = toRawSessionEvent(event);
-      // Checked BEFORE the latches below so the reopen's reset cannot be undone
-      // by the very event that caused it (content events carry neither a
-      // terminal reason nor an error, so this is belt-and-braces).
-      if (!turnOpen && TURN_REOPENING_STREAM_EVENT_TYPES.has(event.type)) reopenTurn();
-      const reason = readTerminalReason(event);
-      // Read as a PAIR: the stop record comes off the event that named the
-      // reason, never latched independently, so a turn cannot settle with one
-      // ending's shape and an earlier ending's intent. A reason arriving with no
-      // record clears the record, which is the safe direction — an unknown
-      // intent settles the way it always did.
-      if (reason !== undefined) {
-        terminalReason = reason;
-        stopWasRequested = readStopWasRequested(event);
+  let failed = false,
+    first: unknown;
+  const cleanup = async (work: () => unknown | Promise<unknown>) => {
+    try {
+      await work();
+    } catch (cause) {
+      if (!failed) {
+        failed = true;
+        first = cause;
       }
-      if (event.type === 'error' && !isNonFatalErrorCode(readErrorCode(event))) sawError = true;
-      if (event.type === 'done') {
-        closeTurn();
-        continue;
-      }
-      if (raw !== null) projector.ingest(raw);
     }
-  } finally {
+  };
+  // Join this scope to its captured cleanup before returning or reporting failure.
+  const drainOriginalCleanup = async () => {
     // The end of the stream is the end of the runtime's process, so anything it
     // still reports as running has stopped being OBSERVABLE. Retire each
     // stranded child with a terminal `subagent_update` BEFORE the close, so the
@@ -1149,17 +1248,65 @@ export async function feedProjector(
     // for a different reason: its stream spans every turn, so the `finally` is
     // the pump dying, which is still exactly when it stops being able to see
     // them.
-    for (const taskId of projector.listRunningSubagents()) {
+    let taskIds: readonly string[] = [];
+    await cleanup(() => {
+      taskIds = projector.listRunningSubagents();
+    });
+    for (const taskId of taskIds) {
       const untracked: RawOf<'subagent_update'> = {
         type: 'subagent_update',
         taskId,
         status: 'untracked',
       };
-      projector.ingest(untracked);
+      await cleanup(() => ingest(untracked));
     }
-    // Defensive: a stream that ends with a window still open — no `done` at all,
-    // or a reopened continuation the runtime never terminated — still closes it
-    // so the projection does not stay `streaming` forever.
-    closeTurn();
+    await cleanup(() => closeTurn());
+    const originalRoomStream = opts.originalRoomStream;
+    if (originalRoomStream)
+      await cleanup(() => retireOriginalRoomResponderStream(originalRoomStream));
+    if (relayOwn) {
+      relayOwn.active = false;
+      relayOwn.closed = !failed;
+    }
+    if (failed) throw first;
+  };
+  try {
+    const started = ingest(start);
+    turnOpen = true;
+    if (relayFeed && relayOwn) {
+      relayOwn.start = started;
+      observeOriginalClaudeRelayProjection(events, projector, started, relayFeed);
+    }
+    if (opts.originalRoomStream)
+      observeOriginalRoomResponderProjection(opts.originalRoomStream, projector, started);
+    opts.onTurnStart?.(started.seq);
+    for await (const event of events) {
+      const raw = toRawSessionEvent(event);
+      // Checked BEFORE the latches below so the reopen's reset cannot be undone
+      // by the very event that caused it (content events carry neither a
+      // terminal reason nor an error, so this is belt-and-braces).
+      if (!turnOpen && TURN_REOPENING_STREAM_EVENT_TYPES.has(event.type)) reopenTurn();
+      const reason = readTerminalReason(event);
+      // Read as a PAIR: the stop record comes off the event that named the
+      // reason, never latched independently, so a turn cannot settle with one
+      // ending's shape and an earlier ending's intent. A reason arriving with no
+      // record clears the record, which is the safe direction — an unknown
+      // intent settles the way it always did.
+      if (reason !== undefined) {
+        terminalReason = reason;
+        stopWasRequested = readStopWasRequested(event);
+      }
+      if (event.type === 'error' && !isNonFatalErrorCode(readErrorCode(event))) sawError = true;
+      if (event.type === 'done') {
+        closeTurn(event);
+        continue;
+      }
+      if (raw !== null) ingest(raw);
+    }
+  } catch (cause) {
+    failed = true;
+    first = cause;
+  } finally {
+    await drainOriginalCleanup();
   }
 }

@@ -17,6 +17,86 @@
  *
  * @module services/core/capabilities/registry
  */
+import type { Db } from '@dorkos/db';
+import type { ConnectorRuntimePrincipalService } from '../../connectors/principal/runtime-principal-service.js';
+import {
+  requireRoomMergeRegistryConstruction,
+  type RoomMergeService,
+} from '../../rooms/repo/room-merge-service.js';
+
+export interface OriginalRoomMergeRegistryConstruction {
+  readonly service: RoomMergeService;
+  readonly nativePrincipals: ConnectorRuntimePrincipalService;
+  readonly db: Db;
+}
+interface OriginalRoomMergeInvocation {
+  readonly construction: OriginalRoomMergeRegistryConstruction;
+  readonly context: CapabilityHandlerContext;
+  readonly input: object;
+  readonly values: Readonly<{ roomId: string; summary: string }>;
+  readonly principal: ServerPrincipalProof;
+  readonly signal?: AbortSignal;
+  active: boolean;
+}
+const originalRoomMergeContexts = new WeakMap<object, object>();
+const originalRoomMergeInvocations = new WeakMap<object, OriginalRoomMergeInvocation>();
+/** Read only the handle minted by the actual captured handler invocation after its real gates. */
+export function readOriginalRoomMergeInvocation(
+  context: CapabilityHandlerContext,
+  input: object,
+  service: RoomMergeService
+): object {
+  const handle = originalRoomMergeContexts.get(context);
+  const record = handle ? originalRoomMergeInvocations.get(handle) : undefined;
+  if (
+    !handle ||
+    !record?.active ||
+    record.context !== context ||
+    record.input !== input ||
+    record.construction.service !== service
+  )
+    throw new Error('Room merge requires its actual original gated invocation.');
+  requireOriginalRoomMergeInvocation(
+    handle,
+    service,
+    record.construction.nativePrincipals,
+    record.construction.db
+  );
+  return handle;
+}
+/** Fixed constructor/identity/lifetime recognition. Native currentness and Room policy remain separate. */
+export function requireOriginalRoomMergeInvocation(
+  handle: object,
+  service: RoomMergeService,
+  nativePrincipals: ConnectorRuntimePrincipalService,
+  db: Db
+): Readonly<{
+  roomId: string;
+  summary: string;
+  principal: ServerPrincipalProof;
+  signal?: AbortSignal;
+}> {
+  const record = originalRoomMergeInvocations.get(handle);
+  if (
+    !record?.active ||
+    record.construction.service !== service ||
+    record.construction.nativePrincipals !== nativePrincipals ||
+    record.construction.db !== db ||
+    originalRoomMergeContexts.get(record.context) !== handle ||
+    record.context.serverPrincipal !== record.principal ||
+    record.context.signal !== record.signal ||
+    record.signal?.aborted
+  )
+    throw new Error('Room merge invocation is foreign, retired or aborted.');
+  const input = record.input as { roomId?: unknown; summary?: unknown };
+  if (input.roomId !== record.values.roomId || input.summary !== record.values.summary)
+    throw new Error('Room merge invocation input changed.');
+  requireRoomMergeRegistryConstruction(service, nativePrincipals, db);
+  if (!record.active || originalRoomMergeInvocations.get(handle) !== record)
+    throw new Error('Room merge invocation retired during construction recognition.');
+  return Object.freeze({ ...record.values, principal: record.principal, signal: record.signal });
+}
+
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import {
@@ -524,6 +604,8 @@ export function computeCatalogVersion(capabilities: readonly SerializedCapabilit
   return createHash('sha256').update(stableStringify(sorted)).digest('hex').slice(0, 12);
 }
 
+const originalRegistryInvocations = new WeakMap<CapabilityRegistry, CapabilityRegistry['invoke']>();
+
 /**
  * Compose one immutable {@link CapabilityRegistry} from the given domains,
  * capturing `deps` for invocation.
@@ -550,8 +632,35 @@ export function computeCatalogVersion(capabilities: readonly SerializedCapabilit
 export function composeRegistry(
   domains: readonly CapabilityDomain[],
   deps: CapabilityDeps,
-  onInvocation?: CapabilityInvocationObserver
+  onInvocation?: CapabilityInvocationObserver,
+  originalRoomMerge?: OriginalRoomMergeRegistryConstruction
 ): CapabilityRegistry {
+  const mergeConstruction = originalRoomMerge ? Object.freeze({ ...originalRoomMerge }) : undefined;
+  if (mergeConstruction)
+    requireRoomMergeRegistryConstruction(
+      mergeConstruction.service,
+      mergeConstruction.nativePrincipals,
+      mergeConstruction.db
+    );
+  let mergeDefinition: CapabilityDefinition | undefined;
+  let mergeHandler: CapabilityDefinition['invoke'] | undefined;
+  let mergeParse: ((input: unknown) => unknown) | undefined;
+  const originalDocumentCalls = new Map<
+    CapabilityDefinition,
+    {
+      parse: (input: unknown) => unknown;
+      invoke: CapabilityDefinition['invoke'];
+    }
+  >();
+  const documentIds = new Set([
+    'ui.configure_doc_channel',
+    'ui.approve_doc_route',
+    'ui.revoke_doc_route',
+    'ui.inspect_doc_channel',
+    'ui.issue_doc_token',
+    'ui.revoke_doc_token',
+    'ui.replay_doc_batch',
+  ]);
   const byId = new Map<string, CapabilityDefinition>();
   const mcpToolNames = new Map<string, string>();
   const cliVerbs = new Map<string, string>();
@@ -589,7 +698,20 @@ export function composeRegistry(
       if (byId.has(id)) {
         throw new Error(`Capability registry: duplicate capability id "${id}".`);
       }
-      byId.set(id, capability);
+      if (id === 'rooms.merge' && mergeConstruction) {
+        // Keep original permission/tier primitives and function pointers private and fixed.
+        mergeDefinition = Object.freeze({ ...capability });
+        mergeHandler = capability.invoke.bind(capability);
+        mergeParse = capability.input.parse.bind(capability.input);
+        byId.set(id, mergeDefinition);
+      } else if (documentIds.has(id)) {
+        const original = Object.freeze({ ...capability });
+        originalDocumentCalls.set(original, {
+          parse: capability.input.parse.bind(capability.input),
+          invoke: capability.invoke.bind(capability),
+        });
+        byId.set(id, original);
+      } else byId.set(id, capability);
 
       if (surfaces.mcp) {
         claim(mcpToolNames, surfaces.mcp.toolName, id, 'MCP tool name');
@@ -620,7 +742,7 @@ export function composeRegistry(
   }
 
   const core: readonly CapabilityDefinition[] = Object.freeze(
-    domains.flatMap((domain) => [...domain.capabilities])
+    domains.flatMap((domain) => domain.capabilities.map((capability) => byId.get(capability.id)!))
   );
 
   // The live extension layer (DOR-2685). Kept apart from the core tables so a
@@ -779,7 +901,12 @@ export function composeRegistry(
       // applied, unknown keys stripped. The approval binds to a hash of this
       // value, so hashing anything else (the raw body, or a re-parse) would make
       // the binding cover something other than what runs.
-      const parsed = capability.input.parse(input);
+      const parsed =
+        capability === mergeDefinition && mergeParse
+          ? mergeParse(input)
+          : originalDocumentCalls.has(capability)
+            ? originalDocumentCalls.get(capability)!.parse(input)
+            : capability.input.parse(input);
 
       // Always a real object, so a handler can read `context.approval` without
       // guarding for an absent context on every call site. The invoking session
@@ -889,19 +1016,58 @@ export function composeRegistry(
       // produced an `approval_required` line and then silence. Two seams each
       // correctly deferred to the other and the record fell between them.
       const auditedWithoutIdentity = capability.tier === 'destructive';
-      if (!onInvocation || (!invocationContext.identity && !auditedWithoutIdentity)) {
-        return capability.invoke(deps, parsed, invocationContext);
+      let mergeHandle: object | undefined;
+      let mergeRecord: OriginalRoomMergeInvocation | undefined;
+      if (id === 'rooms.merge' && mergeConstruction) {
+        if (
+          capability !== mergeDefinition ||
+          !mergeHandler ||
+          !invocationContext.serverPrincipal ||
+          !isServerPrincipal(invocationContext.serverPrincipal) ||
+          typeof parsed !== 'object' ||
+          parsed === null
+        )
+          throw new Error('Room merge original construction or principal is unavailable.');
+        const values = parsed as { roomId?: unknown; summary?: unknown };
+        if (typeof values.roomId !== 'string' || typeof values.summary !== 'string')
+          throw new Error('Room merge input is malformed.');
+        mergeHandle = Object.freeze({});
+        mergeRecord = {
+          construction: mergeConstruction,
+          context: invocationContext,
+          input: parsed,
+          values: Object.freeze({ roomId: values.roomId, summary: values.summary }),
+          principal: invocationContext.serverPrincipal,
+          signal: invocationContext.signal,
+          active: true,
+        };
+        originalRoomMergeInvocations.set(mergeHandle, mergeRecord);
+        originalRoomMergeContexts.set(invocationContext, mergeHandle);
       }
-
-      // Report the outcome either way: a failed attempt by a named agent is
-      // exactly as interesting to an audit trail as a successful one.
+      const invokeHandler = (): Promise<unknown> =>
+        capability === mergeDefinition && mergeHandler
+          ? mergeHandler(deps, parsed, invocationContext)
+          : originalDocumentCalls.has(capability)
+            ? originalDocumentCalls.get(capability)!.invoke(deps, parsed, invocationContext)
+            : capability.invoke(deps, parsed, invocationContext);
       try {
-        const result = await capability.invoke(deps, parsed, invocationContext);
-        notify(onInvocation, capability, invocationContext, true);
-        return result;
-      } catch (err) {
-        notify(onInvocation, capability, invocationContext, false, err);
-        throw err;
+        // Await both branches so the authentic invocation stays active for all admitted work.
+        if (!onInvocation || (!invocationContext.identity && !auditedWithoutIdentity))
+          return await invokeHandler();
+        try {
+          const result = await invokeHandler();
+          notify(onInvocation, capability, invocationContext, true);
+          return result;
+        } catch (err) {
+          notify(onInvocation, capability, invocationContext, false, err);
+          throw err;
+        }
+      } finally {
+        if (mergeRecord && mergeHandle) {
+          mergeRecord.active = false;
+          originalRoomMergeContexts.delete(invocationContext);
+          originalRoomMergeInvocations.delete(mergeHandle);
+        }
       }
     },
     catalog() {
@@ -934,5 +1100,18 @@ export function composeRegistry(
     },
   };
 
+  originalRegistryInvocations.set(registry, registry.invoke);
   return Object.freeze(registry);
+}
+
+/** Dispatch through the exact original factory closure, retaining its parsing/tier/approval/audit gates. */
+export function invokeOriginalCapabilityRegistry(
+  registry: CapabilityRegistry,
+  id: string,
+  input: unknown,
+  context: CapabilityInvocationContext
+): Promise<unknown> {
+  const invoke = originalRegistryInvocations.get(registry);
+  if (!invoke) throw new Error('Original capability registry is unavailable.');
+  return Reflect.apply(invoke, registry, [id, input, context]);
 }

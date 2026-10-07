@@ -142,6 +142,9 @@
     ],
     "ignoredBuiltDependencies": [
       "electron-winstaller"
-    ]
+    ],
+    "patchedDependencies": {
+      "@fumadocs/api-docs@0.2.9": "patches/@fumadocs__api-docs@0.2.9.patch"
+    }
   }
 }

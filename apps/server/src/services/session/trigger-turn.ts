@@ -1,3 +1,14 @@
+import { readOriginalRegisteredRuntime } from '../core/runtime-registry.js';
+import {
+  readOriginalRoomDispatchPlan,
+  requireOriginalRoomDispatchPlanCurrent,
+} from './message-dispatcher.js';
+import {
+  readOriginalRoomDispatchRequest,
+  type OriginalRoomDispatchCustody,
+} from '../rooms/service/room-core.js';
+import { readOriginalRoomRunnerLaunch } from '../rooms/room-turn-runner.js';
+import type { RoomTurnRequest } from '../rooms/room-turn-port.js';
 /**
  * Trigger-only turn orchestration for the message POST (ADR-0264, Design B.2).
  *
@@ -100,6 +111,7 @@ import type {
   ClientContext,
   RoomContextData,
 } from '@dorkos/shared/additional-context';
+import { RoomContextDataSchema } from '@dorkos/shared/additional-context';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import { detectAuthError } from '@dorkos/shared/runtime-error-classification';
 import type { SessionStateProjector } from './session-state-projector.js';
@@ -148,7 +160,107 @@ type RawOf<T extends SessionEvent['type']> = Omit<Extract<SessionEvent, { type: 
  * silence is separately bounded by the stall watchdog, which shares the same
  * probe, so a renewed lock cannot outlive a turn the watchdog would have killed.
  */
+const originalRoomLifecycles = new WeakMap<
+  SseResponse,
+  { custody: OriginalRoomDispatchCustody; runtime: object; retired: boolean }
+>();
+const originalRoomLaunchHolders = new WeakMap<
+  OriginalRoomDispatchCustody,
+  {
+    runtime: object;
+    holder: SseResponse;
+    key: string;
+  }
+>();
+/** Actual holder exists only inside original awaited launch preparation, never from request DATA. */
+export function readOriginalRoomLaunchHolder(request: RoomTurnRequest) {
+  const launch = readOriginalRoomRunnerLaunch(request);
+  if (!launch) return undefined;
+  const custody = readOriginalRoomDispatchRequest(request, launch.runner);
+  if (!custody) return undefined;
+  const own = originalRoomLaunchHolders.get(custody);
+  const lifecycle = own && originalRoomLifecycles.get(own.holder);
+  if (
+    !own ||
+    !lifecycle ||
+    lifecycle.retired ||
+    lifecycle.custody !== custody ||
+    lifecycle.runtime !== own.runtime ||
+    own.key !== launch.sessionId ||
+    readOriginalRoomDispatchRequest(request, launch.runner) !== custody ||
+    originalRoomLaunchHolders.get(custody) !== own
+  )
+    return undefined;
+  return own;
+}
+/** Initial fixed native-entry capture distinguishes ordinary holders from retired original dispatch. */
+export function captureOriginalRoomDispatchLifecycle(
+  holder: SseResponse,
+  runtime: object
+): OriginalRoomDispatchCustody | undefined {
+  const own = originalRoomLifecycles.get(holder);
+  if (!own) return undefined;
+  if (own.retired || (readOriginalRegisteredRuntime(own.runtime) ?? own.runtime) !== runtime)
+    throw new Error('Original Room detached acquisition is retired or foreign.');
+  return own.custody;
+}
+/** Native entry lookup only; registration occurs inside the actual detached acquisition path. */
+export function readOriginalRoomDispatchLifecycle(
+  holder: SseResponse,
+  runtime: object
+): OriginalRoomDispatchCustody | undefined {
+  const own = originalRoomLifecycles.get(holder);
+  return own &&
+    !own.retired &&
+    (readOriginalRegisteredRuntime(own.runtime) ?? own.runtime) === runtime
+    ? own.custody
+    : undefined;
+}
+
+const originalPreparedRoomContexts = new WeakMap<
+  object,
+  {
+    plan: object;
+    runtime: object;
+    lifecycle: SseResponse;
+    sessionId: string;
+    context: RoomContextData;
+  }
+>();
+/** Exact original native-entry tuple only. Returned context is copied DATA, never launch authority. */
+export function readOriginalPreparedRoomContext(
+  runtime: object,
+  lifecycle: SseResponse,
+  sessionId: string,
+  options: MessageOpts | undefined
+): RoomContextData | undefined {
+  if (!options) return undefined;
+  const own = originalPreparedRoomContexts.get(options);
+  if (!own) return undefined;
+  runtime = readOriginalRegisteredRuntime(runtime) ?? runtime;
+  const current = readOriginalRoomDispatchPlan(own.plan);
+  if (
+    own.runtime !== runtime ||
+    own.lifecycle !== lifecycle ||
+    own.sessionId !== sessionId ||
+    !current ||
+    (readOriginalRegisteredRuntime(current.runtime) ?? current.runtime) !== runtime ||
+    readOriginalRoomDispatchLifecycle(lifecycle, runtime) !== current.custody
+  )
+    throw new Error('Original prepared Room context tuple is retired or foreign.');
+  requireOriginalRoomDispatchPlanCurrent(own.plan, sessionId);
+  return RoomContextDataSchema.parse(own.context);
+}
+
+const originalDetachedTurnClosures = new WeakMap<SseResponse, () => boolean>();
+/** Fixed constructor-only closure observation; absence is unknown, never positive disposal. */
+export function readOriginalDetachedTurnLifecycleClosed(holder: SseResponse): boolean | undefined {
+  return originalDetachedTurnClosures.get(holder)?.();
+}
+
+/** Own the activity and positive close lifecycle of a detached turn. */
 export class DetachedTurnLifecycle implements SseResponse, LockActivity {
+  #originalCloseCompleted = false;
   private readonly closeCallbacks: Array<() => void> = [];
   private closed = false;
   private activityAt = Date.now();
@@ -163,7 +275,9 @@ export class DetachedTurnLifecycle implements SseResponse, LockActivity {
    *   not be treated as dead. Defaults to "never", for callers that construct a
    *   lifecycle without one.
    */
-  constructor(private readonly quietIsExpected: () => boolean = () => false) {}
+  constructor(private readonly quietIsExpected: () => boolean = () => false) {
+    originalDetachedTurnClosures.set(this, () => this.#originalCloseCompleted);
+  }
 
   /** Record proof of life; called for every event the turn yields. */
   touch(): void {
@@ -182,9 +296,26 @@ export class DetachedTurnLifecycle implements SseResponse, LockActivity {
 
   /** Fire all close handlers once; further calls are no-ops. */
   close(): void {
+    const original = originalRoomLifecycles.get(this);
+    if (original) original.retired = true;
     if (this.closed) return;
     this.closed = true;
-    for (const cb of this.closeCallbacks) cb();
+    let failed = false,
+      first: unknown;
+    // Every owned close callback is attempted even when an earlier one throws undefined.
+    for (let index = 0; index < this.closeCallbacks.length; index++) {
+      try {
+        const callback = this.closeCallbacks[index]!;
+        callback();
+      } catch (cause) {
+        if (!failed) {
+          failed = true;
+          first = cause;
+        }
+      }
+    }
+    if (failed) throw first;
+    this.#originalCloseCompleted = true;
   }
 }
 
@@ -373,6 +504,8 @@ export const CANONICAL_ID_TIMEOUT_MS = 5_000;
 
 /** The collaborators {@link triggerTurn} needs, narrowed to a runtime-neutral port. */
 export interface TriggerTurnDeps {
+  /** Move only the original native acquisition; absence never issues F2 ancestry. */
+  moveNativeLock?(oldId: string, newId: string, holder: SseResponse): boolean | undefined;
   /**
    * Acquire the session write-lock; returns false when held by another client.
    * The `token` is the per-turn lock identity (I1) so {@link releaseLock} can be
@@ -386,7 +519,13 @@ export interface TriggerTurnDeps {
    */
   releaseLock(sessionId: string, clientId: string, token?: symbol): void;
   /** The runtime's per-turn event generator. */
-  sendMessage(sessionId: string, content: string, opts: MessageOpts): AsyncGenerator<StreamEvent>;
+  sendMessage(
+    sessionId: string,
+    content: string,
+    opts: MessageOpts,
+    holder: SseResponse,
+    lockKey: string
+  ): AsyncGenerator<StreamEvent>;
   /**
    * End a turn the runtime has left open before this one starts, answering
    * whether it settled anything (`AgentRuntime.settleOpenTurn`). Absent for a
@@ -444,6 +583,9 @@ export interface TriggerTurnDeps {
 
 /** Inputs for {@link triggerTurn}. */
 export interface TriggerTurnOpts {
+  /** Private dispatcher plan identity; a caller bag or persisted row cannot reproduce it. */
+  originalRoomPlan?: object;
+
   sessionId: string;
   clientId: string;
   content: string;
@@ -706,6 +848,7 @@ async function runPrepareLaunch(
  *   otherwise `{ accepted: true, canonicalId }`.
  */
 export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnResult> {
+  const originalRoomPlan = opts.originalRoomPlan;
   const {
     sessionId,
     clientId,
@@ -722,6 +865,8 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     projector,
     deps,
   } = opts;
+  const originalSendMessage = deps.sendMessage;
+  const invokeOriginalSendMessage = Reflect.apply;
 
   // A live session answers to EVERY id it has ever held — the request UUID the
   // client first used and the canonical id the runtime assigns mid-first-turn —
@@ -758,6 +903,12 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
   //
   // A helper still working is the same kind of legitimate silence (DOR-2681):
   // a background helper sends nothing for the length of one of its steps.
+  const originalRoom =
+    originalRoomPlan === undefined ? undefined : readOriginalRoomDispatchPlan(originalRoomPlan);
+  if (originalRoomPlan !== undefined && !originalRoom) {
+    slot.release();
+    throw new Error('Original Room queued custody is unavailable at acquisition.');
+  }
   const quietIsExpected = (): boolean =>
     projector.hasPendingInteractions() || deps.isHelperWorking?.(sessionId) === true;
   const lifecycle = new DetachedTurnLifecycle(quietIsExpected);
@@ -766,6 +917,13 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     slot.release();
     return { accepted: false };
   }
+
+  if (originalRoom)
+    originalRoomLifecycles.set(lifecycle, {
+      custody: originalRoom.custody,
+      runtime: originalRoom.runtime,
+      retired: false,
+    });
 
   // Idempotent release: explicit on completion/error, plus the lifecycle close
   // that drives the lock manager's own cleanup. Both funnel through here. The
@@ -827,9 +985,32 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     // on this session is running — see `prepareLaunch`. Its result replaces the
     // accepted room context BEFORE the bag below renders it, so what the model
     // is told matches what is on disk as it starts.
-    const prepared = opts.prepareLaunch
-      ? await runPrepareLaunch(opts.prepareLaunch, sessionId)
-      : {};
+    const prepared = await (async () => {
+      const prepareLaunch = opts.prepareLaunch;
+      if (!prepareLaunch) return {};
+      const own =
+        originalRoom &&
+        Object.freeze({ runtime: originalRoom.runtime, holder: lifecycle, key: turnKey });
+      if (own && originalRoom) originalRoomLaunchHolders.set(originalRoom.custody, own);
+      try {
+        // A genuine Room launch requires its preparation; preserve its original
+        // rejection rather than masking it with a later completion refusal.
+        // Ordinary launch preparation retains its accepted-context fallback.
+        return originalRoom
+          ? await prepareLaunch()
+          : await runPrepareLaunch(prepareLaunch, sessionId);
+      } finally {
+        if (own && originalRoom && originalRoomLaunchHolders.get(originalRoom.custody) === own)
+          originalRoomLaunchHolders.delete(originalRoom.custody);
+      }
+    })();
+    // Generic preparation failures retain their ordinary fallback, but an
+    // original Room request cannot outlive its actual native caller lifetime.
+    if (originalRoomPlan !== undefined) {
+      if (Object.getOwnPropertyDescriptor(opts, 'originalRoomPlan')?.value !== originalRoomPlan)
+        throw new Error('Original Room queued plan was replaced during launch preparation.');
+      requireOriginalRoomDispatchPlanCurrent(originalRoomPlan, sessionId);
+    }
     const roomContext = prepared.roomContext ?? opts.roomContext;
     // Assemble the neutral context bag once, server-side: git_status is derived
     // here (identical for every runtime), client signals are normalized, and any
@@ -920,13 +1101,13 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
       ...(roomTurn !== undefined ? { roomTurn } : {}),
     });
 
-    // A runtime that can tell, before the turn is shown, that starting it would
-    // end the agent's background work answers the handshake first (spec
-    // `warm-process-lifecycle` D2, DOR-2065). Not offered to a protected
-    // message: its claim above is final, and nothing here could undo it.
-    const offerHold = deps.answersDispatchHold === true && opts.privateReceiptId === undefined;
-    const send = (dispatchHold?: DispatchHoldHandshake): AsyncGenerator<StreamEvent> =>
-      deps.sendMessage(sessionId, dispatchContent, {
+    const offerHold =
+      deps.answersDispatchHold === true &&
+      opts.privateReceiptId === undefined &&
+      originalRoomPlan === undefined;
+    let originalRuntimeStream: ReturnType<typeof originalSendMessage> | undefined;
+    const send = (dispatchHold?: DispatchHoldHandshake): AsyncGenerator<StreamEvent> => {
+      const originalSendOptions: Parameters<typeof originalSendMessage>[2] = {
         // Conditional, on the same idiom as the three below it. A turn with no
         // opinion about its directory must hand the runtime NO cwd, not a `cwd`
         // key holding `undefined`: the session route takes care not to stamp one
@@ -957,13 +1138,59 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
           : {}),
         ...(opts.unattended === true ? { unattended: true } : {}),
         ...settings,
+        ...(dispatchHold !== undefined ? { dispatchHold } : {}),
         // After `settings`, and it cannot collide with it: that type has no
         // permission key. See the field's docblock for why it is not in there.
         ...(opts.newSessionPermissionMode !== undefined
           ? { permissionMode: opts.newSessionPermissionMode }
           : {}),
-        ...(dispatchHold !== undefined ? { dispatchHold } : {}),
-      });
+      };
+      // Copy DATA before the final currentness gate; no schema getter runs after that gate.
+      const originalPreparedContext =
+        originalRoomPlan !== undefined && roomContext
+          ? RoomContextDataSchema.parse(roomContext)
+          : undefined;
+      // Repeat after context assembly, capabilities, settlement and private-source
+      // waits. No intervening await may separate this native check from dispatch.
+      if (originalRoomPlan !== undefined) {
+        if (
+          Object.getOwnPropertyDescriptor(opts, 'originalRoomPlan')?.value !== originalRoomPlan ||
+          Object.getOwnPropertyDescriptor(deps, 'sendMessage')?.value !== originalSendMessage
+        )
+          throw new Error(
+            'Original Room queued plan or runtime entry was replaced before dispatch.'
+          );
+        const current = readOriginalRoomDispatchPlan(originalRoomPlan);
+        if (
+          !current ||
+          current.custody !== originalRoom?.custody ||
+          current.runtime !== originalRoom.runtime ||
+          readOriginalRoomDispatchLifecycle(
+            lifecycle,
+            readOriginalRegisteredRuntime(current.runtime) ?? current.runtime
+          ) !== current.custody
+        )
+          throw new Error('Original Room acquired launch is retired or foreign.');
+        requireOriginalRoomDispatchPlanCurrent(originalRoomPlan, sessionId);
+      }
+      if (originalPreparedContext && originalRoomPlan !== undefined && originalRoom)
+        originalPreparedRoomContexts.set(originalSendOptions, {
+          plan: originalRoomPlan,
+          runtime: readOriginalRegisteredRuntime(originalRoom.runtime) ?? originalRoom.runtime,
+          lifecycle,
+          sessionId,
+          context: originalPreparedContext,
+        });
+      const stream = invokeOriginalSendMessage(originalSendMessage, deps, [
+        sessionId,
+        dispatchContent,
+        originalSendOptions,
+        lifecycle,
+        turnKey,
+      ]);
+      originalRuntimeStream = stream;
+      return stream;
+    };
     let source: AsyncIterable<StreamEvent>;
     if (!offerHold) {
       source = send();
@@ -1023,6 +1250,7 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     // The trigger content rides the turn_start (userMessage) so the EventLog is a
     // self-sufficient history source for log-backed runtimes (ADR-0263).
     const turn = feedProjector(projector, guarded, {
+      originalRoomStream: originalRuntimeStream,
       ...(opts.privateReceiptId === undefined ? { userMessage: content } : {}),
       ...(opts.onTurnStart ? { onTurnStart: opts.onTurnStart } : {}),
     })

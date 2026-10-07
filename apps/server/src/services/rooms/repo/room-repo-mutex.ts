@@ -100,6 +100,49 @@ export interface RoomRepoQueueOptions {
   queueFull?: () => Error;
 }
 
+interface ActiveRoomLease {
+  mutex: RoomRepoMutex;
+  roomId: string;
+}
+const roomLeases = new WeakMap<object, ActiveRoomLease>();
+const roomMutexOwners = new WeakMap<
+  object,
+  {
+    run<T>(
+      roomId: string,
+      options: RoomRepoQueueOptions,
+      task: (lease: object) => Promise<T>
+    ): Promise<T>;
+  }
+>();
+/** Active exclusion/lifetime only; not caller, room, namespace or document permission. */
+export function requireRoomRepoMutationLease(
+  mutex: RoomRepoMutex,
+  roomId: string,
+  handle: object
+): undefined {
+  const lease = roomLeases.get(handle);
+  if (!lease || lease.mutex !== mutex || lease.roomId !== roomId || !roomMutexOwners.has(mutex))
+    throw new Error('Unknown or inactive room repository mutation lease.');
+  return undefined;
+}
+/** Require a mutex constructed by the original Room repository owner. */
+export function requireRoomRepoMutex(mutex: unknown): RoomRepoMutex {
+  if (!mutex || typeof mutex !== 'object' || !roomMutexOwners.has(mutex))
+    throw new Error('Unknown room repository mutex.');
+  return mutex as RoomRepoMutex;
+}
+/** Call the captured original implementation, never a public run-shaped replacement. */
+export function runOwnedRoomRepoMutation<T>(
+  mutex: RoomRepoMutex,
+  roomId: string,
+  options: RoomRepoQueueOptions,
+  task: (lease: object) => Promise<T>
+): Promise<T> {
+  requireRoomRepoMutex(mutex);
+  return roomMutexOwners.get(mutex)!.run(roomId, options, task);
+}
+
 /**
  * A per-room serialized operation queue for a room repo's integration tree.
  *
@@ -110,7 +153,11 @@ export interface RoomRepoQueueOptions {
  */
 export class RoomRepoMutex {
   /** Lanes with somebody in them, keyed by room id. */
-  private readonly lanes = new Map<string, Lane>();
+  readonly #lanes = new Map<string, Lane>();
+
+  constructor() {
+    roomMutexOwners.set(this, { run: (roomId, options, task) => this.#run(roomId, options, task) });
+  }
 
   /**
    * Run `task` with exclusive access to one room's repo, waiting if somebody
@@ -129,9 +176,21 @@ export class RoomRepoMutex {
    * @throws Whatever `options.busy()` builds, when the queue is full or the
    *   wait is spent — and whatever `task` itself throws, unchanged.
    */
-  async run<T>(roomId: string, options: RoomRepoQueueOptions, task: () => Promise<T>): Promise<T> {
-    const lane = this.lanes.get(roomId) ?? { held: false, queue: [] };
-    this.lanes.set(roomId, lane);
+  run<T>(
+    roomId: string,
+    options: RoomRepoQueueOptions,
+    task: (lease: object) => Promise<T>
+  ): Promise<T> {
+    return this.#run(roomId, options, task);
+  }
+
+  async #run<T>(
+    roomId: string,
+    options: RoomRepoQueueOptions,
+    task: (lease: object) => Promise<T>
+  ): Promise<T> {
+    const lane = this.#lanes.get(roomId) ?? { held: false, queue: [] };
+    this.#lanes.set(roomId, lane);
 
     if (lane.held) {
       if (lane.queue.length >= MAX_QUEUE_DEPTH) {
@@ -140,16 +199,34 @@ export class RoomRepoMutex {
         // drop it. This caller waited for nothing, so it is told so.
         throw (options.queueFull ?? options.busy)();
       }
-      await this.waitForLane(lane, options);
+      await this.#waitForLane(lane, options);
     } else {
       lane.held = true;
     }
 
+    const handle = Object.freeze({});
+    roomLeases.set(handle, { mutex: this, roomId });
+    let failed = false;
+    let firstCause: unknown;
+    let result: T | undefined;
     try {
-      return await task();
+      result = await task(handle);
+    } catch (error) {
+      failed = true;
+      firstCause = error;
     } finally {
-      this.release(roomId);
+      roomLeases.delete(handle);
+      try {
+        this.#release(roomId);
+      } catch (error) {
+        if (!failed) {
+          failed = true;
+          firstCause = error;
+        }
+      }
     }
+    if (failed) throw firstCause;
+    return result as T;
   }
 
   /**
@@ -158,7 +235,7 @@ export class RoomRepoMutex {
    * @param lane - The room's lane.
    * @param options - The wait cap and the refusal.
    */
-  private waitForLane(lane: Lane, options: RoomRepoQueueOptions): Promise<void> {
+  #waitForLane(lane: Lane, options: RoomRepoQueueOptions): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
         const at = lane.queue.indexOf(waiter);
@@ -186,12 +263,12 @@ export class RoomRepoMutex {
    *
    * @param roomId - The room whose lane is being released.
    */
-  private release(roomId: string): void {
-    const lane = this.lanes.get(roomId);
+  #release(roomId: string): void {
+    const lane = this.#lanes.get(roomId);
     if (!lane) return;
     const next = lane.queue.shift();
     if (!next) {
-      this.lanes.delete(roomId);
+      this.#lanes.delete(roomId);
       return;
     }
     clearTimeout(next.timer);

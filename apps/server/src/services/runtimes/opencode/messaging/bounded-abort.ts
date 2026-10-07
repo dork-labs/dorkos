@@ -14,9 +14,19 @@
  */
 import { INTERRUPT_ACK_TIMEOUT_MS } from '../runtime-constants.js';
 
-/** Sleep helper for the stream-liveness race. */
-export function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+/** Wait for the stream or its original bound; retire the exact timer on every ending. */
+export async function awaitStreamLive(live: Promise<void>, ms: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      live,
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, ms);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }
 
 /** What one bounded abort request concluded — mirrors claude-code's `StopAck` (`bounded-control.ts`). */

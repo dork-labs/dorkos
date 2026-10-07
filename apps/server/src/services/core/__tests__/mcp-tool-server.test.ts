@@ -728,7 +728,7 @@ describe('MCP Tool Handlers', () => {
       expect(server.version).toBe('1.0.0');
     });
 
-    it('registers 57 tools including the five document-channel verbs', () => {
+    it('registers 62 tools including the ten document-channel verbs', () => {
       // Purpose: regression guard against accidental tool omissions or additions.
       // This count changes intentionally when new MCP tools are added. 32 legacy
       // (4 core + 5 tasks + 8 relay + 1 agent + 2 ui + 3 devtools + 6 browser
@@ -772,13 +772,19 @@ describe('MCP Tool Handlers', () => {
       // 50 -> 51 for `accounts_probe` (spec `claude-account-fleet` D3).
       // 51 -> 52 for `session_start` (spec `claude-account-fleet` D5).
       const server = createDorkOsToolServer(makeMockDeps()) as unknown as MockServer;
-      expect(server.tools).toHaveLength(57);
+      // Four operator management tools and one native task writer extend this surface.
+      expect(server.tools).toHaveLength(62);
       for (const name of [
         'configure_doc_channel',
         'approve_doc_route',
         'revoke_doc_route',
         'canvas_send',
         'canvas_patch_state',
+        'replay_doc_batch',
+        'inspect_doc_channel',
+        'issue_doc_token',
+        'revoke_doc_token',
+        'canvas_set_checkbox',
       ]) {
         expect(server.tools.map((tool) => tool.name)).toContain(name);
       }

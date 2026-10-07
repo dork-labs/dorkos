@@ -1,3 +1,56 @@
+const originalProjectorIngest = new WeakMap<
+  SessionStateProjector,
+  (raw: RawSessionEvent) => SessionEvent
+>();
+const originalProjectionEvents = new WeakMap<
+  object,
+  { projector: SessionStateProjector; seq: number }
+>();
+/** Ingest through the projector's constructor-captured original implementation. */
+export function ingestOriginalSessionProjection(
+  projector: SessionStateProjector,
+  raw: RawSessionEvent
+): SessionEvent {
+  const run = originalProjectorIngest.get(projector);
+  if (!run) throw new Error('Session projection constructor is not original.');
+  const event = run(raw);
+  originalProjectionEvents.set(event, { projector, seq: event.seq });
+  return event;
+}
+/** Require the projector's exact original stamped event. */
+export function requireOriginalSessionProjection(
+  projector: SessionStateProjector,
+  event: SessionEvent
+): void {
+  const own = originalProjectionEvents.get(event);
+  if (
+    !own ||
+    own.projector !== projector ||
+    own.seq !== event.seq ||
+    !originalProjectorIngest.has(projector)
+  )
+    throw new Error('Session projection is not original.');
+}
+/** Return constructor-private stamped sequence, after one own DATA-descriptor check. */
+export function readOriginalSessionProjectionSequence(
+  projector: SessionStateProjector,
+  event: SessionEvent
+): number {
+  const own = originalProjectionEvents.get(event),
+    slot = Object.getOwnPropertyDescriptor(event, 'seq');
+  if (
+    !own ||
+    own.projector !== projector ||
+    !originalProjectorIngest.has(projector) ||
+    !Number.isSafeInteger(own.seq) ||
+    own.seq < 1 ||
+    !slot ||
+    !('value' in slot) ||
+    slot.value !== own.seq
+  )
+    throw new Error('Original stamped projection sequence changed');
+  return own.seq;
+}
 /**
  * Server-side source of truth for a single live session's projected state.
  *
@@ -75,7 +128,8 @@ import {
  * the `seq` omitted. The projector stamps `seq` on ingest so the adapter never
  * has to track ordering. This keeps the adapter a pure normalizer.
  */
-export type RawSessionEvent = Omit<SessionEvent, 'seq'>;
+type UnsequencedSessionEvent<Event> = Event extends unknown ? Omit<Event, 'seq'> : never;
+export type RawSessionEvent = UnsequencedSessionEvent<SessionEvent>;
 
 /**
  * How long past its cap an in-session capability hold (DOR-939) keeps pausing
@@ -650,6 +704,12 @@ export class SessionStateProjector {
 
   constructor(sessionId: string) {
     this._sessionId = sessionId;
+    originalProjectorIngest.set(this, (raw) => {
+      const event = this.#ingest(raw);
+      if (this.counter !== event.seq)
+        throw new Error('Session projection changed during ingestion.');
+      return event;
+    });
   }
 
   /**
@@ -686,6 +746,9 @@ export class SessionStateProjector {
    * @param raw - A {@link SessionEvent} union member without its `seq`.
    */
   ingest(raw: RawSessionEvent): SessionEvent {
+    return this.#ingest(raw);
+  }
+  #ingest(raw: RawSessionEvent): SessionEvent {
     // Before anything else, so a stale child cannot ride one more event into a
     // count somebody is about to read. The armed timer is what normally catches
     // these; this catches the case where it could not run (a suspended process,
@@ -753,6 +816,7 @@ export class SessionStateProjector {
     // update of the same episode lands on top of it, never under it.
     const limitAfter = this.status.limit;
     if (limitAfter && limitAfter.since !== limitSinceBefore) notifyLimitSet(this, limitAfter);
+    if (this.counter !== event.seq) throw new Error('Session projection changed during ingestion.');
     return event;
   }
 

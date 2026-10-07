@@ -109,6 +109,7 @@ import type { MarketplaceMcpDeps } from '../../../marketplace-mcp/marketplace-mc
 import { AgentRegistry } from '@dorkos/mesh';
 import { AgentMcpServerService } from '../../../mesh/agent-mcp-server-service.js';
 import { DocRouteGrantError } from '../../../canvas/doc-channel/grant-policy.js';
+import { DocChannelNotFoundError } from '../../../canvas/doc-channel/authorization.js';
 import { DocDownstreamError } from '../../../canvas/doc-channel/downstream/service.js';
 
 /** A tmp path that need not exist — the fakes never touch real disk. */
@@ -291,10 +292,11 @@ if (!CONFORMANCE_ROOM_SLUG) {
  * `enabled: () => false` stub would refuse at the first line of
  * `requireProjectRoom`, never reaching the membership check or the store.
  *
- * Enabled, the conformance channel is simply a room with no files: the caller's
- * membership resolves, the store reports no sidecar row, and both verbs answer
- * the structured `NOT_A_PROJECT_ROOM` this suite accepts. Nothing here touches
- * git — there is no repo to touch.
+ * The generic invocation has no server principal. Repo status can reach the
+ * no-files refusal; merge refuses that anonymous invocation without issuing a
+ * mutation. The isolated original native merge case separately exercises the
+ * constructor-associated registry, active stream principal, and real landing.
+ * No git is reached by this anonymous fixture.
  */
 const roomMerges = new RoomMergeService({
   store: new RoomRepoStore(roomHarness.db, SANDBOX_CWD),
@@ -511,6 +513,25 @@ capabilityConformance(registry, {
   readOnlyToolNames: READ_ONLY_MCP_TOOL_NAMES,
   docsRegistry: composeCapabilityRegistryForDocs(),
   expectedInvokeRefusal: {
+    // The generic probe is anonymous. DTO attribution cannot issue a native merge.
+    // The isolated original native merge case exercises the actual owning registry.
+    'rooms.merge': (error) => error instanceof DocChannelNotFoundError,
+    'ui.replay_doc_batch': (error) =>
+      error instanceof DocRouteGrantError &&
+      error.code === 'INVALID_PRINCIPAL' &&
+      error.status === 403,
+    'ui.inspect_doc_channel': (error) =>
+      error instanceof DocRouteGrantError &&
+      error.code === 'INVALID_PRINCIPAL' &&
+      error.status === 403,
+    'ui.issue_doc_token': (error) =>
+      error instanceof DocRouteGrantError &&
+      error.code === 'INVALID_PRINCIPAL' &&
+      error.status === 403,
+    'ui.revoke_doc_token': (error) =>
+      error instanceof DocRouteGrantError &&
+      error.code === 'INVALID_PRINCIPAL' &&
+      error.status === 403,
     'ui.configure_doc_channel': (error) =>
       error instanceof DocRouteGrantError &&
       error.code === 'INVALID_PRINCIPAL' &&
@@ -524,6 +545,10 @@ capabilityConformance(registry, {
       error.code === 'INVALID_PRINCIPAL' &&
       error.status === 403,
     'ui.send_canvas_event': (error) =>
+      error instanceof DocDownstreamError &&
+      error.code === 'DOC_CHANNEL_UNAVAILABLE' &&
+      error.status === 503,
+    'ui.set_canvas_checkbox': (error) =>
       error instanceof DocDownstreamError &&
       error.code === 'DOC_CHANNEL_UNAVAILABLE' &&
       error.status === 503,
@@ -659,6 +684,26 @@ capabilityConformance(registry, {
     // session in context and gets the sentence that says so. That is the verb
     // really running: a wiring fault would throw instead.
     'ui.read_canvas_document': { documentId: 'conformance-document' },
+    'ui.replay_doc_batch': {
+      documentId: 'conformance-document',
+      expectedGeneration: 'a'.repeat(64),
+      eventId: '11111111-1111-4111-8111-111111111111',
+      batchId: '22222222-2222-4222-8222-222222222222',
+      expectedBatchGeneration: '33333333-3333-4333-8333-333333333333',
+      grantId: 'conformance-grant',
+    },
+    'ui.inspect_doc_channel': { documentId: 'conformance-document' },
+    'ui.issue_doc_token': {
+      request: {
+        documentId: 'conformance-document',
+        allowedTypes: ['task.changed'],
+        directions: ['upstream'],
+        permissions: ['ingest'],
+        expiresAt: '2026-10-06T00:00:00.000Z',
+      },
+      approvedGrantIds: [],
+    },
+    'ui.revoke_doc_token': { documentId: 'conformance-document', tokenId: 'token' },
     'ui.configure_doc_channel': { documentId: 'conformance-document', channel: { routes: [] } },
     'ui.approve_doc_route': {
       documentId: 'conformance-document',
@@ -671,6 +716,14 @@ capabilityConformance(registry, {
       eventId: '00000000-0000-4000-8000-000000000001',
       type: 'task.updated',
       payload: {},
+    },
+    'ui.set_canvas_checkbox': {
+      documentId: 'conformance-document',
+      eventId: '00000000-0000-4000-8000-000000000003',
+      line: 1,
+      textHash: 'a'.repeat(64),
+      expectedFileVersion: 'conformance-file-version',
+      done: true,
     },
     'ui.patch_canvas_state': {
       documentId: 'conformance-document',

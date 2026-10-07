@@ -40,6 +40,36 @@
  */
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import type { Request, Response } from 'express';
+import type multer from 'multer';
+import {
+  createRoomFileUploadStorage,
+  retireRoomFileUploadStorage,
+  restoreRoomFileUploadCause,
+} from './room-file-upload-storage.js';
+import {
+  captureDocHttpRoomFileWriteCaller,
+  checkDocHttpRoomFileWriteCurrent,
+  requireDocHttpRoomFileWriteCurrent,
+  readDocHttpRoomFileWriteAttribution,
+  retireDocHttpRoomFileWriteCaller,
+} from '../../canvas/doc-channel/http-composition.js';
+import {
+  readInstallationRoomFileWriteOwner,
+  withRecognizedInstallationRoomFileEditor,
+  readInstallationRoomUploadStagingRoot,
+  checkInstallationRoomScope,
+  requireInstallationRoomNamespaceCurrent,
+  readInstallationRoomHttpMutationContext,
+  readInstallationRoomMutationRoots,
+  checkInstallationRoomMutationTarget,
+  requireInstallationRoomMutationTarget,
+  type InstallationRoomWrites,
+  type InstallationRoomMutationContext,
+} from '../../canvas/doc-channel/writes/installation-room-writes.js';
+import type { InstallationFileWrites } from '../../canvas/doc-channel/writes/installation-file-writes.js';
+
 import type { RoomRepoCaps } from '@dorkos/shared/room-repo';
 import type {
   RoomFileChangeResponse,
@@ -51,7 +81,7 @@ import { ROOM_UPLOAD_MAX_FILES } from '@dorkos/shared/room-files';
 import { ROOM_FILE_CHANGE_MAX_PATHS, type RoomFileChangeEvent } from '@dorkos/shared/room-schemas';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { logger } from '../../../lib/logger.js';
-import { RoomError } from '../room-errors.js';
+import { RoomError } from '../data/room-errors.js';
 import { normalizeRoomFilePath } from './room-files.js';
 import { fileChangeSentence, ROOT_FOLDER_LABEL, sanitizeSegment } from './room-file-change-text.js';
 import type { RoomRepoStore } from './room-repo-store.js';
@@ -129,6 +159,8 @@ export interface RoomFileAnnouncement {
 export interface RoomFileEditorDeps {
   /** Owns every path under a room's home; never construct one by hand. */
   store: RoomRepoStore;
+  /** Same constructor-owned installation room writer; absent keeps mutations unavailable. */
+  installationRoomWrites?: InstallationRoomWrites;
   /** The per-room serialized queue every write to `repo/` goes through. */
   mutex: RoomRepoMutex;
   /** `config.rooms.repo.enabled`, read per call. */
@@ -188,11 +220,660 @@ interface MainState {
   caps: RoomRepoCaps;
   head: string | null;
   tree: Map<string, TreeEntry>;
+  context: InstallationRoomMutationContext;
+}
+
+interface EditorLegacy {
+  save(
+    roomId: string,
+    actor: RoomFileActor,
+    input: { path: string; baseCommit: string | null; text: string }
+  ): Promise<RoomFileSaveOutcome>;
+  prepareUpload(
+    roomId: string,
+    actor: RoomFileActor
+  ): Promise<{ maxFileBytes: number; stagingDir: string }>;
+  upload(
+    roomId: string,
+    actor: RoomFileActor,
+    input: {
+      dir: string;
+      baseCommit: string | null;
+      replace: readonly string[];
+      files: readonly RoomFileUploadItem[];
+    }
+  ): Promise<RoomFileChangeOutcome>;
+  saveAttachment(
+    roomId: string,
+    actor: RoomFileActor,
+    input: { dir: string; name: string; baseCommit: string | null; bytes: Buffer }
+  ): Promise<RoomFileChangeOutcome>;
+  move(
+    roomId: string,
+    actor: RoomFileActor,
+    input: { from: string; to: string; baseCommit: string }
+  ): Promise<RoomFileChangeOutcome>;
+  remove(
+    roomId: string,
+    actor: RoomFileActor,
+    input: { path: string; baseCommit: string }
+  ): Promise<RoomFileChangeOutcome>;
+}
+interface UploadStage {
+  dev: bigint;
+  ino: bigint;
+  parentDev: bigint;
+  parentIno: bigint;
+  maxFileBytes: number;
+  ancestors: readonly Readonly<{ directory: string; dev: bigint; ino: bigint }>[];
+  minting: boolean;
+  storage?: multer.StorageEngine;
+}
+interface EditorOperation {
+  editor: RoomFileEditor;
+  request: Request;
+  roomId: string;
+  caller: object;
+  actor: Readonly<RoomFileActor>;
+  active: boolean;
+  scope?: object;
+  context?: InstallationRoomMutationContext;
+  release(): void;
+  draining: Promise<void>;
+  staging: Map<string, UploadStage>;
+}
+interface EditorCommands {
+  requireOwner(owner: InstallationFileWrites): void;
+  storage(handle: object, directory: string): multer.StorageEngine;
+  storageOwner(handle: object, directory: string): void;
+  storageLimit(handle: object, directory: string, storage: multer.StorageEngine): number;
+  storageCurrent(
+    handle: object,
+    directory: string,
+    storage: multer.StorageEngine,
+    req: Request
+  ): void;
+  storageCheck(
+    handle: object,
+    directory: string,
+    storage: multer.StorageEngine,
+    req: Request,
+    cleanup: boolean
+  ): Promise<void>;
+  storageSourceContext(
+    handle: object,
+    directory: string,
+    storage: multer.StorageEngine,
+    context: InstallationRoomMutationContext
+  ): void;
+  storageCleanup(
+    handle: object,
+    directory: string,
+    storage: multer.StorageEngine,
+    req: Request
+  ): void;
+  capture(roomId: string, req: Request, res: Response): Promise<object>;
+  current(handle: object): EditorOperation;
+  retire(handle: object): Promise<void>;
+  save(handle: object, input: Parameters<EditorLegacy['save']>[2]): Promise<RoomFileSaveOutcome>;
+  prepare(handle: object): Promise<{ maxFileBytes: number; stagingDir: string }>;
+  upload(
+    handle: object,
+    input: Parameters<EditorLegacy['upload']>[2]
+  ): Promise<RoomFileChangeOutcome>;
+  attachment(
+    handle: object,
+    input: Parameters<EditorLegacy['saveAttachment']>[2]
+  ): Promise<RoomFileChangeOutcome>;
+  move(handle: object, input: Parameters<EditorLegacy['move']>[2]): Promise<RoomFileChangeOutcome>;
+  remove(
+    handle: object,
+    input: Parameters<EditorLegacy['remove']>[2]
+  ): Promise<RoomFileChangeOutcome>;
+}
+const editors = new WeakMap<RoomFileEditor, EditorCommands>();
+const editorOperations = new WeakMap<object, EditorOperation>();
+function fixedEditor(editor: RoomFileEditor): EditorCommands {
+  const actual = editors.get(editor);
+  if (!actual) throw new RoomError('ROOM_NOT_FOUND', 'No such room.');
+  return actual;
+}
+/** Require the Room file editor's exact original owner dependencies. */
+export function requireRoomFileEditorOwner(
+  editor: RoomFileEditor,
+  owner: InstallationFileWrites
+): undefined {
+  fixedEditor(editor).requireOwner(owner);
+  return undefined;
+}
+/** Constructor-private prepared stage and exact selected storage; these export no supplied checker. */
+export function createRoomFileEditorUploadStorage(
+  editor: RoomFileEditor,
+  handle: object,
+  directory: string
+): multer.StorageEngine {
+  return fixedEditor(editor).storage(handle, directory);
+}
+/** Require the original Room file upload storage owner. */
+export function requireRoomFileEditorUploadStorageOwner(
+  editor: RoomFileEditor,
+  handle: object,
+  directory: string
+): void {
+  fixedEditor(editor).storageOwner(handle, directory);
+}
+/** Read the upload limit retained by the original Room file editor. */
+export function readRoomFileEditorUploadLimit(
+  editor: RoomFileEditor,
+  handle: object,
+  directory: string,
+  storage: multer.StorageEngine
+): number {
+  return fixedEditor(editor).storageLimit(handle, directory, storage);
+}
+/** Require currentness of the original Room file upload operation. */
+export function requireRoomFileEditorUploadCurrent(
+  editor: RoomFileEditor,
+  handle: object,
+  directory: string,
+  storage: multer.StorageEngine,
+  req: Request
+): void {
+  fixedEditor(editor).storageCurrent(handle, directory, storage, req);
+}
+/** Recheck currentness of the original Room file upload operation. */
+export function checkRoomFileEditorUploadCurrent(
+  editor: RoomFileEditor,
+  handle: object,
+  directory: string,
+  storage: multer.StorageEngine,
+  req: Request
+): Promise<void> {
+  return fixedEditor(editor).storageCheck(handle, directory, storage, req, false);
+}
+/** Require cleanup custody for the original Room file upload. */
+export function requireRoomFileEditorUploadCleanup(
+  editor: RoomFileEditor,
+  handle: object,
+  directory: string,
+  storage: multer.StorageEngine,
+  req: Request
+): void {
+  fixedEditor(editor).storageCleanup(handle, directory, storage, req);
+}
+/** Recheck cleanup custody for the original Room file upload. */
+export function checkRoomFileEditorUploadCleanup(
+  editor: RoomFileEditor,
+  handle: object,
+  directory: string,
+  storage: multer.StorageEngine,
+  req: Request
+): Promise<void> {
+  return fixedEditor(editor).storageCheck(handle, directory, storage, req, true);
+}
+/** Require the original source context for a Room file upload. */
+export function requireRoomFileEditorUploadSourceContext(
+  editor: RoomFileEditor,
+  handle: object,
+  directory: string,
+  storage: multer.StorageEngine,
+  context: InstallationRoomMutationContext
+): void {
+  fixedEditor(editor).storageSourceContext(handle, directory, storage, context);
+}
+/** Capture the original Room file editor HTTP operation. */
+export function captureRoomFileEditorHttpOperation(
+  editor: RoomFileEditor,
+  roomId: string,
+  req: Request,
+  res: Response
+): Promise<object> {
+  return fixedEditor(editor).capture(roomId, req, res);
+}
+/** Require currentness of the captured Room file editor HTTP operation. */
+export function requireRoomFileEditorHttpCurrent(
+  editor: RoomFileEditor,
+  handle: object
+): undefined {
+  fixedEditor(editor).current(handle);
+  return undefined;
+}
+/** Retire the captured original Room file editor HTTP operation. */
+export function retireRoomFileEditorHttpOperation(
+  editor: RoomFileEditor,
+  handle: object
+): Promise<void> {
+  return fixedEditor(editor).retire(handle);
+}
+/** Save a Room file through the original editor operation. */
+export function executeRoomFileSave(
+  editor: RoomFileEditor,
+  handle: object,
+  input: Parameters<EditorLegacy['save']>[2]
+): Promise<RoomFileSaveOutcome> {
+  return fixedEditor(editor).save(handle, input);
+}
+/** Prepare an upload through the original Room file editor. */
+export function executeRoomFilePrepareUpload(
+  editor: RoomFileEditor,
+  handle: object
+): Promise<{ maxFileBytes: number; stagingDir: string }> {
+  return fixedEditor(editor).prepare(handle);
+}
+/** Upload a file through the original Room file editor operation. */
+export function executeRoomFileUpload(
+  editor: RoomFileEditor,
+  handle: object,
+  input: Parameters<EditorLegacy['upload']>[2]
+): Promise<RoomFileChangeOutcome> {
+  return fixedEditor(editor).upload(handle, input);
+}
+/** Create an attachment through the original Room file editor operation. */
+export function executeRoomFileAttachment(
+  editor: RoomFileEditor,
+  handle: object,
+  input: Parameters<EditorLegacy['saveAttachment']>[2]
+): Promise<RoomFileChangeOutcome> {
+  return fixedEditor(editor).attachment(handle, input);
+}
+/** Move a file through the original Room file editor operation. */
+export function executeRoomFileMove(
+  editor: RoomFileEditor,
+  handle: object,
+  input: Parameters<EditorLegacy['move']>[2]
+): Promise<RoomFileChangeOutcome> {
+  return fixedEditor(editor).move(handle, input);
+}
+/** Remove a file through the original Room file editor operation. */
+export function executeRoomFileRemove(
+  editor: RoomFileEditor,
+  handle: object,
+  input: Parameters<EditorLegacy['remove']>[2]
+): Promise<RoomFileChangeOutcome> {
+  return fixedEditor(editor).remove(handle, input);
 }
 
 /** Changing a room's `main`, as the person who asked. */
 export class RoomFileEditor {
-  constructor(private readonly deps: RoomFileEditorDeps) {}
+  readonly #deps: RoomFileEditorDeps;
+  readonly #owner?: InstallationFileWrites;
+  readonly #operation = new AsyncLocalStorage<EditorOperation>();
+  constructor(deps: RoomFileEditorDeps) {
+    this.#deps = Object.freeze({ ...deps });
+    this.#owner = deps.installationRoomWrites
+      ? readInstallationRoomFileWriteOwner(deps.installationRoomWrites, deps.store, deps.mutex)
+      : undefined;
+    editors.set(
+      this,
+      Object.freeze<EditorCommands>({
+        requireOwner: (owner) => {
+          if (
+            this.#owner !== owner ||
+            !this.#deps.installationRoomWrites ||
+            readInstallationRoomFileWriteOwner(
+              this.#deps.installationRoomWrites,
+              this.#deps.store,
+              this.#deps.mutex
+            ) !== owner
+          )
+            throw new Error('Unknown original Room file editor owner.');
+        },
+        storage: (handle, directory) => this.#storage(handle, directory),
+        storageOwner: (handle, directory) => {
+          const stage = this.#current(handle).staging.get(directory);
+          if (!stage?.minting || stage.storage)
+            throw new Error('Not the original Editor storage minting turn.');
+        },
+        storageLimit: (handle, directory, storage) =>
+          this.#stage(handle, directory, storage).stage.maxFileBytes,
+        storageCurrent: (handle, directory, storage, req) => {
+          this.#stage(handle, directory, storage, req);
+          this.#current(handle);
+        },
+        storageCleanup: (handle, directory, storage, req) => {
+          const { operation } = this.#stage(handle, directory, storage, req);
+          if (!operation.scope || !this.#deps.installationRoomWrites)
+            throw new Error('No admitted upload cleanup scope.');
+          requireInstallationRoomNamespaceCurrent(
+            this.#deps.installationRoomWrites,
+            operation.roomId,
+            operation.scope
+          );
+        },
+        storageSourceContext: (handle, directory, storage, context) => {
+          const { operation } = this.#stage(handle, directory, storage);
+          this.#current(handle);
+          if (operation.context !== context)
+            throw new Error('Upload source belongs to another original mutation context.');
+        },
+        storageCheck: (handle, directory, storage, req, cleanup) =>
+          this.#checkStorage(handle, directory, storage, req, cleanup),
+        capture: (roomId, req, res) => this.#capture(roomId, req, res),
+        current: (handle) => this.#current(handle),
+        retire: (handle) => this.#retire(handle),
+        save: (handle, input) =>
+          this.#dispatch(handle, () =>
+            this.#save(this.#current(handle).roomId, this.#current(handle).actor, input)
+          ),
+        prepare: (handle) =>
+          this.#dispatch(handle, () =>
+            this.#prepareUpload(this.#current(handle).roomId, this.#current(handle).actor)
+          ),
+        upload: (handle, input) =>
+          this.#dispatch(handle, () =>
+            this.#upload(this.#current(handle).roomId, this.#current(handle).actor, input)
+          ),
+        attachment: (handle, input) =>
+          this.#dispatch(handle, () =>
+            this.#saveAttachment(this.#current(handle).roomId, this.#current(handle).actor, input)
+          ),
+        move: (handle, input) =>
+          this.#dispatch(handle, () =>
+            this.#move(this.#current(handle).roomId, this.#current(handle).actor, input)
+          ),
+        remove: (handle, input) =>
+          this.#dispatch(handle, () =>
+            this.#remove(this.#current(handle).roomId, this.#current(handle).actor, input)
+          ),
+      })
+    );
+  }
+  // Legacy DTO calls remain unavailable: only fixed request-local operations enter native bodies.
+  save(..._args: Parameters<EditorLegacy['save']>): Promise<RoomFileSaveOutcome> {
+    return Promise.reject(new RoomError('ROOM_NOT_FOUND', 'No such room.'));
+  }
+  prepareUpload(
+    ..._args: Parameters<EditorLegacy['prepareUpload']>
+  ): Promise<{ maxFileBytes: number; stagingDir: string }> {
+    return Promise.reject(new RoomError('ROOM_NOT_FOUND', 'No such room.'));
+  }
+  upload(..._args: Parameters<EditorLegacy['upload']>): Promise<RoomFileChangeOutcome> {
+    return Promise.reject(new RoomError('ROOM_NOT_FOUND', 'No such room.'));
+  }
+  saveAttachment(
+    ..._args: Parameters<EditorLegacy['saveAttachment']>
+  ): Promise<RoomFileChangeOutcome> {
+    return Promise.reject(new RoomError('ROOM_NOT_FOUND', 'No such room.'));
+  }
+  move(..._args: Parameters<EditorLegacy['move']>): Promise<RoomFileChangeOutcome> {
+    return Promise.reject(new RoomError('ROOM_NOT_FOUND', 'No such room.'));
+  }
+  remove(..._args: Parameters<EditorLegacy['remove']>): Promise<RoomFileChangeOutcome> {
+    return Promise.reject(new RoomError('ROOM_NOT_FOUND', 'No such room.'));
+  }
+  discardUpload(_stagingDir: string): Promise<void> {
+    return Promise.reject(new RoomError('ROOM_NOT_FOUND', 'No such room.'));
+  }
+  assertCanChange(_roomId: string, _actor: RoomFileActor): void {
+    throw new RoomError('ROOM_NOT_FOUND', 'No such room.');
+  }
+  #current(handle: object): EditorOperation {
+    const operation = editorOperations.get(handle);
+    if (!operation?.active || operation.editor !== this || !this.#owner || !operation.context)
+      throw new RoomError('ROOM_NOT_FOUND', 'No such room.');
+    requireDocHttpRoomFileWriteCurrent(this.#owner, operation.roomId, operation.caller);
+    readInstallationRoomMutationRoots(operation.context);
+    return operation;
+  }
+  async #capture(roomId: string, req: Request, res: Response): Promise<object> {
+    const writer = this.#deps.installationRoomWrites;
+    if (!writer || !this.#owner) throw new RoomError('ROOM_NOT_FOUND', 'No such room.');
+    const caller = await captureDocHttpRoomFileWriteCaller(this.#owner, req, res, roomId, this);
+    let actor: Readonly<RoomFileActor>;
+    try {
+      actor = readDocHttpRoomFileWriteAttribution(this.#owner, roomId, caller);
+      this.#prequeue(roomId, caller);
+    } catch (cause) {
+      try {
+        retireDocHttpRoomFileWriteCaller(this.#owner, caller);
+      } catch {
+        /* Preserve exact capture cause. */
+      }
+      throw cause;
+    }
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let entered!: () => void, rejected!: (cause: unknown) => void;
+    const ready = new Promise<void>((resolve, reject) => {
+      entered = resolve;
+      rejected = reject;
+    });
+    const handle = Object.freeze({});
+    const operation: EditorOperation = {
+      editor: this,
+      request: req,
+      roomId,
+      caller,
+      actor,
+      active: true,
+      release,
+      draining: Promise.resolve(),
+      staging: new Map(),
+    };
+    editorOperations.set(handle, operation);
+    // One actual room/installation namespace is held through every participating effect and cleanup.
+    operation.draining = Promise.resolve().then(() =>
+      withRecognizedInstallationRoomFileEditor(writer, roomId, async (scope) => {
+        operation.scope = scope;
+        operation.context = readInstallationRoomHttpMutationContext(writer, roomId, scope, caller);
+        await checkDocHttpRoomFileWriteCurrent(this.#owner!, roomId, caller);
+        this.#current(handle);
+        this.#prequeue(roomId, caller);
+        entered();
+        await held;
+      })
+    );
+    void operation.draining.catch(rejected);
+    try {
+      await ready;
+      this.#current(handle);
+      return handle;
+    } catch (cause) {
+      operation.active = false;
+      editorOperations.delete(handle);
+      release();
+      try {
+        await operation.draining;
+      } catch {
+        /* Preserve exact capture cause, including undefined. */
+      }
+      try {
+        retireDocHttpRoomFileWriteCaller(this.#owner, caller);
+      } catch {
+        /* Preserve capture cause. */
+      }
+      throw cause;
+    }
+  }
+  async #dispatch<T>(handle: object, work: () => Promise<T>): Promise<T> {
+    const operation = this.#current(handle);
+    return this.#operation.run(operation, async () => {
+      await checkDocHttpRoomFileWriteCurrent(this.#owner!, operation.roomId, operation.caller);
+      this.#current(handle);
+      try {
+        const result = await work();
+        await checkDocHttpRoomFileWriteCurrent(this.#owner!, operation.roomId, operation.caller);
+        this.#current(handle);
+        return result;
+      } catch (error) {
+        let cause = error;
+        for (const stage of operation.staging.values())
+          if (stage.storage) cause = restoreRoomFileUploadCause(stage.storage, cause);
+        throw cause;
+      }
+    });
+  }
+  async #retire(handle: object): Promise<void> {
+    const operation = editorOperations.get(handle);
+    if (!operation || operation.editor !== this || !this.#owner)
+      throw new RoomError('ROOM_NOT_FOUND', 'No such room.');
+    let failed = false,
+      cause: unknown;
+    // Close ALL actual storage admissions before awaiting any write/FD/removal drain.
+    const drains: Promise<void>[] = [];
+    for (const stage of operation.staging.values())
+      if (stage.storage) {
+        try {
+          drains.push(retireRoomFileUploadStorage(stage.storage));
+        } catch (error) {
+          if (!failed) {
+            failed = true;
+            cause = error;
+          }
+        }
+      }
+    const settled = await Promise.allSettled(drains);
+    for (const result of settled)
+      if (result.status === 'rejected' && !failed) {
+        failed = true;
+        cause = result.reason;
+      }
+    for (const directory of operation.staging.keys()) {
+      try {
+        await this.#discardOwnedStaging(operation, directory);
+      } catch (error) {
+        if (!failed) {
+          failed = true;
+          cause = error;
+        }
+      }
+    }
+    operation.active = false;
+    editorOperations.delete(handle);
+    operation.release();
+    try {
+      await operation.draining;
+    } catch (error) {
+      if (!failed) {
+        failed = true;
+        cause = error;
+      }
+    }
+    try {
+      retireDocHttpRoomFileWriteCaller(this.#owner, operation.caller);
+    } catch (error) {
+      if (!failed) {
+        failed = true;
+        cause = error;
+      }
+    }
+    if (failed) throw cause;
+  }
+  #stage(
+    handle: object,
+    directory: string,
+    storage: multer.StorageEngine,
+    req?: Request
+  ): { operation: EditorOperation; stage: UploadStage } {
+    const operation = editorOperations.get(handle);
+    const stage = operation?.staging.get(directory);
+    if (
+      !operation?.active ||
+      operation.editor !== this ||
+      !stage ||
+      stage.storage !== storage ||
+      (req && req !== operation.request)
+    )
+      throw new Error('Unknown original prepared upload storage.');
+    return { operation, stage };
+  }
+  #storage(handle: object, directory: string): multer.StorageEngine {
+    const operation = this.#current(handle),
+      stage = operation.staging.get(directory);
+    if (!stage || stage.storage || stage.minting)
+      throw new Error('No fresh original prepared upload stage.');
+    stage.minting = true;
+    try {
+      const storage = createRoomFileUploadStorage(this, handle, directory);
+      stage.storage = storage;
+      return storage;
+    } finally {
+      stage.minting = false;
+    }
+  }
+  async #checkStorage(
+    handle: object,
+    directory: string,
+    storage: multer.StorageEngine,
+    req: Request,
+    cleanup: boolean
+  ): Promise<void> {
+    const { operation } = this.#stage(handle, directory, storage, req);
+    if (!cleanup) {
+      await checkDocHttpRoomFileWriteCurrent(this.#owner!, operation.roomId, operation.caller);
+      this.#current(handle);
+    }
+    await this.#checkStageIdentity(operation, directory);
+    this.#stage(handle, directory, storage, req);
+    if (!cleanup) this.#current(handle);
+    // Cleanup uses only the still-admitted actual scope/FD custody, never refreshed forward permission.
+  }
+  async #checkStageIdentity(operation: EditorOperation, directory: string): Promise<void> {
+    const expected = operation.staging.get(directory);
+    if (!expected || !operation.scope || !this.#deps.installationRoomWrites)
+      throw new Error('No admitted upload cleanup scope.');
+    await checkInstallationRoomScope(
+      this.#deps.installationRoomWrites,
+      operation.roomId,
+      operation.scope
+    );
+    for (const ancestor of expected.ancestors) {
+      const observed = await fs.lstat(ancestor.directory, { bigint: true });
+      if (
+        !observed.isDirectory() ||
+        observed.isSymbolicLink() ||
+        observed.dev !== ancestor.dev ||
+        observed.ino !== ancestor.ino
+      )
+        throw new Error('Upload staging ancestry identity changed.');
+    }
+    const parent = await fs.lstat(path.dirname(directory), { bigint: true });
+    if (
+      !parent.isDirectory() ||
+      parent.isSymbolicLink() ||
+      parent.dev !== expected.parentDev ||
+      parent.ino !== expected.parentIno
+    )
+      throw new Error('Upload staging parent identity changed.');
+    const current = await fs.lstat(directory, { bigint: true });
+    if (
+      !current.isDirectory() ||
+      current.isSymbolicLink() ||
+      current.dev !== expected.dev ||
+      current.ino !== expected.ino
+    )
+      throw new Error('Upload staging directory identity changed.');
+    const finalParent = await fs.lstat(path.dirname(directory), { bigint: true });
+    if (
+      !finalParent.isDirectory() ||
+      finalParent.isSymbolicLink() ||
+      finalParent.dev !== expected.parentDev ||
+      finalParent.ino !== expected.parentIno
+    )
+      throw new Error('Upload staging parent identity changed.');
+    const finalDirectory = await fs.lstat(directory, { bigint: true });
+    if (
+      !finalDirectory.isDirectory() ||
+      finalDirectory.isSymbolicLink() ||
+      finalDirectory.dev !== expected.dev ||
+      finalDirectory.ino !== expected.ino
+    )
+      throw new Error('Upload staging directory identity changed.');
+    requireInstallationRoomNamespaceCurrent(
+      this.#deps.installationRoomWrites,
+      operation.roomId,
+      operation.scope
+    );
+  }
+  async #discardOwnedStaging(operation: EditorOperation, directory: string): Promise<void> {
+    await this.#checkStageIdentity(operation, directory);
+    // Empty-directory removal cannot recursively delete an unacquired/replaced child.
+    // External namespace replacement between these separate syscalls remains an honest race.
+    await fs.rmdir(directory);
+    operation.staging.delete(directory);
+  }
 
   /**
    * Save one text file into the room's `main`, as one commit. Missing folders
@@ -216,15 +897,15 @@ export class RoomFileEditor {
    *   `REPO_CAP_EXCEEDED`, `MAIN_CHECKOUT_DIRTY`, `MERGE_IN_FLIGHT`, or
    *   `ROOM_REPO_GIT_UNAVAILABLE`.
    */
-  async save(
+  async #save(
     roomId: string,
     actor: RoomFileActor,
     input: { path: string; baseCommit: string | null; text: string }
   ): Promise<RoomFileSaveOutcome> {
-    this.assertCanChange(roomId, actor);
+    this.#assertCanChange(roomId, actor);
     const requested = requireFilePath(input.path);
 
-    return this.underLock(roomId, async (state) => {
+    return this.#underLock(roomId, async (state) => {
       const index = new RoomTreeIndex(state.tree.keys());
       // The tree's own spelling of what was asked for — see
       // {@link RoomTreeIndex.canonicalize} for the NFD/NFC overwrite this closes.
@@ -237,7 +918,7 @@ export class RoomFileEditor {
       // in review). With no `baseCommit` the caller is creating a file and has
       // made no claim about the room's state, so the path checks answer first.
       if (input.baseCommit !== null) {
-        const stale = await this.lockConflict(
+        const stale = await this.#lockConflict(
           roomId,
           state,
           input.baseCommit,
@@ -256,7 +937,7 @@ export class RoomFileEditor {
         // one: somebody got there first.
         return {
           status: 'conflict' as const,
-          conflict: await this.conflictAt(roomId, state, filePath),
+          conflict: await this.#conflictAt(roomId, state, filePath),
         };
       }
 
@@ -272,10 +953,11 @@ export class RoomFileEditor {
         state.ceiling,
         [change],
         `${existing ? 'Edit' : 'Add'} ${filePath}`,
-        this.identityOf(actor)
+        this.#identityOf(actor),
+        state.context
       );
       if (committed) {
-        this.post(roomId, actor, { kind, paths: [filePath], commit: committed });
+        this.#post(roomId, actor, { kind, paths: [filePath], commit: committed });
       }
       // `head` is only ever `null` for a repo with no commits, and a save into
       // one always commits — so the fallback is unreachable except where
@@ -287,7 +969,7 @@ export class RoomFileEditor {
           commit: committed ?? state.head ?? '',
           size: bytes.length,
           committed: committed !== null,
-          lastCommit: await this.lastCommitOf(roomId, filePath),
+          lastCommit: await this.#lastCommitOf(roomId, filePath),
         },
       };
     });
@@ -298,38 +980,107 @@ export class RoomFileEditor {
    * it needs to read them: the room's own file ceiling and a staging folder of
    * this request's own.
    *
-   * The staging folder is created here and must be handed to
-   * {@link discardUpload} when the request settles, whatever happened.
+   * Fixed request retirement joins the selected storage/FD lifetime, then
+   * removes only this identity-matching empty stage. Unsafe cleanup refuses.
    *
    * @param roomId - The room.
    * @param actor - Who is asking.
    * @returns The per-file ceiling and the staging folder.
    * @throws {RoomError} Every refusal {@link save} answers before the queue.
    */
-  async prepareUpload(
+  async #prepareUpload(
     roomId: string,
     actor: RoomFileActor
   ): Promise<{ maxFileBytes: number; stagingDir: string }> {
-    this.assertCanChange(roomId, actor);
-    const caps = await this.requireCaps(roomId);
-    const root = this.deps.uploadStagingRoot();
-    await fs.mkdir(root, { recursive: true });
-    const stagingDir = await fs.mkdtemp(path.join(root, 'upload-'));
-    return { maxFileBytes: caps.maxFileBytes, stagingDir };
-  }
-
-  /**
-   * Remove an upload's staging folder. Never throws — the request's own answer
-   * is what matters — but a folder that will not go is logged.
-   *
-   * @param stagingDir - The folder {@link prepareUpload} made.
-   */
-  async discardUpload(stagingDir: string): Promise<void> {
-    try {
-      await fs.rm(stagingDir, { recursive: true, force: true });
-    } catch (err) {
-      logger.warn('[rooms] an upload’s staging folder could not be removed', { stagingDir, err });
+    this.#assertCanChange(roomId, actor);
+    const operation = this.#operation.getStore();
+    if (!operation?.context || !this.#owner) throw new RoomError('ROOM_NOT_FOUND', 'No such room.');
+    const caps = await this.#requireCaps(roomId);
+    const fixed = readInstallationRoomUploadStagingRoot(operation.context);
+    const installation = path.dirname(path.dirname(fixed.root));
+    if ((await fs.realpath(installation)) !== fixed.canonicalInstallation)
+      throw new Error('Original upload installation root changed.');
+    const check = async () => {
+      await checkDocHttpRoomFileWriteCurrent(this.#owner!, roomId, operation.caller);
+      await checkInstallationRoomMutationTarget(
+        operation.context!,
+        readInstallationRoomMutationRoots(operation.context!).repoPath
+      );
+    };
+    const ancestors: { directory: string; dev: bigint; ino: bigint }[] = [];
+    for (const directory of [path.dirname(fixed.root), fixed.root]) {
+      await check();
+      const parent = await fs.lstat(path.dirname(directory), { bigint: true });
+      if (!parent.isDirectory() || parent.isSymbolicLink())
+        throw new Error('Upload staging parent is not an ordinary directory.');
+      let present = false;
+      let entryIdentity: { dev: bigint; ino: bigint } | undefined;
+      try {
+        const entry = await fs.lstat(directory, { bigint: true });
+        present = true;
+        entryIdentity = { dev: entry.dev, ino: entry.ino };
+        if (!entry.isDirectory() || entry.isSymbolicLink())
+          throw new Error('Upload staging root is not an ordinary directory.');
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error;
+      }
+      await check();
+      const current = await fs.lstat(path.dirname(directory), { bigint: true });
+      if (
+        !current.isDirectory() ||
+        current.isSymbolicLink() ||
+        current.dev !== parent.dev ||
+        current.ino !== parent.ino
+      )
+        throw new Error('Upload staging parent identity changed.');
+      if (entryIdentity) {
+        const finalEntry = await fs.lstat(directory, { bigint: true });
+        if (
+          !finalEntry.isDirectory() ||
+          finalEntry.isSymbolicLink() ||
+          finalEntry.dev !== entryIdentity.dev ||
+          finalEntry.ino !== entryIdentity.ino
+        )
+          throw new Error('Upload staging directory identity changed.');
+      }
+      requireDocHttpRoomFileWriteCurrent(this.#owner, roomId, operation.caller);
+      readInstallationRoomMutationRoots(operation.context);
+      ancestors.push({ directory: path.dirname(directory), dev: parent.dev, ino: parent.ino });
+      if (!present) await fs.mkdir(directory);
+      if (
+        (await fs.realpath(directory)) !==
+        path.join(fixed.canonicalInstallation, path.relative(installation, directory))
+      )
+        throw new Error('Upload staging directory escaped the original installation.');
     }
+    const parent = await fs.lstat(fixed.root, { bigint: true });
+    await check();
+    const current = await fs.lstat(fixed.root, { bigint: true });
+    if (
+      !current.isDirectory() ||
+      current.isSymbolicLink() ||
+      current.dev !== parent.dev ||
+      current.ino !== parent.ino
+    )
+      throw new Error('Upload staging root identity changed.');
+    // Identity is checked before mkdtemp; the unavoidable external check/effect race remains.
+    requireDocHttpRoomFileWriteCurrent(this.#owner, roomId, operation.caller);
+    readInstallationRoomMutationRoots(operation.context);
+    const stagingDir = await fs.mkdtemp(path.join(fixed.root, 'upload-'));
+    const identity = await fs.lstat(stagingDir, { bigint: true });
+    if (!identity.isDirectory() || identity.isSymbolicLink())
+      throw new Error('Invalid upload staging directory.');
+    operation.staging.set(stagingDir, {
+      dev: identity.dev,
+      ino: identity.ino,
+      parentDev: parent.dev,
+      parentIno: parent.ino,
+      maxFileBytes: caps.maxFileBytes,
+      ancestors: Object.freeze(ancestors.map((entry) => Object.freeze(entry))),
+      minting: false,
+    });
+    await check();
+    return { maxFileBytes: caps.maxFileBytes, stagingDir };
   }
 
   /**
@@ -347,7 +1098,7 @@ export class RoomFileEditor {
    * @param input.files - The files, in request order.
    * @returns The change, or the conflict that stopped it.
    */
-  async upload(
+  async #upload(
     roomId: string,
     actor: RoomFileActor,
     input: {
@@ -357,7 +1108,7 @@ export class RoomFileEditor {
       files: readonly RoomFileUploadItem[];
     }
   ): Promise<RoomFileChangeOutcome> {
-    this.assertCanChange(roomId, actor);
+    this.#assertCanChange(roomId, actor);
     if (input.files.length === 0) {
       throw new RoomError('ROOM_FILE_PATH_INVALID', 'There were no files in that upload.');
     }
@@ -367,7 +1118,7 @@ export class RoomFileEditor {
         `One upload can carry at most ${ROOM_UPLOAD_MAX_FILES} files.`
       );
     }
-    return this.addFiles(roomId, actor, { ...input, kind: 'upload' });
+    return this.#addFiles(roomId, actor, { ...input, kind: 'upload' });
   }
 
   /**
@@ -383,13 +1134,13 @@ export class RoomFileEditor {
    * @param input.bytes - The attachment's bytes.
    * @returns The change, or the conflict that stopped it.
    */
-  async saveAttachment(
+  async #saveAttachment(
     roomId: string,
     actor: RoomFileActor,
     input: { dir: string; name: string; baseCommit: string | null; bytes: Buffer }
   ): Promise<RoomFileChangeOutcome> {
-    this.assertCanChange(roomId, actor);
-    return this.addFiles(roomId, actor, {
+    this.#assertCanChange(roomId, actor);
+    return this.#addFiles(roomId, actor, {
       dir: input.dir,
       baseCommit: input.baseCommit,
       replace: [],
@@ -413,16 +1164,16 @@ export class RoomFileEditor {
    * @param input.baseCommit - What the person's view was read at.
    * @returns The change, or the conflict that stopped it.
    */
-  async move(
+  async #move(
     roomId: string,
     actor: RoomFileActor,
     input: { from: string; to: string; baseCommit: string }
   ): Promise<RoomFileChangeOutcome> {
-    this.assertCanChange(roomId, actor);
+    this.#assertCanChange(roomId, actor);
     const requestedFrom = requireFilePath(input.from);
     const requestedTo = requireFilePath(input.to);
 
-    return this.underLock(roomId, async (state) => {
+    return this.#underLock(roomId, async (state) => {
       const treeIndex = new RoomTreeIndex(state.tree.keys());
       const from = treeIndex.canonicalize(requestedFrom);
       const to = treeIndex.canonicalize(requestedTo);
@@ -434,7 +1185,7 @@ export class RoomFileEditor {
       }
       // Always locked: moving files is only safe over the files the person saw.
       const isUnder = (p: string): boolean => p === from || p.startsWith(`${from}/`);
-      const stale = await this.lockConflict(roomId, state, input.baseCommit, isUnder, from);
+      const stale = await this.#lockConflict(roomId, state, input.baseCommit, isUnder, from);
       if (stale) return { status: 'conflict' as const, conflict: stale };
 
       const sources = [...state.tree.values()].filter((entry) => isUnder(entry.path));
@@ -473,7 +1224,7 @@ export class RoomFileEditor {
 
       const fromLabel = isFolder ? `${from}/` : from;
       const toLabel = isFolder ? `${to}/` : to;
-      return this.commitAndAnnounce(roomId, actor, state, changes, {
+      return this.#commitAndAnnounce(roomId, actor, state, changes, {
         subject: `Rename ${fromLabel} to ${toLabel}`,
         kind: 'rename',
         paths: writes.map((change) => change.path),
@@ -496,19 +1247,19 @@ export class RoomFileEditor {
    * @param input.baseCommit - What the person's view was read at.
    * @returns The change, or the conflict that stopped it.
    */
-  async remove(
+  async #remove(
     roomId: string,
     actor: RoomFileActor,
     input: { path: string; baseCommit: string }
   ): Promise<RoomFileChangeOutcome> {
-    this.assertCanChange(roomId, actor);
+    this.#assertCanChange(roomId, actor);
     const requested = requireFilePath(input.path);
 
-    return this.underLock(roomId, async (state) => {
+    return this.#underLock(roomId, async (state) => {
       const target = new RoomTreeIndex(state.tree.keys()).canonicalize(requested);
       // Always locked: nobody deletes a file they have not seen.
       const isUnder = (p: string): boolean => p === target || p.startsWith(`${target}/`);
-      const stale = await this.lockConflict(roomId, state, input.baseCommit, isUnder, target);
+      const stale = await this.#lockConflict(roomId, state, input.baseCommit, isUnder, target);
       if (stale) return { status: 'conflict' as const, conflict: stale };
 
       const doomed = [...state.tree.values()].filter((entry) => isUnder(entry.path));
@@ -522,7 +1273,7 @@ export class RoomFileEditor {
       }
 
       const label = state.tree.has(target) ? target : `${target}/`;
-      return this.commitAndAnnounce(roomId, actor, state, changes, {
+      return this.#commitAndAnnounce(roomId, actor, state, changes, {
         subject: `Delete ${label}`,
         kind: 'delete',
         paths: changes.map((change) => change.path),
@@ -539,7 +1290,7 @@ export class RoomFileEditor {
    * @param actor - Who is asking.
    * @param input - The folder, the lock, what may be replaced, and the files.
    */
-  private addFiles(
+  #addFiles(
     roomId: string,
     actor: RoomFileActor,
     input: {
@@ -559,7 +1310,7 @@ export class RoomFileEditor {
       return { path: filePath, content: file.content };
     });
 
-    return this.underLock(roomId, async (state) => {
+    return this.#underLock(roomId, async (state) => {
       const index = new RoomTreeIndex(state.tree.keys());
       const dir = requestedDir === '' ? '' : index.canonicalize(requestedDir);
       // Every target in the tree's own spelling, so a name that is the same
@@ -585,7 +1336,7 @@ export class RoomFileEditor {
       );
       if (input.baseCommit !== null && replaced.size > 0) {
         const first = [...replaced].sort()[0] as string;
-        const stale = await this.lockConflict(
+        const stale = await this.#lockConflict(
           roomId,
           state,
           input.baseCommit,
@@ -603,7 +1354,7 @@ export class RoomFileEditor {
           if (input.baseCommit === null) {
             return {
               status: 'conflict' as const,
-              conflict: await this.conflictAt(roomId, state, target.path),
+              conflict: await this.#conflictAt(roomId, state, target.path),
             };
           }
           assertOrdinaryFile(target.path, existing);
@@ -623,7 +1374,7 @@ export class RoomFileEditor {
         input.kind === 'from-attachment'
           ? `Add ${paths[0]} from the chat`
           : `Upload ${plural(paths.length, 'file')} to ${dirLabel === '' ? ROOT_FOLDER_LABEL : dirLabel}`;
-      return this.commitAndAnnounce(roomId, actor, state, changes, {
+      return this.#commitAndAnnounce(roomId, actor, state, changes, {
         subject,
         kind: input.kind,
         paths,
@@ -641,7 +1392,7 @@ export class RoomFileEditor {
    * @param changes - The change set.
    * @param what - The commit subject and what the room entry says.
    */
-  private async commitAndAnnounce(
+  async #commitAndAnnounce(
     roomId: string,
     actor: RoomFileActor,
     state: MainState,
@@ -659,11 +1410,12 @@ export class RoomFileEditor {
       state.ceiling,
       changes,
       what.subject,
-      this.identityOf(actor)
+      this.#identityOf(actor),
+      state.context
     );
     const paths = [...what.paths].sort();
     if (committed) {
-      this.post(
+      this.#post(
         roomId,
         actor,
         {
@@ -682,7 +1434,7 @@ export class RoomFileEditor {
         paths,
         lastCommit: committed
           ? await describeCommit(state.repoDir, committed, state.ceiling)
-          : await this.lastCommitOf(roomId, paths[0] as string),
+          : await this.#lastCommitOf(roomId, paths[0] as string),
       },
     };
   }
@@ -695,7 +1447,7 @@ export class RoomFileEditor {
    * @param change - What it changed.
    * @param target - The folder or path the sentence names, where it names one.
    */
-  private post(
+  #post(
     roomId: string,
     actor: RoomFileActor,
     change: { kind: RoomFileChangeEvent['kind']; paths: string[]; commit: string; from?: string },
@@ -714,8 +1466,15 @@ export class RoomFileEditor {
     // Past this line the change IS on main. If the entry cannot be written —
     // the room was archived in the window since the gate — it propagates, as a
     // merge's does: a change nobody was told about is worse news than an error.
-    this.deps.announce(roomId, {
-      text: fileChangeSentence(this.displayNameOf(actor), fileChange, target),
+    const operation = this.#operation.getStore();
+    if (!operation || !operation.context || !this.#owner)
+      throw new RoomError('ROOM_NOT_FOUND', 'No such room.');
+    requireInstallationRoomMutationTarget(
+      operation.context,
+      readInstallationRoomMutationRoots(operation.context).repoPath
+    );
+    this.#deps.announce(roomId, {
+      text: fileChangeSentence(this.#displayNameOf(actor), fileChange, target),
       fileChange,
       subjectAuthorId: actor.authorId,
     });
@@ -731,8 +1490,19 @@ export class RoomFileEditor {
    * @throws {RoomError} `ROOM_REPOS_DISABLED`, `ROOM_NOT_FOUND`,
    *   `ROOM_ARCHIVED`, `PEOPLE_ONLY`, or `ROOM_HAS_NO_REPO`.
    */
-  assertCanChange(roomId: string, actor: RoomFileActor): void {
-    if (!this.deps.enabled()) {
+  #prequeue(roomId: string, caller: object): void {
+    if (!this.#deps.enabled())
+      throw new RoomError(
+        'ROOM_REPOS_DISABLED',
+        'Rooms cannot have files of their own on this install. Turn that back on in Settings first.'
+      );
+    if (!this.#owner) throw new RoomError('ROOM_NOT_FOUND', 'No such room.');
+    requireDocHttpRoomFileWriteCurrent(this.#owner, roomId, caller);
+    if (this.#deps.store.getRow(roomId) === null)
+      throw new RoomError('ROOM_HAS_NO_REPO', 'This room does not have files of its own.');
+  }
+  #assertCanChange(roomId: string, actor: RoomFileActor): void {
+    if (!this.#deps.enabled()) {
       throw new RoomError(
         'ROOM_REPOS_DISABLED',
         'Rooms cannot have files of their own on this install. Turn that back on in Settings first.'
@@ -740,8 +1510,11 @@ export class RoomFileEditor {
     }
     // Membership before anything about the repo, so a non-member cannot tell a
     // project room from any other — the order `GET /:id/files` writes down.
-    this.deps.assertCanWriteFiles(roomId, actor.authorId);
-    if (this.deps.store.getRow(roomId) === null) {
+    const operation = this.#operation.getStore();
+    if (!operation || operation.roomId !== roomId || operation.actor !== actor || !this.#owner)
+      throw new RoomError('ROOM_NOT_FOUND', 'No such room.');
+    requireDocHttpRoomFileWriteCurrent(this.#owner, roomId, operation.caller);
+    if (this.#deps.store.getRow(roomId) === null) {
       throw new RoomError('ROOM_HAS_NO_REPO', 'This room does not have files of its own.');
     }
   }
@@ -753,34 +1526,25 @@ export class RoomFileEditor {
    * @param roomId - The room.
    * @param work - The change, handed what `main` holds now.
    */
-  private underLock<T>(roomId: string, work: (state: MainState) => Promise<T>): Promise<T> {
-    return this.deps.mutex.run(
-      roomId,
-      {
-        waitMs: this.deps.queueWaitMs(),
-        busy: () =>
-          new RoomError(
-            'MERGE_IN_FLIGHT',
-            'Someone else is writing to this room’s files right now, and the wait ran out. Try again in a moment.'
-          ),
-        queueFull: () =>
-          new RoomError(
-            'MERGE_IN_FLIGHT',
-            'This room’s files already have as many changes queued as they will hold. Wait for them to land, then try again.'
-          ),
-      },
-      async () => {
-        const repoDir = this.deps.store.repoPath(roomId);
-        const ceiling = this.deps.store.homeDir(roomId);
-        const caps = await this.requireCaps(roomId);
-        return this.translatingGitAbsence(async () => {
-          await assertMainCheckoutReady(repoDir, ceiling);
-          const head = await this.resolveMain(repoDir, ceiling);
-          const tree = head ? await listTree(repoDir, head, ceiling) : new Map<string, TreeEntry>();
-          return work({ repoDir, ceiling, caps, head, tree });
-        });
-      }
-    );
+  async #underLock<T>(roomId: string, work: (state: MainState) => Promise<T>): Promise<T> {
+    const operation = this.#operation.getStore();
+    if (!operation || operation.roomId !== roomId || !operation.context || !this.#owner)
+      throw new RoomError('ROOM_NOT_FOUND', 'No such room.');
+    const context = operation.context;
+    const roots = readInstallationRoomMutationRoots(context);
+    await checkInstallationRoomMutationTarget(context, roots.repoPath);
+    const caps = await this.#requireCaps(roomId);
+    await checkInstallationRoomMutationTarget(context, roots.repoPath);
+    return this.#translatingGitAbsence(async () => {
+      await assertMainCheckoutReady(roots.repoPath, roots.homePath);
+      await checkInstallationRoomMutationTarget(context, roots.repoPath);
+      const head = await this.#resolveMain(roots.repoPath, roots.homePath);
+      const tree = head
+        ? await listTree(roots.repoPath, head, roots.homePath)
+        : new Map<string, TreeEntry>();
+      await checkInstallationRoomMutationTarget(context, roots.repoPath);
+      return work({ repoDir: roots.repoPath, ceiling: roots.homePath, caps, head, tree, context });
+    });
   }
 
   /**
@@ -798,7 +1562,7 @@ export class RoomFileEditor {
    *   assumed away because a conflict carrying `commit: ''` could never be sent
    *   back, and the person would be stuck (found in review).
    */
-  private async lockConflict(
+  async #lockConflict(
     roomId: string,
     state: MainState,
     baseCommit: string,
@@ -820,7 +1584,7 @@ export class RoomFileEditor {
       isLocked,
       fallbackPath
     );
-    return outcome.status === 'changed' ? this.conflictAt(roomId, state, outcome.path) : null;
+    return outcome.status === 'changed' ? this.#conflictAt(roomId, state, outcome.path) : null;
   }
 
   /**
@@ -831,15 +1595,11 @@ export class RoomFileEditor {
    * @param state - What `main` holds.
    * @param filePath - The path that moved.
    */
-  private async conflictAt(
-    roomId: string,
-    state: MainState,
-    filePath: string
-  ): Promise<RoomFileConflict> {
+  async #conflictAt(roomId: string, state: MainState, filePath: string): Promise<RoomFileConflict> {
     return {
       path: filePath,
       commit: state.head as string,
-      lastCommit: state.tree.has(filePath) ? await this.lastCommitOf(roomId, filePath) : null,
+      lastCommit: state.tree.has(filePath) ? await this.#lastCommitOf(roomId, filePath) : null,
     };
   }
 
@@ -848,14 +1608,14 @@ export class RoomFileEditor {
    *
    * @param actor - Who made the change.
    */
-  private identityOf(actor: RoomFileActor): GitIdentity {
+  #identityOf(actor: RoomFileActor): GitIdentity {
     if (actor.signedIn) {
       return {
-        name: gitAuthorName(this.deps.personName(actor.authorId)),
+        name: gitAuthorName(this.#deps.personName(actor.authorId)),
         email: personGitEmail(actor.authorId),
       };
     }
-    return { name: gitAuthorName(this.deps.operatorGitName()), email: OPERATOR_GIT_EMAIL };
+    return { name: gitAuthorName(this.#deps.operatorGitName()), email: OPERATOR_GIT_EMAIL };
   }
 
   /**
@@ -863,8 +1623,10 @@ export class RoomFileEditor {
    *
    * @param actor - Who made the change.
    */
-  private displayNameOf(actor: RoomFileActor): string {
-    const raw = actor.signedIn ? this.deps.personName(actor.authorId) : this.deps.operatorGitName();
+  #displayNameOf(actor: RoomFileActor): string {
+    const raw = actor.signedIn
+      ? this.#deps.personName(actor.authorId)
+      : this.#deps.operatorGitName();
     return sanitizeIdentity(raw ?? '') ?? 'Someone';
   }
 
@@ -879,8 +1641,8 @@ export class RoomFileEditor {
    * @param roomId - The room.
    * @throws {RoomError} `ROOM_HAS_NO_REPO` when the sidecar has gone.
    */
-  private async requireCaps(roomId: string): Promise<RoomRepoCaps> {
-    const sidecar = await this.deps.store.readSidecar(roomId);
+  async #requireCaps(roomId: string): Promise<RoomRepoCaps> {
+    const sidecar = await this.#deps.store.readSidecar(roomId);
     if (!sidecar) {
       throw new RoomError('ROOM_HAS_NO_REPO', 'This room does not have files of its own.');
     }
@@ -893,7 +1655,7 @@ export class RoomFileEditor {
    * @param repoDir - The room's main checkout.
    * @param ceiling - The room home directory git's search may not climb past.
    */
-  private async resolveMain(repoDir: string, ceiling: string): Promise<string | null> {
+  async #resolveMain(repoDir: string, ceiling: string): Promise<string | null> {
     try {
       return await revParse(repoDir, 'main', ceiling);
     } catch (err) {
@@ -909,9 +1671,9 @@ export class RoomFileEditor {
    * @param filePath - The path.
    * @returns The commit, or `null` when it cannot be attributed.
    */
-  private async lastCommitOf(roomId: string, filePath: string): Promise<RoomFileCommit | null> {
+  async #lastCommitOf(roomId: string, filePath: string): Promise<RoomFileCommit | null> {
     try {
-      return await this.deps.files.lastCommitFor(roomId, filePath);
+      return await this.#deps.files.lastCommitFor(roomId, filePath);
     } catch (err) {
       logger.warn('[rooms] a changed room file could not be read back for its provenance', {
         roomId,
@@ -929,7 +1691,7 @@ export class RoomFileEditor {
    * @param work - The git-touching body.
    * @returns Whatever `work` answers.
    */
-  private async translatingGitAbsence<T>(work: () => Promise<T>): Promise<T> {
+  async #translatingGitAbsence<T>(work: () => Promise<T>): Promise<T> {
     try {
       return await work();
     } catch (err) {

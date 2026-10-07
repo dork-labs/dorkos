@@ -1,3 +1,505 @@
+import { randomUUID } from 'node:crypto';
+import type { Db } from '@dorkos/db';
+import { RoomContextDataSchema, type RoomContextData } from '@dorkos/shared/additional-context';
+import type { DocChannelStore } from '../../canvas/doc-channel/store.js';
+import {
+  readInstallationOriginalRoomEmitter,
+  type InstallationFileWrites,
+} from '../../canvas/doc-channel/writes/installation-file-writes.js';
+import {
+  requireOriginalDownstreamRoomEmissionClosed,
+  sendOriginalRoomResponderScriptStep,
+  type OriginalDownstreamRoomEmitter,
+} from '../../canvas/doc-channel/downstream/native-room-emitter.js';
+import {
+  rekeyOriginalRuntimeSessionSettings,
+  readOriginalRegisteredRuntime,
+  readOriginalRegisteredRuntimeStream,
+  readOriginalRegisteredNativeStream,
+} from '../../core/runtime-registry.js';
+import { env } from '../../../env.js';
+import type { ConnectorRuntimeTools } from '../connector-tools.js';
+import type {
+  ConnectorRuntimePrincipalPort,
+  OpenConnectorTurnResult,
+} from '../../connectors/runtime-principal-port.js';
+import {
+  openOriginalNativeTurn,
+  requireCurrentOriginalNativeTurn,
+  resolveOriginalNativePrincipal,
+  requireOriginalNativePrincipalPort,
+  requireNativePrincipalDatabase,
+  requireSameOriginalNativePrincipalPorts,
+  retireOriginalNativeTurn,
+} from '../../connectors/principal/runtime-principal-service.js';
+import {
+  SessionLockManager,
+  captureNativeSessionAcquisition,
+  captureNativeSessionActivity,
+  readNativeSessionAcquisition,
+  isNativeSessionAcquisitionMove,
+  isOriginalNativeSessionAcquisitionAlias,
+  requireOriginalNativeSessionAcquisitionRetired,
+  type NativeSessionAcquisition,
+} from '../../session/session-lock.js';
+import {
+  captureOriginalRoomDispatchLifecycle,
+  readOriginalRoomLaunchHolder,
+  readOriginalDetachedTurnLifecycleClosed,
+  readOriginalPreparedRoomContext,
+  readOriginalRoomDispatchLifecycle,
+} from '../../session/trigger-turn.js';
+import type { OriginalRoomDispatchCustody } from '../../rooms/service/room-core.js';
+import {
+  readOriginalFrozenRoomTarget,
+  requireOriginalRoomPrincipalService,
+} from '../../canvas/doc-channel/operations/room-current-operation.js';
+import {
+  requireOriginalCommittedRoomResponder,
+  requireCurrentOriginalCommittedRoomResponder,
+  consumeOriginalCommittedRoomResponder,
+  retireOriginalCommittedRoomResponder,
+} from '../../canvas/doc-channel/operations/room-responder-operation.js';
+import type {
+  OriginalFrozenRoomSource,
+  PreparedRoomResponder,
+  OriginalCommittedRoomResponder,
+} from '../../canvas/doc-channel/current/current-operation-types.js';
+
+type TestModeNativeEntry = {
+  runtime: TestModeRuntime;
+  sessionId: string;
+  canonicalSessionId: string;
+  path: string;
+  acquisition: NativeSessionAcquisition;
+  controller: AbortController;
+  retired: boolean;
+  closed: boolean;
+  holder: SseResponse;
+  scenarioStarts: number;
+  interrupted?: true;
+  placementOptions?: Readonly<{
+    cwd?: string;
+    forAgent?: string;
+    additionalDirectories?: readonly Readonly<{ path: string; access: 'read' | 'write' }>[];
+  }>;
+  canonicalScenarioStarted?: true;
+  roomOrigin?: { holder: SseResponse; custody: OriginalRoomDispatchCustody };
+  closeScenario?: () => void;
+};
+type TestModeInstalled = {
+  entry: TestModeNativeEntry;
+  operation: object;
+  retire(): Promise<void>;
+  open(): Promise<OpenConnectorTurnResult>;
+};
+type TestModePreparation = {
+  runtime: TestModeRuntime;
+  source: OriginalFrozenRoomSource;
+  nativeOperation: object;
+  entry: TestModeNativeEntry;
+  binding: OpenConnectorTurnResult;
+  retire(): Promise<void>;
+  start(committed: OriginalCommittedRoomResponder): AsyncGenerator<StreamEvent>;
+};
+const testModeNativeConstructors = new WeakMap<
+  object,
+  {
+    entries: Map<string, TestModeNativeEntry>;
+    scenarioStarts: () => number;
+    isLaunchAlias(
+      request: import('../../rooms/room-turn-port.js').RoomTurnRequest,
+      retiredId: string
+    ): boolean;
+    readPreparedRoomContext(sessionId: string): RoomContextData | undefined;
+    readActiveStream(sessionId: string): AsyncGenerator<StreamEvent> | undefined;
+    captureRestart(sessionId: string, db: Db): OriginalTestModeCanonicalRestart;
+    move(oldKey: string, canonicalKey: string, holder: SseResponse): boolean;
+    captureEmitter(owner: InstallationFileWrites, db: Db, store: DocChannelStore): void;
+    requireEmitterClosed(db: Db): void;
+    locked(
+      session: string,
+      text: string,
+      opts: MessageOpts | undefined,
+      holder: SseResponse,
+      key: string
+    ): AsyncGenerator<StreamEvent>;
+    prepare(
+      source: OriginalFrozenRoomSource,
+      holder: SseResponse,
+      key: string
+    ): Promise<PreparedRoomResponder | undefined>;
+  }
+>();
+const testModeNativeOperations = new WeakMap<object, TestModeNativeEntry>();
+const testModePrepared = new WeakMap<PreparedRoomResponder, TestModePreparation>();
+const testModeOriginalStreams = new WeakMap<
+  object,
+  {
+    runtime: TestModeRuntime;
+    own: TestModeInstalled;
+    stopContinuation(): boolean;
+    stopEvents: WeakSet<object>;
+    resolve(): Promise<
+      import('../../connectors/runtime-principal-port.js').ResolveConnectorTurnResult
+    >;
+  }
+>();
+/** Constructor-native launch alias recognition; unknown/foreign producers stay on the ordinary busy path. */
+export function isTestModeOriginalRoomLaunchAlias(
+  runtime: object,
+  request: import('../../rooms/room-turn-port.js').RoomTurnRequest,
+  retiredId: string
+): boolean {
+  runtime = readOriginalRegisteredRuntime(runtime) ?? runtime;
+  return testModeNativeConstructors.get(runtime)?.isLaunchAlias(request, retiredId) === true;
+}
+/** Installation-only capture into the original constructor; no emitter argument or public setter. */
+export function captureTestModeOriginalRoomEmitter(
+  runtime: object,
+  owner: InstallationFileWrites,
+  db: Db,
+  store: DocChannelStore
+): void {
+  runtime = readOriginalRegisteredRuntime(runtime) ?? runtime;
+  const own = testModeNativeConstructors.get(runtime);
+  if (!own) throw new Error('Original dedicated TestMode constructor required.');
+  own.captureEmitter(owner, db, store);
+}
+/** Historical DATA from actual original native entry; this never authorizes a Room launch. */
+export function readTestModeOriginalPreparedRoomContext(
+  runtime: object,
+  sessionId: string
+): RoomContextData | undefined {
+  runtime = readOriginalRegisteredRuntime(runtime) ?? runtime;
+  return testModeNativeConstructors.get(runtime)?.readPreparedRoomContext(sessionId);
+}
+/** Lookup only: the actual held native stream remains recognized by its original private operation. */
+/** DATA-only observation of options consumed by an actually started original native entry. */
+export function readTestModeOriginalPlacementOptions(runtime: object, sessionId: string) {
+  const entry = testModeNativeConstructors.get(runtime)?.entries.get(sessionId);
+  if (
+    !entry ||
+    entry.runtime !== runtime ||
+    entry.retired ||
+    entry.closed ||
+    entry.scenarioStarts < 1
+  )
+    return undefined;
+  return entry.placementOptions;
+}
+
+/** Read the original held native stream without granting Room launch authority. */
+export function readTestModeOriginalActiveStream(runtime: object, sessionId: string) {
+  runtime = readOriginalRegisteredRuntime(runtime) ?? runtime;
+  return testModeNativeConstructors.get(runtime)?.readActiveStream(sessionId);
+}
+/** Fixed actual producer stream identity; possession of copied stream fields never issues. */
+export function readTestModeOriginalNativeStream(runtime: object, stream: object) {
+  stream = readOriginalRegisteredRuntimeStream(runtime, stream) ?? stream;
+  runtime = readOriginalRegisteredRuntime(runtime) ?? runtime;
+  const own = testModeOriginalStreams.get(stream);
+  if (!own || own.runtime !== runtime || !readTestModeNativeOperation(own.own.operation))
+    return undefined;
+  return Object.freeze({ operation: own.own.operation });
+}
+/** Read only the exact original Stop terminal DATA; retired native authority remains unavailable. */
+export function readTestModeOriginalStopTerminalData(
+  runtime: object,
+  stream: object,
+  event?: StreamEvent
+): boolean {
+  stream = readOriginalRegisteredRuntimeStream(runtime, stream) ?? stream;
+  runtime = readOriginalRegisteredRuntime(runtime) ?? runtime;
+  const own = testModeOriginalStreams.get(stream);
+  return (
+    !!own &&
+    own.runtime === runtime &&
+    own.stopContinuation() &&
+    (event === undefined || own.stopEvents.has(event))
+  );
+}
+/** Uses the real original service's captured policy and native SQL gate after its awaits. */
+export function resolveTestModeOriginalNativeStreamPrincipal(runtime: object, stream: object) {
+  stream = readOriginalRegisteredRuntimeStream(runtime, stream) ?? stream;
+  runtime = readOriginalRegisteredRuntime(runtime) ?? runtime;
+  const own = testModeOriginalStreams.get(stream);
+  if (!own || own.runtime !== runtime || !readTestModeNativeOperation(own.own.operation))
+    return Promise.resolve({ status: 'refused' as const, reason: 'revoked' as const });
+  return own.resolve();
+}
+/** Historical effect evidence only, keyed by an actual constructor-created raw stream. No permission is returned. */
+export function readTestModeOriginalScenarioEvidence(runtime: object, stream: object) {
+  stream = readOriginalRegisteredRuntimeStream(runtime, stream) ?? stream;
+  runtime = readOriginalRegisteredRuntime(runtime) ?? runtime;
+  const own = testModeOriginalStreams.get(stream);
+  if (!own || own.runtime !== runtime) return undefined;
+  return Object.freeze({
+    scenarioStarts: own.own.entry.scenarioStarts,
+    retired: own.own.entry.retired,
+    sessionId: own.own.entry.sessionId,
+  });
+}
+/** Pump closure gate on the genuine constructor-created stream, after actual owned drains. */
+export function requireTestModeOriginalRoomEmissionClosed(
+  runtime: object,
+  stream: object,
+  db: Db
+): void {
+  stream = readOriginalRegisteredRuntimeStream(runtime, stream) ?? stream;
+  runtime = readOriginalRegisteredRuntime(runtime) ?? runtime;
+  const original = testModeOriginalStreams.get(stream),
+    constructor = testModeNativeConstructors.get(runtime);
+  if (
+    !original ||
+    original.runtime !== runtime ||
+    !constructor ||
+    !original.own.entry.retired ||
+    original.own.entry.scenarioStarts !== 1 ||
+    !testModeStreams.has(stream)
+  )
+    throw new Error('Original retired ONE TestMode Room stream required');
+  constructor.requireEmitterClosed(db);
+}
+/** Cumulative DATA from the actual native constructor; an unrecognized runtime is UNKNOWN, never zero. */
+export function readTestModeOriginalScenarioCounts(
+  runtime: object
+): Readonly<{ scenarioStarts: number }> | undefined {
+  runtime = readOriginalRegisteredRuntime(runtime) ?? runtime;
+  const own = testModeNativeConstructors.get(runtime);
+  if (!own) return undefined;
+  return Object.freeze({ scenarioStarts: own.scenarioStarts() });
+}
+const testModeStreams = new WeakMap<
+  object,
+  {
+    runtime: object;
+    prepared: PreparedRoomResponder;
+    operation: object;
+    committed: OriginalCommittedRoomResponder;
+    events: WeakSet<object>;
+    terminal?: 'turn_done' | 'failed' | 'cancelled';
+    retire(): Promise<void>;
+  }
+>();
+const nativeSignalAborted = Object.getOwnPropertyDescriptor(AbortSignal.prototype, 'aborted')!.get!;
+const originalMapGet = Map.prototype.get;
+const originalObjectFreeze = Object.freeze;
+const originalMapSet = Map.prototype.set;
+const originalMapEntries = Map.prototype.entries;
+/** Constructor recognition selects only this internal runtime lane; it is not document permission. */
+export function isOriginalNativeTestModeRuntime(runtime: object): boolean {
+  runtime = readOriginalRegisteredRuntime(runtime) ?? runtime;
+  return testModeNativeConstructors.has(runtime);
+}
+/** Actual TestMode constructor/entry only; a logical runtime alias cannot confer authority. */
+export function readTestModeNativeOperation(token: object) {
+  const entry = testModeNativeOperations.get(token);
+  const owner = entry && testModeNativeConstructors.get(entry.runtime);
+  if (
+    !entry ||
+    !owner ||
+    entry.retired ||
+    nativeSignalAborted.call(entry.controller.signal) ||
+    originalMapGet.call(owner.entries, entry.sessionId) !== entry
+  )
+    return undefined;
+  if (
+    entry.roomOrigin &&
+    readOriginalRoomDispatchLifecycle(entry.roomOrigin.holder, entry.runtime) !==
+      entry.roomOrigin.custody
+  ) {
+    entry.retired = true;
+    return undefined;
+  }
+  return {
+    runtime: 'claude-code' as const,
+    canonicalSessionId: entry.canonicalSessionId,
+    agentPath: entry.path,
+    canonicalCwd: entry.path,
+    signal: entry.controller.signal,
+    acquisition: entry.acquisition,
+    roomCustody: entry.roomOrigin?.custody,
+  };
+}
+/** Actual native stream's internally assigned canonical identity; public declarations are DATA only. */
+export function readTestModeOriginalCanonicalSessionId(runtime: object, sessionId: string) {
+  const own = testModeNativeConstructors.get(runtime);
+  if (!own) return undefined;
+  const entry = originalMapGet.call(own.entries, sessionId) as TestModeNativeEntry | undefined;
+  if (
+    !entry ||
+    entry.retired ||
+    nativeSignalAborted.call(entry.controller.signal) ||
+    entry.scenarioStarts !== 1 ||
+    entry.canonicalSessionId === entry.sessionId
+  )
+    return { canonicalId: undefined };
+  const time = Date.now(),
+    activity = captureNativeSessionActivity(entry.acquisition, time);
+  const current =
+    activity &&
+    (readNativeSessionAcquisition(entry.acquisition, activity, time, entry.sessionId) ||
+      readNativeSessionAcquisition(entry.acquisition, activity, time, entry.canonicalSessionId));
+  return {
+    canonicalId:
+      current && !entry.retired && !nativeSignalAborted.call(entry.controller.signal)
+        ? entry.canonicalSessionId
+        : undefined,
+  };
+}
+/** Opaque observation of one real held canonical producer; no alias/source authority is issued. */
+export interface OriginalTestModeCanonicalRestart {
+  readonly kind: 'original-testmode-canonical-restart';
+}
+const originalCanonicalRestarts = new WeakMap<
+  OriginalTestModeCanonicalRestart,
+  {
+    runtime: TestModeRuntime;
+    db: Db;
+    entry: TestModeNativeEntry;
+    locks: SessionLockManager;
+  }
+>();
+/** Capture canonical restart evidence from the original TestMode constructor. */
+export function captureTestModeOriginalCanonicalRestart(
+  runtime: object,
+  sessionId: string,
+  db: Db
+): OriginalTestModeCanonicalRestart {
+  runtime = readOriginalRegisteredRuntime(runtime) ?? runtime;
+  const own = testModeNativeConstructors.get(runtime);
+  if (!own) throw new Error('Original canonical TestMode constructor required');
+  return own.captureRestart(sessionId, db);
+}
+/** Read-only DATA. Positive closure is checked against the original entry and lock retirement witness. */
+export function readTestModeOriginalCanonicalRestart(
+  runtime: object,
+  token: OriginalTestModeCanonicalRestart,
+  db: Db
+): Readonly<{ canonicalId: string; closed: boolean }> {
+  runtime = readOriginalRegisteredRuntime(runtime) ?? runtime;
+  const own = originalCanonicalRestarts.get(token);
+  if (!own || own.runtime !== runtime || own.db !== db)
+    throw new Error('Foreign original canonical restart');
+  if (!own.entry.closed || readOriginalDetachedTurnLifecycleClosed(own.entry.holder) !== true)
+    return Object.freeze({ canonicalId: own.entry.canonicalSessionId, closed: false });
+  requireOriginalNativeSessionAcquisitionRetired(
+    own.locks,
+    own.entry.acquisition,
+    own.entry.holder
+  );
+  return Object.freeze({ canonicalId: own.entry.canonicalSessionId, closed: true });
+}
+
+/** Transfer only this constructor's genuine old/new acquisitions and privately assigned identity. */
+export function moveTestModeOriginalLockedAcquisition(
+  runtime: object,
+  oldKey: string,
+  canonicalKey: string,
+  holder: SseResponse
+): boolean | undefined {
+  return testModeNativeConstructors.get(runtime)?.move(oldKey, canonicalKey, holder);
+}
+/** Send through the original locked TestMode message operation. */
+export function sendTestModeOriginalLockedMessage(
+  runtime: object,
+  session: string,
+  text: string,
+  opts: MessageOpts | undefined,
+  holder: SseResponse,
+  key: string
+) {
+  runtime = readOriginalRegisteredRuntime(runtime) ?? runtime;
+  return testModeNativeConstructors.get(runtime)?.locked(session, text, opts, holder, key);
+}
+/** Prepare the original locked TestMode Room responder. */
+export function prepareTestModeOriginalLockedRoomResponder(
+  runtime: object,
+  holder: SseResponse,
+  key: string,
+  source: OriginalFrozenRoomSource
+): Promise<PreparedRoomResponder | undefined> {
+  runtime = readOriginalRegisteredRuntime(runtime) ?? runtime;
+  return (
+    testModeNativeConstructors.get(runtime)?.prepare(source, holder, key) ??
+    Promise.resolve(undefined)
+  );
+}
+/** Read the original TestMode Room responder preparation. */
+export function readTestModePreparedRoomResponder(
+  runtime: object,
+  prepared: PreparedRoomResponder
+) {
+  runtime = readOriginalRegisteredRuntime(runtime) ?? runtime;
+  const own = testModePrepared.get(prepared);
+  if (!own || own.runtime !== runtime) return undefined;
+  const at = Date.now(),
+    activity = captureNativeSessionActivity(own.entry.acquisition, at);
+  const native = readTestModeNativeOperation(own.nativeOperation);
+  if (
+    !native ||
+    !activity ||
+    !readNativeSessionAcquisition(own.entry.acquisition, activity, at, own.entry.sessionId) ||
+    testModePrepared.get(prepared) !== own ||
+    !readTestModeNativeOperation(own.nativeOperation)
+  )
+    return undefined;
+  return Object.freeze({
+    source: own.source,
+    nativeOperation: own.nativeOperation,
+    acquisition: own.entry.acquisition,
+    native,
+  });
+}
+/** Retire the original TestMode Room responder preparation. */
+export function retireTestModePreparedRoomResponder(
+  runtime: object,
+  prepared: PreparedRoomResponder
+) {
+  runtime = readOriginalRegisteredRuntime(runtime) ?? runtime;
+  const own = testModePrepared.get(prepared);
+  if (!own || own.runtime !== runtime) throw new Error('TestMode preparation is not original.');
+  testModePrepared.delete(prepared);
+  return own.retire();
+}
+/** Start the original TestMode responder from its committed native operation. */
+export function startTestModeCommittedRoomResponder(
+  runtime: object,
+  prepared: PreparedRoomResponder,
+  committed?: OriginalCommittedRoomResponder
+): AsyncGenerator<StreamEvent> {
+  runtime = readOriginalRegisteredRuntime(runtime) ?? runtime;
+  const own = testModePrepared.get(prepared);
+  if (!own || own.runtime !== runtime) throw new Error('TestMode preparation is not original.');
+  requireOriginalCommittedRoomResponder(committed, runtime, prepared, own.nativeOperation);
+  if (!committed) throw new Error('TestMode requires original COMMIT/FIRST.');
+  return own.start(committed);
+}
+/** Read evidence from the original TestMode Room responder stream. */
+export function readTestModeOriginalRoomResponderStream(
+  runtime: object | undefined,
+  stream: object,
+  event?: StreamEvent
+) {
+  stream = readOriginalRegisteredNativeStream(stream) ?? stream;
+  if (runtime) runtime = readOriginalRegisteredRuntime(runtime) ?? runtime;
+  const own = testModeStreams.get(stream);
+  if (
+    !own ||
+    (runtime !== undefined && runtime !== own.runtime) ||
+    (event && !own.events.has(event))
+  )
+    return undefined;
+  return {
+    runtime: own.runtime,
+    prepared: own.prepared,
+    operation: own.operation,
+    committed: own.committed,
+    outcome: own.terminal,
+  };
+}
+
 import { renderDocEvents } from '../../canvas/doc-channel/prompt.js';
 import type {
   AgentRuntime,
@@ -46,7 +548,12 @@ import { reconstructHistoryFromEvents } from '../../session/event-log-history.js
 import { readLogBackedHistory } from '../../session/log-backed-history.js';
 import { heldProcesses } from './held-process.js';
 import { ScenarioAborted, interactionGate } from './interaction-gate.js';
-import { declaredInterruptOutcome, scenarioStore } from './scenario-store.js';
+import {
+  declaredInterruptOutcome,
+  scenarioStore,
+  originalRoomPartialAckReplyScenario,
+  originalNativeCanonicalRekeyScenario,
+} from './scenario-store.js';
 import { TestModeSessionRegistry } from './session-registry.js';
 import { TEST_MODE_CAPABILITIES } from './runtime-constants.js';
 
@@ -77,12 +584,20 @@ const declaredCanonicalIds = new Map<string, { canonicalId: string; revealed: bo
  * Decision 1). Registered instead of ClaudeCodeRuntime when
  * DORKOS_TEST_RUNTIME=true.
  *
- * Never imported in production — index.ts only imports this module when the
- * env var is set. There is no tree-shaking concern because the condition is
- * evaluated at server startup, not at build time.
+ * The original test boot constructs this adapter only when its environment flag
+ * is enabled. Fixed native readers now import this module for lookup-only
+ * constructor recognition; importing it does not construct a runtime or run a
+ * scenario/provider. Dedicated authority remains unavailable outside test boot.
  */
 export class TestModeRuntime implements AgentRuntime {
   readonly type: string;
+  readonly #nativeLocks = new SessionLockManager();
+  readonly #nativeEntries = new Map<string, TestModeNativeEntry>();
+  readonly #originalNativeCanonicalAliases = new Map<string, string>();
+  readonly #preparedRoomContexts = new Map<string, RoomContextData>();
+  readonly #activeNativeStreams = new Map<string, AsyncGenerator<StreamEvent>>();
+  #nativeTools: Readonly<ConnectorRuntimeTools> | undefined;
+  #nativePrincipals: ConnectorRuntimePrincipalPort | undefined;
 
   private readonly registry: TestModeSessionRegistry;
   private readonly capabilities: RuntimeCapabilities;
@@ -100,11 +615,162 @@ export class TestModeRuntime implements AgentRuntime {
    *   multi-runtime UI — the status-bar picker, `?runtime=` launch binding,
    *   session-list runtime marks — is testable with zero real agent binaries.
    */
-  constructor(type = 'test-mode') {
+  #nativeRoomEmitter: OriginalDownstreamRoomEmitter | undefined;
+  #nativeRoomEmitterCaptureStarted = false;
+  #originalScenarioStarts = 0;
+  constructor(type = 'test-mode', nativePrincipals?: ConnectorRuntimePrincipalPort) {
     this.type = type;
     // Sessions must carry their owning instance's type, not a hardcoded
     // 'test-mode', so session-list marks distinguish the two instances.
     this.registry = new TestModeSessionRegistry(type);
+    // Only this actual constructor under the real test boot owns the dedicated alias lane.
+    if (nativePrincipals) {
+      if (!env.DORKOS_TEST_RUNTIME || type !== 'claude-code')
+        throw new Error('Dedicated TestMode principal capture requires the actual test boot lane.');
+      requireOriginalNativePrincipalPort(nativePrincipals);
+      this.#nativePrincipals = nativePrincipals;
+    }
+    if (env.DORKOS_TEST_RUNTIME && type === 'claude-code') {
+      testModeNativeConstructors.set(this, {
+        entries: this.#nativeEntries,
+        scenarioStarts: () => this.#originalScenarioStarts,
+        isLaunchAlias: (request, retiredId) => {
+          const launch = readOriginalRoomLaunchHolder(request);
+          const canonical = originalMapGet.call(this.#originalNativeCanonicalAliases, retiredId) as
+            string | undefined;
+          if (
+            !launch ||
+            (readOriginalRegisteredRuntime(launch.runtime) ?? launch.runtime) !== this ||
+            canonical !== launch.key
+          )
+            return false;
+          const acquisition = captureNativeSessionAcquisition(
+            this.#nativeLocks,
+            launch.key,
+            launch.holder
+          );
+          return (
+            !!acquisition &&
+            isOriginalNativeSessionAcquisitionAlias(
+              this.#nativeLocks,
+              acquisition,
+              launch.holder,
+              launch.key,
+              retiredId
+            ) &&
+            readOriginalRoomLaunchHolder(request) === launch &&
+            originalMapGet.call(this.#originalNativeCanonicalAliases, retiredId) === canonical
+          );
+        },
+        readPreparedRoomContext: (sessionId) => {
+          const context = this.#preparedRoomContexts.get(sessionId);
+          return context ? RoomContextDataSchema.parse(context) : undefined;
+        },
+        readActiveStream: (sessionId) => {
+          const stream = this.#activeNativeStreams.get(sessionId);
+          return stream && readTestModeOriginalNativeStream(this, stream) ? stream : undefined;
+        },
+        captureRestart: (sessionId, db) => {
+          if (!this.#nativePrincipals)
+            throw new Error('Original canonical principal assembly required');
+          requireNativePrincipalDatabase(this.#nativePrincipals, db);
+          const entry = originalMapGet.call(this.#nativeEntries, sessionId) as
+            TestModeNativeEntry | undefined;
+          if (
+            !entry ||
+            entry.retired ||
+            entry.roomOrigin ||
+            !entry.canonicalScenarioStarted ||
+            entry.scenarioStarts !== 1 ||
+            nativeSignalAborted.call(entry.controller.signal)
+          )
+            throw new Error('Original held interactive canonical producer required');
+          const time = Date.now(),
+            activity = captureNativeSessionActivity(entry.acquisition, time);
+          if (
+            !activity ||
+            !readNativeSessionAcquisition(
+              entry.acquisition,
+              activity,
+              time,
+              entry.canonicalSessionId
+            )
+          )
+            throw new Error('Original held canonical acquisition required');
+          const token: OriginalTestModeCanonicalRestart = Object.freeze({
+            kind: 'original-testmode-canonical-restart',
+          });
+          originalCanonicalRestarts.set(token, {
+            runtime: this,
+            db,
+            entry,
+            locks: this.#nativeLocks,
+          });
+          return token;
+        },
+        move: (oldKey, canonicalKey, holder) => {
+          const entry = originalMapGet.call(this.#nativeEntries, oldKey) as
+            TestModeNativeEntry | undefined;
+          if (
+            !entry ||
+            entry.retired ||
+            entry.canonicalSessionId !== canonicalKey ||
+            nativeSignalAborted.call(entry.controller.signal)
+          )
+            return false;
+          const time = Date.now(),
+            activity = captureNativeSessionActivity(entry.acquisition, time);
+          if (!activity || !readNativeSessionAcquisition(entry.acquisition, activity, time, oldKey))
+            return false;
+          const next = captureNativeSessionAcquisition(this.#nativeLocks, canonicalKey, holder);
+          if (!next || !isNativeSessionAcquisitionMove(entry.acquisition, next, holder))
+            return false;
+          entry.acquisition = next;
+          // Historical alias DATA comes only from this actual native acquisition move.
+          // Public declared test renames cannot certify a constructor-native launch.
+          for (const [id, current] of originalMapEntries.call(this.#originalNativeCanonicalAliases))
+            if (current === oldKey)
+              originalMapSet.call(this.#originalNativeCanonicalAliases, id, canonicalKey);
+          originalMapSet.call(this.#originalNativeCanonicalAliases, oldKey, canonicalKey);
+          return true;
+        },
+        captureEmitter: (owner, db, store) => {
+          if (this.#nativeRoomEmitterCaptureStarted || !this.#nativePrincipals)
+            throw new Error(
+              'Original TestMode emitter capture is unavailable or already consumed.'
+            );
+          this.#nativeRoomEmitterCaptureStarted = true;
+          this.#nativeRoomEmitter = readInstallationOriginalRoomEmitter(
+            owner,
+            db,
+            store,
+            this.#nativePrincipals
+          );
+        },
+        requireEmitterClosed: (db) => {
+          if (!this.#nativeRoomEmitter)
+            throw new Error('Original installed TestMode emitter required');
+          requireOriginalDownstreamRoomEmissionClosed(this.#nativeRoomEmitter, db);
+        },
+        locked: (session, text, opts, holder, key) => {
+          const acquisition = captureNativeSessionAcquisition(this.#nativeLocks, key, holder);
+          if (!acquisition || session !== key || !opts?.cwd || !this.#nativePrincipals)
+            throw new Error(
+              'TestMode native turn requires its actual lock, path and principal assembly.'
+            );
+          const custody = captureOriginalRoomDispatchLifecycle(holder, this);
+          const own = this.#installNative(
+            session,
+            opts.cwd,
+            acquisition,
+            holder,
+            custody ? { holder, custody } : undefined
+          );
+          return this.#nativeStream(session, text, opts, own);
+        },
+        prepare: (source, holder, key) => this.#prepareNative(source, holder, key),
+      });
+    }
     // Capabilities are identical across instances except the identity field;
     // the default instance returns the shared constant BY REFERENCE (the
     // capabilities contract test pins that).
@@ -114,6 +780,406 @@ export class TestModeRuntime implements AgentRuntime {
         : { ...TEST_MODE_CAPABILITIES, type };
   }
 
+  /** Existing boot tooling shape; capture once, never accept a caller currentness callback. */
+  setConnectorRuntimeTools(tools: ConnectorRuntimeTools): void {
+    if (this.#nativeTools) throw new Error('TestMode principal assembly is already captured.');
+    requireOriginalNativePrincipalPort(tools.principals);
+    if (this.#nativePrincipals)
+      requireSameOriginalNativePrincipalPorts(this.#nativePrincipals, tools.principals);
+    this.#nativePrincipals = tools.principals;
+    this.#nativeTools = Object.freeze({ ...tools });
+  }
+  #installNative(
+    sessionId: string,
+    path: string,
+    acquisition: NativeSessionAcquisition,
+    holder: SseResponse,
+    roomOrigin?: TestModeNativeEntry['roomOrigin']
+  ): TestModeInstalled {
+    if (!testModeNativeConstructors.has(this) || this.#nativeEntries.has(sessionId))
+      throw new Error('TestMode native slot is unavailable.');
+    const entry: TestModeNativeEntry = {
+      runtime: this,
+      sessionId,
+      canonicalSessionId: sessionId,
+      path,
+      acquisition,
+      controller: new AbortController(),
+      retired: false,
+      closed: false,
+      holder,
+      scenarioStarts: 0,
+      roomOrigin,
+    };
+    const operation = Object.freeze({});
+    this.#nativeEntries.set(sessionId, entry);
+    testModeNativeOperations.set(operation, entry);
+    let binding: OpenConnectorTurnResult | undefined;
+    let retirement: Promise<void> | undefined;
+    const retire = (): Promise<void> => {
+      if (retirement) return retirement;
+      entry.retired = true;
+      if (this.#nativeEntries.get(sessionId) === entry) this.#nativeEntries.delete(sessionId);
+      retirement = Promise.resolve().then(async () => {
+        let failed = false,
+          first: unknown;
+        try {
+          entry.controller.abort();
+        } catch (cause) {
+          failed = true;
+          first = cause;
+        }
+        try {
+          entry.closeScenario?.();
+        } catch (cause) {
+          if (!failed) {
+            failed = true;
+            first = cause;
+          }
+        }
+        try {
+          if (binding)
+            await retireOriginalNativeTurn(this.#nativePrincipals!, operation, 'turn_terminal');
+        } catch (cause) {
+          if (!failed) {
+            failed = true;
+            first = cause;
+          }
+        }
+        if (failed) throw first;
+        entry.closed = true;
+      });
+      return retirement;
+    };
+    return {
+      entry,
+      operation,
+      retire,
+      open: async () => {
+        binding = await openOriginalNativeTurn(
+          this.#nativePrincipals!,
+          {
+            runtime: 'claude-code',
+            canonicalSessionId: sessionId,
+            agentPath: path,
+            canonicalCwd: path,
+            signal: entry.controller.signal,
+          },
+          operation
+        );
+        if (entry.retired) {
+          await retireOriginalNativeTurn(this.#nativePrincipals!, operation, 'setup_failed');
+          throw new Error('TestMode native opening completed after retirement.');
+        }
+        return binding;
+      },
+    };
+  }
+  async #prepareNative(
+    source: OriginalFrozenRoomSource,
+    holder: SseResponse,
+    key: string
+  ): Promise<PreparedRoomResponder | undefined> {
+    const principals = this.#nativePrincipals;
+    if (!principals || this.#nativeEntries.has(key)) return undefined;
+    const target = readOriginalFrozenRoomTarget(source, 'claude-code');
+    requireOriginalRoomPrincipalService(source, principals);
+    const acquisition = captureNativeSessionAcquisition(this.#nativeLocks, key, holder);
+    if (!acquisition || target.sessionId !== key) return undefined;
+    const own = this.#installNative(key, target.agentPath, acquisition, holder);
+    try {
+      const binding = await own.open();
+      const prepared: PreparedRoomResponder = Object.freeze({ kind: 'prepared-room-responder' });
+      let started = false;
+      testModePrepared.set(prepared, {
+        runtime: this,
+        source,
+        nativeOperation: own.operation,
+        entry: own.entry,
+        binding,
+        retire: own.retire,
+        start: (committed) => {
+          if (started || !readTestModePreparedRoomResponder(this, prepared))
+            throw new Error(
+              'TestMode original preparation cannot start twice or after retirement.'
+            );
+          started = true;
+          return this.#nativeStream(key, 'Document update', { cwd: target.agentPath }, own, {
+            prepared,
+            committed,
+          });
+        },
+      });
+      if (!readTestModePreparedRoomResponder(this, prepared)) {
+        testModePrepared.delete(prepared);
+        throw new Error('TestMode preparation retired during setup.');
+      }
+      return prepared;
+    } catch (cause) {
+      try {
+        await own.retire();
+      } catch {}
+      throw cause;
+    }
+  }
+  #nativeStream(
+    sessionId: string,
+    text: string,
+    opts: MessageOpts | undefined,
+    own: TestModeInstalled,
+    room?: { prepared: PreparedRoomResponder; committed: OriginalCommittedRoomResponder }
+  ) {
+    own.entry.placementOptions = Object.freeze({
+      ...(opts?.cwd !== undefined ? { cwd: opts.cwd } : {}),
+      ...(opts?.forAgent !== undefined ? { forAgent: opts.forAgent } : {}),
+      ...(opts?.additionalDirectories !== undefined
+        ? {
+            additionalDirectories: Object.freeze(
+              opts.additionalDirectories.map((grant) => Object.freeze({ ...grant }))
+            ),
+          }
+        : {}),
+    });
+    let closed = false;
+    let stopPhase = 0;
+    const stopEvents = new WeakSet<object>();
+    const stopContinuation = () =>
+      !closed &&
+      stopPhase < 3 &&
+      own.entry.interrupted === true &&
+      own.entry.retired &&
+      nativeSignalAborted.call(own.entry.controller.signal) &&
+      own.entry.scenarioStarts === 1 &&
+      originalMapGet.call(this.#nativeEntries, sessionId) === own.entry;
+    const streamCapture: { returned?: AsyncGenerator<StreamEvent> } = {};
+    const run = async function* (this: TestModeRuntime): AsyncGenerator<StreamEvent> {
+      let failed = false,
+        first: unknown;
+      try {
+        if (!room) await own.open();
+        if (!readTestModeNativeOperation(own.operation))
+          throw new Error('TestMode native entry retired.');
+        if (room) {
+          requireCurrentOriginalCommittedRoomResponder(
+            room.committed,
+            this,
+            room.prepared,
+            own.operation
+          );
+        }
+        const context = readOriginalPreparedRoomContext(this, own.entry.holder, sessionId, opts);
+        if (!readTestModeNativeOperation(own.operation))
+          throw new Error('TestMode native entry retired during context capture.');
+        if (context) this.#preparedRoomContexts.set(sessionId, context);
+        // Fixed original scenario continuation; public sendMessage replacement cannot redirect this effect.
+        yield* this.#sendScenario(sessionId, text, opts, { own, room });
+      } catch (cause) {
+        failed = true;
+        first = cause;
+      } finally {
+        if (room) {
+          testModePrepared.delete(room.prepared);
+          try {
+            retireOriginalCommittedRoomResponder(
+              room.committed,
+              this,
+              room.prepared,
+              own.operation
+            );
+          } catch (cause) {
+            if (!failed) {
+              failed = true;
+              first = cause;
+            }
+          }
+        }
+        try {
+          await own.retire();
+          if (
+            streamCapture.returned &&
+            this.#activeNativeStreams.get(sessionId) === streamCapture.returned
+          )
+            this.#activeNativeStreams.delete(sessionId);
+        } catch (cause) {
+          if (!failed) {
+            failed = true;
+            first = cause;
+          }
+        }
+      }
+      if (failed) throw first;
+    }.call(this);
+    const metadata = room
+      ? {
+          runtime: this,
+          prepared: room.prepared,
+          operation: own.operation,
+          committed: room.committed,
+          events: new WeakSet<object>(),
+          terminal: undefined as 'turn_done' | 'failed' | 'cancelled' | undefined,
+          retire: async () => {
+            let failed = false,
+              first: unknown;
+            try {
+              await close();
+            } catch (cause) {
+              failed = true;
+              first = cause;
+            }
+            try {
+              await run.return(undefined);
+            } catch (cause) {
+              if (!failed) {
+                failed = true;
+                first = cause;
+              }
+            }
+            if (failed) throw first;
+          },
+        }
+      : undefined;
+    const close = async () => {
+      if (closed) return;
+      closed = true;
+      // Retirement happens synchronously before the first cleanup await, including an unpulled stream.
+      own.entry.retired = true;
+      own.entry.controller.abort();
+      let failed = false,
+        first: unknown;
+      if (room) {
+        testModePrepared.delete(room.prepared);
+        try {
+          retireOriginalCommittedRoomResponder(room.committed, this, room.prepared, own.operation);
+        } catch (cause) {
+          failed = true;
+          first = cause;
+        }
+      }
+      try {
+        await own.retire();
+        if (
+          streamCapture.returned &&
+          this.#activeNativeStreams.get(sessionId) === streamCapture.returned
+        )
+          this.#activeNativeStreams.delete(sessionId);
+      } catch (cause) {
+        if (!failed) {
+          failed = true;
+          first = cause;
+        }
+      }
+      if (failed) throw first;
+    };
+    const returned: AsyncGenerator<StreamEvent> = {
+      async next(value) {
+        if (closed) return { done: true, value: undefined };
+        const result = await run.next(value);
+        if (stopContinuation()) {
+          if (result.done) {
+            stopPhase = 3;
+          } else if (
+            stopPhase === 0 &&
+            result.value.type === 'session_status' &&
+            'terminalReason' in result.value.data &&
+            result.value.data.terminalReason === 'aborted_streaming'
+          ) {
+            originalObjectFreeze(result.value.data);
+            originalObjectFreeze(result.value);
+            stopEvents.add(result.value);
+            stopPhase = 1;
+          } else if (stopPhase === 1 && result.value.type === 'done') {
+            originalObjectFreeze(result.value.data);
+            originalObjectFreeze(result.value);
+            stopEvents.add(result.value);
+            stopPhase = 2;
+          }
+        }
+        if (metadata && !result.done) {
+          metadata.events.add(result.value);
+          if (result.value.type === 'error') metadata.terminal = 'failed';
+          if (
+            result.value.type === 'session_status' &&
+            'terminalReason' in result.value.data &&
+            result.value.data.terminalReason === 'aborted_streaming'
+          )
+            metadata.terminal = 'cancelled';
+          if (result.value.type === 'done' && metadata.terminal === undefined)
+            metadata.terminal = 'turn_done';
+        }
+        return result;
+      },
+      async return(value) {
+        const closure = close().then(
+          () => ({ failed: false as const }),
+          (cause: unknown) => ({ failed: true as const, cause })
+        );
+        let failed = false,
+          first: unknown;
+        let result: IteratorResult<StreamEvent> = { done: true, value };
+        try {
+          result = await run.return(value);
+        } catch (cause) {
+          failed = true;
+          first = cause;
+        }
+        const cleanup = await closure;
+        if (cleanup.failed && !failed) {
+          failed = true;
+          first = cleanup.cause;
+        }
+        if (failed) throw first;
+        return result;
+      },
+      async throw(cause) {
+        const closure = close().then(
+          () => ({ failed: false as const }),
+          (cause: unknown) => ({ failed: true as const, cause })
+        );
+        let failed = false,
+          first: unknown;
+        let result: IteratorResult<StreamEvent> = { done: true, value: undefined };
+        try {
+          result = await run.throw(cause);
+        } catch (error) {
+          failed = true;
+          first = error;
+        }
+        const cleanup = await closure;
+        if (cleanup.failed && !failed) {
+          failed = true;
+          first = cleanup.cause;
+        }
+        if (failed) throw first;
+        return result;
+      },
+      async [Symbol.asyncDispose]() {
+        await disposeOriginalStream();
+      },
+      [Symbol.asyncIterator]() {
+        return this;
+      },
+    };
+    streamCapture.returned = returned;
+    const disposeOriginalStream = returned.return.bind(returned, undefined);
+    testModeOriginalStreams.set(returned, {
+      runtime: this,
+      own,
+      stopContinuation,
+      stopEvents,
+      resolve: async () => {
+        const result = await resolveOriginalNativePrincipal(this.#nativePrincipals!, own.operation);
+        if (
+          !readTestModeNativeOperation(own.operation) ||
+          testModeOriginalStreams.get(returned)?.own !== own
+        )
+          return { status: 'refused', reason: 'revoked' };
+        return result;
+      },
+    });
+    if (metadata) testModeStreams.set(returned, metadata);
+    this.#activeNativeStreams.set(sessionId, returned);
+    return returned;
+  }
   ensureSession(sessionId: string, opts: SessionOpts): void {
     this.registry.register(sessionId, {
       permissionMode: opts.permissionMode,
@@ -156,6 +1222,7 @@ export class TestModeRuntime implements AgentRuntime {
     // Declared first-turn renames go too: a session id reused after a reset must
     // not inherit a rename the previous test asked for.
     declaredCanonicalIds.clear();
+    this.#originalNativeCanonicalAliases.clear();
     const store = getSessionEventStore();
     for (const sessionId of this.registry.ids()) {
       disposeProjector(sessionId);
@@ -190,69 +1257,159 @@ export class TestModeRuntime implements AgentRuntime {
     };
   }
 
-  async *sendMessage(
+  sendMessage(sessionId: string, content: string, opts?: MessageOpts): AsyncGenerator<StreamEvent> {
+    return this.#sendScenario(sessionId, content, opts);
+  }
+  async *#sendScenario(
     sessionId: string,
     content: string,
-    opts?: MessageOpts
+    opts?: MessageOpts,
+    native?: {
+      own: TestModeInstalled;
+      room?: { prepared: PreparedRoomResponder; committed: OriginalCommittedRoomResponder };
+    }
   ): AsyncGenerator<StreamEvent> {
-    // Track the session the moment DorkOS observes it — the discovery source
-    // for subscribeSessionList (no filesystem watch, no native store).
-    this.registry.recordMessage(sessionId, content, {
-      ...(opts?.cwd !== undefined ? { cwd: opts.cwd } : {}),
-    });
-    // A declared first-turn rename becomes visible exactly here — after the
-    // message is tracked, so the rename moves a complete entry rather than
-    // racing one into existence, and after the turn has already STARTED under
-    // the id the client minted (see `declareCanonicalSessionId`).
-    this.revealCanonicalSessionId(sessionId);
-    const scenario = scenarioStore.getScenario(sessionId);
-    // The gate is what makes an interactive scenario possible: it hands the
-    // scenario the handle it parks on, and gives `approveTool`/`submitAnswers`/
-    // `submitElicitation`/`interruptQuery` something real to resolve.
-    const ctx = {
-      ...interactionGate.open(sessionId),
-      docEventsPrompt: opts?.additionalContext
-        ?.filter((entry) => entry.kind === 'doc_events')
-        .map((entry) => renderDocEvents(entry.data))
-        .join('\n\n'),
-    };
-    // Boots this session's scripted process if it opted in and holds none yet,
-    // and counts the turn against it — which is what later makes a warm second
-    // turn distinguishable from a fresh one. `undefined` for a session on the
-    // resume path: nothing is held, so there is nothing to hand back.
-    const heldTurn = heldProcesses.beginTurn(sessionId);
+    let ctx: ReturnType<typeof interactionGate.open> | undefined;
+    let heldTurn: ReturnType<typeof heldProcesses.beginTurn> = undefined;
+    let failed = false,
+      first: unknown;
     this.openTurns.set(sessionId, (this.openTurns.get(sessionId) ?? 0) + 1);
     try {
-      yield* scenario(content, ctx, opts);
-    } catch (error) {
-      // A stop is not a failure, and it must not be reported as one. Anything
-      // else IS a failure and has to keep propagating — a scenario that threw a
-      // genuine bug would otherwise be laundered into a tidy "interrupted".
-      if (!(error instanceof ScenarioAborted)) throw error;
-      // The honest terminal shape for an interrupt, mirroring the Claude
-      // adapter's: a final status naming why, then the `done` that closes the
-      // turn so the projector synthesizes `turn_end` and every window's composer
-      // comes back. Without these the turn would hang `streaming` forever and
-      // the UI would settle dishonestly — or not at all.
-      yield {
-        type: 'session_status',
-        data: { sessionId: 'test-mode', terminalReason: 'aborted_streaming' },
-      } as StreamEvent;
-      yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
+      this.registry.recordMessage(sessionId, content, {
+        ...(opts?.cwd !== undefined ? { cwd: opts.cwd } : {}),
+      });
+      if (!native) this.revealCanonicalSessionId(sessionId);
+      const scenario = scenarioStore.getScenario(sessionId);
+      const opened = interactionGate.open(sessionId);
+      ctx = opened;
+      if (native)
+        native.own.entry.closeScenario = () => interactionGate.close(sessionId, opened.token);
+      const scenarioContext = {
+        ...opened,
+        docEventsPrompt: opts?.additionalContext
+          ?.filter((entry) => entry.kind === 'doc_events')
+          .map((entry) => renderDocEvents(entry.data))
+          .join('\n\n'),
+      };
+      heldTurn = heldProcesses.beginTurn(sessionId);
+      if (native) {
+        requireCurrentOriginalNativeTurn(this.#nativePrincipals!, native.own.operation);
+        if (!readTestModeNativeOperation(native.own.operation))
+          throw new Error('TestMode original scenario entry retired before effect.');
+        if (native.room)
+          consumeOriginalCommittedRoomResponder(
+            native.room.committed,
+            this,
+            native.room.prepared,
+            native.own.operation
+          );
+      }
+      // Count the actual original local provider entry, after the private once-start consume.
+      if (native) {
+        native.own.entry.scenarioStarts++;
+        this.#originalScenarioStarts++;
+      }
+      if (scenario === originalNativeCanonicalRekeyScenario) {
+        if (!native || native.room || !this.#nativePrincipals)
+          throw new Error('Canonical recovery requires an original native interactive turn');
+        native.own.entry.canonicalScenarioStarted = true;
+        yield { type: 'session_status', data: { sessionId, model: 'test-mode' } } as StreamEvent;
+        yield {
+          type: 'text_delta',
+          data: { text: 'NATIVE_CANONICAL_REKEY_WAITING' },
+        } as StreamEvent;
+        await scenarioContext.awaitStep();
+        requireCurrentOriginalNativeTurn(this.#nativePrincipals, native.own.operation);
+        const canonicalId = randomUUID();
+        await rekeyOriginalRuntimeSessionSettings(
+          this,
+          this.#nativePrincipals,
+          sessionId,
+          canonicalId
+        );
+        const time = Date.now(),
+          activity = captureNativeSessionActivity(native.own.entry.acquisition, time);
+        if (
+          !readTestModeNativeOperation(native.own.operation) ||
+          !activity ||
+          !readNativeSessionAcquisition(native.own.entry.acquisition, activity, time, sessionId)
+        )
+          throw new Error('Original canonical source retired during settings move');
+        native.own.entry.canonicalSessionId = canonicalId;
+        this.registry.rekey(sessionId, canonicalId);
+        yield {
+          type: 'session_status',
+          data: { sessionId: canonicalId, model: 'test-mode' },
+        } as StreamEvent;
+        yield { type: 'text_delta', data: { text: 'NATIVE_CANONICAL_REKEY_HELD' } } as StreamEvent;
+        await scenarioContext.awaitStep();
+        yield { type: 'done', data: { sessionId: canonicalId } } as StreamEvent;
+      } else if (scenario === originalRoomPartialAckReplyScenario) {
+        if (!native?.room || !this.#nativeRoomEmitter)
+          throw new Error(
+            'Original Room partial reply scenario requires the installed native emitter.'
+          );
+        yield { type: 'session_status', data: { sessionId, model: 'test-mode' } } as StreamEvent;
+        await sendOriginalRoomResponderScriptStep(
+          this.#nativeRoomEmitter,
+          native.room.committed,
+          this,
+          native.room.prepared,
+          native.own.operation,
+          'ack-first'
+        );
+        // A real operator step keeps the source turn/FIRST alive while the first receipt is inspected.
+        yield {
+          type: 'text_delta',
+          data: { text: 'First native document input acknowledged.' },
+        } as StreamEvent;
+        await scenarioContext.awaitStep();
+        requireCurrentOriginalNativeTurn(this.#nativePrincipals!, native.own.operation);
+        await sendOriginalRoomResponderScriptStep(
+          this.#nativeRoomEmitter,
+          native.room.committed,
+          this,
+          native.room.prepared,
+          native.own.operation,
+          'reply-second'
+        );
+        yield { type: 'done', data: { sessionId } } as StreamEvent;
+      } else {
+        yield* scenario(content, scenarioContext, opts);
+      }
+    } catch (cause) {
+      if (cause instanceof ScenarioAborted) {
+        yield {
+          type: 'session_status',
+          data: { sessionId: 'test-mode', terminalReason: 'aborted_streaming' },
+        } as StreamEvent;
+        yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
+      } else {
+        failed = true;
+        first = cause;
+      }
     } finally {
-      // Scoped to THIS turn's token. The generator is disposed lazily, so on a
-      // busy session this can run after the NEXT turn has already opened its own
-      // gate — and closing that one would make its card unanswerable and kill it
-      // as `aborted_streaming`. See `InteractionGate.close`.
-      interactionGate.close(sessionId, ctx.token);
-      // The process survives the turn, however the turn ended — a Stop included,
-      // which is what an acked stop does on the real pump. Token-scoped for the
-      // same lazy-disposal reason the gate close is.
-      if (heldTurn !== undefined) heldProcesses.endTurn(sessionId, heldTurn);
+      try {
+        if (ctx) interactionGate.close(sessionId, ctx.token);
+      } catch (cause) {
+        if (!failed) {
+          failed = true;
+          first = cause;
+        }
+      }
+      try {
+        if (heldTurn !== undefined) heldProcesses.endTurn(sessionId, heldTurn);
+      } catch (cause) {
+        if (!failed) {
+          failed = true;
+          first = cause;
+        }
+      }
       const open = (this.openTurns.get(sessionId) ?? 1) - 1;
       if (open > 0) this.openTurns.set(sessionId, open);
       else this.openTurns.delete(sessionId);
     }
+    if (failed) throw first;
   }
 
   /**
@@ -352,6 +1509,11 @@ export class TestModeRuntime implements AgentRuntime {
     }));
   }
 
+  /** Read the same boot-injected connection used for current managed-server membership. */
+  getMcpServerConfig(cwd: string, serverName: string): McpAppServerConnection | null {
+    return this.managedMcp?.injectableServersForCwd(cwd)[serverName] ?? null;
+  }
+
   /**
    * Whether a session here carries the DorkOS room tools — always, since the
    * graduation (spec `tool-only-room-replies` §A2).
@@ -410,18 +1572,22 @@ export class TestModeRuntime implements AgentRuntime {
     return { content: '', newOffset: 0 };
   }
 
-  acquireLock(_id: string, _clientId: string, _res: SseResponse): boolean {
-    return true;
+  acquireLock(id: string, clientId: string, res: SseResponse, token?: symbol): boolean {
+    return testModeNativeConstructors.has(this)
+      ? this.#nativeLocks.acquireLock(id, clientId, res, token)
+      : true;
   }
 
-  releaseLock(_id: string, _clientId: string): void {}
-
-  isLocked(_id: string, _clientId?: string): boolean {
-    return false;
+  releaseLock(id: string, clientId: string, token?: symbol): void {
+    if (testModeNativeConstructors.has(this)) this.#nativeLocks.releaseLock(id, clientId, token);
   }
 
-  getLockInfo(_id: string): { clientId: string; acquiredAt: number } | null {
-    return null;
+  isLocked(id: string, clientId?: string): boolean {
+    return testModeNativeConstructors.has(this) ? this.#nativeLocks.isLocked(id, clientId) : false;
+  }
+
+  getLockInfo(id: string): { clientId: string; acquiredAt: number } | null {
+    return testModeNativeConstructors.has(this) ? this.#nativeLocks.getLockInfo(id) : null;
   }
 
   getCapabilities(): RuntimeCapabilities {
@@ -778,7 +1944,13 @@ export class TestModeRuntime implements AgentRuntime {
     }
     // Read before the abort, which clears them.
     const pending = interactionGate.pendingInteractionIds(sessionId);
+    const native = this.#nativeEntries.get(sessionId);
+    if (native) {
+      native.retired = true;
+      native.controller.abort();
+    }
     if (!interactionGate.abort(sessionId)) return notRunning;
+    if (native) native.interrupted = true;
     const projector = peekProjector(sessionId);
     for (const interactionId of pending) projector?.resolveInteraction(interactionId);
     return { outcome: declared ?? 'closed', runtime: this.type };
@@ -878,4 +2050,11 @@ function hasBearerHeader(headers: Record<string, string> | undefined): boolean {
       value.startsWith(prefix) &&
       value.length > prefix.length
   );
+}
+
+/** Fixed retirement of the actual original raw source, never a replaced public iterator method. */
+export function retireTestModeOriginalRoomResponderStream(
+  stream: object
+): Promise<void> | undefined {
+  return testModeStreams.get(stream)?.retire();
 }

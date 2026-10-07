@@ -25,27 +25,36 @@ export {
 } from './canvas-channel-json.js';
 
 const IdentifierSchema = z.string().min(1).max(200);
-const HashSchema = z.string().regex(/^[a-f0-9]{64}$/u);
+const HashSchema = z
+  .string()
+  .regex(/^[a-f0-9]{64}$/u)
+  .meta({ pattern: '^[a-f0-9]{64}$' });
 /** Safe nonnegative sequence or revision; zero is the empty baseline. */
 export const CanvasChannelSequenceSchema = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
 /** Stable event identifier: UUID format, without requiring a particular version. */
 export const CanvasChannelEventIdSchema = z
   .string()
-  .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu);
+  .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu)
+  .meta({
+    pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+  });
 /** Complete, dot-separated ASCII event type without wildcard segments. */
 export const CanvasChannelEventTypeSchema = z
   .string()
   .max(128)
-  .regex(/^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$/u);
+  .regex(/^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$/u)
+  .meta({ pattern: '^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*$' });
 /** Exact type or one terminal segment wildcard used by a declared route. */
 export const CanvasChannelEventPatternSchema = z
   .string()
   .max(128)
-  .regex(/^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*(?:\.\*)?$/u);
+  .regex(/^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*(?:\.\*)?$/u)
+  .meta({ pattern: '^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*(?:\\.\\*)?$' });
 /** Public page types cannot impersonate host, state or application receipts. */
 export const CanvasChannelPublicEventTypeSchema = CanvasChannelEventTypeSchema.refine(
   (type) =>
     !type.startsWith('doc.') &&
+    !type.startsWith('host.') &&
     !type.startsWith('state.') &&
     type !== 'selection.ask' &&
     type !== 'md.task.toggled' &&
@@ -135,6 +144,7 @@ export const CanvasChannelDestinationSchema = z.union([
   z
     .string()
     .regex(/^agent:[A-Za-z0-9_-]+$/u)
+    .meta({ pattern: '^agent:[A-Za-z0-9_-]+$' })
     .max(206),
 ]);
 /** Scheduling declaration. Immediate still observes admission and rate limits. */
@@ -365,10 +375,32 @@ export type CanvasChannelRouting = z.infer<typeof CanvasChannelRoutingSchema>;
 function hasCompleteSuppliedIncarnation(value: { incarnation?: unknown }): boolean {
   return !Object.hasOwn(value, 'incarnation') || value.incarnation !== undefined;
 }
+/** Authenticated stored MCP source projection; metadata alone cannot establish host permission. */
+export const CanvasChannelMcpOriginSchema = z
+  .object({
+    canonicalSessionId: IdentifierSchema,
+    serverName: z.string().min(1).max(200),
+    uri: z
+      .string()
+      .min(1)
+      .max(2048)
+      .refine((value) => value.startsWith('ui://')),
+    physicalRevision: CanvasChannelSequenceSchema,
+    declaration: CanvasChannelDeclarationSchema,
+    declarationHash: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/u)
+      .meta({ pattern: '^[a-f0-9]{64}$' }),
+  })
+  .strict();
+/** Actual stored source DATA, never a native frame or grant capability. */
+export type CanvasChannelMcpOrigin = z.infer<typeof CanvasChannelMcpOriginSchema>;
 /** Unrefined base allows snapshot projection before applying the identical birth check. */
 const canvasChannelReplayBaseSchema = z
   .object({
+    scope: IdentifierSchema.optional(),
     routing: CanvasChannelRoutingSchema.optional(),
+    mcpOrigin: CanvasChannelMcpOriginSchema.optional(),
     events: z.array(CanvasChannelFrameSchema).max(200),
     incarnation: CanvasDocIncarnationSchema.optional(),
     state: CanvasChannelStateSchema,
@@ -430,9 +462,12 @@ export const CanvasChannelEmitActionSchema = z
 export const CanvasChannelBindSchema = z.object({ path: CanvasChannelPointerSchema }).strict();
 /** Per-mount presence; only server-issued viewers can refresh or leave. */
 export const CanvasChannelPresenceRequestSchema = z.discriminatedUnion('action', [
-  z.object({ action: z.literal('mount') }).strict(),
+  z.object({ action: z.literal('mount'), mountId: z.string().uuid().optional() }).strict(),
   z.object({ action: z.literal('heartbeat'), viewerId: IdentifierSchema }).strict(),
   z.object({ action: z.literal('unmount'), viewerId: IdentifierSchema }).strict(),
+  z
+    .object({ action: z.literal('focus'), viewerId: IdentifierSchema, focused: z.boolean() })
+    .strict(),
 ]);
 /** Presence response reveals counts of mounts, not person identities. */
 export const CanvasChannelPresenceResponseSchema = z
@@ -443,6 +478,8 @@ export const CanvasChannelPresenceResponseSchema = z
     ttlMs: z.literal(75_000),
   })
   .strict();
+export type CanvasChannelPresenceRequest = z.infer<typeof CanvasChannelPresenceRequestSchema>;
+export type CanvasChannelPresenceResponse = z.infer<typeof CanvasChannelPresenceResponseSchema>;
 /** Read-only frame bridge status. */
 export const CanvasChannelBridgeStatusSchema = z.enum([
   'connecting',
@@ -594,7 +631,8 @@ export const CanvasChannelTokenResponseSchema = z
     token: z
       .string()
       .length(47)
-      .regex(/^dct_[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/u),
+      .regex(/^dct_[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/u)
+      .meta({ pattern: '^dct_[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$' }),
     expiresAt: z.string().max(64).datetime({ offset: true }),
   })
   .strict()
@@ -626,6 +664,8 @@ export const CanvasChannelCheckboxRequestSchema = z
     done: z.boolean(),
   })
   .strict();
+/** Exact native checkbox request; physical evidence and permission are checked by the owning server. */
+export type CanvasChannelCheckboxRequest = z.infer<typeof CanvasChannelCheckboxRequestSchema>;
 /** Durable write intent allows restart reconciliation from before/after evidence. */
 export const CanvasChannelCheckboxIntentSchema = z
   .object({
@@ -671,6 +711,9 @@ export const CanvasChannelCheckboxReceiptSchema = z.discriminatedUnion('status',
     .strict(),
 ]);
 
+/** Verified physical checkbox outcome, independent of agent completion or app acknowledgement. */
+export type CanvasChannelCheckboxReceipt = z.infer<typeof CanvasChannelCheckboxReceiptSchema>;
+
 /** Current document state on a scope stream; it carries no transcript or room-entry cursor. */
 export const CanvasChannelSnapshotFrameSchema = z
   .object({
@@ -691,3 +734,236 @@ export const CanvasChannelNotificationSchema = z.union([
   CanvasChannelSnapshotFrameSchema,
 ]);
 export type CanvasChannelNotification = z.infer<typeof CanvasChannelNotificationSchema>;
+
+/** Explicit operator-selected standalone token scope. */
+export type CanvasChannelTokenRequest = z.infer<typeof CanvasChannelTokenRequestSchema>;
+/** One-time credential response, excluded from document content and snapshots. */
+export type CanvasChannelTokenResponse = z.infer<typeof CanvasChannelTokenResponseSchema>;
+
+/** Secret-free token metadata with the same type/direction/permission grammar as persisted records. */
+export const CanvasChannelTokenMetadataSchema = z
+  .object({
+    tokenId: IdentifierSchema,
+    documentId: IdentifierSchema,
+    allowedTypes: z.array(TokenEventTypeSchema).min(1).max(128),
+    directions: z
+      .array(z.enum(['upstream', 'downstream', 'system']))
+      .min(1)
+      .max(3),
+    permissions: z
+      .array(z.enum(['ingest', 'replay', 'stream']))
+      .min(1)
+      .max(3),
+    creatorId: IdentifierSchema,
+    createdAt: z.string().max(64).datetime({ offset: true }),
+    expiresAt: z.string().max(64).datetime({ offset: true }),
+    revokedAt: z.string().max(64).datetime({ offset: true }).nullable(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    refineTokenReadTypes(value, context);
+    if (
+      new Set(value.allowedTypes).size !== value.allowedTypes.length ||
+      new Set(value.permissions).size !== value.permissions.length ||
+      new Set(value.directions).size !== value.directions.length
+    )
+      context.addIssue({
+        code: 'custom',
+        message: 'Token permissions, types and directions must be unique',
+      });
+    if (value.permissions.includes('ingest') && !value.directions.includes('upstream'))
+      context.addIssue({
+        code: 'custom',
+        message: 'Token ingest permission requires upstream direction',
+      });
+  });
+/** Secret-free display DATA; never proves token authority. */
+export type CanvasChannelTokenMetadata = z.infer<typeof CanvasChannelTokenMetadataSchema>;
+
+/** Sanitized operator evidence; recorded grants and tokens are not themselves current authority. */
+export const CanvasChannelManagementSnapshotSchema = z
+  .object({
+    documentId: IdentifierSchema,
+    generation: HashSchema,
+    declaration: CanvasChannelDeclarationSchema,
+    routing: CanvasChannelRoutingSchema,
+    grants: z
+      .array(
+        z
+          .object({
+            grantId: IdentifierSchema,
+            revision: CanvasChannelSequenceSchema,
+            routeId: IdentifierSchema,
+            allowedTypes: z.array(CanvasChannelEventPatternSchema).min(1).max(128),
+            destination: CanvasChannelRouteSchema.shape.to,
+            expiresAt: z.string().datetime({ offset: true }).nullable(),
+            revokedAt: z.string().datetime({ offset: true }).nullable(),
+          })
+          .strict()
+      )
+      .max(200),
+    grantsTruncated: z.boolean(),
+    tokens: z.array(CanvasChannelTokenMetadataSchema).max(200),
+    tokensTruncated: z.boolean(),
+    reviews: z
+      .array(
+        z
+          .object({
+            batchId: IdentifierSchema,
+            batchGeneration: CanvasChannelEventIdSchema,
+            routeId: IdentifierSchema,
+            grantId: IdentifierSchema,
+            status: z.enum([
+              'pending',
+              'waiting',
+              'accepted',
+              'dispatching',
+              'turn_started',
+              'turn_done',
+              'failed',
+              'expired',
+              'cancelled',
+              'in_doubt',
+            ]),
+            createdAt: z.string().datetime({ offset: true }),
+            updatedAt: z.string().datetime({ offset: true }),
+            reason: z.string().max(1000).nullable(),
+            // A review must independently revalidate current grant/input policy before any replay.
+            requiresExplicitReview: z.boolean(),
+            // Original per-input delivery evidence is distinct from batch/turn completion.
+            inputs: z
+              .array(
+                CanvasChannelDeliverySchema.extend({
+                  ackOutcome: z.enum(['handled', 'rejected']).nullable(),
+                  ackEvidenceStatus: z.enum(['none', 'verified', 'unavailable']),
+                  acknowledgedAt: z.string().datetime({ offset: true }).nullable(),
+                }).superRefine((input, context) => {
+                  if (
+                    (input.ackOutcome === null) !== (input.acknowledgedAt === null) ||
+                    (input.ackEvidenceStatus === 'none') !== (input.ackOutcome === null)
+                  )
+                    context.addIssue({
+                      code: 'custom',
+                      message: 'Acknowledgement outcome and time must be present together.',
+                    });
+                })
+              )
+              .max(200)
+              .optional(),
+            inputsTruncated: z.boolean().optional(),
+            replayAvailable: z.boolean().optional(),
+            replayUnavailableReason: z.string().max(300).nullable().optional(),
+          })
+          .strict()
+      )
+      .max(200),
+    reviewsTruncated: z.boolean(),
+  })
+  .strict();
+/** Operator-only bounded management DATA, never a transport or load admission. */
+export type CanvasChannelManagementSnapshot = z.infer<typeof CanvasChannelManagementSnapshotSchema>;
+
+/** Explicit exact route approval input; resolved target and approval evidence remain server-owned. */
+export const CanvasChannelRouteGrantRequestSchema = z
+  .object({
+    documentId: z.string().min(1).max(200),
+    routeId: z.string().min(1).max(200),
+    allowedTypes: z.array(CanvasChannelEventPatternSchema).min(1).max(128).optional(),
+    limits: CanvasChannelGrantSchema.shape.limits.partial().optional(),
+    expiresAt: CanvasChannelGrantSchema.shape.expiresAt,
+    write: CanvasChannelGrantSchema.shape.write.optional(),
+  })
+  .strict();
+export type CanvasChannelRouteGrantRequest = z.infer<typeof CanvasChannelRouteGrantRequestSchema>;
+/** Independent exact route decision, separate from capability-tier approval. */
+export const CanvasChannelRouteApprovalResultSchema = z.union([
+  z
+    .object({
+      kind: z.literal('granted'),
+      grantId: IdentifierSchema,
+      revision: z.number().int().positive(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('approval_required'),
+      ticket: z
+        .object({
+          approvalId: IdentifierSchema,
+          token: z.string().min(1).max(200),
+          expiresAt: z.string().datetime({ offset: true }),
+        })
+        .strict(),
+    })
+    .strict(),
+]);
+export type CanvasChannelRouteApprovalResult = z.infer<
+  typeof CanvasChannelRouteApprovalResultSchema
+>;
+
+/** Original authenticated editor selection DATA; neither rendered text nor this schema issues authority. */
+export const CanvasChannelSelectionRequestSchema = boundedJson(
+  z
+    .object({
+      documentId: IdentifierSchema,
+      expectedGeneration: z
+        .string()
+        .regex(/^[a-f0-9]{64}$/u)
+        .meta({ pattern: '^[a-f0-9]{64}$' }),
+      eventId: CanvasChannelEventIdSchema,
+      expectedFileHash: z
+        .string()
+        .regex(/^[a-f0-9]{64}$/u)
+        .meta({ pattern: '^[a-f0-9]{64}$' }),
+      sourceGeneration: z.string().min(1).max(200),
+      ranges: z
+        .array(
+          z
+            .object({
+              start: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+              end: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+            })
+            .strict()
+        )
+        .min(1)
+        .max(32)
+        .refine((ranges) =>
+          ranges.every(
+            (range, index) =>
+              range.end > range.start && (index === 0 || range.start >= ranges[index - 1]!.end)
+          )
+        ),
+      selectedText: z
+        .string()
+        .max(8192)
+        .refine((text) => new TextEncoder().encode(text).byteLength <= 8192),
+    })
+    .strict()
+);
+export type CanvasChannelSelectionRequest = z.infer<typeof CanvasChannelSelectionRequestSchema>;
+/** Explicit review of one expired, never-admitted batch; generations are correlation DATA. */
+export const CanvasChannelBatchReplayRequestSchema = z
+  .object({
+    documentId: IdentifierSchema,
+    expectedGeneration: HashSchema,
+    eventId: CanvasChannelEventIdSchema,
+    batchId: CanvasChannelEventIdSchema,
+    expectedBatchGeneration: CanvasChannelEventIdSchema,
+    grantId: IdentifierSchema,
+  })
+  .strict();
+/** Original current replay creates one new generation or returns its retained receipt. */
+export const CanvasChannelBatchReplayResultSchema = z
+  .object({
+    documentId: IdentifierSchema,
+    eventId: CanvasChannelEventIdSchema,
+    previousBatchId: CanvasChannelEventIdSchema,
+    batchId: CanvasChannelEventIdSchema,
+    generation: CanvasChannelEventIdSchema,
+    status: z.enum(['pending', 'duplicate']),
+  })
+  .strict();
+/** Exact immutable operator replay request. */
+export type CanvasChannelBatchReplayRequest = z.infer<typeof CanvasChannelBatchReplayRequestSchema>;
+/** Receipt for the original explicit replay operation, never turn completion. */
+export type CanvasChannelBatchReplayResult = z.infer<typeof CanvasChannelBatchReplayResultSchema>;

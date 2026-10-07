@@ -56,6 +56,7 @@ import type { DbTransaction } from '@dorkos/db';
 import type { CanvasDocument, RoomCanvasChange, RoomEvent } from '@dorkos/shared/room-schemas';
 import type { UiCanvasContent, UiCommand } from '@dorkos/shared/schemas';
 import { logger } from '../../../lib/logger.js';
+import { MAX_CANVAS_DOCUMENTS } from '../../canvas/canvas-limits.js';
 import {
   CANVAS_EDIT_HEARTBEAT_MS,
   CANVAS_EDIT_TTL_MS,
@@ -71,8 +72,7 @@ import {
   type CanvasService,
   type CanvasTreePlacement,
 } from '../../canvas/index.js';
-import { MAX_CANVAS_DOCUMENTS } from '../../canvas/canvas-limits.js';
-import { RoomError } from '../room-errors.js';
+import { RoomError } from '../data/room-errors.js';
 import type { RoomBroadcaster } from '../room-stream.js';
 import type { RoomVisibility } from '../service/room-visibility.js';
 
@@ -333,6 +333,8 @@ export class RoomCanvasService {
    * Bounded by age and by count, exactly as {@link closedTurns} is.
    */
   private readonly targetedTurns = new Map<string, { n: number; rooms: Set<string>; at: number }>();
+  private readonly unsubscribeRemoved: () => void;
+  private retirement: { failed: boolean; cause: unknown } | undefined;
 
   /**
    * Build the service over its collaborators.
@@ -351,12 +353,30 @@ export class RoomCanvasService {
     // **Faces follow the rows.** Whoever was looking at a document that has just
     // gone is looking at nothing, and the writer is the only thing that knows a
     // row went — an LRU eviction happens deep inside somebody else's write.
-    // Never unsubscribed: this service lives as long as the process does, and a
-    // teardown hook nothing calls would be one more thing to get wrong.
-    this.canvas.onRemoved((scope, documentId) => {
+    // The subsystem owns this exact registration through failed setup and
+    // retirement; disposing an old service cannot remove another registration.
+    this.unsubscribeRemoved = this.canvas.onRemoved((scope, documentId) => {
+      if (this.retirement) return;
       const parsed = parseScope(scope);
       if (parsed.kind === 'room') this.clearWatchersOf(parsed.id, documentId);
     });
+  }
+
+  /** Detach this service's original removal observer after its users drain. */
+  dispose(): void {
+    if (this.retirement) {
+      if (this.retirement.failed) throw this.retirement.cause;
+      return;
+    }
+    const retirement = { failed: false, cause: undefined as unknown };
+    this.retirement = retirement; // Commit retirement before the original callback can reenter.
+    try {
+      this.unsubscribeRemoved();
+    } catch (cause) {
+      retirement.failed = true;
+      retirement.cause = cause;
+      throw cause;
+    }
   }
 
   // -------------------------------------------------------------------------

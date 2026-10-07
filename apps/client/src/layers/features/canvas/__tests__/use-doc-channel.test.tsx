@@ -1369,3 +1369,100 @@ it('guards deferred old-controller projection after a real Transport replacement
     fresh.dispose();
   }
 });
+
+it('does not treat startup or a partial owned replay as the initial HTTP disposition', async () => {
+  const transport = createMockTransport();
+  const initial = deferred<CanvasChannelReplayResponse>();
+  const tail = deferred<CanvasChannelReplayResponse>();
+  vi.mocked(transport.getCanvasChannel)
+    .mockReturnValueOnce(initial.promise)
+    .mockReturnValueOnce(tail.promise);
+  const view = renderHook(() => useDocChannel('doc-1'), { wrapper: wrapper(transport) });
+  try {
+    expect(view.result.current.replayObserved).toBe(false);
+    expect(view.result.current.channel.current?.('submit')).toBe(false);
+    await act(async () => initial.resolve(serverReplay(birth, 201, 0)));
+    await waitFor(() => expect(transport.getCanvasChannel).toHaveBeenCalledTimes(2));
+    expect(view.result.current.events).toHaveLength(200);
+    expect(view.result.current.replayObserved).toBe(false);
+    expect(view.result.current.channel.current?.('submit')).toBe(false);
+    await act(async () => tail.resolve(serverReplay(birth, 201, 200)));
+    await waitFor(() => expect(view.result.current.replayObserved).toBe(true));
+    expect(view.result.current.channel.current?.('submit')).toBe(true);
+    expect(view.result.current.events.at(-1)?.docSeq).toBe(201);
+  } finally {
+    view.unmount();
+  }
+});
+
+it.each(['legacy', 'failure'] as const)(
+  'allows terminal %s replay display without manufacturing a current Doc port',
+  async (kind) => {
+    const transport = createMockTransport();
+    const initial = deferred<CanvasChannelReplayResponse>();
+    vi.mocked(transport.getCanvasChannel).mockReturnValue(initial.promise);
+    const view = renderHook(() => useDocChannel('doc-1'), { wrapper: wrapper(transport) });
+    try {
+      expect(view.result.current.replayObserved).toBe(false);
+      await act(async () => {
+        if (kind === 'legacy') initial.resolve(serverReplay(birth, 0, 0, 1, true));
+        else initial.reject(new Error('Original HTTP replay refused'));
+      });
+      await waitFor(() => expect(view.result.current.replayObserved).toBe(true));
+      expect(view.result.current.channel.current?.('read')).toBe(false);
+      expect(view.result.current.channel.current?.('submit')).toBe(false);
+      expect(transport.ingestCanvasEvent).not.toHaveBeenCalled();
+      expect(transport.getCanvasEventReceipt).not.toHaveBeenCalled();
+    } finally {
+      view.unmount();
+    }
+  }
+);
+
+it.each(['snapshot', 'event'] as const)(
+  'retries owned HTTP after a failed disconnect recovery and a same-birth %s',
+  async (kind) => {
+    const transport = createMockTransport();
+    const refused = deferred<CanvasChannelReplayResponse>();
+    const renewed = deferred<CanvasChannelReplayResponse>();
+    vi.mocked(transport.getCanvasChannel)
+      .mockResolvedValueOnce(replay())
+      .mockReturnValueOnce(refused.promise)
+      .mockReturnValue(renewed.promise);
+    const view = renderHook(() => useDocChannel('doc-1'), { wrapper: wrapper(transport) });
+    try {
+      await waitFor(() => expect(view.result.current.channel.current?.('submit')).toBe(true));
+      await act(async () =>
+        ownDocChannelConnection(transport, new AbortController().signal).retire()
+      );
+      expect(transport.getCanvasChannel).toHaveBeenCalledTimes(2);
+      expect(view.result.current.channel.current?.('submit')).toBe(false);
+      await act(async () => refused.reject(new Error('Original HTTP replay refused')));
+      const notification =
+        kind === 'snapshot'
+          ? { ...snapshot(replay()), scope: 'session:server-canonical' }
+          : frame(1);
+      await publish(notification);
+      await waitFor(() => expect(transport.getCanvasChannel).toHaveBeenCalledTimes(3));
+      // Stream DATA remains insufficient even when it projects the current birth.
+      expect(view.result.current.channel.current?.('read')).toBe(false);
+      expect(view.result.current.channel.current?.('submit')).toBe(false);
+      await publish(notification);
+      expect(transport.getCanvasChannel).toHaveBeenCalledTimes(3);
+      expect(transport.ingestCanvasEvent).not.toHaveBeenCalled();
+      expect(transport.getCanvasEventReceipt).not.toHaveBeenCalled();
+      await act(async () =>
+        renewed.resolve(
+          kind === 'event' ? replay({ events: [frame(1)], highWatermark: 1 }) : replay()
+        )
+      );
+      await waitFor(() => expect(view.result.current.channel.current?.('submit')).toBe(true));
+      expect(view.result.current.channel.current?.('read')).toBe(true);
+      expect(transport.getCanvasChannel).toHaveBeenCalledTimes(3);
+      if (kind === 'event')
+        expect(view.result.current.events.map((row) => row.docSeq)).toEqual([1]);
+    } finally {
+      view.unmount();
+    }
+  }
+);

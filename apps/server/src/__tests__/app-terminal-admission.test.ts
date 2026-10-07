@@ -230,7 +230,8 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/connectors/webhooks/admission-fixture');
     expect(mounts).toContain('/api/relay/webhooks/admission-fixture');
     expect(mounts).toContain('/api/canvas/docs');
-    expect(mounts).toHaveLength(68);
+    expect(mounts).toContain('/api/canvas/token/docs');
+    expect(mounts).toHaveLength(69);
     for (const mount of [...mounts, '/', '/x/fixture', '/unknown']) {
       expectTerminal(
         await request(target.server).get(mount).set('Origin', 'https://untrusted.example')

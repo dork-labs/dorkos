@@ -1,0 +1,550 @@
+{
+  "canvas_doc_channels": {
+    "columns": [
+      ["document_id", "TEXT", 1, 1, null],
+      ["scope", "TEXT", 1, 0, null],
+      ["next_doc_seq", "INTEGER", 1, 0, "1"],
+      ["state", "TEXT", 1, 0, "'{}'"],
+      ["state_rev", "INTEGER", 1, 0, "0"],
+      ["retention_floor", "INTEGER", 1, 0, "1"],
+      ["receipt_retention_floor", "INTEGER", 1, 0, "1"],
+      ["declaration", "TEXT", 0, 0, null],
+      ["declaration_hash", "TEXT", 0, 0, null],
+      ["opener_agent_id", "TEXT", 0, 0, null],
+      ["manifest_hash", "TEXT", 0, 0, null],
+      ["closed_at", "TEXT", 0, 0, null],
+      ["closure_evidence", "TEXT", 0, 0, null],
+      ["created_at", "TEXT", 1, 0, null],
+      ["updated_at", "TEXT", 1, 0, null],
+      ["room_spend_floor_ms", "INTEGER", 0, 0, null]
+    ],
+    "foreignKeys": [],
+    "checks": [],
+    "indices": [
+      [
+        "canvas_doc_channels_scope_idx",
+        "CREATE INDEX canvas_doc_channels_scope_idx ON canvas_doc_channels (scope,closed_at)"
+      ]
+    ]
+  },
+  "canvas_doc_grants": {
+    "columns": [
+      ["grant_id", "TEXT", 1, 1, null],
+      ["document_id", "TEXT", 1, 0, null],
+      ["route_id", "TEXT", 1, 0, null],
+      ["revision", "INTEGER", 1, 0, "1"],
+      ["opener_agent_id", "TEXT", 0, 0, null],
+      ["target_agent_id", "TEXT", 0, 0, null],
+      ["target_session_id", "TEXT", 0, 0, null],
+      ["target_runtime", "TEXT", 0, 0, null],
+      ["normalized_route", "TEXT", 1, 0, null],
+      ["route_hash", "TEXT", 1, 0, null],
+      ["declaration_hash", "TEXT", 1, 0, null],
+      ["manifest_hash", "TEXT", 0, 0, null],
+      ["approved_by", "TEXT", 1, 0, null],
+      ["approval_id", "TEXT", 0, 0, null],
+      ["approval_evidence", "TEXT", 1, 0, null],
+      ["limits", "TEXT", 1, 0, null],
+      ["allowed_types", "TEXT", 1, 0, null],
+      ["write_operation", "TEXT", 0, 0, null],
+      ["created_at", "TEXT", 1, 0, null],
+      ["expires_at", "TEXT", 0, 0, null],
+      ["revoked_at", "TEXT", 0, 0, null]
+    ],
+    "foreignKeys": [
+      [["document_id"], "canvas_doc_channels", ["document_id"], "NO ACTION", "NO ACTION"]
+    ],
+    "checks": [],
+    "indices": [
+      [
+        "canvas_doc_grants_document_id_unique",
+        "CREATE UNIQUE INDEX canvas_doc_grants_document_id_unique ON canvas_doc_grants (document_id,grant_id)"
+      ],
+      [
+        "canvas_doc_grants_route_idx",
+        "CREATE INDEX canvas_doc_grants_route_idx ON canvas_doc_grants (document_id,route_id,revoked_at)"
+      ]
+    ]
+  },
+  "canvas_doc_batches": {
+    "columns": [
+      ["batch_id", "TEXT", 1, 1, null],
+      ["document_id", "TEXT", 1, 0, null],
+      ["scope", "TEXT", 1, 0, null],
+      ["route_id", "TEXT", 1, 0, null],
+      ["grant_id", "TEXT", 1, 0, null],
+      ["grant_revision", "INTEGER", 1, 0, null],
+      ["generation", "TEXT", 1, 0, null],
+      ["input_event_ids", "TEXT", 1, 0, null],
+      ["effective_payload", "TEXT", 1, 0, null],
+      ["due_at", "TEXT", 1, 0, null],
+      ["status", "TEXT", 1, 0, null],
+      ["attempt", "INTEGER", 1, 0, "0"],
+      ["lease_until", "TEXT", 0, 0, null],
+      ["waiting_warning_at", "TEXT", 0, 0, "NULL"],
+      ["relay_message_id", "TEXT", 0, 0, null],
+      ["turn_id", "TEXT", 0, 0, null],
+      ["admission_receipt_id", "TEXT", 0, 0, null],
+      ["error_code", "TEXT", 0, 0, null],
+      ["created_at", "TEXT", 1, 0, null],
+      ["updated_at", "TEXT", 1, 0, null],
+      ["delivery_kind", "TEXT", 0, 0, null],
+      ["room_admission_id", "TEXT", 0, 0, null],
+      ["room_source_attempt", "INTEGER", 0, 0, null],
+      ["room_source_json", "TEXT", 0, 0, null],
+      ["room_source_hash", "TEXT", 0, 0, null]
+    ],
+    "foreignKeys": [
+      [["document_id"], "canvas_doc_channels", ["document_id"], "NO ACTION", "NO ACTION"],
+      [
+        ["admission_receipt_id"],
+        "session_message_acceptance_receipts",
+        ["id"],
+        "NO ACTION",
+        "NO ACTION"
+      ],
+      [
+        ["document_id", "grant_id"],
+        "canvas_doc_grants",
+        ["document_id", "grant_id"],
+        "NO ACTION",
+        "NO ACTION"
+      ]
+    ],
+    "checks": [
+      "delivery_kind IS NULL OR delivery_kind IN ('private_session','room_app_event')",
+      "\n (delivery_kind IS NOT 'room_app_event' AND room_admission_id IS NULL\n  AND room_source_attempt IS NULL AND room_source_json IS NULL AND room_source_hash IS NULL)\n OR\n (delivery_kind IS 'room_app_event' AND admission_receipt_id IS NULL\n  AND room_admission_id IS NOT NULL AND length(room_admission_id)>0\n  AND room_source_attempt IS NOT NULL AND room_source_attempt>=0\n  AND room_source_json IS NOT NULL AND json_valid(room_source_json)\n  AND room_source_hash IS NOT NULL AND length(room_source_hash)=64\n  AND room_source_hash NOT GLOB '*[^0-9a-f]*'\n  AND json_extract(room_source_json,'$.admissionId') IS room_admission_id\n  AND json_extract(room_source_json,'$.documentId') IS document_id\n  AND json_extract(room_source_json,'$.batchId') IS batch_id\n  AND json_extract(room_source_json,'$.generation') IS generation\n  AND json_extract(room_source_json,'$.sourceAttempt') IS room_source_attempt)"
+    ],
+    "indices": [
+      [
+        "canvas_doc_batches_document_id_unique",
+        "CREATE UNIQUE INDEX canvas_doc_batches_document_id_unique ON canvas_doc_batches (document_id,batch_id)"
+      ],
+      [
+        "canvas_doc_batches_pending_unique",
+        "CREATE UNIQUE INDEX canvas_doc_batches_pending_unique ON canvas_doc_batches (document_id,route_id) WHERE \"status\" in ('pending', 'waiting')"
+      ],
+      [
+        "canvas_doc_batches_active_unique",
+        "CREATE UNIQUE INDEX canvas_doc_batches_active_unique ON canvas_doc_batches (document_id,route_id) WHERE \"status\" in ('accepted', 'dispatching', 'turn_started', 'in_doubt') AND (delivery_kind IS NOT 'room_app_event' OR status IS NOT 'accepted')"
+      ],
+      [
+        "canvas_doc_batches_due_idx",
+        "CREATE INDEX canvas_doc_batches_due_idx ON canvas_doc_batches (status,due_at)"
+      ],
+      [
+        "canvas_doc_batches_lease_idx",
+        "CREATE INDEX canvas_doc_batches_lease_idx ON canvas_doc_batches (status,lease_until)"
+      ],
+      [
+        "canvas_doc_batches_receipt_idx",
+        "CREATE INDEX canvas_doc_batches_receipt_idx ON canvas_doc_batches (admission_receipt_id)"
+      ],
+      [
+        "canvas_doc_batches_room_admission_unique",
+        "CREATE UNIQUE INDEX canvas_doc_batches_room_admission_unique ON canvas_doc_batches (room_admission_id) WHERE room_admission_id IS NOT NULL"
+      ],
+      [
+        "canvas_doc_batches_room_resume",
+        "CREATE INDEX canvas_doc_batches_room_resume ON canvas_doc_batches (delivery_kind,status,updated_at,batch_id)"
+      ]
+    ]
+  },
+  "canvas_doc_events": {
+    "columns": [
+      ["document_id", "TEXT", 1, 1, null],
+      ["event_id", "TEXT", 1, 2, null],
+      ["doc_seq", "INTEGER", 1, 0, null],
+      ["direction", "TEXT", 1, 0, null],
+      ["type", "TEXT", 1, 0, null],
+      ["payload", "TEXT", 1, 0, null],
+      ["envelope_hash", "TEXT", 1, 0, null],
+      ["envelope_bytes", "INTEGER", 1, 0, "0"],
+      ["payload_pruned_at", "TEXT", 0, 0, null],
+      ["coalesce_key", "TEXT", 0, 0, null],
+      ["client_ts", "TEXT", 0, 0, null],
+      ["received_at", "TEXT", 1, 0, null],
+      ["provenance", "TEXT", 1, 0, null]
+    ],
+    "foreignKeys": [
+      [["document_id"], "canvas_doc_channels", ["document_id"], "NO ACTION", "NO ACTION"]
+    ],
+    "checks": [],
+    "indices": [
+      [
+        "canvas_doc_events_sequence_unique",
+        "CREATE UNIQUE INDEX canvas_doc_events_sequence_unique ON canvas_doc_events (document_id,doc_seq)"
+      ],
+      [
+        "canvas_doc_events_received_idx",
+        "CREATE INDEX canvas_doc_events_received_idx ON canvas_doc_events (document_id,received_at)"
+      ],
+      [
+        "canvas_doc_events_retention_idx",
+        "CREATE INDEX canvas_doc_events_retention_idx ON canvas_doc_events (received_at,document_id,doc_seq)"
+      ],
+      [
+        "canvas_doc_events_unaccounted_idx",
+        "CREATE INDEX canvas_doc_events_unaccounted_idx ON canvas_doc_events (document_id,event_id) WHERE \"canvas_doc_events\".\"envelope_bytes\"=0 AND \"canvas_doc_events\".\"payload_pruned_at\" IS NULL"
+      ]
+    ]
+  },
+  "canvas_doc_deliveries": {
+    "columns": [
+      ["document_id", "TEXT", 1, 1, null],
+      ["event_id", "TEXT", 1, 2, null],
+      ["route_id", "TEXT", 1, 3, null],
+      ["batch_id", "TEXT", 0, 0, null],
+      ["status", "TEXT", 1, 0, null],
+      ["turn_id", "TEXT", 0, 0, null],
+      ["reason", "TEXT", 0, 0, null],
+      ["ack_outcome", "TEXT", 0, 0, null],
+      ["acknowledged_at", "TEXT", 0, 0, null],
+      ["acknowledged_by", "TEXT", 0, 0, null],
+      ["ack_evidence", "TEXT", 0, 0, null],
+      ["updated_at", "TEXT", 1, 0, null],
+      ["delivery_kind", "TEXT", 0, 0, null],
+      ["room_admission_id", "TEXT", 0, 0, null]
+    ],
+    "foreignKeys": [
+      [
+        ["document_id", "event_id"],
+        "canvas_doc_events",
+        ["document_id", "event_id"],
+        "NO ACTION",
+        "NO ACTION"
+      ],
+      [
+        ["document_id", "batch_id"],
+        "canvas_doc_batches",
+        ["document_id", "batch_id"],
+        "NO ACTION",
+        "NO ACTION"
+      ]
+    ],
+    "checks": [
+      "delivery_kind IS NULL OR delivery_kind IN ('private_session','room_app_event')",
+      "\n (delivery_kind IS NOT 'room_app_event' AND room_admission_id IS NULL)\n OR (delivery_kind IS 'room_app_event' AND room_admission_id IS NOT NULL\n     AND length(room_admission_id)>0)"
+    ],
+    "indices": [
+      [
+        "canvas_doc_deliveries_batch_idx",
+        "CREATE INDEX canvas_doc_deliveries_batch_idx ON canvas_doc_deliveries (document_id,batch_id)"
+      ],
+      [
+        "canvas_doc_deliveries_status_idx",
+        "CREATE INDEX canvas_doc_deliveries_status_idx ON canvas_doc_deliveries (status,updated_at)"
+      ],
+      [
+        "canvas_doc_deliveries_room_admission",
+        "CREATE INDEX canvas_doc_deliveries_room_admission ON canvas_doc_deliveries (room_admission_id,document_id,route_id)"
+      ]
+    ]
+  },
+  "canvas_documents": {
+    "columns": [
+      ["id", "TEXT", 1, 1, null],
+      ["scope", "TEXT", 1, 0, null],
+      ["room_id", "TEXT", 0, 0, null],
+      ["content", "TEXT", 1, 0, null],
+      ["title", "TEXT", 1, 0, null],
+      ["content_type", "TEXT", 1, 0, null],
+      ["author_id", "TEXT", 1, 0, null],
+      ["source_key", "TEXT", 0, 0, null],
+      ["source_label", "TEXT", 0, 0, null],
+      ["resolved_cwd", "TEXT", 0, 0, null],
+      ["tree_kind", "TEXT", 0, 0, null],
+      ["ahead_of_main", "INTEGER", 0, 0, null],
+      ["pinned", "INTEGER", 1, 0, "False"],
+      ["rev", "INTEGER", 1, 0, null],
+      ["last_touched_by", "TEXT", 1, 0, null],
+      ["last_touched_at", "TEXT", 1, 0, null],
+      ["editing_by", "TEXT", 0, 0, null],
+      ["editing_heartbeat_at", "TEXT", 0, 0, null],
+      ["opened_at", "TEXT", 1, 0, null],
+      ["last_active_at", "TEXT", 1, 0, null],
+      ["thread_root_entry_id", "TEXT", 0, 0, null]
+    ],
+    "foreignKeys": [[["room_id"], "rooms", ["id"], "NO ACTION", "CASCADE"]],
+    "checks": [],
+    "indices": [
+      [
+        "idx_canvas_documents_scope",
+        "CREATE INDEX idx_canvas_documents_scope ON canvas_documents (scope,last_active_at)"
+      ],
+      [
+        "canvas_documents_source_unique",
+        "CREATE UNIQUE INDEX canvas_documents_source_unique ON canvas_documents (scope,source_key)"
+      ],
+      [
+        "idx_canvas_documents_scope_type",
+        "CREATE INDEX idx_canvas_documents_scope_type ON canvas_documents (scope,content_type)"
+      ],
+      [
+        "idx_canvas_documents_last_touched",
+        "CREATE INDEX idx_canvas_documents_last_touched ON canvas_documents (scope,last_touched_by,last_touched_at)"
+      ]
+    ]
+  },
+  "room_doc_admissions": {
+    "columns": [
+      ["admission_id", "TEXT", 1, 1, null],
+      ["document_id", "TEXT", 1, 0, null],
+      ["batch_id", "TEXT", 1, 0, null],
+      ["generation", "TEXT", 1, 0, null],
+      ["source_attempt", "INTEGER", 1, 0, null],
+      ["room_id", "TEXT", 1, 0, null],
+      ["entry_id", "TEXT", 1, 0, null],
+      ["entry_seq", "INTEGER", 1, 0, null],
+      ["grant_id", "TEXT", 1, 0, null],
+      ["grant_revision", "INTEGER", 1, 0, null],
+      ["route_id", "TEXT", 1, 0, null],
+      ["route_hash", "TEXT", 1, 0, null],
+      ["declaration_hash", "TEXT", 1, 0, null],
+      ["manifest_hash", "TEXT", 0, 0, null],
+      ["input_fingerprint", "TEXT", 1, 0, null],
+      ["authority_digest", "TEXT", 1, 0, null],
+      ["effective_payload_digest", "TEXT", 1, 0, null],
+      ["source_hash", "TEXT", 1, 0, null],
+      ["producer_evidence_json", "TEXT", 1, 0, null],
+      ["target_agent_id", "TEXT", 1, 0, null],
+      ["target_author_id", "TEXT", 1, 0, null],
+      ["target_session_id", "TEXT", 1, 0, null],
+      ["target_runtime", "TEXT", 1, 0, null],
+      ["target_agent_path", "TEXT", 1, 0, null],
+      ["cascade_root", "TEXT", 1, 0, null],
+      ["root_room_id", "TEXT", 1, 0, null],
+      ["root_entry_id", "TEXT", 1, 0, null],
+      ["frozen_ceiling", "INTEGER", 1, 0, null],
+      ["dispatch_attempt", "INTEGER", 1, 0, null],
+      ["boot_epoch", "TEXT", 1, 0, null],
+      ["dispatch_id", "TEXT", 1, 0, null],
+      ["claimed_at_ms", "INTEGER", 1, 0, null],
+      ["claimed_at", "TEXT", 1, 0, null],
+      ["spend_row_id", "INTEGER", 0, 0, null],
+      ["status", "TEXT", 1, 0, null],
+      ["turn_id", "TEXT", 0, 0, null],
+      ["outcome", "TEXT", 0, 0, null],
+      ["created_at", "TEXT", 1, 0, null],
+      ["updated_at", "TEXT", 1, 0, null],
+      ["row_json", "TEXT", 1, 0, null]
+    ],
+    "foreignKeys": [
+      [
+        ["document_id", "batch_id"],
+        "canvas_doc_batches",
+        ["document_id", "batch_id"],
+        "NO ACTION",
+        "NO ACTION"
+      ],
+      [
+        ["document_id", "grant_id"],
+        "canvas_doc_grants",
+        ["document_id", "grant_id"],
+        "NO ACTION",
+        "NO ACTION"
+      ],
+      [["room_id", "entry_id"], "room_entries", ["room_id", "id"], "NO ACTION", "NO ACTION"],
+      [
+        ["root_room_id", "root_entry_id"],
+        "room_entries",
+        ["room_id", "id"],
+        "NO ACTION",
+        "NO ACTION"
+      ]
+    ],
+    "checks": [
+      "source_attempt>=0",
+      "entry_seq>0",
+      "grant_revision>=0",
+      "length(route_hash)=64",
+      "length(declaration_hash)=64",
+      "length(input_fingerprint)=64",
+      "length(authority_digest)=64",
+      "length(effective_payload_digest)=64",
+      "length(source_hash)=64",
+      "json_valid(producer_evidence_json)",
+      "target_runtime IN ('claude-code','codex','opencode')",
+      "frozen_ceiling>0",
+      "dispatch_attempt=1",
+      "spend_row_id IS NULL OR spend_row_id>0",
+      "status IN ('claimed','turn_started','settled','in_doubt')",
+      "outcome IS NULL OR outcome IN ('turn_done','failed','cancelled','in_doubt')",
+      "json_valid(row_json)",
+      "cascade_root=root_entry_id",
+      "(status='claimed' AND turn_id IS NULL AND outcome IS NULL)\n  OR (status='turn_started' AND turn_id IS NOT NULL AND outcome IS NULL)\n  OR (status='in_doubt' AND outcome IS 'in_doubt')\n  OR (status='settled' AND outcome IS NOT NULL AND (outcome IN ('failed','cancelled')\n     OR (outcome='turn_done' AND turn_id IS NOT NULL)))",
+      "json_extract(row_json,'$.admissionId') IS admission_id\n  AND json_extract(row_json,'$.entryId') IS entry_id\n  AND json_extract(row_json,'$.source.documentId') IS document_id\n  AND json_extract(row_json,'$.source.batchId') IS batch_id\n  AND json_extract(row_json,'$.source.generation') IS generation\n  AND json_extract(row_json,'$.sourceAttempt') IS source_attempt\n  AND json_extract(row_json,'$.sourceHash') IS source_hash\n  AND json_extract(row_json,'$.dispatchAttempt') IS dispatch_attempt\n  AND json_extract(row_json,'$.bootEpoch') IS boot_epoch\n  AND json_extract(row_json,'$.dispatchId') IS dispatch_id\n  AND json_extract(row_json,'$.claimedAtMs') IS claimed_at_ms\n  AND json_extract(row_json,'$.spendRowId') IS spend_row_id\n  AND json_extract(row_json,'$.status') IS status\n  AND json_extract(row_json,'$.turnId') IS turn_id\n  AND json_extract(row_json,'$.outcome') IS outcome\n  AND json_extract(row_json,'$.source.roomId') IS room_id\n  AND json_extract(row_json,'$.source.grantId') IS grant_id\n  AND json_extract(row_json,'$.source.grantRevision') IS grant_revision\n  AND json_extract(row_json,'$.source.routeId') IS route_id\n  AND json_extract(row_json,'$.source.routeHash') IS route_hash\n  AND json_extract(row_json,'$.source.declarationHash') IS declaration_hash\n  AND json_extract(row_json,'$.source.manifestHash') IS manifest_hash\n  AND json_extract(row_json,'$.source.inputFingerprint') IS input_fingerprint\n  AND json_extract(row_json,'$.source.authorityDigest') IS authority_digest\n  AND json_extract(row_json,'$.source.effectivePayloadDigest') IS effective_payload_digest\n  AND json_extract(row_json,'$.source.agentId') IS target_agent_id\n  AND json_extract(row_json,'$.source.authorId') IS target_author_id\n  AND json_extract(row_json,'$.source.sessionId') IS target_session_id\n  AND json_extract(row_json,'$.source.runtime') IS target_runtime\n  AND json_extract(row_json,'$.source.agentPath') IS target_agent_path\n  AND json_extract(row_json,'$.cascadeRoot') IS cascade_root\n  AND json_extract(row_json,'$.rootRoomId') IS root_room_id\n  AND json_extract(row_json,'$.rootEntryId') IS root_entry_id\n  AND json_extract(row_json,'$.ceiling') IS frozen_ceiling\n  AND json(json_extract(row_json,'$.producerEvidence')) IS json(producer_evidence_json)\n  AND json_extract(row_json,'$.createdAt') IS created_at\n  AND json_extract(row_json,'$.claimedAt') IS claimed_at\n  AND json_extract(row_json,'$.updatedAt') IS updated_at"
+    ],
+    "indices": [
+      [
+        "room_doc_admissions_source_unique",
+        "CREATE UNIQUE INDEX room_doc_admissions_source_unique ON room_doc_admissions (document_id,batch_id,generation)"
+      ],
+      [
+        "room_doc_admissions_document_id_unique",
+        "CREATE UNIQUE INDEX room_doc_admissions_document_id_unique ON room_doc_admissions (document_id,admission_id)"
+      ],
+      [
+        "room_doc_admissions_entry_unique",
+        "CREATE UNIQUE INDEX room_doc_admissions_entry_unique ON room_doc_admissions (room_id,entry_id)"
+      ],
+      [
+        "room_doc_admissions_dispatch_unique",
+        "CREATE UNIQUE INDEX room_doc_admissions_dispatch_unique ON room_doc_admissions (dispatch_id)"
+      ],
+      [
+        "room_doc_admissions_document_window",
+        "CREATE INDEX room_doc_admissions_document_window ON room_doc_admissions (document_id,claimed_at_ms)"
+      ],
+      [
+        "room_doc_admissions_recovery",
+        "CREATE INDEX room_doc_admissions_recovery ON room_doc_admissions (status,boot_epoch,updated_at,admission_id)"
+      ],
+      [
+        "room_doc_admissions_root",
+        "CREATE INDEX room_doc_admissions_root ON room_doc_admissions (cascade_root,status)"
+      ]
+    ]
+  },
+  "room_doc_admission_inputs": {
+    "columns": [
+      ["admission_id", "TEXT", 1, 1, null],
+      ["document_id", "TEXT", 1, 0, null],
+      ["event_id", "TEXT", 1, 0, null],
+      ["route_id", "TEXT", 1, 0, null],
+      ["input_ordinal", "INTEGER", 1, 2, null],
+      ["doc_seq", "INTEGER", 1, 0, null],
+      ["envelope_hash", "TEXT", 1, 0, null],
+      ["source_delivery_status", "TEXT", 1, 0, null],
+      ["source_delivery_reason", "TEXT", 0, 0, null]
+    ],
+    "foreignKeys": [
+      [
+        ["document_id", "admission_id"],
+        "room_doc_admissions",
+        ["document_id", "admission_id"],
+        "NO ACTION",
+        "NO ACTION"
+      ],
+      [
+        ["document_id", "event_id"],
+        "canvas_doc_events",
+        ["document_id", "event_id"],
+        "NO ACTION",
+        "NO ACTION"
+      ],
+      [
+        ["document_id", "event_id", "route_id"],
+        "canvas_doc_deliveries",
+        ["document_id", "event_id", "route_id"],
+        "NO ACTION",
+        "NO ACTION"
+      ]
+    ],
+    "checks": ["input_ordinal>=0 AND input_ordinal<100", "doc_seq>0", "length(envelope_hash)=64"],
+    "indices": [
+      [
+        "room_doc_admission_inputs_event_unique",
+        "CREATE UNIQUE INDEX room_doc_admission_inputs_event_unique ON room_doc_admission_inputs (admission_id,event_id)"
+      ],
+      [
+        "room_doc_admission_inputs_route_unique",
+        "CREATE UNIQUE INDEX room_doc_admission_inputs_route_unique ON room_doc_admission_inputs (document_id,event_id,route_id)"
+      ]
+    ]
+  },
+  "room_doc_exhausted_lineages": {
+    "columns": [
+      ["cascade_root", "TEXT", 1, 1, null],
+      ["root_room_id", "TEXT", 1, 0, null],
+      ["root_entry_id", "TEXT", 1, 0, null],
+      ["original_admission_id", "TEXT", 1, 0, null],
+      ["frozen_ceiling", "INTEGER", 1, 0, null],
+      ["exhausted_at", "TEXT", 1, 0, null]
+    ],
+    "foreignKeys": [
+      [
+        ["root_room_id", "root_entry_id"],
+        "room_entries",
+        ["room_id", "id"],
+        "NO ACTION",
+        "NO ACTION"
+      ]
+    ],
+    "checks": ["frozen_ceiling>0", "cascade_root=root_entry_id"],
+    "indices": [
+      [
+        "room_doc_exhausted_lineages_anchor",
+        "CREATE INDEX room_doc_exhausted_lineages_anchor ON room_doc_exhausted_lineages (root_room_id,root_entry_id)"
+      ]
+    ]
+  },
+  "room_entries": {
+    "columns": [
+      ["room_id", "TEXT", 1, 1, null],
+      ["seq", "INTEGER", 1, 2, null],
+      ["id", "TEXT", 1, 0, null],
+      ["author_id", "TEXT", 1, 0, null],
+      ["kind", "TEXT", 1, 0, null],
+      ["body", "TEXT", 1, 0, null],
+      ["mentions", "TEXT", 1, 0, "'[]'"],
+      ["mention_spans", "TEXT", 1, 0, "'[]'"],
+      ["session_id", "TEXT", 0, 0, null],
+      ["cascade_root", "TEXT", 1, 0, null],
+      ["cascade_depth", "INTEGER", 1, 0, "0"],
+      ["dispatch_id", "TEXT", 0, 0, null],
+      ["parent_entry_id", "TEXT", 0, 0, null],
+      ["thread_root_entry_id", "TEXT", 0, 0, null],
+      ["signature", "TEXT", 0, 0, null],
+      ["created_at", "TEXT", 1, 0, null],
+      ["timeline_band", "INTEGER", 0, 0, null],
+      ["timeline_pos", "INTEGER", 0, 0, null]
+    ],
+    "foreignKeys": [],
+    "checks": [],
+    "indices": [
+      [
+        "idx_room_entries_mirror_timeline",
+        "CREATE INDEX idx_room_entries_mirror_timeline ON room_entries (room_id,timeline_band,timeline_pos) WHERE \"timeline_band\" IS NOT NULL"
+      ],
+      [
+        "room_entries_room_id_entry_id_unique",
+        "CREATE UNIQUE INDEX room_entries_room_id_entry_id_unique ON room_entries (room_id,id)"
+      ],
+      [
+        "idx_room_entries_cascade_root",
+        "CREATE INDEX idx_room_entries_cascade_root ON room_entries (room_id,cascade_root)"
+      ],
+      [
+        "idx_room_entries_thread_root",
+        "CREATE INDEX idx_room_entries_thread_root ON room_entries (room_id,thread_root_entry_id,seq) WHERE \"thread_root_entry_id\" IS NOT NULL"
+      ],
+      [
+        "idx_room_entries_author_room",
+        "CREATE INDEX idx_room_entries_author_room ON room_entries (author_id,room_id,thread_root_entry_id)"
+      ],
+      [
+        "idx_room_entries_global_root",
+        "CREATE INDEX idx_room_entries_global_root ON room_entries (id,room_id) WHERE id=cascade_root"
+      ],
+      [
+        "idx_room_entries_global_descendants",
+        "CREATE INDEX idx_room_entries_global_descendants ON room_entries (cascade_root,room_id,id)"
+      ]
+    ]
+  },
+  "canvas_doc_room_pending_sources": {
+    "columns": [
+      ["document_id", "TEXT", 1, 1, null],
+      ["batch_id", "TEXT", 1, 2, null],
+      ["generation", "TEXT", 1, 3, null],
+      ["source_json", "TEXT", 1, 0, null],
+      ["source_hash", "TEXT", 1, 0, null],
+      ["due_at", "TEXT", 1, 0, null],
+      ["updated_at", "TEXT", 1, 0, null]
+    ],
+    "foreignKeys": [[["batch_id"], "canvas_doc_batches", ["batch_id"], "NO ACTION", "CASCADE"]],
+    "checks": [],
+    "indices": []
+  }
+}

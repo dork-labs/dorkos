@@ -28,6 +28,7 @@ export {
   turnAgentOf,
   readHomeManifest,
   setAgentHomeRegistry,
+  replaceAgentHomeRegistry,
   assertOwnDesk,
   assertNobodysDesk,
   isInsideRoomsDir,

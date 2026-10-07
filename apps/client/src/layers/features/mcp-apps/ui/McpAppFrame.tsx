@@ -8,7 +8,8 @@
  *
  * @module features/mcp-apps/ui/McpAppFrame
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import type { McpAppDocHost } from '../model/doc-extension';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { LinkSafetyModal, MoreDetails } from '@/layers/shared/ui';
 import { useTransport } from '@/layers/shared/model';
 import { cn, openExternalLink } from '@/layers/shared/lib';
@@ -40,6 +41,8 @@ export interface McpAppFrameProps {
   onRequestPip?: () => void;
   /** Extra classes for the frame wrapper. */
   className?: string;
+  /** Actual hosting Doc permission; never supplied by the framed App. */
+  docHost?: McpAppDocHost;
 }
 
 /** The effective (applied) theme, read from the document root. */
@@ -60,6 +63,7 @@ export function McpAppFrame({
   onRequestFullscreen,
   onRequestPip,
   className,
+  docHost,
 }: McpAppFrameProps) {
   const transport = useTransport();
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -71,8 +75,7 @@ export function McpAppFrame({
   const srcDoc = data?.text ? buildSandboxSrcDoc(data.text, data.csp) : undefined;
   const allow = buildAllowAttribute(data?.permissions ?? []);
 
-  // Proxy an App's resources/read to the same server via the endpoint. Kept in a
-  // ref so the bridge (attached once per srcdoc) always calls the latest closure.
+  // Capture the exact resource server/session/Transport in this mounted bridge.
   const readResource = useCallback(
     async (readUri: string) => {
       const res = await transport.fetchMcpAppResource(sessionId, { serverName, uri: readUri });
@@ -81,37 +84,61 @@ export function McpAppFrame({
     [transport, sessionId, serverName]
   );
 
-  const requestDisplayMode = useCallback(
-    (mode: McpAppDisplayMode) => {
-      if (mode === 'fullscreen') onRequestFullscreen?.();
-      else if (mode === 'pip') onRequestPip?.();
-    },
-    [onRequestFullscreen, onRequestPip]
-  );
+  const displayHandlers = useRef({ onRequestFullscreen, onRequestPip });
+  useLayoutEffect(() => {
+    displayHandlers.current = { onRequestFullscreen, onRequestPip };
+  }, [onRequestFullscreen, onRequestPip]);
+  const requestDisplayMode = useCallback((mode: McpAppDisplayMode) => {
+    if (mode === 'fullscreen') displayHandlers.current.onRequestFullscreen?.();
+    else if (mode === 'pip') displayHandlers.current.onRequestPip?.();
+  }, []);
 
-  // The document actually handed to the iframe. Gated on the bridge listener
-  // being attached first: the iframe mounts blank, the effect below wires the
-  // bridge, and only then does the srcdoc load — so a fast app that posts
-  // ui/initialize on its first script tick can never beat the listener.
-  const [attachedDoc, setAttachedDoc] = useState<string | undefined>(undefined);
+  // A new original resource/permission gets a genuinely new iframe, including same-HTML
+  // replacement. Ordinary reducer updates preserve the cached host and mounted document.
+  const [mount, setMount] = useState<{
+    epoch: number;
+    srcDoc: string;
+    docHost: McpAppDocHost | undefined;
+    readResource: typeof readResource;
+  } | null>(null);
+  const [attachedDoc, setAttachedDoc] = useState<{ epoch: number; srcDoc: string } | null>(null);
+  useEffect(() => {
+    if (!srcDoc) return;
+    setMount((previous) =>
+      previous &&
+      previous.srcDoc === srcDoc &&
+      previous.docHost === docHost &&
+      previous.readResource === readResource
+        ? previous
+        : {
+            epoch: (previous?.epoch ?? 0) + 1,
+            srcDoc,
+            docHost,
+            readResource,
+          }
+    );
+  }, [srcDoc, docHost, readResource]);
 
   useEffect(() => {
     const iframe = iframeRef.current;
-    if (!iframe || !srcDoc) return;
+    if (
+      !iframe ||
+      !mount ||
+      mount.srcDoc !== srcDoc ||
+      mount.docHost !== docHost ||
+      mount.readResource !== readResource
+    )
+      return;
     const dispose = createMcpAppBridge({
       iframe,
       expectedOrigin: SANDBOX_ORIGIN,
+      docHost,
       hostContext: { hostName: 'DorkOS', theme: currentTheme() },
-      handlers: {
-        readResource,
-        openLink: (url) => setPendingLink(url),
-        requestDisplayMode,
-      },
+      handlers: { readResource, openLink: (url) => setPendingLink(url), requestDisplayMode },
     });
-    // Listener is live — now let the document load.
-    setAttachedDoc(srcDoc);
+    setAttachedDoc({ epoch: mount.epoch, srcDoc: mount.srcDoc });
     return dispose;
-  }, [srcDoc, readResource, requestDisplayMode]);
+  }, [mount, srcDoc, docHost, readResource, requestDisplayMode]);
 
   if (isLoading) {
     return <div className={cn('text-muted-foreground p-4 text-sm', className)}>Loading app…</div>;
@@ -136,13 +163,14 @@ export function McpAppFrame({
   return (
     <div className={cn('relative h-full w-full', className)}>
       <iframe
+        key={mount?.epoch ?? 0}
         ref={iframeRef}
         title={title ?? `App from ${serverName}`}
         sandbox={MCP_APP_SANDBOX}
         // `allow` is omitted entirely unless the App declared permissions.
         {...(allow ? { allow } : {})}
         // Loads only after the bridge listener is attached (see attachedDoc).
-        srcDoc={attachedDoc}
+        srcDoc={attachedDoc?.epoch === mount?.epoch ? attachedDoc?.srcDoc : undefined}
         className="bg-background h-full w-full border-0"
       />
       <LinkSafetyModal

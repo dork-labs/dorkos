@@ -1,3 +1,19 @@
+import {
+  readOriginalInstalledDocumentAdapterOrigin,
+  type InstalledDocumentAdapterOrigin,
+} from '@dorkos/relay/server-private-document';
+const originalDocumentAdapterManagers = new WeakMap<
+  object,
+  () => InstalledDocumentAdapterOrigin | undefined
+>();
+/** Constructor-owned configured child lookup, never registry DTO or public replacement. */
+export function readOriginalManagerDocumentAdapterOrigin(
+  manager: object
+): InstalledDocumentAdapterOrigin | undefined {
+  const read = originalDocumentAdapterManagers.get(manager);
+  if (!read) throw new Error('Original adapter manager required');
+  return read();
+}
 /**
  * Server-side adapter lifecycle manager for the Relay message bus.
  *
@@ -286,6 +302,7 @@ function canLeaveChat(adapter: RelayAdapter): adapter is RelayAdapter & LeaveCap
 
 /** Server-side adapter lifecycle manager. */
 export class AdapterManager {
+  #originalDocumentChildren = new Set<RelayAdapter>();
   private readonly registry: AdapterRegistry;
   private configWatcher: FSWatcher | null = null;
   private readonly configPath: string;
@@ -312,6 +329,14 @@ export class AdapterManager {
     this.deps = deps;
 
     this.agentRuntimes = normalizeAgentRuntimes(deps);
+    originalDocumentAdapterManagers.set(this, () => {
+      const ready = [...this.#originalDocumentChildren].flatMap((child) => {
+        const origin = readOriginalInstalledDocumentAdapterOrigin(child);
+        return origin ? [origin] : [];
+      });
+      if (ready.length > 1) throw new Error('Multiple original installed document adapters');
+      return ready[0];
+    });
   }
 
   /**
@@ -506,7 +531,9 @@ export class AdapterManager {
       const newConfig = this.configs.find((c) => c.id === id);
       if (!newConfig || !newConfig.enabled) {
         try {
+          const originalChild = this.registry.get(id);
           await this.registry.unregister(id);
+          if (originalChild) this.#originalDocumentChildren.delete(originalChild);
           this.deps.eventRecorder?.insertAdapterEvent(
             id,
             'adapter.disconnected',
@@ -643,7 +670,9 @@ export class AdapterManager {
 
     await this.enqueue(async () => {
       try {
+        const originalChild = this.registry.get(id);
         await this.registry.unregister(id);
+        if (originalChild) this.#originalDocumentChildren.delete(originalChild);
       } catch (err) {
         // The config already says disabled. If the adapter would not let go of
         // its connection, the cockpit would show "disabled" over a bot that is
@@ -1129,7 +1158,9 @@ export class AdapterManager {
     // lands after, so the adapter can never outlive its config.
     await this.enqueue(async () => {
       try {
+        const originalChild = this.registry.get(id);
         await this.registry.unregister(id);
+        if (originalChild) this.#originalDocumentChildren.delete(originalChild);
       } catch (err) {
         // The config is going away either way — the person asked for that. But
         // an adapter that would not stop is still connected, and saying nothing
@@ -1315,7 +1346,9 @@ export class AdapterManager {
         // therefore lose its registration to this reservation; the queued edit
         // must also start that enabled connection when no old instance exists.
         try {
+          const originalChild = this.registry.get(id);
           await this.registry.unregister(id);
+          if (originalChild) this.#originalDocumentChildren.delete(originalChild);
         } catch (err) {
           // Do NOT build a replacement. The old adapter failed to let go of its
           // connection and is still registered; starting a second one on the same
@@ -1354,6 +1387,7 @@ export class AdapterManager {
       this.configWatcher = null;
     }
     await this.registry.shutdown();
+    this.#originalDocumentChildren.clear();
   }
 
   /** Start all enabled adapters that are not already running. */
@@ -1493,7 +1527,7 @@ export class AdapterManager {
       provider: this.credentialProvider,
       manifests: this.manifests,
     });
-    return createAdapter(
+    const adapter = await createAdapter(
       resolved,
       {
         agentRuntimes: this.agentRuntimes,
@@ -1513,6 +1547,8 @@ export class AdapterManager {
       this.configPath,
       (type, manifest) => this.registerPluginManifest(type, manifest)
     );
+    if (adapter) this.#originalDocumentChildren.add(adapter);
+    return adapter;
   }
 
   /** Return the full adapter catalog with manifests and configured instances. */

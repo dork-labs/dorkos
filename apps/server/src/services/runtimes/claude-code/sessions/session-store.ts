@@ -1,3 +1,4 @@
+import { claudeInterruptReceipt as receipt } from '../connector-turn-context.js';
 /**
  * In-memory session store — lifecycle, lookup, and interactive flow management.
  *
@@ -12,31 +13,29 @@ import {
   type PermissionUpdateDestination,
   type Query,
 } from '@anthropic-ai/claude-agent-sdk';
-import type {
-  PermissionMode,
-  Session,
-  PendingInteractionDTO,
-  InterruptOutcome,
-  InterruptReason,
-  InterruptReceipt,
-  SessionSettings,
+import {
+  type PermissionMode,
+  type Session,
+  type InterruptReason,
+  type InterruptReceipt,
+  type SessionSettings,
 } from '@dorkos/shared/types';
-import type {
-  SessionOpts,
-  MessageOpts,
-  SessionSettingsPort,
-  SessionUpdateResult,
-  ToolDecisionOptions,
+import {
+  type SessionOpts,
+  type MessageOpts,
+  type SessionSettingsPort,
+  type SessionUpdateResult,
+  type ToolDecisionOptions,
 } from '@dorkos/shared/agent-runtime';
 import { tightensDeclaredMode, needsConsentRitual } from '@dorkos/shared/permission-semantics';
-import type { AgentSession } from '../agent-types.js';
+import { type AgentSession } from '../agent-types.js';
 import { CLAUDE_CODE_CAPABILITIES, narrowToClaudeCodeMode } from '../runtime-constants.js';
 import { SESSIONS } from '../../../../config/constants.js';
 import { logger } from '../../../../lib/logger.js';
 import { resolveActiveClaudeRoot } from '../claude-config-dir.js';
 import { withClaudeConfigDir } from '../claude-config-env-lock.js';
-import type { TranscriptReader } from './transcript-reader.js';
-import type { SessionLockManager } from '../../../session/session-lock.js';
+import { type TranscriptReader } from './transcript-reader.js';
+import { type SessionLockManager } from '../../../session/session-lock.js';
 import {
   awaitControlAck,
   PERMISSION_MODE_ACK_TIMEOUT_MS,
@@ -44,21 +43,6 @@ import {
   STOP_ACK_TIMEOUT_MS,
   type ControlAck,
 } from './bounded-control.js';
-
-/**
- * Build one of this store's stop receipts.
- *
- * `runtime` is hardcoded rather than threaded from the facade because this store
- * IS the claude-code adapter's session state — it is reachable from no other
- * runtime, and `ClaudeCodeRuntime.type` is a fixed `'claude-code' as const` that
- * an injection would only be able to agree with.
- *
- * @param outcome - Which of the five endings the stop reached
- * @param reason - Why, when the outcome alone does not say it
- */
-function receipt(outcome: InterruptOutcome, reason?: InterruptReason): InterruptReceipt {
-  return { outcome, ...(reason ? { reason } : {}), runtime: 'claude-code' };
-}
 
 /**
  * Is this session holding a prompt somebody could still come back and answer?
@@ -159,8 +143,64 @@ export const ACCOUNT_ROOT_PROBE_LIMIT = 3;
  * Tracks active sessions, handles the SDK session ID reverse index,
  * and provides session lifecycle, interactive flow, and health check operations.
  */
+const nativeMapValues = Map.prototype.values;
+const nativeMapGet = Map.prototype.get;
+const nativeSessionStores = new WeakMap<
+  object,
+  {
+    sessions: Map<string, AgentSession>;
+    index: Map<string, string>;
+    retired: WeakSet<AgentSession>;
+  }
+>();
+/** Read only the genuine constructor's native session lifetime; no caller can register an entry. */
+export function isCurrentClaudeNativeSession(store: object, session: AgentSession): boolean {
+  const state = nativeSessionStores.get(store);
+  if (!state || state.retired.has(session)) return false;
+  const slot = Object.getOwnPropertyDescriptor(store, 'sessions');
+  if (!slot || !('value' in slot) || slot.value !== state.sessions) {
+    state.retired.add(session);
+    return false;
+  }
+  for (const current of nativeMapValues.call(state.sessions)) if (current === session) return true;
+  return false;
+}
+
+/** Callback-free same original session alias lookup; replaced public find/read methods are never consulted. */
+export function isOriginalClaudeSessionAlias(
+  store: object,
+  retiredId: string,
+  canonicalId: string
+): boolean {
+  const own = nativeSessionStores.get(store);
+  const sessions = Object.getOwnPropertyDescriptor(store, 'sessions');
+  const index = Object.getOwnPropertyDescriptor(store, 'sdkSessionIndex');
+  if (
+    !own ||
+    retiredId === canonicalId ||
+    sessions?.value !== own.sessions ||
+    index?.value !== own.index
+  )
+    return false;
+  const resolve = (id: string): AgentSession | undefined =>
+    nativeMapGet.call(own.sessions, id) ??
+    nativeMapGet.call(own.sessions, nativeMapGet.call(own.index, id));
+  const before = resolve(retiredId),
+    after = resolve(canonicalId);
+  if (!before || before !== after || own.retired.has(before)) return false;
+  const sdk = Object.getOwnPropertyDescriptor(before, 'sdkSessionId');
+  return !!sdk && 'value' in sdk && sdk.value === canonicalId;
+}
+/** Own Claude session state and its original native session records. */
 export class SessionStore {
   private sessions = new Map<string, AgentSession>();
+  constructor() {
+    nativeSessionStores.set(this, {
+      sessions: this.sessions,
+      index: this.sdkSessionIndex,
+      retired: new WeakSet(),
+    });
+  }
   /** Reverse index: SDK session ID → session map key, for O(1) lookup. */
   private sdkSessionIndex = new Map<string, string>();
   private readonly SESSION_TIMEOUT_MS = SESSIONS.TIMEOUT_MS;
@@ -1114,6 +1154,7 @@ export class SessionStore {
       // because the exemption is right for the whole wait, not only its second
       // half (spec `ask-parks-on-timeout` §8).
       if (isWaitingOnPerson(session, now)) continue;
+      nativeSessionStores.get(this)!.retired.add(session);
       for (const interaction of session.pendingInteractions.values()) {
         clearTimeout(interaction.timeout);
       }

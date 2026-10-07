@@ -64,6 +64,7 @@
  * @module services/harness/hook-consent
  */
 import { createHash } from 'node:crypto';
+import { WORKSPACE_HOOKS_ENTRY_MARKER } from './workspace-hooks-entry-marker.js';
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { ProjectedHook } from '@dorkos/harness';
@@ -174,7 +175,7 @@ export function isGlobalActivationEntry(entry: string): boolean {
  * for them, so it lives in the same operator-only lists and is listed and
  * revoked the same way (`--revoke <source path>`).
  */
-export const WORKSPACE_HOOKS_ENTRY_MARKER = '@workspace-';
+export { WORKSPACE_HOOKS_ENTRY_MARKER } from './workspace-hooks-entry-marker.js';
 
 /**
  * Whether a stored decision is about a worktree's `workspace.json` hooks.

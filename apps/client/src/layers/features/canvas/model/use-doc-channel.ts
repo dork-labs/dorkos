@@ -16,6 +16,9 @@ export function useDocChannel(documentId: string): {
   channel: WidgetChannelPort;
   events: CanvasChannelFrame[];
   frameAdmission?: NativeFrameAdmission;
+  replayObserved: boolean;
+  snapshot?: DocChannelView['snapshot'];
+  mcpBinding?: DocChannelView['mcpBinding'];
 } {
   const transport = useTransport();
   const [view, setView] = useState<DocChannelView>(() =>
@@ -30,5 +33,12 @@ export function useDocChannel(documentId: string): {
       ? view
       : emptyDocChannelView(documentId, transport);
   const channel = useMemo(() => projectDocChannelPort(current), [current]);
-  return { channel, events: current.events, frameAdmission: current.frameAdmission };
+  return {
+    channel,
+    mcpBinding: current.mcpBinding,
+    events: current.events,
+    frameAdmission: current.frameAdmission,
+    snapshot: current.snapshot,
+    replayObserved: current.replayObserved === true,
+  };
 }

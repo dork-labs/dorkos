@@ -5,7 +5,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
-import { holdAwakeDuringTurns } from '../hold-during-turn.js';
+import {
+  holdAwakeDuringTurns,
+  observeOriginalAwakeRoomRuntimeStream,
+} from '../hold-during-turn.js';
 import { KeepAwakeService, keepAwakeService, TURN_IDLE_CEILING_MS } from '../keep-awake-service.js';
 import { RuntimeRegistry } from '../../runtime-registry.js';
 
@@ -271,7 +274,12 @@ describe('the registry seam', () => {
     // scheduled run, relay delivery) resolves through, so a runtime fetched
     // from it must count its turn — once, not once per wrapper layer.
     const registry = new RuntimeRegistry();
-    registry.register(runtimeWith(() => events(2), 'fake-registry-keep-awake'));
+    registry.register({
+      ...runtimeWith(() => events(2), 'fake-registry-keep-awake'),
+      // Registry observers capture these required methods; this fake owns no lock.
+      acquireLock: vi.fn(() => false),
+      releaseLock: vi.fn(),
+    });
     const before = working(keepAwakeService).chats;
 
     const stream = registry.get('fake-registry-keep-awake').sendMessage('s-reg', 'hello');
@@ -282,5 +290,58 @@ describe('the registry seam', () => {
       // drain
     }
     expect(working(keepAwakeService).chats).toBe(before);
+  });
+});
+
+describe('already opened native Room stream observation', () => {
+  it('holds the supplied stream once without opening another runtime turn', async () => {
+    const service = new KeepAwakeService();
+    const entered = vi.fn(() => events(1));
+    const finished = vi.fn();
+    const wrapped = holdAwakeDuringTurns(runtimeWith(entered), service);
+    const source = (async function* () {
+      try {
+        yield EVENT;
+        yield EVENT;
+      } finally {
+        finished();
+      }
+    })();
+    const observed = observeOriginalAwakeRoomRuntimeStream(wrapped, 'native-room', source);
+    expect(working(service)).toMatchObject({ rooms: 0, chats: 0 });
+    try {
+      expect(await observed.next()).toEqual({ done: false, value: EVENT });
+      expect(working(service)).toMatchObject({ rooms: 1, chats: 0 });
+      expect(entered).not.toHaveBeenCalled();
+    } finally {
+      await observed.return(undefined);
+      await source.return(undefined);
+    }
+    expect(finished).toHaveBeenCalledOnce();
+    expect(working(service)).toMatchObject({ rooms: 0, chats: 0 });
+    expect(entered).not.toHaveBeenCalled();
+  });
+
+  it('preserves a supplied stream raw undefined failure and releases its hold', async () => {
+    const service = new KeepAwakeService();
+    const entered = vi.fn(() => events(1));
+    const wrapped = holdAwakeDuringTurns(runtimeWith(entered), service);
+    expect(() => observeOriginalAwakeRoomRuntimeStream({}, 'native-room', events(0))).toThrow(
+      'Original keep-awake runtime wrapper required.'
+    );
+    const source = (async function* (): AsyncGenerator<StreamEvent, void> {
+      yield EVENT;
+      throw undefined;
+    })();
+    const observed = observeOriginalAwakeRoomRuntimeStream(wrapped, 'native-room', source);
+    try {
+      await observed.next();
+      await expect(observed.next()).rejects.toBeUndefined();
+    } finally {
+      await observed.return(undefined);
+      await source.return(undefined);
+    }
+    expect(working(service)).toMatchObject({ rooms: 0, chats: 0 });
+    expect(entered).not.toHaveBeenCalled();
   });
 });

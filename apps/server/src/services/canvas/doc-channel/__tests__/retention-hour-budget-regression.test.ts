@@ -2,7 +2,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import {
   createDb,
   eq,
@@ -233,4 +233,102 @@ it('rolls back early orphan cleanup, accounting backfill, compaction and floors 
   expect(f.store.getBatch(first.sourceId)).toBeUndefined();
   expect(f.store.getEvent(f.documentId, input.receipt.id)).toBeUndefined();
   expect(f.store.getBatch(second.sourceId)?.status).toBe('turn_done');
+});
+
+// The paid SDK process alone is replaced. Authority comes from the real original constructor/FILE DB.
+const nativeRetentionSdk = vi.hoisted(() => ({
+  options: [] as unknown[],
+  prompts: [] as unknown[],
+  parked: true,
+  release: undefined as (() => void) | undefined,
+}));
+vi.mock('@openai/codex-sdk', () => ({
+  Codex: class {
+    constructor(options: unknown) {
+      nativeRetentionSdk.options.push(options);
+    }
+    startThread() {
+      return {
+        id: 'native-retention-source',
+        runStreamed: async (prompt: unknown) => {
+          nativeRetentionSdk.prompts.push(prompt);
+          return {
+            events: (async function* () {
+              yield { type: 'thread.started', thread_id: 'native-retention-source' };
+              if (nativeRetentionSdk.parked)
+                await new Promise<void>((resolve) => {
+                  nativeRetentionSdk.release = resolve;
+                });
+              yield {
+                type: 'turn.completed',
+                usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 },
+              };
+            })(),
+          };
+        },
+      };
+    }
+    resumeThread() {
+      return this.startThread();
+    }
+  },
+}));
+import { nativeCommittedCodexRoomFixture } from '../writes/__tests__/authority-fixtures.js';
+function originalNativeRetentionSource(disposition: 'settled' | 'unpulled' = 'settled') {
+  nativeRetentionSdk.options.length = 0;
+  nativeRetentionSdk.prompts.length = 0;
+  nativeRetentionSdk.parked = true;
+  nativeRetentionSdk.release = undefined;
+  return nativeCommittedCodexRoomFixture(
+    {
+      options: nativeRetentionSdk.options,
+      prompts: nativeRetentionSdk.prompts,
+      releaseProducer: () => nativeRetentionSdk.release?.(),
+      completeFutureTurns: () => {
+        nativeRetentionSdk.parked = false;
+      },
+    },
+    disposition
+  );
+}
+
+it('retains genuine native COMMIT/spend evidence through an expired-hour sweep without refund or native reissue', async () => {
+  const h = await originalNativeRetentionSource();
+  let failed = false,
+    first: unknown;
+  try {
+    const admission = h.db.all(
+      sql`SELECT * FROM room_doc_admissions WHERE admission_id=${h.admission.admission_id}`
+    );
+    const spend = h.db.all(sql`SELECT * FROM room_turn_spend`);
+    const batchId = h.http.channels.listDeliveries(h.documentId, h.input.id)[0]!.batchId!;
+    const batch = h.http.channels.getBatch(batchId)!;
+    retainDocHistory(h.http.channels, new Date(Date.now() + 3600_001).toISOString(), {
+      ageMs: 1,
+      documentBytes: 1,
+      installationBytes: 1,
+    });
+    expect(
+      h.db.all(
+        sql`SELECT * FROM room_doc_admissions WHERE admission_id=${h.admission.admission_id}`
+      )
+    ).toEqual(admission);
+    expect(h.db.all(sql`SELECT * FROM room_turn_spend`)).toEqual(spend);
+    expect(h.http.channels.getBatch(batchId)).toEqual(batch);
+    expect(h.http.channels.getEvent(h.documentId, h.input.id)).toBeDefined();
+    expect(nativeRetentionSdk.prompts).toHaveLength(2);
+  } catch (cause) {
+    failed = true;
+    first = cause;
+  } finally {
+    try {
+      await h.cleanup();
+    } catch (cause) {
+      if (!failed) {
+        failed = true;
+        first = cause;
+      }
+    }
+  }
+  if (failed) throw first;
 });

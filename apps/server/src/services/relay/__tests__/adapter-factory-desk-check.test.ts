@@ -17,6 +17,13 @@ const captured = vi.hoisted(() => ({ deps: null as Record<string, unknown> | nul
 vi.mock('@dorkos/relay', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@dorkos/relay')>();
   class CapturingClaudeCodeAdapter {
+    static createInstalledDocumentAdapter(
+      id: string,
+      config: unknown,
+      deps: Record<string, unknown>
+    ) {
+      return { adapter: new CapturingClaudeCodeAdapter(id, config, deps) };
+    }
     constructor(_id: string, _config: unknown, deps: Record<string, unknown>) {
       captured.deps = deps;
     }

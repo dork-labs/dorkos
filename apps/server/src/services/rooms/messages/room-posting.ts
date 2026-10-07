@@ -13,7 +13,7 @@ import { logger } from '../../../lib/logger.js';
 import type { AttachmentRowStore } from '../attachments/attachment-row-store.js';
 import type { RoomCore } from '../service/room-core.js';
 import type { RoomEntryWriter } from './room-entry-writer.js';
-import { RoomError } from '../room-errors.js';
+import { RoomError } from '../data/room-errors.js';
 import type { PostTrigger, PostedEntry } from '../service/room-service-deps.js';
 import type { RoomStore } from '../room-store.js';
 import type { RoomTriggerDispatcher } from '../room-trigger.js';

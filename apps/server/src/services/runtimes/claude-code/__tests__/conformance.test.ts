@@ -11,7 +11,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { runtimeConformance, type HandedGrants } from '@dorkos/test-utils';
-import { controlUi } from '../../../session/browser-seat/ui-control.js';
 import { driveRoomCanvasTurn } from '../../../session/__tests__/durable-turn-harness.js';
 import {
   wrapSdkQuery,
@@ -595,26 +594,28 @@ runtimeConformance(
     // OpenCode could not have (spec `canvas-agent-seat` §5). Driving it with the
     // real binding is what proves the binding is really there.
     roomCanvasTurn: () =>
-      driveRoomCanvasTurn(
-        new ClaudeCodeRuntime(
-          '/tmp/dorkos-conformance',
-          '/projects/conformance',
-          new LocalSessionAttachmentStore(ATTACHMENT_HOME)
-        ),
-        {
-          agentPath: '/agents/ana',
-          otherAgentPath: '/agents/ben',
-          produce: async (sessionId) => {
-            await controlUi(
-              {
-                action: 'open_canvas',
-                content: { type: 'markdown', title: 'The plan', content: '# The plan' },
-              },
-              { sessionId }
-            );
-          },
-        }
-      ),
+      driveRoomCanvasTurn({
+        runtime: 'claude-code',
+        createRuntime: ({ home, targets, mesh, tools, providerTurn }) => {
+          mockedQuery.mockImplementation(
+            (input) =>
+              wrapSdkQuery(
+                (async function* () {
+                  const sessionId = await providerTurn(String(input.options?.cwd));
+                  yield* sdkSimpleText('pong from claude-code', sessionId);
+                })()
+              ) as unknown as ReturnType<typeof query>
+          );
+          const runtime = new ClaudeCodeRuntime(
+            home,
+            targets[0]!.agentPath,
+            new LocalSessionAttachmentStore(join(home, 'attachments'))
+          );
+          runtime.setMeshCore(mesh);
+          runtime.setConnectorRuntimeTools(tools);
+          return runtime;
+        },
+      }),
     // The media gate. Owns its own scripted turn because a media turn needs a
     // differently-scripted SDK than the default `sdkSimpleText` — a `Read` of a
     // PNG, which is the most ordinary media case on the DEFAULT runtime and the

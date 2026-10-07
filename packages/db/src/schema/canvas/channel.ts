@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
+  check,
   foreignKey,
   index,
   integer,
@@ -34,6 +35,8 @@ export const canvasDocChannels = sqliteTable(
     manifestHash: text('manifest_hash'),
     closedAt: text('closed_at'),
     closureEvidence: text('closure_evidence', { mode: 'json' }),
+    /** Monotonic native Room spend floor; legacy/private rows remain unowned. */
+    roomSpendFloorMs: integer('room_spend_floor_ms'),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },
@@ -149,6 +152,11 @@ export const canvasDocBatches = sqliteTable(
     admissionReceiptId: text('admission_receipt_id').references(
       () => sessionMessageAcceptanceReceipts.id
     ),
+    deliveryKind: text('delivery_kind', { enum: ['private_session', 'room_app_event'] }),
+    roomAdmissionId: text('room_admission_id'),
+    roomSourceAttempt: integer('room_source_attempt'),
+    roomSourceJson: text('room_source_json'),
+    roomSourceHash: text('room_source_hash'),
     errorCode: text('error_code'),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
@@ -163,12 +171,44 @@ export const canvasDocBatches = sqliteTable(
     uniqueIndex('canvas_doc_batches_pending_unique')
       .on(table.documentId, table.routeId)
       .where(sql`"status" in ('pending', 'waiting')`),
-    uniqueIndex('canvas_doc_batches_active_unique')
-      .on(table.documentId, table.routeId)
-      .where(sql`"status" in ('accepted', 'dispatching', 'turn_started', 'in_doubt')`),
+    // A frozen, unclaimed Room source is queued DATA; actual dispatch still takes the active slot.
+    uniqueIndex('canvas_doc_batches_active_unique').on(table.documentId, table.routeId)
+      .where(sql`"status" in ('accepted', 'dispatching', 'turn_started', 'in_doubt')
+        AND (delivery_kind IS NOT 'room_app_event' OR status IS NOT 'accepted')`),
     index('canvas_doc_batches_due_idx').on(table.status, table.dueAt),
     index('canvas_doc_batches_lease_idx').on(table.status, table.leaseUntil),
     index('canvas_doc_batches_receipt_idx').on(table.admissionReceiptId),
+    uniqueIndex('canvas_doc_batches_room_admission_unique')
+      .on(table.roomAdmissionId)
+      .where(sql`room_admission_id IS NOT NULL`),
+    index('canvas_doc_batches_room_resume').on(
+      table.deliveryKind,
+      table.status,
+      table.updatedAt,
+      table.batchId
+    ),
+    check(
+      'canvas_doc_batches_room_agreement_0',
+      sql`delivery_kind IS NULL OR delivery_kind IN ('private_session','room_app_event')`
+    ),
+    check(
+      'canvas_doc_batches_room_agreement_1',
+      sql`
+ (delivery_kind IS NOT 'room_app_event' AND room_admission_id IS NULL
+  AND room_source_attempt IS NULL AND room_source_json IS NULL AND room_source_hash IS NULL)
+ OR
+ (delivery_kind IS 'room_app_event' AND admission_receipt_id IS NULL
+  AND room_admission_id IS NOT NULL AND length(room_admission_id)>0
+  AND room_source_attempt IS NOT NULL AND room_source_attempt>=0
+  AND room_source_json IS NOT NULL AND json_valid(room_source_json)
+  AND room_source_hash IS NOT NULL AND length(room_source_hash)=64
+  AND room_source_hash NOT GLOB '*[^0-9a-f]*'
+  AND json_extract(room_source_json,'$.admissionId') IS room_admission_id
+  AND json_extract(room_source_json,'$.documentId') IS document_id
+  AND json_extract(room_source_json,'$.batchId') IS batch_id
+  AND json_extract(room_source_json,'$.generation') IS generation
+  AND json_extract(room_source_json,'$.sourceAttempt') IS room_source_attempt)`
+    ),
   ]
 );
 
@@ -201,6 +241,8 @@ export const canvasDocDeliveries = sqliteTable(
     acknowledgedAt: text('acknowledged_at'),
     acknowledgedBy: text('acknowledged_by'),
     ackEvidence: text('ack_evidence', { mode: 'json' }),
+    deliveryKind: text('delivery_kind', { enum: ['private_session', 'room_app_event'] }),
+    roomAdmissionId: text('room_admission_id'),
     updatedAt: text('updated_at').notNull(),
   },
   (table) => [
@@ -215,6 +257,22 @@ export const canvasDocDeliveries = sqliteTable(
     }),
     index('canvas_doc_deliveries_batch_idx').on(table.documentId, table.batchId),
     index('canvas_doc_deliveries_status_idx').on(table.status, table.updatedAt),
+    index('canvas_doc_deliveries_room_admission').on(
+      table.roomAdmissionId,
+      table.documentId,
+      table.routeId
+    ),
+    check(
+      'canvas_doc_deliveries_room_agreement_0',
+      sql`delivery_kind IS NULL OR delivery_kind IN ('private_session','room_app_event')`
+    ),
+    check(
+      'canvas_doc_deliveries_room_agreement_1',
+      sql`
+ (delivery_kind IS NOT 'room_app_event' AND room_admission_id IS NULL)
+ OR (delivery_kind IS 'room_app_event' AND room_admission_id IS NOT NULL
+     AND length(room_admission_id)>0)`
+    ),
   ]
 );
 
@@ -276,4 +334,21 @@ export const canvasDocWriteIntents = sqliteTable(
     index('canvas_doc_write_intents_recovery_idx').on(table.status, table.updatedAt),
     index('canvas_doc_write_intents_path_idx').on(table.canonicalPath, table.status),
   ]
+);
+
+/** Private pre-due Room source custody; presence here is never admission. */
+export const canvasDocRoomPendingSources = sqliteTable(
+  'canvas_doc_room_pending_sources',
+  {
+    documentId: text('document_id').notNull(),
+    batchId: text('batch_id')
+      .notNull()
+      .references(() => canvasDocBatches.batchId, { onDelete: 'cascade' }),
+    generation: text('generation').notNull(),
+    sourceJson: text('source_json').notNull(),
+    sourceHash: text('source_hash').notNull(),
+    dueAt: text('due_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.documentId, table.batchId, table.generation] })]
 );

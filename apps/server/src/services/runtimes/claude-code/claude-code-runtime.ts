@@ -1,3 +1,540 @@
+import { createRunOutcomeTracker } from '@dorkos/shared/run-outcome';
+import {
+  requireOriginalSessionProjection,
+  readOriginalSessionProjectionSequence,
+} from '../../session/session-state-projector.js';
+import { DetachedTurnLifecycle, readOriginalRoomLaunchHolder } from '../../session/trigger-turn.js';
+import { feedProjector } from '../../session/session-event-normalizer.js';
+import {
+  requireOriginalSessionProjectionFeed,
+  requireOriginalClosedSessionProjectionFeed,
+  type OriginalSessionProjectionFeed,
+} from '../../session/session-event-normalizer.js';
+import type { OriginalDocumentProcessReservation } from '@dorkos/relay/server-private-document';
+import {
+  prepareOriginalRelaySdkLaunch,
+  requireOriginalPreparedRelaySdkLaunch,
+  retireOriginalPreparedRelaySdkLaunch,
+  stopOriginalRelaySdkQuery,
+  drainOriginalRelaySdkQuery,
+  type OriginalPreparedRelaySdkLaunch,
+} from './messaging/relay/relay-sdk-launch.js';
+import {
+  claimOriginalPreparedRelayDocumentFacts,
+  requireOriginalPreparedRelayDocumentClaimCurrent,
+  readOriginalFrozenRelayDocumentTarget,
+  readOriginalFrozenRelayDocumentLaunchInput,
+  reserveOriginalFrozenRelayDocumentProcess,
+} from '../../canvas/doc-channel/delivery/relay-authority.js';
+import type {
+  OriginalFrozenRelayDocumentSource,
+  PreparedRelayDocumentResponder,
+} from '../../canvas/doc-channel/delivery/relay-native-types.js';
+const claudeRelayDriverStops = new WeakMap<
+  object,
+  (source: OriginalFrozenRelayDocumentSource) => Promise<void>
+>();
+/** Fixed original drive cancellation/drain; no caller stream or physical closure checker. */
+export function stopClaudeOriginalRelayDocumentDrive(
+  runtime: object,
+  source: OriginalFrozenRelayDocumentSource
+): Promise<void> {
+  runtime = readOriginalRegisteredRuntime(runtime) ?? runtime;
+  const stop = claudeRelayDriverStops.get(runtime);
+  if (!stop) throw new Error('Original Claude Relay drive stop unavailable');
+  return stop(source);
+}
+const claudeRelayDrivers = new WeakMap<
+  object,
+  (source: OriginalFrozenRelayDocumentSource) => Promise<'busy' | 'drained'>
+>();
+/** Fixed lookup of the original constructor drive, never a caller holder/stream/projector/emitter. */
+export function driveClaudeOriginalRelayDocument(
+  runtime: object,
+  source: OriginalFrozenRelayDocumentSource
+): Promise<'busy' | 'drained'> {
+  runtime = readOriginalRegisteredRuntime(runtime) ?? runtime;
+  const run = claudeRelayDrivers.get(runtime);
+  if (!run) throw new Error('Original installed Claude Relay drive unavailable');
+  return run(source);
+}
+const claudeRelayPreparers = new WeakMap<
+  object,
+  (
+    source: OriginalFrozenRelayDocumentSource,
+    holder: SseResponse,
+    key: string
+  ) => Promise<PreparedRelayDocumentResponder | undefined>
+>();
+const claudeRelayPrepared = new WeakMap<
+  PreparedRelayDocumentResponder,
+  {
+    runtime: object;
+    source: OriginalFrozenRelayDocumentSource;
+    operation: object;
+    acquisition: NativeSessionAcquisition;
+    retire: () => Promise<void>;
+    claimStarted?: boolean;
+    launch: OriginalPreparedRelaySdkLaunch;
+    session: AgentSession;
+    process: OriginalDocumentProcessReservation;
+    commit: () => Promise<import('@dorkos/db/internal-server').OriginalRelayNativeClaim>;
+    claim?: import('@dorkos/db/internal-server').OriginalRelayNativeClaim;
+    principals: import('../../connectors/runtime-principal-port.js').ConnectorRuntimePrincipalPort;
+    send: () => AsyncGenerator<StreamEvent>;
+    sendStarted?: boolean;
+    projector?: SessionStateProjector;
+    projectionStream?: object;
+    projectionFeed?: OriginalSessionProjectionFeed;
+    projectedStart?: SessionEvent;
+    turnStartSeq?: number;
+    completed?: boolean;
+    lastDone?: StreamEvent;
+    projectedEnd?: SessionEvent;
+    runOutcome?: ReturnType<ReturnType<typeof createRunOutcomeTracker>['settle']>;
+  }
+>();
+const originalRelayLaunchPreparations = new WeakMap<
+  OriginalPreparedRelaySdkLaunch,
+  PreparedRelayDocumentResponder
+>();
+const originalClaudeRelayProjectionStreams = new WeakMap<object, PreparedRelayDocumentResponder>();
+/** Lookup-only exact original stream/projector binding; no caller projection flag or registration. */
+export function readOriginalClaudeRelayProjectionProjector(
+  stream: object
+): SessionStateProjector | undefined {
+  const prepared = originalClaudeRelayProjectionStreams.get(stream),
+    own = prepared && claudeRelayPrepared.get(prepared);
+  if (!prepared || !own || !own.sendStarted || !own.projector) return undefined;
+  requireClaudeOriginalRelayPreparedTuple(own.runtime, prepared, own.source, own.operation);
+  return own.projector;
+}
+/** Called by the actual fixed normalizer with its private active feed token and original stamped start. */
+export function observeOriginalClaudeRelayProjection(
+  stream: object,
+  projector: SessionStateProjector,
+  event: SessionEvent,
+  feed: OriginalSessionProjectionFeed
+): void {
+  const prepared = originalClaudeRelayProjectionStreams.get(stream),
+    own = prepared && claudeRelayPrepared.get(prepared);
+  if (
+    !prepared ||
+    !own ||
+    own.projector !== projector ||
+    own.projectedStart ||
+    own.turnStartSeq !== undefined
+  )
+    throw new Error('Original Relay projection already consumed or unavailable');
+  requireClaudeOriginalRelayPreparedTuple(own.runtime, prepared, own.source, own.operation);
+  requireOriginalSessionProjectionFeed(feed, stream, projector, event);
+  if (event.type !== 'turn_start' || !Number.isSafeInteger(event.seq) || event.seq < 1)
+    throw new Error('Original Relay durable turn_start required');
+  own.projectionStream = stream;
+  own.projectionFeed = feed;
+  own.projectedStart = event;
+  own.turnStartSeq = event.seq;
+}
+/** Original sender done identity plus actual fixed stamped end; no caller terminal flag. */
+export function observeOriginalClaudeRelayTerminalProjection(
+  stream: object,
+  projector: SessionStateProjector,
+  event: SessionEvent,
+  feed: OriginalSessionProjectionFeed,
+  terminal: StreamEvent
+): void {
+  const prepared = originalClaudeRelayProjectionStreams.get(stream),
+    own = prepared && claudeRelayPrepared.get(prepared);
+  if (
+    !own ||
+    !own.sendStarted ||
+    !own.claim ||
+    own.lastDone !== terminal ||
+    terminal.type !== 'done' ||
+    own.projector !== projector ||
+    own.projectionStream !== stream ||
+    own.projectionFeed !== feed ||
+    !own.projectedStart ||
+    event.type !== 'turn_end' ||
+    event.seq <= own.projectedStart.seq
+  )
+    throw new Error('Original Relay terminal projection differs');
+  requireOriginalSessionProjectionFeed(feed, stream, projector, own.projectedStart);
+  // Event identity is retained by the fixed projector, not a caller DATA sequence.
+  requireOriginalSessionProjection(projector, event);
+  own.projectedEnd = event;
+}
+export interface OriginalClaudeRelayClosedTurn {
+  readonly kind: 'original-claude-relay-closed-turn';
+}
+const originalRelayClosedTurns = new WeakMap<
+  OriginalClaudeRelayClosedTurn,
+  {
+    runtime: object;
+    source: OriginalFrozenRelayDocumentSource;
+    claim: import('@dorkos/db/internal-server').OriginalRelayNativeClaim;
+    turnStartSeq: number;
+    turnEndSeq: number;
+    outcome: 'completed' | 'failed' | 'blocked';
+  }
+>();
+const originalRelayClosedTurnReaders = new WeakMap<
+  object,
+  (source: OriginalFrozenRelayDocumentSource) => OriginalClaudeRelayClosedTurn
+>();
+/** Lookup-only actual constructor drive closure; no supplied projection/holder/process flag. */
+export function readOriginalClaudeRelayClosedTurn(
+  runtime: object,
+  source: OriginalFrozenRelayDocumentSource
+): OriginalClaudeRelayClosedTurn {
+  runtime = readOriginalRegisteredRuntime(runtime) ?? runtime;
+  const read = originalRelayClosedTurnReaders.get(runtime);
+  if (!read) throw new Error('Original Relay closed turn reader unavailable');
+  return read(source);
+}
+/** Correlation DATA follows original token identity; model outcome still needs actual terminal policy. */
+export function readOriginalClaudeRelayClosedTurnData(
+  token: OriginalClaudeRelayClosedTurn,
+  runtime: object,
+  source: OriginalFrozenRelayDocumentSource,
+  claim: import('@dorkos/db/internal-server').OriginalRelayNativeClaim
+) {
+  runtime = readOriginalRegisteredRuntime(runtime) ?? runtime;
+  const own = originalRelayClosedTurns.get(token);
+  if (!own || own.runtime !== runtime || own.source !== source || own.claim !== claim)
+    throw new Error('Original Relay closed turn identity differs');
+  return Object.freeze({
+    turnStartSeq: own.turnStartSeq,
+    turnEndSeq: own.turnEndSeq,
+    outcome: own.outcome,
+  });
+}
+/** Actual durable projector sequence only, separate from query/spawn FIRST facts. */
+export function readOriginalClaudeRelayProjectedTurnStart(
+  runtime: object,
+  prepared: PreparedRelayDocumentResponder,
+  source: OriginalFrozenRelayDocumentSource,
+  operation: object
+): number {
+  runtime = readOriginalRegisteredRuntime(runtime) ?? runtime;
+  requireClaudeOriginalRelayPreparedTuple(runtime, prepared, source, operation);
+  const own = claudeRelayPrepared.get(prepared)!;
+  if (
+    !own.projector ||
+    !own.projectionStream ||
+    !own.projectionFeed ||
+    !own.projectedStart ||
+    own.turnStartSeq === undefined
+  )
+    throw new Error('Original Relay projected turn_start unavailable');
+  const feed = own.projectionFeed;
+  // The fixed feed recognizer checks its original stream, projector, stamped event and active lifetime.
+  requireOriginalSessionProjectionFeed(
+    feed,
+    own.projectionStream,
+    own.projector,
+    own.projectedStart
+  );
+  return own.turnStartSeq;
+}
+
+/** Commit the original Claude Relay query-start handoff. */
+export async function commitOriginalClaudeRelayQueryStart(
+  session: AgentSession,
+  launch: OriginalPreparedRelaySdkLaunch
+): Promise<void> {
+  const prepared = originalRelayLaunchPreparations.get(launch),
+    own = prepared && claudeRelayPrepared.get(prepared);
+  if (!prepared || !own || own.session !== session || own.launch !== launch || !own.sendStarted)
+    throw new Error('Original Relay sender unavailable');
+  readOriginalClaudeRelayProjectedTurnStart(own.runtime, prepared, own.source, own.operation);
+  own.claim = await claimClaudeOriginalRelayDocument(own.runtime, prepared);
+}
+/** Require currentness of the original Claude Relay query-start handoff. */
+export function requireOriginalClaudeRelayQueryStart(
+  session: AgentSession,
+  launch: OriginalPreparedRelaySdkLaunch
+): void {
+  const prepared = originalRelayLaunchPreparations.get(launch),
+    own = prepared && claudeRelayPrepared.get(prepared);
+  if (
+    !prepared ||
+    !own ||
+    own.session !== session ||
+    own.launch !== launch ||
+    !own.sendStarted ||
+    !own.claim
+  )
+    throw new Error('Original committed Relay sender unavailable');
+  requireOriginalPreparedRelayDocumentClaimCurrent(
+    own.source,
+    own.runtime,
+    prepared,
+    own.operation,
+    own.claim,
+    own.principals
+  );
+}
+/** One actual constructor-owned stream. Return/throw reach actual query before queued delegate drain. */
+export function sendClaudeOriginalRelayDocument(
+  runtime: object,
+  prepared: PreparedRelayDocumentResponder
+): AsyncGenerator<StreamEvent> {
+  runtime = readOriginalRegisteredRuntime(runtime) ?? runtime;
+  const own = claudeRelayPrepared.get(prepared);
+  if (!own || own.runtime !== runtime || own.sendStarted)
+    throw new Error('Original Relay sender consumed or unavailable');
+  // Consume before original source/projector lookups: their listeners may reenter.
+  own.sendStarted = true;
+  const target = readOriginalFrozenRelayDocumentTarget(own.source, own.principals, 'claude-code');
+  own.projector = getOrCreateProjector(target.sessionId, target.agentPath);
+  const delegate = own.send();
+  const tracker = createRunOutcomeTracker(),
+    observe = tracker.observe.bind(tracker),
+    settle = tracker.settle.bind(tracker);
+  const close = async (kind: 'return' | 'throw', value: unknown) => {
+    let failed = false;
+    let first: unknown;
+    let result: IteratorResult<StreamEvent, void> | undefined;
+    const remember = (cause: unknown) => {
+      if (!failed) {
+        failed = true;
+        first = cause;
+      }
+    };
+    // This call runs synchronously before the first await, reaching a held next().
+    try {
+      stopOriginalRelaySdkQuery(own.launch, own.session);
+    } catch (cause) {
+      remember(cause);
+    }
+    const delegateDrain = Promise.resolve()
+      .then(async () => {
+        result =
+          kind === 'return' ? await delegate.return(value as void) : await delegate.throw(value);
+      })
+      .catch(remember);
+    const physicalDrain = Promise.resolve()
+      .then(() => drainOriginalRelaySdkQuery(own.launch, own.session))
+      .catch(remember);
+    await Promise.allSettled([delegateDrain, physicalDrain]);
+    if (failed) throw first;
+    return result!;
+  };
+  const stream: AsyncGenerator<StreamEvent> = {
+    next(value) {
+      return delegate.next(value).then((result) => {
+        if (result.done) {
+          own.runOutcome = settle();
+          own.completed = true;
+        } else {
+          observe(result.value);
+          if (result.value.type === 'done') own.lastDone = result.value;
+        }
+        return result;
+      });
+    },
+    return(value) {
+      return close('return', value);
+    },
+    throw(cause) {
+      return close('throw', cause);
+    },
+    [Symbol.asyncIterator]() {
+      return this;
+    },
+    [Symbol.asyncDispose]() {
+      return close('return', undefined).then(() => {});
+    },
+  };
+  originalClaudeRelayProjectionStreams.set(stream, prepared);
+  return stream;
+}
+/** Only the original constructor lock/session/native operation preparation; no SDK start capability. */
+export function prepareClaudeOriginalRelayDocument(
+  runtime: object,
+  source: OriginalFrozenRelayDocumentSource,
+  holder: SseResponse,
+  key: string
+): Promise<PreparedRelayDocumentResponder | undefined> {
+  runtime = readOriginalRegisteredRuntime(runtime) ?? runtime;
+  return claudeRelayPreparers.get(runtime)?.(source, holder, key) ?? Promise.resolve(undefined);
+}
+/** Read the original Claude Relay document preparation. */
+export function readClaudePreparedRelayDocument(
+  runtime: object,
+  prepared: PreparedRelayDocumentResponder
+) {
+  runtime = readOriginalRegisteredRuntime(runtime) ?? runtime;
+  const own = claudeRelayPrepared.get(prepared);
+  if (!own || own.runtime !== runtime) return undefined;
+  const native = readClaudeNativeOperation(own.operation),
+    at = Date.now();
+  const activity = captureNativeSessionActivity(own.acquisition, at);
+  if (
+    !native ||
+    !activity ||
+    !readNativeSessionAcquisition(own.acquisition, activity, at, native.canonicalSessionId)
+  )
+    return undefined;
+  return Object.freeze({
+    source: own.source,
+    nativeOperation: own.operation,
+    acquisition: own.acquisition,
+    native,
+  });
+}
+/** Fixed actual constructor tuple, never a caller-supplied currentness callback. */
+export function requireClaudeOriginalRelayPreparedTuple(
+  runtime: object,
+  prepared: PreparedRelayDocumentResponder,
+  source: OriginalFrozenRelayDocumentSource,
+  operation: object
+): void {
+  runtime = readOriginalRegisteredRuntime(runtime) ?? runtime;
+  const own = claudeRelayPrepared.get(prepared);
+  if (
+    !own ||
+    own.runtime !== runtime ||
+    own.source !== source ||
+    own.operation !== operation ||
+    !readClaudePreparedRelayDocument(runtime, prepared)
+  )
+    throw new Error('Original current Relay native preparation required');
+  requireOriginalPreparedRelaySdkLaunch(own.launch, own.session);
+}
+/** Consume only the real constructor's original source/operation. This commits DATA, not SDK FIRST. */
+export function claimClaudeOriginalRelayDocument(
+  runtime: object,
+  prepared: PreparedRelayDocumentResponder
+) {
+  runtime = readOriginalRegisteredRuntime(runtime) ?? runtime;
+  const own = claudeRelayPrepared.get(prepared);
+  if (!own || own.runtime !== runtime || own.claimStarted)
+    throw new Error('Original Relay claim already consumed or unavailable');
+  // Consume before native acquisition/currentness work, which may invoke original observers.
+  own.claimStarted = true;
+  readOriginalClaudeRelayProjectedTurnStart(runtime, prepared, own.source, own.operation);
+  return own.commit();
+}
+/** Retire the original Claude Relay document preparation. */
+export function retireClaudePreparedRelayDocument(
+  runtime: object,
+  prepared: PreparedRelayDocumentResponder
+): Promise<void> {
+  runtime = readOriginalRegisteredRuntime(runtime) ?? runtime;
+  const own = claudeRelayPrepared.get(prepared);
+  if (!own || own.runtime !== runtime) throw new Error('Original Relay preparation required.');
+  claudeRelayPrepared.delete(prepared);
+  return own.retire();
+}
+import {
+  readOriginalRegisteredNativeStream,
+  readOriginalRegisteredRuntime,
+} from '../../core/runtime-registry.js';
+const originalClaudeLockedStreams = new WeakMap<
+  object,
+  { runtime: object; sessionId: string; current(): boolean }
+>();
+/** Fixed constructor-created stream identity plus the original live acquisition; never a supplied stream matcher. */
+export function readClaudeOriginalLockedStream(
+  runtime: object,
+  sessionId: string,
+  stream: object
+): boolean {
+  const own = originalClaudeLockedStreams.get(stream);
+  return !!own && own.runtime === runtime && own.sessionId === sessionId && own.current();
+}
+import { isNonFatalErrorCode, isAbsolvingTerminalReason } from '@dorkos/shared/run-outcome';
+import { isInterruptedTerminalReason } from '@dorkos/shared/schemas';
+const originalClaudeRoomStreams = new WeakMap<
+  object,
+  {
+    runtime: object;
+    prepared: PreparedRoomResponder;
+    operation: object;
+    committed: OriginalCommittedRoomResponder;
+    emitted: WeakSet<object>;
+    close(): Promise<IteratorResult<StreamEvent, void>>;
+    reason?: string;
+    failed: boolean;
+    done: boolean;
+  }
+>();
+/** Retire the original Claude Room responder stream and its captured lifecycle. */
+export async function retireClaudeOriginalRoomResponderStream(stream: object): Promise<void> {
+  const own = originalClaudeRoomStreams.get(stream);
+  if (!own) return;
+  originalClaudeRoomStreams.delete(stream);
+  let failed = false,
+    first: unknown;
+  try {
+    retireOriginalCommittedRoomResponder(own.committed, own.runtime, own.prepared, own.operation);
+  } catch (cause) {
+    failed = true;
+    first = cause;
+  }
+  try {
+    await own.close();
+  } catch (cause) {
+    if (!failed) {
+      failed = true;
+      first = cause;
+    }
+  }
+  if (failed) throw first;
+}
+/** Read evidence from the original Claude Room responder stream. */
+export function readClaudeOriginalRoomResponderStream(
+  runtime: object | undefined,
+  stream: object,
+  event?: StreamEvent
+) {
+  stream = readOriginalRegisteredNativeStream(stream) ?? stream;
+  if (runtime) runtime = readOriginalRegisteredRuntime(runtime) ?? runtime;
+
+  const own = originalClaudeRoomStreams.get(stream);
+  if (!own) return undefined;
+  if (
+    (runtime !== undefined && own.runtime !== runtime) ||
+    readClaudePreparedRoomResponder(own.runtime, own.prepared)?.nativeOperation !== own.operation ||
+    (event !== undefined && !own.emitted.has(event))
+  )
+    throw new Error('Original Room stream retired or changed.');
+  return Object.freeze({
+    runtime: own.runtime,
+    prepared: own.prepared,
+    operation: own.operation,
+    committed: own.committed,
+    outcome: own.done
+      ? own.reason === 'error' || (own.failed && !isAbsolvingTerminalReason(own.reason))
+        ? ('failed' as const)
+        : isInterruptedTerminalReason(own.reason)
+          ? ('cancelled' as const)
+          : ('turn_done' as const)
+      : undefined,
+  });
+}
+import { readOriginalPersistentRoomState } from './sessions/persistent-dispatch.js';
+import {
+  captureOriginalRoomDispatchLifecycle,
+  readOriginalRoomDispatchLifecycle,
+} from '../../session/trigger-turn.js';
+import type { OriginalRoomDispatchCustody } from '../../rooms/service/room-core.js';
+import {
+  readOriginalFrozenRoomTarget,
+  requireOriginalRoomPrincipalService,
+  requireOriginalCommittedRoomResponder,
+  consumeOriginalCommittedRoomResponder,
+  retireOriginalCommittedRoomResponder,
+} from '../../canvas/doc-channel/operations/room-current-operation.js';
+import type {
+  OriginalFrozenRoomSource,
+  PreparedRoomResponder,
+  OriginalCommittedRoomResponder,
+} from '../../canvas/doc-channel/current/current-operation-types.js';
+import { readClaudeConnectorContext } from './connector-turn-context.js';
+import { isCurrentClaudeNativeSession } from './sessions/session-store.js';
 import { AccountsAccessContext } from '../shared/accounts-access-context.js';
 /**
  * Claude Code Runtime — implements the AgentRuntime interface for the Claude Agent SDK.
@@ -52,7 +589,7 @@ import type {
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import { CLAUDE_CODE_CAPABILITIES, narrowToClaudeCodeMode } from './runtime-constants.js';
 import { ControlRequestTimeoutError } from './sessions/bounded-control.js';
-import { SessionStore } from './sessions/session-store.js';
+import { SessionStore, isOriginalClaudeSessionAlias } from './sessions/session-store.js';
 import { RuntimeCache } from './messaging/runtime-cache.js';
 import {
   PluginReloadScheduler,
@@ -63,7 +600,17 @@ import {
   type PaidPluginReload,
   type PluginReloadCacheImpact,
 } from './messaging/plugin-reload-policy.js';
-import { SessionLockManager } from '../../session/session-lock.js';
+import {
+  SessionLockManager,
+  runtimeLockHolder,
+  requireOriginalNativeSessionAcquisitionRetired,
+  captureNativeSessionAcquisition,
+  captureNativeSessionActivity,
+  readNativeSessionAcquisition,
+  isNativeSessionAcquisitionMove,
+  isOriginalNativeSessionAcquisitionAlias,
+  type NativeSessionAcquisition,
+} from '../../session/session-lock.js';
 import type { AgentSession } from './agent-types.js';
 import {
   resolveClaudeBinaryBeforePath,
@@ -133,7 +680,10 @@ import { editBaselineStore } from '../../diff/index.js';
 import type { SessionStateProjector } from '../../session/index.js';
 import type { ConnectorRuntimeTools } from '../connector-tools.js';
 import type { RevokeConnectorTurnReason } from '../../connectors/runtime-principal-port.js';
-import { ClaudeConnectorTurnContext } from './connector-turn-context.js';
+import {
+  resolveOriginalClaudeConnectorPrincipal,
+  ClaudeConnectorTurnContext,
+} from './connector-turn-context.js';
 
 export { buildTaskEvent } from './sdk/build-task-event.js';
 
@@ -144,6 +694,288 @@ export { buildTaskEvent } from './sdk/build-task-event.js';
  * and session locking. Delegates to focused collaborators for session state (SessionStore),
  * SDK response caching (RuntimeCache), transcript reading, broadcasting, and locking.
  */
+type ClaudeNativeEntry = {
+  roomOrigin?: Readonly<{ holder: SseResponse; custody: OriginalRoomDispatchCustody }>;
+  acquisition?: NativeSessionAcquisition;
+  instance: object;
+  session: AgentSession;
+  store: SessionStore;
+  retired: boolean;
+  runtime: 'claude-code';
+  key: string;
+  agentPath: string | undefined;
+  cwd: string;
+  context?: ClaudeConnectorTurnContext;
+};
+const claudeLockMoves = new WeakMap<
+  object,
+  (oldKey: string, canonicalKey: string, holder: SseResponse) => boolean
+>();
+/** Closed genuine Claude canonical move; caller strings cannot change the runtime's original session identity. */
+export function moveClaudeOriginalLockedAcquisition(
+  runtime: object,
+  oldKey: string,
+  canonicalKey: string,
+  holder: SseResponse
+): boolean | undefined {
+  return claudeLockMoves.get(runtime)?.(oldKey, canonicalKey, holder);
+}
+const claudeLockedRunners = new WeakMap<
+  object,
+  (
+    sessionId: string,
+    content: string,
+    opts: MessageOpts | undefined,
+    holder: SseResponse,
+    lockKey: string
+  ) => AsyncGenerator<StreamEvent>
+>();
+/** Original constructor-owned turn entry. A holder selects data; it cannot issue lock/principal authority. */
+export function sendClaudeOriginalLockedMessage(
+  runtime: object,
+  sessionId: string,
+  content: string,
+  opts: MessageOpts | undefined,
+  holder: SseResponse,
+  lockKey: string
+): AsyncGenerator<StreamEvent> | undefined {
+  return claudeLockedRunners.get(runtime)?.(sessionId, content, opts, holder, lockKey);
+}
+const claudeRoomPreparers = new WeakMap<
+  object,
+  (
+    source: OriginalFrozenRoomSource,
+    holder: SseResponse,
+    key: string
+  ) => Promise<PreparedRoomResponder | undefined>
+>();
+type ClaudePreparedRoomContinuation = {
+  prepared: PreparedRoomResponder;
+  committed?: OriginalCommittedRoomResponder;
+  runtime: ClaudeCodeRuntime;
+  session: AgentSession;
+  sessionId: string;
+  nativeOperation: object;
+  nativeEntry: ClaudeNativeEntry;
+  runtimeEntries: Map<string, ClaudeNativeEntry>;
+  connectorTurn: ClaudeConnectorTurnContext;
+  acquisition: NativeSessionAcquisition;
+  started: boolean;
+  entered: boolean;
+  finished: boolean;
+  consumed: boolean;
+  stopRead?: () => Promise<void>;
+  retire: () => Promise<void>;
+};
+const claudeRoomQuerySessions = new WeakMap<AgentSession, ClaudePreparedRoomContinuation>();
+/** Fixed sender boundary: ordinary sessions do not acquire dedicated start authority. */
+export function requireOriginalClaudeRoomQueryStart(
+  session: AgentSession
+): ((query: Query) => void) | undefined {
+  const own = claudeRoomQuerySessions.get(session);
+  if (!own) return;
+  if (
+    !own.started ||
+    own.finished ||
+    own.consumed ||
+    !own.committed ||
+    !readClaudePreparedRoomResponder(own.runtime, own.prepared) ||
+    own.nativeEntry.session !== session ||
+    session.connectorTurn !== own.connectorTurn
+  )
+    throw new Error('Room committed start authority is not available.');
+  own.consumed = true;
+  consumeOriginalCommittedRoomResponder(
+    own.committed,
+    own.runtime,
+    own.prepared,
+    own.nativeOperation
+  );
+  // Returned only by the original one-use committed query-start boundary.
+  return (query) => {
+    own.stopRead = () => {
+      query.close();
+      return Promise.resolve();
+    };
+    if (own.finished || own.nativeEntry.retired) query.close();
+  };
+}
+const claudeRoomPrepared = new WeakMap<
+  PreparedRoomResponder,
+  {
+    runtime: object;
+    retire: () => Promise<void>;
+    source: OriginalFrozenRoomSource;
+    nativeOperation: object;
+    acquisition: NativeSessionAcquisition;
+    start: (committed: OriginalCommittedRoomResponder) => AsyncGenerator<StreamEvent>;
+  }
+>();
+const claudeOriginalStores = new WeakMap<object, SessionStore>();
+/** Preparation uses only the original constructor, approved source data and real lock acquisition. */
+export function prepareClaudeOriginalLockedRoomResponder(
+  runtime: object,
+  holder: SseResponse,
+  key: string,
+  source: OriginalFrozenRoomSource
+): Promise<PreparedRoomResponder | undefined> {
+  const prepare = claudeRoomPreparers.get(runtime);
+  if (!prepare) return Promise.resolve(undefined);
+  return prepare(source, holder, key);
+}
+/** Retire only the captured preparation before awaited context revocation. */
+export function retireClaudePreparedRoomResponder(
+  runtime: object,
+  prepared: PreparedRoomResponder
+): Promise<void> {
+  const own = claudeRoomPrepared.get(prepared);
+  if (!own || own.runtime !== runtime)
+    throw new Error('Room responder preparation is not original.');
+  claudeRoomPrepared.delete(prepared);
+  return own.retire();
+}
+/** Fixed lookup of one genuinely constructor-prepared entry; returned identities never register authority. */
+export function readClaudePreparedRoomResponder(runtime: object, prepared: PreparedRoomResponder) {
+  const own = claudeRoomPrepared.get(prepared);
+  if (!own || own.runtime !== runtime) return undefined;
+  const at = Date.now(),
+    activity = captureNativeSessionActivity(own.acquisition, at);
+  const native = readClaudeNativeOperation(own.nativeOperation);
+  if (
+    !activity ||
+    !native ||
+    native.acquisition !== own.acquisition ||
+    !readNativeSessionAcquisition(own.acquisition, activity, at, native.canonicalSessionId) ||
+    claudeRoomPrepared.get(prepared) !== own ||
+    !readClaudeNativeOperation(own.nativeOperation)
+  )
+    return undefined;
+  return Object.freeze({
+    source: own.source,
+    nativeOperation: own.nativeOperation,
+    acquisition: own.acquisition,
+    native,
+  });
+}
+
+/** Continue the exact prepared entry only with authentic COMMIT and private FIRST custody. */
+export function startClaudeCommittedRoomResponder(
+  runtime: object,
+  prepared: PreparedRoomResponder,
+  committed?: OriginalCommittedRoomResponder
+): AsyncGenerator<StreamEvent> {
+  const own = claudeRoomPrepared.get(prepared);
+  if (!own || own.runtime !== runtime)
+    throw new Error('Room responder preparation is not original.');
+  requireOriginalCommittedRoomResponder(committed, runtime, prepared, own.nativeOperation);
+  return own.start(committed!);
+}
+const originalClaudePersistentRequests = new WeakMap<
+  object,
+  { persistent: PersistentDispatch; continuation: ClaudePreparedRoomContinuation }
+>();
+/** Fixed request lookup; copied args or a public dispatch cannot issue a dedicated turn. */
+export function readOriginalClaudeRoomPersistentRequest(
+  persistent: object,
+  args: object
+): object | undefined {
+  const own = originalClaudePersistentRequests.get(args);
+  if (!own) return undefined;
+  const entry = own.continuation;
+  if (
+    own.persistent !== persistent ||
+    !entry.started ||
+    entry.finished ||
+    !entry.committed ||
+    readClaudePreparedRoomResponder(entry.runtime, entry.prepared)?.nativeOperation !==
+      entry.nativeOperation
+  )
+    throw new Error('Original persistent Room request retired.');
+  return args;
+}
+/** Every final effect is bound to the exact private request/session/prepared entry. */
+export function requireOriginalClaudeRoomPersistentEffect(persistent: object, args: object): void {
+  const own = originalClaudePersistentRequests.get(args);
+  if (!own || readOriginalClaudeRoomPersistentRequest(persistent, args) !== args)
+    throw new Error('Persistent Room effect lacks original request custody.');
+  requireOriginalClaudeRoomQueryStart(own.continuation.session);
+}
+/** Ordinary persistent calls cannot operate a live dedicated native session. */
+export function requireOriginalClaudePersistentSession(
+  persistent: object,
+  args: { session: AgentSession }
+): void {
+  const dedicated = claudeRoomQuerySessions.get(args.session);
+  if (dedicated && !dedicated.finished && !originalClaudePersistentRequests.has(args))
+    throw new Error('Dedicated Room session requires its original persistent request.');
+  if (originalClaudePersistentRequests.has(args))
+    readOriginalClaudeRoomPersistentRequest(persistent, args);
+}
+const claudeOriginalLaunchAliases = new WeakMap<
+  object,
+  (request: import('../../rooms/room-turn-port.js').RoomTurnRequest, retiredId: string) => boolean
+>();
+/** Fixed original constructor lookup; no runtime method override or caller checker grants an exemption. */
+export function isClaudeOriginalRoomLaunchAlias(
+  runtime: object,
+  request: import('../../rooms/room-turn-port.js').RoomTurnRequest,
+  retiredId: string
+): boolean {
+  runtime = readOriginalRegisteredRuntime(runtime) ?? runtime;
+  return claudeOriginalLaunchAliases.get(runtime)?.(request, retiredId) === true;
+}
+const claudeNativeConstructors = new WeakSet<object>();
+const claudeNativeOperations = new WeakMap<object, ClaudeNativeEntry>();
+const claudeRuntimeEntries = new WeakMap<object, Map<string, ClaudeNativeEntry>>();
+/** Fixed constructor-owned session and turn lifetime; a reinserted evicted object stays retired. */
+export function readClaudeNativeOperation(token: object) {
+  const entry = claudeNativeOperations.get(token);
+  if (
+    entry?.roomOrigin &&
+    readOriginalRoomDispatchLifecycle(entry.roomOrigin.holder, entry.instance) !==
+      entry.roomOrigin.custody
+  ) {
+    entry.retired = true;
+    return undefined;
+  }
+  const slot = entry ? Object.getOwnPropertyDescriptor(entry.instance, 'sessionStore') : undefined;
+  if (
+    entry &&
+    (!claudeNativeConstructors.has(entry.instance) ||
+      !slot ||
+      !('value' in slot) ||
+      slot.value !== entry.store)
+  ) {
+    entry.retired = true;
+    return undefined;
+  }
+  if (!entry || entry.retired || !isCurrentClaudeNativeSession(entry.store, entry.session))
+    return undefined;
+  const context = Object.getOwnPropertyDescriptor(entry.session, 'connectorTurn');
+  const canonical = Object.getOwnPropertyDescriptor(entry.session, 'sdkSessionId');
+  if (
+    !context ||
+    !('value' in context) ||
+    context.value !== entry.context ||
+    !canonical ||
+    !('value' in canonical) ||
+    typeof canonical.value !== 'string'
+  )
+    return undefined;
+  const signal = entry.context ? readClaudeConnectorContext(entry.context) : undefined;
+  if (!signal || signal.aborted) return undefined;
+  return {
+    roomCustody: entry.roomOrigin?.custody,
+    acquisition: entry.acquisition,
+    runtime: entry.runtime,
+    canonicalSessionId: canonical.value || entry.key,
+    agentPath: entry.agentPath,
+    canonicalCwd: entry.cwd,
+    signal,
+  };
+}
+
+/** Run Claude Code sessions with their original SDK and native turn lifetimes. */
 export class ClaudeCodeRuntime implements AgentRuntime {
   readonly type = 'claude-code' as const;
 
@@ -171,7 +1003,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * {@link pumps}'s SAME resolver, so the two structures can never learn about
    * a rekey at different times.
    */
-  private readonly persistent = new PersistentDispatch(
+  readonly #persistent = new PersistentDispatch(
     this.pumps,
     (id) => this.sessionStore.sessionKeyOf(id),
     (sessionId, impact, contextTokens) =>
@@ -273,7 +1105,370 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    *   declares `mediaOutput: 'none'` and says so per image rather than dropping
    *   one quietly — see {@link getCapabilities}.
    */
+  readonly #roomPreparing = new Map<string, { retired: boolean }>();
+
   constructor(dorkHome: string, cwd?: string, attachments?: SessionAttachmentStore) {
+    claudeNativeConstructors.add(this);
+    const originalLocks = this.lockManager;
+    claudeOriginalStores.set(this, this.sessionStore);
+    const originalStore = this.sessionStore;
+    claudeOriginalLaunchAliases.set(this, (request, retiredId) => {
+      const launch = readOriginalRoomLaunchHolder(request);
+      if (
+        !launch ||
+        (readOriginalRegisteredRuntime(launch.runtime) ?? launch.runtime) !== this ||
+        !isOriginalClaudeSessionAlias(originalStore, retiredId, launch.key)
+      )
+        return false;
+      const acquisition = captureNativeSessionAcquisition(originalLocks, launch.key, launch.holder);
+      return (
+        !!acquisition &&
+        isOriginalNativeSessionAcquisitionAlias(
+          originalLocks,
+          acquisition,
+          launch.holder,
+          launch.key,
+          retiredId
+        ) &&
+        readOriginalRoomLaunchHolder(request) === launch &&
+        isOriginalClaudeSessionAlias(originalStore, retiredId, launch.key)
+      );
+    });
+    const originalAcquire = SessionLockManager.prototype.acquireRuntimeLock;
+    const originalRelease = SessionLockManager.prototype.releaseLock;
+    const originalHolderClose = DetachedTurnLifecycle.prototype.close;
+    const originalHolderTouch = DetachedTurnLifecycle.prototype.touch;
+    const drives = new WeakMap<OriginalFrozenRelayDocumentSource, Promise<'busy' | 'drained'>>();
+    // Failed/UNKNOWN drive resources stay retained by their original constructor until genuine closure.
+    const heldDrives = new Map<
+      OriginalFrozenRelayDocumentSource,
+      {
+        holder: DetachedTurnLifecycle;
+        acquisition?: NativeSessionAcquisition;
+        sessionId: string;
+        stopping: boolean;
+        naturallyCompleted: boolean;
+        prepared?: PreparedRelayDocumentResponder;
+        stream?: AsyncGenerator<StreamEvent>;
+      }
+    >();
+    const settlements = new WeakMap<
+      OriginalFrozenRelayDocumentSource,
+      { settled: boolean; closed: boolean }
+    >();
+    const stops = new WeakMap<OriginalFrozenRelayDocumentSource, Promise<void>>();
+    const closedTurns = new WeakMap<
+      OriginalFrozenRelayDocumentSource,
+      OriginalClaudeRelayClosedTurn
+    >();
+    originalRelayClosedTurnReaders.set(this, (source) => {
+      const settled = settlements.get(source),
+        token = closedTurns.get(source);
+      if (!settled?.settled || !settled.closed || heldDrives.has(source) || !token)
+        throw new Error('Original Relay closed terminal remains UNKNOWN');
+      return token;
+    });
+    claudeRelayDriverStops.set(this, (source) => {
+      const previous = stops.get(source);
+      if (previous) return previous;
+      const stop = Promise.resolve().then(async () => {
+        const drive = drives.get(source),
+          settled = settlements.get(source);
+        if (!drive || !settled) throw new Error('Original Relay drive identity unavailable');
+        const held = heldDrives.get(source);
+        let failed = false,
+          first: unknown;
+        const remember = (cause: unknown) => {
+          if (!failed) {
+            failed = true;
+            first = cause;
+          }
+        };
+        if (held) {
+          if (!held.naturallyCompleted) held.stopping = true;
+          const preparing = this.#relayPreparing.get(held.sessionId);
+          if (preparing) preparing.retired = true;
+          if (held.prepared) {
+            const own = claudeRelayPrepared.get(held.prepared);
+            if (own) {
+              try {
+                stopOriginalRelaySdkQuery(own.launch, own.session);
+              } catch (cause) {
+                remember(cause);
+              }
+            }
+          }
+          // Invoking original return synchronously reaches owned SDK stop before held next settles.
+          let streamDrain: Promise<unknown> | undefined;
+          try {
+            if (held.stream) streamDrain = held.stream.return(undefined).catch(remember);
+          } catch (cause) {
+            remember(cause);
+          }
+          await Promise.allSettled([drive.catch(() => {}), ...(streamDrain ? [streamDrain] : [])]);
+        } else await drive.catch(() => {});
+        // Only original positive physical/principal/lock closure can absolve an ordinary operation refusal.
+        if (!settled.settled || !settled.closed || heldDrives.has(source))
+          remember(new Error('Original Relay drive closure UNKNOWN'));
+        if (failed) throw first;
+      });
+      stops.set(source, stop);
+      return stop;
+    });
+    claudeRelayDrivers.set(this, (source) => {
+      const previous = drives.get(source);
+      if (previous) return previous;
+      // Memo before source/native/projector access can reenter the original constructor drive.
+      const settlement = { settled: false, closed: false };
+      settlements.set(source, settlement);
+      const pending = Promise.resolve()
+        .then(async (): Promise<'busy' | 'drained'> => {
+          const tools = this.connectorRuntimeTools;
+          if (!tools) throw new Error('Original Relay native principal assembly unavailable');
+          const target = readOriginalFrozenRelayDocumentTarget(
+            source,
+            tools.principals,
+            'claude-code'
+          );
+          const holder = new DetachedTurnLifecycle();
+          const token = Symbol('original-relay-document-lock');
+          const held: {
+            holder: DetachedTurnLifecycle;
+            acquisition?: NativeSessionAcquisition;
+            sessionId: string;
+            stopping: boolean;
+            naturallyCompleted: boolean;
+            prepared?: PreparedRelayDocumentResponder;
+            stream?: AsyncGenerator<StreamEvent>;
+          } = { holder, sessionId: target.sessionId, stopping: false, naturallyCompleted: false };
+          heldDrives.set(source, held);
+          let acquired = false,
+            prepared: PreparedRelayDocumentResponder | undefined,
+            stream: AsyncGenerator<StreamEvent> | undefined;
+          let preparedOwn: ReturnType<typeof claudeRelayPrepared.get>;
+          let failed = false,
+            first: unknown,
+            nativeClosed = true;
+          const remember = (cause: unknown) => {
+            if (!failed) {
+              failed = true;
+              first = cause;
+            }
+          };
+          // Join this scope to its captured cleanup before returning or reporting failure.
+          const drainOriginalCleanup = async () => {
+            // Start both real drains before awaiting either; no held next can block physical cancellation.
+            const drains: Promise<unknown>[] = [];
+            if (stream)
+              drains.push(
+                Promise.resolve()
+                  .then(() => stream!.return(undefined))
+                  .catch((cause) => {
+                    nativeClosed = false;
+                    remember(cause);
+                  })
+              );
+            if (prepared)
+              drains.push(
+                Promise.resolve()
+                  .then(() => retireClaudePreparedRelayDocument(this, prepared!))
+                  .catch((cause) => {
+                    nativeClosed = false;
+                    remember(cause);
+                  })
+              );
+            await Promise.allSettled(drains);
+            // Private preparation itself may have retained an unresolved original setup owner.
+            const unresolved = acquired ? this.#relayPreparing.get(target.sessionId) : undefined;
+            if (unresolved) {
+              nativeClosed = false;
+              remember(
+                unresolved.cleanupFailed
+                  ? unresolved.cleanupCause
+                  : new Error('Original Relay preparation owner remains unresolved')
+              );
+            }
+            if (nativeClosed) {
+              try {
+                if (acquired)
+                  originalRelease.call(
+                    originalLocks,
+                    target.sessionId,
+                    runtimeLockHolder(target.sessionId),
+                    token
+                  );
+              } catch (cause) {
+                nativeClosed = false;
+                remember(cause);
+              }
+              try {
+                originalHolderClose.call(holder);
+              } catch (cause) {
+                nativeClosed = false;
+                remember(cause);
+              }
+              if (acquired) {
+                try {
+                  if (!held.acquisition)
+                    throw new Error('Original Relay lock closure witness unavailable');
+                  requireOriginalNativeSessionAcquisitionRetired(
+                    originalLocks,
+                    held.acquisition,
+                    holder
+                  );
+                } catch (cause) {
+                  nativeClosed = false;
+                  remember(cause);
+                }
+              }
+            }
+            if (nativeClosed) {
+              heldDrives.delete(source);
+              settlement.closed = true;
+            }
+          };
+          try {
+            acquired = originalAcquire.call(originalLocks, target.sessionId, holder, token);
+            if (acquired) {
+              held.acquisition = captureNativeSessionAcquisition(
+                originalLocks,
+                target.sessionId,
+                holder
+              );
+              if (!held.acquisition)
+                throw new Error('Original Relay acquired native holder unavailable');
+              prepared = await this.#prepareRelayDocument(source, target, held.acquisition);
+              held.prepared = prepared;
+              if (held.stopping) throw new Error('Original Relay drive stopped during preparation');
+              if (!prepared) throw new Error('Original Relay private capacity unavailable');
+              const own = claudeRelayPrepared.get(prepared);
+              if (!own || own.runtime !== this)
+                throw new Error('Original Relay prepared drive unavailable');
+              preparedOwn = own;
+              stream = sendClaudeOriginalRelayDocument(this, prepared);
+              held.stream = stream;
+              const next = stream.next.bind(stream);
+              // Keep the exact original iterator identity; this private drive only adds real holder activity.
+              stream.next = (...args) => {
+                originalHolderTouch.call(holder);
+                return next(...args);
+              };
+              await feedProjector(own.projector!, stream, { origin: 'runtime' });
+              held.naturallyCompleted = true;
+            }
+          } catch (cause) {
+            remember(cause);
+          } finally {
+            await drainOriginalCleanup();
+          }
+          if (failed) throw first;
+          if (!nativeClosed) throw new Error('Original Relay drive closure UNKNOWN');
+          if (acquired) {
+            const own = preparedOwn;
+            if (
+              held.stopping ||
+              !held.naturallyCompleted ||
+              !own?.completed ||
+              !own.runOutcome ||
+              !own.lastDone ||
+              !own.claim ||
+              !own.projectedStart ||
+              !own.projectedEnd ||
+              !own.projectionFeed ||
+              !own.projectionStream ||
+              !own.projector
+            )
+              throw new Error('Original Relay terminal evidence unavailable');
+            requireOriginalClosedSessionProjectionFeed(
+              own.projectionFeed,
+              own.projectionStream,
+              own.projector,
+              own.projectedStart,
+              own.projectedEnd
+            );
+            const turnStartSeq = readOriginalSessionProjectionSequence(
+              own.projector,
+              own.projectedStart
+            );
+            const turnEndSeq = readOriginalSessionProjectionSequence(
+              own.projector,
+              own.projectedEnd
+            );
+            if (turnEndSeq <= turnStartSeq)
+              throw new Error('Original Relay terminal sequence differs');
+            const closed: OriginalClaudeRelayClosedTurn = Object.freeze({
+              kind: 'original-claude-relay-closed-turn',
+            });
+            originalRelayClosedTurns.set(closed, {
+              runtime: this,
+              source,
+              claim: own.claim,
+              turnStartSeq,
+              turnEndSeq,
+              outcome: own.runOutcome.outcome,
+            });
+            closedTurns.set(source, closed);
+          }
+          return acquired ? 'drained' : 'busy'; // Positive original owner closure only, not model outcome/native acceptance.
+        })
+        .finally(() => {
+          settlement.settled = true;
+        });
+      drives.set(source, pending);
+      return pending;
+    });
+
+    claudeRelayPreparers.set(this, (source, holder, key) => {
+      if (!this.connectorRuntimeTools) return Promise.resolve(undefined);
+      const target = readOriginalFrozenRelayDocumentTarget(
+        source,
+        this.connectorRuntimeTools.principals,
+        'claude-code'
+      );
+      const acquisition = captureNativeSessionAcquisition(originalLocks, key, holder);
+      if (key !== target.sessionId || !acquisition) return Promise.resolve(undefined);
+      return this.#prepareRelayDocument(source, target, acquisition);
+    });
+    claudeRoomPreparers.set(this, (source, holder, key) => {
+      const target = readOriginalFrozenRoomTarget(source, 'claude-code');
+      const acquisition = captureNativeSessionAcquisition(originalLocks, key, holder);
+      if (!target || key !== target.sessionId || !acquisition) return Promise.resolve(undefined);
+      return this.#prepareRoomResponder(source, target, acquisition);
+    });
+    claudeLockMoves.set(this, (oldKey, canonicalKey, holder) => {
+      const entry = claudeRuntimeEntries.get(this)?.get(oldKey);
+      const canonical = entry && Object.getOwnPropertyDescriptor(entry.session, 'sdkSessionId');
+      if (
+        !entry ||
+        entry.retired ||
+        !entry.acquisition ||
+        !canonical ||
+        !('value' in canonical) ||
+        canonical.value !== canonicalKey
+      )
+        return false;
+      const time = Date.now();
+      const activity = captureNativeSessionActivity(entry.acquisition, time);
+      if (
+        !activity ||
+        !readNativeSessionAcquisition(entry.acquisition, activity, time, oldKey) ||
+        entry.retired ||
+        !isCurrentClaudeNativeSession(entry.store, entry.session)
+      )
+        return false;
+      const next = captureNativeSessionAcquisition(originalLocks, canonicalKey, holder);
+      if (!next || !isNativeSessionAcquisitionMove(entry.acquisition, next, holder)) return false;
+      entry.acquisition = next;
+      return true;
+    });
+    claudeLockedRunners.set(this, (sessionId, content, opts, holder, lockKey) => {
+      const acquisition = captureNativeSessionAcquisition(originalLocks, lockKey, holder);
+      if (!acquisition)
+        throw new Error('Native turn requires its exact original session lock acquisition.');
+      const custody = captureOriginalRoomDispatchLifecycle(holder, this);
+      const roomOrigin = custody ? Object.freeze({ holder, custody }) : undefined;
+      return this.#createMessage(sessionId, content, opts, acquisition, roomOrigin);
+    });
     this.attachments = attachments ?? null;
     this.cwd = cwd ?? DEFAULT_CWD;
     this.claudeCliPath = resolveClaudeCliPath();
@@ -502,8 +1697,8 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   isTurnOpen(sessionId: string): boolean {
     return (
       this.sessionStore.findSession(sessionId)?.activeQuery !== undefined ||
-      this.persistent.bootingQuery(sessionId) !== undefined ||
-      this.persistent.runtimeTurnQuery(sessionId) !== undefined
+      this.#persistent.bootingQuery(sessionId) !== undefined ||
+      this.#persistent.runtimeTurnQuery(sessionId) !== undefined
     );
   }
 
@@ -529,7 +1724,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * @param turnAgent - The agent a turn is dispatched as, when it names one
    * @returns The agent's home and its registry entry, or `undefined`
    */
-  private connectorAgentFor(
+  #connectorAgentFor(
     cwdKey: string,
     turnAgent?: string
   ):
@@ -554,7 +1749,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * @param cwdKey - The working directory the caches and command list key on
    * @param turnAgent - The agent a turn is dispatched as, when it names one
    */
-  private buildSenderOpts(
+  #buildSenderOpts(
     sessionId: string,
     session: AgentSession,
     cwdKey: string,
@@ -575,9 +1770,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       bindingStore: this.bindingStore,
       adapterManager: this.adapterManager,
       mcpServerFactory: this.mcpServerFactory,
-      // The same answer for a turn and for a stage that warms the process the
-      // turn will ride, so the two build the same tool list (DOR-2685).
-      connectorTools: this.connectorAgentFor(cwdKey, turnAgent) !== undefined,
+      connectorTools: this.#connectorAgentFor(cwdKey, turnAgent) !== undefined,
       ...cacheCallbacks,
       // Composed over the cache's own handler rather than replacing it: the
       // per-turn status snapshot is one observation with two readers — the
@@ -614,118 +1807,824 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   }
 
   /** @inheritdoc */
-  async *sendMessage(
+  sendMessage(sessionId: string, content: string, opts?: MessageOpts): AsyncGenerator<StreamEvent> {
+    return this.#createMessage(sessionId, content, opts);
+  }
+
+  #createMessage(
     sessionId: string,
     content: string,
-    opts?: MessageOpts
+    opts: MessageOpts | undefined,
+    acquisition?: NativeSessionAcquisition,
+    roomOrigin?: Readonly<{ holder: SseResponse; custody: OriginalRoomDispatchCustody }>,
+    roomPrepared?: ClaudePreparedRoomContinuation
   ): AsyncGenerator<StreamEvent> {
-    const session = await this.sessionStore.ensureForMessage(
-      sessionId,
-      this.transcriptReader,
-      this.cwd,
-      opts
-    );
+    const lifetime: {
+      closed: boolean;
+      entered: boolean;
+      retire?: () => void;
+      acquisition?: NativeSessionAcquisition;
+      roomOrigin?: Readonly<{ holder: SseResponse; custody: OriginalRoomDispatchCustody }>;
+      roomPrepared?: ClaudePreparedRoomContinuation;
+    } = {
+      closed: false,
+      entered: false,
+      acquisition,
+      roomOrigin,
+      roomPrepared,
+      retire: roomPrepared
+        ? () => {
+            roomPrepared.nativeEntry.retired = true;
+          }
+        : undefined,
+    };
+    const stream = this.#sendOwnedMessage(sessionId, content, opts, lifetime);
+    const close = () => {
+      lifetime.closed = true;
+      lifetime.retire?.();
+      // Cancel the actual prepared native owner before generator return queues
+      // behind a pending transport read. Its memo is joined below and in finally.
+      if (roomPrepared) void roomPrepared.retire().catch(() => {});
+    };
+    const joinOriginalClose = async (result: ReturnType<typeof stream.return>) => {
+      let failed = false;
+      let first: unknown;
+      let outcome: Awaited<ReturnType<typeof stream.return>> | undefined;
+      try {
+        outcome = await result;
+      } catch (cause) {
+        failed = true;
+        first = cause;
+      }
+      const own = lifetime.roomPrepared!;
+      try {
+        retireOriginalCommittedRoomResponder(
+          own.committed!,
+          this,
+          own.prepared,
+          own.nativeOperation
+        );
+      } catch (cause) {
+        if (!failed) {
+          failed = true;
+          first = cause;
+        }
+      }
+      try {
+        await own.retire();
+      } catch (cause) {
+        if (!failed) {
+          failed = true;
+          first = cause;
+        }
+      }
+      if (failed) throw first;
+      return outcome!;
+    };
+    const capturedReturn = stream.return.bind(stream);
+    const returnOriginal: AsyncGenerator<StreamEvent>['return'] = (value) => {
+      close();
+      const result = capturedReturn(value);
+      return roomPrepared ? joinOriginalClose(result) : result;
+    };
+    const returned: AsyncGenerator<StreamEvent> = {
+      next: (value) => {
+        if (!roomPrepared) return stream.next(value);
+        return stream.next(value).then((result) => {
+          const own = originalClaudeRoomStreams.get(returned)!;
+          if (!result.done && result.value) {
+            own.emitted.add(result.value);
+            const data = result.value.data;
+            if (
+              data &&
+              typeof data === 'object' &&
+              'terminalReason' in data &&
+              typeof data.terminalReason === 'string'
+            )
+              own.reason = data.terminalReason;
+            if (
+              result.value.type === 'error' &&
+              !isNonFatalErrorCode(
+                data && typeof data === 'object' && 'code' in data && typeof data.code === 'string'
+                  ? data.code
+                  : undefined
+              )
+            )
+              own.failed = true;
+            if (result.value.type === 'done') own.done = true;
+          }
+          return result;
+        });
+      },
+      return: returnOriginal,
+      [Symbol.asyncDispose]: async () => {
+        await returnOriginal(undefined);
+      },
+      throw: (error) => {
+        close();
+        const result = stream.throw(error);
+        return roomPrepared ? joinOriginalClose(result) : result;
+      },
+      [Symbol.asyncIterator]() {
+        return this;
+      },
+    };
+    if (acquisition)
+      originalClaudeLockedStreams.set(returned, {
+        runtime: this,
+        sessionId,
+        current: () => {
+          if (lifetime.closed) return false;
+          const at = Date.now(),
+            activity = captureNativeSessionActivity(acquisition, at);
+          return !!activity && !!readNativeSessionAcquisition(acquisition, activity, at, sessionId);
+        },
+      });
+    const originalReturn = returned.return.bind(returned);
+    if (roomPrepared && roomPrepared.committed)
+      originalClaudeRoomStreams.set(returned, {
+        runtime: this,
+        prepared: roomPrepared.prepared,
+        operation: roomPrepared.nativeOperation,
+        committed: roomPrepared.committed,
+        emitted: new WeakSet(),
+        close: () => originalReturn(undefined),
+        failed: false,
+        done: false,
+      });
+    return returned;
+  }
 
-    // Neither the window snapshot nor the room marker is lifted onto the session
-    // any more: the `ui` verbs are capabilities, and both facts are bound
-    // runtime-neutrally by the trigger (spec `canvas-agent-seat` §5). That is the
-    // whole of what made Codex and OpenCode unable to answer "what is on the
-    // canvas" — the answer lived on this object, which only this runtime has.
-
-    const cwdKey = opts?.cwd || session.cwd || this.cwd;
-
-    // The agent this turn acts as: the home the folder resolves to, and never
-    // another than the turn is dispatched as (DOR-2091, DOR-2355,
-    // `core/agent-identity/agent-home.ts`). The same answer the launch resolves
-    // its token from, so the connections below and the token cannot name two
-    // different agents.
-    const connectorAgent = this.connectorAgentFor(cwdKey, turnAgentOf(opts));
-    const meshAgent = connectorAgent?.meshAgent;
-
+  #installNativeTurn(
+    sessionId: string,
+    session: AgentSession,
+    cwdKey: string,
+    agentPath: string | undefined,
+    meshAgent: { id: string } | undefined,
+    acquisition?: NativeSessionAcquisition,
+    refuseExisting = false,
+    roomOrigin?: Readonly<{ holder: SseResponse; custody: OriginalRoomDispatchCustody }>,
+    relayOwner?: { retired: boolean; cleanupFailed?: boolean; cleanupCause?: unknown }
+  ) {
+    const relayOwned = this.#relayPreparing.get(sessionId);
+    if (relayOwned && (relayOwned !== relayOwner || relayOwned.retired))
+      throw new Error('Original Relay session owner remains unresolved');
+    if (
+      roomOrigin &&
+      readOriginalRoomDispatchLifecycle(roomOrigin.holder, this) !== roomOrigin.custody
+    )
+      throw new Error('Original Room dispatch lifetime is retired.');
+    const store = claudeOriginalStores.get(this),
+      slot = Object.getOwnPropertyDescriptor(this, 'sessionStore');
+    if (
+      !store ||
+      !slot ||
+      !('value' in slot) ||
+      slot.value !== store ||
+      !isCurrentClaudeNativeSession(store, session)
+    )
+      throw new Error('Native preparation requires its original session store.');
+    const dedicated = claudeRoomQuerySessions.get(session);
+    if (dedicated && !dedicated.finished)
+      throw new Error('A prepared Room session cannot be replaced while its continuation is live.');
+    if (dedicated) claudeRoomQuerySessions.delete(session);
+    const existing = claudeRuntimeEntries.get(this)?.get(sessionId);
+    if (refuseExisting && existing && !existing.retired)
+      throw new Error('Native preparation cannot replace a live entry.');
+    const nativeOperation = Object.freeze({});
+    if (!claudeNativeConstructors.has(this))
+      throw new Error('Native runtime operation requires its genuine constructor.');
+    const nativeEntry = {
+      roomOrigin,
+      acquisition,
+      instance: this,
+      session,
+      store,
+      retired: false,
+      runtime: 'claude-code' as const,
+      key: sessionId,
+      agentPath,
+      cwd: cwdKey,
+      context: undefined as ClaudeConnectorTurnContext | undefined,
+    };
+    claudeNativeOperations.set(nativeOperation, nativeEntry);
+    let runtimeEntries = claudeRuntimeEntries.get(this);
+    if (!runtimeEntries) {
+      runtimeEntries = new Map();
+      claudeRuntimeEntries.set(this, runtimeEntries);
+    }
+    runtimeEntries.set(sessionId, nativeEntry);
     const connectorTurn =
-      this.connectorRuntimeTools && connectorAgent
+      this.connectorRuntimeTools && meshAgent && agentPath
         ? new ClaudeConnectorTurnContext({
             tools: this.connectorRuntimeTools,
             canonicalSessionId: () => session.sdkSessionId || sessionId,
-            agentPath: connectorAgent.agentPath,
+            agentPath,
             cwd: cwdKey,
+            nativeOperation,
+            retireNative: () => {
+              nativeEntry.retired = true;
+            },
           })
         : undefined;
-    session.connectorTurn = connectorTurn;
-    // Unconditionally, `false` included: a warm session a person later talks
-    // to must hold for their answer again (spec `agent-permissions` D6).
-    session.unattendedApprovals = opts?.unattendedApprovals === true;
-    // Per turn too, for the same reason: an automatic carry-over's first turn
-    // has nobody to ask, and the person who opens it next does.
-    session.unattendedTurn = opts?.unattended === true;
-    const accessContext =
-      connectorTurn &&
-      this.connectorRuntimeTools &&
-      meshAgent &&
-      !content.trimStart().startsWith('/')
-        ? await this.accountsAccess.select(
-            this.connectorRuntimeTools,
-            meshAgent.id,
-            session.sdkSessionId || sessionId,
-            // The connection tools and the service lookup share the in-session server.
-            { serviceCatalog: true }
-          )
-        : undefined;
-    if (accessContext)
-      opts = {
-        ...opts,
-        additionalContext: [...(opts?.additionalContext ?? []), accessContext.entry],
-      };
-    let connectorRevokeReason: RevokeConnectorTurnReason = 'setup_failed';
-    let observedEvent = false;
-    let sawRuntimeError = false;
-    try {
-      const senderOpts = this.buildSenderOpts(sessionId, session, cwdKey, turnAgentOf(opts));
-      const persistent = this.persistent.shouldDispatch(sessionId);
-      // The resume path keeps no process between turns, so a turn there can
-      // never end background work by restarting one (DOR-2065).
-      if (!persistent) opts?.dispatchHold?.proceed();
-      const stream = persistent
-        ? this.persistent.dispatch({
-            sessionId,
-            content,
-            session,
-            opts: senderOpts,
-            ...(opts !== undefined ? { messageOpts: opts } : {}),
-          })
-        : executeSdkQuery(sessionId, content, session, senderOpts, opts);
+    nativeEntry.context = connectorTurn;
+    return { nativeOperation, nativeEntry, runtimeEntries, connectorTurn };
+  }
 
-      for await (const raw of stream) {
-        observedEvent = true;
-        // A credits session whose token was refused partway through is a
-        // credits problem, not the person's Claude sign-in: it surfaces as the
-        // credits card, and no "sign in to Claude again" notice is raised
-        // (ADR 261001-000811).
-        const event = onCreditsSession(session) ? asCreditsStopped(raw) : raw;
-        if (event.type === 'error') sawRuntimeError = true;
-        yield event;
+  readonly #relayPreparing = new Map<
+    string,
+    { retired: boolean; cleanupFailed?: boolean; cleanupCause?: unknown }
+  >();
+  async #prepareRelayDocument(
+    source: OriginalFrozenRelayDocumentSource,
+    target: Readonly<{ sessionId: string; agentPath: string; agentId: string }>,
+    acquisition: NativeSessionAcquisition
+  ): Promise<PreparedRelayDocumentResponder | undefined> {
+    const { sessionId, agentPath } = target,
+      tools = this.connectorRuntimeTools;
+    if (
+      !tools ||
+      this.#relayPreparing.has(sessionId) ||
+      this.#roomPreparing.has(sessionId) ||
+      (claudeRuntimeEntries.get(this)?.get(sessionId) &&
+        !claudeRuntimeEntries.get(this)!.get(sessionId)!.retired)
+    )
+      return undefined;
+    const capacity = readOriginalPersistentRoomState(this.#persistent, sessionId);
+    if (capacity === 'running' || capacity === 'warming' || capacity === 'resuming')
+      return undefined;
+    const current = readOriginalFrozenRelayDocumentTarget(source, tools.principals, 'claude-code');
+    const meshAgent = this.meshCore?.getByPath(agentPath);
+    if (
+      current.sessionId !== sessionId ||
+      current.agentPath !== agentPath ||
+      current.agentId !== target.agentId ||
+      homeOf(resolveAgentHome(agentPath, agentPath)) !== agentPath ||
+      meshAgent?.id !== target.agentId
+    )
+      throw new Error('Original Relay target changed.');
+    const pending: { retired: boolean; cleanupFailed?: boolean; cleanupCause?: unknown } = {
+      retired: false,
+    };
+    this.#relayPreparing.set(sessionId, pending);
+    let process: OriginalDocumentProcessReservation | undefined;
+    let launch: OriginalPreparedRelaySdkLaunch | undefined;
+    let setup:
+      | {
+          nativeOperation: object;
+          nativeEntry: ClaudeNativeEntry;
+          runtimeEntries: Map<string, ClaudeNativeEntry>;
+          connectorTurn: ClaudeConnectorTurnContext | undefined;
+        }
+      | undefined;
+    try {
+      const reserved = reserveOriginalFrozenRelayDocumentProcess(source, tools.principals, this);
+      if (!reserved) {
+        if (this.#relayPreparing.get(sessionId) === pending) this.#relayPreparing.delete(sessionId);
+        return undefined;
       }
-      // Only a turn that ran delivered the context: an attempt held for
-      // background work yields nothing and must not record it as seen.
-      if (observedEvent && !sawRuntimeError) {
-        accessContext?.commit(session.sdkSessionId || sessionId);
+      process = reserved;
+      const store = claudeOriginalStores.get(this)!;
+      const session = await store.ensureForMessage(sessionId, this.transcriptReader, this.cwd, {
+        cwd: agentPath,
+      });
+      if (pending.retired) throw new Error('Original Relay preparation retired.');
+      setup = this.#installNativeTurn(
+        sessionId,
+        session,
+        agentPath,
+        agentPath,
+        meshAgent,
+        acquisition,
+        true,
+        undefined,
+        pending
+      );
+      if (!setup.connectorTurn) throw new Error('Original Relay connector unavailable.');
+      session.connectorTurn = setup.connectorTurn;
+      await resolveOriginalClaudeConnectorPrincipal(setup.connectorTurn);
+      const input = readOriginalFrozenRelayDocumentLaunchInput(source, tools.principals);
+      session.unattendedApprovals = true;
+      session.unattendedTurn = true;
+      const senderOpts = this.#buildSenderOpts(sessionId, session, agentPath, agentPath);
+      const messageOpts = {
+        cwd: agentPath,
+        unattended: true,
+        unattendedApprovals: true,
+        additionalContext: input.additionalContext,
+      };
+      launch = await prepareOriginalRelaySdkLaunch(
+        sessionId,
+        input.content,
+        session,
+        senderOpts,
+        messageOpts,
+        process
+      );
+      // Launch resolution awaits real credential/identity/configuration readers.
+      // Revalidate the original source and acquisition after ALL of them.
+      readOriginalFrozenRelayDocumentTarget(source, tools.principals, 'claude-code');
+      requireOriginalPreparedRelaySdkLaunch(launch, session);
+      const native = readClaudeNativeOperation(setup.nativeOperation),
+        at = Date.now();
+      const activity = captureNativeSessionActivity(acquisition, at);
+      if (
+        pending.retired ||
+        !native ||
+        native.canonicalSessionId !== sessionId ||
+        native.agentPath !== agentPath ||
+        native.canonicalCwd !== agentPath ||
+        !activity ||
+        !readNativeSessionAcquisition(acquisition, activity, at, sessionId)
+      )
+        throw new Error('Original Relay native entry retired.');
+      const fixed = setup,
+        fixedLaunch = launch,
+        fixedProcess = process;
+      let retirement: Promise<void> | undefined;
+      const retire = () => {
+        if (retirement) return retirement;
+        // Latch original session exclusion before any owner retirement. Failed
+        // cancellation/capacity settlement cannot admit a replacement turn.
+        pending.retired = true;
+        this.#relayPreparing.set(sessionId, pending);
+        fixed.nativeEntry.retired = true;
+        if (fixed.runtimeEntries.get(sessionId) === fixed.nativeEntry)
+          fixed.runtimeEntries.delete(sessionId);
+        if (session.connectorTurn === fixed.connectorTurn) session.connectorTurn = undefined;
+        retirement = Promise.resolve().then(async () => {
+          let failed = false;
+          let first: unknown;
+          const remember = (cause: unknown) => {
+            if (!failed) {
+              failed = true;
+              first = cause;
+            }
+            pending.cleanupFailed = true;
+            pending.cleanupCause = cause;
+          };
+          const launchDrain = Promise.resolve()
+            .then(() => drainOriginalRelaySdkQuery(fixedLaunch, session))
+            .catch(remember);
+          const principalDrain = Promise.resolve()
+            .then(() => fixed.connectorTurn!.cancel())
+            .catch(remember);
+          await Promise.allSettled([launchDrain, principalDrain]);
+          try {
+            fixedProcess.requireReleased();
+          } catch (cause) {
+            remember(cause);
+          }
+          if (failed) throw first;
+          if (this.#relayPreparing.get(sessionId) === pending)
+            this.#relayPreparing.delete(sessionId);
+        });
+        return retirement;
+      };
+      const prepared: PreparedRelayDocumentResponder = Object.freeze({
+        kind: 'prepared-relay-document-responder',
+      });
+      claudeRelayPrepared.set(prepared, {
+        runtime: this,
+        source,
+        operation: fixed.nativeOperation,
+        acquisition,
+        retire,
+        launch: fixedLaunch,
+        session,
+        process: fixedProcess,
+        principals: tools.principals,
+        send: () =>
+          executeSdkQuery(
+            sessionId,
+            input.content,
+            session,
+            senderOpts,
+            messageOpts,
+            0,
+            fixedLaunch
+          ),
+        commit: () =>
+          claimOriginalPreparedRelayDocumentFacts(
+            source,
+            this,
+            prepared,
+            fixed.nativeOperation,
+            tools.principals
+          ),
+      });
+      originalRelayLaunchPreparations.set(fixedLaunch, prepared);
+      // Keep the exact original owner throughout prepared/query/process lifetime.
+      return prepared;
+    } catch (cause) {
+      pending.retired = true;
+      let originalSetupClosed = !setup;
+      if (launch && setup) {
+        try {
+          retireOriginalPreparedRelaySdkLaunch(launch, setup.nativeEntry.session);
+        } catch (cleanupCause) {
+          pending.cleanupFailed = true;
+          pending.cleanupCause = cleanupCause;
+          originalSetupClosed = false;
+        }
       }
-      connectorRevokeReason = sawRuntimeError ? 'runtime_failed' : 'turn_terminal';
-    } catch (error) {
-      connectorRevokeReason = observedEvent ? 'runtime_failed' : 'setup_failed';
-      const message = error instanceof Error ? error.message : String(error);
-      if (onCreditsSession(session) && detectAuthError({ message })) {
-        yield creditsStoppedEvent(message);
+      if (setup) {
+        setup.nativeEntry.retired = true;
+        if (setup.runtimeEntries.get(sessionId) === setup.nativeEntry)
+          setup.runtimeEntries.delete(sessionId);
+        if (setup.nativeEntry.session.connectorTurn === setup.connectorTurn)
+          setup.nativeEntry.session.connectorTurn = undefined;
+        try {
+          if (!setup.connectorTurn)
+            throw new Error('Original Relay setup cleanup owner unavailable', { cause });
+          await setup.connectorTurn.revoke('setup_failed');
+          originalSetupClosed = !pending.cleanupFailed;
+        } catch (cleanupCause) {
+          pending.cleanupFailed = true;
+          pending.cleanupCause = cleanupCause;
+        }
+      }
+      if (process) {
+        try {
+          process.releaseNeverInvoked();
+        } catch (cleanupCause) {
+          pending.cleanupFailed = true;
+          pending.cleanupCause = cleanupCause;
+          originalSetupClosed = false;
+        }
+      }
+      // Positive original revoke and exact never-invoked capacity settlement release this slot. UNKNOWN
+      // stays captured and excludes future work; the setup raw cause remains first.
+      if (originalSetupClosed && this.#relayPreparing.get(sessionId) === pending)
+        this.#relayPreparing.delete(sessionId);
+      throw cause;
+    }
+  }
+
+  async #prepareRoomResponder(
+    source: OriginalFrozenRoomSource,
+    target: Readonly<{ sessionId: string; agentPath: string; agentId: string }>,
+    acquisition: NativeSessionAcquisition
+  ): Promise<PreparedRoomResponder | undefined> {
+    const { sessionId, agentPath } = target,
+      tools = this.connectorRuntimeTools;
+    if (
+      !tools ||
+      this.#roomPreparing.has(sessionId) ||
+      this.#relayPreparing.has(sessionId) ||
+      (claudeRuntimeEntries.get(this)?.get(sessionId) &&
+        !claudeRuntimeEntries.get(this)!.get(sessionId)!.retired)
+    )
+      return undefined;
+    const capacity = readOriginalPersistentRoomState(this.#persistent, sessionId);
+    if (capacity === 'running' || capacity === 'warming' || capacity === 'resuming')
+      return undefined;
+    requireOriginalRoomPrincipalService(source, tools.principals);
+    const meshAgent = this.meshCore?.getByPath(agentPath);
+    if (
+      homeOf(resolveAgentHome(agentPath, agentPath)) !== agentPath ||
+      meshAgent?.id !== target.agentId
+    )
+      throw new Error('Room responder differs from its approved target.');
+    const pending = { retired: false };
+    this.#roomPreparing.set(sessionId, pending);
+    let installed:
+      | {
+          nativeEntry: ClaudeNativeEntry;
+          runtimeEntries: Map<string, ClaudeNativeEntry>;
+          connectorTurn: ClaudeConnectorTurnContext | undefined;
+        }
+      | undefined;
+    try {
+      const store = claudeOriginalStores.get(this)!;
+      const session = await store.ensureForMessage(sessionId, this.transcriptReader, this.cwd, {
+        cwd: agentPath,
+      });
+      if (pending.retired) throw new Error('Room responder preparation retired.');
+
+      const setup = this.#installNativeTurn(
+        sessionId,
+        session,
+        agentPath,
+        agentPath,
+        meshAgent,
+        acquisition,
+        true
+      );
+      installed = setup;
+      if (!setup.connectorTurn) throw new Error('Original Claude connector setup is unavailable.');
+      session.connectorTurn = setup.connectorTurn;
+      let retirement: Promise<void> | undefined;
+      const retire = (): Promise<void> => {
+        if (retirement) return retirement;
+        let resolve!: () => void, reject!: (cause: unknown) => void;
+        retirement = new Promise<void>((done, refused) => {
+          resolve = done;
+          reject = refused;
+        });
+        // Reserve the original retirement before abort callbacks can reenter.
+        void (async () => {
+          const dedicated = claudeRoomQuerySessions.get(session);
+          let failed = false,
+            firstCause: unknown;
+          const remember = (cause: unknown) => {
+            if (!failed) {
+              failed = true;
+              firstCause = cause;
+            }
+          };
+          let readDrain: Promise<void> | undefined;
+          try {
+            readDrain = dedicated?.stopRead?.().catch(remember);
+          } catch (cause) {
+            remember(cause);
+          }
+          setup.nativeEntry.retired = true;
+          if (setup.runtimeEntries.get(sessionId) === setup.nativeEntry)
+            setup.runtimeEntries.delete(sessionId);
+          if (session.connectorTurn === setup.connectorTurn) session.connectorTurn = undefined;
+          if (dedicated && !dedicated.entered) dedicated.finished = true;
+          try {
+            await setup.connectorTurn!.cancel();
+          } catch (cause) {
+            remember(cause);
+          }
+          try {
+            await readDrain;
+          } catch (cause) {
+            remember(cause);
+          }
+          if (failed) throw firstCause;
+        })().then(resolve, reject);
+        return retirement;
+      };
+      await resolveOriginalClaudeConnectorPrincipal(setup.connectorTurn);
+      const native = readClaudeNativeOperation(setup.nativeOperation);
+      if (
+        pending.retired ||
+        !native ||
+        native.canonicalSessionId !== sessionId ||
+        native.agentPath !== agentPath ||
+        native.canonicalCwd !== agentPath
+      )
+        throw new Error('Room responder preparation retired.');
+      const time = Date.now(),
+        activity = captureNativeSessionActivity(acquisition, time);
+      if (!activity || !readNativeSessionAcquisition(acquisition, activity, time, sessionId))
+        throw new Error('Room responder lock retired during preparation.');
+      const prepared: PreparedRoomResponder = Object.freeze({ kind: 'prepared-room-responder' });
+      const continuation: ClaudePreparedRoomContinuation = {
+        prepared,
+        runtime: this,
+        session,
+        sessionId,
+        nativeOperation: setup.nativeOperation,
+        nativeEntry: setup.nativeEntry,
+        runtimeEntries: setup.runtimeEntries,
+        connectorTurn: setup.connectorTurn,
+        acquisition,
+        started: false,
+        entered: false,
+        finished: false,
+        consumed: false,
+        retire,
+      };
+      claudeRoomQuerySessions.set(session, continuation);
+      claudeRoomPrepared.set(prepared, {
+        runtime: this,
+        retire,
+        source,
+        nativeOperation: setup.nativeOperation,
+        acquisition,
+        start: (committed) => {
+          if (continuation.started || !readClaudePreparedRoomResponder(this, prepared))
+            throw new Error('Room prepared entry cannot start twice or after retirement.');
+          continuation.started = true;
+          continuation.committed = committed;
+          return this.#createMessage(
+            sessionId,
+            'Document update',
+            { cwd: agentPath },
+            acquisition,
+            undefined,
+            continuation
+          );
+        },
+      });
+      if (this.#roomPreparing.get(sessionId) === pending) this.#roomPreparing.delete(sessionId);
+      return prepared;
+    } catch (cause) {
+      pending.retired = true;
+      if (this.#roomPreparing.get(sessionId) === pending) this.#roomPreparing.delete(sessionId);
+      if (installed) {
+        installed.nativeEntry.retired = true;
+        if (installed.runtimeEntries.get(sessionId) === installed.nativeEntry)
+          installed.runtimeEntries.delete(sessionId);
+        if (installed.nativeEntry.session.connectorTurn === installed.connectorTurn)
+          installed.nativeEntry.session.connectorTurn = undefined;
+        try {
+          await installed.connectorTurn?.revoke('setup_failed');
+        } catch {
+          /* Preserve original setup cause. */
+        }
+      }
+      throw cause;
+    }
+  }
+
+  async *#sendOwnedMessage(
+    sessionId: string,
+    content: string,
+    opts: MessageOpts | undefined,
+    lifetime: {
+      closed: boolean;
+      entered: boolean;
+      retire?: () => void;
+      acquisition?: NativeSessionAcquisition;
+      roomOrigin?: Readonly<{ holder: SseResponse; custody: OriginalRoomDispatchCustody }>;
+      roomPrepared?: ClaudePreparedRoomContinuation;
+    }
+  ): AsyncGenerator<StreamEvent> {
+    let failed = false,
+      first: unknown;
+    const cleanup = async (work: () => unknown | Promise<unknown>) => {
+      try {
+        await work();
+      } catch (cause) {
+        if (!failed) {
+          failed = true;
+          first = cause;
+        }
+      }
+    };
+    // Join this scope to its captured cleanup before returning or reporting failure.
+    const drainOriginalCleanup = async () => {
+      const own = lifetime.roomPrepared;
+      if (own) {
+        own.finished = true;
+        const committed = own.committed;
+        if ((failed || lifetime.closed) && committed)
+          await cleanup(() =>
+            retireOriginalCommittedRoomResponder(committed, this, own.prepared, own.nativeOperation)
+          );
+        await cleanup(() => own.retire());
+      }
+      if (failed) throw first;
+    };
+    try {
+      if (this.#relayPreparing.has(sessionId))
+        throw new Error('Original Relay session owner remains unresolved');
+      lifetime.entered = true;
+      if (lifetime.roomPrepared) lifetime.roomPrepared.entered = true;
+      const session =
+        lifetime.roomPrepared?.session ??
+        (await this.sessionStore.ensureForMessage(
+          sessionId,
+          this.transcriptReader,
+          this.cwd,
+          opts
+        ));
+
+      // Neither the window snapshot nor the room marker is lifted onto the session
+      // any more: the `ui` verbs are capabilities, and both facts are bound
+      // runtime-neutrally by the trigger (spec `canvas-agent-seat` §5). That is the
+      // whole of what made Codex and OpenCode unable to answer "what is on the
+      // canvas" — the answer lived on this object, which only this runtime has.
+
+      const cwdKey = opts?.cwd || session.cwd || this.cwd;
+
+      // The agent this turn acts as: the home the folder resolves to, and never
+      // another than the turn is dispatched as (DOR-2091, DOR-2355,
+      // `core/agent-identity/agent-home.ts`). The same answer the launch resolves
+      // its token from, so the connections below and the token cannot name two
+      // different agents.
+      const agentPath = homeOf(resolveAgentHome(cwdKey, turnAgentOf(opts)));
+      const meshAgent = agentPath ? this.meshCore?.getByPath(agentPath) : undefined;
+
+      if (lifetime.closed) {
+        if (lifetime.roomPrepared) {
+          lifetime.roomPrepared.finished = true;
+          lifetime.roomPrepared.stopRead = undefined;
+        }
         return;
       }
-      throw error;
-    } finally {
-      if (connectorTurn) {
-        if (session.connectorTurn === connectorTurn) session.connectorTurn = undefined;
-        await connectorTurn.revoke(
-          connectorTurn.cancelled ? 'turn_cancelled' : connectorRevokeReason
+      const { nativeEntry, runtimeEntries, connectorTurn } =
+        lifetime.roomPrepared ??
+        this.#installNativeTurn(
+          sessionId,
+          session,
+          cwdKey,
+          agentPath,
+          meshAgent,
+          lifetime.acquisition,
+          false,
+          lifetime.roomOrigin
         );
+      lifetime.retire = () => {
+        nativeEntry.retired = true;
+      };
+      let connectorRevokeReason: RevokeConnectorTurnReason = 'setup_failed';
+      let observedEvent = false;
+      let sawRuntimeError = false;
+      try {
+        session.connectorTurn = connectorTurn;
+        // Unconditionally, `false` included: a warm session a person later talks
+        // to must hold for their answer again (spec `agent-permissions` D6).
+        session.unattendedApprovals = opts?.unattendedApprovals === true;
+        // Per turn too, for the same reason: an automatic carry-over's first turn
+        // has nobody to ask, and the person who opens it next does.
+        session.unattendedTurn = opts?.unattended === true;
+        const accessContext =
+          connectorTurn &&
+          this.connectorRuntimeTools &&
+          meshAgent &&
+          !content.trimStart().startsWith('/')
+            ? await this.accountsAccess.select(
+                this.connectorRuntimeTools,
+                meshAgent.id,
+                session.sdkSessionId || sessionId,
+                // The connection tools and the service lookup share the in-session server.
+                { serviceCatalog: true }
+              )
+            : undefined;
+        if (accessContext)
+          opts = {
+            ...opts,
+            additionalContext: [...(opts?.additionalContext ?? []), accessContext.entry],
+          };
+        if (lifetime.closed || !isCurrentClaudeNativeSession(this.sessionStore, session)) return;
+        const senderOpts = this.#buildSenderOpts(sessionId, session, cwdKey, turnAgentOf(opts));
+
+        const persistentArgs = {
+          sessionId,
+          content,
+          session,
+          opts: senderOpts,
+          ...(opts !== undefined ? { messageOpts: opts } : {}),
+        };
+        if (lifetime.roomPrepared) {
+          originalClaudePersistentRequests.set(persistentArgs, {
+            persistent: this.#persistent,
+            continuation: lifetime.roomPrepared,
+          });
+        }
+        const persistent = this.#persistent.shouldDispatch(sessionId);
+        if (lifetime.roomPrepared) {
+          lifetime.roomPrepared.stopRead = persistent
+            ? () => this.#persistent.stopOriginalRoomRequest(persistentArgs)
+            : lifetime.roomPrepared.stopRead;
+        }
+        if (!persistent) opts?.dispatchHold?.proceed();
+        const stream = persistent
+          ? this.#persistent.dispatch(persistentArgs)
+          : executeSdkQuery(sessionId, content, session, senderOpts, opts);
+
+        for await (const raw of stream) {
+          observedEvent = true;
+          // A credits session whose token was refused partway through is a
+          // credits problem, not the person's Claude sign-in: it surfaces as the
+          // credits card, and no "sign in to Claude again" notice is raised
+          // (ADR 261001-000811).
+          const event = onCreditsSession(session) ? asCreditsStopped(raw) : raw;
+          if (event.type === 'error') sawRuntimeError = true;
+          yield event;
+        }
+        if (observedEvent && !sawRuntimeError)
+          accessContext?.commit(session.sdkSessionId || sessionId);
+        connectorRevokeReason = sawRuntimeError ? 'runtime_failed' : 'turn_terminal';
+      } catch (error) {
+        connectorRevokeReason = observedEvent ? 'runtime_failed' : 'setup_failed';
+        const message = error instanceof Error ? error.message : String(error);
+        if (onCreditsSession(session) && detectAuthError({ message })) {
+          yield creditsStoppedEvent(message);
+          return;
+        }
+        failed = true;
+        first = error;
+      } finally {
+        if (lifetime.roomPrepared) {
+          lifetime.roomPrepared.finished = true;
+          lifetime.roomPrepared.stopRead = undefined;
+        }
+        nativeEntry.retired = true;
+        if (runtimeEntries.get(sessionId) === nativeEntry) runtimeEntries.delete(sessionId);
+        if (connectorTurn) {
+          if (session.connectorTurn === connectorTurn) session.connectorTurn = undefined;
+          if (!lifetime.roomPrepared)
+            await cleanup(() =>
+              connectorTurn.revoke(
+                connectorTurn.cancelled ? 'turn_cancelled' : connectorRevokeReason
+              )
+            );
+        }
       }
+    } catch (cause) {
+      if (!failed) {
+        failed = true;
+        first = cause;
+      }
+    } finally {
+      await drainOriginalCleanup();
     }
   }
 
@@ -1296,6 +3195,18 @@ export class ClaudeCodeRuntime implements AgentRuntime {
 
   /** @inheritdoc */
   async interruptQuery(sessionId: string): Promise<InterruptReceipt> {
+    const pending = this.#roomPreparing.get(sessionId);
+    if (pending) pending.retired = true;
+    const nativeEntries = claudeRuntimeEntries.get(this);
+    if (nativeEntries)
+      for (const [key, entry] of nativeEntries) {
+        const canonical = Object.getOwnPropertyDescriptor(entry.session, 'sdkSessionId');
+        if (
+          key === sessionId ||
+          (canonical && 'value' in canonical && canonical.value === sessionId)
+        )
+          entry.retired = true;
+      }
     const connectorCancellation = this.sessionStore.findSession(sessionId)?.connectorTurn?.cancel();
     const receipt = await this.sessionStore.interruptQuery(sessionId);
     await connectorCancellation;
@@ -1303,7 +3214,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     // still send (DOR-2064), has nothing left for an idle CLI to wind down: an
     // acknowledged interrupt produces no `result`, so the hold would run to its
     // 30 s cap and the Stop would look ignored. Settle it on the `result` it holds.
-    if (receipt.outcome === 'acked') this.persistent.settleHeldTurn(sessionId);
+    if (receipt.outcome === 'acked') this.#persistent.settleHeldTurn(sessionId);
     // Only `not-running` falls through. A stop that reached a live query and
     // then failed is a fact about THAT query, and re-aiming it at the booting
     // one would report the second attempt's ending for the first attempt's turn.
@@ -1312,7 +3223,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     // still be booting, so the pump holds a live query the `running` edge has
     // not yet armed `session.activeQuery` with (DOR-1191). Reach that turn
     // through the same interrupt→close escalation the running path uses.
-    const bootingQuery = this.persistent.bootingQuery(sessionId);
+    const bootingQuery = this.#persistent.bootingQuery(sessionId);
     if (bootingQuery !== undefined) {
       return this.sessionStore.interruptGivenQuery(sessionId, bootingQuery);
     }
@@ -1320,7 +3231,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     // either: nobody dispatched it, so the pump's `running` edge never fired
     // (spec `warm-process-lifecycle` D6, the Stop rule). Without this, Stop on a
     // turn the person can plainly see answers "nothing is running".
-    const runtimeQuery = this.persistent.runtimeTurnQuery(sessionId);
+    const runtimeQuery = this.#persistent.runtimeTurnQuery(sessionId);
     if (runtimeQuery === undefined) return receipt;
     return this.sessionStore.interruptGivenQuery(sessionId, runtimeQuery);
   }
@@ -1346,14 +3257,14 @@ export class ClaudeCodeRuntime implements AgentRuntime {
         this.cwd
       );
       const cwdKey = session.cwd || this.cwd;
-      const senderOpts = this.buildSenderOpts(sessionId, session, cwdKey);
-      return this.persistent.stage(sessionId, content, opts, session, senderOpts);
+      const senderOpts = this.#buildSenderOpts(sessionId, session, cwdKey);
+      return this.#persistent.stage(sessionId, content, opts, session, senderOpts);
     }
     // A steer rides the persistent pump's held input stream. On the resume path
     // there is no held stream that outlives a turn to reach, so a steer there is
     // simply "no open turn" — which `PersistentDispatch.steer` returns for a
     // session it holds no live process for, without special-casing the path.
-    return this.persistent.steer(sessionId, content, opts);
+    return this.#persistent.steer(sessionId, content, opts);
   }
 
   /**
@@ -1373,7 +3284,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * already open would flicker with the turn rather than describe the session.
    */
   canSteerSession(sessionId: string): boolean {
-    return this.persistent.shouldDispatch(sessionId);
+    return this.#persistent.shouldDispatch(sessionId);
   }
 
   /**
@@ -1396,7 +3307,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * answering `true` cost them a subprocess they never asked for (DOR-1307).
    */
   canStageSession(sessionId: string): boolean {
-    return this.persistent.shouldDispatch(sessionId);
+    return this.#persistent.shouldDispatch(sessionId);
   }
 
   /**
@@ -1408,7 +3319,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * is the id the pump's wiring is filed under.
    */
   settleOpenTurn(sessionId: string): Promise<boolean> {
-    return Promise.resolve(this.persistent.settleOpenTurn(sessionId));
+    return Promise.resolve(this.#persistent.settleOpenTurn(sessionId));
   }
 
   /**
@@ -1422,39 +3333,39 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   onRuntimeTurn(
     listener: (sessionId: string, events: AsyncIterable<StreamEvent>) => void
   ): () => void {
-    return this.persistent.onRuntimeTurn(listener);
+    return this.#persistent.onRuntimeTurn(listener);
   }
 
   /** @inheritdoc */
   isSegmentPending(sessionId: string): boolean {
-    return this.persistent.isSegmentPending(sessionId);
+    return this.#persistent.isSegmentPending(sessionId);
   }
 
   /** @inheritdoc */
   onDispatchGateChange(listener: (sessionId: string) => void): () => void {
-    return this.persistent.onDispatchGateChange(listener);
+    return this.#persistent.onDispatchGateChange(listener);
   }
 
   /** @inheritdoc */
   switchWhenReady(sessionId: string): boolean {
-    return this.persistent.switchWhenReady(sessionId);
+    return this.#persistent.switchWhenReady(sessionId);
   }
 
   /** @inheritdoc */
   onDispatchedTurn(listener: (sessionId: string) => void): () => void {
-    return this.persistent.onDispatchedTurn(listener);
+    return this.#persistent.onDispatchedTurn(listener);
   }
 
   /** @inheritdoc */
   holdsBackgroundWork(sessionId: string): boolean {
     // The warm path only. A resumed turn's process ends with its turn, and the
     // CLI ends its own background work with it, so nothing can follow.
-    return this.persistent.holdsBackgroundWork(sessionId);
+    return this.#persistent.holdsBackgroundWork(sessionId);
   }
 
   /** @inheritdoc */
   isHelperWorking(sessionId: string): boolean {
-    if (this.persistent.isHelperWorking(sessionId)) return true;
+    if (this.#persistent.isHelperWorking(sessionId)) return true;
     // The resume path: the running turn's own tracker. Its ceiling is measured
     // from the turn's start, the one moment this path records; the pump's is
     // measured from its busy spell.
@@ -1490,18 +3401,28 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       // Evicted, not reaped: a polite reap declines a process still holding
       // background work, and a revoked token must not stay live for hours
       // behind a running shell (DOR-2065).
-      this.persistent.forget(id);
+      this.#persistent.forget(id);
       await this.pumps.evict(id).catch(() => undefined);
     }
   }
 
   /** @inheritdoc */
   async reapSession(sessionId: string): Promise<void> {
+    const nativeEntries = claudeRuntimeEntries.get(this);
+    if (nativeEntries)
+      for (const [key, entry] of nativeEntries) {
+        const canonical = Object.getOwnPropertyDescriptor(entry.session, 'sdkSessionId');
+        if (
+          key === sessionId ||
+          (canonical && 'value' in canonical && canonical.value === sessionId)
+        )
+          entry.retired = true;
+      }
     // A reaped pump is SPENT — the registry drops it, and `SessionPump` refuses
     // everything asked of it afterwards. Forgetting the wiring in the same beat
     // is what makes the next message build a fresh one instead of dispatching
     // into a pump that can only throw.
-    if (await this.pumps.reap(sessionId)) this.persistent.forget(sessionId);
+    if (await this.pumps.reap(sessionId)) this.#persistent.forget(sessionId);
   }
 
   // ---------------------------------------------------------------------------
@@ -2083,7 +4004,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       // FIRST and synchronously: the teardown below is awaited by nobody, and a
       // message arriving in that window must not find a bundle whose pump is
       // already on its way out.
-      this.persistent.forget(sessionId);
+      this.#persistent.forget(sessionId);
       // A reload waiting for this session's cache to go cold has nothing left to
       // apply: the process is going, and the next launch reads the plugin set
       // off disk. Dropped rather than paid — nothing was spent, so nothing is

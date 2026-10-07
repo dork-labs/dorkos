@@ -74,8 +74,13 @@ import { MAX_REPORTED_ROOM_STRAYS, behindMainMessage } from '@dorkos/shared/room
 import { MERGE_SUMMARY_MAX_CHARS } from '@dorkos/shared/room-schemas';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { logger } from '../../../lib/logger.js';
-import { RoomError } from '../room-errors.js';
-import type { RoomRepoStore } from './room-repo-store.js';
+import { RoomError } from '../data/room-errors.js';
+import {
+  readOwnedRoomRepoSource,
+  executeOriginalRoomRepoStoreRead,
+  executeOriginalRoomRepoStoreWrite,
+  type RoomRepoStore,
+} from './room-repo-store.js';
 import { RoomWorktreeManager, roomWorktreeBranch } from './room-worktree-manager.js';
 import type { RoomRepoMutex } from './room-repo-mutex.js';
 import {
@@ -195,6 +200,214 @@ export interface RoomMergeServiceDeps {
   isOwnerAuthor(authorId: string): boolean;
 }
 
+import type { Db } from '@dorkos/db';
+import type { RoomStore } from '../room-store.js';
+import {
+  requireRoomServiceFileWriteOwner,
+  requireRoomServiceRepoWriteCurrent,
+  readRoomServiceRepoAgentRoster,
+  type RoomService,
+} from '../room-service.js';
+import type { DocChannelStore } from '../../canvas/doc-channel/store.js';
+import {
+  requireInstallationFileWritesOwner,
+  type InstallationFileWrites,
+} from '../../canvas/doc-channel/writes/installation-file-writes.js';
+import {
+  requireInstallationRoomWrites,
+  readInstallationRoomFileWriteOwner,
+  withRecognizedInstallationRoomMerge,
+  readInstallationRoomRepoMutationContext,
+  readInstallationRoomNativeMergeMutationContext,
+  readInstallationRoomMutationRoots,
+  checkInstallationRoomMutationTarget,
+  requireInstallationRoomMutationTarget,
+  type InstallationRoomWrites,
+  type InstallationRoomMutationContext,
+} from '../../canvas/doc-channel/writes/installation-room-writes.js';
+import {
+  captureDocHttpRoomRepoCaller,
+  readDocHttpRoomRepoCaller,
+  checkDocHttpRoomRepoCaller,
+} from '../../canvas/doc-channel/http-composition.js';
+import {
+  readOriginalRoomMergeInvocation,
+  requireOriginalRoomMergeInvocation,
+  type CapabilityHandlerContext,
+} from '../../core/capabilities/registry.js';
+import {
+  requireNativePrincipalDatabase,
+  captureNativePrincipalTime,
+  readCurrentNativePrincipalSource,
+  type ConnectorRuntimePrincipalService,
+} from '../../connectors/principal/runtime-principal-service.js';
+import { DocChannelNotFoundError } from '../../canvas/doc-channel/authorization.js';
+
+interface RoomMergeOwningConstruction {
+  readonly owner: InstallationFileWrites;
+  readonly writer: InstallationRoomWrites;
+  readonly db: Db;
+  readonly channels: DocChannelStore;
+  readonly rooms: RoomService;
+  readonly roomStore: RoomStore;
+  readonly nativePrincipals?: ConnectorRuntimePrincipalService;
+}
+interface NativeMergeOperation {
+  readonly service: RoomMergeService;
+  readonly invocation: object;
+  readonly authorId: string;
+  readonly roomId: string;
+  active: boolean;
+}
+const nativeMergeOperations = new WeakMap<object, NativeMergeOperation>();
+const originalMergeServices = new WeakMap<
+  RoomMergeService,
+  {
+    readonly owning: RoomMergeOwningConstruction;
+    preflight(): void;
+    http(handle: object, input: { summary: string; worktree?: string }): Promise<RoomMergeResult>;
+    native(
+      context: CapabilityHandlerContext,
+      input: { roomId: string; summary: string }
+    ): Promise<RoomMergeResult>;
+    current(operation: NativeMergeOperation): undefined;
+  }
+>();
+/** Require the Room merge service's exact original owner dependencies. */
+export function requireRoomMergeServiceOwner(
+  service: RoomMergeService,
+  owner: InstallationFileWrites,
+  db: Db,
+  rooms: RoomService
+): undefined {
+  const binding = originalMergeServices.get(service);
+  if (
+    !binding ||
+    binding.owning.owner !== owner ||
+    binding.owning.db !== db ||
+    binding.owning.rooms !== rooms
+  )
+    throw new DocChannelNotFoundError();
+  requireInstallationFileWritesOwner(owner, db, binding.owning.channels);
+  requireRoomServiceFileWriteOwner(rooms, db, binding.owning.roomStore);
+  if (binding.owning.nativePrincipals)
+    requireNativePrincipalDatabase(binding.owning.nativePrincipals, db);
+  if (!db.$client.open || db.$client.inTransaction) throw new DocChannelNotFoundError();
+  return undefined;
+}
+/** Require the original runtime registry used by Room merge construction. */
+export function requireRoomMergeRegistryConstruction(
+  service: RoomMergeService,
+  nativePrincipals: ConnectorRuntimePrincipalService,
+  db: Db
+): undefined {
+  const binding = originalMergeServices.get(service);
+  if (
+    !binding ||
+    !nativePrincipals ||
+    binding.owning.nativePrincipals !== nativePrincipals ||
+    binding.owning.db !== db
+  )
+    throw new DocChannelNotFoundError();
+  return requireRoomMergeServiceOwner(service, binding.owning.owner, db, binding.owning.rooms);
+}
+/** Execute a merge through the original Room HTTP caller. */
+export function executeRoomHttpMerge(
+  service: RoomMergeService,
+  handle: object,
+  input: { summary: string; worktree?: string }
+): Promise<RoomMergeResult> {
+  const binding = originalMergeServices.get(service);
+  if (!binding) return Promise.reject(new DocChannelNotFoundError());
+  requireRoomMergeServiceOwner(
+    service,
+    binding.owning.owner,
+    binding.owning.db,
+    binding.owning.rooms
+  );
+  return binding.http(handle, input);
+}
+/** Execute a merge through the original native Room operation. */
+export function executeRoomNativeMerge(
+  service: RoomMergeService,
+  context: CapabilityHandlerContext,
+  input: { roomId: string; summary: string }
+): Promise<RoomMergeResult> {
+  const binding = originalMergeServices.get(service);
+  if (!binding) return Promise.reject(new DocChannelNotFoundError());
+  if (!binding.owning.nativePrincipals) return Promise.reject(new DocChannelNotFoundError());
+  requireRoomMergeRegistryConstruction(service, binding.owning.nativePrincipals, binding.owning.db);
+  return binding.native(context, input);
+}
+/** Fixed private operation recognition, never a caller-supplied currentness function. */
+export function requireOriginalRoomNativeMergeCurrent(
+  service: RoomMergeService,
+  token: object,
+  roomId: string
+): undefined {
+  const operation = nativeMergeOperations.get(token),
+    binding = originalMergeServices.get(service);
+  if (
+    !operation?.active ||
+    !binding ||
+    operation.service !== service ||
+    operation.roomId !== roomId
+  )
+    throw new DocChannelNotFoundError();
+  binding.current(operation);
+  if (!operation.active || nativeMergeOperations.get(token) !== operation)
+    throw new DocChannelNotFoundError();
+  return undefined;
+}
+
+const originalMergeStoreOperations = new WeakMap<
+  InstallationRoomMutationContext,
+  {
+    service: RoomMergeService;
+    owning: RoomMergeOwningConstruction;
+    store: RoomRepoStore;
+    roomId: string;
+  }
+>();
+/** Same original still-awaited private merge operation; no Store DTO or namespace alone grants this lookup. */
+export function readOriginalRoomMergeStoreOperation(
+  context: InstallationRoomMutationContext,
+  store: RoomRepoStore,
+  db: Db
+): Readonly<{ roomId: string }> | undefined {
+  const operation = originalMergeStoreOperations.get(context);
+  if (!operation || operation.store !== store || operation.owning.db !== db) return undefined;
+  requireRoomMergeServiceOwner(
+    operation.service,
+    operation.owning.owner,
+    db,
+    operation.owning.rooms
+  );
+  const roots = readInstallationRoomMutationRoots(context);
+  requireInstallationRoomMutationTarget(context, roots.homePath);
+  if (originalMergeStoreOperations.get(context) !== operation) return undefined;
+  return Object.freeze({ roomId: operation.roomId });
+}
+
+/** Route captures only through the actual constructor-owned service and verified HTTP composition. */
+export function captureRoomMergeHttpOperation(
+  service: RoomMergeService,
+  req: import('express').Request,
+  res: import('express').Response,
+  roomId: string
+): Promise<object> {
+  const binding = originalMergeServices.get(service);
+  if (!binding) return Promise.reject(new DocChannelNotFoundError());
+  requireRoomMergeServiceOwner(
+    service,
+    binding.owning.owner,
+    binding.owning.db,
+    binding.owning.rooms
+  );
+  binding.preflight();
+  return captureDocHttpRoomRepoCaller(binding.owning.owner, service, req, res, roomId, 'merge');
+}
+
 /** Merging work into a room's `main`, and reporting what its repo holds. */
 export class RoomMergeService {
   /**
@@ -209,7 +422,41 @@ export class RoomMergeService {
     { mainCommit: string; at: number; status: RoomRepoStatus }
   >();
 
-  constructor(private readonly deps: RoomMergeServiceDeps) {}
+  readonly #deps: Readonly<RoomMergeServiceDeps>;
+  readonly #owning?: RoomMergeOwningConstruction;
+  constructor(deps: RoomMergeServiceDeps, owning?: RoomMergeOwningConstruction) {
+    this.#deps = Object.freeze({ ...deps });
+    if (owning) {
+      requireInstallationFileWritesOwner(owning.owner, owning.db, owning.channels);
+      requireInstallationRoomWrites(
+        owning.writer,
+        owning.owner,
+        owning.db,
+        owning.channels,
+        deps.store
+      );
+      if (
+        readInstallationRoomFileWriteOwner(owning.writer, deps.store, deps.mutex) !== owning.owner
+      )
+        throw new DocChannelNotFoundError();
+      requireRoomServiceFileWriteOwner(owning.rooms, owning.db, owning.roomStore);
+      if (owning.nativePrincipals)
+        requireNativePrincipalDatabase(owning.nativePrincipals, owning.db);
+      this.#owning = Object.freeze({ ...owning });
+      originalMergeServices.set(
+        this,
+        Object.freeze({
+          owning: this.#owning,
+          preflight: () => this.#requireEnabled(),
+          http: (handle: object, input: { summary: string; worktree?: string }) =>
+            this.#executeHttp(handle, input),
+          native: (context: CapabilityHandlerContext, input: { roomId: string; summary: string }) =>
+            this.#executeNative(context, input),
+          current: (operation: NativeMergeOperation) => this.#requireNativeOperation(operation),
+        })
+      );
+    }
+  }
 
   /**
    * Merge an agent's branch into the room's `main`, then say so in the room.
@@ -252,28 +499,196 @@ export class RoomMergeService {
     callerAuthorId: string,
     input: { summary: string; worktree?: string }
   ): Promise<RoomMergeResult> {
-    const room = this.requireProjectRoom(roomId, callerAuthorId);
-    const target = this.resolveTarget(roomId, callerAuthorId, input.worktree);
+    // DTO attribution cannot mint a production mutation operation.
+    void roomId;
+    void callerAuthorId;
+    void input;
+    throw new DocChannelNotFoundError();
+  }
 
-    return this.deps.mutex.run(
-      roomId,
-      {
-        waitMs: this.deps.mergeQueueWaitMs(),
-        busy: () =>
-          new RoomError(
-            'MERGE_IN_FLIGHT',
-            'Someone else is merging into this room right now, and the wait ran out. Try again in a moment.'
-          ),
-        // A different fact, so a different sentence: this caller never waited at
-        // all. Same code, because the thing to do about it is the same.
-        queueFull: () =>
-          new RoomError(
-            'MERGE_IN_FLIGHT',
-            'This room already has as many merges queued as it will hold, so this one was not added to the queue. Wait for them to land, then merge again.'
-          ),
-      },
-      () => this.mergeUnderLock(room, target, input.summary)
+  #requireEnabled(): void {
+    if (!this.#deps.enabled())
+      throw new RoomError(
+        'ROOM_REPOS_DISABLED',
+        'Rooms cannot have files of their own on this install. Turn that back on in Settings first.'
+      );
+  }
+  async #executeHttp(
+    handle: object,
+    supplied: { summary: string; worktree?: string }
+  ): Promise<RoomMergeResult> {
+    const owning = this.#owning!;
+    const input = Object.freeze({
+      summary: supplied.summary,
+      ...(supplied.worktree === undefined ? {} : { worktree: supplied.worktree }),
+    });
+    const caller = readDocHttpRoomRepoCaller(owning.owner, this, handle, 'merge');
+    requireRoomServiceRepoWriteCurrent(
+      owning.rooms,
+      owning.db,
+      caller.roomId,
+      caller.authorId,
+      'merge'
     );
+    this.#requireProjectRoom(caller.roomId, caller.authorId);
+    const target = this.#resolveTarget(caller.roomId, caller.authorId, input.worktree);
+    await checkDocHttpRoomRepoCaller(handle);
+    return withRecognizedInstallationRoomMerge(owning.writer, caller.roomId, async (scope) => {
+      await checkDocHttpRoomRepoCaller(handle);
+      requireRoomServiceRepoWriteCurrent(
+        owning.rooms,
+        owning.db,
+        caller.roomId,
+        caller.authorId,
+        'merge'
+      );
+      const room = this.#requireProjectRoom(caller.roomId, caller.authorId);
+      const currentTarget = this.#resolveTarget(caller.roomId, caller.authorId, input.worktree);
+      if (!sameMergeTarget(target, currentTarget)) throw new DocChannelNotFoundError();
+      const context = readInstallationRoomRepoMutationContext(
+        owning.writer,
+        caller.roomId,
+        scope,
+        this,
+        'merge',
+        handle
+      );
+      originalMergeStoreOperations.set(context, {
+        service: this,
+        owning,
+        store: this.#deps.store,
+        roomId: caller.roomId,
+      });
+      try {
+        return await this.#mergeUnderLock(room, currentTarget, input.summary, context);
+      } finally {
+        originalMergeStoreOperations.delete(context);
+      }
+    });
+  }
+
+  #readNativeAuthor(invocation: object): { roomId: string; summary: string; authorId: string } {
+    const owning = this.#owning!;
+    const nativePrincipals = owning.nativePrincipals;
+    if (!nativePrincipals) throw new DocChannelNotFoundError();
+    const captured = requireOriginalRoomMergeInvocation(
+      invocation,
+      this,
+      nativePrincipals,
+      owning.db
+    );
+    const time = captureNativePrincipalTime(nativePrincipals, owning.db, captured.principal);
+    const source = readCurrentNativePrincipalSource(
+      nativePrincipals,
+      owning.db,
+      captured.principal,
+      owning.db,
+      time
+    );
+    if (!source) throw new DocChannelNotFoundError();
+    const roster = readRoomServiceRepoAgentRoster(owning.rooms, owning.db, captured.roomId);
+    const member = roster.find(
+      (row) =>
+        row.agentPath === source.binding.agentPath && row.manifestId === source.binding.agentId
+    );
+    if (!member) throw new DocChannelNotFoundError();
+    requireRoomServiceRepoWriteCurrent(
+      owning.rooms,
+      owning.db,
+      captured.roomId,
+      member.authorId,
+      'merge'
+    );
+    // Repeat the genuine invocation/native read after roster/policy observable work.
+    requireOriginalRoomMergeInvocation(invocation, this, nativePrincipals, owning.db);
+    const finalTime = captureNativePrincipalTime(nativePrincipals, owning.db, captured.principal);
+    const current = readCurrentNativePrincipalSource(
+      nativePrincipals,
+      owning.db,
+      captured.principal,
+      owning.db,
+      finalTime
+    );
+    if (
+      !current ||
+      current.binding.agentId !== source.binding.agentId ||
+      current.binding.agentPath !== source.binding.agentPath
+    )
+      throw new DocChannelNotFoundError();
+    const finalRoster = readRoomServiceRepoAgentRoster(owning.rooms, owning.db, captured.roomId);
+    if (
+      !finalRoster.some(
+        (row) =>
+          row.authorId === member.authorId &&
+          row.agentPath === current.binding.agentPath &&
+          row.manifestId === current.binding.agentId
+      )
+    )
+      throw new DocChannelNotFoundError();
+    return { roomId: captured.roomId, summary: captured.summary, authorId: member.authorId };
+  }
+  #requireNativeOperation(operation: NativeMergeOperation): undefined {
+    this.#requireProjectRoom(operation.roomId, operation.authorId);
+    const current = this.#readNativeAuthor(operation.invocation);
+    if (
+      !operation.active ||
+      current.roomId !== operation.roomId ||
+      current.authorId !== operation.authorId
+    )
+      throw new DocChannelNotFoundError();
+    return undefined;
+  }
+  async #executeNative(
+    handlerContext: CapabilityHandlerContext,
+    input: { roomId: string; summary: string }
+  ): Promise<RoomMergeResult> {
+    const owning = this.#owning!,
+      invocation = readOriginalRoomMergeInvocation(handlerContext, input, this);
+    const caller = this.#readNativeAuthor(invocation);
+    this.#requireProjectRoom(caller.roomId, caller.authorId);
+    const target = this.#resolveTarget(caller.roomId, caller.authorId, undefined);
+    const token = Object.freeze({});
+    const operation: NativeMergeOperation = {
+      service: this,
+      invocation,
+      authorId: caller.authorId,
+      roomId: caller.roomId,
+      active: true,
+    };
+    nativeMergeOperations.set(token, operation);
+    try {
+      return await withRecognizedInstallationRoomMerge(
+        owning.writer,
+        caller.roomId,
+        async (scope) => {
+          requireOriginalRoomNativeMergeCurrent(this, token, caller.roomId);
+          const room = this.#requireProjectRoom(caller.roomId, caller.authorId);
+          const currentTarget = this.#resolveTarget(caller.roomId, caller.authorId, undefined);
+          if (!sameMergeTarget(target, currentTarget)) throw new DocChannelNotFoundError();
+          const context = readInstallationRoomNativeMergeMutationContext(
+            owning.writer,
+            caller.roomId,
+            scope,
+            this,
+            token
+          );
+          originalMergeStoreOperations.set(context, {
+            service: this,
+            owning,
+            store: this.#deps.store,
+            roomId: caller.roomId,
+          });
+          try {
+            return await this.#mergeUnderLock(room, currentTarget, caller.summary, context);
+          } finally {
+            originalMergeStoreOperations.delete(context);
+          }
+        }
+      );
+    } finally {
+      operation.active = false;
+      nativeMergeOperations.delete(token);
+    }
   }
 
   /**
@@ -292,9 +707,9 @@ export class RoomMergeService {
    *   `NOT_A_PROJECT_ROOM`.
    */
   async status(roomId: string, callerAuthorId: string): Promise<RoomRepoStatus> {
-    this.requireProjectRoom(roomId, callerAuthorId);
-    const repoDir = this.deps.store.repoPath(roomId);
-    const ceiling = this.deps.store.homeDir(roomId);
+    this.#requireProjectRoom(roomId, callerAuthorId);
+    const repoDir = this.#deps.store.repoPath(roomId);
+    const ceiling = this.#deps.store.homeDir(roomId);
 
     // One cheap read decides whether the expensive ones have to happen at all.
     const mainCommit = await revParse(repoDir, 'main', ceiling);
@@ -302,14 +717,14 @@ export class RoomMergeService {
     // room's own copy in a terminal, and the operator undoing it, both change
     // this without moving a commit, so a cached answer would go on saying the
     // room is stuck after it was fixed.
-    const main = await this.readMain(repoDir, ceiling);
+    const main = await this.#readMain(repoDir, ceiling);
 
-    const cached = this.cachedStatus(roomId, mainCommit);
-    if (cached) return this.withCaller({ ...cached, main }, callerAuthorId);
+    const cached = this.#cachedStatus(roomId, mainCommit);
+    if (cached) return this.#withCaller({ ...cached, main }, callerAuthorId);
 
-    const fresh = await this.computeStatus(roomId, repoDir, ceiling, mainCommit, main);
+    const fresh = await this.#computeStatus(roomId, repoDir, ceiling, mainCommit, main);
     this.statusCache.set(roomId, { mainCommit, at: Date.now(), status: fresh });
-    return this.withCaller(fresh, callerAuthorId);
+    return this.#withCaller(fresh, callerAuthorId);
   }
 
   /**
@@ -318,7 +733,7 @@ export class RoomMergeService {
    * @param repoDir - The room's main checkout.
    * @param ceiling - The room home directory git's search may not climb past.
    */
-  private async readMain(repoDir: string, ceiling: string): Promise<RoomMainStatus> {
+  async #readMain(repoDir: string, ceiling: string): Promise<RoomMainStatus> {
     const state: RoomMainCheckoutState = await readMainCheckoutState(repoDir, ceiling);
     return {
       branch: state.branch,
@@ -335,7 +750,7 @@ export class RoomMergeService {
    * @param roomId - The room.
    * @param mainCommit - What `main` points at right now.
    */
-  private cachedStatus(roomId: string, mainCommit: string): RoomRepoStatus | null {
+  #cachedStatus(roomId: string, mainCommit: string): RoomRepoStatus | null {
     const hit = this.statusCache.get(roomId);
     if (!hit) return null;
     // A merge moves `main`, so a stale entry cannot outlive the thing it is
@@ -355,7 +770,7 @@ export class RoomMergeService {
    * @param status - The cached answer.
    * @param callerAuthorId - Who is asking.
    */
-  private withCaller(status: RoomRepoStatus, callerAuthorId: string): RoomRepoStatus {
+  #withCaller(status: RoomRepoStatus, callerAuthorId: string): RoomRepoStatus {
     return {
       ...status,
       branches: status.branches.map((branch) => ({
@@ -384,14 +799,14 @@ export class RoomMergeService {
    *   caller. Stored on the cached answer only so the shape is whole; every
    *   later read replaces it.
    */
-  private async computeStatus(
+  async #computeStatus(
     roomId: string,
     repoDir: string,
     ceiling: string,
     mainCommit: string,
     main: RoomMainStatus
   ): Promise<RoomRepoStatus> {
-    const caps = await this.requireCaps(roomId);
+    const caps = await this.#requireCaps(roomId);
     const committedAt = await headCommittedAt(repoDir, ceiling);
 
     const tree = await listTree(repoDir, mainCommit, ceiling);
@@ -399,12 +814,12 @@ export class RoomMergeService {
     for (const entry of tree.values()) usedBytes += entry.size;
 
     const branches: RoomBranchStatus[] = [];
-    for (const member of this.deps.listAgentMembers(roomId)) {
+    for (const member of this.#deps.listAgentMembers(roomId)) {
       const slug = RoomWorktreeManager.slugFor(member.displayName, member.agentPath);
       const branch = roomWorktreeBranch(slug);
       if (!(await hasLocalBranch(repoDir, branch, ceiling))) continue;
       const { ahead, behind } = await aheadBehind(repoDir, 'main', branch, ceiling);
-      const worktreeDir = path.join(this.deps.store.worktreesPath(roomId), slug);
+      const worktreeDir = path.join(this.#deps.store.worktreesPath(roomId), slug);
       const hasWorktree = await directoryExists(worktreeDir);
       // A working copy git cannot read is unfinished work, never clean — the
       // same conservative direction `listStrandedWorktrees` takes, and for the
@@ -445,7 +860,7 @@ export class RoomMergeService {
       mainCommittedAt: committedAt?.toISOString() ?? null,
       main,
       branches,
-      strandedWorktrees: await this.deps.listStrandedWorktrees(roomId),
+      strandedWorktrees: await this.#deps.listStrandedWorktrees(roomId),
       size: {
         usedBytes,
         maxRepoBytes: caps.maxRepoBytes,
@@ -470,16 +885,20 @@ export class RoomMergeService {
    * @param callerAuthorId - Who is asking.
    * @returns The room.
    */
-  private requireProjectRoom(roomId: string, callerAuthorId: string): Room {
-    if (!this.deps.enabled()) {
+  #requireProjectRoom(roomId: string, callerAuthorId: string): Room {
+    if (!this.#deps.enabled()) {
       throw new RoomError(
         'ROOM_REPOS_DISABLED',
         'Rooms cannot have files of their own on this install. Turn that back on in Settings first.'
       );
     }
-    const room = this.deps.requireMembership(roomId, callerAuthorId);
+    const room = this.#deps.requireMembership(roomId, callerAuthorId);
     if (room.archived) throw new RoomError('ROOM_ARCHIVED', 'This room is archived');
-    if (this.deps.store.getRow(roomId) === null) {
+    if (
+      (this.#owning
+        ? readOwnedRoomRepoSource(this.#deps.store, this.#owning.db, roomId).row
+        : this.#deps.store.getRow(roomId)) === null
+    ) {
       throw new RoomError('NOT_A_PROJECT_ROOM', 'This room does not have files of its own.');
     }
     return room;
@@ -497,8 +916,13 @@ export class RoomMergeService {
    *   reconciler will resolve; until it does, the honest answer is the one the
    *   truth gives.
    */
-  private async requireCaps(roomId: string): Promise<RoomRepoCaps> {
-    const sidecar = await this.deps.store.readSidecar(roomId);
+  async #requireCaps(
+    roomId: string,
+    context?: InstallationRoomMutationContext
+  ): Promise<RoomRepoCaps> {
+    const sidecar = context
+      ? await executeOriginalRoomRepoStoreRead(this.#deps.store, this.#owning!.db, context, roomId)
+      : await this.#deps.store.readSidecar(roomId);
     if (!sidecar) {
       throw new RoomError('NOT_A_PROJECT_ROOM', 'This room does not have files of its own.');
     }
@@ -513,12 +937,15 @@ export class RoomMergeService {
    * @param worktree - The slug an operator named, if any.
    * @returns The branch, its slug, and the author the merge is credited to.
    */
-  private resolveTarget(
+  #resolveTarget(
     roomId: string,
     callerAuthorId: string,
     worktree: string | undefined
   ): { slug: string; branch: string; authorId: string; agentName: string } {
-    const members = this.deps.listAgentMembers(roomId).map((member) => ({
+    const roster = this.#owning
+      ? readRoomServiceRepoAgentRoster(this.#owning.rooms, this.#owning.db, roomId)
+      : this.#deps.listAgentMembers(roomId);
+    const members = roster.map((member) => ({
       ...member,
       slug: RoomWorktreeManager.slugFor(member.displayName, member.agentPath),
     }));
@@ -527,7 +954,7 @@ export class RoomMergeService {
       // Naming somebody else's branch is the operator's affordance. An agent
       // that could do it would be publishing a colleague's unfinished work under
       // its own summary, which the room cannot tell apart afterwards.
-      if (!this.deps.isOwnerAuthor(callerAuthorId)) {
+      if (!this.#deps.isOwnerAuthor(callerAuthorId)) {
         throw new RoomError('OPERATOR_ONLY', 'Only you can merge somebody else’s working copy');
       }
       const named = members.find((member) => member.slug === worktree);
@@ -568,15 +995,18 @@ export class RoomMergeService {
    * @param target - Whose branch is being merged.
    * @param rawSummary - The caller's own summary, unsanitized.
    */
-  private async mergeUnderLock(
+  async #mergeUnderLock(
     room: Room,
     target: { slug: string; branch: string; authorId: string; agentName: string },
-    rawSummary: string
+    rawSummary: string,
+    context: InstallationRoomMutationContext
   ): Promise<RoomMergeResult> {
     const roomId = room.id;
-    const repoDir = this.deps.store.repoPath(roomId);
-    const ceiling = this.deps.store.homeDir(roomId);
-    const caps = await this.requireCaps(roomId);
+    const roots = readInstallationRoomMutationRoots(context),
+      repoDir = roots.repoPath,
+      ceiling = roots.homePath;
+    const caps = await this.#requireCaps(roomId, context);
+    await checkInstallationRoomMutationTarget(context, repoDir);
 
     // The one dirty-main gate, shared with the human save path
     // (`room-main-checkout.ts`): two writers into one tree must agree about
@@ -591,7 +1021,7 @@ export class RoomMergeService {
       );
     }
 
-    const worktreeDir = path.join(this.deps.store.worktreesPath(roomId), target.slug);
+    const worktreeDir = path.join(roots.homePath, 'worktrees', target.slug);
     // A branch whose working copy the reap removed has nothing to be dirty, and
     // its commits are still mergeable. Only an existing tree is asked.
     if (await directoryExists(worktreeDir)) {
@@ -615,12 +1045,14 @@ export class RoomMergeService {
     }
 
     const mainCommit = await revParse(repoDir, 'main', ceiling);
-    await this.assertDeltaAllowed(repoDir, ceiling, mainCommit, target.branch, caps);
+    await this.#assertDeltaAllowed(repoDir, ceiling, mainCommit, target.branch, caps);
 
     const stat = await shortstat(repoDir, mainCommit, target.branch, ceiling);
     const summary = sanitizeIdentity(rawSummary, MERGE_SUMMARY_MAX_CHARS);
     const subject = summary ?? `Merge ${target.branch}`;
 
+    await checkInstallationRoomMutationTarget(context, repoDir);
+    requireInstallationRoomMutationTarget(context, repoDir);
     let commit: string;
     try {
       commit = await mergeNoFf(
@@ -634,7 +1066,8 @@ export class RoomMergeService {
           name: sanitizeIdentity(target.agentName) ?? 'an agent',
           email: `${target.slug}@${AGENT_GIT_EMAIL_DOMAIN}`,
         },
-        ceiling
+        ceiling,
+        context
       );
     } catch (err) {
       if (err instanceof MergeConflictError) {
@@ -656,7 +1089,9 @@ export class RoomMergeService {
     // deliberate human act — it propagates, because a merge nobody was told
     // about is worse news than an error. The commit is not rolled back: a room's
     // repo is append-only, and undoing it is the one thing this domain cannot do.
-    const entry = this.deps.announce(roomId, {
+    await checkInstallationRoomMutationTarget(context, repoDir);
+    requireInstallationRoomMutationTarget(context, repoDir);
+    const entry = this.#deps.announce(roomId, {
       text: mergeSentence(target.agentName, subject, stat),
       merge: {
         branch: target.branch,
@@ -668,7 +1103,10 @@ export class RoomMergeService {
       subjectAuthorId: target.authorId,
     });
 
-    await this.recordLastMergeSeq(roomId, entry.seq);
+    await checkInstallationRoomMutationTarget(context, repoDir);
+    await this.#recordLastMergeSeq(roomId, entry.seq, context);
+    await checkInstallationRoomMutationTarget(context, repoDir);
+    requireInstallationRoomMutationTarget(context, repoDir);
     logger.info('[rooms] work merged into a room’s main', {
       roomId,
       branch: target.branch,
@@ -676,6 +1114,7 @@ export class RoomMergeService {
       files: stat.files,
     });
 
+    requireInstallationRoomMutationTarget(context, repoDir);
     return {
       branch: target.branch,
       commit,
@@ -709,7 +1148,7 @@ export class RoomMergeService {
    * @param branch - The branch being merged.
    * @param caps - The room's frozen ceilings.
    */
-  private async assertDeltaAllowed(
+  async #assertDeltaAllowed(
     repoDir: string,
     ceiling: string,
     mainCommit: string,
@@ -780,11 +1219,23 @@ export class RoomMergeService {
    * @param roomId - The room.
    * @param seq - The announcing entry's seq.
    */
-  private async recordLastMergeSeq(roomId: string, seq: number): Promise<void> {
+  async #recordLastMergeSeq(
+    roomId: string,
+    seq: number,
+    context: InstallationRoomMutationContext
+  ): Promise<void> {
     try {
-      const sidecar = await this.deps.store.readSidecar(roomId);
+      const sidecar = await executeOriginalRoomRepoStoreRead(
+        this.#deps.store,
+        this.#owning!.db,
+        context,
+        roomId
+      );
       if (!sidecar) return;
-      await this.deps.store.write({ ...sidecar, lastMergeSeq: seq });
+      await executeOriginalRoomRepoStoreWrite(this.#deps.store, this.#owning!.db, context, {
+        ...sidecar,
+        lastMergeSeq: seq,
+      });
     } catch (err) {
       logger.warn('[rooms] could not record a room’s last merge; the merge itself is fine', {
         roomId,
@@ -913,4 +1364,16 @@ async function directoryExists(dir: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+function sameMergeTarget(
+  left: { slug: string; branch: string; authorId: string; agentName: string },
+  right: { slug: string; branch: string; authorId: string; agentName: string }
+): boolean {
+  return (
+    left.slug === right.slug &&
+    left.branch === right.branch &&
+    left.authorId === right.authorId &&
+    left.agentName === right.agentName
+  );
 }

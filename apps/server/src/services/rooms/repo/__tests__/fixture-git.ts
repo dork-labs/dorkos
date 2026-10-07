@@ -36,6 +36,10 @@
  * @module server/services/rooms/repo/__tests__/fixture-git
  */
 import { rm } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import path from 'node:path';
+import { internalGitArgs } from '../../../../lib/git-safety.js';
 import { vi } from 'vitest';
 
 /**
@@ -84,4 +88,138 @@ export function silenceGitAutoMaintenance(): void {
  */
 export async function removeFixtureTree(dir: string): Promise<void> {
   await rm(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
+}
+
+/**
+ * Native fixture setup/corruption only. This never supplies a product mutation
+ * context, is not exported by the production barrel, and cannot open authority.
+ * Await the actual direct child before fixture cleanup. Budgets match the old
+ * room raw launcher: 30 seconds and 32 MiB, with the same discovery ceiling,
+ * redirect-variable removal and foreground maintenance overrides.
+ */
+function fixtureGitEnvironment(cwd: string, ceiling: string): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  for (const name of [
+    'GIT_DIR',
+    'GIT_WORK_TREE',
+    'GIT_INDEX_FILE',
+    'GIT_OBJECT_DIRECTORY',
+    'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+    'GIT_COMMON_DIR',
+    'GIT_NAMESPACE',
+  ])
+    delete env[name];
+  const rel = path.relative(path.resolve(ceiling), path.resolve(cwd));
+  const [top, name] = rel.split(path.sep);
+  if (top === 'worktrees' && name && name !== '..' && !path.isAbsolute(rel)) {
+    const common = path.join(path.resolve(ceiling), 'repo', '.git');
+    env.GIT_COMMON_DIR = common;
+    env.GIT_DIR = path.join(common, 'worktrees', name);
+    env.GIT_WORK_TREE = path.join(path.resolve(ceiling), 'worktrees', name);
+  }
+  return {
+    ...env,
+    GIT_CEILING_DIRECTORIES: ceiling,
+    GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_CONFIG_SYSTEM: '/dev/null',
+    GIT_TERMINAL_PROMPT: '0',
+  };
+}
+
+function fixtureGitArguments(args: readonly string[]): string[] {
+  return [
+    ...internalGitArgs(),
+    '-c',
+    'diff.ignoreSubmodules=all',
+    '-c',
+    'status.submoduleSummary=false',
+    '-c',
+    'submodule.recurse=false',
+    '-c',
+    'maintenance.autoDetach=false',
+    '-c',
+    'gc.autoDetach=false',
+    ...args,
+  ];
+}
+
+export async function fixtureGit(
+  args: readonly string[],
+  cwd: string,
+  ceiling: string
+): Promise<string> {
+  const { stdout } = await promisify(execFile)('git', fixtureGitArguments(args), {
+    cwd,
+    timeout: 30_000,
+    maxBuffer: 32 * 1024 * 1024,
+    env: fixtureGitEnvironment(cwd, ceiling),
+  });
+  return stdout.trim();
+}
+
+/** Fixed stdin fixture setup only; retain the direct child until its actual close. */
+export async function fixtureGitFastImport(
+  stream: string,
+  cwd: string,
+  ceiling: string
+): Promise<void> {
+  let failed = false;
+  let cause: unknown;
+  const remember = (error: unknown): void => {
+    if (!failed) {
+      failed = true;
+      cause = error;
+    }
+  };
+  let settle!: () => void;
+  const completed = new Promise<void>((resolve) => {
+    settle = resolve;
+  });
+  const child = execFile(
+    'git',
+    fixtureGitArguments(['fast-import', '--quiet']),
+    {
+      cwd,
+      timeout: 30_000,
+      maxBuffer: 32 * 1024 * 1024,
+      env: fixtureGitEnvironment(cwd, ceiling),
+    },
+    (error) => {
+      if (error !== null) remember(error);
+      settle();
+    }
+  );
+  const closed = new Promise<void>((resolve) => {
+    child.once('close', () => resolve());
+  });
+  const stopForWriteFailure = (error: unknown): void => {
+    remember(error);
+    // A failed stdin write cannot leave an importer awaiting further input.
+    try {
+      child.stdin?.destroy();
+    } catch (cleanupError) {
+      remember(cleanupError);
+    }
+    try {
+      child.kill();
+    } catch (cleanupError) {
+      remember(cleanupError);
+    }
+  };
+  if (child.stdin === null) {
+    stopForWriteFailure(new Error('Fixture fast-import stdin is unavailable'));
+  } else {
+    child.stdin.on('error', stopForWriteFailure);
+    try {
+      child.stdin.end(stream, (error?: Error | null) => {
+        if (error !== undefined && error !== null) stopForWriteFailure(error);
+      });
+    } catch (error) {
+      stopForWriteFailure(error);
+    }
+  }
+  // Both callback settlement and actual close precede caller fixture teardown.
+  await completed;
+  await closed;
+  if (failed) throw cause;
 }

@@ -45,6 +45,25 @@ import { uiDomain } from '../ui-capabilities.js';
 
 /** Every `ui` verb: its tool name, its tier, and the arguments it takes. */
 const EXPECTED: Record<string, { tool: string; tier: string; args: string[] }> = {
+  'ui.replay_doc_batch': {
+    tool: 'replay_doc_batch',
+    tier: 'act',
+    args: [
+      'documentId',
+      'expectedGeneration',
+      'eventId',
+      'batchId',
+      'expectedBatchGeneration',
+      'grantId',
+    ],
+  },
+  'ui.inspect_doc_channel': { tool: 'inspect_doc_channel', tier: 'observe', args: ['documentId'] },
+  'ui.issue_doc_token': {
+    tool: 'issue_doc_token',
+    tier: 'act',
+    args: ['request', 'approvedGrantIds'],
+  },
+  'ui.revoke_doc_token': { tool: 'revoke_doc_token', tier: 'act', args: ['documentId', 'tokenId'] },
   'ui.configure_doc_channel': {
     tool: 'configure_doc_channel',
     tier: 'act',
@@ -68,6 +87,11 @@ const EXPECTED: Record<string, { tool: string; tier: string; args: string[] }> =
     tool: 'canvas_send',
     tier: 'act',
     args: ['documentId', 'eventId', 'type', 'payload', 'roomId'],
+  },
+  'ui.set_canvas_checkbox': {
+    tool: 'canvas_set_checkbox',
+    tier: 'act',
+    args: ['documentId', 'eventId', 'line', 'textHash', 'expectedFileVersion', 'done'],
   },
   'ui.patch_canvas_state': {
     tool: 'canvas_patch_state',
@@ -207,7 +231,9 @@ describe('the `ui` capability domain', () => {
     // construction. Nothing here may reach it.
     for (const capability of registry.capabilities) {
       expect(capability.surfaces.mcp?.servers, capability.id).toEqual(
-        ['ui.send_canvas_event', 'ui.patch_canvas_state'].includes(capability.id)
+        ['ui.send_canvas_event', 'ui.patch_canvas_state', 'ui.set_canvas_checkbox'].includes(
+          capability.id
+        )
           ? ['in-session', 'external']
           : ['in-session']
       );

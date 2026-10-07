@@ -18,6 +18,8 @@ import {
   DocChannelStateConflictError,
 } from '../store.js';
 
+import { copyCurrentDocData } from '../current/current-operation-data.js';
+
 const NOW = '2026-10-01T12:00:00.000Z';
 const LATER = '2026-10-01T12:01:00.000Z';
 const connections: Db[] = [];
@@ -54,6 +56,23 @@ function event(documentId = 'document-1', eventId = 'event-1') {
     provenance: { transport: 'widget', actorId: 'person-1' },
   };
 }
+it('persists immutable null-prototype JSON through the native event insert boundary', () => {
+  const { store } = open();
+  channel(store);
+  const input = event();
+  const payload = copyCurrentDocData({
+    nested: { text: 'original bytes' },
+    values: [null, true, 1],
+  });
+  const provenance = copyCurrentDocData(input.provenance);
+  expect(Object.getPrototypeOf(payload)).toBeNull();
+  expect(Object.getPrototypeOf(provenance)).toBeNull();
+  const persisted = store.appendEvent({ ...input, payload, provenance });
+  expect(persisted.payload).toEqual(payload);
+  expect(persisted.provenance).toEqual(provenance);
+  expect(store.getEvent(input.documentId, input.eventId)).toEqual(persisted);
+});
+
 function grant(documentId = 'document-1') {
   return {
     grantId: `grant-${documentId}`,

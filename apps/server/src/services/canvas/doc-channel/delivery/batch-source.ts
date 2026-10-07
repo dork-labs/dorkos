@@ -286,13 +286,14 @@ export class DocumentEventBatchSource implements PrivateSessionMessageSourceAdap
     tx: DbTransaction,
     receipt: SessionMessageAcceptanceReceipt,
     toSessionId: string,
-    _now: string
+    _now: string,
+    previousSourceScope?: string
   ): string | undefined {
     const batch = this.requireBatch(tx, receiptRef(receipt), ['accepted']);
-    const authority = this.readReceiptAuthority(tx, batch, receipt);
+    const authority = this.readReceiptAuthority(tx, batch, receipt, previousSourceScope);
 
     if (authority.target.sessionId !== toSessionId) refuseDocBatch();
-    verifyDocReceipt(authority, receipt, receipt.sessionId);
+    verifyDocReceipt(authority, receipt, receipt.sessionId, previousSourceScope);
     return docBatchDigest(authority);
   }
   /** Reduce only the exact observed grant after a rolled-back ownership move. */
@@ -449,7 +450,8 @@ export class DocumentEventBatchSource implements PrivateSessionMessageSourceAdap
   private readReceiptAuthority(
     tx: DbTransaction,
     batch: DocBatchRow,
-    receipt: SessionMessageAcceptanceReceipt
+    receipt: SessionMessageAcceptanceReceipt,
+    rollbackSourceScope?: string
   ) {
     let authority;
     try {
@@ -464,7 +466,7 @@ export class DocumentEventBatchSource implements PrivateSessionMessageSourceAdap
           receipt,
           grantId: batch.grantId,
           documentId: batch.documentId,
-          scope: `session:${receipt.sessionId}`,
+          scope: rollbackSourceScope ?? batch.scope,
         });
         throw refusal;
       }

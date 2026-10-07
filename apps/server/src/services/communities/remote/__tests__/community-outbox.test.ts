@@ -5,7 +5,7 @@
  */
 import type { RoomMirrorWritePolicy } from '../../../rooms/room-service.js';
 import { Readable } from 'node:stream';
-import { RoomError } from '../../../rooms/room-errors.js';
+import { RoomError } from '../../../rooms/data/room-errors.js';
 import {
   agentLookupFor,
   createRoomHarness,

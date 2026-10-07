@@ -74,6 +74,23 @@ const mockGetMe = vi.fn(
 // Mock TelegramAdapter, WebhookAdapter, and ClaudeCodeAdapter
 vi.mock('@dorkos/relay', async () => {
   const actual = await vi.importActual<object>('@dorkos/relay');
+  const mockClaudeCodeAdapter = vi.fn().mockImplementation(function (id: string) {
+    return {
+      id,
+      // Both claims the real adapter makes. The tasks one is not decorative
+      // here: it is what `canRunTaskOnBus` reads liveness off (DOR-1636).
+      subjectPrefix: ['relay.agent.', 'relay.system.tasks.'],
+      displayName: 'Claude Code',
+      start: vi.fn().mockResolvedValue(undefined),
+      stop: vi.fn().mockResolvedValue(undefined),
+      deliver: vi.fn().mockResolvedValue({ success: true, durationMs: 0 }),
+      getStatus: vi.fn().mockReturnValue({
+        state: 'connected',
+        messageCount: { inbound: 0, outbound: 0 },
+        errorCount: 0,
+      }),
+    };
+  });
   return {
     ...actual,
     TelegramAdapter: vi.fn().mockImplementation(function (id: string) {
@@ -110,22 +127,8 @@ vi.mock('@dorkos/relay', async () => {
         handleInbound: vi.fn().mockResolvedValue({ ok: true }),
       };
     }),
-    ClaudeCodeAdapter: vi.fn().mockImplementation(function (id: string) {
-      return {
-        id,
-        // Both claims the real adapter makes. The tasks one is not decorative
-        // here: it is what `canRunTaskOnBus` reads liveness off (DOR-1636).
-        subjectPrefix: ['relay.agent.', 'relay.system.tasks.'],
-        displayName: 'Claude Code',
-        start: vi.fn().mockResolvedValue(undefined),
-        stop: vi.fn().mockResolvedValue(undefined),
-        deliver: vi.fn().mockResolvedValue({ success: true, durationMs: 0 }),
-        getStatus: vi.fn().mockReturnValue({
-          state: 'connected',
-          messageCount: { inbound: 0, outbound: 0 },
-          errorCount: 0,
-        }),
-      };
+    ClaudeCodeAdapter: Object.assign(mockClaudeCodeAdapter, {
+      createInstalledDocumentAdapter: (id: string) => ({ adapter: new mockClaudeCodeAdapter(id) }),
     }),
     loadAdapters: vi.fn().mockResolvedValue([]),
   };

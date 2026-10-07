@@ -49,7 +49,7 @@
  */
 import type { AuthorKind, Room } from '@dorkos/shared/room-schemas';
 import type { AuthorRecord } from '../author-registry.js';
-import { RoomError } from '../room-errors.js';
+import { RoomError } from '../data/room-errors.js';
 import type { RoomCore } from './room-core.js';
 
 /** The caller checks a room's write paths are gated on. */

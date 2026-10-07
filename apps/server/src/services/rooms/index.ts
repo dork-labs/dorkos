@@ -45,6 +45,7 @@ import {
   publishSessionCanvas,
   sessionCanvasViewers,
   setCanvasService,
+  clearCanvasService,
 } from '../canvas/index.js';
 import { AttachmentRowStore } from './attachments/attachment-row-store.js';
 import type { RoomAttachmentStore } from './attachments/room-attachment-store.js';
@@ -53,14 +54,18 @@ import type { RoomFilesService } from './repo/room-files.js';
 import type { RoomFileEditor } from './repo/room-file-editor.js';
 import type { RoomWorktreeManager } from './repo/room-worktree-manager.js';
 import type { RoomMergeService } from './repo/room-merge-service.js';
-import type { RoomAgentLookup } from './room-errors.js';
-import { resolveRoomLimits, type RoomLimitsResolver } from './limits/room-limits.js';
+import type { RoomAgentLookup } from './data/room-errors.js';
+import {
+  resolveRoomLimits,
+  createTurnBudgetLimits,
+  type RoomLimitsResolver,
+} from './limits/room-limits.js';
 import { RoomService } from './room-service.js';
 import type { RoomMirrorAccess, RoomMirrorWritePolicy } from './service/room-service-deps.js';
 import { RoomStore } from './room-store.js';
 import { RoomBroadcaster } from './room-stream.js';
 import type { RoomTurnRunner } from './room-trigger.js';
-import { RoomTurnBudget, type TurnBudgetLimits } from './limits/turn-budget.js';
+import { RoomTurnBudget } from './limits/turn-budget.js';
 import { createSessionRoomTurnRunner } from './room-turn-runner.js';
 import { lastPersonSignalAt, WelcomeBackGreeter } from './welcome-back/greeter.js';
 import { createSessionWorkSource } from './welcome-back/work-source.js';
@@ -176,40 +181,6 @@ function readRoomsConfig() {
  */
 function createRoomLimitsResolver(store: RoomStore): RoomLimitsResolver {
   return (roomId) => resolveRoomLimits(store.getRoom(roomId), readRoomsConfig());
-}
-
-/**
- * The two hourly ceilings, as the budget reads them — and the one place the
- * room/install asymmetry is spelled out in code.
- *
- * `perRoom` goes through the ladder, so a room may raise, lower or switch off
- * its own hourly ceiling. `global` does NOT and cannot: it reads the
- * install-wide toggle and the install-wide number, because
- * `rooms.maxAutomaticTurnsTotalPerHour` is the ceiling on what every room
- * together may cost and no room has a say in it. An unlimited ROOM is therefore
- * still charged against the install's hour — see `room-limits.ts`.
- *
- * `null` from either is "this cap is off", which the budget treats as a state
- * rather than a large number.
- *
- * @param limitsFor - The bound ladder.
- */
-function createTurnBudgetLimits(limitsFor: RoomLimitsResolver): TurnBudgetLimits {
-  return {
-    perRoom: (roomId) => {
-      const limits = limitsFor(roomId);
-      return limits.turnLimitsEnabled ? limits.maxAutoTurnsPerHour : null;
-    },
-    global: () => {
-      const config = readRoomsConfig();
-      const enabled = config?.turnLimitsEnabled ?? USER_CONFIG_DEFAULTS.rooms.turnLimitsEnabled;
-      if (!enabled) return null;
-      return (
-        config?.maxAutomaticTurnsTotalPerHour ??
-        USER_CONFIG_DEFAULTS.rooms.maxAutomaticTurnsTotalPerHour
-      );
-    },
-  };
 }
 
 /**
@@ -453,6 +424,8 @@ export function createRoomSubsystem(opts: {
   db: Db;
   agents?: RoomAgentLookup;
   turns?: RoomTurnRunner;
+  /** Passive launch DATA; no request, constructor origin, or permission is exposed. */
+  observeOriginalLaunch?: (data: Readonly<{ sessionId: string; roomId: string }>) => void;
   budget?: RoomTurnBudget;
   readCursors?: ReadCursorService;
   canvasNow?: () => number;
@@ -557,182 +530,202 @@ export function createRoomSubsystem(opts: {
     ...(opts.canvasNow ? { now: opts.canvasNow } : {}),
   });
   setCanvasService(canvas);
-  const bridges = new BridgeStore(opts.db);
-  const readCursors = opts.readCursors ?? new ReadCursorService(new ReadCursorStore(opts.db));
-  const service = new RoomService({
-    store,
-    ...((mirrorRuntime?.mirrorAccess ?? opts.mirrorAccess)
-      ? { mirrorAccess: mirrorRuntime?.mirrorAccess ?? opts.mirrorAccess }
-      : {}),
-    ...((mirrorRuntime?.mirrorWrites ?? opts.mirrorWrites)
-      ? { mirrorWrites: mirrorRuntime?.mirrorWrites ?? opts.mirrorWrites }
-      : {}),
-    reactions,
-    canvasDocuments,
-    canvas,
-    attachments,
-    authors,
-    broadcaster,
-    bridges,
-    agents: agentLookup,
-    turns:
-      opts.turns ??
-      createSessionRoomTurnRunner({
-        waitMs: () => readRoomMinutesMs('replyWaitMinutes'),
-        ceilingMs: () => readRoomMinutesMs('lateReplyCeilingMinutes'),
-      }),
-    // Read per turn, never captured: the manager is registered later in
-    // bootstrap (it needs this very service's claim map), and an install with no
-    // repo machinery answers `null` forever, which puts every turn in the
-    // agent's own directory exactly as before.
-    worktrees: () => tryGetRoomWorktreeManager(),
-    // The budget reads its own spent hour back out of this database at
-    // construction, so the ceilings mean an hour of wall clock rather than an
-    // hour of uptime (DOR-1205).
-    budget:
-      opts.budget ?? new RoomTurnBudget({ limits: createTurnBudgetLimits(limitsFor), db: opts.db }),
-    // Recovered from the reactions themselves rather than a counter table, so an
-    // agent that spent its hour and met a restart comes back spent
-    // (ADR 260814-195522).
-    reactionBudget: new ReactionBudget({ db: opts.db }),
-    // The message index, behind its port. Composed here rather than imported by
-    // the service so the rooms domain neither knows the index is FTS5 nor which
-    // `sourceId` its own rows carry.
-    findMessages: ({ rooms: scoped, query, limit }) =>
-      searchMessages(opts.db, {
-        scopes: [
-          {
-            sourceId: roomsSource.id,
-            visibility: 'containers',
-            containers: scoped.map((room) => ({
-              originKey: room.roomId,
-              afterOrdinal: room.afterSeq,
-            })),
-          },
-        ],
-        query,
-        limit,
-      }).map((hit) => ({ roomId: hit.originKey, seq: hit.ordinal })),
-    // The write half of that port: an entry is indexed the moment it is
-    // committed, so a person can find what they just said instead of waiting up
-    // to five minutes for the reconciler (spec Amendment 6). It never throws —
-    // a failure logs and leaves the sweep to catch this room up.
-    indexEntry: ({ roomId, seq }) => indexRoomEntry(opts.db, roomId, seq),
-    // Resolved per write, not captured once: changing a ceiling in Settings —
-    // or on the room — has to bound the very next cascade, not the next server
-    // start. Turning limits back ON is the direction that must never wait for a
-    // restart.
-    limitsFor,
-    // Read per dispatch, for the same reason: shortening the window in Settings
-    // has to bind the very next message, not the next server start.
-    engagedWindow: readEngagedWindow,
-    // Read per burst, for the same reason: lengthening the gathering window in
-    // Settings has to bind the very next message.
-    collect: readCollectWindow,
-    // Read per sweep, for the same reason: switching the gate off in Settings
-    // has to bind the very next burst.
-    responseGate: readResponseGate,
-    // Read per tick, for the same reason: shortening how long a room waits on a
-    // busy agent has to bind the wait that is already running.
-    holdCeilingMs: () => readRoomMinutesMs('lateReplyCeilingMinutes'),
-    // Read at every claim decision, for the same reason: raising it in Settings
-    // has to let the very next message start, and lowering it has to hold the
-    // very next one — neither may wait for a restart.
-    maxConcurrentTurnsPerAgent: readMaxConcurrentTurnsPerAgent,
-    // Read per post, for the same reason: lowering the limit in Settings has to
-    // bind the very next message.
-    maxAttachmentsPerEntry: readMaxAttachmentsPerEntry,
-    // Read per post, for the same reason and one more: posting is the agent's
-    // only voice in a room, so an operator who feels this number is wrong must
-    // be able to move it without waiting for anything to restart.
-    maxPostsPerTurn: readMaxPostsPerTurn,
-    // Read per operation, for the same reason and one more: a room's canvas is
-    // a shared surface, so an operator who feels one agent is taking too much of
-    // it must be able to narrow the bound without waiting for a restart.
-    maxCanvasOpsPerTurn: readMaxCanvasOpsPerTurn,
-    // Resolved per read rather than captured: the repo service is registered
-    // later in bootstrap, and an install with no repo machinery answers `null`
-    // forever — which is exactly right, because then no room has a shared tree
-    // and every file document belongs to whoever opened it.
-    roomRepoPath: (roomId) => {
-      const repos = tryGetRoomRepoService();
-      if (!repos) return null;
-      return repos.repoPathFor(roomId);
-    },
-    // Read per check for the same reason, and for one more: an install becomes
-    // owned partway through its life (the enable-login flow), so a value
-    // captured at boot would leave the rooms domain believing forever that the
-    // unbound `'local'` author is still the operator.
-    isOwnerAuthor: (authorId) => authors.isOwner(authorId, readOwnerAccount()?.id ?? null),
-    // Read per turn: the person can rename themselves at any time, and the
-    // next turn's context has to call them by the new name (DOR-2458).
-    operatorName: readOperatorDisplayName,
-    // The record-based twin, for a caller that already fetched a batch of
-    // rows and would otherwise pay `isOwnerAuthor`'s re-query per member.
-    isOwnerRecord: (record) => isOwnerRecord(record, readOwnerAccount()?.id ?? null),
-    // A THIRD question, not a third spelling of the two above: whose WORDS these
-    // are, which the platform-identity link widens and the two authority
-    // predicates deliberately do not (DOR-1778, `isOwnerVoiceRecord`). Read per
-    // check for the same reason they are — an install becomes owned partway
-    // through its life, and a link made in the app has to silence the very next
-    // message.
-    isOwnerVoice: (authorId) => authors.isOwnerVoice(authorId, readOwnerAccount()?.id ?? null),
-    readCursors,
-    // Read per post, for the same reason as every reader above: muting a room
-    // in the sidebar has to silence the very next `dm.received`, not the next
-    // server start.
-    isRoomMuted: readRoomMuted,
-  });
-  // **Here, not at a boot-time hook, and the difference is the ordering bug the
-  // reservation exists to prevent.** `dorkos` has to be held before ANY author
-  // can be minted — an agent whose manifest name is `DorkOS` that joins a room
-  // first would otherwise take it and leave the room's own voice as `dorkos-2`.
-  // Wiring it into the subsystem's own construction makes that structural: the
-  // registry cannot exist without the reservations existing, on every install
-  // path that can take them. The backfill rides along because it wants the same
-  // guarantee — the reservations are taken before it derives.
-  //
-  // A READ-ONLY subsystem is the one exception, and it does not weaken the
-  // invariant: it cannot mint a handle either, so there is no race for it to
-  // lose, and the reservations it would take are already in the database that
-  // whichever DorkOS wrote it took them in.
-  ensureHandles(opts.db, authors);
-  const welcomeBack = new WelcomeBackGreeter({
-    settings: readWelcomeBack,
-    // Resolved per return rather than captured: #team is seeded during boot and
-    // an install can be greeted before this factory has ever seen it.
-    teamRoomId: () => store.findByWellKnown(TEAM_ROOM_WELL_KNOWN)?.id ?? null,
-    work: createSessionWorkSource({
+  let enteredService: RoomService | undefined;
+  try {
+    const bridges = new BridgeStore(opts.db);
+    const readCursors = opts.readCursors ?? new ReadCursorService(new ReadCursorStore(opts.db));
+    const service = new RoomService({
+      ...(opts.observeOriginalLaunch ? { observeOriginalLaunch: opts.observeOriginalLaunch } : {}),
       store,
+      ...((mirrorRuntime?.mirrorAccess ?? opts.mirrorAccess)
+        ? { mirrorAccess: mirrorRuntime?.mirrorAccess ?? opts.mirrorAccess }
+        : {}),
+      ...((mirrorRuntime?.mirrorWrites ?? opts.mirrorWrites)
+        ? { mirrorWrites: mirrorRuntime?.mirrorWrites ?? opts.mirrorWrites }
+        : {}),
+      reactions,
+      canvasDocuments,
+      canvas,
+      attachments,
       authors,
-      // Read per call: a runtime registered after boot (an OpenCode sidecar
-      // that came up late) has sessions that count too.
-      runtimes: () => runtimeRegistry.listRuntimes(),
-    }),
-    // The ordinary guarded path, deliberately — a welcome-back line is a post
-    // like any other, so membership, the cascade stamp and the turn budget
-    // bind it without this module restating any of them. The entry id comes
-    // back because an offer turn is framed around the line it follows.
-    post: (roomId, input) => service.post(roomId, input).id,
-    // The one thing here that can spend a model turn, and only when
-    // `welcomeBack.offersEnabled` says it may. It goes through the room's own
-    // turn machinery, so the session binding, both busy ceilings and the
-    // automatic-turn budget bind an offer exactly as they bind a reply.
-    offers: { ask: (input) => service.askAside(input) },
-    lastSeenAt: (userId) => lastPersonSignalAt(opts.db, userId),
-  });
-  return {
-    service,
-    store,
-    attachments,
-    authors,
-    broadcaster,
-    bridges,
-    readCursors,
-    welcomeBack,
-    canvas,
-    canvasDocuments,
-  };
+      broadcaster,
+      bridges,
+      agents: agentLookup,
+      turns:
+        opts.turns ??
+        createSessionRoomTurnRunner({
+          waitMs: () => readRoomMinutesMs('replyWaitMinutes'),
+          ceilingMs: () => readRoomMinutesMs('lateReplyCeilingMinutes'),
+        }),
+      // Read per turn, never captured: the manager is registered later in
+      // bootstrap (it needs this very service's claim map), and an install with no
+      // repo machinery answers `null` forever, which puts every turn in the
+      // agent's own directory exactly as before.
+      worktrees: () => tryGetRoomWorktreeManager(),
+      // The budget reads its own spent hour back out of this database at
+      // construction, so the ceilings mean an hour of wall clock rather than an
+      // hour of uptime (DOR-1205).
+      budget:
+        opts.budget ??
+        new RoomTurnBudget({ limits: createTurnBudgetLimits(limitsFor, opts.db), db: opts.db }),
+      // Recovered from the reactions themselves rather than a counter table, so an
+      // agent that spent its hour and met a restart comes back spent
+      // (ADR 260814-195522).
+      reactionBudget: new ReactionBudget({ db: opts.db }),
+      // The message index, behind its port. Composed here rather than imported by
+      // the service so the rooms domain neither knows the index is FTS5 nor which
+      // `sourceId` its own rows carry.
+      findMessages: ({ rooms: scoped, query, limit }) =>
+        searchMessages(opts.db, {
+          scopes: [
+            {
+              sourceId: roomsSource.id,
+              visibility: 'containers',
+              containers: scoped.map((room) => ({
+                originKey: room.roomId,
+                afterOrdinal: room.afterSeq,
+              })),
+            },
+          ],
+          query,
+          limit,
+        }).map((hit) => ({ roomId: hit.originKey, seq: hit.ordinal })),
+      // The write half of that port: an entry is indexed the moment it is
+      // committed, so a person can find what they just said instead of waiting up
+      // to five minutes for the reconciler (spec Amendment 6). It never throws —
+      // a failure logs and leaves the sweep to catch this room up.
+      indexEntry: ({ roomId, seq }) => indexRoomEntry(opts.db, roomId, seq),
+      // Resolved per write, not captured once: changing a ceiling in Settings —
+      // or on the room — has to bound the very next cascade, not the next server
+      // start. Turning limits back ON is the direction that must never wait for a
+      // restart.
+      limitsFor,
+      // Read per dispatch, for the same reason: shortening the window in Settings
+      // has to bind the very next message, not the next server start.
+      engagedWindow: readEngagedWindow,
+      // Read per burst, for the same reason: lengthening the gathering window in
+      // Settings has to bind the very next message.
+      collect: readCollectWindow,
+      // Read per sweep, for the same reason: switching the gate off in Settings
+      // has to bind the very next burst.
+      responseGate: readResponseGate,
+      // Read per tick, for the same reason: shortening how long a room waits on a
+      // busy agent has to bind the wait that is already running.
+      holdCeilingMs: () => readRoomMinutesMs('lateReplyCeilingMinutes'),
+      // Read at every claim decision, for the same reason: raising it in Settings
+      // has to let the very next message start, and lowering it has to hold the
+      // very next one — neither may wait for a restart.
+      maxConcurrentTurnsPerAgent: readMaxConcurrentTurnsPerAgent,
+      // Read per post, for the same reason: lowering the limit in Settings has to
+      // bind the very next message.
+      maxAttachmentsPerEntry: readMaxAttachmentsPerEntry,
+      // Read per post, for the same reason and one more: posting is the agent's
+      // only voice in a room, so an operator who feels this number is wrong must
+      // be able to move it without waiting for anything to restart.
+      maxPostsPerTurn: readMaxPostsPerTurn,
+      // Read per operation, for the same reason and one more: a room's canvas is
+      // a shared surface, so an operator who feels one agent is taking too much of
+      // it must be able to narrow the bound without waiting for a restart.
+      maxCanvasOpsPerTurn: readMaxCanvasOpsPerTurn,
+      // Resolved per read rather than captured: the repo service is registered
+      // later in bootstrap, and an install with no repo machinery answers `null`
+      // forever — which is exactly right, because then no room has a shared tree
+      // and every file document belongs to whoever opened it.
+      roomRepoPath: (roomId) => {
+        const repos = tryGetRoomRepoService();
+        if (!repos) return null;
+        return repos.repoPathFor(roomId);
+      },
+      // Read per check for the same reason, and for one more: an install becomes
+      // owned partway through its life (the enable-login flow), so a value
+      // captured at boot would leave the rooms domain believing forever that the
+      // unbound `'local'` author is still the operator.
+      isOwnerAuthor: (authorId) => authors.isOwner(authorId, readOwnerAccount()?.id ?? null),
+      // Read per turn: the person can rename themselves at any time, and the
+      // next turn's context has to call them by the new name (DOR-2458).
+      operatorName: readOperatorDisplayName,
+      // The record-based twin, for a caller that already fetched a batch of
+      // rows and would otherwise pay `isOwnerAuthor`'s re-query per member.
+      isOwnerRecord: (record) => isOwnerRecord(record, readOwnerAccount()?.id ?? null),
+      // A THIRD question, not a third spelling of the two above: whose WORDS these
+      // are, which the platform-identity link widens and the two authority
+      // predicates deliberately do not (DOR-1778, `isOwnerVoiceRecord`). Read per
+      // check for the same reason they are — an install becomes owned partway
+      // through its life, and a link made in the app has to silence the very next
+      // message.
+      isOwnerVoice: (authorId) => authors.isOwnerVoice(authorId, readOwnerAccount()?.id ?? null),
+      readCursors,
+      // Read per post, for the same reason as every reader above: muting a room
+      // in the sidebar has to silence the very next `dm.received`, not the next
+      // server start.
+      isRoomMuted: readRoomMuted,
+    });
+    enteredService = service;
+    // **Here, not at a boot-time hook, and the difference is the ordering bug the
+    // reservation exists to prevent.** `dorkos` has to be held before ANY author
+    // can be minted — an agent whose manifest name is `DorkOS` that joins a room
+    // first would otherwise take it and leave the room's own voice as `dorkos-2`.
+    // Wiring it into the subsystem's own construction makes that structural: the
+    // registry cannot exist without the reservations existing, on every install
+    // path that can take them. The backfill rides along because it wants the same
+    // guarantee — the reservations are taken before it derives.
+    //
+    // A READ-ONLY subsystem is the one exception, and it does not weaken the
+    // invariant: it cannot mint a handle either, so there is no race for it to
+    // lose, and the reservations it would take are already in the database that
+    // whichever DorkOS wrote it took them in.
+    ensureHandles(opts.db, authors);
+    const welcomeBack = new WelcomeBackGreeter({
+      settings: readWelcomeBack,
+      // Resolved per return rather than captured: #team is seeded during boot and
+      // an install can be greeted before this factory has ever seen it.
+      teamRoomId: () => store.findByWellKnown(TEAM_ROOM_WELL_KNOWN)?.id ?? null,
+      work: createSessionWorkSource({
+        store,
+        authors,
+        // Read per call: a runtime registered after boot (an OpenCode sidecar
+        // that came up late) has sessions that count too.
+        runtimes: () => runtimeRegistry.listRuntimes(),
+      }),
+      // The ordinary guarded path, deliberately — a welcome-back line is a post
+      // like any other, so membership, the cascade stamp and the turn budget
+      // bind it without this module restating any of them. The entry id comes
+      // back because an offer turn is framed around the line it follows.
+      post: (roomId, input) => service.post(roomId, input).id,
+      // The one thing here that can spend a model turn, and only when
+      // `welcomeBack.offersEnabled` says it may. It goes through the room's own
+      // turn machinery, so the session binding, both busy ceilings and the
+      // automatic-turn budget bind an offer exactly as they bind a reply.
+      offers: { ask: (input) => service.askAside(input) },
+      lastSeenAt: (userId) => lastPersonSignalAt(opts.db, userId),
+    });
+    return {
+      service,
+      store,
+      attachments,
+      authors,
+      broadcaster,
+      bridges,
+      readCursors,
+      welcomeBack,
+      canvas,
+      canvasDocuments,
+    };
+  } catch (cause) {
+    // The caller never received this canvas if post-publication setup failed.
+    // A replacement installed by reentry belongs to that later bootstrap.
+    try {
+      enteredService?.canvas.dispose();
+    } catch {
+      /* Preserve the original setup cause. */
+    }
+    try {
+      clearCanvasService(canvas);
+    } catch {
+      /* Independent exact-owner cleanup. */
+    }
+    throw cause;
+  }
 }
 
 let active: RoomService | null = null;
@@ -765,6 +758,13 @@ onProjectorTurnBoundary((sessionId, kind) => {
  */
 export function setRoomService(service: RoomService): void {
   active = service;
+}
+
+/** Retire only the exact singleton owned by the closing bootstrap. */
+export function clearRoomService(expected: RoomService): boolean {
+  if (active !== expected) return false;
+  active = null;
+  return true;
 }
 
 /** Read the active RoomService (throws if bootstrap has not run). */
@@ -982,7 +982,7 @@ export {
   roomRefusalFor,
   type RoomErrorCode,
   type RoomAgentLookup,
-} from './room-errors.js';
+} from './data/room-errors.js';
 export { isOwnerRecord, toAuthorRef, type AuthorRecord } from './author-registry.js';
 export { resolveOperatorAuthor } from './operator-author.js';
 export type { RoomTurnRunner } from './room-trigger.js';

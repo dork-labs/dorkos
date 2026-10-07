@@ -5,6 +5,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./server-private-document": {
+      "types": "./src/server-private-document.ts",
+      "default": "./dist/server-private-document.js"
+    },
     ".": {
       "types": "./src/index.ts",
       "default": "./dist/index.js"

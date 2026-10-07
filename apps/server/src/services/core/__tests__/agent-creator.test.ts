@@ -47,7 +47,8 @@ vi.mock('@dorkos/harness', () => ({
 const mockSeedOperatingSkills = vi.fn(() =>
   Promise.resolve({ skillsDir: '/skills', outcomes: [], createdDirs: [] })
 );
-vi.mock('@dorkos/operating-skills', () => ({
+vi.mock('@dorkos/operating-skills', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@dorkos/operating-skills')>()),
   seedOperatingSkills: (...args: unknown[]) => mockSeedOperatingSkills(...args),
 }));
 

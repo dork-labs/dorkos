@@ -28,13 +28,18 @@ import {
   type TurnAwakeHold,
 } from './keep-awake-service.js';
 
+const originalAwakeRoomObservers = new WeakMap<
+  object,
+  (sessionId: string, source: AsyncGenerator<StreamEvent>) => AsyncGenerator<StreamEvent>
+>();
+
 const NO_OP_HOLD: TurnAwakeHold = { touch: () => {}, release: () => {} };
 
 async function* holdDuring(
   service: Pick<KeepAwakeService, 'holdTurn'>,
   runtime: AgentRuntime,
   sessionId: string,
-  opts: MessageOpts | undefined,
+  room: boolean,
   source: AsyncGenerator<StreamEvent>
 ): AsyncGenerator<StreamEvent> {
   // The service already contains its own failures; this guards the seam as
@@ -44,7 +49,7 @@ async function* holdDuring(
   try {
     hold = service.holdTurn({
       sessionId,
-      room: opts?.roomTurn !== undefined,
+      room,
       isHelperWorking: () => runtime.isHelperWorking?.(sessionId) === true,
     });
   } catch {
@@ -79,7 +84,7 @@ export function holdAwakeDuringTurns(
   runtime: AgentRuntime,
   service: Pick<KeepAwakeService, 'holdTurn'> = keepAwakeService
 ): AgentRuntime {
-  return new Proxy(runtime, {
+  const wrapped = new Proxy(runtime, {
     get(target, prop) {
       if (prop === 'sendMessage') {
         return (
@@ -91,7 +96,7 @@ export function holdAwakeDuringTurns(
             service,
             target,
             sessionId,
-            opts,
+            opts?.roomTurn !== undefined,
             target.sendMessage(sessionId, content, opts)
           );
       }
@@ -101,4 +106,27 @@ export function holdAwakeDuringTurns(
       return typeof value === 'function' ? value.bind(target) : value;
     },
   });
+  originalAwakeRoomObservers.set(wrapped, (sessionId, source) =>
+    holdDuring(service, runtime, sessionId, true, source)
+  );
+  return wrapped;
+}
+
+/**
+ * Apply the original keep-awake observation to an already opened native Room stream.
+ * This observes the supplied stream and never enters the runtime a second time.
+ *
+ * @param wrapped - The actual keep-awake constructor result selected by the registry.
+ * @param sessionId - Canonical session already checked by the native stream owner.
+ * @param source - The original stream with the registry's inner observers applied.
+ * @returns The same event sequence with an outer keep-awake lifetime.
+ */
+export function observeOriginalAwakeRoomRuntimeStream(
+  wrapped: object,
+  sessionId: string,
+  source: AsyncGenerator<StreamEvent>
+): AsyncGenerator<StreamEvent> {
+  const observe = originalAwakeRoomObservers.get(wrapped);
+  if (!observe) throw new Error('Original keep-awake runtime wrapper required.');
+  return observe(sessionId, source);
 }

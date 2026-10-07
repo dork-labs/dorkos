@@ -1,5 +1,5 @@
 /** @vitest-environment node */
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -27,6 +27,7 @@ import {
 } from '../../services/rooms/index.js';
 import { RoomRepoStore } from '../../services/rooms/repo/room-repo-store.js';
 import { createDocChannelHttpComposition } from '../../services/canvas/doc-channel/http-composition.js';
+import { replayServiceCurrentDoc } from '../../services/canvas/doc-channel/service.js';
 import { ApprovalService } from '../../services/core/approvals/approval-service.js';
 import { initAuth, readOwnerAccount } from '../../services/core/auth/index.js';
 import { configManager, initConfigManager } from '../../services/core/config-manager.js';
@@ -37,6 +38,7 @@ import {
 } from '../../services/core/agent-identity/agent-identity-service.js';
 import { createServerPrincipal } from '../../services/connectors/principal/server-principal.js';
 import { env } from '../../env.js';
+import { initBoundary } from '../../lib/boundary.js';
 
 vi.mock('../../services/core/tunnel-manager.js', () => ({
   tunnelManager: {
@@ -57,6 +59,8 @@ let sessionId: string;
 let agentId: string;
 let project: string;
 let documentId: string;
+let generation: string;
+let stopWrites: (() => Promise<void>) | undefined;
 const event = (payload: unknown = { done: true }) => ({
   v: 1 as const,
   id: randomUUID(),
@@ -64,7 +68,17 @@ const event = (payload: unknown = { done: true }) => ({
   payload,
 });
 const endpoint = () => `/api/canvas/docs/${documentId}`;
-const post = (body: object) => request(server).post(`${endpoint()}/events`).send(body);
+const post = (body: object) =>
+  request(server)
+    .post(`${endpoint()}/events`)
+    .set('X-DorkOS-Doc-Generation', generation)
+    .send(body);
+async function captureGeneration(): Promise<void> {
+  // Read the actual current server projection, without an extra observed HTTP request.
+  const replay = await replayServiceCurrentDoc(http.service, documentId, operator());
+  if (!replay.incarnation) throw new Error('Original document incarnation is unavailable.');
+  generation = replay.incarnation.generation;
+}
 function operator() {
   return {
     surface: 'http' as const,
@@ -74,11 +88,12 @@ function operator() {
     }),
   };
 }
-function localDocument() {
+async function localDocument(): Promise<void> {
   documentId = rooms.canvas.open(`session:${sessionId}`, 'owner', {
     type: 'file',
     sourcePath: path.join(project, 'tasks.md'),
   }).id;
+  await captureGeneration();
 }
 function manifest(types: Record<string, unknown>, limits?: Record<string, number>) {
   fs.mkdirSync(path.join(project, '.dork'), { recursive: true });
@@ -118,8 +133,10 @@ function grant(limits?: { envelopeBytes?: number; eventsPerMinute?: number }) {
   if (granted.kind !== 'granted') throw new Error('Expected grant');
   return granted.grant;
 }
-beforeAll(async () => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'doc-http-'));
+beforeEach(async () => {
+  stopWrites = undefined;
+  dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'doc-http-')));
+  await initBoundary(dir);
   initConfigManager(dir);
   db = createDb(path.join(dir, 'http.db'));
   runMigrations(db);
@@ -140,7 +157,7 @@ beforeAll(async () => {
   expect(login.status).toBe(200);
   cookies = login.headers['set-cookie'] as unknown as string[];
 });
-beforeEach(() => {
+beforeEach(async () => {
   configManager.set('auth', { enabled: false });
   rooms = createRoomSubsystem({ db });
   setRoomService(rooms.service);
@@ -154,6 +171,21 @@ beforeEach(() => {
     approvals,
     installationId: 'test-install',
   });
+  const originalHttp = http;
+  stopWrites = async () => {
+    let failed = false;
+    let cause: unknown;
+    for (const result of await Promise.allSettled([
+      Promise.resolve().then(() => originalHttp.stopCheckboxWrites()),
+      Promise.resolve().then(() => originalHttp.stopFileWrites()),
+    ])) {
+      if (result.status === 'rejected' && !failed) {
+        failed = true;
+        cause = result.reason;
+      }
+    }
+    if (failed) throw cause;
+  };
   app.locals.docChannelHttp = http;
   project = fs.mkdtempSync(path.join(dir, 'source-'));
   fs.writeFileSync(path.join(project, 'tasks.md'), 'Tasks');
@@ -177,15 +209,42 @@ beforeEach(() => {
     type: 'url',
     url: `https://example.test/${sessionId}`,
   }).id;
+  await captureGeneration();
 });
-afterEach(() => {
+afterEach(async () => {
   configManager.set('auth', { enabled: false });
   resetAgentIdentityService();
   vi.restoreAllMocks();
-});
-afterAll(() => {
-  db.$client.close();
-  fs.rmSync(dir, { recursive: true, force: true });
+  let failed = false;
+  let cause: unknown;
+  const remember = (error: unknown): void => {
+    if (!failed) {
+      failed = true;
+      cause = error;
+    }
+  };
+  try {
+    await stopWrites?.();
+  } catch (error) {
+    remember(error);
+  }
+  // A rejected original writer drain cannot authorize releasing its native Db.
+  if (!failed) {
+    try {
+      if (db.$client.open) db.$client.close();
+      if (db.$client.open) throw new Error('Original HTTP fixture database remains open.');
+    } catch (error) {
+      remember(error);
+    }
+  }
+  if (!failed) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch (error) {
+      remember(error);
+    }
+  }
+  if (failed) throw cause;
 });
 
 describe('mounted document HTTP endpoints', () => {
@@ -200,7 +259,9 @@ describe('mounted document HTTP endpoints', () => {
     const duplicate = await post(input);
     expect(duplicate.status).toBe(200);
     expect(duplicate.body.receipt).toMatchObject({ id: input.id, status: 'duplicate', docSeq: 1 });
-    const receipt = await request(server).get(`${endpoint()}/events/${input.id}`);
+    const receipt = await request(server)
+      .get(`${endpoint()}/events/${input.id}`)
+      .set('X-DorkOS-Doc-Generation', generation);
     expect(receipt.status).toBe(200);
     expect(receipt.body).toMatchObject({
       receipt: { status: 'recorded', docSeq: 1 },
@@ -239,11 +300,18 @@ describe('mounted document HTTP endpoints', () => {
     expect((await request(server).get(`${endpoint()}/channel?${query}`)).status).toBe(400);
   });
   it('rejects empty/malformed JSON, reserved types and forged authority fields', async () => {
-    expect((await request(server).post(`${endpoint()}/events`)).status).toBe(400);
     expect(
       (
         await request(server)
           .post(`${endpoint()}/events`)
+          .set('X-DorkOS-Doc-Generation', generation)
+      ).status
+    ).toBe(400);
+    expect(
+      (
+        await request(server)
+          .post(`${endpoint()}/events`)
+          .set('X-DorkOS-Doc-Generation', generation)
           .set('Content-Type', 'application/json')
           .send('{')
       ).status
@@ -268,7 +336,7 @@ describe('mounted document HTTP endpoints', () => {
     expect((await post(event({ text: 'x'.repeat(17000) }))).status).toBe(413);
   });
   it('keeps accepted retries before rate accounting and returns Retry-After for new input', async () => {
-    localDocument();
+    await localDocument();
     configure();
     grant({ eventsPerMinute: 1 });
     const input = event();
@@ -279,7 +347,7 @@ describe('mounted document HTTP endpoints', () => {
     expect((await post(input)).status).toBe(200);
   });
   it('accepts and retains new input while a destination batch is already running', async () => {
-    localDocument();
+    await localDocument();
     configure();
     grant();
     const initial = await post(event());
@@ -293,7 +361,13 @@ describe('mounted document HTTP endpoints', () => {
     const accepted = await post(input);
     expect(accepted.status).toBe(201);
     expect(accepted.body.receipt.status).toBe('recorded');
-    expect((await request(server).get(`${endpoint()}/events/${input.id}`)).status).toBe(200);
+    expect(
+      (
+        await request(server)
+          .get(`${endpoint()}/events/${input.id}`)
+          .set('X-DorkOS-Doc-Generation', generation)
+      ).status
+    ).toBe(200);
     expect(accepted.body.deliveries[0].status).toBe('pending');
     expect(accepted.body.deliveries[0].batchId).not.toBe(batchId);
   });
@@ -307,29 +381,44 @@ describe('mounted document HTTP endpoints', () => {
       type: 'url',
       url: 'https://example.test/shared',
     }).id;
+    await captureGeneration();
     const identity = initAgentIdentityService(db);
     const token = await identity.mint({ agentPath: project, displayName: 'test' });
     expect(
       (await request(server).get(`${endpoint()}/channel`).set('X-DorkOS-Agent', token)).status
     ).toBe(200);
-    const original = http.authorization.require.bind(http.authorization);
-    vi.spyOn(http.authorization, 'require').mockImplementation(async (...args) => {
-      const result = await original(...args);
-      db.update(agentIdentityTokens)
-        .set({ revokedAt: new Date().toISOString() })
-        .where(eq(agentIdentityTokens.agentPath, project))
-        .run();
-      return result;
+    const originalActor = http.actor.bind(http);
+    let revoked = false;
+    let revocationFailure: { cause: unknown } | undefined;
+    vi.spyOn(http, 'actor').mockImplementation((...args) => {
+      const actor = originalActor(...args);
+      // Keep the genuine verified proof, then revoke during the original admission await.
+      queueMicrotask(() => {
+        try {
+          db.update(agentIdentityTokens)
+            .set({ revokedAt: new Date().toISOString() })
+            .where(eq(agentIdentityTokens.agentPath, project))
+            .run();
+          revoked = true;
+        } catch (cause) {
+          revocationFailure = { cause };
+        }
+      });
+      return actor;
     });
     const input = event();
-    expect(
-      (await request(server).post(`${endpoint()}/events`).set('X-DorkOS-Agent', token).send(input))
-        .status
-    ).toBe(404);
+    const response = await request(server)
+      .post(`${endpoint()}/events`)
+      .set('X-DorkOS-Doc-Generation', generation)
+      .set('X-DorkOS-Agent', token)
+      .send(input);
+    if (revocationFailure) throw revocationFailure.cause;
+    expect(response.status).toBe(404);
+    expect(revoked).toBe(true);
     expect(http.channels.getEvent(documentId, input.id)).toBeUndefined();
   });
   it('honors the exact granted envelope ceiling', async () => {
-    localDocument();
+    await localDocument();
     configure();
     grant({ envelopeBytes: 256 });
     expect((await post(event({ text: 'x'.repeat(500) }))).status).toBe(413);
@@ -349,7 +438,7 @@ describe('mounted document HTTP endpoints', () => {
     }
   });
   it('validates current manifests for new input while preserving accepted retry receipts after edits', async () => {
-    localDocument();
+    await localDocument();
     manifest({
       'task.changed': {
         type: 'object',
@@ -376,18 +465,30 @@ describe('mounted document HTTP endpoints', () => {
       type: 'file',
       sourcePath,
     }).id;
+    await captureGeneration();
     manifest({ 'task.changed': { type: 'object', required: ['done'] } });
     expect((await post(event({ wrong: true }))).status).toBe(422);
     expect(http.channels.getChannel(documentId)?.nextDocSeq).toBe(1);
   });
   it('refuses local-source authority when its server mapping is missing or escapes', async () => {
-    const missing = rooms.canvas.open(`session:${randomUUID()}`, 'owner', {
+    const missing = rooms.canvas.open(`session:${sessionId}`, 'owner', {
       type: 'file',
       sourcePath: path.join(project, 'tasks.md'),
     });
     documentId = missing.id;
+    await captureGeneration();
+    // Retain the genuine birth while invalidating its actual session mapping.
+    db.delete(sessionMetadata).where(eq(sessionMetadata.sessionId, sessionId)).run();
     expect((await post(event())).status).toBe(403);
-    localDocument();
+    db.insert(sessionMetadata)
+      .values({
+        sessionId,
+        runtime: 'claude-code',
+        agentPath: project,
+        createdAt: new Date().toISOString(),
+      })
+      .run();
+    await localDocument();
     const outside = path.join(dir, 'outside.md');
     fs.writeFileSync(outside, 'outside');
     fs.unlinkSync(path.join(project, 'tasks.md'));
@@ -403,9 +504,21 @@ describe('mounted document HTTP endpoints', () => {
     expect((await post(event())).status).toBe(401);
     const input = event();
     expect(
-      (await request(server).post(`${endpoint()}/events`).set('Cookie', cookies).send(input)).status
+      (
+        await request(server)
+          .post(`${endpoint()}/events`)
+          .set('X-DorkOS-Doc-Generation', generation)
+          .set('Cookie', cookies)
+          .send(input)
+      ).status
     ).toBe(201);
-    expect((await request(server).get(`${endpoint()}/events/${input.id}`)).status).toBe(401);
+    expect(
+      (
+        await request(server)
+          .get(`${endpoint()}/events/${input.id}`)
+          .set('X-DorkOS-Doc-Generation', generation)
+      ).status
+    ).toBe(401);
     expect((await request(server).get(`${endpoint()}/channel`).set('Cookie', cookies)).status).toBe(
       200
     );
@@ -415,6 +528,7 @@ describe('mounted document HTTP endpoints', () => {
       (
         await request(server)
           .post(`${endpoint()}/events`)
+          .set('X-DorkOS-Doc-Generation', generation)
           .set('Host', 'attacker.test')
           .send(event())
       ).status
@@ -423,6 +537,7 @@ describe('mounted document HTTP endpoints', () => {
       (
         await request(server)
           .post(`${endpoint()}/events`)
+          .set('X-DorkOS-Doc-Generation', generation)
           .set('Origin', 'https://attacker.test')
           .send(event())
       ).status
@@ -449,18 +564,25 @@ describe('mounted document HTTP endpoints', () => {
       type: 'url',
       url: 'https://example.test/room',
     }).id;
+    await captureGeneration();
     const input = event();
     expect((await post(input)).status).toBe(201);
     const identity = initAgentIdentityService(db);
     const token = await identity.mint({ agentPath: project, displayName: 'test' });
     for (const suffix of ['/channel', `/events/${input.id}`])
       expect(
-        (await request(server).get(`${endpoint()}${suffix}`).set('X-DorkOS-Agent', token)).status
+        (
+          await request(server)
+            .get(`${endpoint()}${suffix}`)
+            .set('X-DorkOS-Doc-Generation', generation)
+            .set('X-DorkOS-Agent', token)
+        ).status
       ).toBe(404);
     expect(
       (
         await request(server)
           .post(`${endpoint()}/events`)
+          .set('X-DorkOS-Doc-Generation', generation)
           .set('X-DorkOS-Agent', token)
           .send(event())
       ).status

@@ -1,3 +1,4 @@
+import { reserveOriginalDocumentProcess } from '../../document-process-custody.js';
 /**
  * The built-in adapter that bridges the Relay bus to this machine's agent
  * runtimes.
@@ -95,6 +96,46 @@ import type {
   ClaudeCodeAdapterDeps,
   ResolvedConfig,
 } from './types.js';
+
+import type {
+  InstalledDocumentAdapterOrigin,
+  InstalledDocumentAdapterSource,
+} from '../../document-delivery.js';
+const installedDocumentAdapterOrigins = new WeakMap<
+  InstalledDocumentAdapterOrigin,
+  InstalledDocumentAdapterSource
+>();
+const originalInstalledAdapters = new WeakMap<
+  object,
+  { origin: InstalledDocumentAdapterOrigin; ready: () => boolean }
+>();
+/** Lookup only original constructor birth and actual private start/retirement; no attach API. */
+export function readOriginalInstalledDocumentAdapterOrigin(
+  adapter: object
+): InstalledDocumentAdapterOrigin | undefined {
+  const own = originalInstalledAdapters.get(adapter);
+  return own?.ready() ? own.origin : undefined;
+}
+
+const originalPoolRunning = Object.getOwnPropertyDescriptor(
+  CapacityHold.prototype,
+  'running'
+)!.get!;
+const originalPoolWaiting = Object.getOwnPropertyDescriptor(
+  CapacityHold.prototype,
+  'waiting'
+)!.get!;
+
+/** One original installed constructor source; this does not issue native operations or effect evidence. */
+export function consumeInstalledDocumentAdapterOrigin(
+  origin: InstalledDocumentAdapterOrigin
+): InstalledDocumentAdapterSource {
+  const own = installedDocumentAdapterOrigins.get(origin);
+  if (!own) throw new Error('ORIGINAL_DOCUMENT_ADAPTER_ORIGIN_REQUIRED');
+  installedDocumentAdapterOrigins.delete(origin);
+  own.requireNotRetired();
+  return own;
+}
 
 // Re-export all public types from the shared types module
 export type {
@@ -260,6 +301,58 @@ function dispatchRuntimeType(payload: unknown): string | undefined {
  * one.
  */
 export class ClaudeCodeAdapter implements RelayAdapter {
+  #documentStarted = false;
+  #documentRetired = false;
+  /** Couple the real installed CCA and its private source origin; no attach-existing-adapter API. */
+  static createInstalledDocumentAdapter(
+    id: string,
+    config: ClaudeCodeAdapterConfig,
+    deps: ClaudeCodeAdapterDeps
+  ) {
+    const adapter = new ClaudeCodeAdapter(id, config, deps);
+    const runtimes = adapter.#agentRuntimes;
+    const pool = adapter.#capacity;
+    const origin = Object.freeze(Object.create(null)) as InstalledDocumentAdapterOrigin;
+    const requireNotRetired = () => {
+      if (adapter.#documentRetired) throw new Error('ORIGINAL_DOCUMENT_ADAPTER_RETIRED');
+    };
+    const requireReady = () => {
+      requireNotRetired();
+      if (!adapter.#documentStarted || !adapter.#relay)
+        throw new Error('ORIGINAL_DOCUMENT_ADAPTER_NOT_STARTED');
+    };
+    installedDocumentAdapterOrigins.set(
+      origin,
+      Object.freeze({
+        requireNotRetired,
+        requireReady,
+        readRuntime: (runtimeType: string) => {
+          requireReady();
+          const runtime = runtimes.get(runtimeType);
+          if (!runtime) throw new Error('ORIGINAL_DOCUMENT_RUNTIME_UNAVAILABLE');
+          return runtime;
+        },
+        reserveDocumentProcess: (runtimeType: string) => {
+          requireReady();
+          if (!runtimes.get(runtimeType)) throw new Error('ORIGINAL_DOCUMENT_RUNTIME_UNAVAILABLE');
+          return reserveOriginalDocumentProcess(pool);
+        },
+        readPoolCensus: () => {
+          requireNotRetired();
+          return Object.freeze({
+            running: originalPoolRunning.call(pool) as number,
+            waiting: originalPoolWaiting.call(pool) as number,
+          });
+        },
+      })
+    );
+    originalInstalledAdapters.set(adapter, {
+      origin,
+      ready: () => adapter.#documentStarted && !adapter.#documentRetired && !!adapter.#relay,
+    });
+    return Object.freeze({ adapter, origin });
+  }
+
   readonly id: string;
   /**
    * What reaches this adapter — deliberately wider than what it will run.
@@ -308,7 +401,7 @@ export class ClaudeCodeAdapter implements RelayAdapter {
    * one-entry map and behaves exactly as it did, and a host that passed a map
    * cannot accidentally leave its own default runtime out of it.
    */
-  private readonly agentRuntimes: ReadonlyMap<string, AgentRuntimeLike>;
+  readonly #agentRuntimes: ReadonlyMap<string, AgentRuntimeLike>;
   /**
    * The discriminator {@link parseAgentSubject} tests slot 3 against: every
    * runtime type this adapter could plausibly be ADDRESSED about.
@@ -332,7 +425,7 @@ export class ClaudeCodeAdapter implements RelayAdapter {
   private readonly addressableRuntimeTypes: ReadonlySet<string>;
   /** The runtime type a message that names none runs on. */
   private readonly defaultRuntimeType: string;
-  private relay: RelayPublisher | null = null;
+  #relay: RelayPublisher | null = null;
   /**
    * The concurrency ceiling, and the line of deliveries waiting on it.
    *
@@ -341,7 +434,7 @@ export class ClaudeCodeAdapter implements RelayAdapter {
    * rooms). See
    * `capacity-hold.ts` for what makes that promise keepable.
    */
-  private readonly capacity: CapacityHold;
+  readonly #capacity: CapacityHold;
   /**
    * Runtime-level adapter — owns per-session serial queueing and the
    * abstract open/stream/close lifecycle. The relay-level class delegates
@@ -389,7 +482,7 @@ export class ClaudeCodeAdapter implements RelayAdapter {
     // omitted it (or held a second instance under the same key) would route
     // this adapter's own turns somewhere the host did not choose.
     runtimes.set(this.defaultRuntimeType, deps.agentManager);
-    this.agentRuntimes = runtimes;
+    this.#agentRuntimes = runtimes;
     this.addressableRuntimeTypes = new Set([...runtimes.keys(), ...RUNTIME_TYPES]);
     // Claimed from the map alone, never the union: claiming
     // `relay.agent.opencode.` on a build with no opencode would take those
@@ -407,7 +500,7 @@ export class ClaudeCodeAdapter implements RelayAdapter {
       defaultCwd: config.defaultCwd ?? process.cwd(),
     };
     this.deps = deps;
-    this.capacity = new CapacityHold({
+    this.#capacity = new CapacityHold({
       maxConcurrent: this.config.maxConcurrent,
       // NOT the ceiling on the turn that is in the way: that turn runs to its
       // own envelope's TTL (an hour by default), so a hold can expire while the
@@ -433,7 +526,7 @@ export class ClaudeCodeAdapter implements RelayAdapter {
    * @param relay - The RelayPublisher used to publish response events
    */
   async start(relay: RelayPublisher): Promise<void> {
-    this.relay = relay;
+    this.#relay = relay;
     this.approvalUnsub = subscribeApprovalHandler(
       relay,
       // Default runtime first, so a single-runtime host's call order is exactly
@@ -441,7 +534,7 @@ export class ClaudeCodeAdapter implements RelayAdapter {
       // is offered the decision rather than one being resolved.
       [
         this.deps.agentManager,
-        ...[...this.agentRuntimes.values()].filter((r) => r !== this.deps.agentManager),
+        ...[...this.#agentRuntimes.values()].filter((r) => r !== this.deps.agentManager),
       ],
       this.deps.logger ?? console,
       this.deps.approvalAuthorizer,
@@ -463,12 +556,15 @@ export class ClaudeCodeAdapter implements RelayAdapter {
       errorCount: 0,
       startedAt: new Date().toISOString(),
     };
+    if (!this.#documentRetired) this.#documentStarted = true;
   }
 
   /**
    * Stop the adapter — clear relay reference, drain in-flight queue entries, and mark as disconnected.
    */
   async stop(): Promise<void> {
+    this.#documentRetired = true;
+    this.#documentStarted = false;
     // Unsubscribe from approval responses before clearing relay reference
     this.approvalUnsub?.();
     this.approvalUnsub = null;
@@ -490,8 +586,8 @@ export class ClaudeCodeAdapter implements RelayAdapter {
     // delivery, so an ADAPTER restart tells the chats that were waiting. On a
     // whole-server stop the bus and the chat adapters are already down by the
     // time this runs, and the message is simply dropped.
-    this.capacity.drain();
-    this.relay = null;
+    this.#capacity.drain();
+    this.#relay = null;
     this.runtimeAdapter.reset();
     this.status = { ...this.status, state: 'disconnected' };
   }
@@ -655,13 +751,13 @@ export class ClaudeCodeAdapter implements RelayAdapter {
       named ??
       (await this.agentTurnRuntimeType(subject, envelope, context)) ??
       this.defaultRuntimeType;
-    const runtime = this.agentRuntimes.get(runtimeType);
+    const runtime = this.#agentRuntimes.get(runtimeType);
     if (!runtime) {
       return {
         error:
           `No agent runtime registered for '${runtimeType}'. This message is addressed to a ` +
           `runtime this server did not start; it is registered for ` +
-          `${[...this.agentRuntimes.keys()].join(', ')}.`,
+          `${[...this.#agentRuntimes.keys()].join(', ')}.`,
       };
     }
     return { runtime, runtimeType };
@@ -800,7 +896,7 @@ export class ClaudeCodeAdapter implements RelayAdapter {
     // turn a message a person is waiting on into silence. So this gate bounds
     // the wait and lets the message through to the seam that can answer it.
     const remainingMs = ttlRemainingMs(envelope);
-    const slot = await this.capacity.acquire({
+    const slot = await this.#capacity.acquire({
       // Only a delivery the pipeline licensed may wait, and the pipeline is the
       // only thing that can tell which those are: it sets `onHeld` when a
       // person in a bridged chat is the reader, and on nothing else (see
@@ -878,7 +974,7 @@ export class ClaudeCodeAdapter implements RelayAdapter {
               : {}),
             logger: this.deps.logger,
           },
-          this.relay
+          this.#relay
         )
       );
     } catch (err) {
@@ -898,7 +994,7 @@ export class ClaudeCodeAdapter implements RelayAdapter {
       // The one release seam. A turn that answered, threw, timed out or was
       // stopped all arrive here, which is what makes the waiting line's promise
       // keepable: the next held delivery starts from inside this call.
-      this.capacity.release(slot);
+      this.#capacity.release(slot);
     }
   }
 }

@@ -1,3 +1,7 @@
+import {
+  createOriginalTurnPlaceTestFixture,
+  createOriginalTurnRetirementTestFixture,
+} from './room-original-turn-place-test-fixture.js';
 /**
  * Where a room turn stands, which folders it is granted, and why the `.git`
  * grant is narrow (spec `agent-home-desk` §5.1, the T2 security review).
@@ -23,49 +27,25 @@
  * a copy ignores a rewritten .git pointer".
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { chmodSync, existsSync, lstatSync, readdirSync, realpathSync } from 'node:fs';
-import { mkdir, mkdtemp, readFile, utimes, writeFile } from 'node:fs/promises';
+import { promises as fs, chmodSync, existsSync, lstatSync, readdirSync } from 'node:fs';
+import { mkdir, readFile, utimes, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { tmpdir } from 'node:os';
-import { createTestDb } from '@dorkos/test-utils/db';
-import { rooms, type Db } from '@dorkos/db';
-import type { Room } from '@dorkos/shared/room-schemas';
-import { ROOM_REPO_CAP_DEFAULTS } from '@dorkos/shared/room-repo';
+import type { Db } from '@dorkos/db';
 import { assertValidDirectoryGrants } from '@dorkos/shared/directory-grants';
 import { RoomRepoStore } from '../room-repo-store.js';
-import { RoomRepoService } from '../room-repo-service.js';
-import { RoomRepoMutex } from '../room-repo-mutex.js';
 import { RoomWorktreeManager } from '../room-worktree-manager.js';
 import {
   assertRoomRepoConfigSafe,
   commitsAheadOfMain,
   hasUncommittedChanges,
-  mergeNoFf,
-  runGit,
+  readRoomForegroundMaintenance,
+  readRoomWorkingDiff,
 } from '../room-repo-git.js';
-import {
-  resolveRoomTurnPlace,
-  roomSessionPlace,
-  roomTurnGrants,
-  roomTurnLaunchStep,
-} from '../room-turn-place.js';
+import { resolveRoomTurnPlace, roomSessionPlace, roomTurnGrants } from '../room-turn-place.js';
 import type { AuthorRecord } from '../../author-registry.js';
-import { removeFixtureTree, silenceGitAutoMaintenance } from './fixture-git.js';
 
-const ROOM_ID = '01ROOMAAAAAAAAAAAAAAAAAAAA';
-const OPERATOR = 'author-operator';
-const ROOM: Room = {
-  id: ROOM_ID,
-  kind: 'channel',
-  slug: 'release-train',
-  title: 'Release train',
-  topic: null,
-  archived: false,
-  ambientMaxEntries: 20,
-  createdAt: '2026-09-26T12:00:00.000Z',
-  lastActivityAt: '2026-09-26T12:00:00.000Z',
-};
-
+let ROOM_ID: string;
+let OPERATOR: string;
 /** Plain git as an agent's own shell runs it: the machine's git, no DorkOS hardening. */
 async function agentGit(cwd: string, ...args: string[]): Promise<string> {
   const { execFile } = await import('node:child_process');
@@ -109,67 +89,59 @@ describe('room turn placement and grants', () => {
   let db: Db;
   let scratch: string;
   let store: RoomRepoStore;
-  let service: RoomRepoService;
-  let manager: RoomWorktreeManager;
+  let service: { enable(roomId: string, authorId: string): Promise<void> };
+  let native: Awaited<ReturnType<typeof createOriginalTurnPlaceTestFixture>>;
+  let nativeAcquired = false;
+  let ownedFixtureMergeNoFf: typeof native.mergeNoFf;
   let ana: string;
-  let bo: string;
   /** Folders made read-only by a test, restored in `afterEach` so cleanup works. */
   let locked: string[];
 
   beforeEach(async () => {
-    db = createTestDb();
-    silenceGitAutoMaintenance();
-    scratch = realpathSync(await mkdtemp(path.join(tmpdir(), 'dorkos-room-place-')));
-    const dorkHome = path.join(scratch, '.dork');
-    await mkdir(dorkHome, { recursive: true });
-    ana = path.join(scratch, 'agents', 'ana');
-    bo = path.join(scratch, 'agents', 'bo');
-    await mkdir(ana, { recursive: true });
-    await mkdir(bo, { recursive: true });
     locked = [];
-    store = new RoomRepoStore(db, dorkHome);
-    db.insert(rooms)
-      .values({
-        id: ROOM_ID,
-        kind: 'channel',
-        title: ROOM.title,
-        topic: ROOM.topic,
-        createdAt: ROOM.createdAt,
-        lastActivityAt: ROOM.lastActivityAt,
-      })
-      .run();
-    service = new RoomRepoService({
-      store,
-      mutex: new RoomRepoMutex(),
-      queueWaitMs: () => 5000,
-      enabled: () => true,
-      getRoom: () => ROOM,
-      isOwnerAuthor: (authorId) => authorId === OPERATOR,
-      operatorGitName: () => 'Dorian',
-      pinRoomMd: () => {},
-      caps: () => ({ ...ROOM_REPO_CAP_DEFAULTS }),
-      maxRoomMdBytes: () => ROOM_REPO_CAP_DEFAULTS.maxRoomMdBytes,
-    });
-    manager = new RoomWorktreeManager({
-      store,
-      hasRepo: (roomId) => service.hasRepo(roomId),
-      listStrandedWorktrees: (roomId) => service.listStrandedWorktrees(roomId),
-      reapAfterDays: () => 14,
-      busyAgentPaths: () => [],
-    });
+    nativeAcquired = false;
+    native = await createOriginalTurnPlaceTestFixture();
+    nativeAcquired = true;
+    db = native.original.db;
+    scratch = native.original.dir;
+    ROOM_ID = native.original.roomId;
+    OPERATOR = native.original.operator.id;
+    ana = native.targets[0]!.agentPath;
+    store = native.original.repos;
+    ownedFixtureMergeNoFf = native.mergeNoFf;
+    service = {
+      enable: async (roomId, authorId) => {
+        expect(roomId).toBe(ROOM_ID);
+        expect(authorId).toBe(OPERATOR);
+        await native.enable();
+      },
+    };
   });
 
   afterEach(async () => {
-    // Every locked tree is made writable again even if one of them cannot be,
-    // so the scratch folder is always removable whatever the test body did.
+    let failed = false,
+      cause: unknown;
     for (const dir of locked.splice(0)) {
       try {
         chmodTree(dir, true);
-      } catch {
-        // Best effort: the removal below reports anything still stuck.
+      } catch (error) {
+        if (!failed) {
+          failed = true;
+          cause = error;
+        }
       }
     }
-    await removeFixtureTree(scratch);
+    // Native close independently joins runtime/projector, file/checkbox/due
+    // owners and actual Db closure; uncertainty retains its root.
+    try {
+      if (nativeAcquired) await native.close();
+    } catch (error) {
+      if (!failed) {
+        failed = true;
+        cause = error;
+      }
+    }
+    if (failed) throw cause;
   });
 
   /** Whether an error is a path that vanished while the tree was being walked. */
@@ -214,15 +186,20 @@ describe('room turn placement and grants', () => {
   }
 
   it('stands the turn at home with no grants in a room without files', async () => {
-    const place = await resolveRoomTurnPlace(manager, ROOM_ID, ana, 'Ana');
+    const place = await native.place(ROOM_ID, ana, 'Ana');
 
-    expect(place).toEqual({ cwd: ana, additionalDirectories: [], worktree: null, files: null });
+    expect(place).toEqual({
+      cwd: ana,
+      additionalDirectories: [],
+      worktree: null,
+      files: null,
+    });
   });
 
   it('stands the turn at home and grants exactly the six folders in a room with files', async () => {
     await service.enable(ROOM_ID, OPERATOR);
 
-    const place = await resolveRoomTurnPlace(manager, ROOM_ID, ana, 'Ana');
+    const place = await native.place(ROOM_ID, ana, 'Ana');
 
     const worktree = path.join(
       store.worktreesPath(ROOM_ID),
@@ -237,8 +214,14 @@ describe('room turn placement and grants', () => {
       { path: repo, access: 'read' },
       { path: path.join(git, 'objects'), access: 'write' },
       { path: path.join(git, 'refs', 'heads', 'room'), access: 'write' },
-      { path: path.join(git, 'logs', 'refs', 'heads', 'room'), access: 'write' },
-      { path: path.join(git, 'worktrees', path.basename(worktree)), access: 'write' },
+      {
+        path: path.join(git, 'logs', 'refs', 'heads', 'room'),
+        access: 'write',
+      },
+      {
+        path: path.join(git, 'worktrees', path.basename(worktree)),
+        access: 'write',
+      },
     ]);
     // Every granted folder exists, so a commit never has to create one.
     for (const grant of place.additionalDirectories) expect(existsSync(grant.path)).toBe(true);
@@ -256,12 +239,7 @@ describe('room turn placement and grants', () => {
 
   it('never grants the shared hooks, config or info — nor all of .git', async () => {
     await service.enable(ROOM_ID, OPERATOR);
-    const { additionalDirectories: grants } = await resolveRoomTurnPlace(
-      manager,
-      ROOM_ID,
-      ana,
-      'Ana'
-    );
+    const { additionalDirectories: grants } = await native.place(ROOM_ID, ana, 'Ana');
     const git = path.join(store.repoPath(ROOM_ID), '.git');
 
     const writable = grants.filter((g) => g.access === 'write').map((g) => g.path);
@@ -286,7 +264,7 @@ describe('room turn placement and grants', () => {
 
   it('lets a sandboxed shell commit and sync in its copy with nothing but the grants', async () => {
     await service.enable(ROOM_ID, OPERATOR);
-    const place = await resolveRoomTurnPlace(manager, ROOM_ID, ana, 'Ana');
+    const place = await native.place(ROOM_ID, ana, 'Ana');
     const copy = place.worktree!;
     // Main moves on first, so `git merge main` has something to bring in.
     const repo = store.repoPath(ROOM_ID);
@@ -315,13 +293,15 @@ describe('room turn placement and grants', () => {
     const repo = store.repoPath(ROOM_ID);
     const home = store.homeDir(ROOM_ID);
 
-    expect(await runGit(['config', '--get', 'maintenance.autoDetach'], repo, home)).toBe('false');
-    expect(await runGit(['config', '--get', 'gc.autoDetach'], repo, home)).toBe('false');
+    expect(await readRoomForegroundMaintenance(repo, home)).toEqual({
+      maintenanceAutoDetach: 'false',
+      gcAutoDetach: 'false',
+    });
   });
 
   it('refuses a sandboxed shell a hook or a config edit in the room`s shared git', async () => {
     await service.enable(ROOM_ID, OPERATOR);
-    const place = await resolveRoomTurnPlace(manager, ROOM_ID, ana, 'Ana');
+    const place = await native.place(ROOM_ID, ana, 'Ana');
     const git = path.join(store.repoPath(ROOM_ID), '.git');
     sandboxTo(place.additionalDirectories);
 
@@ -335,14 +315,16 @@ describe('room turn placement and grants', () => {
     });
     await expect(
       writeFile(path.join(git, 'info', 'attributes'), '* filter=x\n')
-    ).rejects.toMatchObject({ code: expect.stringMatching(/EACCES|EPERM|ENOENT/) });
+    ).rejects.toMatchObject({
+      code: expect.stringMatching(/EACCES|EPERM|ENOENT/),
+    });
   });
 
   it('runs no hook planted in the room`s shared hooks folder, in the server`s merge', async () => {
     // What an UNsandboxed shell could plant (spec §5.2). A config pointing hook
     // lookup elsewhere is refused outright — see the config cases below.
     await service.enable(ROOM_ID, OPERATOR);
-    const place = await resolveRoomTurnPlace(manager, ROOM_ID, ana, 'Ana');
+    const place = await native.place(ROOM_ID, ana, 'Ana');
     const repo = store.repoPath(ROOM_ID);
     const git = path.join(repo, '.git');
     const marker = path.join(scratch, 'hook-ran');
@@ -355,7 +337,9 @@ describe('room turn placement and grants', () => {
         'reference-transaction',
         'commit-msg',
       ]) {
-        await writeFile(path.join(dir, hook), markingHook(marker), { mode: 0o755 });
+        await writeFile(path.join(dir, hook), markingHook(marker), {
+          mode: 0o755,
+        });
       }
     }
     await writeFile(path.join(place.worktree!, 'PLAN.md'), '# plan\n', 'utf-8');
@@ -366,7 +350,10 @@ describe('room turn placement and grants', () => {
     expect(existsSync(marker)).toBe(true);
     await writeFile(marker, '');
 
-    await mergeNoFf(
+    await ownedFixtureMergeNoFf(
+      db,
+      store,
+      ROOM_ID,
       repo,
       `room/${RoomWorktreeManager.slugFor('Ana', ana)}`,
       'Merge the plan',
@@ -386,11 +373,13 @@ describe('room turn placement and grants', () => {
     // the filter-on-merge case (the smudge runs as the server).
     async function armed(key: string, value: string) {
       await service.enable(ROOM_ID, OPERATOR);
-      const place = await resolveRoomTurnPlace(manager, ROOM_ID, ana, 'Ana');
+      const place = await native.place(ROOM_ID, ana, 'Ana');
       const copy = place.worktree!;
       const marker = path.join(scratch, `ran-${key.replace(/\W/g, '-')}`);
       const program = path.join(scratch, `prog-${key.replace(/\W/g, '-')}.sh`);
-      await writeFile(program, `#!/bin/sh\necho ran >> "${marker}"\ncat\n`, { mode: 0o755 });
+      await writeFile(program, `#!/bin/sh\necho ran >> "${marker}"\ncat\n`, {
+        mode: 0o755,
+      });
       // Written from the COPY, as an agent's plain shell would.
       await agentGit(copy, 'config', key, value.replace('PROGRAM', program));
       return { copy, marker, program };
@@ -417,7 +406,10 @@ describe('room turn placement and grants', () => {
       await writeFile(marker, '');
 
       await expect(
-        mergeNoFf(
+        ownedFixtureMergeNoFf(
+          db,
+          store,
+          ROOM_ID,
           store.repoPath(ROOM_ID),
           `room/${RoomWorktreeManager.slugFor('Ana', ana)}`,
           'Merge the plan',
@@ -437,7 +429,7 @@ describe('room turn placement and grants', () => {
       await agentGit(copy, 'commit', '-q', '-m', 'a');
       await writeFile(path.join(copy, 'A.md'), 'b\n');
 
-      await expect(runGit(['diff'], copy, store.homeDir(ROOM_ID))).rejects.toMatchObject({
+      await expect(readRoomWorkingDiff(copy, store.homeDir(ROOM_ID))).rejects.toMatchObject({
         code: 'ROOM_REPO_CONFIG_UNSAFE',
       });
       expect(existsSync(marker)).toBe(false);
@@ -488,7 +480,7 @@ describe('room turn placement and grants', () => {
     // ordinary `git status` would run that program as the server — unless the
     // server's git is pinned to the room's own storage.
     await service.enable(ROOM_ID, OPERATOR);
-    const place = await resolveRoomTurnPlace(manager, ROOM_ID, ana, 'Ana');
+    const place = await native.place(ROOM_ID, ana, 'Ana');
     const copy = place.worktree!;
     const marker = path.join(scratch, 'filter-ran');
     const fake = path.join(copy, '.evil-git');
@@ -497,7 +489,9 @@ describe('room turn placement and grants', () => {
     await writeFile(path.join(fake, 'HEAD'), 'ref: refs/heads/main\n');
     // A program, as a script file: a `;` in a config value starts a comment.
     const program = path.join(scratch, 'evil-filter.sh');
-    await writeFile(program, `#!/bin/sh\necho ran >> "${marker}"\ncat\n`, { mode: 0o755 });
+    await writeFile(program, `#!/bin/sh\necho ran >> "${marker}"\ncat\n`, {
+      mode: 0o755,
+    });
     await writeFile(
       path.join(fake, 'config'),
       `[core]\n\trepositoryformatversion = 0\n\tbare = false\n[filter "x"]\n\tclean = ${program}\n`
@@ -525,11 +519,13 @@ describe('room turn placement and grants', () => {
     // copy recurses into the submodule and runs that program as the server.
     // The worktree pin does not help — the submodule's git folder is its own.
     await service.enable(ROOM_ID, OPERATOR);
-    const place = await resolveRoomTurnPlace(manager, ROOM_ID, ana, 'Ana');
+    const place = await native.place(ROOM_ID, ana, 'Ana');
     const copy = place.worktree!;
     const marker = path.join(scratch, 'submodule-filter-ran');
     const program = path.join(scratch, 'evil-sub-filter.sh');
-    await writeFile(program, `#!/bin/sh\necho ran >> "${marker}"\ncat\n`, { mode: 0o755 });
+    await writeFile(program, `#!/bin/sh\necho ran >> "${marker}"\ncat\n`, {
+      mode: 0o755,
+    });
     const sub = path.join(copy, 'sub');
     await mkdir(sub, { recursive: true });
     await agentGit(sub, 'init', '-q', '-b', 'main');
@@ -562,11 +558,13 @@ describe('room turn placement and grants', () => {
     // only such config is `repo/.git/config`, which no agent is granted. So a
     // merge of a branch carrying such attributes runs nothing.
     await service.enable(ROOM_ID, OPERATOR);
-    const place = await resolveRoomTurnPlace(manager, ROOM_ID, ana, 'Ana');
+    const place = await native.place(ROOM_ID, ana, 'Ana');
     const copy = place.worktree!;
     const marker = path.join(scratch, 'driver-ran');
     const program = path.join(scratch, 'evil-driver.sh');
-    await writeFile(program, `#!/bin/sh\necho ran >> "${marker}"\ncat\n`, { mode: 0o755 });
+    await writeFile(program, `#!/bin/sh\necho ran >> "${marker}"\ncat\n`, {
+      mode: 0o755,
+    });
     // Drivers defined where an agent CAN write: its copy's own admin folder
     // (read only if worktree config were enabled) and a config file an
     // `include.path` could name. Neither may reach the server.
@@ -580,7 +578,10 @@ describe('room turn placement and grants', () => {
     await agentGit(copy, 'add', '-A');
     await agentGit(copy, 'commit', '-q', '-m', 'attributes');
 
-    await mergeNoFf(
+    await ownedFixtureMergeNoFf(
+      db,
+      store,
+      ROOM_ID,
       store.repoPath(ROOM_ID),
       `room/${RoomWorktreeManager.slugFor('Ana', ana)}`,
       'Merge the plan',
@@ -595,55 +596,56 @@ describe('room turn placement and grants', () => {
 });
 
 describe('roomTurnLaunchStep', () => {
-  function steps() {
-    const retired: string[] = [];
-    const busy = new Set<string>();
-    const step = roomTurnLaunchStep(
-      {
-        boundSessionIds: () => ['s-room', 's-other'],
-        isTurnInFlight: (id) => Promise.resolve(busy.has(id)),
-        worktrees: {
-          retireLegacyPlumbing: (roomId, worktree) => {
-            retired.push(`${roomId}:${worktree}`);
-            return Promise.resolve({ removed: 0, blockRemoved: false });
-          },
-          // No room files section to refresh in these cases; the refresh itself
-          // is pinned over real git in `room-worktree-refresh.test.ts`.
-          refreshTarget: () => null,
-        },
-        describeCommits: () => new Map(),
-        forgetBaselines: () => {},
-      },
-      { roomId: 'r1', worktree: '/w/ana', agentPath: '/agents/ana', files: null }
-    );
-    return { step, retired, busy };
-  }
+  let owning: Awaited<ReturnType<typeof createOriginalTurnRetirementTestFixture>> | undefined;
+  beforeEach(async () => {
+    owning = undefined;
+    owning = await createOriginalTurnRetirementTestFixture();
+  });
+  afterEach(async () => {
+    let failed = false;
+    let cause: unknown;
+    try {
+      vi.restoreAllMocks();
+    } catch (error) {
+      failed = true;
+      cause = error;
+    }
+    try {
+      await owning?.close();
+    } catch (error) {
+      if (!failed) {
+        failed = true;
+        cause = error;
+      }
+    }
+    if (failed) throw cause;
+  });
 
   it('retires legacy plumbing at launch when no other bound session is running', async () => {
-    const { step, retired } = steps();
-
-    await expect(step('s-room')).resolves.toEqual({});
-    expect(retired).toEqual(['r1:/w/ana']);
+    expect(existsSync(owning!.legacy)).toBe(true);
+    await owning!.launch();
+    expect(existsSync(owning!.legacy)).toBe(false);
   });
 
   it('skips it while another session bound to the (room, agent) has a turn in flight', async () => {
-    const { step, retired, busy } = steps();
-    busy.add('s-other');
-
-    await step('s-room');
-    expect(retired).toEqual([]);
-
-    busy.delete('s-other');
-    await step('s-room');
-    expect(retired).toEqual(['r1:/w/ana']);
+    owning!.holdOther();
+    await owning!.launch();
+    expect(existsSync(owning!.legacy)).toBe(true);
+    owning!.release();
+    await owning!.launch();
+    expect(existsSync(owning!.legacy)).toBe(false);
   });
 
   it('does not count the launching session itself as busy (it holds its own lock)', async () => {
-    const { step, retired, busy } = steps();
-    busy.add('s-room');
-
-    await step('s-room');
-    expect(retired).toEqual(['r1:/w/ana']);
+    const unlink = fs.unlink.bind(fs);
+    let selfLockObserved = false;
+    vi.spyOn(fs, 'unlink').mockImplementation(async (file) => {
+      if (String(file) === owning!.legacy) selfLockObserved = owning!.isCurrentTurnInFlight();
+      return unlink(file);
+    });
+    await owning!.launch();
+    expect(selfLockObserved).toBe(true);
+    expect(existsSync(owning!.legacy)).toBe(false);
   });
 });
 
@@ -698,7 +700,11 @@ describe('roomSessionPlace', () => {
   it('names the room, the label the room shows, and the agent the room bound', () => {
     const place = roomSessionPlace({
       bindings: {
-        bindingForSession: () => ({ roomId: 'room-1', authorId: 'author-1', sessionId: 's1' }),
+        bindingForSession: () => ({
+          roomId: 'room-1',
+          authorId: 'author-1',
+          sessionId: 's1',
+        }),
       },
       authors: { getById: () => author('agent', 'Ana the Reviewer') },
       worktrees,
@@ -720,14 +726,22 @@ describe('roomSessionPlace', () => {
     });
     const human = roomSessionPlace({
       bindings: {
-        bindingForSession: () => ({ roomId: 'room-1', authorId: 'author-1', sessionId: 's1' }),
+        bindingForSession: () => ({
+          roomId: 'room-1',
+          authorId: 'author-1',
+          sessionId: 's1',
+        }),
       },
       authors: { getById: () => author('human', 'You') },
       worktrees,
     });
     const gone = roomSessionPlace({
       bindings: {
-        bindingForSession: () => ({ roomId: 'room-1', authorId: 'gone', sessionId: 's1' }),
+        bindingForSession: () => ({
+          roomId: 'room-1',
+          authorId: 'gone',
+          sessionId: 's1',
+        }),
       },
       authors: { getById: () => null },
       worktrees,
@@ -741,37 +755,40 @@ describe('roomSessionPlace', () => {
   it('keeps an OpenCode session created in the copy there — it cannot move home', async () => {
     const COPY = '/dork/rooms/r1/worktrees/api-bot-1a2b3c4d';
     const manager = {
-      ensureWorktree: () => Promise.resolve({ path: COPY, repo: '/dork/rooms/r1/repo' }),
+      ensureWorktree: vi.fn(() => Promise.resolve({ path: COPY, repo: '/dork/rooms/r1/repo' })),
       turnFilesContext: () => Promise.resolve(null),
     } as unknown as RoomWorktreeManager;
-    const opencodeIn = (dir: string) => () =>
-      Promise.resolve({
-        type: 'opencode',
-        getSession: () => Promise.resolve({ cwd: dir } as never),
-        getSessionCwd: () => undefined,
-      });
+    const opencodeIn = (dir: string) =>
+      vi.fn(() =>
+        Promise.resolve({
+          type: 'opencode',
+          getSession: () => Promise.resolve({ cwd: dir } as never),
+          getSessionCwd: () => undefined,
+        })
+      );
+    const copiedRuntime = opencodeIn(COPY);
+    const homeRuntime = opencodeIn(AGENT);
 
     const stuck = await roomSessionPlace({
       bindings: { bindingForSession: () => undefined },
       authors: { getById: () => null },
       worktrees: () => manager,
-      sessionRuntime: opencodeIn(COPY),
+      sessionRuntime: copiedRuntime,
     }).placeTurn('r1', AGENT, 'API Bot', 'oc-old');
     const moved = await roomSessionPlace({
       bindings: { bindingForSession: () => undefined },
       authors: { getById: () => null },
       worktrees: () => manager,
-      sessionRuntime: opencodeIn(AGENT),
+      sessionRuntime: homeRuntime,
     }).placeTurn('r1', AGENT, 'API Bot', 'oc-home');
 
-    expect(stuck).toEqual({
-      cwd: COPY,
-      additionalDirectories: [],
-      worktree: COPY,
-      standsInCopy: true,
-    });
-    expect(moved.cwd).toBe(AGENT);
-    expect(moved.standsInCopy).toBeUndefined();
+    // Attribution-only public placement cannot issue the original native turn.
+    // The genuine original OpenCode HTTP copy refusal is qualified separately.
+    expect(stuck).toEqual({ cwd: AGENT, additionalDirectories: [], worktree: null });
+    expect(moved).toEqual({ cwd: AGENT, additionalDirectories: [], worktree: null });
+    expect(manager.ensureWorktree).not.toHaveBeenCalled();
+    expect(copiedRuntime).not.toHaveBeenCalled();
+    expect(homeRuntime).not.toHaveBeenCalled();
   });
 
   it('places an app-resumed turn exactly as a room turn is placed: at home', async () => {

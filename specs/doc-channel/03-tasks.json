@@ -55,7 +55,7 @@
         "2.2"
       ],
       "externalBlockers": [],
-      "status": "in_progress",
+      "status": "completed",
       "issue": null,
       "parentIssue": null
     },
@@ -195,7 +195,7 @@
       ],
       "parallelWith": [],
       "externalBlockers": [],
-      "status": "in_progress",
+      "status": "completed",
       "issue": null,
       "parentIssue": null
     },
@@ -214,7 +214,7 @@
       ],
       "parallelWith": [],
       "externalBlockers": [],
-      "status": "in_progress",
+      "status": "completed",
       "issue": null,
       "parentIssue": null
     },
@@ -242,7 +242,7 @@
           "gate": "Frame rollout requires verified containment of all served document responses, including top-level opening."
         }
       ],
-      "status": "pending",
+      "status": "completed",
       "issue": null,
       "parentIssue": null
     },
@@ -262,7 +262,7 @@
       ],
       "parallelWith": [],
       "externalBlockers": [],
-      "status": "in_progress",
+      "status": "completed",
       "issue": null,
       "parentIssue": null
     },
@@ -303,7 +303,7 @@
       ],
       "parallelWith": [],
       "externalBlockers": [],
-      "status": "in_progress",
+      "status": "completed",
       "issue": null,
       "parentIssue": null
     },
@@ -361,7 +361,7 @@
       ],
       "parallelWith": [],
       "externalBlockers": [],
-      "status": "in_progress",
+      "status": "completed",
       "issue": null,
       "parentIssue": null
     },
@@ -401,7 +401,7 @@
       ],
       "parallelWith": [],
       "externalBlockers": [],
-      "status": "pending",
+      "status": "completed",
       "issue": null,
       "parentIssue": null
     },

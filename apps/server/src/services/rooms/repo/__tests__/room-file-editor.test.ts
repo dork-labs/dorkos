@@ -52,34 +52,42 @@ import {
 } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
-import { createTestDb } from '@dorkos/test-utils/db';
-import { rooms, type Db } from '@dorkos/db';
 import { ROOM_REPO_CAP_DEFAULTS, type RoomRepoCaps } from '@dorkos/shared/room-repo';
-import { RoomError } from '../../room-errors.js';
+import { RoomError } from '../../data/room-errors.js';
 import { RoomRepoStore } from '../room-repo-store.js';
 import { RoomRepoMutex } from '../room-repo-mutex.js';
-import { RoomFilesService } from '../room-files.js';
-import { RoomFileEditor, type RoomFileSaveOutcome } from '../room-file-editor.js';
-import { commitAll, runGit, stagePaths } from '../room-repo-git.js';
+import type { RoomFileSaveOutcome } from '../room-file-editor.js';
+import { initRepo, stagePaths } from '../room-repo-git.js';
+import {
+  createOriginalOwnedRoomFixture,
+  type OriginalOwnedRoomFixture,
+} from './room-original-owned-fixture.js';
+import { createOriginalFileOpsHttpFixture } from './room-original-file-ops-http-fixture.js';
+import { configManager } from '../../../core/config-manager.js';
+import { resetAgentIdentityService } from '../../../core/agent-identity/agent-identity-service.js';
+import {
+  withRecognizedInstallationRoomNamespace,
+  readInstallationRoomMutationContext,
+} from '../../../canvas/doc-channel/writes/installation-room-writes.js';
+
+import { fixtureGit as runGit } from './fixture-git.js';
 import { removeFixtureTree, silenceGitAutoMaintenance } from './fixture-git.js';
 
-const ROOM_ID = '01ROOMAAAAAAAAAAAAAAAAAAAA';
+let ROOM_ID: string;
 /** The operator at the keyboard of an install with login off. */
 const OPERATOR = { authorId: 'author-operator', signedIn: false };
 
 describe('RoomFileEditor', () => {
-  let db: Db;
   let scratch: string;
-  let dorkHome: string;
   let store: RoomRepoStore;
-  let editor: RoomFileEditor;
+  let editor: Awaited<ReturnType<typeof createOriginalFileOpsHttpFixture>>['editor'];
+  let original: OriginalOwnedRoomFixture;
+  let originalAcquired = false;
+  let fileOps: Awaited<ReturnType<typeof createOriginalFileOpsHttpFixture>> | undefined;
   let repoDir: string;
   let mutex: RoomRepoMutex;
   let caps: RoomRepoCaps;
   let operatorName: string | null;
-  let queueWaitMs: number;
-  /** What the room's own write gate answers; a route test drives the real one. */
-  let writeRefusal: RoomError | null;
 
   /** Run git in the room's repo, with the room's home as the ceiling. */
   function git(args: string[], dir = repoDir): Promise<string> {
@@ -95,7 +103,7 @@ describe('RoomFileEditor', () => {
 
   /** Commit everything in the room's repo under `who`. */
   async function commit(message: string, who = 'Ana'): Promise<string> {
-    return commitAll(repoDir, message, { name: who, email: 'who@dorkos.local' }, dorkHomeOf());
+    return original.commitAll(repoDir, message, { name: who, email: 'who@dorkos.local' });
   }
 
   /** The room's home, which is git's discovery ceiling for every call here. */
@@ -125,88 +133,120 @@ describe('RoomFileEditor', () => {
   }
 
   beforeEach(async () => {
-    db = createTestDb();
+    originalAcquired = false;
+    fileOps = undefined;
     silenceGitAutoMaintenance();
     scratch = await mkdtemp(path.join(tmpdir(), 'dorkos-room-file-editor-'));
-    // The enclosing repository — see the module doc.
-    await runGit(['init', '-b', 'main', '--quiet', '.'], scratch, scratch);
-    await writeFile(path.join(scratch, '.gitignore'), '*\n', 'utf-8');
-    await runGit(['add', '-f', '.gitignore'], scratch, scratch);
-    await runGit(
-      [
-        '-c',
-        'user.name=Enclosing',
-        '-c',
-        'user.email=e@dorkos.local',
-        'commit',
-        '-q',
-        '-m',
-        'base',
-      ],
-      scratch,
-      scratch
-    );
-
-    dorkHome = path.join(scratch, '.dork');
-    await mkdir(dorkHome, { recursive: true });
-    store = new RoomRepoStore(db, dorkHome);
-    db.insert(rooms)
-      .values({
-        id: ROOM_ID,
-        kind: 'channel',
-        title: 'Release train',
+    try {
+      // Preserve the genuine enclosing Git discovery-ceiling trap.
+      await runGit(['init', '-b', 'main', '--quiet', '.'], scratch, scratch);
+      await writeFile(path.join(scratch, '.gitignore'), '*\n', 'utf-8');
+      await runGit(['add', '-f', '.gitignore'], scratch, scratch);
+      await runGit(
+        [
+          '-c',
+          'user.name=Enclosing',
+          '-c',
+          'user.email=e@dorkos.local',
+          'commit',
+          '-q',
+          '-m',
+          'base',
+        ],
+        scratch,
+        scratch
+      );
+      operatorName = 'Dorian';
+      original = await createOriginalOwnedRoomFixture({
+        seed: false,
+        homeParent: scratch,
+        room: { title: 'Release train', agentPaths: ['/original-file-editor-agent'] },
+        operatorGitName: () => operatorName,
+      });
+      originalAcquired = true;
+      ROOM_ID = original.roomId;
+      OPERATOR.authorId = original.operator.id;
+      store = original.repos;
+      mutex = original.mutex;
+      caps = { ...ROOM_REPO_CAP_DEFAULTS };
+      repoDir = store.repoPath(ROOM_ID);
+      await mkdir(repoDir, { recursive: true });
+      await store.write({
+        roomId: ROOM_ID,
+        mode: 'owned',
         createdAt: '2026-08-27T12:00:00.000Z',
-        lastActivityAt: '2026-08-27T12:00:00.000Z',
-      })
-      .run();
-
-    caps = { ...ROOM_REPO_CAP_DEFAULTS };
-    operatorName = 'Dorian';
-    queueWaitMs = 5000;
-    writeRefusal = null;
-    mutex = new RoomRepoMutex();
-
-    repoDir = store.repoPath(ROOM_ID);
-    await mkdir(repoDir, { recursive: true });
-    await git(['-c', 'init.templateDir=', 'init', '-b', 'main', '--quiet', '.']);
-    await store.write({
-      roomId: ROOM_ID,
-      mode: 'owned',
-      createdAt: '2026-08-27T12:00:00.000Z',
-      createdBy: OPERATOR.authorId,
-      defaultBranch: 'main',
-      caps,
-      lastMergeSeq: null,
-    });
-    await put('ROOM.md', '# Release train\n');
-    await put('docs/plan.md', '# Plan\n');
-    await commit('Start this room’s files', 'Dorian');
-
-    const files = new RoomFilesService({
-      store,
-      hasRepo: () => true,
-      maxFileBytes: () => caps.maxFileBytes,
-    });
-    editor = new RoomFileEditor({
-      store,
-      mutex,
-      enabled: () => true,
-      queueWaitMs: () => queueWaitMs,
-      assertCanWriteFiles: () => {
-        if (writeRefusal) throw writeRefusal;
-      },
-      operatorGitName: () => operatorName,
-      personName: () => null,
-      announce: () => undefined,
-      uploadStagingRoot: () => path.join(scratch, 'staging'),
-      files,
-    });
+        createdBy: OPERATOR.authorId,
+        defaultBranch: 'main',
+        caps,
+        lastMergeSeq: null,
+      });
+      await withRecognizedInstallationRoomNamespace(original.writer, ROOM_ID, (scope) =>
+        initRepo(
+          repoDir,
+          dorkHomeOf(),
+          readInstallationRoomMutationContext(original.writer, ROOM_ID, scope)
+        )
+      );
+      await put('ROOM.md', '# Release train\n');
+      await put('docs/plan.md', '# Plan\n');
+      await commit('Start this room’s files', 'Dorian');
+      fileOps = await createOriginalFileOpsHttpFixture(original);
+      editor = fileOps.editor;
+    } catch (cause) {
+      try {
+        if (fileOps) await fileOps.close();
+        else if (originalAcquired) await original.close();
+      } catch {
+        /* Original setup cause wins; uncertain native root remains. */
+      }
+      try {
+        resetAgentIdentityService();
+      } catch {
+        /* Original setup cause wins. */
+      }
+      throw cause;
+    }
   });
 
   afterEach(async () => {
-    vi.unstubAllEnvs();
-    vi.restoreAllMocks();
-    await removeFixtureTree(scratch);
+    let failed = false;
+    let firstCause: unknown;
+    const remember = (cause: unknown) => {
+      if (!failed) {
+        failed = true;
+        firstCause = cause;
+      }
+    };
+    for (const cleanup of [() => vi.unstubAllEnvs(), () => vi.restoreAllMocks()]) {
+      try {
+        cleanup();
+      } catch (cause) {
+        remember(cause);
+      }
+    }
+    let ownerClosed = false;
+    try {
+      if (fileOps) await fileOps.close();
+      else if (originalAcquired) await original.close();
+      ownerClosed = originalAcquired;
+    } catch (cause) {
+      remember(cause);
+    }
+    try {
+      resetAgentIdentityService();
+    } catch (cause) {
+      remember(cause);
+    }
+    // Returned-owner positive native Db/root close is required before deleting
+    // the parent trap; pre-return or failed drains keep the parent intact.
+    if (ownerClosed) {
+      try {
+        await removeFixtureTree(scratch);
+      } catch (cause) {
+        remember(cause);
+      }
+    }
+    if (failed) throw firstCause;
   });
 
   describe('saving', () => {
@@ -233,7 +273,10 @@ describe('RoomFileEditor', () => {
       expect(await git(['rev-list', '--count', `${before}..HEAD`])).toBe('1');
       // Nothing left behind: a dirty tree stops every merge in the room.
       expect(await git(['status', '--porcelain=v1'])).toBe('');
-      expect(result.lastCommit).toMatchObject({ author: 'Dorian', subject: 'Edit ROOM.md' });
+      expect(result.lastCommit).toMatchObject({
+        author: 'Dorian',
+        subject: 'Edit ROOM.md',
+      });
     });
 
     it('creates a file the room did not have, in a folder it does', async () => {
@@ -251,7 +294,11 @@ describe('RoomFileEditor', () => {
     it('commits nothing when the text is what the file already held', async () => {
       const before = await head();
 
-      const result = await save({ path: 'ROOM.md', baseCommit: before, text: '# Release train\n' });
+      const result = await save({
+        path: 'ROOM.md',
+        baseCommit: before,
+        text: '# Release train\n',
+      });
 
       // A person pressing save on an unchanged file is not an error and is not
       // history either.
@@ -264,7 +311,11 @@ describe('RoomFileEditor', () => {
     it('falls back to a plain name when the install has no name for the person', async () => {
       operatorName = null;
 
-      await save({ path: 'ROOM.md', baseCommit: await head(), text: 'renamed\n' });
+      await save({
+        path: 'ROOM.md',
+        baseCommit: await head(),
+        text: 'renamed\n',
+      });
 
       expect(await git(['log', '--format=%an', '-n', '1'])).toBe('DorkOS operator');
     });
@@ -279,7 +330,11 @@ describe('RoomFileEditor', () => {
       await commit('Add a step');
       expect(await head()).not.toBe(opened);
 
-      const result = await save({ path: 'ROOM.md', baseCommit: opened, text: 'still mine\n' });
+      const result = await save({
+        path: 'ROOM.md',
+        baseCommit: opened,
+        text: 'still mine\n',
+      });
 
       expect(result.committed).toBe(true);
       expect(await readFile(path.join(repoDir, 'ROOM.md'), 'utf-8')).toBe('still mine\n');
@@ -298,7 +353,10 @@ describe('RoomFileEditor', () => {
 
       expect(outcome.status).toBe('conflict');
       if (outcome.status !== 'conflict') throw new Error('unreachable');
-      expect(outcome.conflict).toMatchObject({ path: 'ROOM.md', commit: theirs });
+      expect(outcome.conflict).toMatchObject({
+        path: 'ROOM.md',
+        commit: theirs,
+      });
       expect(outcome.conflict.lastCommit).toMatchObject({
         author: 'Ana',
         subject: 'Ana edits the room notes',
@@ -341,7 +399,11 @@ describe('RoomFileEditor', () => {
       await put('ROOM.md', '# edited in a terminal\n');
 
       await expectRoomError(
-        editor.save(ROOM_ID, OPERATOR, { path: 'docs/plan.md', baseCommit: opened, text: 'x\n' }),
+        editor.save(ROOM_ID, OPERATOR, {
+          path: 'docs/plan.md',
+          baseCommit: opened,
+          text: 'x\n',
+        }),
         'MAIN_CHECKOUT_DIRTY'
       );
 
@@ -357,7 +419,11 @@ describe('RoomFileEditor', () => {
       await git(['checkout', '-q', '-b', 'somewhere-else']);
 
       await expectRoomError(
-        editor.save(ROOM_ID, OPERATOR, { path: 'ROOM.md', baseCommit: opened, text: 'x\n' }),
+        editor.save(ROOM_ID, OPERATOR, {
+          path: 'ROOM.md',
+          baseCommit: opened,
+          text: 'x\n',
+        }),
         'MAIN_CHECKOUT_DIRTY'
       );
     });
@@ -379,7 +445,11 @@ describe('RoomFileEditor', () => {
         ':/x.md',
       ]) {
         await expectRoomError(
-          editor.save(ROOM_ID, OPERATOR, { path: bad, baseCommit: null, text: 'x\n' }),
+          editor.save(ROOM_ID, OPERATOR, {
+            path: bad,
+            baseCommit: null,
+            text: 'x\n',
+          }),
           'ROOM_FILE_PATH_INVALID'
         );
       }
@@ -402,7 +472,11 @@ describe('RoomFileEditor', () => {
 
       for (const door of doors) {
         await expectRoomError(
-          editor.save(ROOM_ID, OPERATOR, { path: door, baseCommit: null, text: 'evil = true\n' }),
+          editor.save(ROOM_ID, OPERATOR, {
+            path: door,
+            baseCommit: null,
+            text: 'evil = true\n',
+          }),
           'ROOM_FILE_PATH_INVALID'
         );
       }
@@ -460,7 +534,11 @@ describe('RoomFileEditor', () => {
       // commit records only the name that was asked for, and the room's own
       // copy is left dirty — which stops every merge in the room.
       await expectRoomError(
-        editor.save(ROOM_ID, OPERATOR, { path: 'room.md', baseCommit: null, text: 'sneaky\n' }),
+        editor.save(ROOM_ID, OPERATOR, {
+          path: 'room.md',
+          baseCommit: null,
+          text: 'sneaky\n',
+        }),
         'ROOM_FILE_NOT_READABLE'
       );
 
@@ -488,13 +566,21 @@ describe('RoomFileEditor', () => {
 
     it('refuses to save over a folder', async () => {
       await expectRoomError(
-        editor.save(ROOM_ID, OPERATOR, { path: 'docs', baseCommit: null, text: 'x\n' }),
+        editor.save(ROOM_ID, OPERATOR, {
+          path: 'docs',
+          baseCommit: null,
+          text: 'x\n',
+        }),
         'ROOM_FILE_NOT_READABLE'
       );
     });
 
     it('creates the folders above a new file (agent-home-desk §7.1)', async () => {
-      const result = await save({ path: 'brand/new/note.md', baseCommit: null, text: 'x\n' });
+      const result = await save({
+        path: 'brand/new/note.md',
+        baseCommit: null,
+        text: 'x\n',
+      });
 
       expect(result.committed).toBe(true);
       expect(await git(['ls-files'])).toContain('brand/new/note.md');
@@ -540,7 +626,14 @@ describe('RoomFileEditor', () => {
       await put('[a]x.md', 'the file that was asked for\n');
       await put('ax.md', 'the neighbour a glob would sweep in\n');
 
-      await stagePaths(repoDir, ['[a]x.md'], dorkHomeOf());
+      await withRecognizedInstallationRoomNamespace(original.writer, ROOM_ID, (scope) =>
+        stagePaths(
+          repoDir,
+          ['[a]x.md'],
+          dorkHomeOf(),
+          readInstallationRoomMutationContext(original.writer, ROOM_ID, scope)
+        )
+      );
 
       expect((await git(['diff', '--cached', '--name-only'])).split('\n')).toEqual(['[a]x.md']);
     });
@@ -647,10 +740,14 @@ describe('RoomFileEditor', () => {
 
   describe('the gates around it', () => {
     it('refuses whoever the room says may not save here', async () => {
-      writeRefusal = new RoomError('PEOPLE_ONLY', 'Only people can save a room’s files');
+      const refused = fileOps!.agentActor; // Genuine rostered agent reaches actual PEOPLE_ONLY.
 
       await expectRoomError(
-        editor.save(ROOM_ID, OPERATOR, { path: 'ROOM.md', baseCommit: null, text: 'x\n' }),
+        editor.save(ROOM_ID, refused, {
+          path: 'ROOM.md',
+          baseCommit: null,
+          text: 'x\n',
+        }),
         'PEOPLE_ONLY'
       );
     });
@@ -659,13 +756,21 @@ describe('RoomFileEditor', () => {
       store.removeRow(ROOM_ID);
 
       await expectRoomError(
-        editor.save(ROOM_ID, OPERATOR, { path: 'ROOM.md', baseCommit: null, text: 'x\n' }),
+        editor.save(ROOM_ID, OPERATOR, {
+          path: 'ROOM.md',
+          baseCommit: null,
+          text: 'x\n',
+        }),
         'ROOM_HAS_NO_REPO'
       );
     });
 
     it('waits in the same queue a merge takes, and says so when the wait runs out', async () => {
-      queueWaitMs = 5;
+      const settings = configManager.get('rooms');
+      configManager.set('rooms', {
+        ...settings,
+        repo: { ...settings.repo, mergeQueueWaitMs: 1000 },
+      });
       let release = (): void => {};
       const held = new Promise<void>((resolve) => {
         release = resolve;
@@ -675,13 +780,32 @@ describe('RoomFileEditor', () => {
         held.then(() => undefined)
       );
 
-      await expectRoomError(
-        editor.save(ROOM_ID, OPERATOR, { path: 'ROOM.md', baseCommit: null, text: 'x\n' }),
-        'MERGE_IN_FLIGHT'
-      );
-
-      release();
-      await holder;
+      let failed = false;
+      let firstCause: unknown;
+      try {
+        await expectRoomError(
+          editor.save(ROOM_ID, OPERATOR, {
+            path: 'ROOM.md',
+            baseCommit: null,
+            text: 'x\n',
+          }),
+          'MERGE_IN_FLIGHT'
+        );
+      } catch (cause) {
+        failed = true;
+        firstCause = cause;
+      } finally {
+        release();
+        try {
+          await holder;
+        } catch (cause) {
+          if (!failed) {
+            failed = true;
+            firstCause = cause;
+          }
+        }
+      }
+      if (failed) throw firstCause;
     });
   });
 

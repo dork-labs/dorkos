@@ -4,6 +4,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
+
+// These navigation/view controls exercise the ordinary browser surface. Native Doc
+// owner/replay/load custody is exercised separately by the real frame hook controls.
+vi.mock('../model/use-doc-frame-channel', () => ({
+  useDocFrameChannel: () => ({
+    noteFrameLoaded: () => true,
+    noteFrameRetired: () => {},
+    navigationSource: null,
+  }),
+}));
+
 import type { UiCanvasContent } from '@dorkos/shared/types';
 import { canvasViewForContent } from '@dorkos/shared/canvas-view';
 

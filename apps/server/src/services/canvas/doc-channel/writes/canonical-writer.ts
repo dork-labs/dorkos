@@ -18,6 +18,31 @@ export interface CanonicalWriteLease {
   reserveReplacement(path: string): Promise<CanonicalFileIdentity>;
 }
 
+const originalCanonicalLeases = new WeakMap<
+  CanonicalWriteLease,
+  {
+    coordinator: CanonicalFileWriteCoordinator;
+    active: () => boolean;
+    owned: Set<string>;
+  }
+>();
+/** Lookup only. No caller can issue an active coordinator lease by copying its methods. */
+export function requireOriginalCanonicalWriteLease(
+  coordinator: CanonicalFileWriteCoordinator,
+  lease: CanonicalWriteLease,
+  identity: CanonicalFileIdentity
+): void {
+  const own = originalCanonicalLeases.get(lease);
+  if (
+    !own ||
+    own.coordinator !== coordinator ||
+    !own.active() ||
+    !own.owned.has(`path:${identity.canonicalPath}`) ||
+    !own.owned.has(`inode:${identityKey(identity)}`)
+  )
+    throw new Error('Original canonical writer custody is unavailable.');
+}
+
 /** The queued identity changed before the write callback could perform any effect. */
 export class CanonicalFileIdentityChangedError extends Error {
   constructor() {
@@ -26,56 +51,108 @@ export class CanonicalFileIdentityChangedError extends Error {
   }
 }
 
+interface CanonicalOwner {
+  withFiles<T>(
+    paths: readonly string[],
+    write: (identities: readonly CanonicalFileIdentity[], lease: CanonicalWriteLease) => Promise<T>
+  ): Promise<T>;
+  stop(): Promise<void>;
+}
+const canonicalOwners = new WeakMap<object, CanonicalOwner>();
+/** Constructor/exclusion custody only; no database or document authority. */
+export function requireCanonicalFileWriteCoordinator(
+  value: unknown
+): CanonicalFileWriteCoordinator {
+  if (!value || typeof value !== 'object' || !canonicalOwners.has(value))
+    throw new Error('Unknown canonical file writer.');
+  return value as CanonicalFileWriteCoordinator;
+}
+/** Run against the recognized canonical file writer's original operations. */
+export function withRecognizedCanonicalFiles<T>(
+  owner: CanonicalFileWriteCoordinator,
+  paths: readonly string[],
+  write: (identities: readonly CanonicalFileIdentity[], lease: CanonicalWriteLease) => Promise<T>
+): Promise<T> {
+  requireCanonicalFileWriteCoordinator(owner);
+  return canonicalOwners.get(owner)!.withFiles(paths, write);
+}
+/** Stop the recognized canonical file writer through its captured lifetime. */
+export function stopRecognizedCanonicalWriter(owner: CanonicalFileWriteCoordinator): Promise<void> {
+  requireCanonicalFileWriteCoordinator(owner);
+  return canonicalOwners.get(owner)!.stop();
+}
+
 /** Serialize cooperative writes, including hard-link aliases, in a single server process. */
 export class CanonicalFileWriteCoordinator {
-  private readonly tails = new Map<string, Promise<void>>();
-  private queued = 0;
-  private closed = false;
-  private readonly operations = new Set<Promise<unknown>>();
-  private resolutionTail = Promise.resolve();
-  private readonly context = new AsyncLocalStorage<boolean>();
+  readonly #tails = new Map<string, Promise<void>>();
+  #queued = 0;
+  #closed = false;
+  readonly #operations = new Set<Promise<unknown>>();
+  #resolutionTail = Promise.resolve();
+  readonly #context = new AsyncLocalStorage<boolean>();
 
-  constructor(private readonly ports: CanonicalWriterPorts) {}
+  readonly #ports: CanonicalWriterPorts;
+  constructor(ports: CanonicalWriterPorts) {
+    this.#ports = Object.freeze({
+      resolve: ports.resolve.bind(ports),
+      assertOutsideTransaction: ports.assertOutsideTransaction.bind(ports),
+    });
+    canonicalOwners.set(this, {
+      withFiles: (paths, write) => this.#withFiles(paths, write),
+      stop: () => this.#stop(),
+    });
+  }
 
-  async withFiles<T>(
+  withFiles<T>(
     paths: readonly string[],
     write: (identities: readonly CanonicalFileIdentity[], lease: CanonicalWriteLease) => Promise<T>
   ): Promise<T> {
-    this.ports.assertOutsideTransaction();
-    if (this.context.getStore()) throw new Error('Recursive canonical write acquisition');
-    this.requireOpen();
+    return this.#withFiles(paths, write);
+  }
+
+  async #withFiles<T>(
+    paths: readonly string[],
+    write: (identities: readonly CanonicalFileIdentity[], lease: CanonicalWriteLease) => Promise<T>
+  ): Promise<T> {
+    this.#ports.assertOutsideTransaction();
+    if (this.#context.getStore()) throw new Error('Recursive canonical write acquisition');
+    this.#requireOpen();
     if (paths.length === 0 || paths.length > 16)
       throw new Error('Invalid canonical write key count');
-    if (this.queued >= 1024) throw new Error('Canonical write queue is full');
-    this.queued++;
-    const operation = this.acquire([...paths], write);
-    this.operations.add(operation);
+    if (this.#queued >= 1024) throw new Error('Canonical write queue is full');
+    this.#queued++;
+    const operation = this.#acquire([...paths], write);
+    this.#operations.add(operation);
     try {
       return await operation;
     } finally {
-      this.operations.delete(operation);
-      this.queued--;
+      this.#operations.delete(operation);
+      this.#queued--;
     }
   }
 
   /** Close admission and drain admitted operations before their shared resources are disposed. */
-  async stop(): Promise<void> {
-    if (this.context.getStore()) throw new Error('Recursive canonical writer stop');
-    this.closed = true;
-    await Promise.allSettled([...this.operations]);
+  stop(): Promise<void> {
+    return this.#stop();
   }
 
-  private requireOpen(): void {
-    if (this.closed) throw new Error('Canonical writer admission is closed');
+  async #stop(): Promise<void> {
+    if (this.#context.getStore()) throw new Error('Recursive canonical writer stop');
+    this.#closed = true;
+    await Promise.allSettled([...this.#operations]);
   }
 
-  private async resolveAll(paths: readonly string[]): Promise<CanonicalFileIdentity[]> {
+  #requireOpen(): void {
+    if (this.#closed) throw new Error('Canonical writer admission is closed');
+  }
+
+  async #resolveAll(paths: readonly string[]): Promise<CanonicalFileIdentity[]> {
     let failed = false;
     let firstError: unknown;
     // Scheduling each call also converts synchronous port throws without skipping later probes.
     const probes = paths.map((path) =>
       Promise.resolve()
-        .then(() => this.ports.resolve(path))
+        .then(() => this.#ports.resolve(path))
         .catch((error: unknown) => {
           if (!failed) {
             failed = true;
@@ -92,23 +169,23 @@ export class CanonicalFileWriteCoordinator {
     });
   }
 
-  private async acquire<T>(
+  async #acquire<T>(
     paths: readonly string[],
     write: (identities: readonly CanonicalFileIdentity[], lease: CanonicalWriteLease) => Promise<T>
   ): Promise<T> {
     // Preserve arrival order even when alias realpath/stat calls finish out of order.
-    const previousResolution = this.resolutionTail;
+    const previousResolution = this.#resolutionTail;
     let releaseResolution!: () => void;
-    this.resolutionTail = new Promise<void>((resolve) => {
+    this.#resolutionTail = new Promise<void>((resolve) => {
       releaseResolution = resolve;
     });
     let before: CanonicalFileIdentity[];
     try {
       await previousResolution;
-      this.requireOpen();
-      before = await this.resolveAll(paths);
-      this.requireOpen();
-      this.ports.assertOutsideTransaction();
+      this.#requireOpen();
+      before = await this.#resolveAll(paths);
+      this.#requireOpen();
+      this.#ports.assertOutsideTransaction();
     } finally {
       releaseResolution();
     }
@@ -128,49 +205,53 @@ export class CanonicalFileWriteCoordinator {
     let active = true;
     let reservations = 0;
     const requireActive = () => {
-      this.ports.assertOutsideTransaction();
+      this.#ports.assertOutsideTransaction();
       if (!active) throw new Error('Canonical write lease is no longer active');
     };
     const reserveKey = (key: string) => {
-      const previous = this.tails.get(key) ?? Promise.resolve();
+      const previous = this.#tails.get(key) ?? Promise.resolve();
       let release!: () => void;
       const held = new Promise<void>((resolve) => {
         release = resolve;
       });
       const tail = previous.then(() => held);
-      this.tails.set(key, tail);
+      this.#tails.set(key, tail);
       releases.push(() => {
         release();
-        if (this.tails.get(key) === tail) this.tails.delete(key);
+        if (this.#tails.get(key) === tail) this.#tails.delete(key);
       });
       return previous;
     };
-    const lease: CanonicalWriteLease = {
-      reserveReplacement: async (path) => {
+    const lease: CanonicalWriteLease = Object.freeze({
+      reserveReplacement: async (path: string) => {
         requireActive();
         if (++reservations > 16)
           throw new Error('Canonical replacement reservation limit exceeded');
-        const identity = await this.ports.resolve(path);
+        const identity = await this.#ports.resolve(path);
         requireActive();
         const key = `inode:${identityKey(identity)}`;
         if (!owned.has(key)) {
           // Never wait out of order while holding other keys: refuse before rename.
-          if (this.tails.has(key)) throw new Error('Replacement inode is already held or queued');
+          if (this.#tails.has(key)) throw new Error('Replacement inode is already held or queued');
           reserveKey(key);
           owned.add(key);
         }
         return identity;
       },
-    };
+    });
+    originalCanonicalLeases.set(lease, { coordinator: this, active: () => active, owned });
+    let failed = false;
+    let firstCause: unknown;
+    let result: T | undefined;
     try {
       // Publish the full request before awaiting any key, preserving overlapping arrival FIFO.
       for (const key of keys) blockers.push(reserveKey(key));
       await Promise.all(blockers);
-      this.ports.assertOutsideTransaction();
-      this.requireOpen();
-      const current = await this.resolveAll(paths);
-      this.requireOpen();
-      this.ports.assertOutsideTransaction();
+      this.#ports.assertOutsideTransaction();
+      this.#requireOpen();
+      const current = await this.#resolveAll(paths);
+      this.#requireOpen();
+      this.#ports.assertOutsideTransaction();
       if (
         current.some(
           (identity, index) =>
@@ -179,12 +260,27 @@ export class CanonicalFileWriteCoordinator {
         )
       )
         throw new CanonicalFileIdentityChangedError();
-      this.ports.assertOutsideTransaction();
-      return await this.context.run(true, () => write(current, lease));
+      this.#ports.assertOutsideTransaction();
+      result = await this.#context.run(true, () => write(current, lease));
+    } catch (error) {
+      failed = true;
+      firstCause = error;
     } finally {
       active = false;
-      for (const release of releases.reverse()) release();
+      originalCanonicalLeases.delete(lease);
+      for (const release of releases.reverse()) {
+        try {
+          release();
+        } catch (error) {
+          if (!failed) {
+            failed = true;
+            firstCause = error;
+          }
+        }
+      }
     }
+    if (failed) throw firstCause;
+    return result as T;
   }
 }
 

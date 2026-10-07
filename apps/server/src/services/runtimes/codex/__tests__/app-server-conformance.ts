@@ -18,6 +18,7 @@ import type { CreditsTurnObservation, CreditsTurnScenario, HandedGrants } from '
 import { createTestDb } from '@dorkos/test-utils/db';
 import { startCreditsRelay, type CreditsRelay } from '../../../core/cloud/credits-relay.js';
 import type { SessionAttachmentStore } from '../../../session/attachments/index.js';
+import type { RoomCanvasRuntimeConstruction } from '../../../session/__tests__/original-room-canvas-harness.js';
 import { CodexRuntime } from '../codex-runtime.js';
 import { CodexThreadMap } from '../thread-map.js';
 import { CodexAppServerPool } from '../app-server/process-pool.js';
@@ -112,16 +113,37 @@ export async function stopAppServerConformance(): Promise<void> {
  * @param options - Where images go, and a stop-ack bound.
  */
 export function makeAppServerRuntime(
-  options: { attachments?: SessionAttachmentStore; stopAckMs?: number } = {}
+  options: {
+    attachments?: SessionAttachmentStore;
+    stopAckMs?: number;
+    roomCanvas?: RoomCanvasRuntimeConstruction;
+  } = {}
 ): CodexRuntime {
   const host = new FakeAppServerHost();
-  host.home(PERSON_HOME).defaultScript = creditsAwareTurn;
-  host.home(CREDITS_HOME).defaultScript = creditsAwareTurn;
+  const roomCanvas = options.roomCanvas;
+  const defaultScript: FakeTurnScript = roomCanvas
+    ? async (ctx) => {
+        const loaded = ctx.server.loaded.get(ctx.turn.threadId);
+        if (!loaded || typeof loaded.loadParams.cwd !== 'string')
+          throw new Error('Original app-server Room load is unavailable');
+        const config = loaded.loadParams.config as
+          | {
+              mcp_servers?: Record<string, { http_headers?: Record<string, string> }>;
+            }
+          | undefined;
+        const headers = config?.mcp_servers?.dorkos?.http_headers;
+        if (!headers) throw new Error('Original app-server connector headers are unavailable');
+        await roomCanvas.providerTurn(loaded.loadParams.cwd, headers);
+        await creditsAwareTurn(ctx);
+      }
+    : creditsAwareTurn;
+  host.home(PERSON_HOME).defaultScript = defaultScript;
+  host.home(CREDITS_HOME).defaultScript = defaultScript;
   const pool = new CodexAppServerPool({ spawn: host.spawn, timing: { shutdownStepMs: 10 } });
   pools.push(pool);
   const transport = new AppServerCodexTransport({
     pool,
-    connectorTools: () => undefined,
+    connectorTools: () => roomCanvas?.tools,
     creditsRelay: () => relay,
     environment: {
       person: () => ({ PATH: '/usr/bin', CODEX_HOME: PERSON_HOME }),
@@ -130,11 +152,15 @@ export function makeAppServerRuntime(
     stopAckMs: options.stopAckMs ?? 3_000,
   });
   const runtime = new CodexRuntime({
-    threadMap: new CodexThreadMap(createTestDb()),
+    threadMap: new CodexThreadMap(roomCanvas?.db ?? createTestDb()),
     resolveBinary: async () => '/opt/codex',
     transport,
     ...(options.attachments ? { attachments: options.attachments } : {}),
   });
+  if (roomCanvas) {
+    runtime.setMeshCore(roomCanvas.mesh);
+    runtime.setConnectorRuntimeTools(roomCanvas.tools);
+  }
   wirings.set(runtime, { host, pool });
   return runtime;
 }

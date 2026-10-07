@@ -10,8 +10,8 @@
  *
  * ## What the hardening actually buys, measured rather than assumed
  *
- * Every command goes through {@link runGit}, which applies one shared argument
- * prefix and builds an explicit environment. Each piece is here because it was
+ * Every command goes through the private shared launchers; finite mutation helpers additionally require an original mutation context;
+ * no public arbitrary-argv launcher exists. Each piece is here because it was
  * observed to matter, and none of them claims more than that:
  *
  * - **`GIT_CEILING_DIRECTORIES=<room home>` — the one that was a live bug.**
@@ -115,7 +115,13 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { promises as fsp } from 'node:fs';
 import { internalGitArgs } from '../../../lib/git-safety.js';
-import { RoomError, RoomRepoConfigUnsafeError } from '../room-errors.js';
+import { RoomError, RoomRepoConfigUnsafeError } from '../data/room-errors.js';
+import {
+  readInstallationRoomMutationRoots,
+  checkInstallationRoomMutationTarget,
+  requireInstallationRoomMutationTarget,
+  type InstallationRoomMutationContext,
+} from '../../canvas/doc-channel/writes/installation-room-writes.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -405,14 +411,22 @@ function readsRoomRepo(ceilingDir: string, cwd: string): boolean {
 }
 
 /** The unsafe key names one settings file declares, read without following includes. */
-async function unsafeKeysIn(file: string, ceilingDir: string): Promise<string[]> {
+async function unsafeKeysIn(
+  file: string,
+  ceilingDir: string,
+  context?: InstallationRoomMutationContext
+): Promise<string[]> {
   let listing: string;
+  const args = ['config', '--file', file, '--no-includes', '--name-only', '--list'];
+  const options = {
+    cwd: path.dirname(file),
+    timeout: GIT_TIMEOUT_MS,
+    env: gitEnv(ceilingDir, ceilingDir),
+  };
+  if (context) await checkInstallationRoomMutationTarget(context, file);
+  if (context) requireInstallationRoomMutationTarget(context, file);
   try {
-    const { stdout } = await execFileAsync(
-      'git',
-      ['config', '--file', file, '--no-includes', '--name-only', '--list'],
-      { cwd: path.dirname(file), timeout: GIT_TIMEOUT_MS, env: gitEnv(ceilingDir, ceilingDir) }
-    );
+    const { stdout } = await execFileAsync('git', args, options);
     listing = stdout;
   } catch (err) {
     if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') throw new GitUnavailableError(err);
@@ -461,16 +475,24 @@ async function unsafeKeysIn(file: string, ceilingDir: string): Promise<string[]>
  * @throws {RoomError} `ROOM_REPO_CONFIG_UNSAFE` naming the offending keys.
  */
 export async function assertRoomRepoConfigSafe(ceilingDir: string): Promise<void> {
+  return checkRoomRepoConfigSafe(ceilingDir);
+}
+
+async function checkRoomRepoConfigSafe(
+  ceilingDir: string,
+  context?: InstallationRoomMutationContext
+): Promise<void> {
   const file = path.join(path.resolve(ceilingDir), 'repo', '.git', 'config');
   let stamp: string;
   try {
     const stat = await fsp.stat(file);
     stamp = `${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}:${stat.ino}`;
-  } catch {
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error;
     return; // No repository yet (or none here): nothing configures anything.
   }
   if (safeConfigSeen.get(file) === stamp) return;
-  const unsafe = await unsafeKeysIn(file, ceilingDir);
+  const unsafe = await unsafeKeysIn(file, ceilingDir, context);
   if (unsafe.length > 0) {
     safeConfigSeen.delete(file);
     throw new RoomRepoConfigUnsafeError(file, unsafe);
@@ -510,78 +532,529 @@ export interface RunGitOptions {
   timeoutMs?: number;
 }
 
-/**
- * Run one git command in `cwd` and answer its stdout as raw BYTES.
- *
- * The primitive {@link runGit} is built on, and the one to reach for whenever
- * the output is content rather than a value: `git cat-file blob` answers a
- * file, and a file is bytes — decoding it as UTF-8 would corrupt anything that
- * is not text, and trimming it would silently drop a trailing newline the
- * person actually wrote.
- *
- * @param args - Arguments after `git`, without the shared config prefix.
- * @param cwd - The directory to run in. Must exist.
- * @param ceilingDir - The room home directory git's repository search may not
- *   climb past. Required rather than defaulted: a caller that forgets it is a
- *   caller reading somebody else's repository, which is the bug this exists to
- *   prevent.
- * @param options - Per-call tuning. See {@link RunGitOptions}.
- * @returns Raw stdout.
- * @throws {GitUnavailableError} When there is no `git` on this machine.
- * @throws When git exits non-zero, the timeout elapses, or the output cap is hit.
- */
-export async function runGitRaw(
+/** Arbitrary argv are private; only fixed operation constructors below may launch them. */
+interface NativeLaunch {
+  started: boolean;
+}
+
+/** Private owned launcher; extra targets come only from finite mutation helpers. */
+import { requireOriginalRoomWorktreeReapEffect } from './room-worktree-manager.js';
+
+async function runOwnedGitRaw(
+  args: string[],
+  cwd: string,
+  ceilingDir: string,
+  context: InstallationRoomMutationContext,
+  options: RunGitOptions = {},
+  extraTargets: readonly string[] = [],
+  launch?: NativeLaunch
+): Promise<Buffer> {
+  const roots = readInstallationRoomMutationRoots(context);
+  if (
+    !path.isAbsolute(cwd) ||
+    !path.isAbsolute(ceilingDir) ||
+    path.resolve(ceilingDir) !== roots.homePath
+  ) {
+    throw new Error('Git ceiling must be the captured room home.');
+  }
+  const targets = [cwd, ...extraTargets];
+  for (const target of targets) await checkInstallationRoomMutationTarget(context, target);
+  if (readsRoomRepo(ceilingDir, cwd)) await checkRoomRepoConfigSafe(ceilingDir, context);
+  // Construct all caller-controlled arguments/options before the decisive guards.
+  const command = [...SHARED_CONFIG_ARGS, ...args];
+  const childOptions = {
+    cwd,
+    timeout: options.timeoutMs ?? GIT_TIMEOUT_MS,
+    env: gitEnv(ceilingDir, cwd),
+    maxBuffer: options.maxBuffer ?? GIT_MAX_OUTPUT_BYTES,
+    encoding: 'buffer' as const,
+  };
+  for (const target of targets) await checkInstallationRoomMutationTarget(context, target);
+  for (const target of targets) requireInstallationRoomMutationTarget(context, target);
+  requireOriginalRoomWorktreeReapEffect(context);
+  if (launch) launch.started = true;
+  // No await or supplied callback between the final fixed guards and launch.
+  try {
+    const { stdout } = await execFileAsync('git', command, childOptions);
+    return stdout;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') throw new GitUnavailableError(error);
+    throw error;
+  }
+}
+
+async function runOwnedGit(
+  args: string[],
+  cwd: string,
+  ceilingDir: string,
+  context: InstallationRoomMutationContext,
+  options: RunGitOptions = {},
+  extraTargets: readonly string[] = [],
+  launch?: NativeLaunch
+): Promise<string> {
+  return (await runOwnedGitRaw(args, cwd, ceilingDir, context, options, extraTargets, launch))
+    .toString('utf-8')
+    .trim();
+}
+
+/** Private finite-read implementation. It is never exported as an arbitrary-args alias. */
+async function runReadGitRaw(
   args: string[],
   cwd: string,
   ceilingDir: string,
   options: RunGitOptions = {}
 ): Promise<Buffer> {
-  // Any command that reads the room's own repository reads its config, so none
-  // runs while that config names a program (see {@link assertRoomRepoConfigSafe}).
   if (readsRoomRepo(ceilingDir, cwd)) await assertRoomRepoConfigSafe(ceilingDir);
   try {
     const { stdout } = await execFileAsync('git', [...SHARED_CONFIG_ARGS, ...args], {
       cwd,
       timeout: options.timeoutMs ?? GIT_TIMEOUT_MS,
-      env: gitEnv(ceilingDir, cwd),
+      env: { ...gitEnv(ceilingDir, cwd), GIT_OPTIONAL_LOCKS: '0' },
       maxBuffer: options.maxBuffer ?? GIT_MAX_OUTPUT_BYTES,
-      // Bytes, not characters: this function's whole purpose is to answer what
-      // git wrote rather than what a decoder made of it.
       encoding: 'buffer',
     });
     return stdout;
-  } catch (err) {
-    // `ENOENT` from `execFile` is the BINARY, not a missing path: the cwd is
-    // checked by the caller and a missing repo exits 128 with a message.
-    if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') throw new GitUnavailableError(err);
-    throw err;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') throw new GitUnavailableError(error);
+    throw error;
   }
 }
 
-/**
- * Run one git command in `cwd` and answer its trimmed stdout.
- *
- * The reader for VALUES — a sha, a branch name, a porcelain status. For file
- * contents use {@link runGitRaw}, whose output this one trims and decodes.
- *
- * @param args - Arguments after `git`, without the shared config prefix.
- * @param cwd - The directory to run in. Must exist.
- * @param ceilingDir - The room home directory git's repository search may not
- *   climb past. Required rather than defaulted: a caller that forgets it is a
- *   caller reading somebody else's repository, which is the bug this exists to
- *   prevent.
- * @param options - Per-call tuning. See {@link RunGitOptions}.
- * @returns Trimmed stdout.
- * @throws {GitUnavailableError} When there is no `git` on this machine.
- * @throws When git exits non-zero or the timeout elapses.
- */
-export async function runGit(
+async function runReadGit(
   args: string[],
   cwd: string,
   ceilingDir: string,
   options: RunGitOptions = {}
 ): Promise<string> {
-  return (await runGitRaw(args, cwd, ceilingDir, options)).toString('utf-8').trim();
+  return (await runReadGitRaw(args, cwd, ceilingDir, options)).toString('utf-8').trim();
+}
+
+/** Observe the effective foreground maintenance settings through the same hardened read launcher. */
+export async function readRoomForegroundMaintenance(
+  checkoutDir: string,
+  ceilingDir: string
+): Promise<Readonly<{ maintenanceAutoDetach: string; gcAutoDetach: string }>> {
+  const maintenanceAutoDetach = await runReadGit(
+    ['config', '--get', 'maintenance.autoDetach'],
+    checkoutDir,
+    ceilingDir
+  );
+  const gcAutoDetach = await runReadGit(
+    ['config', '--get', 'gc.autoDetach'],
+    checkoutDir,
+    ceilingDir
+  );
+  return Object.freeze({ maintenanceAutoDetach, gcAutoDetach });
+}
+
+/** Fixed working-tree observation; no caller-selected command, extension, textconv or output budget. */
+export function readRoomWorkingDiff(checkoutDir: string, ceilingDir: string): Promise<string> {
+  return runReadGit(['diff', '--no-ext-diff', '--no-textconv'], checkoutDir, ceilingDir);
+}
+
+/** Actual own-repository registration DATA only; this never grants removal permission. */
+export async function readRoomWorktreeRegistration(
+  repoDir: string,
+  ceilingDir: string,
+  worktreeDir: string,
+  expectedBranch: string
+): Promise<Readonly<{ directory: string; branch: string; head: string }> | null> {
+  requireRevisionOperand(expectedBranch);
+  const bytes = await runReadGitRaw(['worktree', 'list', '--porcelain', '-z'], repoDir, ceilingDir);
+  const text = bytes.toString('utf8');
+  if (!Buffer.from(text, 'utf8').equals(bytes) || !text.endsWith('\0\0'))
+    throw new Error('Invalid native worktree registration encoding/framing.');
+  const records = text.slice(0, -2).split('\0\0');
+  const directories = new Set<string>();
+  let match: Readonly<{ directory: string; branch: string; head: string }> | null = null;
+  for (const record of records) {
+    const fields = record.split('\0');
+    const first = fields.shift();
+    if (!first?.startsWith('worktree ') || first.length === 9)
+      throw new Error('Invalid native worktree registration path.');
+    const directory = first.slice(9);
+    if (!path.isAbsolute(directory))
+      throw new Error('Native worktree registration is not absolute.');
+    const normalized = path.resolve(directory);
+    if (directories.has(normalized)) throw new Error('Duplicate native worktree registration.');
+    directories.add(normalized);
+    const seen = new Set<string>();
+    let head: string | undefined, branch: string | undefined;
+    let bare = false,
+      detached = false,
+      locked = false,
+      prunable = false;
+    for (const field of fields) {
+      const space = field.indexOf(' '),
+        key = space < 0 ? field : field.slice(0, space);
+      const value = space < 0 ? undefined : field.slice(space + 1);
+      if (seen.has(key)) throw new Error('Duplicate native worktree registration field.');
+      seen.add(key);
+      if (key === 'HEAD' && value !== undefined && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(value))
+        head = value;
+      else if (key === 'branch' && value?.startsWith('refs/heads/') && value.length > 11)
+        branch = value;
+      else if (key === 'bare' && value === undefined) bare = true;
+      else if (key === 'detached' && value === undefined) detached = true;
+      else if (key === 'locked') locked = true;
+      else if (key === 'prunable') prunable = true;
+      else throw new Error('Unknown or malformed native worktree registration field.');
+    }
+    if (
+      (bare && (head !== undefined || branch !== undefined || detached)) ||
+      (!bare && (head === undefined || (detached ? branch !== undefined : branch === undefined)))
+    )
+      throw new Error('Conflicting native worktree registration.');
+    if (
+      normalized === path.resolve(worktreeDir) &&
+      !bare &&
+      !detached &&
+      !locked &&
+      !prunable &&
+      branch === `refs/heads/${expectedBranch}` &&
+      head !== undefined
+    )
+      match = Object.freeze({ directory, branch, head });
+  }
+  return match;
+}
+
+/** Revision operands must remain operands, never additional log/diff output options. */
+function requireRevisionOperand(value: string): void {
+  if (
+    typeof value !== 'string' ||
+    value.length === 0 ||
+    value.startsWith('-') ||
+    value.includes('\0')
+  ) {
+    throw new Error('Expected a Git revision operand, not a command option.');
+  }
+}
+
+/** Resolve a literal pathspec before it can reach a mutation command. */
+function requireRepoRelativeMutationPath(repoDir: string, value: string): string {
+  if (
+    typeof value !== 'string' ||
+    value.length === 0 ||
+    value.includes('\0') ||
+    path.isAbsolute(value)
+  )
+    throw new Error('Expected a repository-relative mutation path.');
+  const target = path.resolve(repoDir, value);
+  const relative = path.relative(path.resolve(repoDir), target);
+  if (
+    !relative ||
+    relative === '..' ||
+    relative.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relative) ||
+    relative.split(path.sep)[0] === '.git'
+  )
+    throw new Error('Mutation path escapes the captured repository content.');
+  return target;
+}
+
+/** Fixed owned refresh write; no caller may supply Git flags or another repository. */
+export async function fastForwardRoomWorktree(
+  worktree: string,
+  tip: string,
+  ceilingDir: string,
+  context: InstallationRoomMutationContext,
+  options: RunGitOptions = {}
+): Promise<void> {
+  requireRevisionOperand(tip);
+  await runOwnedGit(
+    ['-c', 'merge.autoStash=false', 'merge', '--ff-only', '--quiet', '--no-stat', tip],
+    worktree,
+    ceilingDir,
+    context,
+    options
+  );
+}
+
+/** Closed status modes used by existing room readers; never a command classifier. */
+export function roomStatusRaw(
+  checkout: string,
+  ceiling: string,
+  mode: 'plain' | 'all' | 'all-submodules' | 'ignored' = 'plain',
+  nul = false
+): Promise<Buffer> {
+  if (typeof nul !== 'boolean') throw new Error('Invalid status separator.');
+  const args = ['status', '--porcelain=v1'];
+  switch (mode) {
+    case 'plain':
+      break;
+    case 'all':
+      args.push('--untracked-files=all');
+      break;
+    case 'all-submodules':
+      args.push('--untracked-files=all', '--ignore-submodules=none');
+      break;
+    case 'ignored':
+      args.push('--ignored', '--untracked-files=all');
+      break;
+    default:
+      throw new Error('Invalid room status mode.');
+  }
+  if (nul) args.push('-z');
+  return runReadGitRaw(args, checkout, ceiling);
+}
+
+/** Fixed tracked/untracked listings; a literal path cannot become an option. */
+export function roomTrackedPathsRaw(
+  checkout: string,
+  ceiling: string,
+  mode: 'plain' | 'staged' | 'tagged' | 'nul' | 'others' = 'plain',
+  relative?: string
+): Promise<Buffer> {
+  const args = ['ls-files'];
+  switch (mode) {
+    case 'plain':
+      break;
+    case 'staged':
+      args.push('-s');
+      break;
+    case 'tagged':
+      args.push('-v', '-z');
+      break;
+    case 'nul':
+      args.push('-z');
+      break;
+    case 'others':
+      args.push('--others', '-z');
+      break;
+    default:
+      throw new Error('Invalid tracked-path mode.');
+  }
+  if (relative !== undefined) {
+    requireRepoRelativeMutationPath(checkout, relative);
+    args.push('--', `:(literal)${relative}`);
+  }
+  return runReadGitRaw(args, checkout, ceiling);
+}
+
+/** Existing worktree ignored-file query with each pattern occupying one fixed -x value slot. */
+export function roomHiddenUntrackedRaw(
+  checkout: string,
+  ceiling: string,
+  patterns: readonly string[]
+): Promise<Buffer> {
+  const args = ['ls-files', '-z', '--others', '--ignored'];
+  for (const pattern of patterns) {
+    if (typeof pattern !== 'string' || pattern.includes('\0'))
+      throw new Error('Invalid exclusion pattern.');
+    args.push('-x', pattern);
+  }
+  return runReadGitRaw(args, checkout, ceiling);
+}
+
+/** Read a verified Room repository revision using bounded Git operands. */
+export function roomVerifiedTip(
+  checkout: string,
+  ceiling: string,
+  ref: string,
+  quiet = false
+): Promise<string> {
+  requireRevisionOperand(ref);
+  if (typeof quiet !== 'boolean') throw new Error('Invalid tip query.');
+  return runReadGit(
+    ['rev-parse', '--verify', ...(quiet ? ['--quiet'] : []), ref],
+    checkout,
+    ceiling
+  );
+}
+/** Read the Room repository's symbolic HEAD. */
+export function roomSymbolicHead(checkout: string, ceiling: string): Promise<string> {
+  return runReadGit(['symbolic-ref', '--quiet', 'HEAD'], checkout, ceiling);
+}
+/** Count commits between validated Room repository revisions. */
+export function roomCommitCount(
+  checkout: string,
+  ceiling: string,
+  from: string,
+  to: string,
+  firstParent = false
+): Promise<string> {
+  requireRevisionOperand(from);
+  requireRevisionOperand(to);
+  if (typeof firstParent !== 'boolean') throw new Error('Invalid commit count mode.');
+  return runReadGit(
+    ['rev-list', ...(firstParent ? ['--first-parent'] : []), '--count', `${from}..${to}`],
+    checkout,
+    ceiling
+  );
+}
+/** Read raw changed paths between validated Room repository revisions. */
+export function roomChangedPathsRaw(
+  checkout: string,
+  ceiling: string,
+  from: string,
+  to: string
+): Promise<Buffer> {
+  requireRevisionOperand(from);
+  requireRevisionOperand(to);
+  return runReadGitRaw(['diff', '--name-only', '--no-renames', '-z', from, to], checkout, ceiling);
+}
+/** Read the merge base of HEAD and a validated Room revision. */
+export function roomMergeBase(checkout: string, ceiling: string, tip: string): Promise<string> {
+  requireRevisionOperand(tip);
+  return runReadGit(['merge-base', 'HEAD', tip], checkout, ceiling);
+}
+
+/** Closed formats, positive finite counts and validated revision operands; no caller-selected --output. */
+export function roomLogRaw(
+  checkout: string,
+  ceiling: string,
+  format: 'subject' | 'authors' | 'author-subject' | 'hashes' | 'first-parent-subjects',
+  count: 1 | 2 | 6 | 8,
+  from?: string,
+  to?: string
+): Promise<Buffer> {
+  if (![1, 2, 6, 8].includes(count)) throw new Error('Invalid room log count.');
+  let args: string[];
+  switch (format) {
+    case 'subject':
+      args = ['log', '--format=%s', '-n', String(count)];
+      break;
+    case 'authors':
+      args = ['log', '--format=%an <%ae>', '-n', String(count)];
+      break;
+    case 'author-subject':
+      args = ['log', '--format=%an <%ae>%n%s', '-n', String(count)];
+      break;
+    case 'hashes':
+      args = ['log', '--format=%H', '-n', String(count)];
+      break;
+    case 'first-parent-subjects':
+      args = ['log', '--first-parent', `--max-count=${count}`, '-z', '--format=%H%x1f%s'];
+      break;
+    default:
+      throw new Error('Invalid room log format.');
+  }
+  if (from !== undefined || to !== undefined) {
+    if (from === undefined || to === undefined) throw new Error('Both range endpoints required.');
+    requireRevisionOperand(from);
+    requireRevisionOperand(to);
+    args.push(`${from}..${to}`);
+  }
+  return runReadGitRaw(args, checkout, ceiling);
+}
+/** Read the size of a validated Room Git object. */
+export function roomBlobSize(checkout: string, ceiling: string, object: string): Promise<string> {
+  requireRevisionOperand(object);
+  return runReadGit(['cat-file', '-s', object], checkout, ceiling);
+}
+/** Read a validated Room Git object. */
+export function roomShowObject(checkout: string, ceiling: string, object: string): Promise<string> {
+  requireRevisionOperand(object);
+  return runReadGit(['show', object], checkout, ceiling);
+}
+
+/** Recognize the same ASCII control range without a control-character regexp. */
+function roomFilePathHasControlCode(value: string): boolean {
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index);
+    if (code <= 0x1f || code === 0x7f) return true;
+  }
+  return false;
+}
+
+/** A normalized literal room-reader path, already normalized by the owning caller. */
+function requireRoomFileLiteralPath(repoDir: string, value: string): void {
+  if (
+    typeof value !== 'string' ||
+    value.length > 4096 ||
+    value !== value.trim() ||
+    value.includes('\\') ||
+    /^[A-Za-z]:/.test(value) ||
+    roomFilePathHasControlCode(value)
+  )
+    throw new Error('Expected a normalized room-file literal path.');
+  for (const part of value.split('/')) {
+    if (!part || part === '.' || part === '..' || part !== part.trim())
+      throw new Error('Expected a normalized room-file literal path.');
+  }
+  requireRepoRelativeMutationPath(repoDir, value);
+}
+
+/** Actual RoomFilesService tree shape: pinned object, NUL names, optional literal relative path. */
+export function readRoomFileTreeRaw(
+  repoDir: string,
+  object: string,
+  ceilingDir: string,
+  relative?: string
+): Promise<Buffer> {
+  requireRevisionOperand(object);
+  const args = ['ls-tree', '-z', '--long', object];
+  if (relative !== undefined) {
+    requireRoomFileLiteralPath(repoDir, relative);
+    args.push('--', `:(literal)${relative}`);
+  }
+  return runReadGitRaw(args, repoDir, ceilingDir);
+}
+
+/** Actual live maxFileBytes+1024 backstop, not the separate FileOps blob fallback. */
+export function readRoomFileContentRaw(
+  repoDir: string,
+  object: string,
+  ceilingDir: string,
+  maxBuffer: number
+): Promise<Buffer> {
+  requireRevisionOperand(object);
+  if (!Number.isSafeInteger(maxBuffer) || maxBuffer <= 0)
+    throw new Error('Expected the positive safe integer live file-content backstop.');
+  return runReadGitRaw(['cat-file', 'blob', object], repoDir, ceilingDir, { maxBuffer });
+}
+
+/** Actual1000-commit provenance shape with original unpredictable24-hex header marker. */
+export function readRoomFileProvenanceRaw(
+  repoDir: string,
+  commit: string,
+  ceilingDir: string,
+  dir: string,
+  nonce: string
+): Promise<Buffer> {
+  requireRevisionOperand(commit);
+  if (typeof nonce !== 'string' || !/^[0-9a-f]{24}$/.test(nonce))
+    throw new Error('Expected the original24-lowercase-hex provenance nonce.');
+  if (dir !== '') requireRoomFileLiteralPath(repoDir, dir);
+  const fields = `${nonce}%H\u001f%aI\u001f%an\u001f%s`;
+  return runReadGitRaw(
+    [
+      'log',
+      '-z',
+      '--name-only',
+      '--no-renames',
+      `--format=${fields}`,
+      '-n',
+      '1000',
+      commit,
+      ...(dir === '' ? [] : ['--', `:(literal)${dir}/`]),
+    ],
+    repoDir,
+    ceilingDir
+  );
+}
+
+/** Fixed blob command for the room file reader; no caller-selected command or tuning. */
+export function readRoomFileBlobRaw(
+  repoDir: string,
+  sha: string,
+  ceilingDir: string
+): Promise<Buffer> {
+  requireRevisionOperand(sha);
+  return runReadGitRaw(['cat-file', 'blob', sha], repoDir, ceilingDir, {
+    maxBuffer: 256 * 1024 * 1024,
+  });
+}
+
+/** Fixed provenance read used by room-file-ops. */
+export function readRoomFileCommitRaw(
+  repoDir: string,
+  sha: string,
+  ceilingDir: string
+): Promise<Buffer> {
+  requireRevisionOperand(sha);
+  return runReadGitRaw(['log', '-1', '--format=%H%x00%an%x00%aI%x00%s', sha], repoDir, ceilingDir);
 }
 
 /**
@@ -594,11 +1067,23 @@ export async function runGit(
  * @param repoDir - The directory to initialise. Created by the caller.
  * @param ceilingDir - The room home directory the search may not climb past.
  */
-export async function initRepo(repoDir: string, ceilingDir: string): Promise<void> {
-  await runGit(
+export async function initRepo(
+  repoDir: string,
+  ceilingDir: string,
+  context: InstallationRoomMutationContext
+): Promise<void> {
+  const roots = readInstallationRoomMutationRoots(context);
+  if (
+    typeof repoDir !== 'string' ||
+    !path.isAbsolute(repoDir) ||
+    path.resolve(repoDir) !== roots.repoPath
+  )
+    throw new Error('Initialization target must be the captured main repository.');
+  await runOwnedGit(
     ['-c', 'init.templateDir=', 'init', '-b', 'main', '--quiet', '.'],
     repoDir,
-    ceilingDir
+    ceilingDir,
+    context
   );
 }
 
@@ -635,7 +1120,7 @@ export async function hasLocalBranch(
   ceilingDir: string
 ): Promise<boolean> {
   try {
-    await runGit(
+    await runReadGit(
       ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`],
       checkoutDir,
       ceilingDir
@@ -711,10 +1196,11 @@ export async function commitAll(
   repoDir: string,
   message: string,
   identity: GitIdentity,
-  ceilingDir: string
+  ceilingDir: string,
+  context: InstallationRoomMutationContext
 ): Promise<string> {
-  await runGit(['add', '--all'], repoDir, ceilingDir);
-  return commitStaged(repoDir, message, identity, ceilingDir);
+  await runOwnedGit(['add', '--all'], repoDir, ceilingDir, context);
+  return commitStaged(repoDir, message, identity, ceilingDir, context);
 }
 
 /**
@@ -737,13 +1223,20 @@ export async function commitAll(
 export async function stagePaths(
   repoDir: string,
   paths: readonly string[],
-  ceilingDir: string
+  ceilingDir: string,
+  context: InstallationRoomMutationContext
 ): Promise<void> {
+  readInstallationRoomMutationRoots(context);
+  const pathTargets = paths.map((value) => requireRepoRelativeMutationPath(repoDir, value));
+  await checkInstallationRoomMutationTarget(context, repoDir);
   if (paths.length === 0) return;
-  await runGit(
+  await runOwnedGit(
     ['add', '--', ...paths.map((filePath) => `:(literal)${filePath}`)],
     repoDir,
-    ceilingDir
+    ceilingDir,
+    context,
+    {},
+    pathTargets
   );
 }
 
@@ -763,7 +1256,7 @@ export async function stagePaths(
  */
 export async function hasStagedChanges(repoDir: string, ceilingDir: string): Promise<boolean> {
   try {
-    await runGit(['diff', '--cached', '--quiet'], repoDir, ceilingDir);
+    await runReadGit(['diff', '--cached', '--quiet'], repoDir, ceilingDir);
     return false;
   } catch (err) {
     if (err instanceof GitUnavailableError) throw err;
@@ -794,9 +1287,10 @@ export async function commitStaged(
   repoDir: string,
   message: string,
   identity: GitIdentity,
-  ceilingDir: string
+  ceilingDir: string,
+  context: InstallationRoomMutationContext
 ): Promise<string> {
-  await runGit(
+  await runOwnedGit(
     [
       '-c',
       // Stripped, not trusted: see {@link stripControlCharacters} for the
@@ -814,9 +1308,10 @@ export async function commitStaged(
       message,
     ],
     repoDir,
-    ceilingDir
+    ceilingDir,
+    context
   );
-  return runGit(['rev-parse', 'HEAD'], repoDir, ceilingDir);
+  return runOwnedGit(['rev-parse', 'HEAD'], repoDir, ceilingDir, context);
 }
 
 /** What a working tree holds that its last commit does not. */
@@ -871,13 +1366,13 @@ export async function listStrayChanges(
   checkoutDir: string,
   ceilingDir: string
 ): Promise<StrayChange[]> {
-  // **Raw, because {@link runGit} trims and a status record can BEGIN with a
+  // **Raw, because the private text launcher trims and a status record can BEGIN with a
   // space.** ` M notes.md` — unmodified in the index, modified in the tree — is
   // the ordinary shape of an edit somebody made in a terminal, and trimming it
   // shifts every field of the record it starts. Filenames may legitimately
   // begin with whitespace too. Nothing here rewrites git's bytes.
   const out = (
-    await runGitRaw(
+    await runReadGitRaw(
       ['status', '--porcelain=v1', '-z', '--untracked-files=all'],
       checkoutDir,
       ceilingDir,
@@ -956,7 +1451,7 @@ export async function isIgnored(
   ceilingDir: string
 ): Promise<boolean> {
   try {
-    await runGit(['check-ignore', '-q', '--no-index', '--', filePath], repoDir, ceilingDir);
+    await runReadGit(['check-ignore', '-q', '--no-index', '--', filePath], repoDir, ceilingDir);
     return true;
   } catch (err) {
     if (err instanceof GitUnavailableError) throw err;
@@ -997,7 +1492,7 @@ export async function pathsInHead(
   // caller asked about — which here would mean choosing the wrong way to undo
   // it.
   const out = (
-    await runGitRaw(
+    await runReadGitRaw(
       [
         'ls-tree',
         '-z',
@@ -1031,13 +1526,20 @@ export async function pathsInHead(
 export async function restoreFromHead(
   repoDir: string,
   paths: readonly string[],
-  ceilingDir: string
+  ceilingDir: string,
+  context: InstallationRoomMutationContext
 ): Promise<void> {
+  readInstallationRoomMutationRoots(context);
+  const pathTargets = paths.map((value) => requireRepoRelativeMutationPath(repoDir, value));
+  await checkInstallationRoomMutationTarget(context, repoDir);
   if (paths.length === 0) return;
-  await runGit(
+  await runOwnedGit(
     ['checkout', 'HEAD', '--', ...paths.map((filePath) => `:(literal)${filePath}`)],
     repoDir,
-    ceilingDir
+    ceilingDir,
+    context,
+    {},
+    pathTargets
   );
 }
 
@@ -1068,10 +1570,14 @@ export async function restoreFromHead(
 export async function unstagePaths(
   repoDir: string,
   paths: readonly string[],
-  ceilingDir: string
+  ceilingDir: string,
+  context: InstallationRoomMutationContext
 ): Promise<void> {
+  readInstallationRoomMutationRoots(context);
+  const pathTargets = paths.map((value) => requireRepoRelativeMutationPath(repoDir, value));
+  await checkInstallationRoomMutationTarget(context, repoDir);
   if (paths.length === 0) return;
-  await runGit(
+  await runOwnedGit(
     [
       'rm',
       '--cached',
@@ -1081,7 +1587,10 @@ export async function unstagePaths(
       ...paths.map((filePath) => `:(literal)${filePath}`),
     ],
     repoDir,
-    ceilingDir
+    ceilingDir,
+    context,
+    {},
+    pathTargets
   );
 }
 
@@ -1101,7 +1610,7 @@ export async function hasUncommittedChanges(
   checkoutDir: string,
   ceilingDir: string
 ): Promise<boolean> {
-  return (await runGit(['status', '--porcelain=v1'], checkoutDir, ceilingDir)).length > 0;
+  return (await runReadGit(['status', '--porcelain=v1'], checkoutDir, ceilingDir)).length > 0;
 }
 
 /**
@@ -1121,7 +1630,7 @@ export async function hasUncommittedChanges(
  */
 export async function commitsAheadOfMain(checkoutDir: string, ceilingDir: string): Promise<number> {
   if (!(await hasMainBranch(checkoutDir, ceilingDir))) return 0;
-  const out = await runGit(['rev-list', '--count', 'main..HEAD'], checkoutDir, ceilingDir);
+  const out = await runReadGit(['rev-list', '--count', 'main..HEAD'], checkoutDir, ceilingDir);
   return Number.parseInt(out, 10) || 0;
 }
 
@@ -1147,12 +1656,15 @@ export async function addWorktree(
   worktreeDir: string,
   branch: string,
   createFrom: string | null,
-  ceilingDir: string
+  ceilingDir: string,
+  context: InstallationRoomMutationContext
 ): Promise<void> {
+  requireRevisionOperand(branch);
+  if (createFrom !== null) requireRevisionOperand(createFrom);
   const args = createFrom
     ? ['worktree', 'add', '--quiet', '-b', branch, worktreeDir, createFrom]
     : ['worktree', 'add', '--quiet', worktreeDir, branch];
-  await runGit(args, repoDir, ceilingDir);
+  await runOwnedGit(args, repoDir, ceilingDir, context, {}, [worktreeDir]);
 }
 
 /**
@@ -1172,9 +1684,12 @@ export async function addWorktree(
 export async function removeWorktree(
   repoDir: string,
   worktreeDir: string,
-  ceilingDir: string
+  ceilingDir: string,
+  context: InstallationRoomMutationContext
 ): Promise<void> {
-  await runGit(['worktree', 'remove', worktreeDir], repoDir, ceilingDir);
+  await runOwnedGit(['worktree', 'remove', worktreeDir], repoDir, ceilingDir, context, {}, [
+    worktreeDir,
+  ]);
 }
 
 /**
@@ -1186,8 +1701,12 @@ export async function removeWorktree(
  * @param repoDir - The room's main checkout.
  * @param ceilingDir - The room home directory the search may not climb past.
  */
-export async function pruneWorktrees(repoDir: string, ceilingDir: string): Promise<void> {
-  await runGit(['worktree', 'prune'], repoDir, ceilingDir);
+export async function pruneWorktrees(
+  repoDir: string,
+  ceilingDir: string,
+  context: InstallationRoomMutationContext
+): Promise<void> {
+  await runOwnedGit(['worktree', 'prune'], repoDir, ceilingDir, context);
 }
 
 /**
@@ -1205,13 +1724,24 @@ export async function pruneWorktrees(repoDir: string, ceilingDir: string): Promi
 export async function deleteMergedBranch(
   repoDir: string,
   branch: string,
-  ceilingDir: string
+  ceilingDir: string,
+  context: InstallationRoomMutationContext
 ): Promise<boolean> {
+  requireRevisionOperand(branch);
+  const launch: NativeLaunch = { started: false };
   try {
-    await runGit(['branch', '--quiet', '-d', branch], repoDir, ceilingDir);
+    await runOwnedGit(
+      ['branch', '--quiet', '-d', branch],
+      repoDir,
+      ceilingDir,
+      context,
+      {},
+      [],
+      launch
+    );
     return true;
   } catch (err) {
-    if (err instanceof GitUnavailableError) throw err;
+    if (!launch.started || err instanceof GitUnavailableError) throw err;
     return false;
   }
 }
@@ -1242,7 +1772,7 @@ export async function headCommittedAt(
 ): Promise<Date | null> {
   let iso: string;
   try {
-    iso = await runGit(['log', '-1', '--format=%cI'], checkoutDir, ceilingDir);
+    iso = await runReadGit(['log', '-1', '--format=%cI'], checkoutDir, ceilingDir);
   } catch (err) {
     if (err instanceof GitUnavailableError) throw err;
     const stderr = String((err as { stderr?: unknown })?.stderr ?? '');
@@ -1274,7 +1804,9 @@ export async function aheadBehind(
   branch: string,
   ceilingDir: string
 ): Promise<{ ahead: number; behind: number }> {
-  const out = await runGit(
+  requireRevisionOperand(base);
+  requireRevisionOperand(branch);
+  const out = await runReadGit(
     ['rev-list', '--left-right', '--count', `${base}...${branch}`],
     repoDir,
     ceilingDir
@@ -1336,7 +1868,8 @@ export async function listTree(
   commitish: string,
   ceilingDir: string
 ): Promise<Map<string, TreeEntry>> {
-  const out = await runGit(
+  requireRevisionOperand(commitish);
+  const out = await runReadGit(
     ['ls-tree', '-r', '-l', '-z', commitish],
     repoDir,
     ceilingDir,
@@ -1388,7 +1921,8 @@ export async function listTree(
  * @returns The blob's content, trimmed.
  */
 export async function readBlob(repoDir: string, sha: string, ceilingDir: string): Promise<string> {
-  return runGit(['cat-file', 'blob', sha], repoDir, ceilingDir);
+  requireRevisionOperand(sha);
+  return runReadGit(['cat-file', 'blob', sha], repoDir, ceilingDir);
 }
 
 /** What one merge would bring in, as a person reads it. */
@@ -1421,7 +1955,9 @@ export async function shortstat(
   to: string,
   ceilingDir: string
 ): Promise<DiffStat> {
-  const out = await runGit(['diff', '--shortstat', from, to], repoDir, ceilingDir);
+  requireRevisionOperand(from);
+  requireRevisionOperand(to);
+  const out = await runReadGit(['diff', '--shortstat', from, to], repoDir, ceilingDir);
   const read = (pattern: RegExp): number => Number.parseInt(pattern.exec(out)?.[1] ?? '0', 10) || 0;
   return {
     files: read(/(\d+) files? changed/),
@@ -1443,7 +1979,8 @@ export async function revParse(
   ref: string,
   ceilingDir: string
 ): Promise<string> {
-  return runGit(['rev-parse', ref], checkoutDir, ceilingDir);
+  requireRevisionOperand(ref);
+  return runReadGit(['rev-parse', ref], checkoutDir, ceilingDir);
 }
 
 /**
@@ -1460,7 +1997,7 @@ export async function currentBranch(
   checkoutDir: string,
   ceilingDir: string
 ): Promise<string | null> {
-  const name = await runGit(['rev-parse', '--abbrev-ref', 'HEAD'], checkoutDir, ceilingDir);
+  const name = await runReadGit(['rev-parse', '--abbrev-ref', 'HEAD'], checkoutDir, ceilingDir);
   return name === 'HEAD' ? null : name;
 }
 
@@ -1499,9 +2036,9 @@ export class MergeConflictError extends Error {
  * — and the next merge into that tree would be refused, or worse, would commit
  * somebody's conflict markers. `git merge --abort` puts the tree back exactly
  * where it was, and it runs in a `finally`-shaped path so no error route can
- * skip it. The abort's own failure is swallowed deliberately: there is nothing
- * to abort when the merge failed before starting, and the caller is owed the
- * reason the merge failed rather than the reason the cleanup did.
+ * skip it. The abort's own failure is recorded as cleanupCause on the original
+ * merge failure; it cannot replace the original cause, even when that cause
+ * is undefined. Pre-launch ownership/configuration refusals do not launch an abort.
  *
  * `--no-verify` is deliberately absent, unlike {@link commitAll}. It is a newer
  * option on `merge` than on `commit`, and `core.hooksPath` — applied to every
@@ -1522,10 +2059,13 @@ export async function mergeNoFf(
   branch: string,
   message: string,
   identity: GitIdentity,
-  ceilingDir: string
+  ceilingDir: string,
+  context: InstallationRoomMutationContext
 ): Promise<string> {
+  requireRevisionOperand(branch);
+  const launch: NativeLaunch = { started: false };
   try {
-    await runGit(
+    await runOwnedGit(
       [
         '-c',
         `user.name=${identity.name}`,
@@ -1539,19 +2079,24 @@ export async function mergeNoFf(
         branch,
       ],
       repoDir,
-      ceilingDir
+      ceilingDir,
+      context,
+      {},
+      [],
+      launch
     );
   } catch (err) {
-    if (err instanceof GitUnavailableError || err instanceof RoomError) throw err;
+    if (!launch.started || err instanceof GitUnavailableError || err instanceof RoomError)
+      throw err;
+    const failure = new MergeConflictError(branch, err);
     try {
-      await runGit(['merge', '--abort'], repoDir, ceilingDir);
-    } catch {
-      // Nothing was in progress — the merge failed before it touched the tree.
-      // The caller's error is the one worth reporting.
+      await runOwnedGit(['merge', '--abort'], repoDir, ceilingDir, context);
+    } catch (cleanupCause) {
+      Object.defineProperty(failure, 'cleanupCause', { value: cleanupCause });
     }
-    throw new MergeConflictError(branch, err);
+    throw failure;
   }
-  return runGit(['rev-parse', 'HEAD'], repoDir, ceilingDir);
+  return runOwnedGit(['rev-parse', 'HEAD'], repoDir, ceilingDir, context);
 }
 
 /**
@@ -1565,7 +2110,7 @@ export async function mergeNoFf(
  * @param ceilingDir - The room home directory the search may not climb past.
  */
 export async function absoluteGitDir(checkoutDir: string, ceilingDir: string): Promise<string> {
-  return runGit(['rev-parse', '--absolute-git-dir'], checkoutDir, ceilingDir);
+  return runReadGit(['rev-parse', '--absolute-git-dir'], checkoutDir, ceilingDir);
 }
 
 /**
@@ -1579,6 +2124,6 @@ export async function absoluteGitDir(checkoutDir: string, ceilingDir: string): P
  * @param ceilingDir - The room home directory the search may not climb past.
  */
 export async function commonGitDir(checkoutDir: string, ceilingDir: string): Promise<string> {
-  const dir = await runGit(['rev-parse', '--git-common-dir'], checkoutDir, ceilingDir);
+  const dir = await runReadGit(['rev-parse', '--git-common-dir'], checkoutDir, ceilingDir);
   return path.resolve(checkoutDir, dir);
 }

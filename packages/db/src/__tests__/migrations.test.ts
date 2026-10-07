@@ -99,6 +99,84 @@ function migrationsFolderThrough(idx: number): string {
 }
 
 describe('Database Migrations', () => {
+  it('upgrades the published latest database through both Doc migrations exactly once', () => {
+    const db = createDb(':memory:');
+    try {
+      // This is the genuine published main history, before either unpublished Doc leaf.
+      migrate(db, { migrationsFolder: migrationsFolderThrough(145) });
+      db.$client
+        .prepare(
+          'INSERT INTO session_metadata (session_id, runtime, agent_path, created_at) VALUES (?, ?, ?, ?)'
+        )
+        .run('published-session', 'codex', '/agents/published', '2026-10-05T23:09:15Z');
+      const publishedRow = db.$client
+        .prepare("SELECT * FROM session_metadata WHERE session_id = 'published-session'")
+        .get();
+      const publishedHistory = db.$client
+        .prepare('SELECT * FROM __drizzle_migrations ORDER BY id')
+        .all();
+      expect(publishedHistory).toHaveLength(146);
+      const tables = () =>
+        db.$client
+          .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+          .all()
+          .map((row) => (row as { name: string }).name);
+      expect(tables()).not.toContain('canvas_doc_channel_tokens');
+      expect(tables()).not.toContain('canvas_doc_room_pending_sources');
+
+      runMigrations(db);
+      expect(tables()).toEqual(
+        expect.arrayContaining([
+          'canvas_doc_channel_tokens',
+          'room_doc_admissions',
+          'room_doc_admission_inputs',
+          'room_doc_exhausted_lineages',
+          'canvas_doc_room_pending_sources',
+        ])
+      );
+      expect(
+        db.$client
+          .prepare("PRAGMA table_info('pulse_runs')")
+          .all()
+          .map((row) => (row as { name: string }).name)
+      ).toEqual(expect.arrayContaining(['scheduled_for', 'missed_ticks']));
+      expect(
+        db.$client
+          .prepare("SELECT * FROM session_metadata WHERE session_id = 'published-session'")
+          .get()
+      ).toEqual(publishedRow);
+      const history = db.$client.prepare('SELECT * FROM __drizzle_migrations ORDER BY id').all();
+      const journal = JSON.parse(
+        readFileSync(path.join(DRIZZLE_DIR, 'meta/_journal.json'), 'utf-8')
+      ) as { entries: { idx: number; tag: string }[] };
+      expect(history).toHaveLength(journal.entries.length);
+      expect(history.slice(0, 146)).toEqual(publishedHistory);
+      // Later main migrations may follow these two immutable Doc leaves.
+      // Each original leaf must still appear exactly once in the full upgrade.
+      for (const hash of [
+        'c156544a648a0d5dd48a5147f2488420d8460da5ea9e0c596afdd407486adc84',
+        '934167d31e86442927414b4ef1790e60ddc3d1d7af51285b59411d135514fc49',
+      ]) {
+        expect(history.filter((row) => (row as { hash: string }).hash === hash)).toHaveLength(1);
+      }
+      const schema = db.$client
+        .prepare('SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY type, name')
+        .all();
+      runMigrations(db);
+      expect(db.$client.prepare('SELECT * FROM __drizzle_migrations ORDER BY id').all()).toEqual(
+        history
+      );
+      expect(
+        db.$client
+          .prepare('SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY type, name')
+          .all()
+      ).toEqual(schema);
+      expect(db.$client.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+    } finally {
+      db.$client.close();
+    }
+  });
+
   it('applies all migrations to a fresh database without errors', () => {
     expect(() => {
       const db = createDb(':memory:');
@@ -156,11 +234,13 @@ describe('Database Migrations', () => {
       // evidence (spec `doc-channel`, migration 0137). These survive physical
       // document removal so closure and accepted delivery history stay intact.
       'canvas_doc_batches',
+      'canvas_doc_channel_tokens',
       'canvas_doc_channels',
       'canvas_doc_deliveries',
       'canvas_doc_events',
       'canvas_doc_grants',
       'canvas_doc_identity_intents',
+      'canvas_doc_room_pending_sources',
       'canvas_doc_write_intents',
       // The documents a room's members have put on its shared canvas — server
       // owned, so every viewer sees one table (spec `room-canvas`, migration
@@ -280,6 +360,9 @@ describe('Database Migrations', () => {
       // The room primitive: a membership-scoped durable stream, its roster, its
       // never-trimmed log, and the per-(room, agent) session bindings
       // (ADR 260726-170125, migration 0034).
+      'room_doc_admission_inputs',
+      'room_doc_admissions',
+      'room_doc_exhausted_lineages',
       'room_entries',
       'room_entry_reactions',
       'room_members',

@@ -1,3 +1,7 @@
+import {
+  createRoomDocBudgetPersistence,
+  type FixedRoomDocBudgetPersistence,
+} from '@dorkos/db/internal-server';
 /**
  * Two ceilings on what automatic replies can cost, counted without asking who
  * is calling.
@@ -84,8 +88,28 @@
  *
  * @module server/services/rooms/limits/turn-budget
  */
-import { roomTurnSpend, and, gt, lte, type Db } from '@dorkos/db';
+import {
+  roomTurnSpend,
+  and,
+  gt,
+  lte,
+  createRoomSpendPersistence,
+  type NativeSpendReceipt,
+  type Db,
+} from '@dorkos/db';
+import type {
+  ConfirmedRoomBarrier,
+  NativeRoomDocCommit,
+  RoomDocCommittedFact,
+} from '@dorkos/db/internal-server';
 import { logger } from '../../../lib/logger.js';
+import {
+  readOriginalRoomTurnBudgetPolicy,
+  type BudgetDecision,
+  type TurnBudgetLimits,
+  type RoomDocBudgetCompanion,
+} from './room-limits.js';
+export type { BudgetDecision, TurnBudgetLimits, RoomDocBudgetCompanion } from './room-limits.js';
 
 /** One hour, the window both config fields are denominated in. */
 const WINDOW_MS = 60 * 60_000;
@@ -114,20 +138,6 @@ export type BudgetRefusalScope = 'room' | 'global';
  * either uninteresting or constant. What a reader of the notice actually needs
  * is WHICH cap refused, since the two send them to different settings.
  */
-export interface BudgetDecision {
-  allowed: boolean;
-  /** Set only when `allowed` is false: which cap said no. */
-  scope?: BudgetRefusalScope;
-  /**
-   * Whether this turn was actually charged to a window.
-   *
-   * False when nothing was counting it — both caps off — in which case
-   * `allowed` is true and no window moved. The one caller that needs the
-   * difference is the notice log's re-arm: "the window rolled, so the next
-   * exhaustion is news" is only true of a window that exists.
-   */
-  counted: boolean;
-}
 
 /**
  * The two live caps, read per call so a change in Settings — or on the room —
@@ -144,24 +154,6 @@ export interface BudgetDecision {
  * is not (`resolveRoomLimits`, which owns that asymmetry). A room whose own cap
  * is `null` is still gated by `global()`.
  */
-export interface TurnBudgetLimits {
-  /**
-   * Automatic turns this room may run per window, or `null` when this room's
-   * own limits are off.
-   *
-   * Takes the room id because the ceiling is per room now: `rooms.max_auto_turns_per_hour`
-   * overrides `rooms.maxAutomaticTurnsPerRoomPerHour` for one room (DOR-1429).
-   */
-  perRoom: (roomId: string) => number | null;
-  /**
-   * Automatic turns the whole install may run per window, across every room, or
-   * `null` when the install-wide toggle is off.
-   *
-   * Takes no room id, and cannot: this is the install's wallet, and no room has
-   * a say in it.
-   */
-  global: () => number | null;
-}
 
 /**
  * A rolling count of automatic turns, per room and in total, held in memory and
@@ -181,10 +173,23 @@ export interface TurnBudgetLimits {
 export class RoomTurnBudget {
   private readonly limits: TurnBudgetLimits;
   private readonly db: Db;
+  readonly #docDb: Db;
+  readonly #docReadGlobal: TurnBudgetLimits['global'];
+  readonly #docReadDestination: ReturnType<typeof readOriginalRoomTurnBudgetPolicy>;
+  readonly #docClock: () => number;
+  readonly #docWindowMs: number;
+  readonly #docReadPreparedFence: ((at: number, floor: number) => { state: string }) | undefined;
+  readonly #docPersistence: FixedRoomDocBudgetPersistence | undefined;
   private readonly now: () => number;
   private readonly windowMs: number;
-  private readonly perRoom = new Map<string, number[]>();
-  private globalRuns: number[] = [];
+  #perRoom = new Map<string, number[]>();
+  #globalRuns: number[] = [];
+  #facts: { identity: object; roomId: string; at: number; receipt?: NativeSpendReceipt }[] = [];
+  private readonly persistence: ReturnType<typeof createRoomSpendPersistence>;
+  #generation = 0;
+  readonly #prepared = new Map<object, { sourceHash: string; barrier?: ConfirmedRoomBarrier }>();
+  #unknownFacts = false;
+  readonly #committed = new WeakSet<object>();
 
   /**
    * Load the window this install is already inside, then bound what is left of
@@ -198,9 +203,20 @@ export class RoomTurnBudget {
   constructor(opts: { limits: TurnBudgetLimits; db: Db; now?: () => number; windowMs?: number }) {
     this.limits = opts.limits;
     this.db = opts.db;
+    this.#docDb = opts.db;
+    this.#docReadDestination = readOriginalRoomTurnBudgetPolicy(opts.limits, opts.db);
+    this.#docReadGlobal =
+      this.#docReadDestination?.readGlobal ?? opts.limits.global.bind(opts.limits);
+    this.#docClock = opts.now ?? (() => Date.now());
+    this.#docPersistence = createRoomDocBudgetPersistence(opts.db);
+    this.persistence = createRoomSpendPersistence(opts.db);
+    this.#docReadPreparedFence = this.persistence?.readRoomDocPreparedFence.bind(this.persistence);
+    this.#docWindowMs = opts.windowMs ?? WINDOW_MS;
     this.now = opts.now ?? (() => Date.now());
     this.windowMs = opts.windowMs ?? WINDOW_MS;
     this.hydrate();
+    if (Object.getPrototypeOf(this) === RoomTurnBudget.prototype)
+      companions.set(this, { db: this.#docDb, construct: () => this.#docCompanion() });
   }
 
   /**
@@ -221,16 +237,20 @@ export class RoomTurnBudget {
    * @param roomId - The room about to run a turn.
    */
   tryReserve(roomId: string): BudgetDecision {
+    const generation = this.#generation;
+    if (this.#isPreparedFenced()) return { allowed: false, counted: false, prepared: true };
     const globalCap = this.limits.global();
     const roomCap = this.limits.perRoom(roomId);
-    if (globalCap === null && roomCap === null) return { allowed: true, counted: false };
-
     const at = this.now();
     const floor = at - this.windowMs;
-    this.globalRuns = this.globalRuns.filter((t) => t > floor);
-    const room = (this.perRoom.get(roomId) ?? []).filter((t) => t > floor);
+    if (generation !== this.#generation || this.#isPreparedFenced(at, floor))
+      return { allowed: false, counted: false, prepared: true };
+    if (globalCap === null && roomCap === null) return { allowed: true, counted: false };
 
-    if (globalCap !== null && this.globalRuns.length >= globalCap) {
+    this.#globalRuns = this.#globalRuns.filter((t) => t > floor);
+    const room = (this.#perRoom.get(roomId) ?? []).filter((t) => t > floor);
+
+    if (globalCap !== null && this.#globalRuns.length >= globalCap) {
       this.store(roomId, room);
       return { allowed: false, scope: 'global', counted: false };
     }
@@ -239,11 +259,24 @@ export class RoomTurnBudget {
       return { allowed: false, scope: 'room', counted: false };
     }
 
+    if (generation !== this.#generation || this.#isPreparedFenced(at, floor))
+      return { allowed: false, counted: false, prepared: true };
+    this.#facts = this.#facts.filter((fact) => fact.at > floor);
+    const fact = { identity: Object.freeze({}), roomId, at } as {
+      identity: object;
+      roomId: string;
+      at: number;
+      receipt?: NativeSpendReceipt;
+    };
+    this.#facts.push(fact);
     room.push(at);
-    this.globalRuns.push(at);
+    this.#globalRuns.push(at);
     this.store(roomId, room);
-    this.record(roomId, at, floor);
-    return { allowed: true, counted: true };
+    this.#generation += 1;
+    const recorded = this.record(roomId, at, floor, fact);
+    return recorded
+      ? { allowed: true, counted: true }
+      : { allowed: false, counted: true, prepared: true };
   }
 
   /**
@@ -272,8 +305,8 @@ export class RoomTurnBudget {
     const floor = this.now() - this.windowMs;
     const globalCap = this.limits.global();
     const roomCap = this.limits.perRoom(roomId);
-    const global = this.globalRuns.filter((t) => t > floor).length;
-    const room = (this.perRoom.get(roomId) ?? []).filter((t) => t > floor).length;
+    const global = this.#globalRuns.filter((t) => t > floor).length;
+    const room = (this.#perRoom.get(roomId) ?? []).filter((t) => t > floor).length;
     return {
       room: roomCap === null ? null : Math.max(0, roomCap - room),
       global: globalCap === null ? null : Math.max(0, globalCap - global),
@@ -323,8 +356,9 @@ export class RoomTurnBudget {
       return;
     }
     for (const row of rows) {
-      this.globalRuns.push(row.at);
-      const window = this.perRoom.get(row.roomId) ?? [];
+      this.#facts.push({ identity: Object.freeze({}), roomId: row.roomId, at: row.at });
+      this.#globalRuns.push(row.at);
+      const window = this.#perRoom.get(row.roomId) ?? [];
       window.push(row.at);
       this.store(row.roomId, window);
     }
@@ -348,25 +382,209 @@ export class RoomTurnBudget {
    * @param at - When, epoch ms.
    * @param floor - The oldest instant still inside the window.
    */
-  private record(roomId: string, at: number, floor: number): void {
+  private record(
+    roomId: string,
+    at: number,
+    floor: number,
+    fact: { receipt?: NativeSpendReceipt }
+  ): boolean {
     try {
-      this.db.insert(roomTurnSpend).values({ roomId, at }).run();
-      this.db.delete(roomTurnSpend).where(lte(roomTurnSpend.at, floor)).run();
+      if (this.persistence) {
+        const result = this.persistence.insertOrdinary(roomId, at, floor);
+        fact.receipt = result.receipt; // Capture genuine insertion identity BEFORE prune/logger.
+        if (result.state === 'refused-prepared') return false;
+        this.persistence.pruneExpired(floor);
+      } else {
+        this.db.insert(roomTurnSpend).values({ roomId, at }).run();
+        this.db.delete(roomTurnSpend).where(lte(roomTurnSpend.at, floor)).run();
+      }
     } catch (err) {
       logger.warn('[rooms] could not record a turn against the durable budget', {
         roomId,
         error: err instanceof Error ? err.message : String(err),
       });
     }
+    return true; // Existing failed-record honored-memory policy is unchanged.
+  }
+
+  #isPreparedFenced(at?: number, floor?: number): boolean {
+    if (this.#unknownFacts || this.#prepared.size) return true;
+    if (!this.#docReadPreparedFence) return false; // Ordinary legacy Db remains supported; dedicated lane unavailable.
+    const time = at ?? this.#docClock();
+    return this.#docReadPreparedFence(time, floor ?? time - this.#docWindowMs).state !== 'clear';
+  }
+  #docCompanion(): RoomDocBudgetCompanion {
+    const persistence = this.#docPersistence;
+    const policy = this.#docReadDestination;
+    if (!persistence || !policy)
+      throw new Error('Dedicated Room lane requires owned persistence and policy');
+    const snapshots = new WeakMap<
+      object,
+      {
+        generation: number;
+        at?: number;
+        global?: number | null;
+        room?: number | null;
+        roomId: string;
+      }
+    >();
+    const requireOwner = (owner: object) => {
+      const state = snapshots.get(owner);
+      if (
+        !state ||
+        !this.#prepared.has(owner) ||
+        state.generation !== this.#generation ||
+        this.#unknownFacts
+      )
+        throw new Error('Room budget preparation changed');
+      return state;
+    };
+    const firsts = new WeakMap<NativeRoomDocCommit, Readonly<RoomDocCommittedFact>>();
+    const companion: RoomDocBudgetCompanion = Object.freeze<RoomDocBudgetCompanion>({
+      begin: (sourceHash, roomId) => {
+        if (this.#isPreparedFenced()) throw new Error('Unresolved Room source');
+        const owner = Object.freeze({});
+        this.#generation += 1;
+        this.#prepared.set(owner, { sourceHash });
+        snapshots.set(owner, { generation: this.#generation, roomId });
+        return owner;
+      },
+      readGlobal: (owner) => {
+        const state = requireOwner(owner);
+        state.global = this.#docReadGlobal();
+        requireOwner(owner);
+      },
+      readRoom: (owner) => {
+        const state = requireOwner(owner);
+        const resolved = policy.readRoom(state.roomId);
+        state.room = resolved.turnLimitsEnabled ? resolved.maxAutoTurnsPerHour : null;
+        requireOwner(owner);
+      },
+      readDestinationPolicy: (owner) => {
+        const state = requireOwner(owner);
+        const resolved = policy.readRoom(state.roomId);
+        requireOwner(owner);
+        return resolved;
+      },
+      readClock: (owner) => {
+        const state = requireOwner(owner);
+        state.at = this.#docClock();
+        requireOwner(owner);
+      },
+      prepare: (owner, data) => {
+        requireOwner(owner);
+        const result = persistence.prepare(data);
+        if (result.state === 'confirmed') this.#prepared.get(owner)!.barrier = result.value;
+        else if (result.state === 'refused') {
+          this.#prepared.delete(owner);
+          this.#generation += 1;
+        }
+        return result;
+      },
+      commit: (owner, data) => {
+        const state = requireOwner(owner),
+          prepared = this.#prepared.get(owner)!;
+        if (
+          !prepared.barrier ||
+          state.global === undefined ||
+          state.room === undefined ||
+          state.at === undefined ||
+          prepared.sourceHash !== data.originalSourceHash ||
+          state.roomId !== data.roomId
+        )
+          throw new Error('Incomplete Room budget capture');
+        const at = state.at,
+          floor = at - this.#docWindowMs;
+        const memoryFacts = this.#facts
+          .filter((fact) => fact.at > floor && fact.at <= at)
+          .map((fact) => Object.freeze({ ...fact }));
+        const result = persistence.commit(prepared.barrier, {
+          ...data,
+          atMs: at,
+          nowIso: new Date(at).toISOString(),
+          globalFloorMs: floor,
+          documentFloorMs: at - 3_600_000,
+          globalCap: state.global,
+          roomCap: state.room,
+          memoryFacts,
+        });
+        if (result.state === 'confirmed') {
+          // FIRST after native outer COMMIT: immutable native fact -> complete SAME budget cache.
+          try {
+            const fact = persistence.readCommittedFact(result.value);
+            if (!this.#committed.has(fact.identity)) {
+              const facts = [...this.#facts, fact],
+                global = [...this.#globalRuns, fact.at];
+              const rooms = new Map(this.#perRoom),
+                room = [...(rooms.get(fact.roomId) ?? []), fact.at];
+              rooms.delete(fact.roomId);
+              rooms.set(fact.roomId, room);
+              while (rooms.size > TRACKED_ROOMS) rooms.delete(rooms.keys().next().value!);
+              this.#facts = facts;
+              this.#globalRuns = global;
+              this.#perRoom = rooms;
+              this.#committed.add(fact.identity);
+              this.#generation += 1;
+            }
+            firsts.set(result.value, Object.freeze({ ...fact }));
+          } catch (cause) {
+            this.#unknownFacts = true;
+            throw cause;
+          }
+          // Lost owner still got its fact before any observer; only exact owner fence retires.
+          if (this.#prepared.get(owner) === prepared) this.#prepared.delete(owner);
+        }
+        return result;
+      },
+      release: (owner) => {
+        const prepared = this.#prepared.get(owner);
+        if (!prepared?.barrier) throw new Error('No owned confirmed Room barrier');
+        const result = persistence.release(prepared.barrier);
+        if (result.state === 'confirmed' && this.#prepared.get(owner) === prepared) {
+          this.#prepared.delete(owner);
+          this.#generation += 1;
+        }
+        return result;
+      },
+    });
+    firstCompanions.set(companion, (commit) =>
+      this.#unknownFacts ? undefined : firsts.get(commit)
+    );
+    return companion;
   }
 
   /** Write a room's pruned window back, re-inserting it as most recently used. */
   private store(roomId: string, window: number[]): void {
-    this.perRoom.delete(roomId);
-    this.perRoom.set(roomId, window);
-    if (this.perRoom.size > TRACKED_ROOMS) {
-      const oldest = this.perRoom.keys().next().value;
-      if (oldest !== undefined) this.perRoom.delete(oldest);
+    this.#perRoom.delete(roomId);
+    this.#perRoom.set(roomId, window);
+    if (this.#perRoom.size > TRACKED_ROOMS) {
+      const oldest = this.#perRoom.keys().next().value;
+      if (oldest !== undefined) this.#perRoom.delete(oldest);
     }
   }
+}
+
+/** Internal server module surface; no HTTP/MCP caller receives this companion. */
+
+const companions = new WeakMap<RoomTurnBudget, { db: Db; construct(): RoomDocBudgetCompanion }>();
+/** Fixed genuine budget+ownDb construction; never a supplied persistence/checker. */
+export function createRoomDocBudgetCompanion(
+  budget: RoomTurnBudget,
+  exactOwnDb: Db
+): RoomDocBudgetCompanion {
+  const original = companions.get(budget);
+  if (!original || original.db !== exactOwnDb) throw new Error('Foreign Room budget');
+  return original.construct();
+}
+
+const firstCompanions = new WeakMap<
+  RoomDocBudgetCompanion,
+  (commit: NativeRoomDocCommit) => Readonly<RoomDocCommittedFact> | undefined
+>();
+/** Fixed constructor-private FIRST recognition; native COMMIT alone never permits SDK start. */
+export function readRoomDocBudgetFirst(
+  companion: RoomDocBudgetCompanion,
+  commit: NativeRoomDocCommit
+): Readonly<RoomDocCommittedFact> | undefined {
+  return firstCompanions.get(companion)?.(commit);
 }

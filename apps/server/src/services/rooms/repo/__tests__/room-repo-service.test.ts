@@ -1,3 +1,7 @@
+import { promises as acquiredNativeFs } from 'node:fs';
+import { apikey, eq as nativeEq } from '@dorkos/db';
+import originalRequest from '@dorkos/test-utils/supertest';
+import { createOriginalOwnedRoomFixture } from './room-original-owned-fixture.js';
 /**
  * Giving a room files, and refusing to take them away (spec `project-rooms`
  * §3.2).
@@ -22,21 +26,31 @@ import { promises as fsp } from 'node:fs';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
-import { createTestDb } from '@dorkos/test-utils/db';
-import { rooms, type Db } from '@dorkos/db';
+import { rooms, roomMembers, and, eq, type Db } from '@dorkos/db';
+import { configManager } from '../../../core/config-manager.js';
+import {
+  initAgentIdentityService,
+  resetAgentIdentityService,
+} from '../../../core/agent-identity/agent-identity-service.js';
+import { z } from 'zod';
 import type { Room } from '@dorkos/shared/room-schemas';
-import { ROOM_REPO_CAP_DEFAULTS } from '@dorkos/shared/room-repo';
-import { RoomError } from '../../room-errors.js';
+import {
+  ROOM_REPO_CAP_DEFAULTS,
+  RoomRepoSidecarSchema,
+  RoomMainRepairResultSchema,
+  type RoomMainRepairRequest,
+} from '@dorkos/shared/room-repo';
+import { RoomError } from '../../data/room-errors.js';
 import { RoomRepoStore } from '../room-repo-store.js';
 import { RoomRepoService } from '../room-repo-service.js';
-import { RoomRepoMutex } from '../room-repo-mutex.js';
 import { ROOM_MD_FILENAME } from '../room-md.js';
-import { commitAll, commitsAheadOfMain, hasUncommittedChanges, runGit } from '../room-repo-git.js';
+import { commitsAheadOfMain, hasUncommittedChanges } from '../room-repo-git.js';
+import { fixtureGit as runGit } from './fixture-git.js';
 import { removeFixtureTree, silenceGitAutoMaintenance } from './fixture-git.js';
 
-const ROOM_ID = '01ROOMAAAAAAAAAAAAAAAAAAAA';
-const OPERATOR = 'author-operator';
-const AGENT = 'author-agent';
+let ROOM_ID = '01ROOMAAAAAAAAAAAAAAAAAAAA';
+let OPERATOR = 'author-operator';
+let AGENT = 'author-agent';
 
 /** The room the service is told about. */
 const ROOM: Room = {
@@ -53,19 +67,18 @@ const ROOM: Room = {
 
 describe('RoomRepoService', () => {
   let db: Db;
+  let original: Awaited<ReturnType<typeof createOriginalOwnedRoomFixture>>;
+  let agentToken: string;
+  let originalAcquired = false;
   let scratch: string;
-  let dorkHome: string;
   let store: RoomRepoStore;
   let service: RoomRepoService;
-  let enabled: boolean;
   let visible: boolean;
   let operatorName: string | null;
   /** Every call the repo service made to put this room's notes on its canvas. */
   let pinned: { roomId: string; authorId: string }[];
   /** Whether that call throws — a canvas that refused must not unwind a repo. */
   let pinRefuses: boolean;
-  /** The queue enable shares with merges — one instance, so a race is a real race. */
-  let mutex: RoomRepoMutex;
 
   /** Run git in `dir` with the room's home as the discovery ceiling. */
   function git(args: string[], dir: string): Promise<string> {
@@ -73,7 +86,7 @@ describe('RoomRepoService', () => {
   }
 
   beforeEach(async () => {
-    db = createTestDb();
+    originalAcquired = false;
     // Before any repo exists — including the ones `enable` makes itself: a
     // `git commit` otherwise leaves a DETACHED maintenance process writing into
     // `.git` after it returns, and this suite's teardown deletes that
@@ -104,47 +117,142 @@ describe('RoomRepoService', () => {
       scratch,
       scratch
     );
-    dorkHome = path.join(scratch, '.dork');
-    await mkdir(dorkHome, { recursive: true });
-    store = new RoomRepoStore(db, dorkHome);
-    mutex = new RoomRepoMutex();
-    enabled = true;
     visible = true;
     operatorName = 'Dorian';
     pinned = [];
     pinRefuses = false;
-    db.insert(rooms)
-      .values({
-        id: ROOM_ID,
-        kind: 'channel',
-        title: ROOM.title,
-        topic: ROOM.topic,
-        createdAt: ROOM.createdAt,
-        lastActivityAt: ROOM.lastActivityAt,
-      })
-      .run();
-    service = new RoomRepoService({
-      store,
-      mutex,
-      queueWaitMs: () => 5000,
-      enabled: () => enabled,
-      getRoom: () => (visible ? ROOM : null),
-      isOwnerAuthor: (authorId) => authorId === OPERATOR,
+    resetAgentIdentityService();
+    const agentPath = path.join(scratch, 'member-agent');
+    original = await createOriginalOwnedRoomFixture({
+      seed: false,
+      homeParent: scratch,
+      room: { title: ROOM.title, topic: ROOM.topic ?? undefined, agentPaths: [agentPath] },
       operatorGitName: () => operatorName,
-      pinRoomMd: (roomId, authorId) => {
+      onPin: (roomId, authorId) => {
         if (pinRefuses) throw new Error('no room on the canvas');
         pinned.push({ roomId, authorId });
       },
-      caps: () => ({ ...ROOM_REPO_CAP_DEFAULTS }),
-      maxRoomMdBytes: () => ROOM_REPO_CAP_DEFAULTS.maxRoomMdBytes,
     });
+    originalAcquired = true;
+    db = original.db;
+    store = original.repos;
+    service = original.repo;
+    ROOM_ID = original.roomId;
+    OPERATOR = original.operator.id;
+    const member = original.subsystem.service.listAgentMembers(ROOM_ID)[0];
+    if (!member) throw new Error('Original agent member missing.');
+    AGENT = member.authorId;
+    agentToken = await initAgentIdentityService(db).mint({ agentPath, displayName: 'Agent' });
   });
 
   afterEach(async () => {
-    vi.unstubAllEnvs();
-    vi.restoreAllMocks();
-    await removeFixtureTree(scratch);
+    let failed = false;
+    let cause: unknown;
+    const remember = (error: unknown): void => {
+      if (!failed) {
+        failed = true;
+        cause = error;
+      }
+    };
+    for (const restore of [
+      () => vi.unstubAllEnvs(),
+      () => vi.restoreAllMocks(),
+      () => resetAgentIdentityService(),
+    ]) {
+      try {
+        restore();
+      } catch (error) {
+        remember(error);
+      }
+    }
+    let closed = false;
+    if (originalAcquired) {
+      try {
+        await original.close();
+        closed = true;
+      } catch (error) {
+        remember(error);
+      }
+    }
+    // Failed construction attempts its own cleanup. Without a returned owner,
+    // or after an uncertain drain, retain the enclosing root for recovery.
+    if (closed) {
+      try {
+        await removeFixtureTree(scratch);
+      } catch (error) {
+        remember(error);
+      }
+    }
+    if (failed) throw cause;
   });
+
+  const refusal = z.object({
+    code: z.enum([
+      'ROOM_REPOS_DISABLED',
+      'ROOM_NOT_FOUND',
+      'OPERATOR_ONLY',
+      'ROOM_REPO_GIT_UNAVAILABLE',
+      'MAIN_CHECKOUT_DIRTY',
+      'ROOM_FILE_NOT_FOUND',
+      'ROOM_REPO_UNMERGED_WORK',
+      'ROOM_HAS_NO_REPO',
+    ]),
+    error: z.string(),
+  });
+
+  function setRepoEnabled(enabled: boolean): void {
+    configManager.set('rooms', {
+      ...configManager.get('rooms'),
+      repo: { ...configManager.get('rooms').repo, enabled },
+    });
+  }
+
+  /** Real mounted callers produce outcomes; this adapter carries only their result data. */
+  async function repoRequest(
+    roomId: string,
+    caller: string,
+    operation: 'enable' | 'repair',
+    input?: RoomMainRepairRequest
+  ) {
+    if (!visible) {
+      if (caller === OPERATOR) {
+        // The install owner can see every existing local Room. A genuine absent
+        // Room exercises its indistinguishable missing-room refusal instead.
+        db.delete(rooms).where(eq(rooms.id, ROOM_ID)).run();
+      } else {
+        db.delete(roomMembers)
+          .where(and(eq(roomMembers.roomId, ROOM_ID), eq(roomMembers.authorId, caller)))
+          .run();
+      }
+    }
+    const pending = originalRequest(original.server)
+      .post(`/api/rooms/${roomId}/repo${operation === 'repair' ? '/main/repair' : ''}`)
+      .set('Authorization', `Bearer ${original.ownerKey.key}`);
+    if (caller === AGENT) pending.set('X-DorkOS-Agent', agentToken);
+    const response = await pending.send(input);
+    if (operation === 'enable' && [201, 409].includes(response.status) && response.body.repo) {
+      return {
+        created: response.status === 201,
+        repo: RoomRepoSidecarSchema.parse(response.body.repo),
+      };
+    }
+    if (operation === 'repair' && response.status === 200) {
+      return RoomMainRepairResultSchema.parse(response.body);
+    }
+    const parsed = refusal.safeParse(response.body);
+    if (parsed.success) throw new RoomError(parsed.data.code, parsed.data.error);
+    throw new Error('Original Room HTTP operation did not return its expected typed outcome.');
+  }
+  async function enableRepo(roomId: string, caller: string) {
+    const result = await repoRequest(roomId, caller, 'enable');
+    if (!('created' in result)) throw new Error('Original enable outcome missing.');
+    return result;
+  }
+  async function repairRepo(roomId: string, caller: string, input: RoomMainRepairRequest) {
+    const result = await repoRequest(roomId, caller, 'repair', input);
+    if ('created' in result) throw new Error('Original repair outcome missing.');
+    return result;
+  }
 
   /** Assert a thrown value is a {@link RoomError} with this code. */
   async function expectRoomError(promise: Promise<unknown>, code: string): Promise<void> {
@@ -154,7 +262,7 @@ describe('RoomRepoService', () => {
 
   describe('enable', () => {
     it('makes a repo on main with ROOM.md in its first commit, authored as the operator', async () => {
-      const result = await service.enable(ROOM_ID, OPERATOR);
+      const result = await enableRepo(ROOM_ID, OPERATOR);
 
       expect(result.created).toBe(true);
       expect(result.repo).toMatchObject({
@@ -182,14 +290,14 @@ describe('RoomRepoService', () => {
     });
 
     it('puts the room’s notes on its canvas, once, as the person who asked', async () => {
-      await service.enable(ROOM_ID, OPERATOR);
+      await enableRepo(ROOM_ID, OPERATOR);
       // A room with files starts with the one document everybody in it shares.
       expect(pinned).toEqual([{ roomId: ROOM_ID, authorId: OPERATOR }]);
 
       // …and the enable that finds a repo already there does not do it again:
       // the notes are the room's now, and a second pin would put back a tab
       // somebody may have closed on purpose.
-      await service.enable(ROOM_ID, OPERATOR);
+      await enableRepo(ROOM_ID, OPERATOR);
       expect(pinned).toHaveLength(1);
     });
 
@@ -197,37 +305,40 @@ describe('RoomRepoService', () => {
       // Nothing is on the canvas for a room that never got files — a tab naming
       // a file that does not exist is worse than no tab.
       vi.stubEnv('PATH', '');
-      await expectRoomError(service.enable(ROOM_ID, OPERATOR), 'ROOM_REPO_GIT_UNAVAILABLE');
+      await expectRoomError(enableRepo(ROOM_ID, OPERATOR), 'ROOM_REPO_GIT_UNAVAILABLE');
       expect(pinned).toEqual([]);
       vi.unstubAllEnvs();
 
       // And the other direction: a canvas that throws is a missing tab, never a
       // reason to tear a working repo back down.
       pinRefuses = true;
-      const result = await service.enable(ROOM_ID, OPERATOR);
+      const result = await enableRepo(ROOM_ID, OPERATOR);
       expect(result.created).toBe(true);
       expect(existsSync(store.sidecarPath(ROOM_ID))).toBe(true);
       expect(await git(['ls-files'], store.repoPath(ROOM_ID))).toBe(ROOM_MD_FILENAME);
     });
 
     it('writes the sidecar outside the repo, where the repo cannot rewrite it', async () => {
-      await service.enable(ROOM_ID, OPERATOR);
+      await enableRepo(ROOM_ID, OPERATOR);
       expect(existsSync(store.sidecarPath(ROOM_ID))).toBe(true);
       expect(await git(['ls-files'], store.repoPath(ROOM_ID))).not.toContain('room-repo.json');
-      expect(store.getRow(ROOM_ID)).toMatchObject({ roomId: ROOM_ID, mode: 'owned' });
+      expect(store.getRow(ROOM_ID)).toMatchObject({
+        roomId: ROOM_ID,
+        mode: 'owned',
+      });
     });
 
     it('falls back to a plain name when this install has no name for the operator', async () => {
       operatorName = null;
-      await service.enable(ROOM_ID, OPERATOR);
+      await enableRepo(ROOM_ID, OPERATOR);
       expect(await git(['log', '--format=%an'], store.repoPath(ROOM_ID))).toBe('DorkOS operator');
     });
 
     it('is idempotent: the second call changes nothing and answers the binding it found', async () => {
-      const first = await service.enable(ROOM_ID, OPERATOR);
+      const first = await enableRepo(ROOM_ID, OPERATOR);
       const head = await git(['rev-parse', 'HEAD'], store.repoPath(ROOM_ID));
 
-      const second = await service.enable(ROOM_ID, OPERATOR);
+      const second = await enableRepo(ROOM_ID, OPERATOR);
 
       expect(second.created).toBe(false);
       expect(second.repo).toEqual(first.repo);
@@ -243,8 +354,8 @@ describe('RoomRepoService', () => {
       // exits 0, and takes its seed commit with it. Measured before the queue
       // existed: two `created: true` answers and a repo with no `ROOM.md`.
       const [first, second] = await Promise.all([
-        service.enable(ROOM_ID, OPERATOR),
-        service.enable(ROOM_ID, OPERATOR),
+        enableRepo(ROOM_ID, OPERATOR),
+        enableRepo(ROOM_ID, OPERATOR),
       ]);
 
       // Exactly one call made it; the other found the binding the first wrote.
@@ -263,36 +374,36 @@ describe('RoomRepoService', () => {
     });
 
     it('rebuilds a cache row the second call finds missing', async () => {
-      await service.enable(ROOM_ID, OPERATOR);
+      await enableRepo(ROOM_ID, OPERATOR);
       store.removeRow(ROOM_ID);
 
-      const again = await service.enable(ROOM_ID, OPERATOR);
+      const again = await enableRepo(ROOM_ID, OPERATOR);
 
       expect(again.created).toBe(false);
       expect(store.getRow(ROOM_ID)).not.toBeNull();
     });
 
     it('refuses an agent, and leaves nothing behind', async () => {
-      await expectRoomError(service.enable(ROOM_ID, AGENT), 'OPERATOR_ONLY');
+      await expectRoomError(enableRepo(ROOM_ID, AGENT), 'OPERATOR_ONLY');
       expect(existsSync(store.homeDir(ROOM_ID))).toBe(false);
       expect(store.getRow(ROOM_ID)).toBeNull();
     });
 
     it('answers a room the caller cannot see the same way reading it would', async () => {
       visible = false;
-      await expectRoomError(service.enable(ROOM_ID, OPERATOR), 'ROOM_NOT_FOUND');
+      await expectRoomError(enableRepo(ROOM_ID, OPERATOR), 'ROOM_NOT_FOUND');
     });
 
     it('checks visibility before the operator gate, so probing tells nothing apart', async () => {
       visible = false;
       // Same 404 for an agent as for the operator: an agent walking room ids
       // must not be able to separate "exists, not yours" from "no such room".
-      await expectRoomError(service.enable(ROOM_ID, AGENT), 'ROOM_NOT_FOUND');
+      await expectRoomError(enableRepo(ROOM_ID, AGENT), 'ROOM_NOT_FOUND');
     });
 
     it('refuses while the feature is switched off, and touches nothing', async () => {
-      enabled = false;
-      await expectRoomError(service.enable(ROOM_ID, OPERATOR), 'ROOM_REPOS_DISABLED');
+      setRepoEnabled(false);
+      await expectRoomError(enableRepo(ROOM_ID, OPERATOR), 'ROOM_REPOS_DISABLED');
       expect(existsSync(store.homeDir(ROOM_ID))).toBe(false);
     });
 
@@ -302,31 +413,44 @@ describe('RoomRepoService', () => {
       await mkdir(store.homeDir(ROOM_ID), { recursive: true });
       await writeFile(store.repoPath(ROOM_ID), 'in the way', 'utf-8');
 
-      await expect(service.enable(ROOM_ID, OPERATOR)).rejects.toThrow();
+      await expect(enableRepo(ROOM_ID, OPERATOR)).rejects.toThrow();
 
       expect(existsSync(store.sidecarPath(ROOM_ID))).toBe(false);
       expect(store.getRow(ROOM_ID)).toBeNull();
     });
 
     it('retracts the binding even when the directory cannot be cleaned up', async () => {
-      // The unwind order, stated as a test. Removing `repo/` first meant a
-      // failing `fs.rm` — a locked file, a permission the server has lost —
-      // threw out of the shared try and left the SIDECAR standing: a room
-      // advertising files it does not have, with no path back. The binding is
-      // what every other path believes, so it is retracted first and each step
-      // gets its own try.
-      await mkdir(store.homeDir(ROOM_ID), { recursive: true });
-      await writeFile(store.repoPath(ROOM_ID), 'in the way', 'utf-8');
-      const realRm = fsp.rm.bind(fsp);
-      vi.spyOn(fsp, 'rm').mockImplementation(async (target, options) => {
-        if (String(target) === store.repoPath(ROOM_ID)) {
+      // Fail publication only after the original operation acquires its seed
+      // directory. The native unwind retracts the binding before quarantining
+      // that partial directory; a failed quarantine must not keep the binding.
+      const realRename = fsp.rename.bind(fsp);
+      let publicationRefused = false;
+      let quarantineRefused = false;
+      vi.spyOn(fsp, 'rename').mockImplementation(async (source, target) => {
+        const from = String(source);
+        const to = String(target);
+        if (
+          path.dirname(from) === store.repoPath(ROOM_ID) &&
+          path.basename(from).endsWith('.seed.tmp') &&
+          to === path.join(store.repoPath(ROOM_ID), ROOM_MD_FILENAME)
+        ) {
+          publicationRefused = true;
+          throw Object.assign(new Error('seed publication refused'), { code: 'EIO' });
+        }
+        if (
+          from === store.repoPath(ROOM_ID) &&
+          to.startsWith(`${store.repoPath(ROOM_ID)}.failed-`)
+        ) {
+          quarantineRefused = true;
           throw Object.assign(new Error('permission denied'), { code: 'EACCES' });
         }
-        await realRm(target, options);
+        await realRename(source, target);
       });
 
-      await expect(service.enable(ROOM_ID, OPERATOR)).rejects.toThrow();
+      await expect(enableRepo(ROOM_ID, OPERATOR)).rejects.toThrow();
 
+      expect(publicationRefused).toBe(true);
+      expect(quarantineRefused).toBe(true);
       // The cleanup failed, and the binding is still gone.
       expect(existsSync(store.sidecarPath(ROOM_ID))).toBe(false);
       expect(store.getRow(ROOM_ID)).toBeNull();
@@ -338,11 +462,11 @@ describe('RoomRepoService', () => {
       // leaves a room that reports having files and has none. Answering
       // `created: false` forever would make that permanent, with no way back
       // except deleting the sidecar by hand.
-      await service.enable(ROOM_ID, OPERATOR);
+      await enableRepo(ROOM_ID, OPERATOR);
       await rm(store.repoPath(ROOM_ID), { recursive: true, force: true });
       expect(existsSync(store.sidecarPath(ROOM_ID))).toBe(true);
 
-      const healed = await service.enable(ROOM_ID, OPERATOR);
+      const healed = await enableRepo(ROOM_ID, OPERATOR);
 
       expect(healed.created).toBe(true);
       expect(await git(['rev-parse', '--abbrev-ref', 'HEAD'], store.repoPath(ROOM_ID))).toBe(
@@ -364,8 +488,8 @@ describe('RoomRepoService', () => {
       // PATH would break every later test in this worker that spawns anything.
       vi.stubEnv('PATH', '');
       try {
-        await expectRoomError(service.enable(ROOM_ID, OPERATOR), 'ROOM_REPO_GIT_UNAVAILABLE');
-        await expect(service.enable(ROOM_ID, OPERATOR)).rejects.toThrow(/git installed/);
+        await expectRoomError(enableRepo(ROOM_ID, OPERATOR), 'ROOM_REPO_GIT_UNAVAILABLE');
+        await expect(enableRepo(ROOM_ID, OPERATOR)).rejects.toThrow(/git installed/);
       } finally {
         vi.unstubAllEnvs();
       }
@@ -378,13 +502,13 @@ describe('RoomRepoService', () => {
   describe('hasRepo', () => {
     it('is false for a room with no repo, true once it has one', async () => {
       expect(service.hasRepo(ROOM_ID)).toBe(false);
-      await service.enable(ROOM_ID, OPERATOR);
+      await enableRepo(ROOM_ID, OPERATOR);
       expect(service.hasRepo(ROOM_ID)).toBe(true);
     });
 
     it('is false for every room while the feature is off, without deleting anything', async () => {
-      await service.enable(ROOM_ID, OPERATOR);
-      enabled = false;
+      await enableRepo(ROOM_ID, OPERATOR);
+      setRepoEnabled(false);
       expect(service.hasRepo(ROOM_ID)).toBe(false);
       // Off is not gone: the files are exactly where they were.
       expect(existsSync(store.repoPath(ROOM_ID))).toBe(true);
@@ -400,7 +524,7 @@ describe('RoomRepoService', () => {
     }
 
     it('allows a delete when every worktree is clean and merged', async () => {
-      await service.enable(ROOM_ID, OPERATOR);
+      await enableRepo(ROOM_ID, OPERATOR);
       await addWorktree('ana');
 
       await expect(service.listStrandedWorktrees(ROOM_ID)).resolves.toEqual([]);
@@ -412,7 +536,7 @@ describe('RoomRepoService', () => {
     });
 
     it('refuses while a worktree holds uncommitted work, and names it', async () => {
-      await service.enable(ROOM_ID, OPERATOR);
+      await enableRepo(ROOM_ID, OPERATOR);
       const dir = await addWorktree('ana');
       await writeFile(path.join(dir, 'draft.md'), 'half an idea', 'utf-8');
 
@@ -422,15 +546,10 @@ describe('RoomRepoService', () => {
     });
 
     it('refuses while a worktree is ahead of main, even though it is clean', async () => {
-      await service.enable(ROOM_ID, OPERATOR);
+      await enableRepo(ROOM_ID, OPERATOR);
       const dir = await addWorktree('bo');
       await writeFile(path.join(dir, 'done.md'), 'finished, unmerged', 'utf-8');
-      await commitAll(
-        dir,
-        'work',
-        { name: 'Bo', email: 'bo@dorkos.local' },
-        store.homeDir(ROOM_ID)
-      );
+      await original.commitAll(dir, 'work', { name: 'Bo', email: 'bo@dorkos.local' });
 
       // Clean by `git status`, and still holding a commit main has never seen.
       await expect(service.listStrandedWorktrees(ROOM_ID)).resolves.toEqual(['bo']);
@@ -438,7 +557,7 @@ describe('RoomRepoService', () => {
     });
 
     it('lets the operator force past stranded work', async () => {
-      await service.enable(ROOM_ID, OPERATOR);
+      await enableRepo(ROOM_ID, OPERATOR);
       const dir = await addWorktree('ana');
       await writeFile(path.join(dir, 'draft.md'), 'half an idea', 'utf-8');
 
@@ -448,7 +567,7 @@ describe('RoomRepoService', () => {
     });
 
     it('removeHome refuses without force, leaving every file where it was', async () => {
-      await service.enable(ROOM_ID, OPERATOR);
+      await enableRepo(ROOM_ID, OPERATOR);
       const dir = await addWorktree('ana');
       await writeFile(path.join(dir, 'draft.md'), 'half an idea', 'utf-8');
 
@@ -466,8 +585,10 @@ describe('RoomRepoService', () => {
       // zero, the guard calls it disposable, and `removeHome` deletes it. With
       // the ceiling, git refuses to leave the room's own home, the read fails,
       // and the conservative handler calls it unfinished work.
-      await service.enable(ROOM_ID, OPERATOR);
-      await mkdir(path.join(store.worktreesPath(ROOM_ID), 'mystery'), { recursive: true });
+      await enableRepo(ROOM_ID, OPERATOR);
+      await mkdir(path.join(store.worktreesPath(ROOM_ID), 'mystery'), {
+        recursive: true,
+      });
       await writeFile(
         path.join(store.worktreesPath(ROOM_ID), 'mystery', 'notes.md'),
         'not a checkout',
@@ -486,7 +607,7 @@ describe('RoomRepoService', () => {
       // The same escape, asked directly of the git layer rather than through
       // the guard: a directory that is not a checkout must fail, not inherit an
       // answer from somewhere up the tree.
-      await service.enable(ROOM_ID, OPERATOR);
+      await enableRepo(ROOM_ID, OPERATOR);
       const outside = path.join(store.worktreesPath(ROOM_ID), 'notarepo');
       await mkdir(outside, { recursive: true });
 
@@ -521,7 +642,7 @@ describe('RoomRepoService', () => {
       // Archiving is a `rooms.archived` flip and nothing else; this pins that
       // the repo domain has no hook on it. The service exposes no archive
       // method BY DESIGN, so the assertion is that the files survive the flip.
-      await service.enable(ROOM_ID, OPERATOR);
+      await enableRepo(ROOM_ID, OPERATOR);
       const head = await git(['rev-parse', 'HEAD'], store.repoPath(ROOM_ID));
 
       db.update(rooms).set({ archived: true }).run();
@@ -535,7 +656,7 @@ describe('RoomRepoService', () => {
   describe('repairMainCheckout', () => {
     /** Enable the room's files and hand back its checkout. */
     async function withFiles(): Promise<string> {
-      await service.enable(ROOM_ID, OPERATOR);
+      await enableRepo(ROOM_ID, OPERATOR);
       return store.repoPath(ROOM_ID);
     }
 
@@ -546,7 +667,9 @@ describe('RoomRepoService', () => {
       await writeFile(path.join(repoDir, ROOM_MD_FILENAME), '# edited by hand\n', 'utf-8');
       await writeFile(path.join(repoDir, 'notes.md'), 'jotted down\n', 'utf-8');
 
-      const result = await service.repairMainCheckout(ROOM_ID, OPERATOR, { action: 'commit' });
+      const result = await repairRepo(ROOM_ID, OPERATOR, {
+        action: 'commit',
+      });
 
       expect(result).toMatchObject({ action: 'commit', paths: 2, clean: true });
       expect(result.commit).not.toBe(before);
@@ -568,7 +691,7 @@ describe('RoomRepoService', () => {
       await writeFile(path.join(repoDir, 'keep.md'), 'still wanted\n', 'utf-8');
       await writeFile(path.join(repoDir, 'throw-away.md'), 'not wanted\n', 'utf-8');
 
-      const result = await service.repairMainCheckout(ROOM_ID, OPERATOR, {
+      const result = await repairRepo(ROOM_ID, OPERATOR, {
         action: 'discard',
         paths: [ROOM_MD_FILENAME, 'throw-away.md'],
       });
@@ -576,7 +699,12 @@ describe('RoomRepoService', () => {
       // A tracked file goes back to what the commit has; an untracked one is
       // removed. The file nobody named is untouched — so the room is still
       // dirty, and the answer says so rather than implying merges resumed.
-      expect(result).toMatchObject({ action: 'discard', commit: null, paths: 2, clean: false });
+      expect(result).toMatchObject({
+        action: 'discard',
+        commit: null,
+        paths: 2,
+        clean: false,
+      });
       expect(await readFile(path.join(repoDir, ROOM_MD_FILENAME), 'utf-8')).toBe(original);
       expect(existsSync(path.join(repoDir, 'throw-away.md'))).toBe(false);
       expect(existsSync(path.join(repoDir, 'keep.md'))).toBe(true);
@@ -594,12 +722,16 @@ describe('RoomRepoService', () => {
 
       // Whatever the room reports is what the operator can name, so discarding
       // "everything on the list" is the case to prove.
-      const listed = await service.repairMainCheckout(ROOM_ID, OPERATOR, {
+      const listed = await repairRepo(ROOM_ID, OPERATOR, {
         action: 'discard',
         paths: ['renamed.md'],
       });
 
-      expect(listed).toMatchObject({ action: 'discard', paths: 1, clean: true });
+      expect(listed).toMatchObject({
+        action: 'discard',
+        paths: 1,
+        clean: true,
+      });
       expect(await readFile(path.join(repoDir, ROOM_MD_FILENAME), 'utf-8')).toBe(original);
       expect(existsSync(path.join(repoDir, 'renamed.md'))).toBe(false);
       expect(await git(['status', '--porcelain=v1'], repoDir)).toBe('');
@@ -613,7 +745,7 @@ describe('RoomRepoService', () => {
       // The stale-screen case, and the invented-path case, are the same case:
       // if it is not on the list right now, it is not discarded.
       await expectRoomError(
-        service.repairMainCheckout(ROOM_ID, OPERATOR, {
+        repairRepo(ROOM_ID, OPERATOR, {
           action: 'discard',
           paths: ['notes.md', ROOM_MD_FILENAME],
         }),
@@ -626,15 +758,9 @@ describe('RoomRepoService', () => {
     it('refuses everybody but the operator, and answers 404 for a room they cannot see', async () => {
       await withFiles();
 
-      await expectRoomError(
-        service.repairMainCheckout(ROOM_ID, AGENT, { action: 'commit' }),
-        'OPERATOR_ONLY'
-      );
+      await expectRoomError(repairRepo(ROOM_ID, AGENT, { action: 'commit' }), 'OPERATOR_ONLY');
       visible = false;
-      await expectRoomError(
-        service.repairMainCheckout(ROOM_ID, AGENT, { action: 'commit' }),
-        'ROOM_NOT_FOUND'
-      );
+      await expectRoomError(repairRepo(ROOM_ID, AGENT, { action: 'commit' }), 'ROOM_NOT_FOUND');
     });
 
     it('refuses to move a branch somebody else checked out', async () => {
@@ -642,7 +768,7 @@ describe('RoomRepoService', () => {
       await git(['checkout', '-q', '-b', 'somebody-elses-work'], repoDir);
 
       await expectRoomError(
-        service.repairMainCheckout(ROOM_ID, OPERATOR, { action: 'commit' }),
+        repairRepo(ROOM_ID, OPERATOR, { action: 'commit' }),
         'MAIN_CHECKOUT_DIRTY'
       );
       // Still where they left it: DorkOS does not check out over work it did
@@ -654,17 +780,200 @@ describe('RoomRepoService', () => {
       const repoDir = await withFiles();
       const before = await git(['rev-parse', 'HEAD'], repoDir);
 
-      const result = await service.repairMainCheckout(ROOM_ID, OPERATOR, { action: 'commit' });
+      const result = await repairRepo(ROOM_ID, OPERATOR, {
+        action: 'commit',
+      });
 
-      expect(result).toEqual({ action: 'commit', commit: null, paths: 0, clean: true });
+      expect(result).toEqual({
+        action: 'commit',
+        commit: null,
+        paths: 0,
+        clean: true,
+      });
       expect(await git(['rev-parse', 'HEAD'], repoDir)).toBe(before);
     });
 
     it('refuses a room with no files of its own', async () => {
       await expectRoomError(
-        service.repairMainCheckout(ROOM_ID, OPERATOR, { action: 'commit' }),
+        repairRepo(ROOM_ID, OPERATOR, { action: 'commit' }),
         'ROOM_HAS_NO_REPO'
       );
     });
+  });
+});
+
+// Actual original construction/HTTP controls. SOURCE ONLY: no assertion has been executed.
+describe('original owning HTTP Repo acquisition and cleanup', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+  async function withOriginalFixture(
+    work: (h: Awaited<ReturnType<typeof createOriginalOwnedRoomFixture>>) => Promise<void>,
+    seed = false
+  ) {
+    const h = await createOriginalOwnedRoomFixture({ seed });
+    let failed = false,
+      cause: unknown;
+    try {
+      await work(h);
+    } catch (error) {
+      failed = true;
+      cause = error;
+    } finally {
+      try {
+        await h.close();
+      } catch (error) {
+        if (!failed) {
+          failed = true;
+          cause = error;
+        }
+      }
+    }
+    if (failed) throw cause;
+  }
+  it('runs actual owner enable and exact repeat conflict through the production router', async () => {
+    await withOriginalFixture(async (h) => {
+      const first = await originalRequest(h.server)
+        .post(`/api/rooms/${h.roomId}/repo`)
+        .set('Authorization', `Bearer ${h.ownerKey.key}`);
+      expect(first.status).toBe(201);
+      expect(first.body.repo.roomId).toBe(h.roomId);
+      const again = await originalRequest(h.server)
+        .post(`/api/rooms/${h.roomId}/repo`)
+        .set('Authorization', `Bearer ${h.ownerKey.key}`);
+      expect(again.status).toBe(409);
+      expect(again.body.code).toBe('ROOM_REPO_EXISTS');
+      expect(h.repos.getRow(h.roomId)?.mode).toBe('owned');
+    });
+  });
+  it('refuses a genuine non-owner member with the original operator-only response', async () => {
+    await withOriginalFixture(async (h) => {
+      const response = await originalRequest(h.server)
+        .post(`/api/rooms/${h.roomId}/repo`)
+        .set('Authorization', `Bearer ${h.memberKey.key}`);
+      expect(response.status).toBe(403);
+      expect(response.body.code).toBe('OPERATOR_ONLY');
+      expect(h.repos.getRow(h.roomId)).toBeNull();
+      await expect(acquiredNativeFs.lstat(h.repos.homeDir(h.roomId))).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+    });
+  });
+  it('does not select production mutation paths/data from replaced public Store or service methods', async () => {
+    await withOriginalFixture(async (h) => {
+      const home = h.repos.homeDir(h.roomId);
+      vi.spyOn(h.repos, 'repoPath').mockImplementation(() => {
+        throw new Error('public repo path replaced');
+      });
+      vi.spyOn(h.repos, 'homeDir').mockImplementation(() => {
+        throw new Error('public home path replaced');
+      });
+      vi.spyOn(h.repos, 'getRow').mockImplementation(() => {
+        throw new Error('public row replaced');
+      });
+      const fake = vi
+        .spyOn(h.repo, 'enable')
+        .mockResolvedValue({ created: false, repo: {} } as never);
+      const response = await originalRequest(h.server)
+        .post(`/api/rooms/${h.roomId}/repo`)
+        .set('Authorization', `Bearer ${h.ownerKey.key}`);
+      expect(response.status).toBe(201);
+      expect(fake).not.toHaveBeenCalled();
+      expect(
+        JSON.parse(await acquiredNativeFs.readFile(path.join(home, 'room-repo.json'), 'utf8'))
+          .roomId
+      ).toBe(h.roomId);
+      vi.restoreAllMocks();
+    });
+  });
+  it('attempts acquired sidecar rollback after genuine credential loss immediately following publication', async () => {
+    await withOriginalFixture(async (h) => {
+      const home = h.repos.homeDir(h.roomId),
+        actualRename = acquiredNativeFs.rename;
+      let armed = true,
+        publications = 0;
+      vi.spyOn(acquiredNativeFs, 'rename').mockImplementation(async (...args) => {
+        await actualRename(...args);
+        if (armed && String(args[1]) === path.join(home, 'room-repo.json')) {
+          armed = false;
+          publications++;
+          h.db
+            .update(apikey)
+            .set({ enabled: false })
+            .where(nativeEq(apikey.id, h.ownerKey.id))
+            .run();
+        }
+      });
+      const response = await originalRequest(h.server)
+        .post(`/api/rooms/${h.roomId}/repo`)
+        .set('Authorization', `Bearer ${h.ownerKey.key}`);
+      expect(armed).toBe(false);
+      expect(publications).toBe(1);
+      expect(response.status).toBe(401);
+      expect(response.body.code).toBe('AUTH_REQUIRED');
+      expect(h.repos.getRow(h.roomId)).toBeNull();
+      await expect(acquiredNativeFs.lstat(path.join(home, 'room-repo.json'))).rejects.toMatchObject(
+        { code: 'ENOENT' }
+      );
+      await expect(acquiredNativeFs.lstat(path.join(home, 'repo'))).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+      vi.restoreAllMocks();
+    });
+  });
+  it('unwinds its acquired publication when the actual captured native cache INSERT fails', async () => {
+    await withOriginalFixture(async (h) => {
+      const home = h.repos.homeDir(h.roomId);
+      h.db.$client.exec(
+        "CREATE TEMP TRIGGER original_cache_fault BEFORE INSERT ON room_repos BEGIN SELECT RAISE(ABORT, 'original cache fault'); END"
+      );
+      const response = await originalRequest(h.server)
+        .post(`/api/rooms/${h.roomId}/repo`)
+        .set('Authorization', `Bearer ${h.ownerKey.key}`);
+      expect(response.status).toBe(500);
+      expect(h.repos.getRow(h.roomId)).toBeNull();
+      await expect(acquiredNativeFs.lstat(path.join(home, 'room-repo.json'))).rejects.toMatchObject(
+        { code: 'ENOENT' }
+      );
+      await expect(acquiredNativeFs.lstat(path.join(home, 'repo'))).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+    });
+  });
+  it('rechecks the actual credential after the awaited existing-repo observation before outward no-op', async () => {
+    await withOriginalFixture(async (h) => {
+      const repoPath = h.repos.repoPath(h.roomId),
+        before = await acquiredNativeFs.readFile(
+          path.join(h.repos.homeDir(h.roomId), 'room-repo.json')
+        );
+      const actualStat = acquiredNativeFs.lstat;
+      let armed = true;
+      vi.spyOn(acquiredNativeFs, 'lstat').mockImplementation((async (
+        ...args: Parameters<typeof acquiredNativeFs.lstat>
+      ) => {
+        const stat = await actualStat(...args);
+        if (armed && String(args[0]) === path.join(repoPath, '.git')) {
+          armed = false;
+          h.db
+            .update(apikey)
+            .set({ enabled: false })
+            .where(nativeEq(apikey.id, h.ownerKey.id))
+            .run();
+        }
+        return stat;
+      }) as typeof acquiredNativeFs.lstat);
+      const response = await originalRequest(h.server)
+        .post(`/api/rooms/${h.roomId}/repo`)
+        .set('Authorization', `Bearer ${h.ownerKey.key}`);
+      expect(armed).toBe(false);
+      expect(response.status).toBe(401);
+      expect(response.body.code).toBe('AUTH_REQUIRED');
+      expect(
+        await acquiredNativeFs.readFile(path.join(h.repos.homeDir(h.roomId), 'room-repo.json'))
+      ).toEqual(before);
+      expect(h.repos.getRow(h.roomId)?.mode).toBe('owned');
+      vi.restoreAllMocks();
+    }, true);
   });
 });

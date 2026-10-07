@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   RuntimeRegistry,
+  readOriginalRegisteredRuntime,
+  observeOriginalRegisteredRuntimeStream,
   RuntimeNotRegisteredError,
   applyConfiguredDefaultRuntime,
   applyAndWatchConfiguredDefaultRuntime,
@@ -17,6 +19,7 @@ import {
   setSessionLimitStore,
 } from '../../session/fleet/session-limit-store.js';
 import type { TurnOrigin } from '../../session/index.js';
+import { onDurableSessionRekey } from '../../session/turn-identity/durable-rekey.js';
 
 // Minimal mock runtime for testing
 function createMockRuntime(type: string, overrides?: Partial<RuntimeCapabilities>): AgentRuntime {
@@ -1506,6 +1509,42 @@ describe('RuntimeRegistry', () => {
       return db.select().from(sessionMetadata).all();
     }
 
+    it('keeps both genuine metadata rows visible to synchronous durable ownership moves', async () => {
+      await registry.persistSessionRuntime('old', 'claude-code', { kind: 'agent-launch' });
+      const original = allRows();
+      let observed: ReturnType<typeof allRows> | undefined;
+      const detach = onDurableSessionRekey((from, to) => {
+        expect([from, to]).toEqual(['old', 'new']);
+        observed = allRows();
+        expect(observed).toHaveLength(2);
+        expect(observed).toEqual(
+          expect.arrayContaining([original[0], { ...original[0], sessionId: 'new' }])
+        );
+      });
+      try {
+        await registry.rekeySessionSettings('old', 'new');
+        expect(observed).toBeDefined();
+        expect(allRows()).toEqual([{ ...original[0], sessionId: 'new' }]);
+      } finally {
+        detach();
+      }
+    });
+
+    it('rolls back a settings ownership move and preserves a raw undefined participant failure', async () => {
+      await registry.persistSessionRuntime('old', 'claude-code', { kind: 'agent-launch' });
+      await registry.saveSessionSettings('new', { model: 'destination-model' });
+      const original = allRows();
+      const detach = onDurableSessionRekey(() => {
+        throw undefined;
+      });
+      try {
+        await expect(registry.rekeySessionSettings('old', 'new')).rejects.toBeUndefined();
+        expect(allRows()).toEqual(original);
+      } finally {
+        detach();
+      }
+    });
+
     it('moves the launch origin with the row, and keeps a destination’s own', async () => {
       await registry.persistSessionRuntime('old', 'claude-code', { kind: 'agent-launch' });
       await registry.rekeySessionSettings('old', 'new');
@@ -1718,5 +1757,33 @@ describe('RuntimeRegistry', () => {
 
       expect(await registry.getSessionSettings('same')).toEqual({ permissionMode: 'plan' });
     });
+  });
+});
+
+describe('original registered runtime construction', () => {
+  it('recognizes only the actual selected wrapper and retires replacement without inventing physical closure', () => {
+    const registry = new RuntimeRegistry();
+    const first = createMockRuntime('claude-code');
+    registry.register(first);
+    const selected = registry.get('claude-code');
+    expect(readOriginalRegisteredRuntime(selected)).toBe(first);
+    expect(readOriginalRegisteredRuntime({ ...selected })).toBeUndefined();
+    const foreign = new RuntimeRegistry();
+    foreign.register(first);
+    expect(foreign.get('claude-code')).not.toBe(selected);
+    registry.register(createMockRuntime('claude-code'));
+    expect(readOriginalRegisteredRuntime(selected)).toBeUndefined();
+  });
+  it('does not observe an arbitrary generator as an original native stream', () => {
+    const registry = new RuntimeRegistry();
+    registry.register(createMockRuntime('claude-code'));
+    const arbitrary = (async function* () {})();
+    expect(() =>
+      observeOriginalRegisteredRuntimeStream(
+        registry.get('claude-code'),
+        'unbound-session',
+        arbitrary
+      )
+    ).toThrow('Current original registered native stream');
   });
 });

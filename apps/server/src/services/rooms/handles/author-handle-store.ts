@@ -19,7 +19,7 @@
 import { and, authors, eq, handleTombstones, isNotNull, ne, sql, type Db } from '@dorkos/db';
 import { normalizeHandle, validateHandle } from '@dorkos/shared/handle';
 import type { AuthorKind } from '@dorkos/shared/room-schemas';
-import { RoomError } from '../room-errors.js';
+import { RoomError } from '../data/room-errors.js';
 
 /**
  * Who is asking for a handle: their row id, and the identity their row is keyed

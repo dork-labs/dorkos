@@ -36,9 +36,12 @@ afterEach(() => {
   for (const stop of cleanups.splice(0)) stop();
   document.body.replaceChildren();
 });
-async function owned() {
+async function owned(routed = true) {
   const transport = createMockTransport();
-  vi.mocked(transport.getCanvasChannel).mockResolvedValue(response());
+  vi.mocked(transport.getCanvasChannel).mockResolvedValue({
+    ...response(),
+    routing: { ...response().routing, enabled: routed },
+  });
   let view = emptyDocChannelView('doc', transport);
   const owner = createDocChannelOwner('doc', transport, (update) => {
     view = typeof update === 'function' ? update(view) : update;
@@ -128,4 +131,123 @@ it('drains independent OLD resources after an undefined throw without touching a
   expect(() => resources.drainRetirement(ticket)).not.toThrow();
   expect(cleanup).toHaveBeenCalledTimes(1);
   expect(sibling).toHaveBeenCalledTimes(1);
+});
+
+it('records through an actual captured frame without routing and keeps ordinary widget submission refused', async () => {
+  const h = await owned(false),
+    f = host(h.transport),
+    facade = h.view.frameAdmission!;
+  expect(h.view.binding!.current('submit')).toBe(false);
+  const prepared = facade.prepareFrameLoad(f.controller, f.observation);
+  expect(prepared).not.toBeNull();
+  const loaded = prepared!.completeLoad();
+  expect(loaded).not.toBeNull();
+  const port = facade.attachFrame(f.controller, loaded!);
+  expect(port).not.toBeNull();
+  const event = {
+    v: 1,
+    id: '00000000-0000-4000-8000-000000000001',
+    type: 'save',
+    payload: { text: 'log only' },
+  };
+  const receipt = {
+    receipt: { id: event.id, status: 'recorded' as const, docSeq: 1 },
+    deliveries: [],
+  };
+  vi.mocked(h.transport.ingestCanvasEvent).mockResolvedValue(receipt);
+  const original = port!.captureOriginal({ id: event.id, bytes: JSON.stringify(event) });
+  expect(original).not.toBeNull();
+  await expect(original!.submit(new AbortController().signal)).resolves.toEqual({
+    kind: 'accepted',
+    receipt,
+  });
+  expect(h.transport.ingestCanvasEvent).toHaveBeenCalledExactlyOnceWith(
+    'doc',
+    event,
+    { expectedGeneration: birth.generation },
+    expect.any(AbortSignal)
+  );
+  expect(h.view.binding!.current('submit')).toBe(false);
+  f.controller.retire();
+  expect(port!.current()).toBe(false);
+});
+
+it('keeps native server refusal and retirement on the original log-only frame', async () => {
+  const h = await owned(false),
+    f = host(h.transport),
+    facade = h.view.frameAdmission!;
+  const loaded = facade.prepareFrameLoad(f.controller, f.observation)!.completeLoad()!;
+  const port = facade.attachFrame(f.controller, loaded)!;
+  const event = { v: 1, id: '00000000-0000-4000-8000-000000000002', type: 'save', payload: {} };
+  vi.mocked(h.transport.ingestCanvasEvent).mockRejectedValue(
+    Object.assign(new Error('Access refused'), { status: 403 })
+  );
+  const original = port.captureOriginal({ id: event.id, bytes: JSON.stringify(event) })!;
+  await expect(original.submit(new AbortController().signal)).resolves.toEqual({
+    kind: 'uncertain',
+  });
+  expect(h.transport.ingestCanvasEvent).toHaveBeenCalledTimes(1);
+  h.owner.dispose();
+  expect(() => port.captureOriginal({ id: event.id, bytes: JSON.stringify(event) })).toThrow();
+  expect(h.transport.ingestCanvasEvent).toHaveBeenCalledTimes(1);
+});
+
+it('rebinds only the exact original loaded observation after same-birth owned HTTP recovery', async () => {
+  const h = await owned(),
+    f = host(h.transport),
+    facade = h.view.frameAdmission!;
+  const loaded = facade.prepareFrameLoad(f.controller, f.observation)!.completeLoad()!;
+  const oldPort = facade.attachFrame(f.controller, loaded)!;
+  expect(oldPort.current()).toBe(true);
+  const failedRun = h.owner.beginRun();
+  failedRun.failed();
+  expect(h.view.binding!.current('read')).toBe(false);
+  expect(oldPort.current()).toBe(false);
+  expect(facade.retainsLoadedFrame(f.controller, loaded)).toBe(true);
+  // Retire Doc authority while preserving the original positively observed host load.
+  f.controller.disableDoc();
+  expect(f.controller.getCurrent()).toBe(loaded);
+  const recovered = h.owner.beginRun(),
+    page = await recovered.readPage();
+  expect(recovered.consumePage(page!)).toEqual({ kind: 'frames', count: 0 });
+  expect(recovered.finishPage(page!)).toBe('done');
+  expect(h.view.frameAdmission).toBe(facade);
+  expect(h.view.binding!.current('read')).toBe(true);
+  const renewed = facade.attachFrame(f.controller, loaded);
+  expect(renewed).not.toBeNull();
+  expect(renewed!.current()).toBe(true);
+  expect(oldPort.current()).toBe(false);
+  expect(f.controller.getCurrent()).toBe(loaded);
+  f.controller.retire();
+  expect(renewed!.current()).toBe(false);
+  expect(facade.attachFrame(f.controller, loaded)).toBeNull();
+  expect(facade.retainsLoadedFrame(f.controller, loaded)).toBe(false);
+});
+
+it('does not renew the retained host load when owned HTTP recovery observes a different birth', async () => {
+  const h = await owned(),
+    f = host(h.transport),
+    facade = h.view.frameAdmission!;
+  const loaded = facade.prepareFrameLoad(f.controller, f.observation)!.completeLoad()!;
+  const oldPort = facade.attachFrame(f.controller, loaded)!;
+  const failedRun = h.owner.beginRun();
+  failedRun.failed();
+  f.controller.disableDoc();
+  vi.mocked(h.transport.getCanvasChannel).mockResolvedValue({
+    ...response(),
+    incarnation: { ...birth, generation: 'b'.repeat(64), physicalOpenedAt: '2026-10-03T00:00:00Z' },
+  });
+  const recovered = h.owner.beginRun(),
+    page = await recovered.readPage();
+  expect(recovered.consumePage(page!)).toEqual({ kind: 'done' });
+  const nextBirth = h.owner.beginRun(),
+    nextPage = await nextBirth.readPage();
+  expect(nextBirth.consumePage(nextPage!)).toEqual({ kind: 'frames', count: 0 });
+  expect(nextBirth.finishPage(nextPage!)).toBe('done');
+  expect(h.view.binding!.current('read')).toBe(true);
+  expect(oldPort.current()).toBe(false);
+  expect(facade.retainsLoadedFrame(f.controller, loaded)).toBe(false);
+  expect(facade.attachFrame(f.controller, loaded)).toBeNull();
+  expect(f.controller.getCurrent()).toBe(loaded);
+  f.controller.retire();
 });

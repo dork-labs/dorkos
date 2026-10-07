@@ -1,163 +1,161 @@
-import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
-/**
- * `POST /api/rooms/:id/repo` — giving a room files of its own, and who may.
- *
- * Driven through the REAL app mount, so the middleware in front of the route is
- * covered too, and against a real git binary on a temporary DorkOS home: the
- * claim "the room now has a repo" is only worth making if something checked the
- * disk.
- *
- * Seeded defects, each run and each red before the fix:
- *
- * - Dropping the operator gate turns "refuses a member agent" green→red: the
- *   agent gets 201 and a repo it asked itself for.
- * - Checking the operator gate BEFORE visibility reddens "an outsider agent
- *   gets the same 404 an unknown room gets" — it answers 403 and leaks that the
- *   room exists.
- * - Returning 201 unconditionally reddens the idempotence test.
- * - Ignoring `config.rooms.repo.enabled` reddens the switched-off test.
- */
+/** Genuine authenticated Room repo route controls; native turns acquire each working copy. */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
-import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { existsSync } from 'node:fs';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { tmpdir } from 'node:os';
-import { FakeAgentRuntime } from '@dorkos/test-utils';
-import { createTestDb } from '@dorkos/test-utils/db';
-import { agents, type Db } from '@dorkos/db';
+import type { Server } from 'node:http';
+import type { Db } from '@dorkos/db';
 import { ROOM_REPO_CAP_DEFAULTS } from '@dorkos/shared/room-repo';
-
-vi.mock('../../lib/boundary.js', () => ({
-  validateBoundary: vi.fn(async (p: string) => p),
-  validateBoundaryOrDorkHome: vi.fn(async (p: string) => p),
-  getBoundary: vi.fn(() => '/mock/home'),
-  initBoundary: vi.fn().mockResolvedValue('/mock/home'),
-  isWithinBoundary: vi.fn().mockResolvedValue(true),
-  BoundaryError: class BoundaryError extends Error {},
-}));
-
-let fakeRuntime: FakeAgentRuntime;
-
-vi.mock('../../services/core/runtime-registry.js', () => ({
-  runtimeRegistry: {
-    getDefault: vi.fn(() => fakeRuntime),
-    get: vi.fn(() => fakeRuntime),
-    getAllCapabilities: vi.fn(() => ({})),
-    getDefaultType: vi.fn(() => 'fake'),
-    has: vi.fn(() => true),
-    listRuntimes: vi.fn(() => [fakeRuntime]),
-  },
-  RuntimeNotRegisteredError: class RuntimeNotRegisteredError extends Error {},
-}));
-
-vi.mock('../../services/core/tunnel-manager.js', () => ({
-  tunnelManager: {
-    status: { enabled: false, connected: false, url: null, port: null, startedAt: null },
-  },
-}));
-
-vi.mock('../../services/core/config-manager.js', () => ({
-  configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
-}));
-
-import { createApp, finalizeApp } from '../../app.js';
+import { configManager } from '../../services/core/config-manager.js';
+import { initAgentIdentityService } from '../../services/core/agent-identity/agent-identity-service.js';
 import {
-  createRoomSubsystem,
-  setRoomMergeService,
-  setRoomRepoService,
-  setRoomService,
-} from '../../services/rooms/index.js';
+  createOriginalNativeLaunchFixture,
+  type OriginalNativeLaunchFixture,
+} from '../../services/rooms/repo/__tests__/room-original-native-launch-fixture.js';
 import {
-  RoomMergeService,
-  RoomRepoMutex,
-  RoomRepoService,
-  RoomRepoStore,
   RoomWorktreeManager,
-} from '../../services/rooms/repo/index.js';
-import { setReadCursorService } from '../../services/core/read-cursor-service.js';
-import { readOwnerAccount } from '../../services/core/auth/index.js';
-import {
-  initAgentIdentityService,
-  resetAgentIdentityService,
-} from '../../services/core/agent-identity/agent-identity-service.js';
-import { runGit } from '../../services/rooms/repo/room-repo-git.js';
+  type RoomWorktreeHandle,
+} from '../../services/rooms/repo/room-worktree-manager.js';
+import type { RoomRepoStore } from '../../services/rooms/repo/room-repo-store.js';
+import { fixtureGit as runGit } from '../../services/rooms/repo/__tests__/fixture-git.js';
 
-/** Run git in a room's repo with that room's home as the discovery ceiling. */
+let original: OriginalNativeLaunchFixture;
+let testServer: Server;
+let ANA_PATH: string;
+let target: Awaited<ReturnType<OriginalNativeLaunchFixture['bootNativePair']>>[number];
+const admittedRooms = new Set<string>();
 function gitInRepo(args: string[], store: RoomRepoStore, roomId: string): Promise<string> {
   return runGit(args, store.repoPath(roomId), store.homeDir(roomId));
 }
-
-const app = createApp({ admission: new MainRequestAdmission() });
-finalizeApp(app);
-const testServer = listeningServer(app);
-
-const ANA_PATH = '/agents/ana';
-
-/** Register an agent so a room can resolve it by directory. */
-function registerAgent(db: Db, name: string, projectPath: string): void {
-  const now = new Date().toISOString();
-  db.insert(agents)
-    .values({
-      id: `ULID_${name.toUpperCase()}`,
-      name,
-      displayName: name[0].toUpperCase() + name.slice(1),
-      runtime: 'claude-code',
-      projectPath,
-      behaviorJson: '{"responseMode":"always"}',
-      registeredAt: now,
-      updatedAt: now,
-    })
-    .run();
+async function openOriginal() {
+  original = await createOriginalNativeLaunchFixture({ seed: false });
+  try {
+    const pair = await original.bootNativePair();
+    target = pair[0]!;
+    ANA_PATH = target.agentPath;
+    testServer = original.server;
+    initAgentIdentityService(original.db);
+    admittedRooms.clear();
+  } catch (cause) {
+    try {
+      await original.close();
+    } catch {
+      /* Preserve setup raw first, including undefined. */
+    }
+    throw cause;
+  }
+}
+async function closeOriginal() {
+  let failed = false;
+  let first: unknown;
+  const remember = (cause: unknown) => {
+    if (!failed) {
+      failed = true;
+      first = cause;
+    }
+  };
+  try {
+    vi.unstubAllEnvs();
+  } catch (cause) {
+    remember(cause);
+  }
+  // Stop each genuinely admitted Room before the fixture joins native/file owners.
+  const stops: Promise<unknown>[] = [];
+  for (const roomId of admittedRooms) {
+    try {
+      const stopped = Promise.resolve(
+        original.subsystem.service.haltRoom(roomId, original.operator.id)
+      );
+      void stopped.catch(remember);
+      stops.push(stopped);
+    } catch (cause) {
+      remember(cause);
+    }
+  }
+  // The original close starts its own native/file/checkbox/due cancellations
+  // before any request joins. No live request is awaited ahead of its owner.
+  try {
+    const closing = original.close();
+    void closing.catch(remember);
+    stops.push(closing);
+  } catch (cause) {
+    remember(cause);
+  }
+  for (const result of await Promise.allSettled(stops)) {
+    if (result.status === 'rejected') remember(result.reason);
+  }
+  if (failed) throw first;
+}
+function setEnabled(enabled: boolean) {
+  configManager.set('rooms', {
+    ...configManager.get('rooms'),
+    repo: { ...configManager.get('rooms').repo, enabled },
+  });
+}
+async function originalWorktree(
+  roomId: string,
+  agentPath: string,
+  name: string
+): Promise<RoomWorktreeHandle> {
+  expect(agentPath).toBe(target.agentPath);
+  // Move this actual native session binding from the boot room to the room
+  // the original HTTP create route just opened. This is canonical native DATA;
+  // the ensuing real Room post alone issues the private launch request.
+  if (original.subsystem.store.getRoomSession(original.roomId, target.authorId)) {
+    original.subsystem.service.removeMember(original.roomId, original.operator.id, target.authorId);
+  }
+  original.subsystem.store.bindRoomSession(
+    roomId,
+    target.authorId,
+    target.sessionId,
+    new Date().toISOString()
+  );
+  admittedRooms.add(roomId);
+  const slug = RoomWorktreeManager.slugFor(name, agentPath);
+  const directory = path.join(original.repos.worktreesPath(roomId), slug);
+  const existed = existsSync(path.join(directory, '.git'));
+  const entry = original.subsystem.service.post(roomId, {
+    authorId: original.operator.id,
+    mentions: [target.authorId],
+    text: 'Inspect this Room working copy.',
+  });
+  await original.subsystem.service.triggersIdle();
+  const prepared = original.readPreparedContext(target.sessionId);
+  expect(prepared?.triggerEntryId).toBe(entry.id);
+  expect(prepared?.files).toBeDefined();
+  if (!prepared?.files) throw new Error('Original native placement unavailable');
+  expect(prepared.files.worktreePath).toBe(path.join(original.repos.worktreesPath(roomId), slug));
+  return {
+    slug,
+    path: prepared.files.worktreePath,
+    branch: prepared.files.branch,
+    repo: prepared.files.repoPath,
+    created: !existed,
+  };
 }
 
 describe('POST /api/rooms/:id/repo', () => {
   let db: Db;
-  let dorkHome: string;
   let store: RoomRepoStore;
-  let enabled: boolean;
 
   beforeEach(async () => {
-    fakeRuntime = new FakeAgentRuntime();
-    vi.clearAllMocks();
-    resetAgentIdentityService();
-    db = createTestDb();
-    dorkHome = await mkdtemp(path.join(tmpdir(), 'dorkos-rooms-repo-route-'));
-    enabled = true;
-    registerAgent(db, 'ana', ANA_PATH);
-    const rooms = createRoomSubsystem({ db });
-    setRoomService(rooms.service);
-    setReadCursorService(rooms.readCursors);
-    store = new RoomRepoStore(db, dorkHome);
-    setRoomRepoService(
-      new RoomRepoService({
-        store,
-        mutex: new RoomRepoMutex(),
-        queueWaitMs: () => 5000,
-        enabled: () => enabled,
-        getRoom: (roomId, viewerAuthorId) => rooms.service.getRoom(roomId, viewerAuthorId),
-        isOwnerAuthor: (authorId) =>
-          rooms.authors.isOwner(authorId, readOwnerAccount()?.id ?? null),
-        operatorGitName: () => 'Dorian',
-        pinRoomMd: () => {},
-        caps: () => ({ ...ROOM_REPO_CAP_DEFAULTS }),
-        maxRoomMdBytes: () => ROOM_REPO_CAP_DEFAULTS.maxRoomMdBytes,
-      })
-    );
+    await openOriginal();
+    db = original.db;
+    store = original.repos;
+    setEnabled(true);
   });
 
-  afterEach(async () => {
-    vi.unstubAllEnvs();
-    resetAgentIdentityService();
-    await rm(dorkHome, { recursive: true, force: true });
-  });
+  afterEach(closeOriginal);
 
   /** A channel with Ana on the roster. */
   async function channel(): Promise<string> {
     const created = await request(testServer)
       .post('/api/rooms')
+      .set('Authorization', `Bearer ${original.ownerKey.key}`)
       .send({ kind: 'channel', title: 'Release train', agentPaths: [ANA_PATH] });
+    if (created.status === 201 && typeof created.body.id === 'string')
+      admittedRooms.add(created.body.id);
     expect(created.status).toBe(201);
     return created.body.id as string;
   }
@@ -165,7 +163,9 @@ describe('POST /api/rooms/:id/repo', () => {
   it('gives the room a repo when the operator asks', async () => {
     const roomId = await channel();
 
-    const res = await request(testServer).post(`/api/rooms/${roomId}/repo`);
+    const res = await request(testServer)
+      .post(`/api/rooms/${roomId}/repo`)
+      .set('Authorization', `Bearer ${original.ownerKey.key}`);
 
     expect(res.status).toBe(201);
     expect(res.body.repo).toMatchObject({ roomId, mode: 'owned', defaultBranch: 'main' });
@@ -177,10 +177,14 @@ describe('POST /api/rooms/:id/repo', () => {
 
   it('answers 409 with the binding it already had, and makes no second commit', async () => {
     const roomId = await channel();
-    const first = await request(testServer).post(`/api/rooms/${roomId}/repo`);
+    const first = await request(testServer)
+      .post(`/api/rooms/${roomId}/repo`)
+      .set('Authorization', `Bearer ${original.ownerKey.key}`);
     const head = await gitInRepo(['rev-parse', 'HEAD'], store, roomId);
 
-    const second = await request(testServer).post(`/api/rooms/${roomId}/repo`);
+    const second = await request(testServer)
+      .post(`/api/rooms/${roomId}/repo`)
+      .set('Authorization', `Bearer ${original.ownerKey.key}`);
 
     expect(second.status).toBe(409);
     expect(second.body.code).toBe('ROOM_REPO_EXISTS');
@@ -193,14 +197,18 @@ describe('POST /api/rooms/:id/repo', () => {
     const identity = initAgentIdentityService(db);
     const token = await identity.mint({ agentPath: ANA_PATH, displayName: 'Ana' });
 
+    if (!token) throw new Error('Original identity token unavailable');
+
     // Ana really is in this room: the same token reads it.
     const reads = await request(testServer)
       .get(`/api/rooms/${roomId}`)
+      .set('Authorization', `Bearer ${original.ownerKey.key}`)
       .set('X-DorkOS-Agent', token);
     expect(reads.status).toBe(200);
 
     const res = await request(testServer)
       .post(`/api/rooms/${roomId}/repo`)
+      .set('Authorization', `Bearer ${original.ownerKey.key}`)
       .set('X-DorkOS-Agent', token);
 
     expect(res.status).toBe(403);
@@ -217,11 +225,15 @@ describe('POST /api/rooms/:id/repo', () => {
       displayName: 'Outsider',
     });
 
+    if (!token) throw new Error('Original outsider identity token unavailable');
+
     const known = await request(testServer)
       .post(`/api/rooms/${roomId}/repo`)
+      .set('Authorization', `Bearer ${original.ownerKey.key}`)
       .set('X-DorkOS-Agent', token);
     const unknown = await request(testServer)
       .post('/api/rooms/01NOSUCHROOM/repo')
+      .set('Authorization', `Bearer ${original.ownerKey.key}`)
       .set('X-DorkOS-Agent', token);
 
     expect(known.status).toBe(404);
@@ -235,6 +247,7 @@ describe('POST /api/rooms/:id/repo', () => {
 
     const res = await request(testServer)
       .post(`/api/rooms/${roomId}/repo`)
+      .set('Authorization', `Bearer ${original.ownerKey.key}`)
       .set('X-DorkOS-Agent', 'not-a-real-token');
 
     expect(res.status).toBe(401);
@@ -242,16 +255,20 @@ describe('POST /api/rooms/:id/repo', () => {
   });
 
   it('answers 404 for a room that does not exist', async () => {
-    const res = await request(testServer).post('/api/rooms/01NOSUCHROOM/repo');
+    const res = await request(testServer)
+      .post('/api/rooms/01NOSUCHROOM/repo')
+      .set('Authorization', `Bearer ${original.ownerKey.key}`);
     expect(res.status).toBe(404);
     expect(res.body.code).toBe('ROOM_NOT_FOUND');
   });
 
   it('is not available while config.rooms.repo.enabled is off, and writes nothing', async () => {
     const roomId = await channel();
-    enabled = false;
+    setEnabled(false);
 
-    const res = await request(testServer).post(`/api/rooms/${roomId}/repo`);
+    const res = await request(testServer)
+      .post(`/api/rooms/${roomId}/repo`)
+      .set('Authorization', `Bearer ${original.ownerKey.key}`);
 
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('ROOM_REPOS_DISABLED');
@@ -269,7 +286,9 @@ describe('POST /api/rooms/:id/repo', () => {
     vi.stubEnv('PATH', '');
     let res;
     try {
-      res = await request(testServer).post(`/api/rooms/${roomId}/repo`);
+      res = await request(testServer)
+        .post(`/api/rooms/${roomId}/repo`)
+        .set('Authorization', `Bearer ${original.ownerKey.key}`);
     } finally {
       vi.unstubAllEnvs();
     }
@@ -285,12 +304,15 @@ describe('POST /api/rooms/:id/repo', () => {
     // lists the same whether the feature is on or off.
     const roomId = await channel();
     for (const flag of [true, false]) {
-      enabled = flag;
+      setEnabled(flag);
       const posted = await request(testServer)
         .post(`/api/rooms/${roomId}/entries`)
+        .set('Authorization', `Bearer ${original.ownerKey.key}`)
         .send({ text: `hello ${flag}` });
       expect(posted.status).toBe(202);
-      const read = await request(testServer).get(`/api/rooms/${roomId}`);
+      const read = await request(testServer)
+        .get(`/api/rooms/${roomId}`)
+        .set('Authorization', `Bearer ${original.ownerKey.key}`);
       expect(read.status).toBe(200);
       expect(read.body).not.toHaveProperty('repo');
     }
@@ -313,80 +335,44 @@ describe('POST /api/rooms/:id/repo', () => {
  */
 describe('the room repo routes', () => {
   let db: Db;
-  let dorkHome: string;
   let store: RoomRepoStore;
-  let rooms: ReturnType<typeof createRoomSubsystem>;
   /** The SAME manager the merge service holds, so a test works where a turn would. */
-  let roomWorktrees: RoomWorktreeManager;
+  let roomWorktrees: { ensureWorktree: typeof originalWorktree };
 
   beforeEach(async () => {
-    fakeRuntime = new FakeAgentRuntime();
-    vi.clearAllMocks();
-    resetAgentIdentityService();
-    db = createTestDb();
-    dorkHome = await mkdtemp(path.join(tmpdir(), 'dorkos-rooms-merge-route-'));
-    registerAgent(db, 'ana', ANA_PATH);
-    rooms = createRoomSubsystem({ db });
-    setRoomService(rooms.service);
-    setReadCursorService(rooms.readCursors);
-    store = new RoomRepoStore(db, dorkHome);
-    const mutex = new RoomRepoMutex();
-    const repoService = new RoomRepoService({
-      store,
-      mutex,
-      queueWaitMs: () => 5000,
-      enabled: () => true,
-      getRoom: (roomId, viewerAuthorId) => rooms.service.getRoom(roomId, viewerAuthorId),
-      isOwnerAuthor: (authorId) => rooms.authors.isOwner(authorId, readOwnerAccount()?.id ?? null),
-      operatorGitName: () => 'Dorian',
-      pinRoomMd: () => {},
-      caps: () => ({ ...ROOM_REPO_CAP_DEFAULTS }),
-      maxRoomMdBytes: () => ROOM_REPO_CAP_DEFAULTS.maxRoomMdBytes,
-    });
-    setRoomRepoService(repoService);
-    roomWorktrees = new RoomWorktreeManager({
-      store,
-      hasRepo: (roomId) => repoService.hasRepo(roomId),
-      listStrandedWorktrees: (roomId) => repoService.listStrandedWorktrees(roomId),
-      reapAfterDays: () => 14,
-      busyAgentPaths: () => rooms.service.listBusyAgentPaths(),
-    });
-    setRoomMergeService(
-      new RoomMergeService({
-        store,
-        mutex,
-        enabled: () => true,
-        mergeQueueWaitMs: () => 5000,
-        requireMembership: (roomId, authorId) => rooms.service.requireMembership(roomId, authorId),
-        listAgentMembers: (roomId) => rooms.service.listAgentMembers(roomId),
-        listStrandedWorktrees: (roomId) => repoService.listStrandedWorktrees(roomId),
-        announce: (roomId, input) => rooms.service.postMergeEvent(roomId, input),
-        isOwnerAuthor: (authorId) =>
-          rooms.authors.isOwner(authorId, readOwnerAccount()?.id ?? null),
-      })
-    );
+    await openOriginal();
+    db = original.db;
+    store = original.repos;
+    roomWorktrees = { ensureWorktree: originalWorktree };
   });
 
-  afterEach(async () => {
-    vi.unstubAllEnvs();
-    resetAgentIdentityService();
-    await rm(dorkHome, { recursive: true, force: true });
-  });
+  afterEach(closeOriginal);
 
   /** A channel with Ana on the roster, with files of its own. */
   async function projectRoom(): Promise<string> {
     const created = await request(testServer)
       .post('/api/rooms')
+      .set('Authorization', `Bearer ${original.ownerKey.key}`)
       .send({ kind: 'channel', title: 'Release train', agentPaths: [ANA_PATH] });
+    if (created.status === 201 && typeof created.body.id === 'string')
+      admittedRooms.add(created.body.id);
     expect(created.status).toBe(201);
     const roomId = created.body.id as string;
-    expect((await request(testServer).post(`/api/rooms/${roomId}/repo`)).status).toBe(201);
+    expect(
+      (
+        await request(testServer)
+          .post(`/api/rooms/${roomId}/repo`)
+          .set('Authorization', `Bearer ${original.ownerKey.key}`)
+      ).status
+    ).toBe(201);
     return roomId;
   }
 
   it('answers the status of a room with files', async () => {
     const roomId = await projectRoom();
-    const res = await request(testServer).get(`/api/rooms/${roomId}/repo/status`);
+    const res = await request(testServer)
+      .get(`/api/rooms/${roomId}/repo/status`)
+      .set('Authorization', `Bearer ${original.ownerKey.key}`);
 
     expect(res.status).toBe(200);
     expect(res.body.mainCommit).toMatch(/^[0-9a-f]{40}$/);
@@ -400,15 +386,21 @@ describe('the room repo routes', () => {
   it('tells a room without files that it has none, on both routes', async () => {
     const created = await request(testServer)
       .post('/api/rooms')
+      .set('Authorization', `Bearer ${original.ownerKey.key}`)
       .send({ kind: 'channel', title: 'Plain', agentPaths: [ANA_PATH] });
+    if (created.status === 201 && typeof created.body.id === 'string')
+      admittedRooms.add(created.body.id);
     const roomId = created.body.id as string;
 
-    const status = await request(testServer).get(`/api/rooms/${roomId}/repo/status`);
+    const status = await request(testServer)
+      .get(`/api/rooms/${roomId}/repo/status`)
+      .set('Authorization', `Bearer ${original.ownerKey.key}`);
     expect(status.status).toBe(409);
     expect(status.body.code).toBe('NOT_A_PROJECT_ROOM');
 
     const merged = await request(testServer)
       .post(`/api/rooms/${roomId}/repo/merge`)
+      .set('Authorization', `Bearer ${original.ownerKey.key}`)
       .send({ summary: 'anything' });
     expect(merged.status).toBe(409);
     expect(merged.body.code).toBe('NOT_A_PROJECT_ROOM');
@@ -417,6 +409,7 @@ describe('the room repo routes', () => {
   it('answers an unknown room the way reading one does', async () => {
     const res = await request(testServer)
       .post('/api/rooms/01NOSUCHROOMAAAAAAAAAAAAAA/repo/merge')
+      .set('Authorization', `Bearer ${original.ownerKey.key}`)
       .send({ summary: 'anything' });
     expect(res.status).toBe(404);
   });
@@ -425,6 +418,7 @@ describe('the room repo routes', () => {
     const roomId = await projectRoom();
     const res = await request(testServer)
       .post(`/api/rooms/${roomId}/repo/merge`)
+      .set('Authorization', `Bearer ${original.ownerKey.key}`)
       .send({ summary: '' });
     // The route's own validation, before any git runs: a merge nobody can read
     // a summary of is a line in the room that says nothing.
@@ -456,6 +450,7 @@ describe('the room repo routes', () => {
 
     const res = await request(testServer)
       .post(`/api/rooms/${roomId}/repo/merge`)
+      .set('Authorization', `Bearer ${original.ownerKey.key}`)
       .send({ summary: 'Add the deploy checklist', worktree: tree.slug });
 
     expect(res.status).toBe(200);
@@ -464,7 +459,9 @@ describe('the room repo routes', () => {
     expect(existsSync(path.join(store.repoPath(roomId), 'checklist.md'))).toBe(true);
 
     // One line in the room, in the room's own voice, about Ana.
-    const log = await request(testServer).get(`/api/rooms/${roomId}/entries`);
+    const log = await request(testServer)
+      .get(`/api/rooms/${roomId}/entries`)
+      .set('Authorization', `Bearer ${original.ownerKey.key}`);
     const merges = (log.body.entries as { body: { merge?: unknown; text: string } }[]).filter(
       (entry) => entry.body.merge !== undefined
     );
@@ -502,7 +499,9 @@ describe('the room repo routes', () => {
       await editByHand(roomId, 'stray.md', 'typed straight into the folder\n');
 
       // The warning: what is different, named, so a person can act on it.
-      const paused = await request(testServer).get(`/api/rooms/${roomId}/repo/status`);
+      const paused = await request(testServer)
+        .get(`/api/rooms/${roomId}/repo/status`)
+        .set('Authorization', `Bearer ${original.ownerKey.key}`);
       expect(paused.status).toBe(200);
       expect(paused.body.main).toMatchObject({ branch: 'main', dirty: true, strayCount: 1 });
       expect(paused.body.main.strays).toEqual([{ path: 'stray.md', kind: 'untracked' }]);
@@ -510,6 +509,7 @@ describe('the room repo routes', () => {
       // And the pause itself, on the merge.
       const refused = await request(testServer)
         .post(`/api/rooms/${roomId}/repo/merge`)
+        .set('Authorization', `Bearer ${original.ownerKey.key}`)
         .send({ summary: 'Add the deploy checklist', worktree: tree.slug });
       expect(refused.status).toBe(409);
       expect(refused.body.code).toBe('MAIN_CHECKOUT_DIRTY');
@@ -517,6 +517,7 @@ describe('the room repo routes', () => {
       // The way out: throw away the change nobody wanted, by name.
       const repaired = await request(testServer)
         .post(`/api/rooms/${roomId}/repo/main/repair`)
+        .set('Authorization', `Bearer ${original.ownerKey.key}`)
         .send({ action: 'discard', paths: ['stray.md'] });
       expect(repaired.status).toBe(200);
       expect(repaired.body).toMatchObject({ action: 'discard', paths: 1, clean: true });
@@ -524,9 +525,12 @@ describe('the room repo routes', () => {
       // And the room is working again — the merge that was refused now lands.
       const merged = await request(testServer)
         .post(`/api/rooms/${roomId}/repo/merge`)
+        .set('Authorization', `Bearer ${original.ownerKey.key}`)
         .send({ summary: 'Add the deploy checklist', worktree: tree.slug });
       expect(merged.status).toBe(200);
-      const clear = await request(testServer).get(`/api/rooms/${roomId}/repo/status`);
+      const clear = await request(testServer)
+        .get(`/api/rooms/${roomId}/repo/status`)
+        .set('Authorization', `Bearer ${original.ownerKey.key}`);
       expect(clear.body.main).toMatchObject({ dirty: false, strayCount: 0, strays: [] });
     });
 
@@ -560,6 +564,7 @@ describe('the room repo routes', () => {
 
       const repaired = await request(testServer)
         .post(`/api/rooms/${roomId}/repo/main/repair`)
+        .set('Authorization', `Bearer ${original.ownerKey.key}`)
         .send({ action: 'commit' });
       expect(repaired.body).toMatchObject({ action: 'commit', paths: 1, clean: true });
       // Their work was kept, which is the whole point of the other answer.
@@ -567,6 +572,7 @@ describe('the room repo routes', () => {
 
       const merged = await request(testServer)
         .post(`/api/rooms/${roomId}/repo/merge`)
+        .set('Authorization', `Bearer ${original.ownerKey.key}`)
         .send({ summary: 'Add the deploy checklist', worktree: tree.slug });
       expect(merged.status).toBe(409);
       expect(merged.body.code).toBe('BEHIND_MAIN');
@@ -579,6 +585,7 @@ describe('the room repo routes', () => {
 
       const res = await request(testServer)
         .post(`/api/rooms/${roomId}/repo/main/repair`)
+        .set('Authorization', `Bearer ${original.ownerKey.key}`)
         .send({ action: 'discard', paths: ['throw-away.md'] });
 
       expect(res.status).toBe(200);
@@ -597,8 +604,11 @@ describe('the room repo routes', () => {
         displayName: 'Ana',
       });
 
+      if (!token) throw new Error('Original identity token unavailable');
+
       const asAgent = await request(testServer)
         .post(`/api/rooms/${roomId}/repo/main/repair`)
+        .set('Authorization', `Bearer ${original.ownerKey.key}`)
         .set('X-DorkOS-Agent', token)
         .send({ action: 'commit' });
       expect(asAgent.status).toBe(403);
@@ -608,6 +618,7 @@ describe('the room repo routes', () => {
       // git runs.
       const empty = await request(testServer)
         .post(`/api/rooms/${roomId}/repo/main/repair`)
+        .set('Authorization', `Bearer ${original.ownerKey.key}`)
         .send({ action: 'discard', paths: [] });
       expect(empty.status).toBe(400);
 

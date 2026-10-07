@@ -23,48 +23,108 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { existsSync } from 'node:fs';
-import { chmod, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { tmpdir } from 'node:os';
-import { createTestDb } from '@dorkos/test-utils/db';
-import { rooms, type Db } from '@dorkos/db';
 import { ROOM_REPO_CAP_DEFAULTS, type RoomRepoCaps } from '@dorkos/shared/room-repo';
-import { RoomError } from '../../room-errors.js';
+import { RoomError } from '../../data/room-errors.js';
+import { resetAgentIdentityService } from '../../../core/agent-identity/agent-identity-service.js';
 import { RoomRepoStore } from '../room-repo-store.js';
 import { RoomRepoMutex } from '../room-repo-mutex.js';
-import { RoomFilesService } from '../room-files.js';
 import {
-  RoomFileEditor,
   type RoomFileActor,
   type RoomFileAnnouncement,
   type RoomFileChangeOutcome,
-  type RoomFileEditorDeps,
 } from '../room-file-editor.js';
-import { commitAll, runGit } from '../room-repo-git.js';
-import { commitChangeSet } from '../room-file-ops.js';
+import {
+  commitAll,
+  initRepo,
+  revParse,
+  roomStatusRaw,
+  roomTrackedPathsRaw,
+  roomCommitCount,
+  roomLogRaw,
+} from '../room-repo-git.js';
+import { commitChangeSet as commitChangeSetInScope } from '../room-file-ops.js';
+import {
+  withRecognizedInstallationRoomNamespace,
+  readInstallationRoomMutationContext,
+  type InstallationRoomWrites,
+} from '../../../canvas/doc-channel/writes/installation-room-writes.js';
 import { codeSpan, escapeMarkdown, fileChangeSentence } from '../room-file-change-text.js';
-import { removeFixtureTree, silenceGitAutoMaintenance } from './fixture-git.js';
+import {
+  createOriginalOwnedRoomFixture,
+  type OriginalOwnedRoomFixture,
+} from './room-original-owned-fixture.js';
+import { createOriginalFileOpsHttpFixture } from './room-original-file-ops-http-fixture.js';
 
-const ROOM_ID = '01ROOMAAAAAAAAAAAAAAAAAAAA';
+let ROOM_ID: string;
 const OPERATOR: RoomFileActor = { authorId: 'author-operator', signedIn: false };
 const ANA: RoomFileActor = { authorId: '01ANAAAAAAAAAAAAAAAAAAAAAA', signedIn: true };
 const BEN: RoomFileActor = { authorId: '01BENAAAAAAAAAAAAAAAAAAAAA', signedIn: true };
 
 describe('RoomFileEditor — upload, move, delete, from the chat', () => {
-  let db: Db;
   let scratch: string;
   let stagingRoot: string;
   let store: RoomRepoStore;
-  let editor: RoomFileEditor;
-  let editorDeps: RoomFileEditorDeps;
+  let editor: Awaited<ReturnType<typeof createOriginalFileOpsHttpFixture>>['editor'];
+  let original: OriginalOwnedRoomFixture;
+  let fileOps: Awaited<ReturnType<typeof createOriginalFileOpsHttpFixture>> | undefined;
   let repoDir: string;
   let mutex: RoomRepoMutex;
   let caps: RoomRepoCaps;
   let announced: RoomFileAnnouncement[];
-  let writeRefusal: RoomError | null;
 
-  function git(args: string[]): Promise<string> {
-    return runGit(args, repoDir, store.homeDir(ROOM_ID));
+  let roomWriter: InstallationRoomWrites;
+  let cleaned = false;
+  let acquired = false;
+  let sourceRoot: string;
+
+  async function cleanup(): Promise<void> {
+    if (cleaned) return;
+    cleaned = true;
+    // The actual returned owner joins all editor requests and native writers.
+    // A failed drain retains the original Db and installation root.
+    let failed = false;
+    let firstCause: unknown;
+    try {
+      if (fileOps) await fileOps.close();
+      else if (acquired) await original.close();
+    } catch (cause) {
+      failed = true;
+      firstCause = cause;
+    }
+    try {
+      resetAgentIdentityService();
+    } catch (cause) {
+      if (!failed) {
+        failed = true;
+        firstCause = cause;
+      }
+    }
+    if (failed) throw firstCause;
+  }
+
+  function commitChangeSet(
+    dir: string,
+    ceiling: string,
+    changes: Parameters<typeof commitChangeSetInScope>[2],
+    subject: string,
+    identity: Parameters<typeof commitChangeSetInScope>[4]
+  ): Promise<string | null> {
+    return withRecognizedInstallationRoomNamespace(roomWriter, ROOM_ID, async (scope) =>
+      commitChangeSetInScope(
+        dir,
+        ceiling,
+        changes,
+        subject,
+        identity,
+        readInstallationRoomMutationContext(roomWriter, ROOM_ID, scope)
+      )
+    );
+  }
+
+  function text(bytes: Promise<Buffer>): Promise<string> {
+    return bytes.then((value) => value.toString('utf8').trim());
   }
 
   async function put(relPath: string, body: string | Buffer): Promise<void> {
@@ -74,22 +134,25 @@ describe('RoomFileEditor — upload, move, delete, from the chat', () => {
   }
 
   async function commit(message: string): Promise<string> {
-    return commitAll(
-      repoDir,
-      message,
-      { name: 'Ana', email: 'who@dorkos.local' },
-      store.homeDir(ROOM_ID)
+    return withRecognizedInstallationRoomNamespace(roomWriter, ROOM_ID, async (scope) =>
+      commitAll(
+        repoDir,
+        message,
+        { name: 'Ana', email: 'who@dorkos.local' },
+        store.homeDir(ROOM_ID),
+        readInstallationRoomMutationContext(roomWriter, ROOM_ID, scope)
+      )
     );
   }
 
   function head(): Promise<string> {
-    return git(['rev-parse', 'HEAD']);
+    return revParse(repoDir, 'HEAD', store.homeDir(ROOM_ID));
   }
 
   /** Stage bytes the way multer would, and describe them as an upload item. */
   async function staged(name: string, body: string | Buffer) {
-    const file = path.join(stagingRoot, `${Math.random().toString(36).slice(2)}`);
-    await mkdir(stagingRoot, { recursive: true });
+    const file = path.join(sourceRoot, `${Math.random().toString(36).slice(2)}`);
+    await mkdir(sourceRoot, { recursive: true });
     await writeFile(file, body);
     return { name, content: { file, size: Buffer.byteLength(body) } };
   }
@@ -108,81 +171,89 @@ describe('RoomFileEditor — upload, move, delete, from the chat', () => {
   async function snapshot(): Promise<{ head: string; files: string; status: string }> {
     return {
       head: await head(),
-      files: await git(['ls-files', '-s']),
-      status: await git(['status', '--porcelain=v1', '--ignored', '--untracked-files=all']),
+      files: await text(roomTrackedPathsRaw(repoDir, store.homeDir(ROOM_ID), 'staged')),
+      status: await text(roomStatusRaw(repoDir, store.homeDir(ROOM_ID), 'ignored')),
     };
   }
 
   beforeEach(async () => {
-    db = createTestDb();
-    silenceGitAutoMaintenance();
-    scratch = await mkdtemp(path.join(tmpdir(), 'dorkos-room-file-ops-'));
-    stagingRoot = path.join(scratch, 'staging');
-    const dorkHome = path.join(scratch, '.dork');
-    await mkdir(dorkHome, { recursive: true });
-    store = new RoomRepoStore(db, dorkHome);
-    db.insert(rooms)
-      .values({
-        id: ROOM_ID,
-        kind: 'channel',
-        title: 'Release train',
+    cleaned = false;
+    acquired = false;
+    fileOps = undefined;
+    try {
+      announced = [];
+      original = await createOriginalOwnedRoomFixture({
+        seed: false,
+        room: { title: 'Release train', agentPaths: ['/original-file-ops-agent'] },
+        operatorGitName: () => 'Dorian',
+        onFileAnnouncement: (_room, input) => {
+          announced.push(input);
+        },
+      });
+      acquired = true;
+      ROOM_ID = original.roomId;
+      OPERATOR.authorId = original.operator.id;
+      scratch = original.dir;
+      stagingRoot = path.join(scratch, '.temp', 'room-uploads');
+      sourceRoot = path.join(scratch, 'original-upload-inputs');
+      store = original.repos;
+      mutex = original.mutex;
+      roomWriter = original.writer;
+      caps = { ...ROOM_REPO_CAP_DEFAULTS };
+      repoDir = store.repoPath(ROOM_ID);
+      await mkdir(repoDir, { recursive: true });
+      await store.write({
+        roomId: ROOM_ID,
+        mode: 'owned',
         createdAt: '2026-09-26T12:00:00.000Z',
-        lastActivityAt: '2026-09-26T12:00:00.000Z',
-      })
-      .run();
-
-    caps = { ...ROOM_REPO_CAP_DEFAULTS };
-    announced = [];
-    writeRefusal = null;
-    mutex = new RoomRepoMutex();
-
-    repoDir = store.repoPath(ROOM_ID);
-    await mkdir(repoDir, { recursive: true });
-    await git(['-c', 'init.templateDir=', 'init', '-b', 'main', '--quiet', '.']);
-    await store.write({
-      roomId: ROOM_ID,
-      mode: 'owned',
-      createdAt: '2026-09-26T12:00:00.000Z',
-      createdBy: OPERATOR.authorId,
-      defaultBranch: 'main',
-      caps,
-      lastMergeSeq: null,
-    });
-    await put('ROOM.md', '# Release train\n');
-    await put('notes/plan.md', '# Plan\n');
-    await put('notes/todo.md', '- ship\n');
-    await put('bin/run.sh', '#!/bin/sh\necho hi\n');
-    await chmod(path.join(repoDir, 'bin/run.sh'), 0o755);
-    await commit('Start');
-
-    const files = new RoomFilesService({
-      store,
-      hasRepo: () => true,
-      maxFileBytes: () => caps.maxFileBytes,
-    });
-    editorDeps = {
-      store,
-      mutex,
-      enabled: () => true,
-      queueWaitMs: () => 5000,
-      assertCanWriteFiles: () => {
-        if (writeRefusal) throw writeRefusal;
-      },
-      operatorGitName: () => 'Dorian',
-      personName: (authorId) =>
-        authorId === ANA.authorId ? 'Ana Lima' : authorId === BEN.authorId ? 'Ben' : null,
-      announce: (_roomId, input) => {
-        announced.push(input);
-      },
-      uploadStagingRoot: () => stagingRoot,
-      files,
-    };
-    editor = new RoomFileEditor(editorDeps);
+        createdBy: OPERATOR.authorId,
+        defaultBranch: 'main',
+        caps,
+        lastMergeSeq: null,
+      });
+      await withRecognizedInstallationRoomNamespace(roomWriter, ROOM_ID, async (scope) =>
+        initRepo(
+          repoDir,
+          store.homeDir(ROOM_ID),
+          readInstallationRoomMutationContext(roomWriter, ROOM_ID, scope)
+        )
+      );
+      await put('ROOM.md', '# Release train\n');
+      await put('notes/plan.md', '# Plan\n');
+      await put('notes/todo.md', '- ship\n');
+      await put('bin/run.sh', '#!/bin/sh\necho hi\n');
+      await chmod(path.join(repoDir, 'bin/run.sh'), 0o755);
+      await commit('Start');
+      fileOps = await createOriginalFileOpsHttpFixture(original);
+      editor = fileOps.editor;
+    } catch (cause) {
+      try {
+        await cleanup();
+      } catch {
+        /* Setup's exact primary wins. */
+      }
+      throw cause;
+    }
   });
 
   afterEach(async () => {
-    vi.restoreAllMocks();
-    await removeFixtureTree(scratch);
+    let failed = false;
+    let firstCause: unknown;
+    try {
+      vi.restoreAllMocks();
+    } catch (error) {
+      failed = true;
+      firstCause = error;
+    }
+    try {
+      await cleanup();
+    } catch (error) {
+      if (!failed) {
+        failed = true;
+        firstCause = error;
+      }
+    }
+    if (failed) throw firstCause;
   });
 
   describe('upload', () => {
@@ -199,8 +270,8 @@ describe('RoomFileEditor — upload, move, delete, from the chat', () => {
         })
       );
 
-      expect(await git(['rev-list', '--count', `${before}..HEAD`])).toBe('1');
-      expect(await git(['log', '--format=%an <%ae>%n%s', '-n', '1'])).toBe(
+      expect(await roomCommitCount(repoDir, store.homeDir(ROOM_ID), before, 'HEAD')).toBe('1');
+      expect(await text(roomLogRaw(repoDir, store.homeDir(ROOM_ID), 'author-subject', 1))).toBe(
         'Dorian <operator@dorkos.local>\nUpload 2 files to designs/v1/'
       );
       expect(await readFile(path.join(repoDir, 'designs/v1/logo.png'))).toEqual(png);
@@ -210,7 +281,7 @@ describe('RoomFileEditor — upload, move, delete, from the chat', () => {
         author: 'Dorian',
         subject: 'Upload 2 files to designs/v1/',
       });
-      expect(await git(['status', '--porcelain=v1'])).toBe('');
+      expect(await text(roomStatusRaw(repoDir, store.homeDir(ROOM_ID)))).toBe('');
     });
 
     it('refuses a name the folder already has, naming it, unless it is listed to replace', async () => {
@@ -443,13 +514,13 @@ describe('RoomFileEditor — upload, move, delete, from the chat', () => {
         })
       );
 
-      expect(await git(['log', '--format=%s', '-n', '1'])).toBe(
+      expect(await text(roomLogRaw(repoDir, store.homeDir(ROOM_ID), 'subject', 1))).toBe(
         'Rename ROOM.md to docs/ROOM-old.md'
       );
-      expect(await git(['rev-list', '--count', `${base}..HEAD`])).toBe('1');
+      expect(await roomCommitCount(repoDir, store.homeDir(ROOM_ID), base, 'HEAD')).toBe('1');
       expect(result.paths).toEqual(['docs/ROOM-old.md']);
       expect(existsSync(path.join(repoDir, 'ROOM.md'))).toBe(false);
-      expect(await git(['status', '--porcelain=v1'])).toBe('');
+      expect(await text(roomStatusRaw(repoDir, store.homeDir(ROOM_ID)))).toBe('');
     });
 
     it('moves a folder, keeping the executable bit, and removes the old folder', async () => {
@@ -458,10 +529,16 @@ describe('RoomFileEditor — upload, move, delete, from the chat', () => {
         await editor.move(ROOM_ID, OPERATOR, { from: 'bin', to: 'tools/bin', baseCommit: base })
       );
 
-      expect(await git(['log', '--format=%s', '-n', '1'])).toBe('Rename bin/ to tools/bin/');
-      expect(await git(['ls-files', '-s', 'tools/bin/run.sh'])).toMatch(/^100755 /);
+      expect(await text(roomLogRaw(repoDir, store.homeDir(ROOM_ID), 'subject', 1))).toBe(
+        'Rename bin/ to tools/bin/'
+      );
+      expect(
+        await text(
+          roomTrackedPathsRaw(repoDir, store.homeDir(ROOM_ID), 'staged', 'tools/bin/run.sh')
+        )
+      ).toMatch(/^100755 /);
       expect(existsSync(path.join(repoDir, 'bin'))).toBe(false);
-      expect(await git(['status', '--porcelain=v1'])).toBe('');
+      expect(await text(roomStatusRaw(repoDir, store.homeDir(ROOM_ID)))).toBe('');
     });
 
     it('renames a file whose name only changes in capitals', async () => {
@@ -473,9 +550,11 @@ describe('RoomFileEditor — upload, move, delete, from the chat', () => {
         })
       );
 
-      expect(await git(['ls-files', 'notes'])).toBe('notes/Plan.md\nnotes/todo.md');
+      expect(
+        await text(roomTrackedPathsRaw(repoDir, store.homeDir(ROOM_ID), 'plain', 'notes'))
+      ).toBe('notes/Plan.md\nnotes/todo.md');
       expect(await readFile(path.join(repoDir, 'notes/Plan.md'), 'utf-8')).toBe('# Plan\n');
-      expect(await git(['status', '--porcelain=v1'])).toBe('');
+      expect(await text(roomStatusRaw(repoDir, store.homeDir(ROOM_ID)))).toBe('');
     });
 
     it('refuses a destination that exists, and one whose folder differs only in capitals', async () => {
@@ -528,10 +607,12 @@ describe('RoomFileEditor — upload, move, delete, from the chat', () => {
         await editor.remove(ROOM_ID, OPERATOR, { path: 'notes', baseCommit: base })
       );
 
-      expect(await git(['log', '--format=%s', '-n', '1'])).toBe('Delete notes/');
+      expect(await text(roomLogRaw(repoDir, store.homeDir(ROOM_ID), 'subject', 1))).toBe(
+        'Delete notes/'
+      );
       expect(result.paths).toEqual(['notes/plan.md', 'notes/todo.md']);
       expect(existsSync(path.join(repoDir, 'notes'))).toBe(false);
-      expect(await git(['status', '--porcelain=v1'])).toBe('');
+      expect(await text(roomStatusRaw(repoDir, store.homeDir(ROOM_ID)))).toBe('');
     });
 
     it('refuses when the file changed since the person looked', async () => {
@@ -606,7 +687,7 @@ describe('RoomFileEditor — upload, move, delete, from the chat', () => {
           bytes: Buffer.from([1, 0, 2]),
         })
       );
-      expect(await git(['log', '--format=%s', '-n', '1'])).toBe(
+      expect(await text(roomLogRaw(repoDir, store.homeDir(ROOM_ID), 'subject', 1))).toBe(
         'Add designs/screenshot.png from the chat'
       );
 
@@ -635,7 +716,7 @@ describe('RoomFileEditor — upload, move, delete, from the chat', () => {
       await editor.save(ROOM_ID, ANA, { path: 'a.md', baseCommit: null, text: 'a\n' });
       await editor.save(ROOM_ID, BEN, { path: 'b.md', baseCommit: null, text: 'b\n' });
 
-      expect(await git(['log', '--format=%an <%ae>', '-n', '2'])).toBe(
+      expect(await text(roomLogRaw(repoDir, store.homeDir(ROOM_ID), 'authors', 2))).toBe(
         [
           `Ben <person-${BEN.authorId}@dorkos.local>`,
           `Ana Lima <person-${ANA.authorId}@dorkos.local>`,
@@ -647,7 +728,7 @@ describe('RoomFileEditor — upload, move, delete, from the chat', () => {
       const nameless: RoomFileActor = { authorId: 'someone-else', signedIn: true };
       await editor.remove(ROOM_ID, nameless, { path: 'ROOM.md', baseCommit: await head() });
 
-      expect(await git(['log', '--format=%an <%ae>', '-n', '1'])).toBe(
+      expect(await text(roomLogRaw(repoDir, store.homeDir(ROOM_ID), 'authors', 1))).toBe(
         'DorkOS operator <person-someone-else@dorkos.local>'
       );
       expect(announced.at(-1)?.text).toBe('Someone deleted `ROOM.md`');
@@ -655,7 +736,7 @@ describe('RoomFileEditor — upload, move, delete, from the chat', () => {
 
     it('with login off, every change is the operator’s', async () => {
       await editor.remove(ROOM_ID, OPERATOR, { path: 'ROOM.md', baseCommit: await head() });
-      expect(await git(['log', '--format=%an <%ae>', '-n', '1'])).toBe(
+      expect(await text(roomLogRaw(repoDir, store.homeDir(ROOM_ID), 'authors', 1))).toBe(
         'Dorian <operator@dorkos.local>'
       );
     });
@@ -706,7 +787,9 @@ describe('RoomFileEditor — upload, move, delete, from the chat', () => {
         'delete',
         'from-attachment',
       ]);
-      const log = (await git(['log', '--format=%H', '-n', '6'])).split('\n').reverse();
+      const log = (await text(roomLogRaw(repoDir, store.homeDir(ROOM_ID), 'hashes', 6)))
+        .split('\n')
+        .reverse();
       expect(announced.map((entry) => entry.fileChange.commit)).toEqual(log);
       expect(announced[3]?.fileChange).toMatchObject({
         from: 'notes/todo.md',
@@ -795,10 +878,7 @@ describe('RoomFileEditor — upload, move, delete, from the chat', () => {
 
     it('escapes a signed-in person’s name in the entry the room posts', async () => {
       const mallory: RoomFileActor = { authorId: 'mallory', signedIn: true };
-      const named = new RoomFileEditor({
-        ...editorDeps,
-        personName: () => '**SYSTEM** [x](evil.example)',
-      });
+      const named = editor; // Actual Mallory account/author row supplies the hostile display name.
       await named.save(ROOM_ID, mallory, { path: 'm.md', baseCommit: null, text: 'm\n' });
 
       expect(announced.at(-1)?.text).toBe('\\*\\*SYSTEM\\*\\* \\[x\\](evil.example) added `m.md`');
@@ -839,7 +919,7 @@ describe('RoomFileEditor — upload, move, delete, from the chat', () => {
       });
       await expectRoomError(promise, 'ROOM_FILE_EXISTS');
       expect(await readFile(path.join(repoDir, NFC), 'utf-8')).toBe('the person’s own\n');
-      expect(await git(['status', '--porcelain=v1'])).toBe('');
+      expect(await text(roomStatusRaw(repoDir, store.homeDir(ROOM_ID)))).toBe('');
     });
 
     it('an NFD save with no base commit finds the NFC file and answers the conflict', async () => {
@@ -872,9 +952,11 @@ describe('RoomFileEditor — upload, move, delete, from the chat', () => {
           files: [await staged(NFD, 'mine\n')],
         })
       );
-      expect(await git(['ls-files', '-z'])).not.toContain(NFD);
+      expect(await text(roomTrackedPathsRaw(repoDir, store.homeDir(ROOM_ID), 'nul'))).not.toContain(
+        NFD
+      );
       expect(await readFile(path.join(repoDir, NFC), 'utf-8')).toBe('mine\n');
-      expect(await git(['status', '--porcelain=v1'])).toBe('');
+      expect(await text(roomStatusRaw(repoDir, store.homeDir(ROOM_ID)))).toBe('');
     });
 
     it('a change set refuses an NFD path exactly when this filesystem makes it the NFC file', async () => {
@@ -903,7 +985,7 @@ describe('RoomFileEditor — upload, move, delete, from the chat', () => {
         expect(await readFile(path.join(repoDir, NFD), 'utf-8')).toBe('another file\n');
       }
       expect(await readFile(path.join(repoDir, NFC), 'utf-8')).toBe('the person’s own\n');
-      expect(await git(['status', '--porcelain=v1'])).toBe('');
+      expect(await text(roomStatusRaw(repoDir, store.homeDir(ROOM_ID)))).toBe('');
     });
   });
 
@@ -931,7 +1013,7 @@ describe('RoomFileEditor — upload, move, delete, from the chat', () => {
       expect(await readFile(path.join(repoDir, 'stray.md'), 'utf-8')).toBe('somebody’s own\n');
       // The file it DID create is gone again; the stray one is exactly as it was.
       expect(existsSync(path.join(repoDir, 'fresh.md'))).toBe(false);
-      expect(await git(['status', '--porcelain=v1'])).toBe('?? stray.md');
+      expect(await text(roomStatusRaw(repoDir, store.homeDir(ROOM_ID)))).toBe('?? stray.md');
       expect(await head()).toBe(before);
     });
   });
@@ -980,23 +1062,30 @@ describe('RoomFileEditor — upload, move, delete, from the chat', () => {
       changed(
         await editor.move(ROOM_ID, OPERATOR, { from: 'big', to: 'huge', baseCommit: await head() })
       );
-      expect((await git(['ls-files', 'huge'])).split('\n')).toHaveLength(230);
-      expect(await git(['status', '--porcelain=v1'])).toBe('');
+      expect(
+        (await text(roomTrackedPathsRaw(repoDir, store.homeDir(ROOM_ID), 'plain', 'huge'))).split(
+          '\n'
+        )
+      ).toHaveLength(230);
+      expect(await text(roomStatusRaw(repoDir, store.homeDir(ROOM_ID)))).toBe('');
 
       changed(await editor.remove(ROOM_ID, OPERATOR, { path: 'huge', baseCommit: await head() }));
-      expect(await git(['ls-files', 'huge'])).toBe('');
+      expect(
+        await text(roomTrackedPathsRaw(repoDir, store.homeDir(ROOM_ID), 'plain', 'huge'))
+      ).toBe('');
       expect(existsSync(path.join(repoDir, 'huge'))).toBe(false);
     }, 180_000);
   });
 
   describe('the gates around it', () => {
     it('refuses whoever the room says may not change its files, for every operation', async () => {
-      writeRefusal = new RoomError('PEOPLE_ONLY', 'Only people can change a room’s files');
+      // A genuine rostered agent token reaches the real PEOPLE_ONLY Room policy.
+      const refused = fileOps!.agentActor;
       const base = await head();
 
-      await expectRoomError(editor.prepareUpload(ROOM_ID, OPERATOR), 'PEOPLE_ONLY');
+      await expectRoomError(editor.prepareUpload(ROOM_ID, refused), 'PEOPLE_ONLY');
       await expectRoomError(
-        editor.upload(ROOM_ID, OPERATOR, {
+        editor.upload(ROOM_ID, refused, {
           dir: '',
           baseCommit: base,
           replace: [],
@@ -1005,15 +1094,15 @@ describe('RoomFileEditor — upload, move, delete, from the chat', () => {
         'PEOPLE_ONLY'
       );
       await expectRoomError(
-        editor.move(ROOM_ID, OPERATOR, { from: 'ROOM.md', to: 'R.md', baseCommit: base }),
+        editor.move(ROOM_ID, refused, { from: 'ROOM.md', to: 'R.md', baseCommit: base }),
         'PEOPLE_ONLY'
       );
       await expectRoomError(
-        editor.remove(ROOM_ID, OPERATOR, { path: 'ROOM.md', baseCommit: base }),
+        editor.remove(ROOM_ID, refused, { path: 'ROOM.md', baseCommit: base }),
         'PEOPLE_ONLY'
       );
       await expectRoomError(
-        editor.saveAttachment(ROOM_ID, OPERATOR, {
+        editor.saveAttachment(ROOM_ID, refused, {
           dir: '',
           name: 'a',
           baseCommit: base,
@@ -1025,28 +1114,80 @@ describe('RoomFileEditor — upload, move, delete, from the chat', () => {
     });
 
     it('waits behind a running merge in the same queue, then lands', async () => {
-      let release = (): void => {};
+      const base = await head(); // Baseline before acquiring the queue's holder.
+      let release!: () => void;
+      let entered!: () => void;
       const held = new Promise<void>((resolve) => {
         release = resolve;
       });
-      const holder = mutex.run(ROOM_ID, { waitMs: 5000, busy: () => new Error('unused') }, () =>
-        held.then(() => undefined)
-      );
-      const base = await head();
-      const pending = editor.remove(ROOM_ID, OPERATOR, { path: 'ROOM.md', baseCommit: base });
-      let settled = false;
-      void pending.finally(() => {
-        settled = true;
+      const entry = new Promise<void>((resolve) => {
+        entered = resolve;
       });
-
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      expect(settled).toBe(false);
-      expect(await head()).toBe(base);
-
-      release();
-      await holder;
-      changed(await pending);
-      expect(await head()).not.toBe(base);
+      const holder = mutex.run(
+        ROOM_ID,
+        { waitMs: 5000, busy: () => new Error('unused') },
+        async () => {
+          entered();
+          await held;
+        }
+      );
+      const holderOutcome = holder.then(
+        () => ({ failed: false }),
+        (cause: unknown) => ({ failed: true, cause })
+      );
+      let pendingOutcome:
+        Promise<{ failed: boolean; cause?: unknown; value?: RoomFileChangeOutcome }> | undefined;
+      let failed = false;
+      let firstCause: unknown;
+      try {
+        await Promise.race([
+          entry,
+          holderOutcome.then(() => {
+            throw new Error('Holder ended before entry.');
+          }),
+        ]);
+        let settled = false;
+        const pending = editor.remove(ROOM_ID, OPERATOR, { path: 'ROOM.md', baseCommit: base });
+        pendingOutcome = pending.then(
+          (value) => {
+            settled = true;
+            return { failed: false, value };
+          },
+          (cause: unknown) => {
+            settled = true;
+            return { failed: true, cause };
+          }
+        );
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(settled).toBe(false);
+        // This fixed read never acquires a namespace on the held room mutex.
+        expect(await revParse(repoDir, 'HEAD', store.homeDir(ROOM_ID))).toBe(base);
+        release();
+        const holderResult = await holderOutcome;
+        if (holderResult.failed) throw 'cause' in holderResult ? holderResult.cause : undefined;
+        const result = await pendingOutcome;
+        if (result.failed) throw result.cause;
+        changed(result.value!);
+        expect(await head()).not.toBe(base);
+      } catch (error) {
+        failed = true;
+        firstCause = error;
+      } finally {
+        release();
+        const holderResult = await holderOutcome;
+        if (holderResult.failed && !failed) {
+          failed = true;
+          firstCause = 'cause' in holderResult ? holderResult.cause : undefined;
+        }
+        if (pendingOutcome) {
+          const result = await pendingOutcome;
+          if (result.failed && !failed) {
+            failed = true;
+            firstCause = result.cause;
+          }
+        }
+      }
+      if (failed) throw firstCause;
     });
   });
 });

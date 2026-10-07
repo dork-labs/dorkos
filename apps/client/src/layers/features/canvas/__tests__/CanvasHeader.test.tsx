@@ -78,6 +78,9 @@ describe('CanvasHeader — keyboard accessibility (WAI-ARIA Tabs)', () => {
     expect(tab('Doc B')).toHaveFocus();
 
     await user.tab();
+    expect(screen.getByRole('button', { name: 'Document events' })).toHaveFocus();
+
+    await user.tab();
     expect(screen.getByRole('button', { name: 'after' })).toHaveFocus();
   });
 

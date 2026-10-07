@@ -52,6 +52,8 @@ export interface TurnChainLink {
 
 /** The runtime seams a rekey needs. Every `AgentRuntime` satisfies it. */
 export interface CanonicalRekeyPort {
+  /** Genuine native adapter association only; absence retains ordinary compatibility, never F2 issuance. */
+  moveNativeLock?(oldId: string, newId: string, holder: SseResponse): boolean | undefined;
   /** The runtime's own id for a session key, once it has minted or kept one. */
   getInternalSessionId(sessionId: string): string | undefined;
   /** Move the session's projector (and every store keyed with it) to a new id. */
@@ -115,6 +117,11 @@ export function createCanonicalRekey(opts: CanonicalRekeyOpts): () => void {
     // canonical id, which this turn cannot resolve — keep the lock we have and
     // let the existing refusal paths answer.
     if (deps.acquireLock(canonical, clientId, holder, lockToken)) {
+      if (deps.moveNativeLock?.(current, canonical, holder) === false) {
+        // The original native entry refused the move: preserve its old exclusion.
+        deps.releaseLock(canonical, clientId, lockToken);
+        return;
+      }
       deps.releaseLock(current, clientId, lockToken);
       opts.onTurnKey(canonical);
     }

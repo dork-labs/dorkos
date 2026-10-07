@@ -38,7 +38,7 @@ import { BoundaryError, validateBoundary } from '../../../lib/boundary.js';
 import { resolveWithinCwd } from '../../../lib/file-route-guards.js';
 import { logger } from '../../../lib/logger.js';
 import { sniffImageContentType } from '../../identity/image-sniff.js';
-import { RoomError } from '../room-errors.js';
+import { RoomError } from '../data/room-errors.js';
 import { RoomWorktreeManager } from '../repo/room-worktree-manager.js';
 import { SAFE_ROOM_ID } from '../repo/room-repo-store.js';
 import { sanitizeAttachmentName, storedExtension } from './attachment-paths.js';

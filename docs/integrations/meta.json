@@ -3,6 +3,7 @@
   "pages": [
     "building-integrations",
     "extensions",
+    "document-channels",
     "mcp-server",
     "building-relay-adapters",
     "sse-protocol"

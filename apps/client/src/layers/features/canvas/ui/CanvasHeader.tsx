@@ -1,3 +1,5 @@
+import { useState } from 'react';
+import { CanvasDocControls } from './doc-channel/CanvasDocControls';
 import {
   Globe,
   FileText,
@@ -19,7 +21,7 @@ import {
 import type { AuthorKind } from '@dorkos/shared/room-schemas';
 import type { UiCanvasContent } from '@dorkos/shared/types';
 import { cn, hashToHslColor, initialOf, type CanvasView } from '@/layers/shared/lib';
-import { IdentityAvatar, useRovingTabList } from '@/layers/shared/ui';
+import { Button, IdentityAvatar, useRovingTabList } from '@/layers/shared/ui';
 
 const CONTENT_TYPE_ICONS = {
   url: Globe,
@@ -230,6 +232,14 @@ export function CanvasHeader({
   onClose,
   onPin,
 }: CanvasHeaderProps) {
+  const [controlsDocumentId, setControlsDocumentId] = useState<string | null>(null);
+  const [previousDocumentId, setPreviousDocumentId] = useState(activeDocumentId);
+  const [previousView, setPreviousView] = useState(view);
+  if (previousDocumentId !== activeDocumentId || previousView !== view) {
+    setPreviousDocumentId(activeDocumentId);
+    setPreviousView(view);
+    setControlsDocumentId(null);
+  }
   const panelId = canvasPanelId(view);
   const { getTabProps } = useRovingTabList({
     orderedIds: documents.map((doc) => doc.id),
@@ -246,98 +256,120 @@ export function CanvasHeader({
   if (documents.length === 0) return null;
 
   return (
-    <div
-      role="tablist"
-      aria-label={TABLIST_LABELS[view]}
-      className="flex items-stretch gap-1 overflow-x-auto border-b px-2 py-1"
-    >
-      {documents.map((doc) => {
-        const Icon = CONTENT_TYPE_ICONS[doc.contentType];
-        const isActive = doc.id === activeDocumentId;
-        const author = doc.author;
-        return (
-          // role="presentation" wrapper: ARIA expects tabs as direct tablist
-          // children; this div exists only to anchor the absolutely-positioned
-          // close control as a SIBLING of the tab (a button inside a button is
-          // invalid HTML) — the same compromise VS Code ships.
-          <div key={doc.id} role="presentation" className="group relative flex shrink-0">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={isActive}
-              id={canvasTabDomId(doc.id)}
-              aria-controls={isActive ? panelId : undefined}
-              {...getTabProps(doc.id)}
-              className={cn(
-                'focus-ring flex items-center gap-1.5 rounded-md py-3 pl-2 text-xs transition-colors md:py-1',
-                // A pin control needs its own slot beside the close button, so
-                // the tab reserves a second one — and only where pinning is
-                // offered, so a private canvas's tabs keep their label width.
-                onPin ? 'pr-12' : 'pr-7',
-                isActive
-                  ? 'bg-muted text-foreground'
-                  : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
+    <>
+      <div
+        role="tablist"
+        aria-label={TABLIST_LABELS[view]}
+        className="flex items-stretch gap-1 overflow-x-auto border-b px-2 py-1"
+      >
+        {documents.map((doc) => {
+          const Icon = CONTENT_TYPE_ICONS[doc.contentType];
+          const isActive = doc.id === activeDocumentId;
+          const author = doc.author;
+          return (
+            // role="presentation" wrapper: ARIA expects tabs as direct tablist
+            // children; this div exists only to anchor the absolutely-positioned
+            // close control as a SIBLING of the tab (a button inside a button is
+            // invalid HTML) — the same compromise VS Code ships.
+            <div key={doc.id} role="presentation" className="group relative flex shrink-0">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                id={canvasTabDomId(doc.id)}
+                aria-controls={isActive ? panelId : undefined}
+                {...getTabProps(doc.id)}
+                className={cn(
+                  'focus-ring flex items-center gap-1.5 rounded-md py-3 pl-2 text-xs transition-colors md:py-1',
+                  // A pin control needs its own slot beside the close button, so
+                  // the tab reserves a second one — and only where pinning is
+                  // offered, so a private canvas's tabs keep their label width.
+                  onPin ? 'pr-12' : 'pr-7',
+                  isActive
+                    ? 'bg-muted text-foreground'
+                    : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
+                )}
+              >
+                {author && (
+                  // Who put it here — the fact a shared table has and a private
+                  // canvas does not. Decorative: the tab's own title names them.
+                  <IdentityAvatar
+                    aria-hidden
+                    size="xs"
+                    className="size-3.5 shrink-0 text-[8px]"
+                    kind={author.kind}
+                    color={author.color ?? hashToHslColor(author.id)}
+                    emoji={author.emoji}
+                    imageUrl={author.imageUrl}
+                    badge={null}
+                    fallback={initialOf(author.displayName)}
+                  />
+                )}
+                <Icon className="size-3.5 shrink-0" />
+                <span className="max-w-40 truncate font-medium">{doc.sourceLabel}</span>
+                {doc.watchers && doc.watchers.length > 0 && (
+                  <CanvasTabWatchers watchers={doc.watchers} />
+                )}
+                {doc.unread && (
+                  <span
+                    data-slot="canvas-tab-unread"
+                    aria-hidden
+                    className="bg-primary size-1.5 shrink-0 rounded-full"
+                  />
+                )}
+              </button>
+              {onPin && (
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onClick={() => onPin(doc.id, !doc.pinned)}
+                  aria-label={doc.pinned ? `Unpin ${doc.sourceLabel}` : `Pin ${doc.sourceLabel}`}
+                  className={cn(
+                    'focus-ring hover:bg-background/80 absolute top-1/2 right-6 -translate-y-1/2 rounded-sm p-1.5 transition-opacity md:p-0.5',
+                    // A pin is state, so it stays visible; an unpinned tab's
+                    // control is an affordance, so it waits for a hover.
+                    doc.pinned ? 'opacity-100' : 'opacity-0 group-hover:opacity-60'
+                  )}
+                >
+                  {doc.pinned ? <PinOff className="size-3" /> : <Pin className="size-3" />}
+                </button>
               )}
-            >
-              {author && (
-                // Who put it here — the fact a shared table has and a private
-                // canvas does not. Decorative: the tab's own title names them.
-                <IdentityAvatar
-                  aria-hidden
-                  size="xs"
-                  className="size-3.5 shrink-0 text-[8px]"
-                  kind={author.kind}
-                  color={author.color ?? hashToHslColor(author.id)}
-                  emoji={author.emoji}
-                  imageUrl={author.imageUrl}
-                  badge={null}
-                  fallback={initialOf(author.displayName)}
-                />
-              )}
-              <Icon className="size-3.5 shrink-0" />
-              <span className="max-w-40 truncate font-medium">{doc.sourceLabel}</span>
-              {doc.watchers && doc.watchers.length > 0 && (
-                <CanvasTabWatchers watchers={doc.watchers} />
-              )}
-              {doc.unread && (
-                <span
-                  data-slot="canvas-tab-unread"
-                  aria-hidden
-                  className="bg-primary size-1.5 shrink-0 rounded-full"
-                />
-              )}
-            </button>
-            {onPin && (
               <button
                 type="button"
                 tabIndex={-1}
-                onClick={() => onPin(doc.id, !doc.pinned)}
-                aria-label={doc.pinned ? `Unpin ${doc.sourceLabel}` : `Pin ${doc.sourceLabel}`}
+                onClick={() => onClose(doc.id)}
+                aria-label={`Close ${doc.sourceLabel}`}
                 className={cn(
-                  'focus-ring hover:bg-background/80 absolute top-1/2 right-6 -translate-y-1/2 rounded-sm p-1.5 transition-opacity md:p-0.5',
-                  // A pin is state, so it stays visible; an unpinned tab's
-                  // control is an affordance, so it waits for a hover.
-                  doc.pinned ? 'opacity-100' : 'opacity-0 group-hover:opacity-60'
+                  'focus-ring hover:bg-background/80 absolute top-1/2 right-1 -translate-y-1/2 rounded-sm p-1.5 opacity-60 transition-opacity group-hover:opacity-100 md:p-0.5',
+                  TAB_CLOSE_TOUCH_REACH
                 )}
               >
-                {doc.pinned ? <PinOff className="size-3" /> : <Pin className="size-3" />}
+                <X className="size-3" />
               </button>
-            )}
-            <button
-              type="button"
-              tabIndex={-1}
-              onClick={() => onClose(doc.id)}
-              aria-label={`Close ${doc.sourceLabel}`}
-              className={cn(
-                'focus-ring hover:bg-background/80 absolute top-1/2 right-1 -translate-y-1/2 rounded-sm p-1.5 opacity-60 transition-opacity group-hover:opacity-100 md:p-0.5',
-                TAB_CLOSE_TOUCH_REACH
-              )}
-            >
-              <X className="size-3" />
-            </button>
-          </div>
-        );
-      })}
-    </div>
+            </div>
+          );
+        })}
+      </div>
+      {view === 'canvas' && activeDocumentId && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => setControlsDocumentId(activeDocumentId)}
+        >
+          Document events
+        </Button>
+      )}
+      {view === 'canvas' && controlsDocumentId === activeDocumentId && controlsDocumentId && (
+        <CanvasDocControls
+          key={controlsDocumentId}
+          documentId={controlsDocumentId}
+          documentLabel={
+            documents.find((document) => document.id === controlsDocumentId)?.sourceLabel
+          }
+          onClose={() => setControlsDocumentId(null)}
+        />
+      )}
+    </>
   );
 }

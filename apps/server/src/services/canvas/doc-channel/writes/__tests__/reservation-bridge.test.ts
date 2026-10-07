@@ -21,7 +21,7 @@ import {
 import { DocChannelStore } from '../../store.js';
 import { DOC_INGEST_LIMITS } from '../../current/accounting.js';
 import { DocIngestRefusal } from '../../ingest-types.js';
-import { scanCheckboxReservationPolicies } from '../reservation-policy-census.js';
+import { scanCheckboxReservationPolicies } from '../reservations/reservation-policy-census.js';
 import { DocCheckboxAuthority } from '../authority.js';
 import { CheckboxAuthorityCallbackError } from '../authority-snapshot.js';
 import { authorityFixture } from './authority-fixtures.js';
@@ -32,7 +32,7 @@ import { createOriginalCheckboxCompletion } from '../completion.js';
 import {
   createCheckboxReservationBridge,
   retireCheckboxReservationScope,
-} from '../reservation-bridge.js';
+} from '../reservations/reservation-bridge.js';
 import { validateCheckboxEvidence } from '../checkbox-evidence.js';
 import type { DocWriteIntentRow, DocEventRow } from '../../store.js';
 
@@ -47,7 +47,31 @@ function trackColdImport(
   invokedAt: string,
   started: number
 ): OwnedColdImport {
-  const receipt: Record<string, unknown> = { argv, invokedAt, pid: child.pid ?? null };
+  const importPhases: { phase: string; elapsedMs: number }[] = [];
+  const receipt: Record<string, unknown> = {
+    argv,
+    invokedAt,
+    pid: child.pid ?? null,
+    importPhases,
+  };
+  let phaseLine = '';
+  child.stdout?.on('data', (chunk: Buffer) => {
+    phaseLine += chunk.toString();
+    let newline: number;
+    while ((newline = phaseLine.indexOf('\n')) !== -1) {
+      const line = phaseLine.slice(0, newline);
+      phaseLine = phaseLine.slice(newline + 1);
+      const match =
+        /^ORIGINAL_COLD_PHASE (first-start|first-ready|remaining-ready|remaining-[0-5]-(?:start|ready)) ([0-9]+)$/.exec(
+          line
+        );
+      if (match && importPhases.length < 15) {
+        const elapsedMs = Number(match[2]);
+        if (Number.isSafeInteger(elapsedMs)) importPhases.push({ phase: match[1], elapsedMs });
+      }
+    }
+    if (phaseLine.length > 128) phaseLine = '';
+  });
   let finish!: () => void;
   const closed = new Promise<void>((resolve) => {
     finish = resolve;
@@ -723,20 +747,30 @@ const importEntries = [
   new URL('../../store.ts', import.meta.url).href,
   new URL('../authority.ts', import.meta.url).href,
   new URL('../authority-policy.ts', import.meta.url).href,
-  new URL('../reservation-bridge.ts', import.meta.url).href,
-  new URL('../reservation-policy-census.ts', import.meta.url).href,
+  new URL('../reservations/reservation-bridge.ts', import.meta.url).href,
+  new URL('../reservations/reservation-policy-census.ts', import.meta.url).href,
   canvasEntry,
   roomCanvasEntry,
 ];
 it.each(importEntries)('cold-loads the declarations-only cycle starting at %s', async (first) => {
   const program =
-    `const first = await import(${JSON.stringify(first)});
+    `const originalImportStarted = performance.now();
+const originalImportPhase = phase => console.log('ORIGINAL_COLD_PHASE ' + phase + ' ' + Math.round(performance.now() - originalImportStarted));
+originalImportPhase('first-start');
+const first = await import(${JSON.stringify(first)});
+originalImportPhase('first-ready');
 ` +
     importEntries
       .filter((entry) => entry !== first)
-      .map((entry) => `await import(${JSON.stringify(entry)});`)
+      .map(
+        (entry, index) =>
+          `originalImportPhase('remaining-${index}-start');
+await import(${JSON.stringify(entry)});
+originalImportPhase('remaining-${index}-ready');`
+      )
       .join('\n') +
-    `\nconst canvas = await import(${JSON.stringify(canvasEntry)});
+    `\noriginalImportPhase('remaining-ready');
+const canvas = await import(${JSON.stringify(canvasEntry)});
 const roomCanvas = await import(${JSON.stringify(roomCanvasEntry)});
 if (canvas.MAX_CANVAS_DOCUMENTS !== 12 || roomCanvas.MAX_ROOM_CANVAS_DOCUMENTS !== 12)
   throw new Error('Uninitialized original canvas capacity');

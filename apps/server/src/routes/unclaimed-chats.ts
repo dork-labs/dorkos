@@ -33,7 +33,7 @@ import { PermissionModeSchema } from '@dorkos/shared/schemas';
 import { BindingConflictError, type BindingStore } from '../services/relay/binding-store.js';
 import type { UnclaimedChatStore } from '../services/relay/unclaimed-chat-store.js';
 import type { BridgeLifecycle } from '../services/relay/chat-bridge/index.js';
-import { RoomError } from '../services/rooms/room-errors.js';
+import { RoomError } from '../services/rooms/data/room-errors.js';
 import { bridgeChatTypeForBinding } from './relay-adapters.js';
 
 /** Minimal mesh lookup the claim route needs to validate an agent exists. */

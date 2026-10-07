@@ -1,3 +1,5 @@
+import { isClaudeOriginalRoomLaunchAlias } from '../runtimes/claude-code/claude-code-runtime.js';
+import { isTestModeOriginalRoomLaunchAlias } from '../runtimes/test-mode/test-mode-runtime.js';
 /**
  * Turning a committed post into agent replies (spec `rooms` §§5-6).
  *
@@ -199,7 +201,9 @@ import type { RoomWorktreeManager } from './repo/room-worktree-manager.js';
 import {
   resolveRoomTurnPlace,
   roomTurnLaunchStep,
+  runOwnedRoomTurnLaunchStep,
   type RoomTurnLaunch,
+  type RoomTurnLaunchDeps,
   type RoomTurnPlace,
 } from './repo/room-turn-place.js';
 import { editBaselineStore } from '../diff/index.js';
@@ -211,12 +215,13 @@ import {
   type RoomTurnUnanswered,
 } from './notices/notice-log.js';
 import { buildCascadeNotice, type BusyContext } from './notices/notice-copy.js';
-import type { RoomAgentLookup } from './room-errors.js';
+import { RoomError, type RoomAgentLookup } from './data/room-errors.js';
 import {
   RoomTurnRuntimeGoneError,
   type LateRoomReply,
   type RoomTurnReply,
   type RoomTurnRunner,
+  type RoomTurnRequest,
 } from './room-turn-port.js';
 import type { RoomStore } from './room-store.js';
 import type { RoomLimitsResolver } from './limits/room-limits.js';
@@ -380,6 +385,8 @@ function withGone(refused: readonly SkippedTrigger[], gone: ReadonlySet<string>)
 
 /** Everything {@link RoomTriggerDispatcher} is constructed from. */
 export interface RoomTriggerDeps {
+  /** Passive original launch DATA; never supplies a request or mutation permission. */
+  observeOriginalLaunch?: (data: Readonly<{ sessionId: string; roomId: string }>) => void;
   store: RoomStore;
   /** Read-only here: the room context reports acknowledgments, never writes one. */
   reactions: ReactionStore;
@@ -575,14 +582,173 @@ function isEntryAuthorExternal(authors: AuthorRegistry, authorId: string): boole
   return authorOrigin(naturalKey) !== 'local';
 }
 
+export interface OriginalRoomTriggerRequestData {
+  readonly trigger: RoomTriggerDispatcher;
+  readonly runner: RoomTurnRunner;
+  readonly store: RoomStore;
+  readonly budget: RoomTurnBudget;
+  readonly roomId: string;
+  readonly entryId: string;
+  readonly entrySeq: number;
+  readonly authorId: string;
+  readonly agentPath: string;
+  readonly initialSessionId: string | null;
+  readonly dispatchId: string;
+  readonly aside: boolean;
+}
+interface OriginalRoomPlacement {
+  readonly data: Readonly<OriginalRoomTriggerRequestData>;
+  readonly displayName: string;
+  active: boolean;
+  current(): boolean;
+}
+const originalRoomPlacements = new WeakMap<object, OriginalRoomPlacement>();
+/** Private original placement lifetime only; copied/native-looking DTOs cannot register here. */
+export function readOriginalRoomTriggerPlacement(
+  token: object
+): Readonly<OriginalRoomTriggerRequestData & { displayName: string }> | undefined {
+  const state = originalRoomPlacements.get(token);
+  if (
+    !state?.active ||
+    !state.current() ||
+    originalRoomPlacements.get(token) !== state ||
+    !state.active
+  )
+    return undefined;
+  return Object.freeze({ ...state.data, displayName: state.displayName });
+}
+const originalTriggerRequests = new WeakMap<
+  RoomTurnRequest,
+  {
+    data: Readonly<OriginalRoomTriggerRequestData>;
+    current(): boolean;
+    launch?: Readonly<{
+      manager: RoomWorktreeManager;
+      roomId: string;
+      worktree: string;
+      agentPath: string;
+      run(
+        context: import('../canvas/doc-channel/writes/installation-room-writes.js').InstallationRoomMutationContext,
+        sessionId: string
+      ): Promise<RoomTurnLaunch>;
+    }>;
+  }
+>();
+/** Internal original-site lookup; data alone does not attest core/runner/native authority. */
+export function readOriginalRoomTriggerRequest(
+  request: RoomTurnRequest,
+  runner: RoomTurnRunner
+): Readonly<OriginalRoomTriggerRequestData> | undefined {
+  const state = originalTriggerRequests.get(request);
+  return state?.data.runner === runner && state.current() ? state.data : undefined;
+}
+
+/** Lookup only: only a privately issued original request can expose its captured launch work. */
+export function readOriginalRoomTriggerLaunch(request: RoomTurnRequest, runner: RoomTurnRunner) {
+  const state = originalTriggerRequests.get(request);
+  return state?.data.runner === runner && state.current() ? state.launch : undefined;
+}
+
 /**
  * Runs addressing, the cascade guard, and the turns that survive both.
  *
  * Construction is deliberately cheap and side-effect free: an install with no
  * rooms in it pays for one object.
  */
+const originalBusyReaders = new WeakMap<
+  RoomTriggerDispatcher,
+  { store: RoomStore; read(): readonly string[] }
+>();
+/** Conservative busy DATA from actual privately held claims, never mutation permission. */
+export function readOriginalRoomTriggerBusyAgents(
+  trigger: RoomTriggerDispatcher,
+  store: RoomStore
+): readonly string[] {
+  const original = originalBusyReaders.get(trigger);
+  if (!original || original.store !== store)
+    throw new Error('Unknown original room busy-claim source.');
+  return original.read();
+}
+/** Dispatch Room triggers while retaining original claims and native lifecycle custody. */
 export class RoomTriggerDispatcher {
   private readonly deps: RoomTriggerDeps;
+  readonly #originalDispatch: { store: RoomStore; runner: RoomTurnRunner; budget: RoomTurnBudget };
+  readonly #originalDeps: RoomTriggerDeps;
+  readonly #originalClaims: Map<string, ActiveClaim>;
+  readonly #busyClaims = new Map<ActiveClaim, Readonly<{ agentPath: string }>>();
+  readonly #heldBusyKeys = new Map<string, ActiveClaim>();
+  readonly #placementClaims = new WeakMap<
+    ActiveClaim,
+    {
+      active: boolean;
+      roomId: string;
+      authorId: string;
+      agentPath: string;
+      entryId: string;
+      dispatchId: string;
+      aside: boolean;
+    }
+  >();
+  readonly #originalHalts: Set<string>;
+  readonly #requestLaunches = new WeakMap<
+    RoomTurnRequest,
+    NonNullable<ReturnType<typeof readOriginalRoomTriggerLaunch>>
+  >();
+
+  #associateOriginalRequest(request: RoomTurnRequest, dispatchId: string): void {
+    const original = this.#originalDispatch,
+      key = agentKey(request.room.id, request.authorId);
+    const claim = this.#originalClaims.get(key);
+    const issued = claim && this.#placementClaims.get(claim);
+    if (
+      !claim ||
+      !issued?.active ||
+      issued.roomId !== request.room.id ||
+      issued.authorId !== request.authorId ||
+      issued.dispatchId !== dispatchId ||
+      issued.agentPath !== request.agentPath ||
+      issued.entryId !== request.entry.id ||
+      claim.dispatchId !== dispatchId
+    )
+      return;
+    const data = Object.freeze({
+      trigger: this,
+      ...original,
+      roomId: request.room.id,
+      entryId: request.entry.id,
+      entrySeq: request.entry.seq,
+      authorId: request.authorId,
+      agentPath: request.agentPath,
+      initialSessionId: request.sessionId,
+      dispatchId,
+      aside: issued.aside,
+    });
+    const prepare = Object.getOwnPropertyDescriptor(request, 'prepareLaunch')?.value;
+    const launch = this.#requestLaunches.get(request);
+    originalTriggerRequests.set(request, {
+      data,
+      launch,
+      current: () =>
+        Object.getOwnPropertyDescriptor(request, 'prepareLaunch')?.value === prepare &&
+        Object.getOwnPropertyDescriptor(request, 'room')?.value?.id === data.roomId &&
+        Object.getOwnPropertyDescriptor(request, 'entry')?.value?.id === data.entryId &&
+        Object.getOwnPropertyDescriptor(request, 'entry')?.value?.seq === data.entrySeq &&
+        Object.getOwnPropertyDescriptor(request, 'authorId')?.value === data.authorId &&
+        Object.getOwnPropertyDescriptor(request, 'agentPath')?.value === data.agentPath &&
+        Object.getOwnPropertyDescriptor(request, 'sessionId')?.value === data.initialSessionId &&
+        Object.getOwnPropertyDescriptor(this, 'deps')?.value === this.#originalDeps &&
+        Object.getOwnPropertyDescriptor(this.#originalDeps, 'store')?.value === original.store &&
+        Object.getOwnPropertyDescriptor(this.#originalDeps, 'runner')?.value === original.runner &&
+        Object.getOwnPropertyDescriptor(this.#originalDeps, 'budget')?.value === original.budget &&
+        Object.getOwnPropertyDescriptor(this, 'claimed')?.value === this.#originalClaims &&
+        Object.getOwnPropertyDescriptor(this, 'haltedTurns')?.value === this.#originalHalts &&
+        this.#originalClaims.get(key) === claim &&
+        !this.#originalHalts.has(dispatchId) &&
+        this.#placementClaims.get(claim) === issued &&
+        issued.active &&
+        Object.getOwnPropertyDescriptor(claim, 'dispatchId')?.value === dispatchId,
+    });
+  }
 
   /**
    * Turns in flight, keyed `(room, agent)` — one apiece, which is the rule
@@ -729,11 +895,26 @@ export class RoomTriggerDispatcher {
    * is work the room owes, and reporting it idle would let a test — or a
    * shutdown — measure a room that has not finished moving.
    */
+  readonly #observeOriginalLaunch: RoomTriggerDeps['observeOriginalLaunch'];
   private inFlight = 0;
   private settled: Array<() => void> = [];
 
   constructor(deps: RoomTriggerDeps) {
     this.deps = deps;
+    this.#observeOriginalLaunch = deps.observeOriginalLaunch;
+    this.#originalDispatch = Object.freeze({
+      store: deps.store,
+      runner: deps.runner,
+      budget: deps.budget,
+    });
+    this.#originalDeps = deps;
+    this.#originalClaims = this.claimed;
+    this.#originalHalts = this.haltedTurns;
+    originalBusyReaders.set(this, {
+      store: deps.store,
+      read: () =>
+        Object.freeze([...new Set([...this.#busyClaims.values()].map((claim) => claim.agentPath))]),
+    });
     this.notices = new RoomNoticeLog({
       writer: deps.writer,
       authors: deps.authors,
@@ -1281,7 +1462,7 @@ export class RoomTriggerDispatcher {
   private runCollected(batch: RoomCollection[]): void {
     const started: Array<{ room: Room; entry: RoomEntry; target: TriggerTarget }> = [];
     for (const collection of this.gateBatch(batch)) {
-      const claimed = this.claimCollected(collection);
+      const claimed = this.#claimCollected(collection);
       if (claimed) started.push(claimed);
     }
     for (const { room, entry, target } of started) {
@@ -1611,7 +1792,7 @@ export class RoomTriggerDispatcher {
    * @returns What to run, or `null` when nothing will — every such path has
    *   already settled this collection's accounting or parked it.
    */
-  private claimCollected(
+  #claimCollected(
     collection: RoomCollection
   ): { room: Room; entry: RoomEntry; target: TriggerTarget } | null {
     const { room, authorId, agentPath, displayName } = collection;
@@ -1760,6 +1941,10 @@ export class RoomTriggerDispatcher {
     // second half of the rule (DOR-1429).
     const afford = this.deps.budget.tryReserve(room.id);
     if (!afford.allowed) {
+      if (afford.prepared) {
+        this.settleCollection(collection, 'refused');
+        return null;
+      }
       // This one CAN be correlated: the target survived the guard and was
       // given its id above, so the refusal belongs to a real dispatch that
       // never ran.
@@ -1840,7 +2025,7 @@ export class RoomTriggerDispatcher {
     // Monotonic in the store, so a target answering an entry BELOW its cursor —
     // a late turn on an old message — cannot walk it backwards.
     this.deps.store.setReadCursor(room.id, authorId, entry.seq);
-    this.holdClaim({
+    this.#holdClaim({
       roomId: room.id,
       cascadeRoot: entry.cascadeRoot,
       authorId,
@@ -2184,7 +2369,15 @@ export class RoomTriggerDispatcher {
       // granted when it has files of its own — and the files section measured
       // against the copy it is granted. The context below names attachment
       // paths relative to `cwd` and the runner puts the files there.
-      const place = await this.placeTurn(room.id, target.agentPath, target.displayName);
+      const place = await this.#placeTurn(
+        room,
+        entry,
+        target.authorId,
+        target.agentPath,
+        target.displayName,
+        target.sessionId,
+        target.dispatchId
+      );
       const { cwd } = place;
       const files = place.files ?? undefined;
       // Built before the request so the context and the projection plan it
@@ -2222,7 +2415,7 @@ export class RoomTriggerDispatcher {
         // rest (DOR-1231).
         gathered: target.gathered,
       });
-      const result = await this.deps.runner.run({
+      const request: RoomTurnRequest = {
         room,
         authorId: target.authorId,
         agentPath: target.agentPath,
@@ -2231,7 +2424,6 @@ export class RoomTriggerDispatcher {
         cwd,
         additionalDirectories: place.additionalDirectories,
         worktree: place.worktree,
-        ...this.launchStepFor(room.id, target.authorId, target.agentPath, place),
         sessionId: target.sessionId,
         entry,
         // **Who wrote it, as a trust boundary** — see `RoomTurnRequest`. Read
@@ -2281,7 +2473,10 @@ export class RoomTriggerDispatcher {
         // session id stamps the entry with the turn that wrote it (spec
         // `tool-only-room-replies` §D8).
         onSessionBound: (id) => this.noteSessionBound(room.id, target.authorId, id),
-      });
+      };
+      Object.assign(request, this.#launchStepFor(request, place));
+      this.#associateOriginalRequest(request, target.dispatchId);
+      const result = await this.#originalDispatch.runner.run(request);
 
       // A REFUSAL IS NOT A READING. The claim moved this agent's cursor to the
       // triggering entry on the assumption that the turn would be SHOWN what sits
@@ -2708,6 +2903,7 @@ export class RoomTriggerDispatcher {
     // window to re-arm.
     const afford = this.deps.budget.tryReserve(room.id);
     if (!afford.allowed) {
+      if (afford.prepared) return;
       logger.debug('[rooms] skipped a welcome-back offer: the room is out of automatic turns', {
         roomId: room.id,
         authorId,
@@ -2745,7 +2941,7 @@ export class RoomTriggerDispatcher {
 
     const dispatchId = newDispatchId();
     const key = agentKey(room.id, authorId);
-    this.holdClaim({
+    this.#holdClaim({
       roomId: room.id,
       cascadeRoot: entry.cascadeRoot,
       authorId,
@@ -2809,7 +3005,15 @@ export class RoomTriggerDispatcher {
     try {
       // An aside turn is a real turn, so it is placed the same way an ordinary
       // one is — see `runOneInDispatch`.
-      const place = await this.placeTurn(room.id, input.agentPath, displayName);
+      const place = await this.#placeTurn(
+        room,
+        entry,
+        authorId,
+        input.agentPath,
+        displayName,
+        input.sessionId,
+        input.dispatchId
+      );
       const { cwd } = place;
       const files = place.files ?? undefined;
       const turnContext = buildRoomContext(this.deps, {
@@ -2841,14 +3045,13 @@ export class RoomTriggerDispatcher {
         // at a line written about itself (DOR-1263).
         aside: true,
       });
-      const result = await this.deps.runner.run({
+      const request: RoomTurnRequest = {
         room,
         authorId,
         agentPath: input.agentPath,
         cwd,
         additionalDirectories: place.additionalDirectories,
         worktree: place.worktree,
-        ...this.launchStepFor(room.id, authorId, input.agentPath, place),
         sessionId: input.sessionId,
         entry,
         // Never external: `entry` here is the greeter's own status post, written
@@ -2863,7 +3066,10 @@ export class RoomTriggerDispatcher {
         // any other turn.
         onActivity: (activity) => this.noteActivity(key, activity),
         onSessionBound: (id) => this.noteSessionBound(room.id, authorId, id),
-      });
+      };
+      Object.assign(request, this.#launchStepFor(request, place));
+      this.#associateOriginalRequest(request, input.dispatchId);
+      const result = await this.#originalDispatch.runner.run(request);
       if (result.sessionId !== input.sessionId) {
         this.deps.store.rebindRoomSession(room.id, authorId, result.sessionId);
       }
@@ -3103,7 +3309,7 @@ export class RoomTriggerDispatcher {
    *
    * @param claim - The claim being taken, already fully resolved.
    */
-  private holdClaim(claim: ActiveClaim): void {
+  #holdClaim(claim: ActiveClaim): void {
     // `dispatchId` is passed explicitly on both claim lines, and that is not
     // belt-and-braces: a claim is TAKEN synchronously inside `RoomService.post`,
     // before `runOne` enters the dispatch scope, and RELEASED from `halt()` on
@@ -3131,6 +3337,17 @@ export class RoomTriggerDispatcher {
     // message. Published in this order, the `done` for the hold lands first and
     // the client's store never holds both.
     this.releaseHold(key, 'started');
+    this.#placementClaims.set(claim, {
+      active: true,
+      roomId: claim.roomId,
+      authorId: claim.authorId,
+      agentPath: claim.agentPath,
+      entryId: claim.entryId,
+      dispatchId: claim.dispatchId,
+      aside: claim.aside,
+    });
+    this.#busyClaims.set(claim, Object.freeze({ agentPath: claim.agentPath }));
+    this.#heldBusyKeys.set(key, claim);
     this.claimed.set(key, claim);
     this.publishPresence(claim, 'working');
     this.publishWorkingCount(claim.roomId, before);
@@ -3188,7 +3405,7 @@ export class RoomTriggerDispatcher {
       });
       return;
     }
-    this.releaseClaim(key, outcome);
+    this.#releaseClaim(key, outcome);
   }
 
   /**
@@ -3217,8 +3434,16 @@ export class RoomTriggerDispatcher {
    * @param outcome - What the turn produced, for the log. Never rendered.
    */
   private releaseClaim(key: string, outcome: ClaimOutcome): void {
-    const claim = this.claimed.get(key);
+    this.#releaseClaim(key, outcome);
+  }
+
+  #releaseClaim(key: string, outcome: ClaimOutcome): void {
+    const claim = this.#heldBusyKeys.get(key);
     if (!claim) return;
+    this.#heldBusyKeys.delete(key);
+    const placementClaim = this.#placementClaims.get(claim);
+    if (placementClaim) placementClaim.active = false;
+    this.#busyClaims.delete(claim);
     logger.info('[rooms] an agent finished a room turn', {
       roomId: claim.roomId,
       authorId: claim.authorId,
@@ -4070,12 +4295,77 @@ export class RoomTriggerDispatcher {
    * @param displayName - The label the room shows for this agent; the readable
    *   half of its copy's folder name and nothing else.
    */
-  private placeTurn(
-    roomId: string,
+  async #placeTurn(
+    room: Room,
+    entry: RoomEntry,
+    authorId: string,
     agentPath: string,
-    displayName: string
+    displayName: string,
+    sessionId: string | null,
+    dispatchId: string
   ): Promise<RoomTurnPlace> {
-    return resolveRoomTurnPlace(this.deps.worktrees?.(), roomId, agentPath, displayName);
+    const original = this.#originalDispatch,
+      key = agentKey(room.id, authorId);
+    const claim = this.#originalClaims.get(key);
+    const issued = claim && this.#placementClaims.get(claim);
+    if (
+      !claim ||
+      !issued?.active ||
+      issued.roomId !== room.id ||
+      issued.authorId !== authorId ||
+      issued.dispatchId !== dispatchId ||
+      issued.agentPath !== agentPath ||
+      issued.entryId !== entry.id ||
+      claim.dispatchId !== dispatchId ||
+      claim.agentPath !== agentPath ||
+      claim.entryId !== entry.id
+    )
+      throw new RoomError('ROOM_NOT_FOUND', 'No such room');
+    const token = Object.freeze({});
+    const data = Object.freeze({
+      trigger: this,
+      ...original,
+      roomId: room.id,
+      entryId: entry.id,
+      entrySeq: entry.seq,
+      authorId,
+      agentPath,
+      initialSessionId: sessionId,
+      dispatchId,
+      aside: issued.aside,
+    });
+    const placement: OriginalRoomPlacement = {
+      data,
+      displayName,
+      active: true,
+      current: () =>
+        Object.getOwnPropertyDescriptor(this, 'deps')?.value === this.#originalDeps &&
+        Object.getOwnPropertyDescriptor(this.#originalDeps, 'store')?.value === original.store &&
+        Object.getOwnPropertyDescriptor(this.#originalDeps, 'runner')?.value === original.runner &&
+        Object.getOwnPropertyDescriptor(this.#originalDeps, 'budget')?.value === original.budget &&
+        Object.getOwnPropertyDescriptor(this, 'claimed')?.value === this.#originalClaims &&
+        Object.getOwnPropertyDescriptor(this, 'haltedTurns')?.value === this.#originalHalts &&
+        this.#originalClaims.get(key) === claim &&
+        !this.#originalHalts.has(dispatchId) &&
+        this.#placementClaims.get(claim) === issued &&
+        issued.active &&
+        Object.getOwnPropertyDescriptor(claim, 'dispatchId')?.value === dispatchId &&
+        Object.getOwnPropertyDescriptor(claim, 'agentPath')?.value === agentPath &&
+        Object.getOwnPropertyDescriptor(claim, 'entryId')?.value === entry.id,
+    };
+    originalRoomPlacements.set(token, placement);
+    try {
+      return await resolveRoomTurnPlace(
+        this.#originalDeps.worktrees?.(),
+        room.id,
+        agentPath,
+        displayName,
+        token
+      );
+    } finally {
+      placement.active = false;
+      originalRoomPlacements.delete(token);
+    }
   }
 
   /**
@@ -4091,48 +4381,72 @@ export class RoomTriggerDispatcher {
    * @param agentPath - The agent's home.
    * @param place - Where the turn was placed.
    */
-  private launchStepFor(
-    roomId: string,
-    authorId: string,
-    agentPath: string,
+  #launchStepFor(
+    request: RoomTurnRequest,
     place: RoomTurnPlace
   ): { prepareLaunch?: (sessionId: string) => Promise<RoomTurnLaunch> } {
-    const worktrees = this.deps.worktrees?.();
+    const { authorId, agentPath } = request,
+      roomId = request.room.id;
+    const worktrees = this.#originalDeps.worktrees?.();
     if (!worktrees || place.worktree === null) return {};
-    return {
-      prepareLaunch: roomTurnLaunchStep(
-        {
-          // The id the binding holds, and every retired id that still resolves
-          // to it: an app-resumed turn on an old id is granted the same copy.
-          boundSessionIds: () => {
-            const bound = this.deps.store.getRoomSession(roomId, authorId);
-            return bound ? [bound, ...this.deps.store.sessionLedger.retiredIdsFor(bound)] : [];
-          },
-          isTurnInFlight: async (sessionId) =>
-            isTurnInFlight(sessionId, await runtimeRegistry.resolveForSession(sessionId)),
-          worktrees,
-          // Named from the room log, never from git (spec `agent-home-desk` §6.2).
-          describeCommits: (shas) => {
-            const named = new Map<string, { kind: 'merge' | 'person'; who: string | null }>();
-            for (const [sha, note] of this.deps.store.commitAnnouncements(roomId, shas)) {
-              const subject = note.subjectAuthorId;
-              const stored = subject === null ? null : this.deps.authors.getById(subject);
-              // The owner by their own name, never the registry's 'You' (DOR-2458).
-              const who =
-                subject === null || !stored
-                  ? null
-                  : agentFacingName(this.deps, subject, stored.displayName);
-              named.set(sha, { kind: note.kind, who });
-            }
-            return named;
-          },
-          forgetBaselines: (sessionIds, absPaths) => {
-            for (const sessionId of sessionIds) editBaselineStore.forget(sessionId, absPaths);
-          },
-        },
-        { roomId, worktree: place.worktree, agentPath, files: place.files }
-      ),
+    const originalDeps: RoomTurnLaunchDeps = {
+      // The id the binding holds, and every retired id that still resolves
+      // to it: an app-resumed turn on an old id is granted the same copy.
+      boundSessionIds: () => {
+        const bound = this.deps.store.getRoomSession(roomId, authorId);
+        return bound ? [bound, ...this.deps.store.sessionLedger.retiredIdsFor(bound)] : [];
+      },
+      isTurnInFlight: async (sessionId) => {
+        const runtime = await runtimeRegistry.resolveForSession(sessionId);
+        if (
+          isTestModeOriginalRoomLaunchAlias(runtime, request, sessionId) ||
+          isClaudeOriginalRoomLaunchAlias(runtime, request, sessionId)
+        )
+          return false;
+        return isTurnInFlight(sessionId, runtime);
+      },
+      worktrees,
+      // Named from the room log, never from git (spec `agent-home-desk` §6.2).
+      describeCommits: (shas) => {
+        const named = new Map<string, { kind: 'merge' | 'person'; who: string | null }>();
+        for (const [sha, note] of this.deps.store.commitAnnouncements(roomId, shas)) {
+          const subject = note.subjectAuthorId;
+          const stored = subject === null ? null : this.deps.authors.getById(subject);
+          // The owner by their own name, never the registry's 'You' (DOR-2458).
+          const who =
+            subject === null || !stored
+              ? null
+              : agentFacingName(this.deps, subject, stored.displayName);
+          named.set(sha, { kind: note.kind, who });
+        }
+        return named;
+      },
+      forgetBaselines: (sessionIds, absPaths) => {
+        for (const sessionId of sessionIds) editBaselineStore.forget(sessionId, absPaths);
+      },
     };
+    const turn = Object.freeze({ roomId, worktree: place.worktree, agentPath, files: place.files });
+    this.#requestLaunches.set(
+      request,
+      Object.freeze({
+        manager: worktrees,
+        roomId,
+        worktree: turn.worktree,
+        agentPath,
+        run: (
+          context: import('../canvas/doc-channel/writes/installation-room-writes.js').InstallationRoomMutationContext,
+          sessionId: string
+        ) => {
+          try {
+            this.#observeOriginalLaunch?.(Object.freeze({ sessionId, roomId }));
+          } catch {
+            // Observation cannot replace the original launch result or raw cause.
+          }
+          return runOwnedRoomTurnLaunchStep(originalDeps, turn, sessionId, context);
+        },
+      })
+    );
+    return { prepareLaunch: roomTurnLaunchStep(originalDeps, turn, request) };
   }
 
   /**
@@ -4259,7 +4573,7 @@ export class RoomTriggerDispatcher {
           error: err instanceof Error ? err.message : String(err),
         });
       }
-      this.releaseClaim(agentKey(room.id, claim.authorId), 'halted');
+      this.#releaseClaim(agentKey(room.id, claim.authorId), 'halted');
     }
     return claims.length;
   }
@@ -4417,7 +4731,7 @@ export class RoomTriggerDispatcher {
     // By KEY, not by dispatch: this is stopping whoever holds the claim rather
     // than finishing a turn of its own, which is the one case room-conduct
     // reserves `releaseClaim` for.
-    this.releaseClaim(key, 'halted');
+    this.#releaseClaim(key, 'halted');
     return 1;
   }
 }

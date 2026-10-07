@@ -3735,11 +3735,23 @@ export type FileListResponse = z.infer<typeof FileListResponseSchema>;
  * hashes differently, i.e. it changed since the client loaded it. Omit
  * `expectedHash` to force an unconditional overwrite.
  */
+/** Original document-bound full-save identity; it cannot certify a completed write. */
+export const CanvasDocumentSaveIdentitySchema = z
+  .object({
+    documentId: z.string().min(1).max(200),
+    expectedGeneration: z.string().regex(/^[a-f0-9]{64}$/),
+    eventId: z.string().uuid(),
+    expectedFileHash: z.string().regex(/^[a-f0-9]{64}$/),
+  })
+  .strict();
+export type CanvasDocumentSaveIdentity = z.infer<typeof CanvasDocumentSaveIdentitySchema>;
+
 export const WriteFileRequestSchema = z
   .object({
     cwd: z.string().min(1),
     path: z.string().min(1),
     content: z.string(),
+    documentSave: CanvasDocumentSaveIdentitySchema.optional(),
     /** SHA-256 the write is conditional on (used once the client has a hash). */
     expectedHash: z.string().optional(),
     /**

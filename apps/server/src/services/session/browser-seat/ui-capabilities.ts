@@ -59,7 +59,9 @@
  * @module server/services/session/browser-seat/ui-capabilities
  */
 import { z } from 'zod';
+import { createDocChannelCheckboxCapabilities } from '../../canvas/doc-channel/writes/checkbox-capabilities.js';
 import { createDocChannelDownstreamCapabilities } from '../../canvas/doc-channel/downstream/capabilities.js';
+import { createDocChannelManagementCapabilities } from '../../canvas/doc-channel/management/capabilities.js';
 import { createDocChannelGrantCapabilities } from '../../canvas/doc-channel/grant-capabilities.js';
 import {
   CONTROL_UI_DESCRIPTION,
@@ -230,7 +232,9 @@ export const uiDomain: CapabilityDomain = {
   assertDeps: () => undefined,
   capabilities: [
     ...createDocChannelGrantCapabilities(),
+    ...createDocChannelManagementCapabilities(),
     ...createDocChannelDownstreamCapabilities(),
+    ...createDocChannelCheckboxCapabilities(),
     defineCapability({
       id: 'ui.control',
       title: 'Drive the DorkOS app',

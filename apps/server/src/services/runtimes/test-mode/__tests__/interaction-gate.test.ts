@@ -8,7 +8,7 @@
  * entirely. So the emphasis here is on the settling — every wait resolves, or
  * rejects on abort, and never neither.
  */
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { ScenarioAborted, interactionGate } from '../interaction-gate.js';
 
 const SESSION = 'session-under-test';
@@ -272,5 +272,102 @@ describe('interactionGate — turn lifecycle', () => {
     ]);
     expect(interactionGate.isOpen('session-a')).toBe(false);
     expect(interactionGate.isOpen('session-b')).toBe(false);
+  });
+});
+
+describe('interactionGate — observing the original step barrier', () => {
+  it('waits for registration without consuming or releasing the real step', async () => {
+    const ctx = interactionGate.open(SESSION);
+    const controller = new AbortController();
+    const removeObserver = vi.spyOn(controller.signal, 'removeEventListener');
+    const removeOwner = vi.spyOn(ctx.signal, 'removeEventListener');
+    let observed = false;
+    const readiness = interactionGate.waitForStep(SESSION, controller.signal).then(() => {
+      observed = true;
+    });
+    await Promise.resolve();
+    expect(observed).toBe(false);
+    expect(interactionGate.isOpen(SESSION)).toBe(true);
+    const step = ctx.awaitStep();
+    let released = false;
+    void step.then(() => {
+      released = true;
+    });
+    await readiness;
+    expect(observed).toBe(true);
+    expect(released).toBe(false);
+    expect(removeObserver).toHaveBeenCalledWith('abort', expect.any(Function));
+    expect(removeOwner).toHaveBeenCalledWith('abort', expect.any(Function));
+    expect(interactionGate.step(SESSION)).toBe(true);
+    await step;
+    expect(released).toBe(true);
+    expect(interactionGate.step(SESSION)).toBe(false);
+    removeObserver.mockRestore();
+    removeOwner.mockRestore();
+  });
+
+  it('observes an already registered barrier without releasing it', async () => {
+    const ctx = interactionGate.open(SESSION);
+    const step = ctx.awaitStep();
+    await expect(
+      interactionGate.waitForStep(SESSION, new AbortController().signal)
+    ).resolves.toBeUndefined();
+    expect(interactionGate.step(SESSION)).toBe(true);
+    await step;
+    expect(interactionGate.step(SESSION)).toBe(false);
+  });
+
+  it('rejects the old observer when its owner is replaced and leaves the new barrier intact', async () => {
+    interactionGate.open(SESSION);
+    const readiness = interactionGate.waitForStep(SESSION, new AbortController().signal);
+    const refusal = expect(readiness).rejects.toBeInstanceOf(ScenarioAborted);
+    const next = interactionGate.open(SESSION);
+    await refusal;
+    const step = next.awaitStep();
+    await expect(
+      interactionGate.waitForStep(SESSION, new AbortController().signal)
+    ).resolves.toBeUndefined();
+    expect(interactionGate.step(SESSION)).toBe(true);
+    await step;
+    expect(next.signal.aborted).toBe(false);
+  });
+
+  it('aborts only the observer, removes its listeners and leaves the native owner usable', async () => {
+    const ctx = interactionGate.open(SESSION);
+    const controller = new AbortController();
+    const removeObserver = vi.spyOn(controller.signal, 'removeEventListener');
+    const removeOwner = vi.spyOn(ctx.signal, 'removeEventListener');
+    const readiness = interactionGate.waitForStep(SESSION, controller.signal);
+    const refusal = expect(readiness).rejects.toBeInstanceOf(ScenarioAborted);
+    controller.abort();
+    await refusal;
+    expect(ctx.signal.aborted).toBe(false);
+    expect(interactionGate.isOpen(SESSION)).toBe(true);
+    expect(removeObserver).toHaveBeenCalledWith('abort', expect.any(Function));
+    expect(removeOwner).toHaveBeenCalledWith('abort', expect.any(Function));
+    const step = ctx.awaitStep();
+    expect(interactionGate.step(SESSION)).toBe(true);
+    await step;
+    removeObserver.mockRestore();
+    removeOwner.mockRestore();
+  });
+
+  it('refuses absent, already aborted and closed owners without creating a step', async () => {
+    await expect(
+      interactionGate.waitForStep(SESSION, new AbortController().signal)
+    ).rejects.toBeInstanceOf(ScenarioAborted);
+    expect(interactionGate.isOpen(SESSION)).toBe(false);
+    const ctx = interactionGate.open(SESSION);
+    const controller = new AbortController();
+    controller.abort();
+    await expect(interactionGate.waitForStep(SESSION, controller.signal)).rejects.toBeInstanceOf(
+      ScenarioAborted
+    );
+    expect(interactionGate.step(SESSION)).toBe(false);
+    const readiness = interactionGate.waitForStep(SESSION, new AbortController().signal);
+    const refusal = expect(readiness).rejects.toBeInstanceOf(ScenarioAborted);
+    interactionGate.close(SESSION, ctx.token);
+    await refusal;
+    expect(interactionGate.isOpen(SESSION)).toBe(false);
   });
 });

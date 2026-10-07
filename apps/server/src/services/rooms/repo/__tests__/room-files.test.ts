@@ -1,8 +1,9 @@
 /**
  * Reading a room's files (spec `project-rooms` §3.9).
  *
- * Real git, on a real temporary DorkOS home built through the module's own
- * hardened runner. Nothing below the service's seams is mocked, because every
+ * Real git, on a temporary DorkOS home prepared by fixture-only commands.
+ * Finite production reads delegate unchanged except the explicit provenance
+ * fault control. No injected raw runner can replace security observations; every
  * claim under test is about what git actually answers: what a tree holds, which
  * commit last touched a path, and what a symlink is when you refuse to follow
  * it.
@@ -20,7 +21,7 @@
  * was looking at the room. Remove the ceiling and "a repo directory with no git
  * in it" turns green for the wrong reason.
  *
- * Seeded defects, each run and each red before the code stood:
+ * Historical predecessor seeded defects (this successor is UNRUN):
  *
  * - Reading the working tree instead of the commit turns "an uncommitted edit
  *   is invisible" green-to-red.
@@ -39,17 +40,90 @@
  *   author test.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { rooms, type Db } from '@dorkos/db';
-import { RoomError } from '../../room-errors.js';
+import { RoomError } from '../../data/room-errors.js';
 import { RoomRepoStore } from '../room-repo-store.js';
 import { RoomFilesService, normalizeRoomFilePath } from '../room-files.js';
-import { commitAll, runGit, runGitRaw, type GitIdentity } from '../room-repo-git.js';
-import { removeFixtureTree, silenceGitAutoMaintenance } from './fixture-git.js';
+import { commitAll } from '../room-repo-git.js';
+import {
+  fixtureGit,
+  fixtureGitFastImport,
+  removeFixtureTree,
+  silenceGitAutoMaintenance,
+} from './fixture-git.js';
+import { createOriginalOwnedRoomFixture } from './room-original-owned-fixture.js';
+import {
+  readInstallationRoomMutationContext,
+  withRecognizedInstallationRoomNamespace,
+} from '../../../canvas/doc-channel/writes/installation-room-writes.js';
 import { logger } from '../../../../lib/logger.js';
+
+/** Observe the actual finite readers; this cannot supply arbitrary Git argv. */
+const reads = vi.hoisted(() => ({
+  calls: [] as string[][],
+  contentBudgets: [] as number[],
+  failProvenance: false,
+}));
+// Observe the actual child-process cut before the heavy Room module graph can
+// capture its original finite readers. No caller supplies or changes Git argv.
+vi.mock('node:child_process', async (importOriginal) => {
+  const real = await importOriginal<typeof import('node:child_process')>();
+  const { promisify } = await import('node:util');
+  const originalPromisified = promisify(real.execFile);
+  const observe = (
+    file: string,
+    argv: readonly string[] | null | undefined,
+    options: import('node:child_process').ExecFileOptions | null | undefined
+  ) => {
+    if (
+      file === 'git' &&
+      Array.isArray(argv) &&
+      options?.encoding === 'buffer' &&
+      options.env?.GIT_OPTIONAL_LOCKS === '0'
+    ) {
+      const index = argv.findIndex((part) =>
+        ['rev-parse', 'ls-tree', 'cat-file', 'log'].includes(part)
+      );
+      const command = argv.slice(index);
+      if (index >= 0 && command[0] === 'rev-parse') reads.calls.push(['rev-parse', command[2]]);
+      if (index >= 0 && command[0] === 'ls-tree') reads.calls.push(['ls-tree', command[3]]);
+      if (index >= 0 && command[0] === 'cat-file' && command[1] === 'blob') {
+        reads.calls.push(['cat-file', command[2]]);
+        if (typeof options.maxBuffer === 'number') reads.contentBudgets.push(options.maxBuffer);
+      }
+      if (index >= 0 && command[0] === 'log') {
+        const format = command.find((part) => part.startsWith('--format='));
+        const nonce = format && /^--format=([0-9a-f]{24})%H/.exec(format)?.[1];
+        if (nonce) {
+          const count = command.indexOf('1000');
+          reads.calls.push(['log', command[count + 1], '', nonce]);
+          if (reads.failProvenance) {
+            const error = new Error('stdout maxBuffer length exceeded');
+            (error as NodeJS.ErrnoException).code = 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER';
+            throw error;
+          }
+        }
+      }
+    }
+  };
+  const execFile = (...args: Parameters<typeof real.execFile>) => {
+    observe(args[0], args[1], args[2]);
+    return real.execFile(...args);
+  };
+  // Preserve Node's actual multi-result Promise and original acquired ChildProcess.
+  // Default promisify on a plain wrapper would lose { stdout, stderr }.
+  Object.defineProperty(execFile, promisify.custom, {
+    value: (...args: Parameters<typeof originalPromisified>) => {
+      observe(args[0], args[1], args[2]);
+      return originalPromisified(...args);
+    },
+  });
+  return { ...real, execFile };
+});
 
 const ROOM_ID = '01ROOMAAAAAAAAAAAAAAAAAAAA';
 
@@ -65,12 +139,12 @@ describe('RoomFilesService', () => {
   let repoDir: string;
   let hasRepo: boolean;
   let maxFileBytes: number;
-  /** Every git command the service ran during one test. */
-  let calls: string[][];
+  /** Every finite production read requested by the service during one test. */
+  const calls = reads.calls;
 
   /** Run git in the room's repo, with the room's home as the ceiling. */
   function git(args: string[], dir = repoDir): Promise<string> {
-    return runGit(args, dir, store.homeDir(ROOM_ID));
+    return fixtureGit(args, dir, store.homeDir(ROOM_ID));
   }
 
   /** Commit everything in the room's repo under `who`. */
@@ -96,58 +170,33 @@ describe('RoomFilesService', () => {
     await writeFile(target, body);
   }
 
-  /**
-   * A service whose git calls are recorded, and optionally rewritten first.
-   *
-   * The rewrite hook is the ONE seam the awkward tests need: returning a new
-   * argument list re-runs the command with it (that is how the commit-limit
-   * test tightens `-n` without minting a thousand commits), and throwing
-   * simulates a failure git itself is hard to provoke on demand.
-   *
-   * @param rewrite - Given the arguments, answers a replacement list, `null` to
-   *   run them unchanged, or throws to fail the call.
-   */
-  function makeService(rewrite?: (args: string[]) => string[] | null): RoomFilesService {
+  /** Actual production finite reads are observed at their module boundary. */
+  function makeService(): RoomFilesService {
     return new RoomFilesService({
       store,
       hasRepo: () => hasRepo,
       maxFileBytes: () => maxFileBytes,
-      runGit: (args, cwd, ceiling) => {
-        calls.push(args);
-        return runGit(rewrite?.(args) ?? args, cwd, ceiling);
-      },
-      runGitRaw: (args, cwd, ceiling, options) => {
-        calls.push(args);
-        return runGitRaw(rewrite?.(args) ?? args, cwd, ceiling, options);
-      },
     });
   }
 
-  /**
-   * Commit through the production `commitAll`, so what it does to an identity
-   * on the way in is what the test is looking at.
-   *
-   * @param message - The commit subject.
-   * @param identity - Who to attribute it to, hostile values included.
-   */
-  function commitAllThrough(message: string, identity: GitIdentity): Promise<string> {
-    return commitAll(repoDir, message, identity, store.homeDir(ROOM_ID));
-  }
-
   beforeEach(async () => {
+    scratch = '';
+    reads.calls.length = 0;
+    reads.contentBudgets.length = 0;
+    reads.failProvenance = false;
     db = createTestDb();
     // Before any repo exists: a `git commit` otherwise leaves a DETACHED
     // maintenance process writing into `.git` after it returns, and this
     // suite's teardown deletes that directory. See `fixture-git.ts`.
     silenceGitAutoMaintenance();
-    scratch = await mkdtemp(path.join(tmpdir(), 'dorkos-room-files-'));
+    scratch = await mkdtemp(path.join(await realpath(tmpdir()), 'dorkos-room-files-'));
     // The enclosing repository — see the module doc. It ignores everything and
     // has a commit of its own, so it reads clean: exactly the answer that would
     // make a ceiling-less read believe it was looking at the room.
-    await runGit(['init', '-b', 'main', '--quiet', '.'], scratch, scratch);
+    await fixtureGit(['init', '-b', 'main', '--quiet', '.'], scratch, scratch);
     await writeFile(path.join(scratch, '.gitignore'), '*\n', 'utf-8');
-    await runGit(['add', '-f', '.gitignore'], scratch, scratch);
-    await runGit(
+    await fixtureGit(['add', '-f', '.gitignore'], scratch, scratch);
+    await fixtureGit(
       [
         '-c',
         'user.name=Enclosing',
@@ -181,12 +230,29 @@ describe('RoomFilesService', () => {
 
     hasRepo = true;
     maxFileBytes = MAX_FILE_BYTES;
-    calls = [];
+    calls.length = 0;
     service = makeService();
   });
 
   afterEach(async () => {
-    await removeFixtureTree(scratch);
+    let failed = false,
+      cause: unknown;
+    try {
+      if (db?.$client.open) db.$client.close();
+    } catch (error) {
+      failed = true;
+      cause = error;
+    }
+    try {
+      if (scratch) await removeFixtureTree(scratch);
+    } catch (error) {
+      if (!failed) {
+        failed = true;
+        cause = error;
+      }
+    }
+    reads.failProvenance = false;
+    if (failed) throw cause;
   });
 
   describe('listing', () => {
@@ -322,7 +388,7 @@ describe('RoomFilesService', () => {
     ])('refuses %s (%s) before git is asked anything', async (bad) => {
       await put('ROOM.md', 'hello\n');
       await commit('seed');
-      calls = [];
+      calls.length = 0;
 
       await expect(service.list(ROOM_ID, bad)).rejects.toMatchObject({
         code: 'ROOM_FILE_PATH_INVALID',
@@ -345,12 +411,27 @@ describe('RoomFilesService', () => {
       await put('ROOM.md', 'hello\n');
       await commit('seed');
 
+      calls.length = 0;
       await expect(service.list(ROOM_ID, '.git')).rejects.toMatchObject({
         code: 'ROOM_FILE_NOT_FOUND',
       });
       await expect(service.read(ROOM_ID, '.git/config')).rejects.toMatchObject({
         code: 'ROOM_FILE_NOT_FOUND',
       });
+      // Every public read family refuses normalized repository metadata before
+      // any Git read, retaining typed 404 rather than leaking a private guard error.
+      for (const metadataPath of ['.git', '.git/', '.git/config', '.git/objects/pack']) {
+        await expect(service.list(ROOM_ID, metadataPath)).rejects.toMatchObject({
+          code: 'ROOM_FILE_NOT_FOUND',
+        });
+        await expect(service.read(ROOM_ID, metadataPath)).rejects.toMatchObject({
+          code: 'ROOM_FILE_NOT_FOUND',
+        });
+        await expect(service.lastCommitFor(ROOM_ID, metadataPath)).rejects.toMatchObject({
+          code: 'ROOM_FILE_NOT_FOUND',
+        });
+      }
+      expect(calls).toEqual([]);
     });
 
     it('takes a filename that would otherwise be a pathspec pattern literally', async () => {
@@ -400,9 +481,12 @@ describe('RoomFilesService', () => {
       expect(read.body).toEqual({ kind: 'too-large', maxBytes: 1024 });
       expect(read.size).toBe(2048);
       expect(JSON.stringify(read)).not.toContain('xxx');
+      expect(reads.contentBudgets).toEqual([]);
       // A file at the ceiling still reads: the cap is "larger than", not "at".
       maxFileBytes = 2048;
       expect((await service.read(ROOM_ID, 'big.txt')).body).toMatchObject({ kind: 'text' });
+      expect(reads.contentBudgets).toEqual([2048 + 1024]);
+      expect(calls.filter(([verb]) => verb === 'cat-file')).toHaveLength(1);
     });
 
     it('refuses to follow a symlink, whatever it points at', async () => {
@@ -439,7 +523,7 @@ describe('RoomFilesService', () => {
         await put(`docs/note-${String(i).padStart(3, '0')}.md`, `note ${i}\n`);
       }
       const sha = await commit('five hundred notes');
-      calls = [];
+      calls.length = 0;
 
       const started = Date.now();
       const listed = await service.list(ROOM_ID, 'docs');
@@ -447,10 +531,10 @@ describe('RoomFilesService', () => {
 
       expect(listed.entries).toHaveLength(500);
       // Every entry is attributed, and the whole listing cost a fixed number of
-      // processes: resolve the commit, stat the directory, list it, walk the
+      // finite reads: resolve the commit, stat the directory, list it, walk the
       // history once. The naive `git log -1 -- <path>` per entry would be 500
       // more, which is the difference this bound exists to buy.
-      expect(calls.length).toBeLessThanOrEqual(4);
+      expect(calls).toHaveLength(4);
       expect(listed.entries.every((e) => e.lastCommit?.sha === sha)).toBe(true);
       expect(elapsedMs).toBeLessThan(5_000);
     });
@@ -481,14 +565,12 @@ describe('RoomFilesService', () => {
       // property rather than the parse: two walks, two different markers.
       await put('a.md', 'one\n');
       await commit('seed');
-      calls = [];
+      calls.length = 0;
 
       await service.list(ROOM_ID);
       await service.list(ROOM_ID);
 
-      const markers = calls
-        .filter((args) => args[0] === 'log')
-        .map((args) => args.find((a) => a.startsWith('--format='))?.slice(9, 33));
+      const markers = calls.filter((args) => args[0] === 'log').map((args) => args[3]);
       expect(markers).toHaveLength(2);
       expect(markers[0]).toMatch(/^[0-9a-f]{24}$/);
       expect(markers[0]).not.toBe(markers[1]);
@@ -561,26 +643,55 @@ describe('RoomFilesService', () => {
       });
     });
 
-    it("cannot shift a commit's fields with a separator in the author name", async () => {
-      // A commit made in an agent's own worktree carries whatever `user.name`
-      // that tree was given, and the provenance walk separates fields with
-      // U+001F. `commitAll` strips control characters on the way IN, so no
-      // DorkOS-written commit can be ambiguous; the parser checks the shape of
-      // what it reads as the second closure.
-      await put('a.md', 'one\n');
-      await git(['add', '--all']);
-      await commitAllThrough('Real Subject', {
-        name: 'Ev\u001fil\u001f9999-12-31T00:00:00Z\u001fForged',
-        email: 'ev\u001fil@dorkos.local',
-      });
-
-      const listed = await service.list(ROOM_ID);
-
-      const provenance = listed.entries.find((e) => e.name === 'a.md')?.lastCommit;
-      expect(provenance?.subject).toBe('Real Subject');
-      expect(provenance?.author).toBe('Evil9999-12-31T00:00:00ZForged');
-      expect(provenance?.at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
-      expect(provenance?.sha).toMatch(/^[0-9a-f]{40}$/);
+    it('sanitizes a hostile identity in actual lowlevel commitAll under original owning exclusion', async () => {
+      // Genuine original construction and a recognized scope supply exclusion,
+      // not user/HTTP permission. No fixture DTO can manufacture the context.
+      const fixture = await createOriginalOwnedRoomFixture({ nativeDatabase: true });
+      let failed = false;
+      // Join this scope to its captured cleanup before returning or reporting failure.
+      const drainOriginalCleanup = async () => {
+        try {
+          await fixture.close();
+        } catch (error) {
+          if (!failed) throw error;
+        }
+      };
+      try {
+        const target = fixture.repos.repoPath(fixture.roomId);
+        await writeFile(path.join(target, 'a.md'), 'one\n');
+        await withRecognizedInstallationRoomNamespace(
+          fixture.writer,
+          fixture.roomId,
+          async (scope) => {
+            const context = readInstallationRoomMutationContext(
+              fixture.writer,
+              fixture.roomId,
+              scope
+            );
+            await commitAll(
+              target,
+              'Real Subject',
+              {
+                name: 'Ev\u001fil\u001f9999-12-31T00:00:00Z\u001fForged',
+                email: 'ev\u001fil@dorkos.local',
+              },
+              fixture.repos.homeDir(fixture.roomId),
+              context
+            );
+          }
+        );
+        const listed = await fixture.files.list(fixture.roomId);
+        const provenance = listed.entries.find((e) => e.name === 'a.md')?.lastCommit;
+        expect(provenance?.subject).toBe('Real Subject');
+        expect(provenance?.author).toBe('Evil9999-12-31T00:00:00ZForged');
+        expect(provenance?.at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+        expect(provenance?.sha).toMatch(/^[0-9a-f]{40}$/);
+      } catch (error) {
+        failed = true;
+        throw error;
+      } finally {
+        await drainOriginalCleanup();
+      }
     });
   });
 
@@ -706,47 +817,45 @@ describe('RoomFilesService', () => {
       // The one failure this service is expected to absorb: provenance is a
       // column, not the content, so a history too big for the output ceiling
       // must cost the column and not the file list.
-      service = makeService((args) => {
-        if (args[0] === 'log') {
-          const err = new Error('stdout maxBuffer length exceeded');
-          (err as NodeJS.ErrnoException).code = 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER';
-          throw err;
-        }
-        return null;
-      });
-
-      const listed = await service.list(ROOM_ID);
-
-      expect(listed.entries.map((e) => e.name)).toEqual(['a.md', 'b.md']);
-      expect(listed.entries.every((e) => e.lastCommit === null)).toBe(true);
-      expect(warn).toHaveBeenCalledWith(
-        expect.stringContaining('provenance'),
-        expect.objectContaining({ roomId: ROOM_ID })
-      );
-      warn.mockRestore();
+      reads.failProvenance = true;
+      try {
+        const listed = await service.list(ROOM_ID);
+        expect(listed.entries.map((e) => e.name)).toEqual(['a.md', 'b.md']);
+        expect(listed.entries.every((e) => e.lastCommit === null)).toBe(true);
+        expect(calls.filter(([verb]) => verb === 'log')).toHaveLength(1);
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining('provenance'),
+          expect.objectContaining({ roomId: ROOM_ID })
+        );
+      } finally {
+        reads.failProvenance = false;
+        warn.mockRestore();
+      }
     });
 
-    it('stops walking at the commit limit, and says it does not know rather than guessing', async () => {
-      await put('old.md', 'old\n');
-      await commit('the commit that made old.md', 'Dorian');
-      await put('new.md', 'new\n');
-      const newest = await commit('the newest commit', 'Ana');
-
-      // The bound the service asks git for, tightened to one commit so the
-      // window's EDGE is reachable without minting a thousand of them. This
-      // also proves `-n` is really passed: rewrite it and the answer changes.
-      service = makeService((args) => {
-        if (args[0] !== 'log') return null;
-        const at = args.indexOf('-n');
-        return at === -1 ? null : [...args.slice(0, at + 1), '1', ...args.slice(at + 2)];
-      });
-
+    it('stops at the actual fixed 1000-commit window without changing production arguments', async () => {
+      // One fixture-only native fast-import seeds 1001 commits efficiently.
+      // The real finite reader retains its original -n 1000 and output budgets.
+      const stream: string[] = ['feature done\n'];
+      for (let index = 1; index <= 1001; index++) {
+        const message = index === 1 ? 'seed' : 'advance';
+        const body = index === 1 ? 'old\n' : `new-${index}\n`;
+        stream.push(
+          `commit refs/heads/main\nmark :${index}\ncommitter Dorian <d@dorkos.local> ${1700000000 + index} +0000\ndata ${Buffer.byteLength(message)}\n${message}\n`
+        );
+        if (index > 1) stream.push(`from :${index - 1}\n`);
+        stream.push(
+          `M 100644 inline ${index === 1 ? 'old.md' : 'new.md'}\ndata ${Buffer.byteLength(body)}\n${body}\n`
+        );
+      }
+      stream.push('done\n');
+      await fixtureGitFastImport(stream.join(''), repoDir, store.homeDir(ROOM_ID));
+      expect(await git(['rev-list', '--count', 'main'])).toBe('1001');
+      const newest = await git(['rev-parse', 'main']);
       const listed = await service.list(ROOM_ID);
-
-      // Inside the window: attributed. Outside it: honestly unknown, never the
-      // nearest commit that happened to be in reach.
-      expect(listed.entries.find((e) => e.name === 'new.md')?.lastCommit?.sha).toBe(newest);
-      expect(listed.entries.find((e) => e.name === 'old.md')?.lastCommit).toBeNull();
+      expect(listed.entries.map((entry) => entry.name)).toEqual(['new.md', 'old.md']);
+      expect(listed.entries.find((entry) => entry.name === 'new.md')?.lastCommit?.sha).toBe(newest);
+      expect(listed.entries.find((entry) => entry.name === 'old.md')?.lastCommit).toBeNull();
     });
 
     it('refuses a repo directory with no git in it, rather than answering for the one around it', async () => {

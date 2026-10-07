@@ -5,7 +5,7 @@
  * @module services/communities/remote/remote-room-subscription-bridge
  */
 import { CommunityEntrySchema, type CommunityEntry } from '@dorkos/shared/community-adapter';
-import { RoomError } from '../../rooms/room-errors.js';
+import { RoomError } from '../../rooms/data/room-errors.js';
 import type { RoomService } from '../../rooms/room-service.js';
 import type { CommunityAgentEnrollmentStore } from './agent-enrollment-store.js';
 import type { CommunityOutboxStore } from './community-outbox-store.js';

@@ -722,3 +722,13 @@ displayName: 'Turbo 2',
 - [configuration.md](configuration.md): config schema, migrations, precedence
 - [api-reference.md](api-reference.md): the routes that consume the registry
 - [project-structure.md](project-structure.md): server service domains
+
+## Document Channel Conformance
+
+Document work uses the existing protected session-message admission or a distinct original Room/Relay operation owner. A batch receipt, page payload, or projected `turn_start` cannot mint runtime authority. The native owner must bind the same runtime, principal core, lock acquisition, and physical attempt before effects.
+
+Keep recorded acceptance, dispatch start, backend admission, completion, and application acknowledgement separate. Emit `turn_done` only from correlated successful settlement. A partial `app.ack` handles only its named inputs; ordinary runtime completion does not acknowledge them.
+
+Restart may resume accepted-unclaimed work after current source/grant checks. Claimed or started work with an unknown outcome stays `in_doubt`; absent transcript history does not permit a retry. Canonical movement preserves the original receipt and batch generation, and refuses an unsafe destination.
+
+Stop must attempt independent cleanup peers and retain the first raw failure. Iterator completion or `Query.return()` alone does not prove child-process, pipe, lock, or holder closure. Release runtime capacity only after the original owner confirms physical closure. Native controls and sanitized Doc Channel conformance are qualified for their tested sources and scopes; new runtimes still need their own original admission and closure evidence. See [Document Channels](document-channels.md) for source locations and HTTP contracts.

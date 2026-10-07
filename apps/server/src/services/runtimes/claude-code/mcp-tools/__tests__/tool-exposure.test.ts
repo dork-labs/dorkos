@@ -464,14 +464,21 @@ describe('in-session tool exposure', () => {
     // from the docs registry, which composes no extension. Extension tools are
     // guarded separately, against a contributed fixture, in
     // `extension-tools-every-list.test.ts`.
-    expect(tools).toHaveLength(120);
-    expect(deferred).toHaveLength(109);
+    // Four operator management tools and one native task writer remain deferred.
+    // Upstream compact_my_session is always loaded: total grows by one, deferred stays114.
+    expect(tools).toHaveLength(125);
+    expect(deferred).toHaveLength(114);
     for (const name of [
       'configure_doc_channel',
       'approve_doc_route',
       'revoke_doc_route',
       'canvas_send',
       'canvas_patch_state',
+      'replay_doc_batch',
+      'inspect_doc_channel',
+      'issue_doc_token',
+      'revoke_doc_token',
+      'canvas_set_checkbox',
     ]) {
       expect(deferred.map((tool) => tool.name)).toContain(name);
     }

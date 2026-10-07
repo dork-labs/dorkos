@@ -200,14 +200,18 @@ it('upgrades populated accounting-era batches without changing their existing da
       string,
       string | number | null
     >[];
+    const historicalColumns = oldDb.$client.prepare(`PRAGMA table_info(${table})`).all() as {
+      name: string;
+    }[];
     for (const row of rows) {
-      delete row.waiting_warning_at;
-      const keys = Object.keys(row);
+      // Seed only the actual accounting-era columns, retaining every original cell.
+      const keys = historicalColumns.map((column) => column.name);
+
       oldDb.$client
         .prepare(
           `INSERT INTO ${table} (${keys.join(',')}) VALUES (${keys.map(() => '?').join(',')})`
         )
-        .run(...Object.values(row));
+        .run(...keys.map((key) => row[key]));
     }
   }
   const before = oldDb.$client.prepare('SELECT * FROM canvas_doc_batches').get();
@@ -215,6 +219,11 @@ it('upgrades populated accounting-era batches without changing their existing da
   expect(oldDb.$client.prepare('SELECT * FROM canvas_doc_batches').get()).toEqual({
     ...(before as Record<string, unknown>),
     waiting_warning_at: null,
+    delivery_kind: null,
+    room_admission_id: null,
+    room_source_attempt: null,
+    room_source_json: null,
+    room_source_hash: null,
   });
   expect(oldDb.$client.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
   const store = new DocChannelStore(oldDb);

@@ -1,7 +1,16 @@
 /** Genuine persistent consumed approval; SIGKILL, not a caught exception, creates process loss. */
-import { fixture } from './checkbox-fixture.js';
 import { once } from 'node:events';
 import type { CheckboxRequest } from '../checkbox-service.js';
+// Temporary fixed phase DATA: no Db, approval, effect or caller context is emitted.
+const startupAt = performance.now();
+const startupPhase = (phase: 'worker-entry' | 'fixture-import-start' | 'fixture-import-ready') => {
+  if (process.argv[2] === '--await-original-case')
+    process.send?.({ kind: 'startup-phase', phase, elapsedMs: performance.now() - startupAt });
+};
+startupPhase('worker-entry');
+startupPhase('fixture-import-start');
+const { fixture } = await import('./checkbox-fixture.js');
+startupPhase('fixture-import-ready');
 let point = process.argv[2];
 let rawSeed = process.argv[3];
 if (point === '--await-original-case') {

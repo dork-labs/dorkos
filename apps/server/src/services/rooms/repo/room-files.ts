@@ -53,7 +53,7 @@
  * committer cannot predict cannot be forged, which is the same reasoning the
  * per-turn nonce in `room-context-block.ts` rests on.
  *
- * The walk is bounded by {@link PROVENANCE_COMMIT_LIMIT}. Past it, entries
+ * The walk is bounded by the fixed 1000-commit read. Past it, entries
  * nobody touched inside the window answer `lastCommit: null` — an honest "not
  * known here" rather than an unbounded walk of a history the person can grow
  * without limit.
@@ -70,14 +70,16 @@ import type {
   RoomFileKind,
   RoomFileListResponse,
 } from '@dorkos/shared/room-files';
-import { RoomError } from '../room-errors.js';
+import { RoomError } from '../data/room-errors.js';
 import { logger } from '../../../lib/logger.js';
 import type { RoomRepoStore } from './room-repo-store.js';
 import {
   GITLINK_MODE,
   GitUnavailableError,
-  runGit,
-  runGitRaw,
+  roomVerifiedTip,
+  readRoomFileTreeRaw,
+  readRoomFileContentRaw,
+  readRoomFileProvenanceRaw,
   SYMLINK_MODE,
 } from './room-repo-git.js';
 
@@ -85,16 +87,15 @@ import {
  * How many commits one provenance walk may look at.
  *
  * Module-private: it is a policy this module applies, not a value anything
- * outside it configures. The test that proves the bound rewrites the `-n`
- * argument through the injected runner instead of importing the number, which
- * has the side benefit of proving the argument really reaches git.
+ * outside it configures. The closed finite Git read preserves the original fixed `-n 1000` argument;
+ * qualification controls inspect that actual command without injecting a runner.
  *
  * A ceiling on work, not a statement about how much history matters. A room
  * repo is young and small, so in practice every entry is attributed long before
  * this; a room that outgrows it loses provenance on its oldest untouched files
  * and nothing else.
  */
-const PROVENANCE_COMMIT_LIMIT = 1000;
+// The closed readRoomFileProvenanceRaw command preserves the original 1000-commit bound.
 
 /** The branch a room's files are read from. Always `main` (spec §3.1). */
 const DEFAULT_BRANCH = 'main';
@@ -110,17 +111,6 @@ const FIELD_SEPARATOR = '\u001f';
  * are shaped the way git shapes them.
  */
 const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})$/;
-
-/** The signature {@link RoomFilesService} calls git through. */
-export type GitTextRunner = (args: string[], cwd: string, ceilingDir: string) => Promise<string>;
-
-/** The signature {@link RoomFilesService} reads file bytes through. */
-export type GitBytesRunner = (
-  args: string[],
-  cwd: string,
-  ceilingDir: string,
-  options?: { maxBuffer?: number }
-) => Promise<Buffer>;
 
 /** The seams {@link RoomFilesService} needs from the rest of the server. */
 export interface RoomFilesServiceDeps {
@@ -144,10 +134,6 @@ export interface RoomFilesServiceDeps {
    * the next request, not the next room.
    */
   maxFileBytes: () => number;
-  /** Injectable only so a test can count git invocations. */
-  runGit?: GitTextRunner;
-  /** Injectable only so a test can count git invocations. */
-  runGitRaw?: GitBytesRunner;
 }
 
 /**
@@ -222,6 +208,16 @@ export function normalizeRoomFilePath(raw: string | undefined): string {
   return withoutTrailingSlash;
 }
 
+/** Project reserved repository metadata as absent only for committed-content reads. */
+function normalizeReadableRoomFilePath(raw: string | undefined): string {
+  const filePath = normalizeRoomFilePath(raw);
+  // Keep the shared syntax normalizer available to writes, whose original
+  // assertWritablePath rejects every metadata spelling before any mutation.
+  if (filePath.split('/')[0] === '.git')
+    throw new RoomError('ROOM_FILE_NOT_FOUND', 'No such file in this room');
+  return filePath;
+}
+
 /**
  * Refuse a path, naming what is wrong with it.
  *
@@ -291,13 +287,7 @@ function kindOf(entry: TreeEntry): RoomFileKind {
 
 /** Read-only access to one room's files, as of `main`'s tip. */
 export class RoomFilesService {
-  private readonly git: GitTextRunner;
-  private readonly gitBytes: GitBytesRunner;
-
-  constructor(private readonly deps: RoomFilesServiceDeps) {
-    this.git = deps.runGit ?? runGit;
-    this.gitBytes = deps.runGitRaw ?? runGitRaw;
-  }
+  constructor(private readonly deps: RoomFilesServiceDeps) {}
 
   /**
    * List one directory of a room's files, as of `main`'s tip.
@@ -316,7 +306,7 @@ export class RoomFilesService {
    */
   async list(roomId: string, rawPath?: string): Promise<RoomFileListResponse> {
     await this.requireRepo(roomId);
-    const dir = normalizeRoomFilePath(rawPath);
+    const dir = normalizeReadableRoomFilePath(rawPath);
 
     return this.translatingGitAbsence(async () => {
       const commit = await this.resolveCommit(roomId);
@@ -342,11 +332,13 @@ export class RoomFilesService {
       }
 
       const listed = parseTreeEntries(
-        await this.git(
-          ['ls-tree', '-z', '--long', dir === '' ? commit : `${commit}:${dir}`],
-          this.repoDir(roomId),
-          this.ceiling(roomId)
-        )
+        (
+          await readRoomFileTreeRaw(
+            this.repoDir(roomId),
+            dir === '' ? commit : `${commit}:${dir}`,
+            this.ceiling(roomId)
+          )
+        ).toString('utf8')
       );
 
       const provenance = await this.provenanceFor(roomId, commit, dir, listed);
@@ -396,7 +388,7 @@ export class RoomFilesService {
    */
   async read(roomId: string, rawPath: string): Promise<RoomFileContentResponse> {
     await this.requireRepo(roomId);
-    const filePath = normalizeRoomFilePath(rawPath);
+    const filePath = normalizeReadableRoomFilePath(rawPath);
     if (filePath === '') {
       throw new RoomError('ROOM_FILE_NOT_READABLE', 'That is the whole room, not a file in it.');
     }
@@ -436,15 +428,15 @@ export class RoomFilesService {
         };
       }
 
-      const bytes = await this.gitBytes(
-        ['cat-file', 'blob', `${commit}:${filePath}`],
+      const bytes = await readRoomFileContentRaw(
         this.repoDir(roomId),
+        `${commit}:${filePath}`,
         this.ceiling(roomId),
         // The size is already known and under the ceiling, so this is a
         // backstop against a blob that grew between the two calls rather than
         // the cap itself. `+ 1024` leaves room for nothing in particular; it is
         // slack, not a budget.
-        { maxBuffer: maxBytes + 1024 }
+        maxBytes + 1024
       );
 
       if (bytes.includes(0)) {
@@ -486,7 +478,7 @@ export class RoomFilesService {
    */
   async lastCommitFor(roomId: string, rawPath: string): Promise<RoomFileCommit | null> {
     await this.requireRepo(roomId);
-    const filePath = normalizeRoomFilePath(rawPath);
+    const filePath = normalizeReadableRoomFilePath(rawPath);
     if (filePath === '') return null;
 
     return this.translatingGitAbsence(async () => {
@@ -569,10 +561,11 @@ export class RoomFilesService {
    */
   private async resolveCommit(roomId: string): Promise<string | null> {
     try {
-      return await this.git(
-        ['rev-parse', '--verify', '--quiet', `refs/heads/${DEFAULT_BRANCH}^{commit}`],
+      return await roomVerifiedTip(
         this.repoDir(roomId),
-        this.ceiling(roomId)
+        this.ceiling(roomId),
+        `refs/heads/${DEFAULT_BRANCH}^{commit}`,
+        true
       );
     } catch (err) {
       if (err instanceof GitUnavailableError) throw err;
@@ -601,11 +594,9 @@ export class RoomFilesService {
     filePath: string
   ): Promise<TreeEntry | null> {
     const lines = parseTreeEntries(
-      await this.git(
-        ['ls-tree', '-z', '--long', commit, '--', `:(literal)${filePath}`],
-        this.repoDir(roomId),
-        this.ceiling(roomId)
-      )
+      (
+        await readRoomFileTreeRaw(this.repoDir(roomId), commit, this.ceiling(roomId), filePath)
+      ).toString('utf8')
     );
     return lines[0] ?? null;
   }
@@ -614,7 +605,7 @@ export class RoomFilesService {
    * The last commit that touched each of `entries`, from ONE history walk.
    *
    * Newest-first, so the first appearance of a name is its answer; bounded by
-   * {@link PROVENANCE_COMMIT_LIMIT}; scoped to the directory being listed, so a
+   * the fixed 1000-commit read; scoped to the directory being listed, so a
    * busy sibling directory costs nothing.
    *
    * **A failure here is not a failure of the listing.** Provenance is a column,
@@ -645,21 +636,15 @@ export class RoomFilesService {
 
     let stdout: string;
     try {
-      stdout = await this.git(
-        [
-          'log',
-          '-z',
-          '--name-only',
-          '--no-renames',
-          `--format=${nonce}%H${FIELD_SEPARATOR}%aI${FIELD_SEPARATOR}%an${FIELD_SEPARATOR}%s`,
-          `-n`,
-          String(PROVENANCE_COMMIT_LIMIT),
+      stdout = (
+        await readRoomFileProvenanceRaw(
+          this.repoDir(roomId),
           commit,
-          ...(dir === '' ? [] : ['--', `:(literal)${dir}/`]),
-        ],
-        this.repoDir(roomId),
-        this.ceiling(roomId)
-      );
+          this.ceiling(roomId),
+          dir,
+          nonce
+        )
+      ).toString('utf8');
     } catch (err) {
       if (err instanceof GitUnavailableError) throw err;
       logger.warn('[rooms] could not read file provenance; listing without it', { roomId, err });

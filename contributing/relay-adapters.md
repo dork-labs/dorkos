@@ -1898,3 +1898,13 @@ Individual config fields can include a `helpMarkdown` property containing Markdo
 - `packages/shared/src/transport.ts` — Transport interface including updateConfig()
 - `templates/relay-adapter/` — Starter template for new adapters
 - `decisions/0030-dynamic-import-for-adapter-plugins.md` — ADR for plugin loading and factory export pattern
+
+## Document Channel Routes
+
+The `relay.doc` namespace belongs to the server. Public publish acceptance or a wire payload cannot create a document principal, grant, canonical target, or runtime lease. An adapter must preserve the original server-owned Doc source and accepted receipt through the protected sink.
+
+Local owning-session document routes use shared session admission directly; they do not require a public Relay hop. Actual Relay-backed routes wait when Relay is disabled. Keep namespace reservation and explicit opener/grant ACLs separate from general agent ACLs.
+
+Record dispatch start from the genuine projector event. Do not mint a turn sequence from a queue row or call successful publication runtime completion. Native claim, route-hour charging, SDK effect attempts, physical closure, and terminal receipt settlement each retain their own original witnesses. Claimed unknown outcomes remain charged and require review; a successful return value cannot refund them.
+
+Protected Doc Relay controls and sanitized browser subjects are qualified for their tested sources and scopes. Cross-agent protected delivery currently supports Claude Code; unavailable targets wait or expire under the existing policy. General Relay adapter tests alone do not establish Doc delivery. See [Document Channels](document-channels.md) for receipt, partial acknowledgement, and canonical recovery rules.

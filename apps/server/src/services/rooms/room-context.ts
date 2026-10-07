@@ -54,7 +54,7 @@ import {
   type AuthorRegistry,
 } from './author-registry.js';
 import type { ReactionStore } from './reactions/reaction-store.js';
-import type { RoomAgentLookup } from './room-errors.js';
+import type { RoomAgentLookup } from './data/room-errors.js';
 import type { RoomStore } from './room-store.js';
 import { projectedAttachmentPath, storedExtension } from './attachments/attachment-paths.js';
 
@@ -547,7 +547,13 @@ export function buildRoomContext(
   // Every entry that reaches the model, whichever heading it reaches it under —
   // the tail included, because a tail line naming a file it cannot open is the
   // same broken promise as a windowed one doing it (ADR 260807-233816).
-  const rendered = [...missed, ...gathered, ...(channelTail?.entries ?? []), ...ownRecent];
+  const ordinaryGathered = gathered.filter((entry) => entry.kind !== 'app_event');
+  const rendered = [
+    ...missed,
+    ...ordinaryGathered,
+    ...(channelTail?.entries ?? []),
+    ...ownRecent,
+  ].filter((entry) => entry.kind !== 'app_event');
 
   // The forum-topic label for every candidate this turn might render, in ONE
   // query — gated on `framing` so an unbridged room's turn never touches the
@@ -652,6 +658,8 @@ export function buildRoomContext(
   const handles = addressableHandles(rosterMentionCandidates(members, records, deps.agents).live);
 
   const flatten = (entry: RoomEntry): RoomContextEntry => {
+    // Native Doc markers carry their own doc_events context, never ordinary message history.
+    if (entry.kind === 'app_event') throw new Error('Native Doc marker is not a Room prompt entry');
     const author = nameOf(entry.authorId);
     return {
       // The one id that travels. A member is reached by handle, so no author id
@@ -755,20 +763,26 @@ export function buildRoomContext(
     working: input.working
       .filter((claim) => claim.authorId !== input.agentAuthorId)
       .map((claim) => ({ ...nameOf(claim.authorId), since: claim.since })),
-    pending: missed.map(flatten),
+    pending: missed.filter((entry) => entry.kind !== 'app_event').map(flatten),
     pendingTruncated,
     // Omitted rather than sent empty, like `channelTail` below: the field means
     // "this turn is answering these too", and a turn that gathered nothing is
     // answering exactly one message.
-    ...(gathered.length > 0 ? { gathered: gathered.map(flatten) } : {}),
+    ...(ordinaryGathered.length > 0 ? { gathered: ordinaryGathered.map(flatten) } : {}),
     // Omitted entirely for a top-level turn, rather than sent as an empty array:
     // the field means "here is the rest of the channel", and a top-level turn is
     // already reading it.
-    ...(channelTail ? { channelTail: channelTail.entries.map(flatten) } : {}),
+    ...(channelTail
+      ? {
+          channelTail: channelTail.entries
+            .filter((entry) => entry.kind !== 'app_event')
+            .map(flatten),
+        }
+      : {}),
     // Present only when something really was left out, so a renderer never has
     // to decide whether `0` means "none" or "not computed".
     ...(channelTail && channelTail.omitted > 0 ? { channelTailOmitted: channelTail.omitted } : {}),
-    ownRecent: ownRecent.map(flatten),
+    ownRecent: ownRecent.filter((entry) => entry.kind !== 'app_event').map(flatten),
     acknowledgments: acknowledgments(),
     // The id of the message being answered. It has no line of its own in the
     // rendered block — it IS the turn's content — so this is the only place an

@@ -58,7 +58,7 @@ import {
   sanitizeIdentity,
 } from '@dorkos/shared/untrusted-text';
 import { logger } from '../../../lib/logger.js';
-import { GitUnavailableError, runGit } from './room-repo-git.js';
+import { GitUnavailableError, revParse, roomBlobSize, roomShowObject } from './room-repo-git.js';
 import { ROOM_MD_FILENAME } from './room-md.js';
 
 /** The tag the composed block opens and closes with. */
@@ -243,7 +243,7 @@ export class RoomConventions {
     const ceiling = this.deps.homeDir(roomId);
     let commit: string;
     try {
-      commit = await runGit(['rev-parse', 'main'], repoDir, ceiling);
+      commit = await revParse(repoDir, 'main', ceiling);
     } catch (err) {
       // No git, no repo, or no `main` yet. A room whose files cannot be read is
       // a room without files for this turn — never a failed turn.
@@ -269,10 +269,10 @@ export class RoomConventions {
     let size: number;
     try {
       // The blob's real size, asked before the blob is read: it is the honest
-      // measure of the file (`runGit` trims what it hands back), it answers
+      // measure of the file (the fixed text reader trims what it hands back), it answers
       // whether `ROOM.md` exists at all, and it keeps a pathological file from
       // being pulled into memory only to be refused.
-      size = Number.parseInt(await runGit(['cat-file', '-s', pinned], repoDir, ceiling), 10);
+      size = Number.parseInt(await roomBlobSize(repoDir, ceiling, pinned), 10);
     } catch {
       // Almost always the ordinary case: this room's members have not written a
       // `ROOM.md`. Cached as a miss so the next turn costs one `rev-parse`.
@@ -288,7 +288,7 @@ export class RoomConventions {
     }
 
     try {
-      const body = await runGit(['show', pinned], repoDir, ceiling);
+      const body = await roomShowObject(repoDir, ceiling, pinned);
       return this.remember(roomId, { commit, body, overCapBytes: null });
     } catch (err) {
       this.warn(roomId, 'could not read ROOM.md out of the room repo', err);

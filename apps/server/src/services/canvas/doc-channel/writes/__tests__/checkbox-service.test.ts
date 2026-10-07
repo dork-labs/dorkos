@@ -51,6 +51,9 @@ function crashTestOwnership() {
   let task: Promise<void> | undefined;
   let cancelCheckpoint: (() => void) | undefined;
   let ready: Promise<void> | undefined;
+  const startupPhases: { phase: string; elapsedMs: number; observedElapsedMs: number }[] = [];
+  let capturedAt = 0;
+  let reportStartup = false;
   const assertActive = () => {
     if (!active) throw new Error('Crash test ended.');
   };
@@ -64,6 +67,8 @@ function crashTestOwnership() {
     capture(value: ReturnType<typeof fork>, preload = false) {
       assertActive();
       child = value;
+      reportStartup = preload;
+      capturedAt = performance.now();
       // Attach lifecycle custody before the first checkpoint wait or any kill.
       exited = new Promise<void>((resolve) => {
         value.once('exit', () => resolve());
@@ -111,6 +116,39 @@ function crashTestOwnership() {
       }>((resolve, reject) => {
         const onMessage = (data: unknown) => {
           if (!active) return;
+          if (
+            !startupReceived &&
+            data &&
+            typeof data === 'object' &&
+            'kind' in data &&
+            data.kind === 'startup-phase'
+          ) {
+            const phase = 'phase' in data ? data.phase : undefined;
+            const elapsedMs = 'elapsedMs' in data ? data.elapsedMs : undefined;
+            const expected = ['worker-entry', 'fixture-import-start', 'fixture-import-ready'];
+            if (
+              Object.keys(data).length !== 3 ||
+              startupPhases.length >= 3 ||
+              typeof phase !== 'string' ||
+              phase !== expected[startupPhases.length] ||
+              typeof elapsedMs !== 'number' ||
+              !Number.isFinite(elapsedMs) ||
+              elapsedMs < 0 ||
+              (startupPhases.length > 0 &&
+                elapsedMs < startupPhases[startupPhases.length - 1].elapsedMs)
+            ) {
+              const cause = new Error('Original worker startup phase DATA changed.');
+              rejectReady(cause);
+              reject(cause);
+              return;
+            }
+            startupPhases.push({
+              phase,
+              elapsedMs,
+              observedElapsedMs: performance.now() - capturedAt,
+            });
+            return;
+          }
           if (!startupReceived) {
             if (
               !data ||
@@ -172,6 +210,19 @@ function crashTestOwnership() {
             await closed;
             await Promise.allSettled(pipes);
             if (task) await Promise.allSettled([task]);
+            if (reportStartup) {
+              reportStartup = false;
+              try {
+                process.stderr.write(
+                  'ORIGINAL_CHECKBOX_CRASH_IMPORT_PHASES ' + JSON.stringify(startupPhases) + '\n'
+                );
+              } catch (cause) {
+                if (!pipeFailed) {
+                  pipeFailed = true;
+                  firstPipeCause = cause;
+                }
+              }
+            }
             if (pipeFailed) throw firstPipeCause;
           })(),
           new Promise<never>((_, reject) => {
@@ -290,9 +341,25 @@ afterEach(async () => {
   );
   if (cleanupFailed) throw firstCleanupCause;
 });
-async function fixture(options: CheckboxServiceOptions = {}) {
+async function fixture(
+  options: CheckboxServiceOptions = {},
+  recoveryPhase?: (phase: 'cleanup-start' | 'cleanup-settled') => void
+) {
   const h = await makeFixture(options);
-  cleanups.push(h.cleanup);
+  const cleanup = h.cleanup;
+  cleanups.push(
+    recoveryPhase
+      ? async () => {
+          recoveryPhase('cleanup-start');
+          try {
+            await cleanup();
+          } finally {
+            // Settled is not a positive native closure witness; the original failure propagates.
+            recoveryPhase('cleanup-settled');
+          }
+        }
+      : cleanup
+  );
   return h;
 }
 it('writes exactly one raw marker, preserves mode/BOM/CRLF and atomically completes original event/outbox/receipt', async () => {
@@ -828,13 +895,25 @@ it('raw fence reuse still decodes replaced evidence codecs and refuses malformed
 });
 
 it('bounded recovery progresses through 101 original intents with a stable keyset and no effects', async () => {
-  const h = await fixture();
+  const started = process.hrtime.bigint();
+  const phase = (value: string) =>
+    console.error(
+      'ORIGINAL_101_RECOVERY_PHASE',
+      JSON.stringify({
+        phase: value,
+        elapsedMs: Number(process.hrtime.bigint() - started) / 1_000_000,
+      })
+    );
+  phase('fixture-start');
+  const h = await fixture({}, phase);
+  phase('fixture-ready');
   const before = await readFile(h.path);
   h.failCompletion(true);
   await expect(h.service.toggle(await h.request(), h.actor)).rejects.toThrow();
   await writeFile(h.path, before);
   const base = h.store.getWriteIntent(h.row().intentId)!;
   h.db.$client.prepare("UPDATE canvas_doc_write_intents SET status='prepared'").run();
+  phase('seed-start');
   for (let i = 0; i < 100; i++) {
     const intentId = randomUUID(),
       eventId = randomUUID();
@@ -857,9 +936,12 @@ it('bounded recovery progresses through 101 original intents with a stable keyse
     h.store.transaction((tx) => tx.insert(canvasDocWriteIntents).values(seeded).run());
     h.service.validate(h.store.getWriteIntent(intentId)!);
   }
+  phase('seed-ready');
   const one = await recoverCheckboxPage(h.service);
+  phase('page-one-returned');
   expect(one).toMatchObject({ selected: 100, verified: 0, retryableFailures: 0, hasMore: true });
   const two = await recoverCheckboxPage(h.service, one.cursor);
+  phase('page-two-returned');
   expect(two).toMatchObject({ selected: 1, verified: 0, retryableFailures: 0, hasMore: false });
   expect(one.cursor).not.toEqual(two.cursor);
   expect(await readFile(h.path)).toEqual(before);
@@ -868,6 +950,7 @@ it('bounded recovery progresses through 101 original intents with a stable keyse
     recoverCheckboxPage(h.service, { updatedAt: 'invalid', intentId: 'x' })
   ).rejects.toThrow('cursor');
   await expect(recoverCheckboxPage(h.service, undefined, 101)).rejects.toThrow('limit');
+  phase('assertions-complete');
 });
 
 it('does not remove an unowned exclusive-create collider during failure or recovery', async () => {

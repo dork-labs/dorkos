@@ -308,7 +308,7 @@
         "apps/server/src/services/rooms/repo/room-file-editor.ts",
         "apps/server/src/services/rooms/messages/room-system-posts.ts",
         "apps/server/src/services/rooms/room-service.ts (postFileChangeEvent)",
-        "apps/server/src/services/rooms/room-errors.ts",
+        "apps/server/src/services/rooms/data/room-errors.ts",
         "apps/server/src/routes/room-error-response.ts",
         "apps/server/src/services/core/openapi-registry.ts",
         "packages/shared/src/room-files.ts",

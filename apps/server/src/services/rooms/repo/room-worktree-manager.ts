@@ -108,14 +108,14 @@
  * @module server/services/rooms/repo/room-worktree-manager
  */
 import { createHash } from 'node:crypto';
-import { existsSync, promises as fs } from 'node:fs';
+import { constants, existsSync, lstatSync, promises as fs, type Stats } from 'node:fs';
 import path from 'node:path';
 import type { RoomContextFiles } from '@dorkos/shared/additional-context';
 import { slugifyAgentName } from '@dorkos/shared/validation';
 import { isUnmodifiedSeededSkill, OPERATING_SKILLS_PACK } from '@dorkos/operating-skills';
 import { CLAUDE_INSTRUCTION_CONTENT } from '@dorkos/harness';
 import { logger } from '../../../lib/logger.js';
-import { RoomError } from '../room-errors.js';
+import { RoomError } from '../data/room-errors.js';
 import { PROJECTED_ATTACHMENTS_ROOT } from '../attachments/attachment-paths.js';
 import { AGENT_WORKSPACE_HARNESSES } from '../../harness/project-agent-workspace.js';
 import type { RoomRepoStore } from './room-repo-store.js';
@@ -131,8 +131,228 @@ import {
   headCommittedAt,
   pruneWorktrees,
   removeWorktree,
-  runGit,
+  roomHiddenUntrackedRaw,
+  readRoomWorktreeRegistration,
 } from './room-repo-git.js';
+
+import type { Db } from '@dorkos/db';
+import type { RoomStore } from '../room-store.js';
+import {
+  requireRoomServiceFileWriteOwner,
+  readRoomServiceOriginalBusyAgents,
+  type RoomService,
+} from '../room-service.js';
+import { readOriginalRoomRunnerLaunch } from '../room-turn-runner.js';
+import { readOriginalRoomTriggerLaunch } from '../room-trigger.js';
+import type { RoomTurnRequest } from '../room-turn-port.js';
+import { roomTurnGrants, type RoomTurnLaunch, type RoomTurnPlace } from './room-turn-place.js';
+import { readOriginalRoomPlacementFacts } from '../service/room-core.js';
+import type { DocChannelStore } from '../../canvas/doc-channel/store.js';
+import {
+  requireInstallationFileWritesOwner,
+  type InstallationFileWrites,
+} from '../../canvas/doc-channel/writes/installation-file-writes.js';
+import {
+  requireInstallationRoomWrites,
+  readInstallationRoomFileWriteOwner,
+  withRecognizedInstallationRoomNamespace,
+  readInstallationRoomPlacementMutationContext,
+  readInstallationRoomLaunchMutationContext,
+  readInstallationRoomMutationRoots,
+  readInstallationRoomStoreRoots,
+  checkInstallationRoomMutationTarget,
+  requireInstallationRoomMutationTarget,
+  requireInstallationRoomLaunchTarget,
+  type InstallationRoomWrites,
+  type InstallationRoomMutationContext,
+} from '../../canvas/doc-channel/writes/installation-room-writes.js';
+import type { RoomRepoMutex } from './room-repo-mutex.js';
+import {
+  ROOM_REPO_SIDECAR_FILENAME,
+  readOwnedRoomRepoSource,
+  originalRoomRepoRoomExists,
+  executeOriginalRoomRepoStoreRead,
+} from './room-repo-store.js';
+import { readOriginalRoomRepoMaintenanceOperation } from './room-repo-reconciler.js';
+import { readRoomRepoConfig } from './room-repo-config.js';
+import { DocChannelNotFoundError } from '../../canvas/doc-channel/authorization.js';
+import {
+  requireOriginalHttpRoomWorktreeOwner,
+  requireOriginalHttpRoomWorktreeAdmission,
+} from '../../canvas/doc-channel/http-composition.js';
+
+interface RoomWorktreeOwningConstruction {
+  readonly owner: InstallationFileWrites;
+  readonly writer: InstallationRoomWrites;
+  readonly mutex: RoomRepoMutex;
+  readonly db: Db;
+  readonly channels: DocChannelStore;
+  readonly rooms: RoomService;
+  readonly roomStore: RoomStore;
+}
+const originalWorktreeManagers = new WeakMap<
+  RoomWorktreeManager,
+  {
+    owning: RoomWorktreeOwningConstruction;
+    store: RoomRepoStore;
+    placement(token: object): Promise<RoomTurnPlace>;
+    launch(request: RoomTurnRequest): Promise<RoomTurnLaunch>;
+    retire(
+      roomId: string,
+      worktree: string,
+      agentPath: string,
+      context: InstallationRoomMutationContext
+    ): Promise<{ removed: number; blockRemoved: boolean }>;
+    reap(
+      roomId: string,
+      context: InstallationRoomMutationContext
+    ): Promise<RoomWorktreeSweepResult>;
+  }
+>();
+const originalReapContexts = new WeakSet<object>();
+const originalReapEffects = new WeakMap<object, () => void>();
+/** Fixed last native-entry guard for an actual private maintenance effect window. */
+export function requireOriginalRoomWorktreeReapEffect(
+  context: InstallationRoomMutationContext
+): undefined {
+  if (!originalReapContexts.has(context)) return undefined;
+  const guard = originalReapEffects.get(context);
+  if (!guard) throw new DocChannelNotFoundError();
+  guard();
+  return undefined;
+}
+/** Actual reconciler operation remains under its original active namespace throughout reap. */
+export function executeOriginalRoomWorktreeReap(
+  manager: RoomWorktreeManager,
+  roomId: string,
+  context: InstallationRoomMutationContext
+): Promise<RoomWorktreeSweepResult> {
+  const binding = originalWorktreeManagers.get(manager);
+  if (!binding) return Promise.reject(new DocChannelNotFoundError());
+  requireRoomWorktreeManagerOwner(
+    manager,
+    binding.owning.owner,
+    binding.owning.db,
+    binding.owning.rooms
+  );
+  requireOriginalHttpRoomWorktreeOwner(
+    binding.owning.owner,
+    manager,
+    binding.owning.db,
+    binding.owning.rooms
+  );
+  const operation = readOriginalRoomRepoMaintenanceOperation(
+    context,
+    binding.store,
+    binding.owning.db
+  );
+  if (!operation || operation.roomId !== roomId || operation.phase !== 'reap')
+    throw new DocChannelNotFoundError();
+  return binding.reap(roomId, context);
+}
+/** Constructor custody only; HTTP composition additionally captures the exact one production instance. */
+export function requireRoomWorktreeManagerOwner(
+  manager: RoomWorktreeManager,
+  owner: InstallationFileWrites,
+  db: Db,
+  rooms: RoomService
+): undefined {
+  const binding = originalWorktreeManagers.get(manager);
+  if (
+    !binding ||
+    binding.owning.owner !== owner ||
+    binding.owning.db !== db ||
+    binding.owning.rooms !== rooms
+  )
+    throw new DocChannelNotFoundError();
+  requireInstallationFileWritesOwner(owner, db, binding.owning.channels);
+  requireInstallationRoomWrites(
+    binding.owning.writer,
+    owner,
+    db,
+    binding.owning.channels,
+    binding.store
+  );
+  if (
+    readInstallationRoomFileWriteOwner(
+      binding.owning.writer,
+      binding.store,
+      binding.owning.mutex
+    ) !== owner
+  )
+    throw new DocChannelNotFoundError();
+  requireRoomServiceFileWriteOwner(rooms, db, binding.owning.roomStore);
+  return undefined;
+}
+/** Place a worktree through the original Room worktree manager operation. */
+export function executeOriginalRoomWorktreePlacement(
+  manager: RoomWorktreeManager,
+  token: object
+): Promise<RoomTurnPlace> {
+  const binding = originalWorktreeManagers.get(manager);
+  if (!binding) return Promise.reject(new DocChannelNotFoundError());
+  requireRoomWorktreeManagerOwner(
+    manager,
+    binding.owning.owner,
+    binding.owning.db,
+    binding.owning.rooms
+  );
+  requireOriginalHttpRoomWorktreeAdmission(
+    binding.owning.owner,
+    manager,
+    binding.owning.db,
+    binding.owning.rooms
+  );
+  return binding.placement(token);
+}
+
+/** Fixed constructor operation: a copied request or another genuine Manager cannot enter this launch. */
+export function executeOriginalRoomWorktreeLaunch(
+  manager: RoomWorktreeManager,
+  request: RoomTurnRequest
+): Promise<RoomTurnLaunch> {
+  const binding = originalWorktreeManagers.get(manager);
+  if (!binding) return Promise.reject(new DocChannelNotFoundError());
+  requireRoomWorktreeManagerOwner(
+    manager,
+    binding.owning.owner,
+    binding.owning.db,
+    binding.owning.rooms
+  );
+  requireOriginalHttpRoomWorktreeAdmission(
+    binding.owning.owner,
+    manager,
+    binding.owning.db,
+    binding.owning.rooms
+  );
+  return binding.launch(request);
+}
+
+/** Fixed finite retirement operation backed by the constructor-private launch target. */
+export function executeOriginalRoomWorktreeRetirement(
+  manager: RoomWorktreeManager,
+  roomId: string,
+  worktree: string,
+  agentPath: string,
+  context: InstallationRoomMutationContext
+) {
+  const binding = originalWorktreeManagers.get(manager);
+  if (!binding) return Promise.reject(new DocChannelNotFoundError());
+  requireRoomWorktreeManagerOwner(
+    manager,
+    binding.owning.owner,
+    binding.owning.db,
+    binding.owning.rooms
+  );
+  requireOriginalHttpRoomWorktreeOwner(
+    binding.owning.owner,
+    manager,
+    binding.owning.db,
+    binding.owning.rooms
+  );
+  requireInstallationRoomLaunchTarget(context, manager, roomId, worktree, agentPath);
+  return binding.retire(roomId, worktree, agentPath, context);
+}
 
 /**
  * How many hex characters of the workspace-path digest ride in a worktree name.
@@ -336,18 +556,55 @@ export class RoomWorktreeManager {
    * Nothing re-creates what was retired, so asking again could only find a
    * person's own files, which are left alone anyway.
    */
-  private readonly retired = new Set<string>();
+  readonly #retired = new Set<string>();
 
   /**
    * Bind the manager to one install's store and settings.
    *
    * @param deps - The seams above.
    */
-  constructor(private readonly deps: RoomWorktreeManagerDeps) {}
+  readonly #deps: Readonly<RoomWorktreeManagerDeps>;
+  readonly #owning?: RoomWorktreeOwningConstruction;
+  constructor(deps: RoomWorktreeManagerDeps, owning?: RoomWorktreeOwningConstruction) {
+    this.#deps = Object.freeze({ ...deps });
+    if (owning) {
+      requireInstallationFileWritesOwner(owning.owner, owning.db, owning.channels);
+      requireInstallationRoomWrites(
+        owning.writer,
+        owning.owner,
+        owning.db,
+        owning.channels,
+        deps.store
+      );
+      if (
+        readInstallationRoomFileWriteOwner(owning.writer, deps.store, owning.mutex) !== owning.owner
+      )
+        throw new DocChannelNotFoundError();
+      requireRoomServiceFileWriteOwner(owning.rooms, owning.db, owning.roomStore);
+      this.#owning = Object.freeze({ ...owning });
+      originalWorktreeManagers.set(
+        this,
+        Object.freeze({
+          owning: this.#owning,
+          store: deps.store,
+          placement: (token: object) => this.#executePlacement(token),
+          launch: (request: RoomTurnRequest) => this.#executeLaunch(request),
+          retire: (
+            roomId: string,
+            worktree: string,
+            agentPath: string,
+            context: InstallationRoomMutationContext
+          ) => this.#retireOwned(roomId, worktree, agentPath, context),
+          reap: (roomId: string, context: InstallationRoomMutationContext) =>
+            this.#reapOwned(roomId, context),
+        })
+      );
+    }
+  }
 
   /** Epoch ms from the injected clock, or the wall clock. */
-  private nowMs(): number {
-    return (this.deps.now ?? Date.now)();
+  #nowMs(): number {
+    return (this.#deps.now ?? Date.now)();
   }
 
   /**
@@ -435,26 +692,161 @@ export class RoomWorktreeManager {
     agentPath: string,
     agentName: string
   ): Promise<RoomWorktreeHandle> {
-    if (!this.deps.hasRepo(roomId)) {
+    void roomId;
+    void agentPath;
+    void agentName;
+    throw new DocChannelNotFoundError();
+  }
+
+  async #executePlacement(token: object): Promise<RoomTurnPlace> {
+    const owning = this.#owning!;
+    requireOriginalHttpRoomWorktreeOwner(owning.owner, this, owning.db, owning.rooms);
+    const facts = readOriginalRoomPlacementFacts(token, owning.db, owning.roomStore);
+    if (!facts) throw new DocChannelNotFoundError();
+    const enabled = readRoomRepoConfig().enabled;
+    const source = readOwnedRoomRepoSource(this.#deps.store, owning.db, facts.roomId);
+    if (
+      JSON.stringify(readOriginalRoomPlacementFacts(token, owning.db, owning.roomStore)) !==
+      JSON.stringify(facts)
+    )
+      throw new DocChannelNotFoundError();
+    if (!enabled || !source.row)
       throw new RoomError('NOT_A_PROJECT_ROOM', 'This room does not have files of its own.');
-    }
+    return withRecognizedInstallationRoomNamespace(owning.writer, facts.roomId, async (scope) => {
+      requireOriginalHttpRoomWorktreeOwner(owning.owner, this, owning.db, owning.rooms);
+      const current = readOriginalRoomPlacementFacts(token, owning.db, owning.roomStore);
+      if (!current || JSON.stringify(current) !== JSON.stringify(facts))
+        throw new DocChannelNotFoundError();
+      const context = readInstallationRoomPlacementMutationContext(
+        owning.writer,
+        facts.roomId,
+        scope,
+        token,
+        owning.roomStore
+      );
+      const roots = readInstallationRoomMutationRoots(context);
+      try {
+        const slug = RoomWorktreeManager.slugFor(current.displayName, current.targetAgentPath),
+          branch = roomWorktreeBranch(slug);
+        const dir = path.join(roots.homePath, 'worktrees', slug);
+        const worktree = await this.#resolveWorktree(facts.roomId, dir, slug, branch, context);
+        // This retained turn-placement duty remains inside the same original namespace,
+        // rather than reopening an unowned pathname after returning the worktree DTO.
+        await this.#ensureRoomBranchLogs(context);
+        const place = { worktreePath: worktree.path, branch, repoPath: roots.repoPath };
+        let counts: { ahead: number | null; behind: number | null };
+        try {
+          await checkInstallationRoomMutationTarget(context, roots.repoPath);
+          counts = await aheadBehind(roots.repoPath, 'main', branch, roots.homePath);
+        } catch (error) {
+          // An unavailable observation may omit counts; lost original authority
+          // must still refuse, including when the Git observation itself failed.
+          await checkInstallationRoomMutationTarget(context, roots.repoPath);
+          counts = { ahead: null, behind: null };
+          logger.debug('[rooms] could not measure a room worktree against main', {
+            roomId: facts.roomId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+        await checkInstallationRoomMutationTarget(context, worktree.path);
+        const storeRoots = readInstallationRoomStoreRoots(context, this.#deps.store, owning.db);
+        const homeIdentity = await fs.lstat(roots.homePath),
+          canonicalHome = await fs.realpath(roots.homePath);
+        await checkInstallationRoomMutationTarget(context, worktree.path);
+        if (
+          !homeIdentity.isDirectory() ||
+          homeIdentity.isSymbolicLink() ||
+          canonicalHome !==
+            path.join(
+              storeRoots.canonicalInstallation,
+              path.relative(storeRoots.installation, roots.homePath)
+            )
+        )
+          throw new Error('Room grant home is not its original canonical namespace.');
+        const additionalDirectories = roomTurnGrants(
+          worktree.path,
+          roots.repoPath,
+          current.targetAgentPath
+        );
+        for (const grant of additionalDirectories) {
+          const relative = path.relative(canonicalHome, grant.path);
+          if (
+            relative === '..' ||
+            relative.startsWith(`..${path.sep}`) ||
+            path.isAbsolute(relative)
+          )
+            throw new Error('Room grant resolved outside its original canonical home.');
+        }
+        await checkInstallationRoomMutationTarget(context, worktree.path);
+        if (
+          !sameWorktreeInode(homeIdentity, await fs.lstat(roots.homePath)) ||
+          (await fs.realpath(roots.homePath)) !== canonicalHome
+        )
+          throw new Error('Room grant home replaced during projection.');
+        // The native filesystem observations above are awaits. Recheck the
+        // original request credential and placement before returning grants.
+        await checkInstallationRoomMutationTarget(context, worktree.path);
+        requireInstallationRoomMutationTarget(context, worktree.path);
+        requireInstallationRoomMutationTarget(context, roots.repoPath);
+        return {
+          cwd: current.targetAgentPath,
+          additionalDirectories,
+          worktree: worktree.path,
+          files: { ...place, ...counts },
+        };
+      } catch (error) {
+        if (error instanceof DocChannelNotFoundError) throw error;
+        // Preserve ordinary unavailable-files behavior only while the exact
+        // original placement and scope still pass their live guards. Admission,
+        // native/currentness, and root failures cannot authorize a fallback.
+        await checkInstallationRoomMutationTarget(context, roots.repoPath);
+        requireInstallationRoomMutationTarget(context, roots.repoPath);
+        logger.warn(
+          '[rooms] could not open this agent’s copy of the room’s files; answering without it',
+          {
+            roomId: facts.roomId,
+            error: error instanceof Error ? error.message : String(error),
+          }
+        );
+        requireInstallationRoomMutationTarget(context, roots.repoPath);
+        return {
+          cwd: current.targetAgentPath,
+          additionalDirectories: [],
+          worktree: null,
+          files: null,
+        };
+      }
+    });
+  }
 
-    const slug = RoomWorktreeManager.slugFor(agentName, agentPath);
-    const dir = path.join(this.deps.store.worktreesPath(roomId), slug);
-    const branch = roomWorktreeBranch(slug);
-
-    // Registered BEFORE the first `await`, so no second caller can slip between
-    // the lookup and the insert. Every path — reuse, heal, create — runs inside
-    // this one promise.
-    const key = `${roomId}/${slug}`;
-    let resolution = this.creating.get(key);
-    if (!resolution) {
-      resolution = this.resolveWorktree(roomId, dir, slug, branch).finally(() => {
-        this.creating.delete(key);
-      });
-      this.creating.set(key, resolution);
-    }
-    return resolution;
+  async #executeLaunch(request: RoomTurnRequest): Promise<RoomTurnLaunch> {
+    const owning = this.#owning!;
+    requireOriginalHttpRoomWorktreeOwner(owning.owner, this, owning.db, owning.rooms);
+    const launch = readOriginalRoomRunnerLaunch(request),
+      input = launch && readOriginalRoomTriggerLaunch(request, launch.runner);
+    if (!launch || !input || input.manager !== this) throw new DocChannelNotFoundError();
+    if (!readOwnedRoomRepoSource(this.#deps.store, owning.db, input.roomId).row)
+      throw new RoomError('NOT_A_PROJECT_ROOM', 'This room does not have files of its own.');
+    return withRecognizedInstallationRoomNamespace(owning.writer, input.roomId, async (scope) => {
+      const context = readInstallationRoomLaunchMutationContext(
+        owning.writer,
+        input.roomId,
+        scope,
+        request,
+        this,
+        owning.rooms,
+        owning.roomStore
+      );
+      const roots = readInstallationRoomMutationRoots(context),
+        worktrees = path.join(roots.homePath, 'worktrees');
+      if (path.dirname(input.worktree) !== worktrees || input.worktree === worktrees)
+        throw new DocChannelNotFoundError();
+      await checkInstallationRoomMutationTarget(context, input.worktree);
+      const result = await input.run(context, launch.sessionId);
+      await checkInstallationRoomMutationTarget(context, input.worktree);
+      requireInstallationRoomMutationTarget(context, input.worktree);
+      return result;
+    });
   }
 
   /**
@@ -471,8 +863,8 @@ export class RoomWorktreeManager {
     try {
       return {
         worktree,
-        repo: this.deps.store.repoPath(roomId),
-        ceiling: this.deps.store.homeDir(roomId),
+        repo: this.#deps.store.repoPath(roomId),
+        ceiling: this.#deps.store.homeDir(roomId),
         branch: roomWorktreeBranch(path.basename(worktree)),
       };
     } catch {
@@ -490,7 +882,7 @@ export class RoomWorktreeManager {
    */
   pathFor(roomId: string, agentPath: string, agentName: string): string {
     return path.join(
-      this.deps.store.worktreesPath(roomId),
+      this.#deps.store.worktreesPath(roomId),
       RoomWorktreeManager.slugFor(agentName, agentPath)
     );
   }
@@ -503,21 +895,73 @@ export class RoomWorktreeManager {
    * @param slug - Its directory name.
    * @param branch - The branch it checks out.
    */
-  private async resolveWorktree(
+  async #resolveWorktree(
     roomId: string,
     dir: string,
     slug: string,
-    branch: string
+    branch: string,
+    context: InstallationRoomMutationContext
   ): Promise<RoomWorktreeHandle> {
     if (await isCheckout(dir)) {
       // Handing the path out is the use. See `ensureWorktree`'s docs. Stamped
       // from the same clock the reap's cutoff reads, so the two never disagree
       // about what "now" is.
-      await stampDirectory(dir, this.nowMs());
-      return { slug, path: dir, branch, created: false, repo: this.deps.store.repoPath(roomId) };
+      await this.#stampOwnedDirectory(dir, context);
+      requireInstallationRoomMutationTarget(context, dir);
+      return {
+        slug,
+        path: dir,
+        branch,
+        created: false,
+        repo: readInstallationRoomMutationRoots(context).repoPath,
+      };
     }
-    if (await directoryExists(dir)) await this.setCorpseAside(roomId, dir, slug);
-    return this.createWorktree(roomId, dir, slug, branch);
+    if (await directoryExists(dir)) await this.#setCorpseAside(roomId, dir, slug, context);
+    return this.#createWorktree(roomId, dir, slug, branch, context);
+  }
+
+  async #ensureRoomBranchLogs(context: InstallationRoomMutationContext): Promise<void> {
+    const { repoPath } = readInstallationRoomMutationRoots(context);
+    await checkInstallationRoomMutationTarget(context, repoPath);
+    const repo = await fs.lstat(repoPath),
+      canonicalRepo = await fs.realpath(repoPath);
+    if (!repo.isDirectory() || repo.isSymbolicLink())
+      throw new Error('Room branch logs lost their actual repository.');
+    let parentPath = repoPath,
+      parent = repo;
+    for (const segment of ['.git', 'logs', 'refs', 'heads', 'room']) {
+      const directory = path.join(parentPath, segment);
+      await checkInstallationRoomMutationTarget(context, directory);
+      let previous: Stats | undefined;
+      try {
+        previous = await fs.lstat(directory);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error;
+      }
+      if (previous && (!previous.isDirectory() || previous.isSymbolicLink()))
+        throw new Error('Room branch log directory is not its actual directory.');
+      if (
+        !sameWorktreeInode(parent, await fs.lstat(parentPath)) ||
+        !sameWorktreeInode(repo, await fs.lstat(repoPath))
+      )
+        throw new Error('Room branch log parent replaced before acquisition.');
+      requireInstallationRoomMutationTarget(context, directory);
+      if (!previous) await fs.mkdir(directory);
+      const current = await fs.lstat(directory);
+      if (
+        !current.isDirectory() ||
+        current.isSymbolicLink() ||
+        (previous && !sameWorktreeInode(previous, current)) ||
+        (await fs.realpath(directory)) !==
+          path.join(canonicalRepo, path.relative(repoPath, directory)) ||
+        !sameWorktreeInode(parent, await fs.lstat(parentPath)) ||
+        !sameWorktreeInode(repo, await fs.lstat(repoPath))
+      )
+        throw new Error('Room branch logs refuse a replaced directory/parent.');
+      requireInstallationRoomMutationTarget(context, directory);
+      parentPath = directory;
+      parent = current;
+    }
   }
 
   /**
@@ -532,23 +976,137 @@ export class RoomWorktreeManager {
    * @param dir - The directory in the way.
    * @param slug - Its name, for the log line.
    */
-  private async setCorpseAside(roomId: string, dir: string, slug: string): Promise<void> {
-    try {
-      if ((await fs.readdir(dir)).length === 0) {
-        await fs.rm(dir, { recursive: true, force: true });
-        return;
-      }
-    } catch {
-      // Unreadable. Fall through to the rename, which needs no listing.
+  async #setCorpseAside(
+    roomId: string,
+    dir: string,
+    slug: string,
+    context: InstallationRoomMutationContext
+  ): Promise<void> {
+    const parentPath = path.dirname(dir);
+    await checkInstallationRoomMutationTarget(context, dir);
+    const parent = await fs.lstat(parentPath),
+      original = await fs.lstat(dir);
+    if (
+      !parent.isDirectory() ||
+      parent.isSymbolicLink() ||
+      !original.isDirectory() ||
+      original.isSymbolicLink()
+    )
+      throw new Error('Room worktree repair lost its actual directory.');
+    const empty = (await fs.readdir(dir)).length === 0;
+    await checkInstallationRoomMutationTarget(context, dir);
+    if (
+      !sameWorktreeInode(parent, await fs.lstat(parentPath)) ||
+      !sameWorktreeInode(original, await fs.lstat(dir))
+    )
+      throw new Error('Room worktree repair directory replaced.');
+    if (empty) {
+      requireInstallationRoomMutationTarget(context, dir);
+      await fs.rmdir(dir); // only the observed empty directory, never a recursive foreign tree
+      await checkInstallationRoomMutationTarget(context, dir);
+      return;
     }
     const moved = `${dir}.orphaned-${Date.now()}`;
-    await fs.rename(dir, moved);
+    await checkInstallationRoomMutationTarget(context, moved);
+    requireInstallationRoomMutationTarget(context, moved);
+    await fs.mkdir(moved); // reserve destination rather than overwrite somebody else's path
+    const reservation = await fs.lstat(moved);
+    let failed = false,
+      cause: unknown,
+      published = false;
+    // Join this scope to its captured cleanup before returning or reporting failure.
+    const drainOriginalCleanup = async () => {
+      if (!published) {
+        try {
+          if (
+            !sameWorktreeInode(parent, await fs.lstat(parentPath)) ||
+            !sameWorktreeInode(reservation, await fs.lstat(moved))
+          )
+            throw new Error('Room worktree cleanup refuses a foreign reservation.');
+          // Cleanup of this actual empty reservation only; admitted namespace remains held.
+          await fs.rmdir(moved);
+        } catch (error) {
+          if (!failed) {
+            failed = true;
+            cause = error;
+          }
+        }
+      }
+    };
+    try {
+      await checkInstallationRoomMutationTarget(context, dir);
+      if (
+        !reservation.isDirectory() ||
+        reservation.isSymbolicLink() ||
+        !sameWorktreeInode(parent, await fs.lstat(parentPath)) ||
+        !sameWorktreeInode(original, await fs.lstat(dir)) ||
+        !sameWorktreeInode(reservation, await fs.lstat(moved))
+      )
+        throw new Error('Room worktree move lost its original source/reserved destination.');
+      requireInstallationRoomMutationTarget(context, dir);
+      requireInstallationRoomMutationTarget(context, moved);
+      await fs.rename(dir, moved);
+      published = true;
+      await checkInstallationRoomMutationTarget(context, moved);
+      if (
+        !sameWorktreeInode(parent, await fs.lstat(parentPath)) ||
+        !sameWorktreeInode(original, await fs.lstat(moved))
+      )
+        throw new Error('Room orphan move readback changed.');
+    } catch (error) {
+      failed = true;
+      cause = error;
+    } finally {
+      await drainOriginalCleanup();
+    }
+    if (failed) throw cause;
     logger.warn('[rooms] a room worktree directory was not a checkout; moved it aside', {
       roomId,
       worktree: slug,
       movedTo: moved,
       note: 'nothing was deleted; the sweep will list it as unfinished work',
     });
+  }
+
+  async #stampOwnedDirectory(dir: string, context: InstallationRoomMutationContext): Promise<void> {
+    const now = new Date(this.#nowMs());
+    await checkInstallationRoomMutationTarget(context, dir);
+    const original = await fs.lstat(dir);
+    if (!original.isDirectory() || original.isSymbolicLink())
+      throw new Error('Room worktree stamp requires the actual directory.');
+    let file: import('node:fs/promises').FileHandle | undefined;
+    let failed = false,
+      cause: unknown;
+    try {
+      requireInstallationRoomMutationTarget(context, dir);
+      file = await fs.open(dir, constants.O_RDONLY | constants.O_NOFOLLOW);
+      const acquired = await file.stat();
+      await checkInstallationRoomMutationTarget(context, dir);
+      if (
+        !acquired.isDirectory() ||
+        !sameWorktreeInode(original, acquired) ||
+        !sameWorktreeInode(acquired, await fs.lstat(dir))
+      )
+        throw new Error('Room worktree stamp directory replaced.');
+      requireInstallationRoomMutationTarget(context, dir);
+      await file.utimes(now, now);
+      await checkInstallationRoomMutationTarget(context, dir);
+    } catch (error) {
+      failed = true;
+      cause = error;
+    } finally {
+      if (file) {
+        try {
+          await file.close();
+        } catch (error) {
+          if (!failed) {
+            failed = true;
+            cause = error;
+          }
+        }
+      }
+    }
+    if (failed) throw cause;
   }
 
   /**
@@ -562,15 +1120,15 @@ export class RoomWorktreeManager {
    *   decides what an unreadable tree means, and the reap decides it is work.
    */
   async worktreeStatus(roomId: string, slug: string): Promise<RoomWorktreeStatus | null> {
-    const dir = path.join(this.deps.store.worktreesPath(roomId), slug);
+    const dir = path.join(this.#deps.store.worktreesPath(roomId), slug);
     if (!(await directoryExists(dir))) return null;
-    const ceiling = this.deps.store.homeDir(roomId);
+    const ceiling = this.#deps.store.homeDir(roomId);
     // Dated FIRST, for the reason `reapRoom` dates first: `git status` refreshes
     // the index when its stat cache is out of date, and the index is one of the
     // sources below. Asked afterwards, every worktree this method looks at
     // reports "touched just now" — measured, on a tree deliberately aged forty
     // days.
-    const lastTouchedAt = (await this.lastTouchedAt(dir, ceiling)).toISOString();
+    const lastTouchedAt = (await this.#lastTouchedAt(dir, ceiling)).toISOString();
     return {
       slug,
       path: dir,
@@ -623,14 +1181,14 @@ export class RoomWorktreeManager {
     agentName: string,
     worktreePath: string
   ): Promise<RoomContextFiles | null> {
-    if (!this.deps.hasRepo(roomId)) return null;
+    if (!this.#deps.hasRepo(roomId)) return null;
     const branch = roomWorktreeBranch(RoomWorktreeManager.slugFor(agentName, agentPath));
 
     let repoDir: string;
     let ceiling: string;
     try {
-      repoDir = this.deps.store.repoPath(roomId);
-      ceiling = this.deps.store.homeDir(roomId);
+      repoDir = this.#deps.store.repoPath(roomId);
+      ceiling = this.#deps.store.homeDir(roomId);
     } catch (err) {
       // The room id is not one this store will name a directory for. There is no
       // honest path to print, so there is no section to render.
@@ -669,140 +1227,281 @@ export class RoomWorktreeManager {
    * @param roomId - The room to sweep.
    * @returns What was removed, and what was kept and why.
    */
-  async reapRoom(roomId: string): Promise<RoomWorktreeSweepResult> {
+  async reapRoom(_roomId: string): Promise<RoomWorktreeSweepResult> {
+    throw new DocChannelNotFoundError(); // Only the fixed original accepted maintenance operation may mutate.
+  }
+
+  async #reapOwned(
+    roomId: string,
+    context: InstallationRoomMutationContext
+  ): Promise<RoomWorktreeSweepResult> {
     const result: RoomWorktreeSweepResult = {
       reaped: [],
       reapedTreeKeptBranch: [],
       spared: [],
       stranded: [],
     };
-    if (!this.deps.hasRepo(roomId)) return result;
-
-    const root = this.deps.store.worktreesPath(roomId);
-    let entries;
-    try {
-      entries = await fs.readdir(root, { withFileTypes: true });
-    } catch {
+    const owning = this.#owning!;
+    const store = originalWorktreeManagers.get(this)!.store;
+    const reapingCapture: { expectedRow?: string } = {};
+    const current = () => {
+      requireRoomWorktreeManagerOwner(this, owning.owner, owning.db, owning.rooms);
+      requireOriginalHttpRoomWorktreeOwner(owning.owner, this, owning.db, owning.rooms);
+      const operation = readOriginalRoomRepoMaintenanceOperation(context, store, owning.db);
+      if (!operation || operation.roomId !== roomId || operation.phase !== 'reap')
+        throw new DocChannelNotFoundError();
+      const roots = readInstallationRoomMutationRoots(context);
+      const source = readOwnedRoomRepoSource(store, owning.db, roomId);
+      if (
+        !originalRoomRepoRoomExists(store, owning.db, roomId) ||
+        source.row?.mode !== 'owned' ||
+        (reapingCapture.expectedRow !== undefined &&
+          JSON.stringify(source.row) !== reapingCapture.expectedRow) ||
+        roots.homePath !== source.home ||
+        roots.repoPath !== source.repo
+      )
+        throw new DocChannelNotFoundError();
+      requireInstallationRoomMutationTarget(context, source.home);
+      return roots;
+    };
+    if (!readRoomRepoConfig().enabled) {
+      current();
       return result;
     }
-    const candidates = entries.filter((e) => e.isDirectory()).map((e) => e.name);
-    if (candidates.length === 0) return result;
-
-    const repoDir = this.deps.store.repoPath(roomId);
-    const ceiling = this.deps.store.homeDir(roomId);
-
-    // **Dated BEFORE anything else reads these trees, and the order is a fix.**
-    // `listStrandedWorktrees` runs `git status` in every candidate, and a status
-    // refresh REWRITES that worktree's index — one of the four sources
-    // `lastTouchedAt` reads. Asked afterwards, the sweep would be reading a
-    // timestamp it had just created: every tree would look touched seconds ago
-    // and nothing would ever be reaped. Measured on a tree aged forty days: it
-    // survived a sweep at the shipped fourteen-day default. The idle clock must
-    // not be able to see the sweep that reads it.
-    const dated = new Map<string, Date | null>();
-    for (const slug of candidates) {
-      try {
-        dated.set(slug, await this.lastTouchedAt(path.join(root, slug), ceiling));
-      } catch {
-        // Unreadable. Recorded as such rather than skipped, so the loop below
-        // can be conservative about it without a second probe.
-        dated.set(slug, null);
-      }
-    }
-
-    // **The safety gate, asked once and honoured absolutely.** Everything on
-    // this list holds uncommitted edits, unmerged commits, or is a directory
-    // git could not read — and none of it is removable at any setting of
-    // `worktreeReapDays`. Removing this line is what the module's red-before
-    // tests re-introduce.
-    const stranded = new Set(await this.deps.listStrandedWorktrees(roomId));
-    // Agents that are mid-turn. A live turn is granted its worktree and works on
-    // it by path, and a turn that only reads leaves no mark on any date above.
-    const busy = new Set(
-      this.deps.busyAgentPaths().map((agentPath) => RoomWorktreeManager.digestFor(agentPath))
+    const roots = current(),
+      root = path.join(roots.homePath, 'worktrees');
+    reapingCapture.expectedRow = JSON.stringify(
+      readOwnedRoomRepoSource(store, owning.db, roomId).row
     );
-    const idleCutoff = this.nowMs() - this.deps.reapAfterDays() * 24 * 60 * 60 * 1000;
-
-    for (const slug of candidates) {
-      if (stranded.has(slug)) {
-        result.stranded.push(slug);
-        continue;
+    originalReapContexts.add(context);
+    const sidecar = await executeOriginalRoomRepoStoreRead(store, owning.db, context, roomId);
+    current();
+    if (!sidecar || sidecar.mode !== 'owned') throw new DocChannelNotFoundError();
+    const expectedSidecar = JSON.stringify(sidecar);
+    const sidecarPath = path.join(roots.homePath, ROOM_REPO_SIDECAR_FILENAME);
+    const homeIdentity = await fs.lstat(roots.homePath);
+    current();
+    const repoIdentity = await fs.lstat(roots.repoPath);
+    current();
+    const sidecarIdentity = await fs.lstat(sidecarPath);
+    current();
+    if (
+      !homeIdentity.isDirectory() ||
+      homeIdentity.isSymbolicLink() ||
+      !repoIdentity.isDirectory() ||
+      repoIdentity.isSymbolicLink() ||
+      !sidecarIdentity.isFile() ||
+      sidecarIdentity.isSymbolicLink()
+    )
+      throw new DocChannelNotFoundError();
+    const same = (left: { dev: number; ino: number }, right: { dev: number; ino: number }) =>
+      left.dev === right.dev && left.ino === right.ino;
+    let rootIdentity: Awaited<ReturnType<typeof fs.lstat>>;
+    try {
+      rootIdentity = await fs.lstat(root);
+    } catch (error) {
+      current();
+      if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') return result;
+      throw error;
+    }
+    current();
+    if (!rootIdentity.isDirectory() || rootIdentity.isSymbolicLink())
+      throw new DocChannelNotFoundError();
+    await checkInstallationRoomMutationTarget(context, root);
+    current();
+    const entries = await fs.readdir(root, { withFileTypes: true });
+    current();
+    const cutoff = this.#nowMs() - readRoomRepoConfig().worktreeReapDays * 24 * 60 * 60 * 1000;
+    current();
+    const busy = (slug: string) =>
+      readRoomServiceOriginalBusyAgents(owning.rooms, owning.db, owning.roomStore).some(
+        (agentPath) => RoomWorktreeManager.digestFor(agentPath) === slug.slice(-SLUG_DIGEST_CHARS)
+      );
+    const verifyParents = async () => {
+      current();
+      if (!readRoomRepoConfig().enabled) throw new DocChannelNotFoundError();
+      await checkInstallationRoomMutationTarget(context, root);
+      current();
+      for (const [target, expected] of [
+        [roots.homePath, homeIdentity],
+        [roots.repoPath, repoIdentity],
+        [root, rootIdentity],
+        [sidecarPath, sidecarIdentity],
+      ] as const) {
+        const observed = await fs.lstat(target);
+        current();
+        if (!same(expected, observed) || observed.isSymbolicLink())
+          throw new DocChannelNotFoundError();
       }
-      if (busy.has(slug.slice(-SLUG_DIGEST_CHARS))) {
-        logger.debug('[rooms] not tidying a room worktree its agent is working in', {
-          roomId,
-          worktree: slug,
-        });
-        result.spared.push(slug);
-        continue;
+      const fresh = await executeOriginalRoomRepoStoreRead(store, owning.db, context, roomId);
+      current();
+      if (!fresh || JSON.stringify(fresh) !== expectedSidecar) throw new DocChannelNotFoundError();
+    };
+    const nativeTail = (slug?: string, dir?: string, identity?: Stats) => {
+      // Callback-free physical checks repeat after the lowlevel launcher's own awaited guards.
+      current();
+      if (!readRoomRepoConfig().enabled) throw new DocChannelNotFoundError();
+      for (const [target, expected] of [
+        [roots.homePath, homeIdentity],
+        [roots.repoPath, repoIdentity],
+        [root, rootIdentity],
+        [sidecarPath, sidecarIdentity],
+      ] as const) {
+        const observed = lstatSync(target);
+        if (!same(expected, observed) || observed.isSymbolicLink())
+          throw new DocChannelNotFoundError();
+        if (
+          target === sidecarPath &&
+          (observed.size !== sidecarIdentity.size ||
+            observed.mtimeMs !== sidecarIdentity.mtimeMs ||
+            observed.ctimeMs !== sidecarIdentity.ctimeMs)
+        )
+          throw new DocChannelNotFoundError();
       }
-      const touched = dated.get(slug) ?? null;
-      if (touched === null) {
-        // It read as clean a moment ago and could not be dated. Whatever the
-        // reason, "I no longer understand this directory" is never a reason to
-        // delete it.
-        logger.warn('[rooms] could not date a room worktree; leaving it alone', {
-          roomId,
-          worktree: slug,
-        });
-        result.stranded.push(slug);
-        continue;
+      if (dir && identity) {
+        const observed = lstatSync(dir);
+        if (
+          !same(identity, observed) ||
+          !observed.isDirectory() ||
+          observed.isSymbolicLink() ||
+          observed.mtimeMs > cutoff
+        )
+          throw new DocChannelNotFoundError();
       }
-      if (touched.getTime() > idleCutoff) {
-        result.spared.push(slug);
-        continue;
-      }
-
-      const dir = path.join(root, slug);
-      // **Both time-varying gates re-asked immediately before the delete, and
-      // this is not belt-and-braces.** Everything above was decided from ONE
-      // snapshot taken before the first `await`, and this loop spans many: a
-      // `git status` per candidate, a stranded-list walk, a `git log` per tree.
-      // A turn that claims anywhere inside that window was not in `busy` and its
-      // fresh `utimes` stamp was not in `dated`, so the sweep would remove the
-      // copy that turn was just granted. Re-asking narrows the window from the
-      // whole sweep to the one syscall below.
-      if (await this.claimedSince(slug, idleCutoff, dir)) {
-        result.spared.push(slug);
-        continue;
-      }
+      if (slug && busy(slug)) throw new DocChannelNotFoundError();
+      current();
+    };
+    const effect = async <T>(guard: () => void, work: () => Promise<T>): Promise<T> => {
+      if (originalReapEffects.has(context)) throw new DocChannelNotFoundError();
+      guard();
+      originalReapEffects.set(context, guard);
       try {
-        // No `--force`: git refuses a tree holding modified or untracked files.
-        // A DIFFERENT half of the question from `branch -d` below — see the
-        // module doc on why the gates are not interchangeable.
-        await removeWorktree(repoDir, dir, ceiling);
-      } catch (err) {
-        logger.warn('[rooms] git would not remove an idle room worktree; keeping it', {
-          roomId,
-          worktree: slug,
-          err,
-        });
+        return await work();
+      } finally {
+        originalReapEffects.delete(context);
+      }
+    };
+    const dated = new Map<string, { identity: Stats; date: Date }>();
+    // Date every candidate before Git status, preserving the original idle-clock ordering.
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const dir = path.join(root, entry.name);
+      try {
+        await checkInstallationRoomMutationTarget(context, dir);
+        current();
+        const identity = await fs.lstat(dir);
+        current();
+        if (!identity.isDirectory() || identity.isSymbolicLink())
+          throw new Error('Unknown room worktree directory');
+        const date = await this.#lastTouchedAt(dir, roots.homePath);
+        current();
+        const after = await fs.lstat(dir);
+        current();
+        if (!same(identity, after)) throw new Error('Room worktree directory was replaced');
+        dated.set(entry.name, { identity, date });
+      } catch (error) {
+        current();
+        result.stranded.push(entry.name);
+      }
+    }
+    for (const [slug, candidate] of dated) {
+      const dir = path.join(root, slug),
+        branch = roomWorktreeBranch(slug);
+      if (busy(slug) || candidate.date.getTime() > cutoff) {
         result.spared.push(slug);
         continue;
       }
-      // `-d`, never `-D`: git refuses a branch `main` does not contain. When it
-      // refuses, the commits are still there and the outcome is reported as
-      // what it is rather than folded into `reaped`.
-      const branchGone = await deleteMergedBranch(repoDir, roomWorktreeBranch(slug), ceiling);
-      if (branchGone) {
-        result.reaped.push(slug);
-      } else {
-        logger.info('[rooms] tidied a room working copy but kept its branch: main has not got it', {
-          roomId,
-          worktree: slug,
-          branch: roomWorktreeBranch(slug),
-        });
+      let registration: Awaited<ReturnType<typeof readRoomWorktreeRegistration>>;
+      try {
+        await verifyParents();
+        registration = await readRoomWorktreeRegistration(
+          roots.repoPath,
+          roots.homePath,
+          dir,
+          branch
+        );
+        current();
+        if (!registration || (await hasUncommittedChanges(dir, roots.homePath))) {
+          current();
+          result.stranded.push(slug);
+          continue;
+        }
+        current();
+        if ((await commitsAheadOfMain(dir, roots.homePath)) > 0) {
+          current();
+          result.stranded.push(slug);
+          continue;
+        }
+        current();
+      } catch (error) {
+        current();
+        result.stranded.push(slug);
+        continue;
+      }
+      // Repeat actual registration, physical identity, sidecar/native and private busy facts after all waits.
+      await verifyParents();
+      const finalRegistration = await readRoomWorktreeRegistration(
+        roots.repoPath,
+        roots.homePath,
+        dir,
+        branch
+      );
+      current();
+      const finalDirectory = await fs.lstat(dir);
+      current();
+      if (
+        !finalRegistration ||
+        JSON.stringify(finalRegistration) !== JSON.stringify(registration) ||
+        !same(candidate.identity, finalDirectory) ||
+        finalDirectory.isSymbolicLink() ||
+        finalDirectory.mtimeMs > cutoff ||
+        busy(slug)
+      ) {
+        result.spared.push(slug);
+        continue;
+      }
+      requireInstallationRoomMutationTarget(context, dir);
+      current();
+      if (busy(slug)) {
+        result.spared.push(slug);
+        continue;
+      }
+      // No force. Git additionally refuses changed files at its actual native removal boundary.
+      try {
+        await effect(
+          () => nativeTail(slug, dir, candidate.identity),
+          () => removeWorktree(roots.repoPath, dir, roots.homePath, context)
+        );
+      } catch (error) {
+        current();
+        result.spared.push(slug);
+        continue;
+      }
+      current();
+      // This successful owned removal is the private continuation receipt for branch cleanup.
+      // A fresh claim keeps the branch; never roll back an already-landed worktree removal.
+      await verifyParents();
+      if (busy(slug)) {
         result.reapedTreeKeptBranch.push(slug);
+        continue;
       }
+      const branchGone = await effect(
+        () => nativeTail(slug),
+        () => deleteMergedBranch(roots.repoPath, branch, roots.homePath, context)
+      );
+      current();
+      if (branchGone) result.reaped.push(slug);
+      else result.reapedTreeKeptBranch.push(slug);
     }
-
     if (result.reaped.length + result.reapedTreeKeptBranch.length > 0) {
-      try {
-        await pruneWorktrees(repoDir, ceiling);
-      } catch (err) {
-        logger.warn('[rooms] could not prune the room worktree list', { roomId, err });
-      }
+      await verifyParents();
+      await effect(
+        () => nativeTail(),
+        () => pruneWorktrees(roots.repoPath, roots.homePath, context)
+      );
+      current();
     }
+    current();
     return result;
   }
 
@@ -857,7 +1556,7 @@ export class RoomWorktreeManager {
    * @param ceiling - The room home directory git's search may not climb past.
    * @returns The newest of the three.
    */
-  private async lastTouchedAt(dir: string, ceiling: string): Promise<Date> {
+  async #lastTouchedAt(dir: string, ceiling: string): Promise<Date> {
     const stamps: number[] = [];
 
     // The filesystem mtimes first, and the one git spawn last: even though
@@ -881,15 +1580,39 @@ export class RoomWorktreeManager {
    * @param slug - Its directory name.
    * @param branch - The branch to check out.
    */
-  private async createWorktree(
+  async #createWorktree(
     roomId: string,
     dir: string,
     slug: string,
-    branch: string
+    branch: string,
+    context: InstallationRoomMutationContext
   ): Promise<RoomWorktreeHandle> {
-    const repoDir = this.deps.store.repoPath(roomId);
-    const ceiling = this.deps.store.homeDir(roomId);
-    await fs.mkdir(this.deps.store.worktreesPath(roomId), { recursive: true });
+    const roots = readInstallationRoomMutationRoots(context),
+      repoDir = roots.repoPath,
+      ceiling = roots.homePath;
+    const parentPath = path.join(ceiling, 'worktrees');
+    await checkInstallationRoomMutationTarget(context, dir);
+    const home = await fs.lstat(ceiling);
+    if (!home.isDirectory() || home.isSymbolicLink())
+      throw new Error('Room worktree home is not its actual directory.');
+    let previousParent: Stats | undefined;
+    try {
+      previousParent = await fs.lstat(parentPath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error;
+    }
+    await checkInstallationRoomMutationTarget(context, dir);
+    if (!sameWorktreeInode(home, await fs.lstat(ceiling)))
+      throw new Error('Room worktree home replaced before parent acquisition.');
+    requireInstallationRoomMutationTarget(context, parentPath);
+    if (!previousParent) await fs.mkdir(parentPath);
+    const parent = await fs.lstat(parentPath);
+    if (
+      !parent.isDirectory() ||
+      parent.isSymbolicLink() ||
+      (previousParent && !sameWorktreeInode(previousParent, parent))
+    )
+      throw new Error('Room worktree parent replaced.');
 
     // The branch may outlive its directory: the reap removes the working copy
     // and `git branch -d` can refuse (or never run, if the process died in
@@ -900,16 +1623,30 @@ export class RoomWorktreeManager {
     // A worktree that was moved aside leaves git's own record of the path
     // behind, and `worktree add` refuses a path it still believes in.
     try {
-      await pruneWorktrees(repoDir, ceiling);
+      await pruneWorktrees(repoDir, ceiling, context);
     } catch {
       // Nothing to prune, or a repo that cannot be read — `addWorktree` below
       // gives the caller the real error either way.
     }
-    await addWorktree(repoDir, dir, branch, branchExists ? null : 'main', ceiling);
+    await checkInstallationRoomMutationTarget(context, dir);
+    if (
+      !sameWorktreeInode(home, await fs.lstat(ceiling)) ||
+      !sameWorktreeInode(parent, await fs.lstat(parentPath))
+    )
+      throw new Error('Room worktree creation lost its acquired parent.');
+    requireInstallationRoomMutationTarget(context, dir);
+    await addWorktree(repoDir, dir, branch, branchExists ? null : 'main', ceiling, context);
+    await checkInstallationRoomMutationTarget(context, dir);
+    if (
+      !sameWorktreeInode(home, await fs.lstat(ceiling)) ||
+      !sameWorktreeInode(parent, await fs.lstat(parentPath))
+    )
+      throw new Error('Room worktree creation parent changed after native child.');
+    await this.#stampOwnedDirectory(dir, context);
     // Nothing is written into it: the agent's turns stand at home, where its
     // skills and instructions already are (spec `agent-home-desk` §5.8). A new
     // tree is exactly the room's files on the agent's branch.
-    this.retired.add(dir);
+    this.#retired.add(dir);
     logger.info('[rooms] room worktree created', { roomId, worktree: slug, branch });
     return { slug, path: dir, branch, created: true, repo: repoDir };
   }
@@ -947,58 +1684,212 @@ export class RoomWorktreeManager {
    * @returns How many files were removed, and whether the block was removed.
    */
   async retireLegacyPlumbing(
+    _roomId: string,
+    _worktree: string,
+    _agentPath: string
+  ): Promise<{ removed: number; blockRemoved: boolean }> {
+    throw new DocChannelNotFoundError();
+  }
+
+  async #retireOwned(
     roomId: string,
     worktree: string,
-    agentPath: string
+    agentPath: string,
+    context: InstallationRoomMutationContext
   ): Promise<{ removed: number; blockRemoved: boolean }> {
     const outcome = { removed: 0, blockRemoved: false };
-    if (this.retired.has(worktree)) return outcome;
-    let ceiling: string;
-    let repoDir: string;
-    try {
-      ceiling = this.deps.store.homeDir(roomId);
-      repoDir = this.deps.store.repoPath(roomId);
-    } catch {
+    const requireLaunch = () =>
+      requireInstallationRoomLaunchTarget(context, this, roomId, worktree, agentPath);
+    requireLaunch();
+    if (this.#retired.has(worktree)) return outcome;
+    const roots = readInstallationRoomMutationRoots(context);
+    const tree = await fs.lstat(worktree),
+      canonicalTree = await fs.realpath(worktree);
+    if (
+      !tree.isDirectory() ||
+      tree.isSymbolicLink() ||
+      canonicalTree !==
+        path.join(await fs.realpath(roots.homePath), path.relative(roots.homePath, worktree))
+    )
+      throw new Error('Legacy retirement worktree is not the original native target.');
+    const checkTree = async () => {
+      await checkInstallationRoomMutationTarget(context, worktree);
+      if (
+        !sameWorktreeInode(tree, await fs.lstat(worktree)) ||
+        (await fs.realpath(worktree)) !== canonicalTree
+      )
+        throw new Error('Legacy retirement worktree changed.');
+      requireLaunch();
+    };
+    const parentOf = async (target: string) => {
+      await checkTree();
+      const parent = path.dirname(target),
+        stat = await fs.lstat(parent);
+      const real = await fs.realpath(parent);
+      if (
+        !stat.isDirectory() ||
+        stat.isSymbolicLink() ||
+        real !== path.join(canonicalTree, path.relative(worktree, parent))
+      )
+        throw new Error('Legacy retirement refuses a replaced or linked ancestor.');
+      await checkTree();
+      return { parent, stat };
+    };
+    const excludeFile = path.join(
+      await commonGitDir(roots.repoPath, roots.homePath),
+      'info',
+      'exclude'
+    );
+    await checkTree();
+    const patterns = blockPatterns(await readIfPresent(excludeFile));
+    await checkTree();
+    if (patterns.length === 0) {
+      this.#retired.add(worktree);
       return outcome;
     }
-    try {
-      const excludeFile = path.join(await commonGitDir(repoDir, ceiling), 'info', 'exclude');
-      const patterns = blockPatterns(await readIfPresent(excludeFile));
-      if (patterns.length === 0) {
-        this.retired.add(worktree);
-        return outcome;
-      }
-      for (const rel of await hiddenUntracked(worktree, ceiling, patterns)) {
-        if (await isLegacyPlumbing(worktree, rel, agentPath)) {
-          await fs.rm(path.join(worktree, rel), { force: true, recursive: true });
-          outcome.removed++;
-        }
-      }
-      await pruneEmptyTree(path.join(worktree, LEGACY_ATTACHMENTS_DIR));
-      await pruneEmptyDirs(worktree, LEGACY_PARENT_DIRS);
-      this.retired.add(worktree);
-      if (await this.noWorktreeNeedsBlock(roomId, ceiling, patterns)) {
-        const current = await readIfPresent(excludeFile);
-        const next = withoutExcludeBlock(current);
+    const emptyParents = new Set(LEGACY_PARENT_DIRS);
+    for (const rel of await hiddenUntracked(worktree, roots.homePath, patterns)) {
+      await checkTree();
+      const target = path.resolve(worktree, rel);
+      if (target === worktree || !target.startsWith(`${worktree}${path.sep}`))
+        throw new Error('Legacy retirement path escaped its original worktree.');
+      const parent = await parentOf(target);
+      const acquired = await fs.lstat(target).catch((error: NodeJS.ErrnoException) => {
+        if (error?.code === 'ENOENT') return undefined;
+        throw error;
+      });
+      if (!acquired || (!acquired.isFile() && !acquired.isSymbolicLink())) continue;
+      if (!(await isLegacyPlumbing(worktree, rel, agentPath))) continue;
+      await checkTree();
+      if (
+        !sameWorktreeInode(acquired, await fs.lstat(target)) ||
+        !sameWorktreeInode(parent.stat, await fs.lstat(parent.parent))
+      )
+        throw new Error('Legacy retirement refuses an observed replacement.');
+      requireLaunch();
+      requireInstallationRoomMutationTarget(context, target);
+      await fs.unlink(target); // Never recursively delete an observed directory.
+      await checkTree();
+      outcome.removed++;
+      // Only this successfully acquired/unlinked legacy leaf contributes dynamic
+      // ancestors (for example attachment entry folders). Never remove content.
+      for (
+        let ancestor = path.dirname(path.relative(worktree, target));
+        ancestor !== '.';
+        ancestor = path.dirname(ancestor)
+      )
+        emptyParents.add(ancestor);
+    }
+    // Empty ancestor cleanup is identity-checked and never recursively removes content.
+    for (const rel of [...emptyParents].sort(
+      (left, right) => right.split(path.sep).length - left.split(path.sep).length
+    )) {
+      const directory = path.join(worktree, rel),
+        parent = await parentOf(directory).catch((error: NodeJS.ErrnoException) => {
+          if (error?.code === 'ENOENT') return undefined;
+          throw error;
+        });
+      if (!parent) continue;
+      const acquired = await fs.lstat(directory).catch((error: NodeJS.ErrnoException) => {
+        if (error?.code === 'ENOENT') return undefined;
+        throw error;
+      });
+      if (
+        !acquired?.isDirectory() ||
+        acquired.isSymbolicLink() ||
+        (await fs.readdir(directory)).length !== 0
+      )
+        continue;
+      await checkTree();
+      if (
+        !sameWorktreeInode(acquired, await fs.lstat(directory)) ||
+        !sameWorktreeInode(parent.stat, await fs.lstat(parent.parent))
+      )
+        throw new Error('Legacy empty directory replaced.');
+      requireLaunch();
+      await fs.rmdir(directory);
+      await checkTree();
+    }
+    if (await this.#noWorktreeNeedsBlock(roomId, roots.homePath, patterns, context)) {
+      await checkTree();
+      await checkInstallationRoomMutationTarget(context, excludeFile);
+      const parentPath = path.dirname(excludeFile),
+        parent = await fs.lstat(parentPath),
+        previous = await fs.lstat(excludeFile);
+      if (
+        !parent.isDirectory() ||
+        parent.isSymbolicLink() ||
+        !previous.isFile() ||
+        previous.isSymbolicLink() ||
+        (await fs.realpath(parentPath)) !==
+          path.join(await fs.realpath(roots.homePath), path.relative(roots.homePath, parentPath))
+      )
+        throw new Error('Legacy exclude target is not its original regular file.');
+      let file: Awaited<ReturnType<typeof fs.open>> | undefined;
+      let failed = false,
+        cause: unknown;
+      try {
+        requireLaunch();
+        file = await fs.open(excludeFile, constants.O_RDWR | constants.O_NOFOLLOW);
+        const acquired = await file.stat();
+        if (!sameWorktreeInode(previous, acquired))
+          throw new Error('Legacy exclude acquisition changed.');
+        const current = await file.readFile('utf8'),
+          next = withoutExcludeBlock(current);
+        await checkTree();
+        if (
+          !sameWorktreeInode(acquired, await fs.lstat(excludeFile)) ||
+          !sameWorktreeInode(parent, await fs.lstat(parentPath))
+        )
+          throw new Error('Legacy exclude publication replaced.');
         if (next !== current) {
-          await fs.writeFile(excludeFile, next, 'utf-8');
+          requireLaunch();
+          requireInstallationRoomMutationTarget(context, excludeFile);
+          const bytes = Buffer.from(next);
+          for (let offset = 0; offset < bytes.length;) {
+            await checkTree();
+            if (
+              !sameWorktreeInode(acquired, await fs.lstat(excludeFile)) ||
+              !sameWorktreeInode(parent, await fs.lstat(parentPath))
+            )
+              throw new Error('Legacy exclude replaced before retained write.');
+            requireLaunch();
+            requireInstallationRoomMutationTarget(context, excludeFile);
+            const wrote = await file.write(bytes, offset, bytes.length - offset, offset);
+            if (wrote.bytesWritten <= 0)
+              throw new Error('Legacy retained exclude write made no progress.');
+            offset += wrote.bytesWritten;
+          }
+          await checkTree();
+          if (
+            !sameWorktreeInode(acquired, await fs.lstat(excludeFile)) ||
+            !sameWorktreeInode(parent, await fs.lstat(parentPath))
+          )
+            throw new Error('Legacy exclude replaced after write.');
+          requireLaunch();
+          await file.truncate(bytes.length);
+          await checkTree();
           outcome.blockRemoved = true;
         }
+      } catch (error) {
+        failed = true;
+        cause = error;
+      } finally {
+        if (file)
+          try {
+            await file.close();
+          } catch (error) {
+            if (!failed) {
+              failed = true;
+              cause = error;
+            }
+          }
       }
-      if (outcome.removed > 0 || outcome.blockRemoved) {
-        logger.info('[rooms] retired what DorkOS used to write into a room worktree', {
-          roomId,
-          worktree: path.basename(worktree),
-          ...outcome,
-        });
-      }
-    } catch (err) {
-      logger.warn('[rooms] could not tidy what DorkOS used to write into a room worktree', {
-        roomId,
-        worktree: path.basename(worktree),
-        error: err instanceof Error ? err.message : String(err),
-      });
+      if (failed) throw cause;
     }
+    await checkTree();
+    requireLaunch();
+    this.#retired.add(worktree);
     return outcome;
   }
 
@@ -1012,31 +1903,40 @@ export class RoomWorktreeManager {
    * @param ceiling - The room home directory git's search may not climb past.
    * @param patterns - The block's lines.
    */
-  private async noWorktreeNeedsBlock(
+  async #noWorktreeNeedsBlock(
     roomId: string,
     ceiling: string,
-    patterns: readonly string[]
+    patterns: readonly string[],
+    context: InstallationRoomMutationContext
   ): Promise<boolean> {
     // `repo/` reads the same `info/exclude`, and a room's main checkout found
     // dirty stops every write to the room (`MAIN_CHECKOUT_DIRTY`) — so anything
     // the block hides there keeps it too.
     try {
-      const repoDir = this.deps.store.repoPath(roomId);
+      const repoDir = readInstallationRoomMutationRoots(context).repoPath;
+      await checkInstallationRoomMutationTarget(context, repoDir);
       if ((await hiddenUntracked(repoDir, ceiling, patterns)).length > 0) return false;
     } catch {
       return false;
     }
-    const root = this.deps.store.worktreesPath(roomId);
+    const root = path.join(readInstallationRoomMutationRoots(context).homePath, 'worktrees');
+    await checkInstallationRoomMutationTarget(context, root);
     let names: string[];
     try {
       names = (await fs.readdir(root, { withFileTypes: true }))
         .filter((e) => e.isDirectory())
         .map((e) => e.name);
-    } catch {
+    } catch (error) {
+      // Unreadable siblings are not evidence that nobody needs the block.
+      // Only absence under the still-current original root permits removal.
+      if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') return false;
+      await checkInstallationRoomMutationTarget(context, root);
       return true;
     }
+    await checkInstallationRoomMutationTarget(context, root);
     for (const name of names) {
       const dir = path.join(root, name);
+      await checkInstallationRoomMutationTarget(context, dir);
       if (!(await isCheckout(dir))) continue;
       try {
         if ((await hiddenUntracked(dir, ceiling, patterns)).length > 0) return false;
@@ -1044,49 +1944,8 @@ export class RoomWorktreeManager {
         return false;
       }
     }
+    await checkInstallationRoomMutationTarget(context, root);
     return true;
-  }
-
-  /**
-   * Has this worktree been claimed, or touched, since the sweep looked?
-   *
-   * The last thing asked before a removal, and deliberately the two gates that
-   * can change WHILE a sweep runs — the claim map and the directory's own
-   * stamp. The other two cannot: `stranded` is about committed and uncommitted
-   * content, which an agent can only change by working in the tree, which
-   * requires the claim this asks about.
-   *
-   * **It stats the DIRECTORY only, and must never call
-   * {@link RoomWorktreeManager.lastTouchedAt}.** That method reads the git
-   * index among its four sources, and `listStrandedWorktrees` has by now run a
-   * `git status` in every candidate, which rewrites exactly that index. Asking
-   * it here would read a timestamp the sweep itself created and spare every
-   * tree forever — the bug the `dated`-before-`stranded` ordering above exists
-   * to prevent, reintroduced one loop later. The directory's own mtime is the
-   * right source precisely because nothing the sweep does touches it, while
-   * {@link RoomWorktreeManager.ensureWorktree} stamps it on every single
-   * resolution — which is what makes a turn that only READS visible at all.
-   *
-   * @param slug - The worktree directory name.
-   * @param idleCutoff - Anything touched at or after this is in use.
-   * @param dir - The working copy, whose own stamp is re-read.
-   * @returns Whether the tree must be left alone after all.
-   */
-  private async claimedSince(slug: string, idleCutoff: number, dir: string): Promise<boolean> {
-    const digest = slug.slice(-SLUG_DIGEST_CHARS);
-    if (this.deps.busyAgentPaths().some((p) => RoomWorktreeManager.digestFor(p) === digest)) {
-      logger.debug('[rooms] a turn claimed a room worktree mid-sweep; leaving it alone', {
-        worktree: slug,
-      });
-      return true;
-    }
-    try {
-      return (await fs.stat(dir)).mtimeMs > idleCutoff;
-    } catch {
-      // Unreadable at this instant, having been readable a moment ago:
-      // something is happening in there. Never a reason to delete it.
-      return true;
-    }
   }
 }
 
@@ -1157,12 +2016,12 @@ async function hiddenUntracked(
   ceiling: string,
   patterns: readonly string[]
 ): Promise<string[]> {
-  const out = await runGit(
-    ['ls-files', '-z', '--others', '--ignored', ...patterns.flatMap((p) => ['-x', p])],
-    worktree,
-    ceiling
-  );
-  return out.split('\0').filter((rel) => rel !== '');
+  const out = await roomHiddenUntrackedRaw(worktree, ceiling, patterns);
+  // NUL records are decoded without trimming: a literal path may begin or end with a space.
+  return out
+    .toString('utf-8')
+    .split('\0')
+    .filter((rel) => rel !== '');
 }
 
 /**
@@ -1350,4 +2209,8 @@ async function newestMtime(targets: string[]): Promise<number[]> {
     }
   }
   return stamps;
+}
+
+function sameWorktreeInode(left: Stats, right: Stats): boolean {
+  return left.dev === right.dev && left.ino === right.ino;
 }

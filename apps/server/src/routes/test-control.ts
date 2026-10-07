@@ -33,7 +33,11 @@ import {
   resolveOperatorAuthor,
   tryGetRoomWorktreeManager,
 } from '../services/rooms/index.js';
-import { commitAll } from '../services/rooms/repo/room-repo-git.js';
+import { assertRoomRepoConfigSafe } from '../services/rooms/repo/room-repo-git.js';
+import { internalGitArgs } from '../lib/git-safety.js';
+import { RoomWorktreeManager } from '../services/rooms/repo/room-worktree-manager.js';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { getAgentIdentityService } from '../services/core/agent-identity/agent-identity-service.js';
 import { hashApprovalInput, type ApprovalService } from '../services/core/approvals/index.js';
 import { PERMISSION_AREA_IDS } from '@dorkos/shared/permissions';
@@ -432,6 +436,110 @@ const roomWorktreeCommitSchema = z.object({
   message: z.string().min(1).default('Work in progress'),
 });
 
+/** Test-only launcher; fixed callers below emulate the missing test-agent shell. */
+async function runTestAgentGit(
+  checkout: string,
+  ceiling: string,
+  command: readonly string[]
+): Promise<string> {
+  if (!env.DORKOS_TEST_RUNTIME)
+    throw new Error('Test runtime is required for agent shell seeding.');
+  const relative = path.relative(ceiling, checkout);
+  const [directory, slug, ...rest] = relative.split(path.sep);
+  if (
+    rest.length ||
+    (directory !== 'repo' && directory !== 'worktrees') ||
+    (directory === 'worktrees' && (!slug || slug === '..')) ||
+    path.isAbsolute(relative)
+  )
+    throw new Error('Original manager-selected room layout is required.');
+  // eslint-disable-next-line no-restricted-syntax -- preserve child PATH while removing inherited Git redirection.
+  const childEnv = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_'))
+  );
+  const common = path.join(ceiling, 'repo', '.git');
+  Object.assign(childEnv, {
+    GIT_COMMON_DIR: common,
+    GIT_DIR: directory === 'repo' ? common : path.join(common, 'worktrees', slug!),
+    GIT_WORK_TREE: checkout,
+    GIT_CEILING_DIRECTORIES: ceiling,
+    GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_CONFIG_SYSTEM: '/dev/null',
+    GIT_TERMINAL_PROMPT: '0',
+  });
+  await assertRoomRepoConfigSafe(ceiling);
+  const { stdout } = await promisify(execFile)(
+    'git',
+    [
+      ...internalGitArgs(),
+      '-c',
+      'diff.ignoreSubmodules=all',
+      '-c',
+      'status.submoduleSummary=false',
+      '-c',
+      'submodule.recurse=false',
+      '-c',
+      'maintenance.autoDetach=false',
+      '-c',
+      'gc.autoDetach=false',
+      ...command,
+    ],
+    { cwd: checkout, env: childEnv, timeout: 30_000, maxBuffer: 64 * 1024 * 1024 }
+  );
+  return stdout.trim();
+}
+
+/** Select actual manager DATA and seed its fixed agent copy only inside the test router. */
+async function prepareTestAgentWorktree(
+  manager: RoomWorktreeManager,
+  roomId: string,
+  agentPath: string,
+  agentName: string
+) {
+  const slug = RoomWorktreeManager.slugFor(agentName, agentPath);
+  const existing = await manager.worktreeStatus(roomId, slug);
+  if (existing) return { path: existing.path, slug };
+  const context = await manager.turnFilesContext(roomId, agentPath, agentName, '');
+  if (!context) throw new Error('The original room has no repository for test seeding.');
+  const ceiling = path.dirname(context.repoPath),
+    checkout = path.join(ceiling, 'worktrees', slug);
+  await fs.mkdir(path.dirname(checkout), { recursive: true });
+  const branch = await runTestAgentGit(context.repoPath, ceiling, [
+    'branch',
+    '--list',
+    '--format=%(refname)',
+    context.branch,
+  ]);
+  await runTestAgentGit(
+    context.repoPath,
+    ceiling,
+    branch
+      ? ['worktree', 'add', '--', checkout, context.branch]
+      : ['worktree', 'add', '-b', context.branch, '--', checkout, 'main']
+  );
+  return { path: checkout, slug };
+}
+
+/** Fixed test-agent shell commit; never exported as a product mutation capability. */
+async function commitTestAgentWorktree(
+  checkout: string,
+  agentName: string,
+  message: string
+): Promise<string> {
+  const ceiling = path.resolve(checkout, '..', '..');
+  await runTestAgentGit(checkout, ceiling, ['add', '--all']);
+  await runTestAgentGit(checkout, ceiling, [
+    '-c',
+    `user.name=${agentName}`,
+    '-c',
+    `user.email=${agentName}@dorkos.local`,
+    'commit',
+    '-m',
+    message,
+  ]);
+  return runTestAgentGit(checkout, ceiling, ['rev-parse', 'HEAD']);
+}
+
 /**
  * `POST /api/test/room-worktree-commit` — put one commit in an agent's own
  * working copy of a room's files.
@@ -450,6 +558,7 @@ const roomWorktreeCommitSchema = z.object({
  */
 testControlRouter.post('/room-worktree-commit', (req, res) => {
   void (async () => {
+    if (!env.DORKOS_TEST_RUNTIME) return res.status(404).json({ error: 'Test runtime required.' });
     const result = roomWorktreeCommitSchema.safeParse(req.body);
     if (!result.success) {
       return res
@@ -464,21 +573,19 @@ testControlRouter.post('/room-worktree-commit', (req, res) => {
       if (agentName === null) {
         return res.status(404).json({ error: `No agent is registered at ${agentPath}` });
       }
-      const handle = await worktrees.ensureWorktree(roomId, agentPath, agentName);
-      const target = path.join(handle.path, result.data.path);
+      const handle = await prepareTestAgentWorktree(worktrees, roomId, agentPath, agentName);
+      const target = path.resolve(handle.path, result.data.path);
+      const relative = path.relative(handle.path, target);
+      if (
+        !relative ||
+        relative === '..' ||
+        relative.startsWith(`..${path.sep}`) ||
+        path.isAbsolute(relative)
+      )
+        return res.status(400).json({ error: 'Test file must be inside the agent worktree.' });
       await fs.mkdir(path.dirname(target), { recursive: true });
       await fs.writeFile(target, text, 'utf-8');
-      // The room's home directory, which every git call in this domain uses as
-      // the ceiling a repository search may not climb past. Derived rather than
-      // asked for: a working copy is always `<home>/worktrees/<slug>`, and the
-      // store that knows the path is the manager's own.
-      const ceiling = path.resolve(handle.path, '..', '..');
-      const commit = await commitAll(
-        handle.path,
-        message,
-        { name: agentName, email: `${agentName}@dorkos.local` },
-        ceiling
-      );
+      const commit = await commitTestAgentWorktree(handle.path, agentName, message);
       res.json({ ok: true, commit, worktree: handle.path, slug: handle.slug });
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });

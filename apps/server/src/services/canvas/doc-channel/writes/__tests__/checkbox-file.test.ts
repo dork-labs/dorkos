@@ -3,7 +3,7 @@ import { appendFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
-import { readBoundedCheckboxFile } from '../checkbox-file.js';
+import { readBoundedCheckboxFile, readOriginalCheckboxFileCloseFailure } from '../checkbox-file.js';
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const original = await importOriginal<typeof import('node:fs/promises')>();
@@ -112,4 +112,66 @@ it('retains raw undefined boundary failure and closes the actual acquired handle
   expect(failed).toBe(true);
   expect(cause).toBeUndefined();
   await expect(observed.handle().stat()).rejects.toMatchObject({ code: 'EBADF' });
+});
+
+it.each([
+  { label: 'raw undefined', cause: undefined },
+  { label: 'read error', cause: new Error('original acquired read failure') },
+])(
+  'retains $label over a reported close failure while preserving separate close custody',
+  async ({ cause }) => {
+    const file = await source(Buffer.from('original'));
+    const originalOpen = fs.open.bind(fs);
+    const closeCause = new Error('original acquired close reporting failure');
+    const boundary = () => {};
+    let acquired: Awaited<ReturnType<typeof fs.open>> | undefined;
+    let closes = 0;
+    vi.mocked(open).mockImplementation(async (...args) => {
+      const handle = await originalOpen(...args);
+      acquired = handle;
+      const read = handle.read.bind(handle),
+        close = handle.close.bind(handle);
+      Object.defineProperty(handle, 'read', {
+        value: async (buffer: Buffer, offset: number, length: number, position: number) => {
+          // Perform the real acquired-handle read before injecting its reported failure.
+          await read(buffer, offset, length, position);
+          throw cause;
+        },
+      });
+      vi.spyOn(handle, 'close').mockImplementation(async () => {
+        closes++;
+        await close();
+        throw closeCause;
+      });
+      return handle;
+    });
+    await expect(readBoundedCheckboxFile(file.path, boundary, file.expected)).rejects.toBe(cause);
+    expect(closes).toBe(1);
+    expect(acquired).toBeDefined();
+    if (!acquired) throw new Error('Original acquired file handle missing.');
+    await expect(acquired.stat()).rejects.toMatchObject({ code: 'EBADF' });
+    expect(readOriginalCheckboxFileCloseFailure(boundary)).toEqual({ cause: closeCause });
+  }
+);
+it('reports close failure when the original bounded read succeeded', async () => {
+  const file = await source(Buffer.from('original'));
+  const originalOpen = fs.open.bind(fs);
+  const cause = new Error('original acquired close reporting failure');
+  const boundary = () => {};
+  let acquired: Awaited<ReturnType<typeof fs.open>> | undefined;
+  vi.mocked(open).mockImplementation(async (...args) => {
+    const handle = await originalOpen(...args);
+    acquired = handle;
+    const close = handle.close.bind(handle);
+    vi.spyOn(handle, 'close').mockImplementation(async () => {
+      await close();
+      throw cause;
+    });
+    return handle;
+  });
+  await expect(readBoundedCheckboxFile(file.path, boundary, file.expected)).rejects.toBe(cause);
+  expect(acquired).toBeDefined();
+  if (!acquired) throw new Error('Original acquired file handle missing.');
+  await expect(acquired.stat()).rejects.toMatchObject({ code: 'EBADF' });
+  expect(readOriginalCheckboxFileCloseFailure(boundary)).toEqual({ cause });
 });

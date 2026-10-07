@@ -1,115 +1,248 @@
+import type { OriginalRoomEmissionStage } from '../../canvas/doc-channel/current/current-operation-types.js';
+import {
+  requireOriginalRoomEmissionPrincipalPort,
+  requireOriginalRoomEmissionFrameTransaction,
+  readOriginalRoomEmissionRuntimeBindingRow,
+} from '../../canvas/doc-channel/operations/room-responder-operation.js';
+import { readTestModeNativeOperation } from '../../runtimes/test-mode/test-mode-runtime.js';
+import {
+  readOriginalSnapshotPrincipalPort,
+  openOriginalSnapshotNativeTurn,
+} from '../../runtimes/connector-mcp/agent-identity-snapshots.js';
+import {
+  captureNativeSessionActivity,
+  readNativeSessionAcquisition,
+} from '../../session/session-lock.js';
+import { readCodexNativeOperation } from '../../runtimes/codex/codex-runtime.js';
+import { readOpenCodeNativeOperation } from '../../runtimes/opencode/opencode-runtime.js';
+import { readClaudeNativeOperation } from '../../runtimes/claude-code/claude-code-runtime.js';
+import {
+  type DbTransaction,
+  sql,
+  and,
+  connectorRuntimeBindings,
+  eq,
+  isNull,
+  type Db,
+} from '@dorkos/db';
 /** Durable, boot-bound runtime principal service for the internal connector listener. */
-import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { and, connectorRuntimeBindings, eq, isNull, type Db } from '@dorkos/db';
-import type {
-  ConnectorTurnOwnership,
-  ConnectorTurnRenewalPermit,
-  ConnectorRuntimeBindingBootPort,
-  ConnectorRuntimePrincipalPort,
-  OpenConnectorTurnInput,
-  OpenConnectorTurnResult,
-  RenewConnectorTurnInput,
-  RenewConnectorTurnResult,
-  ResolveConnectorTurnInput,
-  ResolveConnectorTurnResult,
-  RevokeConnectorTurnReason,
-} from '../runtime-principal-port.js';
+import { randomBytes, randomUUID } from 'node:crypto';
+
 import {
   createServerPrincipal,
   isServerPrincipal,
-  type ConnectorOwnerAuthority,
   type ServerPrincipalProof,
-  type ServerPrincipalClaims,
 } from './server-principal.js';
 import type { ConnectorThreadKeyResolver } from './thread-keys.js';
 
 type RuntimeBindingRow = typeof connectorRuntimeBindings.$inferSelect;
+import type * as PrincipalData from '../runtime-principal-port.js';
+import {
+  readCurrentRuntimeBindingRow,
+  runtimeBearerHash as tokenHash,
+  projectRuntimeBindingInsert,
+  projectNativeOperationOwnData,
+  projectOriginalNativeOwnerData,
+  projectResolvedRuntimeBindingClaims,
+  sameNativeEntryContext,
+  requireRuntimeBindingBootData,
+  ConnectorRuntimeAuthorityError,
+  projectRuntimeBindingClaims,
+  sameRuntimeBindingData,
+  runtimeBindingMatchesClaims,
+} from '../runtime-principal-port.js';
+export {
+  ConnectorRuntimeAuthorityError,
+  type ConnectorRuntimeAuthority,
+  type ConnectorRuntimeAuthorityResolver,
+  type ConnectorRuntimePrincipalServiceOptions,
+} from '../runtime-principal-port.js';
 
-/** Live server authority resolved from canonical runtime context. */
-export interface ConnectorRuntimeAuthority {
-  /** Owner whose grants may be used during the turn. */
-  readonly owner: ConnectorOwnerAuthority;
-  /** Stable agent identity bound to the canonical path. */
-  readonly agentId: string;
-}
-
-/** Canonical identity resolver kept outside runtime-controlled inputs. */
-export interface ConnectorRuntimeAuthorityResolver {
-  /** Resolve and authorize a new turn from canonical server/runtime state. */
-  authorizeTurn(input: OpenConnectorTurnInput): Promise<ConnectorRuntimeAuthority>;
-  /** Recheck the exact stored claims before every connector projection call. */
-  revalidateTurn(claims: Extract<ServerPrincipalClaims, { kind: 'runtime' }>): Promise<boolean>;
-}
-
-/** Typed setup refusal mapped by the runtime boundary without exposing private claims. */
-export class ConnectorRuntimeAuthorityError extends Error {
-  /** Stable internal refusal code. */
-  readonly code: 'boot_not_initialized' | 'authority_refused';
-
-  /**
-   * Construct a safe runtime authority error.
-   *
-   * @param code - Stable setup refusal category.
-   * @param message - Secret-free diagnostic.
-   */
-  constructor(code: ConnectorRuntimeAuthorityError['code'], message: string) {
-    super(message);
-    this.name = 'ConnectorRuntimeAuthorityError';
-    this.code = code;
+const nativePrincipalCores = new WeakMap<object, PrincipalData.NativePrincipalCore>();
+const roomEmissionPrincipalCaptures = new WeakMap<
+  PrincipalData.NativePrincipalCore,
+  (
+    operation: object,
+    time: number,
+    stage: OriginalRoomEmissionStage
+  ) => (tx: DbTransaction, emitter: object) => RuntimeBindingRow | undefined
+>();
+const roomEmissionPrincipalReads = new WeakMap<
+  OriginalRoomEmissionStage,
+  {
+    core: PrincipalData.NativePrincipalCore;
+    operation: object;
+    read: (tx: DbTransaction, emitter: object) => RuntimeBindingRow | undefined;
   }
+>();
+/** Fresh original native activity belongs only to the owner-created emission stage, never a restored DTO. */
+export function captureOriginalRoomEmissionPrincipal(
+  service: object,
+  db: Db,
+  operation: object,
+  stage: OriginalRoomEmissionStage
+): number {
+  requireOriginalRoomEmissionPrincipalPort(stage, db, service);
+  const core = originalNativePrincipalCore(service)!;
+  const capture = roomEmissionPrincipalCaptures.get(core);
+  if (!capture || db.$client.inTransaction)
+    throw new Error('Original emission principal capture unavailable');
+  const time = captureOriginalPreparedNativeTime(service, db, operation);
+  requireOriginalRoomEmissionPrincipalPort(stage, db, service);
+  const read = capture(operation, time, stage);
+  roomEmissionPrincipalReads.set(stage, { core, operation, read });
+  return time;
+}
+/** Repeated callback-free current row reads require the exact active engine-generated frame. */
+export function readOriginalRoomEmissionPrincipalBinding(
+  service: object,
+  db: Db,
+  operation: object,
+  stage: OriginalRoomEmissionStage,
+  tx: DbTransaction,
+  emitter: object
+): RuntimeBindingRow | undefined {
+  requireOriginalRoomEmissionFrameTransaction(
+    stage,
+    db,
+    tx,
+    emitter as import('../../canvas/doc-channel/downstream/native-room-emitter.js').OriginalDownstreamRoomEmitter
+  );
+  requireOriginalRoomEmissionPrincipalPort(stage, db, service);
+  const own = roomEmissionPrincipalReads.get(stage);
+  if (!own || own.core !== originalNativePrincipalCore(service) || own.operation !== operation)
+    throw new Error('Original emission principal activity unavailable');
+  return own.read(tx, emitter);
 }
 
-/** Construction options for the durable runtime principal service. */
-export interface ConnectorRuntimePrincipalServiceOptions {
-  /** Canonical DorkOS database. */
-  readonly db: Db;
-  /** Resolver that owns canonical runtime/session/agent identity checks. */
-  readonly authority: ConnectorRuntimeAuthorityResolver;
-  /** Maximum binding lifetime in milliseconds. */
-  readonly bindingTtlMs?: number;
-  /** Injectable clock for deterministic expiry tests. */
-  readonly now?: () => Date;
-  /** Injectable process-generation source for deterministic boot tests. */
-  readonly makeBootEpoch?: () => string;
-  /** Injectable bearer source for deterministic hashing tests. */
-  readonly makeBearer?: () => string;
-  /**
-   * Thread keys a long-lived runtime process holds (ADR 261005-113107). A
-   * bearer shaped like one resolves to the turn binding attached to it right
-   * now, then takes every check a turn bearer takes. Absent, no bearer is
-   * read as a thread key.
-   */
-  readonly threadKeys?: ConnectorThreadKeyResolver;
+function nativeOperationData(token: object) {
+  const native =
+    readCodexNativeOperation(token) ??
+    readOpenCodeNativeOperation(token) ??
+    readClaudeNativeOperation(token) ??
+    readTestModeNativeOperation(token);
+  if (!native?.agentPath) return undefined;
+  return { ...native, agentPath: native.agentPath };
+}
+/** Recognize only the actual service or its genuine constructor-captured snapshot wrapper. */
+export function requireOriginalNativePrincipalService(port: object, service: object): void {
+  if (
+    !nativePrincipalCores.has(service) ||
+    (port !== service && readOriginalSnapshotPrincipalPort(port) !== service)
+  )
+    throw new Error('Native principal port does not belong to the original service.');
+}
+function originalNativePrincipalCore(port: object) {
+  return (
+    nativePrincipalCores.get(port) ??
+    nativePrincipalCores.get(readOriginalSnapshotPrincipalPort(port) ?? {})
+  );
+}
+/** Fixed original native setup. Structural ownership callbacks and public method replacements are not accepted. */
+export function openOriginalNativeTurn(
+  service: object,
+  input: PrincipalData.OpenConnectorTurnInput,
+  token: object
+): Promise<PrincipalData.OpenConnectorTurnResult> {
+  const own = originalNativePrincipalCore(service),
+    native = nativeOperationData(token);
+  if (
+    !own ||
+    !native ||
+    native.runtime !== input.runtime ||
+    native.canonicalSessionId !== input.canonicalSessionId ||
+    native.agentPath !== input.agentPath ||
+    native.canonicalCwd !== input.canonicalCwd ||
+    native.signal !== input.signal
+  )
+    throw new Error('Native preparation requires its genuine original runtime entry.');
+  if (!nativePrincipalCores.has(service))
+    return openOriginalSnapshotNativeTurn(service, input, token);
+  return own.open(input, token);
+}
+/** Construction attestation only; a caller cannot register a service or obtain its database. */
+export function requireNativePrincipalDatabase(service: object, db: Db): void {
+  if (originalNativePrincipalCore(service)?.db !== db)
+    throw new Error('Document native principal requires its exact owning database.');
+}
+/** Capture configured time in the owning read-only phase before any final row/currentness reads. */
+export function captureNativePrincipalTime(
+  service: object,
+  db: Db,
+  principal: ServerPrincipalProof
+): number {
+  requireNativePrincipalDatabase(service, db);
+  return originalNativePrincipalCore(service)!.captureTime(principal);
+}
+/** Fixed constructor-owned SQL/native read; this does not accept a caller checker or mint actor authority. */
+export function readCurrentNativePrincipal(
+  service: object,
+  db: Db,
+  principal: ServerPrincipalProof,
+  tx: DbTransaction | Db,
+  time: number
+): RuntimeBindingRow | undefined {
+  return readCurrentNativePrincipalSource(service, db, principal, tx, time)?.binding;
 }
 
-function tokenHash(token: string): string {
-  return createHash('sha256').update(token).digest('hex');
+/** Same successful native/lock/SQL read carries original private Room ancestry, never a binding-row reconstruction. */
+export function readCurrentNativePrincipalSource(
+  service: object,
+  db: Db,
+  principal: ServerPrincipalProof,
+  tx: DbTransaction | Db,
+  time: number
+) {
+  requireNativePrincipalDatabase(service, db);
+  return originalNativePrincipalCore(service)!.current(principal, tx, time);
 }
 
-function ownerColumns(owner: ConnectorOwnerAuthority): {
-  ownerKind: 'user' | 'local_install';
-  ownerId: string;
-} {
-  return owner.kind === 'user'
-    ? { ownerKind: owner.kind, ownerId: owner.userId }
-    : { ownerKind: owner.kind, ownerId: owner.installationId };
+/** Fixed configured-time phase for one constructor-recognized prepared native operation. */
+export function captureOriginalPreparedNativeTime(
+  service: object,
+  db: Db,
+  operation: object
+): number {
+  requireNativePrincipalDatabase(service, db);
+  const own = originalNativePrincipalCore(service)!;
+  if (!own.recognizesPreparedOperation(operation))
+    throw new Error('Prepared native time requires the original native operation identity.');
+  if (db.$client.inTransaction)
+    throw new Error('Prepared native time requires its inactive owning database.');
+  const time = own.captureTime(operation);
+  if (db.$client.inTransaction || !own.recognizesPreparedOperation(operation))
+    throw new Error(
+      'Prepared native time lost its original operation after configured clock work.'
+    );
+  return time;
 }
-
-function rowOwner(row: {
-  ownerKind: 'user' | 'local_install';
-  ownerId: string;
-}): ConnectorOwnerAuthority {
-  return row.ownerKind === 'user'
-    ? { kind: 'user', userId: row.ownerId }
-    : { kind: 'local_install', installationId: row.ownerId };
+/** One-use native/lock/current boot/SQL read; no caller binding id or fabricated principal is accepted. */
+export function readOriginalPreparedNativePrincipal(
+  service: object,
+  db: Db,
+  operation: object,
+  time: number,
+  tx: DbTransaction | Db
+): RuntimeBindingRow | undefined {
+  requireNativePrincipalDatabase(service, db);
+  const own = originalNativePrincipalCore(service)!;
+  if (!own.recognizesPreparedOperation(operation)) return undefined;
+  if (tx !== db || db.$client.inTransaction)
+    throw new Error('Prepared native currentness requires its inactive owning database.');
+  const binding = own.current(operation, db, time)?.binding;
+  if (db.$client.inTransaction)
+    throw new Error('Prepared native currentness entered SQL during its fixed read.');
+  return own.recognizesPreparedOperation(operation) ? binding : undefined;
 }
 
 /** SQLite-backed implementation of the runtime principal and boot-barrier ports. */
 export class ConnectorRuntimePrincipalService
-  implements ConnectorRuntimePrincipalPort, ConnectorRuntimeBindingBootPort
+  implements
+    PrincipalData.ConnectorRuntimePrincipalPort,
+    PrincipalData.ConnectorRuntimeBindingBootPort
 {
   private readonly db: Db;
-  private readonly authority: ConnectorRuntimeAuthorityResolver;
+  private readonly authority: PrincipalData.ConnectorRuntimeAuthorityResolver;
   private readonly bindingTtlMs: number;
   private readonly now: () => Date;
   private readonly makeBootEpoch: () => string;
@@ -120,22 +253,199 @@ export class ConnectorRuntimePrincipalService
   /** Exact permit and adapter-owned liveness predicate for each open turn. */
   private readonly renewalOwners = new Map<
     string,
-    { readonly permit: ConnectorTurnRenewalPermit; readonly ownership: ConnectorTurnOwnership }
+    {
+      readonly permit: PrincipalData.ConnectorTurnRenewalPermit;
+      readonly ownership: PrincipalData.ConnectorTurnOwnership;
+    }
   >();
   private bootEpoch?: string;
+  readonly #nativeOwners = new Map<string, PrincipalData.NativePrincipalOwnerData>();
+  #nativeBootEpoch?: string;
+  readonly #fixedOpen: PrincipalData.FixedNativePrincipalOpenData;
 
   /**
    * Construct the runtime principal service.
    *
    * @param options - Database, canonical authority resolver, and bounded test seams.
    */
-  constructor(options: ConnectorRuntimePrincipalServiceOptions) {
+  constructor(options: PrincipalData.ConnectorRuntimePrincipalServiceOptions) {
     this.db = options.db;
     this.authority = options.authority;
     this.bindingTtlMs = options.bindingTtlMs ?? 4 * 60 * 60 * 1_000;
     this.now = options.now ?? (() => new Date());
     this.makeBootEpoch = options.makeBootEpoch ?? randomUUID;
     this.makeBearer = options.makeBearer ?? (() => randomBytes(32).toString('base64url'));
+    const authority = this.authority,
+      authorize = authority.authorizeTurn,
+      originalNow = this.now,
+      originalBearer = this.makeBearer,
+      revalidate = authority.revalidateTurn;
+    this.#fixedOpen = Object.freeze<PrincipalData.FixedNativePrincipalOpenData>({
+      db: this.db,
+      authorize: (input) => Reflect.apply(authorize, authority, [input]),
+      now: () => Reflect.apply(originalNow, this, []),
+      bearer: () => Reflect.apply(originalBearer, this, []),
+      ttl: this.bindingTtlMs,
+    });
+    const originalRevoke = this.revoke;
+    const db = this.db,
+      now = this.now,
+      revoked = this.revokedBindingIds;
+    // Build once before public exposure; final reads use the captured own-native statement,
+    // never a replaceable Db.select/query-builder chain after configured callbacks.
+    const bindingStatement = db
+      .select()
+      .from(connectorRuntimeBindings)
+      .where(eq(connectorRuntimeBindings.id, sql.placeholder('bindingId')))
+      .prepare();
+    const getBinding = bindingStatement.get;
+    const activities = new WeakMap<object, PrincipalData.NativePrincipalActivityData>();
+    const originalFor = (identity: object) => {
+      if (isServerPrincipal(identity))
+        return identity.claims.kind === 'runtime'
+          ? this.#nativeOwners.get(identity.claims.bindingId)
+          : undefined;
+      return [...this.#nativeOwners.values()].find((own) => own.token === identity);
+    };
+    const core: PrincipalData.NativePrincipalCore = {
+      db,
+      retireOriginal: async (operation, reason) => {
+        const original = [...this.#nativeOwners.values()].find((own) => own.token === operation);
+        if (original)
+          await Reflect.apply(originalRevoke, this, [original.claims.bindingId, reason]);
+      },
+      resolveOriginal: async (operation) => {
+        const original = [...this.#nativeOwners.values()].find((own) => own.token === operation);
+        if (!original || db.$client.inTransaction) return { status: 'refused', reason: 'revoked' };
+        const claims = original.claims;
+        if (!(await Reflect.apply(revalidate, authority, [claims])))
+          return { status: 'refused', reason: 'authority_changed' };
+        // The configured policy/clock may retire or replace this exact entry.
+        const time = captureOriginalPreparedNativeTime(this, db, operation);
+        const row = readOriginalPreparedNativePrincipal(this, db, operation, time, db);
+        if (!row || this.#nativeOwners.get(claims.bindingId) !== original)
+          return { status: 'refused', reason: 'revoked' };
+        return { status: 'resolved', principal: createServerPrincipal(claims) };
+      },
+      recognizesPreparedOperation: (operation) =>
+        [...this.#nativeOwners.values()].some((own) => own.token === operation),
+      open: (input, token) =>
+        this.#openTurn(input, {
+          isCurrent: () => !!nativeOperationData(token),
+          nativeOperation: token,
+        }),
+      captureTime: (identity) => {
+        activities.delete(identity);
+        const original = originalFor(identity);
+        const time = now().getTime();
+        const live =
+          original && originalFor(identity) === original
+            ? nativeOperationData(original.token)
+            : undefined;
+        const acquisition = live?.acquisition;
+        if (original && acquisition) {
+          const activity = captureNativeSessionActivity(acquisition, time);
+          if (activity && originalFor(identity) === original)
+            activities.set(identity, { time, acquisition, activity, original });
+        }
+        return time;
+      },
+      current: (identity, _executor, time) => {
+        const captured = activities.get(identity);
+        activities.delete(identity);
+        const original = originalFor(identity);
+        if (!Number.isFinite(time) || !original || captured?.original !== original)
+          return undefined;
+        const claims =
+          isServerPrincipal(identity) && identity.claims.kind === 'runtime'
+            ? identity.claims
+            : original.claims;
+        if (revoked.has(claims.bindingId)) return undefined;
+        const live = nativeOperationData(original.token);
+        if (
+          !captured ||
+          captured.time !== time ||
+          live?.acquisition !== captured.acquisition ||
+          !readNativeSessionAcquisition(
+            captured.acquisition,
+            captured.activity,
+            time,
+            claims.canonicalSessionId
+          )
+        )
+          return undefined;
+        if (!sameNativeEntryContext(live, original, claims.canonicalSessionId)) return undefined;
+        const binding = readCurrentRuntimeBindingRow(
+          Reflect.apply(getBinding, bindingStatement, [{ bindingId: claims.bindingId }]),
+          claims,
+          time,
+          this.#nativeBootEpoch
+        );
+        return binding &&
+          originalFor(identity) === original &&
+          !revoked.has(claims.bindingId) &&
+          nativeOperationData(original.token)?.acquisition === captured.acquisition
+          ? Object.freeze({ binding, roomCustody: live.roomCustody })
+          : undefined;
+      },
+    };
+    nativePrincipalCores.set(this, core);
+    roomEmissionPrincipalCaptures.set(core, (operation, time, stage) => {
+      const captured = activities.get(operation);
+      activities.delete(operation);
+      const original = originalFor(operation);
+      if (!captured || captured.original !== original || captured.time !== time || !original)
+        throw new Error('Original emission native activity unavailable');
+      const claims = original.claims;
+      return (tx, emitter) => {
+        const live = nativeOperationData(original.token);
+        if (
+          originalFor(operation) !== original ||
+          revoked.has(claims.bindingId) ||
+          live?.acquisition !== captured.acquisition ||
+          !readNativeSessionAcquisition(
+            captured.acquisition,
+            captured.activity,
+            time,
+            claims.canonicalSessionId
+          ) ||
+          !sameNativeEntryContext(live, original, claims.canonicalSessionId)
+        )
+          return undefined;
+        const raw = readOriginalRoomEmissionRuntimeBindingRow(
+          stage,
+          db,
+          tx,
+          emitter as import('../../canvas/doc-channel/downstream/native-room-emitter.js').OriginalDownstreamRoomEmitter,
+          claims.bindingId
+        );
+        const row = raw
+          ? ({
+              id: raw.id,
+              tokenHash: raw.token_hash,
+              bootEpoch: raw.boot_epoch,
+              ownerKind: raw.owner_kind,
+              ownerId: raw.owner_id,
+              runtime: raw.runtime,
+              canonicalSessionId: raw.canonical_session_id,
+              agentId: raw.agent_id,
+              agentPath: raw.agent_path,
+              canonicalCwd: raw.canonical_cwd,
+              createdAt: raw.created_at,
+              expiresAt: raw.expires_at,
+              revokedAt: raw.revoked_at,
+              revokeReason: raw.revoke_reason,
+            } as RuntimeBindingRow)
+          : undefined;
+        const binding = readCurrentRuntimeBindingRow(row, claims, time, this.#nativeBootEpoch);
+        return binding &&
+          originalFor(operation) === original &&
+          !revoked.has(claims.bindingId) &&
+          nativeOperationData(original.token)?.acquisition === captured.acquisition
+          ? binding
+          : undefined;
+      };
+    });
     this.threadKeys = options.threadKeys;
   }
 
@@ -151,19 +461,28 @@ export class ConnectorRuntimePrincipalService
     this.revokedBindingIds.clear();
     this.renewalOwners.clear();
     this.bootEpoch = bootEpoch;
+    this.#nativeBootEpoch = bootEpoch;
+    this.#nativeOwners.clear();
     return Promise.resolve({ bootEpoch });
   }
 
   /** Open one bearer after resolving live canonical runtime authority. */
   async openTurn(
-    input: OpenConnectorTurnInput,
-    ownership: ConnectorTurnOwnership
-  ): Promise<OpenConnectorTurnResult> {
+    input: PrincipalData.OpenConnectorTurnInput,
+    ownership: PrincipalData.ConnectorTurnOwnership
+  ): Promise<PrincipalData.OpenConnectorTurnResult> {
+    return this.#openTurn(input, ownership);
+  }
+
+  async #openTurn(
+    input: PrincipalData.OpenConnectorTurnInput,
+    ownership: PrincipalData.ConnectorTurnOwnership
+  ): Promise<PrincipalData.OpenConnectorTurnResult> {
     input.signal.throwIfAborted();
     const bootEpoch = this.requireBootEpoch();
-    let resolved: ConnectorRuntimeAuthority;
+    let resolved: PrincipalData.ConnectorRuntimeAuthority;
     try {
-      resolved = await this.authority.authorizeTurn(input);
+      resolved = await this.#fixedOpen.authorize(input);
     } catch {
       input.signal.throwIfAborted();
       throw new ConnectorRuntimeAuthorityError(
@@ -180,32 +499,40 @@ export class ConnectorRuntimePrincipalService
     }
 
     const bindingId = randomUUID();
-    const bearer = this.makeBearer();
-    const createdAt = this.now();
-    const expiresAt = new Date(createdAt.getTime() + this.bindingTtlMs);
-    this.db
+    const bearer = this.#fixedOpen.bearer();
+    const createdAt = this.#fixedOpen.now();
+    const expiresAt = new Date(createdAt.getTime() + this.#fixedOpen.ttl);
+    this.#fixedOpen.db
       .insert(connectorRuntimeBindings)
-      .values({
-        id: bindingId,
-        tokenHash: tokenHash(bearer),
-        bootEpoch,
-        ...ownerColumns(resolved.owner),
-        runtime: input.runtime,
-        canonicalSessionId: input.canonicalSessionId,
-        agentId: resolved.agentId,
-        agentPath: input.agentPath,
-        canonicalCwd: input.canonicalCwd,
-        createdAt: createdAt.toISOString(),
-        expiresAt: expiresAt.toISOString(),
-      })
+      .values(
+        projectRuntimeBindingInsert(
+          input,
+          resolved,
+          bindingId,
+          bearer,
+          bootEpoch,
+          createdAt,
+          expiresAt
+        )
+      )
       .run();
-    const renewalPermit = Object.freeze({}) as ConnectorTurnRenewalPermit;
+    const renewalPermit = Object.freeze({}) as PrincipalData.ConnectorTurnRenewalPermit;
     this.renewalOwners.set(bindingId, { permit: renewalPermit, ownership });
+    const nativeToken = projectNativeOperationOwnData(ownership);
+    const native = nativeToken ? nativeOperationData(nativeToken) : undefined;
+    if (nativeToken && sameNativeEntryContext(native, input, input.canonicalSessionId)) {
+      this.#nativeOwners.set(
+        bindingId,
+        projectOriginalNativeOwnerData(input, resolved, bindingId, nativeToken)
+      );
+    }
     return { bindingId, bearer, expiresAt: expiresAt.toISOString(), renewalPermit };
   }
 
   /** Renew only while the exact process-owned turn and durable claims remain current. */
-  async renew(input: RenewConnectorTurnInput): Promise<RenewConnectorTurnResult> {
+  async renew(
+    input: PrincipalData.RenewConnectorTurnInput
+  ): Promise<PrincipalData.RenewConnectorTurnResult> {
     const owner = this.renewalOwners.get(input.bindingId);
     if (!owner || owner.permit !== input.permit) {
       return { status: 'refused', reason: 'invalid' };
@@ -219,7 +546,7 @@ export class ConnectorRuntimePrincipalService
     if (!initial) return { status: 'refused', reason: 'invalid' };
     const initialRefusal = this.bindingRefusal(initial);
     if (initialRefusal) return { status: 'refused', reason: initialRefusal };
-    const claims = this.rowClaims(initial);
+    const claims = projectRuntimeBindingClaims(initial);
     if (!(await this.authority.revalidateTurn(claims))) {
       this.denyForAuthorityChange(initial.id);
       return { status: 'refused', reason: 'authority_changed' };
@@ -232,7 +559,7 @@ export class ConnectorRuntimePrincipalService
     if (!current) return { status: 'refused', reason: 'invalid' };
     const currentRefusal = this.bindingRefusal(current);
     if (currentRefusal) return { status: 'refused', reason: currentRefusal };
-    if (!this.sameBinding(initial, current)) {
+    if (!sameRuntimeBindingData(initial, current)) {
       return { status: 'refused', reason: 'authority_changed' };
     }
     const currentOwner = this.renewalOwners.get(input.bindingId);
@@ -274,7 +601,7 @@ export class ConnectorRuntimePrincipalService
     if (
       committed &&
       !this.bindingRefusal(committed) &&
-      this.sameBinding(current, committed) &&
+      sameRuntimeBindingData(current, committed) &&
       committedOwner?.permit === input.permit &&
       committedOwner.ownership.isCurrent()
     ) {
@@ -291,7 +618,9 @@ export class ConnectorRuntimePrincipalService
    * expired bearer is. From there both kinds take the same checks, plus one: the
    * binding must belong to the session the key was minted for.
    */
-  async resolve(input: ResolveConnectorTurnInput): Promise<ResolveConnectorTurnResult> {
+  async resolve(
+    input: PrincipalData.ResolveConnectorTurnInput
+  ): Promise<PrincipalData.ResolveConnectorTurnResult> {
     if (this.threadKeys?.isThreadKey(input.bearer)) return this.resolveThreadKey(input);
     const row = this.db
       .select()
@@ -303,8 +632,8 @@ export class ConnectorRuntimePrincipalService
   }
 
   private async resolveThreadKey(
-    input: ResolveConnectorTurnInput
-  ): Promise<ResolveConnectorTurnResult> {
+    input: PrincipalData.ResolveConnectorTurnInput
+  ): Promise<PrincipalData.ResolveConnectorTurnResult> {
     const key = this.threadKeys?.lookup(input.bearer);
     if (!key) return { status: 'refused', reason: 'invalid' };
     if (key.scope.runtime !== input.expectedRuntime) {
@@ -332,8 +661,8 @@ export class ConnectorRuntimePrincipalService
 
   private async resolveRow(
     row: RuntimeBindingRow,
-    input: ResolveConnectorTurnInput
-  ): Promise<ResolveConnectorTurnResult> {
+    input: PrincipalData.ResolveConnectorTurnInput
+  ): Promise<PrincipalData.ResolveConnectorTurnResult> {
     const initialRefusal = this.bindingRefusal(row);
     if (initialRefusal) return { status: 'refused', reason: initialRefusal };
     if (row.runtime !== input.expectedRuntime) {
@@ -346,16 +675,7 @@ export class ConnectorRuntimePrincipalService
       return { status: 'refused', reason: 'revoked' };
     }
 
-    const claims = {
-      kind: 'runtime',
-      owner: rowOwner(row),
-      bindingId: row.id,
-      runtime: row.runtime,
-      canonicalSessionId: row.canonicalSessionId,
-      agentId: row.agentId,
-      agentPath: row.agentPath,
-      ...(row.canonicalCwd && { canonicalCwd: row.canonicalCwd }),
-    } as const;
+    const claims = projectResolvedRuntimeBindingClaims(row);
     if (!(await this.authority.revalidateTurn(claims))) {
       this.denyForAuthorityChange(row.id);
       return { status: 'refused', reason: 'authority_changed' };
@@ -364,7 +684,7 @@ export class ConnectorRuntimePrincipalService
     if (!current) return { status: 'refused', reason: 'invalid' };
     const currentRefusal = this.bindingRefusal(current);
     if (currentRefusal) return { status: 'refused', reason: currentRefusal };
-    if (!this.sameBinding(row, current)) {
+    if (!sameRuntimeBindingData(row, current)) {
       return { status: 'refused', reason: 'authority_changed' };
     }
     if (!this.hasCurrentOwner(row.id)) {
@@ -381,7 +701,7 @@ export class ConnectorRuntimePrincipalService
     return Boolean(
       row &&
       !this.bindingRefusal(row) &&
-      this.bindingMatchesPrincipal(row, claims) &&
+      runtimeBindingMatchesClaims(row, claims) &&
       this.hasCurrentOwner(claims.bindingId)
     );
   }
@@ -396,7 +716,7 @@ export class ConnectorRuntimePrincipalService
   }
 
   /** Revoke one binding on a terminal, cancelled, setup-failed, or runtime-failed path. */
-  async revoke(bindingId: string, reason: RevokeConnectorTurnReason): Promise<void> {
+  async revoke(bindingId: string, reason: PrincipalData.RevokeConnectorTurnReason): Promise<void> {
     this.renewalOwners.delete(bindingId);
     this.revokedBindingIds.add(bindingId);
     this.db
@@ -414,19 +734,6 @@ export class ConnectorRuntimePrincipalService
       .from(connectorRuntimeBindings)
       .where(eq(connectorRuntimeBindings.id, bindingId))
       .get();
-  }
-
-  private rowClaims(row: RuntimeBindingRow): Extract<ServerPrincipalClaims, { kind: 'runtime' }> {
-    return {
-      kind: 'runtime',
-      owner: rowOwner(row),
-      bindingId: row.id,
-      runtime: row.runtime,
-      canonicalSessionId: row.canonicalSessionId,
-      agentId: row.agentId,
-      agentPath: row.agentPath,
-      ...(row.canonicalCwd && { canonicalCwd: row.canonicalCwd }),
-    };
   }
 
   private denyForAuthorityChange(bindingId: string): void {
@@ -467,42 +774,51 @@ export class ConnectorRuntimePrincipalService
     return undefined;
   }
 
-  private sameBinding(left: RuntimeBindingRow, right: RuntimeBindingRow): boolean {
-    return (
-      left.tokenHash === right.tokenHash &&
-      left.bootEpoch === right.bootEpoch &&
-      left.ownerKind === right.ownerKind &&
-      left.ownerId === right.ownerId &&
-      left.runtime === right.runtime &&
-      left.canonicalSessionId === right.canonicalSessionId &&
-      left.agentId === right.agentId &&
-      left.agentPath === right.agentPath &&
-      left.canonicalCwd === right.canonicalCwd
-    );
-  }
-
-  private bindingMatchesPrincipal(
-    row: RuntimeBindingRow,
-    claims: Extract<ServerPrincipalClaims, { kind: 'runtime' }>
-  ): boolean {
-    return (
-      row.runtime === claims.runtime &&
-      row.canonicalSessionId === claims.canonicalSessionId &&
-      row.agentId === claims.agentId &&
-      row.agentPath === claims.agentPath &&
-      (row.canonicalCwd ?? undefined) === claims.canonicalCwd &&
-      row.ownerKind === claims.owner.kind &&
-      row.ownerId === ownerColumns(claims.owner).ownerId
-    );
-  }
-
   private requireBootEpoch(): string {
-    if (!this.bootEpoch) {
-      throw new ConnectorRuntimeAuthorityError(
-        'boot_not_initialized',
-        'DorkOS is still starting, so connected apps aren’t ready yet. Try again in a moment.'
-      );
-    }
-    return this.bootEpoch;
+    return requireRuntimeBindingBootData(this.bootEpoch);
   }
+}
+
+/** Fixed owning-native gate for the genuine test/runtime entry; no caller Db, clock or checker. */
+export function requireCurrentOriginalNativeTurn(service: object, operation: object): void {
+  const own = originalNativePrincipalCore(service);
+  if (!own || !own.recognizesPreparedOperation(operation) || own.db.$client.inTransaction)
+    throw new Error('Original native operation is unavailable.');
+  const time = captureOriginalPreparedNativeTime(service, own.db, operation);
+  if (!readOriginalPreparedNativePrincipal(service, own.db, operation, time, own.db))
+    throw new Error('Original native principal is no longer current.');
+}
+
+/** Resolve only the originally opened private SDK operation, never claims or a binding-row DTO. */
+export function resolveOriginalNativePrincipal(
+  service: object,
+  operation: object
+): Promise<PrincipalData.ResolveConnectorTurnResult> {
+  const own = originalNativePrincipalCore(service);
+  if (!own || !own.recognizesPreparedOperation(operation))
+    return Promise.resolve({ status: 'refused', reason: 'revoked' });
+  return own.resolveOriginal(operation);
+}
+
+/** Original service or original snapshot wrapper only; no structural principal port attestation. */
+export function requireOriginalNativePrincipalPort(port: object): void {
+  if (!originalNativePrincipalCore(port))
+    throw new Error('Original native principal constructor is required.');
+}
+/** Require both native principal ports to resolve to the same original core. */
+export function requireSameOriginalNativePrincipalPorts(first: object, second: object): void {
+  const own = originalNativePrincipalCore(first);
+  if (!own || originalNativePrincipalCore(second) !== own)
+    throw new Error('TestMode requires the same original principal construction.');
+}
+
+/** Captured original revocation for this exact SDK entry; replacement public methods cannot skip the duty. */
+export function retireOriginalNativeTurn(
+  service: object,
+  operation: object,
+  reason: PrincipalData.RevokeConnectorTurnReason
+): Promise<void> {
+  const own = originalNativePrincipalCore(service);
+  if (!own) throw new Error('Original native principal constructor is required.');
+  return own.retireOriginal(operation, reason);
 }

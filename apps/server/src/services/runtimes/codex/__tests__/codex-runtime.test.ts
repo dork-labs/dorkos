@@ -1926,6 +1926,110 @@ describe('CodexRuntime — the transport seam (ADR 261005-113107)', () => {
       expect(requests).toHaveLength(1 + MAX_CONSECUTIVE_WAKES);
     });
 
+    it('a paused older wake cannot borrow a successor reserved acquisition', async () => {
+      const db = createTestDb();
+      const { transport, requests, wake } = backgroundTransport();
+      let runtime: CodexRuntime | undefined;
+      let paused: AsyncIterator<StreamEvent> | undefined;
+      let successor: AsyncIterator<StreamEvent> | undefined;
+      const oldToken = Symbol('older-wake');
+      const newToken = Symbol('successor-wake');
+      let failed = false;
+      let first: unknown;
+      const remember = (cause: unknown) => {
+        if (!failed) {
+          failed = true;
+          first = cause;
+        }
+      };
+      try {
+        runtime = new CodexRuntime({
+          threadMap: new CodexThreadMap(db),
+          resolveBinary: async () => '/opt/codex',
+          transport,
+        });
+        await drain(runtime.sendMessage('s1', 'start the work', { cwd: '/project' }));
+        const context = requests[0]!.wakeContext;
+        const streams: AsyncIterable<StreamEvent>[] = [];
+        runtime.onRuntimeTurn!((_id, events) => streams.push(events));
+        expect(runtime.acquireRuntimeLock!('s1', { on: () => {} }, oldToken)).toBe(true);
+        expect(
+          wake({
+            sessionId: 's1',
+            completions: [finished(context)],
+            startTurn: true,
+            notices: ['The earlier work finished.'],
+          })
+        ).toBe(true);
+        paused = streams[0]![Symbol.asyncIterator]();
+        // The first owner has captured its acquisition, but has not started a model turn.
+        expect((await paused.next()).value).toEqual({
+          type: 'system_status',
+          data: { message: 'The earlier work finished.' },
+        });
+        runtime.releaseLock('s1', 'runtime:s1', oldToken);
+        expect(runtime.isLocked('s1')).toBe(false);
+        expect(runtime.acquireRuntimeLock!('s1', { on: () => {} }, newToken)).toBe(true);
+        const oldRemainder: StreamEvent[] = [];
+        for (let next = await paused.next(); !next.done; next = await paused.next())
+          oldRemainder.push(next.value);
+        expect(requests).toHaveLength(1);
+        expect(oldRemainder.map((event) => event.type)).toEqual(['background_task_done', 'done']);
+        // Completing the old owner must not discard the independently acquired successor.
+        expect(
+          wake({
+            sessionId: 's1',
+            completions: [finished(context, { taskId: 'cmd-2' })],
+            startTurn: true,
+            notices: [],
+          })
+        ).toBe(true);
+        successor = streams[1]![Symbol.asyncIterator]();
+        const events: StreamEvent[] = [];
+        for (let next = await successor.next(); !next.done; next = await successor.next())
+          events.push(next.value);
+        expect(events.filter((event) => event.type === 'done')).toHaveLength(1);
+        expect(requests).toHaveLength(2);
+        expect(requests[1]!.prompt).toContain('<background_update>');
+        expect(requests[1]!.wakeContext).toEqual(context);
+        expect((await runtime.getSession('/project', 's1'))?.lastMessagePreview).toBe(
+          'start the work'
+        );
+      } catch (cause) {
+        remember(cause);
+      } finally {
+        let cleanupFailed = false;
+        // Cancel both actual iterators and the owned transport before joining their cleanup.
+        const results = await Promise.allSettled([
+          Promise.resolve().then(() => paused?.return?.()),
+          Promise.resolve().then(() => successor?.return?.()),
+          Promise.resolve().then(() => runtime?.shutdown()),
+        ]);
+        for (const result of results)
+          if (result.status === 'rejected') {
+            cleanupFailed = true;
+            remember(result.reason);
+          }
+        for (const token of [oldToken, newToken]) {
+          try {
+            runtime?.releaseLock('s1', 'runtime:s1', token);
+          } catch (cause) {
+            cleanupFailed = true;
+            remember(cause);
+          }
+        }
+        if (!cleanupFailed) {
+          try {
+            db.$client.close();
+          } catch (cause) {
+            remember(cause);
+          }
+        }
+      }
+      if (failed) throw first;
+      expect(db.$client.open).toBe(false);
+    });
+
     it('shows a room turn’s finished work but starts no model turn (its tools are the room’s)', async () => {
       const { runtime, requests, wake } = backgroundRuntime();
       await drain(

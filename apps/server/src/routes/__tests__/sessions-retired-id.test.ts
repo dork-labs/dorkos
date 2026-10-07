@@ -37,19 +37,24 @@ vi.mock('../../lib/boundary.js', () => ({
 
 let fakeRuntime: FakeAgentRuntime;
 
-vi.mock('../../services/core/runtime-registry.js', () => ({
-  runtimeRegistry: {
-    getDefault: vi.fn(() => fakeRuntime),
-    get: vi.fn(() => fakeRuntime),
-    getAllCapabilities: vi.fn(() => ({})),
-    getDefaultType: vi.fn(() => 'fake'),
-    resolveForSession: vi.fn(async () => fakeRuntime),
-    resolveForSessionWithOwnership: vi.fn(async () => ({ runtime: fakeRuntime, bound: true })),
-    getSessionRuntimeType: vi.fn(async () => 'fake'),
-    persistSessionRuntime: vi.fn(async () => {}),
-    getSessionSettings: vi.fn(async () => null),
-    has: vi.fn(() => true),
-  },
+vi.mock('../../services/core/runtime-registry.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/core/runtime-registry.js')>()),
+  runtimeRegistry: Object.assign(
+    (await importOriginal<typeof import('../../services/core/runtime-registry.js')>())
+      .runtimeRegistry,
+    {
+      getDefault: vi.fn(() => fakeRuntime),
+      get: vi.fn(() => fakeRuntime),
+      getAllCapabilities: vi.fn(() => ({})),
+      getDefaultType: vi.fn(() => 'fake'),
+      resolveForSession: vi.fn(async () => fakeRuntime),
+      resolveForSessionWithOwnership: vi.fn(async () => ({ runtime: fakeRuntime, bound: true })),
+      getSessionRuntimeType: vi.fn(async () => 'fake'),
+      persistSessionRuntime: vi.fn(async () => {}),
+      getSessionSettings: vi.fn(async () => null),
+      has: vi.fn(() => true),
+    }
+  ),
   RuntimeNotRegisteredError: class RuntimeNotRegisteredError extends Error {
     constructor(
       public readonly runtime: string,

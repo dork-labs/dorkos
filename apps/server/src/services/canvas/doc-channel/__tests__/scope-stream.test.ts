@@ -18,7 +18,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   for (const db of databases.splice(0)) db.$client.close();
 });
-function fixture() {
+function fixture(maxBufferedDocuments = 1000) {
   const f = harness();
   databases.push(f.db);
   let allowed = true;
@@ -47,7 +47,7 @@ function fixture() {
     },
   };
   const service = new DocChannelService(f.documents, f.store, authorization);
-  const live = new DocChannelLiveBuffer(f.store, ports);
+  const live = new DocChannelLiveBuffer(f.store, ports, maxBufferedDocuments);
   const stream = new DocScopeStream(f.documents, service, live, ports);
   const doc = f.canvas.open(FROM, 'agent', { type: 'file', sourcePath: '/fake/lifeos/tasks.md' });
   const append = (tx?: DbTransaction) =>
@@ -444,3 +444,84 @@ it.each(['revocation', 'navigation'] as const)(
     }
   }
 );
+
+it('reconnects an overflowed slow subscriber from both durable document histories', async () => {
+  const f = fixture(1);
+  const slow = f.reader();
+  let reconnected: ReturnType<typeof f.reader> | undefined;
+  let failed = false;
+  let firstCause: unknown;
+  const remember = (cause: unknown) => {
+    if (!failed) {
+      failed = true;
+      firstCause = cause;
+    }
+  };
+  try {
+    expect((await slow.next()).value).toMatchObject({
+      type: 'canvas_channel_snapshot',
+      documentId: f.doc.id,
+      snapshot: { highWatermark: 0 },
+    });
+    const other = f.canvas.open(FROM, 'agent', {
+      type: 'file',
+      sourcePath: '/fake/lifeos/other.md',
+    });
+    const first = f.append();
+    const second = f.store.appendEvent({
+      documentId: other.id,
+      eventId: randomUUID(),
+      direction: 'system',
+      type: 'state.changed',
+      payload: { stateRev: 1 },
+      envelopeHash: 'a'.repeat(64),
+      receivedAt: NOW,
+      provenance: {},
+    });
+    // Two distinct committed documents exceed this reader's one-document hint bound.
+    f.live.notifyCommitted(f.doc.id);
+    f.live.notifyCommitted(other.id);
+    expect((await slow.next()).done).toBe(true);
+    expect(f.controller.signal.aborted).toBe(false);
+
+    reconnected = f.reader();
+    const events: { documentId: string; id: string; docSeq: number }[] = [];
+    const snapshots: string[] = [];
+    while (events.length < 2) {
+      const frame = (await reconnected.next()).value!;
+      expect(frame.scope).toBe(FROM);
+      if (frame.type === 'canvas_event') {
+        expect(frame).not.toHaveProperty('seq');
+        expect(frame).not.toHaveProperty('entrySeq');
+        events.push({ documentId: frame.documentId, id: frame.event.id, docSeq: frame.docSeq });
+      } else snapshots.push(frame.documentId);
+    }
+    expect(snapshots.sort()).toEqual([f.doc.id, other.id].sort());
+    expect(events.sort((a, b) => a.documentId.localeCompare(b.documentId))).toEqual(
+      [
+        { documentId: f.doc.id, id: first.eventId, docSeq: 1 },
+        { documentId: other.id, id: second.eventId, docSeq: 1 },
+      ].sort((a, b) => a.documentId.localeCompare(b.documentId))
+    );
+    const parked = reconnected.next();
+    await reconnected.return?.();
+    expect((await parked).done).toBe(true);
+  } catch (cause) {
+    remember(cause);
+  } finally {
+    try {
+      f.controller.abort();
+    } catch (cause) {
+      remember(cause);
+    }
+    const returns = [slow, reconnected].map(async (reader) => {
+      try {
+        await reader?.return?.();
+      } catch (cause) {
+        remember(cause);
+      }
+    });
+    await Promise.all(returns);
+  }
+  if (failed) throw firstCause;
+});

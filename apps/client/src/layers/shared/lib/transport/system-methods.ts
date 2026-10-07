@@ -1,3 +1,5 @@
+import { CanvasDocumentSaveIdentitySchema } from '@dorkos/shared/schemas';
+import { CanvasChannelEventReceiptSchema } from '@dorkos/shared/canvas-channel-schemas';
 /**
  * System Transport methods factory — filesystem, config, health, tunnel, admin,
  * discovery, activity, templates, uploads, and agent config.
@@ -293,8 +295,14 @@ export function createSystemMethods(baseUrl: string) {
       cwd: string,
       filePath: string,
       content: string,
-      options?: { expectedHash?: string; expectedContent?: string }
+      options?: {
+        expectedHash?: string;
+        expectedContent?: string;
+        documentSave?: import('@dorkos/shared/schemas').CanvasDocumentSaveIdentity;
+      }
     ): Promise<WriteFileResult> {
+      const documentSave =
+        options?.documentSave && CanvasDocumentSaveIdentitySchema.parse(options.documentSave);
       // Raw fetch (not fetchJSON) so the 409 body — the current on-disk bytes —
       // survives; fetchJSON discards response bodies on non-OK.
       const res = await fetch(`${baseUrl}/files/content`, {
@@ -307,6 +315,7 @@ export function createSystemMethods(baseUrl: string) {
           content,
           expectedHash: options?.expectedHash,
           expectedContent: options?.expectedContent,
+          documentSave,
         }),
       });
       if (res.status === 409) {
@@ -341,7 +350,28 @@ export function createSystemMethods(baseUrl: string) {
       ) {
         throw new Error('Invalid file save response');
       }
-      return { ok: true, hash: data.hash, effect: data.effect };
+      const documentReceipt =
+        'documentReceipt' in data && data.documentReceipt !== undefined
+          ? CanvasChannelEventReceiptSchema.parse(data.documentReceipt)
+          : undefined;
+      if (
+        documentSave &&
+        (!/^[a-f0-9]{64}$/.test(data.hash) ||
+          (data.effect === 'changed' &&
+            (!documentReceipt || documentReceipt.receipt.status !== 'recorded')) ||
+          (data.effect === 'no_op' &&
+            documentReceipt &&
+            documentReceipt.receipt.status !== 'duplicate') ||
+          (documentReceipt && documentReceipt.receipt.id !== documentSave.eventId))
+      )
+        throw new Error('Document save receipt does not match its original operation');
+      if (!documentSave && documentReceipt) throw new Error('Unexpected document save receipt');
+      return {
+        ok: true,
+        hash: data.hash,
+        effect: data.effect,
+        ...(documentReceipt ? { documentReceipt } : {}),
+      };
     },
 
     getGitStatus(cwd?: string): Promise<GitStatusResponse | GitStatusError> {

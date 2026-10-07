@@ -49,7 +49,7 @@ import { logger } from '../../lib/logger.js';
 // than restated here. It imports nothing back, so there is no cycle — and one
 // refusal vocabulary means a route maps a canvas failure onto a status code the
 // same way whichever scope produced it.
-import { RoomError, type RoomErrorCode } from '../rooms/room-errors.js';
+import { RoomError, type RoomErrorCode } from '../rooms/data/room-errors.js';
 import {
   toCanvasDocument,
   type CanvasDocumentRow,

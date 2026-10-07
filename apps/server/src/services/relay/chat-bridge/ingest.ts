@@ -40,7 +40,7 @@ import type { RoomEntryBody } from '@dorkos/shared/room-schemas';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import type { ChatNoticeSender, SubscriberVerdict } from '@dorkos/relay';
 import { logger } from '../../../lib/logger.js';
-import { RoomError } from '../../rooms/room-errors.js';
+import { RoomError } from '../../rooms/data/room-errors.js';
 import { buildBridgeRateLimitedNotice } from '../../rooms/notices/notice-copy.js';
 import type { ExternalAuthorIdentity } from '../../rooms/author-registry.js';
 import { parseHumanSubject } from '../human-subject.js';

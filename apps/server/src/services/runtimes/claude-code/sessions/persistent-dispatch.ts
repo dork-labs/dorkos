@@ -1,3 +1,39 @@
+const originalPersistentCapacity = new WeakMap<
+  object,
+  (key: string) => import('./session-pump-contract.js').PumpState | undefined
+>();
+/** Fixed original pump capacity data only, before a dedicated native claim. */
+export function readOriginalPersistentRoomState(persistent: object, key: string) {
+  const read = originalPersistentCapacity.get(persistent);
+  if (!read) throw new Error('Persistent Room constructor is not original.');
+  return read(key);
+}
+import { readOriginalSessionPumpState } from './session-pump.js';
+const originalRoomPumpDispatches = new WeakMap<
+  object,
+  { pump: object; effect(): void; consumed?: boolean }
+>();
+/** Lookup-only exact private message/pump identity; never message content or caller registration. */
+export function requireOriginalClaudeRoomPumpEffect(
+  pump: object,
+  dispatch: object | undefined
+): void {
+  const own = dispatch && originalRoomPumpDispatches.get(dispatch);
+  if (!own) return;
+  if (own.pump !== pump || own.consumed)
+    throw new Error('Original Room prompt cannot be replayed.');
+  own.consumed = true;
+  own.effect();
+}
+/** Identify dispatch handles issued by the original Claude Room pump. */
+export function isOriginalClaudeRoomPumpDispatch(dispatch: object): boolean {
+  return originalRoomPumpDispatches.has(dispatch);
+}
+import {
+  readOriginalClaudeRoomPersistentRequest,
+  requireOriginalClaudePersistentSession,
+  requireOriginalClaudeRoomPersistentEffect,
+} from '../claude-code-runtime.js';
 /**
  * The composition root of the persistent pump: where the opt-in is read, where
  * every P3 module is wired to its neighbour, and where a turn on a warm process
@@ -377,9 +413,19 @@ function waitingOnFor(
  * so warmth is answered by the thing that actually owns the processes.
  */
 export class PersistentDispatch {
-  private readonly registry: SessionPumpRegistry;
-  private readonly sessionKeyOf: (sessionId: string) => string;
-  private readonly bundles = new Map<string, SessionBundle>();
+  private readonly originalRoomStops = new WeakMap<object, () => Promise<void>>();
+  private readonly originalRoomStopped = new WeakSet<object>();
+
+  /** Stop only the pump captured by this exact private Room dispatch request. */
+  stopOriginalRoomRequest(args: object): Promise<void> {
+    this.originalRoomStopped.add(args);
+    return this.originalRoomStops.get(args)?.() ?? Promise.resolve();
+  }
+
+  readonly #peek: SessionPumpRegistry['peek'];
+  readonly #registry: SessionPumpRegistry;
+  readonly #sessionKeyOf: (sessionId: string) => string;
+  readonly #bundles = new Map<string, SessionBundle>();
   /**
    * Whoever is projecting turns the agent starts on its own, or `undefined`
    * when nothing is listening (spec `warm-process-lifecycle` D6).
@@ -436,8 +482,12 @@ export class PersistentDispatch {
     ) => void,
     backgroundWork: () => BackgroundWorkLedger = sharedBackgroundWorkLedger
   ) {
-    this.registry = registry;
-    this.sessionKeyOf = sessionKeyOf;
+    this.#registry = registry;
+    this.#peek = registry.peek.bind(registry);
+    originalPersistentCapacity.set(this, (key) =>
+      readOriginalSessionPumpState(this.#peek(this.#sessionKeyOf(key)))
+    );
+    this.#sessionKeyOf = sessionKeyOf;
     this.onPluginReloadHeld = onPluginReloadHeld;
     this.backgroundWork = backgroundWork;
   }
@@ -512,9 +562,9 @@ export class PersistentDispatch {
    *   answers to
    */
   runtimeTurnQuery(sessionId: string): Query | undefined {
-    const key = this.sessionKeyOf(sessionId);
-    const bundle = this.bundles.get(key);
-    if (bundle === undefined || this.registry.peek(key) !== bundle.pump) return undefined;
+    const key = this.#sessionKeyOf(sessionId);
+    const bundle = this.#bundles.get(key);
+    if (bundle === undefined || this.#registry.peek(key) !== bundle.pump) return undefined;
     if (bundle.windows.openWindow?.origin !== 'runtime') return undefined;
     return bundle.live;
   }
@@ -532,8 +582,8 @@ export class PersistentDispatch {
    *   answers to
    */
   isSegmentPending(sessionId: string): boolean {
-    const key = this.sessionKeyOf(sessionId);
-    const pump = this.registry.peek(key);
+    const key = this.#sessionKeyOf(sessionId);
+    const pump = this.#registry.peek(key);
     if (pump === undefined) return false;
     const quietness = pump.quietness();
     return !quietness.quiet && quietness.because === 'delivery-owed';
@@ -550,9 +600,9 @@ export class PersistentDispatch {
    *   work, so there is nothing to switch for
    */
   switchWhenReady(sessionId: string): boolean {
-    const key = this.sessionKeyOf(sessionId);
-    const bundle = this.bundles.get(key);
-    if (bundle === undefined || this.registry.peek(key) !== bundle.pump) return false;
+    const key = this.#sessionKeyOf(sessionId);
+    const bundle = this.#bundles.get(key);
+    if (bundle === undefined || this.#registry.peek(key) !== bundle.pump) return false;
     if (bundle.live === undefined || bundle.holdOutstanding !== true) return false;
     bundle.switchRequested = true;
     logger.info('[persistent-dispatch] switch now: the next restart ends background work', {
@@ -569,7 +619,7 @@ export class PersistentDispatch {
    * @param sessionId - The session being asked about, in any id it answers to
    */
   isHelperWorking(sessionId: string): boolean {
-    return this.registry.peek(this.sessionKeyOf(sessionId))?.isHelperWorking() === true;
+    return this.#registry.peek(this.#sessionKeyOf(sessionId))?.isHelperWorking() === true;
   }
 
   /**
@@ -582,9 +632,9 @@ export class PersistentDispatch {
    * @param sessionId - The session being asked about, in any id it answers to
    */
   holdsBackgroundWork(sessionId: string): boolean {
-    const key = this.sessionKeyOf(sessionId);
-    const bundle = this.bundles.get(key);
-    if (bundle === undefined || this.registry.peek(key) !== bundle.pump) return false;
+    const key = this.#sessionKeyOf(sessionId);
+    const bundle = this.#bundles.get(key);
+    if (bundle === undefined || this.#registry.peek(key) !== bundle.pump) return false;
     return bundle.heldWork === true;
   }
 
@@ -606,7 +656,7 @@ export class PersistentDispatch {
   shouldDispatch(sessionId: string): boolean {
     // Not resolved here: `registry.peek` already resolves through the SAME
     // `sessionKeyOf`, so a second resolution here would only be redundant.
-    if (this.registry.peek(sessionId) !== undefined) return true;
+    if (this.#registry.peek(sessionId) !== undefined) return true;
     return isPersistentSessionEnabled();
   }
 
@@ -626,7 +676,7 @@ export class PersistentDispatch {
    * @param sessionId - The session going away, in any id it answers to
    */
   forget(sessionId: string): void {
-    this.bundles.delete(this.sessionKeyOf(sessionId));
+    this.#bundles.delete(this.#sessionKeyOf(sessionId));
   }
 
   /**
@@ -645,7 +695,7 @@ export class PersistentDispatch {
    *   answers to
    */
   bootingQuery(sessionId: string): Query | undefined {
-    const bundle = this.bundles.get(this.sessionKeyOf(sessionId));
+    const bundle = this.#bundles.get(this.#sessionKeyOf(sessionId));
     if (bundle === undefined || !bundle.booting) return undefined;
     return bundle.live;
   }
@@ -662,8 +712,10 @@ export class PersistentDispatch {
    *   of the process being dispatched to.
    */
   async *dispatch(args: PersistentDispatchArgs): AsyncGenerator<StreamEvent> {
+    requireOriginalClaudePersistentSession(this, args);
+    const dedicated = readOriginalClaudeRoomPersistentRequest(this, args);
     const { sessionId, content, session, opts, messageOpts } = args;
-    const key = this.sessionKeyOf(sessionId);
+    const key = this.#sessionKeyOf(sessionId);
     session.lastActivity = Date.now();
     // The per-turn resets wait for the handshake's answer: an attempt held for
     // background work is no turn, and must not wipe the state of the one that
@@ -733,7 +785,7 @@ export class PersistentDispatch {
       fingerprint: captureLaunchFingerprint(resolved.launch),
     };
 
-    let bundle = this.acquire(key, session, opts);
+    let bundle = this.#acquire(key, session, opts);
     // Nothing pinned to the live process may be stale by the time the turn
     // opens. A pin the SDK cannot set live replaces the process outright; the
     // four it can are awaited, never fired blind (`launch-live-settings.ts`).
@@ -868,7 +920,7 @@ export class PersistentDispatch {
         reason: reuse.reason,
       });
       await this.replaceProcess(key);
-      bundle = this.acquire(key, session, opts);
+      bundle = this.#acquire(key, session, opts);
     } else if (reuse.action === 'adjust') {
       const control = bundle.pump.controlQuery;
       if (control === undefined) {
@@ -917,10 +969,51 @@ export class PersistentDispatch {
     // `replaceProcess` can hand back a different one.
     bundle.closedByStop = false;
     try {
-      window = await bundle.recovery.dispatch(
-        [{ content: plan.enrichedContent, messageId: messageOpts?.messageId ?? randomUUID() }],
-        effectiveCwd
-      );
+      const message = {
+        content: plan.enrichedContent,
+        messageId: messageOpts?.messageId ?? randomUUID(),
+      };
+      if (dedicated) {
+        const originalBundle = bundle,
+          originalPump = bundle.pump;
+        this.originalRoomStops.set(args, async () => {
+          // Start both original closures even when the first one refuses.
+          let failed = false,
+            firstCause: unknown;
+          try {
+            originalPump.controlQuery?.close();
+          } catch (cause) {
+            failed = true;
+            firstCause = cause;
+          }
+          try {
+            await originalPump.teardown();
+          } catch (cause) {
+            if (!failed) {
+              failed = true;
+              firstCause = cause;
+            }
+          }
+          if (failed) throw firstCause;
+        });
+        if (this.originalRoomStopped.has(args)) {
+          await this.stopOriginalRoomRequest(args);
+          throw new Error('Original persistent Room request stopped before launch.');
+        }
+        originalRoomPumpDispatches.set(message, {
+          pump: originalPump,
+          effect: () => {
+            if (
+              this.#bundles.get(key) !== originalBundle ||
+              originalBundle.pump !== originalPump ||
+              this.#peek(key) !== originalPump
+            )
+              throw new Error('Original persistent Room pump changed.');
+            requireOriginalClaudeRoomPersistentEffect(this, args);
+          },
+        });
+      }
+      window = await bundle.recovery.dispatch([message], effectiveCwd);
     } catch (err) {
       yield* this.explainRefusedDispatch(sessionId, err, bundle.closedByStop);
       return;
@@ -974,9 +1067,9 @@ export class PersistentDispatch {
    * @returns True when a turn that never finished had to be abandoned
    */
   settleOpenTurn(sessionId: string): boolean {
-    const key = this.sessionKeyOf(sessionId);
-    const bundle = this.bundles.get(key);
-    if (bundle === undefined || this.registry.peek(key) !== bundle.pump) return false;
+    const key = this.#sessionKeyOf(sessionId);
+    const bundle = this.#bundles.get(key);
+    if (bundle === undefined || this.#registry.peek(key) !== bundle.pump) return false;
     return bundle.windows.abandonOpenWindow();
   }
 
@@ -994,9 +1087,9 @@ export class PersistentDispatch {
    * @returns True when a held turn was settled
    */
   settleHeldTurn(sessionId: string): boolean {
-    const key = this.sessionKeyOf(sessionId);
-    const bundle = this.bundles.get(key);
-    if (bundle === undefined || this.registry.peek(key) !== bundle.pump) return false;
+    const key = this.#sessionKeyOf(sessionId);
+    const bundle = this.#bundles.get(key);
+    if (bundle === undefined || this.#registry.peek(key) !== bundle.pump) return false;
     return bundle.windows.settleHeldClose();
   }
 
@@ -1049,12 +1142,12 @@ export class PersistentDispatch {
    * @returns Whether the steer reached the process, and why not when it did not
    */
   steer(sessionId: string, content: string, opts: DeliverIntoTurnOpts): RuntimeDeliveryResult {
-    const key = this.sessionKeyOf(sessionId);
-    const bundle = this.bundles.get(key);
+    const key = this.#sessionKeyOf(sessionId);
+    const bundle = this.#bundles.get(key);
     // No wiring, or a bundle the registry no longer backs (an idle reap or a
     // warm-ceiling reclaim this class was never told about): no live process to
     // join, and touching a spent pump would throw the must-not-throw contract.
-    if (bundle === undefined || this.registry.peek(key) !== bundle.pump) {
+    if (bundle === undefined || this.#registry.peek(key) !== bundle.pump) {
       return { delivered: false, reason: 'no-open-turn' };
     }
     // Tag the OPEN window first — this both proves a window is open (the gate)
@@ -1130,14 +1223,14 @@ export class PersistentDispatch {
     senderOpts: MessageSenderOpts,
     messageOpts?: MessageOpts
   ): Promise<RuntimeDeliveryResult> {
-    const key = this.sessionKeyOf(sessionId);
+    const key = this.#sessionKeyOf(sessionId);
     const enriched = enrichDeliveredContent(content, opts.additionalContext);
-    const existing = this.bundles.get(key);
+    const existing = this.#bundles.get(key);
     // A bundle the registry still backs holds a live (warm or running) process.
     // A bundle it no longer backs — an idle reap or a warm-ceiling reclaim this
     // class was never told about — is as good as cold: touching its spent pump
     // would throw, so it falls through to the cold path and builds a fresh one.
-    const live = existing !== undefined && this.registry.peek(key) === existing.pump;
+    const live = existing !== undefined && this.#registry.peek(key) === existing.pump;
 
     let bundle: SessionBundle;
     if (live) {
@@ -1192,7 +1285,7 @@ export class PersistentDispatch {
         sdkOptions: resolved.sdkOptions,
         fingerprint: captureLaunchFingerprint(resolved.launch),
       };
-      bundle = this.acquire(key, session, senderOpts);
+      bundle = this.#acquire(key, session, senderOpts);
       bundle.plan = plan;
     }
 
@@ -1319,8 +1412,8 @@ export class PersistentDispatch {
    * @param session - The session record the bundle is wired for
    * @param opts - The runtime ports the launcher and the interactive gate need
    */
-  private acquire(key: string, session: AgentSession, opts: MessageSenderOpts): SessionBundle {
-    const existing = this.bundles.get(key);
+  #acquire(key: string, session: AgentSession, opts: MessageSenderOpts): SessionBundle {
+    const existing = this.#bundles.get(key);
     // Held to the REGISTRY's answer, not to the map's, because the registry
     // drops pumps this class never hears about: the idle timer reaps one after
     // five quiet minutes, and a warm-ceiling reclaim takes the least recently
@@ -1328,7 +1421,7 @@ export class PersistentDispatch {
     // bundle still pointing at one would turn the next message into an illegal
     // transition instead of a fresh launch. Identity, not presence: a pump the
     // registry replaced is as stale as one it dropped.
-    if (existing !== undefined && this.registry.peek(key) === existing.pump) return existing;
+    if (existing !== undefined && this.#registry.peek(key) === existing.pump) return existing;
 
     // `existing !== undefined` here means this class HELD a bundle for this
     // session and the registry no longer backs it with the same pump — an
@@ -1357,7 +1450,7 @@ export class PersistentDispatch {
       seenTaskTypes: new Set<string>(),
     } as unknown as SessionBundle;
 
-    bundle.pump = this.registry.acquire(key, {
+    bundle.pump = this.#registry.acquire(key, {
       maxWarmSessions: SESSIONS.MAX_WARM_SESSIONS,
       warmIdleMs: SESSIONS.WARM_IDLE_MS,
       // Mirrored into a durable record so a server that goes away while the
@@ -1460,7 +1553,7 @@ export class PersistentDispatch {
         // A process DorkOS ends on purpose never reaches `onCrash`, so a turn
         // still open on it is closed here, at the edge, rather than left dark
         // for the stall watchdog (DOR-2681). Read through the bundle, not
-        // through `this.bundles`: eviction forgets the bundle before it tears
+        // through `this.#bundles`: eviction forgets the bundle before it tears
         // the process down.
         if (change.to === 'cold' || change.to === 'reaped') bundle.windows?.onRetired();
         // Session timers live in the process, so they end with it; the next
@@ -1572,7 +1665,7 @@ export class PersistentDispatch {
       windows: bundle.windows,
     });
 
-    this.bundles.set(key, bundle);
+    this.#bundles.set(key, bundle);
     return bundle;
   }
 
@@ -1591,7 +1684,7 @@ export class PersistentDispatch {
    * @param key - The resolved map key, exactly as {@link acquire} takes
    */
   private async replaceProcess(key: string): Promise<void> {
-    await this.registry.evict(key);
+    await this.#registry.evict(key);
     this.forget(key);
   }
 
@@ -1613,7 +1706,7 @@ export class PersistentDispatch {
     key: string
   ): Promise<Extract<Quietness, { quiet: false }> | undefined> {
     const current = (): boolean =>
-      bundle.live !== undefined && this.registry.peek(key) === bundle.pump;
+      bundle.live !== undefined && this.#registry.peek(key) === bundle.pump;
     if (!current()) return undefined;
     let quietness = bundle.pump.quietness();
     if (quietness.quiet) {
@@ -1639,7 +1732,7 @@ export class PersistentDispatch {
     bundle: SessionBundle,
     key: string
   ): Extract<Quietness, { quiet: false }> | undefined {
-    if (bundle.live === undefined || this.registry.peek(key) !== bundle.pump) return undefined;
+    if (bundle.live === undefined || this.#registry.peek(key) !== bundle.pump) return undefined;
     const quietness = bundle.pump.quietness();
     return quietness.quiet ? undefined : quietness;
   }
