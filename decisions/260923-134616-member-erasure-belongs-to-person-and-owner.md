@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted (from spec: community-member-erasure)
 
+Amended by [261001-150212](261001-150212-host-account-closure-ends-access-now-erases-after-the-window.md) (a host may close someone's account; accepted 2026-10-06): retires "host authority cannot request or see an erasure": a host can start one through a closure, and learns of a person's own waiting request when its closure joins it. A host still cannot cancel or speed up a person's own erasure, or list anyone's.
+
 ## Context
 
 Accounts on a Community host are host-wide and authority is per membership (ADR `260920-192429`). Host authority manages communities as containers and never reads or writes their content (ADR `260920-201101`; the host-operator API spec). A person asking to be erased may want out of one community or off the host entirely. Erasure is irreversible, so a mistake or a hijacked session must be recoverable for a short time, and GDPR asks for erasure without undue delay. Some members were imported from another host and have no account here.

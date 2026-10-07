@@ -29,6 +29,8 @@ Accepted — implemented by spec `persistent-session-runtime` phase P3 (PRs #975
 
 This is the process-model half of the persistent-session work. Its companion is [ADR 260811-184735](260811-184735-server-owned-durable-message-queue.md) (the server-owned durable message queue, "ADR-c"), which owns the queue that survives the reap this ADR introduces. Read together: the queue makes a message durable, and this ADR makes the process that consumes it warm. Neither is safe without the other — a warm process that dropped queued work on a reap, or a durable queue feeding a cold subprocess every turn, would each miss the point.
 
+(2026-10-06 audit) Still governs; 260915-202228 is now accepted, so the five passages listed above are retired, not pending.
+
 ## Context
 
 The claude-code runtime ran **resume-per-message plus held-stream-within-turn**. Every turn built a fresh SDK `query()`, resumed the prior SDK session, held stdin open only long enough to answer control requests inside that one turn, and closed the process on the first `result`. The subprocess, its MCP connections, and its prompt cache therefore lived and died inside a single turn. Turn two of a conversation paid for a fresh subprocess, a fresh MCP handshake, and a cold prompt cache all over again.

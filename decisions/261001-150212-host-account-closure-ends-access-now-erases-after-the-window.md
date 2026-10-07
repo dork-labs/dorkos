@@ -1,7 +1,7 @@
 ---
 id: 261001-150212
 title: A host may close someone's account; access ends at once, erasure waits the ordinary window
-status: proposed
+status: accepted
 created: 2026-10-01
 spec: null
 superseded-by: null
@@ -12,7 +12,9 @@ amends: [260923-134616, 260924-215422]
 
 ## Status
 
-Proposed (DOR-2557). Amends `260923-134616` where it says host authority cannot request or see an erasure: a host can now start one through a closure, and learns of a person's own waiting request when its closure joins it. A host still cannot cancel or speed up a person's own erasure, or list anyone's. Amends `260924-215422`, which left member erasure unblocked by a legal hold (its open question 8), for one case only: a hold now holds an erasure the host started. A person's own erasure is still not held.
+Accepted (2026-10-06 review): shipped in #2453 (DOR-2557); `apps/community/src/routes/host/host-account-closures.ts`.
+
+Originally: Proposed (DOR-2557). Amends `260923-134616` where it says host authority cannot request or see an erasure: a host can now start one through a closure, and learns of a person's own waiting request when its closure joins it. A host still cannot cancel or speed up a person's own erasure, or list anyone's. Amends `260924-215422`, which left member erasure unblocked by a legal hold (its open question 8), for one case only: a hold now holds an erasure the host started. A person's own erasure is still not held.
 
 ## Context
 

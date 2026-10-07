@@ -1,7 +1,7 @@
 ---
 id: 261004-192123
 title: Keep navigation history per desktop tab, in the client tab store
-status: draft
+status: accepted
 created: 2026-10-04
 spec: desktop-tab-history
 superseded-by: null
@@ -12,7 +12,9 @@ amends: null
 
 ## Status
 
-Draft (extracted from `desktop-tab-history`).
+Accepted (2026-10-06 review): shipped in #2552 (DOR-2107); `apps/client/src/layers/features/app-tabs/model/tab-history.ts`.
+
+Originally: Draft (extracted from `desktop-tab-history`).
 
 ## Context
 
