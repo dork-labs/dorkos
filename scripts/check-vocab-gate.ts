@@ -840,7 +840,12 @@ export function scanMdx(filePath: string, text: string, terms: BannedTerm[]): Vi
  * the READMEs and the operating skills this scan never reads. Listing wave 6
  * here too would report each docs hit twice, under two different fixes. The
  * split is the same in both directions: this script owns render-path strings
- * in app source for wave 6, the shell script owns prose.
+ * in app source for wave 6, the shell script owns prose. The shell script
+ * reads this script's `allowlist.json` for a wave-6 hit under `docs/` (an
+ * entry must name a wave-6 term, and `contains` narrows it to a line), since
+ * {@link MDX_ALLOW_MARKER_BAN} leaves a docs page no inline marker. Moving
+ * wave 6 here instead would lose Discord invite links, which sit in link
+ * targets that {@link stripNonProse} blanks.
  */
 const MDX_SCANNED_WAVES = new Set(['wave-4', 'wave-5']);
 

@@ -338,7 +338,9 @@ describe('wave 6 — retired positioning phrases in copy positions', () => {
     ['the old category line', 'DorkOS is the operating system for autonomous AI agents.'],
     ['the short form', 'An OS for AI agents.'],
     ['the 2026-08 category line', 'One place for every agent you run.'],
-    ['an equal-accounts claim', 'Agents are equal to people here.'],
+    ['"agents are equal"', 'Agents are equal to people here.'],
+    ['"agents equal"', 'Here, agents equal people.'],
+    ['"equal accounts"', 'People and agents get equal accounts.'],
     ['a Discord invite link', 'Join us at discord.gg/dorkos'],
   ])('catches %s', (_name, copy) => {
     const violations = scanSource('Hero.tsx', `const x = <p>${copy}</p>;`, wave6);
@@ -364,6 +366,20 @@ describe('wave 6 — retired positioning phrases in copy positions', () => {
   it('leaves the current category line alone', () => {
     const src = `const x = <p>A workspace for people and agents.</p>;`;
     expect(scanSource('Hero.tsx', src, wave6)).toEqual([]);
+  });
+
+  // Each of these is an ordinary sentence a phrase fired on before every
+  // family was fenced as whole words (DOR-2736 review). check-banned-words.sh
+  // pins the same five in its own suite.
+  it.each([
+    ['"agents equally"', 'Budget runs across your agents equally.'],
+    ['a benchmark "equal to humans"', 'The model scored equal to humans on the reading test.'],
+    ['"the OS for each agent"', "Pick the OS for each agent's sandbox."],
+    ['"Unequal accounts"', 'Unequal accounts of what happened are common in a long run.'],
+    ['"OS for every agent"', "A shared OS for every agent's container image keeps builds fast."],
+  ])('leaves %s alone', (_name, copy) => {
+    const src = `const x = <p>${copy}</p>;`;
+    expect(scanSource('Guide.tsx', src, wave6)).toEqual([]);
   });
 });
 

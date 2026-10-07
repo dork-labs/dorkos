@@ -20,9 +20,11 @@
 #     and agents". The product name DorkOS stays.
 #   - "one place for every agent" / "one place for every AI agent", the 2026-08
 #     category line the reset replaced.
-#   - Equal-accounts claims: "equal to humans", "equal to people", "equal
-#     accounts", "agents equal". An internal design principle (ADR
-#     261006-235239); public copy never states it.
+#   - Equal-accounts claims: "equal accounts", "agents equal", "agents are
+#     equal (to people)". An internal design principle (ADR 261006-235239);
+#     public copy never states it. A bare "equal to humans" is NOT banned: it
+#     is an ordinary benchmark sentence ("scored equal to humans"), and the
+#     claim this group exists to stop always names agents.
 #   - Discord invite links (discord.gg/..., discord.com/invite/...). There is
 #     no DorkOS Discord; the community is the DorkOS Community Space. The bare
 #     word "Discord" stays legal: it is a real app people connect, and the
@@ -53,8 +55,8 @@
 # split is:
 #
 #   check-vocab-gate.ts  →  render-path strings in apps/{client,site,server}/src,
-#                            PLUS docs/**/*.mdx prose (DOR-2508, wave 4 only —
-#                            see that script's own header)
+#                            PLUS docs/**/*.mdx prose (DOR-2508, waves 4 and 5
+#                            only — see that script's own header)
 #   this script          →  everything else: README/AGENTS.md/CONTRIBUTING.md,
 #                            docs/ and blog/ prose for wave 2 AND wave 6 (the
 #                            positioning lines above), and data files an AST
@@ -62,7 +64,26 @@
 #
 # Wave 6 is in both gates, split the same way wave 2 is: check-vocab-gate.ts
 # reads it in app render paths only and leaves it out of its docs scan, so a
-# docs hit is reported once, here, with one fix to follow.
+# docs hit is reported once, here, with one fix to follow. This script's
+# regex is the wider of the two: it accepts the qualifiers "AI", "autonomous"
+# and "coding" in any order, where banned-terms.json lists the spellings
+# people actually wrote, one term each.
+#
+# DOCS EXEMPTIONS COME FROM allowlist.json, FOR WAVE 6. check-vocab-gate.ts
+# bans the `vocab-allow` marker anywhere in docs/**/*.mdx (Fumadocs renders it
+# as visible text), so a docs page cannot use the marker this script honours
+# elsewhere. For a wave-6 hit under docs/, this script reads
+# scripts/vocab-gate/allowlist.json instead, mirroring the parser gate's rules
+# for the fields it needs: `path` is a plain substring of the repo-relative
+# path, `contains` (when present) a case-sensitive substring of the line, and
+# the entry must either omit `terms` or name at least one wave-6 term. The one
+# difference: the parser gate matches `contains` within the first 140
+# characters of a trimmed line, this script anywhere on it. An entry exempts
+# wave 6 only, so a wave-2 word on the same line is still reported. node reads
+# the JSON (no jq on every runner); a missing node or a broken file is an
+# error, never a silent pass. Moving wave 6 into the parser gate's docs scan
+# instead was rejected: that scan blanks link targets, the one place a Discord
+# invite usually sits.
 #
 # Both now run in the `typecheck` workflow, one step apart (DOR-1814 moved the
 # parser half there; before that it rode only its own pin suite, on a workflow
@@ -100,6 +121,12 @@
 # Its __tests__ are not scanned. Should a legitimate use ever appear, mark the
 # line with `vocab-allow` rather than dropping the directory.
 #
+# ONE MARKER EXEMPTS THE WHOLE LINE. `vocab-allow` is checked per line, not per
+# word group, so a marked line is exempt from wave 2 and wave 6 at once.
+# blog/dorkos-0-65-0.mdx relies on that: its line announcing the retirement of
+# "mission control" also quotes "one place for every agent", the category line
+# of the day, under the one marker. Outside docs/, that is the only exemption.
+#
 # WHAT IS DELIBERATELY EXEMPT (see ALLOW_PATTERNS):
 #   - docs/changelog.mdx and docs/changelog-archive.mdx are COMPILED from
 #     CHANGELOG.md, which AGENTS.md forbids editing by hand. They record what
@@ -114,13 +141,13 @@
 #   - GitHub ships a product literally named "Mission Control", so a genuine
 #     reference to it is allowed. Mark such a line with `vocab-allow` in a
 #     comment or HTML comment on the same line, with a reason.
-#   - meta/ is not scanned at all: the brand, positioning and voice files
-#     quote every retired line to state the rule, and meta/archive/ and
-#     its archive/ is a historical record. Neither are research/,
-#     specs/, decisions/ or plans/, which are working notes, not public prose.
+#   - meta/ is not scanned: its brand, positioning and voice files quote every
+#     retired line to state the rule, and meta/archive/ is a historical record.
+#     Nor are research/, specs/, decisions/ or plans/, which are working notes,
+#     not public prose.
 #   - AGENTS.md states the prohibition, so it has to quote both words to say
-#     what they are (and, since 2026-10, the retired positioning lines too). It is scanned anyway — it loads into every agent session as
-#     project instructions, which makes it the likeliest place for a retired
+#     what they are. It is scanned anyway — it loads into every agent session
+#     as project instructions, which makes it the likeliest place for a retired
 #     word to be copied back out of and into user-facing copy. Because matching
 #     is line-scoped and AGENTS.md writes a paragraph per line, the rule lives
 #     in a paragraph of its own so its marker exempts that prose and nothing
@@ -145,12 +172,23 @@ BANNED_RE='mission control|cockpit'
 
 # Wave 6, the 2026-10 positioning lines (see the header). POSITIONING_RE is the
 # three retired lines; DISCORD_LINK_RE is the invite link, kept separate because
-# it alone is safe to grep for in source. `([[:alnum:]-]+ ){0,3}` lets a line
-# carry up to three qualifiers ("for autonomous AI coding agents") without the
-# pattern growing a branch per spelling. The "OS for" branch needs a non-word
-# character in front, written portably, so "DorkOS for agents" or "macOS for"
-# never fires.
-POSITIONING_RE='operating system for ([[:alnum:]-]+ ){0,3}agents?|(^|[^[:alnum:]])os for ([[:alnum:]-]+ ){0,3}agents?|one place for every ([[:alnum:]-]+ ){0,2}agents?|equal to (humans|people)|equal accounts?|agents (are )?equal'
+# it alone is safe to grep for in source.
+#
+# Every branch is fenced as a whole phrase. grep -E has no portable \b (BSD
+# and GNU disagree, and bash 3.2 on macOS uses BSD), so a boundary is written
+# out: `(^|[^[:alnum:]])` in front, `([^[:alnum:]]|$)` behind. Without them
+# "Unequal accounts", "your agents equally" and "DorkOS for agents" all fired.
+# The qualifiers are a closed list, `((ai|autonomous|coding) ){0,3}`, not "any
+# word": an open list let "the OS for each agent's sandbox" and "a shared OS
+# for every agent's container" through as the retired line.
+POS_QUAL='((ai|autonomous|coding) )'
+POS_END='([^[:alnum:]]|$)'
+POS_START='(^|[^[:alnum:]])'
+POSITIONING_RE="operating system for ${POS_QUAL}{0,3}agents?${POS_END}"
+POSITIONING_RE="${POSITIONING_RE}|${POS_START}os for ${POS_QUAL}{0,3}agents?${POS_END}"
+POSITIONING_RE="${POSITIONING_RE}|${POS_START}one place for every ${POS_QUAL}{0,2}agents?${POS_END}"
+POSITIONING_RE="${POSITIONING_RE}|${POS_START}equal accounts?${POS_END}"
+POSITIONING_RE="${POSITIONING_RE}|${POS_START}agents (are )?equal${POS_END}"
 DISCORD_LINK_RE='discord\.gg/|discord(app)?\.com/invite'
 
 # Prose and user-visible data only — never source files. See the header.
@@ -204,6 +242,56 @@ is_exempt_file() {
   return 1
 }
 
+# allowlist.json entries that can exempt a wave-6 hit in docs/ (see the
+# header), as three parallel arrays. Loaded once, by node, before any scan.
+ALLOWLIST_FILE="$ROOT/scripts/vocab-gate/allowlist.json"
+BANNED_TERMS_FILE="$ROOT/scripts/vocab-gate/banned-terms.json"
+docs_allow_paths=()
+docs_allow_contains=()
+docs_allow_scoped=()
+if [ -f "$ALLOWLIST_FILE" ]; then
+  if ! allow_rows=$(node -e '
+    const fs = require("fs");
+    const [allowFile, termsFile] = process.argv.slice(1);
+    const wave6 = new Set(
+      JSON.parse(fs.readFileSync(termsFile, "utf8")).waves
+        .filter((w) => w.id === "wave-6")
+        .flatMap((w) => w.terms)
+    );
+    for (const e of JSON.parse(fs.readFileSync(allowFile, "utf8")).entries) {
+      if (e.terms !== undefined && !e.terms.some((t) => wave6.has(t))) continue;
+      const scoped = e.contains === undefined ? "0" : "1";
+      process.stdout.write([e.path, e.contains ?? "", scoped].join("\x1f") + "\n");
+    }
+  ' "$ALLOWLIST_FILE" "$BANNED_TERMS_FILE"); then
+    echo "check-banned-words: could not read $ALLOWLIST_FILE with node" >&2
+    exit 2
+  fi
+  if [ -n "$allow_rows" ]; then
+    while IFS=$'\x1f' read -r a_path a_contains a_scoped; do
+      docs_allow_paths+=("$a_path")
+      docs_allow_contains+=("$a_contains")
+      docs_allow_scoped+=("$a_scoped")
+    done <<<"$allow_rows"
+  fi
+fi
+
+# Whether an allowlist.json entry exempts this docs line from wave 6.
+#   $1 repo-relative path   $2 line text
+is_docs_allowlisted() {
+  local f="$1" line="$2" i=0
+  while [ "$i" -lt "${#docs_allow_paths[@]}" ]; do
+    case "$f" in
+      *"${docs_allow_paths[$i]}"*)
+        if [ "${docs_allow_scoped[$i]}" = "0" ]; then return 0; fi
+        case "$line" in *"${docs_allow_contains[$i]}"*) return 0 ;; esac
+        ;;
+    esac
+    i=$((i + 1))
+  done
+  return 1
+}
+
 is_allowed_line() {
   local line="$1"
   for p in "${ALLOW_PATTERNS[@]}"; do
@@ -229,6 +317,7 @@ done
 violations=0
 hit_wave2=0
 hit_positioning=0
+hit_positioning_docs=0
 
 # Report one hit, remembering which word group it belongs to so the failure
 # message names the right fix.
@@ -241,7 +330,10 @@ report_hit() {
   fi
   violations=$((violations + 1))
   if printf '%s' "$text" | grep -Eqi "$BANNED_RE"; then hit_wave2=1; fi
-  if printf '%s' "$text" | grep -Eqi "$POSITIONING_RE|$DISCORD_LINK_RE"; then hit_positioning=1; fi
+  if printf '%s' "$text" | grep -Eqi "$POSITIONING_RE|$DISCORD_LINK_RE"; then
+    hit_positioning=1
+    case "$f" in docs/*) hit_positioning_docs=1 ;; esac
+  fi
   printf '  %s:%s\n    %s\n' "$f" "$lineno" "$(printf '%s' "$text" | sed 's/^[[:space:]]*//' | cut -c1-140)" >&2
 }
 
@@ -261,6 +353,16 @@ scan_files() {
     [ -n "$hits" ] || continue
     while IFS= read -r hit; do
       is_allowed_line "${hit#*:}" && continue
+      # A docs allowlist entry exempts wave 6 only: the line still fails if it
+      # also carries a wave-2 word.
+      case "$f" in
+        docs/*)
+          if is_docs_allowlisted "$f" "${hit#*:}" &&
+            ! printf '%s' "${hit#*:}" | grep -Eqi "$BANNED_RE"; then
+            continue
+          fi
+          ;;
+      esac
       report_hit "$f" "${hit%%:*}" "${hit#*:}"
     done <<<"$hits"
   done
@@ -328,6 +430,15 @@ if [ "$violations" -gt 0 ]; then
       echo ""
       echo "If a line quotes the phrase to state the rule, add 'vocab-allow' plus a"
       echo "reason in a comment on the same line."
+    } >&2
+  fi
+  if [ "$hit_positioning_docs" -eq 1 ]; then
+    {
+      echo ""
+      echo "In docs/**/*.mdx the 'vocab-allow' marker is banned (check-vocab-gate.ts:"
+      echo "Fumadocs renders it as visible text). Add a scoped entry with \"path\","
+      echo "\"contains\" (text from that line), \"terms\" (a wave-6 term) and a"
+      echo "\"reason\" to scripts/vocab-gate/allowlist.json instead."
     } >&2
   fi
   exit 1
