@@ -74,7 +74,7 @@ export default function CookiePolicyPage() {
             <p className="text-warm-gray leading-relaxed">
               We use PostHog, a privacy-friendly analytics tool, to understand how the website is
               used. When analytics is on, it sets a cookie to count page visits and a few clicks,
-              like copying the install command. There is no session recording and no cross-site
+              like copying the install command. There is no screen recording and no cross-site
               tracking.
             </p>
             <p className="text-warm-gray leading-relaxed">

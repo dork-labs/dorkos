@@ -48,7 +48,7 @@ describe('UserRow', () => {
     expect(screen.getByText('actions disabled on your account')).toBeTruthy();
     expect(screen.getByText('you')).toBeTruthy();
     // None of the mutating action triggers are rendered for the self row.
-    for (const label of ['Make admin', 'Ban', 'Impersonate', 'Revoke sessions', 'Delete']) {
+    for (const label of ['Make admin', 'Ban', 'Impersonate', 'Sign out everywhere', 'Delete']) {
       expect(screen.queryByRole('button', { name: label })).toBeNull();
     }
   });
@@ -57,7 +57,7 @@ describe('UserRow', () => {
     render(<UserRow user={BASE} isSelf={false} />);
 
     expect(screen.queryByText('actions disabled on your account')).toBeNull();
-    for (const label of ['Make admin', 'Ban', 'Impersonate', 'Revoke sessions', 'Delete']) {
+    for (const label of ['Make admin', 'Ban', 'Impersonate', 'Sign out everywhere', 'Delete']) {
       expect(screen.getByRole('button', { name: label })).toBeTruthy();
     }
     // A plain, verified, non-admin user shows none of the status badges.
