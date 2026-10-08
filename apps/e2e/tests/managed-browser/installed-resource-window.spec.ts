@@ -16,6 +16,7 @@ import {
   parseOriginalFrameQueue,
 } from '../../fixtures/managed-frame-lease-bank';
 import { ManagedBrowserPage } from '../../pages/ManagedBrowserPage';
+import { prepareOriginalManagedOnboarding } from '../../fixtures/managed-original-onboarding';
 import {
   armFrameSample,
   frameObservations,
@@ -105,6 +106,7 @@ test('Two original browsers and drawn viewers: separate idle and active resource
   try {
     await Promise.all(pages.map((original) => own(installFrameObserver(original))));
     await page.goto('/');
+    await own(prepareOriginalManagedOnboarding(page));
     await settingsPage.open();
     await settingsPage.switchTab('Experiments');
     const toggle = settingsPage.activePanel.getByRole('switch', {

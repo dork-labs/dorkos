@@ -20,7 +20,8 @@ export async function ownPrivateProxyAuthentication(
     number,
     {
       resolve: (value: unknown) => void;
-      reject: (error: Error) => void;
+      reject: (error: unknown) => void;
+      root: boolean;
       timer: ReturnType<typeof setTimeout>;
     }
   >();
@@ -46,6 +47,8 @@ export async function ownPrivateProxyAuthentication(
   let sequence = 0,
     stopping = false,
     retiring = false,
+    rootFetchEntered = false,
+    rootReady: Promise<unknown> | undefined,
     uncertain = false,
     firstFailure: Readonly<{ value: unknown }> | undefined,
     closing: Promise<void> | undefined,
@@ -100,7 +103,7 @@ export async function ownPrivateProxyAuthentication(
         reject(new Error('PROXY_AUTH_METHOD_TIMEOUT'));
         fault();
       }, 3000);
-      pending.set(id, { resolve, reject, timer });
+      pending.set(id, { resolve, reject, timer, root: sessionId === undefined });
       try {
         socket.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
       } catch {
@@ -140,6 +143,22 @@ export async function ownPrivateProxyAuthentication(
     if (targetType === 'worker' && !coveredWorker(sessionId))
       throw new Error('PROXY_AUTH_WORKER_PARENT_UNAVAILABLE');
     await send('Runtime.runIfWaitingForDebugger', {}, sessionId);
+  }
+  function sendEvent(
+    method: string,
+    params: object,
+    sessionId: string | undefined,
+    rootEvent: boolean
+  ) {
+    if (!rootEvent) return send(method, params, sessionId);
+    const ready = rootReady;
+    return Promise.resolve().then(async () => {
+      if (!ready) throw new Error('PROXY_AUTH_ROOT_NOT_ENTERED');
+      await ready;
+      if (retiring || stopping || uncertain || socket.readyState !== WebSocket.OPEN)
+        throw new Error('PROXY_AUTH_ROOT_RETIRED');
+      return send(method, params);
+    });
   }
   function own(task: Promise<void>) {
     if (tasks.size >= 128) {
@@ -195,7 +214,17 @@ export async function ownPrivateProxyAuthentication(
       }
       pending.delete(value.id);
       clearTimeout(original.timer);
-      if (value.error) original.reject(new Error('PROXY_AUTH_METHOD_REFUSED'));
+      if (original.root && Object.hasOwn(value, 'sessionId')) {
+        original.reject(new Error('PROXY_AUTH_ROOT_REPLY_SESSION_INVALID'));
+        fault();
+      } else if (original.root && Object.hasOwn(value, 'error')) original.reject(value.error);
+      else if (
+        original.root &&
+        (!value.result || typeof value.result !== 'object' || Array.isArray(value.result))
+      ) {
+        original.reject(new Error('PROXY_AUTH_ROOT_REPLY_INVALID'));
+        fault();
+      } else if (value.error) original.reject(new Error('PROXY_AUTH_METHOD_REFUSED'));
       else original.resolve(value.result);
       return;
     }
@@ -229,35 +258,48 @@ export async function ownPrivateProxyAuthentication(
       );
       authDiagnostic.emit('PROXY_AUTH_TARGET_ATTACHED');
     } else if (value.method === 'Fetch.requestPaused') {
-      if (!params || typeof params.requestId !== 'string' || !value.sessionId) {
+      const rootEvent = rootFetchEntered && !Object.hasOwn(value, 'sessionId');
+      if (!params || typeof params.requestId !== 'string' || (!rootEvent && !value.sessionId)) {
         fault();
         authDiagnostic.emit('PROXY_AUTH_EVENT_INVALID');
         return;
       }
-      if (!sessions.has(value.sessionId)) {
+      if (rootEvent && tasks.size >= 128) {
+        fault();
+        return;
+      }
+      if (!rootEvent && (typeof value.sessionId !== 'string' || !sessions.has(value.sessionId))) {
         fault();
         authDiagnostic.emit('PROXY_AUTH_EVENT_SESSION_UNKNOWN');
         return;
       }
       own(
-        send('Fetch.continueRequest', { requestId: params.requestId }, value.sessionId).then(
-          () => {}
-        )
+        sendEvent(
+          'Fetch.continueRequest',
+          { requestId: params.requestId },
+          value.sessionId,
+          rootEvent
+        ).then(() => {})
       );
       authDiagnostic.emit('PROXY_AUTH_REQUEST_PAUSED');
     } else if (value.method === 'Fetch.authRequired') {
-      if (!params || typeof params.requestId !== 'string' || !value.sessionId) {
+      const rootEvent = rootFetchEntered && !Object.hasOwn(value, 'sessionId');
+      if (!params || typeof params.requestId !== 'string' || (!rootEvent && !value.sessionId)) {
         fault();
         authDiagnostic.emit('PROXY_AUTH_EVENT_INVALID');
         return;
       }
-      if (!sessions.has(value.sessionId)) {
+      if (rootEvent && tasks.size >= 128) {
+        fault();
+        return;
+      }
+      if (!rootEvent && (typeof value.sessionId !== 'string' || !sessions.has(value.sessionId))) {
         fault();
         authDiagnostic.emit('PROXY_AUTH_EVENT_SESSION_UNKNOWN');
         return;
       }
       const challenge = params.authChallenge as { source?: string; origin?: string } | undefined;
-      const attempt = `${value.sessionId}:${params.requestId}`;
+      const attempt = JSON.stringify([rootEvent ? null : value.sessionId, params.requestId]);
       const first = !attempts.has(attempt);
       let exact = false;
       let proxySource: boolean | undefined, originMatch: boolean | undefined;
@@ -274,7 +316,7 @@ export async function ownPrivateProxyAuthentication(
       } catch {
         /* Refuse unknown challenges. */
       }
-      const authOriginal = send(
+      const authOriginal = sendEvent(
         'Fetch.continueWithAuth',
         {
           requestId: params.requestId,
@@ -286,7 +328,8 @@ export async function ownPrivateProxyAuthentication(
               }
             : { response: 'CancelAuth' },
         },
-        value.sessionId
+        value.sessionId,
+        rootEvent
       ).then(() => {});
       own(authOriginal);
       authDiagnostic.emit(
@@ -366,6 +409,17 @@ export async function ownPrivateProxyAuthentication(
   authDiagnostic.emit('PROXY_AUTH_OWNER_ENTERED');
   try {
     await opened;
+    // This root channel belongs to the already-attributed original browser, not
+    // an event-supplied child session. Browser Fetch covers instrumented factories
+    // without a child handler; uninstrumented SW update checks remain outside CDP.
+    rootReady = Promise.resolve().then(() => {
+      rootFetchEntered = true;
+      return send('Fetch.enable', {
+        handleAuthRequests: true,
+        patterns: [{ urlPattern: '*' }],
+      });
+    });
+    await rootReady;
     await send('Target.setAutoAttach', {
       autoAttach: true,
       waitForDebuggerOnStart: true,
@@ -377,6 +431,7 @@ export async function ownPrivateProxyAuthentication(
     if (uncertain) throw new Error('PROXY_AUTH_CUSTODY_UNCERTAIN');
     authDiagnostic.emit('PROXY_AUTH_READY');
   } catch (error) {
+    firstFailure ??= { value: error };
     fault();
     void close().catch(() => {});
     throw error;

@@ -336,3 +336,230 @@ it.each(['malformed-event', 'unowned-session', 'malformed-message'] as const)(
     }
   }
 );
+
+it('acknowledges original browser-root Fetch before admitting target autoattach', async () => {
+  vi.stubGlobal('WebSocket', Channel);
+  const send = Channel.prototype.send;
+  let enable!: Message;
+  let entered!: () => void;
+  const entry = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const held = vi.spyOn(Channel.prototype, 'send').mockImplementation(function (
+    this: Channel,
+    input: string
+  ) {
+    const message = JSON.parse(input) as Message;
+    if (message.method === 'Fetch.enable' && !Object.hasOwn(message, 'sessionId')) {
+      this.commands.push(message);
+      enable = message;
+      entered();
+    } else Reflect.apply(send, this, [input]);
+  });
+  const opening = ownPrivateProxyAuthentication(
+    'ws://127.0.0.1:9222/devtools/browser/original',
+    peer,
+    vi.fn()
+  );
+  void opening.catch(() => {});
+  try {
+    await Promise.race([
+      entry,
+      opening.then(() => {
+        throw new Error('ROOT_FETCH_NOT_ENTERED');
+      }),
+    ]);
+    expect(enable.params).toEqual({ handleAuthRequests: true, patterns: [{ urlPattern: '*' }] });
+    Channel.current.emit({ method: 'Fetch.requestPaused', params: { requestId: 'pre-ack-root' } });
+    Channel.current.emit({
+      method: 'Fetch.authRequired',
+      params: { requestId: 'pre-ack-auth', authChallenge: { source: 'Proxy', origin: peer.url } },
+    });
+    await settle();
+    expect(
+      Channel.current.commands.some((m) =>
+        ['Fetch.continueRequest', 'Fetch.continueWithAuth'].includes(m.method)
+      )
+    ).toBe(false);
+    expect(Channel.current.commands.some((m) => m.method === 'Target.setAutoAttach')).toBe(false);
+  } finally {
+    if (enable) Channel.current.emit({ id: enable.id, result: {} });
+    await opening.then(
+      (owner) => owner.close(),
+      () => {}
+    );
+    held.mockRestore();
+  }
+});
+
+it('owns root pauses and exact proxy challenges without confusing a child request identifier', async () => {
+  const f = await fixture();
+  try {
+    f.channel.emit({ method: 'Fetch.requestPaused', params: { requestId: 'root-request' } });
+    const challenge = (requestId: string, source: string, origin: string, session?: string) =>
+      f.channel.emit({
+        method: 'Fetch.authRequired',
+        ...(session ? { sessionId: session } : {}),
+        params: { requestId, authChallenge: { source, origin } },
+      });
+    challenge('same-request', 'Proxy', peer.url);
+    challenge('same-request', 'Proxy', peer.url, 'original-page');
+    challenge('same-request', 'Proxy', peer.url);
+    challenge('server', 'Server', peer.url);
+    challenge('foreign', 'Proxy', 'http://127.0.0.1:4242');
+    await settle();
+    const pause = f.channel.commands.find((m) => m.method === 'Fetch.continueRequest');
+    expect(pause?.params).toEqual({ requestId: 'root-request' });
+    expect(Object.hasOwn(pause!, 'sessionId')).toBe(false);
+    const replies = f.channel.commands.filter((m) => m.method === 'Fetch.continueWithAuth');
+    for (const reply of replies.slice(0, 2))
+      expect(reply.params.authChallengeResponse).toEqual({
+        response: 'ProvideCredentials',
+        ...peer.credentials,
+      });
+    for (const reply of replies.slice(2))
+      expect(reply.params.authChallengeResponse).toEqual({ response: 'CancelAuth' });
+    expect(f.failed).not.toHaveBeenCalled();
+  } finally {
+    await f.owner.close();
+  }
+});
+
+it.each([null, false, ''])(
+  'refuses explicit invalid root event session %s instead of root authority',
+  async (sessionId) => {
+    const f = await fixture();
+    try {
+      f.channel.emit({
+        method: 'Fetch.authRequired',
+        sessionId,
+        params: { requestId: 'root-request', authChallenge: { source: 'Proxy', origin: peer.url } },
+      });
+      expect(f.failed).toHaveBeenCalledOnce();
+      expect(f.channel.commands.some((m) => m.method === 'Fetch.continueWithAuth')).toBe(false);
+      await expect(f.owner.close()).rejects.toThrow('PROXY_AUTH_CUSTODY_UNCERTAIN');
+    } finally {
+      await f.owner.close().catch(() => {});
+    }
+  }
+);
+
+it.each([false, undefined])(
+  'joins held root authentication and preserves original falsy reply %s',
+  async (cause) => {
+    const f = await fixture();
+    const send = f.channel.send;
+    let reply!: Message;
+    f.channel.send = function (this: Channel, input: string) {
+      const message = JSON.parse(input) as Message;
+      if (message.method === 'Fetch.continueWithAuth' && !Object.hasOwn(message, 'sessionId')) {
+        this.commands.push(message);
+        reply = message;
+      } else Reflect.apply(send, this, [input]);
+    };
+    let preparing: Promise<void> | undefined,
+      released = false;
+    const release = () => {
+      if (!reply || released) return;
+      released = true;
+      // JSON cannot encode an undefined own property; capture its raw reply
+      // through the original decoder's retained test-only JSON.parse port.
+      const parse = JSON.parse;
+      const original = vi.spyOn(JSON, 'parse').mockImplementation((input, reviver) => {
+        if (input === 'original-root-error') return { id: reply.id, error: cause };
+        return parse(input, reviver);
+      });
+      try {
+        f.channel.dispatchEvent(new MessageEvent('message', { data: 'original-root-error' }));
+      } finally {
+        original.mockRestore();
+      }
+    };
+    try {
+      f.channel.emit({
+        method: 'Fetch.authRequired',
+        params: { requestId: 'held-root', authChallenge: { source: 'Proxy', origin: peer.url } },
+      });
+      await settle();
+      preparing = f.owner.prepareClose();
+      void preparing.catch(() => {});
+      await settle();
+      expect(f.channel.readyState).toBe(1);
+      const count = f.channel.commands.length;
+      f.channel.emit({ method: 'Fetch.requestPaused', params: { requestId: 'late-root' } });
+      expect(f.channel.commands).toHaveLength(count);
+      release();
+      await expect(preparing).rejects.toBe(cause);
+      await expect(f.owner.close()).rejects.toBe(cause);
+    } finally {
+      release();
+      // Assertion failure cannot suppress entry or joining of either original.
+      const closing = f.owner.close();
+      await Promise.allSettled([...(preparing ? [preparing] : []), closing]);
+      f.channel.send = send;
+    }
+  }
+);
+
+it('rejects a child-session ACK for the original root Fetch before target admission', async () => {
+  vi.stubGlobal('WebSocket', Channel);
+  const send = Channel.prototype.send;
+  const held = vi.spyOn(Channel.prototype, 'send').mockImplementation(function (
+    this: Channel,
+    input: string
+  ) {
+    const message = JSON.parse(input) as Message;
+    if (message.method === 'Fetch.enable' && !Object.hasOwn(message, 'sessionId')) {
+      this.commands.push(message);
+      queueMicrotask(() => this.emit({ id: message.id, sessionId: 'unowned-child', result: {} }));
+    } else Reflect.apply(send, this, [input]);
+  });
+  const failed = vi.fn();
+  const opening = ownPrivateProxyAuthentication(
+    'ws://127.0.0.1:9222/devtools/browser/original',
+    peer,
+    failed
+  );
+  void opening.catch(() => {});
+  try {
+    await expect(opening).rejects.toThrow('PROXY_AUTH_ROOT_REPLY_SESSION_INVALID');
+    expect(Channel.current.commands.some((m) => m.method === 'Target.setAutoAttach')).toBe(false);
+    expect(failed).toHaveBeenCalledOnce();
+  } finally {
+    await opening.catch(() => {});
+    await settle();
+    held.mockRestore();
+  }
+});
+
+it.each([{ result: null }, { result: false }, { result: [] }])(
+  'refuses malformed original root result $result before target admission',
+  async ({ result }) => {
+    vi.stubGlobal('WebSocket', Channel);
+    const send = Channel.prototype.send;
+    const held = vi.spyOn(Channel.prototype, 'send').mockImplementation(function (
+      this: Channel,
+      input: string
+    ) {
+      const message = JSON.parse(input) as Message;
+      if (message.method === 'Fetch.enable' && !Object.hasOwn(message, 'sessionId')) {
+        this.commands.push(message);
+        queueMicrotask(() => this.emit({ id: message.id, result }));
+      } else Reflect.apply(send, this, [input]);
+    });
+    const opening = ownPrivateProxyAuthentication(
+      'ws://127.0.0.1:9222/devtools/browser/original',
+      peer,
+      vi.fn()
+    );
+    void opening.catch(() => {});
+    try {
+      await expect(opening).rejects.toThrow('PROXY_AUTH_ROOT_REPLY_INVALID');
+      expect(Channel.current.commands.some((m) => m.method === 'Target.setAutoAttach')).toBe(false);
+    } finally {
+      await opening.catch(() => {});
+      await settle();
+      held.mockRestore();
+    }
+  }
+);

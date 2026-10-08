@@ -16,6 +16,7 @@ covers:
   - 'fix(browser): authenticate service workers before resuming them'
   - 'fix(browser): resume owned service-worker requests'
   - 'fix(browser): refuse late worker resumes during shutdown'
+  - 'fix(browser): handle authentication on the browser root connection'
 ---
 
 ### Added

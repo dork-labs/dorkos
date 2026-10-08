@@ -43,7 +43,9 @@ async function fixture(holdAttach = false, holdWorker = false) {
         (holdWorker &&
           value.method === 'Target.setAutoAttach' &&
           value.sessionId === 'original-worker') ||
-        (!holdWorker && value.method === (holdAttach ? 'Fetch.enable' : 'Fetch.continueRequest'))
+        (!holdWorker &&
+          value.method === (holdAttach ? 'Fetch.enable' : 'Fetch.continueRequest') &&
+          (!holdAttach || value.sessionId !== undefined))
       ) {
         this.heldId = value.id;
         entered();
@@ -236,12 +238,15 @@ it('finishes the exact entered attach continuation after its held Fetch ACK with
   });
   f.socket.release();
   await closing;
-  expect(f.socket.sent.map((value) => value.method)).toEqual([
-    'Target.setAutoAttach',
-    'Fetch.enable',
-    'Target.setAutoAttach',
-    'Runtime.runIfWaitingForDebugger',
+  expect(f.socket.sent.map(({ method, sessionId }) => [method, sessionId])).toEqual([
+    ['Fetch.enable', undefined],
+    ['Target.setAutoAttach', undefined],
+    ['Fetch.enable', 'original-session'],
+    ['Target.setAutoAttach', 'original-session'],
+    ['Runtime.runIfWaitingForDebugger', 'original-session'],
   ]);
+  for (const original of f.socket.sent.slice(0, 2))
+    expect(Object.hasOwn(original, 'sessionId')).toBe(false);
   expect(f.socket.close).toHaveBeenCalledOnce();
   expect(f.failed).not.toHaveBeenCalled();
 });

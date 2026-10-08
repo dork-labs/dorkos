@@ -15,6 +15,7 @@ import {
 } from '@dorkos/shared/browser-schemas';
 import { test, expect } from '../../fixtures/managed-performance-receiver';
 import { ManagedBrowserPage } from '../../pages/ManagedBrowserPage';
+import { prepareOriginalManagedOnboarding } from '../../fixtures/managed-original-onboarding';
 import {
   armFrameSample,
   frameObservations,
@@ -40,7 +41,21 @@ test('Actual viewer pixels: 100 local, 100 injected RTT and stalled second viewe
   if (!channelDirectory) throw new Error('Original resource/frame parent channel required');
   const channel = await createOriginalFrameChannel(channelDirectory, new AbortController().signal);
   await installFrameObserver(page);
+  let first: { value: unknown } | undefined;
+  const setupOriginals: Promise<unknown>[] = [];
+  const retainSetup = <T>(original: Promise<T>) => {
+    setupOriginals.push(original);
+    void original.catch(() => {});
+    return original;
+  };
   await page.goto('/');
+  const onboarding = retainSetup(prepareOriginalManagedOnboarding(page));
+  try {
+    await onboarding;
+  } finally {
+    // Setup failure still joins this same original UI/save lifetime before leaving the body.
+    await Promise.allSettled([onboarding]);
+  }
   await settingsPage.open();
   await settingsPage.switchTab('Experiments');
   const toggle = settingsPage.activePanel.getByRole('switch', {
@@ -114,13 +129,6 @@ test('Actual viewer pixels: 100 local, 100 injected RTT and stalled second viewe
       first ??= { value };
       throw value;
     }
-  };
-  let first: { value: unknown } | undefined;
-  const setupOriginals: Promise<unknown>[] = [];
-  const retainSetup = <T>(original: Promise<T>) => {
-    setupOriginals.push(original);
-    void original.catch(() => {});
-    return original;
   };
   const observeIssuance = (role: OriginalFrameRole) => (response: Response) => {
     if (
