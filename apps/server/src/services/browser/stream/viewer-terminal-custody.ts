@@ -9,23 +9,32 @@ type Terminal = Readonly<{
 
 /** Terminal custody routes exact authenticated cleanup; it never admits frames or retains pixels. */
 export class ViewerTerminalCustody {
-  private readonly navigation = new Map<string, Terminal>();
+  private readonly cleanup = new Map<string, Terminal>();
   private readonly capture = new Map<string, Terminal>();
 
   get size(): number {
-    return this.navigation.size + this.capture.size;
+    return this.cleanup.size + this.capture.size;
   }
 
   has(token: string): boolean {
-    return this.navigation.has(token) || this.capture.has(token);
+    return this.cleanup.has(token) || this.capture.has(token);
   }
 
   get(token: string): Terminal | undefined {
-    return this.navigation.get(token) ?? this.capture.get(token);
+    return this.cleanup.get(token) ?? this.capture.get(token);
   }
 
   retainNavigation(token: string, terminal: Terminal): void {
-    this.navigation.set(
+    this.retainCleanup(token, terminal);
+  }
+
+  /** Retain exact authenticated disposal after original response cancellation; never frame authority. */
+  retainPublication(token: string, terminal: Terminal): void {
+    this.retainCleanup(token, terminal);
+  }
+
+  private retainCleanup(token: string, terminal: Terminal): void {
+    this.cleanup.set(
       token,
       Object.freeze({
         actorIdentity: terminal.actorIdentity,
@@ -37,7 +46,7 @@ export class ViewerTerminalCustody {
 
   retainCapture(token: string, terminal: Terminal): void {
     const work = terminal.work;
-    if (!work || this.navigation.has(token)) return;
+    if (!work || this.cleanup.has(token)) return;
     const original = Object.freeze({
       actorIdentity: terminal.actorIdentity,
       binding: terminal.binding,
@@ -52,12 +61,12 @@ export class ViewerTerminalCustody {
   }
 
   consume(token: string): void {
-    this.navigation.delete(token);
+    this.cleanup.delete(token);
     this.capture.delete(token);
   }
 
   clear(): void {
-    this.navigation.clear();
+    this.cleanup.clear();
     this.capture.clear();
   }
 }

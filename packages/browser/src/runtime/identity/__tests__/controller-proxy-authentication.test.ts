@@ -17,10 +17,10 @@ function fixture(emptyCatalog = false, diagnosticWrite: (value: string) => unkno
   let closing: Promise<void> | undefined;
   const original: ConnectOverCDPTransport = {
     open: vi.fn(),
-    send: (value) => {
+    send: vi.fn((value) => {
       if (!message(value)) throw new Error('CONTROL_MESSAGE_INVALID');
       sent.push(value);
-    },
+    }),
     close: vi.fn(
       () =>
         (closing ??= Promise.resolve().then(async () => {
@@ -1194,3 +1194,161 @@ it('an SDK close callback cannot admit a late worker resume or replace original 
     await f.finish();
   }
 });
+
+it('preserves the original SDK cache command and held ACK while retaining owned page HTTP cache', async () => {
+  const f = fixture();
+  try {
+    f.attach();
+    f.sdk.mockClear();
+    const original = {
+      id: 701,
+      method: 'Network.setCacheDisabled',
+      sessionId: 'actual-page',
+      params: { cacheDisabled: true },
+    };
+    f.owner.transport.send(original);
+    expect(f.sent.at(-1)).toEqual({ ...original, params: { cacheDisabled: false } });
+    expect(original.params.cacheDisabled).toBe(true);
+    expect(f.sdk).not.toHaveBeenCalled();
+    const ack = { id: original.id, sessionId: original.sessionId, result: {} };
+    f.original.onmessage?.(ack);
+    expect(f.sdk).toHaveBeenCalledExactlyOnceWith(ack);
+    expect(f.fault).not.toHaveBeenCalled();
+  } finally {
+    await f.finish();
+  }
+});
+
+it.each(['foreign-page', undefined])(
+  'does not normalize a foreign or root cache command %s',
+  async (sessionId) => {
+    const f = fixture();
+    try {
+      f.attach();
+      f.sdk.mockClear();
+      const original = {
+        id: 702,
+        method: 'Network.setCacheDisabled',
+        ...(sessionId ? { sessionId } : {}),
+        params: { cacheDisabled: true },
+      };
+      f.owner.transport.send(original);
+      expect(f.sent.at(-1)).toBe(original);
+    } finally {
+      await f.finish();
+    }
+  }
+);
+
+it.each([{ cacheDisabled: false }, { cacheDisabled: true, unexpected: true }])(
+  'preserves other original cache parameter shapes %s',
+  async (params) => {
+    const f = fixture();
+    try {
+      f.attach();
+      f.sdk.mockClear();
+      const original = {
+        id: 703,
+        method: 'Network.setCacheDisabled',
+        sessionId: 'actual-page',
+        params,
+      };
+      f.owner.transport.send(original);
+      expect(f.sent.at(-1)).toBe(original);
+    } finally {
+      await f.finish();
+    }
+  }
+);
+
+it.each([false, undefined])(
+  'retains exact original cache command producer failure %s',
+  async (reason) => {
+    const f = fixture();
+    try {
+      f.attach();
+      f.sdk.mockClear();
+      vi.mocked(f.original.send).mockImplementationOnce(() => {
+        throw reason;
+      });
+      let failure: { value: unknown } | undefined;
+      try {
+        f.owner.transport.send({
+          id: 704,
+          method: 'Network.setCacheDisabled',
+          sessionId: 'actual-page',
+          params: { cacheDisabled: true },
+        });
+      } catch (value) {
+        failure = { value };
+      }
+      expect(failure).toEqual({ value: reason });
+      expect(f.fault).toHaveBeenCalledExactlyOnceWith(reason);
+      expect(f.sdk).not.toHaveBeenCalled();
+    } finally {
+      await f.finish();
+    }
+  }
+);
+
+it.each(['stale', 'retiring', 'closed'] as const)(
+  'forwards the exact original late cache preference unchanged when %s',
+  async (state) => {
+    const f = fixture();
+    try {
+      f.attach();
+      f.sdk.mockClear();
+      if (state === 'stale') f.revoke();
+      else {
+        await f.owner.prepareClose();
+        if (state === 'closed') f.original.onclose?.();
+      }
+      const original = {
+        id: 705,
+        method: 'Network.setCacheDisabled',
+        sessionId: 'actual-page',
+        params: { cacheDisabled: true },
+      };
+      f.owner.transport.send(original);
+      expect(f.sent.at(-1)).toBe(original);
+      expect(f.original.send).toHaveBeenCalledExactlyOnceWith(original);
+      expect(f.sdk).not.toHaveBeenCalled();
+      const ack = { id: original.id, sessionId: original.sessionId, result: {} };
+      f.original.onmessage?.(ack);
+      expect(f.sdk).toHaveBeenCalledExactlyOnceWith(ack);
+      expect(f.fault).not.toHaveBeenCalled();
+    } finally {
+      await f.finish();
+    }
+  }
+);
+
+it.each([false, undefined])(
+  'preserves an actually throwing currentness callback cause %s',
+  async (reason) => {
+    const f = fixture();
+    try {
+      f.attach();
+      f.sdk.mockClear();
+      f.currentRead.mockImplementationOnce(() => {
+        throw reason;
+      });
+      let failure: { value: unknown } | undefined;
+      try {
+        f.owner.transport.send({
+          id: 706,
+          method: 'Network.setCacheDisabled',
+          sessionId: 'actual-page',
+          params: { cacheDisabled: true },
+        });
+      } catch (value) {
+        failure = { value };
+      }
+      expect(failure).toEqual({ value: reason });
+      expect(f.sent).toHaveLength(0);
+      expect(f.fault).toHaveBeenCalledExactlyOnceWith(reason);
+    } finally {
+      await f.finish();
+    }
+  }
+);

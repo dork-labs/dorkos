@@ -646,14 +646,24 @@ export async function runPrivateOriginalStorageWindow(options: {
             live.set(subject, binding);
             const report = await fixture.ready(subject, round, binding.tabId, port.signal);
             if (round === 0) httpHits.set(subject, report.httpCache);
-            requireOriginalStorage(report, {
-              subject,
-              round,
-              pageId: binding.tabId,
-              httpCache: httpHits.get(subject)!,
-              mutation: 0,
-            });
-            await options.retain({ kind: 'actual-storage-restart', round, binding, report });
+            let oracleFailure: { value: unknown } | undefined;
+            try {
+              requireOriginalStorage(report, {
+                subject,
+                round,
+                pageId: binding.tabId,
+                httpCache: httpHits.get(subject)!,
+                mutation: 0,
+              });
+            } catch (value) {
+              oracleFailure = { value };
+            }
+            try {
+              await options.retain({ kind: 'actual-storage-restart', round, binding, report });
+            } catch (value) {
+              throw oracleFailure ? oracleFailure.value : value;
+            }
+            if (oracleFailure) throw oracleFailure.value;
           }
           if (round === 0) {
             const clean = await open('clean');

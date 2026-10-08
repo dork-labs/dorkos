@@ -286,7 +286,27 @@ export function createControllerProxyAuthentication(
       }
       const fetchStage = fetchStages.entering(value);
       try {
-        sendOriginal(value);
+        let forwarded = value;
+        // The original SDK route remains installed, but its automatic cache policy is
+        // not our storage policy. Only exact admitted page sessions may retain cache.
+        if (value.method === 'Network.setCacheDisabled' && opaque(value.sessionId)) {
+          const session = sessions.get(value.sessionId);
+          const type = session?.admitted ? targets.get(session.target)?.type : undefined;
+          if ((type === 'page' || type === 'iframe') && record(value.params)) {
+            const fields = Object.getOwnPropertyDescriptors(value.params);
+            const disabled = fields.cacheDisabled;
+            if (
+              Object.keys(fields).length === 1 &&
+              disabled &&
+              Object.prototype.hasOwnProperty.call(disabled, 'value') &&
+              disabled.value === true
+            ) {
+              if (!retiring && !closed && isCurrent())
+                forwarded = { ...value, params: { cacheDisabled: false } };
+            }
+          }
+        }
+        sendOriginal(forwarded);
         fetchStages.entered(fetchStage);
       } catch (value) {
         note(value);

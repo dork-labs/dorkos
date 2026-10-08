@@ -440,7 +440,12 @@ export class BrowserPixelSubscriptions {
         effect();
       },
       cancel: () => {
-        if (this.viewers.get(token) === viewer) this.disconnect(token);
+        if (this.viewers.get(token) === viewer) {
+          // The response can lose its client before the separate authenticated disposal POST.
+          // Keep only exact cleanup custody, charged to the existing total sixty-four bound.
+          this.terminals.retainPublication(token, viewer);
+          this.disconnect(token);
+        }
       },
     });
   }

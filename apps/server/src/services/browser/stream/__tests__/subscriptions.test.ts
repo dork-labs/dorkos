@@ -879,3 +879,105 @@ it.each([0, 17, 1.5, NaN])(
     expect(read).not.toHaveBeenCalled();
   }
 );
+
+it('retains settled publication cancellation for one exact authenticated disposal', async () => {
+  const f = fixture();
+  try {
+    const viewer = f.bank.issue(f.proof, origin);
+    const frame = await f.bank.next(viewer.token, origin, f.proof.actorIdentity);
+    const publication = f.bank.publication(
+      viewer.token,
+      origin,
+      f.proof.actorIdentity,
+      frame.metadata.frame
+    );
+    publication.cancel();
+    expect(f.bank.viewerCount()).toBe(0);
+    expect(() => f.bank.disconnectFor(viewer.token, {})).toThrow('authority');
+    await expect(f.bank.next(viewer.token, origin, f.proof.actorIdentity)).rejects.toMatchObject({
+      reason: 'authority',
+    });
+    await f.bank.disconnectFor(viewer.token, f.proof.actorIdentity);
+    expect(() => f.bank.disconnectFor(viewer.token, f.proof.actorIdentity)).toThrow('authority');
+    expect(f.capture).toHaveBeenCalledTimes(1);
+  } finally {
+    await f.bank.close();
+  }
+});
+
+it('charges unconsumed cancelled publications to the original total sixty-four bound', async () => {
+  const f = fixture();
+  try {
+    const tokens: string[] = [];
+    for (let index = 0; index < 64; index++) {
+      const viewer = f.bank.issue(f.proof, origin);
+      const publication = f.bank.publication(viewer.token, origin, f.proof.actorIdentity);
+      publication.cancel();
+      tokens.push(viewer.token);
+    }
+    expect(f.bank.viewerCount()).toBe(0);
+    expect(() => f.bank.issue(f.proof, origin)).toThrow('capacity');
+    expect(() => f.bank.disconnectFor(tokens[0]!, {})).toThrow('authority');
+    expect(() => f.bank.issue(f.proof, origin)).toThrow('capacity');
+    await f.bank.disconnectFor(tokens[0]!, f.proof.actorIdentity);
+    const successor = f.bank.issue(f.proof, origin);
+    await f.bank.disconnectFor(successor.token, f.proof.actorIdentity);
+  } finally {
+    await f.bank.close();
+  }
+});
+
+it.each([false, undefined])(
+  'cancelled publication disposal joins held original capture and retains rejection %s',
+  async (cause) => {
+    const f = fixture();
+    let entered!: () => void, release!: () => void;
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const duties: Promise<unknown>[] = [];
+    onTestFinished(async () => {
+      release();
+      await Promise.allSettled(duties);
+      await f.bank.close();
+    });
+    const viewer = f.bank.issue(f.proof, origin);
+    const frame = await f.bank.next(viewer.token, origin, f.proof.actorIdentity);
+    const publication = f.bank.publication(
+      viewer.token,
+      origin,
+      f.proof.actorIdentity,
+      frame.metadata.frame
+    );
+    f.capture.mockImplementationOnce(async () => {
+      entered();
+      await held;
+      throw cause;
+    });
+    const next = f.bank.next(viewer.token, origin, f.proof.actorIdentity, receipt(frame));
+    void next.catch(() => undefined);
+    duties.push(next);
+    await started;
+    publication.cancel();
+    let settled = false;
+    const closing = f.bank.disconnectFor(viewer.token, f.proof.actorIdentity);
+    void closing.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      }
+    );
+    duties.push(closing);
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    release();
+    await expect(next).rejects.toBe(cause);
+    await expect(closing).rejects.toBe(cause);
+    expect(() => f.bank.disconnectFor(viewer.token, f.proof.actorIdentity)).toThrow('authority');
+  }
+);
