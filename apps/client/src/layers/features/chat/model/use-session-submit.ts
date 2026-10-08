@@ -384,7 +384,7 @@ export function useSessionSubmit({
         const now = new Date().toISOString();
         insertOptimisticSession(queryClient, cwd, {
           id: targetSessionId,
-          title: `Session ${targetSessionId.slice(0, 8)}`,
+          title: `Chat ${targetSessionId.slice(0, 8)}`,
           createdAt: now,
           updatedAt: now,
           // The mode this turn will actually start at, not the literal

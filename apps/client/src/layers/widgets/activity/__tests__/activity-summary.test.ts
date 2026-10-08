@@ -4,7 +4,7 @@ import { sessionActivitySummary } from '../lib/activity-summary';
 describe('sessionActivitySummary', () => {
   it('says nothing started at zero', () => {
     expect(sessionActivitySummary([0, 0, 0, 0, 0, 0, 0], false)).toBe(
-      'Your agents started no sessions this week'
+      'Your agents started no chats this week'
     );
   });
 

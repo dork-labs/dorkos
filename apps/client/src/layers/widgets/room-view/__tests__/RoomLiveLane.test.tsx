@@ -789,7 +789,7 @@ describe('RoomLiveLane', () => {
       await settleRoomList();
 
       expect(screen.getByTestId('room-held').textContent).toContain(
-        'Kai will pick this up when it finishes in another conversation'
+        'Kai will pick this up when it finishes in another chat'
       );
     });
 

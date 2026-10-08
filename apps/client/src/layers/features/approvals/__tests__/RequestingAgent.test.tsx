@@ -109,7 +109,7 @@ describe('an unattributed request says what IS known (DOR-1929)', () => {
   // therefore unattributed AND perfectly well understood, and the old copy
   // reported the second half as if it were the first.
   it.each([
-    ['session' as const, 'Asked from a session on this computer'],
+    ['session' as const, 'Asked from a chat on this computer'],
     ['external-mcp' as const, 'Asked by an app connected to DorkOS'],
   ])('names the %s surface', (origin, expected) => {
     render(<RequestingAgent hasAgentPath={false} origin={origin} />);

@@ -290,7 +290,7 @@ describe('RuntimesTab — the rest of the page', () => {
     });
 
     expect(await screen.findByTestId('default-trust-stop-standing-note')).toHaveTextContent(
-      'New sessions on Codex run at full power'
+      'New chats on Codex run at full power'
     );
   });
 

@@ -138,7 +138,7 @@ test.describe('Claude account UI showcases @smoke', () => {
             ['near the limit', section.getByLabel('Subscription usage').nth(1)],
             ['out', section.getByLabel('Subscription usage').nth(2)],
             ['stale', section.locator('[data-stale="true"]').first()],
-            ['pay-as-you-go', section.getByLabel('Session cost').last()],
+            ['pay-as-you-go', section.getByLabel('Chat cost').last()],
           ];
           for (const [what, trigger] of tooltips) {
             await trigger.hover();

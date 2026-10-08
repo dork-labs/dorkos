@@ -340,7 +340,7 @@ describe('RuntimeItem', () => {
       expect(screen.queryByTestId('dropdown-root')).not.toBeInTheDocument();
       expect(screen.queryByRole('button')).not.toBeInTheDocument();
       expect(screen.getByTestId('tooltip-content')).toHaveTextContent(
-        'Set when the session starts. It can’t change after.'
+        'Set when the chat starts. It can’t change after.'
       );
     });
 
@@ -704,7 +704,7 @@ describe('RuntimeItem — the account this session bills to (DOR-1970)', () => {
       expect(screen.getByTestId('tooltip-content')).toHaveTextContent('Account: Acme Corp')
     );
     expect(screen.getByTestId('tooltip-content')).toHaveTextContent(
-      'Set when the session starts. It can’t change after.'
+      'Set when the chat starts. It can’t change after.'
     );
   });
 

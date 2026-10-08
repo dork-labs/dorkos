@@ -259,6 +259,6 @@ describe('LiveSessionWidget', () => {
 
   it('renders a quiet empty state for a session with no widget fence', () => {
     render(<LiveSessionWidget sessionId="unknown-session" />, { wrapper: Wrapper });
-    expect(screen.getByText('No live widget in this session')).toBeInTheDocument();
+    expect(screen.getByText('No live widget in this chat')).toBeInTheDocument();
   });
 });

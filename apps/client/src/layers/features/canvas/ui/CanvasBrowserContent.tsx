@@ -431,7 +431,7 @@ function explainResolveError(
 ): string {
   switch (error.kind) {
     case 'no-session':
-      return 'Open a session to preview local files.';
+      return 'Open a chat to preview local files.';
     case 'unsupported':
       return 'Local previews aren’t available in this environment.';
     case 'failed':

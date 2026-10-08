@@ -433,7 +433,7 @@ describe('InboxBell', () => {
     expect(await screen.findByText(/wants to write standup\.md/i)).toBeInTheDocument();
     expect(screen.getByText('/projects/meeting-notes/standup.md')).toBeInTheDocument();
     // The tray is never the session, so it owes a way into it.
-    expect(screen.getByRole('button', { name: 'Open session' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open chat' })).toBeInTheDocument();
   });
 
   it('counts a schedule an agent parked, and answers it in the panel without closing it', async () => {
@@ -799,7 +799,7 @@ describe('InboxBell — history and read state', () => {
     );
     // And it says which slice it is showing, so the empty list is not read as a
     // broken Inbox.
-    expect(await screen.findByText('Activity · this session')).toBeInTheDocument();
+    expect(await screen.findByText('Activity · this chat')).toBeInTheDocument();
   });
 
   it('drops the session filter once the panel is closed again', async () => {
@@ -814,7 +814,7 @@ describe('InboxBell — history and read state', () => {
 
     await screen.findByTestId('inbox-bell');
     act(() => requestInbox({ sessionId: 'ses-42' }));
-    await screen.findByText('Activity · this session');
+    await screen.findByText('Activity · this chat');
 
     await userEvent.keyboard('{Escape}');
     await userEvent.click(await screen.findByTestId('inbox-bell'));
@@ -879,7 +879,7 @@ describe('InboxBell — opening a bell that has nothing to say', () => {
     expect(bell).toHaveAttribute('data-tone', 'neutral');
     expect(bell).toHaveAccessibleName('Inbox. Nothing waiting, nothing unread.');
     expect(bell).not.toHaveTextContent(/\d/);
-    expect(await screen.findByText('Activity · this session')).toBeInTheDocument();
+    expect(await screen.findByText('Activity · this chat')).toBeInTheDocument();
   });
 
   it('opens on ⌘⇧Y with no ask cards anywhere to jump to', async () => {
@@ -960,7 +960,7 @@ describe('InboxBell — what the panel says', () => {
 
     act(() => requestInbox({ sessionId: 'ses-42' }));
 
-    await screen.findByText('Activity · this session');
+    await screen.findByText('Activity · this chat');
     expect(screen.queryByRole('button', { name: 'Mark all read' })).not.toBeInTheDocument();
 
     // And it comes back when the filter does.

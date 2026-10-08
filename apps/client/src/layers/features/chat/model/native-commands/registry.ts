@@ -77,7 +77,7 @@ const MAX_RENAME_TITLE_LENGTH = 200;
 export const NATIVE_COMMANDS: NativeCommand[] = [
   {
     name: 'rename',
-    description: 'Rename the current session',
+    description: 'Rename the current chat',
     argHint: '<new title>',
     run: (args, ctx) => {
       // Collapse internal whitespace (Shift+Enter newlines included) to a single
@@ -88,7 +88,7 @@ export const NATIVE_COMMANDS: NativeCommand[] = [
         return false;
       }
       if (!ctx.sessionId) {
-        ctx.notify('No active session to rename', 'error');
+        ctx.notify('No open chat to rename', 'error');
         return false;
       }
       ctx.renameSession(title);
@@ -97,7 +97,7 @@ export const NATIVE_COMMANDS: NativeCommand[] = [
   },
   {
     name: 'clear',
-    description: 'Start a new session here',
+    description: 'Start a new chat here',
     run: (_args, ctx) => {
       // Open a fresh session in the same project, linked back to the current one.
       // No message is sent — this is a client navigation, not a model turn.

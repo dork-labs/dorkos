@@ -178,7 +178,7 @@ export function useOverridesLedger(): OverridesLedger {
       rows.push({
         key: `session:${session.id}`,
         kind: 'session',
-        name: session.title || 'Untitled session',
+        name: session.title || 'Untitled chat',
         detail: descriptor?.label ?? permissionModeLabel(session.permissionMode),
         onOpen: navigate
           ? openAndClose(() => navigate(toSession({ session: session.id, dir: session.cwd })))

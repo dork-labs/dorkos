@@ -63,7 +63,7 @@ export const SHORTCUTS = {
   NEW_SESSION: {
     id: 'new-session',
     key: 'mod+n',
-    label: 'New session',
+    label: 'New chat',
     group: 'navigation',
     desktopOnly: true,
   },
@@ -189,7 +189,7 @@ export const SHORTCUTS = {
   SESSION_DETAILS: {
     id: 'session-details',
     key: 'mod+shift+.',
-    label: 'Session details',
+    label: 'Chat details',
     group: 'chat',
   },
   CLEAR_MESSAGE: { id: 'clear-message', key: 'esc esc', label: 'Clear message', group: 'chat' },

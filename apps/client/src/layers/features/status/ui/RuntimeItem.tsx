@@ -157,7 +157,7 @@ export function RuntimeItem({
       <Tooltip>
         <TooltipTrigger asChild>{chip}</TooltipTrigger>
         <TooltipContent side="top">
-          <span className="block">{'Set when the session starts. It can’t change after.'}</span>
+          <span className="block">{'Set when the chat starts. It can’t change after.'}</span>
           {accountLine && <span className="block">{accountLine}</span>}
         </TooltipContent>
       </Tooltip>

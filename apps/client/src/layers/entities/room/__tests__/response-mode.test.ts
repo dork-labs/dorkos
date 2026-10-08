@@ -161,7 +161,7 @@ describe('explainRung', () => {
     expect(sentence).toBe('Never speaks here');
     // The reassurance is the point: silencing an agent in one room is not
     // switching the agent off.
-    expect(note).toBe('You can still talk to it in its own session.');
+    expect(note).toBe('You can still talk to it in its own chat.');
   });
 
   it('says who the loudest rung is answering, which differs by room', () => {

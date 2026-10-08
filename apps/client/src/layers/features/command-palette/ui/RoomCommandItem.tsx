@@ -55,7 +55,7 @@ export function RoomCommandItem({ room, onSelect }: RoomCommandItemProps) {
     >
       <RoomAvatar room={room} participants={room.participants} className="shrink-0" />
       {room.kind === 'dm' ? (
-        <span className="min-w-0 flex-1 truncate text-sm">Open conversation with {room.title}</span>
+        <span className="min-w-0 flex-1 truncate text-sm">Open DM with {room.title}</span>
       ) : (
         <RoomTitle room={room} className="min-w-0 flex-1 text-sm" />
       )}

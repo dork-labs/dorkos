@@ -387,7 +387,7 @@ export function TrustDial({
               {/* The runtime's own word for the mode wherever it declared one —
                   a stranded WAY OF WORKING has a descriptor in hand, and the id
                   table is only ever the answer for a mode nobody declared. */}
-              This session uses “{current?.label ?? permissionModeLabel(mode)}”, which isn’t one of
+              This chat uses “{current?.label ?? permissionModeLabel(mode)}”, which isn’t one of
               these stops. Pick one to change it.
             </>
           )}

@@ -15,7 +15,7 @@ export function TunnelLanding({ onGetStarted }: TunnelLandingProps) {
           DorkOS from any device" under the illustration, and this block used to
           repeat it verbatim a few pixels below. */}
       <p className="text-muted-foreground mx-auto max-w-[280px] text-center text-xs leading-relaxed">
-        Reach your sessions from your phone, tablet or any browser.
+        Reach your chats from your phone, tablet or any browser.
       </p>
 
       {/* The press comes from the Button primitive now, and the 1% hover grow

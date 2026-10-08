@@ -355,7 +355,7 @@ test.describe('session switcher @smoke', { tag: SOLE_SIDEBAR_TAG }, () => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(SHOWCASE_PATH);
 
-    const chip = page.getByRole('button', { name: /live sessions, open the session switcher/ });
+    const chip = page.getByRole('button', { name: /live chats, open the chat switcher/ });
     await expect(chip.first()).toBeVisible();
     await expect(chip.first()).toContainText('3 live');
 
@@ -402,7 +402,7 @@ test.describe('session switcher @smoke', { tag: SOLE_SIDEBAR_TAG }, () => {
     // the "⋮" in the keyboard lane.
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(SHOWCASE_PATH);
-    const chip = page.getByRole('button', { name: /live sessions, open the session switcher/ });
+    const chip = page.getByRole('button', { name: /live chats, open the chat switcher/ });
     await expect(chip.first()).toBeVisible();
 
     // 1. It rides the transform. Applied to the same node dnd-kit moves, so a
@@ -560,7 +560,7 @@ test.describe('session switcher, from ⌘K', { tag: SOLE_SIDEBAR_TAG }, () => {
     await expect(page.locator('[cmdk-item]').first()).toBeVisible();
     await page.keyboard.press('Enter');
 
-    const browse = page.locator('[cmdk-item]', { hasText: 'Browse sessions' });
+    const browse = page.locator('[cmdk-item]', { hasText: 'Browse chats' });
     await expect(browse).toBeVisible();
     await browse.click();
 

@@ -18,7 +18,7 @@ import type { AgentPickerCandidate } from '@/layers/entities/agent';
  * agent goes in, and a control that changes what it does needs to have said so
  * before it does it.
  */
-export const ONE_DOOR_HINT = 'One agent opens a session. Two or more start a group message.';
+export const ONE_DOOR_HINT = 'One agent opens a chat. Two or more start a group message.';
 
 /**
  * Whether this selection opens an agent's session rather than making a room.
@@ -49,7 +49,6 @@ export function opensAgentSession(chosen: readonly AgentPickerCandidate[]): bool
  */
 export function oneDoorSubmitLabel(chosen: readonly AgentPickerCandidate[]): string {
   const only = chosen[0];
-  if (only !== undefined && opensAgentSession(chosen))
-    return `Open session with ${only.displayName}`;
+  if (only !== undefined && opensAgentSession(chosen)) return `Open chat with ${only.displayName}`;
   return 'Start group message';
 }

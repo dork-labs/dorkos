@@ -39,7 +39,7 @@ export function TerminalReasonChip({ terminalReason }: TerminalReasonChipProps) 
           className="flex px-4 py-1"
           data-testid="terminal-reason-chip"
         >
-          <Badge variant="secondary" aria-label={`Session ended: ${label}`}>
+          <Badge variant="secondary" aria-label={`Chat ended: ${label}`}>
             {label}
           </Badge>
         </motion.div>

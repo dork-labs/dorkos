@@ -407,10 +407,10 @@ describe('rooms in the command palette', () => {
       render(<CommandPaletteDialog />);
       await screen.findByText('#urgent');
 
-      const row = await optionFor('Open conversation with Bo');
+      const row = await optionFor('Open DM with Bo');
       expect(within(row).getByLabelText('2 unread')).toHaveTextContent('2');
-      expect(rowNames().findIndex((n) => n?.includes('Open conversation with Bo'))).toBeLessThan(
-        rowNames().findIndex((n) => n?.includes('Open conversation with Ana'))
+      expect(rowNames().findIndex((n) => n?.includes('Open DM with Bo'))).toBeLessThan(
+        rowNames().findIndex((n) => n?.includes('Open DM with Ana'))
       );
     });
 
@@ -476,8 +476,8 @@ describe('rooms in the command palette', () => {
       type('#quiet');
 
       await waitFor(() => expect(screen.getByText('#quiet')).toBeInTheDocument());
-      expect(screen.queryByText('Open conversation with Quiet Partner')).not.toBeInTheDocument();
-      expect(screen.queryByText('Open conversation with Ana')).not.toBeInTheDocument();
+      expect(screen.queryByText('Open DM with Quiet Partner')).not.toBeInTheDocument();
+      expect(screen.queryByText('Open DM with Ana')).not.toBeInTheDocument();
     });
 
     // NOTE: this case pins NARROWING, not the prefix. `#urgent` does not match
@@ -509,9 +509,7 @@ describe('rooms in the command palette', () => {
       await screen.findByText('#urgent');
       type('@ana');
 
-      await waitFor(() =>
-        expect(screen.getByText('Open conversation with Ana')).toBeInTheDocument()
-      );
+      await waitFor(() => expect(screen.getByText('Open DM with Ana')).toBeInTheDocument());
       // The agent row, which drills into "New session" and the rest.
       expect(screen.getByRole('option', { name: /^Ana/ })).toBeInTheDocument();
       // And the DM row never says "Message Ana". Pressing it opens the
@@ -526,9 +524,7 @@ describe('rooms in the command palette', () => {
       await screen.findByText('#urgent');
       type('@');
 
-      await waitFor(() =>
-        expect(screen.getByText('Open conversation with Ana')).toBeInTheDocument()
-      );
+      await waitFor(() => expect(screen.getByText('Open DM with Ana')).toBeInTheDocument());
       expect(screen.queryByText('#urgent')).not.toBeInTheDocument();
       expect(screen.queryByText('#quiet')).not.toBeInTheDocument();
     });
@@ -550,7 +546,7 @@ describe('rooms in the command palette', () => {
       await screen.findByText('#urgent');
       type('@ana');
 
-      fireEvent.click(await screen.findByRole('option', { name: 'Open conversation with Ana' }));
+      fireEvent.click(await screen.findByRole('option', { name: 'Open DM with Ana' }));
 
       expect(mockNavigate).toHaveBeenCalledWith({
         to: '/channels',
@@ -622,7 +618,7 @@ describe('rooms in the command palette', () => {
       type('@');
 
       await waitFor(() => expect(screen.queryByText('No channels yet.')).not.toBeInTheDocument());
-      expect(screen.getByText('Open conversation with Ana')).toBeInTheDocument();
+      expect(screen.getByText('Open DM with Ana')).toBeInTheDocument();
     });
   });
 });

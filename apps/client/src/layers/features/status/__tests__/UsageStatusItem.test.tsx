@@ -72,7 +72,7 @@ describe('UsageStatusItem', () => {
       wrapper: Wrapper,
     });
     expect(screen.getByText('$1.50')).toBeInTheDocument();
-    expect(screen.getByLabelText('Session cost')).toBeInTheDocument();
+    expect(screen.getByLabelText('Chat cost')).toBeInTheDocument();
   });
 
   it('renders nothing when a pay-as-you-go usage has no cost', () => {
@@ -172,7 +172,7 @@ describe('UsageStatusItem — a cost says which price list it came from', () => 
         wrapper: Wrapper,
       }
     );
-    expect(screen.getByLabelText('Session cost')).toBeInTheDocument();
+    expect(screen.getByLabelText('Chat cost')).toBeInTheDocument();
   });
 
   it('treats a cost with no stated basis as list-priced', () => {
@@ -181,7 +181,7 @@ describe('UsageStatusItem — a cost says which price list it came from', () => 
     render(<UsageStatusItem usage={{ kind: 'pay-as-you-go', costUsd: 0.42 }} />, {
       wrapper: Wrapper,
     });
-    expect(screen.getByLabelText('Session cost')).toBeInTheDocument();
+    expect(screen.getByLabelText('Chat cost')).toBeInTheDocument();
   });
 
   it('calls a guessed cost estimated in its accessible name', () => {
@@ -189,7 +189,7 @@ describe('UsageStatusItem — a cost says which price list it came from', () => 
       <UsageStatusItem usage={{ kind: 'pay-as-you-go', costUsd: 0.42, costBasis: 'unknown' }} />,
       { wrapper: Wrapper }
     );
-    expect(screen.getByLabelText('Estimated session cost')).toBeInTheDocument();
+    expect(screen.getByLabelText('Estimated chat cost')).toBeInTheDocument();
     // The number is untouched — the qualifier is not bought with digits.
     expect(screen.getByText('$0.42')).toBeInTheDocument();
   });
@@ -203,14 +203,14 @@ describe('UsageStatusItem — every place a cost is named says the same thing', 
     render(<UsageDetail usage={{ kind: 'pay-as-you-go', costUsd: 0.42, costBasis: 'unknown' }} />, {
       wrapper: Wrapper,
     });
-    expect(screen.getByText('Estimated session cost')).toBeInTheDocument();
+    expect(screen.getByText('Estimated chat cost')).toBeInTheDocument();
   });
 
   it('heads a list-priced detail body plainly', () => {
     render(<UsageDetail usage={{ kind: 'pay-as-you-go', costUsd: 0.42, costBasis: 'list' }} />, {
       wrapper: Wrapper,
     });
-    expect(screen.getByText('Session cost')).toBeInTheDocument();
+    expect(screen.getByText('Chat cost')).toBeInTheDocument();
   });
 });
 

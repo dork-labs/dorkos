@@ -140,7 +140,7 @@ describe('ContextItem — the inline Compact action', () => {
     const button = screen.getByTestId('compaction-chip');
     expect(button).toBeDisabled();
     expect(button).toHaveAttribute('aria-busy', 'true');
-    expect(screen.getByLabelText('Compacting conversation…')).toBeInTheDocument();
+    expect(screen.getByLabelText('Compacting chat…')).toBeInTheDocument();
   });
 });
 

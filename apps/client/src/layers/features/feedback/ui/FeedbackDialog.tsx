@@ -518,7 +518,7 @@ export function FeedbackDialog({
                 />
                 {showConversation && (
                   <AlsoSendChip
-                    label="This conversation"
+                    label="This chat"
                     summary="Shows what led to the bug."
                     pressed={includeConversation}
                     onPressedChange={(next) => {

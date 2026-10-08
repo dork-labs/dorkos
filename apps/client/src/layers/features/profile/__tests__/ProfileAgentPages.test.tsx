@@ -255,7 +255,7 @@ describe('the counts a row carries', () => {
     });
 
     const row = document.querySelector('[data-profile-row="sessions"]')!;
-    await waitFor(() => expect(row.textContent).toContain('2 conversations'));
+    await waitFor(() => expect(row.textContent).toContain('2 chats'));
   });
 
   it('counts only the schedules that belong to THIS agent', async () => {
@@ -307,7 +307,7 @@ describe('the counts a row carries', () => {
     sessions.settle({ sessions: [], warnings: [] });
     tasks.settle([]);
 
-    await waitFor(() => expect(row().textContent).toContain('0 conversations'));
+    await waitFor(() => expect(row().textContent).toContain('0 chats'));
   });
 
   it('draws no Tasks row at all where the server has tasks switched off', async () => {
@@ -896,7 +896,7 @@ describe('the Sessions page', () => {
       transport: mockTransport({ listSessions: vi.fn().mockReturnValue(sessions.promise) }),
     });
 
-    await screen.findByRole('heading', { name: 'Sessions' });
+    await screen.findByRole('heading', { name: 'Chats' });
     expect(screen.queryByText(/No chats with/)).toBeNull();
     expect(document.querySelector('[data-slot="skeleton"]')).not.toBeNull();
 

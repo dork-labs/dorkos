@@ -217,7 +217,7 @@ export function explainRung(
     case 'silent':
       return {
         sentence: 'Never speaks here',
-        note: 'You can still talk to it in its own session.',
+        note: 'You can still talk to it in its own chat.',
       };
     case 'mention':
       // No second line for a direct message any more. The one that used to sit

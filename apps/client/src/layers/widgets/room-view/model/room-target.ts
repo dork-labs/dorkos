@@ -124,8 +124,8 @@ export function useRoomTarget(input: RoomTargetInput): RoomTarget {
       room: here,
       threadRootId,
     } = latest.current;
-    if (here === undefined) throw new Error('That conversation is not loaded yet.');
-    if (here.archived) throw new Error('This conversation is archived.');
+    if (here === undefined) throw new Error('That room isn’t loaded yet.');
+    if (here.archived) throw new Error('This room is archived.');
     // **Posting into a room is an interaction with it** (DOR-1156). Today is
     // ordered by `max(userLastMessageAt, userLastOpenedAt)` and the client
     // half was only written by opening a row — so the home surface, which IS
@@ -187,9 +187,9 @@ export function useRoomTarget(input: RoomTargetInput): RoomTarget {
       // "You're not in this channel" while it loads told people they had lost
       // access to somewhere they were about to be standing in.
       ...(room === undefined
-        ? { canSendReason: 'Still opening this conversation…' }
+        ? { canSendReason: 'Still opening this room…' }
         : room.archived
-          ? { canSendReason: 'This conversation is archived. You can read it, but not add to it.' }
+          ? { canSendReason: 'This room is archived. You can read it, but not add to it.' }
           : !isMember
             ? { canSendReason: NOT_IN_ROOM_SENTENCE }
             : {}),

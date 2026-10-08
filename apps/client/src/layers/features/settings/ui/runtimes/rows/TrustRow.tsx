@@ -123,7 +123,7 @@ export function TrustRow({
           data-testid={`runtime-trust-unavailable-${runtimeType}`}
           className="text-muted-foreground px-1 text-xs leading-relaxed"
         >
-          {runtimeLabel} hasn’t listed its options yet. New sessions use its own setting.
+          {runtimeLabel} hasn’t listed its options yet. New chats use its own setting.
         </p>
       ) : (
         <TrustDial
@@ -134,7 +134,7 @@ export function TrustRow({
           stopLabels={SETTINGS_STOP_LABELS}
           disabled={disabled === true}
           strandsWorkingMode
-          strandedNote={`${runtimeLabel} has no setting here. New sessions use its own.`}
+          strandedNote={`${runtimeLabel} has no setting here. New chats use its own.`}
           onChangeMode={(next) => {
             const picked = descriptors.find((d) => d.id === next);
             if (picked) onChange(picked.stop);

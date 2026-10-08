@@ -376,7 +376,7 @@ describe('OpenCodeProviderPicker — flips OpenCode to Ready (spec §6)', () => 
     expect(panel).toHaveTextContent('OpenCode is connected');
     // Direct is provider-honest — no frontier claim (a Direct key can point at a
     // local LM Studio / vLLM server), just the connection + handoff line.
-    expect(panel).toHaveTextContent('This session uses OpenCode');
+    expect(panel).toHaveTextContent('This chat uses OpenCode');
     expect(panel).not.toHaveTextContent('Frontier models are unlocked.');
 
     await user.click(screen.getByTestId('runtime-connected-done'));

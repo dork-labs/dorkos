@@ -506,7 +506,7 @@ test.describe('Command Intents — inline palette dedupe + alias hints', () => {
 
     // The plain-language intent descriptions render (writing-for-humans).
     await expect(
-      chatPage.commandPalette.getByText('Shrink the conversation to free up context')
+      chatPage.commandPalette.getByText('Shrink the chat to free up context')
     ).toBeVisible();
   });
 

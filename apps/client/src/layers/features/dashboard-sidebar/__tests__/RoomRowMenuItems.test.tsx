@@ -137,7 +137,7 @@ describe('buildRoomRowMenuNodes', () => {
       opensInput: false,
     });
     expect(dm).toMatchObject({
-      label: 'Join conversation',
+      label: 'Join DM',
       destructive: false,
       opensInput: false,
     });
@@ -185,7 +185,7 @@ describe('buildRoomRowMenuNodes', () => {
     const channel = buildRoomRowMenuNodes(model()).find((n) => n.id === 'leave');
     const dm = buildRoomRowMenuNodes(model({ kind: 'dm' })).find((n) => n.id === 'leave');
     expect(channel).toMatchObject({ label: 'Leave channel', destructive: true, opensInput: false });
-    expect(dm).toMatchObject({ label: 'Leave conversation', destructive: true, opensInput: false });
+    expect(dm).toMatchObject({ label: 'Leave DM', destructive: true, opensInput: false });
   });
 
   it('runs the leave callback the caller supplied', () => {
@@ -204,7 +204,7 @@ describe('buildRoomRowMenuNodes', () => {
     const channel = buildRoomRowMenuNodes(model()).find((n) => n.id === 'archive');
     const dm = buildRoomRowMenuNodes(model({ kind: 'dm' })).find((n) => n.id === 'archive');
     expect(channel).toMatchObject({ label: 'Archive channel', destructive: true });
-    expect(dm).toMatchObject({ label: 'Archive conversation', destructive: true });
+    expect(dm).toMatchObject({ label: 'Archive DM', destructive: true });
   });
 
   it('marks exactly the items that need more input, and only those', () => {
@@ -277,8 +277,8 @@ describe('buildRoomRowMenuNodes', () => {
 
     expect(muteOf({})).toMatchObject({ label: 'Mute channel', icon: BellOff });
     expect(muteOf({ isMuted: true })).toMatchObject({ label: 'Unmute channel', icon: Bell });
-    expect(muteOf({ kind: 'dm' })).toMatchObject({ label: 'Mute conversation' });
-    expect(muteOf({ kind: 'dm', isMuted: true })).toMatchObject({ label: 'Unmute conversation' });
+    expect(muteOf({ kind: 'dm' })).toMatchObject({ label: 'Mute DM' });
+    expect(muteOf({ kind: 'dm', isMuted: true })).toMatchObject({ label: 'Unmute DM' });
   });
 
   it('runs the mute toggle the caller supplied, rather than deciding the direction itself', () => {

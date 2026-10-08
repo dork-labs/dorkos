@@ -369,7 +369,7 @@ test.describe('Mobile tabs — 390×844 @smoke', { tag: SOLE_SIDEBAR_TAG }, () =
     await roomsPage.chooseAgent(ana.name);
     await expect(roomsPage.agentChip(ana.name)).toBeVisible();
     // The button says where it goes before it goes there.
-    await expect(roomsPage.startConversationButton).toHaveText(`Open session with ${ana.name}`);
+    await expect(roomsPage.startConversationButton).toHaveText(`Open chat with ${ana.name}`);
     await expect(page.getByTestId('mobile-tab-panels')).toBeVisible();
 
     await roomsPage.startConversationButton.click();

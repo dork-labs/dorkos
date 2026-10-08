@@ -1273,7 +1273,7 @@ describe('DashboardSidebar', () => {
       mockSidebarPrefs.mockReturnValue(makePrefs({ groups: [group({ items: [] })] }));
       renderWithProviders(<DashboardSidebar />);
       await screen.findByRole('heading', { name: /Clients/, level: 3 });
-      expect(screen.getByText(/Drag channels, conversations or agents here/)).toBeInTheDocument();
+      expect(screen.getByText(/Drag channels, DMs or agents here/)).toBeInTheDocument();
     });
 
     it('tells a smart section with no matches so, rather than hiding it', async () => {

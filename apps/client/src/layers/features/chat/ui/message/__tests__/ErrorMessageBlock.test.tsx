@@ -131,7 +131,7 @@ describe('ErrorMessageBlock', () => {
       />
     );
 
-    expect(screen.getByText('This session hit its spending limit.')).toBeInTheDocument();
+    expect(screen.getByText('This chat hit its spending limit.')).toBeInTheDocument();
     expect(
       screen.getByRole('link', { name: 'https://dorkos.ai/settings/budget' })
     ).toBeInTheDocument();
@@ -1268,7 +1268,7 @@ describe('ErrorMessageBlock — a turn refused because DorkOS credits could not 
       { setCloudCreditsDefault }
     );
     const button = await screen.findByRole('button', {
-      name: 'Start a new conversation on your Codex sign-in',
+      name: 'Start a new chat on your Codex sign-in',
     });
     await waitFor(() => expect(button).toBeEnabled());
     fireEvent.click(button);
@@ -1297,7 +1297,7 @@ describe('ErrorMessageBlock — a turn refused because DorkOS credits could not 
       { setCloudCreditsDefault }
     );
     expect(await screen.findByTestId('credits-own-sign-in-reach')).toHaveTextContent(
-      'This moves all OpenCode conversations to your OpenCode sign-in, not just this one.'
+      'This moves all OpenCode chats to your OpenCode sign-in, not just this one.'
     );
     const button = screen.getByRole('button', { name: 'Use your OpenCode sign-in' });
     await waitFor(() => expect(button).toBeEnabled());

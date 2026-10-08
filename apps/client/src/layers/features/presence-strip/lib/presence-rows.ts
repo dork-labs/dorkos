@@ -55,7 +55,7 @@ function replyingIn(roomTitle: string): string {
  * directory says whose it is, and that is the whole of the truth available.
  * Naming a file or a tool here would be an invention.
  */
-const WORKING_IN_SESSION = 'working in a session';
+const WORKING_IN_SESSION = 'working in a chat';
 
 /** Following a row opens a room, as a reader. */
 export interface PresenceFollowRoom {

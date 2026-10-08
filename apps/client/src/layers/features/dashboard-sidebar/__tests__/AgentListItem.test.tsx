@@ -214,7 +214,7 @@ describe('AgentListItem', () => {
     // than sending a 1 for the row to compare against a threshold of its own
     // (`library-rules.test.ts` pins that boundary). Absent IS "no chip".
     renderItem();
-    expect(screen.queryByRole('button', { name: /session switcher/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /chat switcher/i })).not.toBeInTheDocument();
   });
 
   it('draws the chip from the count the model handed it, counting nothing itself', () => {
@@ -224,8 +224,8 @@ describe('AgentListItem', () => {
     // answer to a question the model had already answered. Give the row that
     // hook back and this goes red: the store is empty, so it would read 0.
     renderItem({ liveCount: 2 });
-    const chip = screen.getByRole('button', { name: /session switcher/i });
-    expect(chip).toHaveAccessibleName(expect.stringContaining('2 live sessions'));
+    const chip = screen.getByRole('button', { name: /chat switcher/i });
+    expect(chip).toHaveAccessibleName(expect.stringContaining('2 live chats'));
     expect(chip).toHaveTextContent('2 live');
   });
 
@@ -237,7 +237,7 @@ describe('AgentListItem', () => {
       label: 'Working',
     });
     renderItem({ liveCount: 3 });
-    expect(screen.getByRole('button', { name: /session switcher/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /chat switcher/i })).toBeInTheDocument();
     expect(screen.queryByTestId('activity-badge')).not.toBeInTheDocument();
   });
 
@@ -245,7 +245,7 @@ describe('AgentListItem', () => {
     const { props } = renderItem({ liveCount: 2 });
     expect(screen.queryByTestId('session-switcher')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /session switcher/i }));
+    fireEvent.click(screen.getByRole('button', { name: /chat switcher/i }));
     expect(screen.getByTestId('session-switcher')).toHaveTextContent('/agents/test-agent');
     // The chip is a satellite, not a nested button: pressing it must not also
     // fire the row underneath.
@@ -254,7 +254,7 @@ describe('AgentListItem', () => {
 
   it('withholds the chip from a muted agent even while its work is live', () => {
     renderItem({ isMuted: true, liveCount: 4 });
-    expect(screen.queryByRole('button', { name: /session switcher/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /chat switcher/i })).not.toBeInTheDocument();
   });
 
   // --- Accessibility ---
@@ -317,7 +317,7 @@ describe('AgentListItem', () => {
       // opened from there rather than only when the chip is on offer.
       renderItem();
       expect(screen.queryByTestId('session-switcher')).not.toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: /session switcher/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /chat switcher/ })).not.toBeInTheDocument();
 
       act(() => (lastMenuParams.onOpenSessions as () => void)());
       expect(screen.getByTestId('session-switcher')).toBeInTheDocument();

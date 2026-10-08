@@ -37,6 +37,6 @@ export function sessionActivitySummary(dailyCounts: number[], degraded: boolean)
     return `Your agents started at least ${total} ${noun} this week`;
   }
 
-  if (total === 0) return 'Your agents started no sessions this week';
+  if (total === 0) return 'Your agents started no chats this week';
   return `Your agents started ${total} ${noun} this week`;
 }

@@ -120,7 +120,7 @@ describe('SessionPage', () => {
   it('says "Session" while the session has no title yet', () => {
     mockSessionTitle.mockReturnValue('   ');
     render(<SessionPage />);
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/^Session$/);
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/^Chat$/);
   });
 
   /**
@@ -157,7 +157,7 @@ describe('SessionPage', () => {
     // SessionPage renders its undrawn heading and ChatPanel — no wrapping panel group divs
     expect([...container.children].map((child) => child.tagName)).toEqual(['H1', 'DIV']);
     expect(container.lastChild).toHaveAttribute('data-testid', 'chat-panel');
-    expect(screen.getByRole('heading', { level: 1, name: 'Session' })).toHaveClass('sr-only');
+    expect(screen.getByRole('heading', { level: 1, name: 'Chat' })).toHaveClass('sr-only');
   });
 
   it('forwards the ?runtime= launch param to ChatPanel', () => {
