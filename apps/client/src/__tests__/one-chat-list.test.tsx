@@ -65,7 +65,7 @@ afterEach(() => {
 });
 
 const WARDEN = MOCK_TEAM_ROSTER.find((member) => member.id === 'agent-warden') as TeamMember;
-const PATH = WARDEN.agent!.projectPath;
+const PATH = WARDEN.agent!.projectPath!;
 
 function wrap(node: React.ReactNode) {
   return (

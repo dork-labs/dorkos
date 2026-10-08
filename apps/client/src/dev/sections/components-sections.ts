@@ -218,13 +218,6 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
     ],
   },
   {
-    id: 'sessionsview',
-    title: 'SessionsView',
-    page: 'components',
-    category: 'Sidebar',
-    keywords: ['session', 'list', 'group', 'today', 'yesterday', 'empty', 'scroll'],
-  },
-  {
     id: 'sidebarfooterstrip',
     title: 'SidebarFooterStrip',
     page: 'components',

@@ -86,10 +86,3 @@ export const TASK_ORIGIN_SESSION: Session = {
   origin: 'task',
   originLabel: 'Scheduled task · daily-digest',
 };
-
-/** {@link MOCK_SESSIONS}, bucketed the way `groupSessionsByTime` buckets them. */
-export const GROUPED_SESSIONS = [
-  { label: 'Today', sessions: MOCK_SESSIONS.slice(0, 2) },
-  { label: 'Yesterday', sessions: MOCK_SESSIONS.slice(2, 4) },
-  { label: 'Previous 7 days', sessions: MOCK_SESSIONS.slice(4) },
-];

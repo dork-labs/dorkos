@@ -206,13 +206,7 @@ export { listWaitingKinds } from './waiting-kinds';
 // and nothing outside the module reads them (its own test imports the file
 // directly). Putting them on the barrel would be three exports where one is used.
 export { askExitTransition } from './ask-exit-transition';
-export {
-  groupSessionsByTime,
-  shortenHomePath,
-  formatRelativeTime,
-  type TimeGroup,
-  type GroupedSessions,
-} from './session-utils';
+export { shortenHomePath, formatRelativeTime } from './session-utils';
 export {
   type FontFamilyKey,
   type FontConfig,

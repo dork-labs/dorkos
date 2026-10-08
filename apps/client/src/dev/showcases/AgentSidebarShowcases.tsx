@@ -15,6 +15,7 @@ import { ShowcaseDemo } from '../ShowcaseDemo';
 import { MOCK_AGENTS, minutesAgo } from './agent-sidebar-fixtures';
 import {
   LIVE_BY_PATH,
+  ChatListShowcase,
   SessionSwitcherShowcase,
   useSwitcherFixture,
 } from './SessionSwitcherShowcases';
@@ -91,6 +92,7 @@ export function AgentSidebarShowcases() {
       <AgentActivityBadgeShowcase />
       <SessionRowCompactShowcase />
       <AgentListItemShowcase />
+      <ChatListShowcase />
       <SessionSwitcherShowcase />
       <RowMenuSurfaceShowcase />
       <SectionHeaderShowcase />

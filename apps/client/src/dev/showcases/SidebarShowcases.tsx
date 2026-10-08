@@ -3,7 +3,6 @@ import { Hash, Pin } from 'lucide-react';
 import type { Session } from '@dorkos/shared/types';
 import {
   CHANNEL_ORIGIN_SESSION,
-  GROUPED_SESSIONS,
   MOCK_SESSIONS,
   TASK_ORIGIN_SESSION,
 } from './session-list-fixtures';
@@ -11,7 +10,6 @@ import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { SessionsView } from '@/layers/features/session-list';
 import { SidebarFooterStrip } from '@/layers/features/dashboard-sidebar';
 import { configKeys } from '@/layers/entities/config';
 import { useSessionChatStore, useSessionListStore, SessionRow } from '@/layers/entities/session';
@@ -72,7 +70,6 @@ export function SidebarShowcases() {
     <>
       <SidebarRowShowcase />
       <SessionRowShowcase />
-      <SessionsViewShowcase />
       <SidebarFooterStripShowcase />
     </>
   );
@@ -536,39 +533,6 @@ function SidebarItemWrapper({ children }: { children: React.ReactNode }) {
         </SidebarMenu>
       </SidebarGroup>
     </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// SessionsView
-// ---------------------------------------------------------------------------
-
-function SessionsViewShowcase() {
-  const [activeId, setActiveId] = useState<string | null>(MOCK_SESSIONS[0].id);
-
-  return (
-    <PlaygroundSection
-      title="SessionsView"
-      description="Grouped session list with time-based buckets and empty state."
-    >
-      <ShowcaseLabel>Grouped list</ShowcaseLabel>
-      <ShowcaseDemo>
-        <div className="border-border h-80 w-64 overflow-hidden rounded-lg border">
-          <SessionsView
-            activeSessionId={activeId}
-            groupedSessions={GROUPED_SESSIONS}
-            onSessionClick={setActiveId}
-          />
-        </div>
-      </ShowcaseDemo>
-
-      <ShowcaseLabel>Empty state</ShowcaseLabel>
-      <ShowcaseDemo>
-        <div className="border-border h-40 w-64 overflow-hidden rounded-lg border">
-          <SessionsView activeSessionId={null} groupedSessions={[]} onSessionClick={() => {}} />
-        </div>
-      </ShowcaseDemo>
-    </PlaygroundSection>
   );
 }
 

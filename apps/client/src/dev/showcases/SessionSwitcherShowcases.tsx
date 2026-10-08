@@ -1,6 +1,6 @@
 /**
- * Dev Playground: the session switcher, and the fixture the agent roster shares
- * with it.
+ * Dev Playground: the chat list, Switch session around it, and the fixture the
+ * agent roster shares with them.
  *
  * Split out of `AgentSidebarShowcases` when that file crossed its 500-line
  * limit. The fixture lives here rather than there because it is the switcher's
@@ -13,9 +13,11 @@ import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import type { Session } from '@dorkos/shared/types';
+import type { SessionStatus } from '@dorkos/shared/session-stream';
 import { Button } from '@/layers/shared/ui';
 import { resolveAgentVisual } from '@/layers/entities/agent';
 import { sessionKeys, useSessionListStore } from '@/layers/entities/session';
+import { ChatList } from '@/layers/features/chat-list';
 import { SessionSwitcher } from '@/layers/features/dashboard-sidebar';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
@@ -62,91 +64,169 @@ const LONG_NAME_SESSIONS: Session[] = [
   },
 ];
 
+/** Started by another chat of this agent's, for a spin-off fixture. */
+function startedFrom(sessionId: string, title: string | null): Session['startedBy'] {
+  return { kind: 'chat', sessionId, title, reason: null, permission: null };
+}
+
+/** The base every switcher fixture shares. */
+const BASE = {
+  permissionMode: 'default',
+  runtime: 'claude-code',
+  cwd: SWITCHER_AGENT.path,
+} as const;
+
 /**
- * The sessions the switcher showcase runs on — three concurrent live turns, two
- * settled conversations, and two automated runs wearing different origin marks.
- *
- * Three live sessions on one agent is the case BC-35 is most specific about:
- * they are three rows, never a "3 sessions" rollup.
+ * The chats the chat-list showcases run on: every case the list has to draw
+ * (spec `your-activity-first` D11, D14). Two chats running and one waiting on
+ * you; a chat with three spin-offs (one running, one done, one lifted because it
+ * needs you); a spin-off you opened, so it is a row of its own; a spin-off whose
+ * parent is gone; chats you used yesterday and last week; one on another
+ * runtime, so rows name theirs; and three automated chats from a schedule, a
+ * room and Telegram.
  */
 const SWITCHER_SESSIONS: Session[] = [
   {
+    ...BASE,
     id: 'sw-live-1',
     title: 'Dashboard overhaul',
     createdAt: minutesAgo(200),
     updatedAt: minutesAgo(0),
-    permissionMode: 'default',
-    runtime: 'claude-code',
-    cwd: SWITCHER_AGENT.path,
+    lastTouchedByYouAt: minutesAgo(12),
   },
   {
+    ...BASE,
     id: 'sw-live-2',
     title: 'Release notes draft',
     createdAt: minutesAgo(180),
-    updatedAt: minutesAgo(3),
-    permissionMode: 'default',
-    runtime: 'claude-code',
-    cwd: SWITCHER_AGENT.path,
+    updatedAt: minutesAgo(1),
+    lastTouchedByYouAt: minutesAgo(3),
   },
   {
-    id: 'sw-live-3',
-    title: 'Flaky sidebar spec',
-    createdAt: minutesAgo(160),
-    updatedAt: minutesAgo(4),
-    permissionMode: 'default',
-    runtime: 'claude-code',
-    cwd: SWITCHER_AGENT.path,
+    ...BASE,
+    id: 'sw-ask',
+    title: 'Ship the pricing page',
+    createdAt: minutesAgo(300),
+    updatedAt: minutesAgo(8),
+    lastTouchedByYouAt: minutesAgo(40),
   },
   {
+    ...BASE,
+    id: 'sw-plan',
+    title: 'Plan the launch week',
+    createdAt: minutesAgo(500),
+    updatedAt: minutesAgo(20),
+    lastTouchedByYouAt: minutesAgo(25),
+  },
+  {
+    ...BASE,
+    id: 'sw-spin-1',
+    title: 'Draft the launch email',
+    origin: 'agent',
+    createdAt: minutesAgo(22),
+    updatedAt: minutesAgo(0),
+    startedBy: startedFrom('sw-plan', 'Plan the launch week'),
+  },
+  {
+    ...BASE,
+    id: 'sw-spin-2',
+    title: 'Check every docs link',
+    origin: 'agent',
+    createdAt: minutesAgo(22),
+    updatedAt: minutesAgo(15),
+    startedBy: startedFrom('sw-plan', 'Plan the launch week'),
+  },
+  {
+    ...BASE,
+    id: 'sw-spin-3',
+    title: 'Price the ad test',
+    origin: 'agent',
+    createdAt: minutesAgo(21),
+    updatedAt: minutesAgo(5),
+    startedBy: startedFrom('sw-plan', 'Plan the launch week'),
+  },
+  {
+    ...BASE,
+    id: 'sw-spin-opened',
+    title: 'Summarise customer calls',
+    origin: 'agent',
+    createdAt: minutesAgo(400),
+    updatedAt: minutesAgo(130),
+    lastTouchedByYouAt: minutesAgo(120),
+    startedBy: startedFrom('sw-plan', 'Plan the launch week'),
+  },
+  {
+    ...BASE,
+    id: 'sw-orphan',
+    title: 'Tidy the backlog',
+    origin: 'agent',
+    createdAt: minutesAgo(2000),
+    updatedAt: minutesAgo(1900),
+    startedBy: startedFrom('sw-gone', 'Weekly review'),
+  },
+  {
+    ...BASE,
     id: 'sw-recent-1',
     title: 'Review help & feedback options',
-    createdAt: minutesAgo(400),
-    updatedAt: minutesAgo(26),
-    permissionMode: 'default',
-    runtime: 'claude-code',
-    cwd: SWITCHER_AGENT.path,
-    lastMessagePreview: 'Settled on a two-tier submit flow',
+    createdAt: minutesAgo(1800),
+    updatedAt: minutesAgo(1500),
+    lastTouchedByYouAt: minutesAgo(1440),
   },
   {
+    ...BASE,
     id: 'sw-recent-2',
     title: 'Fix flaky sidebar test',
-    createdAt: minutesAgo(2000),
-    updatedAt: minutesAgo(1500),
-    permissionMode: 'default',
-    runtime: 'claude-code',
-    cwd: SWITCHER_AGENT.path,
-    lastMessagePreview: 'Landed in PR #877',
+    createdAt: minutesAgo(9000),
+    updatedAt: minutesAgo(8000),
+    userLastMessageAt: minutesAgo(8100),
   },
   {
+    ...BASE,
+    id: 'sw-codex',
+    title: 'Port the CSV importer',
+    runtime: 'codex',
+    createdAt: minutesAgo(5000),
+    updatedAt: minutesAgo(4300),
+    lastTouchedByYouAt: minutesAgo(4320),
+  },
+  {
+    ...BASE,
     id: 'sw-auto-1',
     title: 'Nightly changelog sweep',
     createdAt: minutesAgo(700),
     updatedAt: minutesAgo(360),
-    permissionMode: 'default',
-    runtime: 'claude-code',
-    cwd: SWITCHER_AGENT.path,
     origin: 'task',
     originLabel: 'Scheduled task · nightly',
   },
   {
+    ...BASE,
     id: 'sw-auto-2',
+    title: 'Answer in #launch',
+    createdAt: minutesAgo(900),
+    updatedAt: minutesAgo(600),
+    origin: 'room',
+    originLabel: '#launch',
+  },
+  {
+    ...BASE,
+    id: 'sw-auto-3',
     title: 'Telegram · Dorian',
     createdAt: minutesAgo(3000),
     updatedAt: minutesAgo(2880),
-    permissionMode: 'default',
-    runtime: 'claude-code',
-    cwd: SWITCHER_AGENT.path,
     origin: 'channel',
     originLabel: 'Telegram',
   },
 ];
 
-/** The two sessions the fixture reports as streaming, and what they are doing. */
+/** The chats the fixture reports as running, and what each is doing. */
 const SWITCHER_LIVE: { id: string; toolName: string; target: string }[] = [
   { id: 'sw-live-1', toolName: 'Edit', target: 'RoomRow.tsx' },
   { id: 'sw-live-2', toolName: 'Read', target: 'CHANGELOG.md' },
-  { id: 'sw-live-3', toolName: 'Bash', target: 'pnpm test' },
+  { id: 'sw-spin-1', toolName: 'Write', target: 'launch-email.md' },
 ];
+
+/** The chats the fixture reports as waiting on you. */
+const SWITCHER_BLOCKED: readonly string[] = ['sw-ask', 'sw-spin-3'];
 
 /**
  * How many live sessions each fixture agent has, for the roster row's chip.
@@ -166,6 +246,24 @@ export const LIVE_BY_PATH: Readonly<Record<string, number>> = {
   [SWITCHER_AGENT.path]: SWITCHER_LIVE.length,
   [LONG_NAME_AGENT.path]: LONG_NAME_SESSIONS.length,
 };
+
+/** A live status in the shape the session stream sends, at `lifecycle`. */
+function liveStatus(lifecycle: 'streaming' | 'blocked'): SessionStatus {
+  return {
+    contextUsage: null,
+    cost: null,
+    usage: null,
+    cacheStats: null,
+    model: null,
+    permissionMode: 'default',
+    todoCounts: null,
+    runningSubagentCount: 0,
+    lifecycle,
+    lastError: null,
+    limit: null,
+    accountUsage: null,
+  };
+}
 
 /**
  * Seed the two real stores the switcher reads, so the playground exercises the
@@ -200,45 +298,17 @@ export function useSwitcherFixture(): void {
       store.upsertSession(session);
     }
     for (const session of LONG_NAME_SESSIONS) {
-      store.setSessionStatus(
-        session.id,
-        {
-          contextUsage: null,
-          cost: null,
-          usage: null,
-          cacheStats: null,
-          model: null,
-          permissionMode: 'default',
-          todoCounts: null,
-          runningSubagentCount: 0,
-          lifecycle: 'streaming',
-          lastError: null,
-          limit: null,
-          accountUsage: null,
-        },
-        LONG_NAME_AGENT.path
-      );
+      store.setSessionStatus(session.id, liveStatus('streaming'), LONG_NAME_AGENT.path);
     }
     for (const { id, toolName, target } of SWITCHER_LIVE) {
       store.setSessionStatus(
         id,
-        {
-          contextUsage: null,
-          cost: null,
-          usage: null,
-          cacheStats: null,
-          model: null,
-          permissionMode: 'default',
-          todoCounts: null,
-          runningSubagentCount: 0,
-          lifecycle: 'streaming',
-          lastError: null,
-          limit: null,
-          accountUsage: null,
-          activity: { toolName, target },
-        },
+        { ...liveStatus('streaming'), activity: { toolName, target } },
         SWITCHER_AGENT.path
       );
+    }
+    for (const id of SWITCHER_BLOCKED) {
+      store.setSessionStatus(id, liveStatus('blocked'), SWITCHER_AGENT.path);
     }
     return () => {
       // `removeSession` drops the metadata, the status and the cwd together, so
@@ -309,13 +379,13 @@ export function SessionSwitcherShowcase() {
   return (
     <PlaygroundSection
       title="SessionSwitcher"
-      description="An agent's depth, on one responsive surface — a dialog on the desktop, a bottom sheet on a phone. Live now (three concurrent turns, each with its verb), Recent (one-line outcomes), Automated (collapsed, origin-marked). ↵ continues, ⌘↵ starts a new session, ⇧↵ forks."
+      description="Switch session: the shared ChatList on one responsive surface, a dialog on the desktop and a bottom sheet on a phone. ↵ opens, ⌘↵ starts a new chat, ⇧↵ forks."
     >
       <ShowcaseLabel>Open the switcher</ShowcaseLabel>
       <ShowcaseDemo>
         <div className="flex flex-col items-start gap-3">
           <Button size="sm" onClick={() => setOpen(true)}>
-            Open {SWITCHER_AGENT.displayName} sessions
+            Open {SWITCHER_AGENT.displayName}’s chats
           </Button>
           <p className="text-muted-foreground text-xs">
             Narrow the window below 768px to see the same content as a bottom sheet.
@@ -333,9 +403,59 @@ export function SessionSwitcherShowcase() {
         agentVisual={resolveAgentVisual({ id: SWITCHER_AGENT.path })}
         open={open}
         onOpenChange={setOpen}
-        onSelectSession={(sessionId) => setLastAction(`continue ${sessionId}`)}
-        onNewSession={() => setLastAction('new session')}
+        onSelectSession={(sessionId) => setLastAction(`open ${sessionId}`)}
+        onNewSession={() => setLastAction('new chat')}
       />
+    </PlaygroundSection>
+  );
+}
+
+/**
+ * The chat list on its own, as Profile → Sessions draws it: search on, over the
+ * same seeded stores Switch session reads, so the two showcases cannot drift.
+ */
+export function ChatListShowcase() {
+  const [lastAction, setLastAction] = useState<string | null>(null);
+  useSwitcherFixture();
+
+  return (
+    <PlaygroundSection
+      title="ChatList"
+      description="One agent's chats, drawn by Profile → Sessions and Switch session alike. Needs you first, then running chats, then the rest by when you last used them. Spin-offs fold under the chat that started them; one that needs you is lifted out. Automated chats fold into one group."
+    >
+      <ShowcaseLabel>
+        Every case: needs you, running, spin-offs, automated, two runtimes
+      </ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <div className="flex h-[620px] w-full max-w-[440px] flex-col">
+          <ChatList
+            agentPath={SWITCHER_AGENT.path}
+            agentName={SWITCHER_AGENT.displayName}
+            onOpenChat={(sessionId) => setLastAction(`open ${sessionId}`)}
+            onNewChat={() => setLastAction('new chat')}
+            searchable
+            className="min-h-0 flex-1"
+          />
+        </div>
+      </ShowcaseDemo>
+      {lastAction !== null && (
+        <p className="text-muted-foreground text-xs">
+          Last action: <span data-slot="chat-list-last-action">{lastAction}</span>
+        </p>
+      )}
+
+      <ShowcaseLabel>No chats yet</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="w-full max-w-[440px]">
+          <ChatList
+            agentPath={null}
+            agentName={SWITCHER_AGENT.displayName}
+            sessions={[]}
+            onOpenChat={() => {}}
+            onNewChat={() => setLastAction('new chat')}
+          />
+        </div>
+      </ShowcaseDemo>
     </PlaygroundSection>
   );
 }
