@@ -22,6 +22,7 @@ function session(id: string, extra: Partial<Session> = {}): Session {
     createdAt: '2026-10-08T07:00:00.000Z',
     updatedAt: '2026-10-08T11:00:00.000Z',
     permissionMode: 'default',
+    runtime: 'claude-code',
     ...extra,
   };
 }
