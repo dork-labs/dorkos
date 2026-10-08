@@ -66,6 +66,32 @@ describe('listRecentSessions', () => {
     expect(result.warnings).toEqual([]);
   });
 
+  it('keeps the sessions keepBeyondLimit names, in their updatedAt place (your-activity-first D6)', async () => {
+    const a = runtimeReturning('fake-a', {
+      '/p1': [
+        makeSession('newest', '2026-03-04T00:00:00.000Z', '/p1'),
+        makeSession('newer', '2026-03-03T00:00:00.000Z', '/p1'),
+        makeSession('touched', '2026-03-02T00:00:00.000Z', '/p1'),
+        makeSession('dropped', '2026-03-01T00:00:00.000Z', '/p1'),
+      ],
+    });
+    const asked: string[][] = [];
+
+    const result = await listRecentSessions({
+      runtimes: [a],
+      agentPaths: ['/p1'],
+      limit: 1,
+      keepBeyondLimit: (merged) => {
+        asked.push(merged.map((s) => s.id));
+        return new Set(['touched']);
+      },
+    });
+
+    expect(result.sessions.map((s) => s.id)).toEqual(['newest', 'touched']);
+    // One batched question over every merged session, not one per row.
+    expect(asked).toEqual([['newest', 'newer', 'touched', 'dropped']]);
+  });
+
   it('excludes sessions whose cwd is outside the agent path (DOR-203)', async () => {
     const a = runtimeReturning('fake-a', {
       '/p1': [

@@ -351,3 +351,41 @@ export function refuseUnlessAccountOwner(
   // nobody can be shown to own it.
   return isInstallOwner(res.locals.user as RequestUser | undefined) ? undefined : 'not-the-owner';
 }
+
+/**
+ * Whether this request is a person using a window of the app, for the one
+ * purpose of recording that they touched a chat (spec `your-activity-first`
+ * D4): `POST /api/sessions/:id/opened` and an accepted
+ * `POST /api/sessions/:id/messages`. Both routes ask this, and only this, so
+ * "opened by you" and "written by you" cannot come to mean different callers.
+ *
+ * Three bars, all of which must hold:
+ *
+ * - **No agent identity** ({@link presentsAgentIdentity}), in every posture. An
+ *   agent waking a chat through this route is the case the rule exists for.
+ * - **An `X-Client-Id` header.** Every app window sends one on these calls; a
+ *   coordinator curling the messages route from a shell does not. This is a
+ *   marker, not a credential: it says which client, not who.
+ * - **A browser session under login-on** ({@link requireOperatorCookieUnderLogin}).
+ *   An API key is not a person (DOR-474).
+ *
+ * The residual is DOR-505's, unchanged: with login off, a program on this
+ * machine that strips its agent header AND sends an `X-Client-Id` reads as the
+ * app. That costs only ordering — a chat floats into Today — never power, which
+ * is why a marker is enough here when it is not for {@link clearsTheAgentBar}.
+ *
+ * @param req - The incoming request, for its headers.
+ * @param res - The response carrying the resolved agent identity and user.
+ * @param isLoginEnabled - Optional login-state lookup for tests.
+ * @returns True when the touch should be recorded as yours.
+ */
+export function isPersonAtTheApp(
+  req: Pick<Request, 'headers'>,
+  res: Response,
+  isLoginEnabled?: LoginEnabledLookup
+): boolean {
+  if (presentsAgentIdentity(req, res)) return false;
+  const clientId = req.headers['x-client-id'];
+  if (typeof clientId !== 'string' || clientId.length === 0) return false;
+  return requireOperatorCookieUnderLogin(res, 'this', isLoginEnabled) === undefined;
+}
