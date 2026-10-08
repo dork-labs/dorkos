@@ -5,6 +5,7 @@ covers:
   - 'fix(chats): fit the chat list to a phone and keep origin marks to rooms and schedules (DOR-2789)'
   - 'refactor(sessions): remove the session row the chat list replaced (DOR-2789)'
   - 'feat(chats): lift chats that ran out of usage, and line rows up with the controls (DOR-2789)'
+  - 'fix(chats): say "just now" for a chat you used seconds ago (DOR-2789)'
 ---
 
 ### Changed
