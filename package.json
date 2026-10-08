@@ -144,6 +144,7 @@
       "electron-winstaller"
     ],
     "patchedDependencies": {
+      "@milkdown/ctx@7.22.1": "patches/@milkdown__ctx@7.22.1.patch",
       "@fumadocs/api-docs@0.2.9": "patches/@fumadocs__api-docs@0.2.9.patch"
     }
   }
