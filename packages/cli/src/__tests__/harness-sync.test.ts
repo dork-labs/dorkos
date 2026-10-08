@@ -501,7 +501,7 @@ describe('runHarnessSync', () => {
     const printed = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
     expect(printed).toContain('plugin layers:');
     expect(printed).toContain(
-      '- plugin "globex": installed for all your projects. Only the Claude Code sessions ' +
+      '- plugin "globex": installed for all your projects. Only the Claude Code chats ' +
         'DorkOS runs can see it. Its 1 skill is not shared with this project: nightly'
     );
     expect(printed).not.toMatch(/global sync/);
@@ -519,7 +519,7 @@ describe('runHarnessSync', () => {
     // And what it says about Claude Code is what is true before slice A3 writes
     // anything into the user tier.
     expect(printed).toContain(
-      'In a session DorkOS runs, Claude Code sees both copies, under different names.'
+      'In a chat DorkOS runs, Claude Code sees both copies, under different names.'
     );
     expect(printed).not.toContain('uses the all-projects copy, even here');
   });

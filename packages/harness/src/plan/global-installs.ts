@@ -45,7 +45,7 @@ const GLOBAL_HOOKS_ATTRIBUTION: HarnessId = 'claude-code';
  * moment it is printed.
  */
 const GLOBAL_INSTALL_LEAD =
-  'installed for all your projects. Only the Claude Code sessions DorkOS runs can see it.';
+  'installed for all your projects. Only the Claude Code chats DorkOS runs can see it.';
 
 /**
  * The lead sentence once somebody has shared their all-projects packages with at
@@ -188,7 +188,7 @@ const GLOBAL_INSTALL_TIMERS_PENDING =
 function bothScopesNoticeReason(pkg: string, repoRoot: string): string {
   return (
     `is installed twice: once for all your projects, and once in this project. ` +
-    `In a session DorkOS runs, Claude Code sees both copies, under different names. ` +
+    `In a chat DorkOS runs, Claude Code sees both copies, under different names. ` +
     `On its own, Claude Code sees only this project's copy. So does Codex, until you share it. ` +
     `Uninstall one if you only meant to have one. ` +
     `Run dorkos uninstall ${pkg} --project ${repoRoot}  to remove this project's copy. ` +
