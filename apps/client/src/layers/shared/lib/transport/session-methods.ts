@@ -42,7 +42,7 @@ import type { PendingInteractionsResponse } from '@dorkos/shared/interaction-eve
 import type { ClientContext } from '@dorkos/shared/additional-context';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import { COMMAND_INTENT_REQUEST_TIMEOUT_MS } from '@dorkos/shared/command-intents';
-import { fetchJSON, buildQueryString } from './http-client';
+import { fetchJSON, fetchNoContent, buildQueryString } from './http-client';
 import { parsePendingInteractionsResponse } from './tolerant-session-frames';
 
 // Interaction requests use a longer timeout (10 min) to match the server-side
@@ -88,8 +88,11 @@ export function createSessionMethods(
       return fetchJSON<SessionListResponse>(baseUrl, `/sessions${qs}`);
     },
 
-    async listRecentSessions(limit?: number): Promise<RecentSessionsResponse> {
-      const qs = buildQueryString({ limit });
+    async listRecentSessions(
+      limit?: number,
+      touchedSince?: string
+    ): Promise<RecentSessionsResponse> {
+      const qs = buildQueryString({ limit, touchedSince });
       const data = await fetchJSON<unknown>(baseUrl, `/sessions/recent${qs}`);
       return RecentSessionsResponseSchema.parse(data);
     },
@@ -114,6 +117,15 @@ export function createSessionMethods(
     getSession(id: string, cwd?: string): Promise<Session> {
       const qs = buildQueryString({ cwd });
       return fetchJSON<Session>(baseUrl, `/sessions/${id}${qs}`);
+    },
+
+    markSessionOpened(sessionId: string): Promise<void> {
+      // The client id is what tells the server a window of the app is asking
+      // rather than a script (spec `your-activity-first` D4).
+      return fetchNoContent(baseUrl, `/sessions/${sessionId}/opened`, {
+        method: 'POST',
+        headers: { 'X-Client-Id': getClientId() },
+      });
     },
 
     async getSessionRuntimeType(sessionId: string): Promise<string> {

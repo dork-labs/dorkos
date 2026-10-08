@@ -49,6 +49,7 @@ import {
 import { logger } from '../../lib/logger.js';
 import { withSessionLimitStore } from '../session/fleet/session-limit-store.js';
 import { getSessionStartedByStore } from '../session/origin/session-started-by-store.js';
+import { getSessionTouchStore } from '../session/origin/session-touch-store.js';
 import { decorateRuntime } from './runtime-seam/decorate-runtime.js';
 
 /** Columns read from `session_metadata` for the settings projection. */
@@ -1083,6 +1084,18 @@ export class RuntimeRegistry {
       getSessionStartedByStore()?.move(fromId, toId);
     } catch (err) {
       logger.warn('[RuntimeRegistry] could not move who started a session', {
+        fromId,
+        toId,
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
+    // When you opened or wrote in it moves too (spec `your-activity-first`
+    // D1): the chat page can mark a chat opened under the id it was asked
+    // with, before the runtime settles on its own.
+    try {
+      getSessionTouchStore()?.move(fromId, toId);
+    } catch (err) {
+      logger.warn('[RuntimeRegistry] could not move when you touched a session', {
         fromId,
         toId,
         err: err instanceof Error ? err.message : String(err),

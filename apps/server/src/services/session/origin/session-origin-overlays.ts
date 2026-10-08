@@ -1,10 +1,13 @@
 /**
- * The three session-origin overlays, applied in the one order that is correct.
+ * The four session-origin overlays, applied in the one order that is correct.
  *
  * Room first, Pulse second — see {@link applyRoomOriginOverlay}'s doc for why
  * that ordering is a product decision rather than an accident. Who started the
  * chat comes third (spec `flow-multiproject` §7.7): it sets `startedBy`, a
- * field of its own, so it runs after the two that decide `origin`. It lived as a
+ * field of its own, so it runs after the two that decide `origin`. What you did
+ * in the chat comes last (spec `your-activity-first` D5): it gives back the
+ * message time the room and task steps drop when you wrote there yourself, so
+ * it has to run after them or they would drop it again. It lived as a
  * hand-repeated pair at every call site until the global session-list stream
  * became a fourth one; a rule stated in four places is a rule three of them can
  * drift from, so it is stated here and nowhere else.
@@ -19,6 +22,7 @@ import {
   type ExtensionNameOf,
   type ResolveStartedBy,
 } from './started-by-origin-overlay.js';
+import { applyTouchedByYouOverlay, type ResolveTouches } from './touched-by-you-overlay.js';
 
 /**
  * The batched origin lookups, as the composition root wires them.
@@ -35,6 +39,8 @@ export interface SessionOriginResolvers {
   resolveStartedBy?: ResolveStartedBy | undefined;
   /** An extension's manifest name, for "Started by <name>". */
   extensionNameOf?: ExtensionNameOf | undefined;
+  /** When you opened or wrote in each chat (`session_touches`); absent without a database. */
+  resolveTouches?: ResolveTouches | undefined;
 }
 
 /** One overlay in the ordered chain, named so a failure can say which failed. */
@@ -78,6 +84,10 @@ export function sessionOriginOverlaySteps(
       apply: (sessions) =>
         applyStartedByOverlay(sessions, resolvers.resolveStartedBy, resolvers.extensionNameOf),
     },
+    {
+      name: 'touched by you',
+      apply: (sessions) => applyTouchedByYouOverlay(sessions, resolvers.resolveTouches),
+    },
   ];
 }
 
@@ -108,11 +118,13 @@ export function sessionOriginResolvers(locals: {
   resolveTaskOrigins?: unknown;
   resolveStartedBy?: unknown;
   extensionNameOf?: unknown;
+  resolveTouches?: unknown;
 }): SessionOriginResolvers {
   return {
     resolveRoomOrigins: locals.resolveRoomOrigins as ResolveRoomOrigins | undefined,
     resolveTaskOrigins: locals.resolveTaskOrigins as ResolveTaskOrigins | undefined,
     resolveStartedBy: locals.resolveStartedBy as ResolveStartedBy | undefined,
     extensionNameOf: locals.extensionNameOf as ExtensionNameOf | undefined,
+    resolveTouches: locals.resolveTouches as ResolveTouches | undefined,
   };
 }
