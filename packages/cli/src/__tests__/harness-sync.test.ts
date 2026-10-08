@@ -1464,7 +1464,7 @@ describe('runHarnessSync — withholding a package’s hooks', () => {
 
     const first = printed();
     expect(first).toContain('Created .claude/skills/, which is where Claude Code reads skills.');
-    expect(first).toContain('restart any Claude Code session you');
+    expect(first).toContain('restart any Claude Code chat you');
     expect(first).toContain('https://code.claude.com/docs/en/skills#live-change-detection');
 
     // Said once. On every later sync the folder is already there, Claude Code IS
