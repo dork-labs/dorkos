@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "f340ef4f-6774-4c01-8765-6126cc08dd39",
+  "id": "49f3b68c-36e8-4148-ae06-a22754c49d0f",
   "prevId": "181333a2-dfca-4ae0-aba7-9600fa7ddfa2",
   "tables": {
     "a2a_tasks": {
@@ -460,14 +460,6 @@
           "notNull": true,
           "autoincrement": false
         },
-        "import_state": {
-          "name": "import_state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'none'"
-        },
         "created_at": {
           "name": "created_at",
           "type": "text",
@@ -529,10 +521,6 @@
         "browser_profiles_revision": {
           "name": "browser_profiles_revision",
           "value": "typeof(\"browser_profiles\".\"revision\") = 'integer' AND \"browser_profiles\".\"revision\" BETWEEN 0 AND 9007199254740991"
-        },
-        "browser_profiles_import_state": {
-          "name": "browser_profiles_import_state",
-          "value": "\"browser_profiles\".\"import_state\" IN ('none', 'pending', 'failed', 'ready')"
         },
         "browser_profiles_status": {
           "name": "browser_profiles_status",
@@ -669,6 +657,273 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}
+    },
+    "audit_events": {
+      "name": "audit_events",
+      "columns": {
+        "seq": {
+          "name": "seq",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "at": {
+          "name": "at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "space_id": {
+          "name": "space_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "actor_kind": {
+          "name": "actor_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "actor_name": {
+          "name": "actor_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "on_behalf_of": {
+          "name": "on_behalf_of",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "credential": {
+          "name": "credential",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "session_id": {
+          "name": "session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "action": {
+          "name": "action",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "operation": {
+          "name": "operation",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "target_type": {
+          "name": "target_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "target_id": {
+          "name": "target_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "target_name": {
+          "name": "target_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "container_id": {
+          "name": "container_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "error": {
+          "name": "error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "change": {
+          "name": "change",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "links": {
+          "name": "links",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "summary": {
+          "name": "summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "visibility": {
+          "name": "visibility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "participants": {
+          "name": "participants",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "prev_hash": {
+          "name": "prev_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "hash": {
+          "name": "hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "audit_events_id_unique": {
+          "name": "audit_events_id_unique",
+          "columns": [
+            "id"
+          ],
+          "isUnique": true
+        },
+        "audit_events_actor_seq_idx": {
+          "name": "audit_events_actor_seq_idx",
+          "columns": [
+            "actor_id",
+            "seq"
+          ],
+          "isUnique": false
+        },
+        "audit_events_target_seq_idx": {
+          "name": "audit_events_target_seq_idx",
+          "columns": [
+            "target_id",
+            "seq"
+          ],
+          "isUnique": false
+        },
+        "audit_events_action_seq_idx": {
+          "name": "audit_events_action_seq_idx",
+          "columns": [
+            "action",
+            "seq"
+          ],
+          "isUnique": false
+        },
+        "audit_events_session_seq_idx": {
+          "name": "audit_events_session_seq_idx",
+          "columns": [
+            "session_id",
+            "seq"
+          ],
+          "isUnique": false
+        },
+        "audit_events_at_idx": {
+          "name": "audit_events_at_idx",
+          "columns": [
+            "at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "audit_events_actor_kind": {
+          "name": "audit_events_actor_kind",
+          "value": "\"audit_events\".\"actor_kind\" IN ('person', 'agent', 'system', 'external')"
+        },
+        "audit_events_operation": {
+          "name": "audit_events_operation",
+          "value": "\"audit_events\".\"operation\" IN ('create', 'modify', 'remove', 'access', 'execute', 'auth')"
+        },
+        "audit_events_outcome": {
+          "name": "audit_events_outcome",
+          "value": "\"audit_events\".\"outcome\" IN ('ok', 'failed', 'refused')"
+        },
+        "audit_events_visibility": {
+          "name": "audit_events_visibility",
+          "value": "\"audit_events\".\"visibility\" IN ('space', 'participants', 'admins')"
+        },
+        "audit_events_participants_required": {
+          "name": "audit_events_participants_required",
+          "value": "\"audit_events\".\"visibility\" <> 'participants' OR \"audit_events\".\"participants\" IS NOT NULL"
+        }
+      }
     },
     "approvals": {
       "name": "approvals",
@@ -3063,6 +3318,98 @@
           "value": "\"session_started_by\".\"kind\" IN ('extension', 'chat')"
         }
       }
+    },
+    "session_locations": {
+      "name": "session_locations",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "cwd": {
+          "name": "cwd",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "session_locations_owner_cwd": {
+          "name": "session_locations_owner_cwd",
+          "columns": [
+            "owner_id",
+            "cwd"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "session_native_bindings": {
+      "name": "session_native_bindings",
+      "columns": {
+        "session_id": {
+          "name": "session_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "runtime": {
+          "name": "runtime",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "cwd": {
+          "name": "cwd",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "account": {
+          "name": "account",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
     },
     "workspaces": {
       "name": "workspaces",
@@ -12211,273 +12558,6 @@
         "extension_agent_sends_receipt": {
           "name": "extension_agent_sends_receipt",
           "value": "\"extension_agent_sends\".\"receipt_status\" IN ('started', 'queued')"
-        }
-      }
-    },
-    "audit_events": {
-      "name": "audit_events",
-      "columns": {
-        "seq": {
-          "name": "seq",
-          "type": "integer",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "at": {
-          "name": "at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "space_id": {
-          "name": "space_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "actor_id": {
-          "name": "actor_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "actor_kind": {
-          "name": "actor_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "actor_name": {
-          "name": "actor_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "on_behalf_of": {
-          "name": "on_behalf_of",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "credential": {
-          "name": "credential",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "source": {
-          "name": "source",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "session_id": {
-          "name": "session_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "action": {
-          "name": "action",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "operation": {
-          "name": "operation",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "target_type": {
-          "name": "target_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "target_id": {
-          "name": "target_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "target_name": {
-          "name": "target_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "container_id": {
-          "name": "container_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "outcome": {
-          "name": "outcome",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "error": {
-          "name": "error",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "change": {
-          "name": "change",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "links": {
-          "name": "links",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "summary": {
-          "name": "summary",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "visibility": {
-          "name": "visibility",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "participants": {
-          "name": "participants",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "prev_hash": {
-          "name": "prev_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "hash": {
-          "name": "hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "audit_events_id_unique": {
-          "name": "audit_events_id_unique",
-          "columns": [
-            "id"
-          ],
-          "isUnique": true
-        },
-        "audit_events_actor_seq_idx": {
-          "name": "audit_events_actor_seq_idx",
-          "columns": [
-            "actor_id",
-            "seq"
-          ],
-          "isUnique": false
-        },
-        "audit_events_target_seq_idx": {
-          "name": "audit_events_target_seq_idx",
-          "columns": [
-            "target_id",
-            "seq"
-          ],
-          "isUnique": false
-        },
-        "audit_events_action_seq_idx": {
-          "name": "audit_events_action_seq_idx",
-          "columns": [
-            "action",
-            "seq"
-          ],
-          "isUnique": false
-        },
-        "audit_events_session_seq_idx": {
-          "name": "audit_events_session_seq_idx",
-          "columns": [
-            "session_id",
-            "seq"
-          ],
-          "isUnique": false
-        },
-        "audit_events_at_idx": {
-          "name": "audit_events_at_idx",
-          "columns": [
-            "at"
-          ],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {
-        "audit_events_actor_kind": {
-          "name": "audit_events_actor_kind",
-          "value": "\"audit_events\".\"actor_kind\" IN ('person', 'agent', 'system', 'external')"
-        },
-        "audit_events_operation": {
-          "name": "audit_events_operation",
-          "value": "\"audit_events\".\"operation\" IN ('create', 'modify', 'remove', 'access', 'execute', 'auth')"
-        },
-        "audit_events_outcome": {
-          "name": "audit_events_outcome",
-          "value": "\"audit_events\".\"outcome\" IN ('ok', 'failed', 'refused')"
-        },
-        "audit_events_visibility": {
-          "name": "audit_events_visibility",
-          "value": "\"audit_events\".\"visibility\" IN ('space', 'participants', 'admins')"
-        },
-        "audit_events_participants_required": {
-          "name": "audit_events_participants_required",
-          "value": "\"audit_events\".\"visibility\" <> 'participants' OR \"audit_events\".\"participants\" IS NOT NULL"
         }
       }
     }

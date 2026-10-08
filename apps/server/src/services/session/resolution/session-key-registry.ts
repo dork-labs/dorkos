@@ -19,10 +19,10 @@
  * message written under it lands in a second queue nothing lists and nothing
  * drains.
  *
- * @module services/session/session-key-registry
+ * @module services/session/resolution/session-key-registry
  */
-import type { SessionStateProjector } from './session-state-projector.js';
-import { peekProjector } from './session-state-projector.js';
+import type { SessionStateProjector } from '../session-state-projector.js';
+import { peekProjector } from '../session-state-projector.js';
 
 /** Later-learned session id → the id its dispatcher state is filed under. */
 const sessionAliases = new Map<string, string>();

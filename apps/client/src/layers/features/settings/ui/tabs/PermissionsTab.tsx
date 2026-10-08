@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 /**
  * Settings → Permissions: what agents may do by default (spec
  * `agent-permissions`). The preset picker at the top, the Files & commands
@@ -101,7 +102,7 @@ export function PermissionsTab() {
           className="h-auto p-0 text-sm"
           onClick={() => {
             close();
-            void navigate({ to: '/connections' });
+            void navigate({ ...appRoutes.connections() });
           }}
         >
           Connections

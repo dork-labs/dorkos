@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 /**
  * How a notification draws, and where it goes when it is clicked.
  *
@@ -281,10 +282,10 @@ export function notificationLink(notification: NotificationDTO): NotificationLin
   const { subject, kind, sessionId } = notification;
 
   if (kind === 'agent.unreachable') {
-    return { to: '/', search: { detail: 'offline-agent', itemId: subject.id } };
+    return { ...appRoutes.home(), search: { detail: 'offline-agent', itemId: subject.id } };
   }
   if (kind === 'dead-letter.created') {
-    return { to: '/connections', search: {} };
+    return { ...appRoutes.connections(), search: {} };
   }
   if (kind === 'signin.required') {
     // Settings → Runtimes, which is where signing in again actually happens —
@@ -292,18 +293,18 @@ export function notificationLink(notification: NotificationDTO): NotificationLin
     // (`features/chat/ui/message/ErrorMessageBlock.tsx`). Its subject type is
     // `system`, so without this the switch below would send it nowhere and the
     // one row in the inbox that has something to DO would draw as plain text.
-    return { to: '/', search: { settings: RUNTIMES_SETTINGS_TAB } };
+    return { ...appRoutes.home(), search: { settings: RUNTIMES_SETTINGS_TAB } };
   }
   if (kind === 'extension.approval') {
     // Settings → Extensions, where the same extension's card can turn it on —
     // the same place its phone-free arrival deep-links to
     // (`standingDeepLink` in the server's `escalation-service.ts`).
-    return { to: '/', search: { settings: EXTENSIONS_SETTINGS_TAB } };
+    return { ...appRoutes.home(), search: { settings: EXTENSIONS_SETTINGS_TAB } };
   }
   if (kind === 'community.owner-replacement') {
     // The subject is the owner's connection ref: the community's own page, where the banner
     // says what is happening and opens the community to keep ownership.
-    return { to: '/channels', search: { community: subject.id } };
+    return { ...appRoutes.channels(), search: { community: subject.id } };
   }
   // An extension's decision history row carries no link of its own (the
   // title and body say what happened); "Watch" on the row opens its chat.
@@ -315,19 +316,19 @@ export function notificationLink(notification: NotificationDTO): NotificationLin
     case 'session':
       return toSession({ session: subject.id });
     case 'run':
-      return { to: '/', search: { detail: 'failed-run', itemId: subject.id } };
+      return { ...appRoutes.home(), search: { detail: 'failed-run', itemId: subject.id } };
     case 'task':
-      return { to: '/tasks', search: {} };
+      return { ...appRoutes.tasks(), search: {} };
     case 'room':
       // `?id=`, which is how every other link to a room is spelled — the route
       // carries a room's identity as a search param, not a path segment.
-      return { to: '/channels', search: { id: subject.id } };
+      return { ...appRoutes.channels(), search: { id: subject.id } };
     case 'agent':
       // An agent's note is about a conversation when it had one, and about the
       // agent otherwise. The session is the more useful of the two: it is where
       // the note came from and where an answer would go.
       return sessionId === undefined
-        ? { to: '/team', search: {} }
+        ? { ...appRoutes.team(), search: {} }
         : toSession({ session: sessionId });
     default:
       return null;

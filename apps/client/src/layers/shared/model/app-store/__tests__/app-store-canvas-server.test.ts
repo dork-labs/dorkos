@@ -86,6 +86,9 @@ function fakeTransport(overrides: Partial<SessionCanvasTransport> = {}): Session
 
 describe('CanvasSlice — the server’s table, as this window holds it', () => {
   beforeEach(() => {
+    // Each test begins a fresh view; rebinding the same session is deliberately
+    // idempotent so a delayed canonical route cannot wipe its early snapshot.
+    useAppStore.getState().loadCanvasForSession('fixture-reset');
     useAppStore.getState().loadCanvasForSession(SESSION);
   });
 
@@ -425,8 +428,9 @@ describe('CanvasSlice — the server’s table, as this window holds it', () => 
         expect(useAppStore.getState().openDocuments[0]!.heldUpdate).toEqual(markdown('A'));
       });
 
-      it('forgets its writes when the window binds a session again', () => {
+      it('forgets its writes when the window leaves and reopens a session', () => {
         useAppStore.getState().setDocumentContent('doc-a', markdown('A'));
+        useAppStore.getState().loadCanvasForSession('another-session');
         useAppStore.getState().loadCanvasForSession(SESSION);
         useAppStore
           .getState()
@@ -889,14 +893,46 @@ describe('CanvasSlice — the server’s table, as this window holds it', () => 
       // route moves and this slice rebinds.
       refuse = false;
       useAppStore.getState().carryCanvasWritesAcross(SESSION, CANONICAL);
-      useAppStore.getState().loadCanvasForSession(CANONICAL);
+      // The canonical stream's first snapshot arrives while its route loader
+      // is still pending. Held writes must flush before React binds the route.
+      expect(useAppStore.getState().canvasSessionId).toBe(CANONICAL);
       useAppStore.getState().hydrateCanvasFromSnapshot(CANONICAL, []);
       await vi.waitFor(() => {
         expect(open).toHaveBeenCalledTimes(2);
       });
       // Sent under the NEW name — the scope the server moved the canvas into.
       expect(open).toHaveBeenLastCalledWith(CANONICAL, fileDoc('a.ts'));
+      await settle();
+      expect(useAppStore.getState().openDocuments).toHaveLength(1);
+      // Only now does the delayed route commit. It must retain the snapshot
+      // and successful write rather than resetting the attached stream.
+      useAppStore.getState().loadCanvasForSession(CANONICAL);
+      expect(useAppStore.getState().canvasStreamAttached).toBe(true);
+      expect(useAppStore.getState().openDocuments).toHaveLength(1);
       expect(toast.error).not.toHaveBeenCalled();
+    });
+
+    it('retains an early canonical snapshot when the rekey route binds later', () => {
+      const canonical = 'early-canonical';
+      useAppStore.getState().carryCanvasWritesAcross(SESSION, canonical);
+      useAppStore
+        .getState()
+        .hydrateCanvasFromSnapshot(canonical, [
+          serverDocument({ id: 'canonical-doc', content: fileDoc('result.ts') }),
+        ]);
+      expect(useAppStore.getState().openDocuments.map((document) => document.id)).toEqual([
+        'canonical-doc',
+      ]);
+      useAppStore.getState().loadCanvasForSession(canonical);
+      expect(useAppStore.getState().openDocuments.map((document) => document.id)).toEqual([
+        'canonical-doc',
+      ]);
+      expect(useAppStore.getState().canvasStreamAttached).toBe(true);
+    });
+
+    it('does not select another conversation when an inactive session rekeys', () => {
+      useAppStore.getState().carryCanvasWritesAcross('inactive-retired', 'inactive-canonical');
+      expect(useAppStore.getState().canvasSessionId).toBe(SESSION);
     });
 
     it('drops a write held for a session this window has left, and says nothing', async () => {

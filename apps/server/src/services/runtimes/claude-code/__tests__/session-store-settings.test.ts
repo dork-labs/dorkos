@@ -129,6 +129,16 @@ describe('SessionStore session-settings hydration (ADR-0260)', () => {
     });
   });
 
+  it('records the first message directory after a pre-launch settings change', async () => {
+    await store.updateSession('s1', { model: 'sonnet' });
+    expect(store.findSession('s1')!.cwd).toBeUndefined();
+    const session = await store.ensureForMessage('s1', fakeTranscript(false), '/default', {
+      cwd: '/chosen/project',
+    });
+    expect(session.cwd).toBe('/chosen/project');
+    expect(session.model).toBe('sonnet');
+  });
+
   it('rebindSdkSession moves the stored row AND the reverse index to the canonical id', async () => {
     const port = createFakePort();
     store.configureSettings(port, 'default');

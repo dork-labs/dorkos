@@ -318,6 +318,8 @@ describe('Database Migrations', () => {
       // A session's hard usage limit, kept across a restart until its next
       // turn starts (spec claude-account-fleet D4, migration 0117).
       'session_limits',
+      // Owner-scoped opaque locations keep private directories out of links.
+      'session_locations',
       // Stable proof that a protected source was accepted for one session.
       'session_message_acceptance_receipts',
       // Messages typed while a session was busy, waiting their turn — the
@@ -325,6 +327,8 @@ describe('Database Migrations', () => {
       // restart (spec persistent-session-runtime §3.1, migration 0064).
       'session_message_queue',
       'session_metadata',
+      // Verified native cwd/account source survives an app restart.
+      'session_native_bindings',
       // Words staged for a session that the runtime could not append to its own
       // transcript, waiting to ride the next dispatch. Durable because the
       // "Added context for the next reply" receipt already is (DOR-1324,

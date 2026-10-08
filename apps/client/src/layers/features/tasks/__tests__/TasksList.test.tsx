@@ -8,7 +8,8 @@ import { TOUR_ANCHORS } from '@/layers/shared/config';
 import { TasksList } from '../ui/TasksList';
 
 // useFilterState reads/writes URL search params via the router.
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useNavigate: () => vi.fn(),
   useSearch: () => ({}),
 }));

@@ -34,7 +34,8 @@ import { LAUNCH_STARTED_AT } from '@/layers/shared/lib';
 
 // ── Router: the shell mounts without a RouterProvider ──
 
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useRouterState: ({ select }: { select: (s: unknown) => unknown }) =>
     select({
       location: { pathname: '/', href: '/', searchStr: '' },

@@ -68,7 +68,7 @@ import {
 } from '../services/tasks/lifecycle/schedule-account-eligibility.js';
 import { scheduleCreditsModelRefusal } from '../services/tasks/lifecycle/schedule-credits-model.js';
 import { capabilitiesForTaskRuntime } from '../services/tasks/scheduled-run-power.js';
-import { readAgentExecutionDefaults } from '../services/session/resolve-session-defaults.js';
+import { readAgentExecutionDefaults } from '../services/session/resolution/resolve-session-defaults.js';
 import {
   describeOperatorOnlyTaskRefusal,
   findOperatorOnlyTaskFields,

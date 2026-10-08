@@ -88,6 +88,9 @@ async function runTurn(options: {
 }): Promise<{ hits: Hit[]; argv: string[] }> {
   let argv: string[] = [];
   const abort = new AbortController();
+  // Observe closure at spawn time so even a child that exits during query
+  // cleanup cannot race registration of the waiter.
+  let childClosed: Promise<void> | undefined;
   const stream = query({
     prompt: 'hello',
     options: {
@@ -99,12 +102,14 @@ async function runTurn(options: {
       abortController: abort,
       spawnClaudeCodeProcess: (spawnOptions) => {
         argv = spawnOptions.args;
-        return spawn(spawnOptions.command, spawnOptions.args, {
+        const child = spawn(spawnOptions.command, spawnOptions.args, {
           cwd: spawnOptions.cwd,
           env: spawnOptions.env as NodeJS.ProcessEnv,
           stdio: ['pipe', 'pipe', 'pipe'],
           signal: spawnOptions.signal,
-        }) as unknown as ReturnType<NonNullable<Options['spawnClaudeCodeProcess']>>;
+        });
+        childClosed = new Promise<void>((resolve) => child.once('close', () => resolve()));
+        return child as unknown as ReturnType<NonNullable<Options['spawnClaudeCodeProcess']>>;
       },
     },
   });
@@ -121,6 +126,8 @@ async function runTurn(options: {
     clearTimeout(deadline);
     clearInterval(watcher);
     abort.abort();
+    stream.close();
+    await childClosed;
   }
   return { hits: hits.filter((hit) => hit.path.startsWith('/v1/messages')), argv };
 }
@@ -144,7 +151,7 @@ describe.skipIf(BINARY === null)('a folder’s settings cannot redirect the cred
   afterEach(async () => {
     await credits.close();
     await attacker.close();
-    // The CLI may still be closing its files for a moment after the abort.
+    // runTurn has observed the SDK child's close, so no writer remains.
     fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   });
 

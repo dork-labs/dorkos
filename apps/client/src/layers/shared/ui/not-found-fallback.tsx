@@ -1,3 +1,4 @@
+import { appRoutes } from '../lib/route-factory';
 import { Link } from '@tanstack/react-router';
 import { Search } from 'lucide-react';
 import { Button } from './button';
@@ -12,7 +13,7 @@ export function NotFoundFallback() {
         <p className="text-muted-foreground max-w-md text-sm">This page doesn’t exist.</p>
       </div>
       <Button variant="outline" size="sm" asChild>
-        <Link to="/">Back to home</Link>
+        <Link {...appRoutes.home()}>Back to home</Link>
       </Button>
     </div>
   );

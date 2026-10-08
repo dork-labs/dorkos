@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { ChevronDown, HardDrive, UsersRound } from 'lucide-react';
@@ -272,7 +273,7 @@ export function CommunityContextSwitcher({
     // The connection's content is already erased; leave only if it was the
     // one on screen. Another Community or this DorkOS stays where it was.
     if (communityRefFromRouteDestination(getCommunityRouteEpoch().destination) === connection.ref)
-      void navigate({ to: '/', replace: true });
+      void navigate({ ...appRoutes.home(), replace: true });
   }
 
   return (

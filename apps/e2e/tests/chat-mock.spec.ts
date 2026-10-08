@@ -414,7 +414,11 @@ test.describe('Runtime UX — multi-runtime test server', () => {
     // Second session on the secondary runtime. The id is minted explicitly —
     // without it the loader auto-selects the existing session instead of
     // creating a new one.
-    await chatPage.goto(crypto.randomUUID(), { dir: agentDir, runtime: 'test-mode-b' });
+    await chatPage.goto(crypto.randomUUID(), {
+      dir: agentDir,
+      runtime: 'test-mode-b',
+      draft: true,
+    });
     await chatPage.sendMessage('Secondary runtime session');
     // Scoped to the transcript — see GOTCHAS (announcer duplicates the echo).
     await expect(
@@ -698,6 +702,7 @@ test.describe('Extensions — live remount on agent/cwd switch (DOR-363)', () =>
   // project-scoped extension: switching agents is already a pure client-side transition.
   test('switching agents with no scoped extension is a pure SPA transition (no reload)', async ({
     page,
+    request,
   }) => {
     await fs.rm(extRoot(dirA), { recursive: true, force: true });
     await fs.rm(extRoot(dirB), { recursive: true, force: true });
@@ -710,8 +715,25 @@ test.describe('Extensions — live remount on agent/cwd switch (DOR-363)', () =>
 
     // The app switched to the target agent's working directory.
     await expect
-      .poll(() => new URL(page.url()).searchParams.get('dir'), { timeout: 10_000 })
+      .poll(
+        async () => {
+          const url = new URL(page.url());
+          const launchRef = url.searchParams.get('launchRef');
+          const sessionId = url.searchParams.get('session');
+          if (!sessionId) return null;
+          const response = await request.get(
+            launchRef
+              ? `${API_URL}/api/session-locations/${launchRef}`
+              : `${API_URL}/api/sessions/${sessionId}`
+          );
+          if (!response.ok()) return null;
+          return (await response.json()).cwd;
+        },
+        { timeout: 10_000 }
+      )
       .toBe(dirA);
+    expect(new URL(page.url()).searchParams.has('dir')).toBe(false);
+    expect(new URL(page.url()).searchParams.has('agentPath')).toBe(false);
 
     await expectNoReload(page);
   });
@@ -751,8 +773,25 @@ test.describe('Extensions — live remount on agent/cwd switch (DOR-363)', () =>
     // The scoped set changed → the remount branch runs: a quiet toast, no reload.
     await expect(page.getByText('Project extensions updated')).toBeVisible({ timeout: 15_000 });
     await expect
-      .poll(() => new URL(page.url()).searchParams.get('dir'), { timeout: 10_000 })
+      .poll(
+        async () => {
+          const url = new URL(page.url());
+          const launchRef = url.searchParams.get('launchRef');
+          const sessionId = url.searchParams.get('session');
+          if (!sessionId) return null;
+          const response = await request.get(
+            launchRef
+              ? `${API_URL}/api/session-locations/${launchRef}`
+              : `${API_URL}/api/sessions/${sessionId}`
+          );
+          if (!response.ok()) return null;
+          return (await response.json()).cwd;
+        },
+        { timeout: 10_000 }
+      )
       .toBe(dirA);
+    expect(new URL(page.url()).searchParams.has('dir')).toBe(false);
+    expect(new URL(page.url()).searchParams.has('agentPath')).toBe(false);
 
     await expectNoReload(page);
   });
@@ -1150,30 +1189,29 @@ test.describe('conversations in the command palette', () => {
       // the number differs per family and per size and there is no arithmetic
       // that gets it from a font-size.
       //
-      // The probe goes INSIDE the title and copies no font properties at all,
-      // which is the whole trick. Copying a handful of them onto a sibling
-      // looks equivalent and is not: `ch` also moves with the things a font
-      // shorthand does not carry — variation settings, optical sizing, feature
-      // settings, stretch — so a probe that names four properties resolves
-      // `6ch` in a subtly different font than the element it is standing in
-      // for. That cost 0.7px here, against a 0.5px tolerance, and it would
-      // drift again with any font change. Inheritance is exact by
-      // construction; a copied list is exact only until someone adds a
-      // property to it.
+      // Measure the same element that owns the floor. A nested span can
+      // resolve `ch` differently under optical font sizing, even after fonts
+      // settle. Preserve its styles and temporarily remove flex constraints
+      // so the actual title's 6ch width is observable without a second font.
+      // Read its layout width through computed style: bounding rectangles
+      // include the palette's animated ancestor scale, while min-width does
+      // not. Comparing those mixes visual and layout units during its entry.
       const titleStyle = getComputedStyle(title);
-      const probe = document.createElement('span');
-      probe.style.position = 'absolute';
-      probe.style.visibility = 'hidden';
-      probe.style.display = 'inline-block';
-      probe.style.width = '6ch';
-      title.appendChild(probe);
-      const sixCh = probe.getBoundingClientRect().width;
-      probe.remove();
+      const titleMinWidth = titleStyle.minWidth;
+      const titleElement = title as HTMLElement;
+      const originalStyle = titleElement.getAttribute('style');
+      titleElement.style.width = '6ch';
+      titleElement.style.minWidth = '0';
+      titleElement.style.maxWidth = 'none';
+      titleElement.style.flex = '0 0 auto';
+      const sixCh = parseFloat(getComputedStyle(titleElement).width);
+      if (originalStyle === null) titleElement.removeAttribute('style');
+      else titleElement.setAttribute('style', originalStyle);
 
       return {
-        lineWidth: line.getBoundingClientRect().width,
+        lineWidth: parseFloat(getComputedStyle(line).width),
         whoMaxWidth: getComputedStyle(who).maxWidth,
-        titleMinWidth: titleStyle.minWidth,
+        titleMinWidth,
         sixCh,
       };
     });

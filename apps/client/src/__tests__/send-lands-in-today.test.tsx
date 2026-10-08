@@ -57,7 +57,8 @@ const { AGENT_PATH, FIXED_NOW, SESSION } = vi.hoisted(() => {
   };
 });
 
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   // Present, because these cases render inside a routed cockpit. The safe-router
   // wrappers ask before reading route state (DOR-1444).
   useRouter: () => ({ stores: {} }),

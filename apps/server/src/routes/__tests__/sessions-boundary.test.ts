@@ -26,6 +26,8 @@ let fakeRuntime: FakeAgentRuntime;
 
 vi.mock('../../services/core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    getNativeSessionCwd: vi.fn(() => null),
+    getSessionSettings: vi.fn(async () => undefined),
     getDefault: vi.fn(() => fakeRuntime),
     get: vi.fn(() => fakeRuntime),
     getAllCapabilities: vi.fn(() => ({})),
@@ -102,6 +104,14 @@ describe('Sessions Routes — Boundary Validation', () => {
       permissionMode: 'default',
     });
     vi.clearAllMocks();
+    // Clear unconsumed once-verdicts as well as calls. A pre-boundary failure
+    // must not lend its rejection to the next request or a later test.
+    vi.mocked(validateBoundary)
+      .mockReset()
+      .mockImplementation(async (path) => path);
+    vi.mocked(validateBoundaryOrDorkHome)
+      .mockReset()
+      .mockImplementation(async (path) => path);
   });
 
   describe('PATCH /:id', () => {

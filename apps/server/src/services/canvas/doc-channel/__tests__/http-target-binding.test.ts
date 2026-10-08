@@ -3,7 +3,10 @@ import { agents, sessionMetadata, createDb, runMigrations, type Db } from '@dork
 import { createRoomSubsystem, type RoomSubsystem } from '../../../rooms/index.js';
 import { RoomRepoStore } from '../../../rooms/repo/room-repo-store.js';
 import { ApprovalService } from '../../../core/approvals/approval-service.js';
-import { linkSessionId, resetSessionKeys } from '../../../session/session-key-registry.js';
+import {
+  linkSessionId,
+  resetSessionKeys,
+} from '../../../session/resolution/session-key-registry.js';
 import { randomUUID } from 'node:crypto';
 import { noopLogger } from '@dorkos/shared/logger';
 import { uiDomain } from '../../../session/browser-seat/ui-capabilities.js';

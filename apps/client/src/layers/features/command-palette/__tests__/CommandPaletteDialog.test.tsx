@@ -97,7 +97,8 @@ afterEach(() => {
 const mockTransport = createMockTransport();
 
 const mockNavigate = vi.fn();
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useNavigate: () => mockNavigate,
 }));
 
@@ -485,7 +486,8 @@ describe('CommandPaletteDialog', () => {
     expect(opened).toHaveLength(1);
     const target = new URL(opened[0], window.location.origin);
     expect(target.pathname).toBe('/session');
-    expect(target.searchParams.get('dir')).toBe('/projects/current');
+    expect(target.searchParams.get('dir')).toBeNull();
+    expect(target.searchParams.get('agentId')).toBe('agent-3');
     // Nothing is cached for this agent, so the href does NOT guess: it leaves
     // `?session=` off and lets the loader resolve which conversation that is,
     // rather than inventing an id and opening an empty chat (DOR-928).
@@ -537,7 +539,8 @@ describe('CommandPaletteDialog', () => {
     const target = new URL(String(openSpy.mock.calls[0][0]));
     expect(target.origin).toBe(window.location.origin);
     expect(target.pathname).toBe('/session');
-    expect(target.searchParams.get('dir')).toBe('/projects/current');
+    expect(target.searchParams.get('dir')).toBeNull();
+    expect(target.searchParams.get('agentId')).toBe('agent-3');
     expect(openedAgents()).toContain('/projects/current');
 
     openSpy.mockRestore();
@@ -568,7 +571,8 @@ describe('CommandPaletteDialog', () => {
     const target = new URL(String(openSpy.mock.calls[0][0]));
     expect(target.origin).toBe(window.location.origin);
     expect(target.pathname).toBe('/session');
-    expect(target.searchParams.get('dir')).toBe('/projects/current');
+    expect(target.searchParams.get('dir')).toBeNull();
+    expect(target.searchParams.get('agentId')).toBe('agent-3');
     // Same rule as the tab action: nothing cached for this agent, so the href
     // leaves `?session=` to the loader rather than inventing one (DOR-928).
     expect(target.searchParams.get('session')).toBeNull();
@@ -601,15 +605,21 @@ describe('CommandPaletteDialog', () => {
     if (newSession) fireEvent.click(newSession as Element);
 
     expect(mockSetDir).not.toHaveBeenCalled();
-    expect(mockNavigate).toHaveBeenCalledWith({
-      to: '/session',
-      search: {
-        dir: '/projects/current',
-        session: expect.stringMatching(
-          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
-        ),
-      },
-    });
+    await waitFor(() =>
+      expect(mockNavigate).toHaveBeenCalledWith({
+        to: '/session',
+        search: {
+          dir: undefined,
+          draft: '1',
+          launchRef: 'test-location',
+          seed: undefined,
+          runtime: undefined,
+          session: expect.stringMatching(
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+          ),
+        },
+      })
+    );
     await waitFor(() => expect(openedAgents()).toContain('/projects/current'));
   });
 

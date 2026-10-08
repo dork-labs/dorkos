@@ -1,3 +1,4 @@
+import { useSessionRouteContext } from '../navigation/session-route-context';
 import { useCallback, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -107,7 +108,9 @@ export function useSessionStatus(
 ) {
   const transport = useTransport();
   const queryClient = useQueryClient();
-  const selectedCwd = useAppStore((s) => s.selectedCwd);
+  const storeCwd = useAppStore((s) => s.selectedCwd);
+  const routeContext = useSessionRouteContext(sessionId);
+  const selectedCwd = routeContext?.cwd ?? storeCwd;
   const pendingAccount = useAppStore((s) => s.pendingAccount);
   const { data: models } = useModels({
     sessionId: sessionId ?? undefined,
@@ -294,8 +297,8 @@ export function useSessionStatus(
             description: 'The current reply keeps its old setting.',
           });
         }
-        queryClient.setQueryData(
-          sessionKeys.detail(sessionId, selectedCwd),
+        queryClient.setQueriesData(
+          { queryKey: sessionKeys.bySession(sessionId) },
           (old: Session | undefined) => ({
             ...old,
             ...updated,

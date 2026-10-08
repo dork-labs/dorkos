@@ -21,7 +21,7 @@
  * {@link sendSessionStatusSnapshot} tells a client that has JUST connected what
  * state the transitions it missed left behind (DOR-1136).
  *
- * @module services/session/session-list-broadcaster
+ * @module services/session/catalog/session-list-broadcaster
  */
 import type { AgentRuntime, SessionOpts } from '@dorkos/shared/agent-runtime';
 import { SessionListEventSchema } from '@dorkos/shared/session-stream';
@@ -31,27 +31,27 @@ import {
   InteractionPendingEventSchema,
   InteractionResolvedEventSchema,
 } from '@dorkos/shared/interaction-events';
-import { SSE } from '../../config/constants.js';
-import { eventFanOut, encodeBroadcast, type FanOutClient } from '../core/event-fan-out.js';
+import { SSE } from '../../../config/constants.js';
+import { eventFanOut, encodeBroadcast, type FanOutClient } from '../../core/event-fan-out.js';
 import {
   listProjectorStatuses,
   onProjectorStatusChange,
   onProjectorInteractionChange,
   type InteractionChange,
-} from './session-state-projector.js';
+} from '../session-state-projector.js';
 import {
   overlayStoredSettings,
   type SessionSettingsOverlayPort,
-} from './session-settings-overlay.js';
+} from '../resolution/session-settings-overlay.js';
 import {
   sessionOriginOverlaySteps,
   type SessionOriginResolvers,
-} from './origin/session-origin-overlays.js';
-import { askEntitlement, type AskSubject } from './asks/ask-entitlement.js';
-import type { CallerPrincipal } from '../../lib/caller-principal.js';
-import { DEFAULT_CWD } from '../../lib/resolve-root.js';
-import { projectRegistry } from '../projects/project-registry.js';
-import { logger } from '../../lib/logger.js';
+} from '../origin/session-origin-overlays.js';
+import { askEntitlement, type AskSubject } from '../asks/ask-entitlement.js';
+import type { CallerPrincipal } from '../../../lib/caller-principal.js';
+import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
+import { projectRegistry } from '../../projects/project-registry.js';
+import { logger } from '../../../lib/logger.js';
 
 /**
  * Permission mode used to build the global subscription context. The

@@ -5,6 +5,7 @@ import type { EngineConfiguration, ProcessIdentity } from '../configuration.js';
 import type { BrowserRecord, CloseOutcome, RetirementCloseRefusalStage } from './records.js';
 import { completeInventory } from './inventory.js';
 import { until, pause } from './deadline.js';
+import { createSupervisorStopBarrier, watchControllerCloseRefusal } from './close-barrier.js';
 import {
   ownOperation,
   closeOwned,
@@ -195,11 +196,7 @@ async function performClose(
   ]).then((joined) => {
     if (joined.some((result) => result.status === 'rejected')) owner.uncertain = true;
   });
-  if (record.supervisor) {
-    // Enter all original closes now, but preserve the attributable snapshot and exact
-    // input-session detach before asking the separate owner to terminate Chromium.
-    record.supervisorStopBarrier = closeEntryBarrier;
-  }
+  if (record.supervisor) record.controllerCloseBarrier = closeEntryBarrier;
   const navigationObserver = record.ownerNavigationObserver
     ? (record.ownerNavigationObserverClose ??= ownOperation(record, () =>
         record.ownerNavigationObserver!.close()
@@ -228,17 +225,13 @@ async function performClose(
     noteRefusal(record, 'network');
     record.lifetime.closeFailed = true;
   });
-  const proxy = record.proxy ? closeOwned(record, 'proxy', record.proxy) : Promise.resolve();
   const controllerWireClose = closeControllerWire
     ? (record.controllerWireClose ??= ownOperation(record, async () => {
         await closeEntryBarrier;
         await closeControllerWire();
       }))
     : Promise.resolve();
-  void controllerWireClose.catch(() => {
-    noteRefusal(record, 'connection');
-    owner.uncertain = true;
-  });
+  watchControllerCloseRefusal(record, owner, controllerWireClose);
   const connection =
     !record.context && record.controllerBrowser
       ? ownOperation(record, () =>
@@ -247,10 +240,15 @@ async function performClose(
             : record.controllerBrowser!.close()
         )
       : Promise.resolve();
-  void connection.catch(() => {
-    noteRefusal(record, 'connection');
-    owner.uncertain = true;
-  });
+  watchControllerCloseRefusal(record, owner, connection);
+  if (record.supervisor)
+    record.supervisorStopBarrier = createSupervisorStopBarrier(
+      record,
+      owner,
+      [closeEntryBarrier, context, connection, controllerWireClose],
+      inputEnd
+    );
+  const proxy = record.proxy ? closeOwned(record, 'proxy', record.proxy) : Promise.resolve();
   let observationFailed = record.setupCleanupUncertain === true;
   if (observationFailed) noteRefusal(record, 'setup');
   try {

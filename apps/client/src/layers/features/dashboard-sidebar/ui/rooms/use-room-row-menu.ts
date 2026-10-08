@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 /**
  * Everything a room row can DO, mounted only once the reader reaches for it.
  *
@@ -216,7 +217,7 @@ export function useRoomRowMenu({ room, isActive }: RoomRowMenuInput): RoomRowAct
               });
               // Only when this room is the one on screen: leaving from a row
               // that is not open changes nothing about where the reader is.
-              if (isActive) void navigateRef.current({ to: '/channels', search: {} });
+              if (isActive) void navigateRef.current({ ...appRoutes.channels(), search: {} });
             },
           }
         );

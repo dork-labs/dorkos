@@ -173,7 +173,10 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-vi.mock('@tanstack/react-router', () => ({ useNavigate: () => mockNavigate }));
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
+  useNavigate: () => mockNavigate,
+}));
 
 vi.mock('@/layers/shared/model', () => ({
   useTransport: () => mockTransport,
@@ -571,7 +574,7 @@ describe('opening a conversation from ⌘K remembers both halves of it', () => {
     expect(opened['agent:/projects/orbit']).toBeDefined();
     expect(mockNavigate).toHaveBeenCalledWith({
       to: '/session',
-      search: { session: 'sess-orbit-1', dir: '/projects/orbit' },
+      search: { session: 'sess-orbit-1', dir: undefined },
     });
   });
 });

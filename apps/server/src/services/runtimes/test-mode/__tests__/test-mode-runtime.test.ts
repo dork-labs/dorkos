@@ -262,12 +262,33 @@ describe('TestModeRuntime — stateless log-backed contract adapter', () => {
     const runtime = new TestModeRuntime();
     await runTurn(runtime, SESSION_A, 'Hello');
 
-    expect(runtime.updateSession(SESSION_A, { permissionMode: 'plan' })).toEqual({ updated: true });
-    expect((await runtime.getSession('/projects/test', SESSION_A))?.permissionMode).toBe('plan');
-    // An untracked session is the one "does not exist" case on this runtime.
-    expect(runtime.updateSession(SESSION_B, { permissionMode: 'plan' })).toEqual({
-      updated: false,
+    expect(await runtime.updateSession(SESSION_A, { permissionMode: 'plan' })).toEqual({
+      updated: true,
     });
+    expect((await runtime.getSession('/projects/test', SESSION_A))?.permissionMode).toBe('plan');
+    // Like production runtimes, a draft can save settings without native existence.
+    const saveSessionSettings = vi.fn().mockResolvedValue(undefined);
+    const settingsPort = {
+      saveSessionSettings,
+      getSessionSettings: vi.fn().mockResolvedValue({ permissionMode: 'plan' }),
+    };
+    runtime.setSessionSettings(settingsPort);
+    expect(await runtime.updateSession(SESSION_B, { permissionMode: 'plan' })).toEqual({
+      updated: true,
+    });
+    expect(saveSessionSettings).toHaveBeenCalledWith(SESSION_B, { permissionMode: 'plan' });
+    expect(runtime.hasSession(SESSION_B)).toBe(false);
+    expect(await runtime.getSession('/projects/test', SESSION_B)).toBeNull();
+    expect(await runtime.findSession(SESSION_B)).toBeNull();
+    runtime.ensureSession(SESSION_B, { cwd: '/projects/test' });
+    await runTurn(runtime, SESSION_B, 'First message');
+    expect((await runtime.getSession('/projects/test', SESSION_B))?.permissionMode).toBe('plan');
+    const chosenRuntime = new TestModeRuntime('test-mode-b');
+    chosenRuntime.setSessionSettings(settingsPort);
+    await runTurn(chosenRuntime, SESSION_B, 'The selected runtime reads the saved draft settings');
+    expect((await chosenRuntime.getSession('/projects/test', SESSION_B))?.permissionMode).toBe(
+      'plan'
+    );
   });
 });
 
@@ -559,6 +580,11 @@ describe('TestModeRuntime — a declared first-turn rename', () => {
     // projector agree about what this session is called.
     expect(await runtime.getSession(CTX.cwd, CANONICAL)).not.toBeNull();
     expect(await runtime.getSession(CTX.cwd, SESSION_A)).toBeNull();
+    expect(await runtime.findSession(CANONICAL)).toMatchObject({ id: CANONICAL, cwd: CTX.cwd });
+    expect(await runtime.findSession(SESSION_A)).toBeNull();
+    // Another registered runtime must not claim the renamed session when the
+    // ID-only read probes the native stores before a binding is available.
+    expect(await new TestModeRuntime('test-mode-b').findSession(CANONICAL)).toBeNull();
   });
 
   it('declares nothing for a session that never asked', () => {

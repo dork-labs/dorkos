@@ -69,7 +69,10 @@ const posture = vi.hoisted(() => ({ authEnabled: false }));
 // would cut a reply off.
 const liveRuntimes = vi.hoisted(() => ({ list: [] as unknown[] }));
 vi.mock('../../services/core/runtime-registry.js', () => ({
-  runtimeRegistry: { listRuntimes: () => liveRuntimes.list },
+  runtimeRegistry: {
+    getNativeSessionCwd: vi.fn(() => null),
+    listRuntimes: () => liveRuntimes.list,
+  },
 }));
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: {

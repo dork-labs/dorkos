@@ -12,7 +12,10 @@ import { registerComposerInsert } from '@/layers/shared/lib';
 import { SessionConnectorsGroup } from '../ui/SessionConnectorsGroup';
 
 const navigate = vi.fn();
-vi.mock('@tanstack/react-router', () => ({ useNavigate: () => navigate }));
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
+  useNavigate: () => navigate,
+}));
 afterEach(cleanup);
 
 function renderGroup(transport: Transport) {

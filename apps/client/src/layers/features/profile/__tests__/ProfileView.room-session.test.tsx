@@ -97,6 +97,7 @@ const searchSchema = mergeDialogSearch(
     id: z.string().optional(),
     session: z.string().optional(),
     dir: z.string().optional(),
+    launchRef: z.string().optional(),
   })
 );
 
@@ -269,7 +270,10 @@ describe('Open session, from inside a room', () => {
     await pressOpenSession();
 
     await waitFor(() => {
-      expect(view.where()).toEqual({ pathname: '/session', search: { dir: WARDEN_PATH } });
+      expect(view.where()).toEqual({
+        pathname: '/session',
+        search: { launchRef: 'test-location' },
+      });
     });
   });
 
@@ -282,7 +286,10 @@ describe('Open session, from inside a room', () => {
     await pressOpenSession();
 
     await waitFor(() => {
-      expect(view.where()).toEqual({ pathname: '/session', search: { dir: WARDEN_PATH } });
+      expect(view.where()).toEqual({
+        pathname: '/session',
+        search: { launchRef: 'test-location' },
+      });
     });
   });
 });
@@ -295,7 +302,10 @@ describe('Open session, from anywhere else', () => {
     await pressOpenSession();
 
     await waitFor(() => {
-      expect(view.where()).toEqual({ pathname: '/session', search: { dir: WARDEN_PATH } });
+      expect(view.where()).toEqual({
+        pathname: '/session',
+        search: { launchRef: 'test-location' },
+      });
     });
     expect(view.listRoomSessions).not.toHaveBeenCalled();
     expect(view.transport.getRoom).not.toHaveBeenCalled();

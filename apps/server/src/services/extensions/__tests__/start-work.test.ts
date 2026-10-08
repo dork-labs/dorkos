@@ -59,7 +59,7 @@ vi.mock('../../session/launch/launch-session.js', () => ({
 }));
 
 import { eventFanOut } from '../../core/event-fan-out.js';
-import { SessionListBroadcaster } from '../../session/session-list-broadcaster.js';
+import { SessionListBroadcaster } from '../../session/catalog/session-list-broadcaster.js';
 import { applySessionOriginOverlays } from '../../session/origin/session-origin-overlays.js';
 import { _forgetTitles } from '../../session/origin/started-by-origin-overlay.js';
 import { SessionStartedByStore } from '../../session/origin/session-started-by-store.js';

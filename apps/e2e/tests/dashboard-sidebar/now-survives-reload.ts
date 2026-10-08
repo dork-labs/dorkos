@@ -25,7 +25,8 @@
  * @module tests/dashboard-sidebar/now-survives-reload
  */
 import { test, expect } from '@playwright/test';
-import type { Page } from '@playwright/test';
+import type { Page, Route } from '@playwright/test';
+import { interceptNext } from '@dorkos/test-utils/playwright-routes';
 import { BasePage } from '../../pages/BasePage.js';
 import { ChatPage } from '../../pages/ChatPage.js';
 import { HomeSurfacePage } from '../../pages/HomeSurfacePage.js';
@@ -61,6 +62,53 @@ function blockedRow(page: Page) {
   return nowZone(page).getByText(/wants to edit migrations\/0007_auth_tokens\.sql/);
 }
 
+/** Hold the lazy session loader until the fleet's initial status arrived. */
+async function reloadAfterFleetPreamble(page: Page, lifecycle: 'error' | 'blocked') {
+  await expect(page).toHaveURL(
+    (url) => !!url.searchParams.get('session') && !url.searchParams.has('draft')
+  );
+  const sessionId = new URL(page.url()).searchParams.get('session');
+  expect(sessionId).toBeTruthy();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let completed = Promise.resolve();
+  await interceptNext(
+    page,
+    new RegExp(`/api/sessions/${sessionId}(?:\\?|$)`),
+    (route: Route) => {
+      completed = (async () => {
+        await gate;
+        await route.continue();
+      })();
+      return completed;
+    },
+    { filter: (route) => route.request().method() === 'GET' }
+  );
+  const preamble = page
+    .waitForEvent('websocket', {
+      predicate: (socket) => new URL(socket.url()).pathname === '/api/events',
+    })
+    .then((socket) =>
+      socket.waitForEvent('framereceived', {
+        predicate: (frame) =>
+          String(frame.payload).includes('session_status') &&
+          String(frame.payload).includes(sessionId!) &&
+          String(frame.payload).includes(lifecycle),
+      })
+    );
+  try {
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    // The shell cannot subscribe yet: its loader is deliberately held. This
+    // catches losing the preamble even when an ordinary reload wins the race.
+    await preamble;
+  } finally {
+    release();
+    await completed;
+  }
+}
+
 /** What {@link registerNowSurvivesReloadTests} needs from its host spec. */
 export interface NowSurvivesReloadDeps {
   /** Base URL of the test-mode server, for its `/api/test/*` control routes. */
@@ -94,7 +142,7 @@ export function registerNowSurvivesReloadTests({ apiUrl, agentDir }: NowSurvives
 
       // Half two: the reload. The transition is now in the past, and nothing
       // will ever repeat it — a stopped session does not move again.
-      await page.reload();
+      await reloadAfterFleetPreamble(page, 'error');
       await new BasePage(page).waitForAppReady();
       await new BasePage(page).ensureSidebarOpen();
 
@@ -118,7 +166,7 @@ export function registerNowSurvivesReloadTests({ apiUrl, agentDir }: NowSurvives
 
       await expect(blockedRow(page)).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
 
-      await page.reload();
+      await reloadAfterFleetPreamble(page, 'blocked');
       await new BasePage(page).waitForAppReady();
       await new BasePage(page).ensureSidebarOpen();
 
@@ -157,11 +205,20 @@ export function registerNowSurvivesReloadTests({ apiUrl, agentDir }: NowSurvives
         // Through the page object rather than the raw testid: the strip already
         // has a name in `HomeSurfacePage`, and a second hand-rolled copy of the
         // selector is the thing that goes stale when the strip is renamed.
+        const previousSession = new URL(page.url()).searchParams.get('session');
         await new HomeSurfacePage(page).sidebarNav
           .getByRole('button', { name: 'Ask DorkBot' })
           .click();
+        await expect(page).toHaveURL(
+          (url) =>
+            url.pathname === '/session' &&
+            url.searchParams.get('seed') === 'dorkbot-help' &&
+            url.searchParams.get('draft')?.replaceAll('"', '') === '1' &&
+            url.searchParams.get('session') !== previousSession
+        );
         const dorkbotChat = new ChatPage(page);
         await dorkbotChat.panel.waitFor({ state: 'visible', timeout: SERVER_ROUND_TRIP_MS });
+        await expect(page.getByRole('combobox', { name: /^Message DorkBot/ })).toBeVisible();
         await dorkbotChat.sendMessage('What went wrong?');
         await expect.poll(() => seedContext, { timeout: SERVER_ROUND_TRIP_MS }).toBeDefined();
         return seedContext;

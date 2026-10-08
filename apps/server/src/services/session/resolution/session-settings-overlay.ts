@@ -38,7 +38,7 @@
  * overlay is unaffected — it resolves through `getInternalSessionId` and reads
  * the canonical key — but do not read this paragraph as "one row per session".
  *
- * @module services/session/session-settings-overlay
+ * @module services/session/resolution/session-settings-overlay
  */
 import type { AgentRuntime, RuntimeSettingsCapability } from '@dorkos/shared/agent-runtime';
 import type { Session, SessionSettings } from '@dorkos/shared/types';

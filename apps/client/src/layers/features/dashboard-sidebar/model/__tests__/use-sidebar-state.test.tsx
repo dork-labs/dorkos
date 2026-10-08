@@ -29,7 +29,8 @@ vi.mock('../boot/use-boot-state', () => ({
   useBootState: () => ({ phase: 'settled', settled: true, fleetKnown: true, startedWarm: false }),
 }));
 
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useRouterState: ({ select }: { select: (s: { location: { pathname: string } }) => unknown }) =>
     select({ location: { pathname: '/' } }),
   useSearch: () => ({}),

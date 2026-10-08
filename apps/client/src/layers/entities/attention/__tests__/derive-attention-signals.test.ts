@@ -166,7 +166,7 @@ describe('deriveAttentionSignals — membership (BC-5)', () => {
       kind: 'permission-prompt',
       primary: 'alpha',
       secondary: 'Waiting on you',
-      deepLink: '/session?session=ses-1&dir=%2Fprojects%2Falpha',
+      deepLink: '/session?session=ses-1',
       agentPath: ALPHA,
     });
   });
@@ -293,14 +293,15 @@ describe('deriveAttentionSignals — membership (BC-5)', () => {
     expect(signal?.deepLink).toBe('/session?session=ses-1');
   });
 
-  it('escapes a project path that would otherwise truncate the deep link', () => {
+  it('keeps a project path with URL delimiters out of the deep link', () => {
     const [signal] = deriveAttentionSignals(
       sources({
         ...oneSession('error', { cwd: '/projects/a&b c' }),
         agentNames: {},
       })
     );
-    expect(signal?.deepLink).toBe('/session?session=ses-1&dir=%2Fprojects%2Fa%26b+c');
+    expect(signal?.deepLink).toBe('/session?session=ses-1');
+    expect(signal?.agentPath).toBe('/projects/a&b c');
   });
 });
 

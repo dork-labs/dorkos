@@ -28,7 +28,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { eventFanOut, type FanOutClient } from '../../core/event-fan-out.js';
 import type { CallerPrincipal } from '../../../lib/caller-principal.js';
-import { SessionListBroadcaster, sendSessionStatusSnapshot } from '../session-list-broadcaster.js';
+import {
+  SessionListBroadcaster,
+  sendSessionStatusSnapshot,
+} from '../catalog/session-list-broadcaster.js';
 import { disposeProjector, getOrCreateProjector, type RawSessionEvent } from '../index.js';
 import { projectRegistry } from '../../projects/project-registry.js';
 

@@ -1,3 +1,7 @@
+import {
+  AmbiguousSessionError,
+  SessionDiscoveryUnavailableError,
+} from '../services/session/resolution/session-lookup-error.js';
 import { docScopeNotifications } from '../services/canvas/doc-channel/streams/registry.js';
 /**
  * `GET /api/sessions/:id/events` over a WebSocket — what the app uses.
@@ -25,11 +29,7 @@ import { docScopeNotifications } from '../services/canvas/doc-channel/streams/re
 import type { AgentRuntime, SessionOpts } from '@dorkos/shared/agent-runtime';
 import { STREAM_RESUME_PARAM } from '@dorkos/shared/stream-socket';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
-import {
-  callerNamedCwd,
-  resolveSessionCwdOrDefault,
-  resolveSettingsKey,
-} from '../services/session/index.js';
+import { resolveSessionCwdOrDefault, resolveSettingsKey } from '../services/session/index.js';
 import { deliverSessionStream } from '../services/core/streams/session-stream-delivery.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
 import { DurableStreamSocket } from '../services/core/streams/stream-socket.js';
@@ -89,10 +89,6 @@ export const sessionEventsRoute: UpgradeRoute = {
     // A directory the caller NAMED is judged before anything else is consulted.
     // Agent-home session cwds ({dorkHome}/agents/*) must stream under a narrow
     // boundary — this is the landing path for onboarding's DorkBot session.
-    if (callerNamedCwd(cwdParam)) {
-      const denied = await denyIfOutsideBoundary(cwdParam);
-      if (denied) return denied;
-    }
 
     // Resolve the runtime that owns this session, and build the SessionOpts
     // context the way the SSE handler derives it: the resolved cwd plus the
@@ -103,7 +99,7 @@ export const sessionEventsRoute: UpgradeRoute = {
     let ctx: SessionOpts;
     let cwd: string;
     try {
-      runtime = await runtimeRegistry.resolveForSession(sessionId);
+      runtime = await runtimeRegistry.resolveForSession(sessionId, { allowUnbound: true });
       const stored = await runtimeRegistry.getSessionSettings(
         resolveSettingsKey(sessionId, runtime)
       );
@@ -111,22 +107,23 @@ export const sessionEventsRoute: UpgradeRoute = {
       // (DOR-1444) — the same ladder the SSE handler climbs. This is the path
       // the app uses, so it is the one a second window opened without
       // `&dir=` was refused on while a turn was streaming into the first.
-      cwd = resolveSessionCwdOrDefault(runtime, sessionId, cwdParam);
+      cwd = await resolveSessionCwdOrDefault(runtime, sessionId, cwdParam);
       ctx = { cwd, permissionMode: stored?.permissionMode ?? 'default' };
     } catch (err) {
       logger.warn('[ws session] runtime resolve failed', {
         sessionId,
         error: err instanceof Error ? err.message : String(err),
       });
+      if (err instanceof BoundaryError) return refuse(403, 'Forbidden');
+      if (err instanceof AmbiguousSessionError) return refuse(409, err.message);
+      if (err instanceof SessionDiscoveryUnavailableError) return refuse(503, err.message);
       return refuse(500, 'Internal Server Error');
     }
 
     // The directory nobody named still has to be judged, and only the
     // resolution above knows which one that is.
-    if (!callerNamedCwd(cwdParam)) {
-      const denied = await denyIfOutsideBoundary(cwd);
-      if (denied) return denied;
-    }
+    const denied = await denyIfOutsideBoundary(cwd);
+    if (denied) return denied;
 
     const resume = parseResumeCursor(
       url.searchParams.get(STREAM_RESUME_PARAM) ?? undefined,

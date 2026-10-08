@@ -50,6 +50,7 @@ export interface BrowserRecord {
   supervisor?: Awaited<
     ReturnType<typeof import('../runtime/darwin-supervisor-client.js').startDarwinSupervisorClient>
   >;
+  controllerCloseBarrier?: Promise<void>;
   supervisorStopBarrier?: Promise<void>;
   controllerBrowser?: import('playwright-core').Browser;
   controllerWire?: ReturnType<

@@ -1,17 +1,17 @@
 ---
 number: 156
 title: Use Code-Based Route Definitions Over File-Based Routing
-status: accepted
+status: superseded
 created: 2026-03-20
 spec: dashboard-home-route
-superseded-by: null
+superseded-by: 261006-180100
 ---
 
 # 0156. Use Code-Based Route Definitions Over File-Based Routing
 
 ## Status
 
-Accepted
+Superseded by [thin file routes and opaque session identity](261006-180100-thin-file-routes-and-opaque-session-identity.md).
 
 ## Context
 

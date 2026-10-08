@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 /**
  * Where a search hit opens, and what its row calls the place it was said in
  * (spec `message-search` §8).
@@ -64,7 +65,11 @@ const EXACT_LANDING_SOURCES: readonly string[] = ['claude-code', 'opencode'];
 
 /** Where one hit opens, as a TanStack Router destination. */
 export type MessageSearchTarget =
-  | { kind: 'room'; to: '/channels'; search: { id: string; entry: number } }
+  | {
+      kind: 'room';
+      to: ReturnType<typeof appRoutes.channels>['to'];
+      search: { id: string; entry: number };
+    }
   | ({ kind: 'session' } & SessionTarget<{
       session: string;
       dir: string | undefined;
@@ -118,7 +123,11 @@ export type MessageSearchTarget =
  */
 export function messageSearchTarget(hit: SearchHit): MessageSearchTarget {
   if (hit.source === ROOMS_SOURCE) {
-    return { kind: 'room', to: '/channels', search: { id: hit.container, entry: hit.ordinal } };
+    return {
+      kind: 'room',
+      ...appRoutes.channels(),
+      search: { id: hit.container, entry: hit.ordinal },
+    };
   }
   if (hit.sessionId === undefined) return { kind: 'unopenable' };
   const lands = hit.messageId !== undefined && EXACT_LANDING_SOURCES.includes(hit.source);

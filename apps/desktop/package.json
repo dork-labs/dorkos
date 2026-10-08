@@ -58,6 +58,7 @@
     "@dorkos/typescript-config": "workspace:*",
     "@electron/rebuild": "^4.2.0",
     "@tailwindcss/vite": "^4.3.3",
+    "@tanstack/router-plugin": "^1.168.42",
     "@vitejs/plugin-react": "5.2.0",
     "electron": "^41.10.7",
     "electron-builder": "^26.17.0",

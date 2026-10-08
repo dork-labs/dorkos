@@ -441,7 +441,7 @@ export function closeOwned(
   map.set(subject, shared);
   void shared.catch(() => {});
   void ownOperation(record, async () => {
-    if (kind === 'context' && record.supervisor) await record.supervisorStopBarrier;
+    if (kind === 'context' && record.supervisor) await record.controllerCloseBarrier;
     // The supervisor owns persistent-context termination. The controller owns only its
     // public CDP connection; closing the default context here would race that owner.
     const resource =

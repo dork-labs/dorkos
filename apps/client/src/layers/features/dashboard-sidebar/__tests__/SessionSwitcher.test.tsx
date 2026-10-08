@@ -22,7 +22,8 @@ import { SessionSwitcher, SWITCHER_ROW_SLOT } from '../ui/SessionSwitcher';
 // whole RouterProvider for a dialog buys nothing; what the switcher needs from
 // the router is one value — which session is open — so that is what is stubbed.
 let mockSearch: Record<string, unknown> = {};
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   // Present, because these cases render inside a routed cockpit. The safe-router
   // wrappers ask before reading route state (DOR-1444).
   useRouter: () => ({ stores: {} }),

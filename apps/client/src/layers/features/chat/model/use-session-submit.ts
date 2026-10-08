@@ -37,6 +37,8 @@ import {
   useSessionStreamStore,
   useSessionStartMode,
   sessionKeys,
+  getSessionRouteContext,
+  setSessionRouteContext,
 } from '@/layers/entities/session';
 import { useRuntimeCapabilities } from '@/layers/entities/runtime';
 import { useInteractionStore } from '@/layers/entities/interactions';
@@ -279,12 +281,16 @@ export function useSessionSubmit({
       // latter is an ordinary unowned directory, while the former cannot tell
       // whether omitting `agentPath` would lose a registered agent forever.
       const sessions = queryClient.getQueryData<Session[]>(sessionKeys.list(cwd)) ?? [];
-      const isNewSession = !sessions.some((s) => s.id === targetSessionId);
+      const routeContext = getSessionRouteContext(targetSessionId);
+      const isNewSession = routeContext?.draft ?? !sessions.some((s) => s.id === targetSessionId);
       // This send may start the session: it is not in the list, or an earlier
       // send that would have started it was never accepted (the placeholder
       // row below makes a retry look listed). It carries `create` and the
       // first-turn hints.
-      const startsSession = isNewSession || unacceptedCreates.has(targetSessionId);
+      const startsSession =
+        routeContext?.draft === false
+          ? false
+          : isNewSession || unacceptedCreates.has(targetSessionId);
       if (startsSession && (agentLookupPending || agentLookupFailed)) return;
       if (startsSession) unacceptedCreates.add(targetSessionId);
 
@@ -483,6 +489,11 @@ export function useSessionSubmit({
           postOptions
         );
         unacceptedCreates.delete(targetSessionId);
+        if (routeContext) {
+          const confirmed = { ...routeContext, draft: false };
+          setSessionRouteContext(targetSessionId, confirmed);
+          setSessionRouteContext(canonicalId, confirmed);
+        }
 
         // Record the snapshot as sent (under the canonical id after a rekey) so
         // the next turn only re-sends uiState when it actually changed.
@@ -492,7 +503,6 @@ export function useSessionSubmit({
         // id. Re-target the durable stream, move the optimistic state to the new
         // key, drop the stale entry, and rewrite the URL in place.
         if (canonicalId !== targetSessionId) {
-          streamManager.attachSession(canonicalId, cwd);
           // Move the optimistic message, the trigger latch, and any compose-next
           // queue from the throwaway client UUID to the canonical id, so the
           // first turn's client-authored state follows the (now-canonical) same
@@ -506,6 +516,7 @@ export function useSessionSubmit({
           // (DOR-2016 review, finding 2). The server has already moved the whole
           // scope across, so the write is still the right one to send.
           useAppStore.getState().carryCanvasWritesAcross(targetSessionId, canonicalId);
+          streamManager.attachSession(canonicalId, cwd);
           // The interaction the send above recorded is bucketed under the
           // throwaway id too, and Today walks the session LIST — so left behind
           // it names a session no list will ever contain, and the conversation
@@ -529,9 +540,9 @@ export function useSessionSubmit({
           queryClient.setQueryData<Session[]>(sessionKeys.list(cwd), (prev) =>
             prev?.filter((s) => s.id !== targetSessionId)
           );
-
-          onSessionIdChangeReplaceRef.current?.(canonicalId);
         }
+        // Commit the draft URL even when the runtime retained the optimistic ID.
+        onSessionIdChangeReplaceRef.current?.(canonicalId);
 
         // Watchdog: a 202 whose turn never materializes (server dropped it)
         // must not wedge the composer in queue mode — release the latch if no
@@ -663,7 +674,8 @@ export function useSessionSubmit({
       const listed = (queryClient.getQueryData<Session[]>(sessionKeys.list(cwd)) ?? []).some(
         (s) => s.id === targetSessionId
       );
-      if (!listed) unacceptedCreates.add(targetSessionId);
+      const routeContext = getSessionRouteContext(targetSessionId);
+      if (routeContext?.draft ?? !listed) unacceptedCreates.add(targetSessionId);
 
       // Sequence this session's delivery POSTs so the server accepts them in
       // keystroke order (DOR-1165). Each message is its own POST and the server
@@ -707,7 +719,11 @@ export function useSessionSubmit({
           const context = Object.keys(contextEntries).length > 0 ? contextEntries : undefined;
           // A message sent before the session's creating send was accepted
           // may be the one that reaches the server first.
-          const creates = unacceptedCreates.has(targetSessionId);
+          const creates =
+            getSessionRouteContext(targetSessionId)?.draft === false
+              ? false
+              : unacceptedCreates.has(targetSessionId);
+          if (creates && (agentLookupPending || agentLookupFailed)) return false;
           const { sessionId: canonicalId } = await transport.postMessage(
             targetSessionId,
             finalContent,
@@ -715,10 +731,18 @@ export function useSessionSubmit({
             {
               context,
               disposition,
-              ...(creates ? { create: true } : {}),
+              ...(creates
+                ? {
+                    create: true,
+                    ...(launchRuntimeRef.current && { runtime: launchRuntimeRef.current }),
+                    ...(launchAccountRef.current && { account: launchAccountRef.current }),
+                    ...(agentPath && { agentPath }),
+                  }
+                : {}),
             }
           );
           if (creates) unacceptedCreates.delete(targetSessionId);
+          if (routeContext) setSessionRouteContext(canonicalId, { ...routeContext, draft: false });
           commitUiState(canonicalId);
           return true;
         } catch (err) {
@@ -734,7 +758,7 @@ export function useSessionSubmit({
         }
       });
     },
-    [sessionId, transport, queryClient, setError]
+    [sessionId, transport, queryClient, setError, agentPath, agentLookupPending, agentLookupFailed]
   );
 
   /** Put a message on the session's queue, behind the running turn. */

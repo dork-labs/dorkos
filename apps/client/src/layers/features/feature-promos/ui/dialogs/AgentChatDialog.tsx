@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 import { MessagesSquare, Users, Network } from 'lucide-react';
 import { useNavigate } from '@tanstack/react-router';
 import type { PromoDialogProps } from '../../model/promo-types';
@@ -9,7 +10,7 @@ export function AgentChatDialog({ onClose }: PromoDialogProps) {
 
   const handleExplore = () => {
     onClose();
-    navigate({ to: '/team' });
+    navigate({ ...appRoutes.team() });
   };
 
   return (

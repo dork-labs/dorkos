@@ -16,7 +16,10 @@ const { navigateSpy, closeSpy } = vi.hoisted(() => ({
   navigateSpy: vi.fn(),
   closeSpy: vi.fn(),
 }));
-vi.mock('@tanstack/react-router', () => ({ useNavigate: () => navigateSpy }));
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
+  useNavigate: () => navigateSpy,
+}));
 vi.mock('@/layers/shared/model', async () => {
   const actual =
     await vi.importActual<typeof import('@/layers/shared/model')>('@/layers/shared/model');

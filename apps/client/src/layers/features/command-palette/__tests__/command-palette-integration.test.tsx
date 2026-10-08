@@ -57,7 +57,8 @@ afterEach(cleanup);
 
 // --- Router mock ---
 const mockNavigate = vi.fn();
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useNavigate: () => mockNavigate,
 }));
 
@@ -372,15 +373,22 @@ describe('Command Palette Integration', () => {
     const row = screen.getAllByText('New session')[0].closest('[data-slot="command-item"]');
     fireEvent.click(row as Element);
 
-    expect(mockNavigate).toHaveBeenCalledWith({
-      to: '/session',
-      search: {
-        dir: '/projects/second',
-        session: expect.stringMatching(
-          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
-        ),
-      },
-    });
+    await waitFor(() =>
+      expect(mockNavigate).toHaveBeenCalledWith({
+        to: '/session',
+        search: {
+          dir: undefined,
+          launchRef: 'test-location',
+          draft: '1',
+          seed: undefined,
+          runtime: undefined,
+          session: expect.stringMatching(
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+          ),
+        },
+      })
+    );
+    expect(mockTransport.createSessionLocation).toHaveBeenCalledWith('/projects/second');
   });
 
   it('the New session quick action actually starts one', async () => {
@@ -392,15 +400,21 @@ describe('Command Palette Integration', () => {
     expect(row).not.toBeNull();
     fireEvent.click(row as Element);
 
-    expect(mockNavigate).toHaveBeenCalledWith({
-      to: '/session',
-      search: {
-        dir: '/projects/current', // the agent you are on
-        session: expect.stringMatching(
-          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
-        ),
-      },
-    });
+    await waitFor(() =>
+      expect(mockNavigate).toHaveBeenCalledWith({
+        to: '/session',
+        search: {
+          dir: undefined,
+          launchRef: 'test-location',
+          draft: '1',
+          seed: undefined,
+          runtime: undefined,
+          session: expect.stringMatching(
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+          ),
+        },
+      })
+    );
   });
 
   it('clicking an agent navigates to sub-menu; Open here switches, records frecency, and closes', async () => {

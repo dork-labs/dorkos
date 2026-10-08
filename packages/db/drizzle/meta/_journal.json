@@ -1034,8 +1034,15 @@
     {
       "idx": 147,
       "version": "6",
-      "when": 1791400000000,
-      "tag": "20261007164640_browser_profile_import",
+      "when": 1791414421355,
+      "tag": "20261007230701_private_session_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 148,
+      "version": "6",
+      "when": 1791444515000,
+      "tag": "20261008072835_browser_profile_import",
       "breakpoints": true
     }
   ]

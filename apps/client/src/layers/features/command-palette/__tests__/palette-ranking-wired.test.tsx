@@ -154,7 +154,10 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-vi.mock('@tanstack/react-router', () => ({ useNavigate: () => mockNavigate }));
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
+  useNavigate: () => mockNavigate,
+}));
 
 vi.mock('@/layers/shared/model', () => ({
   useTransport: () => mockTransport,

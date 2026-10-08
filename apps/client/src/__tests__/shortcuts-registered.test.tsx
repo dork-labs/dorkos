@@ -43,7 +43,8 @@ import { useMessageSearchShortcut } from '@/layers/features/command-palette';
 import { SidebarProvider } from '@/layers/shared/ui';
 import { enterDesktopShell, leaveDesktopShell } from '@/test-helpers/desktop-shell';
 
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useNavigate: () => vi.fn((_options: { href: string }) => Promise.resolve()),
   useRouter: () => ({
     navigate: (_options: { href: string }) => Promise.resolve(),

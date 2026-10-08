@@ -300,9 +300,10 @@ export interface CanvasSlice {
    */
   carryCanvasWritesAcross: (retiredSessionId: string, canonicalSessionId: string) => void;
   /**
-   * Bind the slice to a session and empty it, ready for the snapshot to fill.
+   * Bind a different session and empty the slice, ready for its snapshot.
+   * Rebinding the current session preserves its already-received snapshot.
    *
-   * A RESET rather than a read: the table comes from `snapshot.canvas` on the
+   * On a switch the table comes from `snapshot.canvas` on the
    * session stream's cold connect, the same place messages and status come from
    * (spec `canvas-agent-seat` §1.5).
    */
@@ -1258,9 +1259,17 @@ export const createCanvasSlice: StateCreator<
       for (const held of heldWrites) {
         if (held.sessionId === retiredSessionId) held.sessionId = canonicalSessionId;
       }
+      // A rekey is the same conversation. Bind before its stream can deliver
+      // the first snapshot, while retaining documents and pending writes.
+      if (get().canvasSessionId === retiredSessionId) {
+        set({ canvasSessionId: canonicalSessionId, canvasStreamAttached: false });
+      }
     },
 
     loadCanvasForSession: (sessionId) => {
+      // The route can settle after an early canonical snapshot. Its effect
+      // must not clear the already-bound canvas or reset the stream latch.
+      if (get().canvasSessionId === sessionId) return;
       for (const documentId of [...editHeartbeats.keys()]) stopHeartbeat(documentId);
       // Whatever is still held for a DIFFERENT session has nothing here to land
       // for any more — this bind empties the table it would have written to.

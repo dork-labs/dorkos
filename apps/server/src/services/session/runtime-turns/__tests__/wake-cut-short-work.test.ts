@@ -26,7 +26,10 @@ vi.mock('../../session-state-projector.js', () => ({
 }));
 vi.mock('../../projector-persistence.js', () => ({ persistenceModeFor: vi.fn(() => 'none') }));
 vi.mock('../../../core/runtime-registry.js', () => ({
-  runtimeRegistry: { resolveForSession: vi.fn(async () => runtime) },
+  runtimeRegistry: {
+    getNativeSessionCwd: vi.fn(() => null),
+    resolveForSession: vi.fn(async () => runtime),
+  },
 }));
 vi.mock('../../../../lib/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },

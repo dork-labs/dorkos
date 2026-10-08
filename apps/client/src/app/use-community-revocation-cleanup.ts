@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 /**
  * Notice when a Community connection ends somewhere else, and clean up after it.
  *
@@ -79,7 +80,7 @@ export function useCommunityRevocationCleanup(): void {
           selected &&
           communityRefFromRouteDestination(getCommunityRouteEpoch().destination) === ref
         )
-          void navigate({ to: '/', replace: true });
+          void navigate({ ...appRoutes.home(), replace: true });
       });
       if (end === 'revoked')
         toast(`This DorkOS can no longer reach ${before.label}.`, {

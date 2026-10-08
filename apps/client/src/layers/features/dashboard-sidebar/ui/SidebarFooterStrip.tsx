@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 /**
  * The sidebar's footer: one slim tinted strip (BC-47).
  *
@@ -41,7 +42,9 @@ const DORKBOT_AGENT_NAME = 'dorkbot';
 /** One destination in the strip. */
 interface Destination {
   /** Route to navigate to. */
-  to: '/' | '/team' | '/marketplace' | '/connections' | '/browser';
+  to: ReturnType<
+    (typeof appRoutes)['home' | 'team' | 'marketplace' | 'connections' | 'browser']
+  >['to'];
   /** Accessible name; also the tooltip. */
   label: string;
   /** The glyph. */
@@ -60,9 +63,9 @@ interface Destination {
  * of DorkOS", the tab bar answers "which part of Home".
  */
 const DESTINATIONS: readonly Destination[] = [
-  { to: '/', label: 'Home', icon: LayoutDashboard, isActive: isHomeSurfacePath },
+  { ...appRoutes.home(), label: 'Home', icon: LayoutDashboard, isActive: isHomeSurfacePath },
   {
-    to: '/team',
+    ...appRoutes.team(),
     label: 'Team',
     icon: Users,
     isActive: (pathname) => pathname === '/team',
@@ -73,13 +76,13 @@ const DESTINATIONS: readonly Destination[] = [
     testId: TOUR_ANCHORS.navAgents,
   },
   {
-    to: '/marketplace',
+    ...appRoutes.marketplace(),
     label: 'Marketplace',
     icon: Store,
     isActive: (pathname) => pathname === '/marketplace' || pathname.startsWith('/marketplace/'),
   },
   {
-    to: '/connections',
+    ...appRoutes.connections(),
     label: 'Connections',
     icon: Cable,
     isActive: (pathname) => pathname === '/connections',
@@ -99,7 +102,7 @@ export function SidebarFooterStrip() {
     ? [
         ...DESTINATIONS,
         {
-          to: '/browser',
+          ...appRoutes.browser(),
           label: 'Shared browser',
           icon: Globe,
           isActive: (path) => path === '/browser',

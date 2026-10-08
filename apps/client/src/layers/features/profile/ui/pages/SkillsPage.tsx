@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 /**
  * Skills — every skill this agent's folder holds, and what each of your agent
  * tools does with it (spec `harness-sync-status` §User Experience, "The Skills
@@ -65,7 +66,9 @@ function SkillsPageBody({ projectPath }: { projectPath: string }) {
           variant="ghost"
           size="sm"
           className="text-muted-foreground hover:text-foreground w-full"
-          onClick={() => void navigate({ to: '/marketplace', search: { type: 'skill-pack' } })}
+          onClick={() =>
+            void navigate({ ...appRoutes.marketplace(), search: { type: 'skill-pack' } })
+          }
         >
           <Package aria-hidden className="mr-1.5 size-3.5" />
           Browse skill-packs

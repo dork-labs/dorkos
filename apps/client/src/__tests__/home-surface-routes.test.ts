@@ -15,7 +15,10 @@ function router() {
 
 describe('the home surface route tree', () => {
   it('hangs every tab’s route off the home layout', () => {
-    const routesByPath = router().routesByPath as Record<string, { parentRoute?: { id: string } }>;
+    const routesByPath = router().routesByPath as unknown as Record<
+      string,
+      { parentRoute?: { id: string } }
+    >;
 
     for (const tab of HOME_TABS) {
       expect(routesByPath[tab.path]?.parentRoute?.id, `${tab.path} is not a home-surface tab`).toBe(
@@ -25,7 +28,10 @@ describe('the home surface route tree', () => {
   });
 
   it('leaves routes outside the home surface where they were', () => {
-    const routesByPath = router().routesByPath as Record<string, { parentRoute?: { id: string } }>;
+    const routesByPath = router().routesByPath as unknown as Record<
+      string,
+      { parentRoute?: { id: string } }
+    >;
 
     // The tab bar must not appear over a page that is not one of its tabs.
     for (const path of ['/session', '/team', '/channels', '/marketplace']) {

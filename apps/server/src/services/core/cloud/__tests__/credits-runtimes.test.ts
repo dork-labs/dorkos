@@ -14,7 +14,9 @@ vi.mock('../credits-defaults.js', async (importOriginal) => ({
     return [];
   }),
 }));
-vi.mock('../../runtime-registry.js', () => ({ runtimeRegistry: { listRuntimes: () => [] } }));
+vi.mock('../../runtime-registry.js', () => ({
+  runtimeRegistry: { getNativeSessionCwd: vi.fn(() => null), listRuntimes: () => [] },
+}));
 
 import { fillCreditsGapsOnNewLink } from '../credits-runtimes.js';
 

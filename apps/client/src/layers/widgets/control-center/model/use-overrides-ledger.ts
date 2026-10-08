@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 /**
  * The Control Center's honesty ledger, composed entirely from queries that
  * already exist — no new server endpoint (spec `full-power-defaults`, D7).
@@ -199,7 +200,7 @@ export function useOverridesLedger(): OverridesLedger {
         kind: 'task',
         name: task.displayName ?? task.name,
         detail: descriptor?.label ?? permissionModeLabel(task.permissionMode),
-        onOpen: navigate ? openAndClose(() => navigate({ to: '/tasks' })) : null,
+        onOpen: navigate ? openAndClose(() => navigate({ ...appRoutes.tasks() })) : null,
       });
     }
 

@@ -30,7 +30,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 import { createApp } from '../../app.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
-import { SessionListBroadcaster } from '../../services/session/session-list-broadcaster.js';
+import { SessionListBroadcaster } from '../../services/session/catalog/session-list-broadcaster.js';
 import {
   getOrCreateProjector,
   disposeProjector,

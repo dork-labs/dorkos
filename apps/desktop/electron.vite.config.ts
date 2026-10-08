@@ -1,3 +1,5 @@
+import { tanstackRouter } from '@tanstack/router-plugin/vite';
+import { clientRouterOptions } from '../client/router-plugin';
 import { defineConfig } from 'electron-vite';
 import type { Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
@@ -108,7 +110,7 @@ export default defineConfig({
     // (v0.63.0, DOR-1448). `scripts/check-renderer-defines.ts` fails the build
     // if that ever recurs.
     define: clientDefines(),
-    plugins: [react(), tailwindcss()],
+    plugins: [tanstackRouter(clientRouterOptions()), react(), tailwindcss()],
     resolve: {
       alias: {
         '@': path.resolve(clientRoot, 'src'),

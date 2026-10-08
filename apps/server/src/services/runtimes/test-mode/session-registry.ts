@@ -42,7 +42,7 @@ const BIRTH_PERMISSION_MODE: PermissionModeId =
   TEST_MODE_CAPABILITIES.permissionModes.default ??
   TEST_MODE_CAPABILITIES.permissionModes.values[0]!.id;
 
-/** Metadata fields the registry can update on an already-tracked session. */
+/** Metadata fields the registry can save for a draft or tracked session. */
 export interface TrackedSessionPatch {
   permissionMode?: PermissionModeId;
   model?: string;
@@ -77,6 +77,8 @@ function toPreview(content: string): string {
  */
 export class TestModeSessionRegistry {
   private readonly sessions = new Map<string, Session>();
+  // Pre-message settings do not constitute a native conversation.
+  private readonly pendingSettings = new Map<string, TrackedSessionPatch>();
   private readonly listeners = new Set<(event: SessionListEvent) => void>();
 
   /**
@@ -129,12 +131,14 @@ export class TestModeSessionRegistry {
   }
 
   /**
-   * Apply operator settings to a tracked session (the PATCH path).
-   *
-   * @returns false when the session is not tracked.
+   * Save settings for a tracked session or a draft without announcing existence.
+   * Production runtimes accept settings before their first native message too.
    */
   applySettings(sessionId: string, patch: TrackedSessionPatch): boolean {
-    if (!this.sessions.has(sessionId)) return false;
+    if (!this.sessions.has(sessionId)) {
+      this.pendingSettings.set(sessionId, { ...this.pendingSettings.get(sessionId), ...patch });
+      return true;
+    }
     this.register(sessionId, patch);
     return true;
   }
@@ -277,6 +281,7 @@ export class TestModeSessionRegistry {
   reset(): void {
     const ids = this.ids();
     this.sessions.clear();
+    this.pendingSettings.clear();
     for (const sessionId of ids) {
       this.emit({ type: 'session_removed', sessionId });
     }
@@ -284,6 +289,13 @@ export class TestModeSessionRegistry {
 
   /** Get-or-create the tracked entry and fold in the patch (mutates in place). */
   private upsert(sessionId: string, patch: TrackedSessionPatch): Session {
+    patch = {
+      ...this.pendingSettings.get(sessionId),
+      ...(patch.permissionMode !== undefined ? { permissionMode: patch.permissionMode } : {}),
+      ...(patch.model !== undefined ? { model: patch.model } : {}),
+      ...(patch.cwd !== undefined ? { cwd: patch.cwd } : {}),
+    };
+    this.pendingSettings.delete(sessionId);
     let session = this.sessions.get(sessionId);
     if (!session) {
       const now = new Date().toISOString();

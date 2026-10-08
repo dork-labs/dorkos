@@ -62,7 +62,7 @@ import {
   type RunExecutionRuntimes,
 } from './execution/resolve-run-execution.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
-import type { AgentExecutionDefaults } from '../session/resolve-session-defaults.js';
+import type { AgentExecutionDefaults } from '../session/resolution/resolve-session-defaults.js';
 import type { AccountNotAllowedError } from '../core/usage/account-eligibility.js';
 import type { TaskAwakeHold, TaskAwakeHolds } from '../core/keep-awake/index.js';
 import { scheduleAccountRefusal } from './lifecycle/schedule-account-eligibility.js';
