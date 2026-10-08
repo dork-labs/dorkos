@@ -8,7 +8,7 @@
  *
  * @module features/chat-list/ui/ChatListRow
  */
-import { useState, type Ref } from 'react';
+import type { Ref } from 'react';
 import { ChevronRight, GitFork, Pencil } from 'lucide-react';
 import { cn, formatCompactAge } from '@/layers/shared/lib';
 import { SIDEBAR_SECTION_ACTION_ATTRIBUTE } from '@/layers/shared/model';
@@ -28,6 +28,7 @@ import {
   useInlineRename,
 } from '@/layers/entities/session';
 import type { ChatRow, ChatStatus, FoldedSpinOff } from '../model/build-chat-list';
+import { revealKeyFor, useReveal } from '../model/use-reveal';
 
 /**
  * The `data-slot` every chat row answers to, folded spin-offs included.
@@ -44,7 +45,7 @@ export const CHAT_LIST_ROW_SLOT = 'chat-list-row';
 const ROW_INSET = 'pl-2';
 
 /** The `data-slot` on the "N spin-offs" toggle under a chat. */
-export const CHAT_LIST_SPIN_OFF_TOGGLE_SLOT = 'chat-list-spin-off-toggle';
+const CHAT_LIST_SPIN_OFF_TOGGLE_SLOT = 'chat-list-spin-off-toggle';
 
 /** Props for {@link ChatListRow}. */
 export interface ChatListRowProps {
@@ -62,6 +63,8 @@ export interface ChatListRowProps {
   onRename: (sessionId: string, title: string) => void;
   /** Hands the list each row button, so a modified `↵` knows which chat it is on. */
   registerRow: (sessionId: string) => Ref<HTMLButtonElement>;
+  /** The current search text: a fold holding a match opens for it. */
+  search: string;
 }
 
 /**
@@ -77,10 +80,19 @@ export function ChatListRow({
   onFork,
   onRename,
   registerRow,
+  search,
 }: ChatListRowProps) {
   const { session } = row;
   const title = sessionDisplayTitle(session.title);
-  const rename = useInlineRename({
+  const {
+    isRenaming,
+    renameValue,
+    setRenameValue,
+    inputRef,
+    start: startRename,
+    commit: commitRename,
+    handleKeyDown: handleRenameKeyDown,
+  } = useInlineRename({
     value: session.title,
     onCommit: (next) => onRename(session.id, next),
   });
@@ -93,7 +105,7 @@ export function ChatListRow({
       label: 'Rename',
       icon: Pencil,
       opensInput: true,
-      run: rename.start,
+      run: startRename,
     },
     { kind: 'action', id: 'fork', label: 'Fork', icon: GitFork, run: () => onFork(session.id) },
   ];
@@ -121,14 +133,14 @@ export function ChatListRow({
         />
       }
       editor={
-        rename.isRenaming ? (
+        isRenaming ? (
           <input
-            ref={rename.inputRef}
-            value={rename.renameValue}
+            ref={inputRef}
+            value={renameValue}
             aria-label={`Rename ${title}`}
-            onChange={(event) => rename.setRenameValue(event.target.value)}
-            onKeyDown={rename.handleKeyDown}
-            onBlur={rename.commit}
+            onChange={(event) => setRenameValue(event.target.value)}
+            onKeyDown={handleRenameKeyDown}
+            onBlur={commitRename}
             // Right-clicking to paste must open the browser's edit menu, not
             // the row's own, which would blur the field and commit half a name.
             onContextMenu={(event) => event.stopPropagation()}
@@ -143,6 +155,7 @@ export function ChatListRow({
                 parentTitle={title}
                 spinOffs={row.spinOffs}
                 activeSessionId={activeSessionId}
+                search={search}
                 onOpen={onOpen}
                 registerRow={registerRow}
               />
@@ -184,7 +197,7 @@ function SecondLine({ row }: { row: ChatRow }) {
   if (words !== undefined) {
     parts.push(
       <span key="status" className={cn('font-medium', STATUS_WORD_TONE[row.status])}>
-        <StatusDot status={row.status} />
+        <StatusDot status={row.status} decorative />
         {words}
       </span>
     );
@@ -197,7 +210,7 @@ function SecondLine({ row }: { row: ChatRow }) {
     );
   }
   if (row.startedFrom !== null) {
-    parts.push(<span key="from">Started from {row.startedFrom.title}</span>);
+    parts.push(<span key="from">Started from {row.startedFrom}</span>);
   }
   return (
     <>
@@ -228,19 +241,24 @@ function SpinOffFold({
   parentTitle,
   spinOffs,
   activeSessionId,
+  search,
   onOpen,
   registerRow,
 }: {
   parentTitle: string;
   spinOffs: FoldedSpinOff[];
   activeSessionId: string | null;
+  search: string;
   onOpen: (sessionId: string) => void;
   registerRow: (sessionId: string) => Ref<HTMLButtonElement>;
 }) {
-  // A spin-off that is open on the chat page opens its fold, so the current
-  // chat is never hidden behind a toggle.
-  const [open, setOpen] = useState(() =>
-    spinOffs.some((spinOff) => spinOff.session.id === activeSessionId)
+  // The open chat or a search match is never hidden behind a closed toggle.
+  const [open, setOpen] = useReveal(
+    revealKeyFor(
+      spinOffs.map((spinOff) => spinOff.session.id),
+      activeSessionId,
+      search
+    )
   );
   const count = spinOffs.length;
   const label = count === 1 ? '1 spin-off' : `${count} spin-offs`;
@@ -278,7 +296,7 @@ function SpinOffFold({
                   data-slot="chat-list-spin-off-status"
                   className="text-sidebar-foreground/50 text-2xs"
                 >
-                  <StatusDot status={spinOff.status} />
+                  <StatusDot status={spinOff.status} decorative />
                   {SPIN_OFF_STATUS[spinOff.status]}
                 </span>
               }
@@ -306,13 +324,16 @@ const STATUS_DOT: Partial<Record<ChatStatus, 'working' | 'needs-you' | 'error'>>
  * spends no width on an empty slot and every title starts at the same edge
  * as the controls above the list.
  */
-function StatusDot({ status }: { status: ChatStatus }) {
+function StatusDot({ status, decorative = false }: { status: ChatStatus; decorative?: boolean }) {
   const signal = STATUS_DOT[status];
   if (signal === undefined) return null;
   return (
     <span
-      role="img"
-      aria-label={STATUS_DOT_LABEL[signal]}
+      // Hidden from assistive tech where words beside it already say the same
+      // thing; a running chat's verb can be empty, so its dot keeps a name.
+      {...(decorative
+        ? { 'aria-hidden': true }
+        : { role: 'img', 'aria-label': STATUS_DOT_LABEL[signal] })}
       data-status={status}
       className={cn(
         'mr-1.5 inline-block size-1.5 rounded-full align-middle',

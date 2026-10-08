@@ -203,7 +203,10 @@ describe('ChatList', () => {
     setLifecycle('stuck', 'blocked');
     setLifecycle('broke', 'error');
 
-    expect(await findRow('Stuck deploy')).toHaveTextContent('Needs you');
+    const stuck = await findRow('Stuck deploy');
+    expect(stuck).toHaveTextContent('Needs you');
+    // The words say it, so the dot beside them stays out of the spoken name.
+    expect(stuck.querySelector('[data-status="needs-you"]')).toHaveAttribute('aria-hidden', 'true');
     expect(await findRow('Broke')).toHaveTextContent('Stopped with an error');
     const busy = await findRow('Busy build');
     await waitFor(() =>
@@ -344,6 +347,54 @@ describe('ChatList', () => {
     });
   });
 
+  describe('revealing what you need to see', () => {
+    it('opens the fold that holds the open chat, and the Automated group too', async () => {
+      mockSearch = { session: 's1' };
+      renderList([
+        chat('p', 'Plan launch', { lastTouchedByYouAt: ago(1) }),
+        spinOffOf('p', 's1', 'Draft copy'),
+        chat('t', 'Nightly', { origin: 'task' }),
+      ]);
+      await findRow('Draft copy');
+      expect(screen.getByRole('button', { name: '1 spin-off from Plan launch' })).toHaveAttribute(
+        'aria-expanded',
+        'true'
+      );
+      expect(screen.getByRole('button', { name: /Automated/ })).toHaveAttribute(
+        'aria-expanded',
+        'false'
+      );
+    });
+
+    it('opens the Automated group when the open chat is in it', async () => {
+      mockSearch = { session: 't' };
+      renderList([
+        chat('a', 'Mine', { lastTouchedByYouAt: ago(1) }),
+        chat('t', 'Nightly', { origin: 'task' }),
+      ]);
+      expect(await findRow('Nightly')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Automated/ })).toHaveAttribute(
+        'aria-expanded',
+        'true'
+      );
+    });
+
+    it('opens folds that hold a search match', async () => {
+      renderList(
+        [
+          chat('p', 'Plan launch', { lastTouchedByYouAt: ago(1) }),
+          spinOffOf('p', 's1', 'Plan the email'),
+          chat('t', 'Plan nightly', { origin: 'task' }),
+        ],
+        { searchable: true }
+      );
+      await findRow('Plan launch');
+      expect(rowTitles()).toEqual(['Plan launch']);
+      await userEvent.type(screen.getByRole('textbox', { name: 'Search chats' }), 'plan');
+      expect(rowTitles()).toEqual(['Plan launch', 'Plan the email', 'Plan nightly']);
+    });
+  });
+
   describe('sorting', () => {
     it('re-sorts by recent activity and by when chats started', async () => {
       renderList([
@@ -402,6 +453,16 @@ describe('ChatList', () => {
       );
       await waitFor(() => expect(onOpenChat).toHaveBeenCalledWith('forked'));
       expect(onOpenChat).toHaveBeenCalledTimes(1);
+    });
+
+    it('⌘↵ on a row menu item does not start a new chat', async () => {
+      const { onNewChat } = renderList([chat('a', 'One')]);
+      await findRow('One');
+      await userEvent.click(screen.getByRole('button', { name: 'One actions' }));
+      const fork = await screen.findByRole('menuitem', { name: /Fork/ });
+      fork.focus();
+      await userEvent.keyboard('{Meta>}{Enter}{/Meta}');
+      expect(onNewChat).not.toHaveBeenCalled();
     });
 
     it('↑ and ↓ walk the rows and the toggles', async () => {

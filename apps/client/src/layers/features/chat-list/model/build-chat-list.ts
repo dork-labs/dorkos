@@ -63,14 +63,6 @@ export interface BuildChatListOptions extends ChatSignals {
   query?: string;
 }
 
-/** Where a row says it came from, when another chat started it. */
-export interface StartedFrom {
-  /** The chat that started it, or null when this list cannot name one. */
-  sessionId: string | null;
-  /** What to call it: its title, or a stand-in when it has none here. */
-  title: string;
-}
-
 /** A spin-off folded under the chat that started it (D14 rule 1). */
 export interface FoldedSpinOff {
   /** The spin-off chat. */
@@ -91,8 +83,12 @@ export interface ChatRow {
   lifecycle: SessionLifecycle | null;
   /** When you last opened or wrote in it, ISO-8601, or null for never. */
   lastUsedAt: string | null;
-  /** The chat that started it, when one did (D14 rules 3, 4 and 5). */
-  startedFrom: StartedFrom | null;
+  /**
+   * The title of the chat that started it, when one did (D14 rules 3, 4 and
+   * 5): its title in this list, else the title the server recorded, else
+   * "another chat". Null for a chat nothing else started.
+   */
+  startedFrom: string | null;
   /** Spin-offs folded under it, newest first. Empty when it has none. */
   spinOffs: FoldedSpinOff[];
 }
@@ -185,32 +181,182 @@ function isUrgent(status: ChatStatus): boolean {
 }
 
 /**
- * The time a sort orders by, newest first.
+ * The time a sort orders by, in epoch milliseconds, newest first.
  *
  * For you orders by when you last used a chat (D11), falling back to the last
  * time anything happened in it, so a chat you never touched still has a place.
+ * Compared as numbers, not ISO text: two writers may spell one instant with
+ * different precision or offsets.
  *
  * @param session - The chat.
  * @param sort - The chosen order.
  */
-function sortKey(session: Session, sort: ChatListSort): string {
-  if (sort === 'started') return session.createdAt;
-  if (sort === 'activity') return session.updatedAt;
-  return lastUsedAt(session) ?? session.updatedAt;
+function sortKey(session: Session, sort: ChatListSort): number {
+  if (sort === 'started') return Date.parse(session.createdAt);
+  if (sort === 'activity') return Date.parse(session.updatedAt);
+  return Date.parse(lastUsedAt(session) ?? session.updatedAt);
 }
 
-/** Newest first by `key`; ties broken by id so the order never flickers. */
-function byKeyDesc<T extends { session: Session }>(key: (session: Session) => string) {
+/** Newest first by `key`; ties broken by id so the order never depends on input order. */
+function byKeyDesc<T extends { session: Session }>(key: (session: Session) => number) {
   return (a: T, b: T): number => {
-    const ka = key(a.session);
-    const kb = key(b.session);
-    if (ka !== kb) return ka < kb ? 1 : -1;
-    return a.session.id < b.session.id ? -1 : 1;
+    const diff = key(b.session) - key(a.session);
+    if (diff !== 0 && !Number.isNaN(diff)) return diff;
+    return a.session.id < b.session.id ? -1 : a.session.id > b.session.id ? 1 : 0;
   };
 }
 
 /** Where a chat is drawn before sections are cut. */
 type Placement = { kind: 'row'; group: 'main' | 'automated' } | { kind: 'folded'; hostId: string };
+
+/** What every step below reads about one chat, worked out once. */
+interface ChatFacts {
+  session: Session;
+  owner: ChatOwnership;
+  status: ChatStatus;
+  lifecycle: SessionLifecycle | null;
+}
+
+/**
+ * Keep the chats whose title holds `needle`, or every chat for an empty one.
+ *
+ * @param sessions - Every chat.
+ * @param needle - Lower-cased, trimmed search text.
+ */
+function filterByTitle(sessions: readonly Session[], needle: string): readonly Session[] {
+  if (needle === '') return sessions;
+  return sessions.filter((s) => sessionDisplayTitle(s.title).toLowerCase().includes(needle));
+}
+
+/**
+ * Decide where each chat is drawn: its own row (in the main list or the
+ * Automated group) or folded under another row (D14 rules 1 to 5).
+ *
+ * A spin-off folds onto the nearest ancestor that is a row, so a chain of
+ * spin-offs shares one toggle. A chain that loops back on itself makes its
+ * first member the row the rest fold under.
+ *
+ * @param facts - The visible chats, by id.
+ */
+function placeChats(facts: ReadonlyMap<string, ChatFacts>): Map<string, Placement> {
+  const placement = new Map<string, Placement>();
+  const resolving = new Set<string>();
+  const row = (group: 'main' | 'automated'): Placement => ({ kind: 'row', group });
+
+  const place = (id: string): Placement => {
+    const known = placement.get(id);
+    if (known) return known;
+    const fact = facts.get(id);
+    if (!fact) return row('main');
+
+    let result: Placement;
+    const startedBy = fact.session.startedBy;
+    if (isUrgent(fact.status)) {
+      result = row('main'); // Rule 3.
+    } else if (fact.owner === 'automated') {
+      result = row('automated'); // Rule 2.
+    } else if (fact.owner === 'spinOff' && startedBy?.kind === 'chat') {
+      if (!facts.has(startedBy.sessionId) || resolving.has(id)) {
+        result = row('main'); // Rule 5, and a cycle guard.
+      } else {
+        resolving.add(id);
+        const parent = place(startedBy.sessionId);
+        resolving.delete(id);
+        const hostId = parent.kind === 'folded' ? parent.hostId : startedBy.sessionId;
+        result = hostId === id ? row('main') : { kind: 'folded', hostId }; // Rule 1.
+      }
+    } else {
+      result = row('main'); // Yours, including rule 4.
+    }
+    placement.set(id, result);
+    return result;
+  };
+
+  for (const id of facts.keys()) place(id);
+  return placement;
+}
+
+/**
+ * Build the rows, with each folded spin-off under its host, newest first.
+ *
+ * @param facts - The visible chats, by id.
+ * @param placement - Where each is drawn.
+ * @param titleById - Every chat's display title, so a parent the search hid is
+ *   still named.
+ */
+function buildRows(
+  facts: ReadonlyMap<string, ChatFacts>,
+  placement: ReadonlyMap<string, Placement>,
+  titleById: ReadonlyMap<string, string>
+): Map<string, ChatRow> {
+  const rows = new Map<string, ChatRow>();
+  for (const [id, fact] of facts) {
+    if (placement.get(id)?.kind !== 'row') continue;
+    const startedBy = fact.session.startedBy;
+    rows.set(id, {
+      session: fact.session,
+      status: fact.status,
+      lifecycle: fact.lifecycle,
+      lastUsedAt: lastUsedAt(fact.session),
+      startedFrom:
+        startedBy?.kind === 'chat'
+          ? (titleById.get(startedBy.sessionId) ?? startedBy.title ?? UNKNOWN_PARENT)
+          : null,
+      spinOffs: [],
+    });
+  }
+  for (const [id, fact] of facts) {
+    const where = placement.get(id);
+    if (where?.kind !== 'folded') continue;
+    rows
+      .get(where.hostId)
+      ?.spinOffs.push({ session: fact.session, status: fact.status, lifecycle: fact.lifecycle });
+  }
+  const newest = byKeyDesc<FoldedSpinOff>((s) => Date.parse(s.updatedAt));
+  for (const row of rows.values()) row.spinOffs.sort(newest);
+  return rows;
+}
+
+/**
+ * Cut the rows into Needs you, Running (For you only) and the rest, plus the
+ * Automated group, each in the sort's order.
+ *
+ * @param rows - Every row.
+ * @param facts - What is known about each chat, for its owner.
+ * @param placement - Which rows belong in the Automated group.
+ * @param sort - The chosen order.
+ */
+function cutSections(
+  rows: ReadonlyMap<string, ChatRow>,
+  facts: ReadonlyMap<string, ChatFacts>,
+  placement: ReadonlyMap<string, Placement>,
+  sort: ChatListSort
+): Pick<ChatListModel, 'sections' | 'automated'> {
+  const order = byKeyDesc<ChatRow>((s) => sortKey(s, sort));
+  const needsYou: ChatRow[] = [];
+  const running: ChatRow[] = [];
+  const rest: ChatRow[] = [];
+  const automated: ChatRow[] = [];
+  for (const [id, row] of rows) {
+    const where = placement.get(id);
+    if (where?.kind === 'row' && where.group === 'automated') automated.push(row);
+    else if (isUrgent(row.status)) needsYou.push(row);
+    else if (sort === 'for-you' && row.status === 'running' && facts.get(id)?.owner === 'yours')
+      running.push(row);
+    else rest.push(row);
+  }
+
+  const sections: ChatListSection[] = [
+    { id: 'needs-you' as const, label: NEEDS_YOU_LABEL, rows: needsYou.sort(order) },
+    { id: 'running' as const, label: RUNNING_LABEL, rows: running.sort(order) },
+    { id: 'chats' as const, label: CHATS_LABEL, rows: rest.sort(order) },
+  ].filter((section) => section.rows.length > 0);
+  // A lone section needs no heading: "Other chats" over the only chats there
+  // are is a label for nothing.
+  const only = sections.length === 1 ? sections[0] : undefined;
+  if (only && only.id === 'chats') only.label = null;
+  return { sections, automated: automated.sort(order) };
+}
 
 /**
  * Arrange one agent's chats into the list both chat surfaces draw.
@@ -221,9 +367,9 @@ type Placement = { kind: 'row'; group: 'main' | 'automated' } | { kind: 'folded'
  *    of the chat that started it, or under that chat's own host when the
  *    parent is itself folded, so a chain of spin-offs shares one toggle.
  * 2. An automated chat goes in the Automated group.
- * 3. A chat that needs you, ran out of usage, or stopped with an error is never folded: it is a
- *    row in Needs you, wherever it would otherwise sit, saying where it
- *    started.
+ * 3. A chat that needs you, ran out of usage, or stopped with an error is never
+ *    folded: it is a row in Needs you, wherever it would otherwise sit, saying
+ *    where it started. So a folded spin-off is only ever running or done.
  * 4. A spin-off you opened or wrote in is `yours` by `chatOwnership`, so it is
  *    an ordinary row ranked like any chat you touched, saying where it started.
  * 5. A spin-off whose parent is not in the list is an ordinary row saying
@@ -233,7 +379,8 @@ type Placement = { kind: 'row'; group: 'main' | 'automated' } | { kind: 'folded'
  *
  * Sections: Needs you first on every sort. For you then lists running chats
  * that are yours, then the rest by when you last used them. Recent activity
- * and Started list the rest by their own time.
+ * and Started list the rest by their own time. A running spin-off that is a row
+ * of its own (rule 5) is not yours, so it sits with the rest, not in Running.
  *
  * @param sessions - The agent's chats, in any order.
  * @param options - The sort, the live signals and an optional title search.
@@ -245,133 +392,26 @@ export function buildChatList(
   const { sort, lifecycles, waitingIds } = options;
   const outOfUsageIds = options.outOfUsageIds ?? new Set<string>();
   const needle = options.query?.trim().toLowerCase() ?? '';
-  // Titles for "Started from" come from every chat, so a parent the search hid
-  // is still named rather than called "another chat".
-  const titleById = new Map(sessions.map((s) => [s.id, sessionDisplayTitle(s.title)]));
-  const visible =
-    needle === ''
-      ? sessions
-      : sessions.filter((s) => sessionDisplayTitle(s.title).toLowerCase().includes(needle));
+  const visible = filterByTitle(sessions, needle);
 
-  const byId = new Map(visible.map((s) => [s.id, s]));
-  const owner = new Map<string, ChatOwnership>(visible.map((s) => [s.id, chatOwnership(s)]));
-  const lifecycle = new Map(visible.map((s) => [s.id, lifecycleOf(s, lifecycles)]));
-  const status = new Map(
-    visible.map((s) => [
-      s.id,
-      chatStatus(lifecycle.get(s.id) ?? null, waitingIds.has(s.id), outOfUsageIds.has(s.id)),
-    ])
-  );
-
-  // ── Placement ──
-  const placement = new Map<string, Placement>();
-  const resolving = new Set<string>();
-
-  /** Where `id` is drawn, folding chains of spin-offs onto one visible host. */
-  const place = (id: string): Placement => {
-    const known = placement.get(id);
-    if (known) return known;
-    const session = byId.get(id);
-    // Callers only pass ids in the list; this keeps the type honest.
-    if (!session) return { kind: 'row', group: 'main' };
-
-    let result: Placement;
-    const own = owner.get(id);
-    if (isUrgent(status.get(id) ?? 'idle')) {
-      result = { kind: 'row', group: 'main' }; // Rule 3.
-    } else if (own === 'automated') {
-      result = { kind: 'row', group: 'automated' }; // Rule 2.
-    } else if (own === 'spinOff' && session.startedBy?.kind === 'chat') {
-      const parentId = session.startedBy.sessionId;
-      if (!byId.has(parentId) || resolving.has(id)) {
-        result = { kind: 'row', group: 'main' }; // Rule 5, and a cycle guard.
-      } else {
-        resolving.add(id);
-        const parent = place(parentId);
-        resolving.delete(id);
-        const hostId = parent.kind === 'folded' ? parent.hostId : parentId;
-        // A chain that leads back to this chat has no host above it: it is the
-        // row the rest of the chain folds under.
-        result = hostId === id ? { kind: 'row', group: 'main' } : { kind: 'folded', hostId };
-      }
-    } else {
-      result = { kind: 'row', group: 'main' }; // Yours, including rule 4.
-    }
-    placement.set(id, result);
-    return result;
-  };
-  for (const session of visible) place(session.id);
-
-  // ── Rows ──
-  const rowFor = (session: Session): ChatRow => ({
-    session,
-    status: status.get(session.id) ?? 'idle',
-    lifecycle: lifecycle.get(session.id) ?? null,
-    lastUsedAt: lastUsedAt(session),
-    startedFrom:
-      session.startedBy?.kind === 'chat'
-        ? {
-            sessionId: titleById.has(session.startedBy.sessionId)
-              ? session.startedBy.sessionId
-              : null,
-            title:
-              titleById.get(session.startedBy.sessionId) ??
-              session.startedBy.title ??
-              UNKNOWN_PARENT,
-          }
-        : null,
-    spinOffs: [],
-  });
-
-  const rows = new Map<string, ChatRow>();
+  const facts = new Map<string, ChatFacts>();
   for (const session of visible) {
-    if (placement.get(session.id)?.kind === 'row') rows.set(session.id, rowFor(session));
-  }
-  for (const session of visible) {
-    const where = placement.get(session.id);
-    if (where?.kind !== 'folded') continue;
-    rows.get(where.hostId)?.spinOffs.push({
+    const lifecycle = lifecycleOf(session, lifecycles);
+    facts.set(session.id, {
       session,
-      status: status.get(session.id) ?? 'idle',
-      lifecycle: lifecycle.get(session.id) ?? null,
+      owner: chatOwnership(session),
+      lifecycle,
+      status: chatStatus(lifecycle, waitingIds.has(session.id), outOfUsageIds.has(session.id)),
     });
   }
-  for (const row of rows.values()) {
-    row.spinOffs.sort(byKeyDesc((s) => s.updatedAt));
-  }
-
-  // ── Sections ──
-  const order = byKeyDesc<ChatRow>((s) => sortKey(s, sort));
-  const needsYou: ChatRow[] = [];
-  const running: ChatRow[] = [];
-  const rest: ChatRow[] = [];
-  const automated: ChatRow[] = [];
-  for (const row of rows.values()) {
-    const where = placement.get(row.session.id);
-    if (where?.kind === 'row' && where.group === 'automated') automated.push(row);
-    else if (isUrgent(row.status)) needsYou.push(row);
-    else if (
-      sort === 'for-you' &&
-      row.status === 'running' &&
-      owner.get(row.session.id) === 'yours'
-    ) {
-      running.push(row);
-    } else rest.push(row);
-  }
-
-  const cut: ChatListSection[] = [
-    { id: 'needs-you' as const, label: NEEDS_YOU_LABEL, rows: needsYou.sort(order) },
-    { id: 'running' as const, label: RUNNING_LABEL, rows: running.sort(order) },
-    { id: 'chats' as const, label: CHATS_LABEL, rows: rest.sort(order) },
-  ].filter((section) => section.rows.length > 0);
-  // A lone section needs no heading: "Other chats" over the only chats there
-  // are is a label for nothing.
-  const only = cut.length === 1 ? cut[0] : undefined;
-  if (only && only.id === 'chats') only.label = null;
+  const titleById = new Map(sessions.map((s) => [s.id, sessionDisplayTitle(s.title)]));
+  const placement = placeChats(facts);
+  const rows = buildRows(facts, placement, titleById);
 
   return {
-    sections: cut,
-    automated: automated.sort(order),
+    ...cutSections(rows, facts, placement, sort),
+    // From every chat, not the search results: the marks should not come and
+    // go as you type.
     showRuntime: new Set(sessions.map((s) => s.runtime)).size > 1,
     total: sessions.length,
     matched: visible.length,

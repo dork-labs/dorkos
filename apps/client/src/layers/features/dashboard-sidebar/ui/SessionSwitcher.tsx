@@ -13,7 +13,7 @@
  *
  * @module features/dashboard-sidebar/ui/SessionSwitcher
  */
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useIsMobile } from '@/layers/shared/model';
 import {
   Kbd,
@@ -70,6 +70,12 @@ export function SessionSwitcher({
   // only where there are keys, and rendering exactly one shape keeps a test
   // that asks "is the legend gone on a phone" honest.
   const isMobile = useIsMobile();
+  // Mounted from the first open on, so the list stays drawn while the dialog or
+  // sheet animates out instead of collapsing to nothing mid-exit. Before the
+  // first open it is not mounted at all, so a switcher nobody opened asks for
+  // nothing: the roster mounts one per agent row with a live chip.
+  const [opened, setOpened] = useState(open);
+  if (open && !opened) setOpened(true);
 
   const handleOpen = useCallback(
     (sessionId: string) => {
@@ -110,10 +116,7 @@ export function SessionSwitcher({
         </ResponsiveDialogHeader>
 
         <ResponsiveDialogBody className="flex min-h-0 flex-col pb-2">
-          {/* Mounted only while the surface is up, so a switcher that was
-              never opened asks for nothing: the roster mounts one per agent
-              row with a live chip. */}
-          {open && (
+          {opened && (
             <ChatList
               agentPath={agentPath}
               agentName={agentName}

@@ -221,7 +221,7 @@ describe('buildChatList — folding (spec your-activity-first D14)', () => {
     });
     expect(layout(model)).toEqual({ 'needs-you': ['asks'], chats: ['parent'] });
     expect(row(model, 'parent').spinOffs).toEqual([]);
-    expect(row(model, 'asks').startedFrom).toEqual({ sessionId: 'parent', title: 'parent' });
+    expect(row(model, 'asks').startedFrom).toBe('parent');
   });
 
   it('rule 3: a folded spin-off whose account ran out is lifted too', () => {
@@ -239,7 +239,7 @@ describe('buildChatList — folding (spec your-activity-first D14)', () => {
     const touched = spinOff('opened', 'parent', { lastTouchedByYouAt: at(50) });
     const model = build([yours('parent', 5), yours('other', 20), touched]);
     expect(layout(model).chats).toEqual(['opened', 'other', 'parent']);
-    expect(row(model, 'opened').startedFrom?.title).toBe('parent');
+    expect(row(model, 'opened').startedFrom).toBe('parent');
     expect(row(model, 'parent').spinOffs).toEqual([]);
   });
 
@@ -251,14 +251,14 @@ describe('buildChatList — folding (spec your-activity-first D14)', () => {
   it('rule 5: a spin-off whose parent is gone is a normal row named by the recorded title', () => {
     const model = build([yours('mine', 1), spinOff('orphan', 'gone')]);
     expect(layout(model).chats).toContain('orphan');
-    expect(row(model, 'orphan').startedFrom).toEqual({ sessionId: null, title: 'gone (recorded)' });
+    expect(row(model, 'orphan').startedFrom).toBe('gone (recorded)');
   });
 
   it('rule 5: with no recorded title the parent is "another chat"', () => {
     const orphan = spinOff('orphan', 'gone', {
       startedBy: { kind: 'chat', sessionId: 'gone', title: null, reason: null, permission: null },
     });
-    expect(row(build([orphan]), 'orphan').startedFrom?.title).toBe('another chat');
+    expect(row(build([orphan]), 'orphan').startedFrom).toBe('another chat');
   });
 
   it('rule 5: a search that hides the parent still names it', () => {
@@ -266,10 +266,7 @@ describe('buildChatList — folding (spec your-activity-first D14)', () => {
       query: 'draft',
     });
     expect(layout(model)).toEqual({ chats: ['Draft copy'] });
-    expect(row(model, 'Draft copy').startedFrom).toEqual({
-      sessionId: 'Plan launch',
-      title: 'Plan launch',
-    });
+    expect(row(model, 'Draft copy').startedFrom).toBe('Plan launch');
     expect(model.matched).toBe(1);
     expect(model.total).toBe(2);
   });
@@ -303,6 +300,38 @@ describe('buildChatList — folding (spec your-activity-first D14)', () => {
       ...r.spinOffs.map((s) => s.session.id),
     ]);
     expect(ids.sort()).toEqual(['a', 'b']);
+  });
+});
+
+describe('buildChatList — placement edges the review asked for', () => {
+  it('puts a running spin-off whose parent is gone in Other chats, not Running', () => {
+    const model = build([yours('mine', 1), spinOff('orphan', 'gone')], {
+      lifecycles: { orphan: 'streaming' },
+    });
+    expect(layout(model)).toEqual({ chats: ['mine', 'orphan'] });
+  });
+
+  it('breaks a tie on equal times by id, whatever order the chats arrive in', () => {
+    const a = yours('a', 9);
+    const b = yours('b', 9);
+    expect(layout(build([a, b])).chats).toEqual(['a', 'b']);
+    expect(layout(build([b, a])).chats).toEqual(['a', 'b']);
+  });
+
+  it('compares instants, not their spelling', () => {
+    // The same minute written two ways, and a later one written the short way.
+    const same = yours('same', 0, { lastTouchedByYouAt: '2026-10-08T12:30:00.000+00:00' });
+    const later = yours('later', 0, { lastTouchedByYouAt: '2026-10-08T12:31:00Z' });
+    const earlier = yours('earlier', 0, { lastTouchedByYouAt: '2026-10-08T13:29:00.000+01:00' });
+    expect(layout(build([earlier, same, later])).chats).toEqual(['later', 'same', 'earlier']);
+  });
+
+  it('decides the runtime mark from every chat, not just the search results', () => {
+    const model = build([yours('Plan', 1), yours('Port', 2, { runtime: 'codex' })], {
+      query: 'plan',
+    });
+    expect(model.matched).toBe(1);
+    expect(model.showRuntime).toBe(true);
   });
 });
 

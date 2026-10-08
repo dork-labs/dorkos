@@ -11,4 +11,4 @@
  */
 export { ChatList, CHAT_LIST_SLOT } from './ui/ChatList';
 export type { ChatListProps } from './ui/ChatList';
-export { CHAT_LIST_ROW_SLOT, CHAT_LIST_SPIN_OFF_TOGGLE_SLOT } from './ui/ChatListRow';
+export { CHAT_LIST_ROW_SLOT } from './ui/ChatListRow';
