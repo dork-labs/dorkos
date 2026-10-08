@@ -426,12 +426,6 @@ export interface QueueDurabilityReport {
   ranAfterInteractionResolved: boolean;
 }
 
-/** Let queued microtasks and the pump's `queueMicrotask` deferral drain. */
-async function settleQueue(): Promise<void> {
-  for (let i = 0; i < 8; i += 1) await Promise.resolve();
-  await new Promise((resolve) => setTimeout(resolve, 10));
-}
-
 /** A promise plus the function that resolves it. */
 function gate(): { wait: Promise<void>; open: () => void } {
   let open!: () => void;
@@ -488,8 +482,13 @@ export async function driveQueueDurability(
   try {
     // Rule 1: a message queued behind a turn that FAILS still runs.
     const failHold = gate();
+    const failureEntered = gate();
+    const failureSettled = gate();
+    const behindFailureSettled = gate();
+    let failureOutcome: 'ok' | 'failed' | undefined;
     runtime.withScenarios([
       async function* (): AsyncGenerator<StreamEvent> {
+        failureEntered.open();
         yield { type: 'text_delta', data: { text: 'working' } } as StreamEvent;
         await failHold.wait;
         throw new Error('the runtime fell over');
@@ -505,7 +504,14 @@ export async function driveQueueDurability(
       cwd,
       projector: getOrCreateProjector(failSession, cwd),
       runtime,
+      onSettled: (outcome) => {
+        failureOutcome = outcome;
+        failureSettled.open();
+      },
     });
+    // Acceptance precedes the detached runtime launch. Observe its actual entry
+    // before queuing the second message behind this held turn.
+    await failureEntered.wait;
     await dispatchMessage({
       sessionId: failSession,
       clientId: 'c3',
@@ -513,20 +519,29 @@ export async function driveQueueDurability(
       cwd,
       projector: getOrCreateProjector(failSession, cwd),
       runtime,
+      onSettled: () => behindFailureSettled.open(),
     });
-    await settleQueue();
     const beforeFailure = runtime.sendMessage.mock.calls.length; // 1: only the first ran
     failHold.open();
-    await settleQueue();
-    const ranBehindFailedTurn = beforeFailure === 1 && runtime.sendMessage.mock.calls.length === 2;
+    await failureSettled.wait;
+    await behindFailureSettled.wait;
+    const ranBehindFailedTurn =
+      failureOutcome === 'failed' &&
+      beforeFailure === 1 &&
+      runtime.sendMessage.mock.calls.length === 2;
 
     // Rule 2: a message queued behind an OPEN interaction waits, then runs on
     // resolution. A fresh runtime so the call count starts clean.
     const runtime2 = new FakeAgentRuntime();
     runtime2.getInternalSessionId.mockReturnValue(undefined);
     const approvalHold = gate();
+    const approvalEntered = gate();
+    const approvalSettled = gate();
+    const behindApprovalSettled = gate();
+    let enteredWhileInteractionPending = false;
     runtime2.withScenarios([
       async function* (): AsyncGenerator<StreamEvent> {
+        approvalEntered.open();
         yield {
           type: 'approval_required',
           data: {
@@ -541,6 +556,7 @@ export async function driveQueueDurability(
         yield { type: 'done', data: {} } as StreamEvent;
       },
       async function* (): AsyncGenerator<StreamEvent> {
+        enteredWhileInteractionPending = projector.hasPendingInteractions();
         yield { type: 'done', data: {} } as StreamEvent;
       },
     ]);
@@ -552,7 +568,9 @@ export async function driveQueueDurability(
       cwd,
       projector,
       runtime: runtime2,
+      onSettled: () => approvalSettled.open(),
     });
+    await approvalEntered.wait;
     await dispatchMessage({
       sessionId: interactionSession,
       clientId: 'c3',
@@ -560,22 +578,28 @@ export async function driveQueueDurability(
       cwd,
       projector,
       runtime: runtime2,
+      onSettled: () => behindApprovalSettled.open(),
     });
-    await settleQueue();
     // The turn ENDS with the approval unanswered (a stall/interrupt): the queue
     // must not move into an ask nobody replied to.
     approvalHold.open();
-    await settleQueue();
+    // Settlement follows projection and write-lock release. The unanswered
+    // interaction, rather than an unfinished turn, must now hold the queue.
+    await approvalSettled.wait;
     const heldWhileInteractionPending =
       projector.hasPendingInteractions() &&
       runtime2.sendMessage.mock.calls.length === 1 &&
       listQueuedMessages(interactionSession).length === 1;
     // Answered — now, and only now, the queue moves.
     projector.resolveInteraction('c3-call', 'approved');
-    await settleQueue();
+    await behindApprovalSettled.wait;
     const ranAfterInteractionResolved = runtime2.sendMessage.mock.calls.length === 2;
 
-    return { ranBehindFailedTurn, heldWhileInteractionPending, ranAfterInteractionResolved };
+    return {
+      ranBehindFailedTurn,
+      heldWhileInteractionPending: heldWhileInteractionPending && !enteredWhileInteractionPending,
+      ranAfterInteractionResolved,
+    };
   } finally {
     resetMessageDispatcher();
     resetStagedContextStore();
