@@ -661,6 +661,11 @@ import {
   setSessionStartedByStore,
 } from './services/session/origin/session-started-by-store.js';
 import {
+  SessionTouchStore,
+  getSessionTouchStore,
+  setSessionTouchStore,
+} from './services/session/origin/session-touch-store.js';
+import {
   MessageQueueStore,
   SessionEventStore,
   StagedContextStore,
@@ -1357,6 +1362,10 @@ async function start() {
   // starts work finds it; the name lookup reads the manager at call time.
   const sessionStartedByStore = new SessionStartedByStore(db);
   setSessionStartedByStore(sessionStartedByStore);
+  // When you opened or wrote in each chat (spec `your-activity-first` D1),
+  // written by the session routes for a person at the app and read by the
+  // fourth origin overlay below.
+  setSessionTouchStore(new SessionTouchStore(db));
   setStartWorkService(
     new StartWorkService({
       store: sessionStartedByStore,
@@ -4810,6 +4819,11 @@ async function start() {
     getSessionStartedByStore()?.getMany(sessionIds) ?? new Map();
   app.locals.extensionNameOf = (extensionId: string) =>
     extensionManager?.get(extensionId)?.manifest.name ?? extensionId;
+  // What you did in each chat (spec `your-activity-first` D5): the fourth
+  // overlay, a batched read of `session_touches`. Set before the broadcaster
+  // takes its resolvers, so the live stream carries it exactly as the routes do.
+  app.locals.resolveTouches = (sessionIds: string[]) =>
+    getSessionTouchStore()?.resolve(sessionIds) ?? new Map();
   sessionListBroadcaster.setOriginResolvers(sessionOriginResolvers(app.locals));
   // Live session upserts carry the flow items a chat works on, exactly as
   // `GET /api/sessions` does, so the first upsert after a list read no longer

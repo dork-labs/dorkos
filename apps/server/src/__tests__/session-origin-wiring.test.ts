@@ -105,6 +105,22 @@ describe('the composition root wires the session-list stream to the origin looku
     ).toBeLessThan(start);
   });
 
+  it('sets every lookup on app.locals BEFORE handing them to the broadcaster', () => {
+    // `sessionOriginResolvers(app.locals)` copies what is there at that moment,
+    // so a lookup assigned after it reaches the routes and never the live
+    // stream — a chat you touched would lose `lastTouchedByYouAt` on its next
+    // upsert (spec your-activity-first D5).
+    const wiring = lineOf(WIRING);
+    for (const key of ['resolveRoomOrigins', 'resolveStartedBy', 'resolveTouches']) {
+      const assigned = lineOf(`app.locals.${key} =`);
+      expect(assigned, `app.locals.${key} is never assigned in index.ts`).toBeGreaterThan(-1);
+      expect(
+        assigned,
+        `app.locals.${key} is set after the broadcaster takes its lookups`
+      ).toBeLessThan(wiring);
+    }
+  });
+
   it('is really reading index.ts, and would notice a call that vanished', () => {
     // A scan that found nothing satisfies "not present" for free, so an empty or
     // wrong file would make the two assertions above meaningless in one

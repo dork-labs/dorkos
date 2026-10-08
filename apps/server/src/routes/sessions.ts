@@ -76,6 +76,11 @@ import {
   sessionQueueUpdateHandler,
 } from './session-queue-handler.js';
 import { sessionEventsHandler } from './session-events-handler.js';
+import {
+  recordWroteIfPerson,
+  sessionOpenedHandler,
+  touchedSinceKeeper,
+} from './session-touch-handler.js';
 import { sessionCommandIntentHandler } from './session-command-intent-handler.js';
 import { sessionDevtoolsActionHandler, sessionDevtoolsIngestHandler } from './session-devtools.js';
 import sessionCanvasRouter from './session-canvas.js';
@@ -292,7 +297,7 @@ router.get('/recent', async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: 'Invalid query', details: z.treeifyError(parsed.error) });
   }
-  const { limit } = parsed.data;
+  const { limit, touchedSince } = parsed.data;
 
   const meshCore = req.app.locals.meshCore as MeshCore | undefined;
   const agentPaths = meshCore ? meshCore.listWithPaths().map((a) => a.projectPath) : [];
@@ -302,6 +307,14 @@ router.get('/recent', async (req, res) => {
     runtimes,
     agentPaths,
     limit,
+    // Every chat you touched since the caller's day began stays, however many
+    // agent-busy chats outrank it by `updatedAt` (spec `your-activity-first` D6).
+    ...(touchedSince && {
+      keepBeyondLimit: touchedSinceKeeper(
+        touchedSince,
+        sessionOriginResolvers(req.app.locals).resolveTouches
+      ),
+    }),
   });
   // Same persisted-settings overlay as the other two session reads — a recent
   // session is the same session, so it must not report a different mode.
@@ -1100,6 +1113,12 @@ router.post('/:id/messages', async (req, res) => {
     return sendError(res, status, result.message, result.refused);
   }
 
+  // Accepted, so it counts as you writing here (spec `your-activity-first`
+  // D4). A dispatch that answered `accepted: false` refused the message and
+  // records nothing. An accepted one names the chat's canonical id; the
+  // fallback only covers the type, which leaves the field optional.
+  if (result.accepted) recordWroteIfPerson(req, res, result.canonicalId ?? sessionId);
+
   res.status(202).json({
     sessionId: result.canonicalId,
     messageId: result.outcome.messageId,
@@ -1107,6 +1126,10 @@ router.post('/:id/messages', async (req, res) => {
     queuePosition: result.queuePosition,
   });
 });
+
+// POST /api/sessions/:id/opened — the chat page is showing this chat (spec
+// `your-activity-first` D3). Handler in `session-touch-handler.ts`.
+router.post('/:id/opened', sessionOpenedHandler);
 
 // GET|PATCH|DELETE /api/sessions/:id/queue — the messages waiting on a session.
 // Handlers live in `session-queue-handler.ts` so this file stays under the size

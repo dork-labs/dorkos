@@ -745,8 +745,10 @@ export interface Transport
    * an empty envelope.
    *
    * @param limit - Maximum sessions to return (1-50, default 10).
+   * @param touchedSince - ISO-8601 time; every chat you touched at or after it
+   *   is returned too, beyond `limit` (spec `your-activity-first` D6).
    */
-  listRecentSessions(limit?: number): Promise<RecentSessionsResponse>;
+  listRecentSessions(limit?: number, touchedSince?: string): Promise<RecentSessionsResponse>;
   /**
    * Count the sessions started per day across ALL registered agents
    * (DOR-1039), backing the Activity tab's week line. Returns `dailyCounts`
@@ -761,6 +763,16 @@ export interface Transport
   getSessionDailyCounts(days?: number): Promise<SessionDailyCountsResponse>;
   /** Get metadata for a single session by ID. */
   getSession(id: string, cwd?: string): Promise<Session>;
+  /**
+   * Tell the server the chat page is showing this chat, so it counts as
+   * touched by you on every device (spec `your-activity-first` D3). Called by
+   * the chat page each time it shows a chat id, never by click handlers. The
+   * server records it only for a person at the app and answers the same way
+   * either way, so a caller learns nothing from the answer.
+   *
+   * @param sessionId - The chat being shown.
+   */
+  markSessionOpened(sessionId: string): Promise<void>;
   /** Reserve a durable, caller-scoped opaque reference to a launch directory. */
   createSessionLocation(cwd: string): Promise<{ id: string }>;
   /** Resolve a launch reference without putting its private directory in a URL. */

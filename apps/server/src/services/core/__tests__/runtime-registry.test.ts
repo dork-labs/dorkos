@@ -25,6 +25,10 @@ import {
   SessionLimitStore,
   setSessionLimitStore,
 } from '../../session/fleet/session-limit-store.js';
+import {
+  SessionTouchStore,
+  setSessionTouchStore,
+} from '../../session/origin/session-touch-store.js';
 import type { TurnOrigin } from '../../session/index.js';
 import { onDurableSessionRekey } from '../../session/turn-identity/durable-rekey.js';
 
@@ -1754,6 +1758,25 @@ describe('RuntimeRegistry', () => {
         },
       ]);
       expect(allRows()).toEqual([]);
+    });
+
+    it('moves when you touched the chat, even with no settings row (spec your-activity-first D1)', async () => {
+      const touches = new SessionTouchStore(db);
+      setSessionTouchStore(touches);
+      try {
+        touches.recordWrote('old', '2026-10-08T09:00:00.000Z');
+
+        await registry.rekeySessionSettings('old', 'new');
+
+        const found = touches.resolve(['old', 'new']);
+        expect(found.has('old')).toBe(false);
+        expect(found.get('new')).toEqual({
+          openedAt: '2026-10-08T09:00:00.000Z',
+          wroteAt: '2026-10-08T09:00:00.000Z',
+        });
+      } finally {
+        setSessionTouchStore(undefined);
+      }
     });
 
     it('a context-table failure never stops the settings row (the runtime binding) from moving', async () => {

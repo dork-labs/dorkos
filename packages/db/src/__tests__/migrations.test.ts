@@ -233,7 +233,7 @@ describe('Database Migrations', () => {
       expect(
         db.$client.prepare('SELECT * FROM session_native_bindings ORDER BY session_id').all()
       ).toEqual(publishedBindings);
-      expect(journal.entries.slice(148).map((entry) => entry.idx)).toEqual([148, 149, 150]);
+      expect(journal.entries.slice(148).map((entry) => entry.idx)).toEqual([148, 149, 150, 151]);
       expect(db.$client.prepare('SELECT * FROM audit_events ORDER BY seq').all()).toEqual(
         publishedAudit
       );
@@ -506,6 +506,8 @@ describe('Database Migrations', () => {
       // Who started a chat that no person typed into, and the counter for an
       // extension's start limits (spec flow-multiproject §7.7, migration 0135).
       'session_started_by',
+      // Immutable shipped Main148 session-touch state.
+      'session_touches',
       // The durable claim feed for inbound chats with no binding — metadata
       // only, never a message body (connection-scoping spec §Part 3,
       // migration 0048).

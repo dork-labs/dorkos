@@ -1,6 +1,6 @@
 {
-  "id": "c44a7048-e240-4c68-8f5e-6a9fb09b8951",
-  "prevId": "a88714f2-6de5-48b2-9cb5-8d4308efe0fc",
+  "id": "a88714f2-6de5-48b2-9cb5-8d4308efe0fc",
+  "prevId": "4781c5d1-5724-4b21-997d-22e32403c8c8",
   "version": "6",
   "dialect": "sqlite",
   "tables": {
@@ -3363,88 +3363,6 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "canvas_doc_room_pending_sources": {
-      "name": "canvas_doc_room_pending_sources",
-      "columns": {
-        "document_id": {
-          "name": "document_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "batch_id": {
-          "name": "batch_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "generation": {
-          "name": "generation",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "source_json": {
-          "name": "source_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "source_hash": {
-          "name": "source_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "due_at": {
-          "name": "due_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "canvas_doc_room_pending_sources_batch_id_canvas_doc_batches_batch_id_fk": {
-          "name": "canvas_doc_room_pending_sources_batch_id_canvas_doc_batches_batch_id_fk",
-          "tableFrom": "canvas_doc_room_pending_sources",
-          "tableTo": "canvas_doc_batches",
-          "columnsFrom": [
-            "batch_id"
-          ],
-          "columnsTo": [
-            "batch_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "canvas_doc_room_pending_sources_document_id_batch_id_generation_pk": {
-          "columns": [
-            "document_id",
-            "batch_id",
-            "generation"
-          ],
-          "name": "canvas_doc_room_pending_sources_document_id_batch_id_generation_pk"
-        }
-      },
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
@@ -13668,6 +13586,37 @@
           "isUnique": true
         }
       },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "session_touches": {
+      "name": "session_touches",
+      "columns": {
+        "session_id": {
+          "name": "session_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "opened_at": {
+          "name": "opened_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "wrote_at": {
+          "name": "wrote_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},

@@ -11,6 +11,7 @@ import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { constructDatabase } from './database-construction.js';
 export { DatabaseOpenError } from './database-construction.js';
 import { migrationsFolder } from './migrations-folder.js';
+import { bridgeLegacyDocMigrationHistory } from './doc-migration-history.js';
 
 /**
  * Thrown when the database at a path exists but will not open.
@@ -53,7 +54,9 @@ export function createDb(dbPath: string) {
  * @param db - Drizzle database instance from createDb()
  */
 export function runMigrations(db: ReturnType<typeof createDb>): void {
-  migrate(db, { migrationsFolder: migrationsFolder() });
+  const folder = migrationsFolder();
+  bridgeLegacyDocMigrationHistory(db, folder);
+  migrate(db, { migrationsFolder: folder });
 }
 
 /** The Drizzle DB instance type. Use as the parameter type for all stores. */

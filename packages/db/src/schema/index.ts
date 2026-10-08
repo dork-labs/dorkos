@@ -52,3 +52,4 @@ export * from './browser/registry.js';
 export * from './session/session-locations.js';
 
 export * from './session/session-native-bindings.js';
+export * from './session/session-touches.js';
