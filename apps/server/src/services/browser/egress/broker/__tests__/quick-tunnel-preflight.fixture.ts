@@ -41,6 +41,8 @@ export interface OriginalQuickTunnelReply {
 export interface OriginalQuickTunnelPort {
   readonly allowedOrigin: string;
   readonly deniedOrigin: string;
+  readonly sharedAuthorityCampaign: 'required' | 'deferred';
+  readonly allowedAddresses: readonly string[];
   readonly commonAddresses: readonly string[];
   readonly leafSHA256: string;
   readonly proof: Readonly<Record<string, unknown>>;
@@ -75,6 +77,8 @@ export function readOriginalQuickTunnelPort(value: unknown): OriginalQuickTunnel
 /** Caller owns the existing180s deadline; no installation, account or retry is performed here. */
 export async function openOriginalQuickTunnelPreflight(options: {
   artifacts: string;
+  /** Only the user-deferred shared-IP/shared-SAN campaign; all other origin checks remain strict. */
+  sharedAuthorityCampaign?: 'required' | 'deferred';
   binary: Readonly<{
     path: string;
     sha256: string;
@@ -93,6 +97,9 @@ export async function openOriginalQuickTunnelPreflight(options: {
   ): OriginalQuickTunnelReply;
   body?(role: 'allowed' | 'denied', path: string, origins: readonly string[]): string;
 }) {
+  const sharedAuthorityCampaign = options.sharedAuthorityCampaign ?? 'required';
+  if (sharedAuthorityCampaign !== 'required' && sharedAuthorityCampaign !== 'deferred')
+    throw new Error('ORIGINAL_TUNNEL_CAMPAIGN_REQUIRED');
   const suppliedBinary = options.binary;
   const originalBinary = Object.freeze({
     path: suppliedBinary.path,
@@ -869,8 +876,11 @@ export async function openOriginalQuickTunnelPreflight(options: {
         .filter((address) => classifyAddress(address).kind === 'global')
     );
     const commonAddresses = addresses[0]!.filter((address) => addresses[1]!.includes(address));
-    if (!commonAddresses.length) throw new Error('ORIGINAL_TUNNEL_NO_COMMON_PUBLIC_IP');
-    const selected = commonAddresses[0]!,
+    if (addresses.some((rows) => !rows.length))
+      throw new Error('ORIGINAL_TUNNEL_PUBLIC_IP_REQUIRED');
+    if (sharedAuthorityCampaign === 'required' && !commonAddresses.length)
+      throw new Error('ORIGINAL_TUNNEL_NO_COMMON_PUBLIC_IP');
+    const selected = sharedAuthorityCampaign === 'required' ? commonAddresses[0]! : undefined,
       tlsProof: unknown[] = [],
       warm: unknown[] = [];
     let leafSHA256: string | undefined;
@@ -879,7 +889,7 @@ export async function openOriginalQuickTunnelPreflight(options: {
       const origin = origins[at]!,
         hostname = new URL(origin).hostname;
       const socket = tlsConnect({
-        host: selected,
+        host: selected ?? addresses[at]![0]!,
         servername: hostname,
         port: 443,
         ALPNProtocols: ['h2'],
@@ -903,7 +913,7 @@ export async function openOriginalQuickTunnelPreflight(options: {
       if (
         typeof certificate.subjectaltname !== 'string' ||
         !certificate.subjectaltname.length ||
-        origins.some(
+        (sharedAuthorityCampaign === 'required' ? origins : [origin]).some(
           (origin) =>
             checkServerIdentity(new URL(origin).hostname, certificate) ||
             !originalLeaf.checkHost(new URL(origin).hostname, {
@@ -913,12 +923,13 @@ export async function openOriginalQuickTunnelPreflight(options: {
       )
         throw new Error('ORIGINAL_TUNNEL_SHARED_SAN_UNVERIFIED');
       const leaf = sha(certificate.raw);
-      if (leafSHA256 && leafSHA256 !== leaf) throw new Error('ORIGINAL_TUNNEL_DIFFERENT_LEAF');
-      leafSHA256 = leaf;
+      if (sharedAuthorityCampaign === 'required' && leafSHA256 && leafSHA256 !== leaf)
+        throw new Error('ORIGINAL_TUNNEL_DIFFERENT_LEAF');
+      leafSHA256 ??= leaf;
       tlsProof.push({
         hostname,
-        selectedAddress: selected,
-        addressFamily: classifyAddress(selected).family,
+        selectedAddress: selected ?? addresses[at]![0]!,
+        addressFamily: classifyAddress(selected ?? addresses[at]![0]!).family,
         leafSHA256: leaf,
         subjectaltname: certificate.subjectaltname,
         chainAuthorized: socket.authorized,
@@ -999,13 +1010,20 @@ export async function openOriginalQuickTunnelPreflight(options: {
       observedAt: Date.now(),
       origins: Object.freeze([...origins]),
       dns,
-      selectedAddress: selected,
+      sharedAuthorityCampaign,
+      sharedIPSharedSANH2:
+        sharedAuthorityCampaign === 'deferred'
+          ? 'DEFERRED_UNVERIFIED'
+          : 'TOPOLOGY_OBSERVED_BROWSER_CASE_REQUIRED',
+      selectedAddress: selected ?? null,
       commonAddresses: Object.freeze([...commonAddresses]),
       leafSHA256,
       tls: tlsProof,
       warm,
       scope:
-        'Observed Node TLS/H2 topology and positive origins. Chromium must warm its own original session and produce genuine denied CONNECT; browser coalescing is not established here.',
+        sharedAuthorityCampaign === 'required'
+          ? 'Observed Node TLS/H2 shared topology and positive origins. Chromium coalescing is not established here.'
+          : 'Observed independent original public TLS/H2 origins. Shared-IP/shared-SAN campaign is deferred/unverified; no shared topology or coalescing claim.',
     });
     await writeFile(join(options.artifacts, 'PREFLIGHT.json'), JSON.stringify(proof) + '\n', {
       flag: 'wx',
@@ -1015,6 +1033,8 @@ export async function openOriginalQuickTunnelPreflight(options: {
     const port: OriginalQuickTunnelPort = Object.freeze({
       allowedOrigin: origins[0]!,
       deniedOrigin: origins[1]!,
+      sharedAuthorityCampaign,
+      allowedAddresses: Object.freeze([...addresses[0]!]),
       commonAddresses: Object.freeze([...commonAddresses]),
       leafSHA256: leafSHA256!,
       proof,

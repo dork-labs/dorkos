@@ -27,12 +27,13 @@ import { runOriginalControlledSharedSANCase } from './controlled-shared-san-nati
 // Explicit accountless controlled native window only; ordinary repository tests are inert.
 const fixturePath = process.env.DORKOS_CONTROLLED_SHARED_SAN_FIXTURE;
 it.skipIf(!fixturePath || process.platform !== 'darwin')(
-  'observes original controlled shared-SAN H2 denial, causal mutant and revocation',
+  'observes original controlled network denial, causal mutant and revocation with explicit shared-SAN scope',
   async () => {
     const config = z
       .object({
         input: z.string().startsWith('/'),
         artifacts: z.string().startsWith('/'),
+        sharedAuthorityCampaign: z.enum(['required', 'deferred']).default('required'),
         binary: z
           .object({
             path: z.string().startsWith('/'),
@@ -129,6 +130,9 @@ it.skipIf(!fixturePath || process.platform !== 'darwin')(
               kind: 'controlled-original-shared-san-native',
               scope:
                 'Controlled broker/native composition. Public CLI inventory, public HTTPS smoke and full protocol matrix are separate.',
+              sharedAuthorityCampaign: config.sharedAuthorityCampaign,
+              sharedIPSharedSANH2:
+                config.sharedAuthorityCampaign === 'deferred' ? 'DEFERRED_UNVERIFIED' : 'REQUIRED',
               home,
               manager,
               reports,
@@ -148,6 +152,7 @@ it.skipIf(!fixturePath || process.platform !== 'darwin')(
       const artifacts = join(config.artifacts, 'original-tunnels');
       tunnels = await openOriginalQuickTunnelPreflight({
         artifacts,
+        sharedAuthorityCampaign: config.sharedAuthorityCampaign,
         binary: config.binary,
         observer: nativeJournal.journal.artifact,
         signal: lifetime.signal,

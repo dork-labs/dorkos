@@ -422,9 +422,10 @@ export async function runOriginalControlledSharedSANCase(options: {
         !leaf.checkHost(new URL(endpoint.allowedOrigin).hostname, {
           subject: 'never',
         }) ||
-        !leaf.checkHost(new URL(endpoint.deniedOrigin).hostname, {
-          subject: 'never',
-        })
+        (endpoint.sharedAuthorityCampaign === 'required' &&
+          !leaf.checkHost(new URL(endpoint.deniedOrigin).hostname, {
+            subject: 'never',
+          }))
       )
         throw new Error('CONTROLLED_ORIGINAL_BROWSER_SHARED_CERTIFICATE_REQUIRED');
       browserLeafSHA256 = createHash('sha256').update(leaf.raw).digest('hex');
@@ -434,7 +435,13 @@ export async function runOriginalControlledSharedSANCase(options: {
       if (
         !actualPeers.length ||
         actualPeers.some(
-          (peer) => peer.port !== 443 || !endpoint.commonAddresses.includes(peer.address)
+          (peer) =>
+            peer.port !== 443 ||
+            !(
+              endpoint.sharedAuthorityCampaign === 'required'
+                ? endpoint.commonAddresses
+                : endpoint.allowedAddresses
+            ).includes(peer.address)
         )
       )
         throw new Error('CONTROLLED_ORIGINAL_BROWSER_SHARED_IP_REQUIRED');
@@ -1108,7 +1115,12 @@ export async function runOriginalControlledSharedSANCase(options: {
       if ((await page.goto(continuedURL))?.status() !== 200)
         throw new Error('CONTROLLED_CONTINUE_REQUIRED');
       const continued = events.find((row) => row.url === continuedURL);
-      if (!continued || continued.protocol !== 'h2' || continued.connectionId !== warm.connectionId)
+      if (
+        !continued ||
+        continued.protocol !== 'h2' ||
+        (endpoint.sharedAuthorityCampaign === 'required' &&
+          continued.connectionId !== warm.connectionId)
+      )
         throw new Error('CONTROLLED_SAME_ORIGINAL_H2_CONNECTION_REQUIRED');
       const continuedRows = endpoint.observations().slice(start);
       if (
@@ -1479,7 +1491,11 @@ export async function runOriginalControlledSharedSANCase(options: {
       subject: options.subject,
       binding,
       nonce,
-      scope: 'constructor-owned broker/native; not public CLI inventory',
+      scope:
+        'constructor-owned broker/native; not public CLI inventory or full network qualification',
+      sharedAuthorityCampaign: endpoint.sharedAuthorityCampaign,
+      sharedIPSharedSANH2:
+        endpoint.sharedAuthorityCampaign === 'deferred' ? 'DEFERRED_UNVERIFIED' : 'REQUIRED',
       flow,
       browserLeafSHA256: browserLeafSHA256 ?? null,
       denials,
