@@ -1,25 +1,25 @@
 {
  "schema": 1,
- "date": "2026-10-06",
- "collected_at": "2026-10-07T11:39:51.571Z",
- "snapshot": "snapshots/2026-10-06.json",
+ "date": "2026-10-07",
+ "collected_at": "2026-10-08T11:54:40.495Z",
+ "snapshot": "snapshots/2026-10-07.json",
  "report_ref": "reports/2026-W40.md",
  "healthy": true,
  "failures": [],
  "warnings": [
   "Thin sample: review-recovery (n=2 < 5); those SLOs read as insufficient, not as a breach or a win."
  ],
- "api_calls": 171,
+ "api_calls": 323,
  "slos": [
   {
    "id": "headroom",
    "kind": "tripwire",
-   "from": "2026-09-30",
-   "to": "2026-10-06",
-   "n": 22515,
+   "from": "2026-10-01",
+   "to": "2026-10-07",
+   "n": 21042,
    "min_n": 10,
    "stats": {
-    "p95_over_timeout": 0.937
+    "p95_over_timeout": 0.954
    },
    "status": "breach",
    "excess_hours": null,
@@ -28,12 +28,12 @@
   {
    "id": "queue-green",
    "kind": "quality",
-   "from": "2026-09-30",
-   "to": "2026-10-06",
-   "n": 331,
+   "from": "2026-10-01",
+   "to": "2026-10-07",
+   "n": 315,
    "min_n": 30,
    "stats": {
-    "share": 0.8369
+    "share": 0.8444
    },
    "status": "ok",
    "excess_hours": null
@@ -41,38 +41,38 @@
   {
    "id": "wasted-queue-builds",
    "kind": "quality",
-   "from": "2026-09-30",
-   "to": "2026-10-06",
-   "n": 331,
+   "from": "2026-10-01",
+   "to": "2026-10-07",
+   "n": 315,
    "min_n": 30,
    "stats": {
-    "share": 0.0785
+    "share": 0.0667
    },
    "status": "ok",
-   "excess_hours": 33.24
+   "excess_hours": 26.74
   },
   {
    "id": "flaky-test-runs",
    "kind": "quality",
-   "from": "2026-09-30",
-   "to": "2026-10-06",
-   "n": 4141006,
+   "from": "2026-10-01",
+   "to": "2026-10-07",
+   "n": 4225069,
    "min_n": 1000,
    "stats": {
     "share": 0,
-    "failed_jobs": 57,
-    "unreported_failed_jobs": 10
+    "failed_jobs": 52,
+    "unreported_failed_jobs": 9
    },
    "status": "unmeasured",
    "excess_hours": null,
-   "note": "coverage unknown: 10 of 57 failed queue test jobs wrote no retry-aware report (wf.test.community-pg 8, wf.harness-windows.harness-windows 2); share 0 is over the reported suites only"
+   "note": "coverage unknown: 9 of 52 failed queue test jobs wrote no retry-aware report (wf.test.community-pg 7, wf.harness-windows.harness-windows 2); share 0 is over the reported suites only"
   },
   {
    "id": "main-green",
    "kind": "quality",
-   "from": "2026-09-09",
-   "to": "2026-10-06",
-   "n": 801,
+   "from": "2026-09-10",
+   "to": "2026-10-07",
+   "n": 821,
    "min_n": 1,
    "stats": {
     "red_episodes": 35,
@@ -84,12 +84,12 @@
   {
    "id": "review-completes",
    "kind": "quality",
-   "from": "2026-09-30",
-   "to": "2026-10-06",
-   "n": 277,
+   "from": "2026-10-01",
+   "to": "2026-10-07",
+   "n": 280,
    "min_n": 30,
    "stats": {
-    "share": 0.9819
+    "share": 0.9857
    },
    "status": "ok",
    "excess_hours": null
@@ -97,12 +97,12 @@
   {
    "id": "review-recovery",
    "kind": "quality",
-   "from": "2026-09-30",
-   "to": "2026-10-06",
+   "from": "2026-10-01",
+   "to": "2026-10-07",
    "n": 2,
    "min_n": 5,
    "stats": {
-    "p90": 107.1
+    "p90": 40.1
    },
    "status": "insufficient",
    "excess_hours": null
@@ -110,68 +110,68 @@
   {
    "id": "pr-feedback",
    "kind": "speed",
-   "from": "2026-09-30",
-   "to": "2026-10-06",
-   "n": 296,
+   "from": "2026-10-01",
+   "to": "2026-10-07",
+   "n": 271,
    "min_n": 30,
    "stats": {
-    "p50": 14.2,
-    "p90": 22.5
+    "p50": 14.5,
+    "p90": 23.5
    },
    "status": "ok",
-   "excess_hours": 22.71
+   "excess_hours": 22.11
   },
   {
    "id": "queue-build",
    "kind": "speed",
-   "from": "2026-09-30",
-   "to": "2026-10-06",
-   "n": 211,
+   "from": "2026-10-01",
+   "to": "2026-10-07",
+   "n": 214,
    "min_n": 20,
    "stats": {
-    "p50": 24.1,
-    "p90": 31.7
+    "p50": 24.4,
+    "p90": 33.7
    },
    "status": "ok",
-   "excess_hours": 33.91
+   "excess_hours": 35.71
   },
   {
    "id": "lead-time",
    "kind": "speed",
-   "from": "2026-09-30",
-   "to": "2026-10-06",
+   "from": "2026-10-01",
+   "to": "2026-10-07",
    "n": 247,
    "min_n": 30,
    "stats": {
-    "p50": 54.2,
+    "p50": 51,
     "p90": 268.3
    },
    "status": "breach",
-   "excess_hours": 753.53
+   "excess_hours": 315.1
   },
   {
    "id": "local-commit",
    "kind": "speed",
-   "from": "2026-09-30",
-   "to": "2026-10-06",
-   "n": 2295,
+   "from": "2026-10-01",
+   "to": "2026-10-07",
+   "n": 2118,
    "min_n": 20,
    "stats": {
-    "p90": 112,
-    "killed_share": 0.0035
+    "p90": 131,
+    "killed_share": 0.0038
    },
    "status": "ok",
-   "excess_hours": 28.74
+   "excess_hours": 30.58
   },
   {
    "id": "local-push",
    "kind": "speed",
-   "from": "2026-09-30",
-   "to": "2026-10-06",
-   "n": 1030,
+   "from": "2026-10-01",
+   "to": "2026-10-07",
+   "n": 898,
    "min_n": 20,
    "stats": {
-    "p90": 4,
+    "p90": 5,
     "killed_share": 0
    },
    "status": "met",
@@ -181,20 +181,20 @@
  "constraint": {
   "tier": "tripwire",
   "id": "headroom",
-  "reason": "Jobs finish well inside their timeouts: p95_over_timeout 0.937 (worst gate wf.browser-test.browser-shard) breaches its floor."
+  "reason": "Jobs finish well inside their timeouts: p95_over_timeout 0.954 (worst gate wf.browser-test.browser-shard) breaches its floor."
  },
  "local_breaches": [],
  "machine": {
-  "n": 46662,
+  "n": 42774,
   "clones": 2,
-  "load_per_core_p90": 5.99,
-  "mem_available_mb_p10": 127,
-  "swap_used_mb_p50": 27646
+  "load_per_core_p90": 6.59,
+  "mem_available_mb_p10": 172.7,
+  "swap_used_mb_p50": 23215
  },
  "safeguards_ok": true,
  "triggers": {
-  "red": 4,
-  "amber": 34,
-  "top": "wf.browser-test.browser-shard p95 uses 93.7% of its time limit (n=1983)."
+  "red": 5,
+  "amber": 28,
+  "top": "main canary red on fdfe991 since 2026-10-07 12:22Z: test.yml ×1."
  }
 }
