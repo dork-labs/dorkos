@@ -5,6 +5,9 @@ covers:
   - 'fix(site): say "chat" on the website (DOR-2789)'
   - 'fix(community): say "sign-in" and name the channel in space copy (DOR-2789)'
   - 'fix(cli): say "chat" in CLI output (DOR-2789)'
+  - 'fix(copy): finish the chat sweep the review found (DOR-2789)'
+  - 'fix(copy): finish the chat sweep in server and CLI copy (DOR-2789)'
+  - 'fix(site): keep the privacy policy as written; reword the admin delete line (DOR-2789)'
 ---
 
 ### Changed
