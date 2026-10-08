@@ -836,19 +836,70 @@ describe('RoomFileEditor — upload, move, delete, from the chat', () => {
       });
     }, 60_000);
 
-    it('lists at most twenty paths and counts the rest', async () => {
-      const files = [];
-      for (let i = 0; i < 20; i++)
-        files.push(await staged(`f${String(i).padStart(2, '0')}.md`, 'x'));
-      await editor.upload(ROOM_ID, ANA, { dir: 'many', baseCommit: null, replace: [], files });
-      await put('many/extra.md', 'x');
-      await commit('One more');
+    describe('a folder with twenty-one paths', () => {
+      let preparing: Promise<void> | undefined;
+      let removing: Promise<void> | undefined;
+      let closing = false;
+      let owner: OriginalOwnedRoomFixture | undefined;
 
-      await editor.remove(ROOM_ID, ANA, { path: 'many', baseCommit: await head() });
+      const requireOpen = () => {
+        if (closing) throw new Error('Original path-list fixture retired.');
+      };
 
-      const change = announced.at(-1)!.fileChange;
-      expect(change.paths).toHaveLength(20);
-      expect(change.pathCount).toBe(21);
+      beforeEach(async () => {
+        closing = false;
+        owner = original;
+        removing = undefined;
+        preparing = (async () => {
+          const files = [];
+          for (let i = 0; i < 20; i++) {
+            requireOpen();
+            files.push(await staged(`f${String(i).padStart(2, '0')}.md`, 'x'));
+          }
+          requireOpen();
+          await editor.upload(ROOM_ID, ANA, { dir: 'many', baseCommit: null, replace: [], files });
+          requireOpen();
+          await put('many/extra.md', 'x');
+          requireOpen();
+          await commit('One more');
+          requireOpen();
+        })();
+        await preparing;
+      });
+
+      afterEach(async () => {
+        // Cancel original native writes before joining a timed-out operation.
+        // The enclosing fixture retires its server/Db/root only after this join.
+        closing = true;
+        const currentOwner = owner;
+        if (!currentOwner) return;
+        let stopping: Promise<void>;
+        try {
+          stopping = currentOwner.stopWrites();
+        } catch (cause) {
+          stopping = Promise.reject(cause);
+        }
+        const [stopped] = await Promise.allSettled([stopping, preparing, removing]);
+        owner = undefined;
+        preparing = undefined;
+        removing = undefined;
+        if (stopped.status === 'rejected') throw stopped.reason;
+      });
+
+      it('lists at most twenty paths and counts the rest', async () => {
+        removing = (async () => {
+          requireOpen();
+          const baseCommit = await head();
+          requireOpen();
+          await editor.remove(ROOM_ID, ANA, { path: 'many', baseCommit });
+          requireOpen();
+
+          const change = announced.at(-1)!.fileChange;
+          expect(change.paths).toHaveLength(20);
+          expect(change.pathCount).toBe(21);
+        })();
+        await removing;
+      });
     });
 
     it('composes the sentence from sanitized segments, so a hostile path is inert', async () => {
