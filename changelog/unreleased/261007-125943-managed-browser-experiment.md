@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'fix(browser): forward selection copy to the owned browser'
   - 'fix(browser): diagnose selection and native frame acceptance failures'
   - 'fix(browser): retain page cache and cancelled viewer disposal'
   - 'fix(browser): preserve warmup cookies and enforce measured viewer limits'

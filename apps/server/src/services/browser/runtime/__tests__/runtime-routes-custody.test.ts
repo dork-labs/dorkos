@@ -515,7 +515,7 @@ it('fences an already queued valid request after another original registration f
   expect(publish).not.toHaveBeenCalled();
 });
 
-it.each(['/input', '/viewers/issue', '/viewers/next', '/viewers/disconnect'])(
+it.each(['/input', '/copy-selection', '/viewers/issue', '/viewers/next', '/viewers/disconnect'])(
   'fences delegated %s after an original request-body getter reentrantly latches failure',
   async (path) => {
     const f = fixture(path);
@@ -788,5 +788,43 @@ it.each([
     expect(JSON.parse(write.mock.calls[0]![0].toString())).toEqual({
       error: 'The shared browser needs a verified installation and a signed-in owner.',
     });
+  }
+);
+
+it.each(['current', 'invalid', 'unavailable'] as const)(
+  'routes owner copy selection by its exact command binding: %s',
+  (state) => {
+    const f = fixture('/input');
+    const originals: { close?: Promise<void> } = {};
+    onTestFinished(() => originals.close ?? f.routes.close());
+    const layer = f.routes.router.stack.find(
+      (entry) => Array.isArray(entry.route?.path) && entry.route.path.includes('/copy-selection')
+    );
+    // The public mount must reach the same original session capability as ordinary input.
+    expect(layer).toBeDefined();
+    if (!layer) throw new Error('COPY_SESSION_DELEGATION_MISSING');
+    const command = {
+      requestId: 'r'.repeat(22),
+      binding: state === 'invalid' ? { ...optionalBinding, epoch: -1 } : optionalBinding,
+    };
+    f.req.body = { controllerId: 'c'.repeat(22), command };
+    if (state === 'unavailable') originals.close = f.routes.close();
+    layer.route!.stack[0]!.handle(
+      f.req as unknown as Request,
+      f.res as unknown as Response,
+      () => {}
+    );
+    if (state === 'current') {
+      expect(f.originalForBinding).toHaveBeenCalledExactlyOnceWith(optionalBinding);
+      expect(f.delegate).toHaveBeenCalledExactlyOnceWith(f.req, f.res, expect.any(Function));
+      expect(f.req.body).toEqual({ controllerId: 'c'.repeat(22), command });
+      expect(f.res.statusCode).toBe(200);
+    } else {
+      expect(f.originalForBinding).not.toHaveBeenCalled();
+      expect(f.delegate).not.toHaveBeenCalled();
+      expect(f.res.statusCode).toBe(404);
+    }
+    expect(f.originalForTicket).not.toHaveBeenCalled();
+    expect(f.originalForAttachment).not.toHaveBeenCalled();
   }
 );

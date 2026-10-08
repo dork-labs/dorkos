@@ -526,7 +526,7 @@ export function createProductionBrowserRuntimeRoutes(
       res.status(404).json({ error: 'Browser resource not found' });
     }
   });
-  router.post(['/viewers/issue', '/input'], (req, res, next) => {
+  router.post(['/viewers/issue', '/input', '/copy-selection'], (req, res, next) => {
     let stage: BrowserViewerDiagnosticStage = 'router.binding-parse';
     try {
       const binding = BrowserBindingSchema.parse(req.body?.binding ?? req.body?.command?.binding);
