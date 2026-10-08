@@ -22,7 +22,7 @@ const CLAUDE_READY: SystemRequirements['runtimes']['x'] = {
   dependencies: [
     {
       name: 'Claude Code CLI',
-      description: 'The Claude Code CLI powers agent sessions in DorkOS.',
+      description: 'The Claude Code CLI powers agent chats in DorkOS.',
       status: 'satisfied',
       version: '1.0.31',
     },

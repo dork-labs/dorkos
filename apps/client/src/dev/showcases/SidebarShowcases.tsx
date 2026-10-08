@@ -97,7 +97,7 @@ function SidebarRowShowcase() {
             trailingAction={{
               content: <LiveChip />,
               onClick: () => {},
-              label: '3 live sessions',
+              label: '3 live chats',
             }}
           />
         </RowFrame>
@@ -193,7 +193,7 @@ function SidebarRowShowcase() {
             trailingAction={{
               content: <LiveChip />,
               onClick: () => {},
-              label: '3 live sessions',
+              label: '3 live chats',
             }}
           />
         </RowFrame>
@@ -214,7 +214,7 @@ function SidebarRowShowcase() {
             trailingAction={{
               content: <LiveChip />,
               onClick: () => {},
-              label: '3 live sessions',
+              label: '3 live chats',
             }}
           />
         </RowFrame>
@@ -275,7 +275,7 @@ function SidebarRowShowcase() {
                 trailingAction={{
                   content: <LiveChip />,
                   onClick: () => {},
-                  label: '3 live sessions',
+                  label: '3 live chats',
                 }}
               />
             </RowFrame>
