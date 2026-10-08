@@ -821,6 +821,9 @@ importers:
       '@dorkos/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@dorkos/doe':
+        specifier: workspace:*
+        version: link:../../packages/doe
       '@dorkos/extension-api':
         specifier: workspace:*
         version: link:../../packages/extension-api
@@ -1517,15 +1520,15 @@ importers:
 
   packages/doe:
     dependencies:
-      '@earendil-works/pi-mcp':
-        specifier: 1.0.4
-        version: 1.0.4
       '@earendil-works/pi-agent-core':
         specifier: 1.0.4
         version: 1.0.4(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.30.1(@cfworker/json-schema@4.1.1)(zod@4.6.5))(@smithy/signature-v4@5.7.3)(undici@7.30.0)(ws@8.22.0)(zod@4.6.5)
       '@earendil-works/pi-ai':
         specifier: 1.0.4
         version: 1.0.4(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.30.1(@cfworker/json-schema@4.1.1)(zod@4.6.5))(@smithy/signature-v4@5.7.3)(undici@7.30.0)(ws@8.22.0)(zod@4.6.5)
+      '@earendil-works/pi-mcp':
+        specifier: 1.0.4
+        version: 1.0.4
       better-sqlite3:
         specifier: ^12.11.1
         version: 12.11.1

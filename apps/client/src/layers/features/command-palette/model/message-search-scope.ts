@@ -37,6 +37,7 @@ import { SEARCH_MIN_QUERY_LENGTH } from '@dorkos/shared/search-schemas';
  */
 export const SEARCH_SCOPE_COVERED: readonly string[] = [
   'Your channels and direct messages, as soon as they’re posted.',
+  'DorkOS conversations can lag five minutes.',
   'Claude Code, Codex and OpenCode conversations, even outside DorkOS. These can lag five minutes.',
 ];
 
@@ -65,7 +66,7 @@ export const SEARCH_SCOPE_GAPS: readonly string[] = [
  * as the disclosure that opens the rest.
  */
 export const SEARCH_SCOPE_SUMMARY =
-  'Searches channels, direct messages, and Claude Code, Codex and OpenCode conversations. Not tool output.';
+  'Searches channels, direct messages, and DorkOS, Claude Code, Codex and OpenCode conversations. Not tool output.';
 
 /**
  * Stating it is the whole point. A search box that quietly returned less than

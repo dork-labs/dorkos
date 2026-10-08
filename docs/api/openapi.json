@@ -834,7 +834,8 @@
             "enum": [
               "claude-code",
               "codex",
-              "opencode"
+              "opencode",
+              "doe"
             ]
           },
           "accountId": {
@@ -9280,6 +9281,7 @@
           "cursor",
           "codex",
           "opencode",
+          "doe",
           "windsurf",
           "gemini",
           "cline",
@@ -30963,7 +30965,8 @@
               "enum": [
                 "claude-code",
                 "codex",
-                "opencode"
+                "opencode",
+                "doe"
               ],
               "description": "The runtime slug."
             },

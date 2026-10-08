@@ -75,7 +75,7 @@ export interface RoomCanvasRuntimeConstruction {
 
 /** Drive two original Room dispatches; the first creates one canvas document and the second reads it. */
 export async function driveRoomCanvasTurn(options: {
-  runtime: 'claude-code' | 'codex' | 'opencode';
+  runtime: 'claude-code' | 'codex' | 'opencode' | 'doe';
   testMode?: boolean;
   createRuntime: (construction: RoomCanvasRuntimeConstruction) => AgentRuntime;
   releaseProvider?: () => void | Promise<void>;

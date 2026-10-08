@@ -12,7 +12,12 @@
  */
 import { randomBytes } from 'node:crypto';
 import type { InferenceFormat, InferenceToken } from '@dork-labs/cloud-api';
-import type { RuntimeCreditsProtocol } from '@dorkos/shared/agent-runtime';
+import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
+import type {
+  AgentRuntime,
+  RuntimeCapabilities,
+  RuntimeCreditsProtocol,
+} from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 
 /** Why a launch that chose credits cannot have them. */
@@ -278,4 +283,25 @@ export function creditsEnvFor(launch: CreditsLaunch): Record<string, string> {
  */
 export function creditsTokenEnv(launch: CreditsLaunch, tokenVar: string): Record<string, string> {
   return { [tokenVar]: launch.token };
+}
+
+/**
+ * Credits capabilities for a conversation or the current runtime configuration.
+ * The returned view never changes the runtime's stable declaration.
+ *
+ * @param runtime - Runtime declaring supported request formats.
+ * @param sessionId - Conversation whose frozen format should be used.
+ */
+export function creditsCapabilitiesFor(
+  runtime: Pick<AgentRuntime, 'getCapabilities' | 'getCreditsProtocol'>,
+  sessionId?: string
+): RuntimeCapabilities {
+  const capabilities = runtime.getCapabilities();
+  const protocol = runtime.getCreditsProtocol?.(sessionId);
+  if (protocol === undefined) return capabilities;
+  const support = capabilities.credits;
+  if (!support || !(support.supportedProtocols ?? [support.protocol]).includes(protocol)) {
+    throw new CreditsUnavailableError('not-supported', runtimeDisplayName(capabilities.type));
+  }
+  return { ...capabilities, credits: { ...support, protocol, supportedProtocols: [protocol] } };
 }

@@ -67,6 +67,8 @@ export const RUNTIME_HARNESSES: Readonly<Record<string, HarnessId | null>> = {
   'claude-code': 'claude-code',
   codex: 'codex',
   opencode: 'opencode',
+  // DorkOS reads canonical sources directly, without a vendor projection.
+  doe: null,
   'test-mode': null,
 };
 

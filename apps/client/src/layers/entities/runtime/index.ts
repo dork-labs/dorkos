@@ -43,6 +43,7 @@ export type {
 export {
   RUNTIME_DESCRIPTORS,
   PRIMARY_RUNTIME_TYPES,
+  SELECTABLE_RUNTIME_TYPES,
   getRuntimeDescriptor,
   runtimeLabel,
 } from './config/runtime-descriptors';

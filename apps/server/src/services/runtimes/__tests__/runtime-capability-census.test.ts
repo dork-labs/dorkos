@@ -64,6 +64,7 @@ import { CLAUDE_CODE_CAPABILITIES } from '../claude-code/runtime-constants.js';
 import { CODEX_APP_SERVER_CAPABILITIES, CODEX_CAPABILITIES } from '../codex/runtime-constants.js';
 import { resolveCodexTransport } from '../codex/transport/index.js';
 import { OPENCODE_CAPABILITIES } from '../opencode/runtime-constants.js';
+import { DOE_CAPABILITIES } from '../doe/runtime-constants.js';
 import { TEST_MODE_CAPABILITIES } from '../test-mode/runtime-constants.js';
 
 /** The repository root, six levels above this file. */
@@ -87,6 +88,7 @@ const DECLARED: Readonly<Record<MatrixRuntime, RuntimeCapabilities>> = {
       ? { ...CODEX_CAPABILITIES, ...CODEX_APP_SERVER_CAPABILITIES }
       : CODEX_CAPABILITIES,
   opencode: OPENCODE_CAPABILITIES,
+  doe: DOE_CAPABILITIES,
   'test-mode': TEST_MODE_CAPABILITIES,
 };
 
@@ -145,7 +147,11 @@ const unparsed: string[] = [];
 for (const runtime of MATRIX_RUNTIMES) {
   const ids = new Set<string>();
   let count = 0;
-  for (const file of testFiles(runtimeDir(runtime))) {
+  // Doe owns its standalone engine as well as the host adapter; both are first-party runtime tests.
+  // Vendor runtimes retain their existing adapter-only floor and cannot count upstream SDK tests.
+  const directories =
+    runtime === 'doe' ? [runtimeDir(runtime), 'packages/doe/src'] : [runtimeDir(runtime)];
+  for (const file of directories.flatMap(testFiles)) {
     const { titles, parseErrors } = titlesOf(file);
     if (parseErrors > 0) unparsed.push(file);
     count += titles.length;

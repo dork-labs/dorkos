@@ -11,6 +11,7 @@ const CONFIG_RUNTIME = {
   'claude-code': 'claudeCode',
   codex: 'codex',
   opencode: 'opencode',
+  doe: 'doe',
 } as const;
 
 /**

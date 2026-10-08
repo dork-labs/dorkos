@@ -11,6 +11,10 @@ const CLAUDE_SDK_BAN = {
   message:
     'Claude Agent SDK imports are confined to services/runtimes/claude-code/. Import from the AgentRuntime interface instead.',
 };
+const DOE_SDK_BAN = {
+  group: ['@dorkos/doe', '@dorkos/doe/*', '@earendil-works/pi-*', '@mariozechner/pi-*'],
+  message: 'Doe and Pi imports are confined to services/runtimes/doe/. Use AgentRuntime elsewhere.',
+};
 const CODEX_SDK_BAN = {
   group: ['@openai/codex-sdk', '@openai/codex-sdk/*'],
   message:
@@ -72,6 +76,7 @@ const GRAY_MATTER_BAN = {
 // restating the list is exactly the kind of thing that drifts).
 const ALL_CONFINED = [
   CLAUDE_SDK_BAN,
+  DOE_SDK_BAN,
   CODEX_SDK_BAN,
   OPENCODE_SDK_BAN,
   NODE_PTY_BAN,
@@ -231,6 +236,7 @@ export default defineConfig([
       'src/services/runtimes/claude-code/**',
       'src/services/runtimes/codex/**',
       'src/services/runtimes/opencode/**',
+      'src/services/runtimes/doe/**',
       'src/services/terminal/**',
       'src/services/observability/**',
       'src/lib/dork-home.ts',
@@ -346,6 +352,11 @@ export default defineConfig([
   ...confineDirectory(
     'src/services/runtimes/opencode',
     ALL_CONFINED.filter((ban) => ban !== OPENCODE_SDK_BAN)
+  ),
+
+  ...confineDirectory(
+    'src/services/runtimes/doe',
+    ALL_CONFINED.filter((ban) => ban !== DOE_SDK_BAN)
   ),
 
   ...testConfig,

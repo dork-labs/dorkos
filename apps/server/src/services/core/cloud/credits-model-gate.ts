@@ -22,6 +22,7 @@ import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { runtimeRegistry } from '../runtime-registry.js';
 import type { LaunchAccountResolution } from '../../runtimes/claude-code/claude-config-dir.js';
 import { creditsAllowedForAgent, creditsIsDefaultFor } from './credits-defaults.js';
+import { creditsCapabilitiesFor } from './credits-protocols.js';
 import { judgeCreditsModel } from './credits-models.js';
 
 /**
@@ -188,13 +189,15 @@ export async function resolvedModelFor(
  *
  * @param runtime - The runtime the work runs on.
  * @param model - The model the write names.
+ * @param sessionId - Conversation whose frozen request format applies.
  */
 export async function creditsModelRefusal(
-  runtime: Pick<AgentRuntime, 'getCapabilities' | 'getSupportedModels'>,
-  model: string
+  runtime: Pick<AgentRuntime, 'getCapabilities' | 'getSupportedModels' | 'getCreditsProtocol'>,
+  model: string,
+  sessionId?: string
 ): Promise<string | null> {
   const verdict = await judgeCreditsModel(
-    runtime.getCapabilities(),
+    creditsCapabilitiesFor(runtime, sessionId),
     model,
     await resolvedModelFor(runtime, model)
   );

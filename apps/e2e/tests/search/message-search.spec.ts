@@ -42,7 +42,7 @@
  */
 import { test, expect } from '../../fixtures';
 import { SERVER_ROUND_TRIP_MS } from '../../fixtures/rooms-api';
-import { openCockpit } from '../rooms/open-cockpit';
+import { openCockpit as openApp } from '../rooms/open-cockpit';
 
 // One at a time, with a ceiling sized for a machine several worktrees deep in
 // concurrent agents — the same posture the rooms specs take for the same reason.
@@ -76,7 +76,7 @@ test.describe('Message search', () => {
 
     // Load AFTER seeding: the sidebar learns of a room made while the page is
     // up only from a live event, which would make this a test about a race.
-    await openCockpit(basePage);
+    await openApp(basePage);
 
     // The key a person presses, not a store poke.
     await page.keyboard.press('ControlOrMeta+Shift+F');
@@ -116,7 +116,7 @@ test.describe('Message search', () => {
     // and the rest is one click down. The literal wording is pinned by the
     // client's own test; this asserts only that both halves are really there in
     // a real browser, which a unit test cannot.
-    await openCockpit(basePage);
+    await openApp(basePage);
 
     await page.keyboard.press('ControlOrMeta+Shift+F');
     const dialog = page.getByTestId('message-search-dialog');
@@ -129,12 +129,21 @@ test.describe('Message search', () => {
     // block had been deleted. `aria-expanded` on the trigger is the assertion
     // that can actually fail.
     await expect(scopeLine).toHaveAttribute('aria-expanded', 'false');
+    const dorkosDelay = dialog.getByText('DorkOS conversations can lag five minutes.', {
+      exact: true,
+    });
+    const vendorDelay = dialog.getByText(
+      'Claude Code, Codex and OpenCode conversations, even outside DorkOS. These can lag five minutes.',
+      { exact: true }
+    );
+    await expect(dorkosDelay).toBeHidden();
+    await expect(vendorDelay).toBeHidden();
     await expect(dialog.getByText(/Tool output is never searched/)).toBeHidden();
 
     await scopeLine.click();
-    // A fragment the one-line summary does not also carry, so this can only be
-    // the revealed detail.
-    await expect(dialog.getByText(/lag five minutes/)).toBeVisible();
+    // Both runtime-specific delay notes must be reachable in the revealed detail.
+    await expect(dorkosDelay).toBeVisible();
+    await expect(vendorDelay).toBeVisible();
     await expect(dialog.getByText(/Tool output is never searched/)).toBeVisible();
   });
 });

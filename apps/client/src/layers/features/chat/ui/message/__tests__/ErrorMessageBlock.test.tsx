@@ -1194,7 +1194,7 @@ const CREDITS_STATUS = {
   killed: false,
   linked: true,
   ready: true,
-  runtimes: { 'claude-code': 'wired', codex: 'wired', opencode: 'wired' },
+  runtimes: { 'claude-code': 'wired', codex: 'wired', opencode: 'wired', doe: 'follow-up' },
 };
 
 describe('ErrorMessageBlock — a turn refused because DorkOS credits could not pay (ADR 261001-000811)', () => {

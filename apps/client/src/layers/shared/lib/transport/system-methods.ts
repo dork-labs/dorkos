@@ -1,5 +1,7 @@
 import { CanvasDocumentSaveIdentitySchema } from '@dorkos/shared/schemas';
 import { CanvasChannelEventReceiptSchema } from '@dorkos/shared/canvas-channel-schemas';
+import type { DoeCreditsCatalog } from '@dorkos/shared/runtime-connect';
+import type { DoeInferenceConfig } from '@dorkos/shared/config-schema';
 /**
  * System Transport methods factory — filesystem, config, health, tunnel, admin,
  * discovery, activity, templates, uploads, and agent config.
@@ -543,6 +545,30 @@ export function createSystemMethods(baseUrl: string) {
 
     // ── Runtime Connect (terminal-free auth) ──────────────────────────────
 
+    getDoeInference(): Promise<{ inference: DoeInferenceConfig | null; hasKey: boolean }> {
+      return fetchJSON(baseUrl, '/runtimes/doe/inference');
+    },
+    setDoeInference(inference: DoeInferenceConfig): Promise<{ ok: true }> {
+      return fetchJSON(baseUrl, '/runtimes/doe/inference', {
+        method: 'PUT',
+        body: JSON.stringify(inference),
+      });
+    },
+    storeDoeCredential(
+      inference: DoeInferenceConfig,
+      secret: string
+    ): Promise<{ ok: true; hasKey: boolean }> {
+      return fetchJSON(baseUrl, '/runtimes/doe/credential', {
+        method: 'POST',
+        body: JSON.stringify({ inference, secret }),
+      });
+    },
+    getDoeCreditsModels(protocol: DoeInferenceConfig['protocol']): Promise<DoeCreditsCatalog> {
+      return fetchJSON(
+        baseUrl,
+        `/runtimes/doe/credits-models?protocol=${encodeURIComponent(protocol)}`
+      );
+    },
     storeRuntimeCredential(type: string, secret: string): Promise<StoreCredentialResult> {
       return fetchJSON<StoreCredentialResult>(
         baseUrl,

@@ -52,7 +52,12 @@ function creditsReport(over: Partial<CloudCreditsStatus> = {}): CloudCreditsStat
     killed: false,
     linked: false,
     ready: false,
-    runtimes: { 'claude-code': 'wired', codex: 'follow-up', opencode: 'follow-up' },
+    runtimes: {
+      'claude-code': 'wired',
+      codex: 'follow-up',
+      opencode: 'follow-up',
+      doe: 'follow-up',
+    },
     defaults: {},
     notices: [],
     ...over,
@@ -351,7 +356,12 @@ describe('a runtime connect step that does not lead with credits', () => {
   it('offers nothing for a runtime credits are not wired for', async () => {
     const { queryClient } = setup({
       credits: creditsReport({
-        runtimes: { 'claude-code': 'follow-up', codex: 'follow-up', opencode: 'follow-up' },
+        runtimes: {
+          'claude-code': 'follow-up',
+          codex: 'follow-up',
+          opencode: 'follow-up',
+          doe: 'follow-up',
+        },
       }),
     });
     await settled(queryClient);
@@ -390,7 +400,12 @@ describe('a runtime connect step that does not lead with credits', () => {
   // Codex can't search the web on credits, and every place that can move it
   // there says so (DOR-2679).
   it('says what Codex does not get on credits, on the card and once it runs on them', async () => {
-    const wiredCodex = { 'claude-code': 'wired', codex: 'wired', opencode: 'follow-up' } as const;
+    const wiredCodex = {
+      'claude-code': 'wired',
+      codex: 'wired',
+      opencode: 'follow-up',
+      doe: 'follow-up',
+    } as const;
     setup({ runtime: 'codex', credits: creditsReport({ runtimes: wiredCodex }) });
     expect(await screen.findByTestId('credits-offer-caveat')).toHaveTextContent(
       "Codex can't search the web on DorkOS credits."

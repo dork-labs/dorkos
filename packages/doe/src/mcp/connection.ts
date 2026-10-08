@@ -113,7 +113,7 @@ export class McpConnection {
       throw new Error('Invalid MCP server identity');
     this.limits = {
       connectTimeoutMs: positive(limits.connectTimeoutMs ?? 10000, 300000),
-      callTimeoutMs: positive(limits.callTimeoutMs ?? 30000, 300000),
+      callTimeoutMs: positive(limits.callTimeoutMs ?? 30000, 86400000),
       maxMessageBytes: positive(limits.maxMessageBytes ?? 1048576, 16777216),
       maxDiscoveryBytes: positive(limits.maxDiscoveryBytes ?? 4194304, 33554432),
       maxTools: positive(limits.maxTools ?? 2000, 10000),

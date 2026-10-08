@@ -44,7 +44,7 @@ import { cn } from '@/layers/shared/lib';
 import { LEDGER_RUNTIMES } from '@dorkos/shared/account-usage';
 import { useAccountUsage, useClaudeAccounts, useTransport } from '@/layers/shared/model';
 import { Badge, Button, InlineCode, Spinner } from '@/layers/shared/ui';
-import { configKeys, useConfig, useUpdateConfig } from '@/layers/entities/config';
+import { configKeys, useConfig, useLocalCaller, useUpdateConfig } from '@/layers/entities/config';
 import {
   CommandTransparencyNote,
   DependencyInstallHint,
@@ -194,10 +194,17 @@ export function RuntimeCard({
   const readiness = selectRuntimeReadiness(requirements, type, registered);
   const ready = readiness.state === 'ready';
 
+  const localCaller = useLocalCaller();
+  const { data: doeSettings } = useQuery({
+    queryKey: ['doe-inference'],
+    queryFn: () => transport.getDoeInference(),
+    enabled: type === 'doe' && localCaller,
+  });
   const descriptor = getRuntimeDescriptor(type);
   const settings = settingsForRuntime(capabilityMap, type);
   const defaults = config?.executionDefaults?.perRuntime.find((e) => e.runtime === type);
-  const configuredModel = defaults?.model ?? null;
+  const configuredModel =
+    defaults?.model ?? (type === 'doe' ? doeSettings?.inference?.model : null) ?? null;
   const requirementsEntry = requirements?.runtimes[type];
   // Null nearly always: only a credential that reports a real deadline, close
   // enough to act on, says anything here.
@@ -422,7 +429,7 @@ export function RuntimeCard({
           models,
           value: configuredModel,
           onChange: (value) => writeForRuntime({ defaultModel: value }),
-          disabled: writesPending,
+          disabled: writesPending || type === 'doe',
         }}
         effort={{
           // Both answers the row needs, from the two places that hold them: the

@@ -1,3 +1,4 @@
+import { creditsCapabilitiesFor } from '../services/core/cloud/credits-protocols.js';
 /**
  * The model gate: whether a session's runtime can run the model a request
  * names. Shared by `PATCH /api/sessions/:id` (the model picker) and
@@ -20,6 +21,8 @@ export interface ModelGateOptions {
    * catalog says.
    */
   onCredits?: boolean;
+  /** Conversation whose frozen request format applies. */
+  sessionId?: string;
 }
 
 /**
@@ -70,7 +73,7 @@ export async function rejectUnknownModel(
   // service that says nothing leaves the runtime's own check below in charge.
   if (options.onCredits) {
     const verdict = await judgeCreditsModel(
-      runtime.getCapabilities(),
+      creditsCapabilitiesFor(runtime, options.sessionId),
       model,
       await resolvedModelFor(runtime, model)
     );

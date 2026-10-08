@@ -2,6 +2,14 @@
   "version": 1,
   "specs": [
     {
+      "id": "261008-052829",
+      "slug": "doe-runtime",
+      "title": "DorkOS runtime backed by Doe",
+      "created": "2026-10-08",
+      "status": "implemented",
+      "linearIssue": "DOR-2787"
+    },
+    {
       "id": "261007-225912",
       "slug": "doe-engine",
       "title": "Doe standalone business agent engine",

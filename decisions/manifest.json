@@ -2,6 +2,20 @@
   "version": 1,
   "decisions": [
     {
+      "id": "261008-052830",
+      "slug": "doe-host-boundaries",
+      "title": "Doe uses platform boundaries and explicit inference sources",
+      "status": "accepted",
+      "created": "2026-10-08",
+      "extractedFrom": "doe-runtime",
+      "specSlug": "doe-runtime",
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/runtimes/doe/**",
+        "packages/shared/src/agent-runtime.ts"
+      ]
+    },
+    {
       "id": "261007-230223",
       "slug": "doe-core-engine-and-model-history",
       "title": "Doe uses Pi core behind an engine port and owns its complete model history",

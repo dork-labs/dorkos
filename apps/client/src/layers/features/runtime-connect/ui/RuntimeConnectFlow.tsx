@@ -36,6 +36,7 @@ import { useCreditsOfferSlot, useSetCreditsDefault } from '@/layers/shared/model
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/layers/shared/ui';
 import { creditsConnectSuccess } from '../lib/connect-success';
 import { LoginConnect } from './LoginConnect';
+import { DoeInferenceForm } from './DoeInferenceForm';
 import { OpenCodeProviderPicker } from './OpenCodeProviderPicker';
 
 /** Render the terminal-free connect flow for a not-ready runtime. */
@@ -64,6 +65,9 @@ export function RuntimeConnectFlow({
   // link is approved on dorkos.ai and the choice is an account write the
   // owner may make from anywhere, so a phone is offered credits too, with the
   // notice standing in for the runtime's own ways.
+  if (type === 'doe')
+    return isLocalCaller ? <DoeInferenceForm onConnected={onConnected} /> : <RemoteSigninNotice />;
+
   const lead = offer === 'lead' && renderCreditsOffer !== null;
   const ownWays = !isLocalCaller ? (
     <RemoteSigninNotice />

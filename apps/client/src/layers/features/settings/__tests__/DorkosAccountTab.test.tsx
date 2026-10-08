@@ -20,7 +20,7 @@ const NOT_LINKED = {
   killed: false,
   linked: false,
   ready: false,
-  runtimes: { 'claude-code': 'wired', opencode: 'follow-up', codex: 'follow-up' },
+  runtimes: { 'claude-code': 'wired', opencode: 'follow-up', codex: 'follow-up', doe: 'follow-up' },
 } as const;
 
 function renderTab(transport: Transport) {
@@ -59,7 +59,7 @@ describe('DorkosAccountTab', () => {
   it('signed out: the credits line follows the server’s wired set, by name, never by id', async () => {
     const getCloudCredits = vi.fn().mockResolvedValue({
       ...NOT_LINKED,
-      runtimes: { 'claude-code': 'wired', opencode: 'follow-up', codex: 'wired' },
+      runtimes: { 'claude-code': 'wired', opencode: 'follow-up', codex: 'wired', doe: 'follow-up' },
     });
     renderTab(createMockTransport({ getCloudCredits }));
     const benefit = await screen.findByText(/Use one account for/);

@@ -26,7 +26,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { Shuffle } from 'lucide-react';
 import { useSessions, notifySessionLookupFailed } from '@/layers/entities/session';
 import {
-  PRIMARY_RUNTIME_TYPES,
+  SELECTABLE_RUNTIME_TYPES,
   RuntimeSetupDialog,
   getRuntimeDescriptor,
   isRuntimeReady,
@@ -96,7 +96,7 @@ export function EntryRunWithMenu({
   // Offer the primary siblings other than the one this prompt already ran on —
   // "run this elsewhere". A runtime the server has not registered still appears
   // (its Connect flow can install/connect it first).
-  const targets = PRIMARY_RUNTIME_TYPES.filter((type) => type !== currentRuntime);
+  const targets = SELECTABLE_RUNTIME_TYPES.filter((type) => type !== currentRuntime);
 
   const isReady = (type: string) => {
     const registered = capabilityMap ? type in capabilityMap.capabilities : true;
