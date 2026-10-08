@@ -2,6 +2,7 @@
 covers:
   - 'feat(sidebar): Today and agent clicks follow what you touched (DOR-2789)'
   - 'fix(sidebar): keep the digest on landing and record only visible chats (DOR-2789)'
+  - 'refactor(session): name the chat route through SESSION_ROUTE in the open recorder (DOR-2789)'
 ---
 
 ### Changed
