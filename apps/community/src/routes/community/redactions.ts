@@ -43,7 +43,7 @@ export function registerRedactionRoutes(
       ? null
       : await auth.api.getSession({ headers: c.req.raw.headers });
     if (!principal.credentialHash && !openedSession)
-      throw new ApiError(401, 'UNAUTHENTICATED', 'This session is unavailable.');
+      throw new ApiError(401, 'UNAUTHENTICATED', 'This sign-in is no longer valid.');
     const parsed = CommunityWireRedactionPageQuerySchema.parse(
       Object.fromEntries(new URL(c.req.url).searchParams)
     );
