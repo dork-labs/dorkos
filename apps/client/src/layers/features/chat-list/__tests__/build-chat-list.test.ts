@@ -326,6 +326,14 @@ describe('buildChatList — placement edges the review asked for', () => {
     expect(layout(build([earlier, same, later])).chats).toEqual(['later', 'same', 'earlier']);
   });
 
+  it('puts a chat whose time does not parse last, whatever order the chats arrive in', () => {
+    const broken = yours('broken', 0, { lastTouchedByYouAt: 'not a time', updatedAt: 'nope' });
+    const epoch = yours('epoch', 0, { lastTouchedByYouAt: '1970-01-01T00:00:00.000Z' });
+    const recent = yours('recent', 1);
+    expect(layout(build([broken, epoch, recent])).chats).toEqual(['recent', 'epoch', 'broken']);
+    expect(layout(build([recent, broken, epoch])).chats).toEqual(['recent', 'epoch', 'broken']);
+  });
+
   it('decides the runtime mark from every chat, not just the search results', () => {
     const model = build([yours('Plan', 1), yours('Port', 2, { runtime: 'codex' })], {
       query: 'plan',

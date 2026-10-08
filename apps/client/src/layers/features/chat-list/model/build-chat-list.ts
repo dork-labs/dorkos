@@ -199,9 +199,16 @@ function sortKey(session: Session, sort: ChatListSort): number {
 
 /** Newest first by `key`; ties broken by id so the order never depends on input order. */
 function byKeyDesc<T extends { session: Session }>(key: (session: Session) => number) {
+  // A time that does not parse sorts last rather than poisoning the comparator:
+  // NaN beside real numbers would make the order depend on input order.
+  const safeKey = (session: Session) => {
+    const value = key(session);
+    return Number.isNaN(value) ? Number.NEGATIVE_INFINITY : value;
+  };
   return (a: T, b: T): number => {
-    const diff = key(b.session) - key(a.session);
-    if (diff !== 0 && !Number.isNaN(diff)) return diff;
+    const keyA = safeKey(a.session);
+    const keyB = safeKey(b.session);
+    if (keyA !== keyB) return keyB > keyA ? 1 : -1;
     return a.session.id < b.session.id ? -1 : a.session.id > b.session.id ? 1 : 0;
   };
 }
