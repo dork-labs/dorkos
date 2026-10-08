@@ -291,7 +291,15 @@ export async function observeDarwinJournal(
             }
             childFacts = [fact];
           } else {
-            const children = await options.observer.children!(parent.identity);
+            const enrollBaseline =
+              index >= originalParentCount && parent.role === 'descendant'
+                ? options.leafEvents?.enrollBaseline
+                : undefined;
+            const baseline = enrollBaseline
+              ? await enrollBaseline.call(options.leafEvents, parent.identity, next.sequence)
+              : undefined;
+            if (enrollBaseline && !baseline) throw new Error('LEAF_EVENT_BASELINE_UNAVAILABLE');
+            const children = baseline ?? (await options.observer.children!(parent.identity));
             const complete = children.complete;
             if (!complete || !checkBoot(children)) {
               if (

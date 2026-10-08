@@ -269,6 +269,8 @@ static int leaf_drain(struct leaf_receiver *owner) {
   if (count < 0 || count == DORKOS_DARWIN_REQUEST_MAX) return EOVERFLOW;
   return leaf_events(owner, events, count);
 }
+static int print_reply_body(const struct dorkos_darwin_batch *, const struct dorkos_darwin_children *);
+
 static int leaf_command(struct leaf_receiver *owner, const char *line) {
   unsigned slot = 0;
   int used = 0, pid = 0;
@@ -305,14 +307,21 @@ static int leaf_command(struct leaf_receiver *owner, const char *line) {
   const int same = !after_error && after.pbi_status != SZOMB &&
     after.pbi_start_tvsec == seconds && after.pbi_start_tvusec == microseconds &&
     after.pbi_ppid == before.pbi_ppid;
-  watch->admitted = !error && census.complete && !census.batch.count && same &&
+  const int baseline_stable = !error && census.complete && same &&
     census.batch.boot_seconds == boot_seconds && census.batch.boot_microseconds == boot_microseconds &&
     census.parent_before.seconds == seconds && census.parent_before.microseconds == microseconds &&
     census.parent_after.seconds == seconds && census.parent_after.microseconds == microseconds &&
     census.parent_before.parent_pid == (pid_t)before.pbi_ppid &&
     census.parent_after.parent_pid == (pid_t)before.pbi_ppid &&
     !watch->dirty && !watch->exited;
-  return leaf_publish("watch", slot, watch->admitted ? "leaf" : "refused");
+  watch->admitted = baseline_stable && !census.batch.count;
+  if (!error) {
+    printf("{\"kind\":\"baseline\",\"slot\":%u,\"batch\":", slot);
+    if (print_reply_body(&census.batch, &census)) return EIO;
+    puts("}");
+    if (fflush(stdout)) return EIO;
+  }
+  return leaf_publish("watch", slot, watch->admitted ? "leaf" : baseline_stable ? "nonleaf" : "refused");
 }
 static int watch_leaves(void) {
   struct leaf_receiver owner;
@@ -357,7 +366,7 @@ static void print_identity(const struct dorkos_darwin_process *fact) {
     fact->pid, fact->seconds, fact->microseconds);
 }
 _Static_assert(sizeof(pid_t) <= 4 && sizeof(int) <= 4, "closed reply signed integer bound");
-static int print_reply(const struct dorkos_darwin_batch *batch, const struct dorkos_darwin_children *result) {
+static int print_reply_body(const struct dorkos_darwin_batch *batch, const struct dorkos_darwin_children *result) {
   printf("{\"version\":1,\"bootSeconds\":\"%" PRIu64 "\",\"bootMicroseconds\":\"%" PRIu64 "\"",
     batch->boot_seconds, batch->boot_microseconds);
   if (result) {
@@ -407,7 +416,12 @@ static int print_reply(const struct dorkos_darwin_batch *batch, const struct dor
       putchar('}');
     }
   }
-  puts("]}");
+  printf("]}");
+  return ferror(stdout) ? 1 : 0;
+}
+static int print_reply(const struct dorkos_darwin_batch *batch, const struct dorkos_darwin_children *result) {
+  if (print_reply_body(batch, result)) return 1;
+  putchar('\n');
   return ferror(stdout) ? 1 : 0;
 }
 /* One original request at a time; each executes the unchanged read-only probe. */

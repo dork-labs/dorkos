@@ -4,7 +4,7 @@ import {
   acceptsDarwinOwnedChildReturn,
   createDarwinOwnedChildLauncher,
 } from './darwin-owned-child.js';
-import type { DarwinChildrenBatch } from './darwin-process-observer.js';
+import { parseDarwinChildrenBatch, type DarwinChildrenBatch } from './darwin-process-observer.js';
 
 interface Watch {
   identity: ProcessIdentity;
@@ -13,6 +13,9 @@ interface Watch {
   forked: boolean;
   exited: boolean;
   consumed: boolean;
+  baseline?: DarwinChildrenBatch;
+  enrollment: Promise<void>;
+  baselineUsable: boolean;
 }
 interface State {
   boot: string;
@@ -25,6 +28,10 @@ interface State {
 export interface DarwinLeafEventOwner {
   identity(): Promise<ProcessIdentity>;
   enroll(identity: ProcessIdentity, epoch: number): Promise<void>;
+  enrollBaseline?(
+    identity: ProcessIdentity,
+    epoch: number
+  ): Promise<DarwinChildrenBatch | undefined>;
   close(): Promise<void>;
 }
 const owners = new WeakMap<DarwinLeafEventOwner, State>();
@@ -127,9 +134,14 @@ export async function openDarwinLeafEventOwner(
   const stdin = original.child.stdin;
   const stdout = original.child.stdout;
   const jobs = new Set<Promise<void>>();
+  // A children fact has no inspect details: exact C formatter <=160 bytes/fact.
+  // Reserve all 1024 possible original fork/exit rows as well, under the same lifetime cap.
+  const baselineReplyMax = 512 * 160 + 1024;
+  const eventReserve = 512 * 2 * 80;
+  let reservedReplies = 0;
   const replies = new Map<
     string,
-    { resolve(result: string): void; reject(value: unknown): void }
+    { resolve(result: string): void; reject(value: unknown): void; reserve: number }
   >();
   const state: State = {
     boot: `${boot.seconds}:${boot.microseconds}`,
@@ -145,6 +157,7 @@ export async function openDarwinLeafEventOwner(
     state.first ??= { value };
     for (const reply of replies.values()) reply.reject(state.first.value);
     replies.clear();
+    reservedReplies = 0;
   };
   const check = () => {
     requireOriginalEventFailureFree(state);
@@ -152,6 +165,12 @@ export async function openDarwinLeafEventOwner(
   };
   const send = (kind: 'watch' | 'barrier', slot: number, line: string): Promise<string> => {
     check();
+    const reserve = kind === 'watch' ? baselineReplyMax + 128 : 128;
+    if (retainedBytes + reservedReplies + eventReserve + reserve > 256 * 1024) {
+      const value = new Error('LEAF_EVENT_OVERFLOW');
+      fail(value);
+      throw value;
+    }
     let resolve!: (value: string) => void, reject!: (value: unknown) => void;
     const response = new Promise<string>((yes, no) => {
       resolve = yes;
@@ -160,7 +179,8 @@ export async function openDarwinLeafEventOwner(
     void response.catch(() => {});
     const key = `${kind}:${slot}`;
     if (replies.has(key)) throw new Error('LEAF_EVENT_OWNER_UNAVAILABLE');
-    replies.set(key, { resolve, reject });
+    reservedReplies += reserve;
+    replies.set(key, { resolve, reject, reserve });
     const writing = new Promise<void>((yes, no) => {
       if (!stdin) {
         no(new Error('LEAF_EVENT_OWNER_UNAVAILABLE'));
@@ -199,9 +219,39 @@ export async function openDarwinLeafEventOwner(
       pending = Buffer.concat([pending, chunk]);
       let newline: number;
       while ((newline = pending.indexOf(10)) >= 0) {
-        if (newline > 256) throw new Error('LEAF_EVENT_OWNER_UNAVAILABLE');
+        if (newline > baselineReplyMax) throw new Error('LEAF_EVENT_OWNER_UNAVAILABLE');
         const row: unknown = JSON.parse(pending.subarray(0, newline).toString('utf8'));
         pending = pending.subarray(newline + 1);
+        if (row && typeof row === 'object' && 'kind' in row && row.kind === 'baseline') {
+          if (
+            Object.keys(row).sort().join(',') !== 'batch,kind,slot' ||
+            !('slot' in row) ||
+            !('batch' in row)
+          )
+            throw new Error('LEAF_EVENT_OWNER_UNAVAILABLE');
+          const slot = row.slot;
+          if (typeof slot !== 'number' || !Number.isSafeInteger(slot) || slot < 1)
+            throw new Error('LEAF_EVENT_OWNER_UNAVAILABLE');
+          const watch = state.watches.get(slot);
+          if (!watch || watch.baseline || !replies.has(`watch:${slot}`))
+            throw new Error('LEAF_EVENT_OWNER_UNAVAILABLE');
+          const baseline = parseDarwinChildrenBatch(
+            Buffer.from(JSON.stringify(row.batch)),
+            watch.identity
+          );
+          for (const fact of baseline.processes) {
+            if (fact.kind === 'present') Object.freeze(fact.identity);
+            if (fact.kind === 'unknown' && fact.inspection) Object.freeze(fact.inspection);
+            Object.freeze(fact);
+          }
+          Object.freeze(baseline.processes);
+          if (baseline.parentBefore) Object.freeze(baseline.parentBefore);
+          if (baseline.parentAfter) Object.freeze(baseline.parentAfter);
+          if (baseline.parentObservation) Object.freeze(baseline.parentObservation);
+          watch.baseline = Object.freeze(baseline);
+          continue;
+        }
+        if (newline > 256) throw new Error('LEAF_EVENT_OWNER_UNAVAILABLE');
         if (
           !row ||
           typeof row !== 'object' ||
@@ -228,23 +278,40 @@ export async function openDarwinLeafEventOwner(
           if (
             !reply ||
             (value.kind === 'watch'
-              ? value.result !== 'leaf' && value.result !== 'refused'
+              ? value.result !== 'leaf' && value.result !== 'nonleaf' && value.result !== 'refused'
               : value.result !== 'settled')
           )
             throw new Error('LEAF_EVENT_OWNER_UNAVAILABLE');
           if (value.kind === 'watch') {
             const watch = state.watches.get(slot);
             if (!watch) throw new Error('LEAF_EVENT_OWNER_UNAVAILABLE');
+            const baseline = watch.baseline;
+            if (
+              value.result !== 'refused' &&
+              (!baseline ||
+                !baseline.complete ||
+                `${baseline.bootSeconds}:${baseline.bootMicroseconds}` !== state.boot ||
+                (value.result === 'leaf'
+                  ? baseline.processes.length !== 0
+                  : baseline.processes.length === 0))
+            )
+              throw new Error('LEAF_EVENT_OWNER_UNAVAILABLE');
+            watch.baselineUsable = value.result !== 'refused';
             watch.admitted = value.result === 'leaf' && !watch.forked && !watch.exited;
           }
+          reservedReplies -= reply.reserve;
           replies.delete(`${value.kind}:${slot}`);
           reply.resolve(value.result as string);
         }
       }
-      if (pending.length > 256) throw new Error('LEAF_EVENT_OWNER_UNAVAILABLE');
+      if (pending.length > baselineReplyMax) throw new Error('LEAF_EVENT_OWNER_UNAVAILABLE');
     } catch (value) {
       fail(value);
     }
+  });
+  original.child.stderr?.on('data', (chunk: Buffer) => {
+    retainedBytes += chunk.length;
+    if (chunk.length) fail(new Error('LEAF_EVENT_PIPE_UNCERTAIN'));
   });
   stdout?.once('end', () => {
     if (!state.closed || pending.length || replies.size)
@@ -253,43 +320,84 @@ export async function openDarwinLeafEventOwner(
   void original.completion().then((receipt) => {
     if (!state.closed || receipt.firstCause !== null) fail(new Error('LEAF_EVENT_CHILD_UNCERTAIN'));
   }, fail);
-  const owner: DarwinLeafEventOwner = Object.freeze({
-    identity: () => original.identity(),
-    async enroll(identity: ProcessIdentity, epoch: number) {
+  const enroll = async (identity: ProcessIdentity, epoch: number): Promise<void> => {
+    check();
+    if (!Number.isSafeInteger(epoch) || epoch < 0) throw new Error('LEAF_EVENT_OWNER_UNAVAILABLE');
+    const existing = [...state.watches.values()].find(
+      (watch) => watch.identity.pid === identity.pid
+    );
+    if (existing) {
+      if (!sameProcess(existing.identity, identity))
+        throw new Error('LEAF_EVENT_OWNER_UNAVAILABLE');
+      await existing.enrollment;
       check();
-      if (!Number.isSafeInteger(epoch) || epoch < 0)
-        throw new Error('LEAF_EVENT_OWNER_UNAVAILABLE');
-      if ([...state.watches.values()].some((watch) => watch.identity.pid === identity.pid)) return;
-      if (state.watches.size === 512) throw new Error('LEAF_EVENT_OVERFLOW');
-      const birth = /^darwin-bsd-start:([1-9][0-9]{0,19}):(0|[1-9][0-9]{0,5})$/.exec(
-        identity.birth
-      );
-      if (
-        !birth ||
-        BigInt(birth[1]) > 18446744073709551615n ||
-        !Number.isSafeInteger(identity.pid) ||
-        identity.pid < 1 ||
-        identity.pid > 2147483647
-      )
-        throw new Error('LEAF_EVENT_OWNER_UNAVAILABLE');
-      const slot = state.watches.size + 1;
-      const watch: Watch = {
-        identity: Object.freeze({ ...identity }),
-        epoch,
-        admitted: false,
-        forked: false,
-        exited: false,
-        consumed: false,
-      };
-      state.watches.set(slot, watch);
+      return;
+    }
+    if (state.watches.size === 512) throw new Error('LEAF_EVENT_OVERFLOW');
+    const birth = /^darwin-bsd-start:([1-9][0-9]{0,19}):(0|[1-9][0-9]{0,5})$/.exec(identity.birth);
+    if (
+      !birth ||
+      BigInt(birth[1]) > 18446744073709551615n ||
+      !Number.isSafeInteger(identity.pid) ||
+      identity.pid < 1 ||
+      identity.pid > 2147483647
+    )
+      throw new Error('LEAF_EVENT_OWNER_UNAVAILABLE');
+    const slot = state.watches.size + 1;
+    let resolve!: () => void, reject!: (value: unknown) => void;
+    const enrollment = new Promise<void>((yes, no) => {
+      resolve = yes;
+      reject = no;
+    });
+    void enrollment.catch(() => {});
+    const watch: Watch = {
+      identity: Object.freeze({ ...identity }),
+      enrollment,
+      baselineUsable: false,
+      epoch,
+      admitted: false,
+      forked: false,
+      exited: false,
+      consumed: false,
+    };
+    state.watches.set(slot, watch);
+    // Publish the original enrollment before entering reentrant native stdin.write.
+    void (async () => {
       const result = await send(
         'watch',
         slot,
         `W ${slot} ${identity.pid} ${birth[1]} ${birth[2]} ${boot.seconds} ${boot.microseconds}`
       );
       check();
-      if (result !== 'leaf' && result !== 'refused')
+      if (result !== 'leaf' && result !== 'nonleaf' && result !== 'refused')
         throw new Error('LEAF_EVENT_OWNER_UNAVAILABLE');
+    })().then(resolve, reject);
+    await enrollment;
+  };
+  const owner: DarwinLeafEventOwner = Object.freeze({
+    identity: () => original.identity(),
+    enroll,
+    async enrollBaseline(identity: ProcessIdentity, epoch: number) {
+      check();
+      // Repeated enrollment joins the original duty but never republishes an older census.
+      const existing = [...state.watches.values()].find(
+        (watch) => watch.identity.pid === identity.pid
+      );
+      if (existing) {
+        await enroll(identity, epoch);
+        return undefined;
+      }
+      await enroll(identity, epoch);
+      check();
+      const watch = [...state.watches.values()].find((value) =>
+        sameProcess(value.identity, identity)
+      );
+      if (!watch || watch.epoch !== epoch || !watch.baselineUsable || !watch.baseline) {
+        const value = new Error('LEAF_EVENT_BASELINE_UNAVAILABLE');
+        fail(value);
+        throw value;
+      }
+      return watch.baseline;
     },
     close() {
       if (closePromise) return closePromise;

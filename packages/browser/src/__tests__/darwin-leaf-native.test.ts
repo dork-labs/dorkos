@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, it, onTestFinished } from 'vitest';
+import { parseDarwinChildrenBatch } from '../runtime/darwin-process-observer.js';
 it.skipIf(process.platform !== 'darwin')(
   'uses actual native enrollment reads and NOTE_EXIT/NOTE_FORK decision sites',
   async () => {
@@ -32,6 +33,7 @@ int control_kqueue(void) { return 9; }
 int control_sysctl(int *name, u_int length, void *out, size_t *bytes, void *input, size_t input_bytes) {
   (void)name; (void)length; (void)input; (void)input_bytes;
   if (*bytes != sizeof(struct timeval)) return -1;
+  if (scenario == 9) { errno = EPERM; return -1; }
   struct timeval *boot = out; boot->tv_sec = 1; boot->tv_usec = 0; return 0;
 }
 int control_pidinfo(int pid, int flavor, uint64_t arg, void *buffer, int size) {
@@ -68,7 +70,7 @@ int control_kevent(int queue, const struct kevent *changes, int nchanges, struct
   return 0;
 }
 int main(void) {
-  for (scenario = 0; scenario < 9; scenario++) {
+  for (scenario = 0; scenario < 10; scenario++) {
     struct leaf_receiver owner; memset(&owner, 0, sizeof(owner)); owner.queue = 9;
     reads = censuses = registrations = drains = 0;
     const int result = leaf_command(&owner, "W 1 42 10 2 1 0");
@@ -119,7 +121,41 @@ int main(void) {
       'CASE 6 0 0 0 0 1 0 0', // Failed initial positive read never enters registration.
       'CASE 7 0 0 0 0 1 0 1', // Unsupported/permission registration never admits a watch.
       'CASE 8 5 0 0 0 4 2 1', // Full native event batch is refused, not silently truncated.
+      'CASE 9 0 0 0 0 2 0 1', // Entered original census boot failure cannot supply a baseline.
     ]);
+    for (const [scenario, expected] of [
+      [2, 'nonleaf'],
+      [3, 'refused'],
+      [4, 'refused'],
+      [9, 'refused'],
+    ] as const) {
+      const end = rows.findIndex((row) => row.startsWith(`CASE ${scenario} `));
+      const start = rows.findIndex((row) => row.startsWith(`CASE ${scenario - 1} `));
+      expect(rows.slice(start + 1, end)).toContain(
+        `{"kind":"watch","slot":1,"result":"${expected}"}`
+      );
+    }
+    const baselines = rows
+      .filter((row) => row.startsWith('{"kind":"baseline"'))
+      .map((row) => {
+        const envelope: unknown = JSON.parse(row);
+        if (!envelope || typeof envelope !== 'object' || !('batch' in envelope))
+          throw new Error('original-native-baseline-missing');
+        return parseDarwinChildrenBatch(Buffer.from(JSON.stringify(envelope.batch)), {
+          pid: 42,
+          birth: 'darwin-bsd-start:10:2',
+        });
+      });
+    expect(
+      baselines.some(
+        (batch) =>
+          batch.complete &&
+          batch.processes.some(
+            (fact) => fact.kind === 'present' && fact.identity.pid === 30 && fact.parentPid === 42
+          )
+      )
+    ).toBe(true);
+    expect(baselines.some((batch) => batch.complete && batch.processes.length === 0)).toBe(true);
     expect(rows).toContain('{"kind":"event","slot":1,"result":"exit"}');
     expect(rows).toContain('{"kind":"event","slot":1,"result":"fork"}');
   }

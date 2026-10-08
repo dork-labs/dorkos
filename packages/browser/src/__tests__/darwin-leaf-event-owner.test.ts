@@ -49,7 +49,16 @@ async function fixture(
     beforeAck?: 'fork' | 'exit';
     admitted?: boolean;
     holdReturn?: boolean;
+    holdAck?: boolean;
+    holdWrite?: boolean;
     onEnd?(): void;
+    baseline?(identity: {
+      pid: number;
+      seconds: string;
+      microseconds: string;
+    }): DarwinChildrenBatch;
+    omitBaseline?: boolean;
+    afterWatchAck?(slot: number): void;
   } = {}
 ) {
   const stdout = new PassThrough();
@@ -61,12 +70,56 @@ async function fixture(
   });
   const row = (kind: string, slot: number, result: string) =>
     stdout.write(JSON.stringify({ kind, slot, result }) + '\n');
+  let releaseAck: () => void = () => {};
+  let releaseWrite: () => void = () => {};
+  let entered!: () => void;
+  const baselineEntered = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
   const stdin = new Writable({
     write(chunk, _encoding, done) {
       const fields = chunk.toString().trim().split(' ');
       if (fields[0] === 'W') {
+        const parent = { pid: Number(fields[2]), seconds: fields[3], microseconds: fields[4] };
+        const baseline = options.baseline?.(parent) ?? {
+          version: 1 as const,
+          bootSeconds: '1',
+          bootMicroseconds: '0',
+          parentBefore: parent,
+          parentAfter: parent,
+          complete: true,
+          processes: [],
+        };
         if (options.beforeAck) row('event', Number(fields[1]), options.beforeAck);
-        row('watch', Number(fields[1]), options.admitted === false ? 'refused' : 'leaf');
+        if (!options.omitBaseline)
+          stdout.write(
+            JSON.stringify({ kind: 'baseline', slot: Number(fields[1]), batch: baseline }) + '\n'
+          );
+        entered();
+        let ackReleased = false,
+          writeReleased = false;
+        releaseAck = () => {
+          if (ackReleased) return;
+          ackReleased = true;
+          row(
+            'watch',
+            Number(fields[1]),
+            options.admitted === false || !!options.beforeAck || !baseline.complete
+              ? 'refused'
+              : baseline.processes.length
+                ? 'nonleaf'
+                : 'leaf'
+          );
+          options.afterWatchAck?.(Number(fields[1]));
+        };
+        releaseWrite = () => {
+          if (writeReleased) return;
+          writeReleased = true;
+          done();
+        };
+        if (!options.holdAck) releaseAck();
+        if (!options.holdWrite) releaseWrite();
+        return;
       } else row('barrier', Number(fields[1]), 'settled');
       done();
     },
@@ -92,7 +145,16 @@ async function fixture(
     manager: { pid: 7, birth: 'darwin-bsd-start:1:1' },
     boot: { seconds: '1', microseconds: '0' },
   });
-  return { owner, row, release, stdout, stdin };
+  return {
+    owner,
+    row,
+    release,
+    stdout,
+    stdin,
+    baselineEntered,
+    releaseAck: () => releaseAck(),
+    releaseWrite: () => releaseWrite(),
+  };
 }
 it('consumes one exact never-forked leaf exit epoch; never reports physical death', async () => {
   const f = await fixture();
@@ -284,6 +346,7 @@ async function durableFixture() {
 for (const fault of [
   'exit',
   'early-exit',
+  'baseline-exit',
   'fork-then-reparent',
   'unknown-inspect',
   'retained-orphan',
@@ -293,19 +356,54 @@ for (const fault of [
 ] as const)
   it(`runs genuine durable journal leaf transition ${fault}`, async () => {
     const f = await durableFixture();
-    const events = await fixture();
+    let publishExit: ((slot: number) => void) | undefined;
+    const events = await fixture({
+      admitted: fault === 'changed-boot' ? false : undefined,
+      afterWatchAck: (slot) => {
+        publishExit?.(slot);
+      },
+      baseline: (parent) => {
+        const nonleaf = parent.pid === 30 && fault === 'initial-nonleaf';
+        return {
+          version: 1,
+          bootSeconds: fault === 'changed-boot' ? '2' : '1',
+          bootMicroseconds: '0',
+          parentBefore: parent,
+          parentAfter: parent,
+          complete: true,
+          processes: nonleaf
+            ? [
+                {
+                  kind: 'present',
+                  identity: { pid: 31, seconds: '301', microseconds: '0' },
+                  parentPid: 30,
+                  zombie: false,
+                },
+              ]
+            : [],
+        };
+      },
+    });
+    if (fault === 'baseline-exit')
+      publishExit = (slot) => {
+        events.row('event', slot, 'exit');
+      };
     let round = 0,
       clock = 10;
     const checkpoints: JournalSnapshot[] = [];
-    let initialNonleafWatched: boolean | undefined;
+    let initialNonleafEnrolled: boolean | undefined;
     let childQueries = 0;
+    const childQueryRounds: number[] = [];
     const boot = { version: 1 as const, bootSeconds: '1', bootMicroseconds: '0' };
     const observer: DarwinProcessObserver = {
       async inspect(pids) {
         return {
           ...boot,
           processes: pids.map((pid) => {
-            if (round >= 4 || (pid === 30 && fault === 'early-exit' && round >= 3))
+            if (
+              round >= 4 ||
+              (pid === 30 && (fault === 'early-exit' || fault === 'baseline-exit') && round >= 3)
+            )
               return { kind: 'absent' as const, pid };
             if (pid === 30 && round === 3 && fault === 'unknown-inspect')
               return { kind: 'unknown' as const, pid, error: 3 };
@@ -326,14 +424,22 @@ for (const fault of [
         };
       },
       async children(parent) {
-        if (parent.pid === 30) childQueries++;
+        if (parent.pid === 30) {
+          childQueries++;
+          childQueryRounds.push(round);
+        }
         const identity =
           parent.pid === 20
             ? f.rootNative
             : parent.pid === 30
               ? f.childNative
               : { pid: 31, seconds: '301', microseconds: '0' };
-        if (parent.pid === 30 && (round === 3 || (round === 2 && fault === 'early-exit')))
+        if (
+          parent.pid === 30 &&
+          (round === 3 ||
+            (round === 2 && fault === 'early-exit') ||
+            (round === 1 && fault === 'baseline-exit'))
+        )
           return failedCensus();
         if (parent.pid === 30 && round === 1 && fault === 'changed-boot')
           return {
@@ -398,10 +504,10 @@ for (const fault of [
           if (read.state === 'valid-recorded-data') checkpoints.push(read.snapshot);
           round++;
           if (round === 2 && fault === 'initial-nonleaf')
-            initialNonleafWatched = originalLeafDiagnostic(
+            initialNonleafEnrolled = originalLeafDiagnostic(
               events.owner,
               darwinBirth(f.childNative)
-            ).watched;
+            ).enrolled;
           if (round === 2 && fault === 'early-exit') {
             const state = originalLeafDiagnostic(events.owner, darwinBirth(f.childNative));
             // Old delayed enumeration has no watch here; never fabricate its event slot.
@@ -411,6 +517,7 @@ for (const fault of [
             round === 3 &&
             fault !== 'retained-orphan' &&
             fault !== 'early-exit' &&
+            fault !== 'baseline-exit' &&
             fault !== 'changed-boot' &&
             fault !== 'initial-nonleaf' &&
             fault !== 'appended-window-expired'
@@ -424,7 +531,9 @@ for (const fault of [
       const read = await readJournal(f.location);
       expect(read.state).toBe('valid-recorded-data');
       if (read.state !== 'valid-recorded-data') throw new Error('original-journal-missing');
-      if (fault === 'exit' || fault === 'early-exit') {
+      if (fault === 'exit' || fault === 'early-exit' || fault === 'baseline-exit') {
+        if (fault === 'baseline-exit')
+          expect(childQueryRounds, 'REDUNDANT_CHILD_QUERY_AFTER_ORIGINAL_W_BASELINE').toEqual([2]);
         expect(read.snapshot.gaps).toEqual([]);
         if (fault === 'early-exit') {
           const first = checkpoints.find((snapshot) =>
@@ -448,9 +557,9 @@ for (const fault of [
           read.snapshot.retainedIdentities.find((row) => row.identity.pid === 30)?.lifecycle
         ).toBe('dead'); // Only later actual absence.
       } else {
-        if (fault === 'initial-nonleaf') expect(initialNonleafWatched).toBe(false);
+        if (fault === 'initial-nonleaf') expect(initialNonleafEnrolled).toBe(false);
         if (fault === 'changed-boot' || fault === 'appended-window-expired') {
-          expect(originalLeafDiagnostic(events.owner, darwinBirth(f.childNative)).watched).toBe(
+          expect(originalLeafDiagnostic(events.owner, darwinBirth(f.childNative)).enrolled).toBe(
             false
           );
           expect(read.snapshot.firstCause?.sequence).toBe(2);
@@ -465,7 +574,7 @@ for (const fault of [
               gap.cause ===
               (fault === 'unknown-inspect'
                 ? 'identity-unknown'
-                : fault === 'appended-window-expired'
+                : fault === 'appended-window-expired' || fault === 'changed-boot'
                   ? 'observer-lost'
                   : 'association-missing')
           )
@@ -474,7 +583,9 @@ for (const fault of [
     } finally {
       events.release();
       try {
-        await events.owner.close();
+        if (fault === 'changed-boot')
+          await expect(events.owner.close()).rejects.toThrow('LEAF_EVENT_BASELINE_UNAVAILABLE');
+        else await events.owner.close();
       } finally {
         await rm(f.parentDirectory, { recursive: true, force: true });
       }
@@ -568,5 +679,169 @@ it('snapshots exact retained leaf facts without barrier, consumption or authorit
   } finally {
     f.release();
     await f.owner.close();
+  }
+});
+
+it('retains actual nonzero watch baseline grandchildren without granting a leaf', async () => {
+  const f = await fixture({
+    baseline: (parent) => ({
+      version: 1,
+      bootSeconds: '1',
+      bootMicroseconds: '0',
+      parentBefore: parent,
+      parentAfter: parent,
+      complete: true,
+      processes: [
+        {
+          kind: 'present',
+          identity: { pid: 43, seconds: '11', microseconds: '0' },
+          parentPid: parent.pid,
+          zombie: false,
+        },
+      ],
+    }),
+  });
+  try {
+    const batch = await f.owner.enrollBaseline!(identity, 2);
+    expect(batch?.processes).toEqual([
+      {
+        kind: 'present',
+        identity: { pid: 43, seconds: '11', microseconds: '0' },
+        parentPid: 42,
+        zombie: false,
+      },
+    ]);
+    expect(await f.owner.enrollBaseline!(identity, 2)).toBeUndefined();
+    expect(await f.owner.enrollBaseline!(identity, 3)).toBeUndefined();
+    expect(Object.isFrozen(batch)).toBe(true);
+    expect(Object.isFrozen(batch?.processes[0])).toBe(true);
+    expect(originalLeafDiagnostic(f.owner, identity).enrolled).toBe(false);
+    f.row('event', 1, 'exit');
+    expect(await consumeOriginalLeafTerminal(f.owner, identity, 3, failedCensus())).toBe(false);
+  } finally {
+    f.release();
+    await f.owner.close();
+  }
+});
+it('never publishes a baseline capability on missing original watch protocol', async () => {
+  const f = await fixture({ omitBaseline: true });
+  try {
+    await expect(f.owner.enrollBaseline!(identity, 2)).rejects.toThrow(
+      'LEAF_EVENT_OWNER_UNAVAILABLE'
+    );
+  } finally {
+    f.release();
+    await expect(f.owner.close()).rejects.toThrow('LEAF_EVENT_OWNER_UNAVAILABLE');
+  }
+});
+it('keeps a same-epoch exit unconsumable after the original baseline', async () => {
+  const f = await fixture();
+  try {
+    expect((await f.owner.enrollBaseline!(identity, 2))?.complete).toBe(true);
+    f.row('event', 1, 'exit');
+    expect(await consumeOriginalLeafTerminal(f.owner, identity, 2, failedCensus())).toBe(false);
+    expect(await consumeOriginalLeafTerminal(f.owner, identity, 3, failedCensus())).toBe(true);
+  } finally {
+    f.release();
+    await f.owner.close();
+  }
+});
+it('reserves full baseline reply and all possible events before original command entry', async () => {
+  const f = await fixture();
+  const write = vi.spyOn(f.stdin, 'write');
+  try {
+    const maximum = JSON.stringify({
+      kind: 'present',
+      identity: {
+        pid: 2147483647,
+        seconds: '18446744073709551615',
+        microseconds: '18446744073709551615',
+      },
+      parentPid: 2147483647,
+      zombie: false,
+    });
+    expect(Buffer.byteLength(maximum) + 1).toBeLessThanOrEqual(160);
+    expect(512 * 160 + 1024 + 128 + 512 * 2 * 80).toBeLessThan(256 * 1024);
+    for (let i = 0; i < 2500; i++)
+      expect(await consumeOriginalLeafTerminal(f.owner, identity, 2, failedCensus())).toBe(false);
+    write.mockClear();
+    await expect(f.owner.enrollBaseline!(identity, 2)).rejects.toThrow('LEAF_EVENT_OVERFLOW');
+    expect(write).not.toHaveBeenCalled();
+  } finally {
+    f.release();
+    await expect(f.owner.close()).rejects.toThrow('LEAF_EVENT_OVERFLOW');
+  }
+});
+
+for (const held of ['ack', 'write'] as const)
+  it(`joins concurrent original baseline enrollment while ${held} is held`, async () => {
+    const f = await fixture({ holdAck: held === 'ack', holdWrite: held === 'write' });
+    const writing = vi.spyOn(f.stdin, 'write');
+    const first = f.owner.enrollBaseline!(identity, 2);
+    const originals: Promise<unknown>[] = [first];
+    let firstSettled = false,
+      repeatedSettled = false;
+    void first.then(
+      () => {
+        firstSettled = true;
+      },
+      () => {
+        firstSettled = true;
+      }
+    );
+    try {
+      await f.baselineEntered;
+      const repeated = f.owner.enrollBaseline!(identity, 2);
+      const enrolled = f.owner.enroll(identity, 2);
+      originals.push(repeated, enrolled);
+      void repeated.then(
+        () => {
+          repeatedSettled = true;
+        },
+        () => {
+          repeatedSettled = true;
+        }
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(firstSettled).toBe(false);
+      expect(repeatedSettled).toBe(false);
+      expect(writing).toHaveBeenCalledTimes(1);
+      await expect(
+        f.owner.enroll({ ...identity, birth: 'darwin-bsd-start:11:2' }, 2)
+      ).rejects.toThrow('LEAF_EVENT_OWNER_UNAVAILABLE');
+      if (held === 'ack') f.releaseAck();
+      else f.releaseWrite();
+      expect((await first)?.complete).toBe(true);
+      expect(await repeated).toBeUndefined();
+      await enrolled;
+      expect(await f.owner.enrollBaseline!(identity, 3)).toBeUndefined();
+    } finally {
+      if (held === 'ack') f.releaseAck();
+      else f.releaseWrite();
+      await Promise.allSettled(originals);
+      f.release();
+      await f.owner.close();
+      writing.mockRestore();
+    }
+  });
+it('never retries or returns a baseline after the entered native watch refuses', async () => {
+  const f = await fixture({ admitted: false });
+  const writing = vi.spyOn(f.stdin, 'write');
+  let first: unknown;
+  try {
+    try {
+      await f.owner.enrollBaseline!(identity, 2);
+    } catch (value) {
+      first = value;
+    }
+    expect(first).toBeInstanceOf(Error);
+    if (!(first instanceof Error)) throw new Error('original-watch-refusal-missing');
+    expect(first.message).toBe('LEAF_EVENT_BASELINE_UNAVAILABLE');
+    expect(writing).toHaveBeenCalledTimes(1);
+  } finally {
+    f.release();
+    await expect(f.owner.close()).rejects.toBe(first);
+    writing.mockRestore();
   }
 });
