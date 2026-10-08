@@ -27,6 +27,61 @@ import { env as serverEnv } from '../../../../../env.js';
 const target = swappableServer();
 
 it('admits one genuine native turn for operator-approved focus and correlates its ACK and remaining reply', async () => {
+  // Temporary fixed phase DATA; never participates in native/currentness decisions.
+  let phaseRows = 0;
+  let phaseNow: (() => number) | undefined;
+  let phaseStart = -1;
+  let phaseLast = -1;
+  try {
+    phaseNow = performance.now.bind(performance);
+    phaseStart = phaseNow();
+    if (!Number.isFinite(phaseStart) || phaseStart < 0) phaseStart = -1;
+    phaseLast = phaseStart;
+  } catch {}
+  const phase = (
+    label:
+      | 'ack-ready'
+      | 'approval-ready'
+      | 'body-failed'
+      | 'burst-wait-done'
+      | 'burst-wait-start'
+      | 'cleanup-done'
+      | 'due-wait-done'
+      | 'due-wait-start'
+      | 'filesystem-start'
+      | 'first-focus-done'
+      | 'fixture-ready'
+      | 'fixture-start'
+      | 'http-mount-done'
+      | 'http-mount-start'
+      | 'native-gate-ready'
+      | 'native-pump-done'
+      | 'native-pump-start'
+      | 'original-wake-done'
+      | 'repeat-focus-done'
+      | 'runtime-ready'
+      | 'second-focus-done'
+      | 'stop-joined'
+      | 'stop-start'
+      | 'terminal'
+  ): void => {
+    if (phaseRows >= 32) return;
+    phaseRows++;
+    try {
+      const now = phaseNow?.();
+      const elapsed =
+        phaseStart >= 0 &&
+        now !== undefined &&
+        Number.isFinite(now) &&
+        now >= phaseLast &&
+        now - phaseStart <= 600000
+          ? Math.round(now - phaseStart)
+          : -1;
+      if (elapsed >= 0) phaseLast = now!;
+      console.info('[original-focus-body-phase]', { phase: label, elapsedMs: elapsed });
+    } catch {}
+  };
+  phase('filesystem-start');
   const agentPath = await fs.realpath(await fs.mkdtemp(join(tmpdir(), 'focus-first-')));
   const sessionId = randomUUID();
   let h: Awaited<ReturnType<typeof nativeRoomAuthorityFixture>> | undefined;
@@ -41,7 +96,9 @@ it('admits one genuine native turn for operator-approved focus and correlates it
     }
   };
   try {
+    phase('fixture-start');
     h = await nativeRoomAuthorityFixture(agentPath, 'claude-code', sessionId, randomUUID());
+    phase('fixture-ready');
     const actual = h;
     actual.http.grants.configure(
       actual.documentId,
@@ -76,6 +133,7 @@ it('admits one genuine native turn for operator-approved focus and correlates it
     expect(granted.kind).toBe('granted');
     if (granted.kind !== 'granted') throw new Error('Original consumed focus approval missing');
 
+    phase('approval-ready');
     const previousMode = serverEnv.DORKOS_TEST_RUNTIME;
     let runtime: TestModeRuntime;
     try {
@@ -94,18 +152,22 @@ it('admits one genuine native turn for operator-approved focus and correlates it
     registry.setDb(actual.db);
     registry.register(runtime);
     scenarioStore.setForSession(sessionId, 'native-room-partial-ack-reply');
+    phase('runtime-ready');
     const app = express();
     app.use(express.json());
     app.locals.docChannelHttp = { service: actual.http.service, actor: () => actual.operator };
     app.use('/docs', router);
     const server = target.mount(app),
       path = `/docs/${actual.documentId}/presence`;
+    phase('http-mount-start');
     const mounted = await request(server).post(path).send({ action: 'mount' });
+    phase('http-mount-done');
     expect(mounted.status).toBe(200);
     const viewerId = mounted.body.viewerId;
     expect(
       (await request(server).post(path).send({ action: 'focus', viewerId, focused: true })).status
     ).toBe(200);
+    phase('first-focus-done');
     const rows = () =>
       actual.db
         .select()
@@ -120,10 +182,13 @@ it('admits one genuine native turn for operator-approved focus and correlates it
     expect(admissions()).toEqual([]);
     expect(readTestModeOriginalScenarioCounts(runtime)).toEqual({ scenarioStarts: 0 });
     // Exercise the real burst boundary; no timer, TTL or native clock is replaced.
+    phase('burst-wait-start');
     await new Promise<void>((resolve) => setTimeout(resolve, 500));
+    phase('burst-wait-done');
     expect(
       (await request(server).post(path).send({ action: 'focus', viewerId, focused: false })).status
     ).toBe(200);
+    phase('second-focus-done');
     const focus = rows().filter((row) => row.type === 'host.focus');
     expect(focus.map((row) => row.payload)).toEqual([{ focused: true }, { focused: false }]);
     const batches = actual.db
@@ -148,11 +213,14 @@ it('admits one genuine native turn for operator-approved focus and correlates it
     };
     const port = currentRoomDueServicePort(actual.http.service);
     // Reach the declaration's actual due time before invoking the fixed one-shot pump.
+    phase('due-wait-start');
     await new Promise<void>((resolve) =>
       setTimeout(resolve, Math.max(0, Date.parse(batch.dueAt) - Date.now()))
     );
+    phase('due-wait-done');
     // Due-time passage does not mint frozen custody: invoke the original native wake first.
     port.wake();
+    phase('original-wake-done');
     expect(
       actual.db
         .select()
@@ -162,6 +230,7 @@ it('admits one genuine native turn for operator-approved focus and correlates it
     ).toBe('accepted');
     expect(admissions()).toEqual([]);
     expect(readTestModeOriginalScenarioCounts(runtime)).toEqual({ scenarioStarts: 0 });
+    phase('native-pump-start');
     pump = port.pump(registry);
     void pump.catch(remember);
     const delivery = (eventId: string) =>
@@ -176,6 +245,7 @@ it('admits one genuine native turn for operator-approved focus and correlates it
         )
         .get()!;
     await vi.waitFor(() => expect(delivery(focus[0]!.eventId).ackOutcome).toBe('handled'));
+    phase('ack-ready');
     expect(admissions()).toHaveLength(1);
     expect(admissions()[0]).toMatchObject({ batch_id: batch.batchId, status: 'turn_started' });
     expect(admissions()[0]!.turn_id).not.toBeNull();
@@ -192,8 +262,11 @@ it('admits one genuine native turn for operator-approved focus and correlates it
       (await request(server).post(path).send({ action: 'focus', viewerId, focused: false })).status
     ).toBe(200);
     expect(rows().filter((row) => row.type === 'host.focus')).toEqual(focus);
+    phase('repeat-focus-done');
     await vi.waitFor(() => expect(interactionGate.step(sessionId)).toBe(true));
+    phase('native-gate-ready');
     await pump;
+    phase('native-pump-done');
     expect(delivery(focus[0]!.eventId).ackOutcome).toBe('handled');
     expect(delivery(focus[1]!.eventId).ackOutcome).toBeNull();
     expect(
@@ -223,6 +296,7 @@ it('admits one genuine native turn for operator-approved focus and correlates it
         .all()
     ).toHaveLength(1);
   } catch (cause) {
+    phase('body-failed');
     remember(cause);
     // Failure-only DATA from this same original native fixture, before its owning stop.
     // No payloads, bearer, path or principal is disclosed; absence proves nothing.
@@ -293,6 +367,7 @@ it('admits one genuine native turn for operator-approved focus and correlates it
   }
   // Start genuine stop before joining the held stream; UNKNOWN retains its native resources.
   if (h) {
+    phase('stop-start');
     let stopClosed = false;
     await Promise.allSettled([
       Promise.resolve()
@@ -303,10 +378,12 @@ it('admits one genuine native turn for operator-approved focus and correlates it
         .catch(remember),
       ...(pump ? [pump.catch(remember)] : []),
     ]);
+    phase('stop-joined');
     if (stopClosed) {
       try {
         await h.cleanup();
         closed = true;
+        phase('cleanup-done');
       } catch (cause) {
         remember(cause);
       }
@@ -325,5 +402,6 @@ it('admits one genuine native turn for operator-approved focus and correlates it
       remember(cause);
     }
   }
+  phase('terminal');
   if (failed) throw first;
 });

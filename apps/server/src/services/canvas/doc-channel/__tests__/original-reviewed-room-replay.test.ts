@@ -33,6 +33,53 @@ import { interactionGate } from '../../../runtimes/test-mode/interaction-gate.js
 import { env as serverEnv } from '../../../../env.js';
 
 it('reviews expired never-admitted Room inputs once, preserves original inputs and starts one genuine acknowledged native turn', async () => {
+  // Temporary passive phase DATA; no payloads, identifiers or scheduling changes.
+  let phaseRows = 0;
+  let phaseNow: (() => number) | undefined;
+  let phaseStart = -1;
+  let phaseLast = -1;
+  try {
+    phaseNow = performance.now.bind(performance);
+    phaseStart = phaseNow();
+    if (!Number.isFinite(phaseStart) || phaseStart < 0) phaseStart = -1;
+    phaseLast = phaseStart;
+  } catch {}
+  const phase = (
+    label:
+      | 'filesystem-start'
+      | 'fixture-start'
+      | 'fixture-ready'
+      | 'submissions-done'
+      | 'management-start'
+      | 'management-done'
+      | 'replay-done'
+      | 'pump-start'
+      | 'ack-ready'
+      | 'gate-ready'
+      | 'pump-done'
+      | 'body-failed'
+      | 'stop-start'
+      | 'stop-joined'
+      | 'cleanup-done'
+      | 'terminal'
+  ): void => {
+    if (phaseRows >= 16) return;
+    phaseRows++;
+    try {
+      const now = phaseNow?.();
+      const elapsed =
+        phaseStart >= 0 &&
+        now !== undefined &&
+        Number.isFinite(now) &&
+        now >= phaseLast &&
+        now - phaseStart <= 600000
+          ? Math.round(now - phaseStart)
+          : -1;
+      if (elapsed >= 0) phaseLast = now!;
+      console.info('[original-reviewed-room-replay-phase]', { phase: label, elapsedMs: elapsed });
+    } catch {}
+  };
+  phase('filesystem-start');
   const agentPath = await fs.realpath(await fs.mkdtemp(join(tmpdir(), 'review-room-')));
   const sessionId = randomUUID(),
     agentId = randomUUID();
@@ -48,9 +95,11 @@ it('reviews expired never-admitted Room inputs once, preserves original inputs a
     }
   };
   try {
+    phase('fixture-start');
     h = await nativeRoomAuthorityFixture(agentPath, 'claude-code', sessionId, agentId, {
       coalesceWindowMs: 60000,
     });
+    phase('fixture-ready');
     const actual = h;
     const previousMode = serverEnv.DORKOS_TEST_RUNTIME;
     let runtime: TestModeRuntime;
@@ -95,6 +144,7 @@ it('reviews expired never-admitted Room inputs once, preserves original inputs a
         actual.operator,
         condition
       );
+    phase('submissions-done');
     const old = actual.db
       .select()
       .from(canvasDocBatches)
@@ -135,11 +185,13 @@ it('reviews expired never-admitted Room inputs once, preserves original inputs a
       expectedBatchGeneration: old.generation,
       grantId: actual.granted.grant.grantId,
     };
+    phase('management-start');
     const review = await readServiceOriginalDocManagement(
       actual.http.service,
       actual.documentId,
       actual.operator
     );
+    phase('management-done');
     expect(review.reviews.find((row) => row.batchId === old.batchId)?.replayAvailable).toBe(true);
     actual.http.channels.getBatch = () => {
       throw new Error('Reflected replay reader used');
@@ -152,6 +204,7 @@ it('reviews expired never-admitted Room inputs once, preserves original inputs a
       request,
       actual.operator
     );
+    phase('replay-done');
     expect(replayed.status).toBe('pending');
     expect(replayed.batchId).not.toBe(old.batchId);
     expect(replayed.generation).not.toBe(old.generation);
@@ -168,6 +221,7 @@ it('reviews expired never-admitted Room inputs once, preserves original inputs a
       )!.n
     ).toBe(0);
     const port = currentRoomDueServicePort(actual.http.service);
+    phase('pump-start');
     pump = port.pump(registry);
     void pump.catch(remember);
     await vi.waitFor(() => {
@@ -188,6 +242,7 @@ it('reviews expired never-admitted Room inputs once, preserves original inputs a
         sql`SELECT count(*) AS n FROM room_doc_admissions WHERE document_id=${actual.documentId}`
       )!.n
     ).toBe(1);
+    phase('ack-ready');
     expect(readTestModeOriginalScenarioCounts(runtime)).toEqual({ scenarioStarts: 1 });
     expect(
       await replayServiceOriginalExpiredDocBatch(actual.http.service, request, actual.operator)
@@ -200,7 +255,9 @@ it('reviews expired never-admitted Room inputs once, preserves original inputs a
       )
     ).rejects.toThrow();
     await vi.waitFor(() => expect(interactionGate.step(sessionId)).toBe(true));
+    phase('gate-ready');
     await pump;
+    phase('pump-done');
     const finalDeliveries = events.map((event) =>
       actual.db
         .select()
@@ -269,10 +326,12 @@ it('reviews expired never-admitted Room inputs once, preserves original inputs a
           .get()
       ).toEqual(original);
   } catch (cause) {
+    phase('body-failed');
     remember(cause);
   }
   // The genuine stop starts before joining a possibly held scenario; UNKNOWN never closes its database.
   if (h) {
+    phase('stop-start');
     let stopClosed = false;
     await Promise.allSettled([
       Promise.resolve()
@@ -283,10 +342,12 @@ it('reviews expired never-admitted Room inputs once, preserves original inputs a
         .catch(remember),
       ...(pump ? [pump.catch(remember)] : []),
     ]);
+    phase('stop-joined');
     if (stopClosed) {
       try {
         await h.cleanup();
         closed = true;
+        phase('cleanup-done');
       } catch (cause) {
         remember(cause);
       }
@@ -300,5 +361,6 @@ it('reviews expired never-admitted Room inputs once, preserves original inputs a
       remember(cause);
     }
   }
+  phase('terminal');
   if (failed) throw first;
 });

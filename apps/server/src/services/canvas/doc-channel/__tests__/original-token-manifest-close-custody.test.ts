@@ -9,6 +9,8 @@ import { randomUUID } from 'node:crypto';
 it('retains earliest manifest close UNKNOWN while positively draining the original Room peer', async () => {
   // The production reader captures closeSync at module construction. Select the literal fault
   // before fresh original modules load, without replacing the reader or its owner recognition.
+  const mark = shard2BodyPhases();
+  mark('begin');
   vi.resetModules();
   const actualClose = nativeFs.closeSync,
     actualFstat = nativeFs.fstatSync;
@@ -53,7 +55,9 @@ it('retains earliest manifest close UNKNOWN while positively draining the origin
   try {
     const { nativeRoomAuthorityFixture } =
       await import('../writes/__tests__/authority-fixtures.js');
+    mark('authority-import-return');
     services = await import('../service.js');
+    mark('service-import-return');
     const {
       issueServiceOriginalDocToken,
       currentRoomDueServicePort,
@@ -61,9 +65,11 @@ it('retains earliest manifest close UNKNOWN while positively draining the origin
     } = services;
     const { stopInstallationFileWrites } = await import('../writes/installation-file-writes.js');
     stopWriter = stopInstallationFileWrites;
+    mark('writer-import-return');
     h = await nativeRoomAuthorityFixture(root, 'codex', randomUUID(), randomUUID(), {
       checkboxFile: true,
     });
+    mark('fixture-return');
     const own = h,
       port = currentRoomDueServicePort(own.http.service);
     port.nextDueAt(); // Actual original constructor, not a timer/holder stand-in.
@@ -74,6 +80,7 @@ it('retains earliest manifest close UNKNOWN while positively draining the origin
     const stat = await fs.stat(manifest);
     inode = { dev: stat.dev, ino: stat.ino };
     armed = true;
+    mark('manifest-ready');
     // Compilation and INSERT are never reached: this asserts earliest real acquired FD custody.
     await expect(
       issueServiceOriginalDocToken(
@@ -89,12 +96,15 @@ it('retains earliest manifest close UNKNOWN while positively draining the origin
         [own.granted.grant.grantId]
       )
     ).rejects.toBeUndefined();
+    mark('issue-close-observed');
     expect(selected).toBe(true);
     expect(actualCloseSucceeded).toBe(true);
     expect(closeCalls).toBe(1);
     armed = false;
     drain = port.stopPump();
+    mark('drain-start-return');
     await expect(drain).rejects.toBeUndefined();
+    mark('drain-observed');
     expect(port.stopPump()).toBe(drain);
     expect(readServiceOriginalTokenDrainData(own.http.service)).toEqual({
       roomPeerClosed: true,
@@ -105,11 +115,13 @@ it('retains earliest manifest close UNKNOWN while positively draining the origin
     // Parent child custody remains UNKNOWN; it must not close Db or remove either source/Db directory.
     const remove = vi.spyOn(fs, 'rm');
     await expect(own.cleanup()).rejects.toBeUndefined();
+    mark('custody-cleanup-observed');
     expect(remove).not.toHaveBeenCalled();
     expect(own.db.$client.open).toBe(true);
     expect((await fs.stat(own.file)).isFile()).toBe(true);
     expect((await fs.stat(manifest)).isFile()).toBe(true);
     await stopInstallationFileWrites(own.http.fileWrites, own.db, own.http.channels);
+    mark('writer-stop-return');
   } catch (cause) {
     remember(cause);
   } finally {
@@ -130,6 +142,7 @@ it('retains earliest manifest close UNKNOWN while positively draining the origin
           stopInstallationFileWrites(h!.http.fileWrites, h!.db, h!.http.channels)
         ),
       ]);
+      mark('final-drains-return');
       if (outcomes[0]!.status !== 'rejected' || outcomes[0]!.reason !== undefined)
         remember(new Error('Original manifest drain did not retain its raw failure.'));
       if (outcomes[1]!.status === 'rejected') remember(outcomes[1]!.reason);
@@ -179,3 +192,54 @@ it('retains earliest manifest close UNKNOWN while positively draining the origin
   }
   if (failed) throw first;
 });
+
+/** Temporary bounded scalar diagnostic; original body operations remain unchanged. */
+let shard2BodyPhaseRows = 0;
+function shard2BodyPhases() {
+  let start = NaN;
+  let previous = NaN;
+  try {
+    start = performance.now();
+    previous = start;
+  } catch {
+    /* secondary diagnostic */
+  }
+  return (
+    phase:
+      | 'begin'
+      | 'authority-import-return'
+      | 'service-import-return'
+      | 'writer-import-return'
+      | 'fixture-return'
+      | 'manifest-ready'
+      | 'issue-close-observed'
+      | 'drain-start-return'
+      | 'drain-observed'
+      | 'custody-cleanup-observed'
+      | 'writer-stop-return'
+      | 'final-drains-return'
+  ): void => {
+    try {
+      if (shard2BodyPhaseRows >= 128) return;
+      const now = performance.now();
+      const elapsed = now - start;
+      if (
+        !Number.isFinite(start) ||
+        start < 0 ||
+        !Number.isFinite(now) ||
+        now < previous ||
+        !Number.isFinite(elapsed) ||
+        elapsed < 0 ||
+        elapsed > 600000
+      )
+        return;
+      previous = now;
+      const row = '[doc-shard2-body-phase] manifest-custody ' + phase + ' ' + elapsed.toFixed(3);
+      if (row.length > 255) return;
+      shard2BodyPhaseRows++;
+      console.error(row);
+    } catch {
+      /* Clock or logger failure never replaces the original cause. */
+    }
+  };
+}

@@ -837,18 +837,26 @@ describe('RoomFileEditor — upload, move, delete, from the chat', () => {
     }, 60_000);
 
     it('lists at most twenty paths and counts the rest', async () => {
+      const mark = shard2BodyPhases();
+      mark('begin');
       const files = [];
       for (let i = 0; i < 20; i++)
         files.push(await staged(`f${String(i).padStart(2, '0')}.md`, 'x'));
+      mark('staged20-return');
       await editor.upload(ROOM_ID, ANA, { dir: 'many', baseCommit: null, replace: [], files });
+      mark('upload-return');
       await put('many/extra.md', 'x');
+      mark('extra-write-return');
       await commit('One more');
+      mark('extra-commit-return');
 
       await editor.remove(ROOM_ID, ANA, { path: 'many', baseCommit: await head() });
+      mark('remove-return');
 
       const change = announced.at(-1)!.fileChange;
       expect(change.paths).toHaveLength(20);
       expect(change.pathCount).toBe(21);
+      mark('assertions-return');
     });
 
     it('composes the sentence from sanitized segments, so a hostile path is inert', async () => {
@@ -1225,3 +1233,49 @@ describe('RoomFileEditor — upload, move, delete, from the chat', () => {
     });
   });
 });
+
+/** Temporary bounded scalar diagnostic; original body operations remain unchanged. */
+let shard2BodyPhaseRows = 0;
+function shard2BodyPhases() {
+  let start = NaN;
+  let previous = NaN;
+  try {
+    start = performance.now();
+    previous = start;
+  } catch {
+    /* secondary diagnostic */
+  }
+  return (
+    phase:
+      | 'begin'
+      | 'staged20-return'
+      | 'upload-return'
+      | 'extra-write-return'
+      | 'extra-commit-return'
+      | 'remove-return'
+      | 'assertions-return'
+  ): void => {
+    try {
+      if (shard2BodyPhaseRows >= 128) return;
+      const now = performance.now();
+      const elapsed = now - start;
+      if (
+        !Number.isFinite(start) ||
+        start < 0 ||
+        !Number.isFinite(now) ||
+        now < previous ||
+        !Number.isFinite(elapsed) ||
+        elapsed < 0 ||
+        elapsed > 600000
+      )
+        return;
+      previous = now;
+      const row = '[doc-shard2-body-phase] twenty-paths ' + phase + ' ' + elapsed.toFixed(3);
+      if (row.length > 255) return;
+      shard2BodyPhaseRows++;
+      console.error(row);
+    } catch {
+      /* Clock or logger failure never replaces the original cause. */
+    }
+  };
+}

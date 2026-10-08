@@ -301,12 +301,16 @@ async function addWaiting(h: Awaited<ReturnType<typeof setup>>, index: number) {
   return receipt;
 }
 it('pages more than 100 same-session accepted waits without adopting them and wraps new earlier keys', async () => {
+  const mark = shard2BodyPhases();
+  mark('begin');
   const h = await setup();
+  mark('setup-return');
   h.f.canvas.pin(FROM, h.f.documentId, true);
   // Populate actual accepted/routed busy waits; the original row still proves the
   // one-hour final-budget hold. Warning pagination does not need 104 extra
   // final-budget claim/deferral cycles before exercising its actual authority checks.
   addAcceptedReceiptPage(h.f, 104);
+  mark('receipts104-return');
   const evidence = h.f.db.select().from(sessionMessageAcceptanceReceipts).all();
   expect(evidence).toHaveLength(105);
   expect(new Set(evidence.map((row) => row.id)).size).toBe(105);
@@ -323,6 +327,7 @@ it('pages more than 100 same-session accepted waits without adopting them and wr
   h.at(15 * MINUTE);
   const prepare = vi.spyOn(h.f.admission.acceptance, 'prepare');
   const first = await h.pump().inspectAcceptedWaitWarnings();
+  mark('first100-return');
   expect(first).toMatchObject({
     selected: 100,
     warned: 100,
@@ -331,6 +336,7 @@ it('pages more than 100 same-session accepted waits without adopting them and wr
   });
   expect(prepare).toHaveBeenCalledTimes(100);
   const second = await h.pump().inspectAcceptedWaitWarnings(first.cursor);
+  mark('second5-return');
   expect(second).toMatchObject({
     selected: 5,
     warned: 5,
@@ -340,7 +346,9 @@ it('pages more than 100 same-session accepted waits without adopting them and wr
   expect(prepare).toHaveBeenCalledTimes(105);
   expect(warnings(h.f)).toHaveLength(105);
   const inserted = await addWaiting(h, 999);
+  mark('earlier-receipt-return');
   const wrap = await h.pump().inspectAcceptedWaitWarnings();
+  mark('wrap-return');
   expect(wrap).toMatchObject({ selected: 1, warned: 1, hasMore: false });
   expect(h.f.store.getBatch(inserted.sourceId)?.leaseUntil).toBe(h.deadline);
   expect(
@@ -351,6 +359,7 @@ it('pages more than 100 same-session accepted waits without adopting them and wr
       .filter((row) => row.id !== inserted.id)
   ).toEqual(evidence);
   expect(h.nudge).not.toHaveBeenCalled();
+  mark('assertions-return');
 });
 it('returns the coalescing warning deadline rather than the one-hour dispatch deadline', async () => {
   const h = await setup();
@@ -470,3 +479,50 @@ it.each([
   expect(warnings(h.f)).toEqual([]);
   expect(h.nudge).not.toHaveBeenCalled();
 });
+
+/** Temporary bounded scalar diagnostic; original body operations remain unchanged. */
+let shard2BodyPhaseRows = 0;
+function shard2BodyPhases() {
+  let start = NaN;
+  let previous = NaN;
+  try {
+    start = performance.now();
+    previous = start;
+  } catch {
+    /* secondary diagnostic */
+  }
+  return (
+    phase:
+      | 'begin'
+      | 'setup-return'
+      | 'receipts104-return'
+      | 'first100-return'
+      | 'second5-return'
+      | 'earlier-receipt-return'
+      | 'wrap-return'
+      | 'assertions-return'
+  ): void => {
+    try {
+      if (shard2BodyPhaseRows >= 128) return;
+      const now = performance.now();
+      const elapsed = now - start;
+      if (
+        !Number.isFinite(start) ||
+        start < 0 ||
+        !Number.isFinite(now) ||
+        now < previous ||
+        !Number.isFinite(elapsed) ||
+        elapsed < 0 ||
+        elapsed > 600000
+      )
+        return;
+      previous = now;
+      const row = '[doc-shard2-body-phase] accepted-page ' + phase + ' ' + elapsed.toFixed(3);
+      if (row.length > 255) return;
+      shard2BodyPhaseRows++;
+      console.error(row);
+    } catch {
+      /* Clock or logger failure never replaces the original cause. */
+    }
+  };
+}
