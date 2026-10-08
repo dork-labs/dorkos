@@ -67,6 +67,8 @@ const server = listeningServer(app);
 
 const CHAT = '00000000-0000-4000-8000-000000000001';
 const OTHER = '00000000-0000-4000-8000-000000000002';
+/** An id the runtime has retired in favour of {@link CHAT}. */
+const RETIRED = '00000000-0000-4000-8000-000000000003';
 const APP_WINDOW = { 'X-Client-Id': 'window-1' };
 
 /** What the dispatcher answers for a message it took. */
@@ -140,6 +142,16 @@ describe('session touches', () => {
       expect(touchOf(CHAT)).toBeUndefined();
     });
 
+    it('saves under the chat’s current id when opened by a retired one', async () => {
+      runtime.getInternalSessionId.mockImplementation((id: string) =>
+        id === RETIRED ? CHAT : undefined
+      );
+      const res = await request(server).post(`/api/sessions/${RETIRED}/opened`).set(APP_WINDOW);
+      expect(res.status).toBe(204);
+      expect(touchOf(RETIRED)).toBeUndefined();
+      expect(touchOf(CHAT)?.openedAt).toEqual(expect.any(String));
+    });
+
     it('refuses an id that is not a session id', async () => {
       const res = await request(server).post('/api/sessions/not-a-uuid/opened').set(APP_WINDOW);
       expect(res.status).toBe(400);
@@ -167,6 +179,19 @@ describe('session touches', () => {
       });
       const res = await send().set(APP_WINDOW);
       expect(res.status).toBe(409);
+      expect(touchOf(CHAT)).toBeUndefined();
+    });
+
+    it('records nothing when the dispatcher refused the message without a launch refusal', async () => {
+      // `accepted: false` still answers 202 (a busy session refusing a
+      // machine-sent trigger), but nothing was taken.
+      dispatchSessionMessage.mockResolvedValue({
+        ...accepted(),
+        accepted: false,
+        canonicalId: undefined,
+      });
+      const res = await send().set(APP_WINDOW);
+      expect(res.status).toBe(202);
       expect(touchOf(CHAT)).toBeUndefined();
     });
 
@@ -230,6 +255,20 @@ describe('session touches', () => {
         '/api/sessions/recent?limit=3&touchedSince=2026-10-08T04:00:00.000Z'
       );
       expect(res.body.sessions.map((s: Session) => s.id)).not.toContain(CHAT);
+    });
+
+    it('keeps a chat touched exactly at the given time', async () => {
+      agentAt('/p1');
+      runtime.listSessions.mockResolvedValue([
+        makeSession('busy', '2026-10-08T12:00:00.000Z'),
+        makeSession(CHAT, '2026-10-08T05:00:00.000Z'),
+      ]);
+      store.recordOpened(CHAT, '2026-10-08T04:00:00.000Z');
+
+      const res = await request(server).get(
+        '/api/sessions/recent?limit=1&touchedSince=2026-10-08T04:00:00.000Z'
+      );
+      expect(res.body.sessions.map((s: Session) => s.id)).toEqual(['busy', CHAT]);
     });
 
     it('refuses a touchedSince that is not a time', async () => {

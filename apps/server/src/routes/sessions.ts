@@ -33,7 +33,6 @@ import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logError, logger } from '../lib/logger.js';
 import { resolveDecisionAuthority } from '../services/core/approvals/index.js';
 import {
-  isPersonAtTheApp,
   readCallerAuthority,
   requireOperatorCookieUnderLogin,
   type OperatorCookieRefusal,
@@ -63,8 +62,6 @@ import {
 } from '../services/session/index.js';
 import { accountUsageForSession } from '../services/session/fleet/session-account.js';
 import { sessionExists } from '../services/session/launch/session-exists.js';
-import { getSessionTouchStore, laterIso } from '../services/session/origin/session-touch-store.js';
-import type { ResolveTouches } from '../services/session/origin/touched-by-you-overlay.js';
 import { projectsOfFolders } from '../services/projects/project-registry.js';
 import { getAccountUsageStore } from '../services/core/usage/current-usage-store.js';
 import { sessionUiActionHandler } from './session-ui-action-handler.js';
@@ -74,6 +71,11 @@ import {
   sessionQueueUpdateHandler,
 } from './session-queue-handler.js';
 import { sessionEventsHandler } from './session-events-handler.js';
+import {
+  recordWroteIfPerson,
+  sessionOpenedHandler,
+  touchedSinceKeeper,
+} from './session-touch-handler.js';
 import { sessionCommandIntentHandler } from './session-command-intent-handler.js';
 import { sessionDevtoolsActionHandler, sessionDevtoolsIngestHandler } from './session-devtools.js';
 import sessionCanvasRouter from './session-canvas.js';
@@ -119,30 +121,6 @@ function workspaceCallerOf(
   return {
     trusted: trustedCaller(readCallerAuthority(req, res)) !== undefined,
     ...(identity && { requestedBy: identity.displayName || identity.agentPath }),
-  };
-}
-
-/**
- * The `/recent` keeper for `touchedSince`: the ids of merged sessions you
- * touched at or after that time, read from `session_touches` in one batch.
- * Compared by instant, because the caller's time may carry an offset.
- *
- * @param touchedSince - ISO-8601 time from the query.
- * @param resolveTouches - The batched lookup; absent means nothing is kept.
- */
-function touchedSinceKeeper(
-  touchedSince: string,
-  resolveTouches: ResolveTouches | undefined
-): (merged: readonly { id: string }[]) => ReadonlySet<string> {
-  const since = Date.parse(touchedSince);
-  return (merged) => {
-    const kept = new Set<string>();
-    if (!resolveTouches || merged.length === 0) return kept;
-    for (const [id, touch] of resolveTouches(merged.map((s) => s.id))) {
-      const touchedAt = laterIso(touch.openedAt, touch.wroteAt);
-      if (touchedAt && Date.parse(touchedAt) >= since) kept.add(id);
-    }
-    return kept;
   };
 }
 
@@ -1110,22 +1088,10 @@ router.post('/:id/messages', async (req, res) => {
   }
 
   // Accepted, so it counts as you writing here (spec `your-activity-first`
-  // D4) — never on a refusal above, and never for an agent or a script. After
-  // the dispatch, so a failure to record costs only ordering: the message is
-  // already on its way and the 202 must still say so.
-  // A message that joined the queue has no canonical id yet; the id it was
-  // sent under is the chat's, and a later rekey moves the row with it.
-  if (isPersonAtTheApp(req, res)) {
-    const touchedId = result.canonicalId ?? sessionId;
-    try {
-      getSessionTouchStore()?.recordWrote(touchedId, new Date().toISOString());
-    } catch (err) {
-      logger.warn('[sessions] could not record that you wrote in a session', {
-        sessionId: touchedId,
-        err: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
+  // D4). A dispatch that answered `accepted: false` refused the message and
+  // records nothing. An accepted one names the chat's canonical id; the
+  // fallback only covers the type, which leaves the field optional.
+  if (result.accepted) recordWroteIfPerson(req, res, result.canonicalId ?? sessionId);
 
   res.status(202).json({
     sessionId: result.canonicalId,
@@ -1136,18 +1102,8 @@ router.post('/:id/messages', async (req, res) => {
 });
 
 // POST /api/sessions/:id/opened — the chat page is showing this chat (spec
-// `your-activity-first` D3). Recorded only for a person at the app (D4); any
-// other caller gets the same 204 and nothing changes, so the answer tells a
-// script nothing about the rule. Takes no body: Express 5 leaves `req.body`
-// undefined on an empty POST, and nothing here reads it.
-router.post('/:id/opened', (req, res) => {
-  const sessionId = parseSessionId(req.params.id);
-  if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
-  if (isPersonAtTheApp(req, res)) {
-    getSessionTouchStore()?.recordOpened(sessionId, new Date().toISOString());
-  }
-  res.status(204).end();
-});
+// `your-activity-first` D3). Handler in `session-touch-handler.ts`.
+router.post('/:id/opened', sessionOpenedHandler);
 
 // GET|PATCH|DELETE /api/sessions/:id/queue — the messages waiting on a session.
 // Handlers live in `session-queue-handler.ts` so this file stays under the size

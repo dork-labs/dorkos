@@ -2,7 +2,7 @@
  * When you last touched each chat, kept in `session_touches` (spec
  * `your-activity-first` D1).
  *
- * Two writers, both in `routes/sessions.ts` and both behind
+ * Two writers, both in `routes/session-touch-handler.ts` and both behind
  * `isPersonAtTheApp`: `POST /:id/opened` when the chat page shows a chat, and
  * `POST /:id/messages` once a message you wrote is accepted. Nothing an agent,
  * a room, a task or a binding does reaches either, so a row here is a person's
@@ -12,6 +12,11 @@
  *
  * Synchronous (better-sqlite3), like {@link SessionStartedByStore}: the overlays
  * that read it are synchronous.
+ *
+ * Rows are never deleted. There is no route that deletes a chat, and the one
+ * "chat is gone" signal (`onSessionRemoved`) also fires when a watcher blinks,
+ * so deleting on it could quietly stop a live chat being yours. A row for a
+ * chat that really is gone is three short columns no list will ever match.
  *
  * @module services/session/origin/session-touch-store
  */
