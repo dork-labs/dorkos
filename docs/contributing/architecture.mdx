@@ -406,8 +406,8 @@ The services behind those routes, grouped by domain (also not exhaustive):
 ### Chat Storage: Runtime-Owned
 
 <Callout type="info">
-  There is **no universal transcript store**: history is handled per runtime, and `GET
-  /api/sessions` aggregates across all registered runtimes, tagging every chat with its `runtime`
+  There is **no universal transcript store**: history is handled per runtime. A `GET` to
+  `/api/sessions` aggregates across all registered runtimes, tagging every chat with its `runtime`
   type. A failing runtime degrades to partial results plus a warning, never a failed request.
 </Callout>
 

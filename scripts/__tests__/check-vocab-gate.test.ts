@@ -921,7 +921,26 @@ describe('runVocabGate — docs scan wired end to end', () => {
     ]);
   });
 
-  it('scans docs against waves 4 and 5 only — a wave-1 "connection" hit in docs prose is not flagged', () => {
+  // Purpose: "chat" holds in docs, where people learn the word (DOR-2789).
+  // Fails if wave 7 drops out of the docs scan, or if an identifier in inline
+  // code (`sessionId`, which keeps its name) starts firing.
+  it('scans docs against wave 7 — "session" in prose is flagged, in inline code it is not', () => {
+    const root = makeTempDir();
+    const docPath = join(root, 'docs/guides/fixture-guide.mdx');
+    mkdirSync(join(docPath, '..'), { recursive: true });
+    writeFileSync(
+      docPath,
+      'Every chat has a `sessionId`.\nOpen a session from the sidebar.\nPast conversations stay.\n'
+    );
+
+    const violations = runVocabGate(root, ['apps/client/src'], ['docs']);
+    expect(violations.map((v) => [v.line, v.term, v.wave])).toEqual([
+      [2, 'session', 'wave-7'],
+      [3, 'conversations', 'wave-7'],
+    ]);
+  });
+
+  it('scans docs against waves 4, 5 and 7 only — a wave-1 "connection" hit in docs prose is not flagged', () => {
     const root = makeTempDir();
     const docPath = join(root, 'docs/guides/fixture-guide.mdx');
     mkdirSync(join(docPath, '..'), { recursive: true });
@@ -1111,6 +1130,12 @@ describe('the shipped banned-terms.json and allowlist.json', () => {
     const terms = loadBannedTerms();
     for (const term of ['community', 'communities'])
       expect(terms).toContainEqual({ term, wave: 'wave-5', issue: 'DOR-2631' });
+  });
+
+  it('carries the Wave 7 chat terms in singular AND plural', () => {
+    const terms = loadBannedTerms();
+    for (const term of ['session', 'sessions', 'conversation', 'conversations'])
+      expect(terms).toContainEqual({ term, wave: 'wave-7', issue: 'DOR-2789' });
   });
 
   it('carries the Wave 4 Connections terms in singular AND plural', () => {

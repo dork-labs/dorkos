@@ -134,7 +134,8 @@
  * ADR 260804-021140 retired for "Connections"; Wave 5: "community"; Wave 6:
  * the positioning lines the 2026-10 vision reset retired, "operating system
  * for AI agents", "one place for every agent", the equal-accounts claims and
- * Discord invite links). Wave 4 is also the wave that
+ * Discord invite links; Wave 7: "session" and "conversation", which
+ * "chat" replaced in everything people read, DOR-2789). Wave 4 is also the wave that
  * shows what the allowlist is FOR: all four words keep legitimate technical
  * senses this repo uses daily — `RelayAdapter`, `ConnectorProvider`, the
  * marketplace package types an author writes, OpenCode's model providers — and
@@ -846,8 +847,14 @@ export function scanMdx(filePath: string, text: string, terms: BannedTerm[]): Vi
  * {@link MDX_ALLOW_MARKER_BAN} leaves a docs page no inline marker. Moving
  * wave 6 here instead would lose Discord invite links, which sit in link
  * targets that {@link stripNonProse} blanks.
+ *
+ * Wave 7 ("session"/"conversation", DOR-2789) is scanned in docs for the same
+ * reason as wave 5: "chat" replaced both words in everything people read, and
+ * the docs are where a person learns it. Identifiers that keep the word
+ * (`sessionId`, `/api/sessions`, `session.started`) belong in inline code,
+ * which {@link stripNonProse} blanks.
  */
-const MDX_SCANNED_WAVES = new Set(['wave-4', 'wave-5']);
+const MDX_SCANNED_WAVES = new Set(['wave-4', 'wave-5', 'wave-7']);
 
 /**
  * Run the gate against a repo checkout: TypeScript/TSX source through
