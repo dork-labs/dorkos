@@ -657,7 +657,14 @@ it('holds the original worker resume until its exact same-session Fetch ACK and 
       params: { requestId: 'original-worker-request' },
     };
     f.original.onmessage?.(pause);
-    expect(f.sdk).toHaveBeenCalledWith(pause);
+    await originalTurn();
+    expect(f.sdk).not.toHaveBeenCalled();
+    expect(f.sent.at(-1)).toMatchObject({
+      method: 'Fetch.continueRequest',
+      sessionId: resume.sessionId,
+      params: { requestId: 'original-worker-request' },
+    });
+    f.ack();
     f.challenge(resume.sessionId);
     const auth = f.sent.at(-1)!;
     expect(auth).toMatchObject({
@@ -795,6 +802,357 @@ it('refuses a private worker ACK producer when all 128 original task slots are a
     expect(f.sent).toEqual([]);
     await expect(f.owner.prepareClose()).rejects.toThrow('CONTROLLER_AUTH_ADMISSION_CLOSED');
     expect(f.fault).toHaveBeenCalledTimes(1);
+  } finally {
+    await f.finish();
+  }
+});
+
+async function readyOriginalWorker(f: ReturnType<typeof fixture>) {
+  const resume = attachOriginalWorker(f, 'original-default-context');
+  f.owner.transport.send(resume);
+  await originalTurn();
+  f.ack(f.sent.at(-1)!);
+  await originalTurn();
+  f.sdk.mockClear();
+  return resume;
+}
+const workerPause = (sessionId: string, requestId = 'owned-paused-worker-request') => ({
+  method: 'Fetch.requestPaused',
+  sessionId,
+  params: { requestId },
+});
+
+it('joins the exact owned worker continuation ACK before preparation returns', async () => {
+  const f = fixture();
+  let original: Record<string, unknown> | undefined;
+  try {
+    const resume = await readyOriginalWorker(f);
+    f.original.onmessage?.(workerPause(resume.sessionId));
+    await originalTurn();
+    original = f.sent.at(-1)!;
+    expect(original).toMatchObject({
+      method: 'Fetch.continueRequest',
+      sessionId: resume.sessionId,
+      params: { requestId: 'owned-paused-worker-request' },
+    });
+    expect(Number(original.id)).toBeLessThan(0);
+    expect(f.sdk).not.toHaveBeenCalled();
+    let settled = false;
+    const preparing = f.owner.prepareClose().then(() => {
+      settled = true;
+    });
+    try {
+      await originalTurn();
+      expect(settled).toBe(false);
+    } finally {
+      f.ack(original);
+      await preparing;
+    }
+  } finally {
+    await f.finish();
+  }
+});
+
+it.each([false, undefined])(
+  'retains exact continuation ACK rejection %s as first cause',
+  async (cause) => {
+    const f = fixture();
+    try {
+      const resume = await readyOriginalWorker(f);
+      f.original.onmessage?.(workerPause(resume.sessionId));
+      await originalTurn();
+      f.ack(f.sent.at(-1)!, { value: cause });
+      const result = await f.owner.prepareClose().then(
+        () => ({ ok: true as const }),
+        (value: unknown) => ({ ok: false as const, value })
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.value).toBe(cause);
+      expect(f.sdk).not.toHaveBeenCalled();
+    } finally {
+      await f.finish();
+    }
+  }
+);
+
+it.each(['enable', 'disable'] as const)(
+  'forwards worker pauses after later SDK Fetch.%s without private continuation',
+  async (method) => {
+    const f = fixture();
+    try {
+      const resume = await readyOriginalWorker(f);
+      const command = {
+        id: 600,
+        sessionId: resume.sessionId,
+        method: 'Fetch.' + method,
+        params:
+          method === 'enable'
+            ? { handleAuthRequests: true, patterns: [{ urlPattern: '*', requestStage: 'Request' }] }
+            : {},
+      };
+      f.owner.transport.send(command);
+      const pause = workerPause(resume.sessionId);
+      f.original.onmessage?.(pause);
+      expect(f.sent.at(-1)).toBe(command);
+      expect(f.sdk).toHaveBeenCalledWith(pause);
+    } finally {
+      await f.finish();
+    }
+  }
+);
+
+it.each(['enable', 'disable'] as const)(
+  'orders prior SDK Fetch.%s before the original private worker setup',
+  async (method) => {
+    const f = fixture();
+    try {
+      const resume = attachOriginalWorker(f, 'original-default-context');
+      const params = {
+        handleAuthRequests: true,
+        patterns: [{ urlPattern: 'https://original.test/*', requestStage: 'Request' }],
+      };
+      const command = {
+        id: 600,
+        sessionId: resume.sessionId,
+        method: 'Fetch.' + method,
+        params: method === 'enable' ? params : {},
+      };
+      f.owner.transport.send(command);
+      f.owner.transport.send(resume);
+      await originalTurn();
+      const enabled = f.sent.at(-1)!;
+      expect(enabled.params).toEqual(
+        method === 'enable' ? params : { handleAuthRequests: true, patterns: [{ urlPattern: '*' }] }
+      );
+      if (method === 'enable') expect(enabled.params).not.toBe(params);
+      f.ack(enabled);
+      await originalTurn();
+      const pause = workerPause(resume.sessionId);
+      f.original.onmessage?.(pause);
+      await originalTurn();
+      if (method === 'enable') {
+        expect(f.sdk).toHaveBeenCalledWith(pause);
+        expect(f.sent.at(-1)).toBe(resume);
+      } else {
+        expect(f.sdk.mock.calls.some(([value]) => value === pause)).toBe(false);
+        expect(f.sent.at(-1)?.method).toBe('Fetch.continueRequest');
+        f.ack();
+      }
+    } finally {
+      await f.finish();
+    }
+  }
+);
+
+it('refuses a revoked original worker pause before entering continuation', async () => {
+  const f = fixture();
+  try {
+    const resume = await readyOriginalWorker(f);
+    const before = f.sent.length;
+    f.revoke();
+    f.original.onmessage?.(workerPause(resume.sessionId));
+    expect(f.sent).toHaveLength(before);
+    expect(f.sdk).not.toHaveBeenCalled();
+    await expect(f.owner.prepareClose()).rejects.toThrow('CONTROLLER_AUTH_WORKER_REQUEST_REVOKED');
+  } finally {
+    await f.finish();
+  }
+});
+
+it.each(['actual-page', 'foreign-worker'])(
+  'leaves non-managed session %s pause with its original SDK consumer',
+  async (sessionId) => {
+    const f = fixture();
+    try {
+      f.attach();
+      const pause = workerPause(sessionId);
+      f.original.onmessage?.(pause);
+      expect(f.sdk).toHaveBeenCalledWith(pause);
+      expect(f.sent).toEqual([]);
+      expect(f.fault).not.toHaveBeenCalled();
+    } finally {
+      await f.finish();
+    }
+  }
+);
+
+it('retains a worker pause received before Fetch ACK and continues only after that exact ACK', async () => {
+  const f = fixture();
+  let enable: Record<string, unknown> | undefined;
+  let enableReturned = false;
+  try {
+    const resume = attachOriginalWorker(f, 'original-default-context');
+    f.owner.transport.send(resume);
+    await originalTurn();
+    enable = f.sent.at(-1)!;
+    f.sdk.mockClear();
+    f.original.onmessage?.(workerPause(resume.sessionId));
+    await originalTurn();
+    expect(f.sent).toEqual([enable]);
+    expect(f.sdk).not.toHaveBeenCalled();
+    f.ack(enable);
+    enableReturned = true;
+    await originalTurn();
+    const continued = f.sent.find((value) => value.method === 'Fetch.continueRequest')!;
+    expect(continued).toMatchObject({
+      sessionId: resume.sessionId,
+      params: { requestId: 'owned-paused-worker-request' },
+    });
+    f.ack(continued);
+    await f.owner.prepareClose();
+    expect(f.fault).not.toHaveBeenCalled();
+  } finally {
+    if (enable && !enableReturned) f.ack(enable);
+    await f.finish();
+  }
+});
+
+it('SDK disable during held private Fetch ACK prevents forwarding the original worker resume', async () => {
+  const f = fixture();
+  try {
+    const resume = attachOriginalWorker(f, 'original-default-context');
+    f.owner.transport.send(resume);
+    await originalTurn();
+    const enable = f.sent.at(-1)!;
+    const disable = { id: 650, method: 'Fetch.disable', sessionId: resume.sessionId, params: {} };
+    f.owner.transport.send(disable);
+    expect(f.sent.at(-1)).toBe(disable);
+    f.ack(enable);
+    await originalTurn();
+    expect(f.sent).not.toContain(resume);
+    await expect(f.owner.prepareClose()).rejects.toThrow('CONTROLLER_AUTH_WORKER_RESUME_REFUSED');
+  } finally {
+    await f.finish();
+  }
+});
+
+it.each(['close', 'revoke', 'detach', 'sdk-disable'] as const)(
+  'a pre-ACK worker pause cannot enter continuation after %s',
+  async (action) => {
+    const f = fixture();
+    let preparing: Promise<unknown> | undefined;
+    try {
+      const resume = attachOriginalWorker(f, 'original-default-context');
+      f.owner.transport.send(resume);
+      await originalTurn();
+      const enable = f.sent.at(-1)!;
+      f.original.onmessage?.(workerPause(resume.sessionId));
+      await originalTurn();
+      if (action === 'close') preparing = f.owner.prepareClose().catch((value: unknown) => value);
+      else if (action === 'revoke') f.revoke();
+      else if (action === 'detach')
+        f.original.onmessage?.({
+          method: 'Target.detachedFromTarget',
+          params: { sessionId: resume.sessionId },
+        });
+      else
+        f.owner.transport.send({
+          id: 651,
+          method: 'Fetch.disable',
+          sessionId: resume.sessionId,
+          params: {},
+        });
+      f.ack(enable);
+      await originalTurn();
+      expect(f.sent.some((value) => value.method === 'Fetch.continueRequest')).toBe(false);
+      expect(f.sent).not.toContain(resume);
+      expect(f.fault).toHaveBeenCalledTimes(1);
+      await (preparing ?? f.owner.prepareClose().catch((value: unknown) => value));
+    } finally {
+      await f.finish();
+    }
+  }
+);
+
+it('releases settled worker request keys without imposing a permanent browsing history cap', async () => {
+  const f = fixture();
+  try {
+    const resume = await readyOriginalWorker(f);
+    for (let index = 0; index < 2; index++) {
+      f.original.onmessage?.(workerPause(resume.sessionId));
+      await originalTurn();
+      const continued = f.sent.at(-1)!;
+      expect(continued.method).toBe('Fetch.continueRequest');
+      f.ack(continued);
+      await originalTurn();
+    }
+    expect(f.fault).not.toHaveBeenCalled();
+    await f.owner.prepareClose();
+  } finally {
+    await f.finish();
+  }
+});
+
+it('refuses duplicate worker pauses while their original continuation ACK remains pending', async () => {
+  const f = fixture();
+  try {
+    const resume = await readyOriginalWorker(f);
+    const pause = workerPause(resume.sessionId);
+    f.original.onmessage?.(pause);
+    await originalTurn();
+    f.original.onmessage?.(pause);
+    await expect(f.owner.prepareClose()).rejects.toThrow('CONTROLLER_AUTH_WORKER_REQUEST_REPEATED');
+    expect(f.sent.filter((value) => value.method === 'Fetch.continueRequest')).toHaveLength(1);
+  } finally {
+    await f.finish();
+  }
+});
+
+it('captures original SDK routing patterns before caller mutation and preserves original command forwarding', async () => {
+  const f = fixture();
+  try {
+    const resume = attachOriginalWorker(f, 'original-default-context');
+    const params = {
+      handleAuthRequests: true,
+      patterns: [{ urlPattern: 'https://original.test/*', requestStage: 'Response' }],
+    };
+    const command = { id: 652, method: 'Fetch.enable', sessionId: resume.sessionId, params };
+    f.owner.transport.send(command);
+    expect(f.sent.at(-1)).toBe(command);
+    params.patterns[0]!.urlPattern = '*';
+    f.owner.transport.send(resume);
+    await originalTurn();
+    const enable = f.sent.at(-1)!;
+    expect(enable.params).toEqual({
+      handleAuthRequests: true,
+      patterns: [{ urlPattern: 'https://original.test/*', requestStage: 'Response' }],
+    });
+    f.ack(enable);
+    await originalTurn();
+    f.sdk.mockClear();
+    const pause = workerPause(resume.sessionId);
+    f.original.onmessage?.(pause);
+    expect(f.sdk).toHaveBeenCalledWith(pause);
+    expect(f.sent.at(-1)).toBe(resume);
+  } finally {
+    await f.finish();
+  }
+});
+
+it('leaves an admitted dedicated worker pause with its SDK routing consumer', async () => {
+  const f = fixture();
+  try {
+    const resume = attachOriginalWorker(f, 'original-default-context');
+    f.original.onmessage?.({
+      method: 'Target.attachedToTarget',
+      params: {
+        sessionId: 'dedicated-worker',
+        targetInfo: {
+          targetId: 'dedicated-target',
+          type: 'worker',
+          browserContextId: 'original-default-context',
+        },
+      },
+    });
+    f.owner.transport.send(resume);
+    await originalTurn();
+    f.ack();
+    await originalTurn();
+    f.sdk.mockClear();
+    const pause = workerPause('dedicated-worker');
+    f.original.onmessage?.(pause);
+    expect(f.sdk).toHaveBeenCalledWith(pause);
+    expect(f.sent.filter((value) => value.method === 'Fetch.continueRequest')).toEqual([]);
   } finally {
     await f.finish();
   }

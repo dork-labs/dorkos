@@ -1,3 +1,5 @@
+import { createControllerAuthDiagnostic } from './controller-auth-diagnostic.js';
+import { createControllerWorkerFetch } from './controller-worker-fetch.js';
 import { createControllerFetchStages } from './controller-fetch-stages.js';
 import type { ConnectOverCDPTransport } from 'playwright-core';
 
@@ -47,42 +49,9 @@ export function createControllerProxyAuthentication(
     closeOriginal = original.close.bind(original),
     isCurrent = current,
     failOriginal = failed;
-  type Decision =
-    | 'provide'
-    | 'repeat'
-    | 'session'
-    | 'authority'
-    | 'source'
-    | 'origin-type'
-    | 'origin-mismatch'
-    | 'origin-invalid'
-    | 'challenge-invalid'
-    | 'ack-observed'
-    | 'ack-refused'
-    | 'original-fault'
-    | 'send-refused'
-    | 'ack-unobserved';
-  const emitted = new Set<Decision>();
-  let diagnosticSink: ((value: string) => unknown) | undefined;
-  try {
-    diagnosticSink = diagnosticWrite ?? process.stderr.write.bind(process.stderr);
-  } catch {
-    /* Diagnostics have no authority. */
-  }
-  const emit = (decision: Decision) => {
-    try {
-      if (emitted.has(decision) || emitted.size >= 16) return;
-      emitted.add(decision);
-      diagnosticSink?.(
-        'Browser original controller proxy authentication diagnostic ' +
-          JSON.stringify({ ordinal: emitted.size, decision }) +
-          '\n'
-      );
-    } catch {
-      /* The original decision and producer cause stay unchanged. */
-    }
-  };
-  const fetchStages = createControllerFetchStages((value) => diagnosticSink?.(value));
+  const { emit, write } = createControllerAuthDiagnostic(diagnosticWrite);
+  type Decision = Parameters<typeof emit>[0];
+  const fetchStages = createControllerFetchStages(write);
   const sessions = new Map<string, Session>();
   const targets = new Map<string, Target>();
   for (const info of initialTargets) {
@@ -111,7 +80,7 @@ export function createControllerProxyAuthentication(
     number,
     {
       session: string;
-      method: 'Fetch.continueWithAuth' | 'Fetch.enable';
+      method: 'Fetch.continueWithAuth' | 'Fetch.enable' | 'Fetch.continueRequest';
       resolve(): void;
       reject(value: unknown): void;
       timer: ReturnType<typeof setTimeout>;
@@ -119,6 +88,7 @@ export function createControllerProxyAuthentication(
   >();
   const tasks = new Set<Promise<void>>();
   const workerReady = new Map<string, Promise<void>>();
+  const workerFetch = createControllerWorkerFetch();
   let next = -1,
     retiring = false,
     closed = false;
@@ -191,12 +161,14 @@ export function createControllerProxyAuthentication(
     for (const child of removing) {
       sessions.delete(child);
       workerReady.delete(child);
+      workerFetch.detach(child);
     }
   };
   const ownSend = (
     session: string,
     params: Message,
-    method: 'Fetch.continueWithAuth' | 'Fetch.enable' = 'Fetch.continueWithAuth'
+    method:
+      'Fetch.continueWithAuth' | 'Fetch.enable' | 'Fetch.continueRequest' = 'Fetch.continueWithAuth'
   ) => {
     if (
       retiring ||
@@ -212,14 +184,7 @@ export function createControllerProxyAuthentication(
       resolve = yes;
       reject = no;
     });
-    tasks.add(task);
-    void task.then(
-      () => tasks.delete(task),
-      (value) => {
-        note(value);
-        tasks.delete(task);
-      }
-    );
+    retain(task);
     const timer = setTimeout(() => {
       pending.delete(id);
       const value = new Error('CONTROLLER_AUTH_ACK_UNOBSERVED');
@@ -239,6 +204,16 @@ export function createControllerProxyAuthentication(
     }
     return task;
   };
+  const retain = (original: Promise<void>) => {
+    tasks.add(original);
+    void original.then(
+      () => tasks.delete(original),
+      (value) => {
+        note(value);
+        tasks.delete(original);
+      }
+    );
+  };
   const resumeWorker = (value: Message, sessionId: string, session: Session) => {
     if (tasks.size >= 128) throw new Error('CONTROLLER_AUTH_WORKER_RESUME_CAPACITY');
     const admit = () => {
@@ -252,28 +227,22 @@ export function createControllerProxyAuthentication(
       admit();
       let ready = workerReady.get(sessionId);
       if (!ready) {
-        ready = ownSend(
-          sessionId,
-          {
-            handleAuthRequests: true,
-            patterns: [{ urlPattern: '*' }],
-          },
-          'Fetch.enable'
-        );
+        const params = workerFetch.setup(sessionId);
+        ready = Promise.resolve().then(() => {
+          admit();
+          if (workerReady.get(sessionId) !== ready)
+            throw new Error('CONTROLLER_AUTH_WORKER_RESUME_REFUSED');
+          return ownSend(sessionId, params, 'Fetch.enable');
+        });
         workerReady.set(sessionId, ready);
       }
       await ready;
       admit();
+      if (workerReady.get(sessionId) !== ready)
+        throw new Error('CONTROLLER_AUTH_WORKER_RESUME_REFUSED');
       sendOriginal(value);
     });
-    tasks.add(original);
-    void original.then(
-      () => tasks.delete(original),
-      (value) => {
-        note(value);
-        tasks.delete(original);
-      }
-    );
+    retain(original);
   };
   const transport: ConnectOverCDPTransport = {
     open() {
@@ -301,6 +270,17 @@ export function createControllerProxyAuthentication(
         if (session?.admitted && targets.get(session.target)?.type === 'service_worker') {
           resumeWorker(value, value.sessionId, session);
           return;
+        }
+      }
+      const workerSession = opaque(value.sessionId) ? sessions.get(value.sessionId) : undefined;
+      if (
+        opaque(value.sessionId) &&
+        workerSession?.admitted &&
+        targets.get(workerSession.target)?.type === 'service_worker'
+      ) {
+        if (value.method === 'Fetch.enable' || value.method === 'Fetch.disable') {
+          workerReady.delete(value.sessionId);
+          workerFetch.sdk(value.sessionId, value.method, value.params);
         }
       }
       const fetchStage = fetchStages.entering(value);
@@ -391,6 +371,48 @@ export function createControllerProxyAuthentication(
             targetId,
             typeof value.sessionId === 'string' ? value.sessionId : undefined
           );
+      }
+      const pausedSession =
+        value.method === 'Fetch.requestPaused' && opaque(value.sessionId)
+          ? sessions.get(value.sessionId)
+          : undefined;
+      if (
+        value.method === 'Fetch.requestPaused' &&
+        opaque(value.sessionId) &&
+        pausedSession?.admitted &&
+        targets.get(pausedSession.target)?.type === 'service_worker' &&
+        workerFetch.owns(value.sessionId)
+      ) {
+        if (retiring || first) return;
+        if (!isCurrent()) throw new Error('CONTROLLER_AUTH_WORKER_REQUEST_REVOKED');
+        if (!record(value.params) || !opaque(value.params.requestId))
+          throw new Error('CONTROLLER_AUTH_WORKER_REQUEST_INVALID');
+        if (tasks.size >= 128) throw new Error('CONTROLLER_AUTH_WORKER_REQUEST_CAPACITY');
+        const sessionId = value.sessionId,
+          requestId = value.params.requestId;
+        const ready = workerReady.get(sessionId);
+        if (!ready) throw new Error('CONTROLLER_AUTH_WORKER_REQUEST_REVOKED');
+        const release = workerFetch.begin(sessionId, requestId);
+        const original = Promise.resolve().then(async () => {
+          try {
+            await ready;
+            if (first) throw first.value;
+            if (
+              retiring ||
+              closed ||
+              !isCurrent() ||
+              sessions.get(sessionId) !== pausedSession ||
+              workerReady.get(sessionId) !== ready ||
+              !workerFetch.owns(sessionId)
+            )
+              throw new Error('CONTROLLER_AUTH_WORKER_REQUEST_REVOKED');
+            await ownSend(sessionId, { requestId }, 'Fetch.continueRequest');
+          } finally {
+            release();
+          }
+        });
+        retain(original);
+        return;
       }
       if (value.method !== 'Fetch.authRequired') {
         transport.onmessage?.(value);
