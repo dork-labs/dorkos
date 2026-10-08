@@ -143,6 +143,10 @@ revealAutomated(today, state); // the runs, if the operator opened the reveal
 
 Who is eligible → what mute removes → what the overnight boundary removes → what order the rest come in → and only then which one is pinned first. The anchor is exempted at every step before the last, so nothing can mute, archive or cap the conversation you have open out of first place.
 
+**Whose a chat is comes first, and it is what you did in it, not how it started** (spec `your-activity-first` D7, D10). `selectTodayItems` splits the whole recent window with `partitionSessionsByOwnership` from `entities/session`: a chat is **yours** when you opened it on the chat page or wrote in it, on any device (`Session.lastTouchedByYouAt`, `userLastMessageAt`), or when nothing but a person started it. A **spin-off** (started by another chat) or an **automated** chat (room, task, agent, channel, extension) that you never touched waits behind the reveal row. Only your chats touched since 04:00 are Today's. The split runs before any cap, and nothing slices the window first: `useSidebarState` reads the whole shared `useRecentSessions` entry, which already carries every chat you touched since 04:00 beyond its limit (`touchedSince`). Slicing first is what once dropped a chat you typed in when ten agent chats were newer.
+
+**The order key is `max(local opened, lastTouchedByYouAt, userLastMessageAt)`** (`lastInteractionAt` in `rules/order-today.ts`). The local open record is written by the chat page when it shows a chat (`useRecordChatOpened` in `entities/session`), never by a click handler, so a deep link, a reload or a notification counts as much as a sidebar click. `lastTouchedByYouAt` is the server's copy of the same fact, so the desktop, the phone and a second browser agree.
+
 `revealAutomated` runs after every one of them, and that is the point: an automated run put into the candidate list would be sorted by an interaction recency it does not have, measured for a staleness it does not have, and would spend places from the soft cap that belong to the conversations the operator was actually in. It appends, so the runs hang off the bottom of the finished list.
 
 **Pass the exemption arguments or the promise silently stops being true.** `applyMuteRules`' `exemptKey` and `archiveOvernight`'s third argument are the only mechanisms that spare the anchor — `archive-overnight.ts` filters on `row.key === exemptions.anchorKey` and nothing else. Both parameters are optional (`exemptions: ArchiveExemptions = {}`), so a composition that omits them compiles, passes typecheck, and quietly archives the conversation the operator is looking at.
@@ -159,6 +163,7 @@ Getting one of these wrong fails silently. `epochMs` turns an unparseable value 
 | `AgentRosterEntry.lastActivityAt` | epoch milliseconds, or `null`                  |
 | `state.interactions`              | **ISO-8601 strings** (`InteractionTimestamps`) |
 | `state.userLastMessageAt`         | **ISO-8601 strings**                           |
+| `state.lastTouchedByYouAt`        | **ISO-8601 strings**                           |
 | `SidebarAttentionSignal.since`    | **ISO-8601 string**                            |
 | `prefs.digest.lastShownDate`      | a local date key, `YYYY-MM-DD`                 |
 
@@ -329,7 +334,7 @@ Note that `FIXTURE_NOW` is a **local** instant (09:15 on 9 August 2026), not a f
 
 ### Today comes out alphabetical instead of by recency
 
-**Cause**: almost always a unit mismatch. `state.interactions` and `state.userLastMessageAt` hold ISO-8601 strings; epoch milliseconds satisfy the `string` type, parse to `NaN`, and are read as "never opened".
+**Cause**: almost always a unit mismatch. `state.interactions`, `state.userLastMessageAt` and `state.lastTouchedByYouAt` hold ISO-8601 strings; epoch milliseconds satisfy the `string` type, parse to `NaN`, and are read as "never opened".
 **Fix**: emit ISO. `__tests__/interaction-seam.test.ts` is the test that proves both directions of this.
 
 ### A Today row moved while somebody was reading it
