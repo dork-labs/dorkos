@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'fix(chats): sort a chat whose time does not parse last (DOR-2789)'
   - "feat(chats): one chat list for an agent's profile and Switch session (DOR-2789)"
   - 'refactor(chats): remove the lists the chat list replaced, and show it in the playground (DOR-2789)'
   - 'fix(chats): fit the chat list to a phone and keep origin marks to rooms and schedules (DOR-2789)'
