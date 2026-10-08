@@ -53,9 +53,9 @@ export function AdapterBindingRow({
         {canInitiate && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <Zap className="size-3 shrink-0 text-amber-500" aria-label="Can start chats" />
+              <Zap className="size-3 shrink-0 text-amber-500" aria-label="Can message first" />
             </TooltipTrigger>
-            <TooltipContent>Can start chats</TooltipContent>
+            <TooltipContent>Can message first</TooltipContent>
           </Tooltip>
         )}
         {!canReply && (

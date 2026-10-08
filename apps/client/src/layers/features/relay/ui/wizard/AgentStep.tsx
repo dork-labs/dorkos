@@ -17,8 +17,8 @@ import { getAgentDisplayName } from '@/layers/shared/lib';
 const MEMORY_CHOICES: { value: SessionStrategy; label: string; hint: string }[] = [
   {
     value: 'per-chat',
-    label: 'One chat per group',
-    hint: 'Everyone in a group shares one chat with the agent.',
+    label: 'One shared chat per group or channel',
+    hint: 'Everyone there shares one chat with the agent.',
   },
   {
     value: 'per-user',

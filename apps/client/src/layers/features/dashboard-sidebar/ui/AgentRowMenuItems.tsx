@@ -165,7 +165,7 @@ export function buildRowMenuNodes(model: RowMenuModel): RowMenuNode[] {
     {
       kind: 'action',
       id: 'sessions',
-      label: 'Switch session',
+      label: 'Switch chat',
       icon: MessagesSquare,
       // Opens the switcher dialog, which is what earns the ellipsis and what
       // arms the close-focus guard: Radix restores focus one commit after the
@@ -192,7 +192,7 @@ export function buildRowMenuNodes(model: RowMenuModel): RowMenuNode[] {
     {
       kind: 'action',
       id: 'new-session',
-      label: 'New session',
+      label: 'New chat',
       icon: Plus,
       opensInput: false,
       run: model.onNewSession,

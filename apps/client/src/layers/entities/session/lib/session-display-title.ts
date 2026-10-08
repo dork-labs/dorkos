@@ -7,7 +7,7 @@
  * there is one word for one state — the alternative, which this replaced, was
  * a bar and a list calling the same session two different things.
  */
-export const UNTITLED_SESSION_LABEL = 'New session';
+export const UNTITLED_SESSION_LABEL = 'New chat';
 
 /**
  * A session's human-readable title, never blank (DOR-202).

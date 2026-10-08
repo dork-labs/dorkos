@@ -25,8 +25,8 @@ import type { PermissionMode } from '@dorkos/shared/schemas';
 const SESSION_STRATEGIES: { value: SessionStrategy; label: string; description: string }[] = [
   {
     value: 'per-chat',
-    label: 'One chat per group',
-    description: 'Everyone in a group shares one chat with the agent.',
+    label: 'One shared chat per group or channel',
+    description: 'Everyone there shares one chat with the agent.',
   },
   {
     value: 'per-user',
@@ -240,13 +240,13 @@ export function BindingAdvancedSection({
               className="flex cursor-pointer items-center gap-1.5 text-xs font-normal"
             >
               <Shield className="text-muted-foreground size-3" />
-              Agent can start chats
+              Agent can message first
             </Label>
             <Switch
               id="perm-initiate"
               checked={canInitiate}
               onCheckedChange={onCanInitiateChange}
-              aria-label="Agent can start chats"
+              aria-label="Agent can message first"
             />
           </div>
           <div className="flex cursor-pointer items-center justify-between gap-3">
@@ -290,7 +290,7 @@ export function BindingAdvancedSection({
           <p className="text-muted-foreground text-xs">
             When off, you still hear about runs that didn’t finish.
           </p>
-          <p className="text-muted-foreground text-xs">Needs “Agent can start chats”.</p>
+          <p className="text-muted-foreground text-xs">Needs “Agent can message first”.</p>
           {notifyBootstrapHint && (
             <p className="text-muted-foreground text-xs">
               Message your bot once to start. Bots can’t write first.

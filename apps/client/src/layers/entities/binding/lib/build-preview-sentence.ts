@@ -8,7 +8,7 @@ import type { SessionStrategy } from '@dorkos/shared/relay-schemas';
 export const SELECT_ANY = '__any__';
 
 const STRATEGY_PHRASES: Record<SessionStrategy, string> = {
-  'per-chat': 'One chat for each group',
+  'per-chat': 'One shared chat per group or channel',
   'per-user': 'One chat for each person',
   stateless: 'No memory between messages',
 };

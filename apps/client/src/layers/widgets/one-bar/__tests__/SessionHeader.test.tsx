@@ -91,14 +91,14 @@ describe('SessionHeader', () => {
 
   // --- Fallbacks (spec §5.3) ---
 
-  it('names a session the runtime has not titled yet "New session"', () => {
+  it('names a session the runtime has not titled yet "New chat"', () => {
     renderBar({ agentName: 'dorkbot', agentVisual: VISUAL, sessionTitle: '' });
-    expect(screen.getByText('New session')).toBeInTheDocument();
+    expect(screen.getByText('New chat')).toBeInTheDocument();
   });
 
-  it('says "New session" before any title has been fetched at all', () => {
+  it('says "New chat" before any title has been fetched at all', () => {
     renderBar({ agentName: 'dorkbot', agentVisual: VISUAL });
-    expect(screen.getByText('New session')).toBeInTheDocument();
+    expect(screen.getByText('New chat')).toBeInTheDocument();
   });
 
   it('falls back to the directory name when the session has no agent', () => {

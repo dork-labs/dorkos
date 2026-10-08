@@ -7,7 +7,7 @@ export function resolveSubjectLabelLocal(subject: string): string {
   // constant, so the relay feed and an activity row can never call one object
   // by two names (DOR-1490).
   if (subject.startsWith(TASK_SUBJECT_PREFIX)) return TASK_SUBJECT_LABEL;
-  if (subject.startsWith('relay.human.console.')) return 'Your browser session';
+  if (subject.startsWith('relay.human.console.')) return 'You, in the browser';
   if (subject.startsWith('relay.agent.')) {
     const id = subject.slice('relay.agent.'.length);
     return `Agent (${id.slice(0, 7)})`;
