@@ -1,3 +1,8 @@
+import {
+  createOriginalObserverFailureSink,
+  projectOriginalObserverFailure,
+  readOriginalObserverFailure,
+} from '../runtime/journal/unknown-diagnostic.js';
 import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -16,6 +21,7 @@ import {
   originalLeafDiagnostic,
   hasOriginalLeafTerminal,
   openDarwinLeafEventOwner,
+  originalLeafBaselineRefusal,
 } from '../runtime/darwin-leaf-event-owner.js';
 import type { DarwinChildrenBatch } from '../runtime/darwin-process-observer.js';
 const captured = vi.hoisted(() => ({ launch: vi.fn(), accepts: vi.fn() }));
@@ -48,6 +54,7 @@ async function fixture(
   options: {
     beforeAck?: 'fork' | 'exit';
     admitted?: boolean;
+    refusal?: Readonly<{ reason: string; error: number }>;
     holdReturn?: boolean;
     holdAck?: boolean;
     holdWrite?: boolean;
@@ -69,7 +76,14 @@ async function fixture(
     release = () => yes({ firstCause: null });
   });
   const row = (kind: string, slot: number, result: string) =>
-    stdout.write(JSON.stringify({ kind, slot, result }) + '\n');
+    stdout.write(
+      JSON.stringify({
+        kind,
+        slot,
+        result,
+        ...(kind === 'watch' && result === 'refused' && options.refusal ? options.refusal : {}),
+      }) + '\n'
+    );
   let releaseAck: () => void = () => {};
   let releaseWrite: () => void = () => {};
   let entered!: () => void;
@@ -843,5 +857,113 @@ it('never retries or returns a baseline after the entered native watch refuses',
     f.release();
     await expect(f.owner.close()).rejects.toBe(first);
     writing.mockRestore();
+  }
+});
+
+it.each([false, undefined])(
+  'retains exact native watch refusal while original diagnostic writer throws %s',
+  async (failure) => {
+    const f = await fixture({ admitted: false, refusal: { reason: 'fork', error: 0 } });
+    let originalFailure: unknown;
+    try {
+      try {
+        await f.owner.enrollBaseline!(identity, 2);
+      } catch (value) {
+        originalFailure = value;
+      }
+      expect(originalFailure).toBeInstanceOf(Error);
+      expect(originalFailure).toMatchObject({ message: 'LEAF_EVENT_BASELINE_UNAVAILABLE' });
+      expect(originalLeafBaselineRefusal(originalFailure)).toEqual({ reason: 'fork', error: 0 });
+      const row = projectOriginalObserverFailure(1, 'leaf-baseline', originalFailure);
+      expect(row.leafRefusal).toEqual({ reason: 'fork', error: 0 });
+      expect(Object.isFrozen(row.leafRefusal)).toBe(true);
+      const sink = createOriginalObserverFailureSink(() => {
+        throw failure;
+      });
+      expect(
+        await sink(row).then(
+          () => ({ ok: true }),
+          (value) => ({ value })
+        )
+      ).toEqual({ value: failure });
+      expect(originalLeafBaselineRefusal(originalFailure)).toEqual({ reason: 'fork', error: 0 });
+      await expect(f.owner.enrollBaseline!(identity, 2)).rejects.toBe(originalFailure);
+    } finally {
+      f.release();
+      await expect(f.owner.close()).rejects.toBe(originalFailure);
+    }
+  }
+);
+for (const refusal of [
+  { reason: 'secret path', error: 0 },
+  { reason: 'fork', error: -1 },
+  { reason: 'exit', error: 2147483648 },
+])
+  it('refuses malformed native refusal ' + JSON.stringify(refusal), async () => {
+    const f = await fixture({ admitted: false, refusal });
+    try {
+      await expect(f.owner.enrollBaseline!(identity, 2)).rejects.toThrow(
+        'LEAF_EVENT_OWNER_UNAVAILABLE'
+      );
+    } finally {
+      f.release();
+      await expect(f.owner.close()).rejects.toThrow('LEAF_EVENT_OWNER_UNAVAILABLE');
+    }
+  });
+it('bounds the longest refused ACK within the original reserved frame', () => {
+  for (const reason of [
+    'registration-return',
+    'registration-flags',
+    'registration-error',
+    'census-incomplete',
+  ])
+    expect(
+      Buffer.byteLength(
+        JSON.stringify({ kind: 'watch', slot: 512, result: 'refused', reason, error: 2147483647 }) +
+          '\n'
+      )
+    ).toBeLessThanOrEqual(128);
+});
+it('joins held native refusal ACK and write before exposing original reason', async () => {
+  const f = await fixture({
+    admitted: false,
+    refusal: { reason: 'registration-error', error: 1 },
+    holdAck: true,
+    holdWrite: true,
+  });
+  const original = f.owner.enrollBaseline!(identity, 2);
+  const observed = original.then(
+    () => ({ ok: true }),
+    (value) => ({ value })
+  );
+  let settled = false;
+  void observed.then(() => {
+    settled = true;
+  });
+  try {
+    await f.baselineEntered;
+    expect(settled).toBe(false);
+    f.releaseAck();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    f.releaseWrite();
+    const returned = await observed;
+    if (!('value' in returned)) throw new Error('Original refusal missing');
+    expect(originalLeafBaselineRefusal(returned.value)).toEqual({
+      reason: 'registration-error',
+      error: 1,
+    });
+    const bytes = new TextEncoder().encode(
+      JSON.stringify(projectOriginalObserverFailure(1, 'leaf-baseline', returned.value)) + '\n'
+    );
+    const row = readOriginalObserverFailure(bytes);
+    expect(row?.leafRefusal).toEqual({ reason: 'registration-error', error: 1 });
+    expect(Object.isFrozen(row?.leafRefusal)).toBe(true);
+  } finally {
+    f.releaseAck();
+    f.releaseWrite();
+    f.release();
+    await Promise.allSettled([original, f.owner.close()]);
   }
 });

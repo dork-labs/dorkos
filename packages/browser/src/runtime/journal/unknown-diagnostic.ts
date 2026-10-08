@@ -1,3 +1,7 @@
+import {
+  leafBaselineRefusalReasons,
+  originalLeafBaselineRefusal,
+} from '../darwin-leaf-event-owner.js';
 import { z } from 'zod';
 
 const error = z.number().int().min(0).max(2147483647);
@@ -192,6 +196,13 @@ const observerFailure = z
     phase: observerPhase,
     failure: z.enum(['undefined', 'false', 'error', 'other']),
     code: observerCode.optional(),
+    leafRefusal: z
+      .object({
+        reason: z.enum(leafBaselineRefusalReasons),
+        error: z.number().int().min(0).max(2147483647),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 export type OriginalObserverPhase = z.infer<typeof observerPhase>;
@@ -217,15 +228,17 @@ export function projectOriginalObserverFailure(
   } catch {
     /* Observation cannot replace the original catch value. */
   }
-  return Object.freeze(
-    observerFailure.parse({
-      kind: 'original-observer-failure',
-      sequence,
-      phase,
-      failure,
-      ...(code === undefined ? {} : { code }),
-    })
-  );
+  const leafRefusal = originalLeafBaselineRefusal(value);
+  const projected = observerFailure.parse({
+    kind: 'original-observer-failure',
+    sequence,
+    phase,
+    failure,
+    ...(code === undefined ? {} : { code }),
+    ...(leafRefusal === undefined ? {} : { leafRefusal }),
+  });
+  if (projected.leafRefusal) Object.freeze(projected.leafRefusal);
+  return Object.freeze(projected);
 }
 
 /** Parse one original bounded failure line after the worker's original pipes return. */
@@ -236,7 +249,9 @@ export function readOriginalObserverFailure(bytes: Uint8Array) {
     if (!line.startsWith('{"kind":"original-observer-failure",')) continue;
     if (original || Buffer.byteLength(line) > 512)
       throw new Error('JOURNAL_DIAGNOSTIC_UNAVAILABLE');
-    original = Object.freeze(observerFailure.parse(JSON.parse(line)));
+    const parsed = observerFailure.parse(JSON.parse(line));
+    if (parsed.leafRefusal) Object.freeze(parsed.leafRefusal);
+    original = Object.freeze(parsed);
   }
   return original;
 }
@@ -268,6 +283,9 @@ export function createOriginalObserverFailureSink(
         phase: row.phase,
         failure: row.failure,
         ...(row.code === undefined ? {} : { code: row.code }),
+        ...(row.leafRefusal === undefined
+          ? {}
+          : { leafRefusal: { reason: row.leafRefusal.reason, error: row.leafRefusal.error } }),
       });
       const bytes = (parent ? 'JOURNAL_ORIGINAL_FAILURE: ' : '') + JSON.stringify(checked) + '\n';
       if (Buffer.byteLength(bytes) > 1024) throw new Error('JOURNAL_DIAGNOSTIC_UNAVAILABLE');

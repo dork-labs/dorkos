@@ -6,6 +6,37 @@ import {
 } from './darwin-owned-child.js';
 import { parseDarwinChildrenBatch, type DarwinChildrenBatch } from './darwin-process-observer.js';
 
+/** Closed native decision observation; no receipt can supply terminal or baseline authority. */
+export const leafBaselineRefusalReasons = [
+  'initial-read',
+  'initial-zombie',
+  'initial-birth',
+  'registration-return',
+  'registration-flags',
+  'registration-error',
+  'census-error',
+  'census-incomplete',
+  'outer-read',
+  'outer-zombie',
+  'outer-birth',
+  'outer-parent',
+  'boot',
+  'census-birth',
+  'census-parent',
+  'fork',
+  'exit',
+] as const;
+type LeafBaselineRefusal = Readonly<{
+  reason: (typeof leafBaselineRefusalReasons)[number];
+  error: number;
+}>;
+const originalBaselineRefusals = new WeakMap<object, LeafBaselineRefusal>();
+/** Read only the original private Error association; never participant fields or a new native probe. */
+export function originalLeafBaselineRefusal(value: unknown): LeafBaselineRefusal | undefined {
+  return value !== null && (typeof value === 'object' || typeof value === 'function')
+    ? originalBaselineRefusals.get(value)
+    : undefined;
+}
 interface Watch {
   identity: ProcessIdentity;
   epoch: number;
@@ -16,6 +47,7 @@ interface Watch {
   baseline?: DarwinChildrenBatch;
   enrollment: Promise<void>;
   baselineUsable: boolean;
+  refusal?: LeafBaselineRefusal;
 }
 interface State {
   boot: string;
@@ -255,10 +287,30 @@ export async function openDarwinLeafEventOwner(
         if (
           !row ||
           typeof row !== 'object' ||
-          Object.keys(row).sort().join(',') !== 'kind,result,slot'
+          (Object.keys(row).sort().join(',') !== 'kind,result,slot' &&
+            Object.keys(row).sort().join(',') !== 'error,kind,reason,result,slot')
         )
           throw new Error('LEAF_EVENT_OWNER_UNAVAILABLE');
-        const value = row as { kind: unknown; slot: unknown; result: unknown };
+        const value = row as {
+          kind: unknown;
+          slot: unknown;
+          result: unknown;
+          reason?: unknown;
+          error?: unknown;
+        };
+        if ('reason' in value || 'error' in value) {
+          if (
+            value.kind !== 'watch' ||
+            value.result !== 'refused' ||
+            typeof value.reason !== 'string' ||
+            !leafBaselineRefusalReasons.some((reason) => reason === value.reason) ||
+            typeof value.error !== 'number' ||
+            !Number.isSafeInteger(value.error) ||
+            value.error < 0 ||
+            value.error > 2147483647
+          )
+            throw new Error('LEAF_EVENT_OWNER_UNAVAILABLE');
+        }
         if (!Number.isSafeInteger(value.slot) || (value.slot as number) < 1)
           throw new Error('LEAF_EVENT_OWNER_UNAVAILABLE');
         const slot = value.slot as number;
@@ -296,6 +348,12 @@ export async function openDarwinLeafEventOwner(
                   : baseline.processes.length === 0))
             )
               throw new Error('LEAF_EVENT_OWNER_UNAVAILABLE');
+            if (value.reason !== undefined) {
+              const reason = leafBaselineRefusalReasons.find((reason) => reason === value.reason);
+              if (!reason || typeof value.error !== 'number')
+                throw new Error('LEAF_EVENT_OWNER_UNAVAILABLE');
+              watch.refusal = Object.freeze({ reason, error: value.error });
+            }
             watch.baselineUsable = value.result !== 'refused';
             watch.admitted = value.result === 'leaf' && !watch.forked && !watch.exited;
           }
@@ -394,6 +452,7 @@ export async function openDarwinLeafEventOwner(
       );
       if (!watch || watch.epoch !== epoch || !watch.baselineUsable || !watch.baseline) {
         const value = new Error('LEAF_EVENT_BASELINE_UNAVAILABLE');
+        if (watch?.refusal) originalBaselineRefusals.set(value, watch.refusal);
         fail(value);
         throw value;
       }

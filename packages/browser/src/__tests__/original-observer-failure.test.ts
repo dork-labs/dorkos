@@ -56,3 +56,21 @@ it('refuses malformed, duplicate, oversized and non-UTF8 original lines', () => 
   expect(() => readOriginalObserverFailure(new Uint8Array(262145))).toThrow();
   expect(() => readOriginalObserverFailure(Uint8Array.of(255))).toThrow();
 });
+
+it('rejects unbounded or participant-shaped native refusal fields', () => {
+  const row = projectOriginalObserverFailure(
+    1,
+    'leaf-baseline',
+    new Error('LEAF_EVENT_BASELINE_UNAVAILABLE')
+  );
+  for (const leafRefusal of [
+    { reason: 'fork', error: 2147483648 },
+    { reason: 'other-secret', error: 0 },
+    { reason: 'fork', error: 0, secret: 'no' },
+  ])
+    expect(() =>
+      readOriginalObserverFailure(
+        new TextEncoder().encode(JSON.stringify({ ...row, leafRefusal }) + '\n')
+      )
+    ).toThrow();
+});

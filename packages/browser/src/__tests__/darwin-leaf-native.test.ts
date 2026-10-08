@@ -123,17 +123,25 @@ int main(void) {
       'CASE 8 5 0 0 0 4 2 1', // Full native event batch is refused, not silently truncated.
       'CASE 9 0 0 0 0 2 0 1', // Entered original census boot failure cannot supply a baseline.
     ]);
-    for (const [scenario, expected] of [
-      [2, 'nonleaf'],
-      [3, 'refused'],
-      [4, 'refused'],
-      [9, 'refused'],
+    for (const [scenario, expected, reason, error] of [
+      [2, 'nonleaf', undefined, undefined],
+      [3, 'refused', 'outer-birth', 0],
+      [4, 'refused', 'fork', 0],
+      [6, 'refused', 'initial-read', 3],
+      [7, 'refused', 'registration-error', 1],
+      [9, 'refused', 'census-error', 1],
     ] as const) {
       const end = rows.findIndex((row) => row.startsWith(`CASE ${scenario} `));
       const start = rows.findIndex((row) => row.startsWith(`CASE ${scenario - 1} `));
-      expect(rows.slice(start + 1, end)).toContain(
-        `{"kind":"watch","slot":1,"result":"${expected}"}`
-      );
+      const reply = rows.slice(start + 1, end).find((row) => row.startsWith('{"kind":"watch",'));
+      expect(reply).toBeDefined();
+      expect(JSON.parse(reply!)).toEqual({
+        kind: 'watch',
+        slot: 1,
+        result: expected,
+        ...(reason === undefined ? {} : { reason, error }),
+      });
+      expect(Buffer.byteLength(reply! + '\n')).toBeLessThanOrEqual(128);
     }
     const baselines = rows
       .filter((row) => row.startsWith('{"kind":"baseline"'))

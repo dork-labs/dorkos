@@ -271,6 +271,11 @@ static int leaf_drain(struct leaf_receiver *owner) {
 }
 static int print_reply_body(const struct dorkos_darwin_batch *, const struct dorkos_darwin_children *);
 
+/* Closed original decision diagnostics only; the admitted result and native reads are unchanged. */
+static int leaf_refused(unsigned slot, const char *reason, int error) {
+  if (printf("{\"kind\":\"watch\",\"slot\":%u,\"result\":\"refused\",\"reason\":\"%s\",\"error\":%d}\n", slot, reason, error) < 0 || fflush(stdout)) return EIO;
+  return 0;
+}
 static int leaf_command(struct leaf_receiver *owner, const char *line) {
   unsigned slot = 0;
   int used = 0, pid = 0;
@@ -289,15 +294,17 @@ static int leaf_command(struct leaf_receiver *owner, const char *line) {
     if (owner->watches[i].assigned && owner->watches[i].pid == pid) return EINVAL;
   watch->assigned = 1; watch->pid = (pid_t)pid;
   struct proc_bsdinfo before, after;
-  if (read_process((pid_t)pid, &before) || before.pbi_status == SZOMB ||
+  const int before_error = read_process((pid_t)pid, &before);
+  if (before_error || before.pbi_status == SZOMB ||
       before.pbi_start_tvsec != seconds || before.pbi_start_tvusec != microseconds)
-    return leaf_publish("watch", slot, "refused");
+    return leaf_refused(slot, before_error ? "initial-read" : before.pbi_status == SZOMB ? "initial-zombie" : "initial-birth", before_error);
   struct kevent change, receipt;
   EV_SET(&change, (uintptr_t)pid, EVFILT_PROC, EV_ADD | EV_ENABLE | EV_CLEAR | EV_RECEIPT,
          NOTE_EXIT | NOTE_FORK, 0, (void *)(uintptr_t)slot);
-  if (kevent(owner->queue, &change, 1, &receipt, 1, NULL) != 1 ||
-      !(receipt.flags & EV_ERROR) || receipt.data != 0)
-    return leaf_publish("watch", slot, "refused");
+  const int registered = kevent(owner->queue, &change, 1, &receipt, 1, NULL);
+  const int registration_error = registered < 0 ? (errno ? errno : EIO) : 0;
+  if (registered != 1 || !(receipt.flags & EV_ERROR) || receipt.data != 0)
+    return leaf_refused(slot, registered != 1 ? "registration-return" : !(receipt.flags & EV_ERROR) ? "registration-flags" : "registration-error", registered != 1 ? registration_error : (receipt.flags & EV_ERROR) && receipt.data > 0 && receipt.data <= INT_MAX ? (int)receipt.data : 0);
   /* Registration precedes the sole baseline census. Pending fork/exit events
    * are drained before publication. No later census can clear dirty. */
   struct dorkos_darwin_children census;
@@ -321,7 +328,19 @@ static int leaf_command(struct leaf_receiver *owner, const char *line) {
     puts("}");
     if (fflush(stdout)) return EIO;
   }
-  return leaf_publish("watch", slot, watch->admitted ? "leaf" : baseline_stable ? "nonleaf" : "refused");
+  if (!baseline_stable) {
+    const char *reason = error ? "census-error" : !census.complete ? "census-incomplete" :
+      after_error ? "outer-read" : after.pbi_status == SZOMB ? "outer-zombie" :
+      after.pbi_start_tvsec != seconds || after.pbi_start_tvusec != microseconds ? "outer-birth" :
+      after.pbi_ppid != before.pbi_ppid ? "outer-parent" :
+      census.batch.boot_seconds != boot_seconds || census.batch.boot_microseconds != boot_microseconds ? "boot" :
+      census.parent_before.seconds != seconds || census.parent_before.microseconds != microseconds ||
+      census.parent_after.seconds != seconds || census.parent_after.microseconds != microseconds ? "census-birth" :
+      census.parent_before.parent_pid != (pid_t)before.pbi_ppid || census.parent_after.parent_pid != (pid_t)before.pbi_ppid ? "census-parent" :
+      watch->dirty ? "fork" : "exit";
+    return leaf_refused(slot, reason, error ? error : after_error);
+  }
+  return leaf_publish("watch", slot, watch->admitted ? "leaf" : "nonleaf");
 }
 static int watch_leaves(void) {
   struct leaf_receiver owner;
