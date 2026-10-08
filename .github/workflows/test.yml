@@ -766,7 +766,7 @@ jobs:
         if: ${{ github.event_name == 'pull_request' }}
         env:
           TURBO_SCM_BASE: ${{ github.event.pull_request.base.sha }}
-        run: pnpm exec turbo test --affected --continue --concurrency=1 -- --run --shard=${{ matrix.shard }}/4 --passWithNoTests
+        run: pnpm exec turbo test --affected --continue --concurrency=1 --log-order=stream -- --run --shard=${{ matrix.shard }}/4 --passWithNoTests
 
       # THE POINT OF THIS STEP: turbo caches `test`, and a full cache hit prints
       # "Tasks: 31 successful, 31 total" — one per package declaring a `test`
