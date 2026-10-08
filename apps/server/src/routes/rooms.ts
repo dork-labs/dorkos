@@ -103,7 +103,7 @@ import {
   type PostedEntry,
 } from '../services/rooms/index.js';
 import { readRoomRepoConfig, ROOM_REPO_EXISTS_CODE } from '../services/rooms/repo/index.js';
-import { listRoomsAcrossCommunities } from '../services/communities/index.js';
+import { listRoomsAcrossCommunities } from '../services/communities/list-rooms-across-communities.js';
 import { InvalidRoomAttachmentIdError } from '../services/rooms/attachments/room-attachment-store.js';
 import { sniffImageContentType } from '../services/identity/image-sniff.js';
 import {
