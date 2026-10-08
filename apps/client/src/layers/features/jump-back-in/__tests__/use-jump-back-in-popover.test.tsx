@@ -282,10 +282,9 @@ describe('useJumpBackInPopover', () => {
       to: '/session',
       search: { dir: undefined, session: 'sess-9' },
     });
-    expect(Object.keys(useInteractionStore.getState().opened).sort()).toEqual([
-      'agent:/code/api',
-      'session:sess-9',
-    ]);
+    // The agent only: the chat page records the chat when it shows it (spec
+    // `your-activity-first` D3).
+    expect(Object.keys(useInteractionStore.getState().opened)).toEqual(['agent:/code/api']);
   });
 
   it('has nothing to open when the list is empty', async () => {

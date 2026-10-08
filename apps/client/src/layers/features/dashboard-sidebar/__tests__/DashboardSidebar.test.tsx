@@ -505,10 +505,11 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
   // one rule that says what counts as automated, in a wholesale mock, which is
   // precisely the drift DOR-1137 was about. Importing them costs nothing and
   // cannot disagree with the product.
-  partitionSessionsByOrigin: (await importOriginal<typeof import('@/layers/entities/session')>())
-    .partitionSessionsByOrigin,
-  humanOriginSessionIds: (await importOriginal<typeof import('@/layers/entities/session')>())
-    .humanOriginSessionIds,
+  chatOwnership: (await importOriginal<typeof import('@/layers/entities/session')>()).chatOwnership,
+  partitionSessionsByOwnership: (await importOriginal<typeof import('@/layers/entities/session')>())
+    .partitionSessionsByOwnership,
+  nonAutomatedSessionIds: (await importOriginal<typeof import('@/layers/entities/session')>())
+    .nonAutomatedSessionIds,
 }));
 
 // The slot's candidates come from three features and a config read; this file

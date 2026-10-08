@@ -555,11 +555,12 @@ describe('a prefix inside a scope is a character, not a mode', () => {
   });
 });
 
-describe('opening a conversation from ⌘K remembers both halves of it', () => {
-  it('records the conversation AND the agent whose project it runs in', async () => {
-    // The sidebar's own row has always written both (`SidebarChrome.openSession`);
-    // ⌘K wrote only the first, so the same act built a weaker memory depending
-    // on which door a person used. Both, or the two surfaces disagree.
+describe('opening a conversation from ⌘K remembers the agent', () => {
+  it('records the agent whose project it runs in, and leaves the chat to the chat page', async () => {
+    // The sidebar's own row writes the agent too (`SidebarChrome.openSession`),
+    // so both doors build the same memory. The chat itself is recorded by the
+    // chat page when it shows it (spec `your-activity-first` D3), so no door
+    // has to remember to.
     await openPalette();
     type('probe alpha');
     await waitFor(() => expect(rowTexts().some((r) => r.includes('probe alpha'))).toBe(true));
@@ -570,7 +571,7 @@ describe('opening a conversation from ⌘K remembers both halves of it', () => {
     fireEvent.click(row as Element);
 
     const { opened } = useInteractionStore.getState();
-    expect(opened['session:sess-orbit-1']).toBeDefined();
+    expect(opened['session:sess-orbit-1']).toBeUndefined();
     expect(opened['agent:/projects/orbit']).toBeDefined();
     expect(mockNavigate).toHaveBeenCalledWith({
       to: '/session',

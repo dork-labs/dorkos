@@ -168,6 +168,7 @@ export function emptyState(overrides: Partial<SidebarState> = {}): SidebarState 
     prefs: prefs(),
     interactions: {},
     userLastMessageAt: {},
+    lastTouchedByYouAt: {},
     mentions: {},
     activeTarget: null,
     journey: {

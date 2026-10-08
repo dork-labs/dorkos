@@ -25,9 +25,9 @@
  *
  * So a chip reading "2 live" over a switcher listing three rows under Live now
  * is correct, not drift. What WOULD be drift is the two disagreeing about
- * origin, and they cannot: both exclude automated work through
- * `partitionSessionsByOrigin` — the switcher directly, the chip through
- * `humanOriginSessionIds`, which is built from it. A second origin rule lived
+ * whose a chat is, and they cannot: both exclude automated work through
+ * `partitionSessionsByOwnership` — the switcher directly, the chip through
+ * `nonAutomatedSessionIds`, which is built from it. A second origin rule lived
  * in this module once and did disagree (DOR-1137).
  *
  * @module features/dashboard-sidebar/model/use-live-sessions

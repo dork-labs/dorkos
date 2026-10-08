@@ -68,7 +68,7 @@ function pureModuleSources(): { file: string; source: string }[] {
  * or a single side effect — into the module.
  *
  * `@/layers/entities/session` is here on purpose and with an honest caveat. The
- * model needs `partitionSessionsByOrigin`, and FSD says cross-module imports go
+ * model needs `partitionSessionsByOwnership`, and FSD says cross-module imports go
  * through the barrel, which re-exports React components. So "this module cannot
  * see React" is false transitively and always was; what these tests actually
  * hold is the thing that matters — no module HERE reads a clock, holds state,

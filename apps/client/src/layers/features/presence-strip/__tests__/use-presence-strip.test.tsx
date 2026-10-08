@@ -269,12 +269,10 @@ describe('usePresenceStrip', () => {
 
     await waitFor(() => expect(router.state.location.pathname).toBe('/session'));
     expect(router.state.location.search).toEqual({ session: 'sess-1' });
-    // The conversation AND its agent, the pair `SidebarChrome.openSession`
-    // writes (DOR-1156).
-    expect(Object.keys(useInteractionStore.getState().opened).sort()).toEqual([
-      `agent:${AGENT_PATH}`,
-      'session:sess-1',
-    ]);
+    // The agent, as `SidebarChrome.openSession` writes it (DOR-1156). The chat
+    // itself is recorded by the chat page when it shows it (spec
+    // `your-activity-first` D3).
+    expect(Object.keys(useInteractionStore.getState().opened)).toEqual([`agent:${AGENT_PATH}`]);
     expect(lockingCalls(transport)).toBe(0);
   });
 

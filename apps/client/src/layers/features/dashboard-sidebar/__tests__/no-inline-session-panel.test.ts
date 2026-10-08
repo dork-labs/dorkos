@@ -120,7 +120,7 @@ describe('the inline session panel is gone', () => {
     for (const token of [
       'SessionRow',
       'useAgentSessions',
-      'partitionSessionsByOrigin',
+      'partitionSessionsByOwnership',
       'AnimatePresence',
       'previewSessions',
     ]) {

@@ -10,11 +10,13 @@
  *
  * @module features/dashboard-sidebar/model/rules/live-sessions
  */
-import { humanOriginSessionIds } from '@/layers/entities/session';
+import { nonAutomatedSessionIds } from '@/layers/entities/session';
 import type { SidebarState } from '../sidebar-state';
 
 /**
- * Every session running right now that counts — the human ones.
+ * Every session running right now that counts — everything but automated
+ * chats (spec `your-activity-first` D8: a spin-off chat still counts, because a
+ * person asked for it through a chat).
  *
  * **A scheduled run is not something that needs the operator, so it is not in
  * Heads up's number.** `design-decisions.md` §18 is a Signal → Rendering table, and
@@ -28,7 +30,7 @@ import type { SidebarState } from '../sidebar-state';
  * exclusion; the contract was written before the question came up, and it was
  * settled in review of P2.2 (2026-08-10) together with the identical defect in
  * the session switcher's "N live" chip and in ⌘K's Continue list. One definition
- * of live everywhere: human-origin sessions, and the definition itself lives in
+ * of live everywhere: chats that are not automated, and the definition itself lives in
  * `entities/session` so those three surfaces read the same function.
  *
  * **The blocking carve-out survives, and it is the same §18 sentence**:
@@ -37,15 +39,15 @@ import type { SidebarState } from '../sidebar-state';
  * attention item, through `entities/attention`, which reads no origin at all
  * (`derive-attention-signals.ts`). Only the liveness COUNT excludes automation.
  *
- * A working session the snapshot cannot see at all is counted. Origin lives on
+ * A working session the snapshot cannot see at all is counted. Ownership lives on
  * the session record, and `state.sessions` is a trimmed recent list, so an id
- * with no record is one whose origin is unknown rather than one known to be
+ * with no record is one whose ownership is unknown rather than one known to be
  * automated — and hiding a human turn is the worse error of the two.
  *
  * @param state - The snapshot.
  */
 export function liveSessionIds(state: SidebarState): readonly string[] {
-  return humanOriginSessionIds(state.workingSessionIds, state.sessions);
+  return nonAutomatedSessionIds(state.workingSessionIds, state.sessions);
 }
 
 /**

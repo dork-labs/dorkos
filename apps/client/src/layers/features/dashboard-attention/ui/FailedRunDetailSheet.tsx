@@ -10,7 +10,6 @@ import {
   ScrollArea,
   Skeleton,
 } from '@/layers/shared/ui';
-import { useInteractionStore } from '@/layers/entities/interactions';
 import { useTaskRun, useCancelTaskRun } from '@/layers/entities/tasks';
 import { useNavigate } from '@tanstack/react-router';
 import { cn, formatCompactAge, toSession } from '@/layers/shared/lib';
@@ -151,11 +150,9 @@ export function FailedRunDetailSheet({ open, itemId, onClose }: FailedRunDetailS
 
   const handleViewSession = () => {
     if (!run?.sessionId) return;
-    // The other half of the Recent-Activity rows' door (DOR-1156) — those
-    // rows are Inbox notifications now, so the door is opened by
-    // `notificationLink` in `entities/notifications`. No directory to record an
-    // agent against: a run's detail carries the session and nothing else.
-    useInteractionStore.getState().recordOpened('session', run.sessionId);
+    // The chat page records the chat as opened when it shows it
+    // (`useRecordChatOpened`, spec `your-activity-first` D3). No directory to
+    // record an agent against: a run's detail carries the chat and nothing else.
     void navigate(toSession({ session: run.sessionId }));
   };
 

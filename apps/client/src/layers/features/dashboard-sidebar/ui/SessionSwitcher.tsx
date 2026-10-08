@@ -43,7 +43,7 @@ import {
 } from '@/layers/shared/ui';
 import { AgentAvatar, type AgentVisual } from '@/layers/entities/agent';
 import {
-  partitionSessionsByOrigin,
+  partitionSessionsByOwnership,
   sessionDisplayTitle,
   sessionKeys,
   SessionVerbLine,
@@ -111,10 +111,16 @@ export function SessionSwitcher({
   const isMobile = useIsMobile();
   const [automatedOpen, setAutomatedOpen] = useState(false);
 
-  const { conversations, automated } = useMemo(
-    () => partitionSessionsByOrigin(sessions),
-    [sessions]
-  );
+  // Spin-offs stay with your chats here, as they count as live everywhere else
+  // (spec `your-activity-first` D8); only automated chats fold away.
+  const { conversations, automated } = useMemo(() => {
+    const split = partitionSessionsByOwnership(sessions);
+    const folded = new Set(split.automated);
+    return {
+      conversations: sessions.filter((session) => !folded.has(session)),
+      automated: split.automated,
+    };
+  }, [sessions]);
   // Positional, so the zip below cannot drift: one array in, one array out.
   const conversationIds = useMemo(() => conversations.map((s) => s.id), [conversations]);
   const lifecycles = useSessionLifecycles(conversationIds);
@@ -394,9 +400,9 @@ function SwitcherGroup({ label, children }: { label: string; children: React.Rea
  */
 function OriginMark({ origin, label }: { origin?: SessionOrigin; label?: string }) {
   // `user` is not in the registry, and its absence is the signal — an ordinary
-  // conversation is unmarked. A session in this group always has a non-user
-  // origin (that is what `partitionSessionsByOrigin` sorted on), so this guard
-  // is for the type rather than for a state that occurs.
+  // conversation is unmarked. A chat you touched is in the other groups
+  // whatever its origin (`partitionSessionsByOwnership`), so a mark there is
+  // how it still says where it started.
   if (origin === undefined || origin === 'user') return null;
   const Glyph = ORIGIN_GLYPH[origin];
   return (
