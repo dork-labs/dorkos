@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { useNavigate } from '@tanstack/react-router';
@@ -83,7 +84,7 @@ export function ClaimFeed({ enabled, adapterId }: { enabled: boolean; adapterId?
                   }
                   if (bridge && binding.roomId) {
                     toast.success(`${name} will answer in a new channel.`);
-                    void navigate({ to: '/channels', search: { id: binding.roomId } });
+                    void navigate({ ...appRoutes.channels(), search: { id: binding.roomId } });
                     return;
                   }
                   toast.success(`${name} will answer this chat.`);

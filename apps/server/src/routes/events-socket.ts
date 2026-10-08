@@ -16,7 +16,7 @@
 import type { WebSocket } from 'ws';
 import { eventFanOut, encodeBroadcast, type FanOutClient } from '../services/core/event-fan-out.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
-import { sendSessionStatusSnapshot } from '../services/session/session-list-broadcaster.js';
+import { sendSessionStatusSnapshot } from '../services/session/catalog/session-list-broadcaster.js';
 import { DurableStreamSocket } from '../services/core/streams/stream-socket.js';
 import type {
   UpgradeAttempt,

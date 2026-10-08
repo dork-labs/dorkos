@@ -1,3 +1,4 @@
+import { appRoutes } from '../lib/route-factory';
 /**
  * Dialog deep-link hooks — bridges global dialog open/tab state to TanStack Router search params.
  *
@@ -125,8 +126,8 @@ export type SettingsDeepLinkTarget = SettingsTabTarget | SettingsRouteTarget;
  * the destructive actions now and is named after them.
  */
 const LEGACY_SETTINGS_TAB_MAP: Record<string, SettingsTab | SettingsDeepLinkTarget> = {
-  channels: { kind: 'route', path: '/connections' },
-  integrations: { kind: 'route', path: '/connections' },
+  channels: { kind: 'route', path: appRoutes.connections().to },
+  integrations: { kind: 'route', path: appRoutes.connections().to },
   access: { kind: 'tab', tab: 'account', sectionTabs: { security: 'security' } },
   advanced: 'danger',
 };
@@ -519,7 +520,10 @@ export function useOpenConnections(): (options?: OpenConnectionsOptions) => void
   return useCallback(
     (options?: OpenConnectionsOptions) => {
       if (!navigate) return;
-      navigate({ to: '/connections', search: (options?.app ? { app: options.app } : {}) as never });
+      navigate({
+        ...appRoutes.connections(),
+        search: (options?.app ? { app: options.app } : {}) as never,
+      });
     },
     [navigate]
   );

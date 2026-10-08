@@ -5,7 +5,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { useSessionSearch } from './use-session-search';
 import { resolveSessionForCwd, notifySessionLookupFailed } from '../../lib/resolve-session-for-cwd';
-import { reportClientError, toSession } from '@/layers/shared/lib';
+import { useSessionRouteContext, setSessionRouteContext } from './session-route-context';
+import { reportClientError, toSession, newSessionTarget } from '@/layers/shared/lib';
 import { beginSessionNavigation } from '../../lib/session-navigation-intent';
 
 /** Options for the directory setter returned by {@link useDirectoryState}. */
@@ -28,14 +29,10 @@ export interface SetDirOptions {
 }
 
 /**
- * Dual-mode working-directory hook.
- *
- * - **Standalone (web):** `?dir=` from TanStack Router search params.
- *   A one-way `useEffect` syncs URL → Zustand so store consumers see the
- *   correct CWD. When no `?dir=` is present the getter falls back to Zustand,
- *   which holds the server default CWD set by {@link useDefaultCwd}.
- *
- * Both stores are subscribed unconditionally to satisfy React's rules of hooks.
+ * The active conversation's working directory and the agent-switch action.
+ * Server-resolved session context takes precedence over legacy URL hints and
+ * the default selection. Only the active component syncs context into the app
+ * store, so preloading another route cannot move the current composer.
  */
 export function useDirectoryState(): [
   string | null,
@@ -49,7 +46,8 @@ export function useDirectoryState(): [
   const queryClient = useQueryClient();
   const transport = useTransport();
 
-  const urlDir = search.dir ?? null;
+  const routeContext = useSessionRouteContext(search.session);
+  const urlDir = routeContext?.cwd ?? search.dir ?? null;
 
   // Sync URL → Zustand on initial load (standalone only)
   useEffect(() => {
@@ -65,7 +63,8 @@ export function useDirectoryState(): [
       if (dir) {
         if (opts?.preserveSession) {
           setStoreDir(dir);
-          void navigate(toSession((prev) => ({ ...prev, dir })));
+          if (search.session)
+            setSessionRouteContext(search.session, { cwd: dir, draft: search.draft === '1' });
           opts?.onOpened?.();
           return;
         }
@@ -82,7 +81,7 @@ export function useDirectoryState(): [
         // callback — and without it that defect is an unhandled rejection and a
         // click that died in silence.
         void resolveSessionForCwd({ queryClient, transport }, dir)
-          .then((resolved) => {
+          .then(async (resolved) => {
             // Overtaken first: an abandoned switch neither moves you nor
             // explains itself.
             if (!isStillWanted()) return;
@@ -90,8 +89,12 @@ export function useDirectoryState(): [
               notifySessionLookupFailed(dir);
               return;
             }
+            const target = resolved.isNew
+              ? await newSessionTarget(transport, { dir, session: resolved.sessionId })
+              : toSession({ session: resolved.sessionId });
+            if (!isStillWanted()) return;
             setStoreDir(dir);
-            void navigate(toSession({ dir, session: resolved.sessionId }));
+            void navigate(target);
             opts?.onOpened?.();
           })
           .catch((error: unknown) => {

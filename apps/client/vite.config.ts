@@ -1,3 +1,5 @@
+import { tanstackRouter } from '@tanstack/router-plugin/vite';
+import { clientRouterOptions } from './router-plugin';
 import { defineConfig } from 'vite';
 import { configDefaults } from 'vitest/config';
 import react from '@vitejs/plugin-react';
@@ -10,7 +12,7 @@ export default defineConfig({
   // Shared with the desktop shell's renderer build, which bundles this same
   // source — see `vite-define.ts` for what an unshared `define` costs.
   define: clientDefines(),
-  plugins: [react(), tailwindcss()],
+  plugins: [tanstackRouter(clientRouterOptions()), react(), tailwindcss()],
   test: {
     // What `--project <name>` matches from the repo root. Rationale:
     // apps/server/vitest.config.ts. Pinned for every project by

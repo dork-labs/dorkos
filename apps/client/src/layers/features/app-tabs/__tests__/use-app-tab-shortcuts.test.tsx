@@ -15,7 +15,8 @@ const router = {
   state: { location: { href: '/' } },
 };
 
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useNavigate: () => navigate,
   useRouter: () => router,
 }));

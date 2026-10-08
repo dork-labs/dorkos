@@ -69,7 +69,8 @@ function commitNavigation(href: string = mockHref) {
     for (const listener of [...beforeLoadListeners]) listener();
   });
 }
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useNavigate: () => mockNavigate,
   useRouter: () => ({
     state: {

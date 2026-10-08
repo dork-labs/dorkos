@@ -58,9 +58,13 @@ function routerValue(value: string): string {
  *   param has a value.
  */
 export function sessionPath(params: SessionLinkParams): string {
+  if ((params.dir || params.agentPath) && !params.session) {
+    throw new Error('Use an opaque launchRef or agentId for a new session link.');
+  }
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined) query.set(key, routerValue(value));
+    if (key !== 'dir' && key !== 'agentPath' && value !== undefined)
+      query.set(key, routerValue(value));
   }
   const search = query.toString();
   return search ? `${SESSION_ROUTE}?${search}` : SESSION_ROUTE;

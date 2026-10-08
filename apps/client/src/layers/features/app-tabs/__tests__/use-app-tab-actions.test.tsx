@@ -37,7 +37,8 @@ const router = {
   },
 };
 
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useNavigate: () => navigate,
   useRouter: () => router,
   useRouterState: ({ select }: { select: (state: unknown) => unknown }) =>

@@ -147,7 +147,8 @@ afterEach(() => {
   boot.state = { phase: 'settled', settled: true, fleetKnown: true, startedWarm: false };
 });
 
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useNavigate: () => mockNavigate,
   useRouter: () => ({
     navigate: mockRouterNavigate,
@@ -1251,7 +1252,7 @@ describe('DashboardSidebar', () => {
       await waitFor(() =>
         expect(mockNavigate).toHaveBeenCalledWith({
           to: '/session',
-          search: { dir: '/projects/alpha', session: 's9' },
+          search: { dir: undefined, session: 's9' },
         })
       );
     });

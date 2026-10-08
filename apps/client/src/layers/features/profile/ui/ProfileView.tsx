@@ -1,3 +1,7 @@
+import { notifySessionLookupFailed } from '@/layers/entities/session';
+import { reportClientError } from '@/layers/shared/lib';
+import { useTransport } from '@/layers/shared/model';
+import { sessionLocationTarget } from '@/layers/shared/lib';
 /**
  * One Profile — the whole surface, for every identity on this install (spec
  * `profile-unification` §1.1).
@@ -109,6 +113,7 @@ export function ProfileView({
   // Three ways to have no button, and they are all the same answer: don't draw
   // one. Nowhere to open a session (every person today — §8), your own profile,
   // and the profile docked in the very session the button would open.
+  const transport = useTransport();
   const target = messageTarget(member);
   const canOpenSession =
     target !== null && relationship !== 'self' && !inOwnSession && navigate !== null;
@@ -136,7 +141,12 @@ export function ProfileView({
       void navigate(toSession({ session: inRoom }));
       return;
     }
-    void navigate(toSession({ dir: target.projectPath }));
+    try {
+      void navigate(await sessionLocationTarget(transport, target.projectPath));
+    } catch (error) {
+      reportClientError(transport, error);
+      notifySessionLookupFailed(target.projectPath);
+    }
   }
 
   // A page is only reachable when a row of THIS profile pushes it. The row

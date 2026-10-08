@@ -20,11 +20,10 @@ export const dialogSearchSchema = z.object({
   settingsSection: z.string().optional(),
   // Legacy agent dialog. Nothing writes these any more; they are still parsed so
   // `useLegacyProfileLinkRedirect` can see an old bookmark and rewrite it to
-  // `?panel=profile`. `agentPath` survives the rewrite — it says WHICH agent —
-  // and is the external form the Settings runtimes strip and the e2e deep links
-  // use today.
+  // `?panel=profile`. Old directory addresses become opaque profileRef values.
   agent: z.string().optional(),
   agentPath: z.string().optional(),
+  profileRef: z.string().optional(),
   // Shell-level right panel: which tab, and (LEGACY) which inner tab of the
   // agent panel the profile replaced. `hubTab` is kept only so the redirect
   // above can read an old bookmark and translate it; nothing writes it, and
@@ -80,6 +79,7 @@ export const DIALOG_ADDRESS_KEYS = [
   'profile',
   'profilePage',
   'agentPath',
+  'profileRef',
 ] as const satisfies readonly (keyof DialogSearch)[];
 
 /**

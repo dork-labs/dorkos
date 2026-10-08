@@ -27,7 +27,7 @@ import type { Task } from '@dorkos/shared/types';
 
 import type { ActivityService } from '../../activity/activity-service.js';
 import { initAgentExecutionWrites } from '../../core/agent-observation/agent-execution-writes.js';
-import type { AgentExecutionDefaults } from '../../session/resolve-session-defaults.js';
+import type { AgentExecutionDefaults } from '../../session/resolution/resolve-session-defaults.js';
 import type { TaskStore } from '../task-store.js';
 import { AgentExecutionObserver, type AgentExecutionValues } from './agent-execution-observer.js';
 

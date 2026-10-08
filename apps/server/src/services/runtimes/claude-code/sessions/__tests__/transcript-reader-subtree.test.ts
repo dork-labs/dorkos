@@ -110,6 +110,40 @@ describe('TranscriptReader lists a project’s subtree', () => {
     await rm(tmp, { recursive: true, force: true });
   });
 
+  it('finds an external session by id across accounts without guessing its directory', async () => {
+    const cwd = join(tmp, 'external-project');
+    const id = await seedSession(accountB, cwd);
+    await expect(reader.findSession(id)).resolves.toMatchObject({ id, cwd });
+    await expect(reader.findSession('aaaaaaaa-0000-4000-8000-999999999999')).resolves.toBeNull();
+  });
+
+  it('refuses a native id duplicated across accounts', async () => {
+    const cwd = join(tmp, 'duplicate-project');
+    const id = await seedSession(accountA, cwd);
+    const slug = reader.getProjectSlug(cwd);
+    await mkdir(join(accountB, 'projects', slug), { recursive: true });
+    const { copyFile } = await import('fs/promises');
+    await copyFile(
+      join(accountA, 'projects', slug, `${id}.jsonl`),
+      join(accountB, 'projects', slug, `${id}.jsonl`)
+    );
+    await expect(reader.findSession(id)).rejects.toMatchObject({ code: 'SESSION_ID_AMBIGUOUS' });
+  });
+
+  it('finds cwd after an oversized native bookkeeping record', async () => {
+    const cwd = join(tmp, 'large-head-project');
+    const id = await seedSession(accountA, cwd);
+    const file = join(accountA, 'projects', reader.getProjectSlug(cwd), `${id}.jsonl`);
+    const { readFile } = await import('fs/promises');
+    await writeFile(
+      file,
+      JSON.stringify({ type: 'file-history-snapshot', data: 'x'.repeat(300_000) }) +
+        '\n' +
+        (await readFile(file, 'utf8'))
+    );
+    await expect(reader.findSession(id)).resolves.toMatchObject({ id, cwd });
+  });
+
   it('stages the fixture the way the SDK really lays it out', async () => {
     // Guards every case below. A subfolder session must land in a DIFFERENT
     // directory from the project's own — if the two ever slugged the same, the

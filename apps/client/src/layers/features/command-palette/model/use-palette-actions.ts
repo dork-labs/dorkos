@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 import { useCallback } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
@@ -12,7 +13,13 @@ import {
   useFeedbackDialogStore,
   useTransport,
 } from '@/layers/shared/model';
-import { openLink, reportClientError, useCopyFeedback, toSession } from '@/layers/shared/lib';
+import {
+  openLink,
+  reportClientError,
+  useCopyFeedback,
+  toSession,
+  newSessionTarget,
+} from '@/layers/shared/lib';
 import { useRemoteAccessActions, useRemoteAccessSnapshot } from '@/layers/entities/tunnel';
 import {
   useDirectoryState,
@@ -146,7 +153,7 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
     (room: RoomSummary) => {
       useInteractionStore.getState().recordOpened('room', room.id);
       closePalette();
-      navigate({ to: '/channels', search: { id: room.id } });
+      navigate({ ...appRoutes.channels(), search: { id: room.id } });
     },
     [closePalette, navigate]
   );
@@ -207,7 +214,7 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
     (command: string) => {
       closePalette();
       void resolveSessionForCwd({ queryClient, transport }, selectedCwd)
-        .then((resolved) => {
+        .then(async (resolved) => {
           if (resolved === null) {
             notifySessionLookupFailed(selectedCwd);
             return;
@@ -224,7 +231,14 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
           store.updateSession(resolved.sessionId, {
             input: composeCommandDraft(command, draft),
           });
-          void navigate(toSession({ session: resolved.sessionId, dir: selectedCwd ?? undefined }));
+          void navigate(
+            resolved.isNew
+              ? await newSessionTarget(transport, {
+                  session: resolved.sessionId,
+                  dir: selectedCwd ?? undefined,
+                })
+              : toSession({ session: resolved.sessionId })
+          );
         })
         .catch((error: unknown) => {
           // `resolveSessionForCwd` handles its own failures, so anything landing
@@ -276,7 +290,7 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
           openConnections();
           return;
         case 'openMesh':
-          navigate({ to: '/team' });
+          navigate({ ...appRoutes.team() });
           return;
         case 'openSettings':
           openSettings();
@@ -323,7 +337,7 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
       closePalette();
       switch (action) {
         case 'navigateDashboard':
-          navigate({ to: '/' });
+          navigate({ ...appRoutes.home() });
           return;
         case 'newSession':
           startNewSession();
@@ -361,7 +375,7 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
           return;
         case 'openYourReports':
           // Not in the typed router table, like every other door to this page.
-          (navigate as (opts: { to: string }) => void)({ to: '/feedback-requests' });
+          (navigate as (opts: { to: string }) => void)({ ...appRoutes.feedbackRequests() });
           return;
         case 'openTasks':
           openTasks();
@@ -370,7 +384,7 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
           openConnections();
           return;
         case 'openMesh':
-          navigate({ to: '/team' });
+          navigate({ ...appRoutes.team() });
           return;
         case 'discoverAgents':
           useImportProjectsStore.getState().open();

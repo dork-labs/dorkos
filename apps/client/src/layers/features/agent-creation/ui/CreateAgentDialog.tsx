@@ -247,7 +247,14 @@ export function CreateAgentDialog() {
             hostOnCreated();
             return;
           }
-          navigate(toSession({ dir: data._path, session: newSessionId, runtime: data.runtime }));
+          navigate(
+            toSession({
+              agentId: data.id,
+              draft: '1',
+              session: newSessionId,
+              runtime: data.runtime,
+            })
+          );
         },
         // A template that needs reviewing is shown here (`isShownInline` keeps
         // it out of the toast); every other failure is the shared toast's.

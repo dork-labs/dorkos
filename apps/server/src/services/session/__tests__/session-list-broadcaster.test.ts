@@ -18,7 +18,10 @@ import { FakeAgentRuntime, createMockSession } from '@dorkos/test-utils';
 import { SSE } from '../../../config/constants.js';
 import { eventFanOut } from '../../core/event-fan-out.js';
 import type { EncodedBroadcast, FanOutClient } from '../../core/event-fan-out.js';
-import { SessionListBroadcaster, sendSessionStatusSnapshot } from '../session-list-broadcaster.js';
+import {
+  SessionListBroadcaster,
+  sendSessionStatusSnapshot,
+} from '../catalog/session-list-broadcaster.js';
 import {
   getOrCreateProjector,
   disposeProjector,

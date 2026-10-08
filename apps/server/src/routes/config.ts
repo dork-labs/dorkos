@@ -9,7 +9,7 @@ import { configManager } from '../services/core/config-manager.js';
 // Straight from the module, not the `services/session` barrel: that barrel pulls
 // in the projector, transcript readers, and the turn trigger, none of which a
 // config GET needs to load.
-import { describeExecutionDefaults } from '../services/session/resolve-session-defaults.js';
+import { describeExecutionDefaults } from '../services/session/resolution/resolve-session-defaults.js';
 // The route is where the registry and the resolver meet. `resolve-session-defaults`
 // cannot reach the registry itself — the registry imports IT — so the caller
 // hands over the capability map instead of the module reaching for it.

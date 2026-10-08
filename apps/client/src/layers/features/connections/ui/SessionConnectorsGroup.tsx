@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 import { useNavigate } from '@tanstack/react-router';
 import { SessionConnectionAccessList } from '@/layers/entities/connectors';
 import { requestComposerInsert } from '@/layers/shared/lib';
@@ -29,7 +30,7 @@ export function SessionConnectorsGroup({ sessionId }: { sessionId: string }) {
   return (
     <SessionConnectionAccessList
       sessionId={sessionId}
-      onManage={() => void navigate({ to: '/connections' })}
+      onManage={() => void navigate({ ...appRoutes.connections() })}
       emptyAction={askAgent}
       footer={<div className="pt-1">{askAgent}</div>}
     />

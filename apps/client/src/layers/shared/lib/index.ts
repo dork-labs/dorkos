@@ -408,3 +408,7 @@ export type { DecisionRefusal } from './decision-refusal';
 export { SESSION_ROUTE, sessionHref, toSession, sessionSearchSchema } from './session-link';
 export type { SessionTarget, SessionSearch } from './session-link';
 export { serverSentence } from './server-sentence';
+
+export { appRoutes } from './route-factory';
+
+export { newSessionTarget, sessionLocationTarget } from './session-link';

@@ -43,6 +43,7 @@ const RUNTIMES: Record<string, typeof claudeRuntime> = {
 
 vi.mock('../../services/core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    getNativeSessionCwd: vi.fn(() => null),
     getDefault: vi.fn(() => claudeRuntime),
     has: vi.fn((type: string) => type in RUNTIMES),
     get: vi.fn((type: string) => RUNTIMES[type]),

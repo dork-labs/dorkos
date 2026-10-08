@@ -8,6 +8,9 @@ import { CodexRuntime, MAX_CONSECUTIVE_WAKES, WAKE_BUDGET_SPENT_COPY } from '../
 import { resolveCodexTransport, type CodexTransport } from '../transport/index.js';
 import type { BackgroundCompletion, BackgroundWake } from '../app-server/background-work.js';
 import { buildCodexOptions } from '../codex-options.js';
+import * as logHistory from '../../../session/log-backed-history.js';
+import { SessionDiscoveryUnavailableError } from '../../../session/resolution/session-lookup-error.js';
+import { RuntimeRegistry } from '../../../core/runtime-registry.js';
 import { CodexThreadMap } from '../thread-map.js';
 import { checkCodexDependencies } from '../check-dependencies.js';
 import { enumerateCodexMcpServers } from '../enumerate-mcp-servers.js';
@@ -72,6 +75,19 @@ vi.mock('../scan-skill-commands.js', () => ({
  * env-gotcha / codexPathOverride assertions) and hands out the shared
  * startThread/resumeThread spies, which each test scripts per scenario.
  */
+const nativeMocks = vi.hoisted(() => ({
+  findSession: vi.fn().mockResolvedValue(null),
+  listSessions: vi.fn().mockResolvedValue([]),
+  readHistory: vi.fn().mockResolvedValue([]),
+}));
+vi.mock('../native-session-reader.js', () => ({
+  CodexNativeSessionReader: class {
+    findSession = nativeMocks.findSession;
+    listSessions = nativeMocks.listSessions;
+    readHistory = nativeMocks.readHistory;
+  },
+}));
+
 const sdkMocks = vi.hoisted(() => ({
   constructorOptions: [] as unknown[],
   startThread: vi.fn(),
@@ -171,6 +187,9 @@ describe('CodexRuntime', () => {
   beforeEach(() => {
     environmentPolicy.names = [];
     vi.clearAllMocks();
+    nativeMocks.findSession.mockReset().mockResolvedValue(null);
+    nativeMocks.listSessions.mockReset().mockResolvedValue([]);
+    nativeMocks.readHistory.mockReset().mockResolvedValue([]);
     sdkMocks.constructorOptions.length = 0;
     // Default scenario: a fresh single-turn thread per call (multi-turn safe).
     sdkMocks.startThread.mockImplementation(() => makeMockThread(codexSimpleTurn('Hello there')));
@@ -183,6 +202,190 @@ describe('CodexRuntime', () => {
   });
 
   afterEach(() => vi.unstubAllEnvs());
+
+  it('does not promote pending settings or ensure metadata into native ownership', async () => {
+    const { runtime, db } = makeRuntime();
+    const registry = new RuntimeRegistry();
+    registry.setDb(db);
+    registry.register(runtime);
+    registry.setDefault('codex');
+    const id = crypto.randomUUID();
+    const settingsPort = {
+      getSessionSettings: vi.fn().mockResolvedValue({}),
+      saveSessionSettings: vi.fn().mockResolvedValue(undefined),
+    };
+    runtime.setSessionSettings(settingsPort);
+    await runtime.updateSession(id, { permissionMode: 'plan', model: 'pending-model' });
+    expect(settingsPort.saveSessionSettings).toHaveBeenCalledWith(id, {
+      permissionMode: 'plan',
+      model: 'pending-model',
+    });
+    expect(await registry.resolveSessionRuntime(id)).toEqual({ type: 'codex', bound: false });
+    expect(await runtime.getSession('/projects/demo', id)).toBeNull();
+    runtime.ensureSession(id, { cwd: '/projects/demo' });
+    expect(await runtime.findSession(id)).toBeNull();
+    expect(await runtime.listSessions('/projects/demo')).toEqual([expect.objectContaining({ id })]);
+    const resolved = await registry.resolveSessionRuntime(id);
+    const requestedRuntime = resolved.bound ? resolved.type : 'opencode';
+    await registry.persistSessionRuntime(id, requestedRuntime, { kind: 'interactive' });
+    expect(await registry.resolveSessionRuntime(id)).toEqual({ type: 'opencode', bound: true });
+  });
+
+  it('keeps imported native metadata and account after changing its settings', async () => {
+    const { runtime } = makeRuntime();
+    const id = crypto.randomUUID();
+    const native = {
+      id,
+      runtime: 'codex',
+      cwd: '/projects/demo',
+      title: 'Native conversation',
+      createdAt: '2026-01-01',
+      updatedAt: '2026-01-01',
+      permissionMode: 'default',
+      account: '/personal/codex-home',
+    };
+    nativeMocks.findSession.mockResolvedValue(native);
+    nativeMocks.listSessions.mockResolvedValue([native]);
+    await runtime.updateSession(id, { model: 'example' });
+    expect(await runtime.findSession(id)).toMatchObject({ ...native, model: 'example' });
+    expect(await runtime.getSession('/projects/demo', id)).toMatchObject({
+      ...native,
+      model: 'example',
+    });
+    expect(await runtime.listSessions('/projects/demo')).toEqual([
+      expect.objectContaining({ ...native, model: 'example' }),
+    ]);
+  });
+
+  it('preserves an imported native rename without replacing its directory or account', async () => {
+    const { runtime, db, threadMap } = makeRuntime();
+    const id = crypto.randomUUID();
+    const native = {
+      id,
+      runtime: 'codex',
+      cwd: '/projects/demo',
+      title: 'Native title',
+      createdAt: '2026-01-01',
+      updatedAt: '2026-01-01',
+      permissionMode: 'default',
+      account: '/personal/codex-home',
+    };
+    nativeMocks.findSession.mockResolvedValue(native);
+    nativeMocks.listSessions.mockResolvedValue([native]);
+    await runtime.renameSession(id, 'Chosen title');
+    expect(threadMap.getThreadId(id)).toBe(id);
+    const restarted = makeRuntime({ db }).runtime;
+    await restarted.hydrateSessions();
+    expect(await restarted.getSession('/projects/demo', id)).toMatchObject({
+      id,
+      title: 'Chosen title',
+      cwd: native.cwd,
+      account: native.account,
+    });
+    const missing = crypto.randomUUID();
+    nativeMocks.findSession.mockResolvedValueOnce(null);
+    await runtime.renameSession(missing, 'No native source');
+    expect(threadMap.get(missing)).toBeUndefined();
+    expect(await runtime.getSession('/projects/demo', id)).toMatchObject({
+      id,
+      cwd: native.cwd,
+      account: native.account,
+      title: 'Chosen title',
+    });
+    expect(await runtime.listSessions('/projects/demo')).toEqual([
+      expect.objectContaining({
+        id,
+        cwd: native.cwd,
+        account: native.account,
+        title: 'Chosen title',
+      }),
+    ]);
+  });
+
+  it('keeps imported native history authoritative even when empty or unavailable', async () => {
+    const { runtime, threadMap } = makeRuntime();
+    const id = crypto.randomUUID();
+    threadMap.setThreadId(id, id, '/projects/demo');
+    const log = vi
+      .spyOn(logHistory, 'readLogBackedHistory')
+      .mockReturnValue([{ id: 'partial-dorkos', role: 'user', content: 'later DorkOS turn' }]);
+    try {
+      nativeMocks.readHistory.mockResolvedValueOnce([
+        { id: 'native-first', role: 'user', content: 'earlier CLI turn' },
+      ]);
+      expect(await runtime.getMessageHistory('/projects/demo', id)).toEqual([
+        { id: 'native-first', role: 'user', content: 'earlier CLI turn' },
+      ]);
+      nativeMocks.readHistory.mockResolvedValueOnce([]);
+      expect(await runtime.getMessageHistory('/projects/demo', id)).toEqual([]);
+      expect(nativeMocks.readHistory).toHaveBeenLastCalledWith(id, { required: true });
+      nativeMocks.readHistory.mockRejectedValueOnce(new SessionDiscoveryUnavailableError('codex'));
+      await expect(runtime.getMessageHistory('/projects/demo', id)).rejects.toBeInstanceOf(
+        SessionDiscoveryUnavailableError
+      );
+      const owned = crypto.randomUUID();
+      threadMap.setThreadId(owned, 'different-sdk-thread', '/projects/demo');
+      expect(await runtime.getMessageHistory('/projects/demo', owned)).toEqual([
+        { id: 'partial-dorkos', role: 'user', content: 'later DorkOS turn' },
+      ]);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('recognizes a personal native source before any DorkOS thread binding', async () => {
+    const { runtime, threadMap } = makeRuntime();
+    const id = crypto.randomUUID();
+    nativeMocks.findSession.mockResolvedValueOnce({ id, cwd: '/project', runtime: 'codex' });
+    expect(await runtime.sessionRunsOnCredits(id)).toBe(false);
+    expect(threadMap.get(id)).toBeUndefined();
+  });
+
+  it('loads native external history and resumes the native thread rather than starting another', async () => {
+    const { runtime, threadMap } = makeRuntime();
+    const id = crypto.randomUUID();
+    const session = {
+      id,
+      runtime: 'codex',
+      cwd: '/projects/demo',
+      title: 'external',
+      createdAt: '2026-01-01',
+      updatedAt: '2026-01-01',
+      permissionMode: 'default',
+    };
+    nativeMocks.findSession.mockResolvedValue(session);
+    nativeMocks.readHistory.mockResolvedValueOnce([
+      { id: 'native-0', role: 'user', content: 'hello' },
+    ]);
+    expect(await runtime.findSession(id)).toMatchObject(session);
+    expect(await runtime.getMessageHistory('/projects/demo', id)).toEqual([
+      { id: 'native-0', role: 'user', content: 'hello' },
+    ]);
+    await runtime.ensureSession(id, { cwd: '/projects/demo' });
+    const events = [];
+    for await (const event of runtime.sendMessage(id, 'continue', { cwd: '/projects/demo' }))
+      events.push(event);
+    expect(threadMap.getThreadId(id)).toBe(id);
+    expect(sdkMocks.resumeThread).toHaveBeenCalledWith(id, expect.anything());
+    expect(sdkMocks.startThread).not.toHaveBeenCalled();
+  });
+
+  it('uses native history once after an imported turn is also recorded in the DorkOS log', async () => {
+    const { runtime, threadMap } = makeRuntime();
+    const id = crypto.randomUUID();
+    threadMap.setThreadId(id, id, '/projects/demo');
+    const projector = getOrCreateProjector(id, '/projects/demo');
+    await feedProjector(projector, runtime.sendMessage(id, 'continue', { cwd: '/projects/demo' }), {
+      userMessage: 'continue',
+    });
+    nativeMocks.readHistory.mockResolvedValueOnce([
+      { id: 'native-user', role: 'user', content: 'continue' },
+      { id: 'native-assistant', role: 'assistant', content: 'Resumed' },
+    ]);
+    expect(
+      (await runtime.getMessageHistory('/projects/demo', id)).map((message) => message.content)
+    ).toEqual(['continue', 'Resumed']);
+  });
 
   describe('identity and dependencies', () => {
     it('identifies as the codex runtime', () => {
@@ -460,7 +663,7 @@ describe('CodexRuntime', () => {
   });
 
   describe('session lifecycle', () => {
-    it('tracks sessions via ensureSession and reports metadata through getSession', async () => {
+    it('keeps ensureSession metadata private until a thread exists', async () => {
       const { runtime } = makeRuntime();
       const sessionId = crypto.randomUUID();
 
@@ -468,13 +671,7 @@ describe('CodexRuntime', () => {
       runtime.ensureSession(sessionId, { permissionMode: 'acceptEdits', cwd: '/projects/demo' });
       expect(runtime.hasSession(sessionId)).toBe(true);
 
-      const session = await runtime.getSession('/projects/demo', sessionId);
-      expect(session).toMatchObject({
-        id: sessionId,
-        runtime: 'codex',
-        permissionMode: 'acceptEdits',
-        cwd: '/projects/demo',
-      });
+      expect(await runtime.getSession('/projects/demo', sessionId)).toBeNull();
       await expect(runtime.getSession('/projects/demo', crypto.randomUUID())).resolves.toBeNull();
     });
 
@@ -497,11 +694,12 @@ describe('CodexRuntime', () => {
 
       await runtime.renameSession(sessionId, 'Investigate flaky test', '/projects/demo');
 
+      await drain(runtime.sendMessage(sessionId, 'hello', { cwd: '/projects/demo' }));
       const session = await runtime.getSession('/projects/demo', sessionId);
       expect(session?.title).toBe('Investigate flaky test');
     });
 
-    it('updateSession auto-creates untracked sessions and writes through the settings port', async () => {
+    it('updateSession saves pending choices without exposing a native session', async () => {
       const { runtime } = makeRuntime();
       const port: SessionSettingsPort = {
         getSessionSettings: vi.fn().mockResolvedValue(null),
@@ -520,7 +718,7 @@ describe('CodexRuntime', () => {
         permissionMode: 'acceptEdits',
       });
       const session = await runtime.getSession('/projects/demo', sessionId);
-      expect(session?.permissionMode).toBe('acceptEdits');
+      expect(session).toBeNull();
     });
 
     /**

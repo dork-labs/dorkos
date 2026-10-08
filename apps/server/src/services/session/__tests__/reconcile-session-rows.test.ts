@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
-import { reconcileSessionRows } from '../reconcile-session-rows.js';
+import { reconcileSessionRows } from '../catalog/reconcile-session-rows.js';
 import { MessageQueueStore } from '../message-queue-store.js';
 import { StagedContextStore } from '../staged-context-store.js';
 

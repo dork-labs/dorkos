@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 import { useNavigate } from '@tanstack/react-router';
 
 import { useIsMobile, usePendingRead, useSafePathname } from '@/layers/shared/model';
@@ -59,7 +60,7 @@ export function PulseActivitySection() {
           variant="ghost"
           size="sm"
           className="h-6 text-xs"
-          onClick={() => navigate({ to: '/activity' })}
+          onClick={() => navigate({ ...appRoutes.activity() })}
         >
           Open activity →
         </Button>

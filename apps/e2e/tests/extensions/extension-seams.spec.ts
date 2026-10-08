@@ -82,7 +82,27 @@ test.describe('Extension seams — hello-world’s page, status item and tab dot
         }
       }).observe(document, { childList: true, subtree: true, characterData: true });
     });
-    await page.reload();
+    // The extension may otherwise activate before its lazy route mounts. Hold
+    // its actual bundle so the loading state is exercised deterministically.
+    let releaseBundle!: () => void;
+    const bundleGate = new Promise<void>((resolve) => {
+      releaseBundle = resolve;
+    });
+    const bundle = (url: URL) => url.pathname === '/api/extensions/hello-world/bundle';
+    let completed = Promise.resolve();
+    const handler = (route: import('@playwright/test').Route) => {
+      completed = bundleGate.then(() => route.continue());
+      return completed;
+    };
+    await page.route(bundle, handler);
+    try {
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await expect(page.getByTestId('extension-page-skeleton')).toBeVisible();
+    } finally {
+      releaseBundle();
+      await completed;
+      await page.unroute(bundle, handler);
+    }
     await expect(page.getByRole('heading', { name: 'Hello, Kai' })).toBeVisible();
     const seen = (await page.evaluate(
       () =>

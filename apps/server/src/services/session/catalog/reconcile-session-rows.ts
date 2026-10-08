@@ -65,9 +65,9 @@
  * verdict invented for a store this process cannot read would be a guess with a
  * delete behind it.
  *
- * @module services/session/reconcile-session-rows
+ * @module services/session/catalog/reconcile-session-rows
  */
-import { logger } from '../../lib/logger.js';
+import { logger } from '../../../lib/logger.js';
 
 /** The one runtime whose store this reconcile can read for itself. */
 const CLAUDE_CODE_RUNTIME = 'claude-code';

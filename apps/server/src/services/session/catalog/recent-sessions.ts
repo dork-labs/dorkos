@@ -8,11 +8,11 @@
  * in the shared fan-out, so this reader and the Activity tab's week line cannot
  * drift on what "across this machine" means.
  *
- * @module services/session/recent-sessions
+ * @module services/session/catalog/recent-sessions
  */
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { Session, SessionListWarning } from '@dorkos/shared/types';
-import { fanOutAgentSessions } from './agent-session-fanout.js';
+import { fanOutAgentSessions } from '../agent-session-fanout.js';
 
 /**
  * List the most-recent sessions across the given agent project directories.

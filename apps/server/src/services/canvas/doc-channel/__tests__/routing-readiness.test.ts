@@ -13,7 +13,7 @@ import {
 import type { CanvasChannelRoute } from '@dorkos/shared/canvas-channel-schemas';
 import { ApprovalService } from '../../../core/approvals/approval-service.js';
 import { createServerPrincipal } from '../../../connectors/principal/server-principal.js';
-import { resetSessionKeys } from '../../../session/session-key-registry.js';
+import { resetSessionKeys } from '../../../session/resolution/session-key-registry.js';
 import { DocChannelAuthorization, DocChannelNotFoundError } from '../authorization.js';
 import { DocChannelGrants } from '../grants.js';
 import { DocRouteGrantError, type DocGrantAuthority } from '../grant-policy.js';

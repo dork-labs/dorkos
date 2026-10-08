@@ -57,13 +57,16 @@ const resolveForSession = vi.fn(async () => fakeRuntime);
 
 vi.mock('../../services/core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    getNativeSessionCwd: vi.fn(() => null),
     resolveForSession: (...args: unknown[]) =>
       (resolveForSession as unknown as (...a: unknown[]) => Promise<FakeAgentRuntime>)(...args),
     getSessionSettings: vi.fn(async () => null),
+    getSessionAgentPath: vi.fn(async () => null),
   },
   RuntimeNotRegisteredError: class RuntimeNotRegisteredError extends Error {},
 }));
 
+import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { sessionEventsRoute } from '../session-events-socket.js';
 import { validateBoundaryOrDorkHome } from '../../lib/boundary.js';
 import type {
@@ -94,6 +97,7 @@ async function authorize(cwdParam?: string): Promise<UpgradeDecision> {
 beforeEach(() => {
   fakeRuntime = new FakeAgentRuntime();
   vi.clearAllMocks();
+  vi.mocked(runtimeRegistry.getSessionAgentPath).mockResolvedValue(null);
   fakeRuntime.getInternalSessionId.mockReturnValue(SESSION_ID);
 });
 
@@ -107,15 +111,29 @@ describe('sessionEventsRoute — which directory the socket streams against', ()
     expect(validateBoundaryOrDorkHome).toHaveBeenCalledWith(LIVE_CWD);
   });
 
-  it('refuses a directory the caller named that is outside the boundary', async () => {
-    fakeRuntime.getSessionCwd = vi.fn(() => LIVE_CWD);
+  it('uses the durable directory when no live binding survives', async () => {
+    fakeRuntime.getSessionCwd = vi.fn(() => undefined);
+    vi.mocked(runtimeRegistry.getSessionAgentPath).mockResolvedValue(LIVE_CWD);
+    const decision = await authorize();
+    expect(decision.ok).toBe(true);
+    expect(validateBoundaryOrDorkHome).toHaveBeenCalledWith(LIVE_CWD);
+  });
+
+  it('refuses a durable directory outside the boundary', async () => {
+    fakeRuntime.getSessionCwd = vi.fn(() => undefined);
+    vi.mocked(runtimeRegistry.getSessionAgentPath).mockResolvedValue(OUTSIDE_CWD);
+    expect(await authorize()).toMatchObject({ ok: false, status: 403 });
+  });
+
+  it('refuses an unbound draft directory outside the boundary', async () => {
+    fakeRuntime.getSessionCwd = vi.fn(() => undefined);
 
     const decision = await authorize(OUTSIDE_CWD);
 
     expect(decision).toMatchObject({ ok: false, status: 403, deliver: 'close-frame' });
     // Refused before the runtime was consulted at all — a named directory buys
     // no lookup.
-    expect(resolveForSession).not.toHaveBeenCalled();
+    expect(resolveForSession).toHaveBeenCalled();
   });
 
   it('refuses a RESOLVED directory outside the boundary, the same as a named one', async () => {

@@ -1835,6 +1835,9 @@ export interface AgentRuntime {
   /** Get metadata for a single session, or null if not found. */
   getSession(projectDir: string, sessionId: string): Promise<Session | null>;
 
+  /** Read native session metadata by id without a caller-supplied directory. Never creates a session. */
+  findSession?(sessionId: string): Promise<Session | null>;
+
   /** Read the full message history for a session. */
   getMessageHistory(projectDir: string, sessionId: string): Promise<HistoryMessage[]>;
 

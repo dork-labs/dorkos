@@ -24,7 +24,7 @@
 import { useState, type KeyboardEvent, type Ref } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { Shuffle } from 'lucide-react';
-import { useSessions } from '@/layers/entities/session';
+import { useSessions, notifySessionLookupFailed } from '@/layers/entities/session';
 import {
   PRIMARY_RUNTIME_TYPES,
   RuntimeSetupDialog,
@@ -41,7 +41,8 @@ import {
   ResponsiveDropdownMenuItem,
   ResponsiveDropdownMenuLabel,
 } from '@/layers/shared/ui';
-import { toSession } from '@/layers/shared/lib';
+import { useTransport } from '@/layers/shared/model';
+import { newSessionTarget, reportClientError } from '@/layers/shared/lib';
 
 /** What "run this again, elsewhere" needs to know. */
 export interface EntryRunWith {
@@ -82,6 +83,7 @@ export function EntryRunWithMenu({
   onTriggerKeyDown,
 }: EntryRunWithMenuProps) {
   const navigate = useNavigate();
+  const transport = useTransport();
   const { sessions } = useSessions();
   const { data: capabilityMap } = useRuntimeCapabilities();
   const { data: requirements } = useRuntimeRequirements();
@@ -104,7 +106,12 @@ export function EntryRunWithMenu({
   // Fresh session, always: an explicit new id bypasses the loader's
   // auto-select of an existing session; `runtime` binds it; `prompt` seeds it.
   const launchOn = (type: string) => {
-    void navigate(toSession({ session: crypto.randomUUID(), dir: cwd, runtime: type, prompt }));
+    void newSessionTarget(transport, { dir: cwd, runtime: type, prompt })
+      .then((target) => navigate(target))
+      .catch((error) => {
+        reportClientError(transport, error);
+        notifySessionLookupFailed(cwd ?? null);
+      });
   };
 
   const runWith = (type: string) => {

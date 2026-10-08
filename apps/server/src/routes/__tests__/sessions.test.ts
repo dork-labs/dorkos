@@ -59,6 +59,8 @@ vi.mock('../../services/core/runtime-registry.js', () => ({
     // read through `getSessionSettingsMany` via the shared overlay (DOR-463);
     // `getSessionSettings` remains the single-id read used by /events.
     getSessionSettings: vi.fn(async () => null),
+    getSessionAgentPath: vi.fn(async () => null),
+    getNativeSessionCwd: vi.fn(() => null),
     saveSessionSettings: vi.fn(async () => {}),
     getSessionSettingsMany: vi.fn(() => new Map<string, SessionSettings>()),
   },
@@ -147,6 +149,10 @@ describe('Sessions Routes', () => {
     // `...Once` today: the leak is a property of the shared mock, so a future
     // one-shot on `has` or `getDefaultType` would reintroduce it silently.
     vi.mocked(runtimeRegistry.resolveForSession).mockReset().mockResolvedValue(fakeRuntime);
+    vi.mocked(runtimeRegistry.resolveForSessionWithOwnership)
+      .mockReset()
+      .mockResolvedValue({ runtime: fakeRuntime, bound: true });
+    vi.mocked(runtimeRegistry.getNativeSessionCwd).mockReset().mockReturnValue(null);
     vi.mocked(runtimeRegistry.getSessionRuntimeType).mockReset().mockResolvedValue('fake');
     vi.mocked(runtimeRegistry.persistSessionRuntime).mockReset().mockResolvedValue(undefined);
     vi.mocked(runtimeRegistry.getSessionSettingsMany).mockReset().mockReturnValue(new Map());
@@ -1106,6 +1112,12 @@ describe('Sessions Routes', () => {
   // ---- Session runtime ownership (persist on first message) ----
 
   describe('session runtime ownership', () => {
+    beforeEach(() => {
+      vi.mocked(runtimeRegistry.resolveForSessionWithOwnership).mockResolvedValue({
+        runtime: fakeRuntime,
+        bound: false,
+      });
+    });
     /** Trigger one turn and resolve once the 202 is returned. */
     async function sendMessageOnce(sessionId: string, body: Record<string, unknown>) {
       fakeRuntime.withScenarios([
@@ -1113,7 +1125,9 @@ describe('Sessions Routes', () => {
           yield { type: 'done', data: {} } as StreamEvent;
         },
       ]);
-      return request(server).post(`/api/sessions/${sessionId}/messages`).send(body);
+      return request(server)
+        .post(`/api/sessions/${sessionId}/messages`)
+        .send({ ...body, create: true });
     }
 
     it('persists runtime=<default> when no hint or manifest is provided', async () => {
@@ -1261,7 +1275,7 @@ describe('Sessions Routes', () => {
 
       const res = await request(server)
         .post(`/api/sessions/${S1}/messages`)
-        .send({ content: 'hi', runtime: 'codex' });
+        .send({ content: 'hi', runtime: 'codex', create: true });
 
       expect(res.status).toBe(400);
       expect(res.body.code).toBe('UNKNOWN_RUNTIME');
@@ -1296,7 +1310,7 @@ describe('Sessions Routes', () => {
 
       await sendMessageOnce(S1, { content: 'hi' });
 
-      expect(runtimeRegistry.resolveForSession).toHaveBeenCalledWith(S1);
+      expect(runtimeRegistry.resolveForSession).toHaveBeenCalledWith(S1, { allowUnbound: true });
       // persist should be called before resolve on the first message
       const persistOrder = vi.mocked(runtimeRegistry.persistSessionRuntime).mock
         .invocationCallOrder[0];
@@ -1608,6 +1622,21 @@ describe('Sessions Routes', () => {
   // ---- Boundary Enforcement ----
 
   describe('boundary enforcement', () => {
+    it('POST rejects the actual established directory even when the supplied folder is allowed', async () => {
+      Object.assign(fakeRuntime, { getSessionCwd: vi.fn(() => '/outside/actual') });
+      vi.mocked(validateBoundaryOrDorkHome).mockImplementationOnce(async (cwd) => {
+        expect(cwd).toBe('/outside/actual');
+        throw new BoundaryError('Outside boundary', 'OUTSIDE_BOUNDARY');
+      });
+      const response = await request(server)
+        .post(`/api/sessions/${S1}/messages`)
+        .send({ content: 'continue', cwd: '/allowed/stale' });
+      expect(response.status).toBe(403);
+      expect(response.body.code).toBe('OUTSIDE_BOUNDARY');
+      expect(fakeRuntime.acquireLock).not.toHaveBeenCalled();
+      expect(runtimeRegistry.persistSessionRuntime).not.toHaveBeenCalled();
+    });
+
     it('GET /api/sessions rejects cwd outside boundary with 403', async () => {
       vi.mocked(validateBoundaryOrDorkHome).mockRejectedValueOnce(
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')

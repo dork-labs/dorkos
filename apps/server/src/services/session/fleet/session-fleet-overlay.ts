@@ -43,7 +43,7 @@ import type { Session } from '@dorkos/shared/types';
 import { logger } from '../../../lib/logger.js';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
 import { getAccountUsageStore } from '../../core/usage/current-usage-store.js';
-import { projectorFor } from '../session-key-registry.js';
+import { projectorFor } from '../resolution/session-key-registry.js';
 import { applyTrackerItems } from './flow-run-link.js';
 import { withSessionLimitStore } from './session-limit-store.js';
 

@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { motion } from 'motion/react';
@@ -419,7 +420,7 @@ export function InboxBell() {
                     approvals={extensionApprovals}
                     onOpenSettings={() => {
                       setOpen(false);
-                      void navigate({ to: '/', search: { settings: 'extensions' } });
+                      void navigate({ ...appRoutes.home(), search: { settings: 'extensions' } });
                     }}
                   />
                   {/* Everything else waiting, under a project heading per

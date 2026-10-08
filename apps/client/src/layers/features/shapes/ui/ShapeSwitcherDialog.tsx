@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 /**
  * The Shape switcher — the in-cockpit control for applying/switching Shapes
  * (DOR-355 §5). Lists installed Shapes, marks the active one, applies on pick,
@@ -257,7 +258,7 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
                 size="sm"
                 onClick={() => {
                   handleOpenChange(false);
-                  void navigate({ to: '/marketplace' });
+                  void navigate({ ...appRoutes.marketplace() });
                 }}
               >
                 <Store className="size-(--size-icon-xs)" />

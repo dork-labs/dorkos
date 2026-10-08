@@ -1,3 +1,4 @@
+import { appRoutes } from '../lib/route-factory';
 /**
  * The addresses that make up the home surface, and how to compare one.
  *
@@ -17,7 +18,12 @@
  * every bookmark, deep link and release note pointing at `/activity` still has
  * to land on Activity.
  */
-export const HOME_SURFACE_PATHS = ['/', '/activity', '/tasks', '/workspaces'] as const;
+export const HOME_SURFACE_PATHS = [
+  appRoutes.home().to,
+  appRoutes.activity().to,
+  appRoutes.tasks().to,
+  appRoutes.workspaces().to,
+] as const;
 
 /** One of the home surface's four routes. */
 export type HomeSurfacePath = (typeof HOME_SURFACE_PATHS)[number];

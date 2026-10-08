@@ -25,6 +25,7 @@ vi.mock('../../lib/boundary.js', () => ({
 
 vi.mock('../../services/core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    getNativeSessionCwd: vi.fn(() => null),
     getSessionRuntimeType: vi.fn(async () => 'claude-code'),
     // Bound on purpose: the canonical binding probe routes through
     // `resolveTurnRuntimeType`, which takes the session's recorded owner when

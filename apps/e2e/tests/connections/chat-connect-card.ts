@@ -232,7 +232,7 @@ async function openRequestingChat(
   // A fresh conversation each time: the folder's last one may still be open
   // from an earlier case.
   const sessionId = crypto.randomUUID();
-  await chat.goto(sessionId, { dir: agent.agentDir, runtime: 'claude-code' });
+  await chat.goto(sessionId, { dir: agent.agentDir, runtime: 'claude-code', draft: true });
   const bound = await request.post(`${apiUrl}/api/test/scenario`, {
     data: { name: 'connection-request', sessionId },
   });

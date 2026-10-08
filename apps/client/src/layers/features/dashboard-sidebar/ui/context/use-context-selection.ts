@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 import { useRef, useState, type RefObject } from 'react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { toast } from 'sonner';
@@ -120,7 +121,7 @@ export function useContextSelection({ trigger, selectedRef }: ContextSelectionOp
     let targetCommitted = false;
     let capturedRoute: ReturnType<typeof getCommunityRouteEpoch> | null = null;
     try {
-      await navigate({ to: '/channels', search: { community: connection.ref } });
+      await navigate({ ...appRoutes.channels(), search: { community: connection.ref } });
       targetCommitted = true;
       capturedRoute = getCommunityRouteEpoch();
       const remembered = await transport.resolveCommunityNavigation(connection.ref);
@@ -136,7 +137,7 @@ export function useContextSelection({ trigger, selectedRef }: ContextSelectionOp
       }
       if (roomId)
         await navigate({
-          to: '/channels',
+          ...appRoutes.channels(),
           search: {
             community: connection.ref,
             ...(roomId ? { id: roomId } : {}),
@@ -203,12 +204,12 @@ export function useContextSelection({ trigger, selectedRef }: ContextSelectionOp
       await navigate(
         destination.success
           ? ({ to: destination.data.path, search: destination.data.search } as never)
-          : { to: '/' }
+          : { ...appRoutes.home() }
       );
       settlePhoneFocus(true, person.acted());
     } catch {
       const fallback = isCommunityAuthorityCurrent(capturedOwner) && capturedRoute.isCurrent();
-      if (fallback) await navigate({ to: '/' });
+      if (fallback) await navigate({ ...appRoutes.home() });
       settlePhoneFocus(fallback, person.acted());
     } finally {
       person.stop();

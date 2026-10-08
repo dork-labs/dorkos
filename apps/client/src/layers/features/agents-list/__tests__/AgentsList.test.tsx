@@ -30,7 +30,8 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
 
 let currentSearch: Record<string, string | undefined> = {};
 
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useNavigate: () => {
     return ({
       search,

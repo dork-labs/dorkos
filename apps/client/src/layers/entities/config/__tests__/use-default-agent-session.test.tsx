@@ -9,7 +9,8 @@ import type { ServerConfig } from '@dorkos/shared/types';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 
 const mockNavigate = vi.fn();
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useNavigate: () => mockNavigate,
 }));
 
@@ -66,7 +67,7 @@ describe('useDefaultAgentSession', () => {
     result.current.startSession();
     expect(mockNavigate).toHaveBeenCalledWith({
       to: '/session',
-      search: { dir: '/home/kai/.dork/agents/dorkbot' },
+      search: { agentId: '1', dir: undefined },
     });
   });
 

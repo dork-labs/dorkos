@@ -58,7 +58,8 @@ vi.mock('@/layers/shared/lib/transport', async () => {
   };
 });
 
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useNavigate: () => vi.fn(),
   useRouter: () => ({ state: { location: { pathname: '/session', search: {} } } }),
   useRouterState: ({ select }: { select: (s: { location: { pathname: string } }) => unknown }) =>

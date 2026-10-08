@@ -10,7 +10,7 @@
  *
  * @module features/profile/model/use-docked-agent
  */
-import { useAppStore, useSafePathname } from '@/layers/shared/model';
+import { useAppStore, useSafePathname, useSafeSearch } from '@/layers/shared/model';
 import { useMeshMemberId } from '@/layers/entities/mesh';
 import { SESSION_ROUTE } from '@dorkos/shared/session-link';
 
@@ -27,10 +27,11 @@ import { SESSION_ROUTE } from '@dorkos/shared/session-link';
  * nothing behind it.
  */
 export function useDockedAgentPath(): string | null {
+  const search = useSafeSearch() as { profileRef?: string };
   const explicitAgentPath = useAppStore((s) => s.explicitAgentPath);
   const selectedCwd = useAppStore((s) => s.selectedCwd);
   const isSessionRoute = useSafePathname() === SESSION_ROUTE;
-  return explicitAgentPath ?? (isSessionRoute ? selectedCwd : null);
+  return explicitAgentPath ?? (!search.profileRef && isSessionRoute ? selectedCwd : null);
 }
 
 /** The agent whose session is open: where it lives, and what the roster calls it. */

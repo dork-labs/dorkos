@@ -6,6 +6,7 @@ import reactConfig from '@dorkos/eslint-config/react';
 import testConfig from '@dorkos/eslint-config/test';
 
 import fsd from './eslint-rules/fsd.js';
+import routes from './eslint-rules/routes.js';
 
 // The TS preset's `extensions`/`parsers`/`external-module-folders` — the settings
 // that let import-x parse a `.ts` dependency — minus its `import-x/resolver` key,
@@ -18,7 +19,7 @@ delete importXTypeScriptSettings['import-x/resolver'];
 export default defineConfig([
   // `.yalc/**` holds local co-dev overlays of published packages (e.g. an
   // in-flight blintz build); it is gitignored and must not be linted.
-  { ignores: ['dist/**', '.turbo/**', '.yalc/**'] },
+  { ignores: ['dist/**', '.turbo/**', '.yalc/**', 'src/routeTree.gen.ts'] },
   // The two lint guards' fixture slices, which are deliberate violations of the
   // very rules below: a cross-entity cycle, and a relative path that leaves its
   // slice. They have to sit inside `src/layers/` — the rules are scoped by path
@@ -292,6 +293,22 @@ export default defineConfig([
     files: ['src/layers/features/*/model/**/*.{ts,tsx}'],
     plugins: { fsd },
     rules: { 'fsd/no-cross-feature-model-import': 'error' },
+  },
+
+  {
+    files: ['src/**/*.{ts,tsx}'],
+    ignores: [
+      'src/**/__tests__/**',
+      'src/**/*.test.{ts,tsx}',
+      'src/routes/**',
+      'src/layers/shared/lib/route-factory.ts',
+      'src/layers/shared/lib/session-link.ts',
+      'src/dev/**',
+      'src/test-helpers/**',
+      'src/layers/shared/lib/extension-page-path.ts',
+    ],
+    plugins: { routes },
+    rules: { 'routes/no-hardcoded-route': 'error' },
   },
 
   ...testConfig,

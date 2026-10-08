@@ -25,7 +25,8 @@ import { TooltipProvider } from '@/layers/shared/ui';
 import { ChannelsPage } from '../ui/ChannelsPage';
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn() } }));
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useSearch: () => ({ id: 'room-1' }),
   useNavigate: () => () => {},
   // `useInPlaceNavigate` (the thread-URL sync) reads the current location.

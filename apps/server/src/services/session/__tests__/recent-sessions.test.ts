@@ -11,7 +11,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { FakeAgentRuntime, DIRECTORY_MEMBERSHIP_VECTORS } from '@dorkos/test-utils';
 import type { Session } from '@dorkos/shared/types';
-import { listRecentSessions } from '../recent-sessions.js';
+import { listRecentSessions } from '../catalog/recent-sessions.js';
 import { setAgentSessionSources } from '../agent-session-fanout.js';
 
 function makeSession(

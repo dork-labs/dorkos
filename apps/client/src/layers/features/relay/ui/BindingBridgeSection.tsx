@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 import { toast } from 'sonner';
 import { useNavigate } from '@tanstack/react-router';
 import { Ban, Hash } from 'lucide-react';
@@ -98,7 +99,7 @@ export function BindingBridgeSection({ binding, onDone }: BindingBridgeSectionPr
         updates: { bridge: 'room' },
       });
       if (updated.roomId) {
-        void navigate({ to: '/channels', search: { id: updated.roomId } });
+        void navigate({ ...appRoutes.channels(), search: { id: updated.roomId } });
       }
       onDone?.();
     } catch {

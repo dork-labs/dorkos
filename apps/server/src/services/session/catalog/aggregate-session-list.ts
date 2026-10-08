@@ -12,11 +12,11 @@
  * cannot read reports itself and costs only its own sessions
  * ({@link listOneRuntime}).
  *
- * @module services/session/aggregate-session-list
+ * @module services/session/catalog/aggregate-session-list
  */
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { Session, SessionListWarning } from '@dorkos/shared/types';
-import { logger } from '../../lib/logger.js';
+import { logger } from '../../../lib/logger.js';
 
 /**
  * Per-runtime listing budget (spec §Performance): one slow or cold backend

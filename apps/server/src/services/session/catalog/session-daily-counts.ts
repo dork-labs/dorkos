@@ -18,11 +18,11 @@
  * another timezone buckets by ITS midnight, which is the same convention every
  * other server-side day boundary in DorkOS uses.
  *
- * @module services/session/session-daily-counts
+ * @module services/session/catalog/session-daily-counts
  */
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { SessionListWarning } from '@dorkos/shared/types';
-import { fanOutAgentSessions } from './agent-session-fanout.js';
+import { fanOutAgentSessions } from '../agent-session-fanout.js';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 

@@ -8,7 +8,8 @@ import { useThreadUrlSync, type ThreadUrlSync } from '../model/use-thread-url-sy
 const { navigate } = vi.hoisted(() => ({ navigate: vi.fn() }));
 // `useInPlaceNavigate` reads the router's current location to stamp the in-place
 // base, so the mock provides a minimal `useRouter` alongside `useNavigate`.
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useNavigate: () => navigate,
   useRouter: () => ({ state: { location: { pathname: '/channels', search: { id: 'room-1' } } } }),
 }));

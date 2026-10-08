@@ -132,7 +132,7 @@ export {
   readAgentExecutionDefaults,
   describeExecutionDefaults,
   type AgentExecutionDefaults,
-} from './resolve-session-defaults.js';
+} from './resolution/resolve-session-defaults.js';
 export { triggerCommandIntent } from './trigger-command-intent.js';
 export {
   adoptQueuedMessages,
@@ -155,12 +155,12 @@ export type {
   MessageDispatchResult,
   WhenBusy,
 } from './message-dispatcher.js';
-export { reconcileSessionRows } from './reconcile-session-rows.js';
+export { reconcileSessionRows } from './catalog/reconcile-session-rows.js';
 export type {
   SessionRowReconcileDeps,
   SessionRowReconcileReport,
-} from './reconcile-session-rows.js';
-export { linkSessionId } from './session-key-registry.js';
+} from './catalog/reconcile-session-rows.js';
+export { linkSessionId } from './resolution/session-key-registry.js';
 export {
   cancelQueuedMessage,
   clearQueuedMessages,
@@ -222,22 +222,28 @@ export {
   callerNamedCwd,
   resolveSessionCwdOrDefault,
   resolveSessionCwdOrNull,
-} from './resolve-read-cwd.js';
+} from './resolution/resolve-read-cwd.js';
 export { listPendingInteractions } from './pending-interactions.js';
 export type { PendingInteractionEntry } from './pending-interactions.js';
 // --- Multi-runtime session-list aggregation (ADR-0310) ---
-export { aggregateSessionList, LIST_SESSIONS_TIMEOUT_MS } from './aggregate-session-list.js';
+export {
+  aggregateSessionList,
+  LIST_SESSIONS_TIMEOUT_MS,
+} from './catalog/aggregate-session-list.js';
 export {
   fanOutAgentSessions,
   setAgentSessionSources,
   type AgentSessionSources,
 } from './agent-session-fanout.js';
-export { listRecentSessions } from './recent-sessions.js';
-export { countSessionsPerDay } from './session-daily-counts.js';
+export { listRecentSessions } from './catalog/recent-sessions.js';
+export { countSessionsPerDay } from './catalog/session-daily-counts.js';
 
 // --- Global session-list discovery → unified SSE fan-out (Task #7, ADR-0265) ---
-export { SessionListBroadcaster, sessionListBroadcaster } from './session-list-broadcaster.js';
-export type { RoomBindingsPort } from './session-list-broadcaster.js';
+export {
+  SessionListBroadcaster,
+  sessionListBroadcaster,
+} from './catalog/session-list-broadcaster.js';
+export type { RoomBindingsPort } from './catalog/session-list-broadcaster.js';
 
 // --- Session-origin overlays, room then Pulse (session-origin-legibility,
 // team-room-home §D2.3, ADR 260808-140954). The composite is the only seam:
@@ -259,4 +265,7 @@ export { permissionSeedForOrigin } from './origin/turn-origin.js';
 export type { OriginPermissionSeed, TurnOrigin } from './origin/turn-origin.js';
 
 // --- Persisted per-session settings overlay (ADR-0260, DOR-463) ---
-export { overlayStoredSettings, resolveSettingsKey } from './session-settings-overlay.js';
+export {
+  overlayStoredSettings,
+  resolveSettingsKey,
+} from './resolution/session-settings-overlay.js';

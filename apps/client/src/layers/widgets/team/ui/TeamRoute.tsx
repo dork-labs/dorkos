@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 import { lazy, Suspense, useMemo } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useSearch, useNavigate } from '@tanstack/react-router';
@@ -85,11 +86,11 @@ function TeamRouteBody() {
   );
 
   function patchFilters(patch: Partial<TeamRosterFilters>) {
-    void navigate({ to: '/team', search: (prev) => ({ ...prev, ...patch }) });
+    void navigate({ ...appRoutes.team(), search: (prev) => ({ ...prev, ...patch }) });
   }
 
   function clearSelectedAgent() {
-    void navigate({ to: '/team', search: (prev) => ({ ...prev, agent: undefined }) });
+    void navigate({ ...appRoutes.team(), search: (prev) => ({ ...prev, agent: undefined }) });
   }
 
   // Flatten topology namespaces into a single agent array with health + projectPath attached.
@@ -159,7 +160,7 @@ function TeamRouteBody() {
                     <LazyTopologyGraph
                       onSelectAgent={(agentId) =>
                         void navigate({
-                          to: '/team',
+                          ...appRoutes.team(),
                           search: (prev) => ({ ...prev, agent: agentId }),
                         })
                       }
@@ -170,7 +171,7 @@ function TeamRouteBody() {
                       onOpenAdapterCatalog={() => openConnections()}
                       onGoToDiscovery={() =>
                         void navigate({
-                          to: '/team',
+                          ...appRoutes.team(),
                           search: (prev) => ({ ...prev, view: 'table' }),
                         })
                       }

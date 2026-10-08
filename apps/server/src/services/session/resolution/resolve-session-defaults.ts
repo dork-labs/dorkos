@@ -82,7 +82,7 @@
  * settings" — true for a person who changes the default while ten sessions are
  * open.
  *
- * @module services/session/resolve-session-defaults
+ * @module services/session/resolution/resolve-session-defaults
  */
 import type { UserConfig } from '@dorkos/shared/config-schema';
 import type { ExecutionDefaults, PermissionModeId, SessionSettings } from '@dorkos/shared/types';
@@ -95,8 +95,8 @@ import type {
 import { readManifest } from '@dorkos/shared/manifest';
 import { resolveStopMode } from '@dorkos/shared/permission-semantics';
 import { resolveFilesAndCommands } from '@dorkos/shared/permissions';
-import { configManager } from '../core/config-manager.js';
-import { permissionGateSources } from '../core/capabilities/permission-enforcement.js';
+import { configManager } from '../../core/config-manager.js';
+import { permissionGateSources } from '../../core/capabilities/permission-enforcement.js';
 
 /**
  * What one agent says its sessions should start with — the ladder's first tier.

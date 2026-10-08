@@ -10,7 +10,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { applyClaudeAccountChange, claudeAccountsChanged } from '../account-switch.js';
 import { eventFanOut } from '../../../core/event-fan-out.js';
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
-import { sessionListBroadcaster } from '../../../session/session-list-broadcaster.js';
+import { sessionListBroadcaster } from '../../../session/catalog/session-list-broadcaster.js';
 
 const { _invalidateAll, _registeredRuntimes } = vi.hoisted(() => {
   const invalidateAll = vi.fn();
@@ -26,11 +26,11 @@ const { _invalidateAll, _registeredRuntimes } = vi.hoisted(() => {
 vi.mock('../../../core/event-fan-out.js', () => ({
   eventFanOut: { broadcast: vi.fn(), addClient: vi.fn(), clientCount: 0 },
 }));
-vi.mock('../../../session/session-list-broadcaster.js', () => ({
+vi.mock('../../../session/catalog/session-list-broadcaster.js', () => ({
   sessionListBroadcaster: { stop: vi.fn().mockResolvedValue(undefined), start: vi.fn() },
 }));
 vi.mock('../../../core/runtime-registry.js', () => ({
-  runtimeRegistry: { listRuntimes: vi.fn() },
+  runtimeRegistry: { getNativeSessionCwd: vi.fn(() => null), listRuntimes: vi.fn() },
 }));
 vi.mock('../../../../lib/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },

@@ -10,7 +10,10 @@ import { useFeedbackDialogStore } from '@/layers/shared/model';
 import { HelpRows } from '../ui/HelpRows';
 
 const navigate = vi.hoisted(() => vi.fn());
-vi.mock('@tanstack/react-router', () => ({ useNavigate: () => navigate }));
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
+  useNavigate: () => navigate,
+}));
 
 const openLink = vi.hoisted(() => vi.fn());
 vi.mock('@/layers/shared/lib/link-navigation', async (importOriginal) => ({

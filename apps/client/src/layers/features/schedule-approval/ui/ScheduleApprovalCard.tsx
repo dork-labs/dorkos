@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 /**
  * A schedule an agent proposed, and everything you need to decide about it.
  *
@@ -369,7 +370,7 @@ export function ScheduleApprovalCard({
     if (testRun.phase !== 'finished') return undefined;
     return () => {
       onNavigate?.();
-      navigate({ to: '/tasks' });
+      navigate({ ...appRoutes.tasks() });
     };
   };
 

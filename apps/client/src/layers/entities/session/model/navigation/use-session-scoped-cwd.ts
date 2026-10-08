@@ -25,6 +25,7 @@
  * @module entities/session/model/navigation/use-session-scoped-cwd
  */
 
+import { useSessionRouteContext } from './session-route-context';
 import { useSessionSearch } from './use-session-search';
 
 /** What a session-scoped request knows about where to look. */
@@ -38,15 +39,12 @@ export interface SessionScopedCwd {
 }
 
 /**
- * The directory the ACTIVE session's own reads should use.
- *
- * Standalone (web): the URL is the whole answer and it is available on the
- * first render. `?dir=` names the directory;
- * nothing named one means `null`.
- *
- * @returns The scoped directory.
+ * Read this identity's server-resolved directory, with legacy URL compatibility.
+ * A missing resolution remains null: the server resolves ID-only reads instead
+ * of accidentally substituting another tab's selected directory.
  */
 export function useSessionScopedCwd(): SessionScopedCwd {
   const search = useSessionSearch();
-  return { cwd: search.dir ?? null };
+  const context = useSessionRouteContext(search.session);
+  return { cwd: context?.cwd ?? search.dir ?? null };
 }

@@ -155,6 +155,7 @@ testControlRouter.post('/scenario', (req, res) => {
 const canonicalIdSchema = z.object({
   sessionId: z.string().uuid(),
   canonicalId: z.string().uuid(),
+  runtime: z.string().min(1).optional(),
 });
 
 /**
@@ -183,8 +184,9 @@ testControlRouter.post('/canonical-id', async (req, res) => {
       .status(400)
       .json({ error: 'Validation failed', details: z.flattenError(result.error) });
   }
-  const { sessionId, canonicalId } = result.data;
-  const resolved = await resolveTestModeRuntime(sessionId);
+  const { sessionId, canonicalId, runtime } = result.data;
+  // A draft is not bound yet; declare on the runtime its first send will choose.
+  const resolved = await resolveTestModeRuntime(sessionId, runtime);
   if ('error' in resolved) return res.status(resolved.status).json({ error: resolved.error });
   resolved.runtime.declareCanonicalSessionId(sessionId, canonicalId);
   res.json({ ok: true, sessionId, canonicalId });
@@ -297,11 +299,14 @@ const heldProcessSchema = z.object({
  * @returns The owning runtime, or the status and message to answer with.
  */
 async function resolveTestModeRuntime(
-  sessionId: string
+  sessionId: string,
+  runtimeType?: string
 ): Promise<{ runtime: TestModeRuntime } | { status: number; error: string }> {
   let runtime: AgentRuntime;
   try {
-    runtime = await runtimeRegistry.resolveForSession(sessionId);
+    runtime = runtimeType
+      ? runtimeRegistry.get(runtimeType)
+      : await runtimeRegistry.resolveForSession(sessionId);
   } catch (err) {
     return {
       status: 500,

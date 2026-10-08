@@ -167,7 +167,7 @@ describe('useOverridesLedger', () => {
     result.current.rows.find((r) => r.kind === 'session')?.onOpen?.();
     expect(navigate).toHaveBeenCalledWith({
       to: '/session',
-      search: { session: 's1', dir: '/repo' },
+      search: { session: 's1', dir: undefined },
     });
     result.current.rows.find((r) => r.kind === 'task')?.onOpen?.();
     expect(navigate).toHaveBeenCalledWith({ to: '/tasks' });

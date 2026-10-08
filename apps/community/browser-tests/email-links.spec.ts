@@ -8,6 +8,7 @@ import { test, expect } from '@playwright/test';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Pool } from 'pg';
+import { createBrowserTestPool } from './pool-lifecycle.js';
 import { createCommunityApp } from '../src/app.js';
 import { parseConfig, type CommunityConfig } from '../src/config.js';
 import { migrate } from '../src/migrate.js';
@@ -31,6 +32,7 @@ const OLD_PASSWORD = 'old-password-1234';
 const NEW_PASSWORD = 'new-password-5678';
 const BOOTSTRAP_SECRET = 'c'.repeat(32);
 let pool: Pool;
+let closePool: (() => Promise<void>) | undefined;
 let blobDir: string;
 let smtp: SmtpFake;
 let config: CommunityConfig;
@@ -58,7 +60,9 @@ async function tick() {
 test.beforeAll(async () => {
   await admin.query(`CREATE DATABASE ${dbName}`);
   await migrate(dbUrl.toString());
-  pool = new Pool({ connectionString: dbUrl.toString() });
+  const ownedPool = createBrowserTestPool({ connectionString: dbUrl.toString() });
+  pool = ownedPool.pool;
+  closePool = ownedPool.close;
   blobDir = await mkdtemp(join(tmpdir(), 'community-browser-email-'));
   smtp = await startSmtpFake();
   const port = await freePort();
@@ -120,7 +124,7 @@ test.afterAll(async () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
   await smtp?.close();
-  await pool?.end();
+  await closePool?.();
   await admin.query(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE)`);
   await admin.end();
   if (blobDir) await rm(blobDir, { recursive: true, force: true });
