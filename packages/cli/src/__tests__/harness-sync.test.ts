@@ -1659,7 +1659,7 @@ describe('runHarnessHooks', () => {
 
     await runHarnessHooks({ list: true });
 
-    expect(printed()).toContain('globex — for the globally installed package, in every session');
+    expect(printed()).toContain('globex — for the globally installed package, in every chat');
   });
 
   it('--list says the file could not be read rather than "nothing stored yet"', async () => {

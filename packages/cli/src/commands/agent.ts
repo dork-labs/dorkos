@@ -206,10 +206,10 @@ function describeTemplate(template: TemplateBrings): string[] {
     `The template ${template.source} brings:`,
     ...(template.findings.length > 0
       ? [
-          ...template.findings.map((f) => `    ${f.path}: settings the new agent's sessions load`),
+          ...template.findings.map((f) => `    ${f.path}: settings the new agent's chats load`),
           ...(template.settings ?? []).flatMap(describeSettingsFile),
         ]
-      : ["    no settings files for the new agent's sessions"]),
+      : ["    no settings files for the new agent's chats"]),
     ...renderDisclosureLines(template.disclosed, 'agent'),
   ];
 }

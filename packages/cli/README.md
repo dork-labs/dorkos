@@ -32,7 +32,7 @@ Think of DorkOS as the office, and your agents as the workers who log in. Each a
 
 **Founders who build with agents.** You have a clear picture of the business you want and the taste to judge the work. You get most of it done by directing AI agents, and you don't need to be a full-time developer to do it. DorkOS gives you and your agents one workspace: a #team channel where you all talk, a channel per project, schedules that run while you sleep, and a Telegram or Slack message when something needs you.
 
-**Developers running many agents.** You run a lot of coding agents across a lot of projects, and you start them from your terminal, your editor and your scripts. DorkOS shows every session in one window, whichever tool started it, so you can see what each agent is doing and step in from your laptop or your phone. Your agents can run on Claude Code, Codex or OpenCode.
+**Developers running many agents.** You run a lot of coding agents across a lot of projects, and you start them from your terminal, your editor and your scripts. DorkOS shows every chat in one window, whichever tool started it, so you can see what each agent is doing and step in from your laptop or your phone. Your agents can run on Claude Code, Codex or OpenCode.
 
 ## What you get
 
@@ -42,7 +42,7 @@ Think of DorkOS as the office, and your agents as the workers who log in. Each a
 - **One workspace for you and your agents.** Talk in channels, direct messages and threads, starting with #team.
 - **Agents that run without you.** Put an agent on a schedule, then get a message when it finishes.
 - **Agents that use your other apps.** Connect Gmail and other services, and your agents can work in them.
-- **All your sessions in one list.** See your Claude Code sessions for a project, no matter where you started them, then switch folders to see the rest.
+- **All your chats in one list.** See your Claude Code chats for a project, no matter where you started them, then switch folders to see the rest.
 - **Step in from anywhere.** Check on an agent and answer it from your laptop or your phone.
 
 ## Install
@@ -61,7 +61,7 @@ Just want to try it first? `npx dorkos@latest` runs DorkOS with no install step 
 dorkos
 ```
 
-Already signed in to Claude Code? You're done. Your browser opens on #team, where you and your agents talk. Your Claude Code sessions from this folder, wherever you started them, are on that agent's Sessions page. Switch folders from the sidebar to see your other projects.
+Already signed in to Claude Code? You're done. Your browser opens on #team, where you and your agents talk. Your Claude Code chats from this folder, wherever you started them, are on that agent's Chats page. Switch folders from the sidebar to see your other projects.
 
 No Claude Code yet, or paying per token instead of on a subscription? Set an API key first:
 
@@ -82,7 +82,7 @@ Every install starts with a #team channel: you, DorkBot (the built-in helper age
 
 - Type without naming anyone and your default agent answers
 - Name an agent with `@` to ask it directly
-- Bring a Telegram chat in as a channel, so your agent reads the whole conversation
+- Bring a Telegram chat in as a channel, so your agent reads everything said there
 
 ### Connections: let agents work your other apps
 
@@ -94,7 +94,7 @@ Set an agent to run at a time you pick (like every morning at 9am) or on demand,
 
 - Define tasks in files that live next to your code
 - Skip a run if the last one is still going, so you never get duplicates
-- Every run gets its own session with full history
+- Every run gets its own chat with full history
 - Schedules run for as long as DorkOS does: put it on a machine that stays on and they fire around the clock
 
 ### Relay: let agents reach you
@@ -117,9 +117,9 @@ DorkOS scans your projects and finds the folders that hold agents. You choose wh
 
 Your agents have names, colors, and a status. Glance at your browser and know which ones are working, which are done, and which need you.
 
-Start a session in the browser. Check on it from your phone. Every session shows up together, whichever tool started it.
+Start a chat in the browser. Check on it from your phone. Every chat shows up together, whichever tool started it.
 
-- Full session history with rich markdown
+- Full chat history with rich markdown
 - Approve or deny an agent's actions from any device
 - Live updates across every browser tab you have open
 
@@ -167,7 +167,7 @@ For Docker and other ways to update, see the [full upgrade guide](https://dorkos
 
 MIT license. It runs on your own computer or a server you control: your agents, your data, your rules.
 
-Choose how much control you want, from approving every single action to letting an agent run on its own. Every session is saved on your computer, so when an agent works overnight you can see exactly what it did.
+Choose how much control you want, from approving every single action to letting an agent run on its own. Every chat is saved on your computer, so when an agent works overnight you can see exactly what it did.
 
 - [Documentation](https://dorkos.ai/docs)
 - [Changelog](https://dorkos.ai/docs/changelog)
@@ -262,7 +262,7 @@ To add or change marketplace packages, use `dorkos install <package>`, `dorkos m
 
 `dorkos capabilities` asks the running server for its live catalog: the actions it accepts by name, each with how risky it is. `dorkos call <id>` runs one of them and prints the result as JSON. Together they let an agent in any runtime, including Codex and OpenCode, find out what it can do and do it, without needing DorkOS's in-app tools.
 
-The catalog is not the full list of DorkOS tools. Agent messaging, discovery, and extensions are MCP tools, reachable from inside a session and from an external MCP client, but not by `dorkos call`. The catalog says as much in its own output. Curated verbs like `dorkos agent` and `dorkos task` keep their own shapes; `dorkos call` covers what the catalog carries.
+The catalog is not the full list of DorkOS tools. Agent messaging, discovery, and extensions are MCP tools, reachable from inside a chat and from an external MCP client, but not by `dorkos call`. The catalog says as much in its own output. Curated verbs like `dorkos agent` and `dorkos task` keep their own shapes; `dorkos call` covers what the catalog carries.
 
 ### Environment variables
 
@@ -282,7 +282,7 @@ None are required if you already have the [Claude Code CLI](https://docs.anthrop
 | ---------------------- | ----------------- | ------------------------------------------------------------------------------- |
 | `DORKOS_PORT`          | `4242`            | Server port                                                                     |
 | `DORKOS_HOST`          | `localhost`       | Server host (use `0.0.0.0` for Docker)                                          |
-| `DORKOS_DEFAULT_CWD`   | Current directory | Default folder for new sessions                                                 |
+| `DORKOS_DEFAULT_CWD`   | Current directory | Default folder for new chats                                                    |
 | `DORKOS_BOUNDARY`      | Home directory    | Folders DorkOS may touch                                                        |
 | `DORK_HOME`            | `~/.dork`         | Where DorkOS keeps its data                                                     |
 | `LOG_LEVEL`            | `info`            | How much to log                                                                 |
