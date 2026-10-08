@@ -4,7 +4,10 @@ import {
   drainOriginalRelaySdkQuery,
   type OriginalPreparedRelaySdkLaunch,
 } from './relay/relay-sdk-launch.js';
-import { requireOriginalClaudeRoomQueryStart } from '../claude-code-runtime.js';
+import {
+  captureClaudeOriginalQueryCurrent,
+  requireOriginalClaudeRoomQueryStart,
+} from '../claude-code-runtime.js';
 /**
  * SDK query execution -- extracted from ClaudeCodeRuntime.sendMessage()
  * for file size management.
@@ -15,7 +18,7 @@ import { requireOriginalClaudeRoomQueryStart } from '../claude-code-runtime.js';
  *
  * @module services/runtimes/claude-code/message-sender
  */
-import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent, ErrorCategory } from '@dorkos/shared/types';
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import {
@@ -190,6 +193,9 @@ export async function* executeSdkQuery(
 
   // Hold the input stream open so the subprocess survives past the result message
   // and can answer getContextUsage() (closed below once the turn completes).
+  const requireQueryCurrent = captureClaudeOriginalQueryCurrent(session);
+  const { query } = await import('@anthropic-ai/claude-agent-sdk');
+  requireQueryCurrent?.();
   const heldPrompt = createHeldUserPrompt(enrichedContent);
   const queryInput = { prompt: heldPrompt.prompt, options: sdkOptions };
   const captureRoomQuery = requireOriginalClaudeRoomQueryStart(session);

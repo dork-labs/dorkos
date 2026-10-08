@@ -61,6 +61,10 @@ process.on('message', (message: unknown) => {
   } else if (message === 'close') void close();
 });
 try {
+  // The real Node loader/registry graph precedes any runtime or MCP tool construction.
+  // This observer does not replace the installed SDK exports or issue native authority.
+  await import('../../../core/runtime-registry.js');
+  sdk.requireNotAcquired();
   const { originalClaudeDefaultsScenarios } = await import('./room-original-defaults-scenarios.js');
   const { prepareOriginalClaudeDefaultsControl } =
     await import('./room-original-native-defaults-control.js');

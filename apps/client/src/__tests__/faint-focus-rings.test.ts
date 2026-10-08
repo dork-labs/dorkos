@@ -224,6 +224,24 @@ function faintRings(text: string): { focus: string[]; atRest: string[] } {
  * @param fileName - Its name; the extension picks TS or TSX parsing.
  */
 function scan(source: string, fileName = 'probe.tsx'): { focus: string[]; atRest: string[] } {
+  // Ordinary source without either utility stem cannot contain a match. Escapes
+  // and JSX entities retain the parser path because decoded text may add a stem.
+  if (
+    !source.includes('ring') &&
+    !source.includes('outline') &&
+    !source.includes('\\') &&
+    !source.includes('&')
+  ) {
+    return { focus: [], atRest: [] };
+  }
+  return scanOriginal(source, fileName);
+}
+
+/** Original AST scanner, also used as the semantic oracle for eligibility controls. */
+function scanOriginal(
+  source: string,
+  fileName = 'probe.tsx'
+): { focus: string[]; atRest: string[] } {
   const file = ts.createSourceFile(
     fileName,
     source,
@@ -382,6 +400,35 @@ describe('faint focus rings', () => {
     expect(problems({}, { 'a.tsx': { count: 1 } })).toEqual([
       'remove the entry for a.tsx: it draws no part-strength ring now',
     ]);
+  });
+
+  it('keeps encoded strings, JSX entities and template pieces on the original AST path', () => {
+    const sources = [
+      String.raw`const c = 'focus-visible:\u0072\u0069\u006e\u0067-red-500/50';`,
+      String.raw`const c = 'focus-visible:\u006f\u0075\u0074\u006c\u0069\u006e\u0065-red-500/50';`,
+      String.raw`const c = 'focus-visible:\x72\x69\x6e\x67-red-500/50';`,
+      '<div className="focus-visible:r&#105;ng-red-500/50" />',
+      '<div>focus-visible:o&#117;tline-red-500/50</div>',
+      'const c = `${a} focus-visible:ring-red-500/50`;',
+      '// focus-visible:ring-red-500/50\nconst c = "plain";',
+    ];
+    for (const source of sources) expect(scan(source)).toEqual(scanOriginal(source));
+    expect(scan(sources[0]!).focus).toEqual(['focus-visible:ring-red-500/50']);
+    expect(scan(sources[1]!).focus).toEqual(['focus-visible:outline-red-500/50']);
+    expect(scan(sources[2]!).focus).toEqual(['focus-visible:ring-red-500/50']);
+  });
+
+  it('preserves original empty results for source that cannot spell or decode a utility stem', () => {
+    const sources = [
+      'const count = 42;',
+      'const c = "focus-visible:bg-red-500/50";',
+      'const view = <div className="bg-red-500/50">plain</div>;',
+      'const c = "focus-visible:RING-red-500/50";',
+    ];
+    for (const source of sources) {
+      expect(scanOriginal(source)).toEqual({ focus: [], atRest: [] });
+      expect(scan(source)).toEqual(scanOriginal(source));
+    }
   });
 
   it('every focus ring in the app is solid, and every at-rest faint ring is listed', () => {

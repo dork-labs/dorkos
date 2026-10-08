@@ -58,6 +58,10 @@ export function installOriginalClaudeSdkDataObservation() {
   let closed: Promise<void> | undefined;
   return {
     entries,
+    /** Import-only registry loading must not acquire the provider package. */
+    requireNotAcquired() {
+      assert.equal(sdkUrl, undefined, 'Original registry import acquired the Claude SDK eagerly');
+    },
     close() {
       if (closed) return closed;
       closed = Promise.resolve().then(async () => {

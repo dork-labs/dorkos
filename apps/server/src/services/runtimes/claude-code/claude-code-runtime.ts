@@ -559,7 +559,7 @@ import { AccountsAccessContext } from '../shared/accounts-access-context.js';
 import { runtimeEnvironment } from '../shared/runtime-environment-config.js';
 import { setAccountProbeBinaryResolver } from './accounts/account-probe.js';
 import path from 'path';
-import { renameSession as sdkRenameSession, query } from '@anthropic-ai/claude-agent-sdk';
+import type { query } from '@anthropic-ai/claude-agent-sdk';
 import type { McpServerConfig, Query } from '@anthropic-ai/claude-agent-sdk';
 import type { McpServerEntry } from '@dorkos/shared/transport';
 import type {
@@ -939,6 +939,38 @@ export function isClaudeOriginalRoomLaunchAlias(
 const claudeNativeConstructors = new WeakSet<object>();
 const claudeNativeOperations = new WeakMap<object, ClaudeNativeEntry>();
 const claudeRuntimeEntries = new WeakMap<object, Map<string, ClaudeNativeEntry>>();
+const claudeOriginalSessionOperations = new WeakMap<AgentSession, object>();
+/** Capture a refusal-only check for the exact original turn across asynchronous SDK loading. */
+export function captureClaudeOriginalQueryCurrent(session: AgentSession): (() => void) | undefined {
+  const operation = claudeOriginalSessionOperations.get(session);
+  if (!operation) return;
+  const entry = claudeNativeOperations.get(operation);
+  const context = entry?.context;
+  const requireCurrent = () => {
+    const slot = entry && Object.getOwnPropertyDescriptor(entry.instance, 'sessionStore');
+    const contextSlot = Object.getOwnPropertyDescriptor(session, 'connectorTurn');
+    const signal = context ? readClaudeConnectorContext(context) : undefined;
+    if (
+      !entry ||
+      entry.session !== session ||
+      claudeOriginalSessionOperations.get(session) !== operation ||
+      entry.retired ||
+      !claudeNativeConstructors.has(entry.instance) ||
+      !slot ||
+      !('value' in slot) ||
+      slot.value !== entry.store ||
+      !isCurrentClaudeNativeSession(entry.store, session) ||
+      entry.context !== context ||
+      !contextSlot ||
+      !('value' in contextSlot) ||
+      contextSlot.value !== context ||
+      (context !== undefined && (!signal || signal.aborted))
+    )
+      throw new Error('Original Claude query turn retired or changed during SDK acquisition.');
+  };
+  requireCurrent();
+  return requireCurrent;
+}
 /** Fixed constructor-owned session and turn lifetime; a reinserted evicted object stays retired. */
 export function readClaudeNativeOperation(token: object) {
   const entry = claudeNativeOperations.get(token);
@@ -2021,6 +2053,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       context: undefined as ClaudeConnectorTurnContext | undefined,
     };
     claudeNativeOperations.set(nativeOperation, nativeEntry);
+    claudeOriginalSessionOperations.set(session, nativeOperation);
     let runtimeEntries = claudeRuntimeEntries.get(this);
     if (!runtimeEntries) {
       runtimeEntries = new Map();
@@ -3092,6 +3125,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
 
   /** @inheritdoc */
   async renameSession(sessionId: string, title: string, projectDir: string): Promise<void> {
+    const { renameSession: sdkRenameSession } = await import('@anthropic-ai/claude-agent-sdk');
     // `renameSession` runs IN-PROCESS and its options expose no config dir, so
     // the env lock is the only way to point it at the session's OWN account —
     // without it a rename writes into whichever account is active, where the
@@ -3881,6 +3915,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       // first real message.
       const plugins = this.activatedPlugins;
       if (plugins.length === 0) return;
+      const { query } = await import('@anthropic-ai/claude-agent-sdk');
       idle = createIdlePrompt();
       probe = query({
         prompt: idle.prompt,

@@ -1,4 +1,3 @@
-import { query } from '@anthropic-ai/claude-agent-sdk';
 import { createHeldUserPrompt } from '../../sdk/sdk-utils.js';
 import {
   commitOriginalClaudeRelayQueryStart,
@@ -150,6 +149,10 @@ export async function startOriginalRelaySdkQuery(
     own.stop
   )
     throw new Error('Original Relay query start unavailable');
+  const { query } = await import('@anthropic-ai/claude-agent-sdk');
+  requireOriginalPreparedRelaySdkLaunch(token, session);
+  if (!own.consumed || own.queryAttempted || own.stop)
+    throw new Error('Original Relay query start changed during SDK acquisition');
   const held = createHeldUserPrompt(own.resolved.enrichedContent);
   own.stop = held.close.bind(held);
   const input = { prompt: held.prompt, options: own.resolved.sdkOptions };

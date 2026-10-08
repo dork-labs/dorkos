@@ -7,11 +7,10 @@ import { claudeInterruptReceipt as receipt } from '../connector-turn-context.js'
  *
  * @module services/runtimes/claude-code/session-store
  */
-import {
-  forkSession as sdkForkSession,
-  type PermissionUpdate,
-  type PermissionUpdateDestination,
-  type Query,
+import type {
+  PermissionUpdate,
+  PermissionUpdateDestination,
+  Query,
 } from '@anthropic-ai/claude-agent-sdk';
 import {
   type PermissionMode,
@@ -591,8 +590,9 @@ export class SessionStore {
     transcriptReader: TranscriptReader,
     opts?: { upToMessageId?: string; title?: string }
   ): Promise<Session | null> {
-    const internalId = this.getInternalSessionId(sessionId) ?? sessionId;
     try {
+      const { forkSession: sdkForkSession } = await import('@anthropic-ai/claude-agent-sdk');
+      const internalId = this.getInternalSessionId(sessionId) ?? sessionId;
       // `forkSession` runs IN-PROCESS and its options carry no config dir, so the
       // env lock is the only way to point it at the source session's account —
       // and the fork's own transcript is written under whatever account is
