@@ -289,119 +289,148 @@ it('retains exact refused worker diagnostic output until its original receiver s
   await finalize();
 });
 
-it('captures and joins the default original stderr sink without an injected receiver', async () => {
-  let finish!: (value: 'retained') => void;
-  let release!: () => void;
-  const output = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  const batch = {
-    version: 1,
-    bootSeconds: '10',
-    bootMicroseconds: '0',
-    parentBefore: { pid: 123, seconds: '21', microseconds: '0' },
-    parentAfter: null,
-    complete: false,
-    processes: [],
-  };
-  const parent = { pid: 123, birth: 'darwin-bsd-start:21:0' };
-  const raw = new TextEncoder().encode(
-    JSON.stringify({ kind: 'incomplete-native-children', parent, batch }) + '\n'
-  );
-  const original = {
-    completion: new Promise<'retained'>((resolve) => {
-      finish = resolve;
-    }),
-    stderr: vi.fn(() => raw),
-    enrollRoot: vi.fn(async () => {}),
-    endBrowser: vi.fn(async () => {}),
-  };
-  const originals: {
-    acquiring?: ReturnType<typeof fixture>;
-    starting?: ReturnType<typeof startDarwinEngineJournal>;
-    stopping?: ReturnType<Awaited<ReturnType<typeof startDarwinEngineJournal>>['stop']>;
-    finishing?: Promise<void>;
-  } = {};
-  let workerFinished = false,
-    receiverReleased = false,
-    closed = false;
-  const finishWorker = () => {
-    if (!workerFinished) {
-      workerFinished = true;
-      finish('retained');
-    }
-  };
-  const releaseReceiver = () => {
-    if (!receiverReleased) {
-      receiverReleased = true;
-      release();
-    }
-  };
-  const finalize = () => {
-    closed = true;
-    return (originals.finishing ??= (async () => {
-      // Release independently, then join the exact captured start/stop before any root or mock restore.
-      finishWorker();
-      releaseReceiver();
-      if (originals.acquiring) await originals.acquiring;
-      if (originals.starting) {
-        const originalAdapter = await originals.starting;
-        originals.stopping ??= originalAdapter.stop();
-        await originals.stopping;
+it.each(['children', 'unknown'] as const)(
+  'captures and joins the default original %s stderr sink without an injected receiver',
+  async (kind) => {
+    let finish!: (value: 'retained') => void;
+    let release!: () => void;
+    const output = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const batch = {
+      version: 1,
+      bootSeconds: '10',
+      bootMicroseconds: '0',
+      parentBefore: { pid: 123, seconds: '21', microseconds: '0' },
+      parentAfter: null,
+      complete: false,
+      processes: [],
+    };
+    const parent = { pid: 123, birth: 'darwin-bsd-start:21:0' };
+    const raw = new TextEncoder().encode(
+      JSON.stringify(
+        kind === 'children'
+          ? { kind: 'incomplete-native-children', parent, batch }
+          : {
+              kind: 'original-native-unknown',
+              sequence: 238,
+              fact: { kind: 'unknown', pid: 123, error: 35, uncertainty: 'membership-disappeared' },
+              leaf: null,
+            }
+      ) + '\n'
+    );
+    const original = {
+      completion: new Promise<'retained'>((resolve) => {
+        finish = resolve;
+      }),
+      stderr: vi.fn(() => raw),
+      enrollRoot: vi.fn(async () => {}),
+      endBrowser: vi.fn(async () => {}),
+    };
+    const originals: {
+      acquiring?: ReturnType<typeof fixture>;
+      starting?: ReturnType<typeof startDarwinEngineJournal>;
+      stopping?: ReturnType<Awaited<ReturnType<typeof startDarwinEngineJournal>>['stop']>;
+      finishing?: Promise<void>;
+    } = {};
+    let workerFinished = false,
+      receiverReleased = false,
+      closed = false;
+    const finishWorker = () => {
+      if (!workerFinished) {
+        workerFinished = true;
+        finish('retained');
       }
-    })());
-  };
-  originalFinalizers.add(finalize);
-  onTestFinished(finalize); // Before fixture home or adapter acquisition.
-  originals.acquiring = fixture();
-  const options = await originals.acquiring;
-  if (closed) throw new Error('JOURNAL_DIAGNOSTIC_CONTROL_FINALIZING');
-  controls.start.mockResolvedValue(original);
-  const originalWrite = process.stderr.write.bind(process.stderr);
-  const lines: string[] = [];
-  const writer = vi.spyOn(process.stderr, 'write').mockImplementation(((
-    bytes: unknown,
-    callback: unknown
-  ) => {
-    if (typeof bytes !== 'string' || !bytes.startsWith('JOURNAL_ORIGINAL_CHILDREN: '))
-      return originalWrite(bytes as string);
-    lines.push(bytes);
-    void output.then(() => (callback as (error?: unknown) => void)());
-    return true;
-  }) as typeof process.stderr.write);
-  onTestFinished(() => {
-    writer.mockRestore();
-  });
-  originals.starting = startDarwinEngineJournal({
-    ...options,
-  });
-  const adapter = await originals.starting;
-  const captured = original.stderr;
-  original.stderr = vi.fn(() => new Uint8Array());
-  await adapter.attributeRoot(parent);
-  const stopping = (originals.stopping = adapter.stop());
-  let settled = false;
-  void stopping.then(() => {
-    settled = true;
-  });
-  finishWorker();
-  await vi.waitFor(() => expect(lines).toHaveLength(1));
-  expect(captured).toHaveBeenCalledOnce();
-  expect(original.stderr).not.toHaveBeenCalled();
-  expect(JSON.parse(lines[0].slice('JOURNAL_ORIGINAL_CHILDREN: '.length))).toEqual({
-    kind: 'incomplete-native-children',
-    journalId: 'journal',
-    parent,
-    batch,
-  });
-  expect(adapter.custody().pending).toBe(true);
-  expect(settled).toBe(false);
-  releaseReceiver();
-  expect(await stopping).toBe('uncertain');
-  expect(adapter.custody()).toEqual({ pending: false, uncertain: true });
-  expect(lines).toHaveLength(1);
-  await finalize();
-});
+    };
+    const releaseReceiver = () => {
+      if (!receiverReleased) {
+        receiverReleased = true;
+        release();
+      }
+    };
+    const finalize = () => {
+      closed = true;
+      return (originals.finishing ??= (async () => {
+        // Release independently, then join the exact captured start/stop before any root or mock restore.
+        finishWorker();
+        releaseReceiver();
+        if (originals.acquiring) await originals.acquiring;
+        if (originals.starting) {
+          const originalAdapter = await originals.starting;
+          originals.stopping ??= originalAdapter.stop();
+          await originals.stopping;
+        }
+      })());
+    };
+    originalFinalizers.add(finalize);
+    onTestFinished(finalize); // Before fixture home or adapter acquisition.
+    originals.acquiring = fixture();
+    const options = await originals.acquiring;
+    if (closed) throw new Error('JOURNAL_DIAGNOSTIC_CONTROL_FINALIZING');
+    controls.start.mockResolvedValue(original);
+    const originalWrite = process.stderr.write.bind(process.stderr);
+    const lines: string[] = [];
+    const writer = vi.spyOn(process.stderr, 'write').mockImplementation(((
+      bytes: unknown,
+      callback: unknown
+    ) => {
+      if (
+        typeof bytes !== 'string' ||
+        !bytes.startsWith(
+          kind === 'children' ? 'JOURNAL_ORIGINAL_CHILDREN: ' : 'JOURNAL_ORIGINAL_UNKNOWN: '
+        )
+      )
+        return originalWrite(bytes as string);
+      lines.push(bytes);
+      void output.then(() => (callback as (error?: unknown) => void)());
+      return true;
+    }) as typeof process.stderr.write);
+    onTestFinished(() => {
+      writer.mockRestore();
+    });
+    originals.starting = startDarwinEngineJournal({
+      ...options,
+    });
+    const adapter = await originals.starting;
+    const captured = original.stderr;
+    original.stderr = vi.fn(() => new Uint8Array());
+    await adapter.attributeRoot(parent);
+    const stopping = (originals.stopping = adapter.stop());
+    let settled = false;
+    void stopping.then(() => {
+      settled = true;
+    });
+    finishWorker();
+    await vi.waitFor(() => expect(lines).toHaveLength(1));
+    expect(captured).toHaveBeenCalledOnce();
+    expect(original.stderr).not.toHaveBeenCalled();
+    expect(
+      JSON.parse(
+        lines[0].slice(
+          (kind === 'children' ? 'JOURNAL_ORIGINAL_CHILDREN: ' : 'JOURNAL_ORIGINAL_UNKNOWN: ')
+            .length
+        )
+      )
+    ).toEqual(
+      kind === 'children'
+        ? { kind: 'incomplete-native-children', journalId: 'journal', parent, batch }
+        : {
+            kind: 'original-native-unknown',
+            journalId: 'journal',
+            sequence: 238,
+            fact: { kind: 'unknown', pid: 123, error: 35, uncertainty: 'membership-disappeared' },
+            leaf: null,
+          }
+    );
+    expect(adapter.custody().pending).toBe(true);
+    expect(settled).toBe(false);
+    releaseReceiver();
+    expect(await stopping).toBe('uncertain');
+    expect(adapter.custody()).toEqual({ pending: false, uncertain: true });
+    expect(lines).toHaveLength(1);
+    await finalize();
+  }
+);
 
 it('cannot upgrade refused original custody when diagnostic output itself fails with undefined', async () => {
   const parent = { pid: 123, birth: 'darwin-bsd-start:21:0' };

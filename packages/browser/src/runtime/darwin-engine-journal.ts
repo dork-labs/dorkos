@@ -1,3 +1,7 @@
+import {
+  readOriginalUnknownJournalDiagnostic,
+  createOriginalUnknownJournalDiagnosticSink,
+} from './journal/unknown-diagnostic.js';
 import { randomUUID } from 'node:crypto';
 import {
   readDarwinJournalDiagnostic,
@@ -58,6 +62,7 @@ export async function startDarwinEngineJournal(
   const continuous = options.continuous === true;
   const injectedDiagnostic = options.onDiagnostic;
   const onDiagnostic = injectedDiagnostic ?? createOriginalChildBatchDiagnosticSink();
+  const onUnknownDiagnostic = createOriginalUnknownJournalDiagnosticSink();
   const manager = ProcessIdentitySchema.parse(options.binding.manager);
   if (manager.pid !== process.pid) throw new Error('JOURNAL_MANAGER_MISMATCH');
   const observer = createDarwinProcessObserver(options.artifact);
@@ -155,11 +160,20 @@ export async function startDarwinEngineJournal(
         (uncertain || (result !== 'recorded-gone' && result !== 'campaign-closed'))
       ) {
         try {
-          const diagnostic = readDarwinJournalDiagnostic(
-            originalStderr(),
+          const originalBytes = originalStderr();
+          const diagnostic = readDarwinJournalDiagnostic(originalBytes, initial.binding.journalId);
+          // Parse both closed kinds from the same completed bank; duplicates stay refused.
+          const unknown = readOriginalUnknownJournalDiagnostic(
+            originalBytes,
             initial.binding.journalId
           );
-          if (diagnostic) await onDiagnostic(diagnostic);
+          if (unknown) {
+            try {
+              await onUnknownDiagnostic(unknown);
+            } catch {
+              /* Optional fixed output cannot alter original refusal or custody. */
+            }
+          } else if (diagnostic) await onDiagnostic(diagnostic);
         } catch {
           // A newly installed default diagnostic cannot alter original custody or cleanup result.
           if (injectedDiagnostic) uncertain = true;
