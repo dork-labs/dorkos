@@ -151,6 +151,8 @@ export {
 } from './model/status/agent-attention';
 export type { AttentionState, LiveBorderKind } from './model/status/agent-attention';
 export { useRenameSession } from './model/rename/use-rename-session';
+// Rename in place: the chat list's rows open it from their menu.
+export { useInlineRename } from './model/rename/use-inline-rename';
 
 // UI — session row display primitive
 export { SessionRow } from './ui/SessionRow';
