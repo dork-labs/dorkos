@@ -279,6 +279,7 @@ export function createProductionLiveBrowserComposition(
                     originalClose = broker.close.bind(broker);
                   const peer: PrivateLiveNetworkPeer = Object.freeze({
                     url: descriptor.server,
+                    authenticationWarmup: descriptor.authenticationWarmup,
                     credentials: Object.freeze({
                       username: 'dorkos',
                       password: descriptor.credential,

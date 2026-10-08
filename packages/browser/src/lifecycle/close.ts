@@ -145,6 +145,11 @@ async function performClose(
   void observed.catch(() => {
     noteRefusal(record, 'snapshot');
   });
+  const warmup = record.privateProxyWarmup ? record.privateProxyWarmup.close() : Promise.resolve();
+  void warmup.catch(() => {
+    noteRefusal(record, 'context');
+    owner.uncertain = true;
+  });
   const inputs = Promise.all([
     ...[...record.tabs.values()].map((tab) => tab.tail),
     ...[...owner.inputs.values()].map(async (slot) => {
@@ -186,6 +191,7 @@ async function performClose(
     inputs,
     journalBarrier,
     controllerPreparation,
+    warmup,
   ]).then((joined) => {
     if (joined.some((result) => result.status === 'rejected')) owner.uncertain = true;
   });

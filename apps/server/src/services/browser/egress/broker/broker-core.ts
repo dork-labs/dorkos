@@ -1,3 +1,4 @@
+import { createOriginalAuthenticationWarmup } from './authentication-warmup.js';
 import { originalEgressPolicyRefusal } from '../errors.js';
 import type { OriginalConnectDenial, OriginalConnectDenialObserver } from './connect-denial.js';
 import { verifyPeer } from './transport.js';
@@ -51,6 +52,7 @@ export function createBrokerCore(options: {
   let stopped = false;
   let listener: OwnedListener | undefined;
   let startup: Promise<{ server: string; listener: OwnedListener }> | undefined;
+  let authenticationWarmup: ReturnType<typeof createOriginalAuthenticationWarmup> | undefined;
   let closing: Promise<boolean> | undefined;
   let listenerClosed = false;
   let listenerSettled = false;
@@ -110,6 +112,8 @@ export function createBrokerCore(options: {
     const abort = new AbortController();
     let socket: OwnedSocket | undefined;
     let deniedConnect: OriginalConnectDenial | undefined;
+    let originalWarmup: ReturnType<NonNullable<typeof authenticationWarmup>['enter']>;
+    let originalChallenge: ReturnType<NonNullable<typeof authenticationWarmup>['challenge']>;
     const flows: ReturnType<typeof forwardFlow>[] = [];
     const close = () => {
       try {
@@ -136,6 +140,7 @@ export function createBrokerCore(options: {
       return timer;
     };
     try {
+      authenticationWarmup?.rejectDirect(request.raw);
       guardedCall(request.body, 'pause', check);
       guardedCall(request.client, 'pause', check);
       if (
@@ -150,6 +155,7 @@ export function createBrokerCore(options: {
         ownedSchedule(issuer.limits.headerMs, () => {
           void close();
         });
+        originalChallenge = authenticationWarmup?.challenge(request.raw, request.client);
         guardedWrite(
           request.client,
           Buffer.from(
@@ -159,6 +165,7 @@ export function createBrokerCore(options: {
           issuer.limits.queueBytes
         );
         guardedCall(request.client, 'end', check);
+        originalChallenge?.written();
         return;
       }
 
@@ -175,6 +182,18 @@ export function createBrokerCore(options: {
       issuer.ledger.transfer(record.charge, run);
       await issuer.current(run);
       check();
+      originalWarmup = authenticationWarmup?.enter(request.raw, framed, request.client);
+      if (originalWarmup) {
+        await originalWarmup.ready;
+        check();
+        guardedWrite(request.client, originalWarmup.response, check, issuer.limits.queueBytes);
+        guardedCall(request.client, 'end', check);
+        await originalWarmup.closed;
+        done();
+        const observed = await record.custody.close();
+        originalWarmup.complete(observed);
+        return;
+      }
       // A distinct trusted capability certifies only a later validated plaintext
       // WebSocket handshake, never arbitrary opaque CONNECT bytes or TLS.
       const websocketURL = `ws://${framed.destination.authority}/`;
@@ -411,7 +430,9 @@ export function createBrokerCore(options: {
           );
         }
       }
-    } catch {
+    } catch (value) {
+      originalChallenge?.fail(value);
+      originalWarmup?.fail(value);
       done();
       const originalClosed = close();
       if (deniedConnect && observeConnectDenial) {
@@ -451,6 +472,7 @@ export function createBrokerCore(options: {
   const close = (): Promise<boolean> => {
     if (closing) return closing;
     stopped = true;
+    authenticationWarmup?.close();
     let resolve!: (value: boolean) => void;
     closing = new Promise<boolean>((done) => {
       resolve = done;
@@ -497,6 +519,7 @@ export function createBrokerCore(options: {
       void close();
       return;
     }
+    authenticationWarmup?.close();
     local.revoke();
     for (const record of intake.prepared.values()) void record.close();
   });
@@ -603,9 +626,13 @@ export function createBrokerCore(options: {
         .then(({ server, listener: ready }) => {
           checkAdmission();
           if (listenerClosed || listener !== ready) throw new BrokerError('UNAVAILABLE');
+          authenticationWarmup = receiver
+            ? createOriginalAuthenticationWarmup(server, check)
+            : undefined;
           const secret = credential.take();
           return Object.freeze({
             server,
+            authenticationWarmup: authenticationWarmup?.capability,
             credential: secret,
             credentials: Object.freeze({
               username: 'dorkos',

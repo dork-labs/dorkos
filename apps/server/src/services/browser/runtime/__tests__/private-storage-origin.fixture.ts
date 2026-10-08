@@ -147,10 +147,12 @@ const PAGE = String.raw`async function originalStoragePage(options) {
     if (!response.ok) throw new Error('fixture-report-refused');
   };
   await report();
+  let commandCursor = '';
   for (;;) {
-    const response = await fetch('/command?subject=' + subject + '&round=' + round + '&pageId=' + pageId, { cache: 'no-store' });
+    const response = await fetch('/command?subject=' + subject + '&round=' + round + '&pageId=' + pageId + '&cursor=' + encodeURIComponent(commandCursor), { cache: 'no-store' });
     if (!response.ok) throw new Error('fixture-command-refused');
     const command = await response.json();
+    commandCursor = command.cursor;
     if (command.kind === 'mutate' && command.revision > mutation) {
       if (command.revision !== mutation + 1 || command.subject !== subject) throw new Error('fixture-mutation-discontinuity');
       mutation = command.revision;
@@ -230,8 +232,47 @@ export async function createOriginalStorageOrigin(signal: AbortSignal) {
           Number(url.searchParams.get('round')),
           url.searchParams.get('pageId') ?? ''
         );
+        const previous = url.searchParams.get('cursor') ?? '';
+        const command = await new Promise<
+          ({ kind: string; subject: string; revision: number } & { cursor: string }) | undefined
+        >((resolve, reject) => {
+          const finish = () => {
+            waiters.delete(wake);
+            res.removeListener('close', disconnected);
+            signal.removeEventListener('abort', disconnected);
+          };
+          const disconnected = () => {
+            finish();
+            resolve(undefined);
+          };
+          const wake = () => {
+            if (closed || signal.aborted || res.destroyed) {
+              disconnected();
+              return;
+            }
+            try {
+              guard();
+              const next = commands.get(id);
+              if (!next) return;
+              const cursor = JSON.stringify(next);
+              if (cursor === previous) return;
+              finish();
+              resolve({ ...next, cursor });
+            } catch (value) {
+              finish();
+              reject(value);
+            }
+          };
+          // Retain this exact request before command publication, disconnect or stop can wake it.
+          waiters.add(wake);
+          res.once('close', disconnected);
+          signal.addEventListener('abort', disconnected, { once: true });
+          wake();
+        });
+        if (!command || closed || signal.aborted || res.destroyed) return;
+        guard();
         res.setHeader('Cache-Control', 'no-store');
-        res.end(JSON.stringify(commands.get(id) ?? { kind: 'idle' }));
+        res.end(JSON.stringify(command));
         return;
       }
       if (req.method === 'POST' && ['/report', '/error'].includes(url.pathname)) {
@@ -373,6 +414,7 @@ export async function createOriginalStorageOrigin(signal: AbortSignal) {
     guard();
     admission.throwIfAborted();
     commands.set(key(subject, round, pageId), { kind: 'checkpoint', subject, revision });
+    for (const wake of waiters) wake();
     return wait(
       (r) =>
         r.subject === subject &&
@@ -393,6 +435,7 @@ export async function createOriginalStorageOrigin(signal: AbortSignal) {
         guard();
         admission.throwIfAborted();
         commands.set(key(subject, 3, pageId), { kind: 'mutate', subject, revision });
+        for (const wake of waiters) wake();
         await wait(
           (r) =>
             r.subject === subject &&
@@ -412,6 +455,7 @@ export async function createOriginalStorageOrigin(signal: AbortSignal) {
         subject: 'clean',
         revision: 1,
       });
+      for (const wake of waiters) wake();
       return wait(
         (r) => r.subject === 'clean' && r.pageId === pageId && r.localStorage === 'fixture-clean',
         admission

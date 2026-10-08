@@ -1,3 +1,4 @@
+import { ownPrivateProxyWarmupPage } from '../network/private-proxy-warmup.js';
 import { restoreProfileStorageState } from '../profiles/restore-state.js';
 import { readControllerOriginalCatalog } from '../runtime/identity/controller-original-catalog.js';
 import type { ConnectOverCDPTransport } from 'playwright-core';
@@ -437,6 +438,33 @@ export async function acquireBrowser(
   if (stopped()) throw new BrowserLifecycleError('ENGINE_STOPPED');
   await restoreProfileStorageState(record, stopped);
   if (stopped()) throw new BrowserLifecycleError('ENGINE_STOPPED');
+  if (record.authenticationWarmup) {
+    await ownOperation(
+      record,
+      () => {
+        const create = context.newPage;
+        if (stopped()) throw new BrowserLifecycleError('ENGINE_STOPPED');
+        return Reflect.apply(create, context, []) as ReturnType<typeof create>;
+      },
+      (page) => {
+        record.privateProxyWarmupPage = page;
+        record.privateProxyWarmup = ownPrivateProxyWarmupPage(
+          page,
+          () =>
+            (record.status === 'running' || (record.status === 'opening' && !cancelled())) &&
+            ordinaryRecord(record) &&
+            !record.lifetime.gate.stopped &&
+            record.networkCustody?.() === true,
+          (enter) => ownOperation(record, enter)
+        );
+        if (stopped())
+          void record.privateProxyWarmup.close().catch(() => {
+            record.lifetime.uncertain = true;
+          });
+      }
+    );
+    if (stopped()) throw new BrowserLifecycleError('ENGINE_STOPPED');
+  }
   const register = (
     event: 'page' | 'close',
     callback: ((page: import('playwright-core').Page) => void) | (() => void)
@@ -447,6 +475,7 @@ export async function acquireBrowser(
       Reflect.apply(on, context, [event, callback]);
     });
   await register('page', (page: import('playwright-core').Page) => {
+    if (page === record.privateProxyWarmupPage) return;
     if (!ordinaryRecord(record)) {
       // Context custody still owns this late Page. No ordinary registration or completeness claim.
       record.lifetime.uncertain = true;
@@ -474,7 +503,9 @@ export async function acquireBrowser(
     if (stopped()) throw new BrowserLifecycleError('ENGINE_STOPPED');
     return Reflect.apply(list, context, []) as ReturnType<typeof list>;
   });
-  for (const page of pages) trackPage(record, page, config.network.origin, diagnosticNow);
+  for (const page of pages)
+    if (page !== record.privateProxyWarmupPage)
+      trackPage(record, page, config.network.origin, diagnosticNow);
   if (stopped()) throw new BrowserLifecycleError('ENGINE_STOPPED');
   const first =
     record.tabs.values().next().value ??

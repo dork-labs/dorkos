@@ -18,6 +18,7 @@ covers:
   - 'fix(browser): refuse late worker resumes during shutdown'
   - 'fix(browser): handle authentication on the browser root connection'
   - 'fix(browser): join retired input during controller cleanup'
+  - 'fix(browser): warm proxy authentication before saved profile navigation'
 ---
 
 ### Added

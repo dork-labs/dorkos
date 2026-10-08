@@ -62,6 +62,11 @@ export interface BrowserRecord {
   context?: BrowserContext;
   proxy?: FixtureProxy;
   verifiedRuntime?: Readonly<{ runtimeIdentity: string; policyRevision: number }>;
+  authenticationWarmup?: import('../network/private-proxy-warmup.js').PrivateProxyAuthenticationWarmup;
+  privateProxyWarmup?: ReturnType<
+    typeof import('../network/private-proxy-warmup.js').ownPrivateProxyWarmupPage
+  >;
+  privateProxyWarmupPage?: import('playwright-core').Page;
   networkPeer?: import('../engine.js').PrivateBrowserNetworkPeer;
   networkEndpoint?: Readonly<{
     url: string;

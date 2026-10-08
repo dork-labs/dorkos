@@ -167,6 +167,7 @@ export interface PrivateBrowserCaptureOwner {
 export interface PrivateBrowserNetworkPeer {
   readonly url: string;
   readonly credentials: Readonly<{ username: string; password: string }>;
+  readonly authenticationWarmup?: import('./network/private-proxy-warmup.js').PrivateProxyAuthenticationWarmup;
   isCustodyKnown(): boolean;
   close(): Promise<void>;
 }
@@ -648,6 +649,31 @@ function constructEngine(
                 peer.credentials.password.length > 4096
               )
                 throw new BrowserLifecycleError('NETWORK_POLICY_UNSUPPORTED');
+              const warmup = peer.authenticationWarmup;
+              if (warmup !== undefined) {
+                const url = warmup.url;
+                const confirm = warmup.confirm;
+                if (
+                  !Object.isFrozen(warmup) ||
+                  typeof url !== 'string' ||
+                  url.length > 2048 ||
+                  typeof confirm !== 'function'
+                )
+                  throw new BrowserLifecycleError('NETWORK_POLICY_UNSUPPORTED');
+                const parsed = new URL(url);
+                if (
+                  parsed.origin !== peer.url ||
+                  parsed.username ||
+                  parsed.password ||
+                  parsed.search ||
+                  parsed.hash
+                )
+                  throw new BrowserLifecycleError('NETWORK_POLICY_UNSUPPORTED');
+                record.authenticationWarmup = Object.freeze({
+                  url,
+                  confirm: () => Reflect.apply(confirm, warmup, []) as Promise<void>,
+                });
+              }
               record.networkEndpoint = Object.freeze({
                 url: peer.url,
                 credentials: Object.freeze({ ...peer.credentials }),
@@ -702,6 +728,13 @@ function constructEngine(
           Reflect.apply(network.activateReady, network.owner, [birthReceiver, record.networkPeer])
         );
         if (!birthReceiver.isAuthorityCurrent()) throw new BrowserLifecycleError('ENGINE_STOPPED');
+        if (record.authenticationWarmup) {
+          if (!record.privateProxyWarmup)
+            throw new BrowserLifecycleError('NETWORK_POLICY_UNSUPPORTED');
+          await record.privateProxyWarmup.run(record.authenticationWarmup);
+          if (!birthReceiver.isAuthorityCurrent())
+            throw new BrowserLifecycleError('ENGINE_STOPPED');
+        }
       }
       const first = record.tabs.values().next().value;
       if (!first) throw new BrowserLifecycleError('PAGE_UNAVAILABLE');
