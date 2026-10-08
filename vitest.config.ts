@@ -121,6 +121,7 @@ export default defineConfig({
       'packages/connector-providers',
       'packages/db',
       'packages/decisions',
+      'packages/doe',
       'packages/evals',
       'packages/extension-api',
       'packages/harness',
