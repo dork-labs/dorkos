@@ -2,6 +2,17 @@
   "version": 1,
   "decisions": [
     {
+      "id": "261007-230223",
+      "slug": "doe-core-engine-and-model-history",
+      "title": "Doe uses Pi core behind an engine port and owns its complete model history",
+      "status": "accepted",
+      "created": "2026-10-07",
+      "extractedFrom": "doe-engine",
+      "specSlug": "doe-engine",
+      "supersedes": null,
+      "affects": ["packages/doe/**", "apps/server/src/services/runtimes/doe/**"]
+    },
+    {
       "id": "261006-235242",
       "slug": "everything-is-a-plugin",
       "title": "Everything is a plugin; the marketplace has one package type that lists what it contains",
