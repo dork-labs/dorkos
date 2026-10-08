@@ -74,3 +74,34 @@ it('rejects unbounded or participant-shaped native refusal fields', () => {
       )
     ).toThrow();
 });
+
+it.each([false, undefined])(
+  'retains closed leaf identity alongside original falsy failure %s',
+  async (value) => {
+    const identity = { pid: 30, birth: 'darwin-bsd-start:300:0' };
+    const secret = vi.fn(() => {
+      throw Error('secret');
+    });
+    Object.defineProperty(identity, 'toJSON', { value: secret });
+    Object.defineProperty(identity, 'secret', { get: secret, enumerable: true });
+    const row = projectOriginalObserverFailure(1, 'leaf-baseline', value, identity);
+    let bytes = '';
+    await createOriginalObserverFailureSink((line, done) => {
+      bytes = line;
+      done();
+    })(row);
+    const parsed = readOriginalObserverFailure(Buffer.from(bytes));
+    expect(parsed?.leafIdentity).toEqual({ pid: 30, birth: 'darwin-bsd-start:300:0' });
+    expect(parsed?.failure).toBe(value === false ? 'false' : 'undefined');
+    expect(Object.isFrozen(parsed?.leafIdentity)).toBe(true);
+    expect(secret).not.toHaveBeenCalled();
+    expect(Buffer.byteLength(bytes)).toBeLessThanOrEqual(512);
+    expect(() =>
+      readOriginalObserverFailure(
+        Buffer.from(
+          JSON.stringify({ ...row, leafIdentity: { ...row.leafIdentity, extra: 'no' } }) + '\n'
+        )
+      )
+    ).toThrow();
+  }
+);

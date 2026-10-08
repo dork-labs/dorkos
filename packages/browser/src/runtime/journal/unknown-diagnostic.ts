@@ -1,3 +1,4 @@
+import type { ProcessIdentity } from '../../configuration.js';
 import {
   leafBaselineRefusalReasons,
   originalLeafBaselineRefusal,
@@ -189,6 +190,12 @@ const observerCode = z.enum([
   'OWNER_UNAVAILABLE',
   'ROOT_UNAVAILABLE',
 ]);
+const originalLeafIdentity = z
+  .object({
+    pid: z.number().int().positive().max(2147483647),
+    birth: z.string().regex(/^darwin-bsd-start:([1-9][0-9]{0,19}):(0|[1-9][0-9]{0,5})$/),
+  })
+  .strict();
 const observerFailure = z
   .object({
     kind: z.literal('original-observer-failure'),
@@ -196,6 +203,7 @@ const observerFailure = z
     phase: observerPhase,
     failure: z.enum(['undefined', 'false', 'error', 'other']),
     code: observerCode.optional(),
+    leafIdentity: originalLeafIdentity.optional(),
     leafRefusal: z
       .object({
         reason: z.enum(leafBaselineRefusalReasons),
@@ -211,7 +219,8 @@ export type OriginalObserverPhase = z.infer<typeof observerPhase>;
 export function projectOriginalObserverFailure(
   sequence: number,
   phase: OriginalObserverPhase,
-  value: unknown
+  value: unknown,
+  leafIdentity?: ProcessIdentity
 ) {
   let failure: z.infer<typeof observerFailure>['failure'] =
     value === undefined ? 'undefined' : value === false ? 'false' : 'other';
@@ -236,7 +245,11 @@ export function projectOriginalObserverFailure(
     failure,
     ...(code === undefined ? {} : { code }),
     ...(leafRefusal === undefined ? {} : { leafRefusal }),
+    ...(leafIdentity === undefined
+      ? {}
+      : { leafIdentity: { pid: leafIdentity.pid, birth: leafIdentity.birth } }),
   });
+  if (projected.leafIdentity) Object.freeze(projected.leafIdentity);
   if (projected.leafRefusal) Object.freeze(projected.leafRefusal);
   return Object.freeze(projected);
 }
@@ -250,6 +263,7 @@ export function readOriginalObserverFailure(bytes: Uint8Array) {
     if (original || Buffer.byteLength(line) > 512)
       throw new Error('JOURNAL_DIAGNOSTIC_UNAVAILABLE');
     const parsed = observerFailure.parse(JSON.parse(line));
+    if (parsed.leafIdentity) Object.freeze(parsed.leafIdentity);
     if (parsed.leafRefusal) Object.freeze(parsed.leafRefusal);
     original = Object.freeze(parsed);
   }
@@ -283,6 +297,9 @@ export function createOriginalObserverFailureSink(
         phase: row.phase,
         failure: row.failure,
         ...(row.code === undefined ? {} : { code: row.code }),
+        ...(row.leafIdentity === undefined
+          ? {}
+          : { leafIdentity: { pid: row.leafIdentity.pid, birth: row.leafIdentity.birth } }),
         ...(row.leafRefusal === undefined
           ? {}
           : { leafRefusal: { reason: row.leafRefusal.reason, error: row.leafRefusal.error } }),

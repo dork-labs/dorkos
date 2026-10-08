@@ -146,8 +146,15 @@ export async function observeDarwinJournal(
   const gap = recordDarwinJournalGap;
   const checkBoot = (batch: DarwinProcessBatch) => matchesDarwinJournalBoot(current, batch);
   let originalPhase: OriginalObserverPhase = 'initial-commit';
+  let originalLeafIdentity: ProcessIdentity | undefined;
   let originalFailure:
-    { value: unknown; phase: OriginalObserverPhase; sequence: number } | undefined;
+    | {
+        value: unknown;
+        phase: OriginalObserverPhase;
+        sequence: number;
+        leafIdentity?: ProcessIdentity;
+      }
+    | undefined;
   const reportOriginalFailure = createOriginalObserverFailureSink();
   try {
     if ((await opened.writer.commitSnapshot(current)).state !== 'durable-recorded')
@@ -314,10 +321,15 @@ export async function observeDarwinJournal(
                 ? options.leafEvents?.enrollBaseline
                 : undefined;
             originalPhase = enrollBaseline ? 'leaf-baseline' : 'children';
+            // Diagnostic custody only: preserve the exact discovered identity if its original W refuses.
+            originalLeafIdentity = enrollBaseline
+              ? { pid: parent.identity.pid, birth: parent.identity.birth }
+              : undefined;
             const baseline = enrollBaseline
               ? await enrollBaseline.call(options.leafEvents, parent.identity, next.sequence)
               : undefined;
             if (enrollBaseline && !baseline) throw new Error('LEAF_EVENT_BASELINE_UNAVAILABLE');
+            originalLeafIdentity = undefined;
             originalPhase = 'children';
             const children = baseline ?? (await options.observer.children!(parent.identity));
             const complete = children.complete;
@@ -550,7 +562,12 @@ export async function observeDarwinJournal(
       }
   } catch (value) {
     result = 'uncertain';
-    originalFailure = { value, phase: originalPhase, sequence: current.sequence };
+    originalFailure = {
+      value,
+      phase: originalPhase,
+      sequence: current.sequence,
+      ...(originalLeafIdentity ? { leafIdentity: originalLeafIdentity } : {}),
+    };
   }
   if (
     result !== 'recorded-gone' &&
@@ -572,7 +589,8 @@ export async function observeDarwinJournal(
           projectOriginalObserverFailure(
             originalFailure.sequence,
             originalFailure.phase,
-            originalFailure.value
+            originalFailure.value,
+            originalFailure.leafIdentity
           )
         );
       } catch {

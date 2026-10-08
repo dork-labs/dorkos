@@ -967,3 +967,90 @@ it('joins held native refusal ACK and write before exposing original reason', as
     await Promise.allSettled([original, f.owner.close()]);
   }
 });
+
+it('retains a newly discovered refused leaf identity without admitting its uncommitted sweep', async () => {
+  const f = await durableFixture();
+  const events = await fixture({
+    admitted: false,
+    refusal: { reason: 'registration-error', error: 3 },
+  });
+  const boot = { version: 1 as const, bootSeconds: '1', bootMicroseconds: '0' };
+  let round = 0;
+  let clock = 10;
+  let emitted = '';
+  let childQueries = 0;
+  let original: ReturnType<typeof observeDarwinJournal> | undefined;
+  try {
+    original = observeDarwinJournal({
+      location: f.location,
+      initial: f.initial,
+      root: f.root,
+      leafEvents: events.owner,
+      observer: {
+        async inspect(pids) {
+          return {
+            ...boot,
+            processes: pids.map((pid) => ({
+              kind: 'present' as const,
+              identity: pid === 10 ? f.managerNative : pid === 20 ? f.rootNative : f.childNative,
+              parentPid: pid === 10 ? 1 : pid === 20 ? 10 : 20,
+              zombie: false,
+            })),
+          };
+        },
+        async children(parent) {
+          if (parent.pid === 30) childQueries++;
+          const identity = parent.pid === 20 ? f.rootNative : f.childNative;
+          return {
+            ...boot,
+            parentBefore: identity,
+            parentAfter: identity,
+            complete: true,
+            processes:
+              parent.pid === 20 && round === 1
+                ? [
+                    {
+                      kind: 'present' as const,
+                      identity: f.childNative,
+                      parentPid: 20,
+                      zombie: false,
+                    },
+                  ]
+                : [],
+          };
+        },
+      },
+      monotonicNow: () => clock++,
+      endMonotonic: 1000,
+      maxGap: 1000,
+      pause: async () => {
+        round++;
+      },
+      onOriginalFailure: createOriginalObserverFailureSink((bytes, done) => {
+        emitted = bytes;
+        done();
+      }),
+    });
+    expect(await original).toBe('uncertain');
+    const diagnostic = readOriginalObserverFailure(Buffer.from(emitted));
+    expect(diagnostic, 'REFUSED_DISCOVERED_IDENTITY_LOST').toMatchObject({
+      phase: 'leaf-baseline',
+      code: 'LEAF_EVENT_BASELINE_UNAVAILABLE',
+      leafIdentity: darwinBirth(f.childNative),
+      leafRefusal: { reason: 'registration-error', error: 3 },
+    });
+    expect(childQueries).toBe(0);
+    const recorded = await readJournal(f.location);
+    expect(recorded.state).toBe('valid-recorded-data');
+    if (recorded.state !== 'valid-recorded-data') throw Error('original-journal-missing');
+    expect(recorded.snapshot.firstCause?.cause).toBe('observer-lost');
+    expect(recorded.snapshot.retainedIdentities.some((row) => row.identity.pid === 30)).toBe(false);
+    await expect(events.owner.enroll(darwinBirth(f.childNative), 2)).rejects.toThrow(
+      'LEAF_EVENT_BASELINE_UNAVAILABLE'
+    );
+  } finally {
+    events.release();
+    await Promise.allSettled([...(original ? [original] : []), events.owner.close()]);
+    await rm(f.parentDirectory, { recursive: true, force: true });
+  }
+});
