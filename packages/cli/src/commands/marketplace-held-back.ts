@@ -161,7 +161,7 @@ export async function runMarketplaceHeldBack(args: MarketplaceHeldBackArgs): Pro
       `Linked: it runs whatever is in ${pkg.linkedPath}. A change there runs without asking again.`
     );
   }
-  console.log('It runs, in every session:');
+  console.log('It runs, in every chat:');
   for (const line of renderDisclosureLines(pkg.effects, 'global')) console.log(line);
   console.log('');
 

@@ -100,7 +100,7 @@ Provide a prioritized list of recommended updates with risk assessment (safe, mo
     },
     prompt: `Summarize today's agent activity:
 
-1. List sessions that were active today
+1. List chats that were active today
 2. Note any errors or failures
 3. Highlight completed tasks and their outcomes
 4. Flag anything that needs human attention

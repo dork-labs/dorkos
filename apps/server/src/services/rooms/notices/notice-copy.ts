@@ -713,11 +713,11 @@ export function buildBridgeBlockedNotice(reason: BridgeBlockedReason): RoomEntry
         'to let answers through.'
       : reason === 'initiate_off'
         ? 'This message was not sent to the chat because starting a message there is turned off for ' +
-          'this connection. Turn on "Agent can start chats" for it on the Connections page, under the ' +
+          'this connection. Turn on "Agent can message first" for it on the Connections page, under the ' +
           'chat app\'s "Who answers", to let the agent reach out first.'
         : // lost_provenance — the server restarted mid-turn (§6.6).
-          'This answer lost its provenance (the server restarted mid-turn) and was treated as a ' +
-          'new message. It stayed here.';
+          'This answer lost its provenance (the server restarted mid-turn) and was treated as ' +
+          'the agent messaging first. It stayed here.';
   return { text, notice: 'bridge_blocked' };
 }
 

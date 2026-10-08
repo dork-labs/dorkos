@@ -89,7 +89,7 @@ export class LocalSessionAttachmentStore implements SessionAttachmentStore {
       throw new UnsupportedSessionMediaError(
         `That image is ${formatMib(bytes.byteLength)} — larger than the ${formatMib(
           MAX_SESSION_ATTACHMENT_BYTES
-        )} a session will store.`
+        )} a chat will store.`
       );
     }
     const file = this.fileFor(sessionId, attachmentId, extension);
