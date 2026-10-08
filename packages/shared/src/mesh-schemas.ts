@@ -39,6 +39,7 @@ export const AgentRuntimeSchema = z
     'cursor',
     'codex',
     'opencode',
+    'doe',
     'windsurf',
     'gemini',
     'cline',

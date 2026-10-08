@@ -1889,19 +1889,23 @@ describe('GET /api/config', () => {
     it('does not widen the runtimes id list, which other readers treat as flat ids', async () => {
       const res = await request(server).get('/api/config').expect(200);
 
-      expect(res.body.runtimes).toEqual(['claude-code', 'codex', 'opencode']);
+      expect(res.body.runtimes).toEqual(['claude-code', 'codex', 'opencode', 'doe']);
     });
 
-    it('drops a runtime the person turned off from the runtimes list', async () => {
+    it.each([
+      { runtime: 'codex', remaining: ['claude-code', 'opencode', 'doe'] },
+      { runtime: 'doe', remaining: ['claude-code', 'codex', 'opencode'] },
+    ])('drops disabled $runtime from the runtimes list', async ({ runtime, remaining }) => {
       const { configManager } = await import('../../services/core/config-manager.js');
-      const prior = configManager.getDot('runtimes.codex.enabled');
-      configManager.setDot('runtimes.codex.enabled', false);
+      const path = `runtimes.${runtime}.enabled`;
+      const prior = configManager.getDot(path);
+      configManager.setDot(path, false);
       try {
         const res = await request(server).get('/api/config').expect(200);
 
-        expect(res.body.runtimes).toEqual(['claude-code', 'opencode']);
+        expect(res.body.runtimes).toEqual(remaining);
       } finally {
-        configManager.setDot('runtimes.codex.enabled', prior);
+        configManager.setDot(path, prior);
       }
     });
   });

@@ -36,9 +36,10 @@ import { COMPACT_MY_SESSION_TOOL_NAME } from './compaction-capabilities.js';
  */
 export function formatContextWarning(
   data: ContextWarningData,
-  runtime: 'claude-code' | 'codex' | 'opencode'
+  runtime: 'claude-code' | 'codex' | 'opencode',
+  toolName?: (name: string) => string
 ): string {
-  const memory = dorkosToolNameFor(runtime, MEMORY_WRITE_TOOL_NAME);
+  const memory = (toolName ?? ((name) => dorkosToolNameFor(runtime, name)))(MEMORY_WRITE_TOOL_NAME);
   const head = `This conversation is using ${data.percent}% of its context window.`;
   if (!data.canCompact) {
     return (
@@ -46,7 +47,9 @@ export function formatContextWarning(
       'this runtime summarizes the conversation on its own when it fills up.'
     );
   }
-  const compact = dorkosToolNameFor(runtime, COMPACT_MY_SESSION_TOOL_NAME);
+  const compact = (toolName ?? ((name) => dorkosToolNameFor(runtime, name)))(
+    COMPACT_MY_SESSION_TOOL_NAME
+  );
   return (
     `${head} Consider saving open work, session ids and pending decisions with ${memory}, ` +
     `then calling ${compact} so the conversation is summarized once this turn ends.`

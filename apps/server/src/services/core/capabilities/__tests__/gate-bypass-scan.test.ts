@@ -139,6 +139,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
         'PUT /agents/defaultAgent — a name, not a posture, and the operator-only paths on this router go through the guarded step instead (logConfigWrite: "the default-agent route")',
       'routes/tunnel.ts':
         'start/stop — `tunnel.*` IS operator-only, so start runs the cookie bar then the agent bar before reaching here; stop runs neither on purpose, because stopping only narrows exposure (DOR-1738)',
+      'services/runtimes/connect/doe-setup-router.ts':
+        'PUT /doe/inference writes only the fixed DorkOS inference metadata leaf after the loopback and refuseUnlessAccountOwner bars: identified agents and approval-token requesters are refused in every posture; under login an install-owner cookie is required. logConfigWrite records the before/after runtimes section as the DorkOS model setup',
       'services/core/agent-creator.ts':
         'records the agent it just created as the default (logConfigWrite: "the agent creator")',
       'services/core/auth/cloud-link.ts':
@@ -153,6 +155,15 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
         'records which agent tools a PERSON chose to share their all-projects packages with — written only by `dorkos harness global --enable` and `--disable`, two explicit verbs somebody types, and never by a read-only path or by the boot pass, which cannot ask and does not (DOR-1924). Both leaves (`harness.global.harnesses`, `harness.global.askedAt`) are operator-only and sit under the `reach` stake, because the list is what decides whether DorkOS puts a link in a home directory at all (logConfigWrite: "dorkos harness global --enable" / "dorkos harness global --disable")',
       'services/extensions/extension-manager.ts':
         'four writes into `extensions`, all three of whose leaves are operator-only, so each is listed with the gate that stands in front of it: enable/disable are reached only from the three callers on the `extensionManager.enable(` and `.disable(` entries below, every one of them gated; approveToRun only from `routes/extensions-approval.ts`, which runs the strictest bar in this file; forgetRunApproval only from that same route and from a marketplace uninstall, and it only ever REMOVES an approval (logConfigWrite: "the extensions manager" / "approving an extension to run" / "withdrawing an extension run approval")',
+    },
+  },
+  {
+    what: 'stores an encrypted endpoint-bound DorkOS API key and updates its providers/runtimes config references',
+    call: 'storeDoeCredential(',
+    allowed: {
+      'services/runtimes/connect/doe-setup-router.ts':
+        'POST /doe/credential runs the same loopback and refuseUnlessAccountOwner bars before the encrypted store is touched; the helper audits both changed config sections without logging the plaintext key',
+      'services/runtimes/connect/doe-credentials.ts': 'the definition itself',
     },
   },
   {

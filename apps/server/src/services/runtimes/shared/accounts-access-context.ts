@@ -55,7 +55,8 @@ export class AccountsAccessContext {
 /** Render only server-authored guidance with the names exposed by this runtime. */
 export function formatAccountsAccess(
   data: AccountsAccessData,
-  runtime: 'claude-code' | 'codex' | 'opencode'
+  runtime: 'claude-code' | 'codex' | 'opencode',
+  names?: { dorkos(name: string): string; connector(name: string): string }
 ): string {
   // Claude Code carries the connection tools on its in-session `dorkos` server;
   // Codex and OpenCode receive them on a dedicated server of their own.
@@ -66,12 +67,13 @@ export function formatAccountsAccess(
         ? `mcp__${CONNECTOR_RUNTIME_MCP_SERVER_NAME}__`
         : `${CONNECTOR_RUNTIME_MCP_SERVER_NAME}_`;
   const tool = (name: string) =>
+    names?.connector(`connectors.${name}`) ??
     prefix + (runtime === 'opencode' ? `connectors_${name}` : `connectors.${name}`);
   // The service catalog lives on the ordinary `dorkos` server, not on the
   // dedicated connections server. Name it only when this turn attached that
   // server; a name the model cannot call is worse than none (DOR-1292).
   const lookup = data.serviceCatalog
-    ? ` Its serviceSlug is an exact service id: look it up with ${dorkosToolNameFor(runtime, SERVICE_CATALOG_TOOL_NAME)} (for example {"query":"mail"}) instead of guessing.`
+    ? ` Its serviceSlug is an exact service id: look it up with ${names?.dorkos(SERVICE_CATALOG_TOOL_NAME) ?? dorkosToolNameFor(runtime, SERVICE_CATALOG_TOOL_NAME)} (for example {"query":"mail"}) instead of guessing.`
     : ' Its serviceSlug is an exact service id; do not guess one.';
   const status =
     data.accountCount === null

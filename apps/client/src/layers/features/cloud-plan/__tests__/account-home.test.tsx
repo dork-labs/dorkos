@@ -43,7 +43,7 @@ const OFF: CloudCreditsStatus = {
   killed: false,
   linked: false,
   ready: false,
-  runtimes: { 'claude-code': 'wired', opencode: 'follow-up', codex: 'follow-up' },
+  runtimes: { 'claude-code': 'wired', opencode: 'follow-up', codex: 'follow-up', doe: 'follow-up' },
   defaults: {},
   notices: [],
 };

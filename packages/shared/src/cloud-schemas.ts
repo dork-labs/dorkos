@@ -260,7 +260,7 @@ export interface CloudCreditsStatus {
   /** Whether a live inference token is held. Never the token itself. */
   ready: boolean;
   /** Per-runtime state, derived from what each runtime declares. */
-  runtimes: Record<'claude-code' | 'opencode' | 'codex', CloudCreditsRuntimeState>;
+  runtimes: Record<'claude-code' | 'opencode' | 'codex' | 'doe', CloudCreditsRuntimeState>;
   /**
    * Each runtime's recorded choice, and who made it. A runtime with no record
    * runs on its own sign-in by default.

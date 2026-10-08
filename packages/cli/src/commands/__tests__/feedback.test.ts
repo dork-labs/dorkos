@@ -76,7 +76,7 @@ describe('gatherCliReport', () => {
 
   it('degrades to defaults when there is no config store', () => {
     const report = gatherCliReport('feature', '0.45.1', null);
-    expect(report.runtimes).toEqual(['claude-code', 'codex', 'opencode']);
+    expect(report.runtimes).toEqual(['claude-code', 'codex', 'opencode', 'doe']);
     expect(report.flags).toEqual({});
   });
 });
@@ -112,6 +112,7 @@ describe('runFeedback', () => {
     const code = await runFeedback('/tmp/dork', '0.45.1', ['--help'], deps);
     expect(code).toBe(0);
     expect(deps.lines.join('\n')).toContain('Usage: dorkos feedback');
+    expect(deps.lines.join('\n')).toContain('Claude Code, Codex, OpenCode or DorkOS');
   });
 });
 

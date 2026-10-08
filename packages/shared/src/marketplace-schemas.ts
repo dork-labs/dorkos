@@ -1582,7 +1582,7 @@ export interface ShapeLayout {
 export interface ShapeAgentTemplate {
   displayName?: string;
   persona?: string;
-  runtime?: 'claude-code' | 'codex' | 'opencode';
+  runtime?: 'claude-code' | 'codex' | 'opencode' | 'doe';
   capabilities?: string[];
   skills?: string[];
 }

@@ -38,7 +38,8 @@ function fakeConfig(): ConfigReadWrite & { state: Partial<UserConfig> } {
   const state: Partial<UserConfig> = {
     providers: {},
     runtimes: {
-      environment: { inherit: { claudeCode: [], codex: [], opencode: [] } },
+      doe: { enabled: true, inference: null, defaultTrustStop: null },
+      environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
       default: 'claude-code',
       defaultTrustStop: null,
       claudeCode: {

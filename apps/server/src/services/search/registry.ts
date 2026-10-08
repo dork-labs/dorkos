@@ -21,6 +21,8 @@
  * @module server/services/search/registry
  */
 import path from 'path';
+import { resolveDorkHome } from '../../lib/dork-home.js';
+import { openDoeSnapshot } from './doe-store.js';
 import { authors, roomEntries, rooms, and, asc, eq, gt, inArray, sql, type Db } from '@dorkos/db';
 import { resolveClaudeRootSet } from '../runtimes/claude-code/claude-config-dir.js';
 import {
@@ -337,11 +339,23 @@ export const openCodeSource: SnapshotSource = createOpenCodeSource(resolveOpenCo
  * waiting behind the one carrying 1%. OpenCode last: it copies a file before it
  * reads one, and it carries the fewest messages of the three.
  */
+/** DorkOS-owned engine history uses the existing snapshot frontier. */
+export function createDoeSource(resolveDirectory: () => string): SnapshotSource {
+  return {
+    id: 'doe',
+    mechanism: 'sqlite-snapshot',
+    corpus: 'dorkos',
+    open: () => Promise.resolve(openDoeSnapshot(resolveDirectory())),
+  };
+}
+export const doeSource = createDoeSource(() => path.join(resolveDorkHome(), 'runtimes', 'doe'));
+
 export const SEARCH_SOURCES: readonly SearchSource[] = [
   roomsSource,
   claudeCodeSource,
   codexSource,
   openCodeSource,
+  doeSource,
 ];
 
 /**

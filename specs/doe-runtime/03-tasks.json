@@ -1,0 +1,236 @@
+{
+  "spec": "specs/doe-runtime/02-specification.md",
+  "slug": "doe-runtime",
+  "generatedAt": "2026-10-08T05:33:03.667250+00:00",
+  "mode": "full",
+  "lastDecomposeDate": null,
+  "taskApi": "canonical-json-user-authorized",
+  "analysisModel": "gpt-6.1-sol",
+  "modelAssumption": "Flow bindings empty; available harness workhorse selected explicitly.",
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "Foundation",
+      "subject": "[doe-runtime] [P1] Add runtime contracts, configuration and server censuses",
+      "description": "Admit runtime id doe and app label DorkOS in shared runtime/config schemas, general runtime universes, harness direct-source mapping, readiness/system requirements and usage/capability matrices. Add Zod-authoritative runtimes.doe metadata for explicit source, protocol, endpoint, model and custom/local context/output limits; use a semver-keyed CONFIG_MIGRATIONS entry. No plaintext secrets in configuration. Extend RuntimeCreditsSupport compatibly with supported/requested formats, preserving existing single-format runtimes. Platform openai-chat-completions maps deliberately to engine openai-completions. Audit search enumeration/copy, schedules, rooms, memory, model metadata and ledger runtime lists; distinguish general universes from OAuth login allowlists. Doe has no vendor subscription login. Preserve defaults and ordering. Own server package dependency/lock and all import-confinement ESLint edits: @dorkos/doe and Pi can only enter the Doe runtime or existing engine package; add bans in each runtime flat-config block. No cloud control-plane changes or prices.\nAcceptance: config round-trip and migration preserve older installations; all format schemas validate; old runtimes retain behavior; exhaustive runtime maps compile; no startup credential/network resolution. Run affected shared/harness/server targeted tests/typechecks. Publish exact exported config/credits/resource interface names to other authors before they integrate.",
+      "activeForm": "Adding runtime contracts, configuration and server censuses",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null,
+      "status": "completed",
+      "owner": "contracts-credentials",
+      "fileFence": [
+        "packages/shared/**",
+        "packages/harness/**",
+        "packages/test-utils/src/runtime-capability-matrix.ts",
+        "apps/server/src/services/core/config-manager.ts",
+        "apps/server/src/services/core/** runtime census files",
+        "apps/server/src/services/search/**",
+        "apps/server/src/services/observability/**",
+        "apps/server/eslint.config.js",
+        "apps/server/package.json",
+        "pnpm-lock.yaml"
+      ]
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "Foundation",
+      "subject": "[doe-runtime] [P1] Implement explicit credentials and three-format credits resolution",
+      "description": "Implement Doe model/inference resolution with encrypted credential references using existing runtimes/connect storage and provider registry. Support Anthropic, OpenAI, OpenRouter and explicit OpenAI-compatible endpoints, plus validated HTTP loopback Ollama/LM Studio without keys. Require model/context/output limits for custom/local models; unknown prices remain unknown. Reject sk-ant-oat subscription tokens before storage or any network. Resolve secrets only per request, never on import/readiness/model listing. Mask responses and keep keys out of history, logs, model context and errors. Endpoint changes must not reuse another endpoint's credential. Extend existing credits resolver/status/lifecycle for all Anthropic Messages, OpenAI Chat Completions and OpenAI Responses formats, with explicit supported format choice, short-lived refresh and model checks. Refuse missing link/token/format/model, disabled credits and unavailable service; never fallback to own keys/local or another bill. Preserve per-session payer and compatible history family across settings/restart. Existing newly-linked credits consent remains unchanged.\nAcceptance: credential storage/refusal/masking and endpoint isolation tests; three protocol selections and old-runtime regression tests; all credits refusal paths; actual credential-free loopback exchanges for all three engine protocols. Give facade author a narrow neutral resolver interface with metadata/readiness and per-request credential resolution. Do not edit facade/resources/tools or client files.",
+      "activeForm": "Implementing explicit credentials and three-format credits resolution",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [
+        "2.1",
+        "2.2"
+      ],
+      "issue": null,
+      "parentIssue": null,
+      "status": "completed",
+      "owner": "contracts-credentials",
+      "fileFence": [
+        "apps/server/src/services/runtimes/doe/models.ts",
+        "apps/server/src/services/runtimes/doe/credentials.ts",
+        "apps/server/src/services/runtimes/doe/__tests__/models.test.ts",
+        "apps/server/src/services/runtimes/doe/__tests__/credentials.test.ts",
+        "apps/server/src/services/core/cloud/credits-*.ts",
+        "apps/server/src/services/core/cloud/__tests__/credits-*.test.ts",
+        "apps/server/src/services/runtimes/connect/**",
+        "apps/server/src/routes/** credential setup files"
+      ]
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "Host assembly",
+      "subject": "[doe-runtime] [P2] Implement direct resources, lazy tools and authenticated MCP context",
+      "description": "Own Doe host assembly modules resources.ts, tools.ts, context.ts, mcp.ts and builder.ts plus their tests. Read canonical Harness roots directly without vendor projection. Resolve agent home separately from cwd each turn; load project ancestor AGENTS, nested instructions before file access, own AGENTS/SOUL and memory through MemoryProvider. Expose skill metadata only until load: project .agents/skills, configured user agents skills, agent-owned, first-party operating and installed marketplace plugin roots. Preserve namespace/precedence and root placeholders. Skill scripts run through the builder; business role has no shell. Builder honors canonical grants, permissions, explicit environment and cancellation. Reset additionalDirectories/roomTurn every turn; absent options cannot inherit prior grants/routing. Reuse neutral additionalContext, room/session-model/identity/tool guidance with exact callable tool names.\nDerive tool metadata automatically from exposed MCP capability registry surfaces, including future contributions. Share neutral ALWAYS_LOADED/agent-to-agent/searchHint policy while preserving Claude exports. Execute DorkOS calls through resolveDorkosMcpInjection with turn/agent authentication; never global unauthenticated fallback. Stable host names map explicitly; foreign hashed aliases stay distinct and cannot impersonate host tools. Own MCP servers stay deferred. Use engine DeferredToolRegistry, McpConnection, local/skill/web/builder factories; do not write another loop. Keep future query/event registry slot without implementing DOR-2754.\nAcceptance: separate tests prove each instruction/skill source, lazy bodies, nested access instructions, refreshed memory, home/cwd split, plugin roots/names, builder scripts/cancellation, every neutral context block, missing grant reset, foreign aliases, caller ACL/permissions and constant initial schema budget under thousands of added tools. MCP discovery/shutdown bounded; document host assembly function signatures for facade author.",
+      "activeForm": "Implementing direct resources, lazy tools and authenticated MCP context",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [
+        "1.2",
+        "2.2"
+      ],
+      "issue": null,
+      "parentIssue": null,
+      "status": "completed",
+      "owner": "host-tools",
+      "fileFence": [
+        "apps/server/src/services/runtimes/doe/resources.ts",
+        "apps/server/src/services/runtimes/doe/tools.ts",
+        "apps/server/src/services/runtimes/doe/context.ts",
+        "apps/server/src/services/runtimes/doe/mcp.ts",
+        "apps/server/src/services/runtimes/doe/builder.ts",
+        "apps/server/src/services/runtimes/doe/__tests__/resources.test.ts",
+        "apps/server/src/services/runtimes/doe/__tests__/tools.test.ts",
+        "apps/server/src/services/runtimes/doe/__tests__/context.test.ts",
+        "apps/server/src/services/runtimes/doe/__tests__/mcp.test.ts",
+        "apps/server/src/services/runtimes/doe/__tests__/builder.test.ts",
+        "apps/server/src/services/runtimes/claude-code/mcp-tools/tool-exposure.ts",
+        "neutral tool policy module agreed before edit"
+      ]
+    },
+    {
+      "id": "2.2",
+      "phase": 2,
+      "phaseName": "Host assembly",
+      "subject": "[doe-runtime] [P2] Implement runtime facade, sessions, event mapping and conformance fixtures",
+      "description": "Create DoeRuntime facade and persistence/turn/approval modules implementing every required AgentRuntime member using shipped @dorkos/doe and injectable offline engine. Own canonical session metadata (cwd/title/settings/source/model), engine SqliteModelStore full provider history and shared EventLog display history independently. Reuse SessionLockManager/projectors, never reconstruct model context from bounded display events. Cold queries/streamGeneration never create sessions; listings/history are canonical-cwd scoped. Persist settings before truthful applied/next-turn receipts. Map text/tool/approval/question/error/usage/compaction events and durable replay/seq; permission and question features advertised only when implemented. Interrupt/stop bound completion with honest receipts, including hanging backend and still-owned builder work. Implement steering/follow-up ordering and context isolation or report unsupported honestly. Fork must copy independent durable storage faithfully or return unsupported; do not invent SDK ids. Include dependencies/models/commands/health/MCP status and appropriate DI. Register runtime before session broadcasting in index.ts; shutdown drains turns, clients and stores.\nAcceptance: actual shared runtimeConformance with explicit offline fixtures, no credential skips; temporary SQLite restart preserves full model records, payer, settings and display events; two-session and cwd isolation; locks/token release; every event mapping; hanging stop; compaction usage; queue races; unsupported interaction truthfulness. Do not edit models/resources/tools/client or shared contracts. Initially use agreed injected interfaces while host/credential workers proceed; integrate production implementations only after their tasks complete.",
+      "activeForm": "Implementing runtime facade, sessions, event mapping and conformance fixtures",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [
+        "1.2",
+        "2.1"
+      ],
+      "issue": null,
+      "parentIssue": null,
+      "status": "completed",
+      "owner": "root-facade",
+      "fileFence": [
+        "apps/server/src/services/runtimes/doe/doe-runtime.ts",
+        "apps/server/src/services/runtimes/doe/session-store.ts",
+        "apps/server/src/services/runtimes/doe/turn.ts",
+        "apps/server/src/services/runtimes/doe/approvals.ts",
+        "apps/server/src/services/runtimes/doe/runtime-constants.ts",
+        "apps/server/src/services/runtimes/doe/index.ts",
+        "apps/server/src/services/runtimes/doe/__tests__/conformance.test.ts",
+        "apps/server/src/services/runtimes/doe/__tests__/runtime.test.ts",
+        "apps/server/src/services/runtimes/doe/__tests__/session-store.test.ts",
+        "apps/server/src/index.ts"
+      ]
+    },
+    {
+      "id": "2.3",
+      "phase": 2,
+      "phaseName": "Host assembly",
+      "subject": "[doe-runtime] [P2] Implement isolated beat seam and integrate production host assembly",
+      "description": "Wire facade production creation to explicit model/credits resolver and per-turn authenticated tool/resource/context assembly. Preserve role-first business prompt and separate builder coding prompt. Add runtime-owned beat operation accepting beat id/prompt and optional cheap decision callback compatible with packages/decisions. Delegate to Doe runBeat/createBeatExtension, expose end_beat only inside beat scope and return quiet/skipped/raises without automatic notifications. Beat history is isolated from main conversation and payer stays explicit. Do not implement scheduling/cadence/notification delivery or change runtime default.\nAcceptance: preflight skip performs zero model requests; quiet end_beat and explicit bounded raises; duplicate/invalid beat id refusal; isolated history/main conversation unchanged; cancellation and no end_beat outside beats. Production offline loopback integration exercises real engine/tool assembly with no paid flags. Complete shared conformance after all dependency modules are wired.",
+      "activeForm": "Implementing isolated beat seam and integrate production host assembly",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.2",
+        "2.1",
+        "2.2"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null,
+      "status": "completed",
+      "owner": "root-facade",
+      "fileFence": [
+        "apps/server/src/services/runtimes/doe/doe-runtime.ts",
+        "apps/server/src/services/runtimes/doe/beat.ts",
+        "apps/server/src/services/runtimes/doe/__tests__/beat.test.ts",
+        "apps/server/src/services/runtimes/doe/__tests__/integration.test.ts",
+        "apps/server/src/services/runtimes/doe/__tests__/conformance.test.ts"
+      ]
+    },
+    {
+      "id": "3.1",
+      "phase": 3,
+      "phaseName": "Client",
+      "subject": "[doe-runtime] [P3] Add DorkOS settings and ordinary agent runtime choice",
+      "description": "After server contracts stabilize, add DorkOS descriptor/icon/settings card and ordinary runtime choice to existing client FSD surfaces. User-facing engine label always DorkOS; Doe stays developer-only. Secure own-key entry uses existing encrypted setup routes and masked readback. Provide explicit inference source, protocol, endpoint, model and custom/local limits; support own Anthropic/OpenAI/OpenRouter/custom key, local and credits selections. Explain required configuration and short specific refusal states for subscription tokens, missing credits, endpoint and limit errors. Existing runtime defaults and relative ordering, onboarding and status-bar model item remain unchanged. Distinguish OAuth login flows from Doe configuration. Every rendered copy block is at most 15 words, calm and follows writing-for-humans/writing-app-copy. Every viewport works.\nAcceptance: focused component/hook/settings/creation/change tests prove labels, secure configuration submission, source/model selection, explicit payer, invalid states and unchanged defaults/order. Verify actual Settings → Runtimes → DorkOS and agent runtime choice in real browser with credential-free configuration; add focused browser regression where meaningful. Run client typecheck/lint and copy/vocab gates.",
+      "activeForm": "Adding DorkOS settings and ordinary agent runtime choice",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "2.3"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null,
+      "status": "completed",
+      "owner": "client-after-server",
+      "fileFence": [
+        "apps/client/src/layers/entities/runtime/**",
+        "apps/client/src/layers/features/settings/** runtime settings files",
+        "apps/client/src/layers/features/agents/** runtime choice files",
+        "packages/icons/** DorkOS runtime mark files",
+        "apps/e2e/** focused Doe settings/choice browser test"
+      ]
+    },
+    {
+      "id": "4.1",
+      "phase": 4,
+      "phaseName": "Verification and delivery",
+      "subject": "[doe-runtime] [P4] Verify full platform coverage and document proven runtime behavior",
+      "description": "Audit remaining hard-coded runtime universes and prove Doe works with aggregate session listing, search indexing/history, memory, rooms (authenticated posting tools and silence), schedules, usage ledgers, readiness and capability matrix. Add meaningful integration/regression tests, never fabricated support flags or silent missing fixtures. Render/update runtime capability docs and adding-a-runtime/configuration guide for actual contract changes. Write a plain user guide for choosing DorkOS and supported inference sources plus curated changelog fragment only for proven behavior. No default/onboarding/heartbeat runner/trust changes or unverified public claims. Keep docs app noun DorkOS and follow writing-for-humans.\nAcceptance: targeted touched tests and affected typecheck/lint pass; shared conformance fully green; tool/resource/source/credits/beat/client evidence recorded. Execute mandatory pnpm verify before PR. No live model, paid flags or ambient credential dependence. Inspect changed files and fix any dead code/TODO or unowned edits. Documentation aligns to actual tests.",
+      "activeForm": "Verifying full platform coverage and document proven runtime behavior",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "3.1"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null,
+      "status": "completed",
+      "owner": "root-verification",
+      "fileFence": [
+        "platform census/test files only after current author handoff",
+        "contributing/adding-a-runtime.md",
+        "contributing/capabilities/runtimes.md",
+        "contributing/configuration.md",
+        "docs/guides/** DorkOS runtime guide",
+        "changelog/** Doe runtime fragment",
+        "specs/doe-runtime/verification evidence files"
+      ]
+    },
+    {
+      "id": "4.2",
+      "phase": 4,
+      "phaseName": "Verification and delivery",
+      "subject": "[doe-runtime] [P4] Deliver independent reviews, queued PR and completion evidence",
+      "description": "Perform mandatory independent spec-compliance review reading diff/code against brief, final spec and task requirements, then independent code-quality review only after spec review passes. Authors fix findings in their existing ownership fences and reviewers re-review. Follow flow VERIFY independent adversarial review and creating-pull-requests policy before opening reviewable DOR-2787 PR(s); run pnpm verify and relevant tests on final code. Root alone owns tracker/provenance, commits, PR body, attachment, merge queue and DONE. Arm own green PR with gh pr merge --auto and observe merged result; never update branch just to satisfy gate. Preserve evidence/artifacts and close ticket only when all PRs merged and conformance green; post READY FOR ONBOARDING through authorized adapter with PRs, selection instructions and limitations. No tracker calls by workers.\nAcceptance: both independent reviews pass, final validation output confirmed, attached PRs merged via queue, canonical tasks completed, implementation/review evidence accurate, worktree cleanup follows DONE after preservation. Final response records PR numbers/tests and anything left without claiming upcoming surfaces.",
+      "activeForm": "Delivering independent reviews, queued PR and completion evidence",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "4.1"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null,
+      "status": "in_progress",
+      "owner": "root-delivery",
+      "fileFence": [
+        "specs/doe-runtime/** evidence only; source fixes return to owning author"
+      ]
+    }
+  ],
+  "executionAssumption": "Host assembly and facade authoring use existing neutral contracts and do not wait for new foundation declarations; production integration still requires all three tasks."
+}

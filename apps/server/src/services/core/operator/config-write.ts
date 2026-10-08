@@ -253,6 +253,7 @@ const TRUST_STOP_LEAVES: readonly { path: readonly string[]; runtime?: string }[
   { path: ['runtimes', 'claudeCode', 'defaultTrustStop'], runtime: 'claude-code' },
   { path: ['runtimes', 'codex', 'defaultTrustStop'], runtime: 'codex' },
   { path: ['runtimes', 'opencode', 'defaultTrustStop'], runtime: 'opencode' },
+  { path: ['runtimes', 'doe', 'defaultTrustStop'], runtime: 'doe' },
 ];
 
 /** Read one leaf out of a stored config, tolerating any shape. */

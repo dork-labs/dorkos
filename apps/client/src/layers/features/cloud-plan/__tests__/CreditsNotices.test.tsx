@@ -25,7 +25,7 @@ const BASE: CloudCreditsStatus = {
   killed: false,
   linked: true,
   ready: true,
-  runtimes: { 'claude-code': 'wired', codex: 'follow-up', opencode: 'follow-up' },
+  runtimes: { 'claude-code': 'wired', codex: 'follow-up', opencode: 'follow-up', doe: 'follow-up' },
   defaults: {},
   notices: [],
 };
@@ -56,7 +56,7 @@ describe('CreditsNotices', () => {
 
   it('says what a runtime it moved onto credits does not get there', async () => {
     renderSource({
-      runtimes: { 'claude-code': 'wired', codex: 'wired', opencode: 'follow-up' },
+      runtimes: { 'claude-code': 'wired', codex: 'wired', opencode: 'follow-up', doe: 'follow-up' },
       defaults: { codex: { runsOn: 'credits', chosenBy: 'default' } },
       notices: [{ kind: 'filled', runtimes: ['codex'] }],
     });

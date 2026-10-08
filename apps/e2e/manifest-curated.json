@@ -306,6 +306,17 @@
         "The background-task bar is measured in the Dev Playground on purpose: a real one needs an agent turn that spawns a subagent or a background bash command, which this suite never buys. The showcase renders the real component including the overflow-hidden + 44px maxHeight clip that is the whole reason the chevron's reach is sized to the row.",
         "That clip is why the chevron floor is not 20px of reach: on a bash-only bar (no AgentRunner figure, so a shorter row) the last ~2px is clipped and the growth measures 17.6px rather than 20."
       ]
+    },
+    "doe-model-setup": {
+      "relatedCode": [
+        "apps/client/src/layers/features/runtime-connect/ui/DoeInferenceForm.tsx",
+        "apps/server/src/services/runtimes/connect/doe-setup-router.ts"
+      ],
+      "explorationNotes": [
+        "Uses the real runtime registry and isolated test home. Saves credential-free loopback metadata without sending a model request.",
+        "Close Settings before reloading: the dialog stays open across a reload. The phone screenshot is attached to the test report.",
+        "Registers a silent fixture agent, chooses DorkOS through its profile Runs on picker, and verifies the real persisted runtime before fixture cleanup."
+      ]
     }
   }
 }
