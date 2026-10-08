@@ -214,13 +214,15 @@ export function ChatList({
         </div>
       )}
 
-      <div className="flex shrink-0 items-center gap-2">
+      {/* On a phone the two controls stack, New chat first and full width: three
+          sort labels and a button do not share 343px without crowding. */}
+      <div className="flex shrink-0 flex-wrap items-center gap-2">
         {model.total > 0 && (
           <SegmentedControl
             aria-label="Sort chats"
             value={sort}
             onValueChange={(next) => setSort(next as ChatListSort)}
-            className="w-auto min-w-0 flex-1 sm:flex-none"
+            className="w-full sm:w-auto sm:flex-none"
           >
             {CHAT_LIST_SORTS.map((option) => (
               <SegmentedControlItem key={option} value={option} className="whitespace-nowrap">
@@ -232,7 +234,7 @@ export function ChatList({
         <Button
           variant="outline"
           size="sm"
-          className="ml-auto shrink-0"
+          className="w-full shrink-0 max-sm:order-first sm:ml-auto sm:w-auto"
           onClick={onNewChat}
           data-slot="chat-list-new"
         >

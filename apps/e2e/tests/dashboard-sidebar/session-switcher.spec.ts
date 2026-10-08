@@ -38,13 +38,19 @@ type DrawerExitWindow = Window & {
   __drawerExit?: { animationName: string; connected: boolean };
 };
 
-/** Every session row the switcher draws, whichever group it landed in. */
-const ROW = '[data-slot="session-switcher-row"]';
+/**
+ * Every chat row the switcher draws, whichever section it landed in.
+ *
+ * Scoped to the dialog: the same page also shows the chat list inline (the
+ * ChatList showcase), over the same fixture, and a page-wide locator would
+ * count both.
+ */
+const ROW = '[role="dialog"] [data-slot="chat-list-row"]';
 
 /** Open the showcase's switcher and wait for its rows. */
 async function openShowcaseSwitcher(page: Page): Promise<void> {
   await page.goto(SHOWCASE_PATH);
-  await page.getByRole('button', { name: /Open code-reviewer sessions/ }).click();
+  await page.getByRole('button', { name: /Open code-reviewer’s chats/ }).click();
   await expect(page.locator(ROW).first()).toBeVisible();
 }
 
@@ -135,62 +141,77 @@ async function assertChipGeometry(page: Page, width: number): Promise<void> {
 }
 
 /**
- * The switcher's group headings, in DOM order.
+ * The switcher's section headings, in DOM order.
  *
- * **Scoped to a `SwitcherGroup`, not to the page.** This read bare `h3`s until
- * DOR-1766 put a `MessagingConnections` showcase on `/dev/features` whose
- * live-adapters section is also headed "Live now" — so the switcher's three
- * groups came back as four and three tests went red over a switcher that was
- * drawing exactly what it should. The playground renders the whole component
- * library on one route; a page-wide query there answers for all of it, and this
- * one was always going to collide with something eventually.
- *
- * `section[aria-label] > h3` is the shape `SwitcherGroup` renders and the same
- * section the assertions below already target by name, so the scope is the
- * switcher's own structure rather than a fact about one neighbour. It still
- * reads the VISIBLE heading text rather than the label attribute, which is what
- * keeps a renamed group a failure here.
+ * Scoped to the dialog for the same reason {@link ROW} is: the inline ChatList
+ * showcase on this page draws the same headings over the same fixture. It reads
+ * the VISIBLE heading text rather than the label attribute, which is what keeps
+ * a renamed section a failure here.
  */
-async function groupOrder(page: Page): Promise<string[]> {
+async function sectionOrder(page: Page): Promise<string[]> {
   return page
-    .locator('section[aria-label] > h3')
-    .filter({ hasText: /^(Live now|Recent|Automated)$/ })
+    .locator('[role="dialog"] section[aria-label] > h3')
+    .filter({ hasText: /^(Needs you|Running|Other chats)$/ })
     .allTextContents();
 }
 
+/** The three sections the fixture fills, in the order For you draws them. */
+const SECTIONS = ['Needs you', 'Running', 'Other chats'];
+
 test.describe('session switcher @smoke', { tag: SOLE_SIDEBAR_TAG }, () => {
-  test('groups an agent’s sessions Live now / Recent / Automated, with Automated collapsed', async ({
+  test('draws needs you, running and the rest, folds spin-offs, and keeps Automated closed', async ({
     page,
   }) => {
     await openShowcaseSwitcher(page);
+    const dialog = page.locator('[role="dialog"]');
 
-    expect(await groupOrder(page)).toEqual(['Live now', 'Recent', 'Automated']);
+    expect(await sectionOrder(page)).toEqual(SECTIONS);
 
-    // Three concurrent turns are three rows. BC-35 is explicit that they are
-    // never rolled up, so the absence of a summary is asserted alongside the
-    // presence of the rows it would have replaced.
-    const liveRows = page.locator('section[aria-label="Live now"]').locator(ROW);
-    await expect(liveRows).toHaveCount(3);
-    await expect(page.locator('section[aria-label="Live now"]')).not.toContainText('3 sessions');
-
-    // Each live row carries its own verb, off the activity fan-out.
-    await expect(liveRows.nth(0)).toContainText('Editing RoomRow.tsx');
-    await expect(liveRows.nth(1)).toContainText('Reading CHANGELOG.md');
-
-    // Recent rows carry outcomes instead.
-    await expect(page.locator('section[aria-label="Recent"]').locator(ROW)).toHaveCount(2);
-    await expect(page.locator('section[aria-label="Recent"]')).toContainText(
-      'Settled on a two-tier submit flow'
+    // Needs you: the chat waiting on an approval, and a spin-off that needs you
+    // lifted out of its parent's fold, saying where it started (D14 rule 3).
+    const needsYou = dialog
+      .locator('section[aria-label="Needs you"]')
+      .locator('[data-slot="chat-list-row"]');
+    await expect(needsYou).toHaveCount(2);
+    await expect(needsYou.filter({ hasText: 'Price the ad test' })).toContainText(
+      'Started from Plan the launch week'
     );
 
-    // Automated is collapsed: the reveal is there, its rows are not.
-    const reveal = page.locator('section[aria-label="Automated"] button').first();
-    await expect(reveal).toHaveText('+ 2 automated');
-    await expect(reveal).toHaveAttribute('aria-expanded', 'false');
-    await expect(page.locator('section[aria-label="Automated"]').locator(ROW)).toHaveCount(0);
+    // Running: two concurrent turns are two rows, each with its own verb.
+    const running = dialog
+      .locator('section[aria-label="Running"]')
+      .locator('[data-slot="chat-list-row"]');
+    await expect(running).toHaveCount(2);
+    await expect(running.filter({ hasText: 'Dashboard overhaul' })).toContainText(
+      'Editing RoomRow.tsx'
+    );
+    await expect(running.filter({ hasText: 'Release notes draft' })).toContainText(
+      'Reading CHANGELOG.md'
+    );
 
-    await reveal.click();
-    await expect(page.locator('section[aria-label="Automated"]').locator(ROW)).toHaveCount(2);
+    // Spin-offs fold under the chat that started them, closed until asked.
+    const fold = dialog.getByRole('button', { name: '2 spin-offs from Plan the launch week' });
+    await expect(fold).toHaveAttribute('aria-expanded', 'false');
+    await expect(
+      dialog.locator('[data-slot="chat-list-row"]', { hasText: 'Draft the launch email' })
+    ).toHaveCount(0);
+    await fold.click();
+    await expect(
+      dialog.locator('[data-slot="chat-list-row"]', { hasText: 'Draft the launch email' })
+    ).toContainText('Running');
+    await expect(
+      dialog.locator('[data-slot="chat-list-row"]', { hasText: 'Check every docs link' })
+    ).toContainText('Done');
+
+    // Automated is one closed group with a count: the toggle is there, its rows are not.
+    const automated = dialog.locator('section[aria-label="Automated"]');
+    const toggle = automated.getByRole('button');
+    await expect(toggle).toContainText('Automated');
+    await expect(toggle).toContainText('3');
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(automated.locator('[data-slot="chat-list-row"]')).toHaveCount(0);
+    await toggle.click();
+    await expect(automated.locator('[data-slot="chat-list-row"]')).toHaveCount(3);
   });
 
   test('is a dialog on the desktop and a bottom sheet on a phone', async ({ page }) => {
@@ -198,9 +219,12 @@ test.describe('session switcher @smoke', { tag: SOLE_SIDEBAR_TAG }, () => {
     await openShowcaseSwitcher(page);
     await expect(page.locator('[role="dialog"]')).toBeVisible();
     await expect(page.locator('[data-vaul-drawer]')).toHaveCount(0);
-    // The key legend belongs to the surface that has keys.
-    await expect(page.locator('footer')).toContainText('↵ continue');
-    await expect(page.getByRole('button', { name: 'New session' })).toHaveCount(0);
+    // The key legend belongs to the surface that has keys; New chat is at the
+    // top of the list on both shapes.
+    await expect(page.locator('[role="dialog"] footer')).toContainText('↵ open');
+    await expect(
+      page.locator('[role="dialog"]').getByRole('button', { name: 'New chat' })
+    ).toBeVisible();
 
     await page.setViewportSize({ width: 390, height: 844 });
     await openShowcaseSwitcher(page);
@@ -229,11 +253,14 @@ test.describe('session switcher @smoke', { tag: SOLE_SIDEBAR_TAG }, () => {
       )
       .toEqual({ bottomGap: 0, widthGap: 0 });
 
-    // The legend named keys a phone does not have; it is replaced, not hidden.
-    await expect(page.locator('footer')).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'New session' })).toBeVisible();
-    // Still the same three groups underneath.
-    expect(await groupOrder(page)).toEqual(['Live now', 'Recent', 'Automated']);
+    // The legend named keys a phone does not have, so it is not drawn there.
+    await expect(sheet.locator('footer')).toHaveCount(0);
+    await expect(sheet.getByRole('button', { name: 'New chat' })).toBeVisible();
+    // Still the same sections underneath.
+    expect(await sectionOrder(page)).toEqual(SECTIONS);
+    // And nothing runs off the side of a phone.
+    const overflow = await sheet.evaluate((element) => element.scrollWidth - element.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(0);
   });
 
   test('the bottom sheet slides out on dismiss rather than vanishing', async ({ page }) => {
@@ -294,20 +321,28 @@ test.describe('session switcher @smoke', { tag: SOLE_SIDEBAR_TAG }, () => {
   test('each footer key does what the footer says it does', async ({ page }) => {
     const lastAction = page.locator('[data-slot="switcher-last-action"]');
 
-    // `↵` continues the FOCUSED row — the second, so "the focused one" can never
-    // be confused with "the first one".
+    // `↵` opens the FOCUSED row — the second, so "the focused one" can never be
+    // confused with "the first one". The second row is the older of the two
+    // chats in Needs you.
     await openShowcaseSwitcher(page);
     await page.locator(ROW).nth(1).focus();
     await page.keyboard.press('Enter');
-    await expect(lastAction).toHaveText('continue sw-live-2');
+    await expect(lastAction).toHaveText('open sw-ask');
 
-    // `⌘↵` starts a new session instead of continuing the focused one. Without
-    // the keydown interception the browser would activate the button too, so
-    // this failing means the modifier was swallowed.
+    // `↓` walks to the next row, and `↵` opens that one.
+    await openShowcaseSwitcher(page);
+    await page.locator(ROW).nth(0).focus();
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
+    await expect(lastAction).toHaveText('open sw-ask');
+
+    // `⌘↵` starts a new chat instead of opening the focused one. Without the
+    // keydown interception the browser would activate the button too, so this
+    // failing means the modifier was swallowed.
     await openShowcaseSwitcher(page);
     await page.locator(ROW).nth(1).focus();
     await page.keyboard.press('Meta+Enter');
-    await expect(lastAction).toHaveText('new session');
+    await expect(lastAction).toHaveText('new chat');
   });
 
   test('opens from the agent row’s "N live" chip, and the chip clears the row’s text', async ({
@@ -351,7 +386,7 @@ test.describe('session switcher @smoke', { tag: SOLE_SIDEBAR_TAG }, () => {
 
     await chip.first().click();
     await expect(page.locator(ROW).first()).toBeVisible();
-    expect(await groupOrder(page)).toEqual(['Live now', 'Recent', 'Automated']);
+    expect(await sectionOrder(page)).toEqual(SECTIONS);
   });
 
   test('the chip belongs to its row — it rides the drag, and right-click opens the row’s menu', async ({
@@ -530,7 +565,7 @@ test.describe('session switcher, from ⌘K', { tag: SOLE_SIDEBAR_TAG }, () => {
     await expect(page.locator('[cmdk-item]')).toHaveCount(0);
 
     // Exactly one row is tagged, and it is the one that is open.
-    const tag = page.locator('[data-slot="session-switcher-current"]');
+    const tag = page.locator('[role="dialog"] [data-slot="chat-list-current"]');
     await expect(tag).toHaveCount(1);
     await expect(page.locator(ROW).filter({ has: tag })).toContainText('Release notes draft');
 

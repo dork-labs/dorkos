@@ -81,7 +81,14 @@ export function ChatListRow({
   const isCurrent = session.id === activeSessionId;
 
   const menuNodes: SidebarMenuNode[] = [
-    { kind: 'action', id: 'rename', label: 'Rename', icon: Pencil, opensInput: true, run: rename.start },
+    {
+      kind: 'action',
+      id: 'rename',
+      label: 'Rename',
+      icon: Pencil,
+      opensInput: true,
+      run: rename.start,
+    },
     { kind: 'action', id: 'fork', label: 'Fork', icon: GitFork, run: () => onFork(session.id) },
   ];
 
@@ -96,7 +103,9 @@ export function ChatListRow({
       menuNodes={menuNodes}
       actionsLabel={`${title} actions`}
       menuWidth="w-44"
-      {...(hasSecondLine(row) ? { reservesVerbLine: true, secondLine: <SecondLine row={row} /> } : {})}
+      {...(hasSecondLine(row)
+        ? { reservesVerbLine: true, secondLine: <SecondLine row={row} /> }
+        : {})}
       trailing={
         <RowMeta
           session={row.session}
@@ -225,7 +234,7 @@ function SpinOffFold({
   const count = spinOffs.length;
   const label = count === 1 ? '1 spin-off' : `${count} spin-offs`;
   return (
-    <div className="pl-[calc(var(--sidebar-row-x)_-_0.5rem_+_26px)]">
+    <div>
       <button
         type="button"
         data-slot={CHAT_LIST_SPIN_OFF_TOGGLE_SLOT}
@@ -233,7 +242,9 @@ function SpinOffFold({
         aria-expanded={open}
         aria-label={`${label} from ${parentTitle}`}
         onClick={() => setOpen((previous) => !previous)}
-        className="text-sidebar-foreground/60 hover:text-sidebar-foreground focus-visible:ring-sidebar-ring text-2xs flex min-h-6 items-center gap-1 rounded-md pr-2 outline-hidden focus-visible:ring-2 max-md:min-h-9"
+        // The chevron starts where the parent's title starts: the row's own
+        // inset, plus its 18px glyph slot and the 8px after it.
+        className="text-sidebar-foreground/60 hover:text-sidebar-foreground focus-visible:ring-sidebar-ring text-2xs ml-[calc(var(--sidebar-row-x)_-_0.5rem_+_26px)] flex min-h-6 items-center gap-1 rounded-md pr-2 outline-hidden focus-visible:ring-2 max-md:min-h-11"
       >
         <ChevronRight
           aria-hidden
@@ -242,7 +253,7 @@ function SpinOffFold({
         {label}
       </button>
       {open && (
-        <SidebarMenu aria-label={`Spin-offs from ${parentTitle}`} className="gap-0.5 pb-1">
+        <SidebarMenu aria-label={`Spin-offs from ${parentTitle}`} className="gap-0.5 pb-1 pl-4">
           {spinOffs.map((spinOff) => (
             <SidebarRow
               key={spinOff.session.id}
@@ -310,11 +321,15 @@ function RowMeta({
 }) {
   return (
     <>
-      <SessionOriginMark
-        origin={session.origin}
-        {...(session.originLabel === undefined ? {} : { label: session.originLabel })}
-        className="text-sidebar-foreground/50"
-      />
+      {/* Only a room or a schedule (D12). A spin-off says where it started in
+          words, and any other origin is a fact about plumbing, not a choice. */}
+      {(session.origin === 'room' || session.origin === 'task') && (
+        <SessionOriginMark
+          origin={session.origin}
+          {...(session.originLabel === undefined ? {} : { label: session.originLabel })}
+          className="text-sidebar-foreground/50"
+        />
+      )}
       {showRuntime && (
         <RuntimeMark
           type={session.runtime}

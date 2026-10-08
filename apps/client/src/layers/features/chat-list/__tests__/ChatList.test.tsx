@@ -254,6 +254,16 @@ describe('ChatList', () => {
     expect(within(row).getByLabelText('Origin: #launch')).toBeInTheDocument();
   });
 
+  it('draws no origin mark for a spin-off: its second line already says where it started', async () => {
+    renderList([
+      chat('p', 'Plan', { lastTouchedByYouAt: ago(1) }),
+      spinOffOf('p', 's', 'Opened spin-off', { lastTouchedByYouAt: ago(2) }),
+    ]);
+    const row = await findRow('Opened spin-off');
+    expect(row).toHaveTextContent('Started from Plan');
+    expect(within(row).queryByLabelText(/^Origin:/)).toBeNull();
+  });
+
   it('tags the chat open right now', async () => {
     mockSearch = { session: 'b' };
     renderList([chat('a', 'Other'), chat('b', 'Open one')]);
