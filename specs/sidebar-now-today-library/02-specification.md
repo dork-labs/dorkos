@@ -702,8 +702,12 @@ userLastMessageAt)`. `lastTouchedByYouAt` is the server's record of you opening 
   _Amended by `your-activity-first` (DOR-2789, 2026-10-08): the switcher's groups are replaced by the one shared
   chat list (`features/chat-list`, spec `your-activity-first` D11) that the agent's profile renders
   too: needs you, then running, then the rest by when you last used them; spin-offs nest under the
-  chat that started them; automated chats fold into one group. Until that lands, the switcher's
-  Automated group holds only automated chats and spin-offs stay with your chats._
+  chat that started them; automated chats fold into one group. The concrete shape, as built: sorts
+  **For you** (sections Needs you, Running, Other chats), **Recent activity** and **Started**
+  (Needs you, then the rest); a New chat button beside the sort; rows show a status dot, the
+  live verb or "Needs you", "Started from <parent>", a room or schedule mark, the runtime only when
+  the list mixes them, and "You · 2h"; footer hints `↵` open, `⌘↵` new chat, `⇧↵` fork, desktop
+  only. Arrange-only logic is `buildChatList` (`features/chat-list/model`)._
 - **BC-36 — Scroll-to-active.** On conversation switch only, the anchor scrolls into view.
   Guardrails: never auto-expand a collapsed section (the Library copy just takes the active tint
   if visible — BC-33); instant jump under `prefers-reduced-motion`; never scroll while the user
