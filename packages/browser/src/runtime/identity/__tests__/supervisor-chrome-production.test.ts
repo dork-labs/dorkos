@@ -82,6 +82,7 @@ const nativeIdentity = {
  * process observations are semantic doubles; no real process or native-matrix pass claimed. */
 function fixture(
   options: {
+    nativeWorker?: true;
     holdBrowserSession?: true;
     holdBrowserClose?: true;
     substituteCloseSession?: true;
@@ -93,6 +94,16 @@ function fixture(
     accepted = new Set<unknown>();
   const profiles = new Set<string>();
   let admissionCurrent = true;
+  let releaseWorkerFetch: (() => void) | undefined;
+  let workerFetchEntered!: () => void;
+  const workerFetchStarted = new Promise<void>((resolve) => {
+    workerFetchEntered = resolve;
+  });
+  const releaseWorker = () => {
+    const original = releaseWorkerFetch;
+    releaseWorkerFetch = undefined;
+    original?.();
+  };
   let expectedHeld = false;
   let sessionEntered!: () => void;
   const sessionStarted = new Promise<void>((resolve) => {
@@ -109,6 +120,7 @@ function fixture(
     original?.();
   };
   releases.push(releaseSession);
+  releases.push(releaseWorker);
   let releaseClose!: () => void;
   const heldClose = new Promise<void>((resolve) => {
     releaseClose = resolve;
@@ -177,7 +189,8 @@ function fixture(
       let result: unknown = {};
       if (message.method === 'Target.attachToBrowserTarget')
         result = { sessionId: 'original-browser-session' };
-      if (message.method === 'Target.getBrowserContexts') result = { browserContextIds: [] };
+      if (message.method === 'Target.getBrowserContexts')
+        result = { browserContextIds: [], defaultBrowserContextId: 'original-context' };
       if (message.method === 'Target.getTargets')
         result = {
           targetInfos: [
@@ -193,7 +206,8 @@ function fixture(
         this.emit({
           method: 'Target.attachedToTarget',
           params: {
-            sessionId: sockets.indexOf(this) === 0 ? 'sdk-root' : 'auth-root',
+            sessionId:
+              sockets.indexOf(this) === (options.nativeWorker ? 1 : 0) ? 'sdk-root' : 'auth-root',
             waitingForDebugger: false,
             targetInfo: {
               targetId: 'original-root-page',
@@ -203,7 +217,35 @@ function fixture(
             },
           },
         });
+      if (
+        options.nativeWorker &&
+        sockets.indexOf(this) === 1 &&
+        message.method === 'Target.setAutoAttach' &&
+        message.sessionId === undefined
+      )
+        this.emit({
+          method: 'Target.attachedToTarget',
+          params: {
+            sessionId: 'sdk-worker',
+            waitingForDebugger: true,
+            targetInfo: {
+              targetId: 'original-worker',
+              type: 'service_worker',
+              browserContextId: 'original-context',
+            },
+          },
+        });
       const reply = () => this.emit({ id: message.id, sessionId: message.sessionId, result });
+      if (
+        options.nativeWorker &&
+        sockets.indexOf(this) === 1 &&
+        message.method === 'Fetch.enable' &&
+        message.sessionId === 'sdk-worker'
+      ) {
+        releaseWorkerFetch = reply;
+        workerFetchEntered();
+        return;
+      }
       if (message.method === 'Target.attachToBrowserTarget' && options.holdBrowserSession) {
         returnAttachReply = reply;
         return;
@@ -301,15 +343,18 @@ function fixture(
       await new Promise<void>((resolve) => {
         transport.onmessage = (value) => {
           const message = value as Message;
-          if (message.method === 'Target.attachedToTarget')
+          if (message.method === 'Target.attachedToTarget') {
+            const worker =
+              options.nativeWorker && (message.params as Message).sessionId === 'sdk-worker';
             transport.send({
-              id: 99,
-              sessionId: 'sdk-root',
+              id: worker ? 92 : 99,
+              sessionId: worker ? 'sdk-worker' : 'sdk-root',
               method: 'Runtime.runIfWaitingForDebugger',
               params: {},
             });
+          }
           if (message.id === 101) releaseBrowserReply();
-          if (message.id === 99) resolve();
+          if (message.id === (options.nativeWorker ? 92 : 99)) resolve();
         };
         transport.onclose = () => {};
         transport.send({
@@ -341,12 +386,12 @@ function fixture(
     },
     observeTerminated: async () => ({ status: 'dead' }),
   });
-  mocks.launcher.mockImplementation(async (options: { cwd: string; argv: string[] }) => {
-    expect(baselineClose).toHaveBeenCalledTimes(1);
+  mocks.launcher.mockImplementation(async (launchOptions: { cwd: string; argv: string[] }) => {
+    expect(baselineClose).toHaveBeenCalledTimes(options.nativeWorker ? 0 : 1);
     for (const profile of profiles)
       await expect(access(profile)).rejects.toMatchObject({ code: 'ENOENT' });
     await writeFile(
-      join(options.cwd, 'DevToolsActivePort'),
+      join(launchOptions.cwd, 'DevToolsActivePort'),
       '4444\n/devtools/browser/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\n'
     );
     return {
@@ -371,14 +416,14 @@ function fixture(
         const result = await launchDarwinSupervisorBrowser(
           {
             manager: { pid: 500000, birth: 'semantic-manager' },
-            runtime: candidate,
+            runtime: options.nativeWorker ? native : candidate,
             artifact: {
               path: '/original/native-observer',
               sha256: 'b'.repeat(64),
             },
             profileDir: home,
             origin: 'about:blank',
-            identityPreparation: { nativeRuntime: native },
+            ...(options.nativeWorker ? {} : { identityPreparation: { nativeRuntime: native } }),
             ownedProxy: {
               url: 'http://127.0.0.1:49111',
               credentials: {
@@ -413,6 +458,8 @@ function fixture(
     detachReads: () => detachReads,
     sessionStarted,
     releaseSession,
+    workerFetchStarted,
+    releaseWorker,
     releaseClose,
     async replaceDirectory() {
       if (!home) throw new Error('ORIGINAL_PROFILE_MISSING');
@@ -609,3 +656,65 @@ it.each([false, undefined])(
     expect(sink).not.toHaveBeenCalled();
   }
 );
+
+it('gates the native supervisor SDK worker resume on its own original Fetch ACK before proxy authentication', async () => {
+  const f = fixture({ nativeWorker: true });
+  const opening = f.open();
+  try {
+    await Promise.race([
+      f.workerFetchStarted,
+      opening.then(() => {
+        throw new Error('ORIGINAL_WORKER_RESUMED_BEFORE_AUTH_ENTRY');
+      }),
+    ]);
+    // Native opens the original private-auth socket before the SDK socket.
+    const sdk = f.sockets[1]!;
+    expect(
+      sdk.messages.filter(
+        (message) =>
+          message.method === 'Runtime.runIfWaitingForDebugger' && message.sessionId === 'sdk-worker'
+      )
+    ).toEqual([]);
+    const enable = sdk.messages.find(
+      (message) => message.method === 'Fetch.enable' && message.sessionId === 'sdk-worker'
+    );
+    expect(enable).toMatchObject({
+      params: { handleAuthRequests: true, patterns: [{ urlPattern: '*' }] },
+    });
+    f.releaseWorker();
+    const original = await opening;
+    expect(
+      sdk.messages.filter(
+        (message) =>
+          message.method === 'Runtime.runIfWaitingForDebugger' && message.sessionId === 'sdk-worker'
+      )
+    ).toEqual([
+      { id: 92, sessionId: 'sdk-worker', method: 'Runtime.runIfWaitingForDebugger', params: {} },
+    ]);
+    sdk.emit({
+      method: 'Fetch.authRequired',
+      sessionId: 'sdk-worker',
+      params: {
+        requestId: 'worker-original-challenge',
+        authChallenge: { source: 'Proxy', origin: 'http://127.0.0.1:49111' },
+      },
+    });
+    expect(sdk.messages.filter((message) => message.method === 'Fetch.continueWithAuth')).toEqual([
+      expect.objectContaining({
+        sessionId: 'sdk-worker',
+        params: {
+          requestId: 'worker-original-challenge',
+          authChallengeResponse: {
+            response: 'ProvideCredentials',
+            username: 'dorkos',
+            password: 'private-semantic-peer',
+          },
+        },
+      }),
+    ]);
+    expect(await original.close()).toBe(true);
+  } finally {
+    f.releaseWorker();
+    await Promise.allSettled([opening]);
+  }
+});

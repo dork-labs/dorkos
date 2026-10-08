@@ -11,6 +11,8 @@ import {
   consumeSupervisorNativeIdentity,
   nativeRuntimeForSupervisorIdentity,
 } from './identity/supervisor-native-identity.js';
+import { createControllerProxyAuthentication } from './identity/controller-proxy-authentication.js';
+import { readControllerOriginalCatalog } from './identity/controller-original-catalog.js';
 import { ownSupervisorProxyAuthentication } from './identity/supervisor-proxy-authentication.js';
 import { readSupervisorOriginalCatalog } from './identity/supervisor-original-catalog.js';
 import { createSupervisorChromeBarrier } from './identity/supervisor-chrome-barrier.js';
@@ -49,6 +51,7 @@ type State = {
   originalBrowserClose?: () => Promise<unknown>;
   sdkWire?: ReturnType<typeof createSupervisorProtocolWire>;
   sdkReady?: Promise<void>;
+  sdkAuthentication?: ReturnType<typeof createControllerProxyAuthentication>;
   authWire?: ReturnType<typeof createSupervisorProtocolWire>;
   authWireReady?: Promise<void>;
   chromeBarrier?: ReturnType<typeof createSupervisorChromeBarrier>;
@@ -415,6 +418,25 @@ export async function launchDarwinSupervisorBrowser(
         });
       state.sdkReady = state.sdkWire.open();
       await waitWithin(state.sdkReady, Math.max(1, end - performance.now()));
+      admit();
+      if (ownedProxy) {
+        const originalCatalog = await readControllerOriginalCatalog(state.sdkWire.transport);
+        admit();
+        state.sdkAuthentication = createControllerProxyAuthentication(
+          state.sdkWire.transport,
+          ownedProxy,
+          () => {
+            admit();
+            return state.child?.custody().pending === true;
+          },
+          () => {
+            uncertain('NATIVE_PROXY_AUTH_LOSS');
+            failed('custody');
+          },
+          originalCatalog
+        );
+        originalSDKTransport = state.sdkAuthentication.transport;
+      }
     }
     admit();
     state.browser = await chromium.connectOverCDP(originalSDKTransport, {
@@ -560,7 +582,7 @@ export async function launchDarwinSupervisorBrowser(
       }),
       Promise.resolve().then(() => state.proxy?.close()),
       Promise.resolve().then(() => state.auth?.close()),
-      Promise.resolve().then(() => state.sdkWire?.close()),
+      Promise.resolve().then(() => state.sdkAuthentication?.close() ?? state.sdkWire?.close()),
       Promise.resolve().then(() => state.authWire?.close()),
       Promise.resolve().then(() => state.chromeAuth?.close()),
       Promise.resolve().then(() => state.chromeBarrier?.close()),
@@ -617,7 +639,13 @@ export async function launchDarwinSupervisorBrowser(
         );
         const originalAuthenticationEntry = pendingClose.observe(
           'NATIVE_CLOSE_PENDING_AUTH_ENTRY',
-          Promise.resolve().then(() => state.auth?.prepareClose())
+          Promise.resolve().then(async () => {
+            const entries = await Promise.allSettled([
+              Promise.resolve().then(() => state.auth?.prepareClose()),
+              Promise.resolve().then(() => state.sdkAuthentication?.prepareClose()),
+            ]);
+            for (const entry of entries) if (entry.status === 'rejected') throw entry.reason;
+          })
         );
         const originalBrowserStop = joinOriginalProxyAuthenticationStop(
           originalAuthenticationEntry,
@@ -735,7 +763,7 @@ export async function launchDarwinSupervisorBrowser(
           const results = await pendingClose.observe(
             'NATIVE_CLOSE_PENDING_WIRES',
             Promise.allSettled([
-              state.sdkWire!.close(),
+              state.sdkAuthentication?.close() ?? state.sdkWire!.close(),
               state.authWire?.close(),
               state.chromeBarrier?.close(),
               state.identityOwner?.close(),

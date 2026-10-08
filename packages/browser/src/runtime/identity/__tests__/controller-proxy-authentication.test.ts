@@ -612,3 +612,190 @@ it.each([false, undefined])(
     }
   }
 );
+
+const originalTurn = () => new Promise<void>((resolve) => setImmediate(resolve));
+function attachOriginalWorker(f: ReturnType<typeof fixture>, context: string | undefined) {
+  f.original.onmessage?.({
+    method: 'Target.attachedToTarget',
+    params: {
+      sessionId: 'original-worker-session',
+      targetInfo: {
+        targetId: 'original-worker-target',
+        type: 'service_worker',
+        browserContextId: context,
+      },
+    },
+  });
+  return {
+    id: 91,
+    method: 'Runtime.runIfWaitingForDebugger',
+    sessionId: 'original-worker-session',
+  };
+}
+it('holds the original worker resume until its exact same-session Fetch ACK and authenticates its original proxy challenge', async () => {
+  const f = fixture();
+  try {
+    const resume = attachOriginalWorker(f, 'original-default-context');
+    f.owner.transport.send(resume);
+    await originalTurn();
+    expect(f.sent).toHaveLength(1);
+    const enable = f.sent[0]!;
+    expect(enable).toMatchObject({
+      method: 'Fetch.enable',
+      sessionId: resume.sessionId,
+      params: { handleAuthRequests: true, patterns: [{ urlPattern: '*' }] },
+    });
+    expect(Number(enable.id)).toBeLessThan(0);
+    expect(f.sent).not.toContain(resume);
+    f.ack(enable);
+    await originalTurn();
+    expect(f.sent.filter((value) => value === resume)).toHaveLength(1);
+    f.sdk.mockClear();
+    const pause = {
+      method: 'Fetch.requestPaused',
+      sessionId: resume.sessionId,
+      params: { requestId: 'original-worker-request' },
+    };
+    f.original.onmessage?.(pause);
+    expect(f.sdk).toHaveBeenCalledWith(pause);
+    f.challenge(resume.sessionId);
+    const auth = f.sent.at(-1)!;
+    expect(auth).toMatchObject({
+      method: 'Fetch.continueWithAuth',
+      sessionId: resume.sessionId,
+      params: {
+        authChallengeResponse: {
+          response: 'ProvideCredentials',
+          username: 'dorkos',
+          password: 'a'.repeat(43),
+        },
+      },
+    });
+    f.ack(auth);
+    await originalTurn();
+    expect(f.fault).not.toHaveBeenCalled();
+  } finally {
+    await f.finish();
+  }
+});
+it.each([false, undefined])(
+  'worker Fetch ACK rejection %s preserves the exact first cause and never forwards resume',
+  async (value) => {
+    const f = fixture();
+    try {
+      const resume = attachOriginalWorker(f, 'original-default-context');
+      f.owner.transport.send(resume);
+      await originalTurn();
+      f.ack(f.sent[0]!, { value });
+      await originalTurn();
+      expect(f.sent).not.toContain(resume);
+      expect(f.fault).toHaveBeenCalledWith(value);
+      await expect(f.owner.prepareClose()).rejects.toBe(value);
+    } finally {
+      await f.finish();
+    }
+  }
+);
+it.each(['close', 'revoke', 'detach'] as const)(
+  'held original worker ACK cannot resume after %s and remains joined',
+  async (action) => {
+    const f = fixture();
+    try {
+      const resume = attachOriginalWorker(f, 'original-default-context');
+      f.owner.transport.send(resume);
+      await originalTurn();
+      let preparation: Promise<void> | undefined;
+      let settled = false;
+      if (action === 'close') {
+        preparation = f.owner.prepareClose();
+        void preparation.then(
+          () => {
+            settled = true;
+          },
+          () => {
+            settled = true;
+          }
+        );
+      } else if (action === 'revoke') f.revoke();
+      else
+        f.original.onmessage?.({
+          method: 'Target.detachedFromTarget',
+          params: { sessionId: resume.sessionId },
+        });
+      await originalTurn();
+      if (preparation) expect(settled).toBe(false);
+      expect(f.sent).not.toContain(resume);
+      f.ack(f.sent[0]!);
+      await originalTurn();
+      expect(f.sent).not.toContain(resume);
+      expect(f.fault).toHaveBeenCalledTimes(1);
+      await expect(preparation ?? f.owner.prepareClose()).rejects.toThrow(
+        'CONTROLLER_AUTH_WORKER_RESUME_REFUSED'
+      );
+      if (preparation) expect(settled).toBe(true);
+    } finally {
+      await f.finish();
+    }
+  }
+);
+
+it.each([{ context: 'foreign-context' }, { context: undefined }])(
+  'does not grant worker authentication to context $context',
+  async ({ context }) => {
+    const f = fixture();
+    try {
+      const resume = attachOriginalWorker(f, context);
+      f.owner.transport.send(resume);
+      expect(f.sent).toEqual([resume]);
+      f.challenge(resume.sessionId);
+      const auth = f.sent.at(-1)!;
+      expect(auth).toMatchObject({
+        method: 'Fetch.continueWithAuth',
+        params: { authChallengeResponse: { response: 'CancelAuth' } },
+      });
+      expect(JSON.stringify(auth)).not.toContain('password');
+      f.ack(auth);
+    } finally {
+      await f.finish();
+    }
+  }
+);
+
+it('bounds queued worker continuations plus their private ACK to the same 128 original tasks', async () => {
+  const f = fixture();
+  try {
+    const first = attachOriginalWorker(f, 'original-default-context');
+    const originals = Array.from({ length: 127 }, (_, index) => ({ ...first, id: 200 + index }));
+    for (const original of originals) f.owner.transport.send(original);
+    await originalTurn();
+    expect(f.sent).toHaveLength(1);
+    const enable = f.sent[0]!;
+    expect(enable.method).toBe('Fetch.enable');
+    expect(() => f.owner.transport.send({ ...first, id: 400 })).toThrow(
+      'CONTROLLER_AUTH_WORKER_RESUME_CAPACITY'
+    );
+    expect(f.sent).not.toContain(originals[0]);
+    f.ack(enable);
+    await originalTurn();
+    for (const original of originals)
+      expect(f.sent.filter((value) => value === original)).toHaveLength(1);
+    expect(f.fault).not.toHaveBeenCalled();
+    await f.owner.prepareClose();
+  } finally {
+    await f.finish();
+  }
+});
+
+it('refuses a private worker ACK producer when all 128 original task slots are already retained', async () => {
+  const f = fixture();
+  try {
+    const first = attachOriginalWorker(f, 'original-default-context');
+    for (let index = 0; index < 128; index++) f.owner.transport.send({ ...first, id: 200 + index });
+    await originalTurn();
+    expect(f.sent).toEqual([]);
+    await expect(f.owner.prepareClose()).rejects.toThrow('CONTROLLER_AUTH_ADMISSION_CLOSED');
+    expect(f.fault).toHaveBeenCalledTimes(1);
+  } finally {
+    await f.finish();
+  }
+});

@@ -111,12 +111,14 @@ export function createControllerProxyAuthentication(
     number,
     {
       session: string;
+      method: 'Fetch.continueWithAuth' | 'Fetch.enable';
       resolve(): void;
       reject(value: unknown): void;
       timer: ReturnType<typeof setTimeout>;
     }
   >();
   const tasks = new Set<Promise<void>>();
+  const workerReady = new Map<string, Promise<void>>();
   let next = -1,
     retiring = false,
     closed = false;
@@ -186,10 +188,23 @@ export function createControllerProxyAuthentication(
           changed = true;
         }
     }
-    for (const child of removing) sessions.delete(child);
+    for (const child of removing) {
+      sessions.delete(child);
+      workerReady.delete(child);
+    }
   };
-  const ownSend = (session: string, params: Message) => {
-    if (retiring || first || pending.size >= 128 || next <= Number.MIN_SAFE_INTEGER)
+  const ownSend = (
+    session: string,
+    params: Message,
+    method: 'Fetch.continueWithAuth' | 'Fetch.enable' = 'Fetch.continueWithAuth'
+  ) => {
+    if (
+      retiring ||
+      first ||
+      tasks.size >= 128 ||
+      pending.size >= 128 ||
+      next <= Number.MIN_SAFE_INTEGER
+    )
       throw first ? first.value : new Error('CONTROLLER_AUTH_ADMISSION_CLOSED');
     const id = next--;
     let resolve!: () => void, reject!: (value: unknown) => void;
@@ -212,9 +227,9 @@ export function createControllerProxyAuthentication(
       note(value);
       emit('ack-unobserved');
     }, 3000);
-    pending.set(id, { session, resolve, reject, timer });
+    pending.set(id, { session, method, resolve, reject, timer });
     try {
-      sendOriginal({ id, method: 'Fetch.continueWithAuth', params, sessionId: session });
+      sendOriginal({ id, method, params, sessionId: session });
     } catch (value) {
       pending.delete(id);
       clearTimeout(timer);
@@ -222,6 +237,43 @@ export function createControllerProxyAuthentication(
       note(value);
       emit('send-refused');
     }
+    return task;
+  };
+  const resumeWorker = (value: Message, sessionId: string, session: Session) => {
+    if (tasks.size >= 128) throw new Error('CONTROLLER_AUTH_WORKER_RESUME_CAPACITY');
+    const admit = () => {
+      if (first) throw first.value;
+      if (retiring || closed || !isCurrent() || sessions.get(sessionId) !== session)
+        throw new Error('CONTROLLER_AUTH_WORKER_RESUME_REFUSED');
+    };
+    // Retain the SDK's exact original resume before the first asynchronous producer.
+    // The worker's own Fetch handler must acknowledge authentication before it runs.
+    const original = Promise.resolve().then(async () => {
+      admit();
+      let ready = workerReady.get(sessionId);
+      if (!ready) {
+        ready = ownSend(
+          sessionId,
+          {
+            handleAuthRequests: true,
+            patterns: [{ urlPattern: '*' }],
+          },
+          'Fetch.enable'
+        );
+        workerReady.set(sessionId, ready);
+      }
+      await ready;
+      admit();
+      sendOriginal(value);
+    });
+    tasks.add(original);
+    void original.then(
+      () => tasks.delete(original),
+      (value) => {
+        note(value);
+        tasks.delete(original);
+      }
+    );
   };
   const transport: ConnectOverCDPTransport = {
     open() {
@@ -243,6 +295,13 @@ export function createControllerProxyAuthentication(
         if (targetReads.size >= 128 || targetReads.has(Number(value.id)))
           throw new Error('CONTROLLER_AUTH_READ_CAPACITY');
         targetReads.add(Number(value.id));
+      }
+      if (value.method === 'Runtime.runIfWaitingForDebugger' && opaque(value.sessionId)) {
+        const session = sessions.get(value.sessionId);
+        if (session?.admitted && targets.get(session.target)?.type === 'service_worker') {
+          resumeWorker(value, value.sessionId, session);
+          return;
+        }
       }
       const fetchStage = fetchStages.entering(value);
       try {
@@ -290,10 +349,10 @@ export function createControllerProxyAuthentication(
         if (Object.prototype.hasOwnProperty.call(value, 'error')) {
           task.reject(value.error);
           note(value.error);
-          emit('ack-refused');
+          if (task.method === 'Fetch.continueWithAuth') emit('ack-refused');
         } else {
           task.resolve();
-          emit('ack-observed');
+          if (task.method === 'Fetch.continueWithAuth') emit('ack-observed');
         }
         return;
       }

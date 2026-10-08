@@ -13,6 +13,7 @@ covers:
   - 'fix(browser): release cancelled checks and retain process observers'
   - 'fix(browser): preserve original work through diagnostic failures'
   - 'fix(browser): join the original controller reset during cleanup'
+  - 'fix(browser): authenticate service workers before resuming them'
 ---
 
 ### Added
