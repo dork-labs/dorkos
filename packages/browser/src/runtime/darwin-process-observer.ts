@@ -42,6 +42,20 @@ const replySchema = z
               kind: z.literal('unknown'),
               pid: z.number().int().positive().max(2147483647),
               error: z.number().int(),
+              // Same original inspect only; optional for older exact producer replies.
+              inspection: z
+                .object({
+                  membershipBefore: z.boolean(),
+                  membershipAfter: z.boolean(),
+                  firstError: z.number().int().min(0).max(2147483647),
+                  secondError: z.number().int().min(0).max(2147483647),
+                  firstZombie: z.boolean().nullable(),
+                  secondZombie: z.boolean().nullable(),
+                  birthChanged: z.boolean().nullable(),
+                  parentChanged: z.boolean().nullable(),
+                })
+                .strict()
+                .optional(),
               uncertainty: z
                 .enum([
                   'birth-changed',

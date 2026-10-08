@@ -44,6 +44,21 @@ export function hasOriginalLeafTerminal(
     (watch) => watch.consumed && sameProcess(watch.identity, identity)
   );
 }
+/** Snapshot retained receiver facts only; no barrier, native read or terminal authority is acquired. */
+export function originalLeafDiagnostic(owner: DarwinLeafEventOwner, identity: ProcessIdentity) {
+  const state = owners.get(owner);
+  if (!state) throw new Error('LEAF_EVENT_OWNER_UNAVAILABLE');
+  const watch = [...state.watches.values()].find((value) => sameProcess(value.identity, identity));
+  return Object.freeze({
+    watched: !!watch,
+    enrolled: watch?.admitted ?? false,
+    forked: watch?.forked ?? false,
+    exited: watch?.exited ?? false,
+    consumed: watch?.consumed ?? false,
+    receiverFailed: !!state.first,
+    receiverClosed: state.closed,
+  });
+}
 /** Qualify only both original parent ESRCH reads after a prior positive sweep.
  * No unknown inspect, boot change, nonempty partial tree or foreign failure is healed. */
 export async function consumeOriginalLeafTerminal(

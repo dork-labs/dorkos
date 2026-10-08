@@ -13,6 +13,7 @@ import { PassThrough, Writable } from 'node:stream';
 import { beforeEach, expect, it, vi } from 'vitest';
 import {
   consumeOriginalLeafTerminal,
+  originalLeafDiagnostic,
   hasOriginalLeafTerminal,
   openDarwinLeafEventOwner,
 } from '../runtime/darwin-leaf-event-owner.js';
@@ -464,5 +465,31 @@ it('publishes the same original close before reentrant writable final and joins 
     } finally {
       stop.mockRestore();
     }
+  }
+});
+
+it('snapshots exact retained leaf facts without barrier, consumption or authority', async () => {
+  const f = await fixture();
+  try {
+    expect(originalLeafDiagnostic(f.owner, identity).watched).toBe(false);
+    await f.owner.enroll(identity, 2);
+    f.row('event', 1, 'fork');
+    f.row('event', 1, 'exit');
+    const diagnostic = originalLeafDiagnostic(f.owner, identity);
+    expect(diagnostic).toEqual({
+      watched: true,
+      enrolled: true,
+      forked: true,
+      exited: true,
+      consumed: false,
+      receiverFailed: false,
+      receiverClosed: false,
+    });
+    expect(Object.isFrozen(diagnostic)).toBe(true);
+    expect(hasOriginalLeafTerminal(f.owner, identity)).toBe(false);
+    expect(await consumeOriginalLeafTerminal(f.owner, identity, 3, failedCensus())).toBe(false);
+  } finally {
+    f.release();
+    await f.owner.close();
   }
 });

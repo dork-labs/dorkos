@@ -88,6 +88,13 @@ int dorkos_darwin_inspect(const pid_t *pids, size_t count, struct dorkos_darwin_
     fact->pid = pids[i]; fact->kind = DORKOS_DARWIN_UNKNOWN;
     const int first_error = read_process(pids[i], &first);
     const int second_error = read_process(pids[i], &second);
+    fact->have_inspect_observation = 1;
+    fact->first_error = first_error; fact->second_error = second_error;
+    fact->first_zombie = first_error ? -1 : first.pbi_status == SZOMB;
+    fact->second_zombie = second_error ? -1 : second.pbi_status == SZOMB;
+    fact->birth_changed = first_error || second_error ? -1 :
+      first.pbi_start_tvsec != second.pbi_start_tvsec || first.pbi_start_tvusec != second.pbi_start_tvusec;
+    fact->parent_changed = first_error || second_error ? -1 : first.pbi_ppid != second.pbi_ppid;
     absence_eligible[i] = first_error == ESRCH && second_error == ESRCH;
     if (first_error || second_error) { fact->error = first_error ? first_error : second_error; continue; }
     if (first.pbi_start_tvsec != second.pbi_start_tvsec || first.pbi_start_tvusec != second.pbi_start_tvusec ||
@@ -114,6 +121,7 @@ int dorkos_darwin_inspect(const pid_t *pids, size_t count, struct dorkos_darwin_
   for (size_t i = 0; i < count; i++) {
     struct dorkos_darwin_process *fact = &batch->processes[i];
     const int seen_before = listed(&before, fact->pid), seen_after = listed(&after, fact->pid);
+    fact->membership_before = seen_before; fact->membership_after = seen_after;
     if (!seen_before && !seen_after && fact->kind != DORKOS_DARWIN_PRESENT) {
       /* ESRCH alone is not used. Other query errors (e.g. permission denial)
        * remain unknown even when the PID was missing from the sampled lists. */
@@ -388,6 +396,14 @@ static int print_reply(const struct dorkos_darwin_batch *batch, const struct dor
       }
       printf("{\"kind\":\"unknown\",\"pid\":%d,\"error\":%d", fact->pid, fact->error);
       if (reason) printf(",\"uncertainty\":\"%s\"", reason);
+      if (fact->have_inspect_observation)
+        printf(",\"inspection\":{\"membershipBefore\":%s,\"membershipAfter\":%s,\"firstError\":%d,\"secondError\":%d,\"firstZombie\":%s,\"secondZombie\":%s,\"birthChanged\":%s,\"parentChanged\":%s}",
+          fact->membership_before ? "true" : "false", fact->membership_after ? "true" : "false",
+          fact->first_error, fact->second_error,
+          fact->first_zombie < 0 ? "null" : fact->first_zombie ? "true" : "false",
+          fact->second_zombie < 0 ? "null" : fact->second_zombie ? "true" : "false",
+          fact->birth_changed < 0 ? "null" : fact->birth_changed ? "true" : "false",
+          fact->parent_changed < 0 ? "null" : fact->parent_changed ? "true" : "false");
       putchar('}');
     }
   }

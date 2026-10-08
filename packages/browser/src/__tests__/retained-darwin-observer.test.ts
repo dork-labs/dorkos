@@ -232,14 +232,28 @@ it('rotates only between original requests and joins prior child return before o
   try {
     // Genuine bounded native-schema replies (512 rows) grow the unchanged retained byte bank.
     const pids = Array.from({ length: 512 }, (_, i) => i + 1);
-    for (let i = 0; i < 13; i++) await owner.observer.inspect(pids);
-    operation = owner.observer.inspect(pids);
-    void operation.catch(() => {});
+    operation = (async () => {
+      // Follow the original receiver's retirement boundary instead of assuming a reply count.
+      for (let i = 0; i < 32 && first.ends() === 0; i++) await owner.observer.inspect(pids);
+      if (first.ends() !== 1) throw new Error('BOUNDED_ORIGINAL_ROTATION_NOT_OBSERVED');
+    })();
+    let settled = false;
+    void operation.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      }
+    );
     await vi.waitFor(() => expect(first.ends()).toBe(1));
+    expect(settled).toBe(false);
     expect(controls.launch).toHaveBeenCalledTimes(1);
+    expect(second.requests).toEqual([]);
     first.releaseReturn();
     await operation;
     expect(controls.launch).toHaveBeenCalledTimes(2);
+    expect(second.requests).toHaveLength(1);
   } finally {
     first.finish();
     second.finish();

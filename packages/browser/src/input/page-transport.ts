@@ -1,3 +1,4 @@
+import { originalSelectionPhases } from './selection-phase.js';
 import { readOriginalSelection, type SelectionCopy } from './selection-copy.js';
 import { semanticNativeEffect, type NativeSemanticState } from '../semantic/native-effect.js';
 import type { NativeSemanticTarget } from '../semantic/native-target.js';
@@ -153,6 +154,8 @@ class PageTransportOwner {
 
   async copySelection(signal: AbortSignal, current: () => boolean): Promise<SelectionCopy> {
     let result: SelectionCopy | undefined;
+    let entered = false;
+    const authority = originalSelectionPhases.begin('authority');
     const end = performance.now() + INPUT_BUDGET_MS;
     const original = this.call(
       async (guard) => {
@@ -162,6 +165,8 @@ class PageTransportOwner {
           guard();
           if (performance.now() >= end) throw new Error('COPY_READ_DEADLINE');
         };
+        entered = true;
+        authority('settled');
         result = await readOriginalSelection(session, bounded);
       },
       signal,
@@ -171,7 +176,12 @@ class PageTransportOwner {
       current
     );
     // The deadline bounds delivery; the original call stays retained by nativePending until return.
-    await within(original, end, signal);
+    try {
+      await within(original, end, signal);
+    } catch (value) {
+      if (!entered) authority('failed');
+      throw value;
+    }
     if (!result) throw new Error('COPY_RESULT_REFUSED');
     return result;
   }
@@ -376,7 +386,17 @@ class PageTransportOwner {
       this.acquisitionContext = context;
       const create = context.newCDPSession;
       if (!this.current()) throw new Error('INPUT_TARGET_REFUSED');
-      this.originalAcquisition = Promise.resolve(create.call(context, this.page));
+      const phase = originalSelectionPhases.begin('session-opening');
+      try {
+        this.originalAcquisition = Promise.resolve(create.call(context, this.page));
+        void this.originalAcquisition.then(
+          () => phase('settled'),
+          () => phase('failed')
+        );
+      } catch (value) {
+        phase('failed');
+        throw value;
+      }
       void this.originalAcquisition.then(accept, fail);
     } catch (error) {
       fail(error);
@@ -561,22 +581,26 @@ class PageTransportOwner {
       reject = fail;
     });
     void this.detachPromise.catch(() => {});
+    const phase = originalSelectionPhases.begin('detach');
     try {
       void Promise.resolve(this.requireSession().detach()).then(
         () => {
           this.detachPending = false;
           this.detached = true;
+          phase('settled');
           resolve();
         },
         (error: unknown) => {
           this.detachPending = false;
           this.uncertain = true;
+          phase('failed');
           reject(error);
         }
       );
     } catch (error) {
       this.detachPending = false;
       this.uncertain = true;
+      phase('failed');
       reject(error);
     }
     return this.detachPromise;

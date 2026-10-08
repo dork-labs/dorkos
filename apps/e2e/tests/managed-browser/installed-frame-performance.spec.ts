@@ -20,6 +20,7 @@ import {
   armFrameSample,
   frameObservations,
   installFrameObserver,
+  retainOriginalFramePerformanceFailure,
   p95,
 } from '../../fixtures/managed-frame-observer';
 
@@ -209,6 +210,12 @@ test('Actual viewer pixels: 100 local, 100 injected RTT and stalled second viewe
     const originalDrawReceipt = BrowserRenderReceiptSchema.parse(originalDrawn.receipt);
     expect(originalDrawReceipt.viewerId).toBe(secondViewerId);
     await expect.poll(async () => (await frameObservations(originalSecond)).lastRevision).toBe(0);
+    // Measure visible presentation on the primary Page after constructing the independent viewer.
+    await retainSetup(page.bringToFront());
+    expect(
+      await page.evaluate(() => document.visibilityState),
+      'original measured Page is visible'
+    ).toBe('visible');
     // Both genuine viewers are decoding/drawing before the parent's idle counters.
     await channel.write('ready', saved);
     await channel.wait('start');
@@ -378,6 +385,41 @@ test('Actual viewer pixels: 100 local, 100 injected RTT and stalled second viewe
     await channel.wait('release');
   } catch (value) {
     first ??= { value };
+    // Retain original observations before closing either Page; faults cannot replace the original cause.
+    first = await retainOriginalFramePerformanceFailure(
+      first,
+      async () => {
+        const observed = await retainSetup(frameObservations(page));
+        const primaryVisibility = await retainSetup(page.evaluate(() => document.visibilityState));
+        const secondaryVisibility =
+          second && !second.isClosed()
+            ? await retainSetup(second.evaluate(() => document.visibilityState))
+            : 'unavailable';
+        return {
+          expectedRevision: observed.expected,
+          lastDrawnRevision: observed.lastRevision,
+          inputAt: observed.inputAt,
+          inputEvents: observed.inputEvents,
+          visibleChecks: observed.visibleChecks,
+          actualDraws: observed.drawn,
+          actualDecodes: observed.decoded,
+          actualReceipts: observed.receipts,
+          sampleCount: observed.samples.length,
+          overflow: observed.overflow,
+          actualTargetRevisions: performanceReceiver.revisions.slice(-16),
+          primaryVisibility,
+          secondaryVisibility,
+        };
+      },
+      async (observed) => {
+        await retainSetup(
+          info.attach('original-frame-performance-failure', {
+            body: Buffer.from(JSON.stringify(observed)),
+            contentType: 'application/json',
+          })
+        );
+      }
+    );
   } finally {
     page.off('response', primaryIssuance);
     second?.off('response', secondaryIssuance);

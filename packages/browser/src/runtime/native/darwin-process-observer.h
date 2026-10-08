@@ -22,6 +22,9 @@ struct dorkos_darwin_process {
   pid_t parent_pid;
   int zombie, error;
   enum dorkos_darwin_uncertainty uncertainty;
+  int have_inspect_observation, membership_before, membership_after;
+  int first_error, second_error, first_zombie, second_zombie;
+  int birth_changed, parent_changed;
 };
 struct dorkos_darwin_batch {
   uint64_t boot_seconds, boot_microseconds;

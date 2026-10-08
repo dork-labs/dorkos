@@ -1,4 +1,5 @@
 import type { CDPSession } from 'playwright-core';
+import { originalSelectionPhases } from './selection-phase.js';
 
 /** Fixed refusal metadata, never secret field contents. */
 export type SelectionCopy = Readonly<
@@ -123,63 +124,88 @@ export async function readOriginalSelection(
   session: Pick<CDPSession, 'send'>,
   guard: () => void
 ): Promise<SelectionCopy> {
+  const check = () => {
+    const finish = originalSelectionPhases.begin('authority');
+    try {
+      guard();
+      finish('settled');
+    } catch (value) {
+      finish('failed');
+      throw value;
+    }
+  };
   const send = session.send.bind(session);
-  guard();
-  const initial = (await send('Page.getFrameTree')).frameTree.frame;
-  guard();
+  check();
+  const initial = await originalSelectionPhases.observe(
+    'initial-tree',
+    async () => (await send('Page.getFrameTree')).frameTree.frame
+  );
+  check();
   const frameId = initial.id,
     loaderId = initial.loaderId;
-  if (
-    typeof frameId !== 'string' ||
-    typeof loaderId !== 'string' ||
-    !frameId ||
-    !loaderId ||
-    frameId.length > 1024 ||
-    loaderId.length > 1024
-  )
-    throw new Error('COPY_DOCUMENT_REFUSED');
-  const world = await send('Page.createIsolatedWorld', {
-    frameId,
-    worldName: 'dork-owner-selection-copy-v1',
-    grantUniveralAccess: false,
+  originalSelectionPhases.observeSync('initial-tree', () => {
+    if (
+      typeof frameId !== 'string' ||
+      typeof loaderId !== 'string' ||
+      !frameId ||
+      !loaderId ||
+      frameId.length > 1024 ||
+      loaderId.length > 1024
+    )
+      throw new Error('COPY_DOCUMENT_REFUSED');
   });
-  guard();
-  if (!Number.isSafeInteger(world.executionContextId) || world.executionContextId <= 0)
-    throw new Error('COPY_DOCUMENT_REFUSED');
-  const result = await send('Runtime.evaluate', {
-    contextId: world.executionContextId,
-    expression: `(${inspectOriginalSelection.toString()})(document)`,
-    returnByValue: true,
-    awaitPromise: false,
-  });
-  guard();
-  const final = (await send('Page.getFrameTree')).frameTree.frame;
-  guard();
-  if (final.id !== frameId || final.loaderId !== loaderId || result.exceptionDetails)
-    throw new Error('COPY_DOCUMENT_REFUSED');
-  if (result.result.type !== 'object') throw new Error('COPY_RESULT_REFUSED');
-  const value: unknown = result.result.value;
-  if (!value || typeof value !== 'object') throw new Error('COPY_RESULT_REFUSED');
-  const row = value as Record<string, unknown>;
-  if (
-    row.outcome === 'selected' &&
-    Object.keys(row).sort().join(',') === 'outcome,text' &&
-    typeof row.text === 'string' &&
-    row.text.length > 0 &&
-    row.text.length <= 2048 &&
-    Buffer.byteLength(row.text) <= 2048 &&
-    !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(row.text)
-  )
-    return Object.freeze({ outcome: 'selected', text: row.text });
-  if (
-    row.outcome === 'refused' &&
-    Object.keys(row).sort().join(',') === 'outcome,reason' &&
-    typeof row.reason === 'string' &&
-    ['secret', 'selection', 'unsupported', 'capacity'].includes(row.reason)
-  )
-    return Object.freeze({
-      outcome: 'refused',
-      reason: row.reason as 'secret' | 'selection' | 'unsupported' | 'capacity',
+  const world = await originalSelectionPhases.observe('world', async () => {
+    const original = await send('Page.createIsolatedWorld', {
+      frameId,
+      worldName: 'dork-owner-selection-copy-v1',
+      grantUniveralAccess: false,
     });
-  throw new Error('COPY_RESULT_REFUSED');
+    check();
+    if (!Number.isSafeInteger(original.executionContextId) || original.executionContextId <= 0)
+      throw new Error('COPY_DOCUMENT_REFUSED');
+    return original;
+  });
+  const result = await originalSelectionPhases.observe('read', () =>
+    send('Runtime.evaluate', {
+      contextId: world.executionContextId,
+      expression: `(${inspectOriginalSelection.toString()})(document)`,
+      returnByValue: true,
+      awaitPromise: false,
+    })
+  );
+  check();
+  const final = await originalSelectionPhases.observe(
+    'final-tree',
+    async () => (await send('Page.getFrameTree')).frameTree.frame
+  );
+  check();
+  return originalSelectionPhases.observe('result', async () => {
+    if (final.id !== frameId || final.loaderId !== loaderId || result.exceptionDetails)
+      throw new Error('COPY_DOCUMENT_REFUSED');
+    if (result.result.type !== 'object') throw new Error('COPY_RESULT_REFUSED');
+    const value: unknown = result.result.value;
+    if (!value || typeof value !== 'object') throw new Error('COPY_RESULT_REFUSED');
+    const row = value as Record<string, unknown>;
+    if (
+      row.outcome === 'selected' &&
+      Object.keys(row).sort().join(',') === 'outcome,text' &&
+      typeof row.text === 'string' &&
+      row.text.length > 0 &&
+      row.text.length <= 2048 &&
+      Buffer.byteLength(row.text) <= 2048 &&
+      !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(row.text)
+    )
+      return Object.freeze({ outcome: 'selected', text: row.text });
+    if (
+      row.outcome === 'refused' &&
+      Object.keys(row).sort().join(',') === 'outcome,reason' &&
+      typeof row.reason === 'string' &&
+      ['secret', 'selection', 'unsupported', 'capacity'].includes(row.reason)
+    )
+      return Object.freeze({
+        outcome: 'refused',
+        reason: row.reason as 'secret' | 'selection' | 'unsupported' | 'capacity',
+      });
+    throw new Error('COPY_RESULT_REFUSED');
+  });
 }

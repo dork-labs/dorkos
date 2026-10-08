@@ -194,3 +194,37 @@ it.each([
     ).toThrow();
   }
 );
+
+it('retains bounded original inspect detail without changing the unknown kind', () => {
+  const inspection = {
+    membershipBefore: true,
+    membershipAfter: false,
+    firstError: 0,
+    secondError: 3,
+    firstZombie: false,
+    secondZombie: null,
+    birthChanged: null,
+    parentChanged: null,
+  };
+  const reply = {
+    version: 1,
+    bootSeconds: '1',
+    bootMicroseconds: '0',
+    processes: [
+      { kind: 'unknown', pid: 10, error: 35, uncertainty: 'membership-disappeared', inspection },
+    ],
+  };
+  expect(parseDarwinProcessBatch(encode(reply), [10])).toEqual(reply);
+  for (const invalid of [
+    { ...inspection, firstError: -1 },
+    { ...inspection, secondError: 2147483648 },
+    { ...inspection, membershipBefore: null },
+    { ...inspection, path: '/not-a-protocol-field' },
+  ])
+    expect(() =>
+      parseDarwinProcessBatch(
+        encode({ ...reply, processes: [{ ...reply.processes[0], inspection: invalid }] }),
+        [10]
+      )
+    ).toThrow();
+});

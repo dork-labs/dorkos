@@ -1,3 +1,8 @@
+import { createOriginalUpdateRedirect } from './original-update-redirect.fixture.js';
+import { originalBackgroundRevocationScript } from './original-background-revocation.fixture.js';
+import { originalOOPIFDocument } from './controlled-oopif.fixture.js';
+import { originalBackgroundWorkerScript } from './original-background-worker-script.fixture.js';
+import { originalControlledScriptReply } from './controlled-script.fixture.js';
 import { it, onTestFinished } from 'vitest';
 import { mkdtemp, realpath, mkdir, writeFile, lstat, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -66,6 +71,7 @@ it.skipIf(!fixturePath || process.platform !== 'darwin')(
       if (first) throw first.value;
       lifetime.signal.throwIfAborted();
     };
+    const updateRedirect = createOriginalUpdateRedirect(current);
     const input = await readPublicNativeInput(config.input, current);
     await verifyPublicNativeEmits(input, current);
     const installed = await resolveInstalledRuntimeConfiguration(
@@ -146,13 +152,72 @@ it.skipIf(!fixturePath || process.platform !== 'darwin')(
         observer: nativeJournal.journal.artifact,
         signal: lifetime.signal,
         current,
-        body(_role, path, origins) {
+        reply(role, path, origins) {
+          const update = updateRedirect.reply(role, path, origins);
+          if (update) return update;
+          const revocation = /^\/background-revocation\/([a-f0-9-]{36})\.js$/.exec(path);
+          if (role === 'allowed' && revocation)
+            return {
+              status: 200,
+              contentType: 'application/javascript',
+              body: originalBackgroundRevocationScript(revocation[1]!, origins[0]!).source,
+            };
+          const background = /^\/background-worker\/([a-f0-9-]{36})\.js$/.exec(path);
+          if (role === 'allowed' && background)
+            return {
+              status: 200,
+              contentType: 'application/javascript',
+              body: originalBackgroundWorkerScript({
+                nonce: background[1]!,
+                allowedOrigin: origins[0]!,
+                deniedOrigin: origins[1]!,
+              }).source,
+            };
+          const oopif = /^\/oopif\/([a-f0-9-]{36})\/(positive|negative)$/.exec(path);
+          if (role === 'allowed' && oopif)
+            return {
+              status: 200,
+              contentType: 'text/html; charset=utf-8',
+              body: originalOOPIFDocument(
+                oopif[1]!,
+                oopif[2] === 'positive'
+                  ? origins[0] + '/oopif-request/' + oopif[1]
+                  : origins[1] + '/forbidden/' + oopif[1] + '/oopif'
+              ),
+            };
+          const script = originalControlledScriptReply(role, path);
+          if (script) return script;
+          if (role === 'allowed' && /^\/alt-svc\/[a-f0-9-]{36}$/.test(path))
+            return {
+              status: 200,
+              contentType: 'text/html; charset=utf-8',
+              body: '<!doctype html><title>Owned alternative service</title>',
+              alternativeService: origins[1],
+            };
+          const redirect = /^\/redirect\/([a-f0-9-]{36})$/.exec(path);
+          if (redirect)
+            return {
+              status: 302,
+              contentType: 'text/html; charset=utf-8',
+              body: '<!doctype html><title>Owned tunnel fixture</title>',
+              location: origins[1] + '/forbidden/' + redirect[1],
+            };
           const worker = /^\/service-worker\/([a-f0-9-]{36})\.js$/.exec(path);
           if (worker) {
             const url = origins[1] + '/forbidden/' + worker[1] + '/service-worker';
-            return `self.addEventListener('install',e=>e.waitUntil(self.skipWaiting()));self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));self.addEventListener('message',e=>{e.waitUntil(fetch(${JSON.stringify(url)},{mode:'no-cors',cache:'no-store'}).then(r=>r.arrayBuffer()).then(()=>e.source.postMessage('fulfilled'),()=>e.source.postMessage('rejected')));});`;
+            return {
+              status: 200,
+              contentType: 'application/javascript',
+              body: `self.addEventListener('install',e=>e.waitUntil(self.skipWaiting()));self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));self.addEventListener('message',e=>{e.waitUntil(fetch(${JSON.stringify(url)},{mode:'no-cors',cache:'no-store'}).then(r=>r.arrayBuffer()).then(()=>e.source.postMessage('fulfilled'),()=>e.source.postMessage('rejected')));});`,
+            };
           }
-          return '<!doctype html><title>Owned tunnel fixture</title>';
+          return {
+            status: 200,
+            contentType: /^\/worker\/[a-f0-9-]{36}\.js$/.test(path)
+              ? 'application/javascript'
+              : 'text/html; charset=utf-8',
+            body: '<!doctype html><title>Owned tunnel fixture</title>',
+          };
         },
       });
       const preflight = tunnels.port();
@@ -162,6 +227,7 @@ it.skipIf(!fixturePath || process.platform !== 'darwin')(
         await mkdir(profileDir, { mode: 0o700 });
         await runOriginalControlledSharedSANCase({
           preflight,
+          updateRedirect,
           runtime,
           nativeJournal,
           manager,

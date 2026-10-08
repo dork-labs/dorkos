@@ -1,3 +1,8 @@
+import { ownOriginalBackgroundResponseGate } from './original-background-response-gate.fixture.js';
+import {
+  originalOwnedAlternativeService,
+  writeOriginalOwnedAlternativeService,
+} from './controlled-alt-svc.fixture.js';
 import { createHash, randomUUID, X509Certificate } from 'node:crypto';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { Resolver } from 'node:dns/promises';
@@ -30,6 +35,8 @@ export interface OriginalQuickTunnelReply {
   readonly contentType: 'text/html; charset=utf-8' | 'application/javascript' | 'text/plain';
   readonly body: string;
   readonly location?: string;
+  /** Fixed h2 alternative naming only an exact owned HTTPS route; no arbitrary headers. */
+  readonly alternativeService?: string;
 }
 export interface OriginalQuickTunnelPort {
   readonly allowedOrigin: string;
@@ -40,6 +47,20 @@ export interface OriginalQuickTunnelPort {
   assertCurrent(): void;
   observations(): readonly Row[];
   awaitOriginalResponseClose(role: 'allowed' | 'denied', path: string): Promise<void>;
+  awaitOriginalBackgroundRequest(
+    role: 'allowed' | 'denied',
+    path: string,
+    after: number,
+    signal: AbortSignal
+  ): Promise<void>;
+  originalBackgroundGateTerminal(
+    role: 'allowed' | 'denied',
+    path: string
+  ): Readonly<{ returned: Promise<void>; closed(): boolean }>;
+  releaseOriginalBackgroundGate(role: 'allowed' | 'denied', path: string): Promise<void>;
+  originalUpdateRedirectResponse(
+    path: string
+  ): Readonly<{ status: 302; location: string; returned: Promise<void> }>;
   close(): Promise<unknown>;
 }
 const originalPorts = new WeakMap<object, () => OriginalQuickTunnelPort>();
@@ -113,7 +134,12 @@ export async function openOriginalQuickTunnelPreflight(options: {
     closed: Promise<void>;
     pipes: Promise<void>[];
     terminal: { code?: number | null; signal?: string | null };
-    pipeFacts: Array<{ name: string; path: string; bytes: number; eof: boolean }>;
+    pipeFacts: Array<{
+      name: string;
+      path: string;
+      bytes: number;
+      eof: boolean;
+    }>;
   }> = [];
   const servers: Server[] = [],
     sockets = new Set<import('node:net').Socket>();
@@ -129,6 +155,21 @@ export async function openOriginalQuickTunnelPreflight(options: {
   const origins: string[] = [];
   const rawDescriptors = new Set<number>();
   const jobs = new Set<Promise<unknown>>();
+  const backgroundGates = new Map<string, ReturnType<typeof ownOriginalBackgroundResponseGate>>();
+  const backgroundWaits = new Map<
+    string,
+    {
+      role: 'allowed' | 'denied';
+      path: string;
+      after: number;
+      done(): void;
+      refuse(value: unknown): void;
+    }
+  >();
+  const updateRedirectResponses = new Map<
+    string,
+    Readonly<{ status: 302; location: string; returned: Promise<void> }>
+  >();
   const heldResponses = new Map<string, Promise<void>>();
   const fail = (value: unknown) => {
     first ??= { value };
@@ -193,6 +234,9 @@ export async function openOriginalQuickTunnelPreflight(options: {
       return original;
     });
   const stop = () => {
+    for (const waiting of backgroundWaits.values())
+      waiting.refuse(new Error('ORIGINAL_BACKGROUND_WAIT_CLOSED'));
+    for (const gate of backgroundGates.values()) own(gate.close());
     fenceServers();
     fenceWebsockets();
     for (const retire of websocketRetirements.values()) {
@@ -374,6 +418,18 @@ export async function openOriginalQuickTunnelPreflight(options: {
             path,
           });
           rows.push(row);
+          for (const waiting of backgroundWaits.values())
+            if (waiting.role === role && waiting.path === path && rows.length - 1 >= waiting.after)
+              waiting.done();
+          if (/^\/background-gate\/[a-f0-9-]{36}$/.test(path)) {
+            const key = role + ':' + path;
+            if (backgroundGates.has(key) || backgroundGates.size >= 32)
+              throw new Error('ORIGINAL_BACKGROUND_GATE_BOUND');
+            const gate = ownOriginalBackgroundResponseGate(response, current);
+            backgroundGates.set(key, gate);
+            own(gate.originalClose);
+            return;
+          }
           if (/^\/hold(?:\/[a-f0-9-]{36})?$/.test(path)) {
             const key = role + ':' + path;
             if (heldResponses.has(key)) throw new Error('ORIGINAL_TUNNEL_HELD_RESPONSE_DUPLICATE');
@@ -414,7 +470,8 @@ export async function openOriginalQuickTunnelPreflight(options: {
           const status = reply.status,
             contentType = reply.contentType,
             body = reply.body,
-            location = reply.location;
+            location = reply.location,
+            alternativeService = reply.alternativeService;
           if (
             ![200, 302].includes(status) ||
             !['text/plain', 'application/javascript', 'text/html; charset=utf-8'].includes(
@@ -437,10 +494,37 @@ export async function openOriginalQuickTunnelPreflight(options: {
             )
               throw new Error('ORIGINAL_TUNNEL_REDIRECT_INVALID');
           } else if (location !== undefined) throw new Error('ORIGINAL_TUNNEL_REDIRECT_INVALID');
+          const advertisement =
+            alternativeService === undefined
+              ? undefined
+              : originalOwnedAlternativeService(alternativeService, origins);
           current();
           response.statusCode = status;
           response.setHeader('content-type', contentType);
           if (location !== undefined) response.setHeader('location', location);
+          if (advertisement !== undefined && alternativeService !== undefined)
+            writeOriginalOwnedAlternativeService(response, alternativeService, origins);
+          if (
+            role === 'allowed' &&
+            /^\/update-redirect\/[a-f0-9-]{36}\.js$/.test(path) &&
+            status === 302 &&
+            location !== undefined
+          ) {
+            if (updateRedirectResponses.has(path) || updateRedirectResponses.size >= 32)
+              throw new Error('ORIGINAL_UPDATE_REDIRECT_RESPONSE_BOUND');
+            let complete!: () => void, refuse!: (value: unknown) => void;
+            const returned = new Promise<void>((yes, no) => {
+              complete = yes;
+              refuse = no;
+            });
+            own(returned);
+            updateRedirectResponses.set(path, Object.freeze({ status, location, returned }));
+            response.once('close', complete);
+            response.once('error', (value: unknown) => {
+              fail(value);
+              refuse(value);
+            });
+          }
           response.end(body);
         } catch (value) {
           fail(value);
@@ -480,7 +564,12 @@ export async function openOriginalQuickTunnelPreflight(options: {
                   websocketPeers.delete(peer);
                   websocketRetirements.delete(peer);
                   if (rows.length < 512)
-                    rows.push(Object.freeze({ ...row, event: 'response-close' as const }));
+                    rows.push(
+                      Object.freeze({
+                        ...row,
+                        event: 'response-close' as const,
+                      })
+                    );
                   else fail(new Error('ORIGINAL_TUNNEL_REQUEST_BOUND'));
                   resolve();
                 })
@@ -607,11 +696,21 @@ export async function openOriginalQuickTunnelPreflight(options: {
       current();
       const child = spawn(binary, args, {
         cwd: home,
-        env: { HOME: home, TMPDIR: tmp, PATH: '/usr/bin:/bin:/usr/sbin:/sbin', LANG: 'C' },
+        env: {
+          HOME: home,
+          TMPDIR: tmp,
+          PATH: '/usr/bin:/bin:/usr/sbin:/sbin',
+          LANG: 'C',
+        },
         stdio: ['ignore', 'pipe', 'pipe'],
       });
       const terminal: { code?: number | null; signal?: string | null } = {};
-      const pipeFacts: Array<{ name: string; path: string; bytes: number; eof: boolean }> = [];
+      const pipeFacts: Array<{
+        name: string;
+        path: string;
+        bytes: number;
+        eof: boolean;
+      }> = [];
       const closed = new Promise<void>((resolve) => child.once('close', () => resolve()));
       const returned = new Promise<void>((resolve, reject) => {
         child.once('error', reject);
@@ -625,7 +724,14 @@ export async function openOriginalQuickTunnelPreflight(options: {
         });
       });
       const pipes: Promise<void>[] = [];
-      children.push({ child, returned: own(returned), closed, pipes, terminal, pipeFacts });
+      children.push({
+        child,
+        returned: own(returned),
+        closed,
+        pipes,
+        terminal,
+        pipeFacts,
+      });
       let found: string | undefined,
         text = '';
       let publish!: (host: string) => void, rejectHost!: (cause: unknown) => void;
@@ -642,7 +748,12 @@ export async function openOriginalQuickTunnelPreflight(options: {
       ] as const) {
         if (!stream) throw new Error('ORIGINAL_TUNNEL_PIPE');
         const fd = descriptors.get(name)!;
-        const pipeFact = { name, path: join(home, name + '.raw'), bytes: 0, eof: false };
+        const pipeFact = {
+          name,
+          path: join(home, name + '.raw'),
+          bytes: 0,
+          eof: false,
+        };
         pipeFacts.push(pipeFact);
         let bytes = 0;
         const pipe = new Promise<void>((resolve, reject) => {
@@ -795,7 +906,9 @@ export async function openOriginalQuickTunnelPreflight(options: {
         origins.some(
           (origin) =>
             checkServerIdentity(new URL(origin).hostname, certificate) ||
-            !originalLeaf.checkHost(new URL(origin).hostname, { subject: 'never' })
+            !originalLeaf.checkHost(new URL(origin).hostname, {
+              subject: 'never',
+            })
         )
       )
         throw new Error('ORIGINAL_TUNNEL_SHARED_SAN_UNVERIFIED');
@@ -916,13 +1029,78 @@ export async function openOriginalQuickTunnelPreflight(options: {
         if (!retained) throw new Error('ORIGINAL_TUNNEL_HELD_RESPONSE_UNOBSERVED');
         return retained;
       },
+      awaitOriginalBackgroundRequest(
+        role: 'allowed' | 'denied',
+        path: string,
+        after: number,
+        signal: AbortSignal
+      ) {
+        current();
+        if (
+          !/^\/(?:background-gate|background-worker|background-positive|background-completed)\/[a-f0-9-]{36}(?:\.js|\/(?:denied|accepted))?$/.test(
+            path
+          ) ||
+          !Number.isSafeInteger(after) ||
+          after < 0 ||
+          after > rows.length
+        )
+          throw new Error('ORIGINAL_BACKGROUND_WAIT_SCOPE');
+        signal.throwIfAborted();
+        if (
+          rows
+            .slice(after)
+            .some((row) => row.event === 'request' && row.role === role && row.path === path)
+        )
+          return Promise.resolve();
+        const key = role + ':' + path + ':' + after;
+        if (backgroundWaits.has(key) || backgroundWaits.size >= 32)
+          throw new Error('ORIGINAL_BACKGROUND_WAIT_BOUND');
+        let done!: () => void, refuse!: (value: unknown) => void;
+        const returned = new Promise<void>((yes, no) => {
+          done = yes;
+          refuse = no;
+        });
+        const abort = () => refuse(signal.reason);
+        backgroundWaits.set(key, { role, path, after, done, refuse });
+        jobs.add(returned);
+        const release = () => {
+          signal.removeEventListener('abort', abort);
+          backgroundWaits.delete(key);
+          jobs.delete(returned);
+        };
+        void returned.then(release, release);
+        signal.addEventListener('abort', abort, { once: true });
+        if (signal.aborted) abort();
+        return returned;
+      },
+      originalUpdateRedirectResponse(path: string) {
+        current();
+        const retained = updateRedirectResponses.get(path);
+        if (!retained) throw new Error('ORIGINAL_UPDATE_REDIRECT_RESPONSE_UNOBSERVED');
+        return retained;
+      },
+      originalBackgroundGateTerminal(role: 'allowed' | 'denied', path: string) {
+        current();
+        const gate = backgroundGates.get(role + ':' + path);
+        if (!gate) throw new Error('ORIGINAL_BACKGROUND_GATE_UNOBSERVED');
+        return Object.freeze({ returned: gate.originalClose, closed: gate.isOriginalClosed });
+      },
+      releaseOriginalBackgroundGate(role: 'allowed' | 'denied', path: string) {
+        current();
+        const gate = backgroundGates.get(role + ':' + path);
+        if (!gate) throw new Error('ORIGINAL_BACKGROUND_GATE_UNOBSERVED');
+        return gate.releaseOriginalResponse();
+      },
       close,
     });
     originalPorts.set(port, () => {
       current();
       return port;
     });
-    return Object.freeze({ port: () => readOriginalQuickTunnelPort(port), close });
+    return Object.freeze({
+      port: () => readOriginalQuickTunnelPort(port),
+      close,
+    });
   } catch (value) {
     fail(value);
     try {

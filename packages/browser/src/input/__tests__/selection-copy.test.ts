@@ -189,3 +189,46 @@ it.each([0, -1, undefined, NaN])(
     expect(f.send.mock.calls.some((row) => row[0] === 'Runtime.evaluate')).toBe(false);
   }
 );
+
+it.each([false, undefined])(
+  'retains the held original world rejection %s when diagnostic writes fail',
+  async (cause) => {
+    const f = wire();
+    let reject!: (value: unknown) => void;
+    const held = new Promise<never>((_resolve, no) => {
+      reject = no;
+    });
+    void held.catch(() => undefined);
+    let entered!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const original = f.send.getMockImplementation()!;
+    f.send.mockImplementation(async (method, params) => {
+      if (method === 'Page.createIsolatedWorld') {
+        entered();
+        return held;
+      }
+      return original(method, params);
+    });
+    const diagnostic = vi.spyOn(process.stderr, 'write').mockImplementation(() => {
+      throw new Error('non-authoritative diagnostic');
+    });
+    const operation = readOriginalSelection(f.session, () => undefined);
+    void operation.catch(() => undefined);
+    try {
+      await ready;
+      expect(f.send.mock.calls.map((row) => row[0])).toEqual([
+        'Page.getFrameTree',
+        'Page.createIsolatedWorld',
+      ]);
+      reject(cause);
+      await expect(operation).rejects.toBe(cause);
+      expect(f.send.mock.calls.some((row) => row[0] === 'Runtime.evaluate')).toBe(false);
+    } finally {
+      reject(cause);
+      await Promise.allSettled([operation]);
+      diagnostic.mockRestore();
+    }
+  }
+);

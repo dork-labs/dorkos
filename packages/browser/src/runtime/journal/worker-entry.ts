@@ -210,6 +210,7 @@ export async function runPrivateWorker(): Promise<void> {
       launchResolve(null);
     }, value.duration);
     let reportedIncomplete = false;
+    let reportedUnknown = false;
     let leafEvents: DarwinLeafEventOwner | undefined;
     let campaignFirst: { value: unknown } | undefined;
     try {
@@ -258,6 +259,15 @@ export async function runPrivateWorker(): Promise<void> {
           : {}),
         maxGap: value.maxGap,
         onEnrolled: () => send({ kind: 'enrolled' }),
+        onUnknownIdentity: async (original) => {
+          if (reportedUnknown) return;
+          reportedUnknown = true;
+          const bytes = JSON.stringify({ kind: 'original-native-unknown', ...original }) + '\n';
+          if (Buffer.byteLength(bytes) > 2048) return;
+          await new Promise<void>((resolve, reject) =>
+            process.stderr.write(bytes, (error) => (error ? reject(error) : resolve()))
+          );
+        },
         onIncompleteChildren: async (parent, batch, original) => {
           if (reportedIncomplete) return;
           reportedIncomplete = true;

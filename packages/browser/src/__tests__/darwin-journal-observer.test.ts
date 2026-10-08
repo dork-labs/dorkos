@@ -1379,6 +1379,10 @@ it.each([
   ['alive-to-zombie', 'JOURNAL_IDENTITY_NATIVE_ALIVE_TO_ZOMBIE'],
   ['zombie-to-alive', 'JOURNAL_IDENTITY_NATIVE_ZOMBIE_TO_ALIVE'],
   ['membership-disappeared', 'JOURNAL_IDENTITY_NATIVE_MEMBERSHIP_DISAPPEARED'],
+  ['membership-disappeared', 'JOURNAL_IDENTITY_NATIVE_MEMBERSHIP_DISAPPEARED', false, 'held'],
+  ['membership-disappeared', 'JOURNAL_IDENTITY_NATIVE_MEMBERSHIP_DISAPPEARED', false, 'getter'],
+  ['membership-disappeared', 'JOURNAL_IDENTITY_NATIVE_MEMBERSHIP_DISAPPEARED', undefined, 'held'],
+  ['membership-disappeared', 'JOURNAL_IDENTITY_NATIVE_MEMBERSHIP_DISAPPEARED', undefined, 'getter'],
   ['membership-appeared', 'JOURNAL_IDENTITY_NATIVE_MEMBERSHIP_APPEARED'],
   [
     'membership-absent-with-present-reads',
@@ -1395,14 +1399,26 @@ it.each([
   ['terminal', 'JOURNAL_IDENTITY_TERMINAL_CONTRADICTION'],
 ] as const)(
   'retains original identity gap %s and only its fixed refusal branch',
-  async (fault, code) => {
+  async (fault, code, diagnosticFailure?: false, diagnosticMode?: 'held' | 'getter') => {
     const f = await fixture();
     let clock = 10,
       round = 0,
       refusal: string | undefined;
+    const unknownDiagnostics: unknown[] = [];
+    let releaseOutput!: () => void, enteredOutput!: () => void;
+    const output = new Promise<void>((resolve) => {
+      releaseOutput = resolve;
+    });
+    const entered = new Promise<void>((resolve) => {
+      enteredOutput = resolve;
+    });
+    let originalWork: ReturnType<typeof observeDarwinJournal> | undefined;
+    let inspectCalls = 0,
+      childrenCalls = 0;
     const boot = { version: 1 as const, bootSeconds: '1', bootMicroseconds: '0' };
     const observer: DarwinProcessObserver = {
       async inspect(pids) {
+        inspectCalls++;
         return {
           ...boot,
           ...(fault === 'boot' && round >= 2 ? { bootSeconds: '2' } : {}),
@@ -1432,6 +1448,7 @@ it.each([
         };
       },
       async children(parent) {
+        childrenCalls++;
         const native =
           parent.pid === 10 ? f.managerNative : parent.pid === 20 ? f.rootNative : f.childNative;
         return {
@@ -1456,26 +1473,70 @@ it.each([
       },
     };
     try {
-      expect(
-        await observeDarwinJournal({
-          location: f.location,
-          initial: f.initial,
-          root: f.root,
-          observer,
-          monotonicNow: () => clock++,
-          pause: async () => {
-            round++;
-          },
-          endMonotonic: 1000,
-          continuousWindowMilliseconds: 1000,
-          maxGap: 100,
-          onObservationFault: async (value) => {
-            refusal = value;
-            clock = 10000;
-          },
-        })
-      ).toBe(fault === 'boot' ? 'uncertain' : 'retained');
+      originalWork = observeDarwinJournal({
+        location: f.location,
+        initial: f.initial,
+        root: f.root,
+        observer,
+        monotonicNow: () => clock++,
+        pause: async () => {
+          round++;
+        },
+        endMonotonic: 1000,
+        continuousWindowMilliseconds: 1000,
+        maxGap: 100,
+        get onUnknownIdentity() {
+          if (diagnosticMode === 'getter') throw diagnosticFailure;
+          return async (
+            original: Parameters<
+              NonNullable<Parameters<typeof observeDarwinJournal>[0]['onUnknownIdentity']>
+            >[0]
+          ) => {
+            unknownDiagnostics.push(original);
+            enteredOutput();
+            if (diagnosticMode === 'held') await output;
+            throw diagnosticFailure;
+          };
+        },
+        onObservationFault: async (value) => {
+          refusal = value;
+          clock = 10000;
+        },
+      });
+      let settled = false;
+      void originalWork.then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        }
+      );
+      if (diagnosticMode === 'held') {
+        await Promise.race([
+          entered,
+          originalWork.then(
+            () => {
+              throw new Error('ORIGINAL_UNKNOWN_OUTPUT_NOT_ENTERED');
+            },
+            () => {
+              throw new Error('ORIGINAL_UNKNOWN_OUTPUT_NOT_ENTERED');
+            }
+          ),
+        ]);
+        const calls = { inspectCalls, childrenCalls };
+        await Promise.resolve();
+        expect(settled).toBe(false);
+        expect({ inspectCalls, childrenCalls }).toEqual(calls);
+        expect(unknownDiagnostics).toHaveLength(1);
+        releaseOutput();
+      }
+      expect(await originalWork).toBe(fault === 'boot' ? 'uncertain' : 'retained');
       expect(refusal).toBe(code);
+      if (fault === 'membership-disappeared' && diagnosticMode !== 'getter')
+        expect(unknownDiagnostics).toMatchObject([
+          { fact: { kind: 'unknown', error: 35, uncertainty: fault }, leaf: null },
+        ]);
       const read = await readJournal(f.location);
       expect(read.state).toBe('valid-recorded-data');
       if (read.state === 'valid-recorded-data') {
@@ -1500,6 +1561,8 @@ it.each([
         }
       }
     } finally {
+      releaseOutput();
+      if (originalWork) await Promise.allSettled([originalWork]);
       await rm(f.parentDirectory, { recursive: true, force: true });
     }
   }

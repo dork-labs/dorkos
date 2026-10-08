@@ -34,6 +34,8 @@ export async function installFrameObserver(page: Page) {
     const state = {
       expected: 0,
       inputAt: 0,
+      inputEvents: 0,
+      visibleChecks: 0,
       samples: [] as Sample[],
       overflow: false,
       drawn: 0,
@@ -94,6 +96,7 @@ export async function installFrameObserver(page: Page) {
       state.lastRevision = current.revision;
       requestAnimationFrame(() =>
         requestAnimationFrame(() => {
+          state.visibleChecks++;
           // The actual changed pixels must still be present after TWO real animation frames.
           if (
             current.revision !== state.expected ||
@@ -125,8 +128,10 @@ export async function installFrameObserver(page: Page) {
         if (
           event.target instanceof HTMLCanvasElement &&
           event.target.getAttribute('aria-label') === 'Shared browser'
-        )
+        ) {
           state.inputAt = performance.now();
+          state.inputEvents++;
+        }
       },
       true
     );
@@ -194,6 +199,10 @@ export async function frameObservations(page: Page) {
       (
         window as unknown as {
           __managedFrameObservation: {
+            expected: number;
+            inputAt: number;
+            inputEvents: number;
+            visibleChecks: number;
             samples: FrameSample[];
             overflow: boolean;
             drawn: number;
@@ -211,4 +220,19 @@ export function p95(values: readonly number[]) {
   if (values.length < 100 || values.some((n) => !Number.isFinite(n) || n < 0))
     throw new Error('At least 100 genuine nonnegative measurements are required');
   return [...values].sort((a, b) => a - b)[Math.ceil(values.length * 0.95) - 1]!;
+}
+
+/** Await the original bounded diagnostic jobs without replacing the exact failed acceptance cause. */
+export async function retainOriginalFramePerformanceFailure(
+  first: Readonly<{ value: unknown }>,
+  observeOriginal: () => Promise<unknown>,
+  retainOriginal: (observation: unknown) => Promise<void>
+): Promise<Readonly<{ value: unknown }>> {
+  try {
+    const observation = await observeOriginal();
+    await retainOriginal(observation);
+  } catch {
+    // Diagnostic producer/sink refusal cannot replace the genuine failed assertion.
+  }
+  return first;
 }

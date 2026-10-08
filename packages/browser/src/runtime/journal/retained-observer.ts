@@ -12,10 +12,10 @@ import {
 } from '../darwin-owned-child.js';
 
 // Closed print_reply framing (including newline) is <=512 bytes; every fact plus
-// its comma is <=160 bytes: signed32 pid/error, uint64 timestamps, fixed enums.
+// its comma including optional fixed inspect details is <=400 bytes: signed32 pid/error, uint64 timestamps, fixed enums.
 // No request id or arbitrary strings are emitted. Each C request may emit512 facts.
 const maximumReply = (command: 'I' | 'C', count: number) =>
-  512 + 160 * (command === 'C' ? 512 : count);
+  512 + 400 * (command === 'C' ? 512 : count);
 const childCap = 256 * 1024;
 interface Peer {
   original: DarwinOwnedChild;

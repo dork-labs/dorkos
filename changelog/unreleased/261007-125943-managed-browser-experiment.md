@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'fix(browser): diagnose selection and native frame acceptance failures'
   - 'fix(browser): retain page cache and cancelled viewer disposal'
   - 'fix(browser): preserve warmup cookies and enforce measured viewer limits'
   - 'feat(browser): add owner-controlled managed browser experiment'

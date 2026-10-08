@@ -6,6 +6,7 @@ import {
 } from './journal/sweep.js';
 import {
   consumeOriginalLeafTerminal,
+  originalLeafDiagnostic,
   type DarwinLeafEventOwner,
 } from './darwin-leaf-event-owner.js';
 import type { JournalIdentityRefusalCode } from './supervisor-uncertainty-diagnostic.js';
@@ -40,6 +41,13 @@ export async function observeDarwinJournal(
       parent: ProcessIdentity,
       batch: DarwinChildrenBatch,
       original: Readonly<{ sequence: number; reason: OriginalChildBatchReason }>
+    ) => Promise<void>;
+    onUnknownIdentity?: (
+      original: Readonly<{
+        sequence: number;
+        fact: Extract<DarwinProcessBatch['processes'][number], { kind: 'unknown' }>;
+        leaf: ReturnType<typeof originalLeafDiagnostic> | null;
+      }>
     ) => Promise<void>;
     logicalManager?: ProcessIdentity;
     exitingObserver?: ProcessIdentity;
@@ -192,6 +200,29 @@ export async function observeDarwinJournal(
           validBoot,
           refusal
         );
+        // Complete diagnostic lookup/projection/output isolation after the original gap.
+        try {
+          const unknown = batch.processes.find((fact) => fact.kind === 'unknown');
+          const observeUnknown = options.onUnknownIdentity;
+          if (unknown?.kind === 'unknown' && observeUnknown) {
+            const retained = current.retainedIdentities.find(
+              (row) => row.identity.pid === unknown.pid
+            );
+            await observeUnknown.call(
+              options,
+              Object.freeze({
+                sequence: next.sequence,
+                fact: unknown,
+                leaf:
+                  retained && options.leafEvents
+                    ? originalLeafDiagnostic(options.leafEvents, retained.identity)
+                    : null,
+              })
+            );
+          }
+        } catch {
+          /* Diagnostic lookup/output faults never override original refusal/custody. */
+        }
         // Enumerate only previously enrolled live parents. Additions cannot invent an old parent relationship.
         for (const parent of current.retainedIdentities.filter(
           (value) => value.lifecycle === 'alive'
