@@ -6,7 +6,7 @@
  */
 import type { RoomSummary, ThreadSummary } from '@dorkos/shared/room-schemas';
 import type { Session } from '@dorkos/shared/types';
-import { partitionSessionsByOrigin } from '@/layers/entities/session';
+import { partitionSessionsByOwnership } from '@/layers/entities/session';
 import { basename } from '@/layers/shared/lib/basename';
 import type { SidebarRowModel } from '../build-sidebar-model';
 import type { SidebarState } from '../sidebar-state';
@@ -282,12 +282,38 @@ function anchorRow(
 }
 
 /**
+ * The recent window split for Today (spec `your-activity-first` D7, D10):
+ * the chats that are yours, and the spin-off and automated chats behind the
+ * reveal row.
+ *
+ * Decided on the WHOLE window before any cap, so ten busy agent chats cannot
+ * push a chat you used out of Today. A spin-off or automated chat this window
+ * opened locally counts as yours already — the server records the same open
+ * and says so on its next answer, and the row should not wait for it.
+ *
+ * @param state - The snapshot.
+ */
+function splitTodaySessions(state: SidebarState): { yours: Session[]; others: Session[] } {
+  const { yours, spinOffs, automated } = partitionSessionsByOwnership(state.sessions);
+  const mine = [...yours];
+  const others: Session[] = [];
+  for (const session of [...spinOffs, ...automated]) {
+    if (state.interactions[`session:${session.id}`] !== undefined) mine.push(session);
+    else others.push(session);
+  }
+  return { yours: mine, others };
+}
+
+/**
  * Today's candidate rows: every conversation, place and thread the operator has
  * been in, plus the automated reveal when there is anything behind it.
  *
- * Membership is "have they interacted with it", read from the interaction and
- * message maps — never "has it been active", which is what would let an agent
- * put a row on screen the operator has never touched.
+ * Membership is "have they interacted with it", read from the local open
+ * record, the server's `lastTouchedByYouAt` and the message map — never "has
+ * it been active", which is what would let an agent put a row on screen the
+ * operator has never touched. Only chats that are yours are eligible
+ * ({@link splitTodaySessions}); untouched spin-off and automated chats wait
+ * behind the reveal row.
  *
  * **One clause is not about interaction, and it is the price of one door**
  * (`sidebar-simplification` D2). A hand-made 1:1 direct message no longer has a
@@ -328,12 +354,13 @@ export function selectTodayItems(state: SidebarState): SidebarRowModel[] {
     key === anchor ||
     key === anchorRoom ||
     state.interactions[key] !== undefined ||
+    state.lastTouchedByYouAt[key] !== undefined ||
     state.userLastMessageAt[key] !== undefined;
 
-  const { conversations, automated } = partitionSessionsByOrigin([...state.sessions]);
+  const { yours, others } = splitTodaySessions(state);
   const rows: SidebarRowModel[] = [];
 
-  for (const session of conversations) {
+  for (const session of yours) {
     const key = `session:${session.id}`;
     if (!touched(key)) continue;
     rows.push(sessionRow(session, state, mutes, previews.get(key)));
@@ -361,9 +388,9 @@ export function selectTodayItems(state: SidebarState): SidebarRowModel[] {
   // own.** Each one walks a list, so a conversation the operator has OPEN but
   // that is missing from every list gets no row at all — and there are three
   // ordinary ways to be missing. A deep link or a reload lands on a session
-  // older than the recent window the cockpit fetched. An automated-origin
-  // session opened by hand is filtered out by BC-19 before `touched` is ever
-  // asked. And on the very first paint every list is still empty because the
+  // older than the recent window the cockpit fetched. A spin-off or automated
+  // chat opened by hand before its open was recorded anywhere is behind the
+  // reveal (BC-19) when `touched` is asked. And on the very first paint every list is still empty because the
   // queries have not answered. In all three the operator is looking at a
   // conversation the sidebar says they do not have.
   if (anchor !== null && !rows.some((row) => row.key === anchor)) {
@@ -376,8 +403,8 @@ export function selectTodayItems(state: SidebarState): SidebarRowModel[] {
   // BC-1's "no empty zone" cannot see that, because the zone is not empty.
   // Automated runs are not what the operator was doing (BC-19), so with nothing
   // else in Today there is nothing to reveal them beside.
-  if (automated.length > 0 && rows.length > 0) {
-    rows.push(automatedRow(automated.length, state.todayAutomatedExpanded === true));
+  if (others.length > 0 && rows.length > 0) {
+    rows.push(automatedRow(others.length, state.todayAutomatedExpanded === true));
   }
   return rows;
 }
@@ -419,9 +446,10 @@ export function revealAutomated(
   // this filter it is drawn twice, and both copies key `session:<id>`, which is
   // a duplicate React key inside one section rather than a cosmetic repeat.
   const drawn = new Set(rows.map((row) => row.key));
-  const { automated } = partitionSessionsByOrigin([...state.sessions]);
-  const revealed = automated
-    .map((session) => sessionRow(session, state, mutes, previews.get(`session:${session.id}`)))
+  const revealed = splitTodaySessions(state)
+    .others.map((session) =>
+      sessionRow(session, state, mutes, previews.get(`session:${session.id}`))
+    )
     .filter((row) => !row.muted && !drawn.has(row.key))
     .map((row) => ({ ...row, reason: 'today:automated' }));
   return [...rows, ...revealed];

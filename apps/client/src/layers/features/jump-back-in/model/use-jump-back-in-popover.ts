@@ -345,9 +345,9 @@ export function useJumpBackInPopover({
       // Picking a row here is the same act as clicking one in the sidebar, so
       // it leaves the same record (DOR-1156). The panel answers "where were
       // you?" — a door that did not write one made Today forget the answer the
-      // moment the operator acted on it.
+      // moment the operator acted on it. A chat is recorded by the chat page
+      // when it shows it (`useRecordChatOpened`); the agent and a room here.
       if (item.kind === 'session') {
-        useInteractionStore.getState().recordOpened('session', item.session.id);
         if (item.session.cwd) {
           useInteractionStore.getState().recordOpened('agent', item.session.cwd);
         }

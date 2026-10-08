@@ -28,12 +28,13 @@ import type { QueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import type { Transport } from '@dorkos/shared/transport';
 import type { Session } from '@dorkos/shared/types';
+import { interactionKey, useInteractionStore } from '@/layers/entities/interactions';
 import { reportClientError } from '@/layers/shared/lib';
 // Same-slice imports via sibling modules (not the entities/session barrel) to
 // avoid a self-referential barrel import within this slice.
 import { sessionKeys } from '../api/query-keys';
 import { sessionListQueryOptions } from '../api/session-list-query';
-import { partitionSessionsByOrigin } from './partition-sessions-by-origin';
+import { partitionSessionsByOwnership } from './chat-ownership';
 
 /**
  * What every surface says when it could not find out which conversation an
@@ -124,9 +125,9 @@ export interface ResolvedSession {
 }
 
 /**
- * The most recent CONVERSATION for `cwd`, or a freshly minted id when that
- * directory has never held one (see {@link mostRecentConversation} — sessions
- * that started without a person are not conversations, BC-34).
+ * The chat you were last in for `cwd`, or a freshly minted id when that
+ * directory holds no chat of yours (see {@link agentClickTarget}, spec
+ * `your-activity-first` D9).
  *
  * Answers from cache when the list is there and still believable, and asks the
  * server otherwise — the server's answer is then cached under the same key
@@ -153,7 +154,7 @@ export async function resolveSessionForCwd(
 ): Promise<ResolvedSession | null> {
   const sessions = trustedSessionsForCwd(deps.queryClient, cwd) ?? (await askServer(deps, cwd));
   if (sessions === null) return null;
-  const mostRecent = mostRecentConversation(sessions);
+  const mostRecent = agentClickTarget(sessions);
   return mostRecent
     ? // The row's OWN directory first, because that is the one the server can
       // place this session under; the asked-for one only as a fallback, for a
@@ -165,38 +166,57 @@ export async function resolveSessionForCwd(
 }
 
 /**
- * The newest conversation a PERSON had here, or `undefined` when there has
- * never been one.
+ * The chat an agent click opens: **the one you were last in**, or `undefined`
+ * when this folder holds no chat of yours (spec `your-activity-first` D9,
+ * replacing BC-34's "most recent human conversation").
  *
- * **The most recent session and the most recent conversation are not the same
- * thing, and BC-34 asks for the second.** Clicking an agent opens "its most
- * recent human conversation" — but the raw list is every session that ran in
- * this directory, newest first, including the ones that started without you.
- * Taking `sessions[0]` therefore landed the operator inside a room-triggered
- * run the moment they `@`-mentioned an agent in a channel: reproduced by posting
- * `@tangerines …` in `#team` and clicking the `tangerines` row.
+ * 1. The chat with the greatest "you touched it" time: the server's
+ *    `lastTouchedByYouAt` merged with this browser's own `session:<id>` open
+ *    record, so a click right after you opened a chat is correct before the
+ *    server's answer comes back.
+ * 2. Else the newest chat that is yours ({@link partitionSessionsByOwnership})
+ *    by `updatedAt` — a chat you started before touch times were recorded.
+ * 3. Else nothing, and the caller mints a fresh chat.
  *
- * That failure compounds rather than merely surprising. BC-19 keeps automated
- * sessions out of Today, so the conversation the operator was just dropped into
- * is one the sidebar then refuses to name — no anchor row, no way back except
- * the switcher.
+ * **A spin-off or automated chat you never touched is never the target.** Taking
+ * the newest session landed the operator inside a room-triggered run the moment
+ * they `@`-mentioned an agent in a channel, and inside a busy spin-off chat the
+ * moment another chat started one. The newest-by-activity chat is the agent's
+ * work, not yours.
  *
- * The definition of "human" is `partitionSessionsByOrigin`'s, shared with the
- * session switcher's "Live now" group and the agent row's "N live" chip, so all
- * three agree about what a conversation is. That an ABSENT origin means `user`
- * comes from the field itself — `SessionSchema.origin` in
- * `packages/shared/src/schemas.ts`, whose contract is "ABSENT means
- * user-initiated, the unmarked default" — and not from any design decision.
+ * **A chat that needs you elsewhere does not redirect the click.** It already
+ * shows on the agent row's attention badge (`agent-attention`), which is where
+ * it belongs; moving the click there would make the click unpredictable.
  *
- * **No conversation means a FRESH one, not the newest automated run** — BC-34's
- * own else-branch. An agent that has only ever run scheduled tasks opens on an
- * empty composer, which is the honest answer to "take me to where we were
- * talking": we never were.
- *
- * @param sessions - The directory's sessions, newest first.
+ * @param sessions - The directory's sessions, in any order.
  */
-function mostRecentConversation(sessions: Session[]): Session | undefined {
-  return partitionSessionsByOrigin(sessions).conversations[0];
+function agentClickTarget(sessions: readonly Session[]): Session | undefined {
+  const opened = useInteractionStore.getState().opened;
+  let touched: Session | undefined;
+  let touchedAt = -Infinity;
+  for (const session of sessions) {
+    const at = Math.max(
+      parseTime(session.lastTouchedByYouAt),
+      parseTime(opened[interactionKey('session', session.id)])
+    );
+    if (at > touchedAt) {
+      touched = session;
+      touchedAt = at;
+    }
+  }
+  if (touched) return touched;
+  let newest: Session | undefined;
+  for (const session of partitionSessionsByOwnership(sessions).yours) {
+    if (!newest || parseTime(session.updatedAt) > parseTime(newest.updatedAt)) newest = session;
+  }
+  return newest;
+}
+
+/** An ISO time as epoch ms, or `-Infinity` when absent or unparseable. */
+function parseTime(iso: string | undefined): number {
+  if (!iso) return -Infinity;
+  const ms = Date.parse(iso);
+  return Number.isNaN(ms) ? -Infinity : ms;
 }
 
 /**
@@ -209,19 +229,19 @@ function mostRecentConversation(sessions: Session[]): Session | undefined {
  * its URL and let the `/session` loader resolve it properly on arrival, never
  * mint an id of its own.
  *
- * **The same human-conversation rule as {@link resolveSessionForCwd}**, and it
- * has to be: this builds the `href` a row is rendered with while that resolves
- * the click. Filtering in one and not the other would give a link that points
- * somewhere its own click does not go — and "no cached CONVERSATION" answers
+ * **The same rule as {@link resolveSessionForCwd}** ({@link agentClickTarget}),
+ * and it has to be: this builds the `href` a row is rendered with while that
+ * resolves the click. Choosing differently in one would give a link that points
+ * somewhere its own click does not go — and "no cached chat of yours" answers
  * `null` here, which is already the honest "let the loader work it out".
  *
  * @param queryClient - Query client holding the cached session lists.
  * @param cwd - The target working directory, or `null` for the default one.
- * @returns The most recent known conversation id, or `null` when none is cached.
+ * @returns The id of the chat you were last in, or `null` when none is cached.
  */
 export function cachedSessionForCwd(queryClient: QueryClient, cwd: string | null): string | null {
   const sessions = trustedSessionsForCwd(queryClient, cwd);
-  return sessions === null ? null : (mostRecentConversation(sessions)?.id ?? null);
+  return sessions === null ? null : (agentClickTarget(sessions)?.id ?? null);
 }
 
 /**

@@ -5,7 +5,7 @@ import { useSessionStreamStore } from '../stream/session-stream-store';
 import { useSessionListStore } from '../stream/session-list-store';
 // Same-slice sibling rather than the barrel: `entities/session`'s own index
 // re-exports React components, and this module is imported by every agent row.
-import { humanOriginSessionIds } from '../../lib/partition-sessions-by-origin';
+import { nonAutomatedSessionIds } from '../../lib/chat-ownership';
 import {
   BORDER_COLORS,
   BORDER_LABELS as LABELS,
@@ -125,8 +125,8 @@ export function useAgentHottestStatus(
           if (id in s.unseen) result = hotter(result, 'unseen');
         }
         if (agentPath) {
-          // Who counts as WORKING here — human-origin sessions only
-          // (`design-decisions.md` §18). Everything else this fold produces is
+          // Who counts as WORKING here — every chat but an automated one
+          // (`design-decisions.md` §18, `your-activity-first` D8). Everything else this fold produces is
           // attention rather than liveness and is deliberately left alone: a
           // scheduled run that is blocked, wedged or errored still lights this
           // row, because "an automated session that needs you enters Heads up like
@@ -137,7 +137,7 @@ export function useAgentHottestStatus(
           // badge, which is what the row actually draws, called it Working
           // (DOR-1137).
           const human = new Set(
-            humanOriginSessionIds(Object.keys(s.statusCwds), Object.values(s.sessions))
+            nonAutomatedSessionIds(Object.keys(s.statusCwds), Object.values(s.sessions))
           );
           for (const [id, cwd] of Object.entries(s.statusCwds)) {
             if (cwd !== agentPath) continue;

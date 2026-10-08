@@ -39,6 +39,7 @@ export type { SessionLimitDisplay } from './lib/session-limit-text';
 export { useSessionRuntime } from './model/query/use-session-runtime';
 export { useSessionId, useStartNewSession } from './model/navigation/use-session-id';
 export type { SetSessionIdOptions } from './model/navigation/use-session-id';
+export { useRecordChatOpened } from './model/navigation/use-record-chat-opened';
 // Two hooks, two questions. This one is the session's SETTINGS — its model,
 // permission mode, effort, and any change still in flight. `useSessionChatStatus`
 // below is whether the chat is idle, streaming or waiting.
@@ -159,7 +160,7 @@ export { SessionContextGauge } from './ui/SessionContextGauge';
 export { SessionVerbLine } from './ui/SessionVerbLine';
 export type { SessionVerbLineProps } from './ui/SessionVerbLine';
 
-// Origin — session-origin-legibility: descriptor registry, the row glyph, and the sidebar partition selector.
+// Origin — session-origin-legibility: descriptor registry, the row glyph. Ownership — whose a chat is (spec `your-activity-first` D7).
 export { ORIGIN_DESCRIPTORS, getOriginDescriptor } from './config/origin-descriptors';
 export type { OriginDescriptor } from './config/origin-descriptors';
 export { SessionOriginMark } from './ui/SessionOriginMark';
@@ -167,10 +168,11 @@ export { SessionOriginMark } from './ui/SessionOriginMark';
 // Playground shows it by palette color.
 export { AccountMark } from './ui/AccountMark';
 export {
-  humanOriginSessionIds,
-  partitionSessionsByOrigin,
-} from './lib/partition-sessions-by-origin';
-export type { SessionOriginPartition } from './lib/partition-sessions-by-origin';
+  chatOwnership,
+  nonAutomatedSessionIds,
+  partitionSessionsByOwnership,
+} from './lib/chat-ownership';
+export type { ChatOwnership, ChatOwnershipPartition } from './lib/chat-ownership';
 export { useSessionOrigin, useSessionStartedBy } from './model/query/use-sessions';
 export type { SessionOriginData } from './model/query/use-sessions';
 
