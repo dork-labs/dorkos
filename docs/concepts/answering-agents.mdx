@@ -30,7 +30,7 @@ The same Ask shows up in four places at once:
 - **The header**, on every page. A small badge counts how many things are waiting on you.
 - **The sidebar**, under Heads up.
 - **The home screen**, at the top, if anything needs you.
-- **The channel or session it came from**, on the line right above where you type. If an agent
+- **The channel or chat it came from**, on the line right above where you type. If an agent
   is asking you something in a room, that room's line turns to a question you can answer on the
   spot.
 
@@ -74,7 +74,7 @@ If you've set up a way for DorkOS to reach you elsewhere, it doesn't just wait q
 meantime. After a short delay you choose, it can also ping your phone's browser and any chat apps
 you've connected, so a long meeting doesn't mean an agent sits blocked for hours before you happen
 to look. This only fires for something actually stopped and waiting: an agent holding a question,
-a scheduled task waiting for approval, or a session that stopped on an error. A finished turn never
+a scheduled task waiting for approval, or a chat that stopped on an error. A finished turn never
 follows you around. Turn it on, and set the delay, in Settings → Notifications.
 
 Once an Ask is answered, one way or another, it leaves behind a short record: what you chose,
@@ -113,7 +113,7 @@ Another agent on this machine never sees what an agent is waiting for. It could 
 one, and now it cannot read one either.
 
 A script of your own, holding one of your API keys, is treated differently on purpose. It can
-still see what an agent is waiting for, because it can already read that from the session
+still see what an agent is waiting for, because it can already read that from the chat
 itself, and cutting it off would break your own tools for no gain. It cannot answer.
 Answering is for a person signed in to DorkOS.
 

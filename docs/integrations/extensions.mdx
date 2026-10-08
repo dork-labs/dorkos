@@ -1,11 +1,11 @@
 ---
 title: Extensions
-description: Subscribe to privacy-safe session activity events from a DorkOS extension
+description: Subscribe to privacy-safe chat activity events from a DorkOS extension
 ---
 
 # Extensions
 
-Extensions let you build custom UI and automation on top of DorkOS session activity, without ever seeing what was said in a session. This page documents the event-subscription surface, `api.events`, and assumes you already have an extension scaffold (a manifest and an `activate()` entry point) to build on.
+Extensions let you build custom UI and automation on top of DorkOS chat activity, without ever seeing what was said in a chat. This page documents the event-subscription surface, `api.events`, and assumes you already have an extension scaffold (a manifest and an `activate()` entry point) to build on.
 
 A DorkOS extension is a bundle of JavaScript that runs in the browser alongside the client UI. Its manifest (`extension.json`) declares identity, version, and capabilities; its entry point exports an `activate(api)` function that the host calls on load, handing it an `ExtensionAPI` object:
 
@@ -65,7 +65,7 @@ A newly installed extension also shows up in the **Activity inbox** (the bell at
 
 ## Event subscription
 
-`api.events` is a small, typed push channel. It is deliberately **not** the raw session stream. Extensions run untrusted in the browser, so the host exposes only a curated set of lifecycle and activity _summaries_:
+`api.events` is a small, typed push channel. It is deliberately **not** the raw chat stream. Extensions run untrusted in the browser, so the host exposes only a curated set of lifecycle and activity _summaries_:
 
 ```typescript
 interface ExtensionEventsAPI {
@@ -76,9 +76,9 @@ interface ExtensionEventsAPI {
 Call `api.events.subscribe` with the event kinds you want and a handler; it returns an unsubscribe function (also called automatically on deactivate).
 
 <Callout type="info">
-  **Privacy guarantee.** Events never carry conversation content. Excluded, forever: assistant/user
-  message text, thinking output, tool-call **arguments**, tool **results**, and relay message
-  **payloads**. An extension learns *that* a tool ran and *which* tool, never *what it did*.
+  **Privacy guarantee.** Events never carry chat content. Excluded, forever: assistant/user message
+  text, thinking output, tool-call **arguments**, tool **results**, and relay message **payloads**.
+  An extension learns *that* a tool ran and *which* tool, never *what it did*.
 </Callout>
 
 ### Event kinds and payloads
@@ -87,20 +87,20 @@ Call `api.events.subscribe` with the event kinds you want and a handler; it retu
   type={{
     'session.started': {
       type: '{ kind: "session.started", sessionId: string }',
-      description: 'A session became visible to the host (first observed on the session list).',
+      description: 'A chat became visible to the host (first observed on the chat list).',
     },
     'session.ended': {
       type: '{ kind: "session.ended", sessionId: string }',
-      description: 'A session was removed from the host.',
+      description: 'A chat was removed from the host.',
     },
     'session.switched': {
       type: '{ kind: "session.switched", sessionId: string | null, previousSessionId: string | null }',
       description:
-        "The operator's active (foreground) session changed. sessionId is null when deselected.",
+        "The operator's active (foreground) chat changed. sessionId is null when deselected.",
     },
     'turn.started': {
       type: '{ kind: "turn.started", sessionId: string }',
-      description: 'An assistant turn began in the active session. Carries no prompt text.',
+      description: 'An assistant turn began in the active chat. Carries no prompt text.',
     },
     'turn.completed': {
       type: '{ kind: "turn.completed", sessionId: string, durationMs: number | null, toolCallCount: number, terminalReason?: string }',
@@ -146,38 +146,38 @@ Delivery scope differs by event category. This matters when you're deciding whet
     'session.started / session.ended': {
       type: 'GLOBAL',
       description:
-        'Fire for every session the host observes on its session list, not just the foreground session. "Started" means first observed, not created: every pre-existing session emits one when the session-list stream connects, so expect a burst at startup (your handler will think it is very popular for about a second).',
+        'Fire for every chat the host observes on its chat list, not just the foreground chat. "Started" means first observed, not created: every pre-existing chat emits one when the chat-list stream connects, so expect a burst at startup (your handler will think it is very popular for about a second).',
     },
     'session.switched': {
       type: 'FOREGROUND',
-      description: 'Describes the foreground itself: fires when the attached session changes.',
+      description: 'Describes the foreground itself: fires when the attached chat changes.',
     },
     'turn.started / turn.completed': {
       type: 'FOREGROUND-GATED',
       description:
-        'Delivered only for the session the operator has attached (active in the UI). Background-session activity is never pushed.',
+        'Delivered only for the chat the operator has attached (active in the UI). Background-chat activity is never pushed.',
     },
     'tool.activity': {
       type: 'FOREGROUND-GATED',
-      description: 'Same gating as turn.*: only the attached session.',
+      description: 'Same gating as turn.*: only the attached chat.',
     },
     'relay.message': {
       type: 'GLOBAL',
       description:
-        "All relay traffic on the console stream, not just traffic related to the foreground session or the extension's own activity.",
+        "All relay traffic on the console stream, not just traffic related to the foreground chat or the extension's own activity.",
     },
   }}
 />
 
 <Callout type="warn">
-  If you need turn or tool activity for a session that isn't in the foreground, there is no way to
-  get it through `api.events` today; those two categories are gated to whatever session the operator
-  has attached.
+  If you need turn or tool activity for a chat that isn't in the foreground, there is no way to get
+  it through `api.events` today; those two categories are gated to whatever chat the operator has
+  attached.
 </Callout>
 
 ## Example
 
-A manifest that declares access to session lifecycle and tool activity, and an `activate` that logs both:
+A manifest that declares access to chat lifecycle and tool activity, and an `activate` that logs both:
 
 ```json title="extension.json"
 {
@@ -225,7 +225,7 @@ export function activate(api: ExtensionAPI): () => void {
     The Transport interface and building custom clients outside the extension system.
   </Card>
   <Card title="SSE Protocol" href="/docs/integrations/sse-protocol">
-    The underlying session and session-list event streams the event bridge translates from.
+    The underlying chat and chat-list event streams the event bridge translates from.
   </Card>
   <Card title="Marketplace" href="/docs/marketplace">
     Install extensions from the community registry, or publish your own.

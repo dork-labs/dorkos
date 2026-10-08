@@ -85,7 +85,7 @@ The rest of this page is for readers who want the mechanics: how personality tex
 
 ### How injection works
 
-DorkOS builds two blocks and adds them to the agent's system prompt (the instructions the underlying model reads before every response) at the start of each session:
+DorkOS builds two blocks and adds them to the agent's system prompt (the instructions the underlying model reads before every response) at the start of each chat:
 
 ```xml
 <agent_identity>
@@ -104,7 +104,7 @@ Never modify frontend code without asking first.
 
 The `<agent_identity>` block is always included when an agent exists, so the model always knows which agent it's acting as. The `<agent_persona>` block carries your traits and custom instructions; a separate `<agent_safety_boundaries>` block carries your safety boundaries, when either is turned on for that agent.
 
-Building this adds one filesystem read at session start, done in parallel with the rest of the agent's context (environment details, git status), so it doesn't add noticeable delay.
+Building this adds one filesystem read at chat start, done in parallel with the rest of the agent's context (environment details, git status), so it doesn't add noticeable delay.
 
 ### Limits
 

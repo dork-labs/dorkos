@@ -92,7 +92,7 @@ Either surface gives you:
 - **Custom domain**: set a static ngrok domain so your URL stays the same across restarts
 - **Connection quality indicator**: a green, yellow, or red dot showing how fast the tunnel is responding
 - **Copy URL**: copy the tunnel URL to your clipboard
-- **Copy session link**: copy a direct link to the current session
+- **Copy chat link**: copy a direct link to the current chat
 
 You can do all of it from the keyboard too: press ⌘K and type "remote" to copy the link, show the QR
 code, or turn remote access on or off.
@@ -145,7 +145,7 @@ Common issues:
 - **Auth token not found**: make sure `NGROK_AUTHTOKEN` is exported in your shell, or paste it into the Remote Access tab in Settings.
 - **Custom domain errors**: verify your domain is claimed at dashboard.ngrok.com/domains.
 - **Connection quality red**: latency to the tunnel is over 500ms, usually because the nearest ngrok edge server is far from you geographically.
-- **The tunnel dropped**: you get a notification either way, and it tells you which happened. ngrok sometimes loses its session and re-establishes it on its own — DorkOS says "reconnecting", keeps your address, and the globe dims until it is back. If the tunnel closed for good, DorkOS says so and stays off until you turn it back on.
+- **The tunnel dropped**: you get a notification either way, and it tells you which happened. ngrok sometimes loses its connection and re-establishes it on its own — DorkOS says "reconnecting", keeps your address, and the globe dims until it is back. If the tunnel closed for good, DorkOS says so and stays off until you turn it back on.
 
 ## Reference: how the tunnel works under the hood
 

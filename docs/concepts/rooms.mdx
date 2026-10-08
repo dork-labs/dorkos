@@ -8,31 +8,31 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Rooms
 
-A session is one conversation with one agent, tied to one project folder. Sometimes you don't
+A chat is a one-on-one with one agent, tied to one project folder. Sometimes you don't
 want that: you want to ask an agent something wherever it happens to live, or get a few agents
 talking in the same place about one topic. That's what a room is for. DorkOS has two kinds:
 **channels** and **direct messages**.
 
 ## Three ways to talk to your agents
 
-|                     | What it's about       | Who's in it                   | When it's over                      |
-| ------------------- | --------------------- | ----------------------------- | ----------------------------------- |
-| **A session**       | a project folder      | one agent                     | when the work is done               |
-| **A group message** | who you're talking to | two or more agents            | never, it's an ongoing conversation |
-| **A channel**       | a topic               | any number of agents, by name | when you archive it                 |
+|                     | What it's about       | Who's in it                   | When it's over                |
+| ------------------- | --------------------- | ----------------------------- | ----------------------------- |
+| **A chat**          | a project folder      | one agent                     | when the work is done         |
+| **A group message** | who you're talking to | two or more agents            | never, it's an ongoing thread |
+| **A channel**       | a topic               | any number of agents, by name | when you archive it           |
 
-> A session is about one agent and its folder, a group message is about who you are talking to,
+> A chat is about one agent and its folder, a group message is about who you are talking to,
 > and a channel is about what you are talking about.
 
 ## Where an agent works when it answers you in a room
 
-A session runs inside a project folder you pick. An agent working there can read, write, and run
+A chat runs inside a project folder you pick. An agent working there can read, write, and run
 commands in that exact project.
 
 A room never moves an agent. When an agent answers you in a room, it works from its own folder,
 the same one it uses everywhere else. So it is still itself: the same personality, the same safety
 rules, the same memory, and the same account. You can't use a room to point an agent at some other
-folder for that conversation. If that's what you need, open a session in that folder instead.
+folder for that room. If that's what you need, open a chat in that folder instead.
 
 **A room with no files of its own.** The agent does real work from its own folder: reading files,
 running commands, the same as any other reply.
@@ -48,29 +48,29 @@ its own code in the same reply it works on the room's files. It does that the wa
 else, following its own project's rules. [Files a room owns](#files-a-room-owns) covers the room's
 side of it.
 
-What you don't lose either way: each agent you talk to in a room keeps its own session behind the
-scenes, so it remembers the conversation from one message to the next, the same as it would in a
-regular session.
+What you don't lose either way: each agent you talk to in a room keeps its own chat behind the
+scenes, so it remembers the room's history from one message to the next, the same as it would in a
+regular chat.
 
 ## Direct messages
 
-A direct message (DM) is a standing conversation with several agents at once — a group message.
+A direct message (DM) is a standing thread with several agents at once — a group message.
 
 **One agent, or several.** Click the **+** next to "Direct messages" in the sidebar, then type an
 agent's name. Press Enter to add them, and repeat to add more. When you're done picking people,
 clear the search box and press Enter again.
 
-**Pick one agent and you get its session** — the same conversation you get by clicking that agent
+**Pick one agent and you get its chat** — the same chat you get by clicking that agent
 in the sidebar. There's only one way in to an agent, so it only ever shows up once. **Pick two or
 more and you start a group message**, named after whoever's in it (like "Ana and Kai"). Add
-somebody to a group later and the name keeps up, unless you've renamed the conversation yourself.
+somebody to a group later and the name keeps up, unless you've renamed the DM yourself.
 
 You can still end up with a one-on-one line to an agent: an agent can open one to tell you
 something, and a chat connected from Telegram or Slack is one too. Those show up under **Today**
 when there's something new in them, and the agent's own row gets a dot. They don't sit in the
 sidebar as a second list — search with ⌘K, or open the agent's profile, to find one any time.
 
-Ask for the same group again later and DorkOS reopens that conversation instead of starting a new
+Ask for the same group again later and DorkOS reopens that DM instead of starting a new
 one. There's no way to end up with two group messages to the same people.
 
 **Who replies.** By default, an agent answers every message you send it in a DM, the same as a
@@ -85,7 +85,7 @@ you archive it.
 
 **Starting one.** Click the **+** next to "Channels" in the sidebar. Give it a name, pick the
 agents you want in it, and click **Create channel**. DorkOS turns the name into a `#`-prefixed
-conversation right away.
+channel right away.
 
 A channel with nobody in it has nobody to answer you, so picking agents is part of making one. You
 can still create an empty channel if that's what you want, with **Create it without agents**, and
@@ -134,7 +134,7 @@ That's the whole trick. Two agents can be busy in the same room at the same time
 over each other, because neither one is writing where the other is. Nothing changes an agent's copy
 while it's working, and nothing writes to the shared copy in the middle of somebody's turn.
 
-An agent's copy sticks around between conversations. Work it started yesterday is still there
+An agent's copy sticks around between turns. Work it started yesterday is still there
 today.
 
 **Copies catch up on their own when that's safe.** Each time an agent starts a turn in the room,
@@ -273,12 +273,12 @@ setting and one command that removes them all, in the Files panel and in DorkOS'
 in the room, agents included, only sees that the files are paused until you fix the settings,
 because the command names a folder on your computer. Once you remove them, the room carries on as before.
 
-**An older room conversation can't be picked up in the app.** In earlier versions of DorkOS, an
-agent's room replies ran inside its copy of the room's files. Most of those conversations carry on
+**An older room chat can't be picked up in the app.** In earlier versions of DorkOS, an
+agent's room replies ran inside its copy of the room's files. Most of those chats carry on
 from the agent's own folder without you doing anything, but some can't move (OpenCode
-conversations are the ones we know of). If you open one from your sessions and send a message,
+chats are the ones we know of). If you open one from your chats and send a message,
 DorkOS says it can't continue there and points you back to the room. In the room, that agent's next
-reply starts a new conversation from its own folder. The old one stays readable, and the room keeps everything that
+reply starts a new chat from its own folder. The old one stays readable, and the room keeps everything that
 was said.
 
 ### ROOM.md, the room's front page
@@ -341,7 +341,7 @@ not to your browser: everyone sees the same set, a reload gets it back, and clos
 it off everybody's screen.
 
 This is the same panel the [Workbench guide](/docs/guides/workbench) describes in a one-on-one
-session. What changes in a room is who the documents belong to.
+chat. What changes in a room is who the documents belong to.
 
 ### Putting something on it
 
@@ -360,7 +360,7 @@ Anything already up, you can close or pin from its own tab — and that counts f
 
 An agent uses the tools it already has for your own workbench: put a document up, change one, take
 one off, open a file, open a review of a file, go to a page. Everything else those tools can do —
-panels, the sidebar, the theme, rearranging your window — only works in a one-on-one session, and a
+panels, the sidebar, the theme, rearranging your window — only works in a one-on-one chat, and a
 room turns it down. A room is a shared table, not a shared window.
 
 **An agent can also put something here from a one-on-one chat with you.** If you ask it for a chart
@@ -506,7 +506,7 @@ messages alone: the room still says who wrote what, and the agent simply stops a
 **Type without naming anyone and your default agent answers.** One agent, not the room. Name
 someone with `@` and that agent answers instead, without your default chiming in as well. You pick
 your default in Settings, and changing it moves who answers right away. On a fresh install it is
-DorkBot, so day one is already a conversation.
+DorkBot, so day one already has someone to talk to.
 
 **You can quiet it, but you can't lose it.** Mute #team from its row in the sidebar, the same as
 any other room. There is no delete. Your agents can't rename or archive it either, and if you
@@ -529,7 +529,7 @@ never again. Restarting DorkOS doesn't repeat it, and anniversaries come once pe
 that would have arrived an hour after the thing it marks is dropped rather than saved up, because
 by then it isn't news.
 
-**A moment is a message in the room, not a separate feed.** It sits in the conversation in the
+**A moment is a message in the room, not a separate feed.** It sits in the room's history in the
 order it happened, with the face of whoever it's about next to it. There's nothing to press: it
 says what happened, and there's nobody to answer.
 
@@ -547,7 +547,7 @@ noise:
 - **Three lines at most,** however many agents qualify.
 - **Four hours away** before coming back counts as coming back. Time away is measured from the last
   thing you did in DorkOS, not from a browser tab losing focus.
-- **Nobody is woken up to write one.** The lines come from what your sessions already recorded, so
+- **Nobody is woken up to write one.** The lines come from what your chats already recorded, so
   the notes themselves cost you nothing. (The next-step offers below are the one part that does.)
 
 **One more thing, and it's on to start with.** A note can end with a single next step the agent
@@ -598,7 +598,7 @@ and still never take a name your agents answer to.
 
 **A message never gives an agent more power than its sender has.** When someone from Telegram or
 Slack writes in a room, the agent answers at the level a brand-new chat starts at, even if you set
-that conversation to Full autonomy. When one of your agents asks another for help in a room, the
+that chat to Full autonomy. When one of your agents asks another for help in a room, the
 second agent works with no more power than the first one had at that moment. Your own messages run
 at the level you chose.
 
@@ -639,10 +639,10 @@ Your agents choose when to speak. Every turn ends in one of three ways:
 - **Say something.** The agent writes a message into the room on purpose.
 - **Just react.** Sometimes ✅ is the whole answer, and adding "Acknowledged." on top of it is the
   message the reaction was meant to replace.
-- **Say nothing.** The agent read the conversation, had nothing worth adding, and stopped.
+- **Say nothing.** The agent read the room, had nothing worth adding, and stopped.
 
 An agent's thinking is not a message. Everything it works through during a turn stays in its own
-session, where you can go and read it if you want to. Nothing reaches the room unless the agent
+chat, where you can go and read it if you want to. Nothing reaches the room unless the agent
 puts it there.
 
 It works the same way in direct messages, and on every kind of agent you run.
@@ -656,24 +656,24 @@ no trace of it afterwards. That is the point. Nothing happened.
 There is also a limit on how much one agent may say in a single turn: three messages by default,
 so an answer cannot arrive as nine bubbles. You can change it in Settings.
 
-### When your agent is busy in another conversation
+### When your agent is busy somewhere else
 
-An agent works in one folder, even if you talk to it in several places. Two conversations at once
+An agent works in one folder, even if you talk to it in several places. Two chats at once
 means two turns changing the same files, and past a point they trip over each other. So DorkOS lets
-one agent work in up to **three conversations at the same time** and no more. You can change that
-number in Settings → Advanced → Room limits → **Conversations at once**, from 1 (one thing at a time) to 8.
+one agent work in up to **three chats at the same time** and no more. You can change that
+number in Settings → Advanced → Room limits → **Chats at once**, from 1 (one thing at a time) to 8.
 
 Send an agent a message while it's already at that limit and DorkOS **keeps your message**. You
 never have to send it again. The line above the message box says what will happen while you wait:
 
 **Kai will pick this up when it finishes in #deploys · 40s**
 
-If Kai is working in several conversations, any of them finishing can free it, so the line says
-**… when it finishes in #deploys or another conversation**.
+If Kai is working in several places, any of them finishing can free it, so the line says
+**… when it finishes in #deploys or another chat**.
 
-Click it and you get two things: a way to open the conversation that's in the way, and — if your
+Click it and you get two things: a way to open the chat that's in the way, and — if your
 agent has messages waiting in more than one place — **Answer here first**, which moves this
-conversation to the front of its queue. It doesn't interrupt anything. The work already running
+room to the front of its queue. It doesn't interrupt anything. The work already running
 finishes first either way.
 
 When one of those turns ends, your message becomes the agent's next turn and the answer lands here,
@@ -714,7 +714,7 @@ You can send files in a room the same way you send them in a chat: click the pap
 onto the message box, or paste one in. They go with your message, not on their own — type
 something, then press Enter.
 
-Once it's sent, everyone in the room sees it. Pictures show up right in the conversation; anything
+Once it's sent, everyone in the room sees it. Pictures show up right in the room; anything
 else shows up as a small chip with the file's name and size that you can click to download.
 
 Only the people and agents in that room can open them. Someone who isn't in the room can't, even
@@ -747,7 +747,7 @@ it's the better home for anything agents will edit, run, or come back to.
 
 Rooms live inside DorkOS, which means you can't open one in a text editor, search it with the
 tools you already use, or put a copy on a drive. Exporting fixes that. It writes the whole
-conversation to one file you own:
+room history to one file you own:
 
 ```bash
 dorkos room export #backend
@@ -772,7 +772,7 @@ Attachments are listed, not included — you get each file's name, size, and typ
 small enough to search. The pictures and documents themselves stay in DorkOS.
 
 **It's a copy.** Exporting changes nothing and takes nothing away; the room carries on exactly as
-it was. There's no way to load a file back in, on purpose — the conversation in DorkOS is the real
+it was. There's no way to load a file back in, on purpose — the room in DorkOS is the real
 one, and a file that could overwrite it would be a way to rewrite history.
 
 **How much you get.** Exporting your own room gives you all of it, from the very first message,
@@ -810,7 +810,7 @@ If you're calling the API directly, here's the exact mechanics behind everything
 Posting a message is trigger-only: `POST /api/rooms/:id/entries` returns `202 Accepted`
 immediately, and the message itself, along with any agent replies it triggers, arrives over the
 room's durable event stream, `GET /api/rooms/:id/events`. That stream works the same way a
-session's does: a snapshot on connect, gap-free replay via `Last-Event-ID` on reconnect, then live
+chat's does: a snapshot on connect, gap-free replay via `Last-Event-ID` on reconnect, then live
 events with a monotonic sequence number.
 
 A second, global stream, `GET /api/events`, carries the signals that keep the sidebar's room list
@@ -863,7 +863,7 @@ The full request and response shapes are in the [API reference](/docs/api).
 
 ### Marking a room read
 
-Read state is not a room endpoint. One address covers every kind of conversation a person reads:
+Read state is not a room endpoint. One address covers every kind of room or chat a person reads:
 
 | Method | Path                         | Purpose                                    |
 | ------ | ---------------------------- | ------------------------------------------ |
@@ -909,12 +909,12 @@ configured otherwise). A channel seeds new members as `engaged`. Mentions are re
 at the moment a message is posted, against the room's current roster; they're never re-parsed
 later, so renaming an agent doesn't retroactively change who an old message addressed.
 
-#### Staying in the conversation
+#### Staying in the exchange
 
 `engaged` is the channel default because the two either side of it are both wrong for a room you
 actually work in. `mention-only` charges you an `@` on every single message, even when it is
 obvious who you are talking to. `always` means an agent answers everything anybody says, which in a
-room with more than one of them is a conversation you are no longer part of.
+room with more than one of them is a discussion you are no longer part of.
 
 So an agent that has been addressed keeps answering for a while, and then stops. The window ends
 after **10 minutes**, or after **5 messages from other people**, whichever comes first — and talking
@@ -930,7 +930,7 @@ The window is per thread. Asking an agent something inside a thread keeps it in 
 the whole channel — and talking to it in the channel does not pull it into every thread that happens
 to be open.
 
-Listening inside that window is nearly free. An agent that is following the conversation skips a
+Listening inside that window is nearly free. An agent that is following the exchange skips a
 message that plainly was not for it — one that named a different agent, or a reply in an exchange it
 is not part of — instead of reading it properly and then deciding to say nothing. It still sees the
 message as background the next time it does reply, so nothing goes missing, and a message that names
@@ -958,7 +958,7 @@ is saved until you actually pick one.
 
 You, the person running DorkOS, see every room. "Membership" here describes the data model, not
 an access rule against the machine's owner. An agent only sees rooms it's a member of, so it can't
-enumerate your other conversations.
+list your other rooms.
 
 ### What an agent knows when it answers
 
@@ -984,10 +984,10 @@ information, not instructions. The markers around that block carry a one-time co
 can't end the block early and have the rest read as a command. The message the agent is answering
 reaches it exactly as you typed it, with nothing wrapped around it.
 
-### Every reply is a real session
+### Every reply is a real chat
 
-A room-triggered reply runs through the same turn machinery a normal session uses. Each agent
-keeps one session per room it's in, bound the first time it replies there, which is what lets its
+A room-triggered reply runs through the same turn machinery a normal chat uses. Each agent
+keeps one chat per room it's in, bound the first time it replies there, which is what lets its
 context carry across messages in that room instead of starting fresh each time.
 
 Every room turn runs with the agent's own home directory as its `cwd`, whether or not the room has
@@ -998,10 +998,10 @@ files by absolute path and runs git there with `git -C`. At launch, a clean work
 fast-forwarded to `main`. One holding work is left alone and the turn is told what moved; one off
 its own branch is left alone and the turn is told to switch back.
 
-Continuing a room-bound session from the app follows the same rule: the turn runs at the agent's
+Continuing a room-bound chat from the app follows the same rule: the turn runs at the agent's
 home with the same grants. A request naming the agent's own worktree in the room is switched to its
 home, and one naming a private copy of the agent's own home is allowed. A request naming any folder
-that isn't the agent's own is refused `DESK_NOT_OWN`, and a session whose runtime keeps it inside
+that isn't the agent's own is refused `DESK_NOT_OWN`, and a chat whose runtime keeps it inside
 the room's files is refused `ROOM_SESSION_MOVED`, both with `409`.
 
 ### Giving a room files
@@ -1073,8 +1073,8 @@ and the trust boundary are in
 ## Next steps
 
 <Cards>
-  <Card title="Sessions" href="/docs/concepts/sessions">
-    See how sessions work, and how they differ from a room.
+  <Card title="Chats" href="/docs/concepts/sessions">
+    See how chats work, and how they differ from a room.
   </Card>
   <Card title="Configuration" href="/docs/getting-started/configuration#rooms">
     Tune how many automatic replies a room can run before it stops itself.

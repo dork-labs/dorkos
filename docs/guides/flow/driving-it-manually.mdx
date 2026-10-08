@@ -21,7 +21,7 @@ Manual mode needs nothing but your terminal: no server, no scheduler, nothing ru
 Here's the whole loop in three commands:
 
 ```bash
-/flow:capture add keyboard shortcuts to the session list
+/flow:capture add keyboard shortcuts to the chat list
 /flow:triage DOR-201
 /flow DOR-201   # repeat until it reaches REVIEW, then merge and run /flow:done
 ```
@@ -107,10 +107,10 @@ This is one item moving from a raw thought to a merged change, driven entirely b
 ### Capture the thought
 
 ```bash
-/flow:capture add keyboard shortcuts to the session list
+/flow:capture add keyboard shortcuts to the chat list
 ```
 
-The thought lands in your tracker as an idea (small win, we know, the kind that never gets its own sprint but makes everyone's day a little better). No evaluation, no classification: capture is deliberately cheap so a thought survives instead of evaporating. You get back the item's identifier, for example `DOR-201 - Add keyboard shortcuts to the session list`.
+The thought lands in your tracker as an idea (small win, we know, the kind that never gets its own sprint but makes everyone's day a little better). No evaluation, no classification: capture is deliberately cheap so a thought survives instead of evaporating. You get back the item's identifier, for example `DOR-201 - Add keyboard shortcuts to the chat list`.
 
 </Step>
 
@@ -225,7 +225,7 @@ Three commands sit outside the spine. They let you see what's happening and take
 /flow:status
 ```
 
-Shows one screen with everything you'd otherwise have to dig for: every claimed or in-progress item (with its worktree, branch, and session), every question waiting on your reply, and the reasoning behind each automatic decision. Reach for it whenever you want to know where things stand.
+Shows one screen with everything you'd otherwise have to dig for: every claimed or in-progress item (with its worktree, branch, and chat), every question waiting on your reply, and the reasoning behind each automatic decision. Reach for it whenever you want to know where things stand.
 
 <Callout type="info">
   A screenshot of real `/flow:status` output belongs here to show what this looks like in practice.

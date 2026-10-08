@@ -32,7 +32,7 @@ Pick based on how much you want running in the background versus in front of you
 <Cards>
   <Card title="A: Terminal drain (/flow auto)">
     Run it in your terminal and watch the queue drain to the review gate, item by item. Nothing to
-    install. Stops when you close the session, so it's a great fit for a focused afternoon, less so
+    install. Stops when you close the terminal, so it's a great fit for a focused afternoon, less so
     for overnight.
   </Card>
   <Card title="B: The Pulse seat">
@@ -79,7 +79,7 @@ Pick based on how much you want running in the background versus in front of you
 
 **Cons**
 
-- Only runs while your terminal session is open. Close it, and the drain stops.
+- Only runs while your terminal is open. Close it, and the drain stops.
 - You merge and run `/flow:done` yourself. Nothing auto-merges yet.
 
 ## B: the Pulse seat (the scheduled background loop)
@@ -201,7 +201,7 @@ Most people never need this section. Here's what's happening if you're curious.
   run that crashed mid-way and picks up any answer you left to a parked question. New work only
   gets claimed after that.
 - **What the Pulse seat actually is today:** a per-run scheduled drain. Each time it fires, it's a
-  fresh session that checks for recovery and resumed work, then dispatches, and carries one item to
+  fresh chat that checks for recovery and resumed work, then dispatches, and carries one item to
   its gate. An always-on background process that runs continuously, plus automatic merge detection,
   are not built yet; that's the next phase of server work. The Pulse seat gets you unattended
   progress to the gate. It doesn't merge for you.

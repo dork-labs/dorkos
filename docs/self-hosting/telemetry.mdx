@@ -5,7 +5,7 @@ description: What the anonymous DorkOS heartbeat sends, how to turn it off, and 
 
 import { Callout } from 'fumadocs-ui/components/callout';
 
-DorkOS sends us nothing unless you turn it on. If you choose to help, you can share a little anonymous data so we can see roughly how many people run it. It is anonymous, not personal: no prompts, no code, no file paths, no session content, ever. This page shows the exact data, word for word, and how to switch it on or off.
+DorkOS sends us nothing unless you turn it on. If you choose to help, you can share a little anonymous data so we can see roughly how many people run it. It is anonymous, not personal: no prompts, no code, no file paths, no chat content, ever. This page shows the exact data, word for word, and how to switch it on or off.
 
 <Callout type="info">
   The three anonymous channels (a daily heartbeat, marketplace install counts, and a few named
@@ -18,7 +18,7 @@ DorkOS sends us nothing unless you turn it on. If you choose to help, you can sh
 
 - Three anonymous channels are available, all off by default: a daily heartbeat, marketplace install counts, and a few named feature-usage events.
 - On first run, DorkOS shows a notice explaining them. If you do nothing, nothing is ever sent.
-- It is anonymous. No prompts, no code, no file paths, no session content, ever.
+- It is anonymous. No prompts, no code, no file paths, no chat content, ever.
 - Turn it on any time with `dorkos telemetry enable` or the Privacy & Data settings tab, and back off the same way. `DO_NOT_TRACK=1` keeps everything off no matter what the settings say.
 - The full payload is documented here and enforced in code and tests.
 - The public version of this page lives at [dorkos.ai/telemetry](https://dorkos.ai/telemetry).
@@ -51,7 +51,7 @@ DorkOS sends one small message to dorkos.ai about once a day. This is how we can
 
 ## What it never sends
 
-The list above is the complete payload. It is enforced in code and in tests, so nothing sneaks in. It never includes your prompts, your code, file paths, your hostname or username, IP address, or anything from your sessions. This is what makes it anonymous rather than personal. If we ever want to add a field, we update this page first.
+The list above is the complete payload. It is enforced in code and in tests, so nothing sneaks in. It never includes your prompts, your code, file paths, your hostname or username, IP address, or anything from your chats. This is what makes it anonymous rather than personal. If we ever want to add a field, we update this page first.
 
 ## We tell you before anything sends
 
@@ -67,12 +67,12 @@ DorkOS can send a short list of named, anonymous events so we can see which feat
 
 Two events ship today:
 
-| Event             | When it fires                               | What it carries                                                                                                                    |
-| ----------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `app_started`     | Once when the DorkOS server starts.         | `os` (your platform and chip type, like `darwin-arm64`) and `runtimesConfigured` (a count of how many agent runtimes you have on). |
-| `session_created` | Once when a new agent session is first run. | `runtime` (which runtime owns the session, like `claude-code`). Never the folder, the prompt, or the session id.                   |
+| Event             | When it fires                                    | What it carries                                                                                                                    |
+| ----------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `app_started`     | Once when the DorkOS server starts.              | `os` (your platform and chip type, like `darwin-arm64`) and `runtimesConfigured` (a count of how many agent runtimes you have on). |
+| `session_created` | Once when a new chat with an agent is first run. | `runtime` (which runtime owns the chat, like `claude-code`). Never the folder, the prompt, or the chat ID.                         |
 
-Each event is wrapped in the same anonymous envelope as everything else: your random `instanceId`, a timestamp, and your DorkOS version. Like the heartbeat, it never includes your prompts, your code, file paths, your hostname or username, or anything from your sessions.
+Each event is wrapped in the same anonymous envelope as everything else: your random `instanceId`, a timestamp, and your DorkOS version. Like the heartbeat, it never includes your prompts, your code, file paths, your hostname or username, or anything from your chats.
 
 Like the heartbeat and install counts, this channel is off until you turn it on. Two things still hold once you do: nothing sends until after DorkOS has shown you the first-run notice, and you can turn it back off three ways, the same as every other channel:
 
@@ -97,7 +97,7 @@ Prefer a public thread? At the bottom of the feedback form, **Open one instead**
 DorkOS can also send a crash report when something breaks, so we can fix it without asking you for your log files. Unlike the anonymous heartbeat, this one is off until you turn it on:
 
 - It goes to dorkos.ai, the same place as the heartbeat, and nowhere else. There is no third party and nothing to set up.
-- It sends the error type and a cleaned-up stack trace (which function, file, and line) and nothing else. It does **not** send the error message text, because a message can contain anything your code put in it. No prompts, no code, no file paths, no session data.
+- It sends the error type and a cleaned-up stack trace (which function, file, and line) and nothing else. It does **not** send the error message text, because a message can contain anything your code put in it. No prompts, no code, no file paths, no chat data.
 
 Before anything leaves your machine, home directories and full file paths are stripped so no username can leak, and anything shaped like a key, token, or password is redacted. To turn it on, set `telemetry.errorReporting: true` in your config. That is the only switch. Leave it off (the default) and nothing is reported.
 
@@ -133,7 +133,7 @@ To turn it on, set `telemetry.aiMetadata: true` in your config (or use the **Pri
 
 `dorkos --debug-trace` is a diagnostics tool, not part of the telemetry above, and it isn't covered by the opt-in dialog: it's a per-run flag you choose to add when you're troubleshooting something, most often because we asked you to when you report a bug.
 
-When it's on, DorkOS writes a local file recording how long things took: session turns, agent calls, relay messages, and task runs, plus counts. It never records your prompts, your code, file paths, or anything else you typed. The file is written to `~/.dork/traces/` and never leaves your machine unless you attach it to a bug report yourself; there is no network sender for it at all.
+When it's on, DorkOS writes a local file recording how long things took: chat turns, agent calls, relay messages, and task runs, plus counts. It never records your prompts, your code, file paths, or anything else you typed. The file is written to `~/.dork/traces/` and never leaves your machine unless you attach it to a bug report yourself; there is no network sender for it at all.
 
 ```bash
 dorkos --debug-trace
