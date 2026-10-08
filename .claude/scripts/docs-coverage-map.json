@@ -37,6 +37,16 @@
       ]
     },
     {
+      "guide": "audit-trail.md",
+      "description": "The audit log: append-only triggers, hash chain contract, stable actor ids, the Activity tee, adding a choke point",
+      "patterns": [
+        "services/audit/",
+        "schema/audit/",
+        "audit-schemas",
+        "routes/audit.ts"
+      ]
+    },
+    {
       "guide": "system-architecture.md",
       "description": "Deployment boundaries, protocols, ports, Projects/extensions, account eligibility, main request admission, Spaces recovery, Cloud and marketplace; diagrams",
       "patterns": [
@@ -181,30 +191,18 @@
       ]
     },
     {
-      "guide": "parallel-execution.md",
-      "description": "Parallel agent execution patterns, batching, landing parallel branches",
-      "patterns": [
-        ".claude/agents/",
-        "\\.claude/commands/"
-      ]
-    },
-    {
       "guide": "relay-adapters.md",
-      "description": "Adapter interface, lifecycle, testing",
+      "description": "Adapter interface, lifecycle, catalog and manifests (AdapterManifest, ConfigField), bindings, delivery, testing",
       "patterns": [
         "packages/relay/src/adapters/",
         "adapter-registry",
-        "adapter-manager"
-      ]
-    },
-    {
-      "guide": "adapter-catalog.md",
-      "description": "AdapterManifest, ConfigField, plugin manifests, catalog API",
-      "patterns": [
+        "adapter-manager",
         "AdapterManifest",
         "ConfigField",
         "adapter-plugin-loader",
-        "adapters/catalog"
+        "adapters/catalog",
+        "binding-router",
+        "binding-store"
       ]
     },
     {
@@ -855,6 +853,15 @@
         "services/core/permissions/",
         "permission-enforcement",
         "features/permissions/"
+      ]
+    },
+    {
+      "doc": "docs/guides/audit-trail.mdx",
+      "description": "The record: what is in it, Activity retention, checking nobody edited it, what the check can't prove",
+      "patterns": [
+        "services/audit/",
+        "schema/audit/",
+        "services/activity/"
       ]
     },
     {

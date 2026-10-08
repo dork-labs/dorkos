@@ -24,7 +24,7 @@ design-session: specs/unified-conversation/design/
   2. The room notice _"Meeting Notes is waiting for you to approve something before it can carry on. Open Meeting Notes's session to answer — it gives up if nobody does."_ is an awful experience: the person hunts for the session, answers, comes back; if they cannot find it, the prompt auto-denies after ten minutes and the agent gives no answer or a bad one. **10x it.**
   3. _"Meeting Notes is working on it"_ is good but should sit **above** the composer, be **clickable**, show every state, and be worth a 10x pass (progressive disclosure, delight, actions).
   - Everything updates the Dev Playground; restructure sections as needed.
-  - Bar: what an S-tier product designer + motion designer would ship; Jobs/Ive/Rams filters (`meta/website-copy/process.md`); Calm Tech; `writing-for-humans` copy.
+  - Bar: what an S-tier product designer + motion designer would ship; Jobs/Ive/Rams filters (`meta/archive/website-copy/process.md`); Calm Tech; `writing-for-humans` copy.
 - **Design session (2026-08-17, visual companion):** `design/01-messaging-exploration.html`, picks in `design/picks.jsonl`. Dorian's choices:
   - **unify-B** — unify the _whole_ tree in one programme (row, timeline, live lane, composer host), not a partial.
   - **ask-B** — inline Ask in the room **plus** one global "Needs you" tray built by extending the queue that already exists (header pill, sidebar Heads up, home triage). Tier C (notification actions, park-instead-of-deny on timeout, scope options) is the named follow-on.

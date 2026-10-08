@@ -15,7 +15,7 @@ Accepted
 
 ## Context
 
-The GTM plan (`meta/positioning-202607/09-gtm-plan.md` §3.2) and the tracker specced **Buttondown** as the newsletter provider. Since that plan was written, two facts changed the calculus: we shipped Resend for transactional auth email (verification + password reset, `apps/site/src/lib/mailer.ts`, cloud-only) against a verified domain, and Resend now ships Broadcasts + Audiences for marketing email. At pre-launch scale with growth targets of 150 → 400 → 1,500 subscribers at ~2 sends/month, the deciding factors are provider economics and integration cost, not features: Resend's free tier covers 1,000 marketing contacts with Broadcasts included, whereas Buttondown's free tier caps at 100 subscribers and charges a $9/mo add-on for RSS-to-email.
+The GTM plan (`meta/archive/positioning-202607/09-gtm-plan.md` §3.2) and the tracker specced **Buttondown** as the newsletter provider. Since that plan was written, two facts changed the calculus: we shipped Resend for transactional auth email (verification + password reset, `apps/site/src/lib/mailer.ts`, cloud-only) against a verified domain, and Resend now ships Broadcasts + Audiences for marketing email. At pre-launch scale with growth targets of 150 → 400 → 1,500 subscribers at ~2 sends/month, the deciding factors are provider economics and integration cost, not features: Resend's free tier covers 1,000 marketing contacts with Broadcasts included, whereas Buttondown's free tier caps at 100 subscribers and charges a $9/mo add-on for RSS-to-email.
 
 ## Decision
 

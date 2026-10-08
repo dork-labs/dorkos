@@ -124,6 +124,7 @@
  *
  * @module server/services/rooms/room-trigger
  */
+import { outsideAuditScope } from '../audit/audit-context.js';
 import { randomUUID } from 'node:crypto';
 import { ROOM_LIVE_BEAT_MS } from '@dorkos/shared/room-schemas';
 import type {
@@ -140,6 +141,8 @@ import type {
 } from '@dorkos/shared/room-schemas';
 import type { RoomContextCanvas } from '@dorkos/shared/additional-context';
 import type { SessionActivity } from '@dorkos/shared/session-stream';
+import type { TurnPermissionBound, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
+import { entryLevelOf } from '../core/turn-power/turn-levels.js';
 import type { InterruptReceipt } from '@dorkos/shared/types';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { logError, logger } from '../../lib/logger.js';
@@ -573,6 +576,52 @@ function isEntryAuthorExternal(authors: AuthorRegistry, authorId: string): boole
   const naturalKey = authors.getMany([authorId]).get(authorId)?.naturalKey;
   if (naturalKey === undefined) return true;
   return authorOrigin(naturalKey) !== 'local';
+}
+
+/**
+ * The ceiling a turn this entry starts runs under, as the spread a
+ * `RoomTurnRequest` takes (spec `trusted-by-default-flip` §4).
+ *
+ * A stranger's message, or one whose author cannot be resolved, is held to the
+ * receiving runtime's default. Another agent's post is held to the level its
+ * turn ran at when it wrote the post; when that was not kept (a restart, a post
+ * with no session), to the runtime's default, because the alternative is to
+ * hand out the receiving conversation's level on the strength of a missing
+ * record. A person on this machine and the room's own voice are not bounded.
+ *
+ * @param authors - The registry holding the stored author records.
+ * @param entry - The entry that triggered the turn.
+ */
+export function ceilingForEntry(
+  authors: AuthorRegistry,
+  entry: Pick<RoomEntry, 'id' | 'authorId'>
+): { permissionCeiling?: TurnPermissionCeiling } {
+  if (isEntryAuthorExternal(authors, entry.authorId)) {
+    return { permissionCeiling: 'runtime-default' };
+  }
+  const kind = authors.getMany([entry.authorId]).get(entry.authorId)?.kind;
+  if (kind !== 'agent') return {};
+  return { permissionCeiling: entryLevelOf(entry.id) ?? 'runtime-default' };
+}
+
+/**
+ * The ceiling a turn answering several messages runs under: every author's
+ * bound holds at once (a list ceiling, resolved by the runtime to the
+ * strictest). Empty when no author is bounded.
+ *
+ * @param authors - The registry holding the stored author records.
+ * @param entries - Every message the turn answers.
+ */
+export function ceilingForEntries(
+  authors: AuthorRegistry,
+  entries: readonly Pick<RoomEntry, 'id' | 'authorId'>[]
+): { permissionCeiling?: TurnPermissionCeiling } {
+  const bounds = entries.flatMap((entry) => {
+    const one = ceilingForEntry(authors, entry).permissionCeiling;
+    return one === undefined ? [] : [one as TurnPermissionBound];
+  });
+  if (bounds.length === 0) return {};
+  return { permissionCeiling: bounds.length === 1 ? bounds[0]! : bounds };
 }
 
 /**
@@ -1742,6 +1791,13 @@ export class RoomTriggerDispatcher {
       // above the chosen index is refused and unread, so marking it would be a
       // claim about a line nobody will read.
       gathered: new Set(collection.entries.slice(0, chosen.index).map((held) => held.entry.id)),
+      // Every message the turn answers, trigger included, so its power is
+      // decided by the strictest author in the burst (spec
+      // `trusted-by-default-flip` §4) rather than by whoever wrote last.
+      answers: collection.entries.slice(0, chosen.index + 1).map((held) => ({
+        id: held.entry.id,
+        authorId: held.entry.authorId,
+      })),
     };
 
     // The cascade guard allowed these on the merits, one message at a time. The
@@ -2245,7 +2301,15 @@ export class RoomTriggerDispatcher {
         // treated as external: losing the operator's power level for one turn
         // costs a prompt, while reading an unknown author as local would hand
         // it out on the strength of a failed lookup.
-        externalAuthor: isEntryAuthorExternal(this.deps.authors, entry.authorId),
+        //
+        // Over EVERY message the turn answers: a gathered burst that mixes a
+        // stranger and a person is external if any author is.
+        externalAuthor: (target.answers ?? [entry]).some((answered) =>
+          isEntryAuthorExternal(this.deps.authors, answered.authorId)
+        ),
+        // And the turn itself is held to the strictest of its senders' levels,
+        // new conversation or not — see `RoomTurnRequest.permissionCeiling`.
+        ...ceilingForEntries(this.deps.authors, target.answers ?? [entry]),
         // The message, unchanged. A trigger asks the agent exactly what was
         // said; only the welcome-back offer below asks something else.
         prompt: entry.body.text,
@@ -3135,7 +3199,10 @@ export class RoomTriggerDispatcher {
     this.publishPresence(claim, 'working');
     this.publishWorkingCount(claim.roomId, before);
     if (this.republishing === null) {
-      this.republishing = setInterval(() => this.republishPresence(), PRESENCE_REPUBLISH_MS);
+      this.republishing = setInterval(
+        outsideAuditScope(() => this.republishPresence()),
+        PRESENCE_REPUBLISH_MS
+      );
       // A heartbeat is not a reason for the process to stay alive: an unref'd
       // interval lets a CLI that has finished exit while a room still holds a
       // claim, instead of hanging for ten seconds at a time on a timer whose

@@ -98,5 +98,5 @@ an unrelated quit hours later.
   next-launch verdict deliberately surface through one status.
 - `260829-085855` — identity-scoped purge of staged updates, the other half of not letting the
   updater act on things it has not proven.
-- `plans/desktop-resilience-program.md` §2B — the evidence, including the `ShipItState.plist` with
+- `plans/archive/desktop-resilience-program.md` §2B — the evidence, including the `ShipItState.plist` with
   `launchAfterInstallation: false` that identified the passive path as the one that worked.

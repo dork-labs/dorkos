@@ -3,7 +3,7 @@
 **Role**: Primary persona _(promoted 2026-10-06; was secondary)_
 **Confidence**: Partly grounded. The core is modeled on a real DorkOS user (a close contact, not an organic one; see Evidence Limits). The broader "builds a big business with agents" shape is the 2026-10 target and is still assumption-based.
 **Created**: 2026-07-09
-**Rewritten**: 2026-10-06 (vision reset, `../positioning-202610/00-overview.md`)
+**Rewritten**: 2026-10-06 (vision reset, `../VISION.md`)
 **Review by**: 2027-04-06
 
 ---

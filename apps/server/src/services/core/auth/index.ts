@@ -36,6 +36,12 @@
  * @module services/core/auth
  */
 import { createHash } from 'node:crypto';
+import {
+  authAuditAfterHook,
+  recordAccountCreated,
+  recordSignedIn,
+  recordSessionEnded,
+} from './auth-audit.js';
 import { realpathSync } from 'node:fs';
 import { betterAuth, type BetterAuthOptions } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
@@ -226,13 +232,6 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
       },
     },
     databaseHooks: {
-      session: {
-        delete: {
-          after: async (removed) => {
-            authSessionRemovals.remove({ sessionId: removed.id, userId: removed.userId });
-          },
-        },
-      },
       user: {
         create: {
           before: async (userData) => {
@@ -250,7 +249,10 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
             }
             return { data: { ...userData, role: 'owner' } };
           },
-          after: async () => {
+          after: async (created) => {
+            // The account in the audit log, linked to the install id the log
+            // named its owner by until now (spec `audit-trail` §3.2).
+            recordAccountCreated(created);
             // Owner-creation seam for the legacy MCP key migration (task 1.4):
             // when the owner is created (the enable-login flow), fold any lingering
             // `config.mcp.apiKey` into an owner-owned Better Auth key so existing
@@ -260,7 +262,30 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
           },
         },
       },
+      // Sign-ins and sign-outs in the audit log (spec `audit-trail` PR2):
+      // Better Auth keeps sessions, not their history.
+      session: {
+        create: { after: async (created) => recordSignedIn(created) },
+        delete: {
+          after: async (deleted, ctx) => {
+            let first: { value: unknown } | undefined;
+            try {
+              authSessionRemovals.remove({ sessionId: deleted.id, userId: deleted.userId });
+            } catch (value) {
+              first = { value };
+            }
+            try {
+              recordSessionEnded(deleted, ctx?.path);
+            } catch (value) {
+              first ??= { value };
+            }
+            if (first) throw first.value;
+          },
+        },
+      },
     },
+    // Failed sign-ins and API keys created or revoked, in the audit log.
+    hooks: { after: authAuditAfterHook },
   };
 }
 

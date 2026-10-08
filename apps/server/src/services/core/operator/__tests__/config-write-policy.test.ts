@@ -67,6 +67,8 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       // it publishes a card describing every agent here and opens an address
       // outside clients post work to (DOR-1304).
       'a2a.enabled',
+      // How long Activity keeps the history a person reviews (spec `audit-trail`).
+      'activity.retentionDays',
       'agents.defaultDirectory',
       'auth.enabled',
       'browser.chromeUserAgent',

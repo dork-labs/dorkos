@@ -2,7 +2,7 @@
  * Lifecycle stage — drives badge rendering and catalog filtering.
  *
  * `alpha` marks a surface that is built but not yet verified by real users
- * ("The demo-claim gate" in `meta/positioning-202610/00-overview.md`):
+ * (the demo-claim gate in `meta/ROADMAP.md`):
  * earlier than `beta`, honest about it on the badge.
  */
 export type FeatureStatus = 'ga' | 'beta' | 'alpha' | 'coming-soon';

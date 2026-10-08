@@ -35,6 +35,10 @@ import { AdapterRegistry } from '@dorkos/relay';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { AdapterManager } from '../../../../relay/adapter-manager.js';
 import { UnclaimedChatStore } from '../../../../relay/unclaimed-chat-store.js';
+import { auditEvents } from '@dorkos/db';
+import { AuditLog } from '../../../../audit/audit-log.js';
+import { AccountIds } from '../../../../audit/account-ids.js';
+import { initAuditTrail, resetAuditTrail } from '../../../../audit/audit-trail.js';
 
 /** Construct a no-op logger that satisfies the {@link Logger} interface. */
 function buildLogger(): Logger {
@@ -239,6 +243,32 @@ describe('UninstallFlow', () => {
     expect(deps.extensionManager.disable).toHaveBeenCalledWith('ext-a');
     expect(deps.extensionManager.disable).toHaveBeenCalledWith('ext-b');
     expect(deps.adapterManager.removeAdapter).not.toHaveBeenCalled();
+  });
+
+  // Spec `audit-trail` PR2: a removal is recorded where it commits, once; the
+  // removal half of an update records nothing, because the update records itself.
+  it.each([
+    ['a removal', false, [['marketplace.uninstalled', 'plugin-a']]],
+    ['the removal half of an update', true, []],
+  ] as const)('records %s in the audit log accordingly', async (_what, replacing, expected) => {
+    const auditDb = createTestDb();
+    initAuditTrail({
+      log: new AuditLog(auditDb),
+      accounts: new AccountIds({ db: auditDb, installId: 'inst-1', readOwnerAccount: () => null }),
+    });
+    try {
+      const deps = await buildDeps();
+      cleanupDirs.push(deps.dorkHome);
+      await stageInstalledPackage({
+        installRoot: path.join(deps.dorkHome, 'plugins', 'plugin-a'),
+        manifest: buildPluginManifest({ name: 'plugin-a' }),
+      });
+      await new UninstallFlow(deps).uninstall({ name: 'plugin-a', replacing });
+      const rows = auditDb.select().from(auditEvents).all();
+      expect(rows.map((row) => [row.action, row.targetId])).toEqual(expected);
+    } finally {
+      resetAuditTrail();
+    }
   });
 
   it('settles an interrupted reinstall first, so it removes the whole install and leaves no backup (DOR-2273)', async () => {

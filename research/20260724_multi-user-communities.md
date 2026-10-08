@@ -501,7 +501,7 @@ The gap needing care: the subject scheme has no community dimension. Adding `rel
 - Making `apps/community` a separate app enforces it **by construction** — the cockpit cannot import community code.
 - No "sign in to continue" ever appears for a solo user. Absent a community, nothing degrades.
 
-This is also a positioning asset. **Buzz has no single-player mode** — a relay with one member is a chat server with one person in it. Worth stating in `meta/positioning-202607/`.
+This is also a positioning asset. **Buzz has no single-player mode** — a relay with one member is a chat server with one person in it. Worth stating in `meta/archive/positioning-202607/`.
 
 ---
 

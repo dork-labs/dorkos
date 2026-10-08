@@ -308,7 +308,7 @@ No open questions remain; the spec is implementation-ready.
 ## References
 
 - DOR-149 (tracker); ideation [`01-ideation.md`](./01-ideation.md).
-- `plans/agent-harness-portability-roadmap.md` §7 (D1), §8 (ADR-D), §9 (Phase 1).
+- `plans/archive/agent-harness-portability-roadmap.md` §7 (D1), §8 (ADR-D), §9 (Phase 1).
 - Firing chokepoint: `apps/server/src/services/tasks/task-scheduler-service.ts`
   (`dispatch`, `registerTask`, `start`, `stop`).
 - Existing gate: `apps/server/src/index.ts:247-265`, `:441`, `:793`, `:849`.

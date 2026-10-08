@@ -31,22 +31,36 @@ fail=0
 #   $2 expected exit code (0 green, 1 red)
 #   $3 relative file path to create
 #   $4 file contents
+#   $5 optional: an allowlist.json body. The tree then also gets this
+#      checkout's real banned-terms.json, which the guard reads to know which
+#      entries name a wave-6 term.
+#   $6 optional: text the guard's output must contain (a red case's fix hint)
 run_case() {
-  local name="$1" want="$2" path="$3" body="$4"
+  local name="$1" want="$2" path="$3" body="$4" allowlist="${5:-}" must_say="${6:-}"
   local tmp
   tmp=$(mktemp -d)
   mkdir -p "$tmp/$(dirname "$path")"
   printf '%s\n' "$body" >"$tmp/$path"
+  if [ -n "$allowlist" ]; then
+    mkdir -p "$tmp/scripts/vocab-gate"
+    printf '%s\n' "$allowlist" >"$tmp/scripts/vocab-gate/allowlist.json"
+    cp "$repo_root/scripts/vocab-gate/banned-terms.json" "$tmp/scripts/vocab-gate/"
+  fi
 
   local out got
   out=$(ROOT="$tmp" bash "$CHECK" 2>&1)
   got=$?
 
   # A red case must be red BECAUSE of the seeded file: the guard has to name it.
-  # Exit 1 alone proves nothing, since bash 3.2 (macOS) also exits 1 on the
-  # empty file list a tree the guard does not scan leaves behind (DOR-2068).
+  # Exit 1 alone proves nothing: a guard that dies on its own bug (an unbound
+  # variable under `set -u`, a bash 3.2 quirk, as DOR-2068 hit on an empty file
+  # list) also exits non-zero, and would pass every red case while checking
+  # nothing.
   if [ "$want" -eq 1 ] && [ "$got" -eq 1 ] && ! printf '%s' "$out" | grep -qF "  $path:"; then
     got="1, without naming $path"
+  fi
+  if [ -n "$must_say" ] && ! printf '%s' "$out" | grep -qF "$must_say"; then
+    got="$got, without saying \"$must_say\""
   fi
 
   if [ "$got" = "$want" ]; then
@@ -110,7 +124,123 @@ run_case 'the shared tool-name note says "mission control"' 1 'packages/operatin
   'export const TOOL_NAME_NOTE = `> Call it from mission control.`;'
 
 echo ""
+echo "== the 2026-10 positioning lines (DOR-2736) must go RED, one per family =="
+
+# Family 1: the retired category line, in the spellings people actually wrote.
+run_case 'README says "operating system for AI agents"' 1 'README.md' \
+  'DorkOS is the operating system for AI agents.'
+
+run_case 'a docs page says "operating system for autonomous AI agents"' 1 'docs/index.mdx' \
+  'An open-source operating system for autonomous AI agents.'
+
+run_case 'a blog post says "OS for AI agents"' 1 'blog/launch.mdx' \
+  'Think of it as an OS for AI agents.'
+
+# Family 2: the 2026-08 category line the reset replaced.
+run_case 'a docs page says "one place for every agent"' 1 'docs/guides/z.mdx' \
+  'One place for every agent you run.'
+
+# Family 3: equal-accounts claims, an internal principle public copy never states.
+run_case 'an operating skill says "agents are equal to people"' 1 'packages/operating-skills/src/skills/team.ts' \
+  '  Agents are equal to people here: same account, same rights.'
+
+run_case 'a README says "agents equal"' 1 'README.md' \
+  'Here, agents equal people: one account each.'
+
+run_case 'CONTRIBUTING says "equal accounts"' 1 'CONTRIBUTING.md' \
+  'People and agents hold equal accounts.'
+
+# Family 4: a Discord invite link, in prose and in the two surfaces only this
+# group reaches — a package manifest and app source, where an href is
+# invisible to check-vocab-gate.ts.
+run_case 'a docs page links discord.gg' 1 'docs/community.mdx' \
+  'Join the chat at [Discord](https://discord.gg/dorkos).'
+
+run_case 'app source links a discord.com invite' 1 'apps/site/src/components/Footer.tsx' \
+  '  <a href="https://discord.com/invite/abc123">Chat</a>'
+
+run_case 'a package manifest description says "operating system for agents"' 1 'packages/cli/package.json' \
+  '{ "description": "The operating system for agents." }'
+
+echo ""
+echo "== docs exemptions come from allowlist.json, never the marker (wave 6) =="
+
+# check-vocab-gate.ts bans `vocab-allow` inside docs/**/*.mdx, so a docs red
+# must point the writer at allowlist.json instead.
+run_case 'a docs red names allowlist.json as the fix' 1 'docs/guides/voice.mdx' \
+  'Never call DorkOS an OS for AI agents.' '' 'scripts/vocab-gate/allowlist.json'
+
+DOCS_ALLOW='{ "entries": [ { "path": "docs/guides/voice.mdx", "terms": ["OS for AI agents"], "contains": "Never call DorkOS", "reason": "states the rule" } ] }'
+
+run_case 'a contains-scoped allowlist entry exempts its docs line' 0 'docs/guides/voice.mdx' \
+  'Never call DorkOS an OS for AI agents.' "$DOCS_ALLOW"
+
+run_case 'the same entry does not exempt a different line' 1 'docs/guides/voice.mdx' \
+  'DorkOS is the OS for AI agents.' "$DOCS_ALLOW"
+
+run_case 'an entry naming no wave-6 term does not exempt wave 6' 1 'docs/guides/voice.mdx' \
+  'Never call DorkOS an OS for AI agents.' \
+  '{ "entries": [ { "path": "docs/guides/voice.mdx", "terms": ["adapter"], "reason": "wave 4 only" } ] }'
+
+run_case 'the entry exempts wave 6 only, never a wave-2 word on the line' 1 'docs/guides/voice.mdx' \
+  'Never call DorkOS an OS for AI agents, or a cockpit.' "$DOCS_ALLOW"
+
+# Outside docs/ the allowlist is not read: there the marker is the exemption.
+run_case 'an allowlist entry does not reach a blog post' 1 'blog/voice.mdx' \
+  'Never call DorkOS an OS for AI agents.' \
+  '{ "entries": [ { "path": "blog/voice.mdx", "terms": ["OS for AI agents"], "reason": "x" } ] }'
+
+echo ""
 echo "== the guard must stay GREEN on everything we deliberately kept =="
+
+# The bare word "Discord" is a real app people connect (the relay adapter type
+# is literally "discord"). Only an invite link is banned.
+run_case 'the bare word "Discord" is fine in prose' 0 'docs/guides/relay.mdx' \
+  'Connect Discord, Telegram or Slack so your agents can reach you.'
+
+run_case 'the bare word "Discord" is fine in app source' 0 'apps/client/src/features/discord/Setup.tsx' \
+  "  label: 'Discord bot token',"
+
+# "DorkOS" contains "OS"; the short-form branch needs a non-word character in
+# front, so the product name followed by "for agents" must not fire.
+run_case '"DorkOS for agents" is not the short form' 0 'README.md' \
+  'Install DorkOS for agents and the people who run them.'
+
+# Every wave-6 branch is fenced as a whole phrase. Each of these fired before
+# the boundaries were written out, and each is an ordinary docs sentence.
+run_case '"agents equally" is not "agents equal"' 0 'docs/guides/fp1.mdx' \
+  'Budget runs across your agents equally.'
+
+run_case 'a benchmark "equal to humans" is not an accounts claim' 0 'docs/guides/fp2.mdx' \
+  'The model scored equal to humans on the reading test.'
+
+run_case '"the OS for each agent" is not the short form' 0 'docs/guides/fp3.mdx' \
+  "Pick the OS for each agent's sandbox."
+
+run_case '"Unequal accounts" is not "equal accounts"' 0 'docs/guides/fp4.mdx' \
+  'Unequal accounts of what happened are common in a long run.'
+
+run_case '"OS for every agent" is not the short form' 0 'docs/guides/fp5.mdx' \
+  "A shared OS for every agent's container image keeps builds fast."
+
+# Source is scanned for links ONLY. A positioning phrase in a code comment is
+# not prose; check-vocab-gate.ts judges render paths in app source.
+run_case 'a positioning phrase in a source comment is not flagged' 0 'apps/server/src/x.ts' \
+  '// The old headline was one place for every agent you run.'
+
+# The link scan reads app and package SOURCE (`*/src/*`) only. A build script
+# or a fixture outside src/ is not something a person reads.
+run_case 'a Discord link outside src/ is not flagged' 0 'apps/x/scripts/a.ts' \
+  "const url = 'https://discord.gg/abc123';"
+
+# The root manifest names a `cockpit` script: code, not copy. Manifests are
+# read for the positioning group only, never wave 2.
+run_case 'a manifest script named cockpit is not flagged' 0 'package.json' \
+  '{ "scripts": { "capture:cockpit": "node x.js" } }'
+
+# A line that quotes a retired phrase to state the rule carries the marker.
+run_case 'a marked line quoting the rule is allowed' 0 'AGENTS.md' \
+  'Never write "operating system for AI agents" or "equal accounts". <!-- vocab-allow: states the rule -->'
 
 # Carve-out 1: the compiled changelog is generated from CHANGELOG.md, which
 # AGENTS.md forbids editing. It keeps its historical wording.

@@ -1,6 +1,6 @@
 # Relay: The Universal Message Bus for DorkOS
 
-> **Note 2026-10-06 (roadmap).** Relay is planned to merge into one conversation system: every message becomes a DM, a group DM, a channel post or a thread reply, a broadcast becomes a channel post or an @group mention, the Maildir store retires, and the "who may message whom" rules give way to "anyone in a space can message anyone", with loop limits, rate limits, retries, delivery receipts and block and mute kept as safety. This is roadmap, not built; Relay works as described below today. See [`../positioning-202610/00-overview.md`](../positioning-202610/00-overview.md) and the current [litepaper](../dorkos-litepaper.md). The body below is the February 2026 design and is not rewritten.
+> **Note 2026-10-06 (roadmap).** Relay is planned to merge into one conversation system: every message becomes a DM, a group DM, a channel post or a thread reply, a broadcast becomes a channel post or an @group mention, the Maildir store retires, and the "who may message whom" rules give way to "anyone in a space can message anyone", with loop limits, rate limits, retries, delivery receipts and block and mute kept as safety. This is roadmap, not built; Relay works as described below today. See [`ROADMAP.md`](../ROADMAP.md) and the current [litepaper](../dorkos-litepaper.md). The body below is the February 2026 design and is not rewritten.
 
 **By Dorian Collier**
 **February 2026**

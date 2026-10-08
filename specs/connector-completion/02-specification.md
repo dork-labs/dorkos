@@ -48,7 +48,7 @@ See `01-ideation.md` §Verified gaps for the nine source-verified gaps. In short
 ## Non-Goals
 
 - **No custom in-chat connect card** — v1 is markdown in the tool result. The card (rich OAuth affordance in the transcript) is a named deferred enhancement.
-- **No real-provider CI**; Composio/Nango stay mock-verified in CI (gateway spec D5). Copy stays alpha-labeled per the demo-claim gate (`meta/positioning-202607/09-gtm-plan.md` §2.0).
+- **No real-provider CI**; Composio/Nango stay mock-verified in CI (gateway spec D5). Copy stays alpha-labeled per the demo-claim gate (`meta/archive/positioning-202607/09-gtm-plan.md` §2.0).
 - **No multi-user Composio `user_id` scoping** (gateway OQ1 stands).
 - **No per-API tool catalogs over the Nango proxy** — v1 is one honest generic request tool per account (see OQ2).
 - **No new connect-flow persistence** — in-flight flows remain process-scoped (`routes/connectors.ts` map), as the gateway spec accepted.

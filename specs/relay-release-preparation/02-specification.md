@@ -108,7 +108,7 @@ Sections:
 5. **Message Tracing** — SQLite trace store (message_traces table), span model (publish → route → deliver), metrics aggregation
 6. **Convergence** — How Relay unifies session messaging and Pulse dispatch, fallback behavior when disabled
 
-**Source material:** `plans/relay-specs/`, `packages/shared/src/relay-schemas.ts`, `apps/server/src/services/relay/`
+**Source material:** `plans/archive/relay-specs/`, `packages/shared/src/relay-schemas.ts`, `apps/server/src/services/relay/`
 
 #### 6.3.2 Mesh Concept
 
@@ -131,7 +131,7 @@ Sections:
 6. **Lifecycle Events** — Event types (registered, deregistered, heartbeat, health_changed), event store, SSE streaming
 7. **Access Control** — Denial records with reason tracking, subject-based access rules
 
-**Source material:** `plans/mesh-specs/`, `packages/shared/src/mesh-schemas.ts`, `apps/server/src/services/mesh/`
+**Source material:** `plans/archive/mesh-specs/`, `packages/shared/src/mesh-schemas.ts`, `apps/server/src/services/mesh/`
 
 #### 6.3.3 Update concepts/meta.json
 
@@ -587,8 +587,8 @@ No existing ADRs directly relate to documentation infrastructure. This spec does
 ## 15. References
 
 - Ideation: `specs/relay-release-preparation/01-ideation.md`
-- Relay planning docs: `plans/relay-specs/`
-- Mesh planning docs: `plans/mesh-specs/`
+- Relay planning docs: `plans/archive/relay-specs/`
+- Mesh planning docs: `plans/archive/mesh-specs/`
 - Existing adapter guide: `contributing/relay-adapters.md`
 - Relay schemas: `packages/shared/src/relay-schemas.ts`
 - Mesh schemas: `packages/shared/src/mesh-schemas.ts`

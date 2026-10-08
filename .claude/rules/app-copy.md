@@ -12,4 +12,6 @@ The rules in one breath: dry and calm, a control panel and not a consumer app. N
 
 Before changing an existing string, `grep -rn "<old text>" apps/e2e`: browser specs assert literal copy, and they run only in the merge queue.
 
+Words for DorkOS's own ideas (mini apps, access levels, Connections, space, co-workers) and the retired ones come from `meta/VOICE.md`; the vocab gate enforces the machine-checkable part.
+
 Not copy: code samples in `<code>`, Dev Playground commentary (`src/dev/`), test fixtures, and prompt text written for a model.

@@ -32,7 +32,7 @@ project: Canvas dev-server preview
 - `decisions/260708-185519-local-html-serving-origin-isolation.md` — the opaque-origin decision this spec amends for the proxy half.
 - `specs/right-panel-workbench/` (D6 sandbox posture), DOR-213 DevTools bridge (`services/workbench-serve/devtools-shim.ts`, `features/canvas/model/use-devtools-bridge.ts`).
 - `apps/server/src/services/workbench-serve/{proxy,token,devtools-inject}.ts`, `routes/workbench-serve.ts`, `services/core/auth/session-gate.ts` (gate exemptions for `/api/workbench/{serve,proxy}/`), `app.ts` CORS delegate + `lib/trusted-origins.ts`.
-- `docs/guides/workbench.mdx` §"Embedded Browser" — currently claims "localhost dev servers render right in the canvas". False today; the demo-claim gate (`meta/positioning-202607/09-gtm-plan.md` §2.0) says never claim an unverified surface works.
+- `docs/guides/workbench.mdx` §"Embedded Browser" — currently claims "localhost dev servers render right in the canvas". False today; the demo-claim gate (`meta/archive/positioning-202607/09-gtm-plan.md` §2.0) says never claim an unverified surface works.
 - Live reproduction (headless Chromium, 2026-08-16) — evidence in §3.
 
 ## 3) Root cause (verified, not inferred)

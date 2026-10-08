@@ -20,7 +20,7 @@ workflows; read both issues and both PRs with `gh`; fetched Electron's `WebConte
 `webFrameMain` docs, Chromium's `navigation_concepts.md`, `web_contents_observer.h` and
 `frame_tree.cc`, and the two Electron issues reporting the subframe behaviour. Nothing was changed.
 `research/` holds no prior report on the watchdog; the design history is
-`plans/desktop-resilience-program.md` §1/§4 and ADR `260829-085851`.
+`plans/archive/desktop-resilience-program.md` §1/§4 and ADR `260829-085851`.
 
 ## TL;DR
 

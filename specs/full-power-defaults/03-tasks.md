@@ -52,7 +52,7 @@ These files already exist in the repository working tree (`specs/full-power-defa
 
 ### What NOT to commit
 
-`plans/room-turn-limits-overhaul.md` is an unrelated untracked file sitting in the same working tree. Sweeping it in would land somebody else's draft. Check `git status` before you stage.
+`plans/archive/room-turn-limits-overhaul.md` is an unrelated untracked file sitting in the same working tree. Sweeping it in would land somebody else's draft. Check `git status` before you stage.
 
 ### Invariants to check before pushing
 
@@ -65,7 +65,7 @@ These files already exist in the repository working tree (`specs/full-power-defa
 
 - [ ] All twelve files above are committed on a branch based on `origin/main`.
 - [ ] `git diff --stat origin/main` shows changes only under `specs/` and `decisions/` — nothing under `apps/`, `packages/`, or `scripts/`.
-- [ ] `plans/room-turn-limits-overhaul.md` is absent from the diff.
+- [ ] `plans/archive/room-turn-limits-overhaul.md` is absent from the diff.
 - [ ] Every ADR is `status: proposed` in both the file and the manifest.
 - [ ] `/spec:audit` reports no drift between `specs/manifest.json` and the filesystem.
 - [ ] The PR carries the `skip-changelog` label.
@@ -781,4 +781,4 @@ Browser-verify the whole first-run flow in the running cockpit with a fresh conf
 2. **"Customize…" may temporarily point at Settings** (task 2.1). Tasks 2.1 and 2.2 run in parallel, so the door may be written before the Control Center exists. Whichever merges second re-points the link. No lingering `TODO` is left in the source.
 3. **PR-1 takes the `skip-changelog` label rather than a fragment** (task 1.1). It is documentation for DorkOS builders, not a user-facing change, which is the label's stated purpose in `changelog/README.md`.
 4. **The ⚡ glyph's exact anchor is decided at implementation** (task 2.2), against the live layout, with the sidebar header row as the candidate — which is what the spec and the design record both call for.
-5. **`plans/room-turn-limits-overhaul.md` is unrelated** and is deliberately excluded from PR-1's diff, though it sits untracked in the same working tree.
+5. **`plans/archive/room-turn-limits-overhaul.md` is unrelated** and is deliberately excluded from PR-1's diff, though it sits untracked in the same working tree.

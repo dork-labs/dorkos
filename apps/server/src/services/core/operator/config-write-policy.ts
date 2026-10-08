@@ -405,6 +405,11 @@ export const CONFIG_WRITE_POLICY = {
   'keepAwake.whileAgentsWork': 'operator-only',
   'keepAwake.wakeForScheduledTasks': 'operator-only',
 
+  // How long the Activity feed keeps the history people review (spec
+  // `audit-trail` §3.5). Shortening it deletes rows a person may not have read
+  // yet; lengthening it spends disk. Either is the person's call.
+  'activity.retentionDays': 'operator-only',
+
   // Directories DorkOS would scan for agents. Nothing resolves this today (the
   // unified scanner does not read it), so it grants nothing right now. It is
   // operator-only pre-emptively: it is a directory-scope field, and classifying it
@@ -1148,6 +1153,9 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       // for it: battery, and whether the machine is on while nobody is there.
       'keepAwake.whileAgentsWork',
       'keepAwake.wakeForScheduledTasks',
+      // How much Activity history this machine keeps on disk, and how much a
+      // person can still look back over.
+      'activity.retentionDays',
       // How large a room's files may get, how much of its conventions file
       // rides every turn, and when an idle working copy is tidied away. Disk
       // and the bill, bounded by the person rather than by the agents filling

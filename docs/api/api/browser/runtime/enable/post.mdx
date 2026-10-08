@@ -11,7 +11,9 @@ _openapi:
     headings: []
     contents:
       - content: Requires the current signed-in owner and an allowed request origin.
-          Turning it off joins original browser cleanup. Enabling does not grant
+          Turning it off joins original browser cleanup. With enabled false, an
+          optional chromeUserAgent choice is accepted only when no runtime
+          transition or owned browser remains. Enabling does not grant
           workspace, viewer or controller permission.
 ---
 

@@ -1293,7 +1293,7 @@
       "status": "superseded",
       "created": "2026-07-17",
       "lastVerified": "2026-08-06",
-      "affects": ["meta/positioning-202607/**"],
+      "affects": ["meta/archive/positioning-202607/**"],
       "supersededBy": "261006-235237"
     },
     {

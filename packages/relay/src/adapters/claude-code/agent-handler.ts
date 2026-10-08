@@ -12,6 +12,7 @@ import { randomUUID } from 'node:crypto';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import { StreamEventTypeSchema, type PermissionMode } from '@dorkos/shared/schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
+import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import { defuseSystemTags } from '@dorkos/shared/untrusted-text';
 // One answer to "is this error the turn failing?", shared with the scheduled-run
@@ -480,6 +481,15 @@ export async function handleAgentMessage(
   // prompting mode — absence is not consent (DOR-604). The in-process readers
   // that used to default to 'acceptEdits' were the bug and are gone.
   const effectivePermissionMode: PermissionMode = bindingPerms?.permissionMode ?? 'default';
+  // The mode above only reaches a conversation that is NEW: a runtime resolves
+  // a turn as per-send → stored → its own default, and a warm or stored
+  // conversation keeps the level it already has. So a sender that may not shape
+  // the turn (another agent, the A2A gateway, an external MCP client) also
+  // bounds THIS turn at the runtime's default, whatever the conversation is set
+  // to. Power flows downstream, never up (spec `trusted-by-default-flip` §4).
+  const permissionCeiling: TurnPermissionCeiling | undefined = trustedShaper
+    ? undefined
+    : 'runtime-default';
 
   // Which model an agent is, is a property of the AGENT — so the manifest is
   // looked for where the agent lives, and NOT at `effectiveCwd`. The two differ
@@ -666,6 +676,7 @@ export async function handleAgentMessage(
     ? NO_EVENTS
     : deps.agentManager.sendMessage(ccaSessionKey, prompt, {
         permissionMode: effectivePermissionMode,
+        ...(permissionCeiling !== undefined ? { permissionCeiling } : {}),
         ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
         ...(payloadForAgent ? { forAgent: payloadForAgent } : {}),
         ...(formatBlock ? { systemPromptAppend: formatBlock } : {}),
@@ -945,6 +956,7 @@ export async function handleAgentMessage(
         sessionId: durableSessionKey,
         runtimeType: deps.runtimeType ?? deps.agentManager.type ?? 'claude-code',
         ...(agentManifestDir ? { agentDirectory: agentManifestDir } : {}),
+        from: envelope.from,
       });
     } catch (err) {
       // The session id rides as an argument, never inside the format string: it

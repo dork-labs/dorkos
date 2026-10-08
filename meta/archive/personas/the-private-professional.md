@@ -1,6 +1,6 @@
 # Lil — The Private Professional
 
-> **Retired 2026-10-06 (focus).** DorkOS now serves two personas: the founder who runs a business with agents ([`the-ai-native-founder.md`](../../personas/the-ai-native-founder.md), primary) and Kai, the developer running many agents ([`the-autonomous-builder.md`](../../personas/the-autonomous-builder.md), secondary). Lil is retired as a planning persona only so the product can focus on those two. It says nothing about the real person she is drawn from, who is welcome as a user like anyone else. The privacy needs this persona described still matter: DorkOS runs on your own computer, free, with no required account. The current strategy is [`positioning-202610/00-overview.md`](../../positioning-202610/00-overview.md).
+> **Retired 2026-10-06 (focus).** DorkOS now serves two personas: the founder who runs a business with agents ([`the-ai-native-founder.md`](../../personas/the-ai-native-founder.md), primary) and Kai, the developer running many agents ([`the-autonomous-builder.md`](../../personas/the-autonomous-builder.md), secondary). Lil is retired as a planning persona only so the product can focus on those two. It says nothing about the real person she is drawn from, who is welcome as a user like anyone else. The privacy needs this persona described still matter: DorkOS runs on your own computer, free, with no required account. The current strategy is the north-star set in `meta/` (start at `meta/INDEX.md`).
 
 **Role**: Horizon persona (staged — NOT a launch target; see Staging Rules)
 **Confidence**: Grounded — modeled on a real DorkOS user (a close contact, not an organic one; see Validation Caveat)
@@ -58,7 +58,7 @@ Lil is live evidence for two strategic claims:
 1. **The privacy story works on non-developers.** Local-first control is usually marketed as a developer ideology; Lil proves it sells as professional common sense. Her use case belongs in the trust pillar's evidence base.
 2. **The marketplace absorbed the Wing vision.** Wing (the life layer) is vision-stage and forbidden from marketing — yet Lil lives the Wing use case today via a marketplace agent package. The life layer turned out to be a package, not a product module. This validates the marketplace as the expansion mechanism without new subsystems.
 
-She is also a plausible early DorkOS Cloud user in the revenue arc (`positioning-202607/11-revenue-model.md`): remote reach for someone who will never configure a tunnel is exactly what the Cloud offers.
+She is also a plausible early DorkOS Cloud user in the revenue arc: remote reach for someone who will never configure a tunnel is exactly what the Cloud offers.
 
 ## Staging Rules (the point of "horizon")
 

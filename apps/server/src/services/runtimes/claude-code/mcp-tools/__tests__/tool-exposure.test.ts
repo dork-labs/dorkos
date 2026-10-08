@@ -464,11 +464,12 @@ describe('in-session tool exposure', () => {
     // from the docs registry, which composes no extension. Extension tools are
     // guarded separately, against a contributed fixture, in
     // `extension-tools-every-list.test.ts`.
-    // 120 -> 133: the 8 core and 5 optional managed-browser tools are all deferred.
+    // 120 -> 134: the 8 core and 6 optional managed-browser tools are all deferred.
+    // 134 -> 135 for main's audit_verify; it remains searchable and deferred.
     // Docs metadata exposes the complete vocabulary; each actual operation still
     // resolves its original runtime principal, current graph and explicit grants.
-    expect(tools).toHaveLength(133);
-    expect(deferred).toHaveLength(122);
+    expect(tools).toHaveLength(135);
+    expect(deferred).toHaveLength(124);
     expect(
       deferred
         .map((tool) => tool.name)
@@ -477,6 +478,7 @@ describe('in-session tool exposure', () => {
     ).toEqual([
       'managed_browser_close',
       'managed_browser_control',
+      'managed_browser_diagnostics',
       'managed_browser_download',
       'managed_browser_file_access',
       'managed_browser_input',
@@ -490,6 +492,7 @@ describe('in-session tool exposure', () => {
       'managed_browser_upload',
     ]);
     for (const name of [
+      'audit_verify',
       'configure_doc_channel',
       'approve_doc_route',
       'revoke_doc_route',

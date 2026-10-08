@@ -309,6 +309,30 @@ describe('ConfigManager', () => {
     expect(configManager.get('keepAwake')).toEqual(USER_CONFIG_DEFAULTS.keepAwake);
   });
 
+  it('lands activity.retentionDays on disk for a config written before it existed, with no migration', () => {
+    // Spec `audit-trail` §3.5: a whole new TOP-LEVEL section, like `keepAwake`
+    // above, so there is no CONFIG_MIGRATIONS entry — conf writes the default
+    // section before any key runs. Pinned so that decision breaks loudly if
+    // conf ever stops doing it.
+    fs.mkdirSync(testDir, { recursive: true });
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({
+        version: 1,
+        ui: { theme: 'dark' },
+        __internal__: { migrations: { version: '0.98.0' } },
+      })
+    );
+
+    const configManager = initConfigManager(testDir);
+
+    const onDisk = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
+      activity?: unknown;
+    };
+    expect(onDisk.activity).toEqual({ retentionDays: 365 });
+    expect(configManager.get('activity').retentionDays).toBe(365);
+  });
+
   it('lands memory.provider on disk for a config written before memory existed', () => {
     // The upgrade path over a real file and the real conf/Ajv seam (spec
     // `agent-memory`, D7; migration key 0.69.0).

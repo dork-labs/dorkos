@@ -506,7 +506,7 @@ function pendingInstallVersion(): string | null {
  * shut the server down, and issue a fresh `app.quit()` in its place — which is
  * not the same quit. A person spent ten days clicking "Restart to install" and
  * getting the old version back every time, with no error anywhere
- * (`plans/desktop-resilience-program.md` §2B). Stopping the server first leaves
+ * (`plans/archive/desktop-resilience-program.md` §2B). Stopping the server first leaves
  * the guard nothing to do, so it can let the installer's quit run untouched.
  *
  * The cost is a window in front of a stopped server for as long as the handoff

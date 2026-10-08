@@ -837,7 +837,7 @@ export function signPayload(
 
 - Add `contributing/relay-adapters.md` — adapter development guide (how to implement RelayAdapter interface)
 - Update `contributing/architecture.md` — add adapter registry to Relay section
-- Update `plans/relay-specs/04-relay-external-adapters.md` — mark as in-progress
+- Update `plans/archive/relay-specs/04-relay-external-adapters.md` — mark as in-progress
 - Add inline TSDoc to all public adapter APIs
 
 ## Implementation Phases
@@ -906,8 +906,8 @@ _No open questions — all decisions resolved during ideation._
 
 - [Ideation document](./01-ideation.md) — full research, codebase map, resolved decisions
 - [Relay litepaper](../../meta/modules/relay-litepaper.md) — "External Channels: The Adapter Model" section
-- [Relay design doc](../../plans/2026-02-24-relay-design.md) — RelayAdapter interface (lines 239-262), group messages (lines 389-405), Console activity feed (lines 458-476)
-- [Relay spec plan](../../plans/relay-specs/04-relay-external-adapters.md) — spec metadata and verification criteria
+- [Relay design doc](../../plans/archive/2026-02-24-relay-design.md) — RelayAdapter interface (lines 239-262), group messages (lines 389-405), Console activity feed (lines 458-476)
+- [Relay spec plan](../../plans/archive/relay-specs/04-relay-external-adapters.md) — spec metadata and verification criteria
 - [grammY documentation](https://grammy.dev/) — Telegram bot framework
 - [grammY auto-retry plugin](https://grammy.dev/plugins/auto-retry) — rate limit and error recovery
 - [grammY error handling](https://grammy.dev/guide/errors) — GrammyError, HttpError types

@@ -315,6 +315,11 @@ const registry = composeDorkOsCapabilityRegistry({
   connectorDeps,
   mcpDeps,
   roomDeps: { rooms: roomHarness.service, merges: roomMerges },
+  // The audit domain serves `GET /api/audit/verify`, so the boot registry must
+  // carry it for the docs/boot parity check (spec `audit-trail`).
+  auditDeps: {
+    log: { verify: () => ({ ok: true, checked: 0, lastSeq: 0, lastHash: '0'.repeat(64) }) },
+  },
 });
 
 /** Tool names the real in-session adapter registers for the capability surface. */

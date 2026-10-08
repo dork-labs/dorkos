@@ -16696,6 +16696,50 @@
           }
         ]
       },
+      "AuditVerifyResult": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "checked": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "lastSeq": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "lastHash": {
+            "type": "string"
+          },
+          "firstBreak": {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "seq",
+              "reason"
+            ]
+          },
+          "nextFromSeq": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          }
+        },
+        "required": [
+          "ok",
+          "checked",
+          "lastSeq",
+          "lastHash"
+        ]
+      },
       "ListExtensionDecisionsResponse": {
         "type": "object",
         "properties": {
@@ -18911,6 +18955,58 @@
                         "state": {
                           "type": "string",
                           "enum": [
+                            "qualification"
+                          ]
+                        },
+                        "enabled": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "readiness": {
+                          "type": "string",
+                          "enum": [
+                            "unverified"
+                          ]
+                        },
+                        "workspaces": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "workspaceId": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9_-]{22,64}$/u"
+                              },
+                              "label": {
+                                "type": "string",
+                                "maxLength": 512
+                              }
+                            },
+                            "required": [
+                              "workspaceId",
+                              "label"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 64
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "enabled",
+                        "readiness",
+                        "workspaces"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "enum": [
                             "ready"
                           ]
                         },
@@ -18918,6 +19014,12 @@
                           "type": "boolean",
                           "enum": [
                             true
+                          ]
+                        },
+                        "readiness": {
+                          "type": "string",
+                          "enum": [
+                            "accepted"
                           ]
                         },
                         "workspaces": {
@@ -18984,7 +19086,7 @@
           "Managed browser"
         ],
         "summary": "Turn the browser experiment on or off",
-        "description": "Requires the current signed-in owner and an allowed request origin. Turning it off joins original browser cleanup. Enabling does not grant workspace, viewer or controller permission.",
+        "description": "Requires the current signed-in owner and an allowed request origin. Turning it off joins original browser cleanup. With enabled false, an optional chromeUserAgent choice is accepted only when no runtime transition or owned browser remains. Enabling does not grant workspace, viewer or controller permission.",
         "requestBody": {
           "required": true,
           "content": {
@@ -18993,6 +19095,9 @@
                 "type": "object",
                 "properties": {
                   "enabled": {
+                    "type": "boolean"
+                  },
+                  "chromeUserAgent": {
                     "type": "boolean"
                   }
                 },
@@ -19068,6 +19173,58 @@
                         "state": {
                           "type": "string",
                           "enum": [
+                            "qualification"
+                          ]
+                        },
+                        "enabled": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "readiness": {
+                          "type": "string",
+                          "enum": [
+                            "unverified"
+                          ]
+                        },
+                        "workspaces": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "workspaceId": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9_-]{22,64}$/u"
+                              },
+                              "label": {
+                                "type": "string",
+                                "maxLength": 512
+                              }
+                            },
+                            "required": [
+                              "workspaceId",
+                              "label"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 64
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "enabled",
+                        "readiness",
+                        "workspaces"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "enum": [
                             "ready"
                           ]
                         },
@@ -19075,6 +19232,12 @@
                           "type": "boolean",
                           "enum": [
                             true
+                          ]
+                        },
+                        "readiness": {
+                          "type": "string",
+                          "enum": [
+                            "accepted"
                           ]
                         },
                         "workspaces": {
@@ -19114,6 +19277,232 @@
           },
           "403": {
             "description": "The request host or origin was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The browser request is unavailable or could not complete safely.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/browser/runtime/profiles/import": {
+      "post": {
+        "tags": [
+          "Managed browser"
+        ],
+        "summary": "Import sign-ins into a new saved profile",
+        "description": "Requires the current signed-in owner, an allowed request origin and an authorized workspace. Accepts bounded cookies and local storage only. Always creates a new profile; it never seeds a clean browser or changes an existing profile. Availability requires original browser cleanup; failed imports remain quarantined.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "requestId": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{22,64}$/u"
+                  },
+                  "label": {
+                    "type": "string",
+                    "maxLength": 512
+                  },
+                  "workspaceId": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{22,64}$/u"
+                  },
+                  "storageState": {
+                    "type": "object",
+                    "properties": {
+                      "cookies": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 4096
+                            },
+                            "value": {
+                              "type": "string",
+                              "maxLength": 4096
+                            },
+                            "domain": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 253,
+                              "pattern": "^\\.?[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*$/u"
+                            },
+                            "path": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 2048
+                            },
+                            "expires": {
+                              "type": "number",
+                              "minimum": -1,
+                              "maximum": 253402300799
+                            },
+                            "httpOnly": {
+                              "type": "boolean"
+                            },
+                            "secure": {
+                              "type": "boolean"
+                            },
+                            "sameSite": {
+                              "type": "string",
+                              "enum": [
+                                "Strict",
+                                "Lax",
+                                "None"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "value",
+                            "domain",
+                            "path",
+                            "expires",
+                            "httpOnly",
+                            "secure",
+                            "sameSite"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "maxItems": 64
+                      },
+                      "origins": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "origin": {
+                              "type": "string",
+                              "maxLength": 2048
+                            },
+                            "localStorage": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 4096
+                                  },
+                                  "value": {
+                                    "type": "string",
+                                    "maxLength": 4096
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "value"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "maxItems": 64
+                            }
+                          },
+                          "required": [
+                            "origin",
+                            "localStorage"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "maxItems": 32
+                      }
+                    },
+                    "required": [
+                      "cookies",
+                      "origins"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "requestId",
+                  "label",
+                  "workspaceId",
+                  "storageState"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The completed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "requestId": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9_-]{22,64}$/u"
+                    },
+                    "profile": {
+                      "type": "object",
+                      "properties": {
+                        "profileId": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9_-]{22,64}$/u"
+                        },
+                        "label": {
+                          "type": "string",
+                          "maxLength": 512
+                        },
+                        "revision": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "available",
+                            "inUse",
+                            "quarantined"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "profileId",
+                        "label",
+                        "revision",
+                        "status"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "requestId",
+                    "profile"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request does not match the documented schema.",
             "content": {
               "application/json": {
                 "schema": {
@@ -22341,6 +22730,327 @@
                             "reason"
                           ],
                           "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "requestId",
+                        "binding",
+                        "outcome",
+                        "reason"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The delivery request could not be read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Controller authority was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The current binding or ticket is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The browser is unavailable or at capacity.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/browser/copy-selection": {
+      "post": {
+        "tags": [
+          "Managed browser"
+        ],
+        "summary": "Copy a bounded non-secret selection through the current owner controller",
+        "description": "Requires fresh viewer or controller admission for the same browser and tab. Keep tickets in memory and request bodies only. Never put tickets in a URL or persistent storage. Viewer permission never grants input permission.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "command": {
+                    "type": "object",
+                    "properties": {
+                      "requestId": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_-]{22,64}$/u"
+                      },
+                      "binding": {
+                        "type": "object",
+                        "properties": {
+                          "browserId": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_-]{22,64}$/u"
+                          },
+                          "browserGeneration": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "tabId": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_-]{22,64}$/u"
+                          },
+                          "navigationGeneration": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "viewportVersion": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "epoch": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "inputGeneration": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "browserId",
+                          "browserGeneration",
+                          "tabId",
+                          "navigationGeneration",
+                          "viewportVersion",
+                          "epoch",
+                          "inputGeneration"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "requestId",
+                      "binding"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "controllerId": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{22,64}$/u"
+                  },
+                  "grant": {
+                    "type": "object",
+                    "properties": {
+                      "grantId": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_-]{22,64}$/u"
+                      },
+                      "revision": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "grantId",
+                      "revision"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "localTicket": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{22,128}$/u"
+                  }
+                },
+                "required": [
+                  "command",
+                  "controllerId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The original delivery result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9_-]{22,64}$/u"
+                        },
+                        "binding": {
+                          "type": "object",
+                          "properties": {
+                            "browserId": {
+                              "type": "string",
+                              "pattern": "^[A-Za-z0-9_-]{22,64}$/u"
+                            },
+                            "browserGeneration": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "tabId": {
+                              "type": "string",
+                              "pattern": "^[A-Za-z0-9_-]{22,64}$/u"
+                            },
+                            "navigationGeneration": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "viewportVersion": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "epoch": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "inputGeneration": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "browserId",
+                            "browserGeneration",
+                            "tabId",
+                            "navigationGeneration",
+                            "viewportVersion",
+                            "epoch",
+                            "inputGeneration"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "outcome": {
+                          "type": "string",
+                          "enum": [
+                            "selected"
+                          ]
+                        },
+                        "text": {
+                          "type": "string",
+                          "maxLength": 2048
+                        }
+                      },
+                      "required": [
+                        "requestId",
+                        "binding",
+                        "outcome",
+                        "text"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9_-]{22,64}$/u"
+                        },
+                        "binding": {
+                          "type": "object",
+                          "properties": {
+                            "browserId": {
+                              "type": "string",
+                              "pattern": "^[A-Za-z0-9_-]{22,64}$/u"
+                            },
+                            "browserGeneration": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "tabId": {
+                              "type": "string",
+                              "pattern": "^[A-Za-z0-9_-]{22,64}$/u"
+                            },
+                            "navigationGeneration": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "viewportVersion": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "epoch": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "inputGeneration": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "browserId",
+                            "browserGeneration",
+                            "tabId",
+                            "navigationGeneration",
+                            "viewportVersion",
+                            "epoch",
+                            "inputGeneration"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "outcome": {
+                          "type": "string",
+                          "enum": [
+                            "refused"
+                          ]
+                        },
+                        "reason": {
+                          "type": "string",
+                          "enum": [
+                            "secret",
+                            "selection",
+                            "unsupported",
+                            "capacity"
+                          ]
                         }
                       },
                       "required": [
@@ -88349,6 +89059,57 @@
                   "required": [
                     "saved"
                   ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/audit/verify": {
+      "get": {
+        "tags": [
+          "Audit"
+        ],
+        "summary": "Check the audit log",
+        "description": "Check that the DorkOS audit log has not been edited: walk its hash chain and recompute every link. Returns ok, how many rows were checked, the last row and its hash, and — if the chain is broken — the first row that does not check out and why. Optional fromSeq and limit check a stretch instead of the whole log.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0
+            },
+            "required": false,
+            "name": "fromSeq",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 100000
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "required": false,
+            "name": "prevHash",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Check the audit log result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditVerifyResult"
                 }
               }
             }

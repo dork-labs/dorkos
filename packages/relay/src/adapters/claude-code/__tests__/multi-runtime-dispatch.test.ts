@@ -643,6 +643,9 @@ describe('the relay adapter picks the runtime a message names', () => {
           sessionId: SDK_ID,
           runtimeType: 'codex',
           agentDirectory: AGENT_DIR,
+          // The envelope's stamped sender travels with the binding, so the server
+          // can tell one of our agents from a sender from outside.
+          from: 'adapter:telegram',
         });
       });
 

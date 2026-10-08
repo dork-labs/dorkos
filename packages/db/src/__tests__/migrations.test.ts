@@ -146,6 +146,8 @@ describe('Database Migrations', () => {
       // consent; the token lives here only as a hash (agent-trust spec §3.3,
       // migration 0031).
       'approvals',
+      // The append-only, hash-chained audit log (spec audit-trail §3.1).
+      'audit_events',
       // Opaque author identities keyed on (kind, natural_key) — an agent's
       // agentPath, never its manifest ULID (ADR 260726-170126, migration 0034).
       'authors',

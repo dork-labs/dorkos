@@ -466,7 +466,7 @@ Note: this store omits `devtools` middleware intentionally — it has only two f
 
 ### Event Stream (global broadcast subscriptions)
 
-The `EventStreamProvider` manages a single connection to `/api/events` shared across the entire app. It is a **WebSocket** (ADR 260805-041016) — an SSE stream held one of a browser's ~6 sockets per origin for as long as it was open, and three cockpit windows spent all six. The server still serves SSE at the same path for integrations; the cockpit does not use it. All system-wide real-time events (tunnel status, relay messages, extension reloads) flow through this one connection instead of each consumer opening its own `EventSource`.
+The `EventStreamProvider` manages a single connection to `/api/events` shared across the entire app. It is a **WebSocket** (ADR 260805-041016) — an SSE stream held one of a browser's ~6 sockets per origin for as long as it was open, and three app windows spent all six. The server still serves SSE at the same path for integrations; the app does not use it. All system-wide real-time events (tunnel status, relay messages, extension reloads) flow through this one connection instead of each consumer opening its own `EventSource`.
 
 **Architecture**: The underlying connection is a module-level singleton created outside React, so React StrictMode double-mounts and Vite HMR cycles cannot create duplicate connections. The `import.meta.hot.data` API preserves both the connection instance and the listener map across HMR updates — in production, these guards are tree-shaken.
 
@@ -518,7 +518,7 @@ useEventSubscription('tunnel_status', (data) => {
 The `useFilterState` hook bridges the pure filter engine (`shared/lib/filter-engine.ts`) to TanStack Router search params. Filter values are serialized to the URL (shareable, bookmarkable, survives browser back/forward) and deserialized on load. Text filters support per-key debounce to avoid hammering the URL on every keystroke.
 
 ```typescript
-// apps/client/src/layers/features/agents-list/ui/AgentFilterBar.tsx
+// apps/client/src/layers/features/agents-list/ui/AgentsList.tsx
 import { useFilterState } from '@/layers/shared/model';
 import { agentFilterSchema } from '../lib/agent-filter-schema';
 

@@ -17,7 +17,7 @@ Consult these sources, in order, until you can answer confidently:
 3. `decisions/` — ADRs explaining why things are the way they are (use `decisions/manifest.json` to find by topic)
 4. `contributing/` — the developer guides with detailed patterns (`contributing/INDEX.md` maps topics to guides)
 5. `.claude/rules/` — path-specific rules (each has `paths:` frontmatter declaring which files it governs)
-6. `meta/positioning-202610/00-overview.md`: for any question about what DorkOS is, who it is for, how to describe it, or what may be claimed as working (its demo-claim gate)
+6. The north-star set in `meta/`: `VISION.md` (what DorkOS is, who it is for), `PRINCIPLES.md` (how we decide), `VOICE.md` (how to describe it) and `ROADMAP.md` (what is built, and its demo-claim gate for what may be claimed as working)
 
 Read the files the question actually touches — don't answer from memory when a source file can confirm.
 

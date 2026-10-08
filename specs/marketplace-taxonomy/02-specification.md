@@ -23,7 +23,7 @@ The singular `category` field is **retained** as the Claude-Code-interop field a
 
 Today the registry uses **free-string** singular `category` values with no controlled vocabulary and no sidecar (`packages/marketplace/src/marketplace-json-schema.ts:216`, `manifest-schema.ts:98`). The cached `dork-labs/marketplace` registry has 11 packages spread across nine ad-hoc strings (`code-quality`, `security`, `documentation`, `integration`, `observability`, `release`, `development`, `productivity`, `workflow` — see ideation §5). Three consequences:
 
-1. **No SEO surface.** The Shapes program (`plans/shapes-program.md`, success criterion 4) needs "≥6 category SEO routes with zero unverified claims." Static generation needs a **closed** set of slugs.
+1. **No SEO surface.** The Shapes program (`plans/archive/shapes-program.md`, success criterion 4) needs "≥6 category SEO routes with zero unverified claims." Static generation needs a **closed** set of slugs.
 2. **No multi-membership.** `linear-integration` is both project-management and an integration; `flow` is both agent-ops and project-management. A scalar `category` forces a wrong single choice.
 3. **No shared vocabulary.** Client facet chips, site routes, and MCP filters each need to agree on the same slugs; free strings drift.
 
@@ -463,7 +463,7 @@ Phases 3, 4, 5 are parallelizable once Phase 1 lands (disjoint file sets). Phase
 
 ## References
 
-- `plans/shapes-program.md` (W3 row; success criterion 4; reference-shape ladder P1–P5).
+- `plans/archive/shapes-program.md` (W3 row; success criterion 4; reference-shape ladder P1–P5).
 - Real registry: `apps/server/.temp/.dork/cache/marketplace/marketplaces/dorkos-community/marketplace.json`.
 - SEO template: `apps/site/src/app/(marketing)/features/category/[category]/page.tsx`.
 - Client params (already reserved `?category=`): `apps/client/src/layers/features/marketplace/model/use-marketplace-params.ts`.

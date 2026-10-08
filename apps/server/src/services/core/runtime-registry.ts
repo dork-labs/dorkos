@@ -41,8 +41,7 @@ import {
 import { logger } from '../../lib/logger.js';
 import { withSessionLimitStore } from '../session/fleet/session-limit-store.js';
 import { getSessionStartedByStore } from '../session/origin/session-started-by-store.js';
-import { traceRuntime, watchRuntimeSignin } from '../observability/index.js';
-import { holdAwakeDuringTurns } from './keep-awake/hold-during-turn.js';
+import { decorateRuntime } from './runtime-seam/decorate-runtime.js';
 
 /** Columns read from `session_metadata` for the settings projection. */
 type SettingsRow = {
@@ -236,23 +235,11 @@ export class RuntimeRegistry {
    * @param runtime - The runtime to register. Replaces any existing registration for the same type.
    */
   register(runtime: AgentRuntime): void {
-    // Wrap at the one registration seam so every runtime call is traced when
-    // debug tracing is on, and left untouched (zero overhead) when off — no
-    // span code leaks into the runtime adapters.
-    //
-    // The sign-in watch wraps OUTSIDE the tracing one so it is always present:
-    // tracing returns the runtime untouched when it is off, and a credential
-    // failure has to reach the operator whether or not anybody turned tracing
-    // on. This is the one seam every turn passes through — the interactive
-    // composer, a room reply, a scheduled run and a relay delivery all resolve
-    // their runtime from here (DOR-1654).
-    //
-    // Keep-awake wraps OUTERMOST so its hold spans everything inside it: the
-    // computer stays awake for as long as the caller is consuming the turn,
-    // whoever the caller is (spec `keep-awake`).
+    // Every decorator at this one seam, in its order and with its reasons, is
+    // `decorateRuntime`'s to state (`runtime-seam/decorate-runtime.ts`).
     this.runtimes.set(
       runtime.type,
-      holdAwakeDuringTurns(watchRuntimeSignin(traceRuntime(runtime)))
+      decorateRuntime(runtime, (sessionId) => this.storedPermissionModeOf(sessionId))
     );
   }
 
@@ -652,6 +639,23 @@ export class RuntimeRegistry {
         set: { lastAutoResumeFor: episode },
       })
       .run();
+  }
+
+  /**
+   * A session's stored permission mode, read synchronously, or null when there
+   * is no row or no mode. For the turn-level record at the registration seam,
+   * which must not add an await between a dispatch and its turn.
+   *
+   * @param sessionId - Session identifier
+   */
+  storedPermissionModeOf(sessionId: string): string | null {
+    const db = this.requireDb('storedPermissionModeOf');
+    const row = db
+      .select({ permissionMode: sessionMetadata.permissionMode })
+      .from(sessionMetadata)
+      .where(eq(sessionMetadata.sessionId, sessionId))
+      .get();
+    return row?.permissionMode ?? null;
   }
 
   /**

@@ -344,6 +344,40 @@ export function describeConfigWrite(before: unknown, after: unknown): string {
     : `${named}, and ${ordered.length - LOGGED_PATH_LIMIT} more`;
 }
 
+/** Read the value at a dot-path, or `undefined` when a step is missing. */
+function valueAtPath(root: unknown, path: string): unknown {
+  let node = root;
+  for (const key of path.split('.')) {
+    if (!isPlainObject(node)) return undefined;
+    node = node[key];
+  }
+  return node;
+}
+
+/**
+ * Every leaf a write changed, with its value either side, for the audit log
+ * (spec `audit-trail` PR2). The same walk as {@link describeConfigWrite}, so
+ * the log line and the audit row can never disagree about what moved. Values
+ * are raw: the audit writer empties secret fields itself.
+ *
+ * @param before - The stored config, or one section of it, before the write.
+ * @param after - The same, after.
+ * @returns One entry per changed leaf, in a stable order.
+ */
+export function changedConfigLeaves(
+  before: unknown,
+  after: unknown
+): { field: string; before: unknown; after: unknown }[] {
+  if (!isPlainObject(before) || !isPlainObject(after)) return [];
+  const changed: string[] = [];
+  collectChangedPaths(before, after, '', changed);
+  return changed.sort().map((field) => ({
+    field,
+    before: valueAtPath(before, field) ?? null,
+    after: valueAtPath(after, field) ?? null,
+  }));
+}
+
 /** Outcome of {@link applyConfigPatch}: a validated write or a typed rejection. */
 export type ConfigPatchResult =
   | {

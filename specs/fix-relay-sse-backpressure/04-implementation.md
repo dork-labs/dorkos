@@ -28,7 +28,7 @@
 
 ## Known Issues
 
-- **SSE freeze persists after backpressure fix.** A second `/chat:self-test` run (Run 2, 2026-03-06) confirmed that SSE stream freezes still occur despite the backpressure fixes being in place. 2 of 5 messages froze (messages 3 and 4). The JSONL shows complete responses — the SDK processes everything correctly. The issue is that response chunks never reach the client SSE stream. This suggests the root cause is upstream of session-broadcaster (likely in ClaudeCodeAdapter's publish-to-relay or the SSE stream connection lifecycle). See `plans/2026-03-06-chat-self-test-findings-2.md`.
+- **SSE freeze persists after backpressure fix.** A second `/chat:self-test` run (Run 2, 2026-03-06) confirmed that SSE stream freezes still occur despite the backpressure fixes being in place. 2 of 5 messages froze (messages 3 and 4). The JSONL shows complete responses — the SDK processes everything correctly. The issue is that response chunks never reach the client SSE stream. This suggests the root cause is upstream of session-broadcaster (likely in ClaudeCodeAdapter's publish-to-relay or the SSE stream connection lifecycle). See `plans/archive/2026-03-06-chat-self-test-findings-2.md`.
 
 ## Implementation Notes
 

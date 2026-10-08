@@ -940,9 +940,9 @@ Minor copy bug found: `docs/guides/relay-messaging.mdx:170` says "five" built-in
 `2026-02-27-relay-conversation-view-design.md`, `2026-02-28-telegram-adapter-investigation.md` are all marked
 `Provenance` in `plans/INDEX.md:26-30` — superseded but kept because ~9-20 implemented specs cite them.
 **None uses "room", "channel", or "DM"**; the rooms vocabulary is entirely new as of July 2026. Same for
-`plans/mesh-specs/` (5 files) and `plans/relay-specs/` (7 files) — grepped, zero hits. One terminology drift
+`plans/archive/mesh-specs/` (5 files) and `plans/archive/relay-specs/` (7 files) — grepped, zero hits. One terminology drift
 to be aware of when reading them: they call the scheduler **"Pulse"**; shipped docs call it "Tasks" / "Task
-Scheduler". `plans/2026-02-27-relay-conversation-view-design.md` is about the Relay **debugging panel's**
+Scheduler". `plans/archive/2026-02-27-relay-conversation-view-design.md` is about the Relay **debugging panel's**
 message grouping, not the chat surface — do not mistake it for room-view prior art.
 
 **Research prior art** (filenames only, not read here): `research/20260724_multi-user-communities.md`,

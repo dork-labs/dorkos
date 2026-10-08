@@ -2484,6 +2484,22 @@ export const UserConfigSchema = z.object({
       wakeForScheduledTasks: z.boolean().default(false),
     })
     .default(() => ({ whileAgentsWork: true, wakeForScheduledTasks: false })),
+  /**
+   * The Activity feed (spec `audit-trail` §3.5). A whole top-level section on
+   * purpose, like `keepAwake`: conf writes a new section into every stored
+   * config on its own, so the field needs no migration. The default is declared
+   * twice, here and in the section literal below, and the two must agree.
+   */
+  activity: z
+    .object({
+      /**
+       * Days of Activity history to keep. `DORKOS_ACTIVITY_RETENTION_DAYS`
+       * overrides it when set. Permission changes are kept regardless, and the
+       * audit log keeps every action forever whatever this says.
+       */
+      retentionDays: z.number().int().min(1).max(3650).default(365),
+    })
+    .default(() => ({ retentionDays: 365 })),
   mesh: z
     .object({
       scanRoots: z.array(z.string()).default(() => []),

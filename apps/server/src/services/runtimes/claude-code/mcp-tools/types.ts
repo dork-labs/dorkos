@@ -16,6 +16,7 @@ import type { ActivityService } from '../../../activity/activity-service.js';
 import type { ApprovalService } from '../../../core/approvals/index.js';
 import type { CapabilityHandlerContext } from '../../../core/capabilities/registry.js';
 import type { StreamEvent } from '@dorkos/shared/types';
+import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 
 /**
  * The live session the in-session tool server is built for, narrowed to what the
@@ -61,6 +62,12 @@ export interface McpToolSession {
    * `'default'`; this is how a reader tells the two apart. Read at call time.
    */
   autoModeConfirmedFor?: string;
+  /**
+   * The current turn's ceiling (`AgentSession`'s field of the same name), so a
+   * chat held below its own level by a stranger's message starts nothing above
+   * that. Read at call time.
+   */
+  turnPermissionCeiling?: TurnPermissionCeiling;
 }
 
 /**

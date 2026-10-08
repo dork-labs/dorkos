@@ -38,7 +38,7 @@ status: ideation
 - `specs/mcp-apps-host/01-ideation.md` + `02-specification.md` — sandboxed iframe posture (`allow-scripts` WITHOUT `allow-same-origin`, CSP, postMessage JSON-RPC, first-use consent); explicitly flags the existing canvas URL iframe sandbox as too permissive for untrusted HTML.
 - ADRs 0290–0293 — canvas markdown unified on Blintz; `editable` lives in Blintz; `canvasEditing` edit-protection + session-ownership guard; **editor owns document, host owns file** (`sourcePath`, `PUT /api/files/content`, SHA-256 optimistic concurrency, atomic write, boundary-confined).
 - `specs/shell-level-right-panel` (#237) — the right panel is already a generic N-tab **extension slot** (`right-panel` contributions), not a hardcoded two-tab layout.
-- `plans/generative-ui-and-ui-control-program.md` — 4-wave program; waves in flight as PRs #127–#134.
+- `plans/archive/generative-ui-and-ui-control-program.md` — 4-wave program; waves in flight as PRs #127–#134.
 - Research reused: `research/20260708_generative_ui_standards_dorkos.md`, `research/20260326_agent_ui_control_canvas_spec_research.md` (iframe/CSP/Electron hardening), `research/20260328_multi_panel_toggle_ux_patterns.md`, `research/20260306_filesystem_discovery_unification.md`, `research/20260309_upload_files_react_express.md`.
 
 ## 3) Codebase Map

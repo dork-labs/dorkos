@@ -10,7 +10,7 @@
     {
       "id": "wave-2",
       "issue": "DOR-1517",
-      "note": "\"Mission control\" and \"cockpit\" are retired for good — the operator ruled both out on 2026-08-24 and the category phrase became \"one place\" (meta/website-copy/decisions.md, Decision 18; meta/brand-foundation.md §10). This wave covers render-path strings in app source. The prose surfaces an AST walk cannot see — READMEs, docs MDX, blog posts, context7.json, the PWA manifest — are guarded by scripts/check-banned-words.sh instead. GitHub ships a product literally named \"Mission Control\", so a genuine reference to it is allowlisted per file rather than exempted here.",
+      "note": "\"Mission control\" and \"cockpit\" are retired for good — the operator ruled both out on 2026-08-24 and the category phrase became \"one place\" (meta/VOICE.md). This wave covers render-path strings in app source. The prose surfaces an AST walk cannot see — READMEs, docs MDX, blog posts, context7.json, the PWA manifest — are guarded by scripts/check-banned-words.sh instead. GitHub ships a product literally named \"Mission Control\", so a genuine reference to it is allowlisted per file rather than exempted here.",
       "terms": ["mission control", "cockpit"]
     },
     {
@@ -39,6 +39,34 @@
       "issue": "DOR-2631",
       "note": "What code calls a \"community\" is a \"space\" to the person reading (specs/dorkos-account-by-default, decision D6). The rename is user-facing only for now: identifiers, routes (/api/communities), CLI verbs (`dorkos community`), config keys, DB tables and the cloud wire contract keep the word until DOR-2639 renames them, and the gate never reads those positions. Singular and plural are listed because a term is fenced with a word boundary. Docs prose is scanned for this wave too (MDX_SCANNED_WAVES); a literal command or route that still says community belongs in inline code, which the docs scan blanks. Every surviving copy-position use is a scoped, reasoned allowlist entry — the open-source Community server's own pages, the marketplace's community-source sense, and the like.",
       "terms": ["community", "communities"]
+    },
+    {
+      "id": "wave-6",
+      "issue": "DOR-2736",
+      "note": "The 2026-10 vision reset (meta/VISION.md, meta/VOICE.md) retired three positioning lines and one link for good. \"Operating system for AI agents\" in every spelling was the old category line; DorkOS is now \"a workspace for people and agents\" (the product name DorkOS stays). \"One place for every agent\" was the 2026-08 category line it replaced, retired with it. \"Equal accounts\" and \"agents (are) equal\" describe an internal design principle that public copy never states; a bare \"equal to humans\" is deliberately NOT a term, because it is an ordinary benchmark sentence and the claim always names agents. A Discord invite link points at a server DorkOS does not have. The bare word \"Discord\" is NOT banned: it is a real app people connect. Terms are phrases, matched with any run of whitespace between words (termMatcher), so a JSX line wrap does not hide one. This list is a SUBSET of scripts/check-banned-words.sh's regex for the same families: that regex accepts the qualifiers \"AI\", \"autonomous\" and \"coding\" in any order, while a term here is literal, so this lists the spellings people actually wrote. Both fence every phrase as whole words, so \"Unequal accounts\" and \"your agents equally\" never fire. This wave covers render-path strings in app source only. Docs MDX, blog posts, READMEs and the operating skills are guarded by check-banned-words.sh, which reports a hit once and honours this directory's allowlist.json for docs pages (the vocab-allow marker is banned there), so wave 6 stays out of MDX_SCANNED_WAVES on purpose (the same split as wave 2). An allowlist entry meant to exempt a docs line from wave 6 must name at least one term below. meta/VOICE.md is the single list of words DorkOS uses and never uses.",
+      "terms": [
+        "operating system for agents",
+        "operating system for AI agents",
+        "operating system for autonomous agents",
+        "operating system for autonomous AI agents",
+        "operating system for coding agents",
+        "operating system for AI coding agents",
+        "OS for agents",
+        "OS for AI agents",
+        "OS for autonomous agents",
+        "OS for autonomous AI agents",
+        "OS for coding agents",
+        "OS for AI coding agents",
+        "one place for every agent",
+        "one place for every AI agent",
+        "equal account",
+        "equal accounts",
+        "agents equal",
+        "agents are equal",
+        "discord.gg/",
+        "discord.com/invite",
+        "discordapp.com/invite"
+      ]
     }
   ]
 }

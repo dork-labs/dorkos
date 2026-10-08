@@ -15,7 +15,7 @@ linearIssue: DOR-133
 > Anchored to the existing umbrella **DOR-133 - Assemble .agents/flow/ into a
 > self-contained marketplace package** (Flow Engine - Harness project). This is the
 > ideation for that issue, not a new parallel effort. Governing ADR: **ADR-0281**
-> (proposed; to be amended via **DOR-134**). Roadmap: `plans/agent-harness-portability-roadmap.md`.
+> (proposed; to be amended via **DOR-134**). Roadmap: `plans/archive/agent-harness-portability-roadmap.md`.
 
 ---
 
@@ -56,7 +56,7 @@ linearIssue: DOR-133
 - `decisions/0281-ship-flow-as-dorkos-marketplace-plugin-package.md`: proposed; build `.agents/flow/`
   as a `plugin`-type package from P1; v1 layers commands/skills/hooks/templates; `.agents/` stays the
   cross-harness glue; end-state is a self-contained, projected package.
-- `plans/agent-harness-portability-roadmap.md`: the through-line is "one canonical source `.agents/<name>`,
+- `plans/archive/agent-harness-portability-roadmap.md`: the through-line is "one canonical source `.agents/<name>`,
   projected to every agent." Projection mechanism per artifact (skills = symlink, hooks/commands = generate).
   Workstreams A (this), B (projection), C (marketplace authoring), D (tasks/skill unification). A4 = DOR-133.
 - `.agents/flow/skills/linear-adapter/SKILL.md`: the tracker adapter is a **prose contract** (no code

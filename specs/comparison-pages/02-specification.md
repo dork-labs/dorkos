@@ -2,7 +2,7 @@
 
 **Status:** specified · **Date:** 2026-08-23 · **Spec id:** 260823-174248
 **Research:** `research/20260823_comparison-pages-competitor-verification.md` (the 11 named products) · `research/20260823_comparison-pages-landscape-and-seo.md` (wider sweep + SEO mechanics)
-**Mandate:** `meta/positioning-202607/07-website-changes.md` §4.1 · `05-marketing-strategy.md` §2
+**Mandate:** `meta/archive/positioning-202607/07-website-changes.md` §4.1 · `05-marketing-strategy.md` §2
 **Copy formula:** `meta/value-architecture.md` §4C (validate frustration → name the villain _paradigm_ → assert alternative → prove) · `meta/value-architecture-applied.md` §1A (competitive alternative map), §1D (anti-positioning)
 
 ## 1. Goal
@@ -115,4 +115,4 @@ Third-party logo assets (text wordmarks only) · MDX body content (`mdxSlug`-sty
 
 ## 8. Companion correction (separate work item)
 
-Update `research/20260227_competitive_landscape_agent_infrastructure.md` (+ any `meta/positioning-202607/*` copy leaning on it) where it claims Claude scheduling requires an awake machine — Cowork cloud sessions schedule device-off since July 2026. Mark superseded claims, cite sources, keep the nuance that Claude Code-specific coverage is unverified.
+Update `research/20260227_competitive_landscape_agent_infrastructure.md` (+ any `meta/archive/positioning-202607/*` copy leaning on it) where it claims Claude scheduling requires an awake machine — Cowork cloud sessions schedule device-off since July 2026. Mark superseded claims, cite sources, keep the nuance that Claude Code-specific coverage is unverified.

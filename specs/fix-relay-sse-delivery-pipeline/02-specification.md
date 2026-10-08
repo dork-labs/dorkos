@@ -386,6 +386,6 @@ _None — all decisions resolved during ideation._
 - Ideation: `specs/fix-relay-sse-delivery-pipeline/01-ideation.md`
 - Research: `research/20260306_sse_relay_delivery_race_conditions.md`
 - Previous fix: `specs/fix-relay-sse-backpressure/04-implementation.md` (commit ebea3a7)
-- Self-test findings: `plans/2026-03-06-chat-self-test-findings.md`, `plans/2026-03-06-chat-self-test-findings-2.md`
+- Self-test findings: `plans/archive/2026-03-06-chat-self-test-findings.md`, `plans/archive/2026-03-06-chat-self-test-findings-2.md`
 - Mercure dual-buffer design: https://mercure.rocks/spec
 - MCP Streamable HTTP: subscribe-first pattern reference
