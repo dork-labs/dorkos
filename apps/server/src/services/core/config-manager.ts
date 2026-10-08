@@ -3907,6 +3907,17 @@ export function retireAgentContextSettings(store: {
   return blocked;
 }
 
+/** Seed a new runtime without choosing a model or changing existing runtimes. */
+export function seedDoeRuntime(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  if (store.get('runtimes.doe') === undefined)
+    store.set('runtimes.doe', { enabled: true, inference: null, defaultTrustStop: null });
+  if (store.get('runtimes.environment.inherit.doe') === undefined)
+    store.set('runtimes.environment.inherit.doe', []);
+}
+
 export const CONFIG_MIGRATIONS = {
   '1.0.0': (store: {
     has: (key: string) => boolean;
@@ -4860,8 +4871,9 @@ export const CONFIG_MIGRATIONS = {
     // See `seedCodexTransport`.
     seedCodexTransport(store);
   },
+  '0.101.0': seedDoeRuntime,
   // Default-off Chrome identity choice; merged migrations above stay frozen.
-  '0.101.0': (store: {
+  '0.102.0': (store: {
     get: (key: string) => unknown;
     set: (key: string, value: unknown) => void;
   }) => {

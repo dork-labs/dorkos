@@ -2,7 +2,7 @@
 
 ## Overview
 
-This guide walks through adding a new agent runtime (runtime #4) behind the `AgentRuntime` interface, using the two adapters shipped by the `additional-agent-runtimes` spec (Codex and OpenCode) as worked examples. Follow it end-to-end and your runtime gets full DorkOS treatment: session streaming, aggregated listing, permission modes, dependency checks with setup UX, and its own visual identity in every badge and picker.
+This guide walks through adding an agent runtime behind the `AgentRuntime` interface, using Codex, OpenCode and the first-party Doe engine as worked examples. Follow it end-to-end and your runtime gets full DorkOS treatment: session streaming, aggregated listing, permission modes, dependency checks with setup UX, and its own visual identity in every badge and picker.
 
 Related ADRs: [0307](../decisions/0307-second-and-third-runtimes-opencode-and-codex.md) (runtime selection), [0308](../decisions/0308-opencode-adapter-managed-server-sidecar.md) (sidecar pattern), [0309](../decisions/0309-codex-adapter-sdk-threads.md) (SDK-thread pattern), [0310](../decisions/0310-runtime-owned-session-storage-aggregated-listing.md) (runtime-owned storage, registry aggregation).
 
@@ -16,6 +16,7 @@ Related ADRs: [0307](../decisions/0307-second-and-third-runtimes-opencode-and-co
 | Capabilities matrix                | `packages/test-utils/src/runtime-capability-matrix.ts`, rendered to [capabilities/runtimes.md](capabilities/runtimes.md) |
 | Worked example: JSON-RPC child     | `apps/server/src/services/runtimes/codex/` (app-server by default; `exec`, one subprocess per turn, as the fallback)     |
 | Worked example: managed sidecar    | `apps/server/src/services/runtimes/opencode/`                                                                            |
+| Worked example: first-party engine | `apps/server/src/services/runtimes/doe/` (direct resources, authenticated MCP, independent model history)                |
 | Reference stateless implementation | `apps/server/src/services/runtimes/test-mode/`                                                                           |
 | Runtime registry (composition)     | `apps/server/src/services/core/runtime-registry.ts` (`runtimeRegistry`)                                                  |
 | Composition root registration      | `apps/server/src/index.ts` (registration blocks + `shutdownServices()`)                                                  |
@@ -722,3 +723,13 @@ displayName: 'Turbo 2',
 - [configuration.md](configuration.md): config schema, migrations, precedence
 - [api-reference.md](api-reference.md): the routes that consume the registry
 - [project-structure.md](project-structure.md): server service domains
+
+## First-party engine and inference boundaries
+
+Doe is confined to `services/runtimes/doe/`; Pi remains confined to the standalone `@dorkos/doe` engine. The host implements `AgentRuntime` and translates engine events into the shared display stream. `DoeSessionStore` keeps session metadata and immutable inference selection separate from the engine's full provider-message SQLite store. Display retention never becomes model history.
+
+`runtimes.doe.inference` describes source, service, protocol, endpoint, model and token limits. Store only encrypted credential references through the runtime connection store. Resolve authentication at request time, never during construction, metadata reads or model listing. Preserve payer and history family across restart, and persist the actual resolved model budget for context readings.
+
+Multi-format credits runtimes declare `credits.supportedProtocols`. The optional `getCreditsProtocol(sessionId?)` selects the configured or frozen conversation format; `creditsCapabilitiesFor` derives a transient view without mutating stable capabilities. Session model menus and refusals must pass the session id. The optional `sessionRunsOnCredits` answers the frozen payer, rather than applying a later global setting to an existing conversation.
+
+Host assembly owns turn-scoped MCP clients and a connector principal. Runtime shutdown must drain those turns before their tool, account, room and Mesh dependencies close. Terminal metadata failures must still end the event queue and release active ownership. An unacknowledged stop answers `unconfirmed`; it must not close a store still owned by running work.

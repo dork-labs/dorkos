@@ -1,3 +1,4 @@
+import doeSetupRouter from '../services/runtimes/connect/doe-setup-router.js';
 /**
  * Runtime connect + provisioning routes, mounted at `/api/runtimes`.
  *
@@ -496,6 +497,8 @@ router.post('/opencode/provider/credential', async (req, res) => {
     res.status(500).json({ error: 'Could not save the provider key.' });
   }
 });
+
+router.use('/doe', doeSetupRouter);
 
 // --- Generic per-runtime connect (Claude, Codex) ---------------------------
 

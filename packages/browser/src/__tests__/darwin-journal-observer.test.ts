@@ -1,7 +1,11 @@
+import {
+  createOriginalObserverFailureSink,
+  readOriginalObserverFailure,
+} from '../runtime/journal/unknown-diagnostic.js';
 import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { expect, it, onTestFinished } from 'vitest';
+import { expect, it, onTestFinished, vi } from 'vitest';
 import { observeDarwinJournal } from '../runtime/darwin-journal-observer.js';
 import {
   darwinBirth,
@@ -1563,6 +1567,82 @@ it.each([
     } finally {
       releaseOutput();
       if (originalWork) await Promise.allSettled([originalWork]);
+      await rm(f.parentDirectory, { recursive: true, force: true });
+    }
+  }
+);
+
+// These controls retain the real durable observer through its original diagnostic duty.
+it.each([false, undefined])(
+  'retains original observer failure %s while joining failed diagnostic output',
+  async (value) => {
+    const f = await fixture();
+    let finish: ((error?: unknown) => void) | undefined;
+    let emitted = '';
+    let releasing = false;
+    let inspections = 0;
+    let faultReported = false;
+    const sink = createOriginalObserverFailureSink((bytes, done) => {
+      emitted = bytes;
+      finish = done;
+      if (releasing) done();
+      return true;
+    });
+    const original = observeDarwinJournal({
+      location: f.location,
+      initial: f.initial,
+      root: f.root,
+      observer: {
+        async inspect() {
+          inspections++;
+          throw value;
+        },
+        async children() {
+          throw new Error('Unexpected child query');
+        },
+      },
+      monotonicNow: () => 10,
+      pause: async () => {},
+      endMonotonic: 100,
+      maxGap: 100,
+      onOriginalFailure: sink,
+      continuousWindowMilliseconds: 100,
+      onObservationFault: async () => {
+        faultReported = true;
+      },
+    });
+    let settled = false;
+    void original.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      }
+    );
+    try {
+      await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+      if (!finish) throw new Error('Original diagnostic callback not entered');
+      expect(settled).toBe(false);
+      expect(faultReported).toBe(true);
+      expect(inspections).toBe(1);
+      expect(readOriginalObserverFailure(new TextEncoder().encode(emitted))).toEqual({
+        kind: 'original-observer-failure',
+        sequence: 0,
+        phase: 'owner-inspect',
+        failure: value === false ? 'false' : 'undefined',
+      });
+      finish(false);
+      expect(await original).toBe('uncertain');
+      const recorded = await readJournal(f.location);
+      expect(recorded.state).toBe('valid-recorded-data');
+      if (recorded.state === 'valid-recorded-data')
+        expect(recorded.snapshot.firstCause).toEqual({ cause: 'observer-lost', sequence: 1 });
+      expect(inspections).toBe(1);
+    } finally {
+      releasing = true;
+      finish?.();
+      await Promise.allSettled([original]);
       await rm(f.parentDirectory, { recursive: true, force: true });
     }
   }

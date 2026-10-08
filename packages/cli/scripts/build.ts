@@ -69,7 +69,7 @@ const communityMigrationId = communityMigrationCompatibilityId();
  * schemas `@dorkos/shared` used to own, and the server reaches it both directly
  * and through those shared re-exports, so it keeps the vintage-consistency
  * invariant above. A published package's `types` condition points at built
- * `dist/*.d.ts`, so its source path is derived from `default` instead
+ * `dist/*.d.ts`, so its source path is derived from `default` or `import` instead
  * (`./dist/x.js` -> `./src/x.ts`).
  */
 const PUBLISHED_SOURCE_PACKAGES = new Set(['@dork-labs/connector-providers']);
@@ -114,7 +114,7 @@ function loadWorkspacePackages(packagesDirectory = PACKAGES_DIR): Map<string, Wo
  * `default` points at compiled `dist`; we deliberately pick `types` so the
  * bundle embeds source (see the vintage-consistency invariant above). String
  * entries already point at source and are used as-is. A published package's
- * `types` is a built `.d.ts`, so its source is derived from `default`.
+ * `types` is a built `.d.ts`, so its source is derived from `default` or `import`.
  *
  * @param entry - The value of an `exports` subpath key.
  * @returns The package-relative source path, or undefined if unresolvable.
@@ -125,7 +125,7 @@ function sourcePathFromExportsEntry(entry: unknown): string | undefined {
     const conditions = entry as Record<string, unknown>;
     if (typeof conditions.types === 'string' && conditions.types.endsWith('.d.ts')) {
       // A published package: map its compiled entry back to the source file.
-      const built = conditions.default;
+      const built = conditions.default ?? conditions.import;
       if (typeof built !== 'string' || !/^\.\/dist\/.+\.js$/.test(built)) return undefined;
       return built.replace(/^\.\/dist\//, './src/').replace(/\.js$/, '.ts');
     }
@@ -147,7 +147,7 @@ function sourcePathFromExportsEntry(entry: unknown): string | undefined {
  *
  * @returns The configured esbuild plugin.
  */
-function dorkosSourcePlugin(root = ROOT): Plugin {
+export function dorkosSourcePlugin(root = ROOT): Plugin {
   const registry = loadWorkspacePackages(path.join(root, 'packages'));
   return {
     name: 'resolve-dorkos-source',

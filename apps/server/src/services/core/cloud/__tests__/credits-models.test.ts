@@ -31,6 +31,8 @@ import {
   baseModelId,
   creditsLinkKey,
   creditsMenuFor,
+  peekCreditsModelsFor,
+  readCreditsCatalog,
   creditsModelOptions,
   judgeCreditsModel,
   readCreditsCatalogWithContext,
@@ -247,6 +249,23 @@ const OLD_LIST = {
 };
 
 describe('a runtime on credits, end to end against the fake service', () => {
+  it('checks cached protocol metadata without a new catalog request, and forgets an unlinked account', async () => {
+    const service = fakeCloud(() => answer(LIST));
+    cloud.context = service.context;
+    expect(peekCreditsModelsFor('openai-chat-completions')).toEqual([]);
+    expect(service.fetch).not.toHaveBeenCalled();
+    await readCreditsCatalog();
+    expect(service.fetch).toHaveBeenCalledTimes(1);
+    expect(peekCreditsModelsFor('openai-chat-completions').map((entry) => entry.id)).toEqual([
+      'md_gpt_like',
+      'md_both',
+    ]);
+    expect(peekCreditsModelsFor('openai-responses')).toEqual([]);
+    expect(service.fetch).toHaveBeenCalledTimes(1);
+    cloud.context = null;
+    expect(peekCreditsModelsFor('openai-chat-completions')).toEqual([]);
+    expect(service.fetch).toHaveBeenCalledTimes(1);
+  });
   it('lists, suggests and accepts only what credits serve on its protocol, once the service says', async () => {
     cloud.context = fakeCloud(() => answer(LIST)).context;
     const menu = await creditsMenuFor(CLAUDE);

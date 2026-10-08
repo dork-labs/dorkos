@@ -154,3 +154,134 @@ export function createOriginalUnknownJournalDiagnosticSink(
     return emitted;
   };
 }
+
+const observerPhase = z.enum([
+  'initial-commit',
+  'owner-inspect',
+  'enrolled',
+  'root',
+  'sweep-inspect',
+  'root-association',
+  'children',
+  'leaf-enroll',
+  'leaf-baseline',
+  'snapshot-commit',
+  'snapshot-validate',
+  'enumeration-close',
+  'checkpoint',
+  'pause',
+]);
+const observerCode = z.enum([
+  'PROCESS_OBSERVATION_UNAVAILABLE',
+  'PROCESS_OBSERVER_CLOSED',
+  'LEAF_EVENT_OWNER_UNAVAILABLE',
+  'LEAF_EVENT_OWNER_CLOSED',
+  'LEAF_EVENT_BASELINE_UNAVAILABLE',
+  'LEAF_EVENT_OVERFLOW',
+  'LEAF_EVENT_PIPE_UNCERTAIN',
+  'LEAF_EVENT_CHILD_UNCERTAIN',
+  'JOURNAL_UNCERTAIN',
+  'JOURNAL_PRECLOSE_REFUSED',
+  'OWNER_UNAVAILABLE',
+  'ROOT_UNAVAILABLE',
+]);
+const observerFailure = z
+  .object({
+    kind: z.literal('original-observer-failure'),
+    sequence: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+    phase: observerPhase,
+    failure: z.enum(['undefined', 'false', 'error', 'other']),
+    code: observerCode.optional(),
+  })
+  .strict();
+export type OriginalObserverPhase = z.infer<typeof observerPhase>;
+
+/** Closed projection of the original catch value; never invokes participant getters or serializes an error. */
+export function projectOriginalObserverFailure(
+  sequence: number,
+  phase: OriginalObserverPhase,
+  value: unknown
+) {
+  let failure: z.infer<typeof observerFailure>['failure'] =
+    value === undefined ? 'undefined' : value === false ? 'false' : 'other';
+  let code: z.infer<typeof observerCode> | undefined;
+  try {
+    if (value instanceof Error) {
+      failure = 'error';
+      const message = Object.getOwnPropertyDescriptor(value, 'message');
+      if (message && 'value' in message) {
+        const parsed = observerCode.safeParse(message.value);
+        if (parsed.success) code = parsed.data;
+      }
+    }
+  } catch {
+    /* Observation cannot replace the original catch value. */
+  }
+  return Object.freeze(
+    observerFailure.parse({
+      kind: 'original-observer-failure',
+      sequence,
+      phase,
+      failure,
+      ...(code === undefined ? {} : { code }),
+    })
+  );
+}
+
+/** Parse one original bounded failure line after the worker's original pipes return. */
+export function readOriginalObserverFailure(bytes: Uint8Array) {
+  if (bytes.byteLength > 262144) throw new Error('JOURNAL_DIAGNOSTIC_UNAVAILABLE');
+  let original: z.infer<typeof observerFailure> | undefined;
+  for (const line of new TextDecoder('utf-8', { fatal: true }).decode(bytes).split('\n')) {
+    if (!line.startsWith('{"kind":"original-observer-failure",')) continue;
+    if (original || Buffer.byteLength(line) > 512)
+      throw new Error('JOURNAL_DIAGNOSTIC_UNAVAILABLE');
+    original = Object.freeze(observerFailure.parse(JSON.parse(line)));
+  }
+  return original;
+}
+
+/** Retain one original stderr callback; a diagnostic never changes the original refusal. */
+export function createOriginalObserverFailureSink(
+  supplied?: (bytes: string, done: (error?: unknown) => void) => void | boolean,
+  parent = false
+) {
+  let write: typeof supplied;
+  let first: { value: unknown } | undefined;
+  try {
+    if (supplied) write = supplied;
+    else {
+      const original = process.stderr.write.bind(process.stderr);
+      write = (bytes, done) => original(bytes, (error) => done(error));
+    }
+  } catch (value) {
+    first = { value };
+  }
+  let returned: Promise<void> | undefined;
+  return (row: NonNullable<ReturnType<typeof readOriginalObserverFailure>>): Promise<void> => {
+    if (returned) return returned;
+    returned = Promise.resolve().then(() => {
+      if (first) throw first.value;
+      const checked = observerFailure.parse({
+        kind: row.kind,
+        sequence: row.sequence,
+        phase: row.phase,
+        failure: row.failure,
+        ...(row.code === undefined ? {} : { code: row.code }),
+      });
+      const bytes = (parent ? 'JOURNAL_ORIGINAL_FAILURE: ' : '') + JSON.stringify(checked) + '\n';
+      if (Buffer.byteLength(bytes) > 1024) throw new Error('JOURNAL_DIAGNOSTIC_UNAVAILABLE');
+      return new Promise<void>((resolve, reject) => {
+        try {
+          write!(bytes, (error) =>
+            error !== undefined && error !== null ? reject(error) : resolve()
+          );
+        } catch (value) {
+          reject(value);
+        }
+      });
+    });
+    void returned.catch(() => {});
+    return returned;
+  };
+}

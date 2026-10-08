@@ -1723,19 +1723,21 @@ Two kinds of writer, and the difference decides what each one owes you.
 
 **Purpose-built writers** write one known setting as part of doing something else. They keep their own gate — often a stricter one; starting a tunnel needs login AND an owner account — and take `logConfigWrite(subsystem, section, before, after)`, which writes `[Config] Set by <subsystem>: <paths>` with the same paths-only, escaped, no-line-when-nothing-changed rules. Re-running the path policy there would either do nothing or refuse the writer its own job.
 
-| Writer                                        | Section      | Named in the log as                                                                            |
-| --------------------------------------------- | ------------ | ---------------------------------------------------------------------------------------------- |
-| `index.ts` first-run telemetry notice         | `telemetry`  | the first-run telemetry notice                                                                 |
-| `index.ts` profile router setter              | `profile`    | the profile route                                                                              |
-| `routes/config.ts` `PUT /agents/defaultAgent` | `agents`     | the default-agent route                                                                        |
-| `routes/tunnel.ts` start / stop               | `tunnel`     | the tunnel route                                                                               |
-| `routes/runtimes.ts` found-folders dismiss    | `runtimes`   | the found-folders route                                                                        |
-| `services/core/agent-creator.ts`              | `agents`     | the agent creator                                                                              |
-| `services/core/auth/cloud-link.ts`            | `cloud`      | the account link / unlinking this instance                                                     |
-| `services/core/auth/seed-legacy-mcp-key.ts`   | `mcp`        | the MCP key migration                                                                          |
-| `services/shapes/shape-services.ts`           | `ui`         | applying a Shape / clearing the active Shape                                                   |
-| `services/extensions/extension-manager.ts`    | `extensions` | the extensions manager / approving an extension to run / withdrawing an extension run approval |
-| `services/harness/hook-approval.ts`           | `harness`    | approving a package hook                                                                       |
+| Writer                                                                                     | Section                 | Named in the log as                                                                            |
+| ------------------------------------------------------------------------------------------ | ----------------------- | ---------------------------------------------------------------------------------------------- |
+| `index.ts` first-run telemetry notice                                                      | `telemetry`             | the first-run telemetry notice                                                                 |
+| `index.ts` profile router setter                                                           | `profile`               | the profile route                                                                              |
+| `routes/config.ts` `PUT /agents/defaultAgent`                                              | `agents`                | the default-agent route                                                                        |
+| `routes/tunnel.ts` start / stop                                                            | `tunnel`                | the tunnel route                                                                               |
+| `routes/runtimes.ts` found-folders dismiss                                                 | `runtimes`              | the found-folders route                                                                        |
+| `services/runtimes/connect/doe-setup-router.ts` (loopback and owner gate)                  | `runtimes`              | the DorkOS model setup                                                                         |
+| `services/runtimes/connect/doe-credentials.ts` (only through that owner-gated setup route) | `providers`, `runtimes` | the DorkOS API key setup                                                                       |
+| `services/core/agent-creator.ts`                                                           | `agents`                | the agent creator                                                                              |
+| `services/core/auth/cloud-link.ts`                                                         | `cloud`                 | the account link / unlinking this instance                                                     |
+| `services/core/auth/seed-legacy-mcp-key.ts`                                                | `mcp`                   | the MCP key migration                                                                          |
+| `services/shapes/shape-services.ts`                                                        | `ui`                    | applying a Shape / clearing the active Shape                                                   |
+| `services/extensions/extension-manager.ts`                                                 | `extensions`            | the extensions manager / approving an extension to run / withdrawing an extension run approval |
+| `services/harness/hook-approval.ts`                                                        | `harness`               | approving a package hook                                                                       |
 
 The section is passed explicitly because a purpose-built writer only ever moves its own, and the diff is scoped to it.
 
@@ -1942,3 +1944,9 @@ One leaf gates every space surface. On the server, `middleware/spaces-enabled.ts
 Every check goes through one predicate per side, so the official-space exception (DOR-2764) has one place to plug in: `spacesEnabled()` in `middleware/spaces-enabled.ts` on the server (the route gate and the remote-room bridge both call it), and `useSpacesState()` / `useSpacesEnabled()` (`entities/config`) plus `readSpacesEnabled()` (`shared/model`, for the router's load hook) in the client.
 
 It is a new top-level section, so conf writes its default before migrations run and no migration key is needed. Graduation is tracked in DOR-2735.
+
+## Doe inference metadata
+
+`runtimes.doe.inference` is an explicit source selection: `api-key`, `local`, or `dorkos-credits`. Its protocol is `anthropic`, `openai-chat-completions`, or `openai-responses`; the engine maps Chat Completions to `openai-completions`. Endpoint, model, contextWindow and maxOutputTokens are required. API-key configuration stores `credentialRef` and `credentialEndpoint`, never a key. The setup route accepts keys through the existing encrypted runtime connection store and refuses Anthropic subscription tokens before storage.
+
+Local inference requires an HTTP loopback endpoint and resolves no key. Credits resolution uses the linked computer's current held token and the selected format's model catalog. It refuses rather than changing source. A conversation freezes its payer and protocol on first turn; later runtime settings affect new conversations. See [the runtime guide](../docs/guides/runtimes.mdx).

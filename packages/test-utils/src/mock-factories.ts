@@ -1075,6 +1075,10 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     }),
     provisionRuntime: vi.fn().mockResolvedValue({ ok: true, binaryPath: '/mock/opencode' }),
     // Runtime connect (terminal-free auth)
+    getDoeInference: vi.fn().mockResolvedValue({ inference: null, hasKey: false }),
+    setDoeInference: vi.fn().mockResolvedValue({ ok: true }),
+    storeDoeCredential: vi.fn().mockResolvedValue({ ok: true, hasKey: true }),
+    getDoeCreditsModels: vi.fn().mockResolvedValue({ endpoint: null, models: [] }),
     storeRuntimeCredential: vi.fn().mockResolvedValue({ ref: 'file:mock' }),
     storeProviderCredential: vi.fn().mockResolvedValue({ ref: 'file:mock' }),
     getOpenCodeDirectSetup: vi

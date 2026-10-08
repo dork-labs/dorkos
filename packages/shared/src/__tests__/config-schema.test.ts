@@ -214,7 +214,8 @@ describe('UserConfigSchema', () => {
       runtimes: {
         default: 'claude-code',
         defaultTrustStop: null,
-        environment: { inherit: { claudeCode: [], codex: [], opencode: [] } },
+        doe: { enabled: true, inference: null, defaultTrustStop: null },
+        environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
         claudeCode: {
           defaultAccount: null,
           accounts: [],
@@ -609,7 +610,8 @@ describe('USER_CONFIG_DEFAULTS', () => {
       runtimes: {
         default: 'claude-code',
         defaultTrustStop: null,
-        environment: { inherit: { claudeCode: [], codex: [], opencode: [] } },
+        doe: { enabled: true, inference: null, defaultTrustStop: null },
+        environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
         claudeCode: {
           defaultAccount: null,
           accounts: [],
@@ -1056,7 +1058,8 @@ describe('UserConfigSchema runtimes', () => {
     expect(result.runtimes).toEqual({
       default: 'claude-code',
       defaultTrustStop: null,
-      environment: { inherit: { claudeCode: [], codex: [], opencode: [] } },
+      doe: { enabled: true, inference: null, defaultTrustStop: null },
+      environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
       claudeCode: {
         defaultAccount: null,
         accounts: [],
@@ -1096,7 +1099,8 @@ describe('UserConfigSchema runtimes', () => {
     expect(result.runtimes).toEqual({
       default: 'claude-code',
       defaultTrustStop: null,
-      environment: { inherit: { claudeCode: [], codex: [], opencode: [] } },
+      doe: { enabled: true, inference: null, defaultTrustStop: null },
+      environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
       claudeCode: {
         defaultAccount: null,
         accounts: [],
@@ -2211,17 +2215,22 @@ describe('configuredRuntimes', () => {
       values[key];
 
   it('lists every runtime when nothing turns one off', () => {
-    expect(configuredRuntimes(reader({}))).toEqual(['claude-code', 'codex', 'opencode']);
+    expect(configuredRuntimes(reader({}))).toEqual(['claude-code', 'codex', 'opencode', 'doe']);
   });
 
   it('drops only a runtime that is explicitly off, keeping claude-code first', () => {
     expect(configuredRuntimes(reader({ 'runtimes.codex.enabled': false }))).toEqual([
       'claude-code',
       'opencode',
+      'doe',
     ]);
     expect(
       configuredRuntimes(
-        reader({ 'runtimes.codex.enabled': false, 'runtimes.opencode.enabled': false })
+        reader({
+          'runtimes.codex.enabled': false,
+          'runtimes.opencode.enabled': false,
+          'runtimes.doe.enabled': false,
+        })
       )
     ).toEqual(['claude-code']);
   });
@@ -2231,6 +2240,7 @@ describe('configuredRuntimes', () => {
       'claude-code',
       'codex',
       'opencode',
+      'doe',
     ]);
   });
 });

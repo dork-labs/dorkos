@@ -1,3 +1,4 @@
+import { retainCleanup, releaseTogether } from '../server-lifecycle/retained-cleanup.js';
 /**
  * The three `ctx` members that keep an extension's asks and settings with a
  * person (spec `flow-multiproject` §7.1, §7.6, §7.10): `ctx.inbox`,
@@ -58,13 +59,10 @@ export function createInboxApi(
         throw new TypeError('inbox.onAction needs a handler function.');
       unregister?.();
       const remove = inboxOrThrow().setHandler(extensionId, handler);
-      let removed = false;
-      const once = () => {
-        if (removed) return;
-        removed = true;
-        if (unregister === once) unregister = null;
+      const once = retainCleanup(() => {
         remove();
-      };
+        if (unregister === once) unregister = null;
+      });
       unregister = once;
       return once;
     },
@@ -153,17 +151,18 @@ export function createProjectSettingsReader(
       const remove = store.onChange((changedExtension, root) => {
         if (changedExtension === extensionId) listener(root);
       });
-      removers.add(remove);
-      return () => {
-        removers.delete(remove);
+      const once = retainCleanup(() => {
         remove();
-      };
+        removers.delete(once);
+      });
+      removers.add(once);
+      return once;
     },
   };
   return {
     projectSettings,
     release: () => {
-      for (const remove of [...removers]) remove();
+      releaseTogether([...removers]);
       removers.clear();
     },
   };

@@ -1,5 +1,5 @@
 import type { AgentRuntime } from '@dorkos/shared/mesh-schemas';
-import { PRIMARY_RUNTIME_TYPES, getRuntimeDescriptor } from '@/layers/entities/runtime';
+import { SELECTABLE_RUNTIME_TYPES, getRuntimeDescriptor } from '@/layers/entities/runtime';
 import { cn } from '@/layers/shared/lib';
 
 /** Props for {@link RuntimePicker}. */
@@ -26,7 +26,7 @@ export function RuntimePicker({ value, onChange }: RuntimePickerProps) {
       className="flex gap-1.5"
       data-testid="runtime-picker"
     >
-      {PRIMARY_RUNTIME_TYPES.map((type) => {
+      {SELECTABLE_RUNTIME_TYPES.map((type) => {
         const descriptor = getRuntimeDescriptor(type);
         const Icon = descriptor.icon;
         const selected = value === type;

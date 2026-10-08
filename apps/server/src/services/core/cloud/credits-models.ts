@@ -360,6 +360,24 @@ export async function creditsModelsFor(
   return read.models.filter((model) => model.protocols?.includes(format) ?? false);
 }
 
+/** Metadata-only catalog read for readiness. Never fetches or mints a token. */
+export function peekCreditsModelsFor(protocol: RuntimeCreditsProtocol): readonly InferenceModel[] {
+  if (creditsKilled() || captureCloudV1Context() === null) return [];
+  let models: readonly InferenceModel[] | null;
+  if (cached?.isCurrent() && now() - cached.readAt < CATALOG_TTL_MS) models = cached.models;
+  else {
+    try {
+      const token = readCloudInstanceToken();
+      models = token ? lastGoodFor(creditsLinkKey(token)) : null;
+    } catch {
+      return [];
+    }
+  }
+  if (!models) return [];
+  const format = creditsFormatOf(protocol);
+  return models.filter((model) => model.protocols?.includes(format) ?? false);
+}
+
 /** Whether a menu serves a model, by its id or by any id it is also known as. */
 function serves(models: readonly ModelOption[], ids: readonly (string | undefined)[]): boolean {
   const wanted = ids.flatMap((id) => (id === undefined ? [] : [baseModelId(id)]));

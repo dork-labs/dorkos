@@ -15,7 +15,7 @@ export type ConnectorOwnerAuthority =
   | { readonly kind: 'local_install'; readonly installationId: string };
 
 /** Supported runtime adapters that may receive a turn-bound connector principal. */
-export type ConnectorRuntime = 'claude-code' | 'codex' | 'opencode';
+export type ConnectorRuntime = 'claude-code' | 'codex' | 'opencode' | 'doe';
 
 /** Verified identity and execution context for one server-side caller. */
 export type ServerPrincipalClaims =

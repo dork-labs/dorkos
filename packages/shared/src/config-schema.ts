@@ -1813,6 +1813,7 @@ export function configuredRuntimes(read: (key: string) => unknown): string[] {
   const runtimes = ['claude-code'];
   if (read('runtimes.codex.enabled') !== false) runtimes.push('codex');
   if (read('runtimes.opencode.enabled') !== false) runtimes.push('opencode');
+  if (read('runtimes.doe.enabled') !== false) runtimes.push('doe');
   return runtimes;
 }
 
@@ -2156,6 +2157,96 @@ const LoggingConfigSchema = z.object({
 
 /** A permission state as the config file stores it. */
 const PermissionConfigStateSchema = z.enum(PERMISSION_STATES);
+
+/** Explicit inference metadata. Secrets live in the credential store. */
+export const DoeInferenceConfigSchema = z
+  .object({
+    source: z.enum(['api-key', 'local', 'dorkos-credits']),
+    provider: z.string().min(1),
+    protocol: z.enum(['anthropic-messages', 'openai-chat-completions', 'openai-responses']),
+    endpoint: z
+      .string()
+      .url()
+      .refine((value) => {
+        try {
+          const url = new URL(value);
+          return (
+            ['https:', 'http:'].includes(url.protocol) &&
+            !url.username &&
+            !url.password &&
+            !url.search &&
+            !url.hash
+          );
+        } catch {
+          return false;
+        }
+      }, 'Choose an HTTP endpoint without embedded credentials.'),
+    model: z.string().min(1),
+    contextWindow: z.number().int().positive(),
+    maxOutputTokens: z.number().int().positive(),
+    credentialRef: CredentialReferenceSchema.optional(),
+    /** Endpoint this key was explicitly supplied for; changing endpoints requires setup again. */
+    credentialEndpoint: z.string().url().optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.maxOutputTokens > value.contextWindow)
+      ctx.addIssue({
+        code: 'custom',
+        path: ['maxOutputTokens'],
+        message: 'Output limit exceeds the context window.',
+      });
+    let url: URL;
+    try {
+      url = new URL(value.endpoint);
+    } catch {
+      return;
+    }
+    if (
+      value.source === 'local' &&
+      (url.protocol !== 'http:' || !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))
+    )
+      ctx.addIssue({
+        code: 'custom',
+        path: ['endpoint'],
+        message: 'Local models require an HTTP loopback endpoint.',
+      });
+    if (
+      value.credentialRef &&
+      (!value.credentialEndpoint ||
+        (() => {
+          try {
+            return new URL(value.credentialEndpoint).href !== url.href;
+          } catch {
+            return true;
+          }
+        })())
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['credentialEndpoint'],
+        message: 'Save an API key for this endpoint.',
+      });
+    }
+    if (value.source !== 'api-key' && value.credentialRef)
+      ctx.addIssue({
+        code: 'custom',
+        path: ['credentialRef'],
+        message: 'This inference source does not use an API key.',
+      });
+  });
+/** Persisted model and payer choice, without secret values. */
+export type DoeInferenceConfig = z.infer<typeof DoeInferenceConfigSchema>;
+/** DorkOS runtime configuration; a new installation makes no inference choice. */
+export const DoeRuntimeSettingsSchema = z
+  .object({
+    enabled: z.boolean().default(true),
+    inference: DoeInferenceConfigSchema.nullable().default(null),
+    defaultTrustStop: DefaultTrustStopSchema,
+  })
+  .default(() => ({ enabled: true, inference: null, defaultTrustStop: null }));
+/** Parsed DorkOS runtime settings. */
+export type DoeRuntimeSettings = z.infer<typeof DoeRuntimeSettingsSchema>;
 
 export const UserConfigSchema = z.object({
   version: z.literal(1),
@@ -3395,6 +3486,7 @@ export const UserConfigSchema = z.object({
         // agree or the shallow defaults-merge lands somebody on the old value.
         persistentSession: true,
       })),
+      doe: DoeRuntimeSettingsSchema,
       opencode: z
         .object({
           enabled: z.boolean().default(true),
@@ -3476,9 +3568,10 @@ export const UserConfigSchema = z.object({
         })),
     })
     .default(() => ({
-      environment: { inherit: { claudeCode: [], codex: [], opencode: [] } },
+      environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
       default: 'claude-code',
       defaultTrustStop: null,
+      doe: { enabled: true, inference: null, defaultTrustStop: null },
       claudeCode: {
         defaultAccount: null,
         accounts: [],

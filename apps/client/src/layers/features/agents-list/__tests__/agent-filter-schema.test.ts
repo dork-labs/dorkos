@@ -148,6 +148,13 @@ describe('agentFilterSchema', () => {
   });
 
   describe('runtime filter', () => {
+    it.each(['doe', 'opencode'] as const)('admits and filters the %s runtime', (runtime) => {
+      expect(agentFilterSchema.searchValidator.safeParse({ runtime }).success).toBe(true);
+      const selected = makeAgent({ id: runtime, runtime });
+      expect(agentFilterSchema.applyFilters([...agents, selected], { runtime })).toEqual([
+        selected,
+      ]);
+    });
     it('filters by runtime', () => {
       const result = agentFilterSchema.applyFilters(agents, { runtime: 'cursor' });
       expect(result).toHaveLength(1);

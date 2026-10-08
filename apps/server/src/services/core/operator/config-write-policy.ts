@@ -695,6 +695,7 @@ export const CONFIG_WRITE_POLICY = {
   'runtimes.environment.inherit.claudeCode': 'operator-only',
   'runtimes.environment.inherit.codex': 'operator-only',
   'runtimes.environment.inherit.opencode': 'operator-only',
+  'runtimes.environment.inherit.doe': 'operator-only',
   'runtimes.default': 'agent-writable',
   // How much every FUTURE session may do without asking (spec `trust-dial`,
   // decision 6). Operator-only, and it is the one field in this block that is not
@@ -720,6 +721,7 @@ export const CONFIG_WRITE_POLICY = {
   'runtimes.claudeCode.defaultTrustStop': 'operator-only',
   'runtimes.codex.defaultTrustStop': 'operator-only',
   'runtimes.opencode.defaultTrustStop': 'operator-only',
+  'runtimes.doe.defaultTrustStop': 'operator-only',
   // Which Claude account new work runs and BILLS on, and the roster it is chosen
   // from (spec claude-code-accounts D6). A Claude config directory carries its own
   // sign-in, so moving the default account moves the operator's spend onto a
@@ -785,6 +787,16 @@ export const CONFIG_WRITE_POLICY = {
   'runtimes.opencode.defaultModel': 'agent-writable',
   'runtimes.codex.defaultModel': 'agent-writable',
   'runtimes.codex.defaultEffort': 'agent-writable',
+  'runtimes.doe.enabled': 'agent-writable',
+  'runtimes.doe.inference.source': 'operator-only',
+  'runtimes.doe.inference.provider': 'operator-only',
+  'runtimes.doe.inference.protocol': 'operator-only',
+  'runtimes.doe.inference.endpoint': 'operator-only',
+  'runtimes.doe.inference.model': 'agent-writable',
+  'runtimes.doe.inference.contextWindow': 'agent-writable',
+  'runtimes.doe.inference.maxOutputTokens': 'agent-writable',
+  'runtimes.doe.inference.credentialRef': 'operator-only',
+  'runtimes.doe.inference.credentialEndpoint': 'operator-only',
   'runtimes.opencode.enabled': 'agent-writable',
   // An executable the server spawns.
   'runtimes.opencode.binaryPath': 'operator-only',
@@ -1006,6 +1018,14 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'runtimes.environment.inherit.claudeCode',
       'runtimes.environment.inherit.codex',
       'runtimes.environment.inherit.opencode',
+      'runtimes.environment.inherit.doe',
+      'runtimes.doe.inference.source',
+      'runtimes.doe.inference.provider',
+      'runtimes.doe.inference.protocol',
+      'runtimes.doe.inference.endpoint',
+      'runtimes.doe.inference.credentialRef',
+      'runtimes.doe.inference.credentialEndpoint',
+
       'runtimes.opencode.provider',
       'runtimes.opencode.baseURL',
       'runtimes.claudeCode.defaultAccount',
@@ -1078,6 +1098,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'runtimes.claudeCode.defaultTrustStop',
       'runtimes.codex.defaultTrustStop',
       'runtimes.opencode.defaultTrustStop',
+      'runtimes.doe.defaultTrustStop',
       'ui.autonomyAcknowledgedAt',
       // The power-door answer. Filed under `approvals` rather than a stake of
       // its own because that is what the question was about: whether the person

@@ -1,3 +1,4 @@
+import { retainCleanup, releaseTogether } from './server-lifecycle/retained-cleanup.js';
 /**
  * Factory for building a {@link DataProviderContext} per server-side extension.
  *
@@ -44,36 +45,6 @@ import {
   scopeContextOccurrence,
 } from './server-lifecycle/context-occurrence.js';
 import { isolatedFilesDir } from './isolation/grants.js';
-
-/** Retain each original synchronous cleanup outcome, including a falsy throw. */
-function retainCleanup(cleanup: () => void): () => void {
-  let attempted = false;
-  let first: { value: unknown } | undefined;
-  return () => {
-    if (!attempted) {
-      attempted = true;
-      try {
-        cleanup();
-      } catch (value) {
-        first = { value };
-      }
-    }
-    if (first) throw first.value;
-  };
-}
-
-/** Enter every independent cleanup before propagating the first exact failure. */
-function releaseTogether(cleanups: readonly (() => void)[]): void {
-  let first: { value: unknown } | undefined;
-  for (const cleanup of cleanups) {
-    try {
-      cleanup();
-    } catch (value) {
-      first ??= { value };
-    }
-  }
-  if (first) throw first.value;
-}
 
 /** Minimum scheduling interval in seconds (prevents tight loops). */
 const MIN_INTERVAL_SECONDS = 5;
@@ -330,7 +301,11 @@ export function createDataProviderContext(deps: CreateContextDeps): {
     return () => undefined;
   };
 
-  const secrets = new ExtensionSecretStore(extensionId, dorkHome);
+  const secrets = new ExtensionSecretStore(
+    extensionId,
+    dorkHome,
+    originalCurrent ? requireCurrent : undefined
+  );
   const settings = new ExtensionSettingsStore(
     dorkHome,
     extensionId,

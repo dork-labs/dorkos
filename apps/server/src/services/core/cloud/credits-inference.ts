@@ -54,7 +54,7 @@ import {
 } from '@dork-labs/cloud-api';
 import { CloudApiResponseError } from '@dork-labs/cloud-api/client';
 import type { CloudCreditsRuntimeState, CloudCreditsStatus } from '@dorkos/shared/cloud-schemas';
-import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
+import type { RuntimeCreditsProtocol, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import { logger } from '../../../lib/logger.js';
 import { configManager } from '../config-manager.js';
 import { creditsKilled } from './credits-availability.js';
@@ -401,9 +401,19 @@ export async function revokeHeldCreditsToken(): Promise<void> {
 export async function resolveCreditsLaunch(
   capabilities: Pick<RuntimeCapabilities, 'credits'>,
   runtimeLabel: string,
-  waitMs: number = CREDITS_LAUNCH_WAIT_MS
+  waitMs: number = CREDITS_LAUNCH_WAIT_MS,
+  requestedProtocol?: RuntimeCreditsProtocol
 ): Promise<CreditsLaunch> {
-  const protocol = capabilities.credits?.protocol;
+  const support = capabilities.credits;
+  if (!support) throw new CreditsUnavailableError('not-supported', runtimeLabel);
+  const protocol = requestedProtocol ?? support?.protocol;
+  if (
+    requestedProtocol &&
+    support &&
+    !(support.supportedProtocols ?? [support.protocol]).includes(requestedProtocol)
+  ) {
+    throw new CreditsUnavailableError('not-supported', runtimeLabel);
+  }
   if (protocol === undefined) throw new CreditsUnavailableError('not-supported', runtimeLabel);
   if (creditsKilled()) throw new CreditsUnavailableError('off', runtimeLabel);
   if (!isCloudLinked()) throw new CreditsUnavailableError('not-linked', runtimeLabel);
@@ -444,8 +454,13 @@ function wiredWith(
   capabilities: Pick<RuntimeCapabilities, 'credits'>,
   token: InferenceToken | null
 ): boolean {
-  const protocol = capabilities.credits?.protocol;
-  return protocol !== undefined && creditsProtocolServed(protocol, token);
+  const support = capabilities.credits;
+  return (
+    support !== undefined &&
+    (support.supportedProtocols ?? [support.protocol]).some((protocol) =>
+      creditsProtocolServed(protocol, token)
+    )
+  );
 }
 
 /**
@@ -486,6 +501,7 @@ export function creditsWiringReport(
       'claude-code': state('claude-code'),
       opencode: state('opencode'),
       codex: state('codex'),
+      doe: state('doe'),
     },
   };
 }

@@ -91,7 +91,7 @@ export const FEEDBACK_FLAG_ALLOWLIST: Readonly<Record<string, FlagType>> = {
  * is dropped rather than echoed. Keep these in sync with the config schema.
  */
 const FEEDBACK_ENUM_VALUES: Readonly<Record<string, readonly string[]>> = {
-  'runtimes.default': ['claude-code', 'codex', 'opencode'],
+  'runtimes.default': ['claude-code', 'codex', 'opencode', 'doe'],
   'logging.level': ['fatal', 'error', 'warn', 'info', 'debug', 'trace'],
   'ui.theme': ['light', 'dark', 'system'],
 };

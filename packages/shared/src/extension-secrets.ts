@@ -55,11 +55,13 @@ export class ExtensionSecretStore {
    *
    * @param extensionId - The extension whose secrets this store reads and writes.
    * @param dorkHome - Resolved data directory.
+   * @param requireCurrent - Optional private originating owner check at original read/write boundaries.
    * @throws {InvalidExtensionIdError} If the id could name a file outside `dorkHome`.
    */
   constructor(
     private readonly extensionId: string,
-    private readonly dorkHome: string
+    private readonly dorkHome: string,
+    private readonly requireCurrent?: () => void
   ) {
     assertValidExtensionId(extensionId);
     this.secretsFilePath = join(dorkHome, 'extension-secrets', `${extensionId}.json`);
@@ -69,6 +71,7 @@ export class ExtensionSecretStore {
   /** Get a secret value by key. Returns null if not set. */
   async get(key: string): Promise<string | null> {
     const secrets = await this.loadSecrets();
+    this.requireCurrent?.();
     const encrypted = secrets[key];
     if (!encrypted) return null;
     try {
@@ -96,6 +99,7 @@ export class ExtensionSecretStore {
   /** Check if a secret key is set (without decrypting). */
   async has(key: string): Promise<boolean> {
     const secrets = await this.loadSecrets();
+    this.requireCurrent?.();
     return key in secrets;
   }
 
@@ -189,10 +193,14 @@ export class ExtensionSecretStore {
    * @param change - Mutates the freshly-read secrets map in place.
    */
   private async mutate(change: (secrets: Record<string, string>) => void): Promise<void> {
+    this.requireCurrent?.();
     await withFileLock(this.secretsFilePath, async (write) => {
       const secrets = await this.loadSecrets();
+      this.requireCurrent?.();
       change(secrets);
-      await write(JSON.stringify(secrets, null, 2));
+      const serialized = JSON.stringify(secrets, null, 2);
+      this.requireCurrent?.();
+      await write(serialized);
     });
   }
 }

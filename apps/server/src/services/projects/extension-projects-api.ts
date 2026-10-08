@@ -1,3 +1,4 @@
+import { retainCleanup, releaseTogether } from '../extensions/server-lifecycle/retained-cleanup.js';
 /**
  * `ctx.projects`: an extension's view of the project registry (spec
  * `flow-multiproject` §6.1, §11.2).
@@ -87,13 +88,10 @@ export function createProjectsApi(
         throw new TypeError('projects.onChange needs a listener function.');
       }
       const remove = registry.onChange(listener);
-      let removed = false;
-      const once = () => {
-        if (removed) return;
-        removed = true;
-        removers.delete(once);
+      const once = retainCleanup(() => {
         remove();
-      };
+        removers.delete(once);
+      });
       removers.add(once);
       return once;
     },
@@ -103,7 +101,7 @@ export function createProjectsApi(
     projects,
     release: () => {
       released = true;
-      for (const remove of [...removers]) remove();
+      releaseTogether([...removers]);
     },
   };
 }

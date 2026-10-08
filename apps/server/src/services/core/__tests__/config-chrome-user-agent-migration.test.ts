@@ -3,14 +3,19 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 vi.hoisted(() => {
-  process.env.DORKOS_VERSION_OVERRIDE = '0.101.0';
+  process.env.DORKOS_VERSION_OVERRIDE = '0.102.0';
 });
 import { ConfigManager } from '../config-manager.js';
 import { SERVER_VERSION } from '../../../lib/version.js';
-it.each([undefined, true])(
-  'persists the new Chrome choice on actual upgrade boot (%s)',
-  (choice) => {
-    expect(SERVER_VERSION).toBe('0.101.0');
+it.each([
+  ['0.100.0', undefined],
+  ['0.100.0', true],
+  ['0.101.0', undefined],
+  ['0.101.0', true],
+] as const)(
+  'persists the new Chrome choice on actual upgrade boot from %s (%s)',
+  (previousVersion, choice) => {
+    expect(SERVER_VERSION).toBe('0.102.0');
     const dir = mkdtempSync(join(tmpdir(), 'dork-chrome-choice-'));
     onTestFinished(() => rmSync(dir, { recursive: true, force: true }));
     const path = join(dir, 'config.json');
@@ -19,11 +24,18 @@ it.each([undefined, true])(
       JSON.stringify({
         version: 1,
         browser: { enabled: false, ...(choice === undefined ? {} : { chromeUserAgent: choice }) },
-        __internal__: { migrations: { version: '0.100.0' } },
+        runtimes: { doe: { enabled: false, inference: null, defaultTrustStop: null } },
+        __internal__: { migrations: { version: previousVersion } },
       })
     );
     new ConfigManager(dir);
     const persisted = JSON.parse(readFileSync(path, 'utf8'));
     expect(persisted.browser).toEqual({ enabled: false, chromeUserAgent: choice === true });
+    expect(persisted.runtimes.doe).toEqual({
+      enabled: false,
+      inference: null,
+      defaultTrustStop: null,
+    });
+    expect(persisted.__internal__.migrations.version).toBe('0.102.0');
   }
 );

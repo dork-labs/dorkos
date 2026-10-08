@@ -404,6 +404,7 @@ export const CONFIG_DISCLOSURE = {
   'runtimes.environment.inherit.claudeCode': 'withhold',
   'runtimes.environment.inherit.codex': 'withhold',
   'runtimes.environment.inherit.opencode': 'withhold',
+  'runtimes.environment.inherit.doe': 'withhold',
   'runtimes.default': 'expose',
   // How much a new session may do without asking, globally and per runtime (spec
   // `trust-dial`, decision 6). Exposed although it is operator-only to WRITE, and
@@ -461,6 +462,17 @@ export const CONFIG_DISCLOSURE = {
   'runtimes.opencode.port': 'expose',
   'runtimes.opencode.provider': 'expose',
   'runtimes.opencode.baseURL': 'expose',
+  'runtimes.doe.enabled': 'expose',
+  'runtimes.doe.defaultTrustStop': 'expose',
+  'runtimes.doe.inference.source': 'expose',
+  'runtimes.doe.inference.provider': 'expose',
+  'runtimes.doe.inference.protocol': 'expose',
+  'runtimes.doe.inference.endpoint': 'expose',
+  'runtimes.doe.inference.model': 'expose',
+  'runtimes.doe.inference.contextWindow': 'expose',
+  'runtimes.doe.inference.maxOutputTokens': 'expose',
+  'runtimes.doe.inference.credentialRef': 'withhold',
+  'runtimes.doe.inference.credentialEndpoint': 'withhold',
   'runtimes.codex.enabled': 'expose',
   'runtimes.codex.binaryPath': 'expose',
   // Which way DorkOS runs Codex. Names no credential; an agent that can see it
@@ -527,6 +539,7 @@ export const PRESENCE_FLAG_PATHS: readonly string[] = [
   'cloud.instanceToken',
   'cloud.previousLinkProof',
   'runtimes.codex.credentialRef',
+  'runtimes.doe.inference.credentialRef',
 ];
 
 /**

@@ -27,6 +27,7 @@ import { randomUUID } from 'node:crypto';
 import { createApp, finalizeApp } from './app.js';
 import { createSessionLocationsRouter } from './routes/session-locations.js';
 import { ManagedConnectorCloudError } from './services/core/auth/cloud-link-client.js';
+import { DoeRuntime } from './services/runtimes/doe/index.js';
 import { ClaudeCodeRuntime } from './services/runtimes/claude-code/claude-code-runtime.js';
 import { shutdownSessionPumps } from './services/runtimes/claude-code/sessions/session-pump-registry.js';
 import { reapOrphanedWarmProcesses } from './services/runtimes/claude-code/sessions/warm-process-ledger.js';
@@ -694,6 +695,7 @@ const PORT = env.DORKOS_PORT;
 
 // Global references for graceful shutdown
 let claudeRuntime: ClaudeCodeRuntime | null = null;
+let doeRuntime: DoeRuntime | null = null;
 /** The loopback credits relay, while OpenCode is enabled. */
 let creditsRelay: CreditsRelay | null = null;
 let accountUsageStore: AccountUsageStore | undefined;
@@ -1939,6 +1941,16 @@ async function start() {
           return openCodeRuntime;
         }
       );
+    }
+
+    // Register before the broadcaster subscribes; construction performs no inference.
+    if (configManager.get('runtimes').doe.enabled) {
+      registerOptionalRuntime('DorkOS', 'check the DorkOS data directory permissions', () => {
+        doeRuntime = new DoeRuntime();
+        doeRuntime.setSessionSettings(runtimeRegistry);
+        runtimeRegistry.register(doeRuntime);
+        return doeRuntime;
+      });
     }
 
     // Apply the user's configured default runtime (runtimes.default) once all
@@ -6484,6 +6496,7 @@ async function start() {
     await revokeHeldCreditsToken();
     await claudeRuntime?.stopCreditsSessions();
     stopCodexCreditsTurns();
+    doeRuntime?.stopCreditsTurns();
     creditsRelay?.abortAll();
     await openCodeServerManager.recycleIfOnCredits();
   });
@@ -6539,6 +6552,9 @@ async function shutdownRemainingServices() {
   docNotificationCleanup?.();
   docNotificationCleanup = undefined;
   logger.info('[DorkOS] shutting down services');
+  // Drain owned turns while their tool, account and room dependencies remain live.
+  await doeRuntime?.shutdown();
+  doeRuntime = null;
   stopSessionContinuation?.();
   stopSessionContinuation = undefined;
   if (accountUsageStore) {

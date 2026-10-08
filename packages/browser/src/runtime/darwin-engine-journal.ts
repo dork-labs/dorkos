@@ -1,4 +1,6 @@
 import {
+  readOriginalObserverFailure,
+  createOriginalObserverFailureSink,
   readOriginalUnknownJournalDiagnostic,
   createOriginalUnknownJournalDiagnosticSink,
 } from './journal/unknown-diagnostic.js';
@@ -63,6 +65,7 @@ export async function startDarwinEngineJournal(
   const injectedDiagnostic = options.onDiagnostic;
   const onDiagnostic = injectedDiagnostic ?? createOriginalChildBatchDiagnosticSink();
   const onUnknownDiagnostic = createOriginalUnknownJournalDiagnosticSink();
+  const onOriginalFailure = createOriginalObserverFailureSink(undefined, true);
   const manager = ProcessIdentitySchema.parse(options.binding.manager);
   if (manager.pid !== process.pid) throw new Error('JOURNAL_MANAGER_MISMATCH');
   const observer = createDarwinProcessObserver(options.artifact);
@@ -161,6 +164,12 @@ export async function startDarwinEngineJournal(
       ) {
         try {
           const originalBytes = originalStderr();
+          try {
+            const failure = readOriginalObserverFailure(originalBytes);
+            if (failure) await onOriginalFailure(failure);
+          } catch {
+            /* Optional failure output cannot alter original refusal or custody. */
+          }
           const diagnostic = readDarwinJournalDiagnostic(originalBytes, initial.binding.journalId);
           // Parse both closed kinds from the same completed bank; duplicates stay refused.
           const unknown = readOriginalUnknownJournalDiagnostic(

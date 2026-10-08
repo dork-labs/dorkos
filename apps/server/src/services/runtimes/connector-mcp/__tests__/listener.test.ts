@@ -275,25 +275,28 @@ describe('connector runtime MCP listener', () => {
     expect(factory).not.toHaveBeenCalled();
   });
 
-  it('passes the decoded canonical directory only as a resolver constraint', async () => {
-    const principals = port({ status: 'resolved', principal });
-    const listener = await startConnectorRuntimeMcpListener({
-      principals,
-      serverFactory: () => new McpServer({ name: 'dorkos-connections-test', version: '1.0.0' }),
-    });
-    listeners.push(listener);
+  it.each(['opencode', 'doe'] as const)(
+    'passes the decoded canonical directory only as a resolver constraint for %s',
+    async (runtime) => {
+      const principals = port({ status: 'resolved', principal });
+      const listener = await startConnectorRuntimeMcpListener({
+        principals,
+        serverFactory: () => new McpServer({ name: 'dorkos-connections-test', version: '1.0.0' }),
+      });
+      listeners.push(listener);
 
-    await request(listener.url, {
-      [CONNECTOR_RUNTIME_KIND_HEADER]: 'opencode',
-      [CONNECTOR_RUNTIME_CWD_HEADER]: encodeURIComponent('/repo with spaces'),
-    });
+      await request(listener.url, {
+        [CONNECTOR_RUNTIME_KIND_HEADER]: runtime,
+        [CONNECTOR_RUNTIME_CWD_HEADER]: encodeURIComponent('/repo with spaces'),
+      });
 
-    expect(principals.resolve).toHaveBeenCalledWith({
-      bearer: 'turn-secret',
-      expectedRuntime: 'opencode',
-      expectedCanonicalCwd: '/repo with spaces',
-    });
-  });
+      expect(principals.resolve).toHaveBeenCalledWith({
+        bearer: 'turn-secret',
+        expectedRuntime: runtime,
+        expectedCanonicalCwd: '/repo with spaces',
+      });
+    }
+  );
 
   it('rejects a browser origin from another loopback port', async () => {
     const listener = await startConnectorRuntimeMcpListener({

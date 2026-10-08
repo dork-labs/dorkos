@@ -282,6 +282,8 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'runtimes.codex.defaultModel',
   'runtimes.codex.defaultEffort',
   'runtimes.opencode.enabled',
+  // Admission alone sends nothing: Doe requires an explicit inference choice.
+  'runtimes.doe.enabled',
   'runtimes.opencode.binaryPath',
   'runtimes.opencode.port',
   'runtimes.codex.enabled',
@@ -321,6 +323,7 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'runtimes.environment.inherit.claudeCode': [],
   'runtimes.environment.inherit.codex': [],
   'runtimes.environment.inherit.opencode': [],
+  'runtimes.environment.inherit.doe': [],
   'tunnel.domain': null,
   'tunnel.authtoken': null,
   'tunnel.auth': null,
@@ -446,6 +449,18 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'runtimes.opencode.provider': null,
   'runtimes.opencode.baseURL': null,
   'runtimes.codex.credentialRef': null,
+  // The entire inference choice starts null. Every nested slot is absent:
+  // no payer, endpoint, model, token budget or key is silently chosen.
+  'runtimes.doe.inference.source': undefined,
+  'runtimes.doe.inference.provider': undefined,
+  'runtimes.doe.inference.protocol': undefined,
+  'runtimes.doe.inference.endpoint': undefined,
+  'runtimes.doe.inference.model': undefined,
+  'runtimes.doe.inference.contextWindow': undefined,
+  'runtimes.doe.inference.maxOutputTokens': undefined,
+  'runtimes.doe.inference.credentialRef': undefined,
+  'runtimes.doe.inference.credentialEndpoint': undefined,
+
   providers: {},
   // No standing answer to "how much may a new session do without asking", so
   // every runtime keeps its own default — and no shipped runtime defaults to a
@@ -458,6 +473,7 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'runtimes.claudeCode.defaultTrustStop': null,
   'runtimes.codex.defaultTrustStop': null,
   'runtimes.opencode.defaultTrustStop': null,
+  'runtimes.doe.defaultTrustStop': null,
   // Nobody has been told what Full autonomy means, so DorkOS still tells them:
   // `null` is the value that keeps the door asking. A wipe landing here is the
   // right outcome — losing a consent record only costs one dialog, while keeping

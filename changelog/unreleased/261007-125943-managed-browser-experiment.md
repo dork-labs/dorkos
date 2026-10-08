@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'fix(extensions): retain callbacks and cleanup after retirement'
   - 'fix(extensions): retain retiring server work and cancel UI effects'
   - 'fix(browser): preserve extension authority during asynchronous work'
   - 'fix(browser): retain the original native watcher baseline'

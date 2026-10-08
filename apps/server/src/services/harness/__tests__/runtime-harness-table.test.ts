@@ -70,13 +70,15 @@ describe('RUNTIME_HARNESSES', () => {
     }
   });
 
-  it('TR-11: maps the three runtimes that read a harness, and states the one that does not', () => {
+  it('TR-11: maps projected runtimes and distinguishes direct resources from the fake', () => {
     // Spelled out rather than derived: this is the decision, and a table that
     // only had to agree with itself would agree with any answer.
     expect(RUNTIME_HARNESSES).toEqual({
       'claude-code': 'claude-code',
       codex: 'codex',
       opencode: 'opencode',
+      // Doe reads canonical resources directly; no vendor projection is written.
+      doe: null,
       // The e2e fake. It reads nothing off disk, so enabling a harness for it
       // would write files for an agent that cannot read them.
       'test-mode': null,
@@ -86,6 +88,7 @@ describe('RUNTIME_HARNESSES', () => {
   it('TR-11: answers undefined for a runtime with no harness and for one it has never heard of', () => {
     expect(harnessForRuntime('claude-code')).toBe('claude-code');
     expect(harnessForRuntime('test-mode')).toBeUndefined();
+    expect(harnessForRuntime('doe')).toBeUndefined();
     expect(harnessForRuntime('some-future-runtime')).toBeUndefined();
   });
 });
