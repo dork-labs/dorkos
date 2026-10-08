@@ -196,9 +196,7 @@ function byKeyDesc<T extends { session: Session }>(key: (session: Session) => st
 }
 
 /** Where a chat is drawn before sections are cut. */
-type Placement =
-  | { kind: 'row'; group: 'main' | 'automated' }
-  | { kind: 'folded'; hostId: string };
+type Placement = { kind: 'row'; group: 'main' | 'automated' } | { kind: 'folded'; hostId: string };
 
 /**
  * Arrange one agent's chats into the list both chat surfaces draw.
@@ -273,7 +271,10 @@ export function buildChatList(
         resolving.add(id);
         const parent = place(parentId);
         resolving.delete(id);
-        result = { kind: 'folded', hostId: parent.kind === 'folded' ? parent.hostId : parentId };
+        const hostId = parent.kind === 'folded' ? parent.hostId : parentId;
+        // A chain that leads back to this chat has no host above it: it is the
+        // row the rest of the chain folds under.
+        result = hostId === id ? { kind: 'row', group: 'main' } : { kind: 'folded', hostId };
       }
     } else {
       result = { kind: 'row', group: 'main' }; // Yours, including rule 4.

@@ -14,7 +14,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronRight, Plus, Search } from 'lucide-react';
 import type { Session } from '@dorkos/shared/types';
 import { cn } from '@/layers/shared/lib';
-import { SIDEBAR_SECTION_ACTION_ATTRIBUTE, useRovingFocus } from '@/layers/shared/model';
+import {
+  SIDEBAR_ROW_ATTRIBUTE,
+  SIDEBAR_SECTION_ACTION_ATTRIBUTE,
+  useRovingFocus,
+} from '@/layers/shared/model';
 import {
   Button,
   Input,
@@ -165,12 +169,13 @@ export function ChatList({
   useEffect(() => {
     if (!autoFocusRow || focusedOnce.current || !hasRows) return;
     focusedOnce.current = true;
-    // The roving stop is the open chat's row when it is in the list, else the
-    // first row: exactly where `↵` should land.
-    const frame = requestAnimationFrame(() => {
-      listRef.current?.querySelector<HTMLElement>('[tabindex="0"]')?.focus();
-    });
-    return () => cancelAnimationFrame(frame);
+    // The open chat's row when it is in the list, else the first row: exactly
+    // where `↵` should land, and the same row the roving stop rests on.
+    const list = listRef.current;
+    const target =
+      list?.querySelector<HTMLElement>(`[${SIDEBAR_ROW_ATTRIBUTE}][aria-current="page"]`) ??
+      list?.querySelector<HTMLElement>(`[${SIDEBAR_ROW_ATTRIBUTE}]`);
+    target?.focus();
   }, [autoFocusRow, hasRows]);
 
   const isLoading = !sessionsOverride && query.isLoading && sessions.length === 0;

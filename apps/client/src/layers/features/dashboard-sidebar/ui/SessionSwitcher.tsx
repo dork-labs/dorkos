@@ -92,6 +92,15 @@ export function SessionSwitcher({
         // chats rendered a tall box holding one sentence.
         className="min-h-0 max-w-[440px] gap-0 p-0 sm:max-w-[440px]"
         aria-label={`Chats with ${agentName}`}
+        // The list puts focus on a row itself, once it has rows, so `↵` opens
+        // a chat straight away. Left to the dialog, focus would land on the
+        // first control instead: the sort.
+        desktopProps={{
+          onOpenAutoFocus: (event) => {
+            event.preventDefault();
+            (event.currentTarget as HTMLElement | null)?.focus();
+          },
+        }}
       >
         <ResponsiveDialogHeader className="px-4 pt-4 pb-2 text-left">
           <ResponsiveDialogTitle className="flex items-center gap-2 text-sm font-semibold">
@@ -110,7 +119,7 @@ export function SessionSwitcher({
               agentName={agentName}
               onOpenChat={handleOpen}
               onNewChat={handleNew}
-              autoFocusRow
+              autoFocusRow={!isMobile}
               className="max-h-[min(60vh,520px)]"
             />
           )}
