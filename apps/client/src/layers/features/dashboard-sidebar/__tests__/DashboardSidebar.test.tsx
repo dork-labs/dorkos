@@ -498,7 +498,6 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
   // assertion about a second line an assertion about the stub.
   SessionVerbLine: (await importOriginal<typeof import('@/layers/entities/session')>())
     .SessionVerbLine,
-  SessionRow: () => null,
   SessionOriginMark: () => null,
   // Real, not stubbed. Both are pure functions over a list, and this file used
   // to carry a hand-written mirror of the partition — a second spelling of the

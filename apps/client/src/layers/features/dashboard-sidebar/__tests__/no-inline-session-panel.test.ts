@@ -20,7 +20,7 @@
  * - The **subject** is asserted to still be the row it should be, so a check
  *   reading an empty or missing file cannot pass by accident.
  *
- * And the panel's machinery is named by things that still EXIST — `SessionRow`,
+ * And the panel's machinery is named by things that still EXIST — `ChatList`,
  * the row primitive's `expansion` slot — not only by the constant this change
  * deleted. Reinstating the panel turns this file red.
  *
@@ -44,7 +44,7 @@ const SIDEBAR_UI = join(CLIENT_SRC, 'layers/features/dashboard-sidebar/ui');
 /**
  * A token appears in a source file as a whole word.
  *
- * Whole-word, so `SessionRow` does not match `SessionRowCompact` and
+ * Whole-word, so `ChatList` does not match `ChatListRow` and
  * `SessionSwitcher` does not match anything by accident.
  *
  * @param source - The file's text.
@@ -118,7 +118,7 @@ describe('the inline session panel is gone', () => {
     // still exist elsewhere in the tree — rather than only by the constant this
     // change deleted. Each of these is what turns the guard red again.
     for (const token of [
-      'SessionRow',
+      'ChatList',
       'useAgentSessions',
       'partitionSessionsByOwnership',
       'AnimatePresence',
@@ -146,12 +146,12 @@ describe('the inline session panel is gone', () => {
     expect(row).not.toMatch(/\.map\(/);
   });
 
-  it('no sidebar row component renders a SessionRow', () => {
+  it('no sidebar component but the switcher draws the chat list', () => {
     // The panel could be reinstated one file over rather than in place. The
-    // switcher is the one surface allowed to list an agent's sessions, and it
-    // uses `SidebarRow` — the shared row — not `SessionRow`.
+    // switcher is the one sidebar surface allowed to list an agent's chats, and
+    // it does so through the shared `ChatList`.
     const offenders = sources(SIDEBAR_UI)
-      .filter(([, text]) => mentions(text, 'SessionRow'))
+      .filter(([path, text]) => mentions(text, 'ChatList') && !path.endsWith('SessionSwitcher.tsx'))
       .map(([path]) => path);
     expect(offenders).toEqual([]);
   });

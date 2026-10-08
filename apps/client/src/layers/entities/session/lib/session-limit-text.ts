@@ -1,7 +1,9 @@
 /**
- * What a sidebar row says about a session that ran out of usage (spec
- * `claude-account-ui` §6.2). Pure: the server decides the limit's state; this
- * only turns it into the row's words and whether it still needs the person.
+ * What the app says about a chat that ran out of usage (spec
+ * `claude-account-ui` §6.2, §6.3). Pure: the server decides the limit's state;
+ * this turns it into the session header badge's words and whether the chat
+ * still needs the person, which is also when the chat list counts it as
+ * needing you (spec `your-activity-first`).
  *
  * @module entities/session/lib/session-limit-text
  */
@@ -12,14 +14,14 @@ import {
   type SessionLimitView,
 } from '@/layers/shared/lib';
 
-/** What a limited row shows: its trailing text, and whether it wears the red tint. */
+/** What a limited chat shows: its words, and whether it still needs the person. */
 export interface SessionLimitDisplay {
   /** `out · handing off`, `out · needs you` or `out · waiting for reset`. */
   text: string;
   /**
    * True while the account is out and the session needs action (red tint and
    * red text); false once the person chose to wait (`waiting-reset`,
-   * `reset-ready`), which reads in the row's neutral grey (decision Q13).
+   * `reset-ready`), which reads in neutral grey (decision Q13).
    */
   needsAction: boolean;
 }
@@ -28,7 +30,7 @@ export interface SessionLimitDisplay {
 const WAITING_STATES: ReadonlySet<LimitState> = new Set(['waiting-reset', 'reset-ready']);
 
 /**
- * How a sidebar row shows a session's usage limit, or `null` when it shows
+ * How a chat's usage limit reads, or `null` when there is nothing to say
  * nothing: no limit, a `moved` session (its work lives in the new session,
  * Q14), or a limit on one model only (the account still runs another model,
  * and the status-bar chip carries the detail).
@@ -46,18 +48,4 @@ export function sessionLimitDisplay(
   // signal: the red rows need the person, the neutral ones are waiting.
   if (WAITING_STATES.has(state)) return { text: 'out · waiting for reset', needsAction: false };
   return { text: 'out · needs you', needsAction: true };
-}
-
-/**
- * The words a sidebar row shows in place of its time for a session that ran
- * out: `out · handing off` while the work is about to move on its own, `out ·
- * waiting for reset` once the person chose to wait (`waiting-reset`,
- * `reset-ready`), `out · needs you` in every other account-wide limited state
- * (`limited`, `wait-only`, `all-accounts-out`), and `null` when the row shows
- * nothing (see {@link sessionLimitDisplay}).
- *
- * @param limit - The session's usage limit, or nothing when it has none.
- */
-export function sessionLimitText(limit: SessionLimitView | null | undefined): string | null {
-  return sessionLimitDisplay(limit)?.text ?? null;
 }
