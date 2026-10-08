@@ -608,8 +608,8 @@ describe('your-activity-first — Today keeps the chats you used (D10)', () => {
         id: `ses-agent-${index}`,
         title: `Agent work ${index}`,
         cwd: TANGERINE,
-        origin: index % 2 === 0 ? 'agent' : 'task',
         updatedAt: hoursAgo(0.01 * (index + 1)),
+        // Every third is a spin-off, which carries no origin of its own.
         ...(index % 3 === 0
           ? {
               startedBy: {
@@ -620,7 +620,7 @@ describe('your-activity-first — Today keeps the chats you used (D10)', () => {
                 permission: null,
               },
             }
-          : {}),
+          : { origin: index % 2 === 0 ? ('agent' as const) : ('task' as const) }),
       })
     );
   }
@@ -654,6 +654,28 @@ describe('your-activity-first — Today keeps the chats you used (D10)', () => {
     // Untouched spin-offs and automated chats wait behind the reveal.
     const reveal = todayRows(state).find((row) => row.key === 'rollup:automated');
     expect(reveal?.primary).toBe('+ 12 automated');
+  });
+
+  it('admits a chat you only opened on another device since 04:00', () => {
+    // Nothing in this browser and no message: the server's touch is the one
+    // fact that says it is yours and that you were in it today.
+    const state: SidebarState = {
+      ...quietFixture,
+      sessions: [
+        session({
+          id: 'ses-phone',
+          title: 'Opened on the phone',
+          cwd: TANGERINE,
+          lastTouchedByYouAt: hoursAgo(1),
+        }),
+      ],
+      interactions: {},
+      userLastMessageAt: {},
+      lastTouchedByYouAt: { 'session:ses-phone': hoursAgo(1) },
+      activeTarget: null,
+    };
+    expect(selectTodayItems(state).map((row) => row.key)).toContain('session:ses-phone');
+    expect(todayKeys(state)).toContain('session:ses-phone');
   });
 
   it('orders by the latest of this browser’s open, the server’s touch and your last message', () => {

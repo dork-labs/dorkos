@@ -551,6 +551,12 @@ userLastMessageAt)`. `lastTouchedByYouAt` is the server's record of you opening 
   D5.2 data — never invented). It dissolves when the user opens any conversation, and
   `lastShownDate` is written the moment it renders, so it is once per day per account, not per
   device.
+  _Amended by `your-activity-first` (DOR-2789, 2026-10-08): the chat page now records every chat
+  it shows as opened (`useRecordChatOpened`). The chat the app **lands** on (a reload, a deep link,
+  a notification that opened the app) is sent to the server but is not written to this browser's
+  open record, because that record is what the digest measures the absence from and what dissolves
+  it. Landing on a chat therefore still shows the digest; opening any other chat afterwards
+  dissolves it as before. Pinned by `digest-survives-landing.test.tsx`._
 
 #### Row grammar
 

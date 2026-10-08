@@ -65,4 +65,82 @@ describe('useRecordChatOpened', () => {
     renderHook(() => useRecordChatOpened('chat'), { wrapper });
     await waitFor(() => expect(transport.reportError).toHaveBeenCalled());
   });
+
+  it('waits until the page is visible, then records once for the chat it shows', () => {
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    try {
+      renderHook(() => useRecordChatOpened('background'), { wrapper });
+      expect(transport.markSessionOpened).not.toHaveBeenCalled();
+      expect(useInteractionStore.getState().opened['session:background']).toBeUndefined();
+
+      visibility.mockReturnValue('visible');
+      document.dispatchEvent(new Event('visibilitychange'));
+      document.dispatchEvent(new Event('visibilitychange'));
+
+      expect(vi.mocked(transport.markSessionOpened).mock.calls).toEqual([['background']]);
+      expect(useInteractionStore.getState().opened['session:background']).toBeDefined();
+    } finally {
+      visibility.mockRestore();
+    }
+  });
+});
+
+describe('useRecordChatOpened — the chat the app landed on (BC-22)', () => {
+  afterEach(() => {
+    window.history.replaceState(null, '', '/');
+    vi.resetModules();
+  });
+
+  /** Load the hook and the store fresh, as a page load that began on `url`. */
+  async function loadAt(url: string) {
+    window.history.replaceState(null, '', url);
+    vi.resetModules();
+    const hook = await import('../use-record-chat-opened');
+    const interactions = await import('@/layers/entities/interactions');
+    const model = await import('@/layers/shared/model');
+    interactions.useInteractionStore.setState({ opened: {}, counts: {} });
+    const freshWrapper = ({ children }: { children: ReactNode }) => (
+      <model.TransportProvider transport={transport}>{children}</model.TransportProvider>
+    );
+    return { ...hook, ...interactions, freshWrapper };
+  }
+
+  it('tells the server about the landed chat but leaves the local record alone', async () => {
+    const {
+      useRecordChatOpened: record,
+      useInteractionStore: store,
+      freshWrapper,
+    } = await loadAt('/session?session=landed');
+    renderHook(() => record('landed'), { wrapper: freshWrapper });
+
+    expect(transport.markSessionOpened).toHaveBeenCalledWith('landed');
+    expect(store.getState().opened['session:landed']).toBeUndefined();
+  });
+
+  it('records locally once you go to another chat, and when you come back', async () => {
+    const {
+      useRecordChatOpened: record,
+      useInteractionStore: store,
+      freshWrapper,
+    } = await loadAt('/session?session=landed');
+    const { rerender } = renderHook(({ id }) => record(id), {
+      wrapper: freshWrapper,
+      initialProps: { id: 'landed' },
+    });
+    rerender({ id: 'next' });
+    rerender({ id: 'landed' });
+
+    expect(store.getState().opened['session:next']).toBeDefined();
+    expect(store.getState().opened['session:landed']).toBeDefined();
+  });
+
+  it('records the first chat locally when the app was entered somewhere else', async () => {
+    const {
+      useRecordChatOpened: record,
+      useInteractionStore: store,
+      freshWrapper,
+    } = await loadAt('/');
+    renderHook(() => record('clicked'), { wrapper: freshWrapper });
+    expect(store.getState().opened['session:clicked']).toBeDefined();
+  });
 });

@@ -42,11 +42,13 @@ export function selectWorkingSessions(
   statusCwds: Readonly<Record<string, string>>,
   sessions: Readonly<Record<string, Session>>
 ): WorkingSession[] {
-  const human = new Set(nonAutomatedSessionIds(Object.keys(statusCwds), Object.values(sessions)));
+  const countsAsLive = new Set(
+    nonAutomatedSessionIds(Object.keys(statusCwds), Object.values(sessions))
+  );
   const out: WorkingSession[] = [];
   for (const [sessionId, cwd] of Object.entries(statusCwds)) {
     if (statuses[sessionId]?.lifecycle !== 'streaming') continue;
-    if (!human.has(sessionId)) continue;
+    if (!countsAsLive.has(sessionId)) continue;
     out.push({ sessionId, cwd });
   }
   return out;

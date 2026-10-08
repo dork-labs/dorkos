@@ -388,7 +388,7 @@ export function selectTodayItems(state: SidebarState): SidebarRowModel[] {
   // own.** Each one walks a list, so a conversation the operator has OPEN but
   // that is missing from every list gets no row at all — and there are three
   // ordinary ways to be missing. A deep link or a reload lands on a session
-  // older than the recent window the cockpit fetched. A spin-off or automated
+  // older than the recent window the app fetched. A spin-off or automated
   // chat opened by hand before its open was recorded anywhere is behind the
   // reveal (BC-19) when `touched` is asked. And on the very first paint every list is still empty because the
   // queries have not answered. In all three the operator is looking at a

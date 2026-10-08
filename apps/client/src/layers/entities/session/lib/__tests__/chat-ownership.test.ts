@@ -43,7 +43,6 @@ describe('chatOwnership', () => {
   it('an untouched chat another chat started is a spin-off', () => {
     const spinOff = createMockSession({
       id: 'h',
-      origin: 'agent',
       startedBy: { kind: 'chat', sessionId: 'p', title: null, reason: null, permission: null },
     });
     expect(chatOwnership(spinOff)).toBe('spinOff');
@@ -71,7 +70,6 @@ describe('partitionSessionsByOwnership', () => {
       createMockSession({ id: '3', origin: 'task' }),
       createMockSession({
         id: '4',
-        origin: 'agent',
         startedBy: { kind: 'chat', sessionId: '2', title: null, reason: null, permission: null },
       }),
       createMockSession({ id: '5', origin: 'room', lastTouchedByYouAt: TOUCHED }),
@@ -89,7 +87,6 @@ describe('nonAutomatedSessionIds', () => {
       createMockSession({ id: 'task', origin: 'task' }),
       createMockSession({
         id: 'spinOff',
-        origin: 'agent',
         startedBy: { kind: 'chat', sessionId: 'mine', title: null, reason: null, permission: null },
       }),
       createMockSession({ id: 'mine' }),

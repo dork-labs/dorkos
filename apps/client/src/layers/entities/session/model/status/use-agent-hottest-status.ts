@@ -47,8 +47,8 @@ function hotter(result: SessionBorderKind, candidate: SessionBorderKind | null):
  *    match is what lets a COLLAPSED agent row light up: the sidebar only
  *    fetches session metadata for the active agent (`sessionIds` is empty
  *    otherwise), but the status fan-out carries every live session's cwd
- *    regardless. Its `streaming` contribution is human-origin only (§18); its
- *    blocked/error/unseen contributions are not, and must not be.
+ *    regardless. Its `streaming` contribution excludes automated chats (§18); its
+ *    blocked/error/unseen contributions do not, and must not.
  *
  * **This hook, not the model's row, is what an agent row draws.**
  * `SidebarModelRow` hands `AgentListItem` no sessions and no status, so the
@@ -136,13 +136,13 @@ export function useAgentHottestStatus(
           // chip and Heads up's "N working" both excluded a nightly task while this
           // badge, which is what the row actually draws, called it Working
           // (DOR-1137).
-          const human = new Set(
+          const countsAsLive = new Set(
             nonAutomatedSessionIds(Object.keys(s.statusCwds), Object.values(s.sessions))
           );
           for (const [id, cwd] of Object.entries(s.statusCwds)) {
             if (cwd !== agentPath) continue;
             const kind = borderKindFromLifecycle(s.statuses[id]?.lifecycle);
-            if (kind === 'streaming' && !human.has(id)) continue;
+            if (kind === 'streaming' && !countsAsLive.has(id)) continue;
             result = hotter(result, kind);
           }
           // Unseen settles carry their own cwd (the live status — and with it

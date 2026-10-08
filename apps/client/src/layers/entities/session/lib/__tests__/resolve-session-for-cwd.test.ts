@@ -60,8 +60,9 @@ function ago(minutesAgo: number): string {
 
 /** A chat another chat started (`session_start`), `minutesAgo` old. */
 function spinOff(id: string, minutesAgo: number): Session {
+  // A real spin-off carries no origin: `session_start` stamps only `startedBy`.
   return {
-    ...session(id, minutesAgo, 'agent'),
+    ...session(id, minutesAgo),
     startedBy: { kind: 'chat', sessionId: 'parent', title: null, reason: null, permission: null },
   };
 }
@@ -93,6 +94,19 @@ describe('the agent click opens the chat you were last in (your-activity-first D
       { ...session('older', 200), lastTouchedByYouAt: ago(5) },
     ]);
     expect((await resolveSessionForCwd({ queryClient, transport }, CWD))?.sessionId).toBe('older');
+  });
+
+  it('falls back to the newest chat of yours by updatedAt, whatever order the list is in', async () => {
+    // Nothing touched anywhere. The list arrives out of order, so taking the
+    // first chat of yours would open the older one.
+    const queryClient = clientWith([
+      session('older', 90),
+      spinOff('busy-spin-off', 0),
+      session('newest', 5),
+      session('middle', 30),
+    ]);
+    expect((await resolveSessionForCwd({ queryClient, transport }, CWD))?.sessionId).toBe('newest');
+    expect(cachedSessionForCwd(queryClient, CWD)).toBe('newest');
   });
 
   it('a room-born chat you touched is a valid target', async () => {
