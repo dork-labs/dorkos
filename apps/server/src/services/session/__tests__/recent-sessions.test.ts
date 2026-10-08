@@ -92,6 +92,25 @@ describe('listRecentSessions', () => {
     expect(asked).toEqual([['newest', 'newer', 'touched', 'dropped']]);
   });
 
+  it('adds a kept session once, and not at all when the window already holds it', async () => {
+    // An agent nested inside another's folder: a chat in the inner folder
+    // belongs to both, so `merged` holds it twice.
+    const inner = [
+      makeSession('top', '2026-03-04T00:00:00.000Z', '/p1/sub'),
+      makeSession('touched', '2026-03-02T00:00:00.000Z', '/p1/sub'),
+    ];
+    const a = runtimeReturning('fake-a', { '/p1': inner, '/p1/sub': inner });
+
+    const result = await listRecentSessions({
+      runtimes: [a],
+      agentPaths: ['/p1', '/p1/sub'],
+      limit: 1,
+      keepBeyondLimit: () => new Set(['top', 'touched']),
+    });
+
+    expect(result.sessions.map((s) => s.id)).toEqual(['top', 'touched']);
+  });
+
   it('excludes sessions whose cwd is outside the agent path (DOR-203)', async () => {
     const a = runtimeReturning('fake-a', {
       '/p1': [

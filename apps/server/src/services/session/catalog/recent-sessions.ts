@@ -65,10 +65,18 @@ export async function listRecentSessions(opts: {
   }
 
   merged.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+  const sessions = merged.slice(0, limit);
   const kept = keepBeyondLimit?.(merged);
-  const sessions =
-    kept && kept.size > 0
-      ? merged.filter((session, index) => index < limit || kept.has(session.id))
-      : merged.slice(0, limit);
+  if (kept && kept.size > 0) {
+    // A chat two runtimes or two agent paths both list appears twice in
+    // `merged`; past the window, it is added once, and never again when the
+    // window already holds it.
+    const listed = new Set(sessions.map((session) => session.id));
+    for (const session of merged.slice(limit)) {
+      if (!kept.has(session.id) || listed.has(session.id)) continue;
+      listed.add(session.id);
+      sessions.push(session);
+    }
+  }
   return { sessions, agentActivity, warnings };
 }
