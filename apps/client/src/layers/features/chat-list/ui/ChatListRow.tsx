@@ -322,6 +322,19 @@ function StatusDot({ status }: { status: ChatStatus }) {
   );
 }
 
+/** Under a minute ago, which the compact age would spell `0m`. */
+const ONE_MINUTE_MS = 60_000;
+
+/**
+ * When you last used a chat, compact: `just now` inside the first minute (the
+ * app's time rule; `0m` reads as a glitch), then `5m`, `2h`, `3d`.
+ *
+ * @param iso - When you last opened or wrote in the chat.
+ */
+function lastUsedLabel(iso: string): string {
+  return Date.now() - new Date(iso).getTime() < ONE_MINUTE_MS ? 'just now' : formatCompactAge(iso);
+}
+
 /**
  * The trailing slot: where the chat came from, what it runs on (only when the
  * list mixes runtimes), when you last used it, and whether it is the chat
@@ -363,7 +376,7 @@ function RowMeta({
           data-slot="chat-list-last-used"
           className="text-sidebar-foreground/50 text-2xs tabular-nums"
         >
-          You · {formatCompactAge(lastUsedAt)}
+          You · {lastUsedLabel(lastUsedAt)}
         </time>
       )}
       {isCurrent && (

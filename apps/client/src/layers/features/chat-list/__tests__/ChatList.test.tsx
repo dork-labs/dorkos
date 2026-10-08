@@ -246,6 +246,16 @@ describe('ChatList', () => {
     expect(never.querySelector('[data-slot="chat-list-last-used"]')).toBeNull();
   });
 
+  it('says "just now" for a chat used seconds ago, never "0m"', async () => {
+    renderList([
+      chat('a', 'Fresh', { lastTouchedByYouAt: new Date(Date.now() - 5_000).toISOString() }),
+    ]);
+    const row = await findRow('Fresh');
+    expect(row.querySelector('[data-slot="chat-list-last-used"]')).toHaveTextContent(
+      'You · just now'
+    );
+  });
+
   it('marks the runtime only when the list mixes them', async () => {
     const { unmount } = renderList([chat('a', 'One'), chat('b', 'Two')]);
     await findRow('One');
