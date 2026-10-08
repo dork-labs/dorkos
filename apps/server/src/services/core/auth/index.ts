@@ -59,7 +59,7 @@ import { betterAuth, type BetterAuthOptions } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { APIError } from 'better-auth/api';
 import { toNodeHandler, fromNodeHeaders } from 'better-auth/node';
-import { apiKey } from '@better-auth/api-key';
+import { apiKey, defaultKeyHasher } from '@better-auth/api-key';
 import { user, session, account, verification, apikey, eq, type Db } from '@dorkos/db';
 import { env } from '../../../env.js';
 import { logger } from '../../../lib/logger.js';
@@ -400,6 +400,109 @@ export function verifyOriginalDocTokenNativeCapsule(
 let activeAuth: Auth | undefined;
 let activeDb: Db | undefined;
 
+interface OriginalRequestAuthStore {
+  db: Db;
+  database: Auth['options']['database'];
+  plugins: Auth['options']['plugins'];
+  plugin: ReturnType<typeof apiKey>;
+  pluginSchema: string;
+  verifyApiKey: Auth['api']['verifyApiKey'];
+  getSession: Auth['api']['getSession'];
+}
+const originalRequestAuthStores = new WeakMap<object, OriginalRequestAuthStore>();
+const originalAuthProofApply = Reflect.apply;
+const originalAuthProofGet = WeakMap.prototype.get;
+const originalAuthProofSet = WeakMap.prototype.set;
+const originalAuthProofFreeze = Object.freeze;
+const originalAuthProofStringify = JSON.stringify;
+const originalAuthProofHash = defaultKeyHasher;
+const originalAuthProofNow = Date.now;
+const originalAuthProofTime = Date.prototype.getTime;
+const originalAuthProofFinite = Number.isFinite;
+/**
+ * Capture the initialized installation's refusal-only fresh credential reader.
+ * The fixed apiKey factory uses private normalized default hash/storage/config
+ * values; its public schema is checked against the original constructor value.
+ * @param auth - The exact initialized Better Auth instance.
+ * @returns A currentness reader, or undefined for an unsupported/replaced owner.
+ */
+export function captureOriginalRequestAuthReader(auth: Auth):
+  | {
+      current(): boolean;
+      apiKeyCurrent(token: string, id: string, userId: string): Promise<boolean>;
+    }
+  | undefined {
+  const own: OriginalRequestAuthStore | undefined = originalAuthProofApply(
+    originalAuthProofGet,
+    originalRequestAuthStores,
+    [auth]
+  );
+  if (!own) return undefined;
+  const current = (): boolean => {
+    try {
+      return (
+        activeAuth === auth &&
+        activeDb === own.db &&
+        own.db.$client.open &&
+        auth.options.database === own.database &&
+        auth.options.plugins === own.plugins &&
+        own.plugins?.length === 1 &&
+        own.plugins[0] === own.plugin &&
+        originalAuthProofStringify(own.plugin.schema) === own.pluginSchema &&
+        auth.api.verifyApiKey === own.verifyApiKey &&
+        auth.api.getSession === own.getSession
+      );
+    } catch {
+      return false;
+    }
+  };
+  if (!current()) return undefined;
+  return originalAuthProofFreeze({
+    current,
+    apiKeyCurrent: async (token: string, id: string, userId: string): Promise<boolean> => {
+      try {
+        if (!current() || !id || !userId) return false;
+        const hashed = await originalAuthProofHash(token);
+        if (!current()) return false;
+        const row = own.db
+          .select({
+            id: apikey.id,
+            configId: apikey.configId,
+            referenceId: apikey.referenceId,
+            key: apikey.key,
+            enabled: apikey.enabled,
+            expiresAt: apikey.expiresAt,
+          })
+          .from(apikey)
+          .where(eq(apikey.id, id))
+          .get();
+        if (
+          !current() ||
+          !row ||
+          row.id !== id ||
+          row.configId !== 'default' ||
+          row.referenceId !== userId ||
+          row.key !== hashed ||
+          row.enabled === false
+        )
+          return false;
+        if (row.expiresAt) {
+          const expiresAt = originalAuthProofApply(originalAuthProofTime, row.expiresAt, []);
+          if (!originalAuthProofFinite(expiresAt) || originalAuthProofNow() > expiresAt)
+            return false;
+        }
+        const owner = own.db.select({ id: user.id }).from(user).where(eq(user.id, userId)).get();
+        if (!current() || owner?.id !== userId) return false;
+        // Quota was charged by original admission. Exhaustion prevents a NEW
+        // request; explicit row revocation/identity/expiry still refuses this one.
+        return current();
+      } catch {
+        return false;
+      }
+    },
+  });
+}
+
 /**
  * Create the Better Auth singleton over the server's Drizzle db and store it for
  * `app.ts` and downstream auth consumers. Called once at startup. The db handle
@@ -453,6 +556,18 @@ export function initAuth(db: Db, dorkHome: string): Auth {
       : undefined;
   if (capture) originalTokenAuthCustody.set(db, capture);
   activeAuth = betterAuth(options);
+  originalAuthProofApply(originalAuthProofSet, originalRequestAuthStores, [
+    activeAuth,
+    {
+      db,
+      database: activeAuth.options.database,
+      plugins: activeAuth.options.plugins,
+      plugin: options.plugins[0],
+      pluginSchema: originalAuthProofStringify(options.plugins[0].schema),
+      verifyApiKey: activeAuth.api.verifyApiKey,
+      getSession: activeAuth.api.getSession,
+    },
+  ]);
   if (capture) {
     capture.auth = activeAuth;
     capture.ready = true;
@@ -598,6 +713,7 @@ export { toNodeHandler, fromNodeHeaders };
 export {
   sessionGate,
   verifyRequestAuth,
+  recheckAdmittedRequestAuth,
   type RequestUser,
   type VerifyRequestAuthOptions,
 } from './session-gate.js';

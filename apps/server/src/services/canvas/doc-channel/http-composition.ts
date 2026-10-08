@@ -35,7 +35,7 @@ import {
 import type { DocChannelHttp } from '../../../routes/canvas-doc-events.js';
 import { resolveCaller } from '../../../routes/room-caller.js';
 import { getRoomService } from '../../rooms/index.js';
-import { verifyRequestAuth } from '../../core/auth/index.js';
+import { recheckAdmittedRequestAuth } from '../../core/auth/index.js';
 import { configManager } from '../../core/config-manager.js';
 import { getRequestAgentIdentity } from '../../../middleware/agent-identity.js';
 import { isContained } from '../../../lib/boundary.js';
@@ -297,6 +297,7 @@ interface OriginalHttpRoomFileCaller {
   headers: Readonly<Request['headers']>;
   login: boolean;
   user?: Readonly<RequestUser>;
+  admittedPrincipal?: RequestUser;
   attribution: Readonly<{ authorId: string; signedIn: boolean }>;
   active: boolean;
 }
@@ -355,7 +356,10 @@ function roomCallerOf(
   )
     throw new DocChannelNotFoundError();
   const user = current.res.locals.user as RequestUser | undefined;
-  if (current.user ? !sameRoomCredential(user, current.user) : user !== undefined)
+  if (
+    (current.login && user !== current.admittedPrincipal) ||
+    (current.user ? !sameRoomCredential(user, current.user) : user !== undefined)
+  )
     throw new DocChannelNotFoundError();
   // The fixed Room resolver retains non-owner signed-in humans as genuine members.
   const caller = resolveCaller(current.req, current.res);
@@ -393,7 +397,7 @@ export async function captureDocHttpRoomFileWriteCaller(
   const user = suppliedUser ? Object.freeze({ ...suppliedUser }) : undefined;
   const headers = Object.freeze({ ...req.headers });
   if (login || user) {
-    if (!login || !user || !sameRoomCredential(await verifyRequestAuth({ headers }), user))
+    if (!login || !user || !(await recheckAdmittedRequestAuth(req, suppliedUser)))
       throw new RoomFileRequestAuthError();
   }
   requireOriginalRoomFileBinding(owner, binding);
@@ -409,6 +413,7 @@ export async function captureDocHttpRoomFileWriteCaller(
     headers,
     login,
     user: user ? Object.freeze({ ...user }) : undefined,
+    admittedPrincipal: suppliedUser,
     attribution: Object.freeze({ authorId: caller.id, signedIn: user !== undefined }),
     active: true,
   };
@@ -422,17 +427,14 @@ export async function captureDocHttpRoomFileWriteCaller(
     throw error;
   }
 }
-/** Actual asynchronous cookie/API-key verification repeated after waits; its unavoidable check/effect race remains. */
+/** Fresh refusal-only original credential checks after waits; no request re-admission or quota charge. */
 export async function checkDocHttpRoomFileWriteCurrent(
   owner: InstallationFileWrites,
   roomId: string,
   handle: object
 ): Promise<void> {
   const current = roomCallerOf(owner, roomId, handle);
-  if (
-    current.login &&
-    !sameRoomCredential(await verifyRequestAuth({ headers: current.headers }), current.user)
-  )
+  if (current.login && !(await recheckAdmittedRequestAuth(current.req, current.admittedPrincipal)))
     throw new RoomFileRequestAuthError();
   roomCallerOf(owner, roomId, handle);
 }
@@ -706,6 +708,7 @@ interface OriginalHttpRoomRepoCaller {
   headers: Readonly<Request['headers']>;
   login: boolean;
   user?: Readonly<RequestUser>;
+  admittedPrincipal?: RequestUser;
   authorId: string;
   active: boolean;
 }
@@ -742,7 +745,10 @@ function repoCallerOf(handle: object): OriginalHttpRoomRepoCaller {
   )
     throw new DocChannelNotFoundError();
   const user = current.res.locals.user as RequestUser | undefined;
-  if (current.user ? !sameRoomCredential(user, current.user) : user !== undefined)
+  if (
+    (current.login && user !== current.admittedPrincipal) ||
+    (current.user ? !sameRoomCredential(user, current.user) : user !== undefined)
+  )
     throw new DocChannelNotFoundError();
   const actor = resolveCaller(current.req, current.res);
   if (actor.id !== current.authorId) throw new DocChannelNotFoundError();
@@ -786,7 +792,7 @@ export async function captureDocHttpRoomRepoCaller(
   const user = supplied ? Object.freeze({ ...supplied }) : undefined;
   const headers = Object.freeze({ ...req.headers });
   if (login || user) {
-    if (!login || !user || !sameRoomCredential(await verifyRequestAuth({ headers }), user))
+    if (!login || !user || !(await recheckAdmittedRequestAuth(req, supplied)))
       throw new RoomFileRequestAuthError();
   }
   requireOriginalRoomFileBinding(owner, binding);
@@ -801,6 +807,7 @@ export async function captureDocHttpRoomRepoCaller(
     res,
     headers,
     user,
+    admittedPrincipal: supplied,
     login,
     roomId,
     operation,
@@ -820,10 +827,7 @@ export async function captureDocHttpRoomRepoCaller(
 /** Recheck credentials and currentness of the original Room repository caller. */
 export async function checkDocHttpRoomRepoCaller(handle: object): Promise<void> {
   const current = repoCallerOf(handle);
-  if (
-    current.login &&
-    !sameRoomCredential(await verifyRequestAuth({ headers: current.headers }), current.user)
-  )
+  if (current.login && !(await recheckAdmittedRequestAuth(current.req, current.admittedPrincipal)))
     throw new RoomFileRequestAuthError();
   repoCallerOf(handle);
 }

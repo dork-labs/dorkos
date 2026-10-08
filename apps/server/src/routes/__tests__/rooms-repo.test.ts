@@ -5,7 +5,7 @@ import { existsSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Server } from 'node:http';
-import type { Db } from '@dorkos/db';
+import { apikey, eq, type Db } from '@dorkos/db';
 import { ROOM_REPO_CAP_DEFAULTS } from '@dorkos/shared/room-repo';
 import { configManager } from '../../services/core/config-manager.js';
 import { initAgentIdentityService } from '../../services/core/agent-identity/agent-identity-service.js';
@@ -173,6 +173,29 @@ describe('POST /api/rooms/:id/repo', () => {
     expect(await gitInRepo(['rev-parse', '--abbrev-ref', 'HEAD'], store, roomId)).toBe('main');
     expect(await gitInRepo(['ls-files'], store, roomId)).toBe('ROOM.md');
     expect(existsSync(store.sidecarPath(roomId))).toBe(true);
+  });
+
+  it('one paid owner-key admission covers original repo capture and currentness checks', async () => {
+    // Channel creation uses the original unlimited key before this one-request budget.
+    const roomId = await channel();
+    const readKey = () => db.select().from(apikey).where(eq(apikey.id, original.ownerKey.id)).get();
+    expect(readKey()).toMatchObject({ remaining: null, refillAmount: null });
+    db.update(apikey).set({ remaining: 1 }).where(eq(apikey.id, original.ownerKey.id)).run();
+    expect(readKey()?.remaining).toBe(1);
+
+    const res = await request(testServer)
+      .post(`/api/rooms/${roomId}/repo`)
+      .set('Authorization', `Bearer ${original.ownerKey.key}`);
+
+    expect(res.status).toBe(201);
+    expect(res.body.repo).toMatchObject({ roomId, mode: 'owned', defaultBranch: 'main' });
+    expect(await gitInRepo(['rev-parse', '--abbrev-ref', 'HEAD'], store, roomId)).toBe('main');
+    expect(await gitInRepo(['ls-files'], store, roomId)).toBe('ROOM.md');
+    expect(await gitInRepo(['rev-parse', 'HEAD'], store, roomId)).toMatch(/^[a-f0-9]{40}$/);
+    expect(existsSync(store.sidecarPath(roomId))).toBe(true);
+    // A second consuming verification deletes this exhausted key and refuses;
+    // the real gate's paid request must finish using fresh refusal-only checks.
+    expect(readKey()).toMatchObject({ remaining: 0, refillAmount: null });
   });
 
   it('answers 409 with the binding it already had, and makes no second commit', async () => {

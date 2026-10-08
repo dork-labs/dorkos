@@ -3,7 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { readFile } from 'node:fs/promises';
 import request from '@dorkos/test-utils/supertest';
-import { authors, user } from '@dorkos/db';
+import { authors, user, apikey, eq } from '@dorkos/db';
+import { defaultKeyHasher } from '@better-auth/api-key';
 import { configManager } from '../../../core/config-manager.js';
 import {
   initAgentIdentityService,
@@ -328,7 +329,34 @@ export async function createOriginalFileOpsHttpFixture(original: OriginalOwnedRo
   async function run<T>(actor: RoomFileActor, work: Work): Promise<T> {
     return (await start(actor, work).finished) as T;
   }
+  // Only fixture-owned, genuinely minted member keys can be selected here.
+  async function memberKeyHash(authorId: string) {
+    if (closing) throw new Error('Original file-ops fixture retired.');
+    const key = people.get(authorId);
+    if (!key) throw new Error('Original signed-in fixture credential missing.');
+    return await defaultKeyHasher(key);
+  }
   return {
+    setOneRequestApiKeyBudget: async (authorId: string) => {
+      const hash = await memberKeyHash(authorId);
+      const row = original.db.select().from(apikey).where(eq(apikey.key, hash)).get();
+      if (!row || row.refillAmount !== null) throw new Error('Original finite member key missing.');
+      original.db.update(apikey).set({ remaining: 1 }).where(eq(apikey.id, row.id)).run();
+    },
+    readApiKeyUsage: async (authorId: string) => {
+      const hash = await memberKeyHash(authorId);
+      return original.db
+        .select({
+          remaining: apikey.remaining,
+          refillAmount: apikey.refillAmount,
+          requestCount: apikey.requestCount,
+          lastRequest: apikey.lastRequest,
+          updatedAt: apikey.updatedAt,
+        })
+        .from(apikey)
+        .where(eq(apikey.key, hash))
+        .get();
+    },
     agentActor: { authorId: agent.authorId, signedIn: false } satisfies RoomFileActor,
     editor: {
       save: (_room: string, actor: RoomFileActor, input: Parameters<RoomFileEditor['save']>[2]) =>

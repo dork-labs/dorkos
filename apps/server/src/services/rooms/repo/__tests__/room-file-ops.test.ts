@@ -712,6 +712,40 @@ describe('RoomFileEditor — upload, move, delete, from the chat', () => {
   });
 
   describe('authorship', () => {
+    it('one paid API-key admission covers the original upload and its internal currentness checks', async () => {
+      const http = fileOps!;
+      await http.setOneRequestApiKeyBudget(ANA.authorId);
+      expect(await http.readApiKeyUsage(ANA.authorId)).toMatchObject({
+        remaining: 1,
+        refillAmount: null,
+      });
+      const before = await head();
+      const uploaded = changed(
+        await editor.upload(ROOM_ID, ANA, {
+          dir: '',
+          baseCommit: null,
+          replace: [],
+          files: [await staged('paid-request.md', '# Paid once\n')],
+        })
+      );
+      expect(await readFile(path.join(repoDir, 'paid-request.md'), 'utf-8')).toBe('# Paid once\n');
+      expect(uploaded.commit).not.toBe(before);
+      expect(await head()).toBe(uploaded.commit);
+      expect(announced).toHaveLength(1);
+      expect(announced[0]?.fileChange).toMatchObject({
+        kind: 'upload',
+        commit: uploaded.commit,
+        paths: ['paid-request.md'],
+      });
+      // The genuine gate consumed its only unit. All capture/read/write guards
+      // must leave this exhausted, already-paid key present instead of re-admitting it.
+      expect(await http.readApiKeyUsage(ANA.authorId)).toMatchObject({
+        remaining: 0,
+        refillAmount: null,
+        lastRequest: expect.any(Date),
+      });
+    });
+
     it('two signed-in people get two authors, neither of them the operator', async () => {
       await editor.save(ROOM_ID, ANA, { path: 'a.md', baseCommit: null, text: 'a\n' });
       await editor.save(ROOM_ID, BEN, { path: 'b.md', baseCommit: null, text: 'b\n' });
