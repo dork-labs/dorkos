@@ -235,6 +235,8 @@ describe('ExtensionManager — server lifecycle', () => {
         // The manifest declares no tools, so `ctx.tools` binds nothing (DOR-2685).
         toolChecks: [],
         registrationRecovery: 'restart-app',
+        requireCurrent: expect.any(Function),
+        ownOriginal: expect.any(Function),
       });
     });
 

@@ -29,7 +29,8 @@ import type { ProjectRegistry } from './project-registry.js';
  */
 export function createProjectsApi(
   extensionId: string,
-  registry: ProjectRegistry
+  registry: ProjectRegistry,
+  requireCurrent?: () => void
 ): { projects: ProjectsApi; release: () => void } {
   const removers = new Set<() => void>();
   let released = false;
@@ -58,9 +59,10 @@ export function createProjectsApi(
     resolve(cwd) {
       if (typeof cwd !== 'string' || cwd.length === 0) return Promise.resolve(null);
       return orNull(
-        registry
-          .resolveWithin(cwd, extensionId)
-          .then((project) => (project === 'outside' ? null : project))
+        (requireCurrent
+          ? registry.resolveWithin(cwd, extensionId, requireCurrent)
+          : registry.resolveWithin(cwd, extensionId)
+        ).then((project) => (project === 'outside' ? null : project))
       );
     },
     list() {
@@ -68,7 +70,11 @@ export function createProjectsApi(
     },
     report(dir) {
       return typeof dir === 'string' && dir.length > 0
-        ? orNull(registry.report(dir, extensionId))
+        ? orNull(
+            requireCurrent
+              ? registry.report(dir, extensionId, requireCurrent)
+              : registry.report(dir, extensionId)
+          )
         : Promise.resolve(null);
     },
     onChange(listener) {

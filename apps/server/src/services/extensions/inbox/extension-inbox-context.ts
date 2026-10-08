@@ -31,15 +31,22 @@ function inboxOrThrow(): ExtensionInboxService {
  */
 export function createInboxApi(
   extensionId: string,
-  extensionName: string
+  extensionName: string,
+  requireCurrent?: () => void
 ): { inbox: InboxApi; release: () => void } {
   let unregister: (() => void) | null = null;
   let released = false;
 
   const inbox: InboxApi = {
-    raise: (input) => inboxOrThrow().raise(extensionId, extensionName, input),
+    raise: (input) =>
+      requireCurrent
+        ? inboxOrThrow().raise(extensionId, extensionName, input, requireCurrent)
+        : inboxOrThrow().raise(extensionId, extensionName, input),
     resolve: (key, opts) => inboxOrThrow().resolve(extensionId, key, opts),
-    record: (input) => inboxOrThrow().record(extensionId, extensionName, input),
+    record: (input) =>
+      requireCurrent
+        ? inboxOrThrow().record(extensionId, extensionName, input, requireCurrent)
+        : inboxOrThrow().record(extensionId, extensionName, input),
     list: async () => inboxOrThrow().list(extensionId),
     onAction(handler) {
       if (released) {
@@ -121,16 +128,20 @@ export function createRequirePerson(extensionName: string): RequestHandler {
  */
 export function createProjectSettingsReader(
   extensionId: string,
-  dorkHome: string
+  dorkHome: string,
+  requireCurrent?: () => void
 ): { projectSettings: ProjectSettingsReader; release: () => void } {
   const store = projectSettingsStore(dorkHome);
   const removers = new Set<() => void>();
   const projectSettings: ProjectSettingsReader = {
     async get<T = unknown>(projectRoot: string): Promise<T | null> {
       if (typeof projectRoot !== 'string' || !projectRoot) return null;
-      const resolved = await projectRegistry
-        .resolveWithin(projectRoot, extensionId)
-        .catch(() => null);
+      const resolved = await (
+        requireCurrent
+          ? projectRegistry.resolveWithin(projectRoot, extensionId, requireCurrent)
+          : projectRegistry.resolveWithin(projectRoot, extensionId)
+      ).catch(() => null);
+      requireCurrent?.();
       if (!resolved || resolved === 'outside') return null;
       const stored = await store.read(extensionId, resolved.root);
       return (stored?.value as T | undefined) ?? null;

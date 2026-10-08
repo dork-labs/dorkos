@@ -904,4 +904,38 @@ describe('createDataProviderContext', () => {
       }
     });
   });
+  it.each([false, undefined])(
+    'does not heal the original private currentness failure %s',
+    async (value) => {
+      const home = await fs.mkdtemp(path.join(os.tmpdir(), 'context-refusal-'));
+      const requireCurrent = vi.fn().mockImplementationOnce(() => {
+        throw value;
+      });
+      const built = createDataProviderContext({
+        extensionId: 'owned',
+        extensionDir: home,
+        dorkHome: home,
+        requireCurrent,
+      });
+      try {
+        const first = await built.ctx.storage.saveData({ refused: true }).then(
+          () => ({ ok: true }),
+          (cause) => ({ value: cause })
+        );
+        const second = await built.ctx.projects.list().then(
+          () => ({ ok: true }),
+          (cause) => ({ value: cause })
+        );
+        expect(first).toEqual({ value });
+        expect(second).toEqual({ value });
+        expect(requireCurrent).toHaveBeenCalledTimes(1);
+        await expect(
+          fs.stat(path.join(home, 'extension-data/owned/data.json'))
+        ).rejects.toMatchObject({ code: 'ENOENT' });
+      } finally {
+        built.dispose();
+        await fs.rm(home, { recursive: true, force: true });
+      }
+    }
+  );
 });

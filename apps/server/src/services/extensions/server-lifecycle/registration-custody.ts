@@ -43,6 +43,7 @@ export class RegistrationOccurrence {
   private readonly jobs = new Map<() => unknown, Promise<void>>();
   private closing: Promise<void> | undefined;
   private unverified = false;
+  private readonly operations = new Set<Promise<void>>();
 
   constructor(
     private readonly block: () => void,
@@ -52,6 +53,36 @@ export class RegistrationOccurrence {
   /** Observation-only first failure; it never authorizes another registration. */
   failure(): Readonly<{ value: unknown }> | undefined {
     return this.first;
+  }
+
+  /** Only the original live registration may enter or publish context work. */
+  requireCurrent(): void {
+    if (this.first) throw this.first.value;
+    if (this.closing || this.unverified)
+      throw new Error('Extension server registration was retired.');
+  }
+
+  /** Reserve original context work before entry and retain its actual settlement. */
+  runOriginal<T>(enter: () => Promise<T>): Promise<T> {
+    this.requireCurrent();
+    let resolve!: (value: T) => void;
+    let reject!: (value: unknown) => void;
+    const original = new Promise<T>((yes, no) => {
+      resolve = yes;
+      reject = no;
+    });
+    const settled = original.then(
+      () => undefined,
+      () => undefined
+    );
+    this.operations.add(settled);
+    void settled.then(() => this.operations.delete(settled));
+    try {
+      void Promise.resolve(enter()).then(resolve, reject);
+    } catch (value) {
+      reject(value);
+    }
+    return original;
   }
 
   /** A registrar that did not return a receipt leaves its arbitrary effects unknown. */
@@ -125,10 +156,11 @@ export class RegistrationOccurrence {
     for (const cleanup of cleanups) this.enter(cleanup);
     const joinEntered = async () => {
       let joined = 0;
-      while (joined !== this.jobs.size) {
-        const snapshot = [...this.jobs.values()];
+      while (joined !== this.jobs.size || this.operations.size > 0) {
+        const snapshot = [...this.jobs.values(), ...this.operations];
+        const cleanupCount = this.jobs.size;
         await Promise.allSettled(snapshot);
-        joined = snapshot.length;
+        joined = cleanupCount;
       }
       if (this.first) reject(this.first.value);
       else {

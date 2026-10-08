@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'fix(extensions): retain retiring server work and cancel UI effects'
   - 'fix(browser): preserve extension authority during asynchronous work'
   - 'fix(browser): retain the original native watcher baseline'
   - 'fix(browser): close the local controller before stopping its native peer'
@@ -40,6 +41,7 @@ covers:
 
 ### Fixed
 
+- Keep retired extensions from overwriting newer data or leaving their animations running.
 - Keep older sign-in attempts and extension actions from changing a newer sign-in or agent selection.
 - Keep active browsers running when Community navigation preferences change. Browser, sign-in, and tunnel changes still close affected sessions.
 - Fix the desktop build loading the managed browser's native asset builder.

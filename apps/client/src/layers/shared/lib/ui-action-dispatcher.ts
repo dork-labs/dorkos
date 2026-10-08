@@ -290,6 +290,7 @@ interface PanelUrlSignal {
  *   tab switches persist the per-agent preference, `'agent'` ones are view-only.
  *   Required so every call site declares who is asking — silently defaulting is
  *   how an agent overwrites a user preference.
+ * @param effectOwner - Optional originating extension occurrence, checked before each host effect.
  */
 export function executeUiCommand(
   ctx: DispatcherContext,
@@ -305,21 +306,21 @@ export function executeUiCommand(
   switch (command.action) {
     // --- Panels ---
     case 'open_panel':
-      setPanelOpen(ctx, store, command.panel, true);
+      setPanelOpen(ctx, store, command.panel, true, effectOwner);
       break;
     case 'close_panel':
-      setPanelOpen(ctx, store, command.panel, false);
+      setPanelOpen(ctx, store, command.panel, false, effectOwner);
       break;
     case 'toggle_panel':
-      togglePanel(ctx, store, command.panel);
+      togglePanel(ctx, store, command.panel, effectOwner);
       break;
 
     // --- Sidebar ---
     case 'open_sidebar':
-      store.setSidebarOpen(true);
+      enterEffect(store, store.setSidebarOpen, [true], effectOwner);
       break;
     case 'close_sidebar':
-      store.setSidebarOpen(false);
+      enterEffect(store, store.setSidebarOpen, [false], effectOwner);
       break;
 
     // --- Canvas (multi-document) ---
@@ -328,18 +329,18 @@ export function executeUiCommand(
       // re-activated document that is being edited keeps its content. The
       // panel-reveal side effects below run regardless so the canvas surfaces.
       if (command.content != null && !ctx.serverAppliedCanvas) {
-        store.openCanvasDocument(command.content);
+        enterEffect(store, store.openCanvasDocument, [command.content], effectOwner);
       }
       if (command.preferredWidth != null) {
-        store.setCanvasPreferredWidth(command.preferredWidth);
+        enterEffect(store, store.setCanvasPreferredWidth, [command.preferredWidth], effectOwner);
       }
       // The reveal follows what the command produced: a page surfaces the
       // Browser tab, everything else the Canvas tab. An `open_canvas` carrying
       // no content asks for the canvas itself.
       if (command.content != null) {
-        revealForContent(store, origin, command.content);
+        revealForContent(store, origin, command.content, effectOwner);
       } else {
-        revealCanvas(store, origin);
+        revealCanvas(store, origin, effectOwner);
       }
       break;
     case 'update_canvas':
@@ -352,7 +353,8 @@ export function executeUiCommand(
       // Deliberately does NOT reveal anything: an update is not an open, and a
       // tab that selects itself because an agent refreshed a document is the
       // pixel version of a turn that triggers itself (spec `room-canvas` §9.3).
-      if (!ctx.serverAppliedCanvas) store.updateActiveDocument(command.content);
+      if (!ctx.serverAppliedCanvas)
+        enterEffect(store, store.updateActiveDocument, [command.content], effectOwner);
       break;
     case 'open_file': {
       // Resolve the viewer from the mime→viewer registry and open the file as a
@@ -368,8 +370,9 @@ export function executeUiCommand(
         command.sourcePath,
         ctx.workbenchViewerOverrides ?? workbenchViewerOverrides()
       );
-      if (!ctx.serverAppliedCanvas) store.openCanvasDocument(content);
-      revealForContent(store, origin, content);
+      if (!ctx.serverAppliedCanvas)
+        enterEffect(store, store.openCanvasDocument, [content], effectOwner);
+      revealForContent(store, origin, content, effectOwner);
       break;
     }
     case 'open_diff':
@@ -381,19 +384,32 @@ export function executeUiCommand(
       // `open_file`). `mediaKind` is left unset; the viewer resolves text vs
       // image from the registry.
       if (!ctx.serverAppliedCanvas) {
-        store.openCanvasDocument({ type: 'diff', sourcePath: command.sourcePath });
+        enterEffect(
+          store,
+          store.openCanvasDocument,
+          [{ type: 'diff', sourcePath: command.sourcePath }],
+          effectOwner
+        );
       }
-      revealCanvas(store, origin);
+      revealCanvas(store, origin, effectOwner);
       break;
     case 'open_terminal': {
       if (ctx.supportsTerminal === false) {
-        toast.info('The terminal isn’t available here', {
-          description: 'Open this session in the web app.',
-        });
+        enterEffect(
+          toast,
+          toast.info,
+          [
+            'The terminal isn’t available here',
+            {
+              description: 'Open this session in the web app.',
+            },
+          ],
+          effectOwner
+        );
         break;
       }
-      store.setRightPanelOpen(true);
-      tabSetterFor(store, origin)(TERMINAL_TAB_ID);
+      enterEffect(store, store.setRightPanelOpen, [true], effectOwner);
+      enterEffect(undefined, tabSetterFor(store, origin), [TERMINAL_TAB_ID], effectOwner);
       break;
     }
     case 'browser_navigate':
@@ -401,9 +417,14 @@ export function executeUiCommand(
       // store), then reveal the canvas. Appending never clobbers a document the
       // user is editing (edit-protection is per-doc; ADR-0292).
       if (!ctx.serverAppliedCanvas) {
-        store.openCanvasDocument({ type: 'browser', url: command.url });
+        enterEffect(
+          store,
+          store.openCanvasDocument,
+          [{ type: 'browser', url: command.url }],
+          effectOwner
+        );
       }
-      revealBrowser(store, origin);
+      revealBrowser(store, origin, effectOwner);
       break;
     case 'close_canvas':
       // **Naming a document closes THAT document; naming none closes the whole
@@ -412,11 +433,12 @@ export function executeUiCommand(
       // added the field. A document close on a session is a write the server has
       // already made, so the `canvas` event is what drops it here.
       if (command.documentId !== undefined) {
-        if (!ctx.serverAppliedCanvas) store.closeCanvasDocument(command.documentId);
+        if (!ctx.serverAppliedCanvas)
+          enterEffect(store, store.closeCanvasDocument, [command.documentId], effectOwner);
         break;
       }
-      store.setCanvasOpen(false);
-      store.setRightPanelOpen(false);
+      enterEffect(store, store.setCanvasOpen, [false], effectOwner);
+      enterEffect(store, store.setRightPanelOpen, [false], effectOwner);
       break;
 
     // --- PIP (floating panel) ---
@@ -428,62 +450,105 @@ export function executeUiCommand(
       // `dorkos-ui` fence (LiveSessionWidget), so re-emitting the fence updates
       // it live.
       if (ctx.sessionId === undefined) {
-        toast.info('Picture-in-picture needs an active session', {
-          description: 'Open a chat, then pop out its widget.',
-        });
+        enterEffect(
+          toast,
+          toast.info,
+          [
+            'Picture-in-picture needs an active session',
+            {
+              description: 'Open a chat, then pop out its widget.',
+            },
+          ],
+          effectOwner
+        );
         break;
       }
-      store.openPip({ kind: 'widget', sessionId: ctx.sessionId, title: command.title ?? 'Widget' });
+      enterEffect(
+        store,
+        store.openPip,
+        [{ kind: 'widget', sessionId: ctx.sessionId, title: command.title ?? 'Widget' }],
+        effectOwner
+      );
       break;
     case 'close_pip':
-      store.closePip();
+      enterEffect(store, store.closePip, [], effectOwner);
       break;
 
     // --- Toast ---
     case 'show_toast':
-      toast[command.level](command.message, {
-        description: command.description,
-      });
+      enterEffect(
+        toast,
+        toast[command.level],
+        [
+          command.message,
+          {
+            description: command.description,
+          },
+        ],
+        effectOwner
+      );
       break;
 
     // --- Theme ---
     case 'set_theme':
-      ctx.setTheme(command.theme);
+      enterEffect(ctx, ctx.setTheme, [command.theme], effectOwner);
       break;
 
     // --- Scroll ---
-    case 'scroll_to_message':
-      ctx.scrollToMessage?.(command.messageId);
+    case 'scroll_to_message': {
+      const port = ctx.scrollToMessage;
+      if (port) enterEffect(ctx, port, [command.messageId], effectOwner);
       break;
+    }
 
     // --- Agent ---
-    case 'switch_agent':
-      if (effectOwner) ctx.switchAgent?.(command.cwd, effectOwner);
-      else ctx.switchAgent?.(command.cwd);
+    case 'switch_agent': {
+      const port = ctx.switchAgent;
+      if (port) {
+        if (effectOwner) enterEffect(ctx, port, [command.cwd, effectOwner], effectOwner);
+        else enterEffect(ctx, port, [command.cwd], effectOwner);
+      }
       break;
+    }
 
-    case 'apply_layout':
-      if (effectOwner) ctx.applyShape?.(command.shape, effectOwner);
-      else ctx.applyShape?.(command.shape);
+    case 'apply_layout': {
+      const port = ctx.applyShape;
+      if (port) {
+        if (effectOwner) enterEffect(ctx, port, [command.shape, effectOwner], effectOwner);
+        else enterEffect(ctx, port, [command.shape], effectOwner);
+      }
       break;
+    }
 
     // --- Command Palette ---
     case 'open_command_palette':
-      store.setGlobalPaletteOpen(true);
+      enterEffect(store, store.setGlobalPaletteOpen, [true], effectOwner);
       break;
 
     // --- Celebration ---
-    case 'celebrate':
-      // Fire-and-forget: fireCelebration lazy-loads canvas-confetti and no-ops
-      // under prefers-reduced-motion itself, so no extra guard is needed here.
-      // The origin (when present) makes the burst erupt from the clicked
-      // control; agent/stream celebrates omit it and fall back to a default.
-      void fireCelebration({
+    case 'celebrate': {
+      const original = fireCelebration;
+      const options = {
         kind: command.kind,
         emoji: command.emoji,
         origin: ctx.celebrationOrigin,
-      });
+      };
+      effectOwner?.beforeEffect();
+      if (effectOwner) {
+        // The originating owner retains cancellation before the lazy import.
+        // A refused asynchronous continuation must not escape as an unhandled rejection.
+        void Reflect.apply(original, undefined, [options, effectOwner]).catch(() => {
+          try {
+            console.warn('[extensions] Celebration did not complete.');
+          } catch {
+            /* Diagnostic only. */
+          }
+        });
+      } else {
+        void Reflect.apply(original, undefined, [options]);
+      }
       break;
+    }
 
     default: {
       // Exhaustive check — TypeScript errors here if a UiCommand variant is unhandled
@@ -494,6 +559,18 @@ export function executeUiCommand(
 }
 
 // --- Internal helpers ---
+
+/** Enter a captured original port only while its originating occurrence is current. */
+function enterEffect<Args extends unknown[]>(
+  receiver: unknown,
+  port: ((...args: Args) => unknown) | undefined,
+  args: Args,
+  effectOwner?: EffectOwner
+): void {
+  if (!port) return;
+  effectOwner?.beforeEffect();
+  Reflect.apply(port, receiver, args);
+}
 
 /** Tab setter for an origin: user picks persist the per-agent preference, agent switches are view-only (DOR-227). */
 function tabSetterFor(
@@ -514,11 +591,17 @@ function tabSetterFor(
  * @param store - `useAppStore.getState()`.
  * @param origin - Who is revealing it.
  * @param tabId - The contribution id to select.
+ * @param effectOwner - Optional originating extension occurrence.
  */
-function revealTab(store: DispatcherStore, origin: UiCommandOrigin, tabId: string): void {
-  store.setCanvasOpen(true);
-  store.setRightPanelOpen(true);
-  tabSetterFor(store, origin)(tabId);
+function revealTab(
+  store: DispatcherStore,
+  origin: UiCommandOrigin,
+  tabId: string,
+  effectOwner?: EffectOwner
+): void {
+  enterEffect(store, store.setCanvasOpen, [true], effectOwner);
+  enterEffect(store, store.setRightPanelOpen, [true], effectOwner);
+  enterEffect(undefined, tabSetterFor(store, origin), [tabId], effectOwner);
 }
 
 /**
@@ -539,9 +622,14 @@ function revealTab(store: DispatcherStore, origin: UiCommandOrigin, tabId: strin
  * @param store - `useAppStore.getState()`.
  * @param origin - Who is revealing it: `'user'` persists the tab choice as a
  *   preference, `'agent'` switches the view without overwriting one.
+ * @param effectOwner - Optional originating extension occurrence.
  */
-export function revealCanvas(store: DispatcherStore, origin: UiCommandOrigin): void {
-  revealTab(store, origin, CANVAS_TAB_ID);
+export function revealCanvas(
+  store: DispatcherStore,
+  origin: UiCommandOrigin,
+  effectOwner?: EffectOwner
+): void {
+  revealTab(store, origin, CANVAS_TAB_ID, effectOwner);
 }
 
 /**
@@ -551,9 +639,14 @@ export function revealCanvas(store: DispatcherStore, origin: UiCommandOrigin): v
  * @param store - `useAppStore.getState()`.
  * @param origin - Who is revealing it: `'user'` persists the tab choice as a
  *   preference, `'agent'` switches the view without overwriting one.
+ * @param effectOwner - Optional originating extension occurrence.
  */
-export function revealBrowser(store: DispatcherStore, origin: UiCommandOrigin): void {
-  revealTab(store, origin, BROWSER_TAB_ID);
+export function revealBrowser(
+  store: DispatcherStore,
+  origin: UiCommandOrigin,
+  effectOwner?: EffectOwner
+): void {
+  revealTab(store, origin, BROWSER_TAB_ID, effectOwner);
 }
 
 /**
@@ -569,15 +662,17 @@ export function revealBrowser(store: DispatcherStore, origin: UiCommandOrigin): 
  * @param store - `useAppStore.getState()`.
  * @param origin - Who is revealing it: `'user'` persists the tab choice as a
  *   preference, `'agent'` switches the view without overwriting one.
+ * @param effectOwner - Optional originating extension occurrence.
  * @param content - The content that was just opened.
  */
 export function revealForContent(
   store: DispatcherStore,
   origin: UiCommandOrigin,
-  content: UiCanvasContent
+  content: UiCanvasContent,
+  effectOwner?: EffectOwner
 ): void {
-  if (canvasViewForContent(content) === 'browser') revealBrowser(store, origin);
-  else revealCanvas(store, origin);
+  if (canvasViewForContent(content) === 'browser') revealBrowser(store, origin, effectOwner);
+  else revealCanvas(store, origin, effectOwner);
 }
 
 /**
@@ -610,7 +705,8 @@ function setPanelOpen(
   ctx: DispatcherContext,
   store: DispatcherStore,
   panel: UiPanelId,
-  open: boolean
+  open: boolean,
+  effectOwner?: EffectOwner
 ): void {
   const setterMap: Record<UiPanelId, (open: boolean) => void> = {
     settings: store.setSettingsOpen,
@@ -618,14 +714,22 @@ function setPanelOpen(
     relay: store.setRelayOpen,
     picker: store.setPickerOpen,
   };
-  setterMap[panel]?.(open);
+  enterEffect(setterMap, setterMap[panel], [open], effectOwner);
   // Closing clears every signal that can hold the panel open, not just the store
   // flag — a deep-linked Settings or Tasks dialog stays on screen otherwise
   // (DOR-839). No-op for panels with no URL signal, and when none is injected.
-  if (!open) ctx.panelUrlSignal?.close(panel);
+  if (!open) {
+    const signal = ctx.panelUrlSignal;
+    enterEffect(signal, signal?.close, [panel], effectOwner);
+  }
 }
 
-function togglePanel(ctx: DispatcherContext, store: DispatcherStore, panel: UiPanelId): void {
+function togglePanel(
+  ctx: DispatcherContext,
+  store: DispatcherStore,
+  panel: UiPanelId,
+  effectOwner?: EffectOwner
+): void {
   const getterMap: Record<UiPanelId, boolean> = {
     settings: store.settingsOpen,
     tasks: store.tasksOpen,
@@ -636,5 +740,5 @@ function togglePanel(ctx: DispatcherContext, store: DispatcherStore, panel: UiPa
   // store alone reports a deep-linked dialog as closed, so a toggle "opens" the
   // thing already on screen instead of closing it.
   const isOpen = getterMap[panel] || (ctx.panelUrlSignal?.isOpen(panel) ?? false);
-  setPanelOpen(ctx, store, panel, !isOpen);
+  setPanelOpen(ctx, store, panel, !isOpen, effectOwner);
 }

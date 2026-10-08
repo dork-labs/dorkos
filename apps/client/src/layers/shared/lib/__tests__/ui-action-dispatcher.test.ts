@@ -886,3 +886,230 @@ describe('UI_COMMAND_REACH is true of the real dispatcher (DOR-625)', () => {
     expect(ctx.applyShape).toHaveBeenCalledWith('linear-ops');
   });
 });
+
+// --- Originating synchronous effect tails ---
+
+describe('executeUiCommand — originating effect tails', () => {
+  const cases: { command: UiCommand; ports: (keyof DispatcherStore)[] }[] = [
+    {
+      command: {
+        action: 'open_canvas',
+        content: { type: 'markdown', content: '# owned' },
+        preferredWidth: 400,
+      },
+      ports: [
+        'openCanvasDocument',
+        'setCanvasPreferredWidth',
+        'setCanvasOpen',
+        'setRightPanelOpen',
+        'setActiveRightPanelTabView',
+      ],
+    },
+    {
+      command: { action: 'open_file', sourcePath: 'owned.md' },
+      ports: [
+        'openCanvasDocument',
+        'setCanvasOpen',
+        'setRightPanelOpen',
+        'setActiveRightPanelTabView',
+      ],
+    },
+    {
+      command: { action: 'open_diff', sourcePath: 'owned.ts' },
+      ports: [
+        'openCanvasDocument',
+        'setCanvasOpen',
+        'setRightPanelOpen',
+        'setActiveRightPanelTabView',
+      ],
+    },
+    {
+      command: { action: 'browser_navigate', url: 'https://owned.test/' },
+      ports: [
+        'openCanvasDocument',
+        'setCanvasOpen',
+        'setRightPanelOpen',
+        'setActiveRightPanelTabView',
+      ],
+    },
+    {
+      command: { action: 'open_terminal' },
+      ports: ['setRightPanelOpen', 'setActiveRightPanelTabView'],
+    },
+    { command: { action: 'close_canvas' }, ports: ['setCanvasOpen', 'setRightPanelOpen'] },
+  ];
+
+  for (const { command, ports } of cases) {
+    for (let retiringIndex = 0; retiringIndex < ports.length - 1; retiringIndex++) {
+      it(`${command.action} stops after retiring setter ${retiringIndex}`, () => {
+        const ctx = makeMockCtx();
+        const store = ctx.getStore();
+        let current = true;
+        const retired = new Error('original occurrence retired');
+        const entered: string[] = [];
+        ports.forEach((port, index) => {
+          Object.defineProperty(store, port, {
+            value: vi.fn(() => {
+              entered.push(port);
+              if (index === retiringIndex) current = false;
+            }),
+          });
+        });
+        const owner = {
+          beforeEffect() {
+            if (!current) throw retired;
+          },
+        };
+        expect(() => executeUiCommand(ctx, command, 'agent', owner)).toThrow(retired);
+        expect(entered).toEqual(ports.slice(0, retiringIndex + 1));
+      });
+    }
+    it(`${command.action} preserves every ordinary unowned effect`, () => {
+      const ctx = makeMockCtx();
+      const store = ctx.getStore();
+      const entered: string[] = [];
+      ports.forEach((port) => {
+        Object.defineProperty(store, port, {
+          value: vi.fn(() => {
+            entered.push(port);
+          }),
+        });
+      });
+      executeUiCommand(ctx, command, 'agent');
+      expect(entered).toEqual(ports);
+    });
+  }
+
+  it.each(['close_panel', 'toggle_panel'] as const)(
+    '%s cannot clear the URL after its setter retires the origin',
+    (action) => {
+      let current = true;
+      const retired = new Error('original occurrence retired');
+      const ctx = makeMockCtx({
+        settingsOpen: true,
+        setSettingsOpen: vi.fn(() => {
+          current = false;
+        }),
+      });
+      const close = vi.fn();
+      ctx.panelUrlSignal = { isOpen: () => false, close };
+      expect(() =>
+        executeUiCommand(ctx, { action, panel: 'settings' }, 'agent', {
+          beforeEffect() {
+            if (!current) throw retired;
+          },
+        })
+      ).toThrow(retired);
+      expect(ctx.getStore().setSettingsOpen).toHaveBeenCalledExactlyOnceWith(false);
+      expect(close).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each([false, undefined])(
+    'preserves original setter failure %s without entering any tail',
+    (cause) => {
+      const ctx = makeMockCtx({
+        openCanvasDocument: vi.fn(() => {
+          throw cause;
+        }),
+      });
+      const caught: { value: unknown }[] = [];
+      try {
+        executeUiCommand(
+          ctx,
+          { action: 'open_canvas', content: { type: 'markdown', content: '# owned' } },
+          'agent',
+          { beforeEffect() {} }
+        );
+      } catch (value) {
+        caught.push({ value });
+      }
+      expect(caught).toEqual([{ value: cause }]);
+      expect(ctx.getStore().setCanvasOpen).not.toHaveBeenCalled();
+      expect(ctx.getStore().setRightPanelOpen).not.toHaveBeenCalled();
+      expect(ctx.getStore().setActiveRightPanelTabView).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each([
+    { command: { action: 'open_pip' }, port: 'openPip', context: false },
+    { command: { action: 'close_pip' }, port: 'closePip', context: false },
+    { command: { action: 'open_sidebar' }, port: 'setSidebarOpen', context: false },
+    { command: { action: 'open_command_palette' }, port: 'setGlobalPaletteOpen', context: false },
+    {
+      command: { action: 'update_canvas', content: { type: 'markdown', content: '# owned' } },
+      port: 'updateActiveDocument',
+      context: false,
+    },
+    {
+      command: { action: 'close_canvas', documentId: 'owned' },
+      port: 'closeCanvasDocument',
+      context: false,
+    },
+    { command: { action: 'set_theme', theme: 'dark' }, port: 'setTheme', context: true },
+    {
+      command: { action: 'scroll_to_message', messageId: 'owned' },
+      port: 'scrollToMessage',
+      context: true,
+    },
+    { command: { action: 'switch_agent', cwd: '/owned' }, port: 'switchAgent', context: true },
+    { command: { action: 'apply_layout', shape: 'owned' }, port: 'applyShape', context: true },
+  ] satisfies { command: UiCommand; port: string; context: boolean }[])(
+    'captures $port before checking its originating owner',
+    ({ command, port, context }) => {
+      const ctx = makeMockCtx();
+      ctx.sessionId = 'owned-session';
+      let current = true;
+      const retired = new Error('original occurrence retired');
+      const producer = vi.fn();
+      Object.defineProperty(context ? ctx : ctx.getStore(), port, {
+        get() {
+          current = false;
+          return producer;
+        },
+      });
+      expect(() =>
+        executeUiCommand(ctx, command, 'agent', {
+          beforeEffect() {
+            if (!current) throw retired;
+          },
+        })
+      ).toThrow(retired);
+      expect(producer).not.toHaveBeenCalled();
+    }
+  );
+});
+
+describe('celebration originating ownership', () => {
+  it('passes the exact cleanup-capable owner to the original lazy celebration', async () => {
+    const { fireCelebration } = await import('../celebrations/celebration-effects');
+    const owner = { beforeEffect: vi.fn(), registerCleanup: vi.fn() };
+    const ctx = makeMockCtx();
+    executeUiCommand(ctx, { action: 'celebrate', kind: 'burst' }, 'agent', owner);
+    expect(fireCelebration).toHaveBeenLastCalledWith(
+      { kind: 'burst', emoji: undefined, origin: undefined },
+      owner
+    );
+    expect(owner.beforeEffect).toHaveBeenCalled();
+  });
+
+  it.each([false, undefined])(
+    'observes original deferred refusal %s without a late visual',
+    async (cause) => {
+      const { fireCelebration } = await import('../celebrations/celebration-effects');
+      const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      vi.mocked(fireCelebration).mockRejectedValueOnce(cause);
+      try {
+        executeUiCommand(makeMockCtx(), { action: 'celebrate' }, 'agent', {
+          beforeEffect() {},
+        });
+        await Promise.resolve();
+        expect(warning).toHaveBeenCalledExactlyOnceWith(
+          '[extensions] Celebration did not complete.'
+        );
+      } finally {
+        warning.mockRestore();
+      }
+    }
+  );
+});

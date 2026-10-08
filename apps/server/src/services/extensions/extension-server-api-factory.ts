@@ -18,7 +18,6 @@ import {
   type DataProviderContext,
 } from '@dorkos/extension-api/server';
 import { LEDGER_RUNTIMES, type LedgerRuntime } from '@dorkos/shared/account-usage';
-import { writeFileAtomic } from '@dorkos/shared/atomic-write';
 import { ExtensionSecretStore } from '@dorkos/shared/extension-secrets';
 import { ExtensionSettingsStore } from '@dorkos/shared/extension-settings';
 import { eventFanOut } from '../core/event-fan-out.js';
@@ -34,12 +33,16 @@ import {
   createProjectSettingsReader,
   createRequirePerson,
 } from './inbox/extension-inbox-context.js';
-import fs from 'fs/promises';
 import { mkdirSync } from 'fs';
 import path from 'path';
 import { logger } from '../../lib/logger.js';
 import { createToolBinding, type ToolBinding } from './agent-tools/tool-binding.js';
 import type { ExtensionToolCheck } from '@dorkos/extension-api/tool-check';
+import {
+  captureContextCurrentness,
+  createContextStorage,
+  scopeContextOccurrence,
+} from './server-lifecycle/context-occurrence.js';
 import { isolatedFilesDir } from './isolation/grants.js';
 
 /** Retain each original synchronous cleanup outcome, including a falsy throw. */
@@ -261,6 +264,10 @@ interface CreateContextDeps {
   toolChecks?: readonly ExtensionToolCheck[];
   /** Private in-process registrar recovery; an isolated child keeps its ordinary reload path. */
   registrationRecovery?: 'restart-app';
+  /** Private original in-process registration guard; never sent to isolated children. */
+  requireCurrent?: () => void;
+  /** Private original context duty bank; retirement joins entered work. */
+  ownOriginal?: <T>(enter: () => Promise<T>) => Promise<T>;
 }
 
 /**
@@ -302,6 +309,9 @@ export function createDataProviderContext(deps: CreateContextDeps): {
   // Set when this instance was given up on (its `register()` never finished):
   // whatever it still does afterwards must start nothing (see `dispose`).
   let disposed = false;
+  const originalCurrent = deps.requireCurrent;
+  const ownOriginal = deps.ownOriginal?.bind(deps);
+  const requireCurrent = captureContextCurrentness(deps, originalCurrent, () => disposed);
   let toldDisposed = false;
   const recovery =
     deps.registrationRecovery === 'restart-app'
@@ -321,7 +331,11 @@ export function createDataProviderContext(deps: CreateContextDeps): {
   };
 
   const secrets = new ExtensionSecretStore(extensionId, dorkHome);
-  const settings = new ExtensionSettingsStore(dorkHome, extensionId);
+  const settings = new ExtensionSettingsStore(
+    dorkHome,
+    extensionId,
+    originalCurrent ? requireCurrent : undefined
+  );
 
   const dataPath = path.join(dorkHome, 'extension-data', extensionId, 'data.json');
 
@@ -335,19 +349,7 @@ export function createDataProviderContext(deps: CreateContextDeps): {
     logger.warn(`[ext:${extensionId}] couldn't create its files folder:`, err);
   }
 
-  const storage = {
-    async loadData<T = unknown>(): Promise<T | null> {
-      try {
-        const raw = await fs.readFile(dataPath, 'utf-8');
-        return JSON.parse(raw) as T;
-      } catch {
-        return null;
-      }
-    },
-    async saveData<T = unknown>(data: T): Promise<void> {
-      await writeFileAtomic(dataPath, JSON.stringify(data, null, 2));
-    },
-  };
+  const storage = createContextStorage(dataPath, requireCurrent);
 
   function schedule(intervalSeconds: number, fn: () => Promise<void>): () => void {
     if (disposed) return inert('ctx.schedule');
@@ -363,16 +365,28 @@ export function createDataProviderContext(deps: CreateContextDeps): {
   }
 
   function emit(event: string, data: unknown): void {
-    eventFanOut.broadcast(`ext:${extensionId}:${event}`, data);
+    const broadcast = eventFanOut.broadcast;
+    const name = `ext:${extensionId}:${event}`;
+    requireCurrent();
+    broadcast.call(eventFanOut, name, data);
   }
 
   const extensionName = deps.extensionName ?? extensionId;
   const { accounts, release: releaseAccounts } = createAccountsApi(extensionId);
-  const { projects, release: releaseProjects } = createProjectsApi(extensionId, projectRegistry);
-  const { inbox, release: releaseInbox } = createInboxApi(extensionId, extensionName);
+  const { projects, release: releaseProjects } = createProjectsApi(
+    extensionId,
+    projectRegistry,
+    originalCurrent ? requireCurrent : undefined
+  );
+  const { inbox, release: releaseInbox } = createInboxApi(
+    extensionId,
+    extensionName,
+    originalCurrent ? requireCurrent : undefined
+  );
   const { projectSettings, release: releaseProjectSettings } = createProjectSettingsReader(
     extensionId,
-    dorkHome
+    dorkHome,
+    originalCurrent ? requireCurrent : undefined
   );
   const { agent, release: releaseAgent } = createAgentApi(extensionId);
   const tools = createToolBinding(extensionId, deps.toolChecks ?? []);
@@ -465,7 +479,7 @@ export function createDataProviderContext(deps: CreateContextDeps): {
   });
 
   return {
-    ctx,
+    ctx: originalCurrent ? scopeContextOccurrence(ctx, requireCurrent, ownOriginal) : ctx,
     getScheduledCleanups: () => [...scheduledCleanups],
     releaseListeners,
     tools,

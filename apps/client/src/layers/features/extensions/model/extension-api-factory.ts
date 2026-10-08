@@ -36,7 +36,7 @@ import type {
   ExtensionPageContribution,
   StatusBarContribution,
 } from '@/layers/shared/model';
-import { executeUiCommand } from '@/layers/shared/lib/ui-action-dispatcher';
+import { createExtensionUiEffectDispatcher } from './extension-ui-effect-owner';
 import { internalRoutePath } from '@/layers/shared/lib/link-navigation';
 import {
   EXTENSION_PAGE_PATH_PATTERN,
@@ -92,11 +92,7 @@ export function createExtensionAPI(
   requireCurrent?: () => void
 ): { api: ExtensionAPI; cleanups: Array<() => void> } {
   const cleanups: Array<() => void> = [];
-  const effectOwner = requireCurrent ? Object.freeze({ beforeEffect: requireCurrent }) : undefined;
-  const dispatch = (command: UiCommand): void => {
-    if (effectOwner) executeUiCommand(deps.dispatcherContext, command, 'agent', effectOwner);
-    else executeUiCommand(deps.dispatcherContext, command, 'agent');
-  };
+  const dispatch = createExtensionUiEffectDispatcher(deps, cleanups, requireCurrent);
   const request = async (url: string, input?: RequestInit): Promise<Response> => {
     const method = globalThis.fetch;
     const args = input === undefined ? [url] : [url, input];

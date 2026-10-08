@@ -468,6 +468,12 @@ export class ExtensionServerLifecycle {
           extensionName: record.manifest.name,
           toolChecks,
           registrationRecovery: 'restart-app',
+          ownOriginal: (enter) => occurrence.runOriginal(enter),
+          requireCurrent: () => {
+            if (!this.stillWanted(record))
+              throw new Error('Extension server registration was replaced.');
+            occurrence.requireCurrent();
+          },
         });
       // A register() that throws after adding an account listener or advisor
       // must not leave it behind: this instance never becomes active.

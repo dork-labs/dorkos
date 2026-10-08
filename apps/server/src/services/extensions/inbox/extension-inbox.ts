@@ -326,11 +326,13 @@ export class ExtensionInboxService {
   async raise(
     extensionId: string,
     extensionName: string,
-    input: DecisionInput
+    input: DecisionInput,
+    requireCurrent?: () => void
   ): Promise<RaisedDecision> {
     const at = this.now();
     const checked = checkDecisionInput(input, extensionId, at);
-    const project = await this.reportProject(checked.project, extensionId);
+    const project = await this.reportProject(checked.project, extensionId, requireCurrent);
+    requireCurrent?.();
     const stamp = new Date(at).toISOString();
     const fields = {
       extensionName,
@@ -355,6 +357,7 @@ export class ExtensionInboxService {
       watchJson: null,
     };
 
+    requireCurrent?.();
     const { row, created, changedQuestion } = this.deps.db.transaction((tx) => {
       const existing = tx
         .select()
@@ -534,7 +537,8 @@ export class ExtensionInboxService {
   async record(
     extensionId: string,
     extensionName: string,
-    input: RecordedDecisionInput
+    input: RecordedDecisionInput,
+    requireCurrent?: () => void
   ): Promise<void> {
     const checked = checkRecordInput(input, extensionId);
     const outcomes = ['approved', 'rejected', 'answered'] as const;
@@ -544,7 +548,8 @@ export class ExtensionInboxService {
     const by = checkActor(input.by);
     if (!by) throw new InboxLimitError('title', 'record() needs `by`: who decided.');
     this.spendBudget(extensionId, extensionName);
-    const project = await this.reportProject(checked.project, extensionId);
+    const project = await this.reportProject(checked.project, extensionId, requireCurrent);
+    requireCurrent?.();
     const stamp = new Date(this.now()).toISOString();
     const row = {
       id: nextId(),
@@ -567,6 +572,7 @@ export class ExtensionInboxService {
       resolvedByLabel: by.kind === 'deadline' ? null : by.label,
       recorded: 1,
     };
+    requireCurrent?.();
     this.deps.db.insert(extensionDecisions).values(row).run();
     this.noteAdded(extensionId);
     this.prune();
@@ -579,6 +585,7 @@ export class ExtensionInboxService {
       outcome: input.outcome,
       unread: input.tell === true,
     });
+    requireCurrent?.();
     pruneExtensionHistory(extensionId, HISTORY_ROWS_PER_EXTENSION, this.offeredIds(extensionId));
   }
 
@@ -1215,10 +1222,16 @@ export class ExtensionInboxService {
   }
 
   /** Resolve an extension's `project` through the registry (boundary and repo checked). */
-  private async reportProject(dir: string | null, extensionId: string): Promise<ProjectRef | null> {
+  private async reportProject(
+    dir: string | null,
+    extensionId: string,
+    requireCurrent?: () => void
+  ): Promise<ProjectRef | null> {
     if (!dir) return null;
     try {
-      return await this.deps.projects.report(dir, extensionId);
+      return await (requireCurrent
+        ? this.deps.projects.report(dir, extensionId, requireCurrent)
+        : this.deps.projects.report(dir, extensionId));
     } catch (err) {
       logger.warn(`[ext:${extensionId}] could not resolve a decision's project`, {
         error: err instanceof Error ? err.message : String(err),

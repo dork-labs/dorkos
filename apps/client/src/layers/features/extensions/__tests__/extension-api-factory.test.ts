@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createExtensionAPI } from '../model/extension-api-factory';
 import { StartWorkError } from '@dorkos/extension-api';
 import type { ExtensionAPIDeps } from '../model/types';
+import type { EffectOwner } from '@/layers/shared/lib/extension-effect-owner';
 import type { UiCanvasContent } from '@dorkos/shared/types';
 
 // Mock sonner toast before importing the factory
@@ -1145,3 +1146,65 @@ for (const cause of [false, undefined])
       vi.unstubAllGlobals();
     }
   });
+
+describe('owned asynchronous UI cleanup receipts', () => {
+  afterEach(() => vi.mocked(executeUiCommand).mockReset());
+
+  it('publishes the original cleanup into the live loader array and releases only that receipt', () => {
+    const captured: { current?: EffectOwner } = {};
+    vi.mocked(executeUiCommand).mockImplementation((_ctx, _command, _origin, original) => {
+      captured.current = original;
+    });
+    const { api, cleanups } = createExtensionAPI('owned-celebration', makeDeps(), [], () => {});
+    api.executeCommand({ action: 'celebrate' });
+    const owner = captured.current;
+    expect(owner?.registerCleanup).toBeDefined();
+    if (!owner?.registerCleanup) throw new Error('ORIGINAL_CLEANUP_REGISTRAR_MISSING');
+    const cleanup = vi.fn();
+    const foreign = vi.fn();
+    cleanups.push(foreign);
+    const release = owner.registerCleanup(cleanup);
+    expect(cleanups).toHaveLength(2);
+    if (!release) throw new Error('ORIGINAL_CLEANUP_RECEIPT_MISSING');
+    release();
+    release();
+    expect(cleanups).toEqual([foreign]);
+    expect(cleanup).not.toHaveBeenCalled();
+  });
+
+  it.each([false, undefined])(
+    'retains exact cleanup uncertainty %s without replay after retirement',
+    (cause) => {
+      const captured: { current?: EffectOwner } = {};
+      let current = true;
+      vi.mocked(executeUiCommand).mockImplementation((_ctx, _command, _origin, original) => {
+        captured.current = original;
+      });
+      const { api, cleanups } = createExtensionAPI('owned-celebration', makeDeps(), [], () => {
+        if (!current) throw new Error('ORIGINAL_OWNER_RETIRED');
+      });
+      api.executeCommand({ action: 'celebrate' });
+      const owner = captured.current;
+      if (!owner?.registerCleanup) throw new Error('ORIGINAL_CLEANUP_REGISTRAR_MISSING');
+      const cleanup = vi.fn(() => {
+        throw cause;
+      });
+      const release = owner.registerCleanup(cleanup);
+      current = false;
+      const failure = (operation: () => void) => {
+        try {
+          operation();
+        } catch (value) {
+          return { value };
+        }
+        throw new Error('ORIGINAL_FAILURE_LOST');
+      };
+      expect(failure(cleanups[0]).value).toBe(cause);
+      expect(failure(cleanups[0]).value).toBe(cause);
+      expect(cleanup).toHaveBeenCalledOnce();
+      if (!release) throw new Error('ORIGINAL_CLEANUP_RECEIPT_MISSING');
+      expect(() => release()).toThrow('ORIGINAL_OWNER_RETIRED');
+      expect(cleanups).toHaveLength(1);
+    }
+  );
+});
