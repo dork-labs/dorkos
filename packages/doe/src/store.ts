@@ -267,6 +267,36 @@ export class SqliteModelStore implements ModelStore {
         .all(id, scope) as { payload: string }[]
     ).map((row) => JSON.parse(row.payload) as ModelUsage);
   }
+  /** Read the newest scope usage through its indexed tail, without loading history. */
+  latestUsage(id: string, scope: ContextScope = 'main'): ModelUsage | undefined {
+    this.check(id, scope);
+    const row = this.db
+      .prepare(
+        'SELECT payload FROM usage WHERE session_id = ? AND scope = ? ORDER BY seq DESC LIMIT 1'
+      )
+      .get(id, scope) as { payload: string } | undefined;
+    return row ? (JSON.parse(row.payload) as ModelUsage) : undefined;
+  }
+  /** Read the newest checkpoint without rebuilding the retained conversation. */
+  latestCheckpoint(id: string, scope: ContextScope = 'main'): CheckpointRecord | undefined {
+    this.check(id, scope);
+    const row = this.db
+      .prepare(
+        'SELECT seq,payload FROM checkpoints WHERE session_id = ? AND scope = ? ORDER BY seq DESC LIMIT 1'
+      )
+      .get(id, scope) as { seq: number; payload: string } | undefined;
+    return row ? { ...(JSON.parse(row.payload) as CheckpointInput), seq: row.seq } : undefined;
+  }
+  /** A cumulative cost is known only when every actual request has a recorded cost. */
+  costTotal(id: string): number | undefined {
+    validateId(id);
+    const row = this.db
+      .prepare(
+        "SELECT COUNT(*) AS total, COUNT(json_extract(payload,'$.costUsd')) AS known, SUM(json_extract(payload,'$.costUsd')) AS cost FROM usage WHERE session_id = ?"
+      )
+      .get(id) as { total: number; known: number; cost: number | null };
+    return row.total > 0 && row.total === row.known ? (row.cost ?? undefined) : undefined;
+  }
   /** Delete precisely this session and its scoped records on explicit host request. */
   deleteSession(id: string): void {
     validateId(id);

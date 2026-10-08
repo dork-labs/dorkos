@@ -95,7 +95,7 @@ export const connectorRuntimeBindings = sqliteTable(
     bootEpoch: text('boot_epoch').notNull(),
     ownerKind: text('owner_kind', { enum: ['user', 'local_install'] }).notNull(),
     ownerId: text('owner_id').notNull(),
-    runtime: text('runtime', { enum: ['claude-code', 'codex', 'opencode'] }).notNull(),
+    runtime: text('runtime', { enum: ['claude-code', 'codex', 'opencode', 'doe'] }).notNull(),
     canonicalSessionId: text('canonical_session_id').notNull(),
     agentId: text('agent_id').notNull(),
     agentPath: text('agent_path').notNull(),

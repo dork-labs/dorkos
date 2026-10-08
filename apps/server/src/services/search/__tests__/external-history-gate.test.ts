@@ -233,6 +233,7 @@ describe('the registry says which sources read somebody else', () => {
       ['claude-code', 'external'],
       ['codex', 'external'],
       ['opencode', 'external'],
+      ['doe', 'dorkos'],
     ]);
   });
 
@@ -242,7 +243,7 @@ describe('the registry says which sources read somebody else', () => {
     // fixture sweeps above for exactly that reason.
     expect(
       selectSearchSources({ excludeExternalHistory: true }).map((source) => source.id)
-    ).toEqual(['rooms']);
+    ).toEqual(['rooms', 'doe']);
     expect(selectSearchSources({ excludeExternalHistory: false })).toBe(SEARCH_SOURCES);
   });
 });

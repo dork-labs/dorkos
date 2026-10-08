@@ -109,6 +109,8 @@ function runtimeLabel(runtime: string): string {
       return 'Codex';
     case 'opencode':
       return 'OpenCode';
+    case 'doe':
+      return 'DorkOS';
     default:
       return 'Your agent';
   }

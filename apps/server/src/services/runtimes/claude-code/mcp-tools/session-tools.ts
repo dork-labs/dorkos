@@ -453,7 +453,7 @@ export function createSessionStartHandler(
         accountHint: account?.id,
         cwd,
       });
-      const refusal = onCredits ? await creditsModelRefusal(runtime, args.model) : null;
+      const refusal = onCredits ? await creditsModelRefusal(runtime, args.model, sessionId) : null;
       if (refusal) return refuse(refusal, 'UNSUPPORTED_MODEL');
     }
 

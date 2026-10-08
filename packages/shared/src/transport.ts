@@ -1,3 +1,5 @@
+import type { DoeCreditsCatalog } from './runtime-connect.js';
+import type { DoeInferenceConfig } from './config-schema.js';
 import type {
   PageEvent,
   CanvasChannelEventReceipt,
@@ -1726,6 +1728,15 @@ export interface Transport
    * @param type - Runtime type (`'claude-code'` | `'codex'`).
    * @param secret - The raw API key. Sent once; never returned or logged.
    */
+  /** Explicit DorkOS inference metadata; never returns the stored secret. */
+  getDoeInference(): Promise<{ inference: DoeInferenceConfig | null; hasKey: boolean }>;
+  setDoeInference(inference: DoeInferenceConfig): Promise<{ ok: true }>;
+  storeDoeCredential(
+    inference: DoeInferenceConfig,
+    secret: string
+  ): Promise<{ ok: true; hasKey: boolean }>;
+  getDoeCreditsModels(protocol: DoeInferenceConfig['protocol']): Promise<DoeCreditsCatalog>;
+
   storeRuntimeCredential(type: string, secret: string): Promise<StoreCredentialResult>;
   /**
    * Store an OpenCode Direct-provider's API key by reference and select it as

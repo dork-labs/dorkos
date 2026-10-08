@@ -70,10 +70,18 @@ const RUNNERS: Record<string, (c: Case) => void> = {
   },
 
   'prune.cases.json': ({ input, expected }) => {
+    const targets = pruneTargets(
+      input.registered as Record<string, string[]>,
+      input.onDisk as Record<string, string[]>
+    );
+    // Flow's vendored contract covers its three native runtime ledgers.
+    // DorkOS-only attribution formats are tested by runtime-accounts.test.ts.
     expect(
-      pruneTargets(
-        input.registered as Record<string, string[]>,
-        input.onDisk as Record<string, string[]>
+      Object.fromEntries(
+        Object.keys(expected.remove as object).map((runtime) => [
+          runtime,
+          targets[runtime as keyof typeof targets],
+        ])
       )
     ).toEqual(expected.remove);
   },

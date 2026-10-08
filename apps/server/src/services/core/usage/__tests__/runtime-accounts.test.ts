@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { DEFAULT_ACCOUNT_COLORS } from '@dorkos/shared/account-usage';
 import {
   DEFAULT_ACCOUNT_LABEL,
+  defaultAccountFolder,
   accountForPath,
   pruneTargets,
   resolveAccountRef,
@@ -17,6 +18,38 @@ function config(accounts: unknown[], extra: Record<string, unknown> = {}) {
 }
 
 describe('resolveRuntimeAccounts (contract §1.1a rev 6d)', () => {
+  it('Doe has no native default folder, even when a hand-edited config names one', () => {
+    expect(
+      defaultAccountFolder(
+        'doe',
+        { runtimes: { doe: { defaultAccount: '/private/key-home' } } },
+        HOME
+      )
+    ).toEqual({ path: null, warnings: [] });
+  });
+
+  it('Doe exposes no accounts or aliases, even for a hand-edited native registry', () => {
+    const lookup = () => {
+      throw new Error('Doe must not inspect native account folders');
+    };
+    for (const doe of [
+      undefined,
+      {
+        accounts: [{ id: 'work', path: '/private/key-home' }],
+        defaultAccount: '/private/key-home',
+      },
+    ]) {
+      expect(
+        resolveRuntimeAccounts('doe', {
+          config: { runtimes: { doe } },
+          home: HOME,
+          realpath: lookup,
+          defaultFolder: lookup,
+        })
+      ).toEqual({ accounts: [], warnings: [] });
+    }
+  });
+
   it("the operator's setup: only claude3 registered elsewhere, so default stands alone, listed last", () => {
     const { accounts } = resolveRuntimeAccounts('claude-code', {
       config: config([{ id: 'claude3', path: '/home/op/.claude3', label: 'Claude3' }]),
@@ -177,24 +210,28 @@ describe('the default account color (runtimes.claudeCode.defaultAccountColor, DO
 });
 
 describe('pruneTargets (prune.cases shapes, rev 6d)', () => {
+  it('leaves Doe attribution files outside native account reconciliation', () => {
+    expect(pruneTargets({}, { doe: ['default', 'conversation-source'] }).doe).toEqual([]);
+  });
+
   it('removes unregistered ids per runtime, in on-disk order', () => {
     expect(
       pruneTargets(
         { 'claude-code': ['work', 'claude3'] },
         { 'claude-code': ['claude2', 'claude3', 'work'] }
       )
-    ).toEqual({ 'claude-code': ['claude2'], codex: [], opencode: [] });
+    ).toEqual({ 'claude-code': ['claude2'], codex: [], opencode: [], doe: [] });
   });
 
   it('an aliased default adds no id, so a leftover default.json goes; a standalone default keeps it', () => {
     expect(
       pruneTargets({ 'claude-code': ['claude3'] }, { 'claude-code': ['claude3', 'default'] })
-    ).toEqual({ 'claude-code': ['default'], codex: [], opencode: [] });
+    ).toEqual({ 'claude-code': ['default'], codex: [], opencode: [], doe: [] });
     expect(
       pruneTargets(
         { 'claude-code': ['claude3', 'default'] },
         { 'claude-code': ['claude3', 'default'] }
       )
-    ).toEqual({ 'claude-code': [], codex: [], opencode: [] });
+    ).toEqual({ 'claude-code': [], codex: [], opencode: [], doe: [] });
   });
 });

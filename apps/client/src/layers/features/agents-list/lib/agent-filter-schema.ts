@@ -49,9 +49,16 @@ export const agentFilterSchema = createFilterSchema<TopologyAgent>({
   }),
   runtime: enumFilter({
     field: (a) => a.runtime,
-    options: ['claude-code', 'cursor', 'codex', 'other'],
+    options: ['claude-code', 'cursor', 'codex', 'opencode', 'doe', 'other'],
     label: 'Runs on',
-    labels: { 'claude-code': 'Claude Code', cursor: 'Cursor', codex: 'Codex', other: 'Other' },
+    labels: {
+      'claude-code': 'Claude Code',
+      cursor: 'Cursor',
+      codex: 'Codex',
+      opencode: 'OpenCode',
+      doe: 'DorkOS',
+      other: 'Other',
+    },
   }),
   lastSeen: dateRangeFilter({
     field: (a) => a.lastSeenAt,

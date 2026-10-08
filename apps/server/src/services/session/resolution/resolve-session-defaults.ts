@@ -181,10 +181,18 @@ export async function readAgentExecutionDefaults(
 }
 
 /** The `runtimes.*` config keys that actually exist in {@link UserConfig}. */
-const RUNTIMES_CONFIG_SECTIONS = ['claudeCode', 'codex', 'opencode'] as const;
+const RUNTIMES_CONFIG_SECTIONS = ['claudeCode', 'codex', 'opencode', 'doe'] as const;
 
 /** One of the config keys a runtime's execution defaults can live under. */
 type RuntimesConfigSection = (typeof RUNTIMES_CONFIG_SECTIONS)[number];
+
+/** DorkOS keeps the model beside explicit inference; vendor runtimes keep a default model. */
+function configuredModelDefault(
+  configured: UserConfig['runtimes'][RuntimesConfigSection] | undefined
+): string | null | undefined {
+  if (!configured) return undefined;
+  return 'inference' in configured ? configured.inference?.model : configured.defaultModel;
+}
 
 /**
  * Whether a runtime-declared config section is one this config file has.
@@ -301,8 +309,8 @@ export function resolveSessionDefaults(opts: {
   const configured = section ? runtimes?.[section] : undefined;
   const settings: SessionSettings = { ...fromAgent };
   if (configured) {
-    if (settings.model === undefined && configured.defaultModel != null) {
-      settings.model = configured.defaultModel;
+    if (settings.model === undefined && configuredModelDefault(configured) != null) {
+      settings.model = configuredModelDefault(configured)!;
     }
     // OpenCode's section has no `defaultEffort` — its API accepts no effort, so
     // the field does not exist rather than existing and doing nothing.
@@ -600,7 +608,7 @@ export function describeExecutionDefaults(
         return [
           {
             runtime,
-            model: configured?.defaultModel ?? null,
+            model: configuredModelDefault(configured) ?? null,
             // What THIS runtime overrides the global stop with; `null` = it
             // doesn't. Reported unresolved: which mode id the stop lands on is
             // the runtime's capability profile's answer, and the cockpit already

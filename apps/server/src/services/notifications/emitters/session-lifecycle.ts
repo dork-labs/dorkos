@@ -102,6 +102,7 @@ const UNLABELLED_ACCOUNT: Readonly<Record<LedgerRuntime, string>> = {
   'claude-code': 'Your Claude account',
   codex: 'Your Codex account',
   opencode: 'Your OpenCode account',
+  doe: 'Your DorkOS account',
 };
 
 /**

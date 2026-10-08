@@ -1,3 +1,4 @@
+import { creditsCapabilitiesFor } from '../services/core/cloud/credits-protocols.js';
 import { Router } from 'express';
 import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
@@ -59,12 +60,12 @@ router.get('/', async (req, res) => {
     ? await sessionRunsOnCredits(runtime, sessionId, { accountHint: account, cwd })
     : account === CREDITS_ACCOUNT_ID && runtime.getCapabilities().credits !== undefined;
   if (onCredits) {
-    const menu = await creditsMenuFor(runtime.getCapabilities());
+    const menu = await creditsMenuFor(creditsCapabilitiesFor(runtime, sessionId));
     if (menu.kind === 'filtered') return res.json({ models: menu.models });
     // The service says nothing about protocols: the runtime's own menu, as before.
   }
 
-  const models = await runtime.getSupportedModels();
+  const models = await runtime.getSupportedModels(sessionId);
   res.json({ models });
 });
 

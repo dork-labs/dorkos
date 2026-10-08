@@ -37,7 +37,7 @@ by DorkOS.
 Options:
   --bug        Report a bug (default)
   --feature    Request a feature
-  --runtime    Report a runtime issue (Claude Code, Codex, or OpenCode)
+  --runtime    Report a runtime issue (Claude Code, Codex, OpenCode or DorkOS)
   --print      Print the URL instead of opening a browser
   -h, --help   Show this help
 `;

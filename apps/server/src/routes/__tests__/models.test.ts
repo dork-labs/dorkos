@@ -227,6 +227,43 @@ describe('Models Routes', () => {
   });
 
   describe('on DorkOS credits', () => {
+    it.each(['openai-chat-completions', 'openai-responses'] as const)(
+      'uses the frozen %s protocol for a Doe conversation menu',
+      async (protocol) => {
+        const wire = protocol === 'openai-responses' ? 'openaiResponses' : 'openaiChat';
+        (service.body as { models: Array<{ protocols: string[] }> }).models[1].protocols = [wire];
+        const runtime = {
+          type: 'doe',
+          getSupportedModels: async () => [],
+          getCapabilities: () => ({
+            type: 'doe',
+            credits: {
+              protocol: 'anthropic-messages',
+              scope: 'conversation',
+              supportedProtocols: [
+                'anthropic-messages',
+                'openai-chat-completions',
+                'openai-responses',
+              ],
+            },
+          }),
+          getCreditsProtocol: (id?: string) =>
+            id === ROWLESS_SESSION ? protocol : 'anthropic-messages',
+          sessionRunsOnCredits: async () => true,
+        };
+        RUNTIMES.doe = runtime;
+        try {
+          const res = await request(testServer).get(
+            `/api/models?runtime=doe&sessionId=${ROWLESS_SESSION}`
+          );
+          expect(res.status).toBe(200);
+          expect(res.body.models.map((m: { value: string }) => m.value)).toEqual(['md_gpt_like']);
+        } finally {
+          delete RUNTIMES.doe;
+        }
+      }
+    );
+
     it('lists only what credits serve on the runtime’s protocol for a session on credits', async () => {
       ladder.accountId = 'dorkos-credits';
       const res = await request(testServer).get(`/api/models?sessionId=${CLAUDE_SESSION}`);

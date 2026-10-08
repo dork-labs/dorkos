@@ -421,6 +421,7 @@ const RUNTIME_DISPLAY_NAMES: Record<string, string> = {
   'claude-code': 'Claude Code',
   codex: 'Codex',
   opencode: 'OpenCode',
+  doe: 'DorkOS',
 };
 
 /**
@@ -447,7 +448,7 @@ export function runtimeDisplayName(type: string): string {
  * @param type - Runtime type identifier (e.g. `'claude-code'`).
  */
 export function runtimeAuthConnectKind(type: string): 'login' | 'provider-picker' {
-  return type === 'opencode' ? 'provider-picker' : 'login';
+  return type === 'opencode' || type === 'doe' ? 'provider-picker' : 'login';
 }
 
 /**
@@ -860,6 +861,8 @@ export type RuntimeCreditsProtocol = (typeof RUNTIME_CREDITS_PROTOCOLS)[number];
 export interface RuntimeCreditsSupport {
   /** The protocol this runtime speaks to the credits endpoint. */
   protocol: RuntimeCreditsProtocol;
+  /** Additional formats this runtime can select explicitly. Absent means protocol only. */
+  supportedProtocols?: readonly RuntimeCreditsProtocol[];
   /**
    * What a change of the runtime's credits choice reaches, so every surface
    * that offers the choice can say so truthfully:
@@ -2095,13 +2098,16 @@ export interface AgentRuntime {
   // --- Capabilities ---
 
   /** Return available models for this runtime. */
-  getSupportedModels(): Promise<ModelOption[]>;
+  getSupportedModels(sessionId?: string): Promise<ModelOption[]>;
 
   /** Return available subagents reported by the SDK. */
   getSupportedSubagents(): Promise<SubagentInfo[]>;
 
   /** Return static capability flags for this runtime. */
   getCapabilities(): RuntimeCapabilities;
+
+  /** Credits request format for a frozen conversation, or the current configuration. */
+  getCreditsProtocol?(sessionId?: string): RuntimeCreditsProtocol | undefined;
 
   /** Check whether this runtime's external dependencies are satisfied. */
   checkDependencies(): Promise<DependencyCheck[]>;

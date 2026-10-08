@@ -19,12 +19,13 @@ import {
   creditsRuntimeWired,
   creditsWiringReport,
 } from './credits-inference.js';
+import { creditsCapabilitiesFor } from './credits-protocols.js';
 import { isCloudLinked } from './v1-client.js';
 
 /** Every registered runtime, with its declared capabilities, whether credits reach it, and its sign-in state. */
 export function creditsRuntimeViews(): CreditsRuntimeView[] {
   return runtimeRegistry.listRuntimes().map((runtime) => {
-    const capabilities = runtime.getCapabilities();
+    const capabilities = creditsCapabilitiesFor(runtime);
     return {
       type: runtime.type,
       capabilities,

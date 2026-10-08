@@ -1,6 +1,6 @@
 ---
 title: Runtimes
-description: Choose the AI program behind your agents, like Claude Code, Codex or OpenCode
+description: Choose DorkOS, Claude Code, Codex or OpenCode for your agents
 ---
 
 import { Steps, Step } from 'fumadocs-ui/components/steps';
@@ -10,21 +10,45 @@ import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
 
 # Runtimes
 
-A runtime is the AI program that powers an agent: its brain. DorkOS ships with three: Claude Code, Codex, and OpenCode, and you can use more than one at once. Every session lands in the same list, streams through the same chat, and uses the same tool approvals and status bar.
+A runtime is the AI program that powers an agent: its brain. DorkOS ships with four: DorkOS, Claude Code, Codex, and OpenCode, and you can use more than one at once. Every session lands in the same list, streams through the same chat, and uses the same tool approvals and status bar.
 
 | Runtime         | Ecosystem                       | Why you'd pick it                                                         |
 | --------------- | ------------------------------- | ------------------------------------------------------------------------- |
+| **DorkOS**      | Your chosen model service       | Business work with DorkOS tools and separate coding tasks.                |
 | **Claude Code** | Anthropic                       | The default. Deepest DorkOS support: plugins, agent tools, cost tracking. |
 | **Codex**       | OpenAI                          | Runs GPT models via the `codex` CLI and your ChatGPT login.               |
 | **OpenCode**    | Open source (any model service) | Bring any service, including local models via Ollama.                     |
 
-Only using Claude Code? Nothing changes for you, and you can stop reading here. The rest of this page is for anyone who wants to add Codex or OpenCode to the mix.
+Only using Claude Code? Nothing changes for you, and you can stop reading here. The rest of this page explains the other choices and their setup.
 
 With a single registered runtime, DorkOS looks exactly as it always has. The status-bar chip is a quiet identity mark, not a picker. Runtimes that are registered but not set up yet show up in the picker as "Needs setup" entries with a clear next step, never as dead options.
 
 ## Connect a Runtime
 
-Each runtime needs two things: its CLI installed somewhere your computer can find it, and a login. DorkOS checks both for you and tells you exactly what's missing.
+DorkOS runs its own agent without another CLI. Claude Code, Codex and OpenCode each need their CLI and a sign-in. The app checks their setup and tells you what's missing.
+
+### Set up the DorkOS runtime
+
+Open **Settings → Runtimes → DorkOS** and choose **Set up** or **Change source**.
+Choose what pays for model requests:
+
+- **Your API key:** choose a service, request format, endpoint and model. Enter your key here; the app stores an encrypted reference. Anthropic subscription tokens are refused.
+- **Local model:** enter your running model server's HTTP loopback address and model name. No key is needed. Ollama and LM Studio can serve compatible models.
+- **DorkOS credits:** link this computer to a DorkOS account, then choose a request format and an available model. A missing link, token, format or model stops the request.
+
+For a custom or local model, enter its context limit and maximum reply size in tokens.
+The request format must match the service: Anthropic Messages, OpenAI Chat Completions or OpenAI Responses.
+Save, then choose **DorkOS** in an agent's **Runs on** row or when starting a new chat.
+
+A conversation keeps the inference source and request format it started with, including after a restart.
+Changing runtime settings applies to new conversations. A missing source stops the conversation with an error.
+An existing API key is tied to its endpoint; changing the endpoint requires a matching key.
+
+The DorkOS runtime can read project instructions and skills, use the app's tools, and delegate coding work to a separate builder.
+Tool approval follows the selected permission mode. Its model history is stored separately from the visible chat.
+Session forks, question cards and media attachments are not offered by this runtime yet.
+
+### Set up a coding runtime
 
 <Tabs items={['OpenCode', 'Codex']}>
 <Tab value="OpenCode">
@@ -119,7 +143,7 @@ This computer's own Claude sign-in (usually the `~/.claude` folder) is your main
 
 ### DorkOS credits
 
-Today, DorkOS credits pay for Claude Code. Codex and OpenCode use their own sign-in.
+DorkOS credits are an inference source for DorkOS and an account choice for Claude Code.
 
 When this computer is linked to a DorkOS account, **DorkOS credits** is one more choice in the same places you pick an account: the **Default account** list under **Runs on**, an agent's **Runs on**, the account chip before a chat's first message, and **Continue on another account**. A chat set to DorkOS credits runs on them and nothing else. If DorkOS can't reach your credits, the chat stops and says so, with **Retry** and **Use your Claude Code sign-in**. It never quietly runs on your own sign-in instead. When a scheduled task, an agent's reply or a room turn stops this way, you get a notification, so it never fails without anyone knowing.
 

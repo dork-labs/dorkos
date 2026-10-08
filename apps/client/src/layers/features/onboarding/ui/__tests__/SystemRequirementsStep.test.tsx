@@ -179,7 +179,12 @@ describe('SystemRequirementsStep', () => {
         killed: false,
         linked: true,
         ready: true,
-        runtimes: { 'claude-code': 'follow-up', codex: 'wired', opencode: 'follow-up' },
+        runtimes: {
+          'claude-code': 'follow-up',
+          codex: 'wired',
+          opencode: 'follow-up',
+          doe: 'follow-up',
+        },
         defaults: { codex: { runsOn: 'credits', chosenBy: 'user' } },
       },
     });

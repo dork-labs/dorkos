@@ -1,4 +1,4 @@
-import { lstat, readlink, realpath } from 'node:fs/promises';
+import { lstat, readlink } from 'node:fs/promises';
 import path from 'node:path';
 import type { PathPolicy } from '../contracts.js';
 /** Resolve every existing symlink before collapsing parent segments, including new destinations. */
@@ -59,7 +59,7 @@ export class CanonicalPaths {
     const target = await canonicalPath(input, this.workingDirectory);
     const roots = mode === 'read' ? this.policy.readRoots : this.policy.writeRoots;
     for (const root of roots) {
-      const canonicalRoot = await realpath(await canonicalPath(root, this.workingDirectory));
+      const canonicalRoot = await canonicalPath(root, this.workingDirectory);
       if (contained(target, canonicalRoot)) return target;
     }
     throw new Error(`Access denied: path outside ${mode} grants`);

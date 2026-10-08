@@ -834,7 +834,9 @@ router.patch('/:id', async (req, res) => {
           cwd: typeof req.query.cwd === 'string' ? req.query.cwd : undefined,
         })
       : false;
-    const modelError = authority ? await rejectUnknownModel(authority, model, { onCredits }) : null;
+    const modelError = authority
+      ? await rejectUnknownModel(authority, model, { onCredits, sessionId })
+      : null;
     if (modelError) return sendError(res, 400, modelError, 'UNSUPPORTED_MODEL');
   }
   // Past the gate the id is one THIS runtime declares, so it is a real mode by
