@@ -7,14 +7,26 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import type { MeshCore } from '@dorkos/mesh';
 
-const fakeRuntime = { getCapabilities: () => ({}), ensureSession: vi.fn() };
+vi.mock('../../../../lib/boundary.js', () => ({
+  validateBoundaryOrDorkHome: vi.fn(async () => {}),
+}));
+import { validateBoundaryOrDorkHome } from '../../../../lib/boundary.js';
+
+const fakeRuntime = {
+  type: 'claude-code',
+  getSessionCwd: () => '/actual',
+  getCapabilities: () => ({}),
+  ensureSession: vi.fn(),
+};
 
 vi.mock('../../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    getNativeSessionCwd: vi.fn(() => null),
     has: vi.fn(() => true),
     getDefaultType: vi.fn(() => 'claude-code'),
     persistSessionRuntime: vi.fn(async () => true),
     resolveForSession: vi.fn(async () => fakeRuntime),
+    resolveForSessionWithOwnership: vi.fn(async () => ({ runtime: fakeRuntime, bound: false })),
   },
 }));
 vi.mock('../../../core/usage-reporter.js', () => ({ reportUsageEvent: vi.fn() }));
@@ -67,6 +79,35 @@ describe('dispatchSessionMessage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(runtimeRegistry.has).mockReturnValue(true);
+    vi.mocked(runtimeRegistry.resolveForSessionWithOwnership).mockResolvedValue({
+      runtime: fakeRuntime as never,
+      bound: false,
+    });
+  });
+
+  it('resumes an established session in its actual directory despite a stale supplied folder', async () => {
+    vi.mocked(runtimeRegistry.resolveForSessionWithOwnership).mockResolvedValueOnce({
+      runtime: fakeRuntime as never,
+      bound: true,
+    });
+    vi.mocked(resolveSessionCwdWithRoom).mockImplementationOnce(async (request) => ({
+      cwd: request.cwd!,
+      rung: 'explicit',
+    }));
+    await dispatchSessionMessage({
+      sessionId: SESSION,
+      request: { content: 'continue', cwd: '/stale' },
+      clientId: 'c',
+      meshCore: undefined,
+      roomSessionPlace: undefined,
+      origin: { kind: 'interactive' },
+    });
+    expect(resolveSessionCwdWithRoom).toHaveBeenCalledWith(
+      expect.objectContaining({ cwd: '/actual' }),
+      undefined
+    );
+    expect(dispatchMessage).toHaveBeenCalledWith(expect.objectContaining({ cwd: '/actual' }));
+    expect(validateBoundaryOrDorkHome).toHaveBeenCalledWith('/actual');
   });
 
   it('refuses an agent directory Mesh does not know, and starts nothing', async () => {

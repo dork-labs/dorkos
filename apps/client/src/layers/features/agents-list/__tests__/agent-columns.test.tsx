@@ -7,7 +7,8 @@ import '@testing-library/jest-dom/vitest';
 import { AgentFleetTable } from '../ui/AgentFleetTable';
 import type { AgentTableRow } from '../lib/agent-columns';
 
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useNavigate: () => vi.fn(),
 }));
 

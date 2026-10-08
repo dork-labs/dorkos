@@ -10,7 +10,7 @@
  * described the branding block and the version row are gone with it.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup, within } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 
@@ -20,7 +20,16 @@ import '@testing-library/jest-dom/vitest';
 // ---------------------------------------------------------------------------
 const mockNavigate = vi.fn();
 let mockPathname = '/marketplace';
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@/layers/shared/model/TransportContext', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/model/TransportContext')>()),
+  useTransport: () => ({
+    createSessionLocation: vi.fn(async () => ({ id: 'test-location' })),
+    getDefaultCwd: vi.fn(async () => ({ path: '/default' })),
+  }),
+}));
+
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useNavigate: () => mockNavigate,
   useRouterState: ({ select }: { select: (s: { location: { pathname: string } }) => unknown }) =>
     select({ location: { pathname: mockPathname } }),
@@ -404,26 +413,28 @@ describe('SidebarFooterStrip', () => {
 
   // ── BC-48: Ask DorkBot ───────────────────────────────────────────────────
 
-  it('opens a fresh DorkBot session carrying the seed, and records where you came from', () => {
+  it('opens a fresh DorkBot session carrying the seed, and records where you came from', async () => {
     mockPathname = '/marketplace';
     renderStrip();
 
     fireEvent.click(screen.getByLabelText('Ask DorkBot'));
 
-    expect(mockNavigate).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledTimes(1));
     const call = mockNavigate.mock.calls[0][0] as {
       to: string;
-      search: { dir?: string; session?: string; seed?: string };
+      search: { dir?: string; session?: string; seed?: string; launchRef?: string; draft?: string };
     };
     expect(call.to).toBe('/session');
-    expect(call.search.dir).toBe('/home/me/.dork/agents/dorkbot');
+    expect(call.search.dir).toBeUndefined();
+    expect(call.search.launchRef).toBe('test-location');
+    expect(call.search.draft).toBe('1');
     expect(call.search.seed).toBe('dorkbot-help');
     // A FRESH conversation: a minted id, not a resolved one.
     expect(call.search.session).toMatch(/^[0-9a-f-]{36}$/);
     expect(takeAskDorkBotOrigin()).toBe('/marketplace');
   });
 
-  it('waits rather than guessing while the roster has not answered', () => {
+  it('waits rather than guessing while the roster has not answered', async () => {
     mockAgents = [];
     renderStrip();
 
@@ -438,7 +449,7 @@ describe('SidebarFooterStrip', () => {
     mockAgents = [{ id: 'a1', name: 'dorkbot', projectPath: '/dorkbot' }];
     renderStrip();
     fireEvent.click(screen.getByLabelText('Ask DorkBot'));
-    expect(mockNavigate).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledTimes(1));
   });
 
   // ── BC-44: the update pill ───────────────────────────────────────────────

@@ -534,6 +534,7 @@ import type {
   InteractionAnswerOptions,
   ToolDecisionOptions,
   SessionUpdateResult,
+  SessionSettingsPort,
 } from '@dorkos/shared/agent-runtime';
 import type { McpServerEntry } from '@dorkos/shared/transport';
 import type {
@@ -618,6 +619,7 @@ export class TestModeRuntime implements AgentRuntime {
 
   private readonly registry: TestModeSessionRegistry;
   private readonly capabilities: RuntimeCapabilities;
+  private settingsPort: SessionSettingsPort | undefined;
   /** The managed-MCP server resolver, injected at boot; drives {@link getMcpStatus}. */
   private managedMcp: ManagedMcpServerResolver | undefined;
   /** Turns running right now, per session; drives {@link isTurnOpen}. */
@@ -1267,7 +1269,12 @@ export class TestModeRuntime implements AgentRuntime {
     return null;
   }
 
-  updateSession(sessionId: string, opts: SessionSettings): SessionUpdateResult {
+  setSessionSettings(port: SessionSettingsPort): void {
+    this.settingsPort = port;
+  }
+
+  async updateSession(sessionId: string, opts: SessionSettings): Promise<SessionUpdateResult> {
+    await this.settingsPort?.saveSessionSettings(sessionId, opts);
     return {
       updated: this.registry.applySettings(sessionId, {
         ...(opts.permissionMode !== undefined ? { permissionMode: opts.permissionMode } : {}),
@@ -1294,7 +1301,16 @@ export class TestModeRuntime implements AgentRuntime {
       first: unknown;
     this.openTurns.set(sessionId, (this.openTurns.get(sessionId) ?? 0) + 1);
     try {
+      // Read the original persisted settings without replacing native turn custody.
+      const stored = await this.settingsPort?.getSessionSettings(sessionId);
+      if (native) {
+        requireCurrentOriginalNativeTurn(this.#nativePrincipals!, native.own.operation);
+        if (!readTestModeNativeOperation(native.own.operation))
+          throw new Error('TestMode original scenario entry retired during settings acquisition.');
+      }
       this.registry.recordMessage(sessionId, content, {
+        ...(stored?.permissionMode !== undefined ? { permissionMode: stored.permissionMode } : {}),
+        ...(stored?.model !== undefined ? { model: stored.model } : {}),
         ...(opts?.cwd !== undefined ? { cwd: opts.cwd } : {}),
       });
       if (!native) this.revealCanonicalSessionId(sessionId);
@@ -1558,6 +1574,11 @@ export class TestModeRuntime implements AgentRuntime {
   }
 
   async getSession(_projectDir: string, id: string): Promise<Session | null> {
+    return this.registry.get(id);
+  }
+
+  /** Discover tracked identities without falling back to another scripted runtime. */
+  async findSession(id: string): Promise<Session | null> {
     return this.registry.get(id);
   }
 

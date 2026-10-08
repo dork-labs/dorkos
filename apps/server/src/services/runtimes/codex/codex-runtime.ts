@@ -136,15 +136,10 @@ import { AccountsAccessContext } from '../shared/accounts-access-context.js';
  * StreamEvent producer (the platform's trigger-turn consumes it into the
  * per-session {@link SessionStateProjector}), and `subscribeSession` /
  * `getSessionSnapshot` / `getMessageHistory` are served from that projector's
- * DorkOS-owned EventLog. Session discovery comes from the in-memory
- * {@link CodexSessionRegistry}, and restart survival comes from DorkOS itself:
- * display metadata (title/preview/updatedAt) is written through to the
- * `codex_threads` rows alongside the durable sessionId↔threadId binding, and
- * {@link CodexRuntime.hydrateSessions} re-seeds the registry from those rows at
- * startup. Sessions that never bound a thread have no durable row and are not
- * rediscovered. The same boundary applies to writes: a rename issued before
- * the session's first turn lives in memory only until the binding lands (the
- * bind then carries the renamed title with it).
+ * DorkOS-owned EventLog for sessions created here. Local CLI and desktop
+ * threads are discovered from Codex's native rollouts in the selected home;
+ * imported sessions read those native transcripts and resume the same thread.
+ * Durable `codex_threads` bindings and display metadata survive restart.
  *
  * Approvals, questions, elicitations and steering exist only on the
  * app-server transport (spec §10, §11): `codex exec` closes stdin after the
@@ -195,7 +190,6 @@ import {
   peekProjector,
   streamGenerationOf,
 } from '../../session/session-state-projector.js';
-import { reconstructHistoryFromEvents } from '../../session/event-log-history.js';
 import { readLogBackedHistory } from '../../session/log-backed-history.js';
 import {
   SessionLockManager,
@@ -242,6 +236,7 @@ import { creditsIsDefaultFor } from '../../core/cloud/credits-defaults.js';
 import { captureCodexMedia } from './media-capture.js';
 import type { SessionAttachmentStore } from '../../session/attachments/index.js';
 import { CodexSessionRegistry } from './session-registry.js';
+import { CodexNativeSessionReader } from './native-session-reader.js';
 import {
   CodexThreadMap,
   type CodexThreadMetadataPatch,
@@ -553,6 +548,7 @@ export class CodexRuntime implements AgentRuntime {
    * bridge — the safe default (spec `mcp-server-management`, DOR-892).
    */
   private managedMcpServers: ManagedMcpServerResolver | undefined;
+  private readonly nativeSessions: CodexNativeSessionReader;
   private readonly threadMap: CodexThreadMap;
   /** Floor of the turn cwd resolution chain — see {@link CodexRuntimeOptions.defaultCwd}. */
   private readonly defaultCwd: string;
@@ -628,6 +624,7 @@ export class CodexRuntime implements AgentRuntime {
       return this.#createMessage(sessionId, content, opts, acquisition, roomOrigin);
     });
     this.attachments = options.attachments ?? null;
+    this.nativeSessions = new CodexNativeSessionReader(undefined, this.attachments);
     this.threadMap = options.threadMap;
     this.defaultCwd = options.defaultCwd ?? DEFAULT_CWD;
     this.resolveBinary = options.resolveBinary ?? resolveCodexBinaryPath;
@@ -908,9 +905,10 @@ export class CodexRuntime implements AgentRuntime {
    */
   async sessionRunsOnCredits(sessionId: string): Promise<boolean> {
     const boundThreadId = this.threadMap.get(sessionId)?.threadId;
-    return boundThreadId !== undefined
-      ? threadRunsOnCredits(boundThreadId)
-      : creditsIsDefaultFor(this.type);
+    if (boundThreadId !== undefined) return threadRunsOnCredits(boundThreadId);
+    // A native personal conversation predates DorkOS's current new-session default.
+    if (await this.nativeSessions.findSession(sessionId)) return false;
+    return creditsIsDefaultFor(this.type);
   }
 
   /**
@@ -994,6 +992,10 @@ export class CodexRuntime implements AgentRuntime {
    */
   async updateSession(sessionId: string, opts: SessionSettings): Promise<SessionUpdateResult> {
     await this.seedFromDurable(sessionId);
+    if (!this.hasThreadProof(sessionId)) {
+      const native = await this.nativeSessions.findSession(sessionId);
+      if (native) this.registry.adoptNative(native);
+    }
     // Read BEFORE the register below overwrites it — this is the mode the
     // in-flight turn's sandbox was projected from.
     const prevMode = this.registry.get(sessionId)?.permissionMode ?? CODEX_DEFAULT_MODE;
@@ -1019,6 +1021,7 @@ export class CodexRuntime implements AgentRuntime {
   async renameSession(sessionId: string, title: string): Promise<void> {
     // Seed first so the rename lands on top of the durable createdAt/cwd (the
     // user's title is genuinely fresher and overwrites the seeded one).
+    await this.importNativeThread(sessionId);
     await this.seedFromDurable(sessionId);
     this.registry.rename(sessionId, title);
     this.persistSessionMetadata(sessionId);
@@ -1125,6 +1128,21 @@ export class CodexRuntime implements AgentRuntime {
     const record = this.threadMap.getRecord(sessionId);
     if (!record) return;
     this.registry.hydrate([this.toDurableDisplaySession(record)]);
+  }
+
+  /** Bind only a verified imported thread; no SDK resume or model turn is started. */
+  private async importNativeThread(
+    sessionId: string,
+    isCurrent: () => boolean = () => true
+  ): Promise<void> {
+    if (this.threadMap.get(sessionId)) return;
+    const native = await this.nativeSessions.findSession(sessionId);
+    if (!isCurrent() || !native?.cwd) return;
+    this.registry.adoptNative(native);
+    this.threadMap.setThreadId(sessionId, sessionId, native.cwd, {
+      title: native.title,
+      updatedAt: native.updatedAt,
+    });
   }
 
   // --- Messaging ---
@@ -1510,6 +1528,31 @@ export class CodexRuntime implements AgentRuntime {
       // Seed from the durable row before any registry mutation: recordMessage's
       // title-if-blank derivation must see the persisted title, not a fresh
       // blank entry it would fill with an auto-preview (see seedFromDurable).
+      const importCurrent = () => {
+        if (lifetime.closed) return false;
+        if (
+          lifetime.roomOrigin &&
+          readOriginalRoomDispatchLifecycle(lifetime.roomOrigin.holder, this) !==
+            lifetime.roomOrigin.custody
+        )
+          return false;
+        if (lifetime.acquisition) {
+          const at = Date.now(),
+            activity = captureNativeSessionActivity(lifetime.acquisition, at);
+          if (
+            !activity ||
+            !readNativeSessionAcquisition(lifetime.acquisition, activity, at, sessionId)
+          )
+            return false;
+        }
+        return (
+          !lifetime.roomPrepared ||
+          readCodexNativeOperation(lifetime.roomPrepared.nativeOperation) !== undefined
+        );
+      };
+      if (!importCurrent()) return;
+      await this.importNativeThread(sessionId, importCurrent);
+      if (!importCurrent()) return;
       await this.seedFromDurable(sessionId);
       let settings = await this.resolveTurnSettings(sessionId, opts);
       const binding = this.threadMap.get(sessionId);
@@ -2209,52 +2252,100 @@ export class CodexRuntime implements AgentRuntime {
 
   // --- Session queries (storage) ---
 
+  /** Settings and ensureSession metadata alone never prove native existence. */
+  private hasThreadProof(sessionId: string): boolean {
+    return this.threadMap.get(sessionId) !== undefined || this.activeTurns.has(sessionId);
+  }
+
+  /** Preserve native identity, directory and account while overlaying launch settings. */
+  private withNativeSettings(native: Session): Session {
+    const tracked = this.registry.get(native.id);
+    if (!tracked) return native;
+    return {
+      ...native,
+      permissionMode: tracked.permissionMode,
+      ...(tracked.model !== undefined ? { model: tracked.model } : {}),
+      ...(tracked.effort !== undefined ? { effort: tracked.effort } : {}),
+      ...(tracked.fastMode !== undefined ? { fastMode: tracked.fastMode } : {}),
+    };
+  }
+
+  /** Display edits stay durable; native directory and account remain authoritative. */
+  private withNativeIdentity(tracked: Session, native: Session): Session {
+    return {
+      ...native,
+      ...tracked,
+      cwd: native.cwd,
+      account: native.account,
+      createdAt: native.createdAt,
+    };
+  }
+
   async listSessions(projectDir: string): Promise<Session[]> {
-    return this.registry.list(projectDir);
+    const native = await this.nativeSessions.listSessions(projectDir);
+    const nativeIds = new Set(native.map((session) => session.id));
+    // Explicit ensureSession scopes remain listable for task/relay launch
+    // continuity. An imported native row supplies its own identity instead.
+    const nativeById = new Map(native.map((session) => [session.id, session]));
+    const tracked = this.registry
+      .list(projectDir)
+      .filter((session) => this.hasThreadProof(session.id) || !nativeIds.has(session.id))
+      .map((session) =>
+        nativeById.has(session.id)
+          ? this.withNativeIdentity(session, nativeById.get(session.id)!)
+          : session
+      );
+    const trackedIds = new Set(tracked.map((session) => session.id));
+    const boundNativeIds = new Set(this.threadMap.listAll().map((row) => row.threadId));
+    return [
+      ...tracked,
+      ...native
+        .filter((session) => !boundNativeIds.has(session.id) && !trackedIds.has(session.id))
+        .map((session) => this.withNativeSettings(session)),
+    ];
   }
 
   async getSession(_projectDir: string, sessionId: string): Promise<Session | null> {
-    return this.registry.get(sessionId);
+    return this.findSession(sessionId);
+  }
+
+  async findSession(sessionId: string): Promise<Session | null> {
+    if (this.hasThreadProof(sessionId)) {
+      await this.seedFromDurable(sessionId);
+      const tracked = this.registry.get(sessionId);
+      if (tracked) {
+        const binding = this.threadMap.get(sessionId);
+        const native =
+          binding?.threadId === sessionId ? await this.nativeSessions.findSession(sessionId) : null;
+        return native ? this.withNativeIdentity(tracked, native) : tracked;
+      }
+    }
+    const native = await this.nativeSessions.findSession(sessionId);
+    return native ? this.withNativeSettings(native) : null;
   }
 
   /**
-   * Completed messages reconstructed from the DorkOS-owned event stream, read
-   * DURABLY from the `session_events` store (DOR-189) so history survives a
-   * server restart — the SDK has no thread-read API. Needs no live projector:
-   * the store is the completed-history source whether or not a projector is up
-   * (each turn is flushed on `turn_end`), which fixes the post-restart
-   * empty-transcript bug (was `peekProjector` → `[]`).
-   *
-   * **A failed turn cannot come back as agent speech here, and the reason is
-   * structural** (DOR-1666, the parity check against the claude-code gap where
-   * the CLI writes API failures into its JSONL as synthetic assistant
-   * messages). Every Codex failure has its own typed home in the SDK stream —
-   * `turn.failed`, an `ErrorItem`, or a `ThreadErrorEvent`; nothing delivers
-   * one as an `AgentMessageItem` — so the mapper classifies it exactly once
-   * into a typed `error` event, `turn_end` flushes that event with the rest of
-   * its turn, and `reconstructHistoryFromEvents` replays it as an `ErrorPart`
-   * carrying the same category. History inherits the live classification
-   * rather than re-deriving it, which is why the two can never disagree. Pinned
-   * by "reconstructs an auth-failed turn as a typed auth_error part" in
-   * `__tests__/codex-runtime.test.ts`.
+   * DorkOS-created threads retain their durable event history. Imported native
+   * threads read their own transcript so turns made outside DorkOS survive.
+   * Never concatenate these stores: Codex records DorkOS turns there too.
    */
   async getMessageHistory(_projectDir: string, sessionId: string): Promise<HistoryMessage[]> {
-    return readLogBackedHistory(sessionId);
+    const log = await readLogBackedHistory(sessionId);
+    const binding = this.threadMap.get(sessionId);
+    // DorkOS-created threads keep their log-backed IDs. External native IDs
+    // keep their full native transcript, including turns created elsewhere.
+    if (binding && binding.threadId !== sessionId) return log;
+    const imported =
+      binding?.threadId === sessionId ||
+      (await this.nativeSessions.findSession(sessionId)) !== null;
+    const native = await this.nativeSessions.readHistory(sessionId, { required: imported });
+    return imported || native.length ? native : log;
   }
 
-  /**
-   * @inheritdoc
-   *
-   * Built entirely from the DorkOS-owned projection: completed `messages` are
-   * reconstructed from the EventLog (durably hydrated on projector creation via
-   * `{ persist: 'history' }`), and the live turn/status/pending/cursor come from the
-   * same projector — the exact test-mode pattern (ADR-0263).
-   */
+  /** Completed history comes from the owning store; live state/cursors remain projector-owned. */
   async getSessionSnapshot(ctx: SessionOpts, sessionId: string): Promise<SessionSnapshot> {
     const projector = getOrCreateProjector(sessionId, ctx.cwd, { persist: 'history' });
-    return projector.buildSnapshot(() =>
-      Promise.resolve(reconstructHistoryFromEvents(projector.replayFrom(0)))
-    );
+    return projector.buildSnapshot(() => this.getMessageHistory(ctx.cwd ?? DEFAULT_CWD, sessionId));
   }
 
   /**

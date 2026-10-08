@@ -1,6 +1,11 @@
-import { useQuery } from '@tanstack/react-query';
-import { useTransport, useAppStore } from '@/layers/shared/model';
-import { isSessionRequestReady } from '@/layers/shared/lib';
+import { useEffect } from 'react';
+import { useSafeNavigate } from '@/layers/shared/model';
+import { toSession } from '@/layers/shared/lib';
+import { useSessionSearch } from '../navigation/use-session-search';
+import { setSessionRouteContext } from '../navigation/session-route-context';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTransport } from '@/layers/shared/model';
+import { useSessionRouteContext } from '../navigation/session-route-context';
 import type { PermissionModeId, Session } from '@dorkos/shared/types';
 // Same-slice imports via sibling modules (not the entities/session barrel) to
 // avoid a self-referential barrel import within this slice.
@@ -25,17 +30,9 @@ export interface UseSessionDetailOptions<T> {
    */
   select?: (session: Session) => T;
   /**
-   * Read a session belonging to a DIFFERENT working directory than the one this
-   * window has selected.
-   *
-   * A session row is addressed by id **and** directory — the server resolves the
-   * transcript under the agent's project path — so the id alone is not enough
-   * for a caller talking about somebody else's session. Almost every caller is
-   * reporting on the session the person is currently inside, which is what the
-   * default (this window's `selectedCwd`) is for. A parked schedule is the
-   * exception: it names the session that PROPOSED it, which is usually not the
-   * one on screen, and without its own directory the lookup would either miss or
-   * — worse — read a different agent's session that happens to share the id.
+   * Optional legacy directory hint for a session owned by another surface.
+   * Existing sessions normally resolve by identity on the server. The active
+   * route supplies its resolved context; other callers omit this hint safely.
    */
   dir?: string;
 }
@@ -47,9 +44,7 @@ export interface UseSessionDetailOptions<T> {
  * one session cost a single fetch and can never disagree.
  *
  * @param sessionId - The active session id, or null when none is selected.
- *   When null the query is disabled and no request is made. The same holds
- *   while the working directory is still resolving — see
- *   {@link isSessionRequestReady}.
+ *   When null the query is disabled and no request is made.
  * @param options - Fetch gate, field selector and directory override; see
  *   {@link UseSessionDetailOptions}.
  */
@@ -58,17 +53,32 @@ export function useSessionDetail<T = Session>(
   options?: UseSessionDetailOptions<T>
 ) {
   const transport = useTransport();
-  const selectedCwd = useAppStore((s) => s.selectedCwd);
-  // The caller's directory wins when it named one. Both paths land in the same
-  // key factory, so a session read under an explicit directory shares its cache
-  // entry with the same session read while that directory is selected.
-  const cwd = options?.dir ?? selectedCwd;
+  const queryClient = useQueryClient();
 
-  return useQuery({
+  // Explicit legacy hints win; otherwise use this identity's resolved context.
+  // A missing context requests server-side resolution, never a global default.
+  const context = useSessionRouteContext(sessionId);
+  const cwd = options?.dir ?? context?.cwd ?? null;
+
+  const navigate = useSafeNavigate();
+  const search = useSessionSearch();
+  // Settings PATCHes and optimistic list rows can make detail look successful
+  // before the runtime has created anything. Only an actual native read counts.
+  const native = useQuery<Session>({
+    queryKey: sessionKeys.nativeDetail(sessionId, cwd),
+    queryFn: () => transport.getSession(sessionId!, cwd ?? undefined),
+    enabled: false,
+    staleTime: Infinity,
+  });
+  const query = useQuery({
     queryKey: sessionKeys.detail(sessionId, cwd),
-    queryFn: () => transport.getSession(sessionId!, cwd!),
+    queryFn: async () => {
+      const session = await transport.getSession(sessionId!, cwd ?? undefined);
+      queryClient.setQueryData(sessionKeys.nativeDetail(sessionId, cwd), session);
+      return session;
+    },
     staleTime: 30_000,
-    enabled: isSessionRequestReady(sessionId, cwd) && (options?.enabled ?? true),
+    enabled: Boolean(sessionId) && (options?.enabled ?? true),
     select: options?.select,
     // **Dropped wifi is not a reason to stop asking localhost.** TanStack's
     // default `networkMode: 'online'` PAUSES a fetch whenever
@@ -78,6 +88,28 @@ export function useSessionDetail<T = Session>(
     // (DOR-2103).
     networkMode: 'always',
   });
+  useEffect(() => {
+    if (
+      !navigate ||
+      search.draft !== '1' ||
+      search.session !== sessionId ||
+      !query.isSuccess ||
+      !native.data ||
+      !context?.cwd
+    )
+      return;
+    if (context.draft) setSessionRouteContext(sessionId!, { ...context, draft: false });
+    void navigate({
+      ...toSession((prev) => ({
+        ...prev,
+        draft: undefined,
+        launchRef: undefined,
+        agentId: undefined,
+      })),
+      replace: true,
+    });
+  }, [navigate, search.draft, search.session, sessionId, query.isSuccess, native.data, context]);
+  return query;
 }
 
 /**

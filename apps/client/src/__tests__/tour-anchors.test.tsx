@@ -52,7 +52,8 @@ import { MOCK_TEAM_ROSTER } from '@/dev/mock-samples';
 // The home surface renders its page through an `Outlet`. On `/` that page is
 // the #team room, so the mock puts the real one there and the general tour gets
 // the composition it actually runs against: tab bar above, room below.
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useNavigate: () => vi.fn(),
   useRouterState: ({ select }: { select: (state: unknown) => unknown }) =>
     select({ location: { pathname: '/' } }),

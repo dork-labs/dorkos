@@ -128,7 +128,8 @@ interface MockRouterState {
   matches: MockRouteMatch[];
 }
 
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useRouterState: ({ select }: { select: (s: MockRouterState) => unknown }) =>
     select({
       location: { pathname: mockPathname, href: mockPathname, searchStr: mockSearchStr() },

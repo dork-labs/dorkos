@@ -3501,6 +3501,10 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   }
 
   /** @inheritdoc */
+  async findSession(sessionId: string): Promise<Session | null> {
+    return this.transcriptReader.findSession(sessionId);
+  }
+
   async getSession(projectDir: string, sessionId: string): Promise<Session | null> {
     return this.transcriptReader.getSession(projectDir, sessionId);
   }

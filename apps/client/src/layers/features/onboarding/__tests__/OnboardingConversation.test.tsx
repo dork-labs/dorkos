@@ -13,7 +13,11 @@ import { setPrefersReducedMotion } from '@/test-setup';
 // Instant reveals so the scripted lines land synchronously.
 
 const mockNavigate = vi.fn();
-vi.mock('@tanstack/react-router', () => ({ useNavigate: () => mockNavigate }));
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
+  linkOptions: (options: unknown) => options,
+  useNavigate: () => mockNavigate,
+}));
 
 /**
  * DorkBot's manifest id. A ULID, because `ensureDorkBot` mints one with
@@ -651,10 +655,16 @@ describe('OnboardingConversation', () => {
     const sessionId = Object.keys(useAgentBirthStore.getState().records)[0];
     expect(mockNavigate).toHaveBeenCalledWith({
       to: '/session',
-      search: { dir: REGISTERED_DIR, session: sessionId, runtime: 'claude-code' },
+      search: {
+        agentId: '01JQZ8XKF3M0000000000DBOT',
+        draft: '1',
+        dir: undefined,
+        session: sessionId,
+        runtime: 'claude-code',
+      },
     });
     const navDir = mockNavigate.mock.calls[0][0].search.dir as string;
-    expect(navDir).not.toContain('~');
+    expect(navDir).toBeUndefined();
     expect(onComplete).toHaveBeenCalled();
   });
 

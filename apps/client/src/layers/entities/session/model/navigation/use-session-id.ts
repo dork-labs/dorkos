@@ -1,13 +1,16 @@
+import { notifySessionLookupFailed } from '../../lib/resolve-session-for-cwd';
 import { useCallback } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 
-import { useAppStore } from '@/layers/shared/model';
+import { useAppStore, useTransport } from '@/layers/shared/model';
 import { useSessionSearch } from './use-session-search';
-import { toSession } from '@/layers/shared/lib';
+import { getSessionRouteContext, setSessionRouteContext } from './session-route-context';
+import { toSession, newSessionTarget, reportClientError } from '@/layers/shared/lib';
 
 /** Open a fresh conversation in the chosen directory, preserving an optional seed. */
 export function useStartNewSession(): (dir?: string, options?: StartNewSessionOptions) => void {
   const navigate = useNavigate();
+  const transport = useTransport();
   const selectedCwd = useAppStore((s) => s.selectedCwd);
   const setPendingRuntime = useAppStore((s) => s.setPendingRuntime);
 
@@ -16,9 +19,19 @@ export function useStartNewSession(): (dir?: string, options?: StartNewSessionOp
       const target = dir ?? selectedCwd ?? undefined;
       const session = crypto.randomUUID();
       if (options?.runtime) setPendingRuntime({ sessionId: session, type: options.runtime });
-      void navigate(toSession({ dir: target, session, seed: options?.seed }));
+      void newSessionTarget(transport, {
+        dir: target,
+        session,
+        seed: options?.seed,
+        runtime: options?.runtime,
+      })
+        .then((target) => navigate(target))
+        .catch((error) => {
+          reportClientError(transport, error);
+          notifySessionLookupFailed(selectedCwd);
+        });
     },
-    [navigate, selectedCwd, setPendingRuntime]
+    [navigate, selectedCwd, setPendingRuntime, transport]
   );
 }
 
@@ -44,6 +57,8 @@ export interface SetSessionIdOptions {
    * canonical URL silently supersedes the optimistic one (no extra Back step).
    */
   replace?: boolean;
+  /** The ID is an explicit fresh conversation, never an existing-session lookup. */
+  draft?: boolean;
   /**
    * The session this new one continues from (the `/clear` intent's "linked back"
    * reference, DOR-109). Recorded as client navigation state in the URL — a
@@ -62,14 +77,39 @@ export function useSessionId(): [
   // Standalone: TanStack Router search params
   const search = useSessionSearch();
   const navigate = useNavigate();
+  const transport = useTransport();
 
   // Stable reference — navigate from TanStack Router is already stable.
   const setSessionId = useCallback(
     (id: string | null, options?: SetSessionIdOptions) => {
+      if (id && options?.draft) {
+        const cwd =
+          getSessionRouteContext(search.session ?? '')?.cwd ??
+          useAppStore.getState().selectedCwd ??
+          undefined;
+        void newSessionTarget(transport, {
+          session: id,
+          dir: cwd,
+          runtime: getSessionRouteContext(search.session ?? '')?.runtime ?? search.runtime,
+          continuedFrom: options.continuedFrom,
+        })
+          .then((target) => navigate(target))
+          .catch((error) => {
+            reportClientError(transport, error);
+            notifySessionLookupFailed(cwd ?? null);
+          });
+        return;
+      }
+      const context = getSessionRouteContext(search.session ?? '');
+      if (id && options?.replace && context) setSessionRouteContext(id, context);
       navigate({
         ...toSession((prev) => ({
           ...prev,
           session: id ?? undefined,
+          draft: options?.replace && prev.draft ? prev.draft : undefined,
+          launchRef: options?.replace && prev.draft ? prev.launchRef : undefined,
+          agentId: options?.replace && prev.draft ? prev.agentId : undefined,
+          dir: undefined,
           // Set explicitly so a fresh navigation without a link drops any prior
           // `continuedFrom` rather than carrying it forward via `...prev`.
           continuedFrom: options?.continuedFrom,
@@ -91,7 +131,7 @@ export function useSessionId(): [
         replace: options?.replace,
       });
     },
-    [navigate]
+    [navigate, transport, search.session, search.runtime]
   );
 
   return [search.session ?? null, setSessionId];

@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
 
 vi.mock('../../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    getNativeSessionCwd: vi.fn(() => null),
     getDefaultType: () => 'claude-code',
     has: (type: string) => ['claude-code', 'codex'].includes(type),
     get: (type: string) => ({

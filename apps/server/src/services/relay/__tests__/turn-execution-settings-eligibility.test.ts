@@ -17,6 +17,7 @@ import type { AccountAdvisor } from '@dorkos/extension-api/server';
 
 vi.mock('../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    getNativeSessionCwd: vi.fn(() => null),
     getSessionSettings: () => Promise.resolve(null),
     has: (type: string) => type === 'claude-code',
     get: () => ({

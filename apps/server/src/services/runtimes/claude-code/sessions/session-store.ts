@@ -461,6 +461,8 @@ export class SessionStore {
     opts?: MessageOpts
   ): Promise<AgentSession> {
     const existing = this.findSession(sessionId);
+    // A pre-launch settings change creates a session before its directory is known.
+    if (existing && !existing.cwd) existing.cwd = opts?.cwd ?? defaultCwd;
     if (!existing) {
       const effectiveCwd = opts?.cwd ?? defaultCwd;
       const transcript = await transcriptReader.hasTranscript(effectiveCwd, sessionId);

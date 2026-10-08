@@ -42,6 +42,9 @@ export const sessionKeys = {
    */
   detail: (sessionId: string | null, cwd: string | null) =>
     [...sessionKeys.detailRoot, sessionId, cwd] as const,
+  /** Native-read evidence, isolated from settings and optimistic detail overlays. */
+  nativeDetail: (sessionId: string | null, cwd: string | null) =>
+    ['session-native-detail', sessionId, cwd] as const,
   /**
    * The settings STORED for one session id, independent of any directory.
    *

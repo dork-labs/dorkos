@@ -375,7 +375,15 @@ test.describe('Mobile tabs — 390×844 @smoke', { tag: SOLE_SIDEBAR_TAG }, () =
     await roomsPage.startConversationButton.click();
 
     // The agent's own session — the same address its Library row opens.
-    await expect(page).toHaveURL(/\/session\?.*dir=/, { timeout: SERVER_ROUND_TRIP_MS });
+    await expect(page).toHaveURL(/\/session\?.*session=/, { timeout: SERVER_ROUND_TRIP_MS });
+    const sessionUrl = new URL(page.url());
+    expect(sessionUrl.searchParams.has('dir')).toBe(false);
+    expect(sessionUrl.searchParams.has('agentPath')).toBe(false);
+    const launchRef = sessionUrl.searchParams.get('launchRef');
+    expect(launchRef).toBeTruthy();
+    const location = await page.request.get(`/api/session-locations/${launchRef}`);
+    expect(location.ok()).toBe(true);
+    expect(await location.json()).toMatchObject({ cwd: ana.projectPath });
     expect(new URL(page.url()).searchParams.get('session')).toBeTruthy();
     await expect(page.getByTestId('mobile-tab-panels')).toBeHidden();
     await expect(page.getByTestId('mobile-tab-bar')).toBeVisible();

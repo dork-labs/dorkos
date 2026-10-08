@@ -78,11 +78,22 @@ export { SESSION_ROUTE };
 export const sessionSearchSchema = mergeDialogSearch(
   z.object({
     session: z.string().optional(),
+    agentId: z.string().optional(),
+    launchRef: z.string().optional(),
+    draft: z
+      .union([z.literal('1'), z.literal(1)])
+      .transform(() => '1' as const)
+      .optional()
+      .catch(undefined),
     dir: z.string().optional(),
     message: z.string().optional(),
     runtime: z.string().optional(),
     prompt: z.string().optional(),
-    send: z.literal('1').optional().catch(undefined),
+    send: z
+      .union([z.literal('1'), z.literal(1)])
+      .transform(() => '1' as const)
+      .optional()
+      .catch(undefined),
     seed: z.literal('dorkbot-help').optional().catch(undefined),
     continuedFrom: z.string().optional(),
   })
@@ -123,7 +134,22 @@ export function toSession<S extends SessionSearch>(search: S): SessionTarget<S>;
 export function toSession<S extends SessionSearch | SessionSearchUpdate>(
   search: S
 ): SessionTarget<S> {
-  return { to: SESSION_ROUTE, search };
+  const normalize = (next: SessionSearch) => {
+    if (next.dir && !next.session)
+      throw new Error('Use sessionLocationTarget for directory navigation.');
+    if (next.dir && next.draft)
+      throw new Error('Use newSessionTarget for draft directory navigation.');
+    return {
+      ...next,
+      dir: undefined,
+      ...(next.agentPath !== undefined && { agentPath: undefined }),
+    };
+  };
+  if (typeof search === 'function') {
+    const update = search as SessionSearchUpdate;
+    return { to: SESSION_ROUTE, search: ((prev: SessionSearch) => normalize(update(prev))) as S };
+  }
+  return { to: SESSION_ROUTE, search: normalize(search) as S };
 }
 
 /**
@@ -136,5 +162,36 @@ export function toSession<S extends SessionSearch | SessionSearchUpdate>(
  * @param search - The same params {@link toSession} takes.
  */
 export function sessionHref(search: SessionSearch): string {
-  return sessionPath(search);
+  if (search.dir && !search.session)
+    throw new Error('Use an agent ID or launch reference for a directory link.');
+  return sessionPath({ ...search, dir: undefined, agentPath: undefined });
+}
+
+/** Prepare a portable fresh-session target without a directory in its URL. */
+export async function newSessionTarget(
+  transport: {
+    createSessionLocation(cwd: string): Promise<{ id: string }>;
+    getDefaultCwd(): Promise<{ path: string }>;
+  },
+  search: SessionSearch & { dir?: string }
+): Promise<SessionTarget<SessionSearch>> {
+  const { dir, ...rest } = search;
+  const cwd =
+    dir ??
+    (search.agentId || search.launchRef ? undefined : (await transport.getDefaultCwd()).path);
+  const launchRef = cwd ? (await transport.createSessionLocation(cwd)).id : search.launchRef;
+  return toSession({
+    ...rest,
+    launchRef,
+    draft: '1',
+    session: search.session ?? crypto.randomUUID(),
+  });
+}
+
+/** Prepare a directory's latest conversation using an opaque location reference. */
+export async function sessionLocationTarget(
+  transport: { createSessionLocation(cwd: string): Promise<{ id: string }> },
+  cwd: string
+): Promise<SessionTarget<SessionSearch>> {
+  return toSession({ launchRef: (await transport.createSessionLocation(cwd)).id });
 }

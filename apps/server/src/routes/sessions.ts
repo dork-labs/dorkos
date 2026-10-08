@@ -61,7 +61,6 @@ import {
   sessionFleetOverlayDeps,
   sessionOriginResolvers,
   overlayStoredSettings,
-  callerNamedCwd,
   resolveSessionCwdOrDefault,
   resolveSessionCwdOrNull,
   peekProjector,
@@ -452,7 +451,6 @@ router.get('/:id', async (req, res) => {
   if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
 
   const cwdParam = (req.query.cwd as string) || undefined;
-  if (!(await assertBoundary(cwdParam, res, { allowDorkHome: true }))) return;
 
   // Translate client-facing session ID to backend-internal session ID
   const runtime = await runtimeRegistry.resolveForSession(sessionId);
@@ -461,13 +459,10 @@ router.get('/:id', async (req, res) => {
   if (!projectDir) return sendError(res, 404, 'Session not found', 'SESSION_NOT_FOUND');
   // A directory the caller never named is judged here — otherwise omitting
   // `?cwd=` would read a session that naming the same directory is refused for.
-  if (
-    !callerNamedCwd(cwdParam) &&
-    !(await assertBoundary(projectDir, res, { allowDorkHome: true }))
-  )
-    return;
+  if (!(await assertBoundary(projectDir, res, { allowDorkHome: true }))) return;
   const session = await runtime.getSession(projectDir, internalSessionId);
   if (!session) return sendError(res, 404, 'Session not found', 'SESSION_NOT_FOUND');
+  await runtimeRegistry.rememberNativeSession?.(session, readCallerPrincipal(req, res));
   // Adapters tag `runtime` themselves (task 1.1); backstop sloppy ones so
   // the required field always reaches the wire.
   //
@@ -523,8 +518,6 @@ router.get('/:id/tasks', async (req, res) => {
 
   const cwdParam = (req.query.cwd as string) || undefined;
 
-  if (!(await assertBoundary(cwdParam, res, { allowDorkHome: true }))) return;
-
   // Translate client-facing session ID to backend-internal session ID
   const runtime = await runtimeRegistry.resolveForSession(sessionId);
   const internalSessionId = runtime.getInternalSessionId(sessionId) ?? sessionId;
@@ -532,11 +525,10 @@ router.get('/:id/tasks', async (req, res) => {
   // Lenient rather than 404-capable: a task read that cannot place the session
   // already answers "no tasks" honestly, and the live binding is what makes the
   // no-`&dir=` window read the right transcript (DOR-1444).
-  const cwd = resolveSessionCwdOrDefault(runtime, sessionId, cwdParam);
+  const cwd = await resolveSessionCwdOrDefault(runtime, sessionId, cwdParam);
   // A directory the caller never named is judged here — otherwise omitting
   // `?cwd=` would read a session that naming the same directory is refused for.
-  if (!callerNamedCwd(cwdParam) && !(await assertBoundary(cwd, res, { allowDorkHome: true })))
-    return;
+  if (!(await assertBoundary(cwd, res, { allowDorkHome: true }))) return;
 
   const etag = await runtime.getSessionETag(cwd, internalSessionId);
   if (etag) {
@@ -565,8 +557,6 @@ router.get('/:id/messages', async (req, res) => {
 
   const cwdParam = (req.query.cwd as string) || undefined;
 
-  if (!(await assertBoundary(cwdParam, res, { allowDorkHome: true }))) return;
-
   // Translate client-facing session ID to backend-internal session ID
   const runtime = await runtimeRegistry.resolveForSession(sessionId);
   const internalSessionId = runtime.getInternalSessionId(sessionId) ?? sessionId;
@@ -583,8 +573,7 @@ router.get('/:id/messages', async (req, res) => {
   // A directory the caller never named is judged here — otherwise omitting
   // `?cwd=` would read a session that naming the same directory is refused for.
   // DOR-1322 shipped without this and the gap was live until DOR-1444.
-  if (!callerNamedCwd(cwdParam) && !(await assertBoundary(cwd, res, { allowDorkHome: true })))
-    return;
+  if (!(await assertBoundary(cwd, res, { allowDorkHome: true }))) return;
 
   const etag = await runtime.getSessionETag(cwd, internalSessionId);
   if (etag) {
@@ -731,7 +720,9 @@ router.patch('/:id', async (req, res) => {
   // A gate that conflates the two refuses requests on a guess — see
   // {@link modelGateAuthority}. Nothing here writes ownership: that is the first
   // turn's to establish (ADR-0255), and the `runtime` hint cannot bind.
-  const { runtime, bound } = await runtimeRegistry.resolveForSessionWithOwnership(sessionId);
+  const { runtime, bound } = await runtimeRegistry.resolveForSessionWithOwnership(sessionId, {
+    allowUnbound: true,
+  });
   // The wire carries any well-formed mode id, because a runtime names its own
   // modes (`PermissionModeIdSchema`). The session's runtime is the ONLY thing
   // that can say whether the id it was handed is real, so it is the authority

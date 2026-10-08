@@ -705,16 +705,16 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       // Updates a MODEL, not a permission mode: test-mode declares its own
       // scenario-shaped mode ids, and the route now refuses to store a mode the
       // owning runtime never declared (that gate is covered in sessions.test.ts).
-      // TestModeRuntime.updateSession answers `{ updated: false }` because no
-      // _sessions entry exists — the route should respond with 404.
+      // Pre-message settings are accepted without claiming native existence.
       const res = await request(testServer)
         .patch(`/api/sessions/${TEST_MODE_SESSION}`)
         .send({ model: 'scripted-model' });
 
       expect(testModeSpy).toHaveBeenCalled();
       expect(claudeSpy).not.toHaveBeenCalled();
-      expect(res.status).toBe(404);
-      expect(res.body.code).toBe('SESSION_NOT_FOUND');
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ id: TEST_MODE_SESSION, model: 'scripted-model' });
+      expect(testMode.hasSession(TEST_MODE_SESSION)).toBe(false);
     });
 
     it('POST /:id/fork routes to test-mode runtime', async () => {

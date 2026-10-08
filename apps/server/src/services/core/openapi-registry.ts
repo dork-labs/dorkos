@@ -30,6 +30,7 @@ import { OpenAPIRegistry, OpenApiGeneratorV31 } from '@asteasolutions/zod-to-ope
 import { env } from '../../env.js';
 import { registerConnectorEventOpenApi } from '../connectors/events/openapi.js';
 import { registerSessionContinueOpenApi } from '../session/fleet/continue-openapi.js';
+import { registerSessionLocationsOpenApi } from '../session/resolution/session-locations-openapi.js';
 import { registerProjectsOpenApi } from '../projects/projects-openapi.js';
 import { registerDocChannelOpenApi } from '../canvas/doc-channel/openapi.js';
 import { registerAccountEligibilityOpenApi } from './usage/account-eligibility-openapi.js';
@@ -643,6 +644,7 @@ const LocalUninstallResultSchema = z.object({
 const registry = new OpenAPIRegistry();
 registerConnectorEventOpenApi(registry);
 registerSessionContinueOpenApi(registry);
+registerSessionLocationsOpenApi(registry);
 registerProjectsOpenApi(registry);
 registerDocChannelOpenApi(registry);
 registerAccountEligibilityOpenApi(registry);

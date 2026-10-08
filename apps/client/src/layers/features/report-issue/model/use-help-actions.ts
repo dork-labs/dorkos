@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 /**
  * The help-and-feedback actions, once, for every surface that offers them.
  *
@@ -18,7 +19,6 @@ import { useFeedbackDialogStore } from '@/layers/shared/model';
 const DOCS_URL = 'https://dorkos.ai/docs';
 
 /** Where the person's own reports live. */
-const YOUR_REPORTS_PATH = '/feedback-requests';
 
 /** One help-and-feedback action. */
 export interface HelpAction {
@@ -59,9 +59,7 @@ export function useHelpActions(): HelpAction[] {
         label: 'Your reports',
         icon: Inbox,
         secondary: false,
-        // The route is not in the typed router table, so navigate is loosened
-        // here on purpose. The path is stable and agreed in the spec.
-        run: () => (navigate as (opts: { to: string }) => void)({ to: YOUR_REPORTS_PATH }),
+        run: () => navigate(appRoutes.feedbackRequests()),
       },
       {
         id: 'documentation',

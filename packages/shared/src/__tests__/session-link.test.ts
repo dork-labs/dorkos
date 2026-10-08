@@ -20,9 +20,20 @@ describe('sessionPath', () => {
   });
 
   it('encodes a value that would otherwise break the query', () => {
-    expect(sessionPath({ dir: '/Users/kai/my code&more' })).toBe(
-      '/session?dir=%2FUsers%2Fkai%2Fmy+code%26more'
+    expect(sessionPath({ prompt: '/Users/kai/my code&more' })).toBe(
+      '/session?prompt=%2FUsers%2Fkai%2Fmy+code%26more'
     );
+  });
+
+  it('keeps directories out of copied session links across server and desktop callers', () => {
+    expect(
+      sessionPath({
+        session: 'abc',
+        dir: '/Users/private/project',
+        agentPath: '/Users/private/agent',
+      })
+    ).toBe('/session?session=abc');
+    expect(() => sessionPath({ dir: '/Users/private/project' })).toThrow(/opaque/);
   });
 
   it('quotes a string the router would otherwise read back as a number or a boolean', () => {

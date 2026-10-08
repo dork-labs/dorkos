@@ -62,7 +62,7 @@ describe('switchAgentCwd', () => {
       currentLocation: () => ({ pathname: '/session', search: {} }),
       navigate,
     });
-    expect(navigate).toHaveBeenCalledWith({ dir: '/home/user/project', session: 'sess-cached' });
+    expect(navigate).toHaveBeenCalledWith({ session: 'sess-cached' });
   });
 
   it('resumes a session the server knows about but this window never cached', async () => {
@@ -77,7 +77,6 @@ describe('switchAgentCwd', () => {
       navigate,
     });
     expect(navigate).toHaveBeenCalledWith({
-      dir: '/home/user/project',
       session: 'sess-on-server',
     });
   });
@@ -208,7 +207,6 @@ describe('switchAgentCwd', () => {
     return pending.then(() => {
       expect(store.setSelectedCwd).toHaveBeenCalledWith('/home/user/project');
       expect(navigate).toHaveBeenCalledWith({
-        dir: '/home/user/project',
         session: 'sess-1',
       });
     });
@@ -224,8 +222,15 @@ describe('switchAgentCwd', () => {
       navigate,
     });
     expect(navigate).toHaveBeenCalledTimes(1);
-    const arg = navigate.mock.calls[0][0] as { dir: string; session: string };
-    expect(arg.dir).toBe('/home/user/project');
+    const arg = navigate.mock.calls[0][0] as {
+      dir?: string;
+      session: string;
+      launchRef: string;
+      draft: string;
+    };
+    expect(arg.dir).toBeUndefined();
+    expect(arg.launchRef).toBe('test-location');
+    expect(arg.draft).toBe('1');
     expect(arg.session).toMatch(UUID_RE);
   });
 });
@@ -259,6 +264,6 @@ describe('executeUiCommand switch_agent → switchAgentCwd (wired path)', () => 
     await vi.waitFor(() => expect(navigate).toHaveBeenCalled());
 
     expect(store.setSelectedCwd).toHaveBeenCalledWith('/home/user/new');
-    expect(navigate).toHaveBeenCalledWith({ dir: '/home/user/new', session: 'sess-new' });
+    expect(navigate).toHaveBeenCalledWith({ session: 'sess-new' });
   });
 });

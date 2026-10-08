@@ -70,6 +70,7 @@ const RUNTIMES: Record<string, typeof openCodeRuntime> = { opencode: openCodeRun
 
 vi.mock('../../services/core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    getNativeSessionCwd: vi.fn(() => null),
     // `runtimes.default: opencode` — the acceptance configuration for DOR-768.
     getDefault: vi.fn(() => openCodeRuntime),
     getDefaultType: vi.fn(() => 'opencode'),

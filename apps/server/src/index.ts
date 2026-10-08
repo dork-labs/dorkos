@@ -35,6 +35,7 @@ import { HARNESS_MANIFEST_PATH } from '@dorkos/harness';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import { randomUUID } from 'node:crypto';
 import { createApp, finalizeApp } from './app.js';
+import { createSessionLocationsRouter } from './routes/session-locations.js';
 import { ManagedConnectorCloudError } from './services/core/auth/cloud-link-client.js';
 import { ClaudeCodeRuntime } from './services/runtimes/claude-code/claude-code-runtime.js';
 import { shutdownSessionPumps } from './services/runtimes/claude-code/sessions/session-pump-registry.js';
@@ -631,7 +632,7 @@ import {
   isOtlpExporting,
   traceRelay,
 } from './services/observability/index.js';
-import { sessionListBroadcaster } from './services/session/session-list-broadcaster.js';
+import { sessionListBroadcaster } from './services/session/catalog/session-list-broadcaster.js';
 import { applyTrackerItemsLive } from './services/session/fleet/flow-run-link.js';
 import { KnownProjectsStore } from './services/projects/known-projects-store.js';
 import { startProjectRegistry } from './services/projects/project-feeds.js';
@@ -684,7 +685,7 @@ import {
   suspendPrivateDispatches,
   getOrCreateProjector,
 } from './services/session/index.js';
-import { aggregateSessionList } from './services/session/aggregate-session-list.js';
+import { aggregateSessionList } from './services/session/catalog/aggregate-session-list.js';
 import { peekCanvasService } from './services/canvas/index.js';
 import { env } from './env.js';
 
@@ -1763,6 +1764,7 @@ async function start() {
   if (env.DORKOS_TEST_RUNTIME) {
     const { TestModeRuntime } = await import('./services/runtimes/test-mode/test-mode-runtime.js');
     const testRuntime = new TestModeRuntime();
+    testRuntime.setSessionSettings(runtimeRegistry);
     runtimeRegistry.register(testRuntime);
     relayAgentRuntime = testRuntime;
     // Optional SECOND instance under a distinct type — gives e2e a server with
@@ -1770,7 +1772,9 @@ async function start() {
     // binding, session-list runtime marks) with zero real agent binaries.
     // Test branch only; the production path never registers test runtimes.
     if (env.DORKOS_TEST_RUNTIME_SECONDARY) {
-      runtimeRegistry.register(new TestModeRuntime('test-mode-b'));
+      const secondaryRuntime = new TestModeRuntime('test-mode-b');
+      secondaryRuntime.setSessionSettings(runtimeRegistry);
+      runtimeRegistry.register(secondaryRuntime);
       logger.info('[TestMode] Secondary TestModeRuntime registered as test-mode-b');
     }
     // Optional claude-code-typed alias (DOR-952): a seeded agent's manifest can
@@ -1780,7 +1784,9 @@ async function start() {
     // of 400ing. Same TestModeRuntime class; the resolver injection below reaches
     // it too. Test branch only.
     if (env.DORKOS_TEST_RUNTIME_CLAUDE_ALIAS) {
-      runtimeRegistry.register(new TestModeRuntime('claude-code'));
+      const aliasRuntime = new TestModeRuntime('claude-code');
+      aliasRuntime.setSessionSettings(runtimeRegistry);
+      runtimeRegistry.register(aliasRuntime);
       logger.info('[TestMode] TestModeRuntime alias registered as claude-code (DOR-952)');
     }
     runtimeRegistry.setDefault('test-mode');
@@ -3358,6 +3364,8 @@ async function start() {
       },
     },
   });
+
+  app.use('/api/session-locations', createSessionLocationsRouter(db));
 
   // Build mcpToolDeps and register factory only when ClaudeCodeRuntime is available.
   let mcpToolDeps: Parameters<typeof createExternalMcpServer>[0] | undefined;

@@ -268,7 +268,7 @@ describe('usePresenceStrip', () => {
     );
 
     await waitFor(() => expect(router.state.location.pathname).toBe('/session'));
-    expect(router.state.location.search).toEqual({ session: 'sess-1', dir: AGENT_PATH });
+    expect(router.state.location.search).toEqual({ session: 'sess-1' });
     // The conversation AND its agent, the pair `SidebarChrome.openSession`
     // writes (DOR-1156).
     expect(Object.keys(useInteractionStore.getState().opened).sort()).toEqual([

@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 import { useState, useCallback } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
@@ -196,7 +197,7 @@ function OutboundToolsCrossLink() {
         className="h-auto p-0 text-xs"
         onClick={() => {
           close();
-          void navigate({ to: '/team' });
+          void navigate({ ...appRoutes.team() });
         }}
       >
         Open the Team page

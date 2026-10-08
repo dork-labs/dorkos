@@ -1,4 +1,7 @@
+import { AmbiguousSessionError } from '../../../session/resolution/session-lookup-error.js';
 import fs from 'fs/promises';
+import { createReadStream } from 'node:fs';
+import { createInterface } from 'node:readline';
 import path from 'path';
 import type {
   Session,
@@ -476,6 +479,58 @@ export class TranscriptReader {
     // Sort by updatedAt descending (most recent first)
     sessions.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     return sessions;
+  }
+
+  /** Find an existing native transcript across configured accounts; never reverse a lossy slug. */
+  async findSession(sessionId: string): Promise<Session | null> {
+    if (!/^[a-f0-9-]{36}$/i.test(sessionId)) return null;
+    let found: Session | null = null;
+    for (const root of resolveClaudeRootSet()) {
+      const projects = path.join(root, 'projects');
+      let entries;
+      try {
+        entries = await fs.readdir(projects, { withFileTypes: true });
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        continue;
+      }
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const filePath = path.join(projects, entry.name, `${sessionId}.jsonl`);
+        try {
+          const { session } = await this.extractSessionMeta(filePath, sessionId);
+          if (!session.cwd) {
+            const input = createReadStream(filePath);
+            const lines = createInterface({ input, crlfDelay: Infinity });
+            try {
+              for await (const line of lines) {
+                let record;
+                try {
+                  record = JSON.parse(line);
+                } catch {
+                  continue;
+                }
+                if (typeof record?.cwd === 'string' && record.cwd) {
+                  session.cwd = record.cwd;
+                  break;
+                }
+              }
+            } finally {
+              lines.close();
+              input.destroy();
+            }
+          }
+          if (!session.cwd) continue;
+          await validateBoundaryOrDorkHome(session.cwd);
+          if (found) throw new AmbiguousSessionError();
+          found = session;
+        } catch (error) {
+          if (error instanceof AmbiguousSessionError) throw error;
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        }
+      }
+    }
+    return found;
   }
 
   /**

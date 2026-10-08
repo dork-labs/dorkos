@@ -444,7 +444,7 @@ function TryIt({ detail }: { detail: ConnectorConnectionDetail }) {
               target &&
               navigate &&
               void navigate(
-                toSession({ session: crypto.randomUUID(), dir: target.projectPath, prompt })
+                toSession({ session: crypto.randomUUID(), agentId: target.id, draft: '1', prompt })
               )
             }
           >

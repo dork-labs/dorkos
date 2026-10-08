@@ -5,7 +5,7 @@ import { FakeAgentRuntime } from '@dorkos/test-utils';
 
 // Mock the registry + createApp deps before importing the app.
 vi.mock('../../services/core/runtime-registry.js', () => ({
-  runtimeRegistry: { listRuntimes: vi.fn() },
+  runtimeRegistry: { getNativeSessionCwd: vi.fn(() => null), listRuntimes: vi.fn() },
 }));
 
 vi.mock('../../services/core/tunnel-manager.js', () => ({

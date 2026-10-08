@@ -32,6 +32,16 @@ vi.mock('../../../lib/boundary.js', () => ({
   validateBoundaryOrDorkHome: vi.fn(async (p: string) => p),
 }));
 
+// These cases exercise room placement around an unbound new session. Native
+// discovery is covered by resolve-session-cwd.test.ts; no production registry
+// or database is composed here.
+vi.mock('../../core/runtime-registry.js', () => ({
+  runtimeRegistry: {
+    resolveForSessionWithOwnership: vi.fn(async () => ({ runtime: {}, bound: false })),
+    getSessionAgentPath: vi.fn(async () => null),
+  },
+}));
+
 const AGENT = '/home/agents/api-bot';
 const WORKTREE = '/home/.dork/rooms/room-1/worktrees/api-bot-1a2b3c4d';
 /** Another registered agent, not in the room. */

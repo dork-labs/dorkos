@@ -759,6 +759,10 @@ export interface Transport
   getSessionDailyCounts(days?: number): Promise<SessionDailyCountsResponse>;
   /** Get metadata for a single session by ID. */
   getSession(id: string, cwd?: string): Promise<Session>;
+  /** Reserve a durable, caller-scoped opaque reference to a launch directory. */
+  createSessionLocation(cwd: string): Promise<{ id: string }>;
+  /** Resolve a launch reference without putting its private directory in a URL. */
+  getSessionLocation(id: string): Promise<{ cwd: string }>;
   /**
    * Resolve the runtime type string (e.g. `'claude-code'`, `'test-mode'`) that
    * owns the given session.

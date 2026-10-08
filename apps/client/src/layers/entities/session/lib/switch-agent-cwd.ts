@@ -1,3 +1,4 @@
+import { newSessionTarget } from '@/layers/shared/lib';
 import type { QueryClient } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import { resolveSessionForCwd, notifySessionLookupFailed } from './resolve-session-for-cwd';
@@ -32,7 +33,7 @@ export interface SwitchAgentCwdDeps {
    * Kept router-agnostic so the caller owns the route target and the function
    * stays trivially testable.
    */
-  navigate: (search: { dir: string; session: string }) => void;
+  navigate: (search: { dir?: string; session?: string; draft?: '1'; launchRef?: string }) => void;
 }
 
 /**
@@ -74,6 +75,10 @@ export async function switchAgentCwd(cwd: string, deps: SwitchAgentCwdDeps): Pro
     return;
   }
 
+  const target = resolved.isNew
+    ? await newSessionTarget(transport, { dir: cwd, session: resolved.sessionId })
+    : { search: { session: resolved.sessionId } };
+  if (!isStillWanted()) return;
   store.setSelectedCwd(cwd);
-  navigate({ dir: cwd, session: resolved.sessionId });
+  navigate(target.search);
 }

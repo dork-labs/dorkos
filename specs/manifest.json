@@ -2,6 +2,21 @@
   "version": 1,
   "specs": [
     {
+      "id": "261007-225912",
+      "slug": "doe-engine",
+      "title": "Doe standalone business agent engine",
+      "created": "2026-10-07",
+      "status": "implemented",
+      "linearIssue": "DOR-2786"
+    },
+    {
+      "id": "261006-180000",
+      "slug": "session-routing-identity",
+      "title": "Private routes and reliable session identity",
+      "created": "2026-10-06",
+      "status": "implemented"
+    },
+    {
       "id": "261003-204731",
       "slug": "isolated-extension-backends",
       "title": "Isolated extension backends: a subprocess runtime with declared network and run allowlists",

@@ -100,11 +100,11 @@ function migrationsFolderThrough(idx: number): string {
 }
 
 describe('Database Migrations', () => {
-  it('upgrades the published audit database through all Doc migrations exactly once', () => {
+  it('upgrades the published private-session and audit database through all Doc migrations exactly once', () => {
     const db = createDb(':memory:');
     try {
-      // Published audit main is immutable; all unpublished Doc leaves follow it.
-      migrate(db, { migrationsFolder: migrationsFolderThrough(146) });
+      // Published private-session main is immutable; all unmerged Doc leaves follow it.
+      migrate(db, { migrationsFolder: migrationsFolderThrough(147) });
       db.$client
         .prepare(
           'INSERT INTO session_metadata (session_id, runtime, agent_path, created_at) VALUES (?, ?, ?, ?)'
@@ -162,13 +162,35 @@ describe('Database Migrations', () => {
         .run(...Object.values(auditRow), auditHash);
       const publishedAudit = db.$client.prepare('SELECT * FROM audit_events ORDER BY seq').all();
       expect(publishedAudit).toEqual([{ ...auditRow, hash: auditHash }]);
+      db.$client
+        .prepare(
+          'INSERT INTO session_locations (id, owner_id, cwd, created_at) VALUES (?, ?, ?, ?)'
+        )
+        .run('published-location', 'published-owner', '/agents/published', '2026-10-07T23:07:01Z');
+      db.$client
+        .prepare(
+          'INSERT INTO session_native_bindings (session_id, runtime, cwd, account, created_at) VALUES (?, ?, ?, ?, ?)'
+        )
+        .run(
+          'published-session',
+          'codex',
+          '/agents/published',
+          'published-account',
+          '2026-10-07T23:07:01Z'
+        );
+      const publishedLocations = db.$client
+        .prepare('SELECT * FROM session_locations ORDER BY id')
+        .all();
+      const publishedBindings = db.$client
+        .prepare('SELECT * FROM session_native_bindings ORDER BY session_id')
+        .all();
       const publishedRow = db.$client
         .prepare("SELECT * FROM session_metadata WHERE session_id = 'published-session'")
         .get();
       const publishedHistory = db.$client
         .prepare('SELECT * FROM __drizzle_migrations ORDER BY id')
         .all();
-      expect(publishedHistory).toHaveLength(147);
+      expect(publishedHistory).toHaveLength(148);
       const tables = () =>
         db.$client
           .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -204,11 +226,18 @@ describe('Database Migrations', () => {
         readFileSync(path.join(DRIZZLE_DIR, 'meta/_journal.json'), 'utf-8')
       ) as { entries: { idx: number; tag: string }[] };
       expect(history).toHaveLength(journal.entries.length);
-      expect(history.slice(0, 147)).toEqual(publishedHistory);
+      expect(history.slice(0, 148)).toEqual(publishedHistory);
+      expect(db.$client.prepare('SELECT * FROM session_locations ORDER BY id').all()).toEqual(
+        publishedLocations
+      );
+      expect(
+        db.$client.prepare('SELECT * FROM session_native_bindings ORDER BY session_id').all()
+      ).toEqual(publishedBindings);
+      expect(journal.entries.slice(148).map((entry) => entry.idx)).toEqual([148, 149, 150]);
       expect(db.$client.prepare('SELECT * FROM audit_events ORDER BY seq').all()).toEqual(
         publishedAudit
       );
-      // All three unchanged Doc SQL hashes must occur once after published audit.
+      // All three unchanged Doc SQL hashes must occur once after published private-session main.
       for (const hash of [
         'c156544a648a0d5dd48a5147f2488420d8460da5ea9e0c596afdd407486adc84',
         '934167d31e86442927414b4ef1790e60ddc3d1d7af51285b59411d135514fc49',
@@ -458,6 +487,8 @@ describe('Database Migrations', () => {
       // A session's hard usage limit, kept across a restart until its next
       // turn starts (spec claude-account-fleet D4, migration 0117).
       'session_limits',
+      // Owner-scoped opaque locations keep private directories out of links.
+      'session_locations',
       // Stable proof that a protected source was accepted for one session.
       'session_message_acceptance_receipts',
       // Messages typed while a session was busy, waiting their turn — the
@@ -465,6 +496,8 @@ describe('Database Migrations', () => {
       // restart (spec persistent-session-runtime §3.1, migration 0064).
       'session_message_queue',
       'session_metadata',
+      // Verified native cwd/account source survives an app restart.
+      'session_native_bindings',
       // Words staged for a session that the runtime could not append to its own
       // transcript, waiting to ride the next dispatch. Durable because the
       // "Added context for the next reply" receipt already is (DOR-1324,

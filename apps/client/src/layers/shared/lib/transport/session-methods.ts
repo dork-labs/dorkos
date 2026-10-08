@@ -100,6 +100,17 @@ export function createSessionMethods(
       return SessionDailyCountsResponseSchema.parse(data);
     },
 
+    createSessionLocation(cwd: string): Promise<{ id: string }> {
+      return fetchJSON(baseUrl, '/session-locations', {
+        method: 'POST',
+        body: JSON.stringify({ cwd }),
+      });
+    },
+
+    getSessionLocation(id: string): Promise<{ cwd: string }> {
+      return fetchJSON(baseUrl, `/session-locations/${encodeURIComponent(id)}`);
+    },
+
     getSession(id: string, cwd?: string): Promise<Session> {
       const qs = buildQueryString({ cwd });
       return fetchJSON<Session>(baseUrl, `/sessions/${id}${qs}`);

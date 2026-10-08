@@ -47,7 +47,7 @@ import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-
 import { CODEX_CAPABILITIES } from '../../../runtimes/codex/runtime-constants.js';
 import { OPENCODE_CAPABILITIES } from '../../../runtimes/opencode/runtime-constants.js';
 import { TEST_MODE_CAPABILITIES } from '../../../runtimes/test-mode/runtime-constants.js';
-import { resolveSessionDefaults } from '../../resolve-session-defaults.js';
+import { resolveSessionDefaults } from '../../resolution/resolve-session-defaults.js';
 import { permissionSeedForOrigin } from '../turn-origin.js';
 
 /** Every runtime profile a DorkOS install can serve from `/api/capabilities`. */

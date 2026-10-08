@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 /**
  * One door to #team: `/channels?id=<team>` is Home, so it goes there.
  *
@@ -70,7 +71,7 @@ export function useTeamRoomRedirect(
   useEffect(() => {
     if (!isTeamRoom) return;
     void navigate({
-      to: '/',
+      ...appRoutes.home(),
       search: {
         ...(threadId === undefined ? {} : { thread: threadId }),
         ...(entrySeq === undefined ? {} : { entry: entrySeq }),

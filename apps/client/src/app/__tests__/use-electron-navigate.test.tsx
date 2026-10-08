@@ -7,7 +7,8 @@ import { useElectronNavigate } from '../use-electron-navigate';
 
 const mockNavigate = vi.fn();
 
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useNavigate: () => mockNavigate,
 }));
 

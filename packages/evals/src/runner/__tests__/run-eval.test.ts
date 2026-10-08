@@ -385,7 +385,12 @@ describe('runEval', () => {
     expect(result.retainedSandbox).toBeTruthy();
     expect(await countSandboxes()).toBe(1);
 
-    const report = await sweepStrays({ tempRoot: sandboxRoot });
+    // This filesystem-retention test has no containers; the host Docker daemon is irrelevant.
+    const report = await sweepStrays({
+      tempRoot: sandboxRoot,
+      docker: { run: vi.fn(async () => ({ code: 0, stdout: '', stderr: '' })) },
+    });
+    expect(report.containers).toEqual([]);
     expect(report.sandboxes).toHaveLength(1);
     expect(await countSandboxes()).toBe(0);
     // `retainedSandbox` is `<sandbox root>/.dork` — the sweep removed the whole

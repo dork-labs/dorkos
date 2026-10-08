@@ -51,7 +51,7 @@ import {
   type ServerPrincipalProof,
   type ServerPrincipalClaims,
 } from '../../connectors/principal/server-principal.js';
-import { queueKeyOf } from '../../session/session-key-registry.js';
+import { queueKeyOf } from '../../session/resolution/session-key-registry.js';
 import {
   requireRoomServiceRepoWriteCurrent,
   requireRoomServiceFileWriteOwner,

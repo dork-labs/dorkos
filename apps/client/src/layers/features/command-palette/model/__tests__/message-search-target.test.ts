@@ -77,7 +77,7 @@ describe('where a search hit opens', () => {
           })
         )
       )
-    ).toEqual({ session: 'sess-9', dir: '/work/api', message: 'uuid-1' });
+    ).toEqual({ session: 'sess-9', dir: undefined, message: 'uuid-1' });
   });
 
   it('opens an OpenCode hit on the message too', () => {
@@ -169,13 +169,12 @@ describe('where a search hit opens', () => {
           })
         )
       )
-    ).toEqual({ session: 'sess-9', dir: '/work/api' });
+    ).toEqual({ session: 'sess-9', dir: undefined });
   });
 
-  it('opens a transcript hit in the conversation, carrying its directory', () => {
-    // `dir` is not decoration: the durable stream resolves a conversation's
-    // history from it, so a session id arriving under whatever directory
-    // happened to be on screen reads another project's transcript (DOR-928).
+  it('opens a transcript hit by identity without publishing its directory', () => {
+    // The server resolves the transcript directory from session identity;
+    // a search link must not disclose the local path.
     expect(
       messageSearchTarget(
         hit({
@@ -188,7 +187,7 @@ describe('where a search hit opens', () => {
     ).toEqual({
       kind: 'session',
       to: '/session',
-      search: { session: 'sess-9', dir: '/work/api' },
+      search: { session: 'sess-9', dir: undefined },
     });
   });
 
@@ -220,7 +219,7 @@ describe('where a search hit opens', () => {
     expect(messageSearchTarget(gone)).toEqual({
       kind: 'session',
       to: '/session',
-      search: { session: 'sess-old', dir: '/removed/worktree' },
+      search: { session: 'sess-old', dir: undefined },
     });
   });
 

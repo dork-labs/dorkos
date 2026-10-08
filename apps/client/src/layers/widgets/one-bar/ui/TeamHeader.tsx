@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 import { Plus } from 'lucide-react';
 import { BarTabStrip, Button, type BarTab } from '@/layers/shared/ui';
 import { useAgentCreationStore, useIsMobile } from '@/layers/shared/model';
@@ -42,7 +43,7 @@ const TEAM_VIEWS: TeamView[] = [
 export const TEAM_VIEW_TABS: BarTab[] = TEAM_VIEWS.map(({ mode, label, startsGroup }) => ({
   id: mode,
   label,
-  to: '/team',
+  ...appRoutes.team(),
   // An updater, not a literal: the owner filter and the sort are the same
   // people asked about a different way, so they survive a change of view.
   search: (prev: Record<string, unknown>) => ({ ...prev, view: mode }),

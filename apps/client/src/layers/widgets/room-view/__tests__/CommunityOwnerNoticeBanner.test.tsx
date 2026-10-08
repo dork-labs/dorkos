@@ -19,7 +19,8 @@ import { TransportProvider } from '@/layers/shared/model';
 import { ChannelsPage } from '../ui/ChannelsPage';
 
 const address = vi.hoisted(() => ({ community: 'owner-ref' as string, id: undefined }));
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useSearch: () => address,
   useNavigate: () => vi.fn(),
 }));

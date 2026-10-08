@@ -47,7 +47,10 @@ import {
 } from '../model/message-search-scope';
 import { MessageSearchDialog } from '../ui/MessageSearchDialog';
 
-vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn() }));
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
+  useNavigate: () => vi.fn(),
+}));
 vi.mock('sonner', () => ({ toast: { info: vi.fn() } }));
 
 const mockTransport = createMockTransport();

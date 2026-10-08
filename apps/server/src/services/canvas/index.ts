@@ -18,7 +18,7 @@
  * @module server/services/canvas
  */
 import { onDurableSessionRekey } from '../session/turn-identity/durable-rekey.js';
-import { onSessionRemoved } from '../session/session-list-broadcaster.js';
+import { onSessionRemoved } from '../session/catalog/session-list-broadcaster.js';
 import { logger } from '../../lib/logger.js';
 import { CanvasService } from './canvas-service.js';
 import { sessionScope } from './scopes.js';

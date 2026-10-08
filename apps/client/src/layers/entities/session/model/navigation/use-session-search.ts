@@ -13,6 +13,9 @@ import type { SessionSearch } from '@/layers/shared/lib';
 export function useSessionSearch(): Partial<SessionSearch> {
   const search = useSafeSearch();
   return {
+    agentId: typeof search.agentId === 'string' ? search.agentId : undefined,
+    launchRef: typeof search.launchRef === 'string' ? search.launchRef : undefined,
+    draft: search.draft === '1' ? '1' : undefined,
     session: typeof search.session === 'string' ? search.session : undefined,
     dir: typeof search.dir === 'string' ? search.dir : undefined,
     runtime: typeof search.runtime === 'string' ? search.runtime : undefined,

@@ -22,7 +22,7 @@ import { z } from 'zod';
 import { SessionSchema } from '@dorkos/shared/schemas';
 import type { RuntimeRegistry } from '../runtime-registry.js';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
-import { aggregateSessionList } from '../../session/aggregate-session-list.js';
+import { aggregateSessionList } from '../../session/catalog/aggregate-session-list.js';
 import {
   firstVar,
   jsonResourceContents,

@@ -27,6 +27,19 @@
       ]
     },
     {
+      "guide": "routing.md",
+      "description": "File routes, typed navigation, private launch references and native session identity",
+      "patterns": [
+        "apps/client/src/routes/",
+        "apps/client/src/router",
+        "route-factory",
+        "session-link",
+        "session-route-loader",
+        "session-locations",
+        "router-plugin"
+      ]
+    },
+    {
       "guide": "architecture.md",
       "description": "Local implementation, Transport, runtimes and streams",
       "patterns": [

@@ -48,3 +48,7 @@ export * from './extensions/extension-agent-sends.js';
 export * from './canvas/channel.js';
 export * from './canvas/channel-tokens.js';
 export * from './browser/registry.js';
+
+export * from './session/session-locations.js';
+
+export * from './session/session-native-bindings.js';

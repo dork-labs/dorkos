@@ -53,6 +53,7 @@ let fakeRuntime: FakeAgentRuntime;
 let manifestBinding: AgentWorkspaceBinding | null = null;
 /** What `session_metadata.agent_path` says this session was bound with. */
 let sessionAgentPath: string | null = null;
+let sessionBound = true;
 /** What `WorkspaceManager.ensure` returns for a `managed` binding. */
 let ensuredWorkspacePath = '/mock/home/workspaces/dorkos/agent-api-bot';
 /** When set, `ensure` throws it instead of answering — the provisioning-failure rows. */
@@ -92,13 +93,17 @@ vi.mock('../../services/core/runtime-registry.js', async (importOriginal) => ({
     (await importOriginal<typeof import('../../services/core/runtime-registry.js')>())
       .runtimeRegistry,
     {
+      getNativeSessionCwd: vi.fn(() => null),
       getDefault: vi.fn(() => fakeRuntime),
       get: vi.fn(() => fakeRuntime),
       listRuntimes: vi.fn(() => [fakeRuntime]),
       getAllCapabilities: vi.fn(() => ({})),
       getDefaultType: vi.fn(() => 'claude-code'),
       resolveForSession: vi.fn(async () => fakeRuntime),
-      resolveForSessionWithOwnership: vi.fn(async () => ({ runtime: fakeRuntime, bound: true })),
+      resolveForSessionWithOwnership: vi.fn(async () => ({
+        runtime: fakeRuntime,
+        bound: sessionBound,
+      })),
       getSessionRuntimeType: vi.fn(async () => 'claude-code'),
       persistSessionRuntime: vi.fn(async () => true),
       getSessionAgentPath: vi.fn(async () => sessionAgentPath),
@@ -246,6 +251,7 @@ beforeEach(() => {
   fakeRuntime = new FakeAgentRuntime('claude-code');
   manifestBinding = null;
   sessionAgentPath = null;
+  sessionBound = true;
   ensuredWorkspacePath = CHECKOUT;
   ensureFailure = null;
   vi.clearAllMocks();
@@ -343,7 +349,8 @@ describe('POST /:id/messages — where the turn runs', () => {
 
   // `workspaceKey` is a per-turn statement about this piece of work, which is
   // strictly more specific than a standing per-agent preference.
-  it('a workspaceKey still overrides the agent binding', async () => {
+  it('a new session workspaceKey overrides the agent binding', async () => {
+    sessionBound = false;
     manifestBinding = { mode: 'home' };
     ensuredWorkspacePath = '/mock/home/workspaces/dorkos/DOR-1';
 
@@ -351,6 +358,7 @@ describe('POST /:id/messages — where the turn runs', () => {
       cwd: '/repos/dorkos',
       workspaceKey: 'DOR-1',
       agentPath: AGENT,
+      create: true,
     });
 
     expect(opts?.cwd).toBe('/mock/home/workspaces/dorkos/DOR-1');
@@ -360,6 +368,20 @@ describe('POST /:id/messages — where the turn runs', () => {
       expect.objectContaining({ name: 'dorkos/DOR-1', carriesToken: false })
     );
     expect(ensureSpy.mock.calls.at(-1)?.[1]).toEqual(expect.any(Function));
+  });
+
+  it('an existing native session ignores a workspaceKey and keeps its directory', async () => {
+    fakeRuntime.getSessionCwd = vi.fn(() => '/mock/home/native-project');
+    manifestBinding = { mode: 'home' };
+
+    const opts = await sendAndCapture({
+      cwd: '/repos/stale-project',
+      workspaceKey: 'DOR-1',
+      agentPath: AGENT,
+    });
+
+    expect(opts?.cwd).toBe('/mock/home/native-project');
+    expect(ensureSpy).not.toHaveBeenCalled();
   });
 
   it('a turn whose binding cannot be honored still runs, in the agent folder', async () => {

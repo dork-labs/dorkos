@@ -11,7 +11,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { FakeAgentRuntime, createMockSessionWithReading } from '@dorkos/test-utils';
 import type { Session } from '@dorkos/shared/types';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
-import { aggregateSessionList } from '../aggregate-session-list.js';
+import { aggregateSessionList } from '../catalog/aggregate-session-list.js';
 
 function makeSession(overrides: Partial<Session> & Pick<Session, 'id' | 'updatedAt'>): Session {
   return {

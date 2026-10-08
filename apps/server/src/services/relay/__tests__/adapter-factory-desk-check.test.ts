@@ -36,7 +36,11 @@ vi.mock('../../workspace/resolve-session-cwd.js', () => ({ resolveSessionCwd }))
 
 const getSessionAgentPath = vi.hoisted(() => vi.fn(async () => null as string | null));
 vi.mock('../../core/runtime-registry.js', () => ({
-  runtimeRegistry: { getSessionAgentPath, getDefaultType: () => 'claude-code' },
+  runtimeRegistry: {
+    getNativeSessionCwd: vi.fn(() => null),
+    getSessionAgentPath,
+    getDefaultType: () => 'claude-code',
+  },
 }));
 
 import { createAdapter, type AdapterFactoryDeps } from '../adapter-factory.js';

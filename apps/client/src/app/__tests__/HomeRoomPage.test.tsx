@@ -31,7 +31,8 @@ import {
 /** What `?…` says on this render. Set by a test before it renders. */
 let search: Record<string, unknown> = {};
 
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useSearch: () => search,
   useNavigate: () => vi.fn(),
   // `useInPlaceNavigate` (the thread-URL sync) reads the current location.

@@ -12,7 +12,14 @@ import type { AgentRuntime, RuntimeCapabilities } from '@dorkos/shared/agent-run
 import type { SessionSettings } from '@dorkos/shared/types';
 import { SessionSettingsSchema } from '@dorkos/shared/schemas';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { sessionContext, sessionMetadata, eq, sql, type Db } from '@dorkos/db';
+import {
+  sessionContext,
+  sessionMetadata,
+  sessionNativeBindings,
+  eq,
+  sql,
+  type Db,
+} from '@dorkos/db';
 import { logger } from '../../../lib/logger.js';
 import {
   SessionLimitStore,
@@ -104,7 +111,7 @@ let configuredStopDefaults: SessionSettings = {};
 /** The options the registry last handed the resolver, for the same question. */
 let lastResolveOpts: { runtimeType?: string; permissionModes?: readonly unknown[] } | null = null;
 
-vi.mock('../../session/resolve-session-defaults.js', () => ({
+vi.mock('../../session/resolution/resolve-session-defaults.js', () => ({
   resolveSessionDefaults: (opts: {
     runtimeType?: string;
     agent?: SessionSettings;
@@ -1220,6 +1227,75 @@ describe('RuntimeRegistry', () => {
     const read = (id: string) =>
       db.select().from(sessionMetadata).where(eq(sessionMetadata.sessionId, id)).get();
 
+    it('resolves native evidence before the authorized detail read persists ownership', async () => {
+      const runtime = createMockRuntime('codex');
+      runtime.findSession = vi
+        .fn()
+        .mockResolvedValue({ id: 'external-thread', cwd: '/project', runtime: 'codex' });
+      registry.register(runtime);
+      expect(await registry.resolveSessionRuntime('external-thread')).toEqual({
+        type: 'codex',
+        bound: true,
+      });
+      expect(read('external-thread')).toBeUndefined();
+      await registry.persistSessionRuntime('external-thread', 'test-mode', A_PERSON);
+      expect(await registry.getSessionRuntimeType('external-thread')).toBe('test-mode');
+    });
+
+    it('persists verified actual cwd independently of agent provenance, only for the owner', async () => {
+      await (await import('../../../lib/boundary.js')).initBoundary(process.cwd());
+      const session = {
+        id: 'verified-native',
+        cwd: process.cwd(),
+        runtime: 'opencode',
+        account: 'native-home',
+      } as import('@dorkos/shared/types').Session;
+      await registry.rememberNativeSession(session, { kind: 'agent' });
+      expect(read(session.id)).toBeUndefined();
+      await registry.rememberNativeSession(session, { kind: 'operator' });
+      expect(read(session.id)?.runtime).toBe('opencode');
+      expect(read(session.id)?.agentPath).toBeNull();
+      expect(registry.getNativeSessionCwd(session.id)).toBe(process.cwd());
+      expect(registry.getNativeSessionAccount(session.id)).toBe('native-home');
+      // Runtime registry projections may omit account after resuming a native
+      // session. A read must not erase its already verified private source.
+      const { account: _account, ...displaySession } = session;
+      await registry.rememberNativeSession(displaySession, { kind: 'operator' });
+      expect(registry.getNativeSessionAccount(session.id)).toBe('native-home');
+      expect(await registry.resolveSessionRuntime(session.id)).toEqual({
+        type: 'opencode',
+        bound: true,
+      });
+    });
+
+    it('distinguishes unavailable native storage from absent sessions and permits draft probes', async () => {
+      const runtime = createMockRuntime('codex');
+      runtime.findSession = vi.fn().mockRejectedValue(new Error('unreadable'));
+      registry.register(runtime);
+      await expect(registry.resolveSessionRuntime('existing')).rejects.toMatchObject({
+        code: 'SESSION_DISCOVERY_UNAVAILABLE',
+      });
+      expect(await registry.resolveSessionRuntime('new-draft', { allowUnbound: true })).toEqual({
+        type: 'claude-code',
+        bound: false,
+      });
+      expect(read('existing')).toBeUndefined();
+    });
+
+    it('refuses ambiguous native ids instead of choosing the first runtime', async () => {
+      for (const type of ['codex', 'opencode']) {
+        const runtime = createMockRuntime(type);
+        runtime.findSession = vi
+          .fn()
+          .mockResolvedValue({ id: 'collision', cwd: '/project', runtime: type });
+        registry.register(runtime);
+      }
+      await expect(registry.resolveSessionRuntime('collision')).rejects.toMatchObject({
+        code: 'SESSION_ID_AMBIGUOUS',
+      });
+      expect(read('collision')).toBeUndefined();
+    });
+
     it('does not choose the runtime — the first turn still does', async () => {
       // The bug: a pre-launch settings change created the row with the INFERRED
       // runtime, and the binding write is first-write-wins, so a session the
@@ -1543,6 +1619,64 @@ describe('RuntimeRegistry', () => {
       } finally {
         detach();
       }
+    });
+
+    it('moves verified native cwd and account source with the canonical identity', async () => {
+      await registry.persistSessionRuntime('old-native', 'claude-code', A_PERSON);
+      db.insert(sessionNativeBindings)
+        .values({
+          sessionId: 'old-native',
+          runtime: 'claude-code',
+          cwd: '/actual/worktree',
+          account: '/private/native-home',
+          createdAt: '2026-10-07',
+        })
+        .run();
+      let sawBothNativeRows = false;
+      const detach = onDurableSessionRekey((from, to) => {
+        expect([from, to]).toEqual(['old-native', 'canonical-native']);
+        expect(registry.getNativeSessionCwd(from)).toBe('/actual/worktree');
+        expect(registry.getNativeSessionCwd(to)).toBe('/actual/worktree');
+        sawBothNativeRows = true;
+      });
+      try {
+        await registry.rekeySessionSettings('old-native', 'canonical-native');
+      } finally {
+        detach();
+      }
+      expect(sawBothNativeRows).toBe(true);
+      expect(registry.getNativeSessionCwd('canonical-native')).toBe('/actual/worktree');
+      expect(registry.getNativeSessionAccount('canonical-native')).toBe('/private/native-home');
+      expect(registry.getNativeSessionCwd('old-native')).toBeNull();
+      expect(await registry.getSessionRuntimeType('canonical-native')).toBe('claude-code');
+    });
+
+    it('keeps a canonical destination’s existing verified native source', async () => {
+      await registry.persistSessionRuntime('old-native', 'claude-code', A_PERSON);
+      await registry.persistSessionRuntime('canonical-native', 'claude-code', A_PERSON);
+      db.insert(sessionNativeBindings)
+        .values([
+          {
+            sessionId: 'old-native',
+            runtime: 'claude-code',
+            cwd: '/old/work',
+            account: 'old-home',
+            createdAt: '2026-10-07',
+          },
+          {
+            sessionId: 'canonical-native',
+            runtime: 'claude-code',
+            cwd: '/kept/work',
+            account: 'kept-home',
+            createdAt: '2026-10-07',
+          },
+        ])
+        .run();
+      await registry.rekeySessionSettings('old-native', 'canonical-native');
+      await registry.rekeySessionSettings('old-native', 'canonical-native');
+      expect(registry.getNativeSessionCwd('canonical-native')).toBe('/kept/work');
+      expect(registry.getNativeSessionAccount('canonical-native')).toBe('kept-home');
+      expect(registry.getNativeSessionCwd('old-native')).toBeNull();
     });
 
     it('moves the launch origin with the row, and keeps a destination’s own', async () => {

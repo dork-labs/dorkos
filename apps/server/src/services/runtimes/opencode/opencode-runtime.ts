@@ -188,6 +188,7 @@ import {
   streamGenerationOf,
 } from '../../session/session-state-projector.js';
 import { readLogBackedHistory } from '../../session/log-backed-history.js';
+import { SessionDiscoveryUnavailableError } from '../../session/resolution/session-lookup-error.js';
 import { overlayModelSubstitutions } from '../../session/overlays/model-substitution-overlay.js';
 import { overlayAgentCompactions } from '../../session/overlays/agent-compaction-overlay.js';
 import {
@@ -217,6 +218,7 @@ import {
 import { mapOpenCodeTodos } from './events/session-event-mapper.js';
 import {
   OpenCodeSessionMapper,
+  isDerivedOpenCodeSessionId,
   unwrap,
   type OpenCodeClientProvider,
   type OpenCodeSessionMapStore,
@@ -2035,6 +2037,10 @@ export class OpenCodeRuntime implements AgentRuntime {
    * which boots the sidecar: a bookmarked id must resolve after a restart
    * instead of 404ing until something else warms the sidecar (DOR-251).
    */
+  async findSession(sessionId: string): Promise<Session | null> {
+    return this.mapper.findSession(DEFAULT_CWD, sessionId);
+  }
+
   async getSession(projectDir: string, sessionId: string): Promise<Session | null> {
     const sessions = await this.listSessions(projectDir);
     const listed = sessions.find((session) => session.id === sessionId);
@@ -2049,10 +2055,9 @@ export class OpenCodeRuntime implements AgentRuntime {
    *
    * OpenCode's store is durable — history comes from the sidecar through the
    * mapper (booting it when needed), so revisits survive both DorkOS and
-   * sidecar restarts. When the sidecar is unreachable (or the session was
-   * never bound) this falls back to the DorkOS-owned event stream, read
-   * durably from the `session_events` store (DOR-189) so the fallback now
-   * survives a DorkOS restart too — the contract ("array, never a throw").
+   * sidecar restarts. A known native conversation reports unavailable when
+   * its store cannot be read; a partial EventLog cannot stand in for its
+   * transcript. Only an unbound draft may use the DorkOS-owned event stream.
    */
   async getMessageHistory(projectDir: string, sessionId: string): Promise<HistoryMessage[]> {
     try {
@@ -2069,6 +2074,12 @@ export class OpenCodeRuntime implements AgentRuntime {
         )
       );
     } catch (err) {
+      if (
+        this.mapper.getOpenCodeSessionId(sessionId) !== undefined ||
+        isDerivedOpenCodeSessionId(sessionId)
+      ) {
+        throw new SessionDiscoveryUnavailableError(this.type);
+      }
       logger.debug(
         '[OpenCodeRuntime] native history read failed — serving durable EventLog fallback',
         logError(err)

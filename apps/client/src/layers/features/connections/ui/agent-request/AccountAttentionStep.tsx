@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 import { useId, useState } from 'react';
 import { ArrowUpRight, ExternalLink, RefreshCw } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
@@ -137,7 +138,7 @@ export function AccountAttentionStep({
         )}
         {action === 'review_access' && (
           <Button asChild variant="secondary">
-            <Link to="/connections" search={{ app: account.connectionId }}>
+            <Link {...appRoutes.connections()} search={{ app: account.connectionId }}>
               Open Connections
               <ArrowUpRight className="size-4" aria-hidden />
             </Link>

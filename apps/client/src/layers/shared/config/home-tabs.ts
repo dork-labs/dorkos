@@ -1,3 +1,4 @@
+import { appRoutes } from '../lib/route-factory';
 import { HOME_SURFACE_PATHS, normalizePathname, type HomeSurfacePath } from './home-surface';
 
 /** Which tab of the home surface is showing. */
@@ -23,10 +24,10 @@ export interface HomeTab {
  * old address for a rename nobody can see. The label is what changes.
  */
 const TAB_NAMES: Record<HomeSurfacePath, { id: HomeTabId; label: string }> = {
-  '/': { id: 'home', label: 'Home' },
-  '/activity': { id: 'activity', label: 'Activity' },
-  '/tasks': { id: 'scheduled', label: 'Schedules' },
-  '/workspaces': { id: 'workspaces', label: 'Workspaces' },
+  [appRoutes.home().to]: { id: 'home', label: 'Home' },
+  [appRoutes.activity().to]: { id: 'activity', label: 'Activity' },
+  [appRoutes.tasks().to]: { id: 'scheduled', label: 'Schedules' },
+  [appRoutes.workspaces().to]: { id: 'workspaces', label: 'Workspaces' },
 };
 
 /**

@@ -1,10 +1,11 @@
+import { toast } from 'sonner';
 import { useCallback } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { ServerConfig } from '@dorkos/shared/types';
 import { useTransport } from '@/layers/shared/model';
 import { useConfig } from './use-config';
-import { toSession } from '@/layers/shared/lib';
+import { toSession, sessionLocationTarget, reportClientError } from '@/layers/shared/lib';
 
 /** Fallback agent slug when config has no configured default (a fresh install). */
 const DEFAULT_AGENT = 'dorkbot';
@@ -73,8 +74,15 @@ export function useDefaultAgentSession(): DefaultAgentSession {
   const defaultAgentDir = registeredEntry?.projectPath ?? resolveDefaultAgentDir(config);
 
   const startSession = useCallback(() => {
-    navigate(toSession({ dir: defaultAgentDir }));
-  }, [navigate, defaultAgentDir]);
+    if (registeredEntry) void navigate(toSession({ agentId: registeredEntry.id }));
+    else if (defaultAgentDir)
+      void sessionLocationTarget(transport, defaultAgentDir)
+        .then((target) => navigate(target))
+        .catch((error) => {
+          reportClientError(transport, error);
+          toast.error('Could not open the conversation. Try again.');
+        });
+  }, [navigate, defaultAgentDir, registeredEntry, transport]);
 
   return {
     startSession,

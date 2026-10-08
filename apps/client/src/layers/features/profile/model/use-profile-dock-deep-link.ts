@@ -19,7 +19,13 @@
  * @module features/profile/model/use-profile-dock-deep-link
  */
 import { useEffect, useRef } from 'react';
-import { useAppStore, useInPlaceNavigate, useSafeSearch } from '@/layers/shared/model';
+import { useQuery } from '@tanstack/react-query';
+import {
+  useAppStore,
+  useInPlaceNavigate,
+  useSafeSearch,
+  useTransport,
+} from '@/layers/shared/model';
 import { asProfilePageId, type ProfilePageId } from './profile-stack';
 import { PROFILE_PANEL_ID, useProfileStore } from './profile-store';
 import { useDockedAgentPath } from './use-docked-agent';
@@ -87,14 +93,35 @@ const LEGACY_DIALOG_TABS = new Set(['identity', 'personality', 'channels', 'tool
  * with it, silently. Only a page, or a different agent, is a new instruction.
  */
 export function useProfileDockDeepLink(): void {
-  const search = useSafeSearch() as { panel?: string; profilePage?: string; agentPath?: string };
+  const search = useSafeSearch() as {
+    panel?: string;
+    profilePage?: string;
+    agentPath?: string;
+    profileRef?: string;
+  };
+  const transport = useTransport();
+  const location = useQuery({
+    queryKey: ['profile-location', search.profileRef],
+    queryFn: () => transport.getSessionLocation(search.profileRef!),
+    enabled: Boolean(search.profileRef),
+  });
   const openProfileDockedFromLink = useProfileStore((s) => s.openProfileDockedFromLink);
   const requestRightPanel = useAppStore((s) => s.requestRightPanel);
+  const setExplicitAgentPath = useAppStore((s) => s.setExplicitAgentPath);
   const dockedAgentPath = useDockedAgentPath();
 
   const wantsProfile = search.panel === PROFILE_PANEL_ID;
-  const urlAgentPath = search.agentPath ?? null;
+  const urlAgentPath = search.agentPath ?? location.data?.cwd ?? null;
   const page = asProfilePageId(search.profilePage) ?? undefined;
+  // An address names the dock's subject even when it does not ask to open it.
+  // Keep it independent of the conversation cwd and the panel-open modifier.
+  const resolvedSubject = useRef<string | null>(null);
+  useEffect(() => {
+    if (!wantsProfile && urlAgentPath && resolvedSubject.current !== urlAgentPath) {
+      resolvedSubject.current = urlAgentPath;
+      setExplicitAgentPath(urlAgentPath);
+    }
+  }, [wantsProfile, urlAgentPath, setExplicitAgentPath]);
   /**
    * Every link this hook has acted on, as agent → the pages named for it (`''`
    * for the root). A set rather than "the last one", so walking away from an
@@ -108,6 +135,7 @@ export function useProfileDockDeepLink(): void {
       return;
     }
 
+    if (search.profileRef && !urlAgentPath) return;
     const target = urlAgentPath ?? dockedAgentPath;
     if (target) {
       const seen = applied.current.get(target);
@@ -129,6 +157,7 @@ export function useProfileDockDeepLink(): void {
     requestRightPanel(PROFILE_PANEL_ID, null);
   }, [
     wantsProfile,
+    search.profileRef,
     urlAgentPath,
     dockedAgentPath,
     page,
@@ -150,8 +179,11 @@ export function useLegacyProfileLinkRedirect(): void {
     hubTab?: string;
     agent?: string;
     dialog?: string;
+    agentPath?: string;
+    profileRef?: string;
   };
   const inPlaceNav = useInPlaceNavigate();
+  const transport = useTransport();
 
   const isLegacyPanel = search.panel === LEGACY_PANEL_ID;
   // Never on `!!search.agent`: see {@link LEGACY_DIALOG_TABS}. Either the param
@@ -163,29 +195,57 @@ export function useLegacyProfileLinkRedirect(): void {
   const legacyTab = isLegacyPanel ? search.hubTab : search.agent;
 
   useEffect(() => {
-    if (!needsRedirect || !inPlaceNav) return;
-    const page = legacyTabPage(legacyTab);
+    if ((!needsRedirect && !search.agentPath) || !inPlaceNav) return;
+    let cancelled = false;
+    const rewrite = async () => {
+      const profileRef =
+        search.profileRef ??
+        (search.agentPath
+          ? (await transport.createSessionLocation(search.agentPath)).id
+          : undefined);
+      if (cancelled) return;
+      const page = legacyTabPage(legacyTab);
 
-    inPlaceNav({
-      search: (prev) => {
-        const next = { ...prev };
-        // Only the params this hook actually claimed. `?dialog=agent` is always
-        // the dead dialog's; `?agent=` is only ours when it names one of that
-        // dialog's tabs — on `/team` the same param is a topology node id, and
-        // deleting it there loses the selection whatever else is in the URL.
-        if (search.dialog === 'agent') delete next.dialog;
-        if (typeof next.agent === 'string' && LEGACY_DIALOG_TABS.has(next.agent)) {
-          delete next.agent;
-        }
-        delete next.hubTab;
-        next.panel = PROFILE_PANEL_ID;
-        // Only when the old tab has a successor: a link to Config asked for a
-        // page that no longer exists, and the root is the honest answer.
-        if (page) next.profilePage = page;
-        else delete next.profilePage;
-        return next;
-      },
-      replace: true,
+      inPlaceNav({
+        search: (prev) => {
+          const next = { ...prev };
+          // Only the params this hook actually claimed. `?dialog=agent` is always
+          // the dead dialog's; `?agent=` is only ours when it names one of that
+          // dialog's tabs — on `/team` the same param is a topology node id, and
+          // deleting it there loses the selection whatever else is in the URL.
+          if (search.dialog === 'agent') delete next.dialog;
+          if (typeof next.agent === 'string' && LEGACY_DIALOG_TABS.has(next.agent)) {
+            delete next.agent;
+          }
+          if (profileRef) {
+            next.profileRef = profileRef;
+            delete next.agentPath;
+          }
+          if (!needsRedirect) return next;
+          delete next.hubTab;
+          next.panel = PROFILE_PANEL_ID;
+          // Only when the old tab has a successor: a link to Config asked for a
+          // page that no longer exists, and the root is the honest answer.
+          if (page) next.profilePage = page;
+          else delete next.profilePage;
+          return next;
+        },
+        replace: true,
+      });
+    };
+    void rewrite().catch(() => {
+      /* Keep the original address when it cannot be reserved. */
     });
-  }, [needsRedirect, search.dialog, legacyTab, inPlaceNav]);
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    needsRedirect,
+    search.dialog,
+    search.agentPath,
+    search.profileRef,
+    legacyTab,
+    inPlaceNav,
+    transport,
+  ]);
 }

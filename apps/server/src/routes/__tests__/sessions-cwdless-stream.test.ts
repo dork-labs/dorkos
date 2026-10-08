@@ -69,6 +69,7 @@ vi.mock('../../services/core/runtime-registry.js', async (importOriginal) => ({
     (await importOriginal<typeof import('../../services/core/runtime-registry.js')>())
       .runtimeRegistry,
     {
+      getNativeSessionCwd: vi.fn(() => null),
       getDefault: vi.fn(() => fakeRuntime),
       get: vi.fn(() => fakeRuntime),
       getAllCapabilities: vi.fn(() => ({})),
@@ -79,6 +80,7 @@ vi.mock('../../services/core/runtime-registry.js', async (importOriginal) => ({
       persistSessionRuntime: vi.fn(async () => {}),
       getSessionSettings: vi.fn(async () => null),
       getSessionSettingsMany: vi.fn(() => new Map()),
+      getSessionAgentPath: vi.fn(async () => null),
       has: vi.fn(() => true),
     }
   ),
@@ -97,6 +99,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn(async () => null) }));
 
+import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import request from '@dorkos/test-utils/supertest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
@@ -127,6 +130,7 @@ beforeEach(() => {
   fakeRuntime = new FakeAgentRuntime();
   vi.clearAllMocks();
   snapshotCwds = [];
+  vi.mocked(runtimeRegistry.getSessionAgentPath).mockResolvedValue(null);
   fakeRuntime.acquireLock.mockReturnValue(true);
   fakeRuntime.isLocked.mockReturnValue(false);
   fakeRuntime.getLockInfo.mockReturnValue(null);
@@ -232,7 +236,8 @@ describe('a window that opened the session without the folder', () => {
     expect(fakeRuntime.getSession).toHaveBeenCalledWith(LIVE_CWD, SESSION_ID);
   });
 
-  it('still refuses an out-of-boundary directory the caller named', async () => {
+  it('refuses an out-of-boundary directory for an unbound draft', async () => {
+    fakeRuntime.getSessionCwd = vi.fn(() => undefined);
     const res = await request(server)
       .get(`/api/sessions/${SESSION_ID}/events`)
       .query({ cwd: '/etc/shadow' });
@@ -296,5 +301,99 @@ describe('a session whose live binding is outside the boundary', () => {
 
     expect(named.status).toBe(403);
     expect(unnamed.status).toBe(named.status);
+  });
+});
+
+describe('an ID-only external session without DorkOS metadata', () => {
+  beforeEach(() => {
+    fakeRuntime.getSessionCwd = vi.fn(() => undefined);
+    Object.assign(fakeRuntime, {
+      findSession: vi.fn().mockResolvedValue({ id: SESSION_ID, runtime: 'fake', cwd: LIVE_CWD }),
+    });
+  });
+
+  it('uses native cwd for detail, history, tasks and stream reads', async () => {
+    for (const suffix of ['', '/messages', '/tasks']) {
+      const response = await request(server).get(`/api/sessions/${SESSION_ID}${suffix}`);
+      expect(response.status).toBe(200);
+    }
+    const stream = attachEventStream(server, SESSION_ID, { until: 'snapshot', maxMs: 2000 });
+    try {
+      await stream.ready;
+      expect(snapshotCwds).toEqual([LIVE_CWD]);
+    } finally {
+      stream.close();
+      await stream.done;
+    }
+    expect(fakeRuntime.getSession).toHaveBeenCalledWith(LIVE_CWD, SESSION_ID);
+    expect(fakeRuntime.getMessageHistory).toHaveBeenCalledWith(LIVE_CWD, SESSION_ID);
+  });
+});
+
+describe('an ID-only link after the live binding is gone', () => {
+  beforeEach(() => {
+    fakeRuntime.getSessionCwd = vi.fn(() => undefined);
+    vi.mocked(runtimeRegistry.getSessionAgentPath).mockResolvedValue(LIVE_CWD);
+  });
+
+  it('reads session details and messages from the durable directory', async () => {
+    fakeRuntime.getMessageHistory.mockResolvedValue([
+      { id: 'm1', role: 'assistant', content: 'Saved reply', timestamp: '2026-08-23T00:00:00Z' },
+    ]);
+    const detail = await request(server).get(`/api/sessions/${SESSION_ID}`);
+    const history = await request(server).get(`/api/sessions/${SESSION_ID}/messages`);
+    expect(detail.status).toBe(200);
+    expect(history.status).toBe(200);
+    expect(history.body.messages[0].content).toBe('Saved reply');
+    expect(fakeRuntime.getSession).toHaveBeenCalledWith(LIVE_CWD, SESSION_ID);
+    expect(fakeRuntime.getMessageHistory).toHaveBeenCalledWith(LIVE_CWD, SESSION_ID);
+  });
+
+  it('looks up an alias under its canonical session id', async () => {
+    const canonical = '00000000-0000-4000-8000-0000000000ce';
+    fakeRuntime.getInternalSessionId.mockReturnValue(canonical);
+    const res = await request(server).get(`/api/sessions/${SESSION_ID}/messages`);
+    expect(res.status).toBe(200);
+    expect(runtimeRegistry.getSessionAgentPath).toHaveBeenCalledWith(canonical);
+    expect(fakeRuntime.getMessageHistory).toHaveBeenCalledWith(LIVE_CWD, canonical);
+  });
+
+  it('honours an explicit directory before consulting the durable binding', async () => {
+    vi.mocked(runtimeRegistry.getSessionAgentPath).mockResolvedValue('/secret/outside');
+    const explicit = `${LIVE_CWD}/nested`;
+    const res = await request(server)
+      .get(`/api/sessions/${SESSION_ID}/messages`)
+      .query({ cwd: explicit });
+    expect(res.status).toBe(200);
+    expect(fakeRuntime.getMessageHistory).toHaveBeenCalledWith(explicit, SESSION_ID);
+    expect(runtimeRegistry.getSessionAgentPath).not.toHaveBeenCalled();
+  });
+
+  it('reads tasks from the same directory', async () => {
+    const res = await request(server).get(`/api/sessions/${SESSION_ID}/tasks`);
+    expect(res.status).toBe(200);
+    expect(fakeRuntime.getSessionTasks).toHaveBeenCalledWith(LIVE_CWD, SESSION_ID);
+  });
+
+  it('hydrates the durable stream from the same directory', async () => {
+    const stream = attachEventStream(server, SESSION_ID, { until: 'snapshot', maxMs: 2000 });
+    try {
+      await stream.ready;
+      expect(snapshotCwds).toContain(LIVE_CWD);
+    } finally {
+      stream.close();
+      await stream.done;
+    }
+  });
+
+  it('boundary-checks the durable directory on every read', async () => {
+    vi.mocked(runtimeRegistry.getSessionAgentPath).mockResolvedValue('/secret/outside');
+    for (const suffix of ['', '/messages', '/tasks', '/events']) {
+      const res = await request(server).get(`/api/sessions/${SESSION_ID}${suffix}`);
+      expect(res.status).toBe(403);
+    }
+    expect(fakeRuntime.getMessageHistory).not.toHaveBeenCalled();
+    expect(fakeRuntime.getSessionTasks).not.toHaveBeenCalled();
+    expect(fakeRuntime.getSessionSnapshot).not.toHaveBeenCalled();
   });
 });

@@ -17,6 +17,7 @@ import { readTestModeOriginalActiveStream } from '../../../runtimes/test-mode/te
 import { isTurnInFlight } from '../../../session/message-dispatcher.js';
 import { peekProjector } from '../../../session/session-state-projector.js';
 import { configManager } from '../../../core/config-manager.js';
+import { DEFAULT_CWD } from '../../../../lib/resolve-root.js';
 import { RoomWorktreeManager } from '../room-worktree-manager.js';
 import type { OriginalNativeLaunchFixture } from './room-original-native-launch-fixture.js';
 
@@ -49,6 +50,7 @@ export async function runOriginalNativeAppResumeControl(
   );
   const repo = owning.repos.repoPath(owning.roomId);
   let originalSessionReads = 0;
+  const originalClientDirectories: string[] = [];
   let providerStarts = 0;
   if (mode === 'app-resume-opencode-copy') {
     // Durable legacy session DATA belongs to an actual OpenCode constructor.
@@ -100,7 +102,13 @@ export async function runOriginalNativeAppResumeControl(
         provider: {
           peekClient: () => client,
           getClient: async (cwd) => {
-            assert.equal(cwd, target.agentPath);
+            // Native store-wide discovery and the guarded Room read share one
+            // sidecar. Its acquisition cwd is not the session directory.
+            originalClientDirectories.push(cwd);
+            assert.equal(
+              cwd,
+              originalClientDirectories.length === 1 ? DEFAULT_CWD : target.agentPath
+            );
             return client;
           },
           turnSettled: async () => {},
@@ -167,7 +175,8 @@ export async function runOriginalNativeAppResumeControl(
       const response = await send();
       assert.equal(response.status, 409);
       assert.equal(response.body.code, 'ROOM_SESSION_MOVED');
-      assert.equal(originalSessionReads, 1);
+      assert.deepEqual(originalClientDirectories, [DEFAULT_CWD, target.agentPath]);
+      assert.equal(originalSessionReads, 2);
       assert.equal(providerStarts, 0);
       assert.equal(isTurnInFlight(target.sessionId, selected), false);
       assert.equal(peekProjector(target.sessionId), undefined);

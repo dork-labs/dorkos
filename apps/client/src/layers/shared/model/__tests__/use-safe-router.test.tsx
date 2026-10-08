@@ -14,7 +14,8 @@ import { renderHook } from '@testing-library/react';
  * a restatement of the mock.
  */
 let routerPresent = true;
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useRouter: () => (routerPresent ? { stores: {} } : undefined),
   useSearch: () => {
     if (!routerPresent) throw new TypeError("Cannot read properties of null (reading 'stores')");

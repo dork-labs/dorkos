@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 import { Fragment, type ReactNode } from 'react';
 import { Zap } from 'lucide-react';
 import type {
@@ -110,7 +111,11 @@ export function UnattendedAutonomyBanner({ drivers }: UnattendedAutonomyBannerPr
               </Button>
             )}
             {kinds.has('task') && (
-              <Button variant="outline" size="sm" onClick={() => navigate({ to: '/tasks' })}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate({ ...appRoutes.tasks() })}
+              >
                 Schedules
               </Button>
             )}

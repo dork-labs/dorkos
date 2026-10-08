@@ -23,7 +23,7 @@
 import type { QueuedMessage } from '@dorkos/shared/schemas';
 import { getMessageQueueStore, toQueuedMessage } from './message-queue-store.js';
 import type { MoveTarget } from './message-queue-store.js';
-import { queueKeyOf } from './session-key-registry.js';
+import { queueKeyOf } from './resolution/session-key-registry.js';
 import {
   cancelPendingDispatch,
   emitQueueUpdate,

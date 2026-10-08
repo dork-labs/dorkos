@@ -74,6 +74,7 @@ const LITERAL_NAME_ALLOWED = [
   'apps/desktop/package.json',
   'apps/desktop/src/main/__tests__/about.test.ts',
   'packages/connector-providers/LICENSE',
+  'packages/doe/LICENSE', // Standalone license text cannot import the company module.
   'packages/shared/src/company.ts',
   'packages/ui/LICENSE',
 ];

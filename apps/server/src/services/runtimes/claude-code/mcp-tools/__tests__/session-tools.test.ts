@@ -45,6 +45,7 @@ vi.mock('../../../../core/approvals/autonomy-consent.js', async (importOriginal)
 const storedSettings = vi.hoisted(() => new Map<string, { permissionMode?: string }>());
 vi.mock('../../../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    getNativeSessionCwd: vi.fn(() => null),
     getSessionSettings: vi.fn(async (id: string) => storedSettings.get(id) ?? null),
     has: vi.fn((type: string) => runtimes.has(type)),
     get: vi.fn((type: string) => runtimes.get(type)),

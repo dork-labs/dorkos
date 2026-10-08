@@ -21,6 +21,7 @@ const rules = vi.hoisted(() => ({ claudeCode: {} as Record<string, unknown> }));
 
 vi.mock('../../../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    getNativeSessionCwd: vi.fn(() => null),
     has: vi.fn((type: string) => runtimes.has(type)),
     get: vi.fn((type: string) => runtimes.get(type)),
     getDefaultType: vi.fn(() => 'claude-code'),
