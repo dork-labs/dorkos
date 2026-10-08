@@ -5,19 +5,17 @@
  */
 import { useEffect } from 'react';
 import { useInteractionStore } from '@/layers/entities/interactions';
-import { reportClientError } from '@/layers/shared/lib';
+import { SESSION_ROUTE, reportClientError } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
 import { useSessionRouteContext } from './session-route-context';
-
-/** The chat route's path, as the page was first loaded on it. */
-const SESSION_PATH = '/session';
 
 /**
  * Whether this page load began on the chat page — a reload, a deep link, or a
  * notification that opened the app. Read once, when the module loads, because
  * the question is about how the app was ENTERED, not where it is now.
  */
-const loadedOnChatPage = typeof window !== 'undefined' && window.location.pathname === SESSION_PATH;
+const loadedOnChatPage =
+  typeof window !== 'undefined' && window.location.pathname === SESSION_ROUTE;
 
 /**
  * The chat the app landed on, once the chat page first shows one; `null`
