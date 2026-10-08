@@ -1,3 +1,4 @@
+import { readOriginalSignedPresenceFile } from '../fixtures/signed-desktop/presence.js';
 import { open } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import {
@@ -6,7 +7,10 @@ import {
 } from '../fixtures/signed-packaged-managed-browser';
 
 /** Standalone opt-in executable. Ordinary tests never launch an app or read this configuration. */
-export async function runSignedDesktopAcceptanceFile(path: string): Promise<void> {
+export async function runSignedDesktopAcceptanceFile(
+  path: string,
+  presenceFile?: string
+): Promise<void> {
   const file = await open(path, 'r');
   let config: unknown;
   try {
@@ -27,6 +31,8 @@ export async function runSignedDesktopAcceptanceFile(path: string): Promise<void
   } finally {
     await file.close();
   }
+  const presence =
+    presenceFile === undefined ? undefined : await readOriginalSignedPresenceFile(presenceFile);
   const lifetime = new AbortController();
   const stop = () => lifetime.abort(new Error('SIGNED_DESKTOP_ORIGINAL_PARENT_CANCELLED'));
   process.once('SIGTERM', stop);
@@ -34,7 +40,8 @@ export async function runSignedDesktopAcceptanceFile(path: string): Promise<void
   try {
     await runSignedPackagedManagedBrowser(
       SignedDesktopAcceptanceSchema.parse(config),
-      lifetime.signal
+      lifetime.signal,
+      presence
     );
   } finally {
     process.removeListener('SIGTERM', stop);
@@ -43,9 +50,15 @@ export async function runSignedDesktopAcceptanceFile(path: string): Promise<void
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  if (process.argv.length !== 3) throw new Error('SIGNED_DESKTOP_CONFIG_PATH_REQUIRED');
-  runSignedDesktopAcceptanceFile(process.argv[2]!).then(
-    () => console.log('SIGNED_DESKTOP_MANAGED_BROWSER_PASS'),
+  if (process.argv.length !== 3 && (process.argv.length !== 5 || process.argv[3] !== '--presence'))
+    throw new Error('SIGNED_DESKTOP_CONFIG_PATH_REQUIRED');
+  runSignedDesktopAcceptanceFile(process.argv[2]!, process.argv[4]).then(
+    () =>
+      console.log(
+        process.argv[4]
+          ? 'SIGNED_DESKTOP_MANAGED_BROWSER_CORE_PASS_OS_SCOPE_UNVERIFIED'
+          : 'SIGNED_DESKTOP_MANAGED_BROWSER_PASS'
+      ),
     () => {
       console.error('SIGNED_DESKTOP_MANAGED_BROWSER_REFUSED');
       process.exitCode = 1;

@@ -1,8 +1,17 @@
+import {
+  createOriginalSignedJournalReader,
+  requireOriginalSignedJournalManager,
+} from './signed-desktop/journal-reader.js';
+import {
+  createOriginalSignedPresence,
+  crashOriginalSignedRenderer,
+  parseOriginalSignedPresence,
+} from './signed-desktop/presence.js';
 import { grantOriginalSignedDesktopQualification } from './signed-desktop/qualification.js';
 import { retainOriginalPackagedAppTerminal } from './signed-desktop/app-terminal.js';
 import { _electron, expect, type ElectronApplication } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, open, readdir, realpath, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, realpath, writeFile } from 'node:fs/promises';
 import { join, relative, isAbsolute } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createDarwinEngineProcesses } from '../../../packages/browser/src/runtime/darwin-engine-processes.js';
@@ -33,9 +42,19 @@ export {
 /** Genuine signed A -> signed B -> signed A rollback. No substitute CLI server, trust or auth override. */
 export async function runSignedPackagedManagedBrowser(
   config: SignedDesktopAcceptance,
-  signal: AbortSignal
+  signal: AbortSignal,
+  presence?: Readonly<{
+    executable: string;
+    sha256: string;
+    interaction: true;
+    probeSwitcher: boolean;
+    crashRenderer: boolean;
+  }>
 ): Promise<void> {
+  if (presence) presence = parseOriginalSignedPresence(presence);
   config = SignedDesktopAcceptanceSchema.parse(config);
+  if (!config.journalReader) throw new Error('SIGNED_JOURNAL_READER_REQUIRED');
+  const originalJournalReader = config.journalReader;
   if (process.platform !== 'darwin' || process.arch !== 'arm64')
     throw new Error('SIGNED_DESKTOP_PLATFORM_UNAVAILABLE');
   if (!config.first.qualificationSubject || !config.upgrade.qualificationSubject)
@@ -88,7 +107,14 @@ export async function runSignedPackagedManagedBrowser(
   const sharedReceiver = await ownPackagedManagedReceiver();
   const cacheDigests = new Map<string, string>();
   const priorJournals = new Set<string>();
+  let journalReader: Awaited<ReturnType<typeof createOriginalSignedJournalReader>> | undefined;
   try {
+    journalReader = await createOriginalSignedJournalReader(
+      originalJournalReader,
+      home,
+      env,
+      signal
+    );
     for (const [index, artifact] of [config.first, config.upgrade, config.first].entries()) {
       if (first) break;
       signal.throwIfAborted();
@@ -110,6 +136,7 @@ export async function runSignedPackagedManagedBrowser(
           path: verified.native,
           sha256: artifact.observerSHA256,
         });
+        let osPresence: Awaited<ReturnType<typeof createOriginalSignedPresence>> | undefined;
         let app: ElectronApplication | undefined;
         let receiver: Awaited<ReturnType<typeof ownPackagedManagedReceiver>> | undefined;
         let terminal: ReturnType<typeof retainOriginalPackagedAppTerminal> | undefined;
@@ -134,7 +161,9 @@ export async function runSignedPackagedManagedBrowser(
         };
         let appRoot: ProcessIdentity | undefined;
         let managerPids: number[] = [];
+        let originalAppCohort: readonly ProcessIdentity[] = [];
         const originalJournals: unknown[] = [];
+        const journalToolStart = journalReader?.tools.length ?? 0;
         const retainOriginalProcesses = async () => {
           if (!app || !appRoot) throw new Error('ORIGINAL_APP_REQUIRED');
           const tree = await observer.processes.descendants(appRoot, new AbortController().signal);
@@ -157,56 +186,35 @@ export async function runSignedPackagedManagedBrowser(
             managerPids.some((pid) => !tree.identities.some((identity) => identity.pid === pid))
           )
             throw new Error('PACKAGED_SERVER_UTILITY_NOT_OWNED');
+          originalAppCohort = Object.freeze(
+            tree.identities.map((birth) => Object.freeze({ ...birth }))
+          );
         };
-        const scan = async (dir: string): Promise<void> => {
-          let entries;
-          try {
-            entries = await readdir(dir, { withFileTypes: true });
-          } catch (value) {
-            if ((value as NodeJS.ErrnoException).code === 'ENOENT') return;
-            throw value;
-          }
-          for (const entry of entries) {
-            const path = join(dir, entry.name);
-            if (entry.isSymbolicLink()) throw new Error('DESKTOP_DATA_LINK_UNQUALIFIED');
-            if (entry.isDirectory()) await scan(path);
-            else if (
-              entry.name === 'snapshot.json' &&
-              dir.split('/').at(-1)?.startsWith('journal-')
-            ) {
-              const fd = await open(path, 'r');
-              let bytes: Buffer;
-              try {
-                const before = await fd.stat();
-                if (!before.isFile() || before.size > 1024 * 1024 || originalJournals.length >= 128)
-                  throw new Error('DESKTOP_JOURNAL_BOUND');
-                bytes = await fd.readFile();
-                const after = await fd.stat();
-                if (
-                  bytes.length !== before.size ||
-                  before.dev !== after.dev ||
-                  before.ino !== after.ino ||
-                  before.size !== after.size ||
-                  before.mtimeMs !== after.mtimeMs
-                )
-                  throw new Error('DESKTOP_JOURNAL_CHANGED');
-              } finally {
-                await fd.close();
-              }
-              const snapshot = validateJournalSnapshot(JSON.parse(bytes.toString('utf8')));
-              if (priorJournals.has(snapshot.binding.journalId)) continue;
-              if (!managerPids.includes(snapshot.binding.manager.pid))
-                throw new Error('JOURNAL_NOT_PACKAGED_SERVER_ACTOR');
-              for (const original of snapshot.retainedIdentities) retain(original.identity);
-              originalJournals.push({ path: relative(home, path), sha256: sha(bytes), snapshot });
-              await writeFile(join(leg, 'journal-' + snapshot.binding.journalId + '.json'), bytes, {
-                flag: 'wx',
-                mode: 0o600,
-              });
-              expect(snapshot.phase).toBe('observation-ended');
-              expect(snapshot.gaps).toEqual([]);
-              expect(snapshot.firstCause).toBeNull();
-            }
+        const observePresence = async (phase: 'launch' | 'capture' | 'input' | 'off') => {
+          if (!osPresence) return;
+          await retainOriginalProcesses();
+          await osPresence.observe(phase, originalAppCohort);
+        };
+        const scan = async (): Promise<void> => {
+          if (!journalReader) throw new Error('SIGNED_JOURNAL_READER_REQUIRED');
+          for (const original of await journalReader.read(signal)) {
+            const snapshot = validateJournalSnapshot(JSON.parse(original.bytes.toString('utf8')));
+            if (priorJournals.has(snapshot.binding.journalId)) continue;
+            requireOriginalSignedJournalManager(
+              snapshot.binding.manager,
+              managerPids,
+              originalAppCohort
+            );
+            for (const birth of snapshot.retainedIdentities) retain(birth.identity);
+            originalJournals.push({ path: original.path, sha256: sha(original.bytes), snapshot });
+            await writeFile(
+              join(leg, 'journal-' + snapshot.binding.journalId + '.json'),
+              original.bytes,
+              { flag: 'wx', mode: 0o600 }
+            );
+            expect(snapshot.phase).toBe('observation-ended');
+            expect(snapshot.gaps).toEqual([]);
+            expect(snapshot.firstCause).toBeNull();
           }
         };
         let closing: Promise<void> | undefined;
@@ -230,6 +238,14 @@ export async function runSignedPackagedManagedBrowser(
         };
         signal.addEventListener('abort', abort, { once: true });
         try {
+          if (presence)
+            osPresence = await createOriginalSignedPresence(
+              presence,
+              observer,
+              home,
+              signal,
+              recordFailure
+            );
           app = await _electron.launch({
             executablePath: verified.executable,
             cwd: repo,
@@ -354,7 +370,24 @@ export async function runSignedPackagedManagedBrowser(
             attach: (name, value) =>
               writeFile(join(leg, name + '.json'), value.body, { flag: 'wx', mode: 0o600 }),
             retainOriginalProcesses,
+            ...(osPresence ? { observePresence } : {}),
           });
+          if (presence?.crashRenderer) {
+            signal.throwIfAborted();
+            await crashOriginalSignedRenderer(app, page, signal, () => signal.throwIfAborted());
+            const afterCrash = await page.request.get('/api/browser/runtime/status');
+            expect(afterCrash.status()).toBe(200);
+            expect(await afterCrash.json()).toMatchObject({ state: 'disabled', enabled: false });
+            const retainedSession = await page.request.get('/api/auth/get-session');
+            expect(retainedSession.status()).toBe(200);
+            expect((await retainedSession.json()).user.email).toBe(email);
+            await observePresence('off');
+            if (osPresence)
+              osPresence.receipts.push({
+                phase: 'original-renderer-crash-recovery',
+                observed: true,
+              });
+          }
           await retainOriginalProcesses();
           expect(await signedBundleTree(artifact.appPath)).toBe(artifact.treeSHA256);
           const runtime = join(home, '.dork/browser/runtime/playwright-1.63.0');
@@ -391,7 +424,7 @@ export async function runSignedPackagedManagedBrowser(
           }
           try {
             if (appRoot && app) await retainOriginalProcesses();
-            await scan(join(home, '.dork/browser/journals'));
+            await scan();
             expect(originalJournals.length).toBeGreaterThan(0);
             for (const value of originalJournals)
               priorJournals.add(
@@ -409,6 +442,13 @@ export async function runSignedPackagedManagedBrowser(
             recordFailure(value);
           }
           const tasks = [close()];
+          if (osPresence) {
+            try {
+              tasks.push(osPresence.close());
+            } catch (value) {
+              recordFailure(value);
+            }
+          }
           for (const task of tasks) void task.catch(recordFailure);
           await Promise.allSettled(tasks);
           await Promise.allSettled(originalPipes);
@@ -447,6 +487,15 @@ export async function runSignedPackagedManagedBrowser(
             },
             originalPipesJoined: !first,
             originalJournals,
+            originalJournalReaderTools: journalReader?.tools.slice(journalToolStart),
+            osPresence: presence
+              ? {
+                  receipts: osPresence?.receipts,
+                  qualification: 'UNVERIFIED',
+                  browserCrash: 'UNVERIFIED',
+                  managerCrash: 'UNVERIFIED',
+                }
+              : undefined,
             knownBirths: [...births.values()],
             observed,
             failed: !!first,
@@ -466,6 +515,11 @@ export async function runSignedPackagedManagedBrowser(
       }
     }
   } finally {
+    try {
+      await journalReader?.close();
+    } catch (value) {
+      first ??= { value };
+    }
     try {
       await sharedReceiver.close();
     } catch (value) {

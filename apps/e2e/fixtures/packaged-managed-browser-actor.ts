@@ -34,6 +34,8 @@ export interface DesktopActorArtifacts {
   reuseSaved: boolean;
   initialSavedCookie: boolean;
   retainOriginalProcesses(): Promise<void>;
+  /** Optional original OS observer; no result supplies browser or input authority. */
+  observePresence?(phase: 'launch' | 'capture' | 'input' | 'off'): Promise<void>;
   outputPath(name: string): string;
   attach(name: string, value: { body: Buffer; contentType: string }): Promise<void>;
 }
@@ -179,6 +181,7 @@ export async function exercisePackagedManagedBrowser(
       })
       .toBe(true);
     await expect.poll(() => acknowledgments).toBeGreaterThan(0);
+    await testInfo.observePresence?.('capture');
     const beforeFocus = acknowledgments;
     await expect
       .poll(async () => (await pixels(view, metrics.width, metrics.height))?.whites)
@@ -233,12 +236,14 @@ export async function exercisePackagedManagedBrowser(
       .poll(async () => (await pixels(view, metrics.width, metrics.height))?.whiteColumns ?? 0)
       .toBeGreaterThan(4);
     await page.screenshot({ path: testInfo.outputPath('native-typed.png') });
+    await testInfo.observePresence?.('input');
     expect(managedReceiver.visits[0]?.cookieReturned).toBe(testInfo.initialSavedCookie);
     checkAdmission();
     await view.closeSaved(label);
     checkAdmission();
     await view.openSaved();
     await testInfo.retainOriginalProcesses();
+    await testInfo.observePresence?.('launch');
     const beforeReopen = managedReceiver.visits.length;
     checkAdmission();
     await view.navigateLocal(managedReceiver.url);
@@ -391,6 +396,7 @@ export async function exercisePackagedManagedBrowser(
     const final = await page.request.get('/api/browser/runtime/status');
     expect(final.status()).toBe(200);
     expect(await final.json()).toMatchObject({ state: 'disabled', enabled: false });
+    await testInfo.observePresence?.('off');
     expect(drawObservationOverflow, 'actual draw observation capacity').toBe(false);
     await testInfo.attach('actual-public-ui-observations', {
       body: Buffer.from(

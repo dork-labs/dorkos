@@ -20,6 +20,7 @@ export interface SignedDesktopAcceptance {
   readonly first: Artifact;
   readonly upgrade: Artifact;
   readonly artifacts: string;
+  readonly journalReader?: Readonly<{ path: string; sha256: string }>;
 }
 function object(value: unknown, keys: string): Record<string, unknown> {
   if (
@@ -75,13 +76,29 @@ export function parseSignedDesktopArtifact(value: unknown): Artifact {
 }
 export const SignedDesktopAcceptanceSchema = Object.freeze({
   parse(value: unknown): SignedDesktopAcceptance {
-    const input = object(value, 'artifacts,first,upgrade');
+    const input = object(
+      value,
+      value && typeof value === 'object' && 'journalReader' in value
+        ? 'artifacts,first,journalReader,upgrade'
+        : 'artifacts,first,upgrade'
+    );
     const artifacts = text(input.artifacts, /^\//);
     if (!isAbsolute(artifacts)) throw new Error('SIGNED_DESKTOP_ARTIFACTS_PATH');
     return Object.freeze({
       first: parseSignedDesktopArtifact(input.first),
       upgrade: parseSignedDesktopArtifact(input.upgrade),
       artifacts,
+      ...(input.journalReader === undefined
+        ? {}
+        : (() => {
+            const reader = object(input.journalReader, 'path,sha256');
+            return {
+              journalReader: Object.freeze({
+                path: text(reader.path, /^\//),
+                sha256: text(reader.sha256, /^[a-f0-9]{64}$/),
+              }),
+            };
+          })()),
     });
   },
 });
@@ -141,7 +158,7 @@ export async function signedBundleTree(root: string): Promise<string> {
   return sha(JSON.stringify(rows));
 }
 
-interface OriginalToolReceipt {
+export interface OriginalToolReceipt {
   executable: string;
   argv: readonly string[];
   pid: number | undefined;
