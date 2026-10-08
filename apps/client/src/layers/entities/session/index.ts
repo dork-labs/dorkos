@@ -48,14 +48,6 @@ export type { SessionStatusData } from './model/settings/use-session-status';
 // Query-key factory — the one place a session cache key is built, so a reader
 // can never look in an entry no writer fills (DOR-482).
 export { sessionKeys } from './api/query-keys';
-// Permission mode — the single client answer to "will this agent ask me first?".
-// `isBypassPermissionMode` is in `shared/lib`, not here: an integration binding is
-// an entity and cannot import a sibling entity, and it is one of the three surfaces
-// that must agree about what a bypass mode covers.
-//
-// `FULL_POWER_MARK_LABEL` is published so the row tests assert the exact shipped
-// string instead of re-hardcoding it — one source of truth for the mark's copy.
-export { FULL_POWER_MARK_LABEL } from './lib/permission-mode';
 // What a conversation nobody has written to yet WILL run at — the display twin
 // of the server's seed, for the window in which no row exists to read (DOR-2103).
 export { useSessionStartMode } from './model/settings/use-session-start-mode';
@@ -151,10 +143,6 @@ export { useRenameSession } from './model/rename/use-rename-session';
 // Rename in place: the chat list's rows open it from their menu.
 export { useInlineRename } from './model/rename/use-inline-rename';
 
-// UI — session row display primitive
-export { SessionRow } from './ui/SessionRow';
-export type { SessionRowProps } from './ui/SessionRow';
-export { SessionContextGauge } from './ui/SessionContextGauge';
 // The leaf that holds the live verb, so the sidebar model never has to (R1).
 export { SessionVerbLine } from './ui/SessionVerbLine';
 export type { SessionVerbLineProps } from './ui/SessionVerbLine';
@@ -163,9 +151,6 @@ export type { SessionVerbLineProps } from './ui/SessionVerbLine';
 export { ORIGIN_DESCRIPTORS, getOriginDescriptor } from './config/origin-descriptors';
 export type { OriginDescriptor } from './config/origin-descriptors';
 export { SessionOriginMark } from './ui/SessionOriginMark';
-// The sidebar's account dot (spec `claude-account-ui` §6.2); the Dev
-// Playground shows it by palette color.
-export { AccountMark } from './ui/AccountMark';
 export {
   chatOwnership,
   nonAutomatedSessionIds,

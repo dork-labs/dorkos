@@ -6,9 +6,8 @@ import {
   SidebarMenuSurface,
 } from '@/layers/shared/ui';
 import { Bot, Hash } from 'lucide-react';
-import { SessionRow, type SessionBorderKind } from '@/layers/entities/session';
+import type { SessionBorderKind } from '@/layers/entities/session';
 import { resolveAgentVisual } from '@/layers/entities/agent';
-import type { Session } from '@dorkos/shared/types';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -29,33 +28,6 @@ import {
 } from '@/layers/features/dashboard-sidebar';
 
 // ── Mock data ──
-
-const MOCK_SESSIONS: Session[] = [
-  {
-    id: 'sess-1',
-    title: 'Refactor auth middleware',
-    createdAt: minutesAgo(120),
-    updatedAt: minutesAgo(3),
-    permissionMode: 'default',
-    runtime: 'claude-code',
-  },
-  {
-    id: 'sess-2',
-    title: 'Add pagination to /api/agents',
-    createdAt: minutesAgo(90),
-    updatedAt: minutesAgo(15),
-    permissionMode: 'default',
-    runtime: 'claude-code',
-  },
-  {
-    id: 'sess-3',
-    title: 'Fix CORS headers for relay',
-    createdAt: minutesAgo(60),
-    updatedAt: minutesAgo(45),
-    permissionMode: 'default',
-    runtime: 'claude-code',
-  },
-];
 
 const ALL_STATUSES: { status: SessionBorderKind; label: string }[] = [
   { status: 'streaming', label: 'Working' },
@@ -90,7 +62,6 @@ export function AgentSidebarShowcases() {
   return (
     <>
       <AgentActivityBadgeShowcase />
-      <SessionRowCompactShowcase />
       <AgentListItemShowcase />
       <ChatListShowcase />
       <SessionSwitcherShowcase />
@@ -157,51 +128,6 @@ function AgentActivityBadgeShowcase() {
               <span className="text-muted-foreground">{label}</span>
             </div>
           ))}
-        </div>
-      </ShowcaseDemo>
-    </PlaygroundSection>
-  );
-}
-
-// ── AgentSessionPreview ──
-
-function SessionRowCompactShowcase() {
-  const [activeId, setActiveId] = useState('sess-1');
-
-  return (
-    <PlaygroundSection
-      title="SessionRow (compact)"
-      description="Compact session row with dot indicator for the expanded agent view. Shows title, relative time, and status dot. Border state reads from the session store (idle in playground)."
-    >
-      <ShowcaseLabel>Active and inactive</ShowcaseLabel>
-      <ShowcaseDemo>
-        <div className="max-w-xs space-y-1">
-          {MOCK_SESSIONS.map((session) => (
-            <SessionRow
-              key={session.id}
-              variant="compact"
-              session={session}
-              isActive={session.id === activeId}
-              onClick={() => setActiveId(session.id)}
-            />
-          ))}
-        </div>
-      </ShowcaseDemo>
-
-      <ShowcaseLabel>Long title truncation</ShowcaseLabel>
-      <ShowcaseDemo>
-        <div className="max-w-xs">
-          <SessionRow
-            variant="compact"
-            session={{
-              ...MOCK_SESSIONS[0],
-              id: 'sess-long',
-              title:
-                'Extremely long session title that should truncate gracefully in the compact preview row',
-            }}
-            isActive={false}
-            onClick={() => {}}
-          />
         </div>
       </ShowcaseDemo>
     </PlaygroundSection>

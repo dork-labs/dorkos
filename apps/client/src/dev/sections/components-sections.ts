@@ -201,23 +201,6 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
     ],
   },
   {
-    id: 'sessionrow',
-    title: 'SessionRow',
-    page: 'components',
-    category: 'Sidebar',
-    keywords: [
-      'session',
-      'row',
-      'active',
-      'permission',
-      'expand',
-      'entrance',
-      'compact',
-      'dot',
-      'variant',
-    ],
-  },
-  {
     id: 'sidebarfooterstrip',
     title: 'SidebarFooterStrip',
     page: 'components',

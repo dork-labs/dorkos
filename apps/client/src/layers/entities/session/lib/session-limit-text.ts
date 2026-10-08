@@ -12,16 +12,6 @@ import {
   type SessionLimitView,
 } from '@/layers/shared/lib';
 
-/**
- * The text color of a row's red "out" words. `text-destructive`, not the
- * status error text: the row's tint is covered when it is hovered or selected,
- * and on those grey surfaces the dark theme's `--status-error-fg` measures
- * 4.08:1 (selected), 4.28:1 and 4.33:1 (hover), under the 4.5:1 text needs.
- * `--destructive` clears 4.5:1 on every surface a row sits on in both themes
- * (4.54:1 at its lowest, selected in dark).
- */
-export const LIMIT_ACTION_TEXT_CLASS = 'text-destructive';
-
 /** What a limited row shows: its trailing text, and whether it wears the red tint. */
 export interface SessionLimitDisplay {
   /** `out · handing off`, `out · needs you` or `out · waiting for reset`. */

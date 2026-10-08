@@ -78,8 +78,8 @@ const BASE = {
 
 /**
  * The chats the chat-list showcases run on: every case the list has to draw
- * (spec `your-activity-first` D11, D14). Two chats running and one waiting on
- * you; a chat with three spin-offs (one running, one done, one lifted because it
+ * (spec `your-activity-first` D11, D14). Two chats running, one waiting on you
+ * and one whose account ran out; a chat with three spin-offs (one running, one done, one lifted because it
  * needs you); a spin-off you opened, so it is a row of its own; a spin-off whose
  * parent is gone; chats you used yesterday and last week; one on another
  * runtime, so rows name theirs; and three automated chats from a schedule, a
@@ -109,6 +109,27 @@ const SWITCHER_SESSIONS: Session[] = [
     createdAt: minutesAgo(300),
     updatedAt: minutesAgo(8),
     lastTouchedByYouAt: minutesAgo(40),
+  },
+  {
+    ...BASE,
+    id: 'sw-out',
+    title: 'Rewrite the onboarding emails',
+    createdAt: minutesAgo(600),
+    updatedAt: minutesAgo(50),
+    lastTouchedByYouAt: minutesAgo(55),
+    // Its account ran out and nothing has been decided yet: "Out of usage".
+    status: {
+      lifecycle: 'idle',
+      limit: {
+        accountId: 'acct-2',
+        window: 'five_hour',
+        resetsAt: minutesAgo(-120),
+        since: minutesAgo(50),
+        plan: { mode: 'ask' },
+        scope: 'account',
+        state: 'limited',
+      },
+    },
   },
   {
     ...BASE,
