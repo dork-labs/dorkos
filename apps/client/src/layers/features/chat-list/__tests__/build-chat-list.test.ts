@@ -63,12 +63,14 @@ function build(
   options: Partial<BuildChatListOptions> & {
     lifecycles?: Record<string, SessionLifecycle>;
     waiting?: string[];
+    outOfUsage?: string[];
   } = {}
 ): ChatListModel {
   return buildChatList(sessions, {
     sort: options.sort ?? 'for-you',
     lifecycles: options.lifecycles ?? {},
     waitingIds: new Set(options.waiting ?? []),
+    outOfUsageIds: new Set(options.outOfUsage ?? []),
     ...(options.query === undefined ? {} : { query: options.query }),
   });
 }
@@ -96,6 +98,12 @@ describe('chatStatus', () => {
     expect(chatStatus('streaming', false)).toBe('running');
     expect(chatStatus('interrupted', false)).toBe('idle');
     expect(chatStatus(null, false)).toBe('idle');
+  });
+
+  it('reads an account that ran out as out of usage, below a waiting prompt', () => {
+    expect(chatStatus('idle', false, true)).toBe('out-of-usage');
+    expect(chatStatus('error', false, true)).toBe('out-of-usage');
+    expect(chatStatus('blocked', false, true)).toBe('needs-you');
   });
 });
 
@@ -214,6 +222,12 @@ describe('buildChatList — folding (spec your-activity-first D14)', () => {
     expect(layout(model)).toEqual({ 'needs-you': ['asks'], chats: ['parent'] });
     expect(row(model, 'parent').spinOffs).toEqual([]);
     expect(row(model, 'asks').startedFrom).toEqual({ sessionId: 'parent', title: 'parent' });
+  });
+
+  it('rule 3: a folded spin-off whose account ran out is lifted too', () => {
+    const model = build([yours('parent', 5), spinOff('out', 'parent')], { outOfUsage: ['out'] });
+    expect(layout(model)).toEqual({ 'needs-you': ['out'], chats: ['parent'] });
+    expect(row(model, 'out').status).toBe('out-of-usage');
   });
 
   it('rule 3: an automated chat that stopped with an error is lifted too', () => {

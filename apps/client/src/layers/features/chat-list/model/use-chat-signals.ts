@@ -2,10 +2,11 @@
  * The live facts a chat list needs beside the session records: each chat's
  * coarse phase, and which chats have a prompt waiting on a person.
  *
- * Both come from sources the rest of the app already reads, so the list says
- * "needs you" exactly when Heads up does: the session list store's lifecycle
- * (`blocked`, `error`, `streaming`) and the fleet-wide pending-prompt list
- * (`entities/attention`). No new request is made here.
+ * All of it comes from sources the rest of the app already reads, so the list
+ * says "needs you" exactly when Heads up does: the session list store's
+ * lifecycle (`blocked`, `error`, `streaming`) and usage limit, and the
+ * fleet-wide pending-prompt list (`entities/attention`). No new request is
+ * made here.
  *
  * @module features/chat-list/model/use-chat-signals
  */
@@ -13,7 +14,7 @@ import { useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import type { Session } from '@dorkos/shared/types';
 import { usePendingInteractions } from '@/layers/entities/attention';
-import { useSessionListStore } from '@/layers/entities/session';
+import { sessionLimitDisplay, useSessionListStore } from '@/layers/entities/session';
 import type { ChatSignals } from './build-chat-list';
 
 /**
@@ -31,6 +32,18 @@ export function useChatSignals(sessions: readonly Session[]): ChatSignals {
   const phases = useSessionListStore(
     useShallow((state) => sessions.map((s) => state.statuses[s.id]?.lifecycle ?? null))
   );
+  // Whether each chat ran out of usage and still needs you, positionally, by
+  // the same rule the session header's account badge follows. The live limit
+  // wins over the one the list row carried.
+  const outOfUsage = useSessionListStore(
+    useShallow((state) =>
+      sessions.map(
+        (s) =>
+          sessionLimitDisplay(state.statuses[s.id]?.limit ?? s.status?.limit ?? null)
+            ?.needsAction === true
+      )
+    )
+  );
   const { interactions } = usePendingInteractions();
 
   const lifecycles = useMemo(() => {
@@ -46,5 +59,13 @@ export function useChatSignals(sessions: readonly Session[]): ChatSignals {
     [interactions]
   );
 
-  return useMemo(() => ({ lifecycles, waitingIds }), [lifecycles, waitingIds]);
+  const outOfUsageIds = useMemo(
+    () => new Set(sessions.filter((_, index) => outOfUsage[index]).map((s) => s.id)),
+    [sessions, outOfUsage]
+  );
+
+  return useMemo(
+    () => ({ lifecycles, waitingIds, outOfUsageIds }),
+    [lifecycles, waitingIds, outOfUsageIds]
+  );
 }

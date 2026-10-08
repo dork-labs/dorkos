@@ -6,7 +6,7 @@ import { render, screen, cleanup, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockSessionLimit, createMockTransport } from '@dorkos/test-utils';
 import type { Session } from '@dorkos/shared/types';
 import type { SessionActivity, SessionStatus } from '@dorkos/shared/session-stream';
 import { TransportProvider } from '@/layers/shared/model';
@@ -210,6 +210,21 @@ describe('ChatList', () => {
       expect(busy.querySelector('[data-slot="chat-list-verb"]')?.textContent).not.toBe('')
     );
     expect(busy.querySelector('[data-status="running"]')).not.toBeNull();
+  });
+
+  it('lifts a chat whose account ran out, and leaves one you chose to let wait', async () => {
+    renderList([
+      chat('a', 'Ran out', { status: { lifecycle: 'idle', limit: createMockSessionLimit('ask') } }),
+      chat('b', 'Waiting for reset', {
+        lastTouchedByYouAt: ago(1),
+        status: { lifecycle: 'idle', limit: createMockSessionLimit('waiting') },
+      }),
+    ]);
+    const out = await findRow('Ran out');
+    expect(out).toHaveTextContent('Out of usage');
+    expect(headings()[0]).toBe('Needs you');
+    expect(rowTitles()).toEqual(['Ran out', 'Waiting for reset']);
+    expect(await findRow('Waiting for reset')).not.toHaveTextContent('Out of usage');
   });
 
   it('counts a waiting question from the fleet-wide list as needs you', async () => {

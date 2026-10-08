@@ -167,12 +167,16 @@ test.describe('session switcher @smoke', { tag: SOLE_SIDEBAR_TAG }, () => {
 
     expect(await sectionOrder(page)).toEqual(SECTIONS);
 
-    // Needs you: the chat waiting on an approval, and a spin-off that needs you
-    // lifted out of its parent's fold, saying where it started (D14 rule 3).
+    // Needs you: the chat waiting on an approval, the chat whose account ran
+    // out, and a spin-off that needs you lifted out of its parent's fold,
+    // saying where it started (D14 rule 3).
     const needsYou = dialog
       .locator('section[aria-label="Needs you"]')
       .locator('[data-slot="chat-list-row"]');
-    await expect(needsYou).toHaveCount(2);
+    await expect(needsYou).toHaveCount(3);
+    await expect(needsYou.filter({ hasText: 'Rewrite the onboarding emails' })).toContainText(
+      'Out of usage'
+    );
     await expect(needsYou.filter({ hasText: 'Price the ad test' })).toContainText(
       'Started from Plan the launch week'
     );

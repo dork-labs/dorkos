@@ -26,11 +26,13 @@ export const CHAT_LIST_SORTS: readonly ChatListSort[] = ['for-you', 'activity', 
  * What a chat is doing, as far as choosing one goes.
  *
  * - `needs-you`: a turn is parked on an approval or a question.
+ * - `out-of-usage`: its account ran out of usage and it waits on you to
+ *   continue it elsewhere or decide to wait.
  * - `failed`: the last turn stopped with an error.
  * - `running`: a turn is in flight.
  * - `idle`: none of those.
  */
-export type ChatStatus = 'needs-you' | 'failed' | 'running' | 'idle';
+export type ChatStatus = 'needs-you' | 'out-of-usage' | 'failed' | 'running' | 'idle';
 
 /** The live facts one chat's row is built from, beside the session record. */
 export interface ChatSignals {
@@ -41,6 +43,12 @@ export interface ChatSignals {
   lifecycles: Readonly<Record<string, SessionLifecycle | null | undefined>>;
   /** Chats with an approval or a question waiting on a person right now. */
   waitingIds: ReadonlySet<string>;
+  /**
+   * Chats whose account ran out of usage and that still need you: the
+   * "out · needs you" and "out · handing off" states, never a chat you chose
+   * to leave waiting for the reset. Absent means none.
+   */
+  outOfUsageIds?: ReadonlySet<string>;
 }
 
 /** Options for {@link buildChatList}. */
@@ -157,9 +165,15 @@ function lifecycleOf(
  *
  * @param lifecycle - The chat's coarse phase.
  * @param waiting - Whether an approval or question is waiting on a person.
+ * @param outOfUsage - Whether its account ran out and it still needs you.
  */
-export function chatStatus(lifecycle: SessionLifecycle | null, waiting: boolean): ChatStatus {
+export function chatStatus(
+  lifecycle: SessionLifecycle | null,
+  waiting: boolean,
+  outOfUsage = false
+): ChatStatus {
   if (waiting || lifecycle === 'blocked') return 'needs-you';
+  if (outOfUsage) return 'out-of-usage';
   if (lifecycle === 'error') return 'failed';
   if (lifecycle === 'streaming') return 'running';
   return 'idle';
@@ -167,7 +181,7 @@ export function chatStatus(lifecycle: SessionLifecycle | null, waiting: boolean)
 
 /** Whether a status belongs in the Needs you section. */
 function isUrgent(status: ChatStatus): boolean {
-  return status === 'needs-you' || status === 'failed';
+  return status === 'needs-you' || status === 'out-of-usage' || status === 'failed';
 }
 
 /**
@@ -207,7 +221,7 @@ type Placement = { kind: 'row'; group: 'main' | 'automated' } | { kind: 'folded'
  *    of the chat that started it, or under that chat's own host when the
  *    parent is itself folded, so a chain of spin-offs shares one toggle.
  * 2. An automated chat goes in the Automated group.
- * 3. A chat that needs you or stopped with an error is never folded: it is a
+ * 3. A chat that needs you, ran out of usage, or stopped with an error is never folded: it is a
  *    row in Needs you, wherever it would otherwise sit, saying where it
  *    started.
  * 4. A spin-off you opened or wrote in is `yours` by `chatOwnership`, so it is
@@ -229,6 +243,7 @@ export function buildChatList(
   options: BuildChatListOptions
 ): ChatListModel {
   const { sort, lifecycles, waitingIds } = options;
+  const outOfUsageIds = options.outOfUsageIds ?? new Set<string>();
   const needle = options.query?.trim().toLowerCase() ?? '';
   // Titles for "Started from" come from every chat, so a parent the search hid
   // is still named rather than called "another chat".
@@ -242,7 +257,10 @@ export function buildChatList(
   const owner = new Map<string, ChatOwnership>(visible.map((s) => [s.id, chatOwnership(s)]));
   const lifecycle = new Map(visible.map((s) => [s.id, lifecycleOf(s, lifecycles)]));
   const status = new Map(
-    visible.map((s) => [s.id, chatStatus(lifecycle.get(s.id) ?? null, waitingIds.has(s.id))])
+    visible.map((s) => [
+      s.id,
+      chatStatus(lifecycle.get(s.id) ?? null, waitingIds.has(s.id), outOfUsageIds.has(s.id)),
+    ])
   );
 
   // ── Placement ──

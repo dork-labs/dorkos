@@ -1,10 +1,10 @@
 /**
  * One chat in the list, and the spin-offs folded under it.
  *
- * Built on `SidebarRow`, the app's one row, so a chat reads the same here as it
- * does in the sidebar: the glyph slot says what it is doing, the trailing slot
- * says where it came from and when you last used it, and the second line
- * carries the live verb or what it needs (spec `your-activity-first` D12).
+ * Built on `SidebarRow`, the app's one row, without its glyph column: the
+ * trailing slot says where a chat came from and when you last used it, and the
+ * second line carries a status dot with the live verb or what it needs (spec
+ * `your-activity-first` D12).
  *
  * @module features/chat-list/ui/ChatListRow
  */
@@ -36,6 +36,12 @@ import type { ChatRow, ChatStatus, FoldedSpinOff } from '../model/build-chat-lis
  * which section they landed in, which is exactly what the list decides.
  */
 export const CHAT_LIST_ROW_SLOT = 'chat-list-row';
+
+/**
+ * A row's left inset: the same 8px the section headings and toggles use, so
+ * row titles line up with them instead of the sidebar's glyph column.
+ */
+const ROW_INSET = 'pl-2';
 
 /** The `data-slot` on the "N spin-offs" toggle under a chat. */
 export const CHAT_LIST_SPIN_OFF_TOGGLE_SLOT = 'chat-list-spin-off-toggle';
@@ -96,8 +102,8 @@ export function ChatListRow({
     <SidebarRow
       dataSlot={CHAT_LIST_ROW_SLOT}
       buttonRef={registerRow(session.id)}
-      glyph={<StatusGlyph status={row.status} />}
       title={title}
+      className={ROW_INSET}
       isActive={isCurrent}
       onSelect={() => onOpen(session.id)}
       menuNodes={menuNodes}
@@ -155,12 +161,14 @@ function hasSecondLine(row: ChatRow): boolean {
 /** The words a status says on a row's second line, when it says any. */
 const STATUS_WORDS: Partial<Record<ChatStatus, string>> = {
   'needs-you': 'Needs you',
+  'out-of-usage': 'Out of usage',
   failed: 'Stopped with an error',
 };
 
 /** The tone those words wear. */
 const STATUS_WORD_TONE: Partial<Record<ChatStatus, string>> = {
   'needs-you': STATUS_TONE_TEXT.warning,
+  'out-of-usage': STATUS_TONE_TEXT.error,
   failed: STATUS_TONE_TEXT.error,
 };
 
@@ -176,12 +184,14 @@ function SecondLine({ row }: { row: ChatRow }) {
   if (words !== undefined) {
     parts.push(
       <span key="status" className={cn('font-medium', STATUS_WORD_TONE[row.status])}>
+        <StatusDot status={row.status} />
         {words}
       </span>
     );
   } else if (row.status === 'running') {
     parts.push(
       <span key="status" data-slot="chat-list-verb">
+        <StatusDot status={row.status} />
         <SessionVerbLine sessionId={row.session.id} lifecycle={row.lifecycle} />
       </span>
     );
@@ -206,6 +216,7 @@ const SPIN_OFF_STATUS: Record<ChatStatus, string> = {
   running: 'Running',
   idle: 'Done',
   'needs-you': 'Needs you',
+  'out-of-usage': 'Out of usage',
   failed: 'Error',
 };
 
@@ -242,9 +253,8 @@ function SpinOffFold({
         aria-expanded={open}
         aria-label={`${label} from ${parentTitle}`}
         onClick={() => setOpen((previous) => !previous)}
-        // The chevron starts where the parent's title starts: the row's own
-        // inset, plus its 18px glyph slot and the 8px after it.
-        className="text-sidebar-foreground/60 hover:text-sidebar-foreground focus-visible:ring-sidebar-ring text-2xs ml-[calc(var(--sidebar-row-x)_-_0.5rem_+_26px)] flex min-h-6 items-center gap-1 rounded-md pr-2 outline-hidden focus-visible:ring-2 max-md:min-h-11"
+        // The chevron starts where the parent's title starts.
+        className="text-sidebar-foreground/60 hover:text-sidebar-foreground focus-visible:ring-sidebar-ring text-2xs ml-2 flex min-h-6 items-center gap-1 rounded-md pr-2 outline-hidden focus-visible:ring-2 max-md:min-h-11"
       >
         <ChevronRight
           aria-hidden
@@ -253,14 +263,14 @@ function SpinOffFold({
         {label}
       </button>
       {open && (
-        <SidebarMenu aria-label={`Spin-offs from ${parentTitle}`} className="gap-0.5 pb-1 pl-4">
+        <SidebarMenu aria-label={`Spin-offs from ${parentTitle}`} className="gap-0.5 pb-1 pl-3">
           {spinOffs.map((spinOff) => (
             <SidebarRow
               key={spinOff.session.id}
               dataSlot={CHAT_LIST_ROW_SLOT}
               buttonRef={registerRow(spinOff.session.id)}
-              glyph={<StatusGlyph status={spinOff.status} />}
               title={sessionDisplayTitle(spinOff.session.title)}
+              className={ROW_INSET}
               isActive={spinOff.session.id === activeSessionId}
               onSelect={() => onOpen(spinOff.session.id)}
               trailing={
@@ -268,6 +278,7 @@ function SpinOffFold({
                   data-slot="chat-list-spin-off-status"
                   className="text-sidebar-foreground/50 text-2xs"
                 >
+                  <StatusDot status={spinOff.status} />
                   {SPIN_OFF_STATUS[spinOff.status]}
                 </span>
               }
@@ -283,22 +294,30 @@ function SpinOffFold({
 const STATUS_DOT: Partial<Record<ChatStatus, 'working' | 'needs-you' | 'error'>> = {
   running: 'working',
   'needs-you': 'needs-you',
+  'out-of-usage': 'error',
   failed: 'error',
 };
 
 /**
- * The glyph slot: a dot for a chat that is running, needs you or stopped with
- * an error, and an empty slot otherwise, so every title starts on one line.
+ * A dot beside the words that say what a chat is doing: running, needs you,
+ * out of usage or stopped with an error. Idle draws none.
+ *
+ * Inline with the words rather than in a column of its own, so a settled row
+ * spends no width on an empty slot and every title starts at the same edge
+ * as the controls above the list.
  */
-function StatusGlyph({ status }: { status: ChatStatus }) {
+function StatusDot({ status }: { status: ChatStatus }) {
   const signal = STATUS_DOT[status];
-  if (signal === undefined) return <span aria-hidden className="size-1.5" />;
+  if (signal === undefined) return null;
   return (
     <span
       role="img"
       aria-label={STATUS_DOT_LABEL[signal]}
       data-status={status}
-      className={cn('ml-1.5 size-1.5 rounded-full', statusDotClass(signal))}
+      className={cn(
+        'mr-1.5 inline-block size-1.5 rounded-full align-middle',
+        statusDotClass(signal)
+      )}
     />
   );
 }
