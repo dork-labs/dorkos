@@ -659,7 +659,7 @@ export class OpenCodeSessionMapper {
     });
     if (saturated) {
       throw new Error(
-        `OpenCode has more than ${SESSION_LIST_LIMIT} sessions on this machine, so DorkOS could not read far enough to be sure this list is complete. Showing none is safer than showing a list that looks complete.`
+        `OpenCode has more than ${SESSION_LIST_LIMIT} chats on this machine, so DorkOS could not read far enough to be sure this list is complete. Showing none is safer than showing a list that looks complete.`
       );
     }
     return rows
@@ -754,7 +754,7 @@ export class OpenCodeSessionMapper {
     const probe = unwrap(await client.session.list({ query }), 'session.list');
     if (probe.length > 1) {
       throw new Error(
-        'This version of OpenCode ignored the session limit DorkOS asked for, so DorkOS cannot tell whether this list is complete.'
+        'This version of OpenCode ignored the chat limit DorkOS asked for, so DorkOS cannot tell whether this list is complete.'
       );
     }
   }
@@ -855,7 +855,7 @@ export class OpenCodeSessionMapper {
       // for the adapter having stopped reading.
       if (!openCodeId && saturated) {
         throw new Error(
-          `OpenCode has more than ${SESSION_REBUILD_LIMIT} sessions on this machine, so DorkOS could not search far enough to open this one. The session is not missing — the search was cut short.`
+          `OpenCode has more than ${SESSION_REBUILD_LIMIT} chats on this machine, so DorkOS could not search far enough to open this one. The chat is not missing — the search was cut short.`
         );
       }
     }
@@ -926,7 +926,7 @@ export class OpenCodeSessionMapper {
       }
       if (storableImageExtension(file.mime) === null) {
         return unshowableImagePart(
-          `A session cannot store ${displayableMime(file.mime)} — only PNG, JPEG, GIF and WebP images.`
+          `A chat cannot store ${displayableMime(file.mime)} — only PNG, JPEG, GIF and WebP images.`
         );
       }
       const attachmentId = deriveSessionAttachmentId(identity);

@@ -322,7 +322,7 @@ export function mountAccountEligibilityRoutes(router: Router): void {
         const folder = await folderOfSession(parsed.data.sessionId);
         if (folder === null) {
           return res.status(404).json({
-            error: 'DorkOS couldn’t find that session’s folder.',
+            error: 'DorkOS couldn’t find that chat’s folder.',
             code: 'unknown_session',
           });
         }

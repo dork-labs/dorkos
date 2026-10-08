@@ -552,7 +552,7 @@ export class DevLinkService {
       throw new DevLinkError(
         'dev_link_path_not_allowed',
         400,
-        "A folder can't be linked into itself. Link it for another project, or for every session."
+        "A folder can't be linked into itself. Link it for another project, or for every chat."
       );
     }
     if (await exists(`${slot}${MARKETPLACE_DEVLINK_PARKED_MARKER}`)) {
@@ -1120,7 +1120,7 @@ function describePlan(preview: DevLinkPreview, replaceInstalled: boolean, sets: 
     `Folder: ${preview.path}`,
     `Package: ${preview.name} (${preview.type})`,
     preview.scope === 'global'
-      ? 'Runs in: every session'
+      ? 'Runs in: every chat'
       : `Runs in: the project at ${path.dirname(path.dirname(path.dirname(preview.slot)))}`,
   ];
   if (preview.replaces && replaceInstalled) {
@@ -1145,12 +1145,12 @@ function describePlan(preview: DevLinkPreview, replaceInstalled: boolean, sets: 
     ...describeEffectsInFull(
       preview.effects,
       preview.scope === 'global'
-        ? 'in every session'
+        ? 'in every chat'
         : 'declared, but not started for a project install'
     )
   );
   if (preview.scope === 'global' && preview.effects && disclosesAnything(preview.effects)) {
-    lines.push('Approving lets these start in every session.');
+    lines.push('Approving lets these start in every chat.');
   } else if (preview.scope === 'project' && (preview.effects?.hooks.length ?? 0) > 0) {
     lines.push('Approving lets its hooks run in this project.');
   }

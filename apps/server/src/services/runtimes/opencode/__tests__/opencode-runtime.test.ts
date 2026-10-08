@@ -95,7 +95,7 @@ vi.mock('../../shared/dorkos-mcp-injection.js', async (importOriginal) => {
 const SATISFIED_CHECKS: DependencyCheck[] = [
   {
     name: 'OpenCode CLI',
-    description: 'The OpenCode CLI powers OpenCode agent sessions in DorkOS.',
+    description: 'The OpenCode CLI powers OpenCode agent chats in DorkOS.',
     status: 'satisfied',
     version: '1.17.13',
   },
@@ -550,7 +550,7 @@ describe('OpenCodeRuntime', () => {
     });
 
     // DOR-477: the per-turn context bag is NOT system-shaped and stays on the
-    // conversation, where a later turn can still read what was said.
+    // chat, where a later turn can still read what was said.
     it('keeps the per-turn additional-context bag on a synthetic part', async () => {
       const harness = makeRuntime();
       const { runtime, client } = harness;
@@ -754,7 +754,7 @@ describe('OpenCodeRuntime', () => {
       expect(rejected.yieldedBeforeFailure, 'a failed trigger must yield nothing').toBe(0);
       expect(rejected.turnRecordCleared, 'the turn record must be torn down').toBe(true);
       expect(rejected.message).toContain('OpenCode session.summarize failed');
-      expect(unnamed.message).toContain('Pick a model for the session');
+      expect(unnamed.message).toContain('Pick a model for the chat');
 
       // Path B must fail BEFORE the sidecar is asked to compact — sending a
       // half-filled body would be the bug this whole ladder exists to avoid.

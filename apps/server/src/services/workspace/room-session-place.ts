@@ -79,7 +79,7 @@ export interface RoomSessionPlacePort {
  * another turn because its runtime keeps it inside the room's files.
  */
 export const ROOM_SESSION_MOVED_MESSAGE =
-  "This conversation started inside the room's files before an update and can't continue " +
+  "This chat started inside the room's files before an update and can't continue " +
   "here. Carry on in the room, where the agent's next turn starts fresh in its own folder.";
 
 /** Why a room-bound session's turn must not start, with the sentence to show. */
@@ -196,7 +196,7 @@ export async function resolveSessionCwdWithRoom(
         refusal: {
           code: 'DESK_NOT_OWN',
           message:
-            `This room conversation always runs from ${agentName}'s own folder ` +
+            `In this room, ${agentName} always works from its own folder ` +
             `("${agentPath}") and can't move to "${path.resolve(resolved.cwd)}", not even to ` +
             `a folder inside it. Send the message without choosing a folder.`,
         },

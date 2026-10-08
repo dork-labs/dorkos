@@ -133,7 +133,7 @@ export const STICKY_ACCOUNT_LOCKED_CODE = 'STICKY_ACCOUNT_LOCKED';
 
 /** What a person or an agent reads when {@link refuseStickyAccountChange} refuses. */
 export const STICKY_ACCOUNT_LOCKED_MESSAGE =
-  "This schedule keeps one conversation, so it stays on the account it started on. Turn off 'Keep one conversation' to change it.";
+  "This schedule picks up where its last run left off, so it stays on the account it started on. Turn off 'Remember the last run' to change it.";
 
 /**
  * Whether moving a schedule to another Claude account would be a promise no run

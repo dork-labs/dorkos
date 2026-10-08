@@ -113,14 +113,14 @@ export const COMMAND_INTENTS: readonly CommandIntentDescriptor[] = [
   {
     id: 'compact',
     canonical: '/compact',
-    description: 'Shrink the conversation to free up context',
+    description: 'Shrink the chat to free up context',
     aliases: ['/compress', '/summarize'],
     fulfillment: 'runtime',
   },
   {
     id: 'clear',
     canonical: '/clear',
-    description: 'Start a fresh session in this project',
+    description: 'Start a fresh chat in this project',
     aliases: ['/new', '/new-chat'],
     fulfillment: 'client-native',
   },

@@ -533,7 +533,7 @@ describe('OpenCodeSessionMapper', () => {
         serveWithCapIgnoringLimit(client, sessions, cap);
         const mapper = new OpenCodeSessionMapper(createProvider(client));
 
-        await expect(mapper.listSessions(PROJECT_DIR)).rejects.toThrow(/ignored the session limit/);
+        await expect(mapper.listSessions(PROJECT_DIR)).rejects.toThrow(/ignored the chat limit/);
         const probe = client.session.list.mock.calls[1]![0]!.query;
         expect(probe.limit).toBe(1);
         // The probe must ask the SAME question the real read asks. A sidecar
@@ -882,7 +882,7 @@ describe('OpenCodeSessionMapper', () => {
       ]);
     });
 
-    // The blast radius of a throw here is the whole conversation, not one
+    // The blast radius of a throw here is the whole chat, not one
     // message: `getMessageHistory` throwing is caught by the runtime facade and
     // turned into the log-backed EventLog fallback, which for a session adopted
     // from the OpenCode TUI holds nothing at all. Before the payload was
@@ -1396,7 +1396,7 @@ describe('getMessageHistory — images', () => {
     expect(history[0]!.parts).toEqual([
       {
         type: 'error',
-        message: 'A session cannot store image/svg+xml — only PNG, JPEG, GIF and WebP images.',
+        message: 'A chat cannot store image/svg+xml — only PNG, JPEG, GIF and WebP images.',
         category: 'execution_error',
       },
     ]);

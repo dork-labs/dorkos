@@ -2,7 +2,7 @@
 export class AmbiguousSessionError extends Error {
   readonly code = 'SESSION_ID_AMBIGUOUS';
   constructor() {
-    super('This session ID matches multiple conversations.');
+    super('This chat ID matches multiple chats.');
     this.name = 'AmbiguousSessionError';
   }
 }
@@ -11,7 +11,7 @@ export class AmbiguousSessionError extends Error {
 export class SessionDiscoveryUnavailableError extends Error {
   readonly code = 'SESSION_DISCOVERY_UNAVAILABLE';
   constructor(readonly runtime: string) {
-    super('Session history is temporarily unavailable. Try again.');
+    super('Chat history is temporarily unavailable. Try again.');
     this.name = 'SessionDiscoveryUnavailableError';
   }
 }

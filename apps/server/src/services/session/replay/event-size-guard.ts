@@ -89,7 +89,7 @@ export const EVENT_LOG_MAX_BYTES = 32 * 1024 * 1024;
  * @param bytes - How much was dropped.
  */
 function omissionMarker(bytes: number): string {
-  return `[${bytes.toLocaleString('en-US')} bytes omitted — too large to deliver on the session stream]`;
+  return `[${bytes.toLocaleString('en-US')} bytes omitted — too large to show in this chat]`;
 }
 
 /**

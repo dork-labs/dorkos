@@ -133,7 +133,7 @@ describe('the out-of-usage routes', () => {
       .send({ account: 'dorkos-credits' });
     expect(res.status).toBe(403);
     expect(res.body).toEqual({
-      error: 'Only you can move this session onto your DorkOS credits, from the DorkOS app.',
+      error: 'Only you can move this chat onto your DorkOS credits, from the DorkOS app.',
       code: 'person_only',
     });
     expect(continueSession).not.toHaveBeenCalled();
@@ -160,13 +160,13 @@ describe('the out-of-usage routes', () => {
       new ContinueError(
         409,
         'WAIT_ONLY',
-        'This conversation did not start here, so it can only wait for the reset.'
+        'This chat did not start here, so it can only wait for the reset.'
       )
     );
     const res = await request(testServer).post(`${base}/continue`).send({ account: 'spare' });
     expect(res.status).toBe(409);
     expect(res.body).toEqual({
-      error: 'This conversation did not start here, so it can only wait for the reset.',
+      error: 'This chat did not start here, so it can only wait for the reset.',
       code: 'WAIT_ONLY',
     });
 

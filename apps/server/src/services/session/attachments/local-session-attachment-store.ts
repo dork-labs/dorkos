@@ -226,7 +226,7 @@ export class LocalSessionAttachmentStore implements SessionAttachmentStore {
     if (!extension) {
       const shown = mediaType.trim() ? displayableMime(mediaType) : 'an untyped file';
       throw new UnsupportedSessionMediaError(
-        `A session cannot store ${shown} — only PNG, JPEG, GIF and WebP images.`
+        `A chat cannot store ${shown} — only PNG, JPEG, GIF and WebP images.`
       );
     }
     return { extension, normalized: imageMediaTypeForExtension(extension) ?? mediaType };

@@ -236,7 +236,7 @@ describe('tasks_update writes the SKILL.md, not just the row', () => {
     expect(payload).toEqual({
       code: 'STICKY_ACCOUNT_LOCKED',
       error:
-        "This schedule keeps one conversation, so it stays on the account it started on. Turn off 'Keep one conversation' to change it.",
+        "This schedule picks up where its last run left off, so it stays on the account it started on. Turn off 'Remember the last run' to change it.",
     });
     expect(store.getTask(id)!.account).toBeNull();
     expect(await fs.readFile(skillPath(), 'utf-8')).not.toContain('account');

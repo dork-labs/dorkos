@@ -102,7 +102,7 @@ export interface ClaudeDependencyDeps {
 /** Check that a usable Claude Code binary resolves and answers `--version`. */
 async function checkCliBinary(binary: string | null): Promise<DependencyCheck> {
   const name = CLI_CHECK_NAME;
-  const description = 'The Claude Code CLI powers agent sessions in DorkOS.';
+  const description = 'The Claude Code CLI powers agent chats in DorkOS.';
 
   if (binary) {
     try {

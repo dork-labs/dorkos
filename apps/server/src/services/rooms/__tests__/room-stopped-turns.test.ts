@@ -113,7 +113,7 @@ describe('a room says when a turn has stopped', () => {
       expect(notices()[0].body.subjectAuthorId).toBe(ana);
       expect(notices()[0].authorId).toBe(authors.system().id);
       expect(notices()[0].body.text).toBe(
-        "Ana is waiting for you to approve something before it can carry on. Open Ana's session to answer. It will wait, but not forever."
+        "Ana is waiting for you to approve something before it can carry on. Open Ana's chat to answer. It will wait, but not forever."
       );
       // The tool's name is for the log, never the room: an approval's arguments
       // are file paths and commands, and a shared room is not where they go.
@@ -524,7 +524,7 @@ describe('a room says when a turn has stopped', () => {
       // guarded `post_to_room` and nothing else, on the reasoning that a
       // reaction writes no entry and takes no turn — but a room that has just
       // been told everything in it was stopped, and then watches the stopped
-      // agent put a pill on the conversation, has been told something untrue.
+      // agent put a pill on the chat, has been told something untrue.
       // It is the same mark, at the same scope, with the same lifetime.
       const stubborn = gatedRunner({ interruptEndsTurn: false });
       const room = await roomMidTurn(stubborn);

@@ -34,7 +34,7 @@ export type ContinuationRecorder = (
 
 /** The refusal while nothing records moved sessions. */
 export const CONTINUATION_UNAVAILABLE_MESSAGE =
-  'This DorkOS server does not track sessions that ran out of usage, so there is nothing to mark as continued.';
+  'This DorkOS server does not track chats that ran out of usage, so there is nothing to mark as continued.';
 
 let recorder: ContinuationRecorder | undefined;
 

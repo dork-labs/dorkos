@@ -66,7 +66,7 @@ export const AUTO_DOWNGRADE_STATUS: Record<AutoDowngradeReason, string> = {
  * reading it, and it is the one piece a log line carries instead.
  */
 export const UNKNOWN_MODE_STATUS =
-  "This session's saved mode isn't one Claude Code offers — using Default, so it will ask before it acts.";
+  "This chat's saved mode isn't one Claude Code offers — using Default, so it will ask before it acts.";
 
 /** Result of reconciling a session's permission mode against the model. */
 export interface PermissionModeResolution {

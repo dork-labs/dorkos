@@ -207,7 +207,7 @@ describe('resolveCompactionModel', () => {
     // Guessing out of the provider catalog would spend the user's money on a
     // model they never chose; the sidecar's own answer here is a bare 400.
     await expect(resolveCompactionModel(asClient(makeClient()), NO_MODEL)).rejects.toThrow(
-      /Pick a model for the session/
+      /Pick a model for the chat/
     );
   });
 

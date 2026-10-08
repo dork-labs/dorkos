@@ -177,7 +177,7 @@ export class CodexNativeSessionReader {
         ));
       return { type: 'image', attachmentId, ...stored };
     } catch {
-      return { type: 'error', message: 'An image in this conversation could not be loaded.' };
+      return { type: 'error', message: 'An image in this chat could not be loaded.' };
     }
   }
 

@@ -86,8 +86,7 @@ import { installAutoHandoff } from './auto-handoff.js';
 export { ContinueError } from './continue-in-flight.js';
 
 /** The sentence for a session that can only wait for its reset (spec D9, quoted). */
-export const WAIT_ONLY_MESSAGE =
-  'This conversation did not start here, so it can only wait for the reset.';
+export const WAIT_ONLY_MESSAGE = 'This chat did not start here, so it can only wait for the reset.';
 
 /** The sentence when the Flow extension holds the session and cannot be reached (spec §X, quoted). */
 export const FLOW_UNREACHABLE_MESSAGE = 'Flow could not be reached, so this was not changed.';
@@ -126,7 +125,7 @@ function noLimit(): ContinueError {
   return new ContinueError(
     409,
     'NO_LIMIT',
-    'This session has not run out of usage, so there is nothing to continue.'
+    'This chat has not run out of usage, so there is nothing to continue.'
   );
 }
 
@@ -150,7 +149,7 @@ function requireClaimOwner(stored: StoredSessionLimit): void {
 /** Refuse while the session is running a turn. */
 function requireNotStreaming(sessionId: string): void {
   if (peekProjector(sessionId)?.getStatus().lifecycle === 'streaming') {
-    throw new ContinueError(409, 'SESSION_BUSY', 'This session is working right now.');
+    throw new ContinueError(409, 'SESSION_BUSY', 'This chat is working right now.');
   }
 }
 
@@ -339,7 +338,7 @@ export async function continueSession(
     throw new ContinueError(
       400,
       'RUNTIME_NOT_OFFERED',
-      'Only a Claude Code session can continue on another account or model for now. This one can wait for the reset.'
+      'Only a Claude Code chat can continue on another account or model for now. This one can wait for the reset.'
     );
   }
   // The folder's project, resolved before the re-read below so nothing after
@@ -378,7 +377,7 @@ export async function continueSession(
     throw new ContinueError(
       400,
       'CREDITS_NOT_OFFERED',
-      'DorkOS credits aren’t available for this session right now. Choose another account.'
+      'DorkOS credits aren’t available for this chat right now. Choose another account.'
     );
   }
   // Another runtime's account is checked against the advisor's offer, below.
@@ -402,7 +401,7 @@ export async function continueSession(
       throw new ContinueError(
         400,
         'MODEL_NOT_YOURS_TO_SET',
-        'Flow moves this session, so it chooses the new session’s model. Choose only the account.'
+        'Flow moves this chat, so it chooses the new chat’s model. Choose only the account.'
       );
     }
     // A second click after the advisor accepted: already handing off there.
@@ -456,7 +455,7 @@ async function requireOfferedElsewhere(
     throw new ContinueError(
       400,
       'RUNTIME_NOT_OFFERED',
-      `Continuing on ${runtime} is not offered for this session.`
+      `Continuing on ${runtime} is not offered for this chat.`
     );
   }
   if (runtimeRegistry.getAllCapabilities()[runtime]?.supportsAccounts) return;
@@ -556,7 +555,7 @@ function moving(): ContinueError {
 }
 
 function alreadyMoved(): ContinueError {
-  return new ContinueError(409, 'ALREADY_MOVED', 'This work already continued in another session.');
+  return new ContinueError(409, 'ALREADY_MOVED', 'This work already continued in another chat.');
 }
 
 /**
@@ -625,12 +624,12 @@ async function markContinuedOnce(
   }
   if (stored.limit.plan.mode === 'continued') {
     throw new Error(
-      `Session ${sourceSessionId} already continued in session ${stored.limit.plan.sessionId}.`
+      `Chat ${sourceSessionId} already continued in chat ${stored.limit.plan.sessionId}.`
     );
   }
   if (stored.claimedBy !== ownerId) {
     throw new Error(
-      `Session ${sourceSessionId} was not claimed by "${ownerId}", so it cannot mark it as continued.`
+      `Chat ${sourceSessionId} was not claimed by "${ownerId}", so it cannot mark it as continued.`
     );
   }
   clearClaimedHandoff(stored.sessionId);

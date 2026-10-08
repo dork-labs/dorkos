@@ -4,7 +4,7 @@
  * One agent is one working directory, so a message addressed to an agent that is
  * already mid-turn somewhere else cannot start a second turn — the `agentPath`
  * ceiling has bounded that since DOR-500. What it used to do instead was drop the
- * message with a durable line: _"is working in another conversation right now, so
+ * message with a durable line: _"is working in another chat right now, so
  * it didn't pick this up. Send it again in a few minutes."_ Three things were
  * wrong with that, in increasing order of seriousness: it asked a person to do
  * work the machine could do, over a message the room had already committed to its
@@ -385,7 +385,7 @@ describe('a message for an agent working elsewhere', () => {
     expect(said).toHaveLength(1);
     expect(said[0]!.body.notice).toBe('agent_busy');
     expect(said[0]!.body.text).toBe(
-      "Ana has been working in another conversation for a long time, so it hasn't got to your message yet. It will read it the next time it picks up work here."
+      "Ana has been working in another chat for a long time, so it hasn't got to your message yet. It will read it the next time it picks up work here."
     );
     // Past tense, and never a resend. The message is still behind Ana's cursor,
     // so the next turn here reads it whatever triggers that turn.
@@ -419,7 +419,7 @@ describe('a message for an agent working elsewhere', () => {
     // `unknown` busy line and arms its key.
     runner.failOldestAsBusy(ana);
     await settleUntil(() => notices(b.id).length === 1, 'the session-busy line');
-    expect(notices(b.id)[0]!.body.text).toContain('was busy in its own session');
+    expect(notices(b.id)[0]!.body.text).toContain('was busy in its own chat');
 
     // Now Ana takes a turn somewhere else, and an UNDIRECTED message here waits
     // behind it until the room gives up.
@@ -434,16 +434,14 @@ describe('a message for an agent working elsewhere', () => {
 
     const said = notices(b.id);
     expect(said, 'the room gave up on a wait and said nothing about it').toHaveLength(2);
-    expect(said[1]!.body.text).toContain(
-      'has been working in another conversation for a long time'
-    );
+    expect(said[1]!.body.text).toContain('has been working in another chat for a long time');
     runner.release(ana);
     await service.triggersIdle();
   });
 
   it('drops the wait when this room is halted, and runs it when the blocking room is', async () => {
     // Case 7. Both fall out of the existing ordering, and the second is the one
-    // worth stating: the person stopped one conversation, not the other, and the
+    // worth stating: the person stopped one chat, not the other, and the
     // other one's question still deserves an answer.
     const [a, b] = open();
     service.post(a.id, { authorId: human, text: '@ana check the build' });
@@ -739,7 +737,7 @@ describe('a message for an agent working elsewhere', () => {
     await service.triggersIdle();
   });
 
-  describe('how many conversations one agent may work in at once (DOR-2104)', () => {
+  describe('how many chats one agent may work in at once (DOR-2104)', () => {
     it('at a limit of one, holds the second room behind the first — the old behaviour', async () => {
       const [a, b] = open(2, { maxConcurrentTurnsPerAgent: 1 });
       service.post(a.id, { authorId: human, text: '@ana check the build' });

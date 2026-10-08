@@ -1678,7 +1678,7 @@ describe('TaskSchedulerService', () => {
       expect(vi.mocked(mockAgent.sendMessage)).toHaveBeenCalledOnce();
       const skipped = store.listRuns({ taskId: task.id }).find((r) => r.status === 'skipped');
       expect(skipped, 'the second fire wrote a skipped run').toBeDefined();
-      expect(skipped!.error).toContain('one session');
+      expect(skipped!.error).toContain('one chat');
 
       await service.stop();
     });

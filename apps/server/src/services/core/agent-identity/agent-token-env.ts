@@ -73,7 +73,7 @@ export async function resolveAgentTokenEnv(
         operation: 'create',
         target: { type: 'agent', id: agent.accountId, name: agent.name },
         outcome: 'ok',
-        summary: `Gave ${agent.name} a sign-in token for a new session`,
+        summary: `Gave ${agent.name} a sign-in token for a new chat`,
       });
     }
     return { [AGENT_TOKEN_ENV_VAR]: token };

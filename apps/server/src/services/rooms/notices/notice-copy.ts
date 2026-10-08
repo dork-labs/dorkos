@@ -143,9 +143,9 @@ export function buildBusyNotice(
  */
 const BUSY_LINES: Record<BusyContext, (agentName: string) => string> = {
   'held-too-long': (agentName) =>
-    `${agentName} has been working in another conversation for a long time, so it hasn't got to your message yet. It will read it the next time it picks up work here.`,
+    `${agentName} has been working in another chat for a long time, so it hasn't got to your message yet. It will read it the next time it picks up work here.`,
   unknown: (agentName) =>
-    `${agentName} was busy in its own session, so it didn't answer here. It will read your message the next time it picks up work in this room.`,
+    `${agentName} was busy in its own chat, so it didn't answer here. It will read your message the next time it picks up work in this room.`,
 };
 
 /**
@@ -260,11 +260,11 @@ const BRIDGE_WAITING_LINES: Record<WaitingKind, (agentName: string) => string> =
  */
 const WAITING_LINES: Record<WaitingKind, (agentName: string) => string> = {
   approval: (agentName) =>
-    `${agentName} is waiting for you to approve something before it can carry on. Open ${agentName}'s session to answer. It will wait, but not forever.`,
+    `${agentName} is waiting for you to approve something before it can carry on. Open ${agentName}'s chat to answer. It will wait, but not forever.`,
   question: (agentName) =>
-    `${agentName} has a question for you before it can carry on. Open ${agentName}'s session to answer. It will wait, but not forever.`,
+    `${agentName} has a question for you before it can carry on. Open ${agentName}'s chat to answer. It will wait, but not forever.`,
   elicitation: (agentName) =>
-    `${agentName} needs something from you before it can carry on. Open ${agentName}'s session to answer. It will wait, but not forever.`,
+    `${agentName} needs something from you before it can carry on. Open ${agentName}'s chat to answer. It will wait, but not forever.`,
 };
 
 /**
@@ -357,7 +357,7 @@ const AGENT_HALT_LINES: Record<AgentHaltOutcome, (agentName: string) => string> 
  */
 export function buildTurnFailedNotice(agentName: string, subjectAuthorId: string): RoomEntryBody {
   return {
-    text: `${agentName} ran into a problem and could not answer here. Open ${agentName}'s session to see what went wrong.`,
+    text: `${agentName} ran into a problem and could not answer here. Open ${agentName}'s chat to see what went wrong.`,
     notice: 'turn_failed',
     subjectAuthorId,
   };
@@ -399,7 +399,7 @@ export function bridgeTurnFailedText(agentName: string): string {
  */
 export function buildAgentGoneNotice(agentName: string, subjectAuthorId: string): RoomEntryBody {
   return {
-    text: `${agentName} isn't set up on this machine any more, so it can't answer here. Register it again, then add it back to this conversation.`,
+    text: `${agentName} isn't set up on this machine any more, so it can't answer here. Register it again, then add it back to this room.`,
     notice: 'agent_gone',
     subjectAuthorId,
   };
@@ -450,7 +450,7 @@ export function buildRuntimeGoneNotice(
   return {
     text:
       `${agentName} answers here through ${program}, which isn't running on this machine, so it can't reply. ` +
-      `Turn ${program} back on to pick up where you left off, or remove ${agentName} from this conversation and add it back to start fresh.`,
+      `Turn ${program} back on to pick up where you left off, or remove ${agentName} from this room and add it back to start fresh.`,
     notice: 'runtime_gone',
     subjectAuthorId,
   };
@@ -506,7 +506,7 @@ export function buildAgentUnavailableNotice(
  */
 export function buildAgentLeftNotice(agentName: string, subjectAuthorId: string): RoomEntryBody {
   return {
-    text: `${agentName} left this conversation before it could answer, so your message is still waiting. Add it back if you want it to pick this up.`,
+    text: `${agentName} left this room before it could answer, so your message is still waiting. Add it back if you want it to pick this up.`,
     notice: 'agent_left',
     subjectAuthorId,
   };
@@ -672,8 +672,8 @@ export function buildBridgeAgentSwappedNotice(
  */
 export function buildBridgeHistoryNotice(priorSession: boolean): RoomEntryBody {
   const text = priorSession
-    ? "This channel picks up a conversation that was already going. The earlier messages stay in the agent's own session and aren't copied here, because the platform doesn't share past messages. The agent still remembers them. This channel's record starts now."
-    : "This channel starts a new conversation. The platform doesn't share past messages, so nothing said before is shown here. This channel's record starts now.";
+    ? "This channel continues an exchange that was already going. The earlier messages stay in the agent's own chat and aren't copied here, because the platform doesn't share past messages. The agent still remembers them. This channel's record starts now."
+    : "This channel starts fresh. The platform doesn't share past messages, so nothing said before is shown here. This channel's record starts now.";
   return { text, notice: 'bridge_history_note' };
 }
 
@@ -713,11 +713,11 @@ export function buildBridgeBlockedNotice(reason: BridgeBlockedReason): RoomEntry
         'to let answers through.'
       : reason === 'initiate_off'
         ? 'This message was not sent to the chat because starting a message there is turned off for ' +
-          'this connection. Turn on "Start conversations" for it on the Connections page, under the ' +
+          'this connection. Turn on "Agent can start chats" for it on the Connections page, under the ' +
           'chat app\'s "Who answers", to let the agent reach out first.'
         : // lost_provenance — the server restarted mid-turn (§6.6).
           'This answer lost its provenance (the server restarted mid-turn) and was treated as a ' +
-          'new conversation. It stayed here.';
+          'new message. It stayed here.';
   return { text, notice: 'bridge_blocked' };
 }
 

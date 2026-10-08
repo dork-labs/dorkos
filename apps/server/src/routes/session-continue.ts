@@ -69,7 +69,7 @@ function requirePersonAndSession(req: Request, res: Response): string | null {
     return null;
   }
   if (caller.kind !== 'human') {
-    sendError(res, 403, 'Only a person can move or hold a session', 'PEOPLE_ONLY');
+    sendError(res, 403, 'Only a person can move or hold a chat', 'PEOPLE_ONLY');
     return null;
   }
   return sessionId;
@@ -110,8 +110,8 @@ export async function continueOptionsHandler(req: Request, res: Response): Promi
 
 /** What continuing on DorkOS credits says to a caller that is not the owner. */
 const CONTINUE_ON_CREDITS = {
-  personOnly: 'Only you can move this session onto your DorkOS credits, from the DorkOS app.',
-  action: 'move a session onto DorkOS credits',
+  personOnly: 'Only you can move this chat onto your DorkOS credits, from the DorkOS app.',
+  action: 'move a chat onto DorkOS credits',
 };
 
 /**

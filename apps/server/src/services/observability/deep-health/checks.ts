@@ -49,15 +49,15 @@ export function checkRoomSessionTranscripts(input: RoomSessionTranscriptInput): 
   const unreadable = input.unreadableCount ?? 0;
   if (input.judgedCount === 0 && unreadable > 0) {
     return {
-      label: 'Could not check whether rooms remember their conversations',
+      label: 'Could not check whether room members keep their chats',
       status: 'info',
-      detail: `DorkOS could not read the saved conversation for ${unreadable} room ${plural(unreadable, 'member', 'members')}, so none could be checked.`,
+      detail: `DorkOS could not read the saved chat for ${unreadable} room ${plural(unreadable, 'member', 'members')}, so none could be checked.`,
     };
   }
   const orphaned = input.orphaned;
   if (orphaned.length === 0) {
     return {
-      label: 'Rooms remember their conversations',
+      label: 'Room members keep their chats',
       status: 'pass',
       detail:
         `${input.judgedCount} ${plural(input.judgedCount, 'room member', 'room members')} checked` +
@@ -66,12 +66,12 @@ export function checkRoomSessionTranscripts(input: RoomSessionTranscriptInput): 
   }
   const roomCount = new Set(orphaned.map((b) => b.roomId)).size;
   return {
-    label: `${orphaned.length} room ${plural(orphaned.length, 'member has', 'members have')} lost their conversation`,
+    label: `${orphaned.length} room ${plural(orphaned.length, 'member has', 'members have')} lost their chat`,
     status: 'warn',
     detail:
       `Across ${roomCount} ${plural(roomCount, 'room', 'rooms')}, DorkOS is pointing at a saved ` +
-      'conversation that is no longer on disk. Those agents will answer as if the room just started.',
-    fix: 'Remove and re-add the affected member, or start a fresh session in that room.',
+      'chat that is no longer on disk. Those agents will answer as if the room just started.',
+    fix: 'Remove and re-add the affected member, or start a fresh chat in that room.',
   };
 }
 

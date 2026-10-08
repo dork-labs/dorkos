@@ -710,7 +710,7 @@ describe('session_start', () => {
     expect(MCP_TOOL_TIERS.session_start).toMatchObject({
       tier: 'act',
       area: 'agents',
-      title: 'Start a new agent session',
+      title: 'Start a spin-off chat',
       approvalDisplayFields: ['cwd', 'account', 'permissionMode', 'agentPath', 'prompt'],
     });
     expect(getSessionTools(makeDeps()).map((t) => t.name)).toEqual(['session_start']);
