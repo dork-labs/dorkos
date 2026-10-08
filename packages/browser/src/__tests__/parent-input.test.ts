@@ -2,7 +2,7 @@ import { retirementFixture } from './parent-fixture.js';
 import { fakeJPEG } from './parent-fixture.js';
 import { it, expect, vi, afterEach } from 'vitest';
 import type { CDPSession } from 'playwright-core';
-import { composeInput } from '../lifecycle/input-owner.js';
+import { composeInput, captureInputRetirement } from '../lifecycle/input-owner.js';
 import { submitInput, resetInput } from '../lifecycle/parent-actions.js';
 import { closeRecord } from '../lifecycle/close.js';
 import { parseBrowserBinding, parseBrowserCommand } from '../contracts.js';
@@ -352,4 +352,42 @@ it('candidate: retirement denies text but releases exactly owned held key and fi
     ['Input.cancelDragging'],
   ]);
   expect(h.record.lifetime.gate.stopped).toBe(false);
+});
+
+it('captures only live exact input and joins its original held retirement ACK without whole-browser dependency', async () => {
+  const h = tabFixture(),
+    c = configuration();
+  const slot = composeInput(c, h.record, h.tab);
+  await slot.readiness;
+  const observer = captureInputRetirement(h.record, h.tab.binding);
+  expect(observer.joinIfRetiring()).toBeUndefined();
+  const ack = deferred<void>();
+  h.session.send.mockImplementation(() => ack.promise);
+  let closing: ReturnType<typeof closeRecord> | undefined;
+  try {
+    closing = closeRecord(c, h.record);
+    const original = observer.joinIfRetiring();
+    expect(original).toBe(slot.retirement);
+    expect(original).toBeDefined();
+    if (!original) throw new Error('ORIGINAL_INPUT_RETIREMENT_NOT_RETAINED');
+    let returned = false;
+    void original.then(
+      () => {
+        returned = true;
+      },
+      () => {
+        returned = true;
+      }
+    );
+    await tick();
+    expect(returned).toBe(false);
+    expect(() => captureInputRetirement(h.record, h.tab.binding)).toThrow();
+    ack.resolve();
+    expect(await original).toMatchObject({ state: 'settled', pending: false, uncertainty: false });
+    await closing;
+    expect(observer.joinIfRetiring()).toBe(original);
+  } finally {
+    ack.resolve();
+    await Promise.allSettled([ack.promise, ...(closing ? [closing] : [])]);
+  }
 });

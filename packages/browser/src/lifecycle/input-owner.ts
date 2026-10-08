@@ -398,3 +398,21 @@ export function cleanupRoute(record: BrowserRecord, owner: InputOwnerSlot): Inpu
   };
   return Object.freeze(route);
 }
+
+/** Observe only the exact input owner's original retirement, captured during ordinary admission. */
+export function captureInputRetirement(
+  record: BrowserRecord,
+  binding: BrowserBinding
+): Readonly<{
+  joinIfRetiring(): Promise<CleanupObservation> | undefined;
+}> {
+  const owner = readyInput(record, binding);
+  return Object.freeze({
+    joinIfRetiring() {
+      if (ordinaryRecord(record)) return undefined;
+      // This is observation of a retained original, never permission to reset or release input.
+      if (!owner.retirement) throw new BrowserLifecycleError('BROWSER_STOPPED');
+      return owner.retirement;
+    },
+  });
+}

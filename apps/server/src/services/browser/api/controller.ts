@@ -39,6 +39,7 @@ type Seat = {
   promise: Promise<BrowserControl>;
   failed: boolean;
   operation?: Promise<ResetResult>;
+  inputRetirement?: ReturnType<NonNullable<BrowserLifecycleEngine['captureInputRetirement']>>;
 };
 const same = (a: BrowserBinding, b: BrowserBinding) =>
   Object.keys(a).every((key) => a[key as keyof BrowserBinding] === b[key as keyof BrowserBinding]);
@@ -61,12 +62,13 @@ export class OwnedBrowserController {
   private readonly stopInstance: BrowserRegistry['stop'];
   private readonly readTabs: BrowserLifecycleEngine['listTabs'];
   private readonly reset: BrowserLifecycleEngine['resetInput'];
+  private readonly captureInputRetirement?: BrowserLifecycleEngine['captureInputRetirement'];
   private readonly admitGrant?: OwnedBrowserGrants['admitController'];
 
   /** Capture original registry/engine methods; the default-off setting is server authority. */
   constructor(
     registry: Pick<BrowserRegistry, 'instance' | 'stop'>,
-    engine: Pick<BrowserLifecycleEngine, 'listTabs' | 'resetInput'>,
+    engine: Pick<BrowserLifecycleEngine, 'listTabs' | 'resetInput' | 'captureInputRetirement'>,
     private readonly enabled: () => boolean = () => false,
     grants?: Pick<OwnedBrowserGrants, 'admitController'>
   ) {
@@ -74,6 +76,7 @@ export class OwnedBrowserController {
     this.stopInstance = registry.stop.bind(registry);
     this.readTabs = engine.listTabs.bind(engine);
     this.reset = engine.resetInput.bind(engine);
+    this.captureInputRetirement = engine.captureInputRetirement?.bind(engine);
     this.admitGrant = grants?.admitController.bind(grants);
   }
 
@@ -471,6 +474,9 @@ export class OwnedBrowserController {
     const timer = setTimeout(() => fail(new BrowserApiRefusal('inaccessible')), 2000);
     try {
       actor.check();
+      seat.inputRetirement = this.captureInputRetirement?.(binding);
+      this.current(actor.owner, binding, grant);
+      actor.check();
       const operation = this.reset(binding);
       seat.operation = operation;
       this.retainReset(seat, operation);
@@ -587,6 +593,34 @@ export class OwnedBrowserController {
           // A reentrant callback can revoke before takeover has assigned the original reset promise.
           await Promise.resolve();
           if (Date.now() >= deadline) throw new BrowserApiRefusal('inaccessible');
+          const retiring = seat.inputRetirement?.joinIfRetiring();
+          if (retiring) {
+            const observation = await Promise.race([
+              retiring,
+              new Promise<never>((_resolve, reject) => {
+                timer = setTimeout(
+                  () => reject(new BrowserApiRefusal('inaccessible')),
+                  Math.max(1, deadline - Date.now())
+                );
+              }),
+            ]);
+            if (
+              Date.now() >= deadline ||
+              observation.state !== 'settled' ||
+              observation.pending !== false ||
+              observation.uncertainty !== false ||
+              observation.drain !== 'acknowledged' ||
+              observation.release !== 'acknowledged' ||
+              observation.binding.browserId !== originalBinding.browserId ||
+              observation.binding.browserGeneration !== originalBinding.browserGeneration ||
+              observation.binding.tabId !== originalBinding.tabId
+            )
+              throw new BrowserApiRefusal('inaccessible');
+            // Exact retired input can be joined; it cannot publish a new Seat/ticket or heal Off.
+            if (this.seats.get(key(originalBinding)) === seat)
+              this.seats.delete(key(originalBinding));
+            return;
+          }
           if (!barrier) {
             // The engine may have cleanly advanced input protocol after aborting original Work.
             // Loss cleanup follows only this Seat's immutable original browser/tab lifetime.

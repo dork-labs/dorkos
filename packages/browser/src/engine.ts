@@ -10,7 +10,7 @@ import {
   type PrivateBrowserSemanticOwner,
 } from './semantic/owned-read.js';
 import { type OwnedUploadChooser, type OwnedUploadLease } from './files/upload-chooser.js';
-import { currentTab, readyInput } from './lifecycle/input-owner.js';
+import { currentTab, readyInput, captureInputRetirement } from './lifecycle/input-owner.js';
 import {
   installOwnerNavigation,
   type PrivateOwnerNavigationContinuation,
@@ -100,6 +100,8 @@ export interface BrowserLifecycleEngine {
   diagnostics(binding: unknown): DiagnosticSummary;
   input(command: unknown, signal?: AbortSignal): Promise<InputResult>;
   resetInput(binding: unknown): Promise<ResetResult>;
+  /** Constructor-private, observation-only handle captured while its exact input slot is live. */
+  captureInputRetirement?(binding: unknown): ReturnType<typeof captureInputRetirement>;
   close(command: unknown): Promise<Extract<BrowserResult, { kind: 'close' }>>;
   shutdown(): Promise<readonly Extract<BrowserResult, { kind: 'close' }>[]>;
 }
@@ -870,6 +872,10 @@ function constructEngine(
         command,
         signal
       );
+    },
+    captureInputRetirement(value: unknown) {
+      const binding = parseBrowserBinding(value);
+      return captureInputRetirement(find(binding.browserId, binding.browserGeneration), binding);
     },
     resetInput(value: unknown) {
       const binding = parseBrowserBinding(value);

@@ -17,6 +17,7 @@ covers:
   - 'fix(browser): resume owned service-worker requests'
   - 'fix(browser): refuse late worker resumes during shutdown'
   - 'fix(browser): handle authentication on the browser root connection'
+  - 'fix(browser): join retired input during controller cleanup'
 ---
 
 ### Added

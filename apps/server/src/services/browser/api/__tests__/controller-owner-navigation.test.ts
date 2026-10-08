@@ -16,7 +16,12 @@ const engineBinding = (value: unknown): BrowserBinding => {
 
 /** Original controller/seat/flow implementation with semantic registry/engine methods;
  * no native, SQLite credential verification or network permission is inferred here. */
-function fixture(options?: Readonly<{ expectedFailure: unknown }>) {
+function fixture(
+  options?: Readonly<{
+    expectedFailure: unknown;
+    inputRetirement?: NonNullable<BrowserLifecycleEngine['captureInputRetirement']>;
+  }>
+) {
   const state = {
     binding: engineBinding({
       browserId: 'retained-browser-original',
@@ -62,10 +67,12 @@ function fixture(options?: Readonly<{ expectedFailure: unknown }>) {
     return { status: 'ready', binding: state.binding };
   });
   const readTabs = vi.fn<BrowserLifecycleEngine['listTabs']>(() => [{ ...state.binding }]);
-  const engine: Pick<BrowserLifecycleEngine, 'listTabs' | 'resetInput'> = {
-    listTabs: readTabs,
-    resetInput: reset,
-  };
+  const engine: Pick<BrowserLifecycleEngine, 'listTabs' | 'resetInput' | 'captureInputRetirement'> =
+    {
+      listTabs: readTabs,
+      resetInput: reset,
+      captureInputRetirement: options?.inputRetirement,
+    };
   const controller = new OwnedBrowserController(registry, engine, () => true);
   const operations = new Set<Promise<unknown>>();
   onTestFinished(async () => {
@@ -202,6 +209,116 @@ it.each([false, undefined])(
     } finally {
       reject(cause);
       await Promise.allSettled([held, ...operations, f.own(flow.close())]);
+    }
+  }
+);
+
+it.each(['settled', 'unverified', 'foreign', false, undefined] as const)(
+  'joins held original input retirement instead of enumerating the stopped engine: %s',
+  async (outcome) => {
+    type Observation = NonNullable<
+      Awaited<
+        ReturnType<
+          ReturnType<
+            NonNullable<BrowserLifecycleEngine['captureInputRetirement']>
+          >['joinIfRetiring']
+        >
+      >
+    >;
+    let resolve!: (value: Observation) => void, reject!: (value: unknown) => void;
+    const original = new Promise<Observation>((yes, no) => {
+      resolve = yes;
+      reject = no;
+    });
+    void original.catch(() => {});
+    let retiring = false;
+    const join = vi.fn(() => (retiring ? original : undefined));
+    const capture = vi.fn(() => Object.freeze({ joinIfRetiring: join }));
+    const options: {
+      expectedFailure: unknown;
+      inputRetirement: NonNullable<BrowserLifecycleEngine['captureInputRetirement']>;
+    } = { expectedFailure: outcome === 'settled' ? undefined : outcome, inputRetirement: capture };
+    const f = fixture(options);
+    const jobs: Promise<unknown>[] = [];
+    try {
+      const seat = await f.own(f.controller.takeover(f.actor, f.state.binding));
+      const flow = f.controller.captureOwnerNavigation(f.actor, seat.binding);
+      await f.own(flow.ready);
+      retiring = true;
+      f.readTabs.mockImplementation(() => {
+        throw new Error('BROWSER_STOPPED');
+      });
+      const reads = f.readTabs.mock.calls.length;
+      const resets = f.reset.mock.calls.length;
+      let returned = false;
+      const loss = f.own(f.controller.revokeController(f.originalActor.controllerIdentity));
+      jobs.push(loss);
+      void loss.then(
+        () => {
+          returned = true;
+        },
+        () => {
+          returned = true;
+        }
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(returned).toBe(false);
+      expect(f.readTabs).toHaveBeenCalledTimes(reads);
+      expect(f.reset).toHaveBeenCalledTimes(resets);
+      expect(capture).toHaveBeenCalledTimes(1);
+      if (outcome === 'settled') {
+        resolve({
+          state: 'settled',
+          binding: f.state.binding,
+          drain: 'acknowledged',
+          release: 'acknowledged',
+          pending: false,
+          uncertainty: false,
+        });
+        await loss;
+      } else if (outcome === 'unverified' || outcome === 'foreign') {
+        resolve(
+          outcome === 'unverified'
+            ? {
+                state: 'unverified',
+                binding: null,
+                reason: 'observationUnavailable',
+                pending: true,
+                uncertainty: true,
+              }
+            : {
+                state: 'settled',
+                binding: {
+                  ...f.state.binding,
+                  browserGeneration: f.state.binding.browserGeneration + 1,
+                },
+                drain: 'acknowledged',
+                release: 'acknowledged',
+                pending: false,
+                uncertainty: false,
+              }
+        );
+        const result = await Promise.allSettled([loss]);
+        expect(result[0]).toMatchObject({ status: 'rejected', reason: { reason: 'inaccessible' } });
+        if (result[0].status !== 'rejected') throw new Error('ORIGINAL_LOSS_NOT_REFUSED');
+        options.expectedFailure = result[0].reason;
+      } else {
+        reject(outcome);
+        expect(await Promise.allSettled([loss])).toEqual([{ status: 'rejected', reason: outcome }]);
+      }
+      jobs.push(f.own(flow.close()));
+      const closed = await Promise.allSettled(jobs);
+      expect(
+        closed.every((row) =>
+          outcome === 'settled'
+            ? row.status === 'fulfilled'
+            : row.status === 'rejected' && row.reason === options.expectedFailure
+        )
+      ).toBe(true);
+    } finally {
+      reject(outcome);
+      await Promise.allSettled([original, ...jobs]);
     }
   }
 );
