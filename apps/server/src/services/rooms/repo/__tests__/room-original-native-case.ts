@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { fork, type ChildProcess } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -100,7 +100,9 @@ export function registerOriginalNativeLaunchCase(
 ): void {
   describe('original native Room post worktree launch (' + caseName + ')', () => {
     let child: ChildProcess | undefined;
-    let root: string;
+    let root: string | undefined;
+    let rootPending: Promise<string> | undefined;
+    let closingRequested = false;
     let failed: boolean;
     let first: unknown;
     let ended: Promise<void>;
@@ -109,6 +111,7 @@ export function registerOriginalNativeLaunchCase(
     let exitCode: number | null;
     let exitSeen: boolean;
     let closed: boolean;
+    let bootstrap: Promise<void>;
     let ready: Promise<void>;
     let result: Promise<boolean>;
     let closePromise: Promise<void> | undefined;
@@ -120,7 +123,7 @@ export function registerOriginalNativeLaunchCase(
         first = cause;
       }
     };
-    beforeEach(async () => {
+    beforeAll(async () => {
       failed = false;
       first = undefined;
       exitSeen = false;
@@ -131,7 +134,12 @@ export function registerOriginalNativeLaunchCase(
       output[1] = [];
       saved[0] = 0;
       saved[1] = 0;
-      root = await mkdtemp(path.join(tmpdir(), 'original-room-launch-child-'));
+      rootPending = mkdtemp(path.join(tmpdir(), 'original-room-launch-child-'));
+      root = await rootPending;
+      if (closingRequested) {
+        remember(new Error('Original launch child bootstrap was retired before fork'));
+        throw first;
+      }
       child = fork(
         fileURLToPath(new URL('./room-original-native-launch-child.ts', import.meta.url)),
         [caseName],
@@ -222,6 +230,22 @@ export function registerOriginalNativeLaunchCase(
           resolve();
         });
       });
+      bootstrap = new Promise<void>((resolve, reject) => {
+        child!.on('message', (message) => {
+          if (
+            typeof message === 'object' &&
+            message !== null &&
+            'phase' in message &&
+            message.phase === 'bootstrap-ready'
+          )
+            resolve();
+        });
+        void ended.then(() =>
+          reject(
+            failed ? first : new Error('Original launch child closed before bootstrap completed')
+          )
+        );
+      });
       ready = new Promise<void>((resolve, reject) => {
         child!.on('message', (message) => {
           if (
@@ -251,11 +275,24 @@ export function registerOriginalNativeLaunchCase(
           reject(failed ? first : new Error('Original launch child closed before scenario result'))
         );
       });
+      void ready.catch(() => {});
       void result.catch(() => {});
+      await bootstrap;
+    });
+    beforeEach(async () => {
+      child!.send('start-setup', (cause) => {
+        if (cause) remember(cause);
+      });
       await ready;
     });
-    afterEach(async () => {
+    const close = async () => {
+      closingRequested = true;
       await (closePromise ??= (async () => {
+        if (!child) {
+          const acquiredRoot = await rootPending;
+          if (acquiredRoot) await rm(acquiredRoot, { recursive: true, force: true });
+          return;
+        }
         try {
           if (child?.connected)
             child.send('close', (cause) => {
@@ -295,9 +332,11 @@ export function registerOriginalNativeLaunchCase(
           console.error(Buffer.concat(output[0]).toString(), Buffer.concat(output[1]).toString());
           throw first; // Keep root/native files on every unresolved or failed child.
         }
-        await rm(root, { recursive: true, force: true });
+        if (root) await rm(root, { recursive: true, force: true });
       })());
-    });
+    };
+    afterEach(close);
+    afterAll(close);
     it(title, async () => {
       try {
         await beforeNativeCase?.();

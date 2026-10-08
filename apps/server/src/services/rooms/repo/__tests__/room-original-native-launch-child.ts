@@ -542,7 +542,6 @@ if (
   ].includes(caseName)
 )
   throw new Error('Original native launch case is unknown');
-originalConstructionPhase('fixture-start');
 const ownerWriteControl =
   caseName === 'runner-owner-write-failure'
     ? (
@@ -636,6 +635,62 @@ const replyWaitControl =
         await import('./room-original-native-runner-wait-control.js')
       ).makeOriginalRunnerNativeWaitControl()
     : undefined;
+const setupControl =
+  caseName === 'second-bound-dispatcher-busy' || caseName === 'second-bound-runtime-lock'
+    ? await import('./room-original-native-second-bound-controls.js')
+    : caseName === 'retired-id-busy' || caseName === 'busy-read-unknown'
+      ? await import('./room-original-native-placement-controls.js')
+      : caseName === 'refresh-story'
+        ? await import('./room-original-native-refresh-story.js')
+        : undefined;
+// This gate owns no fixture or native authority. Install cancellation before signaling readiness.
+await new Promise<void>((resolve, reject) => {
+  const cleanup = () => {
+    process.off('message', onMessage);
+    process.off('disconnect', onDisconnect);
+  };
+  const cancel = () => {
+    cleanup();
+    const cause = new Error('Original native child closed before setup started');
+    remember(cause);
+    if (process.connected) process.disconnect();
+    reject(first);
+  };
+  const onDisconnect = () => cancel();
+  const onMessage = (message: unknown) => {
+    if (message === 'close') cancel();
+    else if (message === 'start-setup') {
+      cleanup();
+      resolve();
+    }
+  };
+  process.on('message', onMessage);
+  process.once('disconnect', onDisconnect);
+  if (!process.connected) cancel();
+  else
+    process.send?.({ phase: 'bootstrap-ready' }, (cause) => {
+      if (cause) {
+        remember(cause);
+        cancel();
+      }
+    });
+});
+let initializationCancelled = false;
+const cancelInitialization = (message?: unknown) => {
+  if (message !== undefined && message !== 'close') return;
+  initializationCancelled = true;
+  remember(new Error('Original native child closed during fixture initialization'));
+};
+const disconnectInitialization = () => cancelInitialization();
+process.on('message', cancelInitialization);
+process.once('disconnect', disconnectInitialization);
+if (!process.connected) cancelInitialization();
+if (initializationCancelled) {
+  process.off('message', cancelInitialization);
+  process.off('disconnect', disconnectInitialization);
+  throw first;
+}
+originalConstructionPhase('fixture-start');
 const owning = await createOriginalNativeLaunchFixture(
   caseName === 'runner-no-binding'
     ? {
@@ -757,7 +812,15 @@ const owning = await createOriginalNativeLaunchFixture(
                                     },
                                   }
                                 : {}
-);
+)
+  .catch((cause: unknown) => {
+    remember(cause);
+    throw first;
+  })
+  .finally(() => {
+    process.off('message', cancelInitialization);
+    process.off('disconnect', disconnectInitialization);
+  });
 originalConstructionPhase('fixture-ready');
 const setup: {
   refreshStory?: () => Promise<void>;
@@ -812,6 +875,11 @@ function close(): void {
   })();
 }
 process.on('disconnect', close);
+if (initializationCancelled || !process.connected) {
+  close();
+  await closing;
+  throw failed ? first : new Error('Original native child disconnected during initialization');
+}
 originalConstructionPhase('setup-start');
 try {
   setupPending = (async () => {
@@ -819,7 +887,7 @@ try {
       const repo = owning.repos.repoPath(owning.roomId);
       const ceiling = owning.repos.homeDir(owning.roomId);
       setup.secondBound = await (
-        await import('./room-original-native-second-bound-controls.js')
+        setupControl as typeof import('./room-original-native-second-bound-controls.js')
       ).prepareOriginalNativeSecondBoundBusyControl(
         owning,
         (args, cwd = repo) => fixtureGit(args, cwd, ceiling),
@@ -829,7 +897,7 @@ try {
       const repo = owning.repos.repoPath(owning.roomId);
       const ceiling = owning.repos.homeDir(owning.roomId);
       setup.retiredBusy = await (
-        await import('./room-original-native-placement-controls.js')
+        setupControl as typeof import('./room-original-native-placement-controls.js')
       ).prepareOriginalNativeRetiredIdBusyControl(
         owning,
         (args, cwd = repo) => fixtureGit(args, cwd, ceiling),
@@ -839,7 +907,7 @@ try {
       const repo = owning.repos.repoPath(owning.roomId);
       const ceiling = owning.repos.homeDir(owning.roomId);
       setup.refreshStory = await (
-        await import('./room-original-native-refresh-story.js')
+        setupControl as typeof import('./room-original-native-refresh-story.js')
       ).prepareOriginalNativeRefreshStory(owning, (args, cwd = repo) =>
         fixtureGit(args, cwd, ceiling)
       );
