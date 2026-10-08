@@ -313,7 +313,7 @@ it.each([false, true])(
           sequence: expect.any(Number),
         },
       });
-      expect(childrenCalls).toBe(unqualified ? 1 : 2); // Initial root discovery, then the exact incomplete root sweep.
+      expect(childrenCalls).toBe(unqualified ? 1 : 3); // Root census, new descendant census, then exact incomplete root sweep.
       const gappedAlive = checkpoints.find((snapshot) => snapshot.gaps.length);
       expect(gappedAlive?.retainedIdentities[1].lifecycle).toBe('alive');
       const final = await readJournal(f.location);

@@ -223,10 +223,12 @@ export async function observeDarwinJournal(
         } catch {
           /* Diagnostic lookup/output faults never override original refusal/custody. */
         }
-        // Enumerate only previously enrolled live parents. Additions cannot invent an old parent relationship.
-        for (const parent of current.retainedIdentities.filter(
-          (value) => value.lifecycle === 'alive'
-        )) {
+        // New descendants have an exact same-window parent association from the preceding
+        // original census. Census them in breadth-first order before publication, so their
+        // existing complete-zero path can enroll a leaf without an unobserved extra sweep.
+        const parents = current.retainedIdentities.filter((value) => value.lifecycle === 'alive');
+        const originalParentCount = parents.length;
+        for (const [index, parent] of parents.entries()) {
           const now = next.retainedIdentities.find((value) =>
             sameProcess(value.identity, parent.identity)
           )!;
@@ -246,6 +248,19 @@ export async function observeDarwinJournal(
           )
             continue;
           if (options.enumerationCloseRequested?.()) continue;
+          if (index >= originalParentCount) {
+            // Newly discovered work cannot enter after this original sampling window expires.
+            const beforeChildren = options.monotonicNow();
+            if (
+              !Number.isFinite(beforeChildren) ||
+              beforeChildren < start ||
+              beforeChildren >= currentWindowEnd ||
+              beforeChildren - start > options.maxGap
+            ) {
+              gap(next, 'observer-lost');
+              break;
+            }
+          }
           let childFacts: DarwinProcessBatch['processes'];
           let childBatch: DarwinChildrenBatch | undefined;
           if (parent.role === 'manager') {
@@ -383,7 +398,7 @@ export async function observeDarwinJournal(
               parentDeathSequence: null,
             };
             const isRoot = sameProcess(child, root);
-            next.retainedIdentities.push({
+            const enrolled: JournalSnapshot['retainedIdentities'][number] = {
               identity: child,
               role: isRoot ? 'root' : 'descendant',
               parent: parent.identity,
@@ -394,7 +409,9 @@ export async function observeDarwinJournal(
               lastSeenSequence: next.sequence,
               relationWindow: relation,
               lifecycle: 'alive',
-            });
+            };
+            next.retainedIdentities.push(enrolled);
+            if (!isRoot) parents.push(enrolled);
             if (isRoot) {
               next.root = { kind: 'attributed', identity: child, association };
               if (next.phase === 'allocated') next.phase = 'observing';

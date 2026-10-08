@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'fix(browser): track new descendants within the original observation window'
   - 'fix(browser): keep browser sessions running across unrelated settings changes'
   - 'fix(browser): forward selection copy to the owned browser'
   - 'fix(browser): diagnose selection and native frame acceptance failures'

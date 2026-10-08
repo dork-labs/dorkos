@@ -281,20 +281,32 @@ async function durableFixture() {
   };
 }
 
-for (const fault of ['exit', 'fork-then-reparent', 'unknown-inspect', 'retained-orphan'] as const)
+for (const fault of [
+  'exit',
+  'early-exit',
+  'fork-then-reparent',
+  'unknown-inspect',
+  'retained-orphan',
+  'changed-boot',
+  'initial-nonleaf',
+  'appended-window-expired',
+] as const)
   it(`runs genuine durable journal leaf transition ${fault}`, async () => {
     const f = await durableFixture();
     const events = await fixture();
     let round = 0,
       clock = 10;
     const checkpoints: JournalSnapshot[] = [];
+    let initialNonleafWatched: boolean | undefined;
+    let childQueries = 0;
     const boot = { version: 1 as const, bootSeconds: '1', bootMicroseconds: '0' };
     const observer: DarwinProcessObserver = {
       async inspect(pids) {
         return {
           ...boot,
           processes: pids.map((pid) => {
-            if (round >= 4) return { kind: 'absent' as const, pid };
+            if (round >= 4 || (pid === 30 && fault === 'early-exit' && round >= 3))
+              return { kind: 'absent' as const, pid };
             if (pid === 30 && round === 3 && fault === 'unknown-inspect')
               return { kind: 'unknown' as const, pid, error: 3 };
             return {
@@ -314,9 +326,29 @@ for (const fault of ['exit', 'fork-then-reparent', 'unknown-inspect', 'retained-
         };
       },
       async children(parent) {
-        const identity = parent.pid === 20 ? f.rootNative : f.childNative;
-        if (parent.pid === 30 && round === 3) return failedCensus();
-        if (parent.pid === 30 && round === 2 && fault === 'retained-orphan')
+        if (parent.pid === 30) childQueries++;
+        const identity =
+          parent.pid === 20
+            ? f.rootNative
+            : parent.pid === 30
+              ? f.childNative
+              : { pid: 31, seconds: '301', microseconds: '0' };
+        if (parent.pid === 30 && (round === 3 || (round === 2 && fault === 'early-exit')))
+          return failedCensus();
+        if (parent.pid === 30 && round === 1 && fault === 'changed-boot')
+          return {
+            ...boot,
+            bootSeconds: '2',
+            parentBefore: identity,
+            parentAfter: identity,
+            complete: true,
+            processes: [],
+          };
+        if (
+          parent.pid === 30 &&
+          ((round === 2 && fault === 'retained-orphan') ||
+            ((round === 1 || round === 2) && fault === 'initial-nonleaf'))
+        )
           return {
             ...boot,
             parentBefore: identity,
@@ -331,6 +363,7 @@ for (const fault of ['exit', 'fork-then-reparent', 'unknown-inspect', 'retained-
               },
             ],
           };
+        if (parent.pid === 20 && round === 1 && fault === 'appended-window-expired') clock = 1000;
         return {
           ...boot,
           parentBefore: identity,
@@ -364,7 +397,24 @@ for (const fault of ['exit', 'fork-then-reparent', 'unknown-inspect', 'retained-
           const read = await readJournal(f.location);
           if (read.state === 'valid-recorded-data') checkpoints.push(read.snapshot);
           round++;
-          if (round === 3 && fault !== 'retained-orphan') {
+          if (round === 2 && fault === 'initial-nonleaf')
+            initialNonleafWatched = originalLeafDiagnostic(
+              events.owner,
+              darwinBirth(f.childNative)
+            ).watched;
+          if (round === 2 && fault === 'early-exit') {
+            const state = originalLeafDiagnostic(events.owner, darwinBirth(f.childNative));
+            // Old delayed enumeration has no watch here; never fabricate its event slot.
+            if (state.watched) events.row('event', 1, 'exit');
+          }
+          if (
+            round === 3 &&
+            fault !== 'retained-orphan' &&
+            fault !== 'early-exit' &&
+            fault !== 'changed-boot' &&
+            fault !== 'initial-nonleaf' &&
+            fault !== 'appended-window-expired'
+          ) {
             if (fault === 'fork-then-reparent') events.row('event', 1, 'fork');
             events.row('event', 1, 'exit');
           }
@@ -374,8 +424,19 @@ for (const fault of ['exit', 'fork-then-reparent', 'unknown-inspect', 'retained-
       const read = await readJournal(f.location);
       expect(read.state).toBe('valid-recorded-data');
       if (read.state !== 'valid-recorded-data') throw new Error('original-journal-missing');
-      if (fault === 'exit') {
+      if (fault === 'exit' || fault === 'early-exit') {
         expect(read.snapshot.gaps).toEqual([]);
+        if (fault === 'early-exit') {
+          const first = checkpoints.find((snapshot) =>
+            snapshot.retainedIdentities.some((row) => row.identity.pid === 30)
+          );
+          expect(
+            first?.retainedIdentities.find((row) => row.identity.pid === 30)?.firstSeenSequence
+          ).toBe(2);
+          expect(originalLeafDiagnostic(events.owner, darwinBirth(f.childNative)).consumed).toBe(
+            true
+          );
+        }
         expect(
           checkpoints.some((snapshot) =>
             snapshot.retainedIdentities.some(
@@ -386,14 +447,30 @@ for (const fault of ['exit', 'fork-then-reparent', 'unknown-inspect', 'retained-
         expect(
           read.snapshot.retainedIdentities.find((row) => row.identity.pid === 30)?.lifecycle
         ).toBe('dead'); // Only later actual absence.
-      } else
+      } else {
+        if (fault === 'initial-nonleaf') expect(initialNonleafWatched).toBe(false);
+        if (fault === 'changed-boot' || fault === 'appended-window-expired') {
+          expect(originalLeafDiagnostic(events.owner, darwinBirth(f.childNative)).watched).toBe(
+            false
+          );
+          expect(read.snapshot.firstCause?.sequence).toBe(2);
+        }
+        if (fault === 'appended-window-expired') {
+          expect(childQueries).toBe(0);
+          expect(read.snapshot.firstCause?.cause).toBe('observer-lost');
+        }
         expect(
           read.snapshot.gaps.some(
             (gap) =>
               gap.cause ===
-              (fault === 'unknown-inspect' ? 'identity-unknown' : 'association-missing')
+              (fault === 'unknown-inspect'
+                ? 'identity-unknown'
+                : fault === 'appended-window-expired'
+                  ? 'observer-lost'
+                  : 'association-missing')
           )
         ).toBe(true);
+      }
     } finally {
       events.release();
       try {
