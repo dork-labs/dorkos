@@ -42,6 +42,36 @@ import { createToolBinding, type ToolBinding } from './agent-tools/tool-binding.
 import type { ExtensionToolCheck } from '@dorkos/extension-api/tool-check';
 import { isolatedFilesDir } from './isolation/grants.js';
 
+/** Retain each original synchronous cleanup outcome, including a falsy throw. */
+function retainCleanup(cleanup: () => void): () => void {
+  let attempted = false;
+  let first: { value: unknown } | undefined;
+  return () => {
+    if (!attempted) {
+      attempted = true;
+      try {
+        cleanup();
+      } catch (value) {
+        first = { value };
+      }
+    }
+    if (first) throw first.value;
+  };
+}
+
+/** Enter every independent cleanup before propagating the first exact failure. */
+function releaseTogether(cleanups: readonly (() => void)[]): void {
+  let first: { value: unknown } | undefined;
+  for (const cleanup of cleanups) {
+    try {
+      cleanup();
+    } catch (value) {
+      first ??= { value };
+    }
+  }
+  if (first) throw first.value;
+}
+
 /** Minimum scheduling interval in seconds (prevents tight loops). */
 const MIN_INTERVAL_SECONDS = 5;
 
@@ -83,14 +113,13 @@ function createAccountsApi(extensionId: string): { accounts: AccountsApi; releas
   }
 
   function track(remove: () => void): () => void {
-    let removed = false;
-    const once = () => {
-      if (removed) return;
-      removed = true;
-      releases.delete(once);
+    const once = retainCleanup(() => {
       remove();
-    };
+      releases.delete(once);
+    });
     releases.add(once);
+    // The producer may synchronously release this context before returning its receipt.
+    if (released) once();
     return once;
   }
 
@@ -144,16 +173,10 @@ function createAccountsApi(extensionId: string): { accounts: AccountsApi; releas
 
   return {
     accounts,
-    release: () => {
+    release: retainCleanup(() => {
       released = true;
-      for (const remove of [...releases]) {
-        try {
-          remove();
-        } catch (err) {
-          logger.warn(`[ext:${extensionId}] releasing an account listener failed:`, err);
-        }
-      }
-    },
+      releaseTogether([...releases]);
+    }),
   };
 }
 
@@ -205,23 +228,21 @@ function createAgentApi(extensionId: string): { agent: AgentApi; release: () => 
         return () => {};
       }
       const remove = service.subscribe(extensionId, listener);
-      let removed = false;
-      const once = () => {
-        if (removed) return;
-        removed = true;
-        releases.delete(once);
+      const once = retainCleanup(() => {
         remove();
-      };
+        releases.delete(once);
+      });
       releases.add(once);
+      if (released) once();
       return once;
     },
   };
   return {
     agent,
-    release: () => {
+    release: retainCleanup(() => {
       released = true;
-      for (const remove of [...releases]) remove();
-    },
+      releaseTogether([...releases]);
+    }),
   };
 }
 
@@ -238,6 +259,8 @@ interface CreateContextDeps {
    * means the extension declares none, and every `handle` call is refused.
    */
   toolChecks?: readonly ExtensionToolCheck[];
+  /** Private in-process registrar recovery; an isolated child keeps its ordinary reload path. */
+  registrationRecovery?: 'restart-app';
 }
 
 /**
@@ -280,12 +303,18 @@ export function createDataProviderContext(deps: CreateContextDeps): {
   // whatever it still does afterwards must start nothing (see `dispose`).
   let disposed = false;
   let toldDisposed = false;
+  const recovery =
+    deps.registrationRecovery === 'restart-app'
+      ? 'Restart the DorkOS app before trying again.'
+      : 'Reload the extension to try again.';
+  const stoppedRecovery =
+    deps.registrationRecovery === 'restart-app' ? recovery : 'Reload it to try again.';
   const inert = (what: string): (() => void) => {
     if (!toldDisposed) {
       toldDisposed = true;
       logger.warn(
         `[ext:${extensionId}] ${what} was called after DorkOS stopped waiting for this ` +
-          `extension to start; it does nothing. Reload the extension to try again.`
+          `extension to start; it does nothing. ${recovery}`
       );
     }
     return () => undefined;
@@ -328,7 +357,7 @@ export function createDataProviderContext(deps: CreateContextDeps): {
         logger.error(`[ext:${extensionId}] Scheduled task error:`, err);
       });
     }, clamped * 1000);
-    const cancel = () => clearInterval(interval);
+    const cancel = retainCleanup(() => clearInterval(interval));
     scheduledCleanups.push(cancel);
     return cancel;
   }
@@ -374,7 +403,7 @@ export function createDataProviderContext(deps: CreateContextDeps): {
         inert('agent.send');
         throw new AgentSendError(
           'stopped',
-          'This extension was stopped before it finished starting, so it cannot send messages. Reload it to try again.'
+          `This extension was stopped before it finished starting, so it cannot send messages. ${stoppedRecovery}`
         );
       }
       return agent.send(input);
@@ -409,7 +438,7 @@ export function createDataProviderContext(deps: CreateContextDeps): {
         if (disposed) {
           inert('sessions.start');
           throw new Error(
-            'This extension was stopped before it finished starting, so it cannot start chats. Reload it to try again.'
+            `This extension was stopped before it finished starting, so it cannot start chats. ${stoppedRecovery}`
           );
         }
         const service = getStartWorkService();
@@ -421,13 +450,19 @@ export function createDataProviderContext(deps: CreateContextDeps): {
     tools: tools.api,
   };
 
-  const releaseListeners = () => {
-    releaseAccounts();
-    releaseProjects();
-    releaseInbox();
-    releaseProjectSettings();
-    releaseAgent();
-  };
+  const listenerReleases = [
+    releaseAccounts,
+    releaseProjects,
+    releaseInbox,
+    releaseProjectSettings,
+    releaseAgent,
+  ].map(retainCleanup);
+  const releaseListeners = retainCleanup(() => releaseTogether(listenerReleases));
+  const closeTools = retainCleanup(() => tools.close());
+  const dispose = retainCleanup(() => {
+    disposed = true;
+    releaseTogether([closeTools, ...scheduledCleanups.splice(0), releaseListeners]);
+  });
 
   return {
     ctx,
@@ -440,18 +475,6 @@ export function createDataProviderContext(deps: CreateContextDeps): {
      * no-op (logged once). For a `register()` DorkOS stopped waiting for, which
      * may still run on in the background (`extension-server-lifecycle.ts`).
      */
-    dispose: () => {
-      disposed = true;
-      // A given-up instance never offers tools, whatever it binds later.
-      tools.close();
-      for (const cancel of scheduledCleanups.splice(0)) {
-        try {
-          cancel();
-        } catch {
-          /* swallow cancellation errors */
-        }
-      }
-      releaseListeners();
-    },
+    dispose,
   };
 }

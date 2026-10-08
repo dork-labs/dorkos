@@ -28,7 +28,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import type { Transport } from '@dorkos/shared/transport';
 import type { Session } from '@dorkos/shared/types';
-import { reportClientError } from '@/layers/shared/lib';
+import { reportClientError, type EffectOwner } from '@/layers/shared/lib';
 // Same-slice imports via sibling modules (not the entities/session barrel) to
 // avoid a self-referential barrel import within this slice.
 import { sessionKeys } from '../api/query-keys';
@@ -53,16 +53,21 @@ export const SESSION_LOOKUP_FAILED_MESSAGE =
  * @param cwd - The directory that could not be resolved, named so the message
  *   is about something rather than about nothing.
  */
-export function notifySessionLookupFailed(cwd: string | null): void {
-  toast.error(SESSION_LOOKUP_FAILED_MESSAGE, {
+export function notifySessionLookupFailed(cwd: string | null, owner?: EffectOwner): void {
+  const method = toast.error;
+  const options = {
     description: cwd
       ? `Nothing moved. Try ${cwd} again in a moment.`
       : 'Nothing moved. Try again in a moment.',
-  });
+  };
+  owner?.beforeEffect();
+  Reflect.apply(method, toast, [SESSION_LOOKUP_FAILED_MESSAGE, options]);
 }
 
 /** What {@link resolveSessionForCwd} needs: somewhere to look, somewhere to ask. */
 export interface ResolveSessionDeps {
+  /** Original extension occurrence; absent for user-owned lookup. */
+  effectOwner?: EffectOwner;
   /** Query client holding (and caching) the per-directory session lists. */
   queryClient: QueryClient;
   /** Transport used to ask the server when nothing is cached yet. */
@@ -151,7 +156,9 @@ export async function resolveSessionForCwd(
   deps: ResolveSessionDeps,
   cwd: string | null
 ): Promise<ResolvedSession | null> {
+  const owner = deps.effectOwner;
   const sessions = trustedSessionsForCwd(deps.queryClient, cwd) ?? (await askServer(deps, cwd));
+  owner?.beforeEffect();
   if (sessions === null) return null;
   const mostRecent = mostRecentConversation(sessions);
   return mostRecent
@@ -242,13 +249,26 @@ export function cachedSessionForCwd(queryClient: QueryClient, cwd: string | null
  * which is the one case where starting a new one is right.
  */
 async function askServer(deps: ResolveSessionDeps, cwd: string | null): Promise<Session[] | null> {
+  const owner = deps.effectOwner;
   try {
-    return await deps.queryClient.fetchQuery({
-      ...sessionListQueryOptions(deps, cwd),
-      staleTime: 0,
-    });
+    const queryClient = deps.queryClient;
+    const options = sessionListQueryOptions(deps, cwd);
+    if (!owner) return await queryClient.fetchQuery({ ...options, staleTime: 0 });
+    // The extension lane does not hand a late result to fetchQuery's automatic
+    // cache commit. It uses the same canonical query function and explicit writes.
+    const query = options.queryFn;
+    owner.beforeEffect();
+    const sessions = await Reflect.apply(query, options, []);
+    const publish = queryClient.setQueryData;
+    const key = options.queryKey;
+    owner.beforeEffect();
+    Reflect.apply(publish, queryClient, [key, sessions]);
+    owner.beforeEffect();
+    return sessions;
   } catch (error) {
-    reportClientError(deps.transport, error);
+    const transport = deps.transport;
+    owner?.beforeEffect();
+    reportOwnedLookupFailure(transport, error, owner);
     return null;
   }
 }
@@ -267,4 +287,36 @@ function trustedSessionsForCwd(queryClient: QueryClient, cwd: string | null): Se
   const state = queryClient.getQueryState<Session[]>(sessionKeys.list(cwd));
   if (state === undefined || state.isInvalidated) return null;
   return state.data && state.data.length > 0 ? state.data : null;
+}
+
+/** Prepare callback-free diagnostic data before its exact occurrence admission. */
+function reportOwnedLookupFailure(transport: Transport, error: unknown, owner?: EffectOwner): void {
+  if (!owner) {
+    reportClientError(transport, error);
+    return;
+  }
+  const method = transport.reportError;
+  const value = (key: string): string | undefined => {
+    if ((typeof error !== 'object' || error === null) && typeof error !== 'function')
+      return undefined;
+    const descriptor = Object.getOwnPropertyDescriptor(error, key);
+    return descriptor && 'value' in descriptor && typeof descriptor.value === 'string'
+      ? descriptor.value
+      : undefined;
+  };
+  const name = value('name') ?? 'Error';
+  const message = value('message') ?? (typeof error === 'string' ? error : 'Session lookup failed');
+  const stack = value('stack');
+  const prepared = new Error(message);
+  Object.defineProperties(prepared, { name: { value: name }, stack: { value: stack } });
+  owner.beforeEffect();
+  reportClientError(
+    {
+      reportError: (input) => {
+        owner.beforeEffect();
+        return Reflect.apply(method, transport, [input]);
+      },
+    },
+    prepared
+  );
 }

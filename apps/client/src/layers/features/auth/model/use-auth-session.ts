@@ -9,7 +9,7 @@
  *
  * @module features/auth/model/use-auth-session
  */
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useRef, useEffect, type RefObject } from 'react';
 import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import {
   clearBootCache,
@@ -17,9 +17,17 @@ import {
   isBootQueryKey,
   isStreamOwnedQuery,
   setAuthRequired,
+  beginExtensionAuthOperation,
+  isExtensionAuthOperationCurrent,
+  authenticateExtensionAuthOperation,
+  resumeExtensionLoads,
+  getExtensionLoadAdmission,
+  cancelExtensionAuthOperation,
+  suspendExtensionLoads,
+  type ExtensionAuthOperation,
 } from '@/layers/shared/lib';
 import { useAuthClient } from './auth-client-context';
-import type { AuthError, AuthSession, AuthUser } from './auth-client';
+import type { AuthClient, AuthError, AuthSession, AuthUser } from './auth-client';
 
 /**
  * Everything a sign-in or sign-out may safely re-read.
@@ -37,10 +45,20 @@ function refetchableOnAuthChange(query: { meta?: Record<string, unknown> }): boo
   return !isStreamOwnedQuery(query);
 }
 
-function invalidateProtectedCommunityState(queryClient: QueryClient): void {
-  invalidateCommunityAuthority();
-  void queryClient.cancelQueries({ queryKey: ['communities'] });
-  queryClient.removeQueries({ queryKey: ['communities'] });
+function invalidateProtectedCommunityState(
+  queryClient: QueryClient,
+  requireCurrent: () => void
+): void {
+  requireCurrent();
+  invalidateCommunityAuthority(requireCurrent);
+  const cancel = queryClient.cancelQueries;
+  const cancelInput = { queryKey: ['communities'] };
+  requireCurrent();
+  void Reflect.apply(cancel, queryClient, [cancelInput]);
+  const remove = queryClient.removeQueries;
+  const removeInput = { queryKey: ['communities'] };
+  requireCurrent();
+  Reflect.apply(remove, queryClient, [removeInput]);
 }
 
 /** TanStack Query key for the current auth session. */
@@ -62,6 +80,35 @@ export function useAuthSession() {
 /** Outcome of a credential mutation — lets callers branch on the error synchronously. */
 export type AuthActionResult = { ok: true } | { ok: false; error: AuthError };
 
+/** Contain a throwing client as well as a rejected request; no success is synthesized. */
+async function settledAuthCall(
+  call: () => Promise<{ error: AuthError | null }>
+): Promise<{ error: AuthError | null }> {
+  try {
+    return await call();
+  } catch {
+    return {
+      error: {
+        status: 0,
+        code: 'AUTH_REQUEST_FAILED',
+        message: 'Sign-in state could not be confirmed.',
+      },
+    };
+  }
+}
+
+/** A superseded local continuation grants no session or extension state. */
+function supersededAuthResult(): AuthActionResult {
+  return {
+    ok: false,
+    error: {
+      status: 0,
+      code: 'AUTH_SUPERSEDED',
+      message: 'A newer sign-in change took precedence.',
+    },
+  };
+}
+
 /** State + trigger returned by the credential mutation hooks. */
 interface AuthActionState<Args extends unknown[]> {
   run: (...args: Args) => Promise<AuthActionResult>;
@@ -70,102 +117,184 @@ interface AuthActionState<Args extends unknown[]> {
   reset: () => void;
 }
 
-/**
- * Sign in with email + password. On success clears the auth-required signal and
- * refetches session + config so gated data reloads behind the (now valid) cookie.
- */
-export function useSignIn(): AuthActionState<[email: string, password: string]> {
-  const client = useAuthClient();
-  const queryClient = useQueryClient();
-  const [isPending, setIsPending] = useState(false);
-  const [error, setError] = useState<AuthError | null>(null);
-
-  const run = useCallback(
-    async (email: string, password: string): Promise<AuthActionResult> => {
-      setIsPending(true);
-      setError(null);
-      invalidateProtectedCommunityState(queryClient);
-      const { error: err } = await client.signIn.email({ email, password });
-      setIsPending(false);
-      if (err) {
-        setError(err);
-        return { ok: false, error: err };
-      }
-      setAuthRequired(false);
-      await queryClient.invalidateQueries({ predicate: refetchableOnAuthChange });
-      return { ok: true };
-    },
-    [client, queryClient]
-  );
-
-  return { run, isPending, error, reset: () => setError(null) };
+type AuthKind = ExtensionAuthOperation['kind'];
+interface CredentialArgs {
+  signIn: [email: string, password: string];
+  signUp: [email: string, password: string, name: string];
+  signOut: [];
 }
-
-/**
- * Create the owner account (first-run sign-up). On success clears the
- * auth-required signal and refetches session state.
- */
-export function useSignUp(): AuthActionState<[email: string, password: string, name: string]> {
-  const client = useAuthClient();
-  const queryClient = useQueryClient();
-  const [isPending, setIsPending] = useState(false);
-  const [error, setError] = useState<AuthError | null>(null);
-
-  const run = useCallback(
-    async (email: string, password: string, name: string): Promise<AuthActionResult> => {
-      setIsPending(true);
-      setError(null);
-      invalidateProtectedCommunityState(queryClient);
-      const { error: err } = await client.signUp.email({ email, password, name });
-      setIsPending(false);
-      if (err) {
-        setError(err);
-        return { ok: false, error: err };
-      }
-      setAuthRequired(false);
-      await queryClient.invalidateQueries({ queryKey: authSessionKey });
-      return { ok: true };
-    },
-    [client, queryClient]
-  );
-
-  return { run, isPending, error, reset: () => setError(null) };
+interface ActionOwner {
+  client: AuthClient;
+  query: QueryClient;
+  identity: object;
+  local: RefObject<object | null>;
+  attempt: RefObject<ExtensionAuthOperation | null>;
+  pending: (value: boolean) => void;
+  error: (value: AuthError | null) => void;
 }
-
-/** Sign out; clears the cached session so the guard re-evaluates (login enabled → login screen). */
-export function useSignOut(): AuthActionState<[]> {
-  const client = useAuthClient();
-  const queryClient = useQueryClient();
-  const [isPending, setIsPending] = useState(false);
-  const [error, setError] = useState<AuthError | null>(null);
-
-  const run = useCallback(async (): Promise<AuthActionResult> => {
-    setIsPending(true);
-    setError(null);
-    invalidateProtectedCommunityState(queryClient);
-    const { error: err } = await client.signOut();
-    setIsPending(false);
-    if (err) {
-      setError(err);
-      return { ok: false, error: err };
+interface AuthRun {
+  owner: ActionOwner;
+  local: object;
+  attempt: ExtensionAuthOperation | null;
+}
+function locallyCurrent(run: AuthRun): boolean {
+  return run.owner.local.current === run.local;
+}
+function globallyCurrent(run: AuthRun): boolean {
+  return !!run.attempt && isExtensionAuthOperationCurrent(run.owner.identity, run.attempt);
+}
+function currentRun(run: AuthRun): boolean {
+  return locallyCurrent(run) && globallyCurrent(run);
+}
+function requireRun(run: AuthRun): void {
+  if (!currentRun(run)) throw new Error('Auth attempt superseded.');
+}
+function startRun(run: AuthRun, kind: AuthKind): void {
+  // Record the original token before retirement callbacks; never consult a newer ref in catch.
+  run.attempt = beginExtensionAuthOperation(run.owner.identity, kind);
+  if (locallyCurrent(run)) run.owner.attempt.current = run.attempt;
+  requireRun(run);
+  invalidateProtectedCommunityState(run.owner.query, () => requireRun(run));
+  requireRun(run);
+}
+function authRequest(run: AuthRun, kind: AuthKind, args: readonly string[]) {
+  const client = run.owner.client;
+  if (kind === 'signOut') {
+    const method = client.signOut;
+    requireRun(run);
+    return Reflect.apply(method, client, []);
+  }
+  const target = client[kind];
+  const method = target.email;
+  const input =
+    kind === 'signUp'
+      ? { email: args[0], password: args[1], name: args[2] }
+      : { email: args[0], password: args[1] };
+  requireRun(run);
+  return Reflect.apply(method, target, [input]);
+}
+async function finishCredential(run: AuthRun, kind: AuthKind): Promise<AuthActionResult> {
+  const { owner, attempt } = run;
+  // Successful authentication survives expected login UI unmount, but no newer occurrence.
+  if (!attempt || !authenticateExtensionAuthOperation(owner.identity, attempt))
+    return supersededAuthResult();
+  if (locallyCurrent(run)) owner.pending(false);
+  if (!globallyCurrent(run)) return supersededAuthResult();
+  setAuthRequired(false);
+  if (!globallyCurrent(run)) return supersededAuthResult();
+  const resumed = resumeExtensionLoads(owner.identity, attempt);
+  const sameAdmission = () =>
+    globallyCurrent(run) && (!resumed || getExtensionLoadAdmission() === resumed);
+  const query = owner.query;
+  const invalidate = query.invalidateQueries;
+  const input =
+    kind === 'signUp' ? { queryKey: authSessionKey } : { predicate: refetchableOnAuthChange };
+  if (!sameAdmission()) return supersededAuthResult();
+  await Reflect.apply(invalidate, query, [input]);
+  return sameAdmission() ? { ok: true } : supersededAuthResult();
+}
+async function finishSignOut(run: AuthRun): Promise<AuthActionResult> {
+  const { query } = run.owner;
+  const set = query.setQueryData;
+  const setInput = [authSessionKey, null];
+  requireRun(run);
+  Reflect.apply(set, query, setInput);
+  const remove = query.removeQueries;
+  const removeInput = {
+    predicate: (query: { queryKey: readonly unknown[] }) => isBootQueryKey(query.queryKey),
+  };
+  requireRun(run);
+  Reflect.apply(remove, query, [removeInput]);
+  requireRun(run);
+  clearBootCache();
+  const invalidate = query.invalidateQueries;
+  const invalidateInput = { predicate: refetchableOnAuthChange };
+  requireRun(run);
+  await Reflect.apply(invalidate, query, [invalidateInput]);
+  requireRun(run);
+  return { ok: true };
+}
+function failRun(run: AuthRun): AuthActionResult {
+  // Local ownership is checked before suspension: an unmounted or superseded catch grants no effect.
+  if (!currentRun(run)) return supersededAuthResult();
+  suspendExtensionLoads();
+  if (!locallyCurrent(run)) return supersededAuthResult();
+  const error: AuthError = {
+    status: 0,
+    code: 'AUTH_STATE_FAILED',
+    message: 'Sign-in state could not be confirmed.',
+  };
+  run.owner.pending(false);
+  run.owner.error(error);
+  return { ok: false, error };
+}
+async function performAuthRun(
+  owner: ActionOwner,
+  kind: AuthKind,
+  args: readonly string[]
+): Promise<AuthActionResult> {
+  owner.pending(true);
+  owner.error(null);
+  const run: AuthRun = { owner, local: {}, attempt: null };
+  owner.local.current = run.local;
+  try {
+    startRun(run, kind);
+    const { error } = await settledAuthCall(() => authRequest(run, kind, args));
+    if (!currentRun(run)) {
+      if (locallyCurrent(run)) owner.pending(false);
+      return supersededAuthResult();
     }
-    // Community descriptors and content are owner-private. Remove them before
-    // publishing the signed-out session so the next render cannot reuse the
-    // previous owner's same-browser cache while a refetch is still pending.
-    queryClient.setQueryData<AuthSession | null>(authSessionKey, null);
-    // Forget the sidebar's local memory, in the cache and on disk. It holds this
-    // person's channels, agents and today's conversations, and the whole point
-    // of it is that the NEXT load paints from it before the server has said
-    // anything — so leaving it behind would show the signed-out install's panel
-    // to whoever opens the browser next. Dropped from the cache first so the
-    // persister's next save has nothing left to write.
-    queryClient.removeQueries({ predicate: (query) => isBootQueryKey(query.queryKey) });
-    clearBootCache();
-    await queryClient.invalidateQueries({ predicate: refetchableOnAuthChange });
-    return { ok: true };
-  }, [client, queryClient]);
-
+    if (error) {
+      owner.pending(false);
+      owner.error(error);
+      return { ok: false, error };
+    }
+    if (kind === 'signOut') {
+      owner.pending(false);
+      return await finishSignOut(run);
+    }
+    return await finishCredential(run, kind);
+  } catch {
+    return failRun(run);
+  }
+}
+function useAuthAction<K extends AuthKind>(kind: K): AuthActionState<CredentialArgs[K]> {
+  const client = useAuthClient();
+  const query = useQueryClient();
+  const [identity] = useState<object>(() => ({}));
+  const local = useRef<object | null>(null);
+  const attempt = useRef<ExtensionAuthOperation | null>(null);
+  const [isPending, pending] = useState(false);
+  const [error, setError] = useState<AuthError | null>(null);
+  useEffect(
+    () => () => {
+      local.current = null;
+      if (attempt.current) cancelExtensionAuthOperation(identity, attempt.current);
+    },
+    [identity]
+  );
+  const run = useCallback(
+    (...args: CredentialArgs[K]) =>
+      performAuthRun(
+        { client, query, identity, local, attempt, pending, error: setError },
+        kind,
+        args
+      ),
+    [client, query, identity, kind]
+  );
   return { run, isPending, error, reset: () => setError(null) };
+}
+/** Sign in; only the original current successful credential occurrence can resume extension loads. */
+export function useSignIn(): AuthActionState<CredentialArgs['signIn']> {
+  return useAuthAction('signIn');
+}
+/** Create the owner account under the same exact occurrence and cache-publication fences. */
+export function useSignUp(): AuthActionState<CredentialArgs['signUp']> {
+  return useAuthAction('signUp');
+}
+/** Sign out and retire extensions before publishing the signed-out cache state. */
+export function useSignOut(): AuthActionState<CredentialArgs['signOut']> {
+  return useAuthAction('signOut');
 }
 
 /** The signed-in user, or `null` — a thin read over {@link useAuthSession}. */

@@ -1061,3 +1061,87 @@ describe('createExtensionAPI', () => {
     });
   });
 });
+
+describe('asynchronous API originating owner', () => {
+  it.each([false, true])(
+    'held decision body cannot navigate after retirement=%s',
+    async (retired) => {
+      const deps = makeDeps();
+      let current = true;
+      let deliver!: (value: unknown) => void;
+      let entered!: () => void;
+      const reading = new Promise<unknown>((resolve) => {
+        deliver = resolve;
+      });
+      const enteredBody = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const response = new Response();
+      vi.spyOn(response, 'json').mockImplementation(() => {
+        entered();
+        return reading;
+      });
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response));
+      const { api } = createExtensionAPI('owned', deps, [], () => {
+        if (!current) throw new Error('EXTENSION_RETIRED');
+      });
+      const operation = api.answerDecision('decision', { action: 'approve' });
+      void operation.catch(() => {});
+      try {
+        await enteredBody;
+        current = !retired;
+        deliver({
+          resolved: true,
+          message: 'Done',
+          navigate: '/activity',
+          offer: null,
+          watch: null,
+        });
+        if (retired) {
+          await expect(operation).rejects.toThrow('EXTENSION_RETIRED');
+          expect(deps.navigate).not.toHaveBeenCalled();
+        } else {
+          await expect(operation).resolves.toMatchObject({ resolved: true });
+          expect(deps.navigate).toHaveBeenCalledWith({ to: '/activity' });
+        }
+      } finally {
+        deliver({
+          resolved: true,
+          message: 'Done',
+          navigate: '/activity',
+          offer: null,
+          watch: null,
+        });
+        await Promise.allSettled([operation]);
+        vi.unstubAllGlobals();
+      }
+    }
+  );
+});
+
+for (const cause of [false, undefined])
+  it(`keeps the original asynchronous request rejection (${String(cause)})`, async () => {
+    let reject!: (value: unknown) => void;
+    const response = new Promise<Response>((_yes, no) => {
+      reject = no;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => response)
+    );
+    let current = true;
+    const { api } = createExtensionAPI('owned', makeDeps(), [], () => {
+      if (!current) throw new Error('EXTENSION_RETIRED');
+    });
+    const original = api.loadData();
+    void original.catch(() => {});
+    try {
+      current = false;
+      reject(cause);
+      await expect(original).rejects.toBe(cause);
+    } finally {
+      reject(cause);
+      await Promise.allSettled([original]);
+      vi.unstubAllGlobals();
+    }
+  });

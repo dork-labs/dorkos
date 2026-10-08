@@ -31,3 +31,37 @@ describe('sessionListQueryOptions', () => {
     expect(queryClient.getQueryData(accountKeys.usage('claude-code'))).toBeUndefined();
   });
 });
+
+// Originating-occurrence controls preserve the captured request and publication boundary.
+it('refuses owned account seeding after a held envelope retires', async () => {
+  let deliver!: (value: {
+    sessions: [];
+    accountUsage: ReturnType<typeof createMockAccountUsage>[];
+  }) => void;
+  let current = true;
+  const queryClient = new QueryClient();
+  const transport = createMockTransport({
+    listSessions: vi.fn(
+      () =>
+        new Promise<Parameters<typeof deliver>[0]>((resolve) => {
+          deliver = resolve;
+        })
+    ),
+  });
+  const running = sessionListQueryOptions(
+    {
+      transport,
+      queryClient,
+      effectOwner: {
+        beforeEffect: () => {
+          if (!current) throw new Error('EXTENSION_RETIRED');
+        },
+      },
+    },
+    null
+  ).queryFn();
+  current = false;
+  deliver({ sessions: [], accountUsage: [createMockAccountUsage()] });
+  await expect(running).rejects.toThrow('EXTENSION_RETIRED');
+  expect(queryClient.getQueryData(accountKeys.usage('claude-code'))).toBeUndefined();
+});

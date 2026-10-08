@@ -178,3 +178,25 @@ describe('useAccountUsage', () => {
     expect(result.current.byPath.get('/Users/test/.claude')).toEqual(root);
   });
 });
+
+// Originating-occurrence controls preserve the captured request and publication boundary.
+it('refuses prepared account-cache publication after callback retirement', () => {
+  const queryClient = createTestQueryClient();
+  let current = true;
+  const records = [
+    Object.defineProperty({ ...ACCT_2 }, 'runtime', {
+      get: () => {
+        current = false;
+        return 'claude-code';
+      },
+    }),
+  ];
+  expect(() =>
+    seedAccountUsage(queryClient, records, {
+      beforeEffect: () => {
+        if (!current) throw new Error('EXTENSION_RETIRED');
+      },
+    })
+  ).toThrow('EXTENSION_RETIRED');
+  expect(queryClient.getQueryData(accountKeys.usage('claude-code'))).toBeUndefined();
+});

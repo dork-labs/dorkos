@@ -315,7 +315,21 @@ export {
   type DispatcherStore,
   type UiCommandOrigin,
 } from './ui-action-dispatcher';
-export { registerExtensionRemount, requestExtensionRemount } from './extension-remount';
+export {
+  registerExtensionRemount,
+  requestExtensionRemount,
+  getExtensionLoadAdmission,
+  subscribeExtensionLoadAdmission,
+  suspendExtensionLoads,
+  beginExtensionAuthOperation,
+  isExtensionAuthOperationCurrent,
+  authenticateExtensionAuthOperation,
+  resumeExtensionLoads,
+  registerExtensionLoadOwner,
+  markExtensionRetirementFailed,
+  cancelExtensionAuthOperation,
+} from './extension-remount';
+export type { ExtensionLoadAdmission, ExtensionAuthOperation } from './extension-remount';
 export {
   composerFileReference,
   registerComposerInsert,
@@ -412,3 +426,5 @@ export { serverSentence } from './server-sentence';
 export { appRoutes } from './route-factory';
 
 export { newSessionTarget, sessionLocationTarget } from './session-link';
+
+export type { EffectOwner } from './extension-effect-owner';

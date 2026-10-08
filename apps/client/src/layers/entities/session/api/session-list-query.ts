@@ -15,6 +15,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import type { Session } from '@dorkos/shared/types';
 import { seedAccountUsage } from '@/layers/shared/model';
+import type { EffectOwner } from '@/layers/shared/lib';
 // Same-slice imports via sibling modules (not the entities/session barrel) to
 // avoid a self-referential barrel import within this slice.
 import { sessionKeys } from './query-keys';
@@ -22,6 +23,8 @@ import { syncSessionDetailCache } from '../lib/sync-session-detail-cache';
 
 /** What the session-list query needs to run: somewhere to ask, somewhere to write. */
 export interface SessionListQueryDeps {
+  /** Original extension occurrence, when the lookup belongs to an extension. */
+  effectOwner?: EffectOwner;
   /** Transport the list is fetched over. */
   transport: Transport;
   /** Query client used to refresh the detail cache. */
@@ -48,16 +51,24 @@ export function sessionListQueryOptions(deps: SessionListQueryDeps, cwd: string 
       // detail-cache sync needs that lower bound to tell an answer that predates
       // a settings PATCH from one that supersedes it (DOR-496).
       const observedAt = Date.now();
-      const { sessions, accountUsage } = await deps.transport.listSessions(cwd ?? undefined);
+      const owner = deps.effectOwner;
+      const transport = deps.transport;
+      const method = transport.listSessions;
+      const directory = cwd ?? undefined;
+      owner?.beforeEffect();
+      const result = await Reflect.apply(method, transport, [directory]);
+      owner?.beforeEffect();
+      const { sessions, accountUsage } = result;
       // These rows are the same answer the detail endpoint gives, so any detail
       // entry they cover is refreshed too. A refetch triggered from elsewhere —
       // a Claude account switch, a rename from a profile — would otherwise leave a
       // frozen detail entry outranking a list row that had just been corrected.
-      syncSessionDetailCache(deps.queryClient, sessions, observedAt);
+      syncSessionDetailCache(deps.queryClient, sessions, observedAt, owner);
       // The envelope also carries the usage of every account these sessions run
       // on. It is already here, so it seeds the per-runtime usage cache and no
       // row has to ask for its own account's usage (spec `claude-account-ui` §6.0).
-      if (accountUsage) seedAccountUsage(deps.queryClient, accountUsage);
+      if (accountUsage) seedAccountUsage(deps.queryClient, accountUsage, owner);
+      owner?.beforeEffect();
       return sessions;
     },
     // **Dropped wifi is not a reason to stop asking localhost.** TanStack's

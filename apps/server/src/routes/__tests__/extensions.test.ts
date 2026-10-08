@@ -275,21 +275,35 @@ describe('Extension Routes', () => {
   });
 
   describe('GET /api/extensions/:id/bundle', () => {
+    it.each(['', '?generation=foreign', '?generation=a&generation=b'])(
+      'refuses missing or malformed correspondence %s before manager entry',
+      async (query) => {
+        const res = await request(fixtureServer).get('/api/extensions/test-ext/bundle' + query);
+        expect(res.status).toBe(400);
+        expect(manager.readBundle).not.toHaveBeenCalled();
+      }
+    );
+
     it('returns JavaScript with correct Content-Type and Cache-Control', async () => {
       manager.readBundle.mockResolvedValue('console.log("hello");');
 
-      const res = await request(fixtureServer).get('/api/extensions/test-ext/bundle');
+      const res = await request(fixtureServer).get(
+        '/api/extensions/test-ext/bundle?generation=' + 'a'.repeat(64)
+      );
 
       expect(res.status).toBe(200);
       expect(res.headers['content-type']).toContain('application/javascript');
       expect(res.headers['cache-control']).toBe('no-store');
       expect(res.text).toBe('console.log("hello");');
+      expect(manager.readBundle).toHaveBeenCalledWith('test-ext', 'a'.repeat(64));
     });
 
     it('returns 404 when bundle not available', async () => {
       manager.readBundle.mockResolvedValue(null);
 
-      const res = await request(fixtureServer).get('/api/extensions/missing/bundle');
+      const res = await request(fixtureServer).get(
+        '/api/extensions/missing/bundle?generation=' + 'a'.repeat(64)
+      );
 
       expect(res.status).toBe(404);
       expect(res.body.error).toContain('missing');

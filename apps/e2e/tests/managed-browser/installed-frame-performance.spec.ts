@@ -1,4 +1,5 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import type { Page, Response, Route } from '@playwright/test';
 import {
   OriginalFrameLeaseBank,
@@ -416,6 +417,17 @@ test('Actual viewer pixels: 100 local, 100 injected RTT and stalled second viewe
           info.attach('original-frame-performance-failure', {
             body: Buffer.from(JSON.stringify(observed)),
             contentType: 'application/json',
+          })
+        );
+      },
+      async (observed) => {
+        // A body attachment is not retained by the list reporter. Preserve these same
+        // bounded original counters in the parent's existing exclusive artifact root.
+        const bytes = Buffer.from(JSON.stringify(observed));
+        if (bytes.length > 16_384) throw new Error('FRAME_FAILURE_OBSERVATION_CAPACITY');
+        await retainSetup(
+          writeFile(join(dirname(queuePath), 'original-frame-performance-failure.json'), bytes, {
+            flag: 'wx',
           })
         );
       }

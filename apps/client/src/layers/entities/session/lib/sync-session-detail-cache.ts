@@ -113,6 +113,7 @@
  *
  * @module entities/session/lib/sync-session-detail-cache
  */
+import type { EffectOwner } from '@/layers/shared/lib';
 import type { QueryClient } from '@tanstack/react-query';
 import type { Session } from '@dorkos/shared/types';
 import { sessionKeys } from '../api/query-keys';
@@ -150,7 +151,8 @@ function isSessionRow(value: unknown): value is Session {
 export function syncSessionDetailCache(
   queryClient: QueryClient,
   sessions: readonly Session[],
-  observedAt: number
+  observedAt: number,
+  owner?: EffectOwner
 ): void {
   if (sessions.length === 0) return;
   const fresh = new Map(sessions.map((session) => [session.id, session]));
@@ -172,10 +174,11 @@ export function syncSessionDetailCache(
     // and drops rows whose metadata is unchanged (`sessionMetaEqual`), so its
     // frames for a single session land a quarter-second apart.
     if (query.state.dataUpdatedAt >= observedAt) continue;
-    queryClient.setQueryData<Session>(
-      query.queryKey,
-      { ...cached, ...incoming },
-      { updatedAt: observedAt }
-    );
+    const method = queryClient.setQueryData;
+    const key = query.queryKey;
+    const value = { ...cached, ...incoming };
+    const options = { updatedAt: observedAt };
+    owner?.beforeEffect();
+    Reflect.apply(method, queryClient, [key, value, options]);
   }
 }

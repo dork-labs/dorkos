@@ -226,11 +226,14 @@ export function p95(values: readonly number[]) {
 export async function retainOriginalFramePerformanceFailure(
   first: Readonly<{ value: unknown }>,
   observeOriginal: () => Promise<unknown>,
-  retainOriginal: (observation: unknown) => Promise<void>
+  retainOriginal: (observation: unknown) => Promise<void>,
+  retainIndependent?: (observation: unknown) => Promise<void>
 ): Promise<Readonly<{ value: unknown }>> {
   try {
     const observation = await observeOriginal();
-    await retainOriginal(observation);
+    const sinks = [retainOriginal, ...(retainIndependent ? [retainIndependent] : [])];
+    // Independently enter both original sinks, even when one throws before returning.
+    await Promise.allSettled(sinks.map((sink) => Promise.resolve().then(() => sink(observation))));
   } catch {
     // Diagnostic producer/sink refusal cannot replace the genuine failed assertion.
   }

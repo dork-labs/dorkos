@@ -332,7 +332,11 @@ export function createExtensionsRouter(
     try {
       const { id } = req.params;
       if (!SAFE_EXT_ID.test(id)) return res.status(400).json({ error: 'Invalid extension ID' });
-      const bundle = await extensionManager.readBundle(id);
+      const generation = req.query.generation;
+      if (typeof generation !== 'string' || !/^[a-f0-9]{64}$/.test(generation)) {
+        return res.status(400).json({ error: 'Invalid bundle generation' });
+      }
+      const bundle = await extensionManager.readBundle(id, generation);
       if (!bundle) {
         return res.status(404).json({ error: `Bundle not available for '${id}'` });
       }

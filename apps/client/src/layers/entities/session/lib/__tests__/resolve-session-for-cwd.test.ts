@@ -182,3 +182,35 @@ describe('cachedSessionForCwd', () => {
     expect(cachedSessionForCwd(queryClient, CWD)).toBeNull();
   });
 });
+
+// Originating-occurrence controls preserve the captured request and publication boundary.
+describe('resolveSessionForCwd originating occurrence', () => {
+  it.each([false, true])('does not publish a retired held lookup, retired=%s', async (retired) => {
+    let deliver!: (value: { sessions: Session[] }) => void;
+    let current = true;
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const transport = createMockTransport({
+      listSessions: vi.fn(
+        () =>
+          new Promise<Parameters<typeof deliver>[0]>((resolve) => {
+            deliver = resolve;
+          })
+      ),
+    });
+    const owner = {
+      beforeEffect: () => {
+        if (!current) throw new Error('EXTENSION_RETIRED');
+      },
+    };
+    const running = resolveSessionForCwd({ queryClient, transport, effectOwner: owner }, CWD);
+    current = !retired;
+    deliver({ sessions: [session('mine', 1)] });
+    if (retired) {
+      await expect(running).rejects.toThrow('EXTENSION_RETIRED');
+      expect(queryClient.getQueryData(sessionKeys.list(CWD))).toBeUndefined();
+    } else {
+      await expect(running).resolves.toMatchObject({ sessionId: 'mine' });
+      expect(queryClient.getQueryData(sessionKeys.list(CWD))).toHaveLength(1);
+    }
+  });
+});

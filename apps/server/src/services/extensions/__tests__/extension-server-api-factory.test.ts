@@ -400,6 +400,100 @@ describe('createDataProviderContext', () => {
       expect(listeners.size).toBe(0);
     });
 
+    it.each([false, undefined])(
+      'attempts every listener release and retains exact failure %s',
+      (cause) => {
+        const removers = [
+          vi.fn(() => {
+            throw cause;
+          }),
+          vi.fn(),
+        ];
+        let entered = 0;
+        const store = {
+          listAccounts: () => [],
+          list: () => [],
+          onChange: () => removers[entered++],
+        };
+        setAccountUsageStore(store as unknown as AccountUsageStore);
+        const built = buildCtx();
+        built.ctx.accounts.onUsage(vi.fn());
+        built.ctx.accounts.onUsage(vi.fn());
+        const capture = (cleanup: () => void): { value: unknown } => {
+          try {
+            cleanup();
+          } catch (value) {
+            return { value };
+          }
+          throw new Error('original failure was lost');
+        };
+        expect(capture(built.releaseListeners).value).toBe(cause);
+        expect(removers[0]).toHaveBeenCalledTimes(1);
+        expect(removers[1]).toHaveBeenCalledTimes(1);
+        expect(capture(built.releaseListeners).value).toBe(cause);
+        expect(capture(built.dispose).value).toBe(cause);
+        expect(removers[0]).toHaveBeenCalledTimes(1);
+        expect(removers[1]).toHaveBeenCalledTimes(1);
+      }
+    );
+
+    it.each([false, undefined])(
+      'manual unsubscribe failure %s remains owned by disposal',
+      (cause) => {
+        const removers = [
+          vi.fn(() => {
+            throw cause;
+          }),
+          vi.fn(),
+        ];
+        let entered = 0;
+        const store = {
+          listAccounts: () => [],
+          list: () => [],
+          onChange: () => removers[entered++],
+        };
+        setAccountUsageStore(store as unknown as AccountUsageStore);
+        const built = buildCtx();
+        const unsubscribe = built.ctx.accounts.onUsage(vi.fn());
+        built.ctx.accounts.onUsage(vi.fn());
+        const capture = (cleanup: () => void): { value: unknown } => {
+          try {
+            cleanup();
+          } catch (value) {
+            return { value };
+          }
+          throw new Error('original failure was lost');
+        };
+        expect(capture(unsubscribe).value).toBe(cause);
+        expect(removers[0]).toHaveBeenCalledTimes(1);
+        expect(removers[1]).not.toHaveBeenCalled();
+        expect(capture(built.dispose).value).toBe(cause);
+        expect(removers[0]).toHaveBeenCalledTimes(1);
+        expect(removers[1]).toHaveBeenCalledTimes(1);
+        expect(capture(built.dispose).value).toBe(cause);
+        expect(removers[0]).toHaveBeenCalledTimes(1);
+      }
+    );
+
+    it('retires an exact account receipt returned after synchronous disposal', () => {
+      const remove = vi.fn();
+      const store = {
+        listAccounts: () => [],
+        list: () => [],
+        onChange: () => {
+          built.dispose();
+          return remove;
+        },
+      };
+      setAccountUsageStore(store as unknown as AccountUsageStore);
+      const built = buildCtx();
+      const unsubscribe = built.ctx.accounts.onUsage(vi.fn());
+      expect(remove).toHaveBeenCalledTimes(1);
+      unsubscribe();
+      built.dispose();
+      expect(remove).toHaveBeenCalledTimes(1);
+    });
+
     it('never hands an extension an account folder path', async () => {
       const { ctx } = buildCtx();
       const seen = vi.fn();
@@ -603,12 +697,140 @@ describe('createDataProviderContext', () => {
       expect(() => ctx.agent.subscribe(() => undefined)).toThrow(/shut down or reloaded/);
     });
 
+    it.each([false, undefined])(
+      'manual agent unsubscribe failure %s remains owned by disposal',
+      (cause) => {
+        const removers = [
+          vi.fn(() => {
+            throw cause;
+          }),
+          vi.fn(),
+        ];
+        let entered = 0;
+        const subscribe = vi.fn(() => removers[entered++]);
+        setAgentSendService({ subscribe } as unknown as AgentSendService);
+        const built = buildCtx();
+        const unsubscribe = built.ctx.agent.subscribe(vi.fn());
+        built.ctx.agent.subscribe(vi.fn());
+        const capture = (cleanup: () => void): { value: unknown } => {
+          try {
+            cleanup();
+          } catch (value) {
+            return { value };
+          }
+          throw new Error('original failure was lost');
+        };
+        expect(capture(unsubscribe).value).toBe(cause);
+        expect(capture(built.dispose).value).toBe(cause);
+        expect(removers[0]).toHaveBeenCalledTimes(1);
+        expect(removers[1]).toHaveBeenCalledTimes(1);
+        expect(capture(built.dispose).value).toBe(cause);
+        expect(removers[0]).toHaveBeenCalledTimes(1);
+      }
+    );
+
     it('says plainly when DorkOS cannot send yet', async () => {
       const { ctx } = buildCtx();
       await expect(
         ctx.agent.send({ to: 's', text: 't', idempotencyKey: 'k' })
       ).rejects.toMatchObject({ code: 'unavailable' });
     });
+  });
+
+  describe('private registration recovery copy', () => {
+    it.each([false, true])(
+      'keeps isolated reload copy separate from in-process UNKNOWN, restart=%s',
+      async (restart) => {
+        const built = createDataProviderContext({
+          extensionId,
+          extensionDir,
+          dorkHome: tmpDir,
+          ...(restart ? { registrationRecovery: 'restart-app' as const } : {}),
+        });
+        built.dispose();
+        const { logger } = await import('../../../lib/logger.js');
+        built.ctx.schedule(60, async () => undefined);
+        expect(logger.warn).toHaveBeenCalledWith(
+          `[ext:${extensionId}] ctx.schedule was called after DorkOS stopped waiting for this extension to start; it does nothing. ` +
+            (restart
+              ? 'Restart the DorkOS app before trying again.'
+              : 'Reload the extension to try again.')
+        );
+        await expect(
+          built.ctx.sessions.start({ project: '/repos/x', prompt: 'p', title: 't', reason: 'r' })
+        ).rejects.toThrow(
+          restart ? 'Restart the DorkOS app before trying again.' : 'Reload it to try again.'
+        );
+      }
+    );
+  });
+
+  describe('original scheduled cancellation custody', () => {
+    it('manual cancellation then disposal enters original clearInterval once', () => {
+      vi.useFakeTimers();
+      const clear = vi.spyOn(globalThis, 'clearInterval');
+      let built: ReturnType<typeof buildCtx> | undefined;
+      try {
+        built = buildCtx();
+        const cancel = built.ctx.schedule(60, async () => undefined);
+        expect(built.getScheduledCleanups()[0]).toBe(cancel);
+        cancel();
+        built.dispose();
+        cancel();
+        expect(clear).toHaveBeenCalledTimes(1);
+      } finally {
+        try {
+          built?.dispose();
+        } finally {
+          clear.mockRestore();
+          vi.useRealTimers();
+        }
+      }
+    });
+
+    it.each([false, undefined])(
+      'failed manual cancellation %s stays owned and siblings are attempted',
+      (cause) => {
+        vi.useFakeTimers();
+        const originalClear = globalThis.clearInterval;
+        const clear = vi.spyOn(globalThis, 'clearInterval');
+        let count = 0;
+        clear.mockImplementation((timer) => {
+          originalClear(timer);
+          if (++count === 1) throw cause;
+        });
+        let built: ReturnType<typeof buildCtx> | undefined;
+        const capture = (cleanup: () => void): { value: unknown } => {
+          try {
+            cleanup();
+          } catch (value) {
+            return { value };
+          }
+          throw new Error('original failure was lost');
+        };
+        try {
+          built = buildCtx();
+          const cancel = built.ctx.schedule(60, async () => undefined);
+          built.ctx.schedule(60, async () => undefined);
+          expect(capture(cancel).value).toBe(cause);
+          expect(clear).toHaveBeenCalledTimes(1);
+          expect(capture(built.dispose).value).toBe(cause);
+          expect(clear).toHaveBeenCalledTimes(2);
+          expect(capture(built.dispose).value).toBe(cause);
+          expect(capture(cancel).value).toBe(cause);
+          expect(clear).toHaveBeenCalledTimes(2);
+        } finally {
+          // Both original fake timers were cleared before the first throw.
+          try {
+            built?.dispose();
+          } catch {
+            /* Preserve the original asserted failure. */
+          }
+          clear.mockRestore();
+          vi.useRealTimers();
+        }
+      }
+    );
   });
 
   describe('dispose (a register() DorkOS stopped waiting for, DOR-2527 R3)', () => {

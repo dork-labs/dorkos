@@ -287,6 +287,108 @@ describe('ExtensionManager', () => {
 
   // === 8. Read bundle ===
 
+  it.each(['approval', 'disabled', 'source', 'manifest', 'copy', 'dev-link'] as const)(
+    'withholds an original pending bundle when %s changes during its read',
+    async (change) => {
+      const id = 'retained-bundle';
+      const record = makeRecord(id, { status: 'enabled' });
+      mockConfigGet.mockReturnValue({ enabled: [id], disabled: [], ...approved([id]) });
+      mockDiscover.mockResolvedValue([record]);
+      mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'original-source' });
+      await manager.initialize(null);
+      const generation = manager.listPublic()[0].bundleGeneration;
+      expect(generation).toMatch(/^[a-f0-9]{64}$/);
+      let release!: (value: string) => void;
+      mockReadBundle.mockImplementationOnce(
+        () =>
+          new Promise<string>((resolve) => {
+            release = resolve;
+          })
+      );
+      const reading = manager.readBundle(id, generation);
+      try {
+        expect(mockReadBundle).toHaveBeenCalledWith(id, 'original-source');
+        if (change === 'approval')
+          mockConfigGet.mockReturnValue({ enabled: [id], disabled: [], ...approved([]) });
+        if (change === 'disabled')
+          mockConfigGet.mockReturnValue({ enabled: [], disabled: [id], ...approved([id]) });
+        if (change === 'source') record.sourceHash = 'replacement-source';
+        if (change === 'manifest') record.manifest = { ...record.manifest, version: '2.0.0' };
+        if (change === 'copy') record.path = '/other-copy';
+        if (change === 'dev-link') {
+          record.devLink = { path: record.path };
+          mockConfigGet.mockReturnValue({
+            enabled: [id],
+            disabled: [],
+            approvedToRun: [id],
+            approvedSources: { [id]: { path: record.path, devLink: record.path } },
+          });
+          const current = manager.listPublic()[0];
+          expect(current.approvedToRun).toBe(true);
+          expect(current.bundleGeneration).not.toBe(generation);
+        }
+      } finally {
+        release('original-bundle');
+        await reading;
+      }
+      await expect(reading).resolves.toBeNull();
+    }
+  );
+
+  it.each(['before-read', 'after-read'] as const)(
+    'rechecks exact source after reentrant manifest serialization %s',
+    async (phase) => {
+      const id = 'serialization-reentry';
+      const record = makeRecord(id, { status: 'enabled' });
+      mockConfigGet.mockReturnValue({ enabled: [id], disabled: [], ...approved([id]) });
+      mockDiscover.mockResolvedValue([record]);
+      mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'original-source' });
+      await manager.initialize(null);
+      const generation = manager.listPublic()[0].bundleGeneration;
+      expect(generation).toMatch(/^[a-f0-9]{64}$/);
+      const originalManifest = { ...record.manifest };
+      const installReentry = () =>
+        Object.defineProperty(record.manifest, 'toJSON', {
+          value: () => {
+            record.sourceHash = 'replacement-source';
+            return originalManifest;
+          },
+        });
+      if (phase === 'before-read') {
+        installReentry();
+        await expect(manager.readBundle(id, generation)).resolves.toBeNull();
+        expect(mockReadBundle).not.toHaveBeenCalled();
+      } else {
+        let release!: (value: string) => void;
+        mockReadBundle.mockImplementationOnce(
+          () =>
+            new Promise<string>((resolve) => {
+              release = resolve;
+            })
+        );
+        const reading = manager.readBundle(id, generation);
+        try {
+          expect(mockReadBundle).toHaveBeenCalledWith(id, 'original-source');
+          installReentry();
+        } finally {
+          release('original-bundle');
+          await reading;
+        }
+        await expect(reading).resolves.toBeNull();
+      }
+    }
+  );
+
+  it('refuses a foreign advertised generation before original bundle I/O', async () => {
+    const id = 'exact-generation';
+    mockConfigGet.mockReturnValue({ enabled: [id], disabled: [], ...approved([id]) });
+    mockDiscover.mockResolvedValue([makeRecord(id, { status: 'enabled' })]);
+    mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'original-source' });
+    await manager.initialize(null);
+    await expect(manager.readBundle(id, 'f'.repeat(64))).resolves.toBeNull();
+    expect(mockReadBundle).not.toHaveBeenCalled();
+  });
+
   it('reads bundle for compiled extensions', async () => {
     const record = makeRecord('ext-d', { status: 'enabled' });
     mockConfigGet.mockReturnValue({ enabled: ['ext-d'], disabled: [], ...approved(['ext-d']) });

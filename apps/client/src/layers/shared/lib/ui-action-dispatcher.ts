@@ -1,3 +1,4 @@
+import type { EffectOwner } from './extension-effect-owner';
 import type { UiCommand, UiCanvasContent, UiPanelId } from '@dorkos/shared/types';
 import { canvasContentForFile } from '@dorkos/shared/viewer-registry';
 import { toast } from 'sonner';
@@ -185,7 +186,7 @@ export interface DispatcherContext {
   /** Optional: scroll-to-message handler */
   scrollToMessage?: (messageId?: string) => void;
   /** Optional: agent switching handler */
-  switchAgent?: (cwd: string) => void;
+  switchAgent?: (cwd: string, owner?: EffectOwner) => void;
   /**
    * Optional: shape switching handler. Given an installed Shape name, applies it
    * (server resolves the manifest + degrades per-piece, then the client restores
@@ -193,7 +194,7 @@ export interface DispatcherContext {
    * `applyShapeAction` (DOR-355 task 3.1); when absent, `apply_layout` is a safe
    * no-op, matching `switchAgent`.
    */
-  applyShape?: (shape: string) => void;
+  applyShape?: (shape: string, owner?: EffectOwner) => void;
   /**
    * Extension → viewer overrides (config `workbench.defaultViewers`) consulted
    * when resolving an `open_file` command's viewer.
@@ -293,11 +294,13 @@ interface PanelUrlSignal {
 export function executeUiCommand(
   ctx: DispatcherContext,
   command: UiCommand,
-  origin: UiCommandOrigin
+  origin: UiCommandOrigin,
+  effectOwner?: EffectOwner
 ): void {
   // One read per dispatch, so every branch below sees the state as of now — not
   // as of whenever this context was built (see `getStore`).
   const store = ctx.getStore();
+  effectOwner?.beforeEffect();
 
   switch (command.action) {
     // --- Panels ---
@@ -455,11 +458,13 @@ export function executeUiCommand(
 
     // --- Agent ---
     case 'switch_agent':
-      ctx.switchAgent?.(command.cwd);
+      if (effectOwner) ctx.switchAgent?.(command.cwd, effectOwner);
+      else ctx.switchAgent?.(command.cwd);
       break;
 
     case 'apply_layout':
-      ctx.applyShape?.(command.shape);
+      if (effectOwner) ctx.applyShape?.(command.shape, effectOwner);
+      else ctx.applyShape?.(command.shape);
       break;
 
     // --- Command Palette ---

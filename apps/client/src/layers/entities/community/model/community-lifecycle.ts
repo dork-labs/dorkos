@@ -82,11 +82,24 @@ export async function endCommunityConnection(
  * listener can render for the next owner.
  *
  * @param queryClient - The app's query cache.
+ * @param requireCurrent - Fence each effect to the originating auth occurrence.
  */
-export function eraseCommunityOwnerState(queryClient: QueryClient): void {
-  void queryClient.cancelQueries({ queryKey: communityKeys.all });
-  queryClient.removeQueries({ queryKey: communityKeys.all });
-  useCommunityDraftStore.getState().discardAll();
+export function eraseCommunityOwnerState(
+  queryClient: QueryClient,
+  requireCurrent?: () => void
+): void {
+  const cancel = queryClient.cancelQueries;
+  const cancelInput = { queryKey: communityKeys.all };
+  requireCurrent?.();
+  void Reflect.apply(cancel, queryClient, [cancelInput]);
+  const remove = queryClient.removeQueries;
+  const removeInput = { queryKey: communityKeys.all };
+  requireCurrent?.();
+  Reflect.apply(remove, queryClient, [removeInput]);
+  const drafts = useCommunityDraftStore.getState();
+  const discard = drafts.discardAll;
+  requireCurrent?.();
+  Reflect.apply(discard, drafts, []);
 }
 
 /**

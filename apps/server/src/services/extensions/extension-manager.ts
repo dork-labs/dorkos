@@ -39,7 +39,6 @@ import {
   type TestExtensionResult,
 } from './extension-manager-types.js';
 import {
-  EXTENSION_NOT_APPROVED_CODE,
   approvedSourceOf,
   isApprovedByDigest,
   isApprovedByOrigin,
@@ -1407,19 +1406,35 @@ export class ExtensionManager {
    * @returns The compiled bundle, or `null` when there is nothing this caller may
    *   be given — not compiled, or not approved to run.
    */
-  async readBundle(id: string): Promise<string | null> {
+  async readBundle(id: string, expectedGeneration?: string): Promise<string | null> {
     const record = this.extensions.get(id);
-    if (!record || !['compiled', 'active'].includes(record.status) || !record.sourceHash) {
+    if (
+      !record ||
+      !record.sourceHash ||
+      !record.bundleReady ||
+      !['compiled', 'active'].includes(record.status)
+    )
       return null;
-    }
-    if (!mayRunExtensionCode(record, configManager.get('extensions'))) {
-      logger.warn(
-        `[Extensions] Bundle withheld for ${id}: waiting for a person to approve it ` +
-          `(${EXTENSION_NOT_APPROVED_CODE})`
+    const sourceHash = record.sourceHash;
+    const generation =
+      expectedGeneration ?? toPublic(record, configManager.get('extensions')).bundleGeneration;
+    if (!generation || !/^[a-f0-9]{64}$/.test(generation)) return null;
+    const allowed = () => {
+      const config = configManager.get('extensions');
+      const publicGeneration = toPublic(record, config).bundleGeneration;
+      return (
+        publicGeneration === generation &&
+        isEnabled(id, config, this.coreExtensions) &&
+        mayRunExtensionCode(record, config) &&
+        this.extensions.get(id) === record &&
+        record.sourceHash === sourceHash &&
+        record.bundleReady &&
+        ['compiled', 'active'].includes(record.status)
       );
-      return null;
-    }
-    return this.compiler.readBundle(id, record.sourceHash);
+    };
+    if (!allowed()) return null;
+    const bundle = await this.compiler.readBundle(id, sourceHash);
+    return allowed() ? bundle : null;
   }
 
   /** Report that a client has activated an extension. */

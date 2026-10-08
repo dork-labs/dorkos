@@ -1,3 +1,4 @@
+import type { EffectOwner } from '@/layers/shared/lib';
 import { newSessionTarget } from '@/layers/shared/lib';
 import type { QueryClient } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
@@ -16,6 +17,8 @@ export interface SwitchAgentCwdStore {
 
 /** Injected dependencies for {@link switchAgentCwd}. */
 export interface SwitchAgentCwdDeps {
+  /** Exact originating extension occurrence; user actions omit it. */
+  effectOwner?: EffectOwner;
   /** App-store slice, e.g. `useAppStore.getState()` read fresh per call. */
   store: SwitchAgentCwdStore;
   /** Query client, read to reuse a known session for the target directory. */
@@ -63,22 +66,40 @@ export interface SwitchAgentCwdDeps {
  */
 export async function switchAgentCwd(cwd: string, deps: SwitchAgentCwdDeps): Promise<void> {
   const { store, queryClient, transport, currentLocation, navigate } = deps;
+  const originalOwner = deps.effectOwner;
   const isStillWanted = beginSessionNavigation(currentLocation);
+  const owner = originalOwner
+    ? Object.freeze({
+        beforeEffect: () => {
+          const wanted = isStillWanted();
+          originalOwner.beforeEffect();
+          if (!wanted) throw new Error('Extension navigation was superseded.');
+        },
+      })
+    : undefined;
+  owner?.beforeEffect();
 
-  const resolved = await resolveSessionForCwd({ queryClient, transport }, cwd);
+  const resolved = await resolveSessionForCwd({ queryClient, transport, effectOwner: owner }, cwd);
   // Overtaken checks FIRST: an abandoned switch has nothing to say. Reporting a
   // failure the person has already navigated away from would tell them we left
   // them where they are while they are somewhere else.
-  if (!isStillWanted()) return;
+  const wanted = isStillWanted();
+  owner?.beforeEffect();
+  if (!wanted) return;
   if (resolved === null) {
-    notifySessionLookupFailed(cwd);
+    notifySessionLookupFailed(cwd, owner);
     return;
   }
 
   const target = resolved.isNew
-    ? await newSessionTarget(transport, { dir: cwd, session: resolved.sessionId })
+    ? await newSessionTarget(transport, { dir: cwd, session: resolved.sessionId }, owner)
     : { search: { session: resolved.sessionId } };
-  if (!isStillWanted()) return;
-  store.setSelectedCwd(cwd);
-  navigate(target.search);
+  const stillWanted = isStillWanted();
+  const setCwd = store.setSelectedCwd;
+  owner?.beforeEffect();
+  if (!stillWanted) return;
+  Reflect.apply(setCwd, store, [cwd]);
+  const search = target.search;
+  owner?.beforeEffect();
+  Reflect.apply(navigate, deps, [search]);
 }

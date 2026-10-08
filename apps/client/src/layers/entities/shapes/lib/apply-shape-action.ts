@@ -18,7 +18,7 @@ import type { UiCommand } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
 import type { ApplyShapeResult } from '@dorkos/shared/marketplace-schemas';
 import { toast } from 'sonner';
-import { requestExtensionRemount } from '@/layers/shared/lib';
+import { requestExtensionRemount, type EffectOwner } from '@/layers/shared/lib';
 import { applyShapeLayout } from './apply-shape-layout';
 import { shapeKeys } from '../api/query-keys';
 
@@ -26,6 +26,8 @@ import { shapeKeys } from '../api/query-keys';
 export interface ApplyShapeActionDeps {
   /** The active transport (only `applyShape` is used). */
   transport: Pick<Transport, 'applyShape'>;
+  /** Exact originating extension occurrence; absent for genuine user actions. */
+  effectOwner?: EffectOwner;
   /** Query client — the installed-Shapes list is invalidated so the active flag refreshes. */
   queryClient: QueryClient;
   /**
@@ -47,15 +49,18 @@ export interface ApplyShapeActionDeps {
  * or a warning toast that lists every degradation note (§7) so a half-satisfied
  * Shape reads as a partially-furnished office, not a silent failure.
  */
-function surfaceApplyOutcome(label: string, warnings: string[]): void {
+function surfaceApplyOutcome(label: string, warnings: string[], owner?: EffectOwner): void {
   if (warnings.length === 0) {
-    toast.success(`Switched to ${label}`);
+    const method = toast.success;
+    const message = `Switched to ${label}`;
+    ownedEntry(owner, method, toast, [message]);
     return;
   }
   const noun = warnings.length === 1 ? 'note' : 'notes';
-  toast.warning(`Switched to ${label} · ${warnings.length} ${noun}`, {
-    description: warnings.join('\n'),
-  });
+  const method = toast.warning;
+  const message = `Switched to ${label} · ${warnings.length} ${noun}`;
+  const options = { description: warnings.join('\n') };
+  ownedEntry(owner, method, toast, [message, options]);
 }
 
 /**
@@ -69,29 +74,48 @@ export async function applyShapeAction(
   name: string,
   deps: ApplyShapeActionDeps
 ): Promise<ApplyShapeResult> {
-  const result = await deps.transport.applyShape(name);
+  const owner = deps.effectOwner;
+  const transport = deps.transport;
+  const apply = transport.applyShape;
+  const result = await ownedEntry(owner, apply, transport, [name]);
+  owner?.beforeEffect();
 
-  // Restore the chrome from the returned layout (no second fetch).
-  applyShapeLayout(result.applied.layout, deps.dispatch);
+  // Each nested layout effect retains the same originating occurrence.
+  const dispatch = deps.dispatch;
+  applyShapeLayout(result.applied.layout, (command) =>
+    ownedEntry(owner, dispatch, deps, [command])
+  );
 
-  // Live-remount the extension slots so any newly-activated extension appears
-  // without a reload (W1c). Fire-and-forget: a rejected remount leaves the
-  // previous extensions live, so it must not fail the switch.
-  void requestExtensionRemount().catch((err: unknown) => {
+  // Admission transfers only this reload transaction to the genuine provider.
+  // Reload may retire the initiating extension: later effects then refuse.
+  const remount = ownedEntry(owner, requestExtensionRemount, undefined, []);
+  void remount.catch((err: unknown) => {
+    // This is a diagnostic, not permission for another host mutation.
     console.error('[shapes] Extension remount after apply failed:', err);
   });
 
-  // Refresh the installed-Shapes list so the active flag flips.
-  void deps.queryClient.invalidateQueries({ queryKey: shapeKeys.all });
+  const query = deps.queryClient;
+  const invalidate = query.invalidateQueries;
+  const request = { queryKey: shapeKeys.all };
+  void ownedEntry(owner, invalidate, query, [request]);
+  surfaceApplyOutcome(deps.label ?? name, result.warnings, owner);
 
-  surfaceApplyOutcome(deps.label ?? name, result.warnings);
-
-  // Auto-follow the arrival agent only when the person opted in and the agent
-  // actually exists (the server sets `autoFollow` from `ui.shapes.autoFollowAgent`).
   const arrival = result.offeredAgents.find((a) => a.arrival && a.autoFollow && a.projectPath);
-  if (arrival?.projectPath && deps.switchAgent) {
-    deps.switchAgent(arrival.projectPath);
-  }
-
+  const switchAgent = deps.switchAgent;
+  const cwd = arrival?.projectPath;
+  if (cwd && switchAgent) ownedEntry(owner, switchAgent, deps, [cwd]);
+  owner?.beforeEffect();
   return result;
+}
+
+/** Capture preparation first; the genuine owner is checked at each host entry. */
+function ownedEntry<Args extends unknown[], T>(
+  owner: EffectOwner | undefined,
+  method: (...args: Args) => T,
+  receiver: unknown,
+  args: Args
+): T {
+  const check = owner?.beforeEffect;
+  if (check) Reflect.apply(check, owner, []);
+  return Reflect.apply(method, receiver, args) as T;
 }

@@ -45,6 +45,12 @@ import {
 import { toast } from 'sonner';
 import type { ExtensionAPIDeps } from './types';
 import { extensionApiUrl } from './extension-api-url';
+import {
+  prepareCommandRegistration,
+  disposeTogether,
+  retainCleanup,
+  guardExtensionAPI,
+} from './extension-registration-owner';
 
 /** Default priority for extension contributions (mid-range, after built-ins). */
 const DEFAULT_PRIORITY = 50;
@@ -76,14 +82,36 @@ function closeOtherDialogs(keep: DialogOpenState): void {
  * @param declaredEvents - The manifest's `capabilities.events` entries. Gates
  *   `api.events.subscribe`: a subscribe request for a kind not covered here (by
  *   kind name or category) is rejected. Defaults to none.
+ * @param requireCurrent - Guard for the exact loader admission; built-ins omit it.
  * @returns The API object and collected cleanup functions
  */
 export function createExtensionAPI(
   extId: string,
   deps: ExtensionAPIDeps,
-  declaredEvents: readonly ExtensionEventDeclaration[] = []
+  declaredEvents: readonly ExtensionEventDeclaration[] = [],
+  requireCurrent?: () => void
 ): { api: ExtensionAPI; cleanups: Array<() => void> } {
   const cleanups: Array<() => void> = [];
+  const effectOwner = requireCurrent ? Object.freeze({ beforeEffect: requireCurrent }) : undefined;
+  const dispatch = (command: UiCommand): void => {
+    if (effectOwner) executeUiCommand(deps.dispatcherContext, command, 'agent', effectOwner);
+    else executeUiCommand(deps.dispatcherContext, command, 'agent');
+  };
+  const request = async (url: string, input?: RequestInit): Promise<Response> => {
+    const method = globalThis.fetch;
+    const args = input === undefined ? [url] : [url, input];
+    requireCurrent?.();
+    const response = await Reflect.apply(method, globalThis, args);
+    requireCurrent?.();
+    return response;
+  };
+  const readJSON = async (response: Response): Promise<unknown> => {
+    const method = response.json;
+    requireCurrent?.();
+    const body: unknown = await Reflect.apply(method, response, []);
+    requireCurrent?.();
+    return body;
+  };
   let markersQueuedForCleanup = false;
 
   const api: ExtensionAPI = {
@@ -131,12 +159,10 @@ export function createExtensionAPI(
         category: 'feature',
       };
       const unsub = deps.registry.register('command-palette.items', contribution);
-      deps.registerCommandHandler(actionId, callback);
-      const fullCleanup = () => {
-        unsub();
-        deps.unregisterCommandHandler(actionId);
-      };
+      const command = prepareCommandRegistration(deps, actionId, callback);
+      const fullCleanup = retainCleanup(() => disposeTogether([unsub, command.cleanup]));
       cleanups.push(fullCleanup);
+      command.enter();
       return fullCleanup;
     },
 
@@ -277,19 +303,12 @@ export function createExtensionAPI(
       // Origin 'agent': extension code is programmatic — not an explicit human
       // tab pick — so it must not persist over the user's per-agent right-panel
       // tab preference (DOR-227).
-      executeUiCommand(deps.dispatcherContext, command, 'agent');
+      dispatch(command);
     },
 
     openCanvas(content: UiCanvasContent): void {
       // Origin 'agent': programmatic reveal, same reasoning as executeCommand.
-      executeUiCommand(
-        deps.dispatcherContext,
-        {
-          action: 'open_canvas',
-          content,
-        },
-        'agent'
-      );
+      dispatch({ action: 'open_canvas', content });
     },
 
     navigate(path: string): void {
@@ -359,19 +378,22 @@ export function createExtensionAPI(
     },
 
     async loadData<T>(): Promise<T | null> {
-      const res = await fetch(extensionApiUrl(`/extensions/${extId}/data`));
-      if (res.status === 204) return null;
+      const res = await request(extensionApiUrl(`/extensions/${extId}/data`));
+      const empty = res.status === 204;
+      requireCurrent?.();
+      if (empty) return null;
       if (!res.ok) throw new Error(`loadData failed: ${res.status}`);
-      return res.json() as Promise<T>;
+      return (await readJSON(res)) as T;
     },
 
     async saveData<T>(data: T): Promise<void> {
-      const res = await fetch(extensionApiUrl(`/extensions/${extId}/data`), {
+      const res = await request(extensionApiUrl(`/extensions/${extId}/data`), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
       if (!res.ok) throw new Error(`saveData failed: ${res.status}`);
+      requireCurrent?.();
     },
 
     notify(message: string, options?: { type?: 'info' | 'success' | 'error' }): void {
@@ -390,7 +412,7 @@ export function createExtensionAPI(
       decisionId: string,
       answer: DecisionAnswer
     ): Promise<DecisionAnswerResult> {
-      const res = await fetch(
+      const res = await request(
         extensionApiUrl(`/extensions/${extId}/decisions/${encodeURIComponent(decisionId)}/action`),
         {
           method: 'POST',
@@ -399,11 +421,13 @@ export function createExtensionAPI(
         }
       );
       if (!res.ok) throw await requestError(res, 'answerDecision');
-      const body = DecisionActionResponseSchema.parse(await res.json());
+      const body = DecisionActionResponseSchema.parse(await readJSON(res));
       // The server checked it is an in-app path. Follow it the way the
       // extension's own `navigate` would: core routes, and this extension's
       // own `/x/<id>/…` pages.
+      requireCurrent?.();
       if (body.navigate) api.navigate(body.navigate);
+      requireCurrent?.();
       return {
         resolved: body.resolved,
         message: body.message,
@@ -413,9 +437,9 @@ export function createExtensionAPI(
     },
 
     async listDecisions(): Promise<ExtensionDecisionView[]> {
-      const res = await fetch(extensionApiUrl(`/extensions/${extId}/decisions`));
+      const res = await request(extensionApiUrl(`/extensions/${extId}/decisions`));
       if (!res.ok) throw await requestError(res, 'listDecisions');
-      return ListExtensionDecisionsResponseSchema.parse(await res.json()).decisions.map(
+      return ListExtensionDecisionsResponseSchema.parse(await readJSON(res)).decisions.map(
         (decision) => ({
           id: decision.id,
           key: decision.key,
@@ -435,7 +459,7 @@ export function createExtensionAPI(
     // Starts a NEW chat and never navigates: the extension shows "· Watch",
     // and the current chat (and anything typed in it) is left alone.
     async startWork(input: StartWorkInput): Promise<{ sessionId: string }> {
-      const res = await fetch(extensionApiUrl(`/extensions/${extId}/start-work`), {
+      const res = await request(extensionApiUrl(`/extensions/${extId}/start-work`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(input),
@@ -444,31 +468,32 @@ export function createExtensionAPI(
         const err = await requestError(res, 'startWork');
         throw isStartWorkCode(err.code) ? new StartWorkError(err.code, err.message) : err;
       }
-      return { sessionId: StartWorkResponseSchema.parse(await res.json()).sessionId };
+      return { sessionId: StartWorkResponseSchema.parse(await readJSON(res)).sessionId };
     },
 
     projectSettings: {
       async get<T = unknown>(projectRoot: string): Promise<T | null> {
         const query = new URLSearchParams({ project: projectRoot });
-        const res = await fetch(
+        const res = await request(
           extensionApiUrl(`/extensions/${extId}/project-settings?${query.toString()}`)
         );
         if (!res.ok) throw await requestError(res, 'projectSettings.get');
-        const body = ProjectSettingsResponseSchema.parse(await res.json());
+        const body = ProjectSettingsResponseSchema.parse(await readJSON(res));
         return (body.value as T | null) ?? null;
       },
       async set(projectRoot: string, value: unknown): Promise<void> {
-        const res = await fetch(extensionApiUrl(`/extensions/${extId}/project-settings`), {
+        const res = await request(extensionApiUrl(`/extensions/${extId}/project-settings`), {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ project: projectRoot, value }),
         });
         if (!res.ok) throw await requestError(res, 'projectSettings.set');
+        requireCurrent?.();
       },
     },
   };
 
-  return { api, cleanups };
+  return { api: requireCurrent ? guardExtensionAPI(api, requireCurrent) : api, cleanups };
 }
 
 // --- Internal helpers ---

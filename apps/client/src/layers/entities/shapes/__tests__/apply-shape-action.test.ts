@@ -153,3 +153,71 @@ describe('applyShapeAction', () => {
     expect(switchAgent).not.toHaveBeenCalled();
   });
 });
+
+// Originating-occurrence controls preserve the captured request and publication boundary.
+describe('applyShapeAction originating occurrence', () => {
+  beforeEach(() => vi.clearAllMocks());
+  it.each([false, true])(
+    'held response retains its original occurrence, retired=%s',
+    async (retired) => {
+      let deliver!: (value: ApplyShapeResult) => void;
+      let current = true;
+      const { deps, dispatched } = makeDeps(result());
+      deps.transport.applyShape = vi.fn(
+        () =>
+          new Promise<ApplyShapeResult>((resolve) => {
+            deliver = resolve;
+          })
+      );
+      const invalidate = vi.spyOn(deps.queryClient, 'invalidateQueries');
+      const owner = {
+        beforeEffect: () => {
+          if (!current) throw new Error('EXTENSION_RETIRED');
+        },
+      };
+      const running = applyShapeAction('linear-ops', { ...deps, effectOwner: owner });
+      current = !retired;
+      deliver(result());
+      if (retired) {
+        await expect(running).rejects.toThrow('EXTENSION_RETIRED');
+        expect(dispatched).toEqual([]);
+        expect(invalidate).not.toHaveBeenCalled();
+        expect(toastSuccess).not.toHaveBeenCalled();
+      } else {
+        await expect(running).resolves.toMatchObject({ ok: true });
+        expect(dispatched).toContainEqual({ action: 'open_sidebar' });
+        expect(invalidate).toHaveBeenCalledTimes(1);
+        expect(toastSuccess).toHaveBeenCalledTimes(1);
+      }
+    }
+  );
+
+  it('layout callback retirement refuses every unstarted tail effect', async () => {
+    let current = true;
+    const { deps, dispatched } = makeDeps(
+      result({
+        applied: {
+          ...result().applied,
+          layout: { ...result().applied.layout, openPanels: ['settings'] },
+        },
+      })
+    );
+    const dispatch = (command: UiCommand) => {
+      dispatched.push(command);
+      current = false;
+    };
+    await expect(
+      applyShapeAction('linear-ops', {
+        ...deps,
+        dispatch,
+        effectOwner: {
+          beforeEffect: () => {
+            if (!current) throw new Error('EXTENSION_RETIRED');
+          },
+        },
+      })
+    ).rejects.toThrow('EXTENSION_RETIRED');
+    expect(dispatched).toEqual([{ action: 'open_sidebar' }]);
+    expect(toastSuccess).not.toHaveBeenCalled();
+  });
+});
