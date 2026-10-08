@@ -114,7 +114,7 @@ export function UserRow({ user, isSelf }: { user: AdminUserView; isSelf: boolean
           <AdminAction
             label="Delete"
             title={`Permanently delete ${user.email}?`}
-            description="Irreversibly erases this account and cascades to their sign-ins, sign-in methods, API keys, and linked instances. This cannot be undone."
+            description="Irreversibly erases this account, signs them out everywhere and erases their sign-in methods, API keys and linked instances. This cannot be undone."
             confirmLabel="Delete account"
             variant="destructive"
             typedConfirm={user.email}

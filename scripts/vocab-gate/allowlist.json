@@ -886,11 +886,6 @@
       "reason": "TEMPORARY, DOR-2789 PR3 rewrites this file; remove this entry when this branch is rebased onto it."
     },
     {
-      "path": "apps/client/src/layers/features/dashboard-sidebar/ui/AgentRowMenuItems.tsx",
-      "terms": ["session", "sessions", "conversation", "conversations"],
-      "reason": "TEMPORARY, DOR-2789 PR3 rewrites this file; remove this entry when this branch is rebased onto it."
-    },
-    {
       "path": "apps/client/src/layers/features/profile/ui/pages/SessionsPage.tsx",
       "terms": ["session", "sessions", "conversation", "conversations"],
       "reason": "TEMPORARY, DOR-2789 PR3 rewrites this file; remove this entry when this branch is rebased onto it."
@@ -934,6 +929,11 @@
       "path": "docs/integrations/mcp-server.mdx",
       "terms": ["session", "sessions", "conversation", "conversations"],
       "reason": "TEMPORARY, DOR-2789: open PR #2673 also rewrites this page, so its chat wording waits for that to land. Sweep the page and remove this entry then."
+    },
+    {
+      "path": "apps/site/src/app/(public)/privacy/page.tsx",
+      "terms": ["session", "sessions", "conversation", "conversations"],
+      "reason": "DOR-2789. The privacy policy is a legal page and is not reworded in a vocabulary sweep. Its uses are legal and analytics terms (a sign-in session record, \"session recording\" in analytics) and data the installation stores, each worded for the policy rather than the app."
     }
   ]
 }

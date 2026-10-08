@@ -70,7 +70,7 @@ export default function PrivacyPolicyPage() {
             The DorkOS app: it runs on your machine
           </h2>
           <p className="text-warm-gray leading-relaxed">
-            Your installation keeps local files, settings, and chat records on your computer. An
+            Your installation keeps local files, settings, and session records on your computer. An
             agent sends prompts, code, and other information it needs to the AI service you choose.
             That service handles the information under its own terms and privacy policy.
           </p>
@@ -87,8 +87,8 @@ export default function PrivacyPolicyPage() {
             heartbeat and anonymous marketplace install counts so we can see roughly how many people
             run DorkOS. It sends a random install id, the DorkOS version, your platform and chip
             type, which runtimes you have on, whether the tunnel and cloud link are enabled, and
-            rough counts. It never sends your prompts, code, file paths, hostname, username, or chat
-            content as telemetry.
+            rough counts. It never sends your prompts, code, file paths, hostname, username, or
+            session content as telemetry.
           </p>
           <p className="text-warm-gray leading-relaxed">
             The first time you run DorkOS, it shows a notice explaining this and sends nothing on
@@ -180,8 +180,8 @@ export default function PrivacyPolicyPage() {
           </p>
           <p className="text-warm-gray leading-relaxed">
             Other service routes can have different data paths. Review their setup and the service’s
-            privacy policy before granting access. Ordinary Slack and Telegram chats use your
-            Messaging setup; account notifications have separate permissions.
+            privacy policy before granting access. Ordinary Slack and Telegram conversations use
+            your Messaging setup; account notifications have separate permissions.
           </p>
         </section>
 
@@ -236,7 +236,7 @@ export default function PrivacyPolicyPage() {
                 (hashed), never as plain text. You can also sign in with GitHub or Google instead.
               </li>
               <li>
-                While you are signed in, we keep a record of that sign-in. For security, that record
+                While you are signed in, we keep a session. For security, that session record
                 includes your IP address and browser type.
               </li>
               <li>
@@ -276,7 +276,7 @@ export default function PrivacyPolicyPage() {
             <p className="text-warm-gray leading-relaxed">
               We use PostHog, a privacy-friendly analytics tool, to understand how the website is
               used. We count page visits and a few clicks, like copying the install command. That is
-              it. We do not record your screen, we do not log what you type, and we do not use
+              it. There is no session recording, we do not log what you type, and we do not use
               tracking that follows you to other sites.
             </p>
             <p className="text-warm-gray leading-relaxed">
@@ -315,8 +315,8 @@ export default function PrivacyPolicyPage() {
             <li>We never run ads.</li>
             <li>We never track you across other websites.</li>
             <li>
-              Your installation does not upload its whole chat history or codebase to us for managed
-              connections. Our hosted service processes the action and notification content
+              Your installation does not upload its whole session history or codebase to us for
+              managed connections. Our hosted service processes the action and notification content
               described above when you use it.
             </li>
           </ul>

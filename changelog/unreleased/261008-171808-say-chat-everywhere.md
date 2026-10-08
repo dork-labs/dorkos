@@ -9,4 +9,4 @@ covers:
 
 ### Changed
 
-- DorkOS now calls a conversation with an agent a "chat" everywhere: menus, buttons, settings, errors, the docs, the website and the command line. It used to say "session" in some places and "conversation" in others for the same thing. "New session" is now "New chat", the Sessions page is now Chats, and Session details is now Chat details. Channels and DMs keep their names, and being signed in is now called a sign-in (DOR-2789)
+- DorkOS now calls a conversation with an agent a "chat" in its menus, buttons, settings, errors, docs, website and command line. It used to say "session" in some places and "conversation" in others for the same thing. "New session" is now "New chat", the Sessions page is now Chats, and Session details is now Chat details. A chat an agent starts is a spin-off chat. Channels and DMs keep their names (DOR-2789)
