@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'fix(browser): retain the original native watcher baseline'
   - 'fix(browser): close the local controller before stopping its native peer'
   - 'fix(browser): track new descendants within the original observation window'
   - 'fix(browser): keep browser sessions running across unrelated settings changes'
