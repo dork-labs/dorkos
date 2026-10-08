@@ -41,6 +41,14 @@ vi.mock('sonner', () => ({
   toast: Object.assign(toasts.message, { success: toasts.success, error: toasts.error }),
 }));
 
+// The Sessions page draws the shared chat list, which reads the fleet-wide
+// prompt list off the app's event stream. These cases stand up no stream; what
+// the list needs from it is which chats have a prompt waiting, and none do.
+vi.mock('@/layers/entities/attention', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/attention')>()),
+  usePendingInteractions: () => ({ interactions: [], isLoading: false, isError: false }),
+}));
+
 const byId = (id: string): TeamMember => MOCK_TEAM_ROSTER.find((member) => member.id === id)!;
 
 const SELF = byId('person-dorian');
@@ -889,12 +897,12 @@ describe('the Sessions page', () => {
     });
 
     await screen.findByRole('heading', { name: 'Sessions' });
-    expect(screen.queryByText(/No conversations yet/)).toBeNull();
+    expect(screen.queryByText(/No chats with/)).toBeNull();
     expect(document.querySelector('[data-slot="skeleton"]')).not.toBeNull();
 
     sessions.settle({ sessions: [], warnings: [] });
 
-    expect(await screen.findByText(/No conversations yet/)).toBeInTheDocument();
+    expect(await screen.findByText('No chats with Warden yet.')).toBeInTheDocument();
   });
 
   it('says it could not look, rather than that there is nothing', async () => {
@@ -905,8 +913,8 @@ describe('the Sessions page', () => {
       }),
     });
 
-    expect(await screen.findByText(/Couldn’t read Warden’s conversations/)).toBeInTheDocument();
-    expect(screen.queryByText(/No conversations yet/)).toBeNull();
+    expect(await screen.findByText('Couldn’t read Warden’s chats.')).toBeInTheDocument();
+    expect(screen.queryByText(/No chats with/)).toBeNull();
   });
 });
 

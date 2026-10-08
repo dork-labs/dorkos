@@ -21,11 +21,11 @@ const NARROW_WAITING_TEXT = 'out · waiting';
 
 /**
  * The session header's account pill, drawn from an account already read: the
- * account's dot and name (`● Acct 2`), and, when the session ran out, the
- * sidebar row's own words (`● Acct 4 · out · needs you`).
+ * account's dot and name (`● Acct 2`), and, when the session ran out, what
+ * that means (`● Acct 4 · out · needs you`).
  *
- * It follows the sidebar row's rule exactly (`sessionLimitDisplay`, spec
- * `claude-account-ui` §6.2 and §6.3), so the two never disagree: red with
+ * It follows `sessionLimitDisplay` (spec `claude-account-ui` §6.2 and §6.3),
+ * the same rule the chat list lifts a chat into Needs you by: red with
  * "out · needs you" or "out · handing off" while the session needs action,
  * neutral with "out · waiting for reset" once the person chose to wait (Q13),
  * and plain for a moved session (Q14), a limit on one model only, or no limit

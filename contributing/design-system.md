@@ -1352,7 +1352,7 @@ All three components are exported from `@/layers/shared/ui`.
 | Route error fallback     | `apps/client/src/layers/shared/ui/route-error-fallback.tsx`      |
 | Not-found fallback       | `apps/client/src/layers/shared/ui/not-found-fallback.tsx`        |
 | Chat components          | `apps/client/src/layers/features/chat/`                          |
-| Session components       | `apps/client/src/layers/features/session-list/`                  |
+| Chat list                | `apps/client/src/layers/features/chat-list/`                     |
 | App state                | `apps/client/src/layers/shared/model/app-store/app-store.ts`     |
 | Chat state               | `apps/client/src/layers/features/chat/model/use-chat-session.ts` |
 | Filter engine            | `apps/client/src/layers/shared/lib/filter-engine.ts`             |
