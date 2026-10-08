@@ -644,6 +644,8 @@ it.each([
     const f = owned(() => stopping.resolve([closeResult]));
     vi.mocked(f.engine.shutdown).mockImplementation(() => stopping.promise);
     await f.open();
+    emit.mockClear(); // Count only the original shutdown or retirement observation.
+
     const closing = f.owner.close();
     void closing.catch(() => {});
     let settled = false;
@@ -691,6 +693,8 @@ it.each([false, undefined])(
     if (closeResult.kind !== 'close') throw new Error('CONTROL_CLOSE_RESULT');
     vi.mocked(f.engine.shutdown).mockResolvedValue([closeResult]);
     await f.open();
+    emit.mockClear(); // Count only the original shutdown or retirement observation.
+
     const original = await rejected(f.owner.close());
     f.accept(original.reason);
     expect(original.reason).toMatchObject({ code: 'CUSTODY_UNCERTAIN' });
@@ -770,6 +774,8 @@ it('observes the captured original retirement promise once without joining it or
     get: read,
   });
   await f.open();
+  emit.mockClear(); // Count only the original shutdown or retirement observation.
+
   expect(read).toHaveBeenCalledOnce();
   expect(f.participant.registerBirth).toHaveBeenCalledOnce();
   Object.defineProperty(f.receiver, 'observation', {
@@ -1073,6 +1079,22 @@ it.each([undefined, 2000])(
     } else {
       expect(actual.captureMinimumIntervalMilliseconds).toBe(interval);
     }
+    expect(validateEngineConfiguration(actual)).toEqual(actual);
+    await f.owner.close();
+  }
+);
+
+it.each([undefined, 2])(
+  'preserves the original constructor tab ceiling %s through production ownership',
+  async (limit) => {
+    const f = owned();
+    const read = vi.fn(() => limit);
+    Object.defineProperty(f.settings, 'tabsPerBrowser', { enumerable: true, get: read });
+    await f.open();
+    expect(read).toHaveBeenCalledTimes(1);
+    const actual = originals.construct.mock.calls[0]![0] as EngineConfiguration;
+    if (limit === undefined) expect(Object.hasOwn(actual, 'tabsPerBrowser')).toBe(false);
+    else expect(actual.tabsPerBrowser).toBe(limit);
     expect(validateEngineConfiguration(actual)).toEqual(actual);
     await f.owner.close();
   }

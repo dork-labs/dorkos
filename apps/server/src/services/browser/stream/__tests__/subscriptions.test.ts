@@ -22,7 +22,7 @@ function nativeReceipt(value: unknown) {
   return result;
 }
 
-function fixture() {
+function fixture(viewersPerBrowser?: number) {
   let current = true,
     sequence = 0;
   const actorIdentity = {},
@@ -51,7 +51,7 @@ function fixture() {
       pointer: null,
     }),
   }));
-  const bank = new BrowserPixelSubscriptions({ capture });
+  const bank = new BrowserPixelSubscriptions({ capture }, undefined, undefined, viewersPerBrowser);
   return {
     bank,
     proof,
@@ -834,3 +834,48 @@ it('automatically removes expired terminal custody only after its original captu
   expect(f.bank.ownsTicket(viewer.token)).toBe(false);
   expect(() => f.bank.disconnectFor(viewer.token, f.proof.actorIdentity)).toThrow('authority');
 });
+
+it('enforces a lower constructor viewer ceiling before proof getters and retains existing capture bounds', async () => {
+  const f = fixture(1);
+  onTestFinished(async () => {
+    await f.bank.close();
+  });
+  f.bank.issue(f.proof, origin);
+  const read = vi.fn(() => {
+    throw new Error('EXCESS_VIEWER_GETTER');
+  });
+  const proof = Object.defineProperty({ ...f.proof }, 'binding', { get: read });
+  expect(() => f.bank.issue(proof, origin)).toThrow('capacity');
+  expect(read).not.toHaveBeenCalled();
+  expect(f.bank.viewerCount()).toBe(1);
+  expect(f.capture).not.toHaveBeenCalled();
+});
+it('rechecks the captured viewer ceiling after the original authority callback reenters issue', async () => {
+  const f = fixture(1);
+  onTestFinished(async () => {
+    await f.bank.close();
+  });
+  const proof: OriginalViewerAdmission = {
+    ...f.proof,
+    current: () => {
+      f.bank.issue(f.proof, origin);
+      return true;
+    },
+  };
+  expect(() => f.bank.issue(proof, origin)).toThrow('authority');
+  expect(f.bank.viewerCount()).toBe(1);
+  expect(f.capture).not.toHaveBeenCalled();
+});
+it.each([0, 17, 1.5, NaN])(
+  'refuses invalid constructor viewer ceiling %s before capture getters',
+  (limit) => {
+    const read = vi.fn(() => {
+      throw new Error('CAPTURE_GETTER');
+    });
+    const engine = Object.defineProperty({ capture: vi.fn() }, 'capture', { get: read });
+    expect(() => new BrowserPixelSubscriptions(engine, undefined, undefined, limit)).toThrow(
+      'capacity'
+    );
+    expect(read).not.toHaveBeenCalled();
+  }
+);

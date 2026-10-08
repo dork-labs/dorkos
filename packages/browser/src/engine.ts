@@ -547,6 +547,7 @@ function constructEngine(
     if (!manager) throw new BrowserLifecycleError('PROCESS_OBSERVATION_UNAVAILABLE');
     const browserId = parseBrowserId(randomBytes(16).toString('base64url'));
     const record: BrowserRecord = {
+      ...(config.tabsPerBrowser === undefined ? {} : { tabsPerBrowser: config.tabsPerBrowser }),
       diagnosticsBudget,
       ...(initialStorageState ? { initialStorageState } : {}),
       browserId,

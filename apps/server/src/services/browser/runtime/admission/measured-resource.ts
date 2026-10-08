@@ -3,6 +3,8 @@ export interface MeasuredBrowserResourceEnvelope {
   readonly executableSHA256: string;
   readonly profiles: number;
   readonly browsers: number;
+  readonly tabsPerBrowser: number;
+  readonly viewersPerBrowser: number;
   readonly captureMinimumIntervalMilliseconds: number;
   readonly maximumCPUPercent: number;
   readonly minimumAvailableMemoryBytes: number;
@@ -22,6 +24,8 @@ export interface MeasuredBrowserResourceAdmission {
   readonly kind: 'measured-browser-resource-admission';
 }
 type Captured = Readonly<{
+  tabsPerBrowser: number;
+  viewersPerBrowser: number;
   captureMinimumIntervalMilliseconds: number;
   profiles(used: number): void;
   browserCount(used: number): void;
@@ -57,6 +61,12 @@ export function createMeasuredBrowserResourceAdmission(options: {
     !Number.isSafeInteger(envelope.browsers) ||
     envelope.browsers < 1 ||
     envelope.browsers > 16 ||
+    !Number.isSafeInteger(envelope.tabsPerBrowser) ||
+    envelope.tabsPerBrowser < 1 ||
+    envelope.tabsPerBrowser > 64 ||
+    !Number.isSafeInteger(envelope.viewersPerBrowser) ||
+    envelope.viewersPerBrowser < 1 ||
+    envelope.viewersPerBrowser > 16 ||
     !Number.isFinite(envelope.captureMinimumIntervalMilliseconds) ||
     envelope.captureMinimumIntervalMilliseconds <= 0 ||
     envelope.captureMinimumIntervalMilliseconds > 2000 ||
@@ -78,6 +88,8 @@ export function createMeasuredBrowserResourceAdmission(options: {
   admissions.set(
     identity,
     Object.freeze({
+      tabsPerBrowser: envelope.tabsPerBrowser,
+      viewersPerBrowser: envelope.viewersPerBrowser,
       captureMinimumIntervalMilliseconds: envelope.captureMinimumIntervalMilliseconds,
       profiles: (used: number) => count(used, envelope.profiles),
       browserCount: (used: number) => count(used, envelope.browsers),

@@ -414,6 +414,7 @@ export function createProductionBrowserRuntimeOwner() {
         const nativeJournal = configuration.nativeJournal;
         const recovery = configuration.recordedRecovery;
         const captureMinimumIntervalMilliseconds = configuration.captureMinimumIntervalMilliseconds;
+        const tabsPerBrowser = configuration.tabsPerBrowser;
         // Optional fields must remain absent: the canonical validator rejects own undefined values.
         const browserWorkerPath = nativeJournal?.browserWorkerPath;
         const continuous = nativeJournal?.continuous;
@@ -452,6 +453,7 @@ export function createProductionBrowserRuntimeOwner() {
               }
             : {}),
           ...(recovery ? { recordedRecovery: recovery } : {}),
+          ...(tabsPerBrowser === undefined ? {} : { tabsPerBrowser }),
           ...(captureMinimumIntervalMilliseconds === undefined
             ? {}
             : { captureMinimumIntervalMilliseconds }),

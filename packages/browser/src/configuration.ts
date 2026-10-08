@@ -132,6 +132,8 @@ const ConfigurationSchema = z
       .strict()
       .optional(),
     recordedRecovery: z.custom<RecordedProfileRecovery>(callback).optional(),
+    // Constructor-only reviewed limit; absence retains the structural ceiling, not capacity.
+    tabsPerBrowser: z.number().int().min(1).max(64).safe().optional(),
     // Constructor-only measured interval; absence makes no capture-rate qualification.
     captureMinimumIntervalMilliseconds: z.number().finite().positive().max(2000).optional(),
     policy: z

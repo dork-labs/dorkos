@@ -13,6 +13,8 @@ function fixture() {
     executableSHA256: 'a'.repeat(64),
     profiles: 3,
     browsers: 2,
+    tabsPerBrowser: 2,
+    viewersPerBrowser: 2,
     captureMinimumIntervalMilliseconds: 100,
     maximumCPUPercent: 60,
     minimumAvailableMemoryBytes: 1000,
@@ -102,4 +104,30 @@ it('refuses a forged participant without reading its getters', () => {
   Object.defineProperty(fake, 'kind', { get: read });
   refused(() => captureMeasuredBrowserResourceAdmission(fake));
   expect(read).not.toHaveBeenCalled();
+});
+
+it('captures tab and viewer ceilings once without turning later source mutation into capacity', () => {
+  const f = fixture();
+  f.envelope.tabsPerBrowser = 64;
+  f.envelope.viewersPerBrowser = 16;
+  expect(f.gate.tabsPerBrowser).toBe(2);
+  expect(f.gate.viewersPerBrowser).toBe(2);
+});
+it.each([
+  { tabsPerBrowser: 0 },
+  { tabsPerBrowser: 65 },
+  { tabsPerBrowser: 1.5 },
+  { viewersPerBrowser: 0 },
+  { viewersPerBrowser: 17 },
+  { viewersPerBrowser: NaN },
+])('refuses invalid reviewed structural ceilings %j', (change) => {
+  const f = fixture();
+  refused(() =>
+    createMeasuredBrowserResourceAdmission({
+      envelope: { ...f.envelope, ...change },
+      now: () => f.state.now,
+      observe: f.observe,
+    })
+  );
+  expect(f.observe).not.toHaveBeenCalled();
 });

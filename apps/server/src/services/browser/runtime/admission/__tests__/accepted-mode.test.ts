@@ -59,6 +59,8 @@ const entry = (): AcceptedBrowserMode => ({
   resourceEnvelope: {
     profiles: 2,
     browsers: 2,
+    tabsPerBrowser: 2,
+    viewersPerBrowser: 2,
     captureMinimumIntervalMilliseconds: 100,
     maximumCPUPercent: 50,
     minimumAvailableMemoryBytes: 1000,
@@ -219,3 +221,17 @@ it('does not qualify a missing primitive or mismatched runtime platform from a n
     )
   ).toThrow();
 });
+
+it.each(['tabsPerBrowser', 'viewersPerBrowser'] as const)(
+  'refuses a historical catalogue envelope missing reviewed %s',
+  (field) => {
+    const original = entry();
+    const envelope: Partial<NonNullable<AcceptedBrowserMode['resourceEnvelope']>> = {
+      ...original.resourceEnvelope,
+    };
+    delete envelope[field];
+    Object.defineProperty(original, 'resourceEnvelope', { value: envelope });
+    records.push(original);
+    expect(() => acquireBrowserModeAdmission(subject, () => true)).toThrow();
+  }
+);

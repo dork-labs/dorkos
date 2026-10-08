@@ -90,6 +90,7 @@ function freezeEnvelope(value: BrowserFramePointerEnvelope): BrowserFramePointer
 /** Disposable pull subscriptions: one unacknowledged frame per viewer, no durable replay. */
 export class BrowserPixelSubscriptions {
   private readonly viewers = new Map<string, Viewer>();
+  private readonly maximumViewers: number;
   private readonly terminals = new ViewerTerminalCustody();
   private readonly work = new Set<Promise<Frame>>();
   private readonly navigationFences = new Map<string, BrowserBinding>();
@@ -104,8 +105,13 @@ export class BrowserPixelSubscriptions {
   constructor(
     engine: Pick<PrivateBrowserCaptureDispatcher, 'capture'>,
     observer?: PrivateViewerSampleObserver,
-    private readonly observeCensus?: PrivateViewerCensusObserver
+    private readonly observeCensus?: PrivateViewerCensusObserver,
+    viewersPerBrowser?: number
   ) {
+    const limit = viewersPerBrowser ?? 16;
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 16)
+      throw new ViewerRefusal('capacity');
+    this.maximumViewers = limit;
     this.capture = engine.capture.bind(engine);
     this.observeViewer = observer;
     this.sampleCensus();
@@ -159,7 +165,11 @@ export class BrowserPixelSubscriptions {
   /** Called only by the private authenticated host after genuine origin/CSRF admission. */
   issue(proof: OriginalViewerAdmission, admittedOrigin: string) {
     if (this.observationFailure) throw this.observationFailure.value;
-    if (this.closed || this.viewers.size >= 16 || this.viewers.size + this.terminals.size >= 64)
+    if (
+      this.closed ||
+      this.viewers.size >= this.maximumViewers ||
+      this.viewers.size + this.terminals.size >= 64
+    )
       throw new ViewerRefusal('capacity');
     const binding = Object.freeze(BrowserBindingSchema.parse(proof.binding));
     const refresh = proof.refresh.bind(proof),
@@ -179,7 +189,7 @@ export class BrowserPixelSubscriptions {
       !admitted ||
       this.closed ||
       !this.navigationAdmitted(binding) ||
-      this.viewers.size >= 16 ||
+      this.viewers.size >= this.maximumViewers ||
       this.viewers.size + this.terminals.size >= 64 ||
       finalActorIdentity !== actorIdentity ||
       finalGrantIdentity !== grantIdentity

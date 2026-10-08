@@ -137,7 +137,7 @@ export function createOriginalAuthenticationWarmup(origin: string, check: () => 
         raw.rawHeaders.some(
           (value, index) =>
             index % 2 === 0 &&
-            ['authorization', 'cookie', 'content-length', 'transfer-encoding', 'upgrade'].includes(
+            ['authorization', 'content-length', 'transfer-encoding', 'upgrade'].includes(
               value.toLowerCase()
             )
         )
@@ -176,10 +176,11 @@ export function createOriginalAuthenticationWarmup(origin: string, check: () => 
         framed.path !== path ||
         raw.head.byteLength ||
         (framed.contentLength !== undefined && framed.contentLength !== 0) ||
-        framed.headers.authorization !== undefined ||
-        framed.headers.cookie !== undefined
+        framed.headers.authorization !== undefined
       )
         throw new BrokerError('AUTHORITY_REFUSED');
+      // The persistent context may send host cookies regardless of this listener's port.
+      // This exact private response never reads, reflects, forwards or persists Cookie values.
       entered = true;
       const closed = terminal(socket);
       return Object.freeze({

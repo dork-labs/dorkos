@@ -32,7 +32,8 @@ export function trackPage(
   if (!ordinaryRecord(record)) throw new Error('PAGE_REGISTRATION_REFUSED');
   const prior = [...record.tabs.values()].find((tab) => tab.page === page);
   if (prior) return prior;
-  if (record.tabs.size >= maximumRegisteredTabs) {
+  const limit = record.tabsPerBrowser ?? maximumRegisteredTabs;
+  if (record.tabs.size >= limit) {
     const refusal = new Error('TAB_REGISTRATION_LIMIT');
     tabLimitRefusals.add(refusal);
     record.lifetime.requestRetirement('engineFault');

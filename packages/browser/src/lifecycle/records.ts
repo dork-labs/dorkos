@@ -31,6 +31,7 @@ export type RetirementCloseRefusalStage =
 
 /** Internal acquisition ledger, allocated before any owned browser can launch. */
 export interface BrowserRecord {
+  tabsPerBrowser?: number;
   retirementCloseRefusal?: RetirementCloseRefusalStage;
   ownerNavigationObserver?: Readonly<{ close(): Promise<void> }>;
   ownerNavigationObserverClose?: Promise<void>;

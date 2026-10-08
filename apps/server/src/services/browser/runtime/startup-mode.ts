@@ -111,6 +111,7 @@ export interface ProductionBrowserModeAdmission {
   readonly kind: 'production-browser-mode';
 }
 type Mode = {
+  viewersPerBrowser?: number;
   resourceAcceptance?: PrivateBrowserResourceOwner;
   viewerSamples?: PrivateViewerSampleObserver;
   ownerId: string;
@@ -1237,6 +1238,7 @@ export function createProductionBrowserStartupMode(options: {
           },
           ...(measuredResources
             ? {
+                tabsPerBrowser: measuredResources.tabsPerBrowser,
                 captureMinimumIntervalMilliseconds:
                   measuredResources.captureMinimumIntervalMilliseconds,
               }
@@ -1290,6 +1292,9 @@ export function createProductionBrowserStartupMode(options: {
               : resourceAcceptance
                 ? { resourceAcceptance }
                 : {}),
+            ...(measuredResources
+              ? { viewersPerBrowser: measuredResources.viewersPerBrowser }
+              : {}),
             ...(viewerSamples ? { viewerSamples } : {}),
             current: valid,
             configuration: { ...configured, network: configured.network },

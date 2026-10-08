@@ -1,6 +1,7 @@
 import { expect, it, onTestFinished, vi } from 'vitest';
 import { configuration, deferred, fakePage, record, tick } from './parent-fixture.js';
 import { closeRecord } from '../lifecycle/close.js';
+import { validateEngineConfiguration } from '../configuration.js';
 import { ordinaryRecord } from '../lifecycle/ownership.js';
 import { isOriginalTabLimitRefusal, trackPage } from '../tabs/registry.js';
 
@@ -66,3 +67,58 @@ it.each([false, undefined, new Error('TAB_REGISTRATION_LIMIT')])(
     expect(isOriginalTabLimitRefusal(value)).toBe(false);
   }
 );
+
+it('refuses a measured lower tab ceiling before excess Page getters while duplicate observation remains idempotent', async () => {
+  const owned = record();
+  owned.tabsPerBrowser = 2;
+  onTestFinished(async () => {
+    await closeRecord(configuration(), owned);
+  });
+  const first = fakePage(),
+    second = fakePage(),
+    excess = fakePage();
+  const tab = trackPage(owned, first.page, origin, () => 0);
+  trackPage(owned, second.page, origin, () => 0);
+  expect(trackPage(owned, first.page, origin, () => 0)).toBe(tab);
+  const read = vi.fn(() => {
+    throw new Error('EXCESS_MEASURED_PAGE');
+  });
+  Object.defineProperty(excess.raw, 'on', { get: read });
+  let reason: unknown;
+  try {
+    trackPage(owned, excess.page, origin, () => 0);
+  } catch (value) {
+    reason = value;
+  }
+  expect(isOriginalTabLimitRefusal(reason)).toBe(true);
+  expect(read).not.toHaveBeenCalled();
+  expect(owned.tabs.size).toBe(2);
+  expect(ordinaryRecord(owned)).toBe(false);
+});
+it('reserves a measured tab slot before an original Page callback can reenter registration', async () => {
+  const owned = record();
+  owned.tabsPerBrowser = 1;
+  onTestFinished(async () => {
+    await closeRecord(configuration(), owned);
+  });
+  const original = fakePage(),
+    reentrant = fakePage();
+  let reason: unknown;
+  original.raw.setDefaultTimeout.mockImplementation(() => {
+    try {
+      trackPage(owned, reentrant.page, origin, () => 0);
+    } catch (value) {
+      reason = value;
+    }
+  });
+  trackPage(owned, original.page, origin, () => 0);
+  expect(isOriginalTabLimitRefusal(reason)).toBe(true);
+  expect(owned.tabs.size).toBe(1);
+  expect(ordinaryRecord(owned)).toBe(false);
+});
+
+it.each([0, 65, 1.5, NaN])('refuses invalid original constructor tab ceiling %s', (limit) => {
+  expect(() => validateEngineConfiguration({ ...configuration(), tabsPerBrowser: limit })).toThrow(
+    'INVALID_CONFIGURATION'
+  );
+});

@@ -102,7 +102,12 @@ async function fixture() {
     await Promise.allSettled(jobs);
     if (first) throw first.value;
   });
-  const send = (target = warmup.url, authenticated: boolean | string = false, method = 'GET') => {
+  const send = (
+    target = warmup.url,
+    authenticated: boolean | string = false,
+    method = 'GET',
+    cookie?: string
+  ) => {
     let resolve!: (value: {
         status: number;
         body: string;
@@ -125,6 +130,7 @@ async function fixture() {
         path: target,
         headers: {
           Host: new URL(warmup.url).host,
+          ...(cookie === undefined ? {} : { Cookie: cookie }),
           ...(authenticated
             ? {
                 'Proxy-Authorization':
@@ -335,3 +341,42 @@ it.each(['revoke', 'close'] as const)(
     await expect(f.warmup.confirm()).rejects.toMatchObject({ code: 'CLOSED' });
   }
 );
+
+it.each([false, true])(
+  'does not let a retained host cookie prevent private proxy authentication (preemptive=%s)',
+  async (preemptive) => {
+    const f = await fixture();
+    const cookie = 'dork_fixture=fixture-alpha; dork_session=fixture-alpha';
+    if (!preemptive) expect((await f.send(f.warmup.url, false, 'GET', cookie)).status).toBe(407);
+    const result = await f.send(f.warmup.url, true, 'GET', cookie);
+    expect(result.status).toBe(200);
+    expect(result.headers['set-cookie']).toBeUndefined();
+    expect(result.headers.location).toBeUndefined();
+    expect(result.body).not.toContain('fixture-alpha');
+    expect(result.headers['cache-control']).toBe('no-store');
+    await f.warmup.confirm();
+    expect(f.resolver).not.toHaveBeenCalled();
+    expect(f.dial).not.toHaveBeenCalled();
+    await expect(f.send(f.warmup.url, true, 'GET', cookie)).rejects.toMatchObject({
+      code: 'ECONNRESET',
+    });
+  }
+);
+it('retained cookies do not substitute credentials or permit direct origin-form warmup', async () => {
+  const f = await fixture();
+  const cookie = 'dork_fixture=fixture-alpha';
+  await expect(
+    f.send(
+      f.warmup.url,
+      'Basic ' + Buffer.from('dorkos:' + 'X'.repeat(43)).toString('base64'),
+      'GET',
+      cookie
+    )
+  ).rejects.toMatchObject({ code: 'ECONNRESET' });
+  await expect(f.send(new URL(f.warmup.url).pathname, true, 'GET', cookie)).rejects.toMatchObject({
+    code: 'ECONNRESET',
+  });
+  await expect(f.warmup.confirm()).rejects.toBeDefined();
+  expect(f.resolver).not.toHaveBeenCalled();
+  expect(f.dial).not.toHaveBeenCalled();
+});

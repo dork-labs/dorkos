@@ -57,9 +57,15 @@ export class BrowserViewHost {
     capture: BrowserViewCapture,
     private readonly enabled: () => boolean = () => false,
     viewerSamples?: PrivateViewerSampleObserver,
-    viewerCensus?: PrivateViewerCensusObserver
+    viewerCensus?: PrivateViewerCensusObserver,
+    viewersPerBrowser?: number
   ) {
-    this.pixels = new BrowserPixelSubscriptions(capture, viewerSamples, viewerCensus);
+    this.pixels = new BrowserPixelSubscriptions(
+      capture,
+      viewerSamples,
+      viewerCensus,
+      viewersPerBrowser
+    );
     this.closeCapture = capture.close.bind(capture);
     this.captureIdentity = identities.capture.bind(identities);
     this.readInstance = registry.instance.bind(registry);

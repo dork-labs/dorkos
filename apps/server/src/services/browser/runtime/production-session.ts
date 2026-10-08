@@ -432,7 +432,8 @@ export function createProductionBrowserSession(options: {
               mode.viewerSamples?.census?.({
                 browserId: original.opened.browserId,
                 browserGeneration: original.opened.browserGeneration,
-              })
+              }),
+              mode.viewersPerBrowser
             );
             retainClose(view, 'close');
             admit();

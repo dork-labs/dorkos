@@ -74,6 +74,8 @@ const root = { pid: 20, birth: 'original-root' };
 const envelope = {
   profiles: 2,
   browsers: 2,
+  tabsPerBrowser: 2,
+  viewersPerBrowser: 2,
   captureMinimumIntervalMilliseconds: 100,
   maximumCPUPercent: 50,
   minimumAvailableMemoryBytes: 1000,

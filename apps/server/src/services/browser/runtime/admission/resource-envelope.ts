@@ -5,6 +5,8 @@ export const ReviewedBrowserResourceEnvelopeSchema = z
   .strictObject({
     profiles: z.number().int().min(1).max(64).safe(),
     browsers: z.number().int().min(1).max(16).safe(),
+    tabsPerBrowser: z.number().int().min(1).max(64).safe(),
+    viewersPerBrowser: z.number().int().min(1).max(16).safe(),
     captureMinimumIntervalMilliseconds: z.number().positive().max(2000),
     maximumCPUPercent: z.number().positive().max(100),
     minimumAvailableMemoryBytes: z.number().int().nonnegative().safe(),

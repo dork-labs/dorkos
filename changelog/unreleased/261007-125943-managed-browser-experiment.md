@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'fix(browser): preserve warmup cookies and enforce measured viewer limits'
   - 'feat(browser): add owner-controlled managed browser experiment'
   - 'fix(browser): preserve displayed input and packaged runtime ownership'
   - 'fix(browser): identify current instances and diagnose pending shutdown'
