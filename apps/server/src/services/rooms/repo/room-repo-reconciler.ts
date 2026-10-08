@@ -50,6 +50,7 @@
  *
  * @module server/services/rooms/repo/room-repo-reconciler
  */
+import { outsideAuditScope } from '../../audit/audit-context.js';
 import { logger } from '../../../lib/logger.js';
 import fs from 'node:fs/promises';
 import type { Db } from '@dorkos/db';
@@ -317,7 +318,10 @@ export class RoomRepoReconciler {
     if (binding)
       requireOriginalHttpRoomReconcilerAdmission(binding.owner, this, binding.db, binding.rooms);
     if (this.#timer) return;
-    this.#timer = setInterval(() => this.#runTick(), this.#intervalMs);
+    this.#timer = setInterval(
+      outsideAuditScope(() => this.#runTick()),
+      this.#intervalMs
+    );
     this.#timer.unref();
   }
 

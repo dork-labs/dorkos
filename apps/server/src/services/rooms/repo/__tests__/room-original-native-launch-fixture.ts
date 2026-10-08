@@ -91,6 +91,7 @@ import {
 import { createDocChannelHttpComposition } from '../../../canvas/doc-channel/http-composition.js';
 import roomsRouter from '../../../../routes/rooms.js';
 import { resolveAgentIdentity } from '../../../../middleware/agent-identity.js';
+import { auditActor } from '../../../../middleware/audit-actor.js';
 import { errorHandler } from '../../../../middleware/error-handler.js';
 
 import {
@@ -591,6 +592,7 @@ export async function createOriginalNativeLaunchFixture(
     app.use(express.json({ limit: '1mb' }));
     app.use(sessionGate);
     app.use(resolveAgentIdentity);
+    app.use(auditActor);
     app.use('/api/rooms', roomsRouter);
     app.use(errorHandler);
     if (options.seed !== false) {

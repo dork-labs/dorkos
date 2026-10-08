@@ -46,7 +46,13 @@ import {
   stampDisplayNameSource,
   type DisplayNameWriter,
 } from '../../identity/display-name-provenance.js';
-import { applyConfigPatch, deepMerge, describeConfigWrite } from './config-patch.js';
+import {
+  applyConfigPatch,
+  changedConfigLeaves,
+  deepMerge,
+  describeConfigWrite,
+} from './config-patch.js';
+import { recordAudit } from '../../audit/audit-trail.js';
 import {
   describeOperatorOnlyRefusal,
   findOperatorOnlyPaths,
@@ -540,10 +546,36 @@ export function applyGuardedConfigWrite(write: GuardedConfigWrite): GuardedConfi
   const touched = describeConfigWrite(result.before, result.config);
   if (touched) {
     logger.info(`[Config] Patched by ${source}: ${touched}`);
+    recordConfigChange(changedConfigLeaves(result.before, result.config), touched);
   }
   reportTrustStopMoves(result.before, result.config, { source, writer });
 
   return { ok: true, config: result.config, warnings: result.warnings };
+}
+
+/**
+ * Record a config change in the audit log, field by field (spec `audit-trail`
+ * PR2). Who changed it comes from the current audit scope: the request, or the
+ * agent whose tool call made the write. Secret fields keep their name and lose
+ * both values; the audit writer does that, so this passes them through.
+ *
+ * @param change - Each changed leaf, before and after.
+ * @param touched - The same change as the log line names it.
+ * @param via - The purpose-built writer that made it, when not a settings door.
+ */
+function recordConfigChange(
+  change: { field: string; before: unknown; after: unknown }[],
+  touched: string,
+  via?: string
+): void {
+  recordAudit({
+    action: 'config.changed',
+    operation: 'modify',
+    target: { type: 'config', id: 'config.json', name: 'Settings' },
+    outcome: 'ok',
+    change,
+    summary: via ? `Changed settings through ${via}: ${touched}` : `Changed settings: ${touched}`,
+  });
 }
 
 /**
@@ -580,5 +612,10 @@ export function logConfigWrite(
   const touched = describeConfigWrite({ [section]: before }, { [section]: after });
   if (touched) {
     logger.info(`[Config] Set by ${subsystem}: ${touched}`);
+    recordConfigChange(
+      changedConfigLeaves({ [section]: before }, { [section]: after }),
+      touched,
+      subsystem
+    );
   }
 }

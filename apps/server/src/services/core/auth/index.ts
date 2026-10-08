@@ -49,6 +49,12 @@ import { encodeOriginalDocTokenHeaderAuthentication } from '../../canvas/doc-cha
  */
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { realpathSync, statSync } from 'node:fs';
+import {
+  authAuditAfterHook,
+  recordAccountCreated,
+  recordSignedIn,
+  recordSessionEnded,
+} from './auth-audit.js';
 import { betterAuth, type BetterAuthOptions } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { APIError } from 'better-auth/api';
@@ -254,7 +260,10 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
             }
             return { data: { ...userData, role: 'owner' } };
           },
-          after: async () => {
+          after: async (created) => {
+            // The account in the audit log, linked to the install id the log
+            // named its owner by until now (spec `audit-trail` §3.2).
+            recordAccountCreated(created);
             // Owner-creation seam for the legacy MCP key migration (task 1.4):
             // when the owner is created (the enable-login flow), fold any lingering
             // `config.mcp.apiKey` into an owner-owned Better Auth key so existing
@@ -264,7 +273,15 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
           },
         },
       },
+      // Sign-ins and sign-outs in the audit log (spec `audit-trail` PR2):
+      // Better Auth keeps sessions, not their history.
+      session: {
+        create: { after: async (created) => recordSignedIn(created) },
+        delete: { after: async (deleted, ctx) => recordSessionEnded(deleted, ctx?.path) },
+      },
     },
+    // Failed sign-ins and API keys created or revoked, in the audit log.
+    hooks: { after: authAuditAfterHook },
   };
 }
 

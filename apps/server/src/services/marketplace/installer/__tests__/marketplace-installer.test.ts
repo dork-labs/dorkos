@@ -54,6 +54,9 @@ vi.mock('../../telemetry/telemetry-hook.js', () => ({
 // at the fake `installPath` values these tests use (e.g. `/fake/dorkhome/...`).
 vi.mock('../../installed-metadata.js', () => ({
   writeInstallMetadata: vi.fn().mockResolvedValue(undefined),
+  // What the audit log reads either side of an install or update (spec
+  // `audit-trail` PR2). Per-test overrides set the version and commit.
+  readInstallMetadata: vi.fn().mockResolvedValue(null),
 }));
 
 // The skill-pack SKILL.md check reads the package tree; these tests stage at
@@ -76,8 +79,14 @@ import { ConflictError, DisclosureChangedError, InvalidPackageError } from '../e
 import { disclosedEffectsOf } from '../../preview/disclosed-effects.js';
 import { UnsupportedSourceUrlError } from '../../sources/source-url-policy.js';
 import { reportInstallEvent } from '../../telemetry/telemetry-hook.js';
-import { writeInstallMetadata } from '../../installed-metadata.js';
+import { readInstallMetadata, writeInstallMetadata } from '../../installed-metadata.js';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { recordProjectInstall } from '../../lib/project-install-index.js';
+import { createTestDb } from '@dorkos/test-utils/db';
+import { auditEvents } from '@dorkos/db';
+import { AuditLog } from '../../../audit/audit-log.js';
+import { AccountIds } from '../../../audit/account-ids.js';
+import { initAuditTrail, resetAuditTrail } from '../../../audit/audit-trail.js';
 
 const mockedValidatePackage = vi.mocked(validatePackage);
 const mockedReportInstallEvent = vi.mocked(reportInstallEvent);
@@ -1614,6 +1623,131 @@ describe('MarketplaceInstaller', () => {
         'uninstall blew up'
       );
       expect(pluginFlow.install).not.toHaveBeenCalled();
+    });
+  });
+
+  // Spec `audit-trail` PR2: installs and updates are recorded once each,
+  // where they commit, so every door (app, HTTP, MCP) is covered by one call.
+  describe('the audit log', () => {
+    function withAudit() {
+      const db = createTestDb();
+      initAuditTrail({
+        log: new AuditLog(db),
+        accounts: new AccountIds({ db, installId: 'inst-1', readOwnerAccount: () => null }),
+      });
+      const all = () => db.select().from(auditEvents).all();
+      return Object.assign(
+        () => all().map((row) => [row.action, row.targetId, row.change && JSON.parse(row.change)]),
+        { operations: () => all().map((row) => [row.action, row.operation, row.outcome]) }
+      );
+    }
+    afterEach(() => resetAuditTrail());
+
+    it('records an install once, with its version and source', async () => {
+      const rows = withAudit();
+      const { deps, resolver, pluginFlow, previewBuilder } = buildDeps();
+      const manifest = buildPluginManifest({ name: 'hello-plugin' });
+      wireLocalResolution(resolver, 'hello-plugin', '/tmp/hello-plugin');
+      mockedValidatePackage.mockResolvedValue({ ok: true, issues: [], manifest });
+      previewBuilder.build.mockResolvedValue(buildEmptyPreview());
+      pluginFlow.install.mockResolvedValue(buildInstallResult(manifest));
+
+      await new MarketplaceInstaller(deps).install({
+        name: 'hello-plugin',
+        marketplace: 'dorkos-community',
+      });
+
+      expect(rows()).toEqual([
+        [
+          'marketplace.installed',
+          'hello-plugin',
+          [
+            { field: 'version', after: manifest.version },
+            { field: 'source', after: 'dorkos-community' },
+          ],
+        ],
+      ]);
+    });
+
+    /** A real install root for `name`, so the update locates it on disk. */
+    async function installedHome(name: string): Promise<string> {
+      const home = await mkdtemp(nodePath.join(tmpdir(), 'dorkos-audit-update-'));
+      await mkdir(nodePath.join(home, 'plugins', name, '.dork'), { recursive: true });
+      await writeFile(nodePath.join(home, 'plugins', name, '.dork', 'manifest.json'), '{}');
+      return home;
+    }
+
+    function wireUpdate(name: string) {
+      const built = buildDeps();
+      const manifest = buildPluginManifest({ name });
+      wireLocalResolution(built.resolver, name, `/tmp/${name}`);
+      mockedValidatePackage.mockResolvedValue({ ok: true, issues: [], manifest });
+      built.previewBuilder.build.mockResolvedValue(buildEmptyPreview());
+      built.uninstallFlow.uninstall.mockResolvedValue({
+        ok: true,
+        packageName: name,
+        removedFiles: 1,
+        preservedData: [],
+      });
+      return { ...built, manifest };
+    }
+
+    it('records an update once, with the version and commit either side', async () => {
+      const rows = withAudit();
+      const home = await installedHome('updateable-plugin');
+      const { deps, pluginFlow, manifest } = wireUpdate('updateable-plugin');
+      pluginFlow.install.mockResolvedValue(buildInstallResult(manifest));
+      vi.mocked(readInstallMetadata)
+        .mockResolvedValueOnce({ version: '0.9.0', commitSha: 'a'.repeat(40) } as never)
+        .mockResolvedValueOnce({ version: manifest.version, commitSha: 'b'.repeat(40) } as never);
+
+      await new MarketplaceInstaller({ ...deps, dorkHome: home }).update({
+        name: 'updateable-plugin',
+      });
+
+      expect(rows()).toEqual([
+        [
+          'marketplace.updated',
+          'updateable-plugin',
+          [
+            { field: 'version', before: '0.9.0', after: manifest.version },
+            { field: 'commit', before: 'a'.repeat(12), after: 'b'.repeat(12) },
+          ],
+        ],
+      ]);
+    });
+
+    it('records an update whose install half failed after the old version was removed', async () => {
+      const rows = withAudit();
+      const home = await installedHome('broken-plugin');
+      const { deps, pluginFlow } = wireUpdate('broken-plugin');
+      pluginFlow.install.mockRejectedValue(new Error('disk full'));
+      vi.mocked(readInstallMetadata)
+        .mockResolvedValueOnce({ version: '1.0.0' } as never)
+        .mockResolvedValueOnce(null);
+
+      await expect(
+        new MarketplaceInstaller({ ...deps, dorkHome: home }).update({ name: 'broken-plugin' })
+      ).rejects.toThrow('disk full');
+
+      expect(rows()).toEqual([
+        ['marketplace.update_failed', 'broken-plugin', [{ field: 'version', before: '1.0.0' }]],
+      ]);
+      expect(rows.operations()).toEqual([['marketplace.update_failed', 'remove', 'failed']]);
+    });
+
+    it('records a failed update that left the old version in place as a change that did not happen', async () => {
+      const rows = withAudit();
+      const home = await installedHome('kept-plugin');
+      const { deps, pluginFlow } = wireUpdate('kept-plugin');
+      pluginFlow.install.mockRejectedValue(new Error('refused'));
+      vi.mocked(readInstallMetadata).mockResolvedValue({ version: '1.0.0' } as never);
+
+      await expect(
+        new MarketplaceInstaller({ ...deps, dorkHome: home }).update({ name: 'kept-plugin' })
+      ).rejects.toThrow('refused');
+
+      expect(rows.operations()).toEqual([['marketplace.update_failed', 'modify', 'failed']]);
     });
   });
 

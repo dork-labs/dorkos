@@ -32,6 +32,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, realpath, mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
+import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import { configManager } from '../../../core/config-manager.js';
 import { ROOM_REPO_CAP_DEFAULTS, type RoomRepoCaps } from '@dorkos/shared/room-repo';
@@ -44,6 +45,11 @@ import { symlinkLeavesRepo, type RoomMergeService } from '../room-merge-service.
 
 import { fixtureGit as runGit } from './fixture-git.js';
 import { removeFixtureTree, silenceGitAutoMaintenance } from './fixture-git.js';
+import { auditEvents } from '@dorkos/db';
+import { AuditLog } from '../../../audit/audit-log.js';
+import { AccountIds } from '../../../audit/account-ids.js';
+import { initAuditTrail, resetAuditTrail } from '../../../audit/audit-trail.js';
+import { readOwnerAccount } from '../../../core/auth/index.js';
 
 let ROOM_ID: string;
 let OPERATOR: string;
@@ -563,6 +569,48 @@ describe('RoomMergeService', () => {
       // not write it.
       expect(announced[0]?.subjectAuthorId).toBe(BEN);
       expect(announced[0]?.text).toContain('Ben merged');
+    });
+
+    // Spec `audit-trail` PR2: the commit is authored as the agent, so the
+    // audit log is where the person who MERGED it is named.
+    it('records who merged it in the audit log, not the agent whose work it is', async () => {
+      const auditDb = createTestDb();
+      const owner = readOwnerAccount();
+      expect(owner?.id).toBe(fixture.original.ownerId);
+      initAuditTrail({
+        log: new AuditLog(auditDb),
+        accounts: new AccountIds({
+          db: auditDb,
+          installId: 'inst-1',
+          readOwnerAccount,
+        }),
+      });
+      try {
+        await enableRepo();
+        await commitIn(BEN, 'ben.md', 'ben\n');
+        // The original owner API key is authenticated on the server. Caller
+        // AsyncLocalStorage does not cross the fixture's real HTTP request.
+        const result = await merges.merge(ROOM_ID, OPERATOR, {
+          summary: 'Land Ben’s work',
+          worktree: slugOf(BEN),
+        });
+
+        const rows = auditDb.select().from(auditEvents).all();
+        expect(rows).toMatchObject([
+          {
+            action: 'room.merged',
+            actorId: fixture.original.ownerId,
+            actorKind: 'person',
+            targetId: `room/${slugOf(BEN)}`,
+            containerId: ROOM_ID,
+          },
+        ]);
+        expect(JSON.parse(rows[0]!.change!)).toEqual([
+          { field: 'main', after: result.commit.slice(0, 12) },
+        ]);
+      } finally {
+        resetAuditTrail();
+      }
     });
 
     it('tells the operator there is nothing to merge when they name nothing', async () => {

@@ -115,6 +115,9 @@ export function createMcpAuth({
     //    is inactive once login is on, yielding to per-user keys) lives in
     //    `localToken` above, which is where acceptor 2 needed the same answer.
     if (bearerIsLocalToken) {
+      // Named for the audit log: this caller proved the per-install local
+      // token, which is neither a person's key nor an agent's token.
+      res.locals.mcpLocalToken = true;
       next();
       return;
     }

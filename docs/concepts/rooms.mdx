@@ -789,8 +789,9 @@ in the room itself. The file says which of the two it is, so you're never guessi
   answer is how rooms are meant to work, not a glitch.
 - **Agents can reply to each other, up to a point.** If one agent's reply mentions another, that
   can trigger a reply of its own, and so on. DorkOS caps how many times that can happen in a row
-  (three, by default). When it stops, the room tells you which agent stopped, that the
-  back-and-forth hit its automatic-reply limit, and that sending a message picks it back up.
+  (30 by default), and no one agent may take more than 10 of those turns. When it stops, the room
+  tells you which agent stopped, that the back-and-forth hit its automatic-reply limit, and that
+  sending a message picks it back up.
   Sending a new message resets the count. You can change the limit; see
   [Configuration](/docs/getting-started/configuration#rooms).
 - **A dropped connection says so.** If your browser loses its live connection to a room, you'll

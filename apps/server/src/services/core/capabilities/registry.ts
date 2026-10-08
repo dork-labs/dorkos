@@ -98,6 +98,7 @@ export function requireOriginalRoomMergeInvocation(
 }
 
 import { createHash } from 'node:crypto';
+import { runAsAgent } from '../../audit/audit-trail.js';
 import { z } from 'zod';
 import {
   EXTENSION_TOOL_UNAVAILABLE_CODE,
@@ -1005,17 +1006,6 @@ export function composeRegistry(
         if (change !== undefined) invocationContext.approvedChange = change;
       }
 
-      // No observer, or nothing to attribute: run the original path untouched so
-      // an unattributed call stays byte-identical to before this seam existed
-      // (spec §3.1 — absent identity is today's behavior).
-      //
-      // A `destructive` capability is the exception, and it is not optional: the
-      // tier gate deliberately does NOT audit an `allowed` call ("allowed calls
-      // are audited on invoke", `tier-enforcement.ts`), so skipping the observer
-      // for an unidentified caller meant an irreversible action that actually RAN
-      // produced an `approval_required` line and then silence. Two seams each
-      // correctly deferred to the other and the record fell between them.
-      const auditedWithoutIdentity = capability.tier === 'destructive';
       let mergeHandle: object | undefined;
       let mergeRecord: OriginalRoomMergeInvocation | undefined;
       if (id === 'rooms.merge' && mergeConstruction) {
@@ -1050,12 +1040,18 @@ export function composeRegistry(
           : originalDocumentCalls.has(capability)
             ? originalDocumentCalls.get(capability)!.invoke(deps, parsed, invocationContext)
             : capability.invoke(deps, parsed, invocationContext);
+      // Keep caller audit attribution around the captured original handler.
+      const run = () =>
+        runAsAgent(invocationContext.identity, supplied.sessionId, invokeHandler, {
+          inSession: supplied.mcpServer === 'in-session',
+        });
+      // Unidentified reads stay silent; identified and mutating calls are observed.
+      const silent = !invocationContext.identity && capability.tier === 'observe';
       try {
         // Await both branches so the authentic invocation stays active for all admitted work.
-        if (!onInvocation || (!invocationContext.identity && !auditedWithoutIdentity))
-          return await invokeHandler();
+        if (!onInvocation || silent) return await run();
         try {
-          const result = await invokeHandler();
+          const result = await run();
           notify(onInvocation, capability, invocationContext, true);
           return result;
         } catch (err) {

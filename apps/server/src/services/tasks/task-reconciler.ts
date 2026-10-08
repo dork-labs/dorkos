@@ -27,6 +27,7 @@
  *
  * @module services/tasks/task-reconciler
  */
+import { outsideAuditScope } from '../audit/audit-context.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { TaskStore } from './task-store.js';
@@ -183,22 +184,28 @@ export class TaskReconciler {
   /** Start periodic reconciliation, on both cadences. */
   start(): void {
     if (this.interval) return;
-    this.interval = setInterval(() => {
-      this.reconcile()
-        .catch((err) => {
-          this.report('error', '[TaskReconciler] Reconciliation failed', err);
-        })
-        .then(() => this.afterPeriodicPass?.())
-        .catch((err) => {
-          this.report('error', '[TaskReconciler] The check after a pass failed', err);
-        });
-    }, RECONCILE_INTERVAL_MS);
+    this.interval = setInterval(
+      outsideAuditScope(() => {
+        this.reconcile()
+          .catch((err) => {
+            this.report('error', '[TaskReconciler] Reconciliation failed', err);
+          })
+          .then(() => this.afterPeriodicPass?.())
+          .catch((err) => {
+            this.report('error', '[TaskReconciler] The check after a pass failed', err);
+          });
+      }),
+      RECONCILE_INTERVAL_MS
+    );
     this.interval.unref?.();
-    this.sweepInterval = setInterval(() => {
-      this.sweepUnwatchedRoots().catch((err) => {
-        this.report('error', '[TaskReconciler] Unwatched-root sweep failed', err);
-      });
-    }, UNWATCHED_ROOT_SWEEP_MS);
+    this.sweepInterval = setInterval(
+      outsideAuditScope(() => {
+        this.sweepUnwatchedRoots().catch((err) => {
+          this.report('error', '[TaskReconciler] Unwatched-root sweep failed', err);
+        });
+      }),
+      UNWATCHED_ROOT_SWEEP_MS
+    );
     this.sweepInterval.unref?.();
     logger.info(
       `[TaskReconciler] Started (every 5m; every ${UNWATCHED_ROOT_SWEEP_SECONDS}s for a root with no live watch)`

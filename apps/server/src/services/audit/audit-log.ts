@@ -53,6 +53,7 @@ import type {
 import { redactSecretsInText } from '../core/approvals/approval-summary.js';
 import { logger } from '../../lib/logger.js';
 import { canonicalJson } from './canonical-json.js';
+import { markAuditScopeRecorded } from './audit-context.js';
 
 /** What the first row links to: 64 zeros. */
 export const GENESIS_HASH = '0'.repeat(64);
@@ -414,6 +415,9 @@ export class AuditLog {
       logger.warn('[Audit] Failed to record an audit event', { err, action: input.action });
       return undefined;
     }
+    // Whatever scope this ran in has now recorded something, so the request
+    // fallback leaves it alone (`middleware/audit-request-fallback.ts`).
+    markAuditScopeRecorded();
     const event = toAuditEvent(row);
     for (const observer of this.observers) {
       try {

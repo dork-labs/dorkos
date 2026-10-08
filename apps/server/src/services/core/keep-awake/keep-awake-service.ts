@@ -26,6 +26,7 @@
  *
  * @module services/core/keep-awake/keep-awake-service
  */
+import { outsideAuditScope } from '../../audit/audit-context.js';
 import { createKeepAwake, type Hold, type KeepAwake } from '@dorkos/keep-awake';
 import type { KeepAwakeStatus } from '@dorkos/shared/schemas';
 import { logger } from '../../../lib/logger.js';
@@ -164,7 +165,10 @@ export class KeepAwakeService {
       this.keepAwake?.setEnabled(next);
       this.scheduleBroadcast();
     });
-    this.sweepTimer = setInterval(() => this.sweepIdleTurns(), SWEEP_EVERY_MS);
+    this.sweepTimer = setInterval(
+      outsideAuditScope(() => this.sweepIdleTurns()),
+      SWEEP_EVERY_MS
+    );
     this.sweepTimer.unref?.();
     const initial = this.keepAwake.status();
     if (!initial.supported && initial.reason) {

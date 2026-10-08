@@ -23,4 +23,16 @@ describe('audit trail startup wiring', () => {
     expect(source).toContain("app.use('/api/audit', createAuditRouter(auditLog));");
     expect(source).toContain('auditDeps: { log: auditLog },');
   });
+
+  it('enters the request audit scope after both identity gates, before any route', () => {
+    const app = readFileSync(new URL('../app.ts', import.meta.url), 'utf8');
+    const gate = app.indexOf('app.use(sessionGate);');
+    const identity = app.indexOf('app.use(resolveAgentIdentity);');
+    const scope = app.indexOf('app.use(auditActor);');
+    const firstRoute = app.indexOf("app.use('/api/sessions'");
+    expect(gate).toBeGreaterThan(-1);
+    expect(identity).toBeGreaterThan(gate);
+    expect(scope).toBeGreaterThan(identity);
+    expect(firstRoute).toBeGreaterThan(scope);
+  });
 });

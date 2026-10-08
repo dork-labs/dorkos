@@ -107,6 +107,12 @@ import { ApprovalService } from '../approvals/index.js';
 import { eventFanOut } from '../event-fan-out.js';
 import type { AgentIdentity } from '../agent-identity/index.js';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
+import { auditEvents, type Db } from '@dorkos/db';
+import { AuditLog } from '../../audit/audit-log.js';
+import { AccountIds } from '../../audit/account-ids.js';
+import { initAuditTrail, recordAudit, resetAuditTrail } from '../../audit/audit-trail.js';
+import { runWithAuditActor } from '../../audit/audit-context.js';
+import { gateHandRegisteredMcpTools, type SdkMcpTool } from '../mcp-tool-gate.js';
 
 /** The agent every probe calls as: unrestricted ceiling, so only the tier gates it. */
 const AGENT: AgentIdentity = {
@@ -724,6 +730,7 @@ describe('hand-registered MCP tools carry a permission tier', () => {
 
   describe('the gate runs', () => {
     let approvals: ApprovalService;
+    let auditDb: Db;
 
     beforeEach(() => {
       deletedTaskIds = [];
@@ -731,11 +738,86 @@ describe('hand-registered MCP tools carry a permission tier', () => {
       approvals = new ApprovalService(createTestDb());
       vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
       initCapabilityTierGate({ approvals });
+      auditDb = createTestDb();
+      initAuditTrail({
+        log: new AuditLog(auditDb),
+        accounts: new AccountIds({
+          db: auditDb,
+          installId: 'inst-test',
+          readOwnerAccount: () => null,
+        }),
+      });
     });
 
     afterEach(() => {
       resetCapabilityTierGate();
+      resetAuditTrail();
       vi.restoreAllMocks();
+    });
+
+    /** The audit rows the gate itself wrote (spec `audit-trail` PR2). */
+    const gateAuditRows = () =>
+      auditDb
+        .select()
+        .from(auditEvents)
+        .all()
+        .filter((row) => row.action.startsWith('mcp.'));
+
+    describe('audit scope', () => {
+      /** A real `act` tool name with a probe handler, so only the gate is under test. */
+      const probeTool = (handler: SdkMcpTool['handler']): SdkMcpTool => ({
+        name: 'tasks_update',
+        description: 'probe',
+        inputSchema: {},
+        handler,
+      });
+      const person = {
+        actor: { accountId: 'install:inst-test', kind: 'person' as const, name: 'Owner' },
+        surface: 'app' as const,
+      };
+
+      it('names the calling agent for a write the tool makes, not the person whose turn it is', async () => {
+        const [tool] = gateHandRegisteredMcpTools(
+          [
+            probeTool(async () => {
+              recordAudit({
+                action: 'probe.wrote',
+                operation: 'modify',
+                outcome: 'ok',
+                summary: 'Wrote something',
+              });
+              return { content: [{ type: 'text', text: '{}' }] };
+            }),
+          ],
+          async () => ({ identity: AGENT })
+        );
+        // The turn was started by the person; their scope surrounds the call.
+        await runWithAuditActor(person, () => tool!.handler({}, {}));
+
+        const rows = auditDb.select().from(auditEvents).all();
+        expect(rows.map((row) => [row.action, row.actorKind, row.source])).toEqual([
+          ['probe.wrote', 'agent', '{"surface":"mcp"}'],
+          ['mcp.tasks_update', 'agent', '{"surface":"mcp"}'],
+        ]);
+      });
+
+      it('records a call the tool reports as failed, as failed', async () => {
+        const [tool] = gateHandRegisteredMcpTools(
+          [probeTool(async () => ({ content: [{ type: 'text', text: 'no' }], isError: true }))],
+          async () => ({ identity: AGENT })
+        );
+        await tool!.handler({}, {});
+        expect(gateAuditRows()).toMatchObject([{ action: 'mcp.tasks_update', outcome: 'failed' }]);
+      });
+
+      it('records a read as nothing at all', async () => {
+        const [tool] = gateHandRegisteredMcpTools(
+          [{ ...probeTool(async () => ({ content: [] })), name: 'tasks_list' }],
+          async () => ({ identity: AGENT })
+        );
+        await tool!.handler({}, {});
+        expect(gateAuditRows()).toEqual([]);
+      });
     });
 
     /** What the destructive handler would have touched, if it ran. */
@@ -783,6 +865,36 @@ describe('hand-registered MCP tools carry a permission tier', () => {
           // The handler ran, with the arguments the approval was bound to.
           expect(sideEffects()).toEqual([Object.values(DESTRUCTIVE_INPUT[name])[0]]);
           expect(payloadOf(result).status).not.toBe('approval_required');
+        });
+
+        // Spec `audit-trail` PR2: an allowed call used to leave nothing at all.
+        it(`${server} ${name}: an approved call that ran is in the audit log, as the agent`, async () => {
+          const tools = toolsFor(AGENT);
+          const asked = payloadOf(await tools.get(name)!.call(DESTRUCTIVE_INPUT[name]));
+          // Parked for approval: the gate's own audit row is not written for that.
+          expect(gateAuditRows()).toEqual([]);
+
+          approvals.grant(asked.approvalId as string);
+          await tools.get(name)!.call({
+            ...DESTRUCTIVE_INPUT[name],
+            approvalToken: asked.approvalToken as string,
+          });
+
+          const rows = gateAuditRows();
+          expect(rows).toHaveLength(1);
+          expect(rows[0]).toMatchObject({
+            action: `mcp.${name}`,
+            operation: 'remove',
+            outcome: 'ok',
+            actorKind: 'agent',
+            visibility: 'space',
+          });
+          expect(rows[0]!.actorId).toMatch(/^unregistered:/);
+          // Linked to the approval the person granted, so the two read as one story.
+          expect(JSON.parse(rows[0]!.links!)).toEqual({ approvalId: asked.approvalId });
+          // The arguments themselves are never recorded: only what the tool
+          // declares as its subject becomes the target.
+          expect(rows[0]!.change).toBeNull();
         });
 
         it(`${server} ${name}: refuses an agent whose access was turned off`, async () => {

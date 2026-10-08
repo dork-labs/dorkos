@@ -126,6 +126,7 @@ import { isTestModeOriginalRoomLaunchAlias } from '../runtimes/test-mode/test-mo
  *
  * @module server/services/rooms/room-trigger
  */
+import { outsideAuditScope } from '../audit/audit-context.js';
 import { randomUUID } from 'node:crypto';
 import { ROOM_LIVE_BEAT_MS } from '@dorkos/shared/room-schemas';
 import type {
@@ -3415,7 +3416,10 @@ export class RoomTriggerDispatcher {
     this.publishPresence(claim, 'working');
     this.publishWorkingCount(claim.roomId, before);
     if (this.republishing === null) {
-      this.republishing = setInterval(() => this.republishPresence(), PRESENCE_REPUBLISH_MS);
+      this.republishing = setInterval(
+        outsideAuditScope(() => this.republishPresence()),
+        PRESENCE_REPUBLISH_MS
+      );
       // A heartbeat is not a reason for the process to stay alive: an unref'd
       // interval lets a CLI that has finished exit while a room still holds a
       // claim, instead of hanging for ten seconds at a time on a timer whose
