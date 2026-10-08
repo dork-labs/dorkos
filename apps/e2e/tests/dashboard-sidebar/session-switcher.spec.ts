@@ -571,7 +571,11 @@ test.describe('session switcher, from ⌘K', { tag: SOLE_SIDEBAR_TAG }, () => {
     // Exactly one row is tagged, and it is the one that is open.
     const tag = page.locator('[role="dialog"] [data-slot="chat-list-current"]');
     await expect(tag).toHaveCount(1);
-    await expect(page.locator(ROW).filter({ has: tag })).toContainText('Release notes draft');
+    // `has` is queried INSIDE each row, so it takes the bare slot: a locator
+    // that starts at the dialog would look for a dialog within the row.
+    await expect(
+      page.locator(ROW).filter({ has: page.locator('[data-slot="chat-list-current"]') })
+    ).toContainText('Release notes draft');
 
     // `⇧↵` forks the FOCUSED row and lands in the fork, not the original.
     await page.locator(ROW).first().focus();
