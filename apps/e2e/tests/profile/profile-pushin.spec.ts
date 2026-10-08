@@ -44,7 +44,7 @@ test.describe('Profile — a page pushes in @smoke', () => {
 
     // The page took the panel: the portrait is gone, and the strip carries the
     // identity in one line instead.
-    await expect(page.locator('[data-slot="profile-page-title"]')).toHaveText('Sessions');
+    await expect(page.locator('[data-slot="profile-page-title"]')).toHaveText('Chats');
     await expect(docked.locator('[data-slot="profile-header"]')).toHaveCount(0);
     await expect(page.locator('[data-slot="profile-strip"]')).toContainText(agent.name);
 

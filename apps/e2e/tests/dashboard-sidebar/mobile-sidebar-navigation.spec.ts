@@ -573,7 +573,7 @@ test.describe('Mobile tabs — 390×844 @smoke', { tag: SOLE_SIDEBAR_TAG }, () =
     const catchUp = page.getByTestId('today-catch-up');
     await expect(catchUp).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
     await expect(catchUp).toHaveAccessibleName(
-      `Catch up: mark ${rooms.length} unread conversations in Today as read`,
+      `Catch up: mark ${rooms.length} unread items in Today as read`,
       { timeout: SERVER_ROUND_TRIP_MS }
     );
 
