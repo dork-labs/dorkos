@@ -16,7 +16,7 @@ const engineBinding = (value: unknown): BrowserBinding => {
 
 /** Original controller/seat/flow implementation with semantic registry/engine methods;
  * no native, SQLite credential verification or network permission is inferred here. */
-function fixture() {
+function fixture(options?: Readonly<{ expectedFailure: unknown }>) {
   const state = {
     binding: engineBinding({
       browserId: 'retained-browser-original',
@@ -61,8 +61,9 @@ function fixture() {
     };
     return { status: 'ready', binding: state.binding };
   });
+  const readTabs = vi.fn<BrowserLifecycleEngine['listTabs']>(() => [{ ...state.binding }]);
   const engine: Pick<BrowserLifecycleEngine, 'listTabs' | 'resetInput'> = {
-    listTabs: () => [{ ...state.binding }],
+    listTabs: readTabs,
     resetInput: reset,
   };
   const controller = new OwnedBrowserController(registry, engine, () => true);
@@ -75,7 +76,10 @@ function fixture() {
       ...operations,
     ]);
     const rejected = results.find((result) => result.status === 'rejected');
-    if (rejected?.status === 'rejected') throw rejected.reason;
+    if (rejected?.status === 'rejected') {
+      if (options) expect(rejected.reason).toBe(options.expectedFailure);
+      else throw rejected.reason;
+    }
   });
   const own = <T>(operation: Promise<T>): Promise<T> => {
     operations.add(operation);
@@ -85,7 +89,7 @@ function fixture() {
   const fenceViews = vi.fn(async () => {});
   controller.bindNavigationViews({ bindingLost: fenceViews });
   const actor = () => state.actor;
-  return { state, controller, reset, own, fenceViews, actor, originalActor };
+  return { state, controller, reset, readTabs, own, fenceViews, actor, originalActor };
 }
 
 it('admits the exact ungranted retained-profile controller and completes its original successor binding', async () => {
@@ -140,3 +144,64 @@ it('revokes retained-profile flow permission when the exact original credential 
   await f.own(flow.close());
   expect(f.reset).toHaveBeenCalledTimes(2);
 });
+
+it.each([false, undefined])(
+  'joins one original Seat loss through navigation reentry and preserves %s after engine stop',
+  async (cause) => {
+    const f = fixture({ expectedFailure: cause });
+    const seat = await f.own(f.controller.takeover(f.actor, f.state.binding));
+    const flow = f.controller.captureOwnerNavigation(f.actor, seat.binding);
+    await f.own(flow.ready);
+    let reject!: (value: unknown) => void;
+    const held = new Promise<Awaited<ReturnType<BrowserLifecycleEngine['resetInput']>>>(
+      (_yes, no) => {
+        reject = no;
+      }
+    );
+    void held.catch(() => {});
+    f.reset.mockImplementation(() => held);
+    const operations: Promise<unknown>[] = [];
+    let settled = false;
+    try {
+      const first = f.own(f.controller.revokeController(f.originalActor.controllerIdentity));
+      operations.push(first);
+      void first.then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        }
+      );
+      const repeated = f.own(f.controller.revokeController(f.originalActor.controllerIdentity));
+      operations.push(repeated);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(f.reset).toHaveBeenCalledTimes(2); // Original takeover, then one original loss.
+      expect(settled).toBe(false);
+      expect(f.controller.pendingResets()).toBe(1);
+      const reads = f.readTabs.mock.calls.length;
+      reject(cause);
+      for (const operation of operations) {
+        const result = await Promise.allSettled([operation]);
+        expect(result).toEqual([{ status: 'rejected', reason: cause }]);
+      }
+      const stopped = new Error('BROWSER_STOPPED');
+      f.readTabs.mockImplementation(() => {
+        throw stopped;
+      });
+      const later = f.own(f.controller.revokeController(f.originalActor.controllerIdentity));
+      operations.push(later);
+      expect(await Promise.allSettled([later])).toEqual([{ status: 'rejected', reason: cause }]);
+      expect(f.readTabs).toHaveBeenCalledTimes(reads);
+      expect(f.reset).toHaveBeenCalledTimes(2);
+      expect(f.controller.pendingResets()).toBe(0);
+      expect(await Promise.allSettled([f.own(flow.close())])).toEqual([
+        { status: 'rejected', reason: cause },
+      ]);
+    } finally {
+      reject(cause);
+      await Promise.allSettled([held, ...operations, f.own(flow.close())]);
+    }
+  }
+);

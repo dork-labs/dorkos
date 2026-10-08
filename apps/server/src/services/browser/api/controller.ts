@@ -48,6 +48,7 @@ const key = (binding: BrowserBinding) =>
 /** Private controller: exact owner/grant admission stops immediately, then the original engine drains/reset publishes. */
 export class OwnedBrowserController {
   private readonly seats = new Map<string, Seat>();
+  private readonly lossResets = new WeakMap<Seat, Promise<void>>();
   private readonly navigationFlows = new Map<string, object>();
   private navigationClosed = false;
   private readonly navigationCleanup = new Set<Promise<void>>();
@@ -529,90 +530,135 @@ export class OwnedBrowserController {
 
   private resetSeats(matches: (seat: Seat) => boolean): Promise<void> {
     const entries = [...this.seats.values()].filter(
-      (seat) => matches(seat) && (!seat.failed || this.navigationFlows.has(key(seat.state.binding)))
+      (seat) =>
+        matches(seat) &&
+        (this.lossResets.has(seat) ||
+          !seat.failed ||
+          this.navigationFlows.has(key(seat.state.binding)))
     );
-    for (const seat of entries) {
-      const flow = this.navigationFlows.get(key(seat.state.binding));
-      if (flow) this.navigationLoss.get(flow)?.();
-    }
-    const originals = entries.map((seat) => ({
-      seat,
-      binding: seat.state.binding,
-      barrier: seat.state.status === 'barrier',
-    }));
-    for (const { seat } of originals) seat.cancel!(new BrowserApiRefusal('inaccessible'));
-    const deadline = Date.now() + 2000;
-    const operations = originals.map(async ({ seat, binding: originalBinding, barrier }) => {
-      let binding = originalBinding;
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      try {
-        // A reentrant callback can revoke before takeover has assigned the original reset promise.
-        await Promise.resolve();
-        if (Date.now() >= deadline) throw new BrowserApiRefusal('inaccessible');
-        if (!barrier) {
-          // The engine may have cleanly advanced input protocol after aborting original Work.
-          // Loss cleanup follows only this Seat's immutable original browser/tab lifetime.
-          const observed = this.readTabs(
-            originalBinding.browserId,
-            originalBinding.browserGeneration
-          ).find(
-            (tab) =>
-              tab.browserId === originalBinding.browserId &&
-              tab.browserGeneration === originalBinding.browserGeneration &&
-              tab.tabId === originalBinding.tabId
-          );
-          if (!observed) throw new BrowserApiRefusal('inaccessible');
-          binding = BrowserBindingSchema.parse(observed);
-          this.current(seat.resourceOwner, binding);
-          if (Date.now() >= deadline) throw new BrowserApiRefusal('inaccessible');
-        }
-        const operation = barrier ? seat.operation : this.reset(binding);
-        if (!operation) throw new BrowserApiRefusal('inaccessible');
-        this.retainReset(seat, operation);
-        void operation.then(
-          () => this.resets.delete(operation),
-          () => this.resets.delete(operation)
-        );
-        const result = await Promise.race([
-          operation,
-          new Promise<never>((_resolve, reject) => {
-            timer = setTimeout(
-              () => reject(new BrowserApiRefusal('inaccessible')),
-              Math.max(1, deadline - Date.now())
-            );
-          }),
-        ]);
-        if (Date.now() >= deadline) throw new BrowserApiRefusal('inaccessible');
-        const next = BrowserBindingSchema.parse(result.binding);
-        // Loss cleanup may join an engine reset whose binding was already published.
-        // The genuine original engine promise owns its cleanup; this path never issues a ticket.
-        const protocol =
-          (next.epoch === binding.epoch && next.inputGeneration === binding.inputGeneration) ||
-          (next.epoch === binding.epoch + 1 &&
-            next.inputGeneration === binding.inputGeneration + 1);
-        if (
-          result.status !== 'ready' ||
-          next.browserId !== binding.browserId ||
-          next.browserGeneration !== binding.browserGeneration ||
-          next.tabId !== binding.tabId ||
-          next.navigationGeneration !== binding.navigationGeneration ||
-          next.viewportVersion !== binding.viewportVersion ||
-          !protocol
-        )
-          throw new BrowserApiRefusal('inaccessible');
-        this.current(seat.resourceOwner, next);
-        if (this.seats.get(key(binding)) === seat) this.seats.delete(key(binding));
-      } catch (primary) {
-        try {
-          this.stopInstance(seat.resourceOwner, binding.browserId, binding.browserGeneration);
-        } catch {
-          /* Preserve the original reset failure, including undefined. */
-        }
-        throw primary;
-      } finally {
-        if (timer) clearTimeout(timer);
-      }
+    const originals: {
+      seat: Seat;
+      binding: BrowserBinding;
+      barrier: boolean;
+      resolve(): void;
+      reject(value: unknown): void;
+      first?: { value: unknown };
+    }[] = [];
+    const operations = entries.map((seat) => {
+      const existing = this.lossResets.get(seat);
+      if (existing) return existing;
+      let resolve!: () => void, reject!: (value: unknown) => void;
+      const original = new Promise<void>((yes, no) => {
+        resolve = yes;
+        reject = no;
+      });
+      // Publish the exact Seat loss before navigation close can reenter resetSeats.
+      this.lossResets.set(seat, original);
+      void original.catch(() => {});
+      originals.push({
+        seat,
+        binding: seat.state.binding,
+        barrier: seat.state.status === 'barrier',
+        resolve,
+        reject,
+      });
+      return original;
     });
+    for (const original of originals) {
+      const flow = this.navigationFlows.get(key(original.binding));
+      try {
+        if (flow) this.navigationLoss.get(flow)?.();
+      } catch (value) {
+        original.first ??= { value };
+      }
+      try {
+        original.seat.cancel!(new BrowserApiRefusal('inaccessible'));
+      } catch (value) {
+        original.first ??= { value };
+      }
+    }
+    const deadline = Date.now() + 2000;
+    for (const original of originals) {
+      const { seat, binding: originalBinding, barrier } = original;
+      const work = (async () => {
+        let binding = originalBinding;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          // A reentrant callback can revoke before takeover has assigned the original reset promise.
+          await Promise.resolve();
+          if (Date.now() >= deadline) throw new BrowserApiRefusal('inaccessible');
+          if (!barrier) {
+            // The engine may have cleanly advanced input protocol after aborting original Work.
+            // Loss cleanup follows only this Seat's immutable original browser/tab lifetime.
+            const observed = this.readTabs(
+              originalBinding.browserId,
+              originalBinding.browserGeneration
+            ).find(
+              (tab) =>
+                tab.browserId === originalBinding.browserId &&
+                tab.browserGeneration === originalBinding.browserGeneration &&
+                tab.tabId === originalBinding.tabId
+            );
+            if (!observed) throw new BrowserApiRefusal('inaccessible');
+            binding = BrowserBindingSchema.parse(observed);
+            this.current(seat.resourceOwner, binding);
+            if (Date.now() >= deadline) throw new BrowserApiRefusal('inaccessible');
+          }
+          const operation = barrier ? seat.operation : this.reset(binding);
+          if (!operation) throw new BrowserApiRefusal('inaccessible');
+          this.retainReset(seat, operation);
+          void operation.then(
+            () => this.resets.delete(operation),
+            () => this.resets.delete(operation)
+          );
+          const result = await Promise.race([
+            operation,
+            new Promise<never>((_resolve, reject) => {
+              timer = setTimeout(
+                () => reject(new BrowserApiRefusal('inaccessible')),
+                Math.max(1, deadline - Date.now())
+              );
+            }),
+          ]);
+          if (Date.now() >= deadline) throw new BrowserApiRefusal('inaccessible');
+          const next = BrowserBindingSchema.parse(result.binding);
+          // Loss cleanup may join an engine reset whose binding was already published.
+          // The genuine original engine promise owns its cleanup; this path never issues a ticket.
+          const protocol =
+            (next.epoch === binding.epoch && next.inputGeneration === binding.inputGeneration) ||
+            (next.epoch === binding.epoch + 1 &&
+              next.inputGeneration === binding.inputGeneration + 1);
+          if (
+            result.status !== 'ready' ||
+            next.browserId !== binding.browserId ||
+            next.browserGeneration !== binding.browserGeneration ||
+            next.tabId !== binding.tabId ||
+            next.navigationGeneration !== binding.navigationGeneration ||
+            next.viewportVersion !== binding.viewportVersion ||
+            !protocol
+          )
+            throw new BrowserApiRefusal('inaccessible');
+          this.current(seat.resourceOwner, next);
+          if (this.seats.get(key(binding)) === seat) this.seats.delete(key(binding));
+        } catch (primary) {
+          try {
+            this.stopInstance(seat.resourceOwner, binding.browserId, binding.browserGeneration);
+          } catch {
+            /* Preserve the original reset failure, including undefined. */
+          }
+          throw primary;
+        } finally {
+          if (timer) clearTimeout(timer);
+        }
+      })();
+      void work.then(
+        () => {
+          if (original.first) original.reject(original.first.value);
+          else original.resolve();
+        },
+        (value) => original.reject(original.first ? original.first.value : value)
+      );
+    }
     // Every original closure enters independently, even if an earlier reset fails.
     return Promise.allSettled(operations).then((results) => {
       const failed = results.find((result) => result.status === 'rejected');

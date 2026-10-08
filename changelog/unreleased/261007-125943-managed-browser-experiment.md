@@ -12,6 +12,7 @@ covers:
   - 'feat(browser): qualify managed browser runtimes and selection copy'
   - 'fix(browser): release cancelled checks and retain process observers'
   - 'fix(browser): preserve original work through diagnostic failures'
+  - 'fix(browser): join the original controller reset during cleanup'
 ---
 
 ### Added
