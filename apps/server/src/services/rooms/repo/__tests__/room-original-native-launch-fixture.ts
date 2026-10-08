@@ -207,67 +207,13 @@ export async function createOriginalNativeLaunchFixture(
     releaseProvider?: () => void | Promise<void>;
   } = {}
 ): Promise<OriginalNativeLaunchFixture> {
-  // Temporary fixed phase DATA; clock/log failures never affect constructor custody.
-  let phaseRows = 0;
-  let phaseNow: (() => number) | undefined;
-  let phaseStart = -1;
-  let phaseLast = -1;
-  try {
-    phaseNow = performance.now.bind(performance);
-    phaseStart = phaseNow();
-    if (!Number.isFinite(phaseStart) || phaseStart < 0) phaseStart = -1;
-    phaseLast = phaseStart;
-  } catch {}
-  const fixturePhase = (
-    label:
-      | 'boundary-start'
-      | 'boundary-ready'
-      | 'root-ready'
-      | 'config-ready'
-      | 'db-open'
-      | 'migrations-done'
-      | 'auth-ready'
-      | 'server-listening'
-      | 'signup-start'
-      | 'signup-done'
-      | 'room-owner-ready'
-      | 'principals-start'
-      | 'principals-ready'
-      | 'http-ready'
-      | 'owner-key-ready'
-      | 'member-key-ready'
-      | 'repo-enable-start'
-      | 'repo-enable-done'
-      | 'fixture-ready'
-      | 'native-boot-start'
-      | 'native-boot-ready'
-  ): void => {
-    if (phaseRows >= 128) return;
-    phaseRows++;
-    try {
-      const now = phaseNow?.();
-      const elapsed =
-        phaseStart >= 0 &&
-        now !== undefined &&
-        Number.isFinite(now) &&
-        now >= phaseLast &&
-        now - phaseStart <= 600000
-          ? Math.round(now - phaseStart)
-          : -1;
-      if (elapsed >= 0) phaseLast = now!;
-      console.info('[original-native-fixture-phase]', { phase: label, elapsedMs: elapsed });
-    } catch {}
-  };
-  fixturePhase('boundary-start');
   await initBoundary(tmpdir());
-  fixturePhase('boundary-ready');
 
   // Native Git registration and runtime grants name the canonical filesystem root.
   // Resolve the existing parent before acquiring a temp root, so a failed read
   // cannot strand a newly acquired fixture outside its registered close owner.
   const homeParent = await realpath(options.homeParent ?? tmpdir());
   const dir = await mkdtemp(path.join(homeParent, 'original-room-owning-'));
-  fixturePhase('root-ready');
   let db: Db | undefined,
     channels: DocChannelStore | undefined,
     owner: InstallationFileWrites | undefined;
@@ -378,23 +324,17 @@ export async function createOriginalNativeLaunchFixture(
       repo: { ...configManager.get('rooms').repo, enabled: true },
     });
     configManager.set('auth', { ...configManager.get('auth'), enabled: false });
-    fixturePhase('config-ready');
     const opened = openServerDatabase(path.join(dir, 'fixture.sqlite'));
     db = opened.db;
-    fixturePhase('db-open');
     runMigrations(db);
-    fixturePhase('migrations-done');
     const auth = initAuth(db, dir),
       app = express();
-    fixturePhase('auth-ready');
     app.all('/api/auth/*splat', toNodeHandler(auth));
     server = createServer(app);
     const listening = once(server, 'listening');
     server.listen(0, '127.0.0.1');
     await listening;
-    fixturePhase('server-listening');
     const origin = `http://localhost:${env.DORKOS_PORT}`;
-    fixturePhase('signup-start');
     const signup = await request(server!)
       .post('/api/auth/sign-up/email')
       .set('Origin', origin)
@@ -403,7 +343,6 @@ export async function createOriginalNativeLaunchFixture(
         password: 'actual-original-owner-password',
         name: options.operatorName ?? 'Original Owner',
       });
-    fixturePhase('signup-done');
     assert.equal(signup.status, 200);
     const ownerId: string = signup.body.user.id;
     assert.equal(readOwnerAccount()?.id, ownerId);
@@ -476,7 +415,6 @@ export async function createOriginalNativeLaunchFixture(
     );
     placementCapture.roomId = room.id;
     subsystem.service.addMember(room.id, operator.id, { authorId: member.id });
-    fixturePhase('room-owner-ready');
     const repos = new RoomRepoStore(db, dir),
       mutex = new RoomRepoMutex();
     channels = new DocChannelStore(db);
@@ -604,9 +542,7 @@ export async function createOriginalNativeLaunchFixture(
         },
       },
     });
-    fixturePhase('principals-start');
     await principals.initializeBoot();
-    fixturePhase('principals-ready');
     const merge = new RoomMergeService(
       {
         store: repos,
@@ -642,7 +578,6 @@ export async function createOriginalNativeLaunchFixture(
       revalidateRuntime: (proof) => principals.revalidatePrincipal(proof),
       owningFileWrites: { channels, fileWrites: owner },
     });
-    fixturePhase('http-ready');
     capturedStop = http.stopFileWrites.bind(http);
     capturedCheckboxStop = http.stopCheckboxWrites.bind(http);
     const due = currentRoomDueServicePort(http.service);
@@ -650,11 +585,9 @@ export async function createOriginalNativeLaunchFixture(
     const ownerKey = await auth.api.createApiKey({
       body: { userId: ownerId, name: 'genuine-owner-control' },
     });
-    fixturePhase('owner-key-ready');
     const memberKey = await auth.api.createApiKey({
       body: { userId: memberId, name: 'genuine-member-control' },
     });
-    fixturePhase('member-key-ready');
     configManager.set('auth', { ...configManager.get('auth'), enabled: true });
     app.use(express.json({ limit: '1mb' }));
     app.use(sessionGate);
@@ -663,11 +596,9 @@ export async function createOriginalNativeLaunchFixture(
     app.use('/api/rooms', roomsRouter);
     app.use(errorHandler);
     if (options.seed !== false) {
-      fixturePhase('repo-enable-start');
       const enabled = await request(server!)
         .post(`/api/rooms/${room.id}/repo`)
         .set('Authorization', `Bearer ${ownerKey.key}`);
-      fixturePhase('repo-enable-done');
       assert.equal(enabled.status, 201);
       assert.equal(enabled.body.repo.roomId, room.id);
     }
@@ -681,7 +612,6 @@ export async function createOriginalNativeLaunchFixture(
     let nativeSessions = new Set<string>();
     const nativeTargetAuthors = new Map<string, string>();
     const bootNative = async (names: readonly string[]) => {
-      fixturePhase('native-boot-start');
       if (nativeBootStarted) throw new Error('Original native fixture boot already attempted');
       nativeBootStarted = true;
       const actualDb = opened.db;
@@ -846,7 +776,6 @@ export async function createOriginalNativeLaunchFixture(
       runtimeRegistry.setDb(actualDb);
       runtimeRegistry.register(nativeCapture.runtime);
       runtimeRegistry.setDefault(runtimeType);
-      fixturePhase('native-boot-ready');
       return Object.freeze(targets);
     };
     // A native stream can retire before its projector/dispatcher finally releases
@@ -868,7 +797,6 @@ export async function createOriginalNativeLaunchFixture(
       }
       throw new Error('Original native dispatcher/projector settlement required');
     };
-    fixturePhase('fixture-ready');
     return {
       dir,
       db,
