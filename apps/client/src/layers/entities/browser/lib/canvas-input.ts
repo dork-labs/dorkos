@@ -423,7 +423,7 @@ export class BrowserCanvasInput {
       this.closed ||
       this.gesture?.collecting() ||
       event.target !== this.canvas ||
-      (this.active && kind !== 'click')
+      (this.active && kind === 'mouseMove')
     )
       return;
     try {
@@ -474,6 +474,17 @@ export class BrowserCanvasInput {
           return;
         steps = [{ kind, x, y, button }];
       } else steps = [{ kind, x, y }];
+      if (this.active && kind === 'wheel') {
+        // The original input bank deliberately drops busy scrolls. Consume only an eligible
+        // current canvas wheel so it cannot scroll the surrounding app; enter no new work.
+        const final = this.context();
+        if (
+          final.controller.controllerId === context.controller.controllerId &&
+          this.visual(final) === this.visual(context)
+        )
+          event.preventDefault();
+        return;
+      }
       this.issue(context, steps, () => {
         event.preventDefault();
         if (kind === 'click') this.canvas.focus({ preventScroll: true });

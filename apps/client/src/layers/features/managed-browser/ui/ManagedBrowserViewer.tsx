@@ -77,7 +77,22 @@ export function ManagedBrowserViewer({
   onLifetime,
 }: ManagedBrowserViewerProps) {
   const lifetime = useRef<LifetimeBank | undefined>(undefined);
-  const [copyStatus, setCopyStatus] = useState('');
+  const [copyFeedback, setCopyFeedback] = useState(() => ({
+    delivery,
+    context,
+    lossSignal,
+    input,
+    message: '',
+  }));
+  const copyScopeCurrent =
+    copyFeedback.delivery === delivery &&
+    copyFeedback.context === context &&
+    copyFeedback.lossSignal === lossSignal &&
+    copyFeedback.input === input;
+  if (!copyScopeCurrent) {
+    setCopyFeedback({ delivery, context, lossSignal, input, message: '' });
+  }
+  const copyStatus = copyScopeCurrent ? copyFeedback.message : '';
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const previousClose = useRef<Promise<void> | undefined>(undefined);
   const [visual, setVisual] = useState<Visual>();
@@ -337,7 +352,8 @@ export function ManagedBrowserViewer({
               );
           },
           (message) => {
-            if (active && !bank?.closed) setCopyStatus(message);
+            if (active && !bank?.closed)
+              setCopyFeedback({ delivery, context, lossSignal, input, message });
           }
         );
         originalCopy = adapter.copySelection.bind(adapter);

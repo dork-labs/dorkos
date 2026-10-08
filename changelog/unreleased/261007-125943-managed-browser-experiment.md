@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'fix(browser): keep viewer feedback scoped to its lifetime'
   - 'fix(extensions): retain callbacks and cleanup after retirement'
   - 'fix(extensions): retain retiring server work and cancel UI effects'
   - 'fix(browser): preserve extension authority during asynchronous work'
@@ -50,3 +51,4 @@ covers:
 - Keep browser work running when an observed helper exits during a process check.
 - Preserve saved profiles and their session links when updating to a version that supports sign-in imports.
 - Release a cancelled installation check's reservation after its processes and file operations finish, so a later check can start. Checks with the installed browser are still pending.
+- Clear old copy messages when the browser view changes, and keep busy browser scroll events from scrolling the surrounding app.
