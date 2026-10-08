@@ -215,6 +215,7 @@ export function createControllerProxyAuthentication(
     );
   };
   const resumeWorker = (value: Message, sessionId: string, session: Session) => {
+    if (retiring || closed) return;
     if (tasks.size >= 128) throw new Error('CONTROLLER_AUTH_WORKER_RESUME_CAPACITY');
     const admit = () => {
       if (first) throw first.value;

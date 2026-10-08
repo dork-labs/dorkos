@@ -1157,3 +1157,40 @@ it('leaves an admitted dedicated worker pause with its SDK routing consumer', as
     await f.finish();
   }
 });
+
+it('does not admit a new SDK worker resume after original preparation has returned', async () => {
+  const f = fixture();
+  try {
+    const resume = attachOriginalWorker(f, 'original-default-context');
+    const preparation = f.owner.prepareClose();
+    await preparation;
+    f.owner.transport.send(resume);
+    await originalTurn();
+    expect(f.sent).toEqual([]);
+    expect(f.fault).not.toHaveBeenCalled();
+    expect(f.owner.prepareClose()).toBe(preparation);
+    await f.owner.prepareClose();
+  } finally {
+    await f.finish();
+  }
+});
+
+it('an SDK close callback cannot admit a late worker resume or replace original wire retirement', async () => {
+  const f = fixture();
+  try {
+    const resume = attachOriginalWorker(f, 'original-default-context');
+    const sdkClose = vi.fn(() => f.owner.transport.send(resume));
+    f.owner.transport.onclose = sdkClose;
+    const closing = f.owner.close();
+    f.returned.resolve();
+    await closing;
+    await originalTurn();
+    expect(sdkClose).toHaveBeenCalledTimes(1);
+    expect(f.sent).toEqual([]);
+    expect(f.fault).not.toHaveBeenCalled();
+    expect(f.original.close).toHaveBeenCalledTimes(1);
+    expect(f.owner.close()).toBe(closing);
+  } finally {
+    await f.finish();
+  }
+});
