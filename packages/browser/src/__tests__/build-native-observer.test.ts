@@ -24,6 +24,22 @@ afterEach(async () => {
   if (directory) await rm(directory, { recursive: true, force: true });
 });
 
+it('loads the native asset builder through the desktop CommonJS tsx boundary without running it', () => {
+  const output = execFileSync(
+    process.execPath,
+    [
+      '--require',
+      'tsx/cjs',
+      '-e',
+      'const native = require(process.argv[2]); console.log(typeof native.buildNativeObserver, native.nativeObserverManifestName);',
+      'desktop-import-consumer',
+      fileURLToPath(new URL('../../scripts/build-native-observer.ts', import.meta.url)),
+    ],
+    { encoding: 'utf8', timeout: 10_000, maxBuffer: 256 * 1024 }
+  );
+  expect(output.trim()).toBe('function darwin-process-observer.manifest.json');
+});
+
 it('emits unavailable metadata on unsupported hosts and removes stale helper output', async () => {
   await writeFile(join(directory, 'darwin-process-observer'), 'stale output');
   const result = await buildNativeObserver({

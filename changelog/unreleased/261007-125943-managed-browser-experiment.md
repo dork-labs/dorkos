@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'fix(browser): keep browser sessions running across unrelated settings changes'
   - 'fix(browser): forward selection copy to the owned browser'
   - 'fix(browser): diagnose selection and native frame acceptance failures'
   - 'fix(browser): retain page cache and cancelled viewer disposal'
@@ -35,6 +36,8 @@ covers:
 
 ### Fixed
 
+- Keep active browsers running when Community navigation preferences change. Browser, sign-in, and tunnel changes still close affected sessions.
+- Fix the desktop build loading the managed browser's native asset builder.
 - Wait for an in-flight browser frame to finish before renewing the view, so renewal does not start overlapping captures.
 - Keep browser work running when an observed helper exits during a process check.
 - Preserve saved profiles and their session links when updating to a version that supports sign-in imports.

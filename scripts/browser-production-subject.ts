@@ -28,6 +28,7 @@ export const BROWSER_SUBJECT_ENTRIES = [
   'apps/desktop/src/main/browser-qualification/bootstrap.ts',
   'packages/shared/src/browser-desktop-qualification.ts',
   'apps/desktop/scripts/restore-browser-library.ts',
+  'apps/desktop/scripts/emit-browser-qualification-subject.ts',
   'packages/shared/src/browser-schemas.ts',
   'packages/shared/src/config-schema.ts',
   'packages/shared/src/transport.ts',

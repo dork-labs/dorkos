@@ -867,8 +867,10 @@ export function ManagedBrowserWorkspace(props: ManagedBrowserWorkspaceProps) {
             <details>
               <summary className="text-sm">Open a website on this computer</summary>
               <p className="text-muted-foreground text-sm">
-                Allow the local HTTP address above for five minutes in this browser. The DorkOS app
-                and protected services stay blocked.
+                Allow this local HTTP address for five minutes in this browser.
+              </p>
+              <p className="text-muted-foreground text-sm">
+                The DorkOS app and protected services stay blocked.
               </p>
               <Button
                 type="button"

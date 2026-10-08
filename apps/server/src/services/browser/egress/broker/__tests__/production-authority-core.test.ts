@@ -1240,3 +1240,43 @@ it('forwards configured Chrome identity through actual authority into the verifi
   );
   expect(constructed[0].runtime.executable.sha256).toBe(hash);
 });
+
+it.each(['CONNECT', 'HTTP', 'WS'] as const)(
+  'preserves the actual existing %s flow across Community navigation preference writes',
+  async (mode) => {
+    const f = await fixture(mode);
+    configManager.setDot('ui.communityNavigation', { version: 1, owners: [] });
+    if (mode === 'HTTP') f.fake.responseBody.emit('after-navigation-preference');
+    else f.client.emit('after-navigation-preference');
+    await turns();
+    f.issuer.check(f.run);
+    expect((mode === 'HTTP' ? f.client.writes : f.origin.writes).join('')).toContain(
+      'after-navigation-preference'
+    );
+    expect(f.client.observedClosed).toBe(false);
+    expect(f.origin.observedClosed).toBe(false);
+    expect(lifecycle.retire).not.toHaveBeenCalled();
+  }
+);
+
+it.each(['auth', 'browser', 'browser.chromeUserAgent', 'tunnel'] as const)(
+  'retires the original active broker on relevant config path %s including parent replacement',
+  async (path) => {
+    const f = await fixture();
+    if (path === 'browser.chromeUserAgent') {
+      const { mintBrowserIdentityChoicePermit } =
+        await import('../../../runtime/activation/identity-choice-permit.js');
+      configManager.chooseOwnedBrowserIdentity(
+        true,
+        mintBrowserIdentityChoicePermit(configManager, true, () => true)
+      );
+    } else configManager.set(path, { ...configManager.get(path) });
+    f.client.emit('must-not-forward-after-relevant-config');
+    await turns();
+    expect(() => f.issuer.check(f.run)).toThrow('AUTHORITY_REFUSED');
+    expect(f.origin.writes.join('')).not.toContain('must-not-forward-after-relevant-config');
+    expect(f.client.observedClosed).toBe(true);
+    expect(f.origin.observedClosed).toBe(true);
+    expect(lifecycle.retire).toHaveBeenCalled();
+  }
+);

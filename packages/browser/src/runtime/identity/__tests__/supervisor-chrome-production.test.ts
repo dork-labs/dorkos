@@ -1,4 +1,4 @@
-import { expect, it, vi, onTestFinished } from 'vitest';
+import { expect, it, vi, onTestFinished, afterAll } from 'vitest';
 import { mkdtemp, writeFile, rm, access, rename, mkdir, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -78,6 +78,18 @@ const nativeIdentity = {
     formFactors: ['Desktop'],
   },
 };
+// Uncertain production owners retain their original directory identity. Keep fixture
+// directories allocated until every case has ended so the host cannot recycle an
+// inode into a later case's fresh profile; production's exact refusal stays intact.
+const retainedFixtureDirectories = new Set<string>();
+afterAll(async () => {
+  const results = await Promise.allSettled(
+    [...retainedFixtureDirectories].map((path) => rm(path, { recursive: true, force: true }))
+  );
+  const failure = results.find((result) => result.status === 'rejected');
+  if (failure?.status === 'rejected') throw failure.reason;
+});
+
 /** Actual production selector/baseline/receiver/wire/bridge/auth consumers. SDK, child and
  * process observations are semantic doubles; no real process or native-matrix pass claimed. */
 function fixture(
@@ -126,7 +138,6 @@ function fixture(
     releaseClose = resolve;
   });
   releases.push(releaseClose);
-  const extraHomes = new Set<string>();
   const detachBrowserSession = vi.fn(async () => {});
   const replacementDetach = vi.fn(async () => {
     throw new Error('REPLACEMENT_DETACH_ENTERED');
@@ -150,9 +161,7 @@ function fixture(
         primary ??= { value };
       }
     const removals = await Promise.allSettled([
-      ...[...extraHomes].map((path) => rm(path, { recursive: true, force: true })),
       ...[...profiles].map((path) => rm(path, { recursive: true, force: true })),
-      ...(home ? [rm(home, { recursive: true, force: true })] : []),
     ]);
     for (const result of removals)
       if (result.status === 'rejected') primary ??= { value: result.reason };
@@ -412,7 +421,9 @@ function fixture(
   const open = () =>
     own(
       (async () => {
-        home = await realpath(await mkdtemp(join(tmpdir(), 'chrome-production-semantic-')));
+        const acquired = await mkdtemp(join(tmpdir(), 'chrome-production-semantic-'));
+        retainedFixtureDirectories.add(acquired);
+        home = await realpath(acquired);
         const result = await launchDarwinSupervisorBrowser(
           {
             manager: { pid: 500000, birth: 'semantic-manager' },
@@ -465,7 +476,7 @@ function fixture(
       if (!home) throw new Error('ORIGINAL_PROFILE_MISSING');
       const moved = home + '-original';
       await rename(home, moved);
-      extraHomes.add(moved);
+      retainedFixtureDirectories.add(moved);
       await mkdir(home, { mode: 0o700 });
     },
     expectHeldClose() {
@@ -537,7 +548,12 @@ it('refuses a successful close after original directory replacement and still st
 it('retains and detaches a late original browser session after admission revocation', async () => {
   const f = fixture({ holdBrowserSession: true }),
     opening = f.open();
-  await f.sessionStarted;
+  await Promise.race([
+    f.sessionStarted,
+    opening.then(() => {
+      throw new Error('ORIGINAL_SESSION_ENTRY_NOT_OBSERVED');
+    }),
+  ]);
   f.revokeAdmission();
   f.releaseSession();
   const error = await opening.then(
@@ -570,7 +586,12 @@ it('refuses a substituted close session even after the exact original attach was
 it('captures a late returned original detach getter once and never substitutes the cleanup receiver', async () => {
   const f = fixture({ holdBrowserSession: true, replaceDetachAfterFirst: true }),
     opening = f.open();
-  await f.sessionStarted;
+  await Promise.race([
+    f.sessionStarted,
+    opening.then(() => {
+      throw new Error('ORIGINAL_SESSION_ENTRY_NOT_OBSERVED');
+    }),
+  ]);
   f.revokeAdmission();
   f.releaseSession();
   const error = await opening.then(

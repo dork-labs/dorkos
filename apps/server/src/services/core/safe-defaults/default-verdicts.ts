@@ -80,6 +80,8 @@ export interface PermissiveDefault {
  */
 export const NO_RISK_DEFAULTS: readonly string[] = [
   'version',
+  // Selects a separately qualified browser identity; grants no access and enables no browser.
+  'browser.chromeUserAgent',
   'server.port',
   'server.cwd',
   'server.boundary',

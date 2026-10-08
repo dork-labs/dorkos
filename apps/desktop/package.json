@@ -30,6 +30,7 @@
     "@anthropic-ai/sdk": "0.123.0",
     "@asteasolutions/zod-to-openapi": "9.1.0",
     "@composio/core": "0.21.0",
+    "@dorkos/browser": "workspace:*",
     "@dorkos/db": "workspace:*",
     "@dorkos/server": "workspace:*",
     "@dorkos/shared": "workspace:*",

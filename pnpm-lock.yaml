@@ -589,6 +589,9 @@ importers:
       '@composio/core':
         specifier: 0.21.0
         version: 0.21.0(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.3)(ws@8.22.0)(zod@4.6.5)
+      '@dorkos/browser':
+        specifier: workspace:*
+        version: link:../../packages/browser
       '@dorkos/db':
         specifier: workspace:*
         version: link:../../packages/db

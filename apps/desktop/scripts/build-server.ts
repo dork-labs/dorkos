@@ -926,6 +926,7 @@ async function buildServer() {
   // exactly mirroring packages/cli/scripts/build.ts's dist/server/index.js
   // layout (DOR-245) instead of leaking build output outside the package.
   const outfile = path.join(OUT, 'server/server-entry.mjs');
+  const productionSubjectSHA256 = await browserProductionSubject(ROOT);
   const result = await build({
     entryPoints: [path.join(DESKTOP_PKG, 'src/server-entry.ts')],
     bundle: true,
@@ -969,7 +970,7 @@ async function buildServer() {
     ],
     define: {
       __CLI_VERSION__: JSON.stringify(version),
-      __BROWSER_PRODUCTION_SUBJECT__: JSON.stringify(await browserProductionSubject(ROOT)),
+      __BROWSER_PRODUCTION_SUBJECT__: JSON.stringify(productionSubjectSHA256),
     },
     sourcemap: true,
     // Consumed by verifyBundleLoadable below — the authoritative list of what
@@ -1061,6 +1062,22 @@ async function buildServer() {
     logLevel: 'silent',
   });
   await assertNoUnexpectedWarnings(signerResult.warnings);
+
+  const subjectResult = await build({
+    entryPoints: [path.join(DESKTOP_PKG, 'scripts/emit-browser-qualification-subject.ts')],
+    outfile: path.join(OUT, 'browser/qualification-subject.mjs'),
+    bundle: true,
+    platform: 'node',
+    target: 'node22.22',
+    format: 'esm',
+    external: ['playwright-core', 'zod'],
+    plugins: [dorkosSourcePlugin()],
+    define: {
+      __BROWSER_PRODUCTION_SUBJECT__: JSON.stringify(productionSubjectSHA256),
+    },
+    logLevel: 'silent',
+  });
+  await assertNoUnexpectedWarnings(subjectResult.warnings);
 
   // Copy Drizzle migration files alongside the bundled server — see the
   // dist/server/ layout note above.

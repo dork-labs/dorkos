@@ -7,6 +7,12 @@ import { createSemanticProcess } from '../process-owner.js';
 const raw = vi.hoisted(() => ({
   pending: new Set<Promise<void>>(),
   overflow: undefined as (() => void) | undefined,
+  first: undefined as
+    | Readonly<{ kind: 'protocol'; reason: unknown }>
+    | Readonly<{ kind: 'terminal'; code: number | null; signal: NodeJS.Signals | null }>
+    | undefined,
+  terminal: undefined as
+    Readonly<{ code: number | null; signal: NodeJS.Signals | null }> | undefined,
 }));
 vi.mock('node:child_process', async (original) => {
   const actual = await original<typeof import('node:child_process')>();
@@ -14,6 +20,14 @@ vi.mock('node:child_process', async (original) => {
     ...actual,
     spawn(...args: Parameters<typeof actual.spawn>) {
       const child = actual.spawn(...args);
+      // Observe the same originals before the owner installs its first-failure listeners.
+      child.stdio[3]!.on('error', (reason) => {
+        raw.first ??= { kind: 'protocol', reason };
+      });
+      child.once('exit', (code, signal) => {
+        raw.terminal = { code, signal };
+        raw.first ??= { kind: 'terminal', code, signal };
+      });
       let diagnosticBytes = 0;
       child.stderr!.on('data', (bytes: Buffer) => {
         diagnosticBytes += bytes.length;
@@ -35,6 +49,8 @@ afterEach(async () => {
   const results = await Promise.allSettled(finalizers.splice(0).map((close) => close()));
   await Promise.allSettled([...raw.pending]);
   raw.overflow = undefined;
+  raw.first = undefined;
+  raw.terminal = undefined;
   for (const result of results) if (result.status === 'rejected') throw result.reason;
 });
 // Actual owned Node children/protocol originals; no browser/native/positive authority doubles.
@@ -132,9 +148,20 @@ it.each(['early-zero', 'original-stderr-overflow'] as const)(
     }
     expect(observed?.reason).toBeInstanceOf(Error);
     bank.expected = observed;
-    expect((observed!.reason as Error).message).toBe(
-      mode === 'early-zero' ? 'SEMANTIC_WORKER_TERMINAL' : 'SEMANTIC_DIAGNOSTIC_EXCEEDED'
-    );
+    if (mode === 'early-zero') {
+      expect(raw.terminal).toEqual({ code: 0, signal: null });
+      if (raw.first?.kind === 'protocol') {
+        // Linux can reset fd3 with unread initialization bytes before reporting exit.
+        // This exact original error must survive the later zero exit and all joins.
+        expect(raw.first.reason).toMatchObject({ code: 'ECONNRESET', syscall: 'read' });
+        expect(observed!.reason).toBe(raw.first.reason);
+      } else {
+        expect(raw.first).toEqual({ kind: 'terminal', code: 0, signal: null });
+        expect((observed!.reason as Error).message).toBe('SEMANTIC_WORKER_TERMINAL');
+      }
+    } else {
+      expect((observed!.reason as Error).message).toBe('SEMANTIC_DIAGNOSTIC_EXCEEDED');
+    }
     expect(raw.pending.size).toBe(0);
     expect(contacts).toBe(0);
     expect(server.listening).toBe(true);

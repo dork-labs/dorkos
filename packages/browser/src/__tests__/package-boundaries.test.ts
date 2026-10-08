@@ -399,7 +399,12 @@ describe('private browser package boundaries', () => {
             'runtime/identity/supervisor-native-identity.ts',
           ],
           'node:tls': ['runtime/identity/supervisor-identity-acceptance.ts'],
-          'node:perf_hooks': ['runtime/identity/supervisor-native-cohort.ts'],
+          'node:perf_hooks': [
+            'runtime/identity/supervisor-native-cohort.ts',
+            // Observation-only elapsed selection phases use the monotonic clock.
+            'input/selection-phase.ts',
+            'runtime/installation/phase-diagnostic.ts',
+          ],
           // Only pinned public types/library imports in these reviewed internal modules.
           // Inline import types are enumerated too; private package subpaths stay forbidden.
           'playwright-core': [

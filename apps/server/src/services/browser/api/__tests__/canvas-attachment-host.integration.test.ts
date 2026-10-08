@@ -643,9 +643,9 @@ it('refuses a held old-generation native ACK during document retirement without 
   expect(refused.value).toMatchObject({ reason: 'inaccessible' });
   await expect(closing).rejects.toBe(refused.value);
   expect(x.canvas.get(shown.document.scope, shown.document.id)).toBeNull();
-  // The failed grant Seat is no longer an identity-reset candidate. Join the genuine
-  // identity bank here; this does not qualify the already stopped native engine.
-  await x.f.identities.close();
+  // The exact Seat loss is memoized across grant and identity retirement. Its
+  // rejected original joins again; neither that join nor native custody becomes healthy.
+  await expect(x.f.identities.close()).rejects.toBe(refused.value);
   x.f.expectRetiredControllerInputCleanup();
 });
 

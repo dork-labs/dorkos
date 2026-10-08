@@ -4,9 +4,10 @@ import { expect, it, vi } from 'vitest';
 import type { ManagedReceiver } from '../fixtures/managed-browser-receiver';
 
 type OriginalFixture = (
-  context: { page: { evaluate(): Promise<void> } },
+  context: { baseURL: string; page: { request: { post(): Promise<never> } } },
   use: (receiver: ManagedReceiver) => Promise<void>
 ) => Promise<void>;
+const baseURL = 'http://127.0.0.1:4242';
 const registration = vi.hoisted(() => ({ fixture: undefined as OriginalFixture | undefined }));
 // Capture only Playwright's registration boundary. The fixture creates its genuine
 // HTTP listener, request handlers, original sockets and cleanup duties unchanged.
@@ -53,16 +54,22 @@ it.each([false, undefined])(
   'original body failure %j survives later Off failure and genuine HTTP/socket cleanup',
   async (cause) => {
     let url!: string, original!: Awaited<ReturnType<typeof openOriginalReceiver>>;
-    const evaluate = vi.fn(async () => {
+    const post = vi.fn(async () => {
       throw new Error('later controlled Off');
     });
-    const result = registration.fixture!({ page: { evaluate } }, async (receiver) => {
-      url = receiver.url;
-      original = await openOriginalReceiver(receiver);
-      throw cause;
-    });
+    const result = registration.fixture!(
+      { baseURL, page: { request: { post } } },
+      async (receiver) => {
+        url = receiver.url;
+        original = await openOriginalReceiver(receiver);
+        throw cause;
+      }
+    );
     await expect(result).rejects.toBe(cause);
-    expect(evaluate).toHaveBeenCalledOnce();
+    expect(post).toHaveBeenCalledExactlyOnceWith(baseURL + '/api/browser/runtime/enable', {
+      data: { enabled: false },
+      headers: { Origin: baseURL },
+    });
     await expectOriginalClosed(url, original);
   }
 );
@@ -74,19 +81,22 @@ it.each([false, undefined])(
     const entered = new Promise<void>((yes) => {
       offEntered = yes;
     });
-    const off = new Promise<void>((_yes, no) => {
+    const off = new Promise<never>((_yes, no) => {
       rejectOff = no;
     });
-    const evaluate = vi.fn(() => {
+    const post = vi.fn(() => {
       offEntered();
       return off;
     });
     let settled = false;
-    const result = registration.fixture!({ page: { evaluate } }, async (receiver) => {
-      url = receiver.url;
-      original = await openOriginalReceiver(receiver);
-      throw cause;
-    });
+    const result = registration.fixture!(
+      { baseURL, page: { request: { post } } },
+      async (receiver) => {
+        url = receiver.url;
+        original = await openOriginalReceiver(receiver);
+        throw cause;
+      }
+    );
     void result.then(
       () => {
         settled = true;
@@ -95,40 +105,54 @@ it.each([false, undefined])(
         settled = true;
       }
     );
-    await entered;
-    await expectOriginalClosed(url, original);
-    expect(settled).toBe(false);
-    rejectOff(new Error('later controlled Off return'));
+    try {
+      await entered;
+      await expectOriginalClosed(url, original);
+      expect(settled).toBe(false);
+    } finally {
+      // Release and independently join the exact held public request even if an assertion fails.
+      rejectOff(new Error('later controlled Off return'));
+      await Promise.allSettled([result, ...(original ? [original.closed] : [])]);
+    }
     await expect(result).rejects.toBe(cause);
-    expect(evaluate).toHaveBeenCalledOnce();
+    expect(post).toHaveBeenCalledExactlyOnceWith(baseURL + '/api/browser/runtime/enable', {
+      data: { enabled: false },
+      headers: { Origin: baseURL },
+    });
   }
 );
 it.each([false, undefined])(
   'original Off failure %j is retained after successful real receiver observations',
   async (cause) => {
     let url!: string, original!: Awaited<ReturnType<typeof openOriginalReceiver>>;
-    const evaluate = vi.fn(async () => {
+    const post = vi.fn(async () => {
       throw cause;
     });
-    const result = registration.fixture!({ page: { evaluate } }, async (receiver) => {
-      url = receiver.url;
-      original = await openOriginalReceiver(receiver);
-      const observation = {
-        width: 1280,
-        height: 720,
-        value: 'actual-controlled-marker',
-        focused: true,
-      };
-      const response = await fetch(receiver.url + '/observe', {
-        method: 'POST',
-        body: JSON.stringify(observation),
-      });
-      expect(response.status).toBe(204);
-      await response.arrayBuffer();
-      expect(receiver.observations).toEqual([observation]);
-    });
+    const result = registration.fixture!(
+      { baseURL, page: { request: { post } } },
+      async (receiver) => {
+        url = receiver.url;
+        original = await openOriginalReceiver(receiver);
+        const observation = {
+          width: 1280,
+          height: 720,
+          value: 'actual-controlled-marker',
+          focused: true,
+        };
+        const response = await fetch(receiver.url + '/observe', {
+          method: 'POST',
+          body: JSON.stringify(observation),
+        });
+        expect(response.status).toBe(204);
+        await response.arrayBuffer();
+        expect(receiver.observations).toEqual([observation]);
+      }
+    );
     await expect(result).rejects.toBe(cause);
-    expect(evaluate).toHaveBeenCalledOnce();
+    expect(post).toHaveBeenCalledExactlyOnceWith(baseURL + '/api/browser/runtime/enable', {
+      data: { enabled: false },
+      headers: { Origin: baseURL },
+    });
     await expectOriginalClosed(url, original);
   }
 );

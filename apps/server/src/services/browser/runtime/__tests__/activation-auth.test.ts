@@ -67,7 +67,13 @@ const readinessOriginals = vi.hoisted(() => ({
   resolve: vi.fn(),
   native: vi.fn(),
   journal: vi.fn(),
+  runtime: vi.fn(),
 }));
+vi.mock('../admission/runtime-class.js', async (load) => {
+  const original = await load<typeof import('../admission/runtime-class.js')>();
+  readinessOriginals.runtime.mockImplementation(original.readOriginalBrowserRuntimeClass);
+  return { ...original, readOriginalBrowserRuntimeClass: readinessOriginals.runtime };
+});
 vi.mock('../installed-package.js', () => ({
   resolveServerBrowserRuntimePackage: readinessOriginals.resolve,
 }));
@@ -533,12 +539,23 @@ it.each(['unknown-binding', 'stale-generation', 'profile-capacity'] as const)(
 );
 
 // Production consumer composition with real original auth/config/SQLite. Controlled installation
-// ports are sequencing fixtures, not native qualification or accepted catalogue entries.
+// ports and the matching runtime-class reader are sequencing fixtures, not native qualification
+// or accepted catalogue entries. Never change the actual host's process.platform/process.arch.
 async function readinessFixture(
-  qualify?: () => Promise<ReturnType<typeof createPrivateBrowserQualification>>
+  qualify?: () => Promise<ReturnType<typeof createPrivateBrowserQualification>>,
+  cohort: Readonly<{ platform: 'darwin' | 'linux'; arch: 'arm64' | 'x64' }> = {
+    platform: 'darwin',
+    arch: 'arm64',
+  }
 ) {
-  const runtime = readOriginalBrowserRuntimeClass();
+  const originalRuntimeReader = readinessOriginals.runtime.getMockImplementation();
+  if (!originalRuntimeReader) throw new Error('FIXTURE_RUNTIME_READER_UNAVAILABLE');
+  const runtime = Object.freeze({ ...readOriginalBrowserRuntimeClass(), ...cohort });
   const f = await fixture();
+  f.beforeDispose(() => {
+    readinessOriginals.runtime.mockImplementation(originalRuntimeReader);
+  });
+  readinessOriginals.runtime.mockReturnValue(runtime);
   vi.stubGlobal('__BROWSER_PRODUCTION_SUBJECT__', 'b'.repeat(64));
   f.beforeDispose(() => {
     vi.unstubAllGlobals();
@@ -637,14 +654,29 @@ it('fresh installed originals cannot enable production without a reviewed exact-
   expect(enabled).not.toHaveBeenCalled();
   expect(f.config.get('browser').enabled).toBe(false);
 });
+it('a controlled unsupported platform is refused before the private qualification producer', async () => {
+  const qualify = vi.fn(async () =>
+    createPrivateBrowserQualification({ current: () => true, check: () => true })
+  );
+  const f = await readinessFixture(qualify, { platform: 'linux', arch: 'x64' });
+  await expect(
+    f.mode.setEnabled(true, { cookie: f.cookie }, new AbortController().signal)
+  ).rejects.toSatisfy(isOriginalStartupRefusal);
+  expect(f.verify).toHaveBeenCalledOnce();
+  expect(qualify).not.toHaveBeenCalled();
+  expect(f.config.get('browser').enabled).toBe(false);
+});
+
 it('the original explicit fixture capability runs qualification without reporting accepted readiness', async () => {
-  const f = await readinessFixture(async () =>
+  const qualify = vi.fn(async () =>
     createPrivateBrowserQualification({
       current: () => true,
       check: (subject) => subject.executableSHA256 === 'a'.repeat(64) && subject.mode === 'native',
     })
   );
+  const f = await readinessFixture(qualify);
   const result = await f.mode.setEnabled(true, { cookie: f.cookie }, new AbortController().signal);
+  expect(qualify).toHaveBeenCalled();
   expect(result).toMatchObject({ state: 'qualification', enabled: true, readiness: 'unverified' });
   expect(f.mode.modeCurrent()).toBe(true);
   await f.mode.setEnabled(false, { cookie: f.cookie }, new AbortController().signal);
@@ -653,14 +685,44 @@ it('the original explicit fixture capability runs qualification without reportin
 it.each([false, undefined])(
   'retains a genuine qualification producer fault %s without writing enabled',
   async (reason) => {
-    const f = await readinessFixture(async () => {
+    const qualify = vi.fn(async () => {
       throw reason;
     });
+    const f = await readinessFixture(qualify);
     f.accepted.push(reason);
     await expect(
       f.mode.setEnabled(true, { cookie: f.cookie }, new AbortController().signal)
     ).rejects.toBe(reason);
+    expect(qualify).toHaveBeenCalledOnce();
     expect(f.config.get('browser').enabled).toBe(false);
     await expect(f.mode.close()).rejects.toBe(reason);
+  }
+);
+
+it.each(['ui.communityNavigation', 'auth', 'browser.chromeUserAgent', 'tunnel'] as const)(
+  'retained startup owner only loses its config epoch for relevant %s changes',
+  async (path) => {
+    const f = await fixture();
+    const mode = createProductionBrowserStartupMode({
+      db: f.db,
+      auth: f.auth,
+      config: f.config,
+      inventory: {} as Parameters<typeof createProductionBrowserStartupMode>[0]['inventory'],
+    });
+    f.beforeDispose(() => mode.close());
+    const owner = await mode.captureOwner({ cookie: f.cookie }, new AbortController().signal);
+    expect(owner()).toBe(true);
+    if (path === 'ui.communityNavigation') f.config.setDot(path, { version: 1, owners: [] });
+    else if (path === 'browser.chromeUserAgent') {
+      // The real private chooser emits the identity transition, without inventing native readiness.
+      const { mintBrowserIdentityChoicePermit } =
+        await import('../activation/identity-choice-permit.js');
+      f.config.chooseOwnedBrowserIdentity(
+        true,
+        mintBrowserIdentityChoicePermit(f.config, true, () => true)
+      );
+    } else f.config.set(path, { ...f.config.get(path) });
+    expect(owner()).toBe(path === 'ui.communityNavigation');
+    expect(f.db.select().from(session).all()).toHaveLength(1);
   }
 );

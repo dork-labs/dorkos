@@ -293,6 +293,16 @@ export function createProductionBrowserStartupMode(options: {
     }
   };
   const unsubscribe = subscribeConfig((change) => {
+    // These sections select browser identity/auth authority or the protected tunnel surface.
+    // UI preference writes do not change the retained browser's authority or native proof.
+    if (
+      !change.paths.some((path) =>
+        ['browser', 'auth', 'tunnel'].some(
+          (section) => path === section || path.startsWith(section + '.')
+        )
+      )
+    )
+      return;
     if (change.paths.every((path) => path === 'browser.enabled' || path === 'browser')) {
       // Opt-in is not native authority. Every setting transition still disposes existing Pages;
       // installed original mode proof survives only if original files/auth remain current.

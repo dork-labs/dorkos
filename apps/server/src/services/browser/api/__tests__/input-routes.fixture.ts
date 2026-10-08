@@ -82,6 +82,7 @@ export async function fixture(
     let failed = false,
       first: unknown;
     let shutdownOutcomes: Array<{ cleanup: string; reason: string | null }> = [];
+    let joinedIdentityRefusal = false;
     const healthy = {
       navigation: navigation === undefined,
       routes: false,
@@ -134,8 +135,15 @@ export async function fixture(
         }
       },
       async () => {
-        await originals.identities?.close();
-        healthy.identity = true;
+        try {
+          await originals.identities?.close();
+          healthy.identity = true;
+        } catch (error) {
+          if (!acceptedFailures.has(error)) throw error;
+          // Only the exact body-observed original loss may be joined as refused.
+          // The identity owner remains unhealthy and the owned home stays retained.
+          joinedIdentityRefusal = true;
+        }
       },
       async () => {
         await originals.grants?.closeExpiry();
@@ -176,9 +184,9 @@ export async function fixture(
       }
     }
     try {
-      // This body observed a failed grant reset before joining original identity cleanup.
-      // The failed Seat is no longer a reset candidate; only a genuine fulfilled join qualifies.
-      if (expectedTerminal && !healthy.identity)
+      // A failed exact Seat loss is reused by identity retirement. A settled original
+      // refusal can be joined, but cannot qualify identity or native cleanup as healthy.
+      if (expectedTerminal && !healthy.identity && !joinedIdentityRefusal)
         throw new Error('expected-original-retired-controller-identity-join-not-observed');
       if (originals.home && !expectedTerminal && Object.values(healthy).every(Boolean))
         fs.rmSync(originals.home, { recursive: true, force: true });
@@ -187,7 +195,11 @@ export async function fixture(
           JSON.stringify({
             kind: 'browser-input-negative-cleanup',
             expectedTerminal: expectedTerminal ?? null,
-            identityCleanup: healthy.identity ? 'joined' : 'unverified',
+            identityCleanup: healthy.identity
+              ? 'joined'
+              : joinedIdentityRefusal
+                ? 'joined-refused'
+                : 'unverified',
             shutdownOutcomes,
             healthy,
             homeRemoved: false,

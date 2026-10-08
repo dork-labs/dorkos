@@ -178,7 +178,17 @@ export function createBrowserAuthorityCore(
       retainedFailure ??= Object.freeze({ value: reason });
     }
   };
-  const unsubscribe = options.config.onChange(() => {
+  const unsubscribe = options.config.onChange((change) => {
+    // These sections select browser identity/auth authority or the protected tunnel surface.
+    // UI preference writes do not change the retained browser's authority or native proof.
+    if (
+      !change.paths.some((path) =>
+        ['browser', 'auth', 'tunnel'].some(
+          (section) => path === section || path.startsWith(section + '.')
+        )
+      )
+    )
+      return;
     if (epoch === Number.MAX_SAFE_INTEGER) stopped = true;
     else epoch++;
     for (const original of originals.values()) retire(original);

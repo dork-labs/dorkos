@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { mkdtemp, mkdir, writeFile, readFile, realpath, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, expect, it } from 'vitest';
 import {
   browserNativeArtifactSource,
@@ -12,6 +14,21 @@ const roots: string[] = [];
 const hash = (bytes: string | Uint8Array) => createHash('sha256').update(bytes).digest('hex');
 afterEach(async () => {
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
+});
+it('loads the actual desktop asset producers through CommonJS without running the CLI', () => {
+  const output = execFileSync(
+    process.execPath,
+    [
+      '--require',
+      'tsx/cjs',
+      '-e',
+      'const build = require(process.argv[2]); console.log(typeof build.buildBrowserNativeAssets, typeof build.buildBrowserRuntimeAssets);',
+      'desktop-import-consumer',
+      fileURLToPath(new URL('../../scripts/build.ts', import.meta.url)),
+    ],
+    { encoding: 'utf8', timeout: 10_000, maxBuffer: 256 * 1024 }
+  );
+  expect(output.trim()).toBe('function function');
 });
 async function fixture() {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'browser-native-handoff-')));
