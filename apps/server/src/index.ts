@@ -17,6 +17,7 @@ import { HARNESS_MANIFEST_PATH } from '@dorkos/harness';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import { randomUUID } from 'node:crypto';
 import { createApp, finalizeApp } from './app.js';
+import { createFrontDoor, createFrontDoorServer } from './http/front-door.js';
 import { createSessionLocationsRouter } from './routes/session-locations.js';
 import { ManagedConnectorCloudError } from './services/core/auth/cloud-link-client.js';
 import { DoeRuntime } from './services/runtimes/doe/index.js';
@@ -6082,7 +6083,9 @@ async function start() {
 
   const server = startMainListener({
     admission: mainRequestAdmission,
-    listen: () => app.listen(PORT, host),
+    // Hono is the front door; every route still answers from the Express app
+    // behind it (`http/front-door.ts`, ADR 261009-192542).
+    listen: () => createFrontDoorServer(createFrontDoor(app)).listen(PORT, host),
     onListening: (server) => {
       logger.info(`[DorkOS] server running on http://${host}:${PORT}`);
 

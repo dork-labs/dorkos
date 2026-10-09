@@ -840,6 +840,9 @@ importers:
       '@dorkos/skills':
         specifier: workspace:*
         version: link:../../packages/skills
+      '@hono/node-server':
+        specifier: ^1.19.15
+        version: 1.19.17(hono@4.13.12)
       '@modelcontextprotocol/sdk':
         specifier: 1.31.0
         version: 1.31.0(@cfworker/json-schema@4.1.1)(zod@4.6.5)
@@ -906,6 +909,9 @@ importers:
       giget:
         specifier: ^3.3.1
         version: 3.3.1
+      hono:
+        specifier: ^4.13.9
+        version: 4.13.12
       mdast-util-from-markdown:
         specifier: 2.0.3
         version: 2.0.3
@@ -1939,12 +1945,12 @@ importers:
       '@dorkos/typescript-config':
         specifier: workspace:*
         version: link:../typescript-config
+      '@hono/node-server':
+        specifier: ^1.19.15
+        version: 1.19.17(hono@4.13.12)
       '@tanstack/react-query':
         specifier: ^5.104.0
         version: 5.104.0(react@19.3.0)
-      '@types/express':
-        specifier: ^5.0.6
-        version: 5.0.6
       '@types/react':
         specifier: ^19.3.0
         version: 19.3.0

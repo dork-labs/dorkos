@@ -1,5 +1,4 @@
 import http from 'node:http';
-import type { Express } from 'express';
 
 /** A single SSE frame parsed off the wire, including its optional `id:` line. */
 export interface SseFrame {
@@ -227,18 +226,20 @@ function collectSseFrames(
  * server ends the stream. Frames capture the `id:` line, so resume tests can
  * assert `<sessionId>-<epoch>-<generation>-<seq>` event ids.
  *
- * @param app - Express app instance (from `createApp()` + `finalizeApp()`)
+ * @param app - The app to serve, as a Node request listener: an Express app
+ *   (from `createApp()` + `finalizeApp()`) as it is, or a Hono app through
+ *   `honoListener` from `@dorkos/test-utils/listening-server`.
  * @param sessionId - Target session UUID
  * @param opts - Stop condition and resume signals; see {@link CollectDurableEventsOptions}
  * @returns The collected frames, raw text, headers, and status.
  */
 export function collectDurableEvents(
-  app: Express,
+  app: http.RequestListener,
   sessionId: string,
   opts: CollectDurableEventsOptions = {}
 ): Promise<DurableEventsResult> {
   return new Promise((resolve, reject) => {
-    const server = app.listen(0, () => {
+    const server = http.createServer(app).listen(0, '127.0.0.1', () => {
       const addr = server.address();
       const port = typeof addr === 'object' && addr ? addr.port : 0;
       collectSseFrames(
