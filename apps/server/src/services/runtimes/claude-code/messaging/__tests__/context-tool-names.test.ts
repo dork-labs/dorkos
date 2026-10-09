@@ -993,6 +993,7 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
       'using-the-agent-browser',
       'using-the-marketplace',
       'working-in-room-repos',
+      'working-with-spin-off-chats',
     ]);
 
     const offenders: string[] = [];
