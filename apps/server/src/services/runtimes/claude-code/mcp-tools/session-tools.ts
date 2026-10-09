@@ -80,6 +80,7 @@ import {
   AGENT_LAUNCH_CAP_MESSAGE,
 } from '../../../session/launch/launch-session.js';
 import { getStartWorkService, type StartReservation } from '../../../extensions/start-work.js';
+import { getChatMessageService } from '../../../session/chat-messages/chat-message-service.js';
 import {
   NO_CHAT_CEILING_RUNTIME,
   resolveStartPermission,
@@ -484,13 +485,33 @@ export function createSessionStartHandler(
       throw err;
     }
 
+    // The first message carries who sent it, like any chat message (spec
+    // `spin-off-chats` §1): the new chat's agent reads it as a teammate's, and
+    // the app shows "From <agent> · <chat>". Only from a calling chat: the
+    // external server has no chat to name.
+    const messageId = crypto.randomUUID();
+    const chatMessages = getChatMessageService();
+    const stamped =
+      chatMessages && caller.chat?.sessionId
+        ? await chatMessages.beginStart(
+            { sessionId: caller.chat.sessionId, agentPath },
+            sessionId,
+            args.prompt,
+            messageId
+          )
+        : null;
+    const settleStamp = (canonical: string | null) => {
+      if (stamped) chatMessages?.settleStart(stamped.id, canonical);
+    };
+
     let result: Awaited<ReturnType<typeof dispatchSessionMessage>>;
     try {
       result = await dispatchSessionMessage({
         origin: { kind: 'agent-launch' },
         sessionId,
+        messageId,
         request: {
-          content: args.prompt,
+          content: stamped?.content ?? args.prompt,
           cwd,
           runtime: runtimeType,
           ...(account ? { account: account.id } : {}),
@@ -506,11 +527,13 @@ export function createSessionStartHandler(
       });
     } catch (err) {
       reservation?.cancel();
+      settleStamp(null);
       await discardUnstartedSession(sessionId);
       throw err;
     }
     if (isSessionLaunchRefusal(result)) {
       reservation?.cancel();
+      settleStamp(null);
       await discardUnstartedSession(sessionId);
       // The launch ladder's account refusal (the unnamed path: the agent's or
       // the default account may not work in this project) reads like the
@@ -522,11 +545,13 @@ export function createSessionStartHandler(
     }
     if (!result.accepted) {
       reservation?.cancel();
+      settleStamp(null);
       await discardUnstartedSession(sessionId);
       return refuse('The session could not be started.', 'NOT_STARTED');
     }
 
     const canonicalId = result.canonicalId ?? sessionId;
+    settleStamp(canonicalId);
     if (canonicalId !== sessionId) reservation?.rekey(canonicalId);
     const accountName = account ? (account.label ?? account.id) : null;
     void deps.activityService?.emit({

@@ -157,6 +157,23 @@ export class SessionStartedByStore {
   }
 
   /**
+   * The chats a chat started (`kind = 'chat'`), oldest first: its spin-offs.
+   *
+   * @param sessionId - The starting chat.
+   */
+  childrenOf(sessionId: string): string[] {
+    return this.db
+      .select({ sessionId: sessionStartedBy.sessionId })
+      .from(sessionStartedBy)
+      .where(
+        and(eq(sessionStartedBy.kind, 'chat'), eq(sessionStartedBy.startedBySessionId, sessionId))
+      )
+      .orderBy(sessionStartedBy.createdAt)
+      .all()
+      .map((row) => row.sessionId);
+  }
+
+  /**
    * How many chats an extension's chain started since `since`. A move to
    * another account is not a start and is left out.
    *

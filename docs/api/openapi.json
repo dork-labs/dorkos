@@ -2591,6 +2591,12 @@
           },
           "commandArgs": {
             "type": "string"
+          },
+          "chatMessages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatMessageStamp"
+            }
           }
         },
         "required": [
@@ -3706,6 +3712,94 @@
             "type": "string"
           }
         }
+      },
+      "ChatMessageStamp": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ChatMessageKind"
+          },
+          "from": {
+            "$ref": "#/components/schemas/ChatMessageSender"
+          },
+          "text": {
+            "type": "string"
+          },
+          "delivery": {
+            "$ref": "#/components/schemas/ChatDelivery"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ChatMessageStatus"
+          },
+          "replyToId": {
+            "type": "string"
+          },
+          "sentAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "from",
+          "text",
+          "delivery",
+          "status",
+          "sentAt"
+        ]
+      },
+      "ChatMessageKind": {
+        "type": "string",
+        "enum": [
+          "message",
+          "report",
+          "start",
+          "stop"
+        ]
+      },
+      "ChatMessageSender": {
+        "type": "object",
+        "properties": {
+          "chatId": {
+            "type": "string"
+          },
+          "chatTitle": {
+            "type": "string"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "agentName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "chatId",
+          "agentName"
+        ]
+      },
+      "ChatDelivery": {
+        "type": "string",
+        "enum": [
+          "queue",
+          "steer",
+          "interrupt"
+        ]
+      },
+      "ChatMessageStatus": {
+        "type": "string",
+        "enum": [
+          "queued",
+          "delivered",
+          "steered",
+          "interrupted",
+          "working",
+          "replied",
+          "failed"
+        ]
       },
       "SessionSnapshot": {
         "type": "object",
@@ -4874,6 +4968,12 @@
                   "user",
                   "runtime"
                 ]
+              },
+              "chatMessages": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ChatMessageStamp"
+                }
               }
             },
             "required": [
@@ -4930,6 +5030,12 @@
               },
               "messageId": {
                 "type": "string"
+              },
+              "chatMessages": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ChatMessageStamp"
+                }
               }
             },
             "required": [
@@ -5228,6 +5334,25 @@
               "type",
               "content",
               "messageId"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "chat_activity"
+                ]
+              }
+            },
+            "required": [
+              "seq",
+              "type"
             ]
           }
         ]
@@ -7670,6 +7795,114 @@
           "panels",
           "sidebar",
           "agent"
+        ]
+      },
+      "ChatActivityResponse": {
+        "type": "object",
+        "properties": {
+          "sent": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SentChatMessage"
+            }
+          },
+          "stops": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatStopNotice"
+            }
+          }
+        },
+        "required": [
+          "sent",
+          "stops"
+        ]
+      },
+      "SentChatMessage": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ChatMessageKind"
+          },
+          "to": {
+            "type": "object",
+            "properties": {
+              "chatId": {
+                "type": "string"
+              },
+              "chatTitle": {
+                "type": "string"
+              },
+              "agentName": {
+                "type": "string"
+              },
+              "agentId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "chatId"
+            ]
+          },
+          "text": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "delivery": {
+            "$ref": "#/components/schemas/ChatDelivery"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ChatMessageStatus"
+          },
+          "position": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "failureReason": {
+            "type": "string"
+          },
+          "replyId": {
+            "type": "string"
+          },
+          "sentAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "to",
+          "text",
+          "delivery",
+          "status",
+          "sentAt"
+        ]
+      },
+      "ChatStopNotice": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "by": {
+            "$ref": "#/components/schemas/ChatMessageSender"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "by",
+          "at"
         ]
       },
       "SessionQueueResponse": {
@@ -20953,6 +21186,12 @@
                             "user",
                             "runtime"
                           ]
+                        },
+                        "chatMessages": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/ChatMessageStamp"
+                          }
                         }
                       },
                       "required": [
@@ -21009,6 +21248,12 @@
                         },
                         "messageId": {
                           "type": "string"
+                        },
+                        "chatMessages": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/ChatMessageStamp"
+                          }
                         }
                       },
                       "required": [
@@ -21307,6 +21552,25 @@
                         "type",
                         "content",
                         "messageId"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "chat_activity"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type"
                       ]
                     },
                     {
@@ -21870,6 +22134,48 @@
           },
           "400": {
             "description": "The id is not a session id (`INVALID_SESSION_ID`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/chat-messages": {
+      "get": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "What a chat sent other chats, and who stopped it",
+        "description": "The messages this chat sent other chats with `chat_send` or `session_start`, with where each one is now (queued, working, delivered, replied, failed), and the times another chat stopped this one with `chat_stop`. The app re-reads it whenever the session's event stream carries a `chat_activity` event.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The chat's messaging",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatActivityResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid session id",
             "content": {
               "application/json": {
                 "schema": {

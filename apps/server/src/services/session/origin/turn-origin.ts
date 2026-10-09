@@ -132,6 +132,15 @@ export type TurnOrigin =
    */
   | { readonly kind: 'extension-message' }
   /**
+   * Another chat sent this one a message (`chat_send`, a spin-off's report,
+   * spec `spin-off-chats`), or opened an agent's DM chat to send the first.
+   * Like `agent-launch`, nobody chose a trust stop for it and nobody is
+   * watching: the row seeds no operator stop. Its turn is held to the sending
+   * chat's level by a ceiling the dispatcher reads at launch, so a message
+   * never carries more power than the chat that sent it.
+   */
+  | { readonly kind: 'chat-message' }
+  /**
    * A limited session's work carried over to a new session on another account
    * (spec `claude-account-fleet` D9), by a person or by the account advisor.
    * The new session's settings row is copied from the source session before
@@ -258,6 +267,10 @@ export function permissionSeedForOrigin(origin: TurnOrigin): OriginPermissionSee
     // with nothing seeded, like a connector event's.
     //
     // The harness is not a surface anybody ships to.
+    // Another chat's message is the sending chat's work, held to its level by
+    // the launch ceiling; the operator's stop is a promise to a person, and the
+    // sender is not that person.
+    case 'chat-message':
     case 'extension-message':
     case 'schedule':
     case 'relay-binding':

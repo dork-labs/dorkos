@@ -24,6 +24,7 @@ import {
 } from '@dorkos/shared/session-stream';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import { filterKickoffHistory } from '@dorkos/shared/kickoff';
+import { stampEvent, stampHistory } from '../../session/chat-messages/chat-message-stamps.js';
 import type { DurableStreamSink } from './durable-stream-sink.js';
 import type { DocScopeNotifications } from '../../canvas/doc-channel/streams/registry.js';
 import { attachDocumentStream, serializedStreamSink } from './document-stream-delivery.js';
@@ -102,6 +103,8 @@ export async function deliverSessionStream(
   plan: SessionStreamPlan
 ): Promise<void> {
   const { sessionId, runtime, ctx, resume, principal } = plan;
+  // Every id this chat answers to, for matching a sent message to it.
+  const chatIds = [...new Set([sessionId, runtime.getInternalSessionId(sessionId) ?? sessionId])];
   const serialized = serializedStreamSink(sink);
   sink = serialized;
   let documents: ReturnType<typeof attachDocumentStream> | undefined;
@@ -157,6 +160,12 @@ export async function deliverSessionStream(
       // kickoff (M4) never leaves the server as a user message, whichever
       // runtime stored it. See @dorkos/shared/kickoff for the seam's scope.
       snap.messages = filterKickoffHistory(snap.messages);
+      // A message another chat sent carries its sender (spec `spin-off-chats`
+      // §2), on the history and on the turn in progress alike.
+      snap.messages = stampHistory(chatIds, snap.messages);
+      if (snap.inProgressTurn) {
+        snap.inProgressTurn = snap.inProgressTurn.map((event) => stampEvent(chatIds, event));
+      }
       // An Ask's detail — the tool, the command or path, the working directory
       // — rides the snapshot's `pendingInteractions` verbatim. A caller the
       // entitlement refuses gets an empty list rather than an error, the same
@@ -190,7 +199,7 @@ export async function deliverSessionStream(
       if (!maySeeAsk && isBlockingInteractionEventType(value.type)) continue;
       await sink.send({
         event: value.type,
-        data: value,
+        data: stampEvent(chatIds, value),
         id: streamFrameId(sessionId, generation, value.seq),
       });
     }

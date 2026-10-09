@@ -61,6 +61,7 @@ import { devtoolsCaptureStore } from './devtools-capture-store.js';
 import { uiTurnFacts } from './browser-seat/ui-turn-facts.js';
 import type { SessionEventStore } from './session-event-store.js';
 import { getMessageQueueStore, toQueuedMessage } from './message-queue-store.js';
+import { getChatMessageStore } from './chat-messages/chat-message-store.js';
 import { getStagedContextStore } from './staged-context-store.js';
 import { getSessionLimitStore, withSessionLimitStore } from './fleet/session-limit-store.js';
 import {
@@ -2684,6 +2685,10 @@ export function rekeyProjector(oldId: string, newId: string): void {
     // the person has already been told their words will ride the next reply, and
     // a hold left at the pre-rename id is invisible to every dispatch after it.
     getStagedContextStore()?.rekeySession(fromId, newId);
+    // And what chats sent this one, or sent from it: the Sent cards, the
+    // senders on its received messages, and its read cursors (spec
+    // `spin-off-chats`).
+    getChatMessageStore()?.rekeySession(fromId, newId);
     // And the usage limit a turn under the old id hit (spec
     // claude-account-fleet D4), or the session's next projector cannot find it.
     getSessionLimitStore()?.rekeySession(fromId, newId);
