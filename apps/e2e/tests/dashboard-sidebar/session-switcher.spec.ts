@@ -361,7 +361,7 @@ test.describe('session switcher @smoke', { tag: SOLE_SIDEBAR_TAG }, () => {
 
     // The chip is a satellite of the row, never a button inside one.
     const nested = await page.evaluate(() =>
-      Array.from(document.querySelectorAll('button[aria-label*="session switcher"]')).some(
+      Array.from(document.querySelectorAll('button[aria-label*="chat switcher"]')).some(
         (b) => b.parentElement?.closest('button') !== null
       )
     );
@@ -408,7 +408,7 @@ test.describe('session switcher @smoke', { tag: SOLE_SIDEBAR_TAG }, () => {
     // 1. It rides the transform. Applied to the same node dnd-kit moves, so a
     //    chip parked outside the drag wrapper would stay put while the row left.
     const ridesDrag = await page.evaluate(() => {
-      const button = document.querySelector<HTMLElement>('button[aria-label*="session switcher"]')!;
+      const button = document.querySelector<HTMLElement>('button[aria-label*="chat switcher"]')!;
       const item = button.closest('li')!;
       const wrapper = item.firstElementChild as HTMLElement;
       const before = button.getBoundingClientRect().top;
