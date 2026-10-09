@@ -75,7 +75,10 @@ export function useTabTarget(href: string): TabTargetView {
   const routeContext = useSessionRouteContext(isSession ? target.sessionId : null);
   const { data: session } = useSessionRow(isSession ? target.sessionId : null, {
     // A draft has no row on the server yet; asking for one only earns a 404.
-    enabled: !routeContext?.draft,
+    // The href says so too, for a tab restored after a reload, when the
+    // in-memory route context is gone.
+    enabled: !(routeContext?.draft ?? target.draft),
+    nameOnly: true,
     select: (row) => ({ cwd: row.cwd ?? null, title: row.title }),
   });
   const dir = isSession ? (routeContext?.cwd ?? target.dir ?? session?.cwd ?? null) : null;

@@ -33,6 +33,14 @@ export interface UseSessionDetailOptions<T> {
    * route supplies its resolved context; other callers omit this hint safely.
    */
   dir?: string;
+  /**
+   * For a surface that only names the chat, like a tab or a History row: read
+   * once, never refetch on window focus, never retry a miss. Live title changes
+   * still arrive, because the session stream merges fresh rows into every
+   * cached detail entry. Without it, ten open chat tabs are ten reads each time
+   * the window regains focus.
+   */
+  nameOnly?: boolean;
 }
 
 /**
@@ -65,7 +73,8 @@ export function useSessionRow<T = Session>(
       queryClient.setQueryData(sessionKeys.nativeDetail(sessionId, cwd), session);
       return session;
     },
-    staleTime: 30_000,
+    staleTime: options?.nameOnly ? Infinity : 30_000,
+    ...(options?.nameOnly && { refetchOnWindowFocus: false, retry: false }),
     enabled: Boolean(sessionId) && (options?.enabled ?? true),
     select: options?.select,
     // **Dropped wifi is not a reason to stop asking localhost.** TanStack's

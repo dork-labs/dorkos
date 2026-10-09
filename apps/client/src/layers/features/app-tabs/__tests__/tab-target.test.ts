@@ -16,6 +16,7 @@ describe('parseTabHref', () => {
       pathname: '/session',
       sessionId: 'abc',
       dir: '/Users/kai/api',
+      draft: false,
       roomId: null,
       community: null,
     });
@@ -26,9 +27,15 @@ describe('parseTabHref', () => {
       pathname: '/session',
       sessionId: null,
       dir: '/tmp',
+      draft: false,
       roomId: null,
       community: null,
     });
+  });
+
+  it('reads the draft flag off a chat tab', () => {
+    expect(parseTabHref('/session?session=abc&draft=1').draft).toBe(true);
+    expect(parseTabHref('/session?session=abc').draft).toBe(false);
   });
 
   it('ignores session params on other routes', () => {
@@ -36,6 +43,7 @@ describe('parseTabHref', () => {
       pathname: '/team',
       sessionId: null,
       dir: null,
+      draft: false,
       roomId: null,
       community: null,
     });
@@ -46,6 +54,7 @@ describe('parseTabHref', () => {
       pathname: '/channels',
       sessionId: null,
       dir: null,
+      draft: false,
       roomId: 'general',
       community: 'alpha',
     });
@@ -56,6 +65,7 @@ describe('parseTabHref', () => {
       pathname: '/channels',
       sessionId: null,
       dir: null,
+      draft: false,
       roomId: 'room_1',
       community: null,
     });
@@ -66,6 +76,7 @@ describe('parseTabHref', () => {
       pathname: '/channels',
       sessionId: null,
       dir: null,
+      draft: false,
       roomId: null,
       community: null,
     });
@@ -85,6 +96,7 @@ describe('parseTabHref', () => {
       pathname: '/',
       sessionId: null,
       dir: null,
+      draft: false,
       roomId: null,
       community: null,
     });

@@ -179,6 +179,30 @@ describe('AppTabStrip', () => {
     });
   });
 
+  it('trusts the route context over a stale ?dir= and the row, as useDirectoryState does', () => {
+    agentByPath.mockImplementation((cwd) =>
+      cwd === '/Users/kai/api'
+        ? ({ id: 'scout', displayName: 'Scout' } as AgentManifest)
+        : cwd === '/Users/kai/web'
+          ? ({ id: 'pixel', displayName: 'Pixel' } as AgentManifest)
+          : null
+    );
+    vi.mocked(transport.getSession).mockResolvedValue({
+      id: 'moved-1',
+      cwd: '/Users/kai/web',
+      title: 'x',
+    } as Awaited<ReturnType<typeof transport.getSession>>);
+    setSessionRouteContext('moved-1', { cwd: '/Users/kai/api', draft: false });
+    renderStrip([tab('t9', '/session?session=moved-1&dir=%2FUsers%2Fkai%2Fweb')]);
+    expect(screen.getByRole('tab', { name: /Scout/ })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: /Pixel/ })).toBeNull();
+  });
+
+  it('does not ask the server for a restored draft tab, whose route context died with the reload', () => {
+    renderStrip([tab('t9', '/session?session=draft-2&draft=1')]);
+    expect(transport.getSession).not.toHaveBeenCalled();
+  });
+
   it('names a channel tab "#slug" once the room resolves', () => {
     roomById.mockImplementation((roomId) => (roomId === 'room-1' ? channelRoom() : null));
     renderStrip([GENERAL_CHANNEL]);
