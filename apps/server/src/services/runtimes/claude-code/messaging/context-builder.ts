@@ -74,13 +74,17 @@ const T = IN_SESSION_TOOL_PREFIX;
  *
  * @param agentToAgentToolsPreloaded - True when the four agent-to-agent tools ride
  *   this session's turn-1 prompt.
+ * @param messagesAllowed - False when the Messages area is Blocked for this
+ *   agent. The chat tools are then not in its list at all, so the sentence that
+ *   names them as loaded is left out, by the same answer `<chat_tools>` uses.
  */
-function dorkosToolsContext(agentToAgentToolsPreloaded: boolean): string {
-  const preloaded = agentToAgentToolsPreloaded
-    ? `The room tools, ${T}list_capabilities, and — because you are a registered agent —
+function dorkosToolsContext(agentToAgentToolsPreloaded: boolean, messagesAllowed = true): string {
+  const preloaded =
+    agentToAgentToolsPreloaded && messagesAllowed
+      ? `The room tools, ${T}list_capabilities, and — because you are a registered agent —
 ${T}mesh_list, ${T}mesh_inspect, ${T}chat_send and ${T}chat_read are already in your
 tool list. Call any of them straight away, with no lookup step.`
-    : `The room tools and ${T}list_capabilities are already in your tool list — call them
+      : `The room tools and ${T}list_capabilities are already in your tool list — call them
 straight away, with no lookup step.`;
 
   return `<dorkos_tools>
@@ -111,24 +115,18 @@ something cannot be done here.
  * checks on them, stops them, and tells a helper from a spin-off chat
  * (spec `spin-off-chats` §7).
  *
- * **Whether the tools are already loaded.** `agentToAgentToolsPreloaded` mirrors
- * the exposure decision in `mcp-tools/tool-exposure.ts` exactly. Saying "already
- * in your tool list" to a session whose tools are in fact deferred would cost the
- * turn it is meant to save, so the two must be computed from the same fact.
+ * Written only for an agent session, so it can say the tools are already
+ * loaded: that is the same fact `mcp-tools/tool-exposure.ts` decides exposure
+ * with. See {@link buildChatToolsBlock} for the session that is not an agent.
  *
  * **Reaching the person** rides Relay (`relay_notify_user`), so that paragraph is
  * written only when Relay is on; the chat tools themselves need no bus.
  *
- * @param agentToAgentToolsPreloaded - True when this session's agent-to-agent
- *   tools ride the turn-1 prompt (a registered agent).
  * @param relayOn - Whether Relay is on, which `relay_notify_user` needs.
  */
-function chatToolsContext(agentToAgentToolsPreloaded: boolean, relayOn: boolean): string {
-  const loadingNote = agentToAgentToolsPreloaded
-    ? `${T}mesh_list, ${T}mesh_inspect, ${T}chat_send and ${T}chat_read are already in your
-tool list — no ToolSearch step before you use them.`
-    : `Load these tools with ToolSearch by their full names before the first use in a turn,
-e.g. ToolSearch(query="select:${T}chat_send").`;
+function chatToolsContext(relayOn: boolean): string {
+  const loadingNote = `${T}mesh_list, ${T}mesh_inspect, ${T}chat_send and ${T}chat_read are already in your
+tool list — no ToolSearch step before you use them.`;
 
   const reachingThePerson = relayOn
     ? `
@@ -167,8 +165,8 @@ Message a chat or an agent:
     stops its running turn and runs your message next. Use the default unless the other
     chat must change course right now.
   - replyTo=<message id> when you answer a message another chat sent you.
-  - The answer comes back as a new message in THIS chat, and starts a turn here when you
-    are idle. Do not wait or poll for it: end your turn, and you will be woken.
+  - A spin-off you started reports back here on its own. Another chat answers only if it
+    chooses to, with ${T}chat_send; check with ${T}chat_read if you need to know.
 
 Check on a chat:
   ${T}chat_read(chat=<id>, include="status")  — the cheapest check: its state (running,
@@ -212,7 +210,24 @@ Error codes: NO_CHAT (only an agent in a chat can do this), SELF (that is your o
 </chat_tools>`;
 }
 
-const MESH_TOOLS_CONTEXT = `<mesh_tools>
+/**
+ * The `<mesh_tools>` block's text.
+ *
+ * The lines on messaging an agent are written only for an agent session: the
+ * chat tools refuse a chat that does not belong to one (see
+ * {@link buildChatToolsBlock}).
+ *
+ * @param agentSession - Whether this session is a registered agent's.
+ */
+function meshToolsContext(agentSession: boolean): string {
+  const listEntry = agentSession
+    ? `5. ${T}mesh_list(runtime?, capability?) — filter agents by runtime or capability; every entry
+   carries the agent's id, which ${T}chat_send takes as its "to"`
+    : `5. ${T}mesh_list(runtime?, capability?) — filter agents by runtime or capability`;
+  const messageLine = agentSession
+    ? `\n- Message another agent: ${T}chat_send(to=<their agent id from ${T}mesh_list>, message="…")`
+    : '';
+  return `<mesh_tools>
 DorkOS Mesh is a local agent registry for discovering and communicating with AI agents on this machine.
 
 Agent lifecycle:
@@ -223,21 +238,20 @@ Agent lifecycle:
    different id and name than you asked for. Read the returned agent; it is the authoritative one.
 3. ${T}mesh_inspect(agentId) — get full manifest and health status
 4. ${T}mesh_status() — aggregate overview: total, active, stale agent counts
-5. ${T}mesh_list(runtime?, capability?) — filter agents by runtime or capability; every entry
-   carries the agent's id, which ${T}chat_send takes as its "to"
+${listEntry}
 6. ${T}mesh_deny(path, reason) — exclude a path from future discovery
 7. ${T}mesh_unregister(agentId) — remove an agent from the registry
 8. ${T}mesh_query_topology(namespace?) — view agent network from a namespace perspective
 
 Workflows:
-- Find agents: ${T}mesh_list() then ${T}mesh_inspect(agentId) for details
-- Message another agent: ${T}chat_send(to=<their agent id from ${T}mesh_list>, message="…")
+- Find agents: ${T}mesh_list() then ${T}mesh_inspect(agentId) for details${messageLine}
 - Register this project: ${T}mesh_register(path=cwd, name="project-name", runtime="claude-code")
   — if the project already has a .dork/agent.json, this adopts that agent instead of creating one,
   and the name and runtime you pass are ignored rather than written over it
 
 Runtimes: claude-code | cursor | codex | other
 </mesh_tools>`;
+}
 
 const ADAPTER_TOOLS_CONTEXT = `<adapter_tools>
 Relay adapters bridge external platforms (Telegram, webhooks) to the agent message bus.
@@ -413,24 +427,23 @@ function buildMarketplaceToolsBlock(toolConfig?: ToolDocGates): string {
 /**
  * Build the `<chat_tools>` context block.
  *
+ * Only an agent session gets it. The chat tools answer NO_CHAT to a chat that
+ * does not belong to an agent, so teaching them there is noise that ends in a
+ * refusal. `agentSession` is `loadsAgentToAgentTools`'s answer, the same one
+ * that decides whether the tools are loaded at all.
+ *
  * When `toolConfig` is provided, uses the agent's gates (`toolDocGates`): the
  * block goes with the Messages area. Without one, the chat tools are always
  * there, so the block is too; only its paragraph on reaching the person follows
  * the Relay feature flag.
  *
  * @param toolConfig - Pre-resolved tool config, when the caller has one.
- * @param agentToAgentToolsPreloaded - Whether this session's agent-to-agent
- *   tools already ride the prompt; see {@link chatToolsContext}.
+ * @param agentSession - Whether this session is a registered agent's.
  */
-function buildChatToolsBlock(
-  toolConfig?: ToolDocGates,
-  agentToAgentToolsPreloaded = false
-): string {
+function buildChatToolsBlock(toolConfig?: ToolDocGates, agentSession = false): string {
+  if (!agentSession) return '';
   if (toolConfig && !toolConfig.messages) return '';
-  return chatToolsContext(
-    agentToAgentToolsPreloaded,
-    toolConfig ? toolConfig.relay : isRelayEnabled()
-  );
+  return chatToolsContext(toolConfig ? toolConfig.relay : isRelayEnabled());
 }
 
 /**
@@ -438,10 +451,14 @@ function buildChatToolsBlock(
  *
  * When `toolConfig` is provided, uses the agent's gates (`toolDocGates`).
  * Mesh is always-on per ADR-0062, so there is no feature flag to fall back to.
+ * The lines on messaging an agent also need the Messages area.
+ *
+ * @param toolConfig - Pre-resolved tool config, when the caller has one.
+ * @param agentSession - Whether this session is a registered agent's.
  */
-function buildMeshToolsBlock(toolConfig?: ToolDocGates): string {
+function buildMeshToolsBlock(toolConfig?: ToolDocGates, agentSession = false): string {
   if (toolConfig && !toolConfig.mesh) return '';
-  return MESH_TOOLS_CONTEXT;
+  return meshToolsContext(agentSession && (!toolConfig || toolConfig.messages));
 }
 
 /**
@@ -542,9 +559,12 @@ function buildRelayConnectionsBlock(
  * Returns an empty string when the agent registry is unavailable or no agents are registered.
  *
  * @param meshCore - Optional agent registry port for agent data access
+ * @param agentSession - Whether this session is a registered agent's; only one
+ *   can message a peer, so only one is told how
  */
 async function buildPeerAgentsBlock(
-  meshCore: AgentRegistryPort | null | undefined
+  meshCore: AgentRegistryPort | null | undefined,
+  agentSession = false
 ): Promise<string> {
   if (!meshCore) return '';
   try {
@@ -555,7 +575,10 @@ async function buildPeerAgentsBlock(
     // the slug buys nothing here and misnames every agent that has a real name
     // (DOR-1264).
     const lines = agents.map((a) => `- ${a.displayName ?? a.name} (${a.projectPath})`).join('\n');
-    return `<peer_agents>\nRegistered agents on this machine (use ${T}mesh_list() for live data):\n${lines}\n\nTo message a peer: take its id from ${T}mesh_list(), then ${T}chat_send(to=<their agent id>, message="…").\n</peer_agents>`;
+    const howToMessage = agentSession
+      ? `\n\nTo message a peer: take its id from ${T}mesh_list(), then ${T}chat_send(to=<their agent id>, message="…").`
+      : '';
+    return `<peer_agents>\nRegistered agents on this machine (use ${T}mesh_list() for live data):\n${lines}${howToMessage}\n</peer_agents>`;
   } catch {
     return '';
   }
@@ -625,7 +648,7 @@ export async function buildSystemPromptAppend(
 
   // Static tool context blocks (synchronous — config checks only, content never changes)
   const chatBlock = buildChatToolsBlock(toolConfig, agentSession);
-  const meshBlock = buildMeshToolsBlock(toolConfig);
+  const meshBlock = buildMeshToolsBlock(toolConfig, agentSession);
   const adapterBlock = buildAdapterToolsBlock(toolConfig);
   const tasksBlock = buildTasksToolsBlock(toolConfig);
   const marketplaceBlock = buildMarketplaceToolsBlock(toolConfig);
@@ -658,7 +681,7 @@ export async function buildSystemPromptAppend(
   //    The naming rule comes first, because every block after it is written in
   //    the long form it explains (DOR-1292).
   const toolDocs = [
-    dorkosToolsContext(agentSession),
+    dorkosToolsContext(agentSession, !toolConfig || toolConfig.messages),
     chatBlock,
     meshBlock,
     adapterBlock,
@@ -847,7 +870,6 @@ export {
   buildRelayConnectionsBlock as _buildRelayConnectionsBlock,
   buildUiToolsBlock as _buildUiToolsBlock,
   dorkosToolsContext as _dorkosToolsContext,
-  MESH_TOOLS_CONTEXT as _MESH_TOOLS_CONTEXT,
   ADAPTER_TOOLS_CONTEXT as _ADAPTER_TOOLS_CONTEXT,
   TASKS_TOOLS_CONTEXT as _TASKS_TOOLS_CONTEXT,
   MARKETPLACE_TOOLS_CONTEXT as _MARKETPLACE_TOOLS_CONTEXT,

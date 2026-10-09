@@ -7,7 +7,6 @@ import {
 import type {
   AgentRuntime,
   AgentRegistryPort,
-  RelayPort,
   ManagedMcpServerResolver,
   MessageOpts,
   CommandIntentOpts,
@@ -305,11 +304,6 @@ export class DoeRuntime extends DoeSessionRuntime implements AgentRuntime {
   setMeshCore(mesh: AgentRegistryPort): void {
     this.mesh = mesh;
   }
-  /**
-   * Required by `AgentRuntime`; Doe needs no relay. Its peer tools are the chat
-   * tools, which ride no bus (spec `spin-off-chats` §7).
-   */
-  setRelay(_relay: RelayPort): void {}
   /** Managed server configuration is read afresh for each turn. */
   setManagedMcpServerResolver(resolver: ManagedMcpServerResolver): void {
     this.managedMcp = resolver;

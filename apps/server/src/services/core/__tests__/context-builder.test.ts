@@ -224,7 +224,11 @@ describe('buildSystemPromptAppend', () => {
       adapterTools: true,
       tasksTools: true,
     });
-    const result = (await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir')).text;
+    const result = (
+      await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir', undefined, {
+        agentSession: true,
+      })
+    ).text;
     expect(result).toContain('<env>');
     expect(result).toContain('<chat_tools>');
     expect(result).toContain('<mesh_tools>');
@@ -256,7 +260,11 @@ describe('buildSystemPromptAppend', () => {
     // The chat tools ride no bus (spec `spin-off-chats` §7); only reaching the
     // person through `relay_notify_user` needs Relay.
     vi.mocked(isRelayEnabled).mockReturnValue(false);
-    const result = (await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir')).text;
+    const result = (
+      await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir', undefined, {
+        agentSession: true,
+      })
+    ).text;
     expect(result).toContain('<env>');
     expect(result).toContain('<mesh_tools>');
     expect(result).toContain('<chat_tools>');
@@ -297,7 +305,7 @@ describe('buildSystemPromptAppend', () => {
     expect(result).not.toContain('dorkos.ai');
     // It survives BESIDE the Claude-specific tool docs and the <env> block, in
     // the same append, rather than replacing either of them.
-    expect(result).toContain('<chat_tools>');
+    expect(result).toContain('<mesh_tools>');
     expect(result).toContain('<env>');
   });
 
@@ -334,6 +342,36 @@ describe('agent-aware block gating', () => {
       })
     ).text;
     expect(result).not.toContain('<chat_tools>');
+  });
+
+  // DOR-2790: a plain session's chat answers NO_CHAT, so it is not taught the
+  // chat tools, and no session is told they are loaded when Messages is Blocked.
+  it('teaches the chat tools to an agent session only', async () => {
+    const plain = (await buildSystemPromptAppend(testHome('/tmp/test'), '/tmp/test')).text;
+    expect(plain).not.toContain('<chat_tools>');
+    expect(plain).not.toContain('chat_send');
+    const agent = (
+      await buildSystemPromptAppend(testHome('/tmp/test'), '/tmp/test', undefined, {
+        agentSession: true,
+      })
+    ).text;
+    expect(agent).toContain('<chat_tools>');
+  });
+
+  it('never claims the chat tools are loaded when Messages is Blocked', async () => {
+    const result = (
+      await buildSystemPromptAppend(
+        testHome('/tmp/test'),
+        '/tmp/test',
+        toolDocGates(['messages']),
+        {
+          agentSession: true,
+        }
+      )
+    ).text;
+    expect(result).not.toContain('<chat_tools>');
+    expect(result).not.toContain('chat_send');
+    expect(result).not.toContain('chat_read');
   });
 
   it('omits mesh block when toolConfig.mesh=false', async () => {
@@ -402,13 +440,12 @@ describe('agent-aware block gating', () => {
       tasksTools: false,
     });
     const result = (
-      await buildSystemPromptAppend(testHome('/tmp/test'), '/tmp/test', {
-        tasks: true,
-        messages: true,
-        relay: true,
-        mesh: true,
-        adapter: true,
-      })
+      await buildSystemPromptAppend(
+        testHome('/tmp/test'),
+        '/tmp/test',
+        { tasks: true, messages: true, relay: true, mesh: true, adapter: true },
+        { agentSession: true }
+      )
     ).text;
     expect(result).toContain('<chat_tools>');
     expect(result).toContain('<mesh_tools>');
@@ -620,7 +657,7 @@ describe('buildChatToolsBlock', () => {
   });
 
   it('teaches the three chat tools and session_start', () => {
-    const result = _buildChatToolsBlock();
+    const result = _buildChatToolsBlock(undefined, true);
     expect(result).toContain('<chat_tools>');
     for (const name of ['chat_send', 'chat_read', 'chat_stop', 'session_start']) {
       expect(result).toContain(`${IN_SESSION_TOOL_PREFIX}${name}`);
@@ -629,7 +666,7 @@ describe('buildChatToolsBlock', () => {
   });
 
   it('no longer teaches the retired relay tools', () => {
-    const result = _buildChatToolsBlock();
+    const result = _buildChatToolsBlock(undefined, true);
     for (const retired of [
       'relay_send',
       'relay_inbox',
@@ -641,19 +678,19 @@ describe('buildChatToolsBlock', () => {
   });
 
   it('says the server stamps the sender, so there is no "from"', () => {
-    const result = _buildChatToolsBlock().replace(/\s+/g, ' ');
+    const result = _buildChatToolsBlock(undefined, true).replace(/\s+/g, ' ');
     expect(result).toContain('There is no "from" parameter');
   });
 
   it('teaches the three delivery modes, queue first', () => {
-    const result = _buildChatToolsBlock();
+    const result = _buildChatToolsBlock(undefined, true);
     expect(result).toContain('delivery="queue" (the default)');
     expect(result).toContain('delivery="steer"');
     expect(result).toContain('delivery="interrupt"');
   });
 
   it('tells a helper from a spin-off chat, and says spin-offs report back by themselves', () => {
-    const result = _buildChatToolsBlock().replace(/\s+/g, ' ');
+    const result = _buildChatToolsBlock(undefined, true).replace(/\s+/g, ' ');
     expect(result).toContain('A HELPER is a worker inside this chat');
     expect(result).toContain('A SPIN-OFF CHAT is a full chat');
     expect(result).toContain('A spin-off reports back on its own');
@@ -661,48 +698,64 @@ describe('buildChatToolsBlock', () => {
     expect(result).not.toContain('helper chat');
   });
 
-  // DOR-1337 (F8). The claim must match the exposure decision, both ways.
-  it('claims the agent-to-agent tools are loaded only for an agent session', () => {
+  // DOR-1337 (F8) and DOR-2790: the chat tools answer NO_CHAT to a chat that is
+  // not an agent's, so only an agent session is taught them, and that session
+  // has them loaded.
+  it('is written for an agent session only, which has the tools loaded', () => {
     expect(_buildChatToolsBlock(undefined, true)).toContain('already in your');
-    const plain = _buildChatToolsBlock(undefined, false);
-    expect(plain).not.toContain('already in your');
-    expect(plain).toContain('ToolSearch');
+    expect(_buildChatToolsBlock(undefined, false)).toBe('');
+    expect(_buildChatToolsBlock(undefined)).toBe('');
+  });
+
+  it('does not promise an answer: only a spin-off reports back by itself', () => {
+    const result = _buildChatToolsBlock(undefined, true).replace(/\s+/g, ' ');
+    expect(result).not.toContain('Do not wait or poll');
+    expect(result).not.toContain('The answer comes back');
+    expect(result).toContain('A spin-off you started reports back here on its own');
+    expect(result).toContain('answers only if it chooses to');
+    expect(result).toContain(`${IN_SESSION_TOOL_PREFIX}chat_read if you need to know`);
   });
 
   it('keeps the block with Relay off, without the relay_notify_user half', () => {
     vi.mocked(isRelayEnabled).mockReturnValue(false);
-    const result = _buildChatToolsBlock();
+    const result = _buildChatToolsBlock(undefined, true);
     expect(result).toContain('<chat_tools>');
     expect(result).not.toContain('relay_notify_user');
   });
 
   it('returns empty string when its permission area is Blocked for the agent', () => {
-    expect(_buildChatToolsBlock(toolDocGates(['messages']))).toBe('');
+    expect(_buildChatToolsBlock(toolDocGates(['messages']), true)).toBe('');
   });
 
   it('uses toolConfig when provided (messages=true, relay=false)', () => {
     vi.mocked(isRelayEnabled).mockReturnValue(true); // global says on
-    const result = _buildChatToolsBlock({
-      tasks: true,
-      messages: true,
-      relay: false,
-      mesh: true,
-      adapter: true,
-      packages: true,
-    });
+    const result = _buildChatToolsBlock(
+      {
+        tasks: true,
+        messages: true,
+        relay: false,
+        mesh: true,
+        adapter: true,
+        packages: true,
+      },
+      true
+    );
     expect(result).toContain('<chat_tools>');
     expect(result).not.toContain('relay_notify_user');
   });
 
   it('uses toolConfig when provided (messages=false)', () => {
-    const result = _buildChatToolsBlock({
-      tasks: true,
-      messages: false,
-      relay: false,
-      mesh: true,
-      adapter: true,
-      packages: true,
-    });
+    const result = _buildChatToolsBlock(
+      {
+        tasks: true,
+        messages: false,
+        relay: false,
+        mesh: true,
+        adapter: true,
+        packages: true,
+      },
+      true
+    );
     expect(result).toBe('');
   });
 });
@@ -730,6 +783,18 @@ describe('buildMeshToolsBlock', () => {
 
   it('returns empty string when its permission area is Blocked for the agent', () => {
     expect(_buildMeshToolsBlock(toolDocGates(['agents']))).toBe('');
+  });
+
+  // DOR-2790: chat_send refuses a chat that is not an agent's, so only an agent
+  // session is told to message a peer with it.
+  it('tells only an agent session how to message another agent', () => {
+    const agent = _buildMeshToolsBlock(undefined, true);
+    expect(agent).toContain('Message another agent:');
+    expect(agent).toContain(`which ${IN_SESSION_TOOL_PREFIX}chat_send takes as its "to"`);
+    const plain = _buildMeshToolsBlock(undefined, false);
+    expect(plain).toContain('<mesh_tools>');
+    expect(plain).not.toContain('chat_send');
+    expect(_buildMeshToolsBlock(toolDocGates(['messages']), true)).not.toContain('chat_send');
   });
 
   it('returns mesh context when config is undefined (default behavior)', () => {
@@ -974,12 +1039,20 @@ describe('buildPeerAgentsBlock', () => {
       { id: 'a1', name: 'api-bot', projectPath: '/projects/api', icon: '🤖', color: '#f00' },
       { id: 'a2', name: 'test-bot', projectPath: '/projects/test' },
     ]);
-    const result = await _buildPeerAgentsBlock(mockMesh);
+    const result = await _buildPeerAgentsBlock(mockMesh, true);
     expect(result).toContain('<peer_agents>');
     expect(result).toContain('api-bot (/projects/api)');
     expect(result).toContain('test-bot (/projects/test)');
     expect(result).toContain('chat_send(to=<their agent id>');
     expect(result).toContain('</peer_agents>');
+  });
+
+  // DOR-2790: chat_send refuses a chat that is not an agent's.
+  it('tells only an agent session how to message a peer', async () => {
+    const mockMesh = makeMockMesh(() => [{ id: 'a1', name: 'api-bot', projectPath: '/p' }]);
+    const plain = await _buildPeerAgentsBlock(mockMesh, false);
+    expect(plain).toContain('api-bot (/p)');
+    expect(plain).not.toContain('chat_send');
   });
 
   it('introduces a colleague by the name a person reads, not its slug', async () => {

@@ -201,21 +201,16 @@ export function createMeshRegisterHandler(deps: McpToolDeps) {
 }
 
 /**
- * List registered agents with optional filters, each carrying the address to
- * send to.
+ * List registered agents with optional filters.
  *
- * The manifest itself is unchanged — `namespace` stays stripped, as it is on
- * every other public mesh surface. What is added is `relaySubject`: the agent's
- * canonical `relay.agent.{namespace}.{agentId}` endpoint, resolved through
- * `meshCore.getSubject()` (the un-stripped registry entry) so it is byte-identical
- * to what `mesh_inspect` reports and to what Relay registered the endpoint and
- * its access rules under.
- *
- * It rides the listing because the listing is where an agent decides who to talk
- * to. Without it the only honest way to address a peer was a second
- * `mesh_inspect` per agent, and the shortcut the model actually took was to
- * invent `relay.agent.{agentId}` from the prose — a subject no allow rule can
- * match, so every send was refused with ACCESS_DENIED (DOR-1337 / F5).
+ * Each entry's `id` is what `chat_send` takes as its `to`: that is how one
+ * agent messages another. The manifest itself is unchanged — `namespace` stays
+ * stripped, as it is on every other public mesh surface. What is added is
+ * `relaySubject`: the agent's canonical `relay.agent.{namespace}.{agentId}`
+ * endpoint, resolved through `meshCore.getSubject()` (the un-stripped registry
+ * entry) so it is byte-identical to what `mesh_inspect` reports and to what
+ * Relay registered the endpoint and its access rules under. It is only for
+ * Relay and A2A integrations; an agent never needs it to message a peer.
  *
  * A `relaySubject` is omitted, never guessed, when the id resolves to nothing —
  * a row that raced with an unregister has no address, and an invented one would
@@ -311,7 +306,7 @@ export function createMeshStatusHandler(deps: McpToolDeps) {
   };
 }
 
-/** Inspect a specific agent — manifest, health status, relay endpoint. */
+/** Inspect a specific agent — manifest, health status, and its Relay endpoint for integrations. */
 export function createMeshInspectHandler(deps: McpToolDeps) {
   return async (args: { agentId: string }) => {
     const err = requireMesh(deps);
@@ -411,9 +406,8 @@ export function meshToolDefinitions(deps: McpToolDeps) {
     ),
     tool(
       'mesh_list',
-      'List all registered agents with optional filters. Each agent carries relaySubject — ' +
-        'its full endpoint address, e.g. "relay.agent.{namespace}.{agentId}". Send to that exact ' +
-        'string: it is the address every access rule is written against.',
+      'List all registered agents with optional filters. To message an agent, pass its id ' +
+        'as "to" to the chat send tool. The relaySubject field is only for Relay and A2A integrations.',
       {
         runtime: z.string().optional().describe('Filter by runtime'),
         capability: z.string().optional().describe('Filter by capability'),
@@ -446,7 +440,8 @@ export function meshToolDefinitions(deps: McpToolDeps) {
     ),
     tool(
       'mesh_inspect',
-      'Inspect a specific agent — manifest, health status, relay endpoint.',
+      'Inspect a specific agent — manifest and health status. Its id is what the chat send ' +
+        'tool takes as "to"; the relay endpoint is only for Relay and A2A integrations.',
       {
         agentId: z.string().describe('The agent ULID to inspect'),
       },

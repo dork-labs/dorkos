@@ -50,6 +50,35 @@ export function renderDoeContextEntry(entry: AdditionalContextEntry): string {
   const tag = CONTEXT_TAG[entry.kind];
   return `<${tag}>\n${body}\n</${tag}>`;
 }
+/**
+ * The sentence naming the chat tools Doe really has loaded, or `''`.
+ *
+ * Doe reaches DorkOS only through the host MCP server, which carries the
+ * capability tools. The chat tools are capabilities, so they arrive when the
+ * host connected; `mesh_list` and `mesh_inspect` are hand-registered on Claude
+ * Code and never reach Doe, so they are not named. `chat_send` and `chat_read`
+ * load up front only for an agent session (`loadsAgentToAgentTools`), and a
+ * tool the agent's permissions hide is not claimed at all.
+ *
+ * @param hostConnected - Whether the host MCP server connected this turn.
+ * @param agentToAgent - `loadsAgentToAgentTools`'s answer for this session.
+ * @param hidden - The tool names the agent's permissions hide.
+ */
+export function chatToolsLine(
+  hostConnected: boolean,
+  agentToAgent: boolean,
+  hidden: ReadonlySet<string>
+): string {
+  if (!hostConnected || !agentToAgent) return '';
+  const parts: string[] = [];
+  if (!hidden.has('chat_send')) parts.push('chat_send messages another chat or agent');
+  if (!hidden.has('chat_read')) parts.push('chat_read checks on one');
+  if (parts.length === 0) return '';
+  const names = ['chat_send', 'chat_read'].filter((name) => !hidden.has(name)).join(' and ');
+  const [noun, verb] = parts.length === 1 ? ['Chat tool', 'is'] : ['Chat tools', 'are'];
+  return `${noun} ${names} ${verb} loaded: ${parts.join(', and ')}. Use tool_search to discover other tools.`;
+}
+
 /** Every fresh turn receives current identity, SOUL and MemoryProvider snapshot exactly once. */
 export async function buildDoeContext(options: {
   cwd: string;
@@ -59,17 +88,20 @@ export async function buildDoeContext(options: {
   agentToAgent?: boolean;
 }): Promise<string> {
   const append = await buildAgentContextAppend(options.agentPath, options.cwd);
-  const blocked = options.hostConnected
-    ? renderBlockedAreaLines((await resolveToolVisibilityFor(options.agentPath)).blockedAreas)
-    : '';
+  const visibility = options.hostConnected
+    ? await resolveToolVisibilityFor(options.agentPath)
+    : undefined;
+  const blocked = visibility ? renderBlockedAreaLines(visibility.blockedAreas) : '';
   return [
     GEN_UI_CONTEXT,
     append.text,
     options.hostConnected ? buildRoomToolsBlock('') : '',
     blocked,
-    options.agentToAgent
-      ? 'Peer tools mesh_list, mesh_inspect, chat_send and chat_read are loaded: chat_send messages another chat or agent, and chat_read checks on one. Use tool_search to discover other tools.'
-      : '',
+    chatToolsLine(
+      options.hostConnected,
+      options.agentToAgent ?? false,
+      visibility?.hiddenToolNames ?? new Set()
+    ),
     options.opts?.systemPromptAppend ?? '',
     ...(options.opts?.additionalContext ?? []).map(renderDoeContextEntry),
   ]

@@ -310,7 +310,7 @@ async function claudeCodeProse(): Promise<{ prose: string; shared: string[] }> {
   for (const block of shared) prose = prose.split(block).join('');
 
   const { mesh, relay } = dynamicBlockFixtures();
-  prose += `\n${await _buildPeerAgentsBlock(mesh)}`;
+  prose += `\n${await _buildPeerAgentsBlock(mesh, true)}`;
   prose += `\n${_buildRelayConnectionsBlock(relay)}`;
   return { prose, shared };
 }
@@ -584,7 +584,12 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // `<relay_tools>`, which named the six retired relay tools over and over
     // across its four workflows, became `<chat_tools>`, which teaches three
     // chat tools and `session_start` once each where they are used.
-    expect(prefixed.length).toBe(84);
+    //
+    // 84 -> 70 for plain sessions (DOR-2790): the chat tools refuse a chat that
+    // is not an agent's, so `<chat_tools>` and the mesh line on messaging a peer
+    // render for an agent session only, and this case walks the plain prompt.
+    // The agent-session case below guards the names in that half.
+    expect(prefixed.length).toBe(70);
   });
 
   it('names only advertised tools in the agent-session variant of the prompt too', async () => {
