@@ -91,3 +91,33 @@ thirty-minute budget, worker cap4, PR retry0 and queue retry1. Observe newjob
 duration and whole56 behavior as well as the existing0.025/seven-day metric.
 This scheduling hypothesis is not a repair verdict; revise or revert if its
 new discovery/report guard fails, recovery still fails, or headroom worsens.
+
+Actual6fc9 required run37970905492 exceeded the unchanged thirty-minute job
+maximum on the owner shard. Ordinary47/47, Room1 and cold33 completed;
+checkbox Vitest never entered. The fourth phase was rebuilding prerequisite
+tasks (including a2a-gateway) when cancellation occurred. Preserve this
+negative and the seven completed other shards/two communities. No checkbox
+assertion or product runtime failure is inferred from this cancellation.
+
+Keep the full ordinary Turbo dependency graph. A selected server's fresh
+ordinary summary must prove every transitive dependency completed with exit0
+(cached success is valid), with no missing executable/cyclic/unknown task,
+before reuse. Omitted virtual nodes require exact no-script package manifests
+and supported task-config dependencies; recheck that evidence and package
+membership alongside recorded directories, build logs and regular outputs.
+Snapshot only those tasks' recorded output bodies/modes and declared output
+membership; recheck before each isolated phase. Only then insert Turbo2.10.13
+--only for that same server test task. Its task definition/environment/filter,
+Vitest flags and fresh MISS requirement remain. The task hash loses graph
+edges; no cache equivalence or cache replay acceptance is claimed.
+An ordinary test failure with completed builds still runs all later phases;
+a failed/missing/unknown build or changed output falls back to the original
+isolated command with dependencies. First failures remain failures.
+
+This is the same measured failure_rate hypothesis above, target0.025 after7days;
+no computed verdict or release is declared. It specifically removes repeated
+successful prerequisite execution when readiness is proved, while retaining
+fallback and the original30-minute limit. Verify real new CI, output-proof
+availability, exact server selection, MISS, complete reports/union, failure
+ordering and job duration. No actual ordinary-summary artifact survived the
+cancelled run, so that run does not prove the proposed reuse predicate.

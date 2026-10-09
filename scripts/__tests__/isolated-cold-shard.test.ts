@@ -1,8 +1,19 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+  mkdirSync,
+  chmodSync,
+  realpathSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  completedServerDependencies,
+  dependencyOutputSnapshot,
+  isolatedCommand,
   bothPhases,
   commands,
   mergeReports,
@@ -395,5 +406,271 @@ describe('isolated Room, cold and checkbox whole-file phases', () => {
         '/repo/checkbox.test.ts'
       )
     ).toThrow('status accounting');
+  });
+});
+
+describe('completed ordinary prerequisite reuse', () => {
+  function summary(exitCode = 0) {
+    return {
+      version: '1',
+      turboVersion: '2.10.13',
+      tasks: [
+        {
+          taskId: '@dorkos/server#test',
+          task: 'test',
+          directory: 'apps/server',
+          dependencies: ['@dorkos/shared#build'],
+          resolvedTaskDefinition: { dependsOn: ['^build'] },
+          execution: { exitCode: 7 },
+        },
+        {
+          taskId: '@dorkos/shared#build',
+          task: 'build',
+          directory: 'packages/shared',
+          command: 'tsc',
+          dependencies: [],
+          with: [],
+          execution: { exitCode, startTime: 1, endTime: 2 },
+          cache: { status: 'MISS' },
+          hash: 'native-summary-hash',
+          outputs: ['dist/**'],
+          excludedOutputs: null,
+          expandedOutputs: ['packages/shared/dist/index.js'],
+        },
+      ],
+    };
+  }
+  it('reuses successful builds after an ordinary test failure while preserving native close and the first failure', async () => {
+    const root = realpathSync(mkdtempSync(path.join(tmpdir(), 'completed-build-')));
+    mkdirSync(path.join(root, 'packages/shared/dist'), { recursive: true });
+    const output = path.join(root, 'packages/shared/dist/index.js');
+    writeFileSync(output, 'original build');
+    const child = path.join(root, 'failure.cjs');
+    writeFileSync(
+      child,
+      "setTimeout(() => { require('node:fs').writeFileSync('closed.txt', 'closed'); process.exitCode=7; }, 10);\n"
+    );
+    const taskRows = completedServerDependencies(summary());
+    expect(taskRows).not.toBeNull();
+    const snapshot = dependencyOutputSnapshot(root, taskRows ?? []);
+    const command = ['pnpm', 'exec', 'turbo', 'test', '--filter=@dorkos/server', '--', '--run'];
+    const modes: boolean[] = [];
+    try {
+      const result = await bothPhases(
+        async (phase) => {
+          if (phase === 'ordinary') return native([process.execPath, child], root);
+          expect(readFileSync(path.join(root, 'closed.txt'), 'utf8')).toBe('closed');
+          modes.push(isolatedCommand(command, root, taskRows, snapshot).includes('--only'));
+          return 0;
+        },
+        () => true
+      );
+      expect(modes).toEqual([true, true, true]);
+      expect(result.exitCode).toBe(7);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+  it('falls back for failed, absent, malformed and cyclic prerequisites without treating an ordinary failure as build failure', () => {
+    expect(completedServerDependencies(summary(1))).toBeNull();
+    const missing = summary();
+    missing.tasks.pop();
+    expect(completedServerDependencies(missing)).toBeNull();
+    const cyclic = summary();
+    const build = cyclic.tasks[1];
+    if (!build) throw new Error('missing known build fixture');
+    build.dependencies = ['@dorkos/shared#build'];
+    expect(completedServerDependencies(cyclic)).toBeNull();
+    expect(completedServerDependencies({ tasks: [{}] })).toBeNull();
+    expect(completedServerDependencies(summary())).not.toBeNull();
+    const command = ['pnpm', 'exec', 'turbo', 'test', '--', '--run'];
+    expect(isolatedCommand(command, tmpdir(), null, null)).toBe(command);
+  });
+  it('rechecks bodies, modes and membership before each phase and falls back after real output changes', () => {
+    const root = realpathSync(mkdtempSync(path.join(tmpdir(), 'changed-build-')));
+    mkdirSync(path.join(root, 'packages/shared/dist'), { recursive: true });
+    const file = path.join(root, 'packages/shared/dist/index.js');
+    writeFileSync(file, 'built');
+    const tasks = completedServerDependencies(summary());
+    const snapshot = dependencyOutputSnapshot(root, tasks ?? []);
+    const command = ['pnpm', 'exec', 'turbo', 'test', '--', '--run'];
+    try {
+      expect(isolatedCommand(command, root, tasks, snapshot)).toContain('--only');
+      chmodSync(file, 0o600);
+      expect(isolatedCommand(command, root, tasks, snapshot)).toBe(command);
+      chmodSync(file, 0o644);
+      writeFileSync(file, 'changed');
+      expect(isolatedCommand(command, root, tasks, snapshot)).toBe(command);
+      writeFileSync(file, 'built');
+      writeFileSync(path.join(root, 'packages/shared/dist/extra.js'), 'new output');
+      expect(isolatedCommand(command, root, tasks, snapshot)).toBe(command);
+      rmSync(file);
+      expect(isolatedCommand(command, root, tasks, snapshot)).toBe(command);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+  it('accepts the saved Turbo 2.10.13 directory/log/omitted-task shape and refuses newly executable virtual tasks', () => {
+    const root = realpathSync(mkdtempSync(path.join(tmpdir(), 'real-turbo-summary-')));
+    // Exact build row from saved dc21e804 summary; only the server selection is reduced to this closure.
+    const build = {
+      taskId: '@dork-labs/cloud-api#build',
+      task: 'build',
+      directory: 'packages/cloud-api',
+      command: 'tsc -p tsconfig.build.json',
+      dependencies: [
+        '@dork-labs/cloud-api#generate:api-docs',
+        '@dorkos/eslint-config#build',
+        '@dorkos/typescript-config#build',
+      ],
+      with: [],
+      execution: {
+        startTime: 1791554572635,
+        endTime: 1791554574299,
+        exitCode: 0,
+      },
+      cache: {
+        local: false,
+        remote: false,
+        status: 'MISS',
+        timeSaved: 0,
+      },
+      hash: '9b730c4fa487af90',
+      outputs: ['.next/**', 'dist-server/**', 'dist/**'],
+      excludedOutputs: ['.next/cache/**', '.next/dev/**'],
+      expandedOutputs: [
+        'packages/cloud-api/.turbo/turbo-build.log',
+        'packages/cloud-api/dist',
+        'packages/cloud-api/dist/billing.d.ts',
+        'packages/cloud-api/dist/billing.d.ts.map',
+        'packages/cloud-api/dist/billing.js',
+        'packages/cloud-api/dist/billing.js.map',
+        'packages/cloud-api/dist/client.d.ts',
+        'packages/cloud-api/dist/client.d.ts.map',
+        'packages/cloud-api/dist/client.js',
+        'packages/cloud-api/dist/client.js.map',
+        'packages/cloud-api/dist/communities.d.ts',
+        'packages/cloud-api/dist/communities.d.ts.map',
+        'packages/cloud-api/dist/communities.js',
+        'packages/cloud-api/dist/communities.js.map',
+        'packages/cloud-api/dist/connections.d.ts',
+        'packages/cloud-api/dist/connections.d.ts.map',
+        'packages/cloud-api/dist/connections.js',
+        'packages/cloud-api/dist/connections.js.map',
+        'packages/cloud-api/dist/display.d.ts',
+        'packages/cloud-api/dist/display.d.ts.map',
+        'packages/cloud-api/dist/display.js',
+        'packages/cloud-api/dist/display.js.map',
+        'packages/cloud-api/dist/index.d.ts',
+        'packages/cloud-api/dist/index.d.ts.map',
+        'packages/cloud-api/dist/index.js',
+        'packages/cloud-api/dist/index.js.map',
+        'packages/cloud-api/dist/inference.d.ts',
+        'packages/cloud-api/dist/inference.d.ts.map',
+        'packages/cloud-api/dist/inference.js',
+        'packages/cloud-api/dist/inference.js.map',
+        'packages/cloud-api/dist/instances.d.ts',
+        'packages/cloud-api/dist/instances.d.ts.map',
+        'packages/cloud-api/dist/instances.js',
+        'packages/cloud-api/dist/instances.js.map',
+        'packages/cloud-api/dist/primitives.d.ts',
+        'packages/cloud-api/dist/primitives.d.ts.map',
+        'packages/cloud-api/dist/primitives.js',
+        'packages/cloud-api/dist/primitives.js.map',
+        'packages/cloud-api/dist/problem.d.ts',
+        'packages/cloud-api/dist/problem.d.ts.map',
+        'packages/cloud-api/dist/problem.js',
+        'packages/cloud-api/dist/problem.js.map',
+        'packages/cloud-api/dist/remote-enrolment.d.ts',
+        'packages/cloud-api/dist/remote-enrolment.d.ts.map',
+        'packages/cloud-api/dist/remote-enrolment.js',
+        'packages/cloud-api/dist/remote-enrolment.js.map',
+        'packages/cloud-api/dist/remote.d.ts',
+        'packages/cloud-api/dist/remote.d.ts.map',
+        'packages/cloud-api/dist/remote.js',
+        'packages/cloud-api/dist/remote.js.map',
+        'packages/cloud-api/dist/routes.d.ts',
+        'packages/cloud-api/dist/routes.d.ts.map',
+        'packages/cloud-api/dist/routes.js',
+        'packages/cloud-api/dist/routes.js.map',
+        'packages/cloud-api/dist/seats.d.ts',
+        'packages/cloud-api/dist/seats.d.ts.map',
+        'packages/cloud-api/dist/seats.js',
+        'packages/cloud-api/dist/seats.js.map',
+        'packages/cloud-api/dist/session.d.ts',
+        'packages/cloud-api/dist/session.d.ts.map',
+        'packages/cloud-api/dist/session.js',
+        'packages/cloud-api/dist/session.js.map',
+      ],
+      resolvedTaskDefinition: {
+        outputs: ['!.next/cache/**', '!.next/dev/**', '.next/**', 'dist-server/**', 'dist/**'],
+        cache: true,
+        dependsOn: ['^build', 'generate:api-docs'],
+        inputs: [],
+        outputLogs: 'full',
+        persistent: false,
+        interruptible: false,
+        env: ['NEXT_PUBLIC_*', 'NODE_ENV', 'POSTHOG_*', 'VITE_*'],
+        passThroughEnv: null,
+        interactive: false,
+      },
+    };
+    const files: Record<string, string> = {
+      'pnpm-workspace.yaml': "packages:\n  - 'apps/*'\n  - 'packages/*'\n",
+      'turbo.json':
+        '{\n  "tasks": {\n    "build": {\n      "dependsOn": [\n        "generate:api-docs",\n        "^build"\n      ],\n      "outputs": [\n        "dist/**",\n        "dist-server/**",\n        ".next/**",\n        "!.next/cache/**",\n        "!.next/dev/**"\n      ],\n      "env": [\n        "NODE_ENV",\n        "VITE_*",\n        "NEXT_PUBLIC_*",\n        "POSTHOG_*"\n      ]\n    },\n    "generate:api-docs": {\n      "cache": true\n    }\n  }\n}',
+      'packages/cloud-api/package.json':
+        '{\n  "name": "@dork-labs/cloud-api",\n  "version": "0.101.0",\n  "description": "The public wire contract for DorkOS Cloud: Zod schemas for the /v1 surface, plus a thin fetch client.",\n  "license": "MIT",\n  "repository": {\n    "type": "git",\n    "url": "git+https://github.com/dork-labs/dorkos.git",\n    "directory": "packages/cloud-api"\n  },\n  "homepage": "https://github.com/dork-labs/dorkos/tree/main/packages/cloud-api#readme",\n  "type": "module",\n  "sideEffects": false,\n  "publishConfig": {\n    "access": "public"\n  },\n  "exports": {\n    ".": {\n      "types": "./dist/index.d.ts",\n      "default": "./dist/index.js"\n    },\n    "./client": {\n      "types": "./dist/client.d.ts",\n      "default": "./dist/client.js"\n    },\n    "./display": {\n      "types": "./dist/display.d.ts",\n      "default": "./dist/display.js"\n    },\n    "./fixtures/v1/*.json": "./fixtures/v1/*.json",\n    "./package.json": "./package.json"\n  },\n  "files": [\n    "dist",\n    "fixtures",\n    "README.md",\n    "LICENSE"\n  ],\n  "scripts": {\n    "build": "tsc -p tsconfig.build.json",\n    "prepublishOnly": "pnpm run clean && pnpm run build",\n    "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",\n    "typecheck": "tsc --noEmit",\n    "test": "vitest run",\n    "lint": "eslint .",\n    "clean": "node -e \\"require(\'node:fs\').rmSync(\'dist\',{recursive:true,force:true})\\""\n  },\n  "peerDependencies": {\n    "zod": "^4.6.2"\n  },\n  "devDependencies": {\n    "@dorkos/eslint-config": "workspace:*",\n    "@dorkos/typescript-config": "workspace:*",\n    "typescript": "^5.9.3",\n    "vitest": "^4.1.11",\n    "zod": "^4.6.2"\n  },\n  "keywords": [\n    "dorkos",\n    "wire-contract",\n    "zod"\n  ]\n}\n',
+      'packages/eslint-config/package.json':
+        '{\n  "name": "@dorkos/eslint-config",\n  "version": "0.0.0",\n  "description": "Shared ESLint flat-config presets for DorkOS apps and packages.",\n  "private": true,\n  "type": "module",\n  "exports": {\n    "./base": "./base.js",\n    "./react": "./react.js",\n    "./node": "./node.js",\n    "./test": "./test.js"\n  },\n  "dependencies": {\n    "@eslint/js": "^10.0.1",\n    "eslint-config-prettier": "^10.1.8",\n    "eslint-plugin-jsdoc": "^63.3.3",\n    "eslint-plugin-jsx-a11y": "^6.10.2",\n    "eslint-plugin-react": "^7.37.5",\n    "eslint-plugin-react-hooks": "^7.1.1",\n    "typescript-eslint": "^8.70.1"\n  }\n}\n',
+      'packages/typescript-config/package.json':
+        '{\n  "name": "@dorkos/typescript-config",\n  "version": "0.0.0",\n  "description": "Shared TypeScript compiler configurations (tsconfig bases) for DorkOS apps and packages.",\n  "private": true,\n  "type": "module",\n  "files": [\n    "base.json",\n    "react.json",\n    "node.json"\n  ]\n}\n',
+    };
+    for (const [file, body] of Object.entries(files)) {
+      mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+      writeFileSync(path.join(root, file), body);
+    }
+    for (const file of build.expandedOutputs) {
+      if (file === 'packages/cloud-api/dist') mkdirSync(path.join(root, file), { recursive: true });
+      else {
+        mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+        writeFileSync(path.join(root, file), 'recorded output');
+      }
+    }
+    const report = {
+      version: '1',
+      turboVersion: '2.10.13',
+      tasks: [
+        {
+          taskId: '@dorkos/server#test',
+          task: 'test',
+          directory: 'apps/server',
+          dependencies: [build.taskId],
+          resolvedTaskDefinition: { dependsOn: ['^build'] },
+        },
+        build,
+      ],
+    };
+    const command = ['pnpm', 'exec', 'turbo', 'test', '--', '--run'];
+    try {
+      const tasks = completedServerDependencies(report, root);
+      expect(tasks).not.toBeNull();
+      const snapshot = dependencyOutputSnapshot(root, tasks ?? []);
+      expect(snapshot.find((entry) => entry.path === 'packages/cloud-api/dist')?.directory).toBe(
+        true
+      );
+      expect(
+        snapshot.find((entry) => entry.path === 'packages/cloud-api/.turbo/turbo-build.log')?.sha256
+      ).toBeDefined();
+      expect(isolatedCommand(command, root, tasks, snapshot)).toContain('--only');
+      const manifest = path.join(root, 'packages/eslint-config/package.json');
+      const body = JSON.parse(readFileSync(manifest, 'utf8'));
+      body.scripts = { build: 'must execute this build' };
+      writeFileSync(manifest, JSON.stringify(body));
+      expect(completedServerDependencies(report, root)).toBeNull();
+      expect(isolatedCommand(command, root, tasks, snapshot)).toBe(command);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
