@@ -68,10 +68,10 @@ export interface AdapterFactoryDeps {
    */
   approvalAuthorizer: ApprovalAuthorizer;
   /**
-   * Where a running agent turn records the envelope it is answering, so that
-   * turn's own `relay_send*` calls continue that budget (DOR-791). This is
-   * `RelayCore.inboundBudgets` — the SAME instance the in-session tool surface
-   * reads back from; a second one would thread nothing and fail silently.
+   * Where a running agent turn records the envelope it is answering (DOR-791).
+   * This is `RelayCore.inboundBudgets`, the one instance per process. Its
+   * in-session reader, the relay send tools, retired with spec
+   * `spin-off-chats` §7; agents now message each other through chats.
    */
   inboundBudgets?: InboundTurnBudgets;
 }
@@ -189,7 +189,7 @@ export async function createAdapter(
           placementOf: (agentPath) => resolveSessionCwd({ agentPath }),
         }),
         // Who answers a message addressed to an AGENT rather than a session —
-        // the shape an agent-to-agent `relay_send` arrives on. The same single
+        // the shape an A2A or external MCP message arrives on. The same single
         // copy of the binding-then-manifest ladder rooms and the chat bindings
         // ask, so one agent DM'ing another cannot get a different program than
         // the same agent reached from Telegram would (DOR-1627), and a

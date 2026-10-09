@@ -91,29 +91,27 @@ export const ALWAYS_LOADED_TOOLS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * The six tools an agent-to-agent turn cannot afford to search for first.
+ * The four tools an agent-to-agent turn cannot afford to search for first.
  *
- * Granted eagerly only to sessions that ARE a registered mesh agent with Relay
- * on — never to a plain session, which is most of them. The trade is the same
- * one the set above makes and it is paid by a different set of turns: reaching
- * a peer means finding it (`mesh_list`), reading its address
- * (`mesh_inspect`), and sending (`relay_send`, `relay_send_async`,
- * `relay_send_and_wait`, `relay_inbox`), and DorkOS's own tester watched an
- * agent narrate the cost — "I'll need to search for the mesh_list and relay
- * tool schemas since they're deferred" — inside a three-minute call budget
- * (DOR-1337 / F8).
+ * Granted eagerly only to sessions that ARE a registered mesh agent — never to a
+ * plain session, which is most of them. The trade is the same one the set above
+ * makes and it is paid by a different set of turns: reaching a peer means
+ * finding it (`mesh_list`, `mesh_inspect`), messaging it (`chat_send`) and
+ * checking on the chat it answers in (`chat_read`), and DorkOS's own tester
+ * watched an agent narrate the cost of searching for peer tools first inside a
+ * three-minute call budget (DOR-1337 / F8).
  *
- * Kept to six. The rest of the relay and mesh surface (endpoint registration,
- * topology writes, adapters, traces) is not on the critical path of one
- * agent asking another a question, and stays deferred.
+ * Two of the four are hand-registered and two are capability-projected
+ * (`chat_send`, `chat_read`), so every path that marks a tool eager reads this
+ * set by bare name: the hand-registered wrap and `capabilityMcpTools` on Claude
+ * Code, and the host projection on Doe. `chat_stop` is not on the critical path
+ * of asking a peer something, and stays deferred with the rest of the surface.
  */
 export const AGENT_TO_AGENT_TOOLS: ReadonlySet<string> = new Set([
   'mesh_list',
   'mesh_inspect',
-  'relay_send',
-  'relay_send_async',
-  'relay_send_and_wait',
-  'relay_inbox',
+  'chat_send',
+  'chat_read',
 ]);
 
 /**
@@ -127,23 +125,20 @@ export const AGENT_TO_AGENT_TOOLS: ReadonlySet<string> = new Set([
  * spends a `ToolSearch` for nothing. Written here, once, so the two cannot
  * drift by editing one of them.
  *
- * Both inputs are derived from the SESSION'S OWN working directory — the same
+ * The input is derived from the SESSION'S OWN working directory — the same
  * `session.cwd` the MCP factory is handed. Not the turn's effective cwd, which
- * a per-message override can move: the relay identity these tools publish as is
- * resolved from `session.cwd` too, so keying exposure anywhere else would load
- * six tools for a session whose sends are then refused as a non-agent.
+ * a per-message override can move: the identity these tools act as is resolved
+ * from `session.cwd` too, so keying exposure anywhere else would load the tools
+ * for a session that is not the agent they would act as.
+ *
+ * Relay is no longer an input: the chat tools ride no bus (spec
+ * `spin-off-chats` §7), so a registered agent is reason enough.
  *
  * @param hasRegisteredAgentAtSessionCwd - Whether Mesh knows an agent at the
  *   session's working directory.
- * @param relayWired - Whether Relay is available to this process at all; with
- *   no bus the six tools can only answer RELAY_DISABLED, so preloading their
- *   schemas would be prompt spent on nothing.
  */
-export function loadsAgentToAgentTools(
-  hasRegisteredAgentAtSessionCwd: boolean,
-  relayWired: boolean
-): boolean {
-  return hasRegisteredAgentAtSessionCwd && relayWired;
+export function loadsAgentToAgentTools(hasRegisteredAgentAtSessionCwd: boolean): boolean {
+  return hasRegisteredAgentAtSessionCwd;
 }
 
 /**

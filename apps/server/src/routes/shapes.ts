@@ -112,7 +112,7 @@ function requireShapeSlug(name: string, res: Response): string | null {
  * The deletion half — step 4b removes schedules carrying this Shape's provenance
  * that the current manifest no longer declares — is deliberately NOT the load-
  * bearing reason, because that argument loses to a counter-precedent already in
- * the tree: `relay_inbox` permanently deletes the mail it acks, is tier `act`, and
+ * the tree: `memory_write` can remove the caller's own notes, is tier `act`, and
  * is auto-allowed, justified precisely by being confined to the caller's own
  * things. Step 4b is provenance-gated in exactly that way (a user's own schedules
  * and other Shapes' are never touched), so on its own it would argue for `act`.

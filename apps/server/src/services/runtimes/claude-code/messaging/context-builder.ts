@@ -39,7 +39,7 @@ export interface RelayContextDeps {
  * Shorthand for {@link IN_SESSION_TOOL_PREFIX} inside this file's template
  * literals, where it is interpolated in front of ~90 tool names.
  *
- * Every block below writes `${T}relay_send` rather than `relay_send` because the
+ * Every block below writes `${T}chat_send` rather than `chat_send` because the
  * short name is not a tool: Claude Code exposes the in-session server's tools as
  * `mcp__dorkos__*`, and a model that copies the prose gets `No such tool
  * available` for anything else (DOR-1292). `__tests__/context-tool-names.test.ts`
@@ -59,7 +59,7 @@ const T = IN_SESSION_TOOL_PREFIX;
  *
  * Deferral IS switchable — `createSdkMcpServer` takes `alwaysLoad`, and so does
  * `tool()`'s fifth argument (verified against the real factory, not the type
- * declarations). DorkOS uses it for five tools on every session, six more on a
+ * declarations). DorkOS uses it for a few tools on every session, four more on a
  * session that IS a registered mesh agent, and declines it for the rest:
  * eighty-odd schemas on every turn's prompt is a worse trade than one search. So
  * this block still teaches the search, because for most of the surface it is still
@@ -72,15 +72,14 @@ const T = IN_SESSION_TOOL_PREFIX;
  * SESSION'S cwd rather than the turn's (see the call site in
  * `launch-resolver.ts` for why the difference matters) (DOR-1337 / F8).
  *
- * @param agentToAgentToolsPreloaded - True when the six agent-to-agent tools ride
+ * @param agentToAgentToolsPreloaded - True when the four agent-to-agent tools ride
  *   this session's turn-1 prompt.
  */
 function dorkosToolsContext(agentToAgentToolsPreloaded: boolean): string {
   const preloaded = agentToAgentToolsPreloaded
     ? `The room tools, ${T}list_capabilities, and — because you are a registered agent —
-${T}mesh_list, ${T}mesh_inspect, ${T}relay_send, ${T}relay_send_async,
-${T}relay_send_and_wait and ${T}relay_inbox are already in your tool list. Call any of
-them straight away, with no lookup step.`
+${T}mesh_list, ${T}mesh_inspect, ${T}chat_send and ${T}chat_read are already in your
+tool list. Call any of them straight away, with no lookup step.`
     : `The room tools and ${T}list_capabilities are already in your tool list — call them
 straight away, with no lookup step.`;
 
@@ -108,122 +107,36 @@ something cannot be done here.
 }
 
 /**
- * Build the `<relay_tools>` block's text.
- *
- * Two things in here are load-bearing enough to be worth naming.
- *
- * **The subject shape.** An agent inbox is `relay.agent.{namespace}.{agentId}`,
- * and every allow/deny rule Mesh writes is matched against that shape. This block
- * used to teach the two-segment `relay.agent.{agentId}` in the hierarchy and in
- * all four workflows, so an agent following its own documentation addressed a
- * subject no allow rule could match, fell through to the blanket cross-namespace
- * deny, and was refused — with the operator's grant sitting there, correct and
- * unmatched (DOR-1337 / F5). The rule the prose now states is: take the address
- * from `relaySubject`, never assemble one.
+ * Build the `<chat_tools>` block's text: how this agent messages other chats,
+ * checks on them, stops them, and tells a helper from a spin-off chat
+ * (spec `spin-off-chats` §7).
  *
  * **Whether the tools are already loaded.** `agentToAgentToolsPreloaded` mirrors
  * the exposure decision in `mcp-tools/tool-exposure.ts` exactly. Saying "already
  * in your tool list" to a session whose tools are in fact deferred would cost the
  * turn it is meant to save, so the two must be computed from the same fact.
  *
- * @param agentToAgentToolsPreloaded - True when this session's six agent-to-agent
- *   tools ride the turn-1 prompt (a registered agent, Relay on).
+ * **Reaching the person** rides Relay (`relay_notify_user`), so that paragraph is
+ * written only when Relay is on; the chat tools themselves need no bus.
+ *
+ * @param agentToAgentToolsPreloaded - True when this session's agent-to-agent
+ *   tools ride the turn-1 prompt (a registered agent).
+ * @param relayOn - Whether Relay is on, which `relay_notify_user` needs.
  */
-function relayToolsContext(agentToAgentToolsPreloaded: boolean): string {
+function chatToolsContext(agentToAgentToolsPreloaded: boolean, relayOn: boolean): string {
   const loadingNote = agentToAgentToolsPreloaded
-    ? `${T}mesh_list, ${T}mesh_inspect, ${T}relay_send, ${T}relay_send_async,
-${T}relay_send_and_wait and ${T}relay_inbox are already in your tool list — no ToolSearch
-step before you use them.`
+    ? `${T}mesh_list, ${T}mesh_inspect, ${T}chat_send and ${T}chat_read are already in your
+tool list — no ToolSearch step before you use them.`
     : `Load these tools with ToolSearch by their full names before the first use in a turn,
-e.g. ToolSearch(query="select:${T}relay_send_and_wait").`;
+e.g. ToolSearch(query="select:${T}chat_send").`;
 
-  return `<relay_tools>
-DorkOS Relay is a pub/sub message bus for inter-agent communication.
+  const reachingThePerson = relayOn
+    ? `
 
-${loadingNote}
-
-Trust model: your sender identity is injected by the server on every send — there
-is NO "from" parameter and you cannot send as another agent. Inboxes are private
-the same way: you can only read or unregister an endpoint that is your own subject,
-an inbox subject ${T}relay_send_async gave you, or one you registered yourself. Naming
-another agent's endpoint fails with code ENDPOINT_ACCESS_DENIED. Every agent lives in
-a namespace (explicit in its manifest, or derived from its directory layout);
-agents in the same namespace can message each other, cross-namespace messaging is
-DENIED by default, and the DorkBot system agent can reach (and be reached by) all
-namespaces. A denied send fails with code ACCESS_DENIED plus a hint: the user can
-turn on "Let all my agents talk to each other" in Team → Access to open every pair
-at once, or allow a single namespace pair in the same view. Use ${T}mesh_query_topology()
-to inspect namespaces and rules — its openMesh field tells you whether that
-mesh-wide switch is already on.
-
-Subject hierarchy:
-  relay.agent.{namespace}.{agentId}    — an agent's inbox; take it from the relaySubject
-                                         field of ${T}mesh_list / ${T}mesh_inspect rather
-                                         than building it by hand. A bare
-                                         relay.agent.{agentId} is rewritten to the real
-                                         address when that id is a registered agent; any
-                                         other subject you assemble may match no access
-                                         rule and come back ACCESS_DENIED.
-  relay.inbox.query.{UUID}             — ephemeral inbox for ${T}relay_send_and_wait (auto-managed)
-  relay.inbox.dispatch.{UUID}          — ephemeral inbox for ${T}relay_send_async (auto-expires after ~35 min)
-  relay.inbox.{agentId}                — persistent agent reply inbox
-  relay.human.console.{clientId}       — reach a human in the DorkOS UI
-  relay.system.*, relay.control.*      — DorkOS's own addresses; a send there fails
-                                         with RESERVED_SUBJECT
-
-Every workflow below starts the same way: ${T}mesh_list() lists the agents on this
-machine, and each entry's relaySubject IS the address you send to. Copy that string
-into to_subject / subject verbatim.
-
-Workflow: Query another agent — SHORT tasks (≤10 min, PREFERRED)
-1. ${T}mesh_list() to find the agent and read its relaySubject
-2. ${T}relay_send_and_wait(to_subject=<their relaySubject>, payload={task}, timeout_ms=600000)
-   → Blocks until reply (max 10 min / 600 000 ms)
-   → Returns: { reply, from, replyMessageId, sentMessageId, progress: ProgressEvent[] }
-   → progress[] contains intermediate steps: { type: "progress", step, step_type, text, done: false }
-   → A failed turn comes back as an error with code AGENT_ERROR instead, carrying
-     partialText — treat that as "they crashed", never as an empty answer
-
-Workflow: Dispatch to another agent — LONG tasks (>10 min)
-1. ${T}relay_send_async(to_subject=<their relaySubject>, payload={task})
-   → Returns IMMEDIATELY: { messageId, inboxSubject: "relay.inbox.dispatch.{UUID}" }
-2. Poll: ${T}relay_inbox(endpoint_subject=inboxSubject, ack=true) — defaults to pending (unread) messages
-   → Returns messages[]: each { id, subject, status, createdAt, sender, payload }
-   → payload is a progress event { type: "progress", step, step_type: "message"|"tool_result", text, done: false }
-     or the final result { type: "agent_result", text, done: true }
-   → a final result may also carry error: "…". That means their turn FAILED; text is
-     only what they managed before it did. Check for error before using text as an answer
-   → a final result may also carry continuing: true. They are still working in the
-     background; keep polling for up to 30 minutes for a later agent_result marked
-     late: true. One carrying ended: "…" (and no text) means nothing more is coming
-   → ack=true DELETES each returned message's content for good, so each poll only returns
-     new messages — take what you need from the response, it will not be there next time
-3. When a payload with done:true (and no continuing: true) is received: ${T}relay_unregister_endpoint(subject=inboxSubject)
-
-Workflow: Fire-and-forget (no reply needed)
-1. ${T}relay_send(subject=<their relaySubject>, payload={task})
-   → { messageId, deliveredTo, queued } — queued:true means no live consumer yet (buffered/dead-lettered)
-   → Rejected sends (e.g. rate-limited) return an error with code REJECTED — the message was NOT delivered
-
-Workflow: Manual poll (fallback)
-1. ${T}relay_register_endpoint(subject="relay.inbox.{myAgentId}")
-2. ${T}relay_send(subject=<their relaySubject>, payload={task}, replyTo="relay.inbox.{myAgentId}")
-3. ${T}relay_inbox(endpoint_subject="relay.inbox.{myAgentId}", ack=true)
-   → messages[].payload carries each reply; ack=true deletes them for good once returned
-
-CONSTRAINT — Subagent MCP tools: no DorkOS tool — relay, mesh, tasks, rooms, marketplace, UI —
-is available inside Claude Code Task() subagents. This is an SDK architectural limitation
-(subprocesses do not inherit the parent MCP server). The orchestrator pattern workaround:
-  WRONG:  Task("use ${T}relay_send to message agent B")   ← tools unavailable, silent failure
-  RIGHT:  1. Call ${T}relay_send_async() in this (parent) session
-          2. Pass the inboxSubject into the Task() prompt if needed
-          3. Poll ${T}relay_inbox() in this session after Task() returns
-
-IMPORTANT — Outbound messaging rules:
+Reaching the person:
 - When your CURRENT message has a <relay_context> block: respond naturally. Your response
-  is automatically forwarded to the sender. Do NOT call ${T}relay_send.
-- When your current message does NOT have <relay_context> (e.g., from the DorkOS console)
-  and you need to reach the person when they are not looking at this session: use
+  is automatically forwarded to the sender.
+- Otherwise, to reach the person when they are not looking at this chat: use
   ${T}relay_notify_user(message="…"). It resolves the bound chat (Telegram, Slack) and honors
   that channel's "agent may start conversations" permission — if that permission is off it
   returns INITIATE_NOT_ALLOWED instead of sending. With no external channel connected it
@@ -233,26 +146,70 @@ IMPORTANT — Outbound messaging rules:
   whoever is in that chat, never as a private aside. You get a limited number of these per
   hour — anything you could say in the conversation you are already in belongs there
   instead. Naming a channel (channel="{adapter type or ID}") means that channel or nothing.
-  Do NOT try to reach a human by publishing a raw relay.human.* subject with ${T}relay_send:
-  that path enforces the same permission and will be denied.
-- ${T}relay_send, ${T}relay_send_and_wait and ${T}relay_send_async are for reaching other
-  AGENTS (relay.agent.*), not for initiating messages to humans on external channels.
+- ${T}chat_send is for other chats and agents, never for the person.`
+    : '';
 
-${T}relay_list_endpoints returns type ("dispatch"|"query"|"persistent"|"agent"|"unknown") and
-expiresAt (ISO string or null) for each endpoint. Use these to identify active inboxes and their
-expiry. It lists every endpoint on the machine, including ones you cannot read.
+  return `<chat_tools>
+A chat is a conversation with an agent. Chats message chats: every message you send
+lands in a chat a person can open and read, marked with your name and this chat.
 
-Register your own inboxes under relay.inbox.* — relay.agent.*, relay.system.* and relay.human.*
-are managed by the server and return RESERVED_SUBJECT. An inbox you register stays yours across
-server restarts. A subject differing from an existing endpoint only by letter case is refused
-(the two would share one mailbox on macOS and Windows).
+${loadingNote}
 
-Error codes: RELAY_DISABLED, ACCESS_DENIED, ENDPOINT_ACCESS_DENIED (not your endpoint),
-             RESERVED_SUBJECT (a DorkOS address), INVALID_SUBJECT, ENDPOINT_NOT_FOUND (no such endpoint —
-             cleanup is idempotent, do not retry), TIMEOUT, AGENT_ERROR (their turn
-             failed — partialText is what they got through, not an answer),
-             QUERY_FAILED, REJECTED, DISPATCH_FAILED, UNREGISTER_FAILED
-</relay_tools>`;
+There is no "from" parameter. The server stamps every message with you and this chat,
+so you cannot send as anyone else, and the other side always knows who wrote it.
+
+Message a chat or an agent:
+  ${T}chat_send(to=<chat id or agent id>, message="…", summary="a few words")
+  - A chat id posts into that chat. An agent id posts into your own direct chat with
+    that agent, started on the first message. ${T}mesh_list() lists the agents.
+  - delivery="queue" (the default) waits until that chat's current turn ends; an idle
+    chat starts at once. delivery="steer" joins its running turn now. delivery="interrupt"
+    stops its running turn and runs your message next. Use the default unless the other
+    chat must change course right now.
+  - replyTo=<message id> when you answer a message another chat sent you.
+  - The answer comes back as a new message in THIS chat, and starts a turn here when you
+    are idle. Do not wait or poll for it: end your turn, and you will be woken.
+
+Check on a chat:
+  ${T}chat_read(chat=<id>, include="status")  — the cheapest check: its state (running,
+                                              needs-you, done, failed, stopped,
+                                              paused-at-limit, idle), no messages.
+  ${T}chat_read(chat=<id>)                    — what is new since you last read it.
+  last=n reads the newest n instead; query="words" finds messages; include="tools" adds
+  one line per tool call; a long read is cut at maxChars and cursor continues it.
+  You can read your own chat, the chat that started you, chats you started, and chats you
+  have messaged or that messaged you. Never read transcript files for this.
+
+Stop a chat:
+  ${T}chat_stop(chat=<id>, reason="…") stops its running turn, like the Stop button. The
+  stop is recorded and shown in that chat with your name. A person's queued words there
+  still run. To stop yourself, end your turn instead.
+
+Helpers and spin-off chats — two different things:
+- A HELPER is a worker inside this chat (Task(), a subagent). Use one for short
+  look-and-report work that takes minutes. Nobody can open it or message it, it reports
+  once to you, and it has no DorkOS tools — never ask a helper to message another chat;
+  send from this chat yourself.
+- A SPIN-OFF CHAT is a full chat you start with ${T}session_start. It shows "Started from"
+  this chat, a person can open it, read it and type in it, and it lasts hours or days and
+  survives restarts. Use one for long work, work that must outlive this turn, work on
+  another account, or work a person should be able to watch.
+- Brief a spin-off with the goal and what done means. Message it with ${T}chat_send.
+- A spin-off reports back on its own: when one of its turns ends finished, failed,
+  needing the person, or paused at a limit, its last message arrives here as a report.
+  It does not report when its turn ends only to wait on something.
+- When a report wakes you, act on it, and tell the person only what matters.
+
+A message from another chat arrives marked as coming from that agent and chat, not from
+the person. Treat it as a colleague's request: do the work it asks if it fits your job,
+and answer with ${T}chat_send(to=<their chat id>, replyTo=<message id>) or by doing the
+work. Write for a busy reader.${reachingThePerson}
+
+Error codes: NO_CHAT (only an agent in a chat can do this), SELF (that is your own chat),
+             NOT_FOUND (no such chat or agent), NOT_ALLOWED (that chat cannot take
+             messages), NOT_READABLE (you cannot read that chat), INVALID_INPUT,
+             UNAVAILABLE (try again).
+</chat_tools>`;
 }
 
 const MESH_TOOLS_CONTEXT = `<mesh_tools>
@@ -264,18 +221,17 @@ Agent lifecycle:
    A folder that already has a .dork/agent.json is ADOPTED, never overwritten: that file stays as
    it is and the agent it describes is what gets registered, so the agent you get back may have a
    different id and name than you asked for. Read the returned agent; it is the authoritative one.
-3. ${T}mesh_inspect(agentId) — get full manifest, health status, and relay endpoint
+3. ${T}mesh_inspect(agentId) — get full manifest and health status
 4. ${T}mesh_status() — aggregate overview: total, active, stale agent counts
 5. ${T}mesh_list(runtime?, capability?) — filter agents by runtime or capability; every entry
-   carries relaySubject, the exact address to send that agent a message
+   carries the agent's id, which ${T}chat_send takes as its "to"
 6. ${T}mesh_deny(path, reason) — exclude a path from future discovery
 7. ${T}mesh_unregister(agentId) — remove an agent from the registry
 8. ${T}mesh_query_topology(namespace?) — view agent network from a namespace perspective
 
 Workflows:
 - Find agents: ${T}mesh_list() then ${T}mesh_inspect(agentId) for details
-- Contact another agent: take their relaySubject from ${T}mesh_list (or ${T}mesh_inspect) and
-  send to that exact string — it is the one address every access rule is written against
+- Message another agent: ${T}chat_send(to=<their agent id from ${T}mesh_list>, message="…")
 - Register this project: ${T}mesh_register(path=cwd, name="project-name", runtime="claude-code")
   — if the project already has a .dork/agent.json, this adopts that agent instead of creating one,
   and the name and runtime you pass are ignored rather than written over it
@@ -455,21 +411,26 @@ function buildMarketplaceToolsBlock(toolConfig?: ToolDocGates): string {
 }
 
 /**
- * Build the `<relay_tools>` context block.
+ * Build the `<chat_tools>` context block.
  *
- * When `toolConfig` is provided, uses the agent's gates (`toolDocGates`).
- * Otherwise falls back to the Relay feature flag.
+ * When `toolConfig` is provided, uses the agent's gates (`toolDocGates`): the
+ * block goes with the Messages area. Without one, the chat tools are always
+ * there, so the block is too; only its paragraph on reaching the person follows
+ * the Relay feature flag.
  *
  * @param toolConfig - Pre-resolved tool config, when the caller has one.
- * @param agentToAgentToolsPreloaded - Whether this session's six agent-to-agent
- *   tools already ride the prompt; see {@link relayToolsContext}.
+ * @param agentToAgentToolsPreloaded - Whether this session's agent-to-agent
+ *   tools already ride the prompt; see {@link chatToolsContext}.
  */
-function buildRelayToolsBlock(
+function buildChatToolsBlock(
   toolConfig?: ToolDocGates,
   agentToAgentToolsPreloaded = false
 ): string {
-  if (!(toolConfig ? toolConfig.relay : isRelayEnabled())) return '';
-  return relayToolsContext(agentToAgentToolsPreloaded);
+  if (toolConfig && !toolConfig.messages) return '';
+  return chatToolsContext(
+    agentToAgentToolsPreloaded,
+    toolConfig ? toolConfig.relay : isRelayEnabled()
+  );
 }
 
 /**
@@ -590,11 +551,11 @@ async function buildPeerAgentsBlock(
     const agents = meshCore.listWithPaths().slice(0, 10);
     if (agents.length === 0) return '';
     // The name a person reads, not the addressing slug — this block introduces
-    // colleagues, and `mesh_inspect(agentId)` below is how one is reached, so
+    // colleagues, and `chat_send` to an id from `mesh_list` is how one is reached, so
     // the slug buys nothing here and misnames every agent that has a real name
     // (DOR-1264).
     const lines = agents.map((a) => `- ${a.displayName ?? a.name} (${a.projectPath})`).join('\n');
-    return `<peer_agents>\nRegistered agents on this machine (use ${T}mesh_list() for live data):\n${lines}\n\nTo contact a peer: ${T}mesh_inspect(agentId) for relay endpoint, then ${T}relay_send() to that subject.\n</peer_agents>`;
+    return `<peer_agents>\nRegistered agents on this machine (use ${T}mesh_list() for live data):\n${lines}\n\nTo message a peer: take its id from ${T}mesh_list(), then ${T}chat_send(to=<their agent id>, message="…").\n</peer_agents>`;
   } catch {
     return '';
   }
@@ -663,7 +624,7 @@ export async function buildSystemPromptAppend(
   const agentSession = options.agentSession ?? false;
 
   // Static tool context blocks (synchronous — config checks only, content never changes)
-  const relayBlock = buildRelayToolsBlock(toolConfig, agentSession);
+  const chatBlock = buildChatToolsBlock(toolConfig, agentSession);
   const meshBlock = buildMeshToolsBlock(toolConfig);
   const adapterBlock = buildAdapterToolsBlock(toolConfig);
   const tasksBlock = buildTasksToolsBlock(toolConfig);
@@ -698,7 +659,7 @@ export async function buildSystemPromptAppend(
   //    the long form it explains (DOR-1292).
   const toolDocs = [
     dorkosToolsContext(agentSession),
-    relayBlock,
+    chatBlock,
     meshBlock,
     adapterBlock,
     tasksBlock,
@@ -877,7 +838,7 @@ function formatRelayContext(data: RelayContextData): string {
 
 /** @internal Exported for testing only. */
 export {
-  buildRelayToolsBlock as _buildRelayToolsBlock,
+  buildChatToolsBlock as _buildChatToolsBlock,
   buildMeshToolsBlock as _buildMeshToolsBlock,
   buildAdapterToolsBlock as _buildAdapterToolsBlock,
   buildTasksToolsBlock as _buildTasksToolsBlock,
@@ -885,7 +846,6 @@ export {
   buildPeerAgentsBlock as _buildPeerAgentsBlock,
   buildRelayConnectionsBlock as _buildRelayConnectionsBlock,
   buildUiToolsBlock as _buildUiToolsBlock,
-  relayToolsContext as _relayToolsContext,
   dorkosToolsContext as _dorkosToolsContext,
   MESH_TOOLS_CONTEXT as _MESH_TOOLS_CONTEXT,
   ADAPTER_TOOLS_CONTEXT as _ADAPTER_TOOLS_CONTEXT,

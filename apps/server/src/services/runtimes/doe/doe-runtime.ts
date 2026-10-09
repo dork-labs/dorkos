@@ -66,7 +66,6 @@ export class DoeRuntime extends DoeSessionRuntime implements AgentRuntime {
   private readonly status = new Map<string, McpServerEntry[]>();
   private readonly serverConfigs = new Map<string, ReadonlyMap<string, McpAppServerConnection>>();
   private mesh?: AgentRegistryPort;
-  private relay?: RelayPort;
   private managedMcp?: ManagedMcpServerResolver;
   private connectorTools?: ConnectorRuntimeTools;
   private settingsPort?: SessionSettingsPort;
@@ -148,7 +147,6 @@ export class DoeRuntime extends DoeSessionRuntime implements AgentRuntime {
         settingsRevision: this.settingsRevision,
         settingsPort: this.settingsPort,
         mesh: this.mesh,
-        relay: this.relay,
         managedMcp: this.managedMcp,
         connectorTools: this.connectorTools,
         active: this.active,
@@ -307,10 +305,11 @@ export class DoeRuntime extends DoeSessionRuntime implements AgentRuntime {
   setMeshCore(mesh: AgentRegistryPort): void {
     this.mesh = mesh;
   }
-  /** Install the existing relay availability port. */
-  setRelay(relay: RelayPort): void {
-    this.relay = relay;
-  }
+  /**
+   * Required by `AgentRuntime`; Doe needs no relay. Its peer tools are the chat
+   * tools, which ride no bus (spec `spin-off-chats` §7).
+   */
+  setRelay(_relay: RelayPort): void {}
   /** Managed server configuration is read afresh for each turn. */
   setManagedMcpServerResolver(resolver: ManagedMcpServerResolver): void {
     this.managedMcp = resolver;

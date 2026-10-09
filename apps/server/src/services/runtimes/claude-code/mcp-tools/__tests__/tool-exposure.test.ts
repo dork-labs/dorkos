@@ -468,12 +468,11 @@ describe('in-session tool exposure', () => {
     // the audit log is a deliberate step a turn can search for. Both counts
     // move by the same one.
     // 121 -> 124 for `chat_send`, `chat_read` and `chat_stop` (spec
-    // `spin-off-chats` §1), all three DEFERRED: no prompt block names them
-    // yet (PR 4 of the spec moves the relay teaching onto them), so a turn
-    // that messages another chat searches for them like the relay tools it
-    // replaces. Both counts move by the same three.
-    expect(tools).toHaveLength(124);
-    expect(deferred).toHaveLength(113);
+    // `spin-off-chats` §1), all three DEFERRED on a plain session.
+    // 124 -> 118 (spec `spin-off-chats` §7): the six relay send, inbox and
+    // endpoint tools retire. Both counts move by the same amounts.
+    expect(tools).toHaveLength(118);
+    expect(deferred).toHaveLength(107);
     for (const name of [
       'configure_doc_channel',
       'approve_doc_route',
@@ -508,10 +507,12 @@ describe('in-session tool exposure', () => {
   });
 
   // DOR-1337 (F8). An agent asking another agent a question had to ToolSearch
-  // for `mesh_list` and the relay schemas first, inside its own timeout — the
-  // tester quoted the agent narrating exactly that. A session that IS an agent
-  // gets those six eagerly; nothing else does.
-  it('adds the six agent-to-agent tools for a session that is a registered agent', async () => {
+  // for `mesh_list` and the messaging schemas first, inside its own timeout —
+  // the tester quoted the agent narrating exactly that. A session that IS an
+  // agent gets those four eagerly; nothing else does. Two of them (`chat_send`,
+  // `chat_read`) are capability-projected, so this also pins that the
+  // capability half reads the session's set, not the standing one.
+  it('adds the four agent-to-agent tools for a session that is a registered agent', async () => {
     const tools = await advertisedTools({ cwd: '/agents/alpha' }, createAgentSessionDeps());
     const eager = tools
       .filter((t) => t._meta?.[ALWAYS_LOAD_META] === true)
@@ -533,10 +534,8 @@ describe('in-session tool exposure', () => {
         'compact_my_session',
         'mesh_list',
         'mesh_inspect',
-        'relay_send',
-        'relay_send_async',
-        'relay_send_and_wait',
-        'relay_inbox',
+        'chat_send',
+        'chat_read',
       ].sort()
     );
     expect(eager).toEqual([...alwaysLoadedToolsFor(true)].sort());
@@ -549,7 +548,7 @@ describe('in-session tool exposure', () => {
   });
 
   it('leaves a plain session in the same directory family on the standing five', async () => {
-    // Same deps, a cwd Mesh does not recognise: the six stay deferred, which is
+    // Same deps, a cwd Mesh does not recognise: the four stay deferred, which is
     // the half that keeps eighty-odd schemas off most sessions' prompts.
     const tools = await advertisedTools({ cwd: '/tmp/just-a-project' }, createAgentSessionDeps());
     const eager = tools
@@ -559,9 +558,9 @@ describe('in-session tool exposure', () => {
     expect(eager).toEqual([...ALWAYS_LOADED_TOOLS].sort());
   });
 
-  it('keeps the six deferred for an agent session with Relay switched off', async () => {
-    // No `relayCore` means no relay tool can do anything, so preloading their
-    // schemas would spend prompt on six tools that answer RELAY_DISABLED.
+  it('loads the four for an agent session with Relay switched off', async () => {
+    // The chat tools ride no bus (spec `spin-off-chats` §7), so Relay being off
+    // takes nothing away from an agent asking another one something.
     const deps = createAgentSessionDeps();
     delete (deps as { relayCore?: unknown }).relayCore;
     const tools = await advertisedTools({ cwd: '/agents/alpha' }, deps);
@@ -569,7 +568,7 @@ describe('in-session tool exposure', () => {
       .filter((t) => t._meta?.[ALWAYS_LOAD_META] === true)
       .map((t) => t.name)
       .sort();
-    expect(eager).toEqual([...ALWAYS_LOADED_TOOLS].sort());
+    expect(eager).toEqual([...alwaysLoadedToolsFor(true)].sort());
   });
 
   it('hints the room verbs with their curated capability titles', async () => {
@@ -579,8 +578,8 @@ describe('in-session tool exposure', () => {
     const byName = new Map((await advertisedTools()).map((t) => [t.name, t]));
     expect(byName.get('react_to_room_entry')?._meta?.[SEARCH_HINT_META]).toBe('React to a message');
     expect(byName.get('post_to_room')?._meta?.[SEARCH_HINT_META]).toBe('Post to a room');
-    // Hand-registered: `relay_send`'s description opens with what it does.
-    expect(typeof byName.get('relay_send')?._meta?.[SEARCH_HINT_META]).toBe('string');
+    // Hand-registered: `relay_notify_user`'s description opens with what it does.
+    expect(typeof byName.get('relay_notify_user')?._meta?.[SEARCH_HINT_META]).toBe('string');
   });
 });
 
@@ -636,8 +635,8 @@ describe('searchHintFrom', () => {
     expect(hint?.endsWith('…')).toBe(true);
     expect(hint!.length).toBeLessThanOrEqual(120);
     // The cut lands after a whole word: dropping the ellipsis leaves words that
-    // are all intact. Cutting at the character count produced "…or o" for
-    // `relay_inbox`, which nothing can match on.
+    // are all intact. Cutting at the character count produced "…or o" for a
+    // long relay description, which nothing can match on.
     const words = hint!.slice(0, -1).split(' ');
     expect(words.every((word) => word === 'alpha' || word === 'beta')).toBe(true);
   });

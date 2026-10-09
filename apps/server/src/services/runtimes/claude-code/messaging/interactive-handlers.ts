@@ -71,16 +71,16 @@ export const READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
 /**
  * DorkOS agent communication tools, auto-approved because they carry their own
  * authorization, NOT because they are read-only. Some of these mutate:
- * `relay_inbox` with `ack: true` permanently deletes the messages it returns
- * (see the `act` tier note in `mcp-tool-tiers.ts`) and `relay_register_endpoint`
- * creates a mailbox.
+ * `chat_send` starts a turn in another chat and `chat_stop` ends one.
  *
- * The exemption is deliberate. An agent polls its inbox continuously, so a card
- * per poll would train the user to dismiss cards without reading them, which
- * weakens every other approval card. What bounds the damage instead is that the
- * server injects the caller's identity and the endpoint tools refuse any inbox
- * the caller does not own, so an `ack` can only ever destroy the caller's own
- * mail. Cross-agent messaging authorization lives in relay/access-rules.json.
+ * The exemption is deliberate. Agents message each other's chats as a matter of
+ * course, so a card per message would train the user to dismiss cards without
+ * reading them, which weakens every other approval card. What bounds the damage
+ * instead is that the server stamps the calling chat as the sender, so a message
+ * or a stop can never claim to come from anyone else, and every one lands in a
+ * chat a person can open (with each stop also in the audit trail). The Messages
+ * permission area is resolved on every call, so a person who wants these asked
+ * about or Blocked says so there (spec `spin-off-chats`, ADR 261009-171114).
  *
  * ## Why this is a hand-written list and not derived (DOR-499)
  *
@@ -97,7 +97,7 @@ export const READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
  * general". This list
  * answers the narrower question above: does this tool carry its own authorization,
  * so that a card would add friction without adding safety? That is a hand-picked
- * judgment, not a property of the tier. `relay_register_endpoint` and
+ * judgment, not a property of the tier. `chat_send` and
  * `mesh_register` are `act` and are here; plenty of other `act` tools are
  * deliberately not. Deriving the list from `act` + `observe` would auto-admit every
  * future `act` tool to a no-prompt path as a side effect of picking a tier, and
@@ -174,10 +174,12 @@ export const DORKOS_AGENT_TOOLS = new Set(
     // an agent the tool refuses itself.
     'request_permission',
     'relay_notify_user',
-    'relay_send',
-    'relay_inbox',
     'relay_list_endpoints',
-    'relay_register_endpoint',
+    // Chats messaging chats (spec `spin-off-chats`). The sender is the verified
+    // calling chat, never an argument, and each tool refuses without one.
+    'chat_send',
+    'chat_read',
+    'chat_stop',
     'mesh_list',
     'mesh_inspect',
     'mesh_discover',
@@ -304,7 +306,7 @@ export const DORKOS_AGENT_TOOLS = new Set(
  *   can start conversations" switch has to be on (`canInitiate`, per binding,
  *   default FALSE). What the scope then COVERS is the operator's choice too, and
  *   it is often wider than one chat: a binding may name a group, a chat with
- *   somebody else, or — with the chat filter left empty, which is the cockpit's
+ *   somebody else, or — with the chat filter left empty, which is the app's
  *   default for a new binding ("Any chat (wildcard)") — **every chat that has
  *   messaged that adapter, including ones nobody claimed**. That is stated
  *   exactly this way in `relay/initiate-consent.ts`: sender scoping does not
@@ -389,7 +391,7 @@ export const DORKOS_AGENT_TOOLS = new Set(
  * with files — its worktree, which anchors back to that agent (DOR-2091). An
  * agent a room dispatched to is in the mesh by construction, so the two agree
  * wherever this was meant to work: the verbs are
- * frictionless there. An ordinary cockpit session in a plain project directory
+ * frictionless there. An ordinary app session in a plain project directory
  * resolves neither, and keeps today's card.
  *
  * ## Why they are auto-allowed at all, once identity holds

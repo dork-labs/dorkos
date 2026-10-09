@@ -9,7 +9,6 @@ import {
 import type {
   AgentRuntime,
   AgentRegistryPort,
-  RelayPort,
   ManagedMcpServerResolver,
   MessageOpts,
   SessionSettingsPort,
@@ -61,7 +60,6 @@ export interface DoeTurnHostState {
   settingsRevision: Map<string, number>;
   settingsPort?: SessionSettingsPort;
   mesh?: AgentRegistryPort;
-  relay?: RelayPort;
   managedMcp?: ManagedMcpServerResolver;
   connectorTools?: ConnectorRuntimeTools;
   active: Map<string, ActiveTurn>;
@@ -199,7 +197,6 @@ export async function executeDoeTurn(
       },
       connectorInjection,
       mesh: hostState.mesh,
-      relayWired: hostState.relay !== undefined,
       ...(mode === 'bypassPermissions'
         ? {
             builderExecutionPolicy: {

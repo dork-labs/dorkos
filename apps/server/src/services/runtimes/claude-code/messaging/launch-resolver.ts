@@ -58,7 +58,6 @@ import {
 import { resolveCreditsLaunchEnv } from '../../../core/cloud/credits-inference.js';
 import { decideCreditsLaunchModel } from '../../../core/cloud/credits-models.js';
 import { creditsRefusalEvent as creditsRefusalEventFor } from '../../../core/cloud/credits-protocols.js';
-import { isRelayEnabled } from '../../../relay/relay-state.js';
 import type { AgentSession } from '../agent-types.js';
 import { claudeConfigDirEnv, resolveLaunchAccountRoot } from '../claude-config-dir.js';
 import { ensureCreditsClaudeRoot, isCreditsClaudeRoot } from '../credits-root.js';
@@ -240,7 +239,7 @@ export async function resolveLaunch(args: {
     isCommandDispatch = knownCommands === null || knownCommands.includes(`/${commandName}`);
   }
 
-  // Whether this turn's prompt already carries the six agent-to-agent tools
+  // Whether this turn's prompt already carries the four agent-to-agent tools
   // (DOR-1337 / F8). Decided by the SAME rule the tool server applies —
   // `loadsAgentToAgentTools` — over the SAME input: `session.cwd`, which is the
   // cwd `mcpServerFactory` hands `createDorkOsToolServer` a few lines below,
@@ -277,8 +276,7 @@ export async function resolveLaunch(args: {
   const toolConfig = toolDocGates(toolVisibility.blockedAreas);
   const baseAppend = await buildSystemPromptAppend(turnAgentPath, effectiveCwd, toolConfig, {
     agentSession: loadsAgentToAgentTools(
-      !!(toolAgentPath && opts.meshCore?.getByPath(toolAgentPath)),
-      isRelayEnabled()
+      !!(toolAgentPath && opts.meshCore?.getByPath(toolAgentPath))
     ),
     blockedAreaLines: renderBlockedAreaLines(toolVisibility.blockedAreas),
   });

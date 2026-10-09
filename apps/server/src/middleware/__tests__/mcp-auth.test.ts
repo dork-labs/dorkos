@@ -177,13 +177,13 @@ describe('createMcpAuth — surface "mcp", login off', () => {
     expect(next).toHaveBeenCalled();
   });
 
-  it('401s a mutating tools/call (relay_send) tokenless', async () => {
-    // The human-impersonating relay family must be gated.
+  it('401s a mutating tools/call (relay_enable_adapter) tokenless', async () => {
+    // Mutating relay tools must be gated.
     mockConfig({ authEnabled: false });
     const next = vi.fn() as NextFunction;
     const res = createMockRes();
     await mcpAuth(
-      createMockReq({ body: rpc('tools/call', 'relay_send') }) as Request,
+      createMockReq({ body: rpc('tools/call', 'relay_enable_adapter') }) as Request,
       res as Response,
       next
     );
@@ -334,7 +334,7 @@ describe('createMcpAuth — surface "mcp", login off, each acceptor authorizes a
     const next = vi.fn() as NextFunction;
     const res = createMockRes();
     await mcpAuth(
-      createMockReq({ body: rpc('tools/call', 'relay_send') }) as Request,
+      createMockReq({ body: rpc('tools/call', 'relay_enable_adapter') }) as Request,
       res as Response,
       next
     );
@@ -355,7 +355,7 @@ describe('createMcpAuth — surface "mcp", login off, each acceptor authorizes a
     const res = createMockRes();
     await mcpAuth(
       createMockReq({
-        body: rpc('tools/call', 'relay_send'),
+        body: rpc('tools/call', 'relay_enable_adapter'),
         authHeader: `Bearer ${LOCAL_TOKEN}`,
       }) as Request,
       res as Response,
@@ -389,7 +389,7 @@ describe('createMcpAuth — surface "mcp", login off, each acceptor authorizes a
     await mcpAuth(
       createMockReq({
         authHeader: `Bearer ${LOCAL_TOKEN}`,
-        body: rpc('tools/call', 'relay_send'),
+        body: rpc('tools/call', 'relay_enable_adapter'),
       }) as Request,
       res as Response,
       next
@@ -512,7 +512,7 @@ describe('createMcpAuth — the API-key lookup is skipped only for the local tok
     await mcpAuth(
       createMockReq({
         authHeader: `Bearer ${LOCAL_TOKEN}`,
-        body: rpc('tools/call', 'relay_send'),
+        body: rpc('tools/call', 'relay_enable_adapter'),
       }) as Request,
       res as Response,
       next

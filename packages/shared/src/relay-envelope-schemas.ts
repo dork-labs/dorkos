@@ -722,7 +722,7 @@ export const AGENT_CANCEL_SUBJECT_PREFIX = 'relay.control.agent-cancel.';
  * Server-injected on publish and not reachable from a model, exactly like
  * {@link TASK_SCHEDULER_PRINCIPAL}: a handler that checks it knows the request
  * came from the A2A gateway acting on its caller's `tasks/cancel`, and not from
- * an agent with `relay_send` that guessed a reply subject.
+ * a publisher that guessed a reply subject.
  */
 export const A2A_GATEWAY_PRINCIPAL = 'relay.system.a2a.gateway';
 

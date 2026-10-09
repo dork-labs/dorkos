@@ -68,7 +68,7 @@ export async function buildDoeContext(options: {
     options.hostConnected ? buildRoomToolsBlock('') : '',
     blocked,
     options.agentToAgent
-      ? 'Peer tools mesh_list, mesh_inspect, relay_send, relay_send_async, relay_send_and_wait and relay_inbox are loaded. Use tool_search to discover other tools.'
+      ? 'Peer tools mesh_list, mesh_inspect, chat_send and chat_read are loaded: chat_send messages another chat or agent, and chat_read checks on one. Use tool_search to discover other tools.'
       : '',
     options.opts?.systemPromptAppend ?? '',
     ...(options.opts?.additionalContext ?? []).map(renderDoeContextEntry),

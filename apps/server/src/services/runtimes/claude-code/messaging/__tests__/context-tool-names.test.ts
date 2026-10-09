@@ -320,8 +320,8 @@ async function claudeCodeProse(): Promise<{ prose: string; shared: string[] }> {
  * `mcp__dorkos__` prefix attached where it is present.
  *
  * Whole-token matching is what makes the check exact: a substring search for
- * `relay_send` would be satisfied by `mcp__dorkos__relay_send_and_wait` and miss a
- * bare `relay_send_and_wait` entirely.
+ * `mesh_list` would be satisfied by `mcp__dorkos__mesh_list_extra` and miss a
+ * bare `mesh_list_extra` entirely.
  */
 function identifierTokens(text: string): string[] {
   return text.match(/[a-z][a-z0-9_]*/g) ?? [];
@@ -492,9 +492,9 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // 120 -> 121 for `audit_verify` (DOR-2738): no prompt block names it, so it
     // stays deferred and unprefixed.
     // 121 -> 124 for `chat_send`, `chat_read` and `chat_stop` (spec
-    // `spin-off-chats` §1): capabilities on the in-session server; no block
-    // names them until the relay teaching moves onto them (spec §7).
-    expect(advertised.size).toBe(124);
+    // `spin-off-chats` §1); 124 -> 118 (§7): the six relay send, inbox and
+    // endpoint tools retire. `<chat_tools>` names the three chat tools prefixed.
+    expect(advertised.size).toBe(118);
     for (const name of [
       'configure_doc_channel',
       'approve_doc_route',
@@ -579,7 +579,12 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // 97 -> 99 for `marketplace_update` (DOR-2195): `<marketplace_tools>` names it
     // twice, once among the confirmation-gated mutations and once for its
     // signature, as it does every other mutation.
-    expect(prefixed.length).toBe(99);
+    //
+    // 99 -> 84 for spin-off chats (spec `spin-off-chats` §7):
+    // `<relay_tools>`, which named the six retired relay tools over and over
+    // across its four workflows, became `<chat_tools>`, which teaches three
+    // chat tools and `session_start` once each where they are used.
+    expect(prefixed.length).toBe(84);
   });
 
   it('names only advertised tools in the agent-session variant of the prompt too', async () => {
@@ -604,15 +609,8 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     ].sort();
     expect(unknown).toEqual([]);
 
-    // And it says the six are loaded, in full, so nothing spends a ToolSearch.
-    for (const name of [
-      'mesh_list',
-      'mesh_inspect',
-      'relay_send',
-      'relay_send_async',
-      'relay_send_and_wait',
-      'relay_inbox',
-    ]) {
+    // And it says the four are loaded, in full, so nothing spends a ToolSearch.
+    for (const name of ['mesh_list', 'mesh_inspect', 'chat_send', 'chat_read']) {
       expect(prompt).toContain(`${IN_SESSION_TOOL_PREFIX}${name}`);
     }
   });

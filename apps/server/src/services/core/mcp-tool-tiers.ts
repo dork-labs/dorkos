@@ -243,57 +243,13 @@ export const MCP_TOOL_TIERS = {
   },
 
   // ── Relay: messaging ────────────────────────────────────────────────────
-  relay_send: {
-    tier: 'act',
-    area: 'messages',
-    approvalDisplayFields: ['subject'],
-    title: 'Send a message to another agent',
-  },
-  // Not `observe`: `ack: true` DESTROYS each acknowledged message. It unlinks the
-  // payload file from the maildir (`packages/relay/src/maildir-store.ts`), leaving
-  // only the index row, so later reads come back with `payload: null`. It stays
-  // `act` for the same reason `relay_unregister_endpoint` does — this is the
-  // ordinary way a caller drains its own inbox, and a card on every drain is the
-  // fastest way to teach someone to stop reading cards.
-  relay_inbox: {
-    tier: 'act',
-    area: 'messages',
-    approvalDisplayFields: ['endpoint_subject', 'ack'],
-    title: 'Read and clear the message inbox',
-  },
+  // Agent-to-agent sends are the chat tools now (`chat_send`, `chat_read`,
+  // `chat_stop`), declared as capabilities with their own tiers; the relay send,
+  // inbox and endpoint tools were retired (spec `spin-off-chats` §7).
   relay_list_endpoints: {
     tier: 'observe',
     area: 'messages',
     title: 'List message endpoints',
-  },
-  relay_register_endpoint: {
-    tier: 'act',
-    area: 'messages',
-    approvalDisplayFields: ['subject'],
-    title: 'Create a message endpoint',
-  },
-  relay_send_and_wait: {
-    tier: 'act',
-    area: 'messages',
-    approvalDisplayFields: ['to_subject'],
-    title: 'Send a message and wait for the reply',
-  },
-  relay_send_async: {
-    tier: 'act',
-    area: 'messages',
-    approvalDisplayFields: ['to_subject'],
-    title: 'Send a message without waiting',
-  },
-  // This one deletes a maildir, undelivered messages and all. It is still `act`,
-  // and deliberately: it is the documented last step of every async send, so the
-  // tool's own description tells the agent to call it on each `done: true`. A card
-  // in front of routine cleanup is the fastest way to teach someone to stop reading
-  // cards.
-  relay_unregister_endpoint: {
-    tier: 'act',
-    area: 'messages',
-    approvalDisplayFields: ['subject'],
-    title: 'Remove a message endpoint',
   },
   // In-session only, and the two destinations it can reach are gated
   // differently — which is why this comment says what is true rather than "it
@@ -302,7 +258,7 @@ export const MCP_TOOL_TIERS = {
   //     `canInitiate` flag: a person decided whether this agent may start
   //     conversations there, and a false one refuses the send outright.
   //   - The DorkOS DM fallback (DOR-1209) has NO consent gate. It writes into
-  //     the operator's own cockpit, on a surface they can mute, archive and
+  //     the operator's own app, on a surface they can mute, archive and
   //     read at their leisure — the same place a room post already lands — so
   //     it is bounded by being quiet rather than by permission.
   // The gate that will cover both is recipient consent for RECURRING

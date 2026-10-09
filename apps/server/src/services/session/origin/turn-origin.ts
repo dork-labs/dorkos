@@ -82,8 +82,9 @@ export type TurnOrigin =
    */
   | { readonly kind: 'relay-binding' }
   /**
-   * One agent addressed another directly over the relay (`relay_send` to a
-   * mesh endpoint). Nobody created a session for it and nobody is watching it;
+   * One agent addressed another directly over the relay (a publish to a mesh
+   * endpoint stamped as one of our agents; agents' own send tool for this
+   * retired with spec `spin-off-chats`, which routes them through chats). Nobody created a session for it and nobody is watching it;
    * like a binding, it carries its own grant and seeds no operator stop.
    */
   | { readonly kind: 'agent-dm' }
@@ -91,7 +92,7 @@ export type TurnOrigin =
    * A message on the relay addressed to an agent, from a sender that is NOT one
    * of our agents: the A2A gateway (another company's agent), an external MCP
    * client, or a hand-built publish. It arrives on the same agent subject an
-   * agent's `relay_send` does, so the stamped sender is the only fact that
+   * agent's own publish does, so the stamped sender is the only fact that
    * tells it apart, and it gets its own member so that a later change letting
    * our own agents' DMs follow a configured level can never carry it along
    * (spec `trusted-by-default-flip` §4).
