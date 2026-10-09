@@ -847,31 +847,59 @@ process.on('message', (message: unknown) => {
     close();
   }
 });
+/** Report bounded teardown DATA without acquiring resources or changing lifecycle outcomes. */
+function originalClosePhase(phase: string, resources?: readonly string[]): void {
+  try {
+    console.info('ORIGINAL_NATIVE_CLOSE_PHASE', {
+      phase,
+      elapsedMs: Math.round(process.uptime() * 1000),
+      ...(resources ? { resources: resources.slice(0, 24).map((name) => name.slice(0, 48)) } : {}),
+    });
+  } catch {
+    // A diagnostic output failure cannot replace the original lifecycle result.
+  }
+}
 function close(): void {
   if (closing) return;
   // Stop the actual Trigger/runtime before waiting for a held scenario.
   closing = (async () => {
+    originalClosePhase('first-stop-start');
     const stop = Promise.resolve().then(() => owning.stopNative());
+    void stop.then(
+      () => originalClosePhase('first-stop-settled'),
+      () => originalClosePhase('first-stop-settled')
+    );
     for (const result of await Promise.allSettled([stop, setupPending, running]))
       if (result.status === 'rejected') remember(result.reason);
+    originalClosePhase('join-settled');
     // Setup may finish acquiring its original native owner after the first stop.
     // Stop that exact owner again before the enclosing Db/root can close; its
     // original memo joins the same cancellation when it was already acquired.
+    originalClosePhase('second-stop-start');
     try {
       await owning.stopNative();
     } catch (cause) {
       remember(cause);
     }
+    originalClosePhase('second-stop-settled');
+    originalClosePhase('owning-close-start');
     try {
       await owning.close();
     } catch (cause) {
       remember(cause);
     }
+    originalClosePhase('owning-close-settled');
     if (failed) {
       console.error(first);
       process.exitCode = 1;
     }
+    originalClosePhase('disconnect-start');
     if (process.connected) process.disconnect();
+    try {
+      originalClosePhase('disconnect-complete', process.getActiveResourcesInfo());
+    } catch {
+      // Resource introspection is optional DATA, never a cleanup requirement.
+    }
   })();
 }
 process.on('disconnect', close);

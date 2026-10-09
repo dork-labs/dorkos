@@ -89,7 +89,8 @@ for (const integrityCase of ['select-builder', 'event-codec'] as const) {
         await expect
           .poll(async () => {
             const data = await host.readNativeEmissionIntegrityData();
-            if (data.observerFailed) throw new Error('Original integrity observer failed');
+            if (data.observerFailed)
+              throw new Error('Original integrity observer failed: ' + data.observerFailure);
             return data.phase;
           })
           .toBe('armed');
@@ -108,7 +109,8 @@ for (const integrityCase of ['select-builder', 'event-codec'] as const) {
         await expect
           .poll(async () => {
             const data = await host.readNativeEmissionIntegrityData();
-            if (data.observerFailed) throw new Error('Original integrity observer failed');
+            if (data.observerFailed)
+              throw new Error('Original integrity observer failed: ' + data.observerFailure);
             return data.phase === 'restored' && data.retired === true;
           })
           .toBe(true);

@@ -681,7 +681,10 @@ export async function startIsolatedConsumerHost(
             Number.isSafeInteger(data.replacementCalls) &&
             data.replacementCalls >= 0 &&
             (data.retired === null || typeof data.retired === 'boolean') &&
-            typeof data.observerFailed === 'boolean'
+            typeof data.observerFailed === 'boolean' &&
+            (data.observerFailure === null ||
+              (typeof data.observerFailure === 'string' && data.observerFailure.length <= 512)) &&
+            data.observerFailed === (data.observerFailure !== null)
           );
         }
       );

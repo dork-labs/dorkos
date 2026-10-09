@@ -21,6 +21,8 @@ export type NativeEmissionIntegrityData = Readonly<{
   replacementCalls: number;
   retired: boolean | null;
   observerFailed: boolean;
+  /** Bounded diagnostic only; the original opaque cause remains owned by stop(). */
+  observerFailure: string | null;
 }>;
 
 function sameDescriptor(
@@ -73,6 +75,12 @@ export function createNativeEmissionIntegrityControl(
       replacementCalls,
       retired,
       observerFailed,
+      observerFailure: observerFailed
+        ? (observerCause instanceof Error
+            ? observerCause.name + ': ' + observerCause.message
+            : 'Observer cause type: ' + typeof observerCause
+          ).slice(0, 512)
+        : null,
     });
   const observe = () => {
     if (phase === 'armed') {
