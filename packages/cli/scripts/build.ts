@@ -1,3 +1,4 @@
+import { copyBrowserVMRelease } from '../../../scripts/browser-vm-release-copy.mjs';
 import { browserProductionSubject } from '../../../scripts/browser-production-subject.js';
 import { build, formatMessages, type Message, type Plugin } from 'esbuild';
 import { execSync } from 'child_process';
@@ -577,8 +578,11 @@ async function buildCLI() {
   });
 
   await assertNoUnexpectedWarnings('CLI', cliBundle.warnings);
-  await buildBrowserRuntimeAssets();
-  await buildBrowserNativeAssets();
+  if (process.platform !== 'darwin') {
+    await buildBrowserRuntimeAssets();
+    await buildBrowserNativeAssets();
+  }
+  await copyBrowserVMRelease(ROOT, OUT);
 
   // Make executable
   await fs.chmod(path.join(OUT, 'bin/cli.js'), 0o755);

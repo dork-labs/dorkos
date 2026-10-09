@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "419e4bd2-dd01-4824-8da3-cd9e6c7f50d7",
-  "prevId": "6f602795-29fa-4612-8480-30a61f5cb9a5",
+  "id": "4781c5d1-5724-4b21-997d-22e32403c8c8",
+  "prevId": "49f3b68c-36e8-4148-ae06-a22754c49d0f",
   "tables": {
     "a2a_tasks": {
       "name": "a2a_tasks",
@@ -408,95 +408,6 @@
         }
       }
     },
-    "browser_profile_disks": {
-      "name": "browser_profile_disks",
-      "columns": {
-        "profile_id": {
-          "name": "profile_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "owner_author_id": {
-          "name": "owner_author_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "generation": {
-          "name": "generation",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "backend": {
-          "name": "backend",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "format_version": {
-          "name": "format_version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "browser_profile_disks_generation": {
-          "name": "browser_profile_disks_generation",
-          "columns": [
-            "generation"
-          ],
-          "isUnique": true
-        }
-      },
-      "foreignKeys": {
-        "browser_profile_disks_profile_id_owner_author_id_browser_profiles_profile_id_owner_author_id_fk": {
-          "name": "browser_profile_disks_profile_id_owner_author_id_browser_profiles_profile_id_owner_author_id_fk",
-          "tableFrom": "browser_profile_disks",
-          "tableTo": "browser_profiles",
-          "columnsFrom": [
-            "profile_id",
-            "owner_author_id"
-          ],
-          "columnsTo": [
-            "profile_id",
-            "owner_author_id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {
-        "browser_profile_disks_generation_shape": {
-          "name": "browser_profile_disks_generation_shape",
-          "value": "length(\"browser_profile_disks\".\"generation\") = 22 AND \"browser_profile_disks\".\"generation\" NOT GLOB '*[^A-Za-z0-9_-]*'"
-        },
-        "browser_profile_disks_backend": {
-          "name": "browser_profile_disks_backend",
-          "value": "\"browser_profile_disks\".\"backend\" = 'qemu-hvf'"
-        },
-        "browser_profile_disks_format": {
-          "name": "browser_profile_disks_format",
-          "value": "typeof(\"browser_profile_disks\".\"format_version\") = 'integer' AND \"browser_profile_disks\".\"format_version\" = 1"
-        }
-      }
-    },
     "browser_profiles": {
       "name": "browser_profiles",
       "columns": {
@@ -548,14 +459,6 @@
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
-        },
-        "import_state": {
-          "name": "import_state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'none'"
         },
         "created_at": {
           "name": "created_at",
@@ -618,10 +521,6 @@
         "browser_profiles_revision": {
           "name": "browser_profiles_revision",
           "value": "typeof(\"browser_profiles\".\"revision\") = 'integer' AND \"browser_profiles\".\"revision\" BETWEEN 0 AND 9007199254740991"
-        },
-        "browser_profiles_import_state": {
-          "name": "browser_profiles_import_state",
-          "value": "\"browser_profiles\".\"import_state\" IN ('none', 'pending', 'failed', 'ready')"
         },
         "browser_profiles_status": {
           "name": "browser_profiles_status",
@@ -3503,6 +3402,37 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "session_touches": {
+      "name": "session_touches",
+      "columns": {
+        "session_id": {
+          "name": "session_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "opened_at": {
+          "name": "opened_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "wrote_at": {
+          "name": "wrote_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
           "autoincrement": false
         }
       },

@@ -376,6 +376,7 @@ export function createProductionBrowserSession(options: {
                     input.owner,
                     raster.owner
                   ),
+                  registryStore: options.store,
                   bindEngine: grants.bindEngine.bind(grants),
                   navigation: originalNavigation.owner,
                   ...(mode.resourceAcceptance ? { resources: mode.resourceAcceptance } : {}),

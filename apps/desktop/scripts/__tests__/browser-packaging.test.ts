@@ -5,7 +5,6 @@ import { assertDesktopBrowserPackaging } from '../browser-packaging';
 const manifest = { dependencies: { 'playwright-core': '1.63.0' } };
 const config = {
   files: ['package.json', 'dist/**'],
-  afterPack: 'dist/browser/restore-library.cjs',
   mac: { sign: 'dist/browser/sign-browser-app.cjs' },
   asarUnpack: [
     'package.json',
@@ -34,20 +33,16 @@ it('refuses a duplicate unreachable extraResources copy', () => {
     })
   ).toThrow('single-copy');
 });
-it('refuses absent production library separately from executable layout', () => {
-  expect(() => assertDesktopBrowserPackaging({ dependencies: {} }, config)).toThrow(
-    'production browser library'
-  );
-});
-it('refuses unpinned library and missing emitted files', () => {
-  expect(() =>
-    assertDesktopBrowserPackaging({ dependencies: { 'playwright-core': '^1.63.0' } }, config)
-  ).toThrow('exact production');
+it('VM packaging needs no host library and refuses the obsolete restore hook', () => {
+  expect(() => assertDesktopBrowserPackaging({ dependencies: {} }, config)).not.toThrow();
   expect(() =>
     assertDesktopBrowserPackaging(manifest, {
       ...config,
-      files: ['package.json'],
+      afterPack: 'dist/browser/restore-library.cjs',
     })
+  ).toThrow('superseded');
+  expect(() =>
+    assertDesktopBrowserPackaging(manifest, { ...config, files: ['package.json'] })
   ).toThrow('package files');
 });
 

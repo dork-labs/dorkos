@@ -81,6 +81,10 @@ const refusals = new WeakSet<object>();
 export function isOriginalSemanticReadRefusal(value: unknown): boolean {
   return !!value && typeof value === 'object' && refusals.has(value);
 }
+/** Backend-private denial factory. It grants no successful work or native authority. */
+export function createOriginalSemanticRefusalIssuer() {
+  return Object.freeze({ issue: (reason: string): Error => refusal(reason) });
+}
 function refusal(reason: string): Error {
   const error = new Error(reason);
   refusals.add(error);

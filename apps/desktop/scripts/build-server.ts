@@ -1,3 +1,4 @@
+import { copyBrowserVMRelease } from '../../../scripts/browser-vm-release-copy.mjs';
 import { browserProductionSubject } from '../../../scripts/browser-production-subject.js';
 import { execFileSync } from 'child_process';
 import { assertDesktopBrowserPackaging } from './browser-packaging';
@@ -1037,20 +1038,11 @@ async function buildServer() {
     throw err;
   }
 
-  // Same source/hash producers as the CLI, bound to this exact server controller.
-  await buildBrowserRuntimeAssets(ROOT, OUT, 'server/server-entry.mjs');
-  await buildBrowserNativeAssets(ROOT, OUT, 'server/server-entry.mjs');
-  const restoreResult = await build({
-    entryPoints: [path.join(DESKTOP_PKG, 'scripts/restore-browser-library.ts')],
-    outfile: path.join(OUT, 'browser/restore-library.cjs'),
-    bundle: true,
-    platform: 'node',
-    target: 'node22.22',
-    format: 'cjs',
-    plugins: [dorkosSourcePlugin()],
-    logLevel: 'silent',
-  });
-  await assertNoUnexpectedWarnings(restoreResult.warnings);
+  // Darwin uses only the signed prebuilt VM bank. Preserve other host paths.
+  if (process.platform !== 'darwin') {
+    await buildBrowserRuntimeAssets(ROOT, OUT, 'server/server-entry.mjs');
+    await buildBrowserNativeAssets(ROOT, OUT, 'server/server-entry.mjs');
+  }
   const signerResult = await build({
     entryPoints: [path.join(DESKTOP_PKG, 'scripts/sign-browser-app.ts')],
     outfile: path.join(OUT, 'browser/sign-browser-app.cjs'),
@@ -1063,21 +1055,23 @@ async function buildServer() {
   });
   await assertNoUnexpectedWarnings(signerResult.warnings);
 
-  const subjectResult = await build({
-    entryPoints: [path.join(DESKTOP_PKG, 'scripts/emit-browser-qualification-subject.ts')],
-    outfile: path.join(OUT, 'browser/qualification-subject.mjs'),
-    bundle: true,
-    platform: 'node',
-    target: 'node22.22',
-    format: 'esm',
-    external: ['playwright-core', 'zod'],
-    plugins: [dorkosSourcePlugin()],
-    define: {
-      __BROWSER_PRODUCTION_SUBJECT__: JSON.stringify(productionSubjectSHA256),
-    },
-    logLevel: 'silent',
-  });
-  await assertNoUnexpectedWarnings(subjectResult.warnings);
+  if (process.platform !== 'darwin') {
+    const subjectResult = await build({
+      entryPoints: [path.join(DESKTOP_PKG, 'scripts/emit-browser-qualification-subject.ts')],
+      outfile: path.join(OUT, 'browser/qualification-subject.mjs'),
+      bundle: true,
+      platform: 'node',
+      target: 'node22.22',
+      format: 'esm',
+      external: ['playwright-core', 'zod'],
+      plugins: [dorkosSourcePlugin()],
+      define: {
+        __BROWSER_PRODUCTION_SUBJECT__: JSON.stringify(productionSubjectSHA256),
+      },
+      logLevel: 'silent',
+    });
+    await assertNoUnexpectedWarnings(subjectResult.warnings);
+  }
 
   // Copy Drizzle migration files alongside the bundled server — see the
   // dist/server/ layout note above.
@@ -1105,6 +1099,8 @@ async function buildServer() {
     );
   }
   console.log(`  ✓ Copied ${stagedExtensions.length} core extensions to ${coreExtensionsDest}`);
+
+  await copyBrowserVMRelease(ROOT, OUT);
 
   console.log('[2/2] Server bundle complete.');
 }

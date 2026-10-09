@@ -309,6 +309,3 @@ asarUnpack:
 # Disabled here so electron-builder packages that already-correct binary
 # as-is instead of redoing (and re-breaking) the work.
 npmRebuild: false
-
-# Restore the verifier-pinned SDK in its original unpacked location before signing.
-afterPack: dist/browser/restore-library.cjs

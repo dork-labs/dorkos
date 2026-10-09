@@ -1,3 +1,4 @@
+import { BrowserRegistryStore } from '../../../registry/store.js';
 import {
   createOriginalBrowserViewerDiagnostic,
   type BrowserViewerDiagnosticStage,
@@ -86,6 +87,8 @@ export type PrivateLiveBrowserParticipants = Pick<
 > & {
   /** Bind original current-tab authority before the first birth callback/open. */
   bindEngine?(engine: BrowserLifecycleEngine): void;
+  /** Original startup store; never a disk generation/path from the open command. */
+  registryStore?: BrowserRegistryStore;
 };
 
 /** Exact private peer returned by the server-owned cold listener. */
@@ -627,6 +630,9 @@ export function createBrowserAuthorityCore(
           throw new BrokerError('AUTHORITY_REFUSED');
         // Capture the original private participants after reserving the whole one-use admission.
         // A participant never replaces this authority's broker, policy, or receiver retention.
+        const originalRegistryStore = participants?.registryStore;
+        if (runtimeOwner && !(originalRegistryStore instanceof BrowserRegistryStore))
+          throw new BrokerError('AUTHORITY_REFUSED');
         const participantEngine = participants?.bindEngine?.bind(participants);
         if (runtimeOwner && !participantEngine) throw new BrokerError('AUTHORITY_REFUSED');
         const participantBirth = participants?.registerBirth.bind(participants);
@@ -843,7 +849,10 @@ export function createBrowserAuthorityCore(
               command,
               undefined,
               _runtime.identity.mode,
-              initialStorageState
+              initialStorageState,
+              originalRegistryStore instanceof BrowserRegistryStore
+                ? Object.freeze({ registry: originalRegistryStore, ownerId: grant.ownerId })
+                : undefined
             );
             if (acquiredOriginal.engine !== acquired.engine)
               throw new BrokerError('AUTHORITY_REFUSED');

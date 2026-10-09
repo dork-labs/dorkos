@@ -49,20 +49,14 @@ it('upgrades the original pre-disk journal without assigning legacy profiles a d
       { id: 'bob', kind: 'human', naturalKey: 'user:bob', displayName: 'Bob', createdAt: at },
     ])
     .run();
-  db.insert(browserProfiles)
-    .values({
-      profileId: 'P'.repeat(22),
-      ownerAuthorId: 'alice',
-      label: 'Legacy',
-      mode: 'persistent',
-      metadataVersion: 1,
-      revision: 3,
-      status: 'inUse',
-      importState: 'none',
-      createdAt: at,
-      updatedAt: at,
-    })
-    .run();
+  // A combined import/disks migration starts from profiles without import_state.
+  db.$client
+    .prepare(
+      `INSERT INTO browser_profiles
+    (profile_id, owner_author_id, label, mode, metadata_version, revision, status, created_at, updated_at)
+    VALUES (?, 'alice', 'Legacy', 'persistent', 1, 3, 'inUse', ?, ?)`
+    )
+    .run('P'.repeat(22), at, at);
   db.insert(browserInstances)
     .values({
       browserId: 'B'.repeat(22),
@@ -78,11 +72,13 @@ it('upgrades the original pre-disk journal without assigning legacy profiles a d
       updatedAt: at,
     })
     .run();
-  const profiles = db.select().from(browserProfiles).all(),
+  const profiles = db.$client.prepare('SELECT * FROM browser_profiles').all(),
     instances = db.select().from(browserInstances).all();
   runMigrations(db);
   runMigrations(db);
-  expect(db.select().from(browserProfiles).all()).toEqual(profiles);
+  expect(db.$client.prepare('SELECT * FROM browser_profiles').all()).toEqual(
+    profiles.map((row) => ({ ...(row as Record<string, unknown>), import_state: 'none' }))
+  );
   expect(db.select().from(browserInstances).all()).toEqual(instances);
   expect(db.select().from(browserProfileDisks).all()).toEqual([]);
   const disk = {
