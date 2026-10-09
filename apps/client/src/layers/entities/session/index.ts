@@ -94,6 +94,7 @@ export {
   useSessionTriggerPending,
   useSessionInProgressTurn,
   useSessionQueue,
+  useChatActivityVersion,
   useSessionQueueOutcomes,
   DEFAULT_SESSION_STREAM_STATE,
 } from './model/stream/session-stream-store';

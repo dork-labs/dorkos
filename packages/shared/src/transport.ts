@@ -1,3 +1,4 @@
+import type { ChatActivityResponse } from './chat-messages.js';
 import type { DoeCreditsCatalog } from './runtime-connect.js';
 import type { DoeInferenceConfig } from './config-schema.js';
 import type {
@@ -754,6 +755,14 @@ export interface Transport
    * @param sessionId - The chat being shown.
    */
   markSessionOpened(sessionId: string): Promise<void>;
+  /**
+   * What a chat sent other chats, and the times another chat stopped it (spec
+   * `spin-off-chats` §6): the Sent cards and the "Stopped by" lines. Re-read
+   * whenever the chat's stream carries a `chat_activity` event.
+   *
+   * @param sessionId - The chat.
+   */
+  getChatActivity(sessionId: string): Promise<ChatActivityResponse>;
   /** Reserve a durable, caller-scoped opaque reference to a launch directory. */
   createSessionLocation(cwd: string): Promise<{ id: string }>;
   /** Resolve a launch reference without putting its private directory in a URL. */

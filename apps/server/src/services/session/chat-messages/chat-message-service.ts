@@ -66,6 +66,11 @@ import {
 } from '../message-dispatcher.js';
 import { getMessageQueueStore } from '../message-queue-store.js';
 import { queueKeyOf } from '../resolution/session-key-registry.js';
+import {
+  noteChatTurnSettled,
+  noteChatTurnStarted,
+  noteOtherTurnStarted,
+} from './chat-started-turns.js';
 import { cancelQueuedMessage } from '../queued-message-edits.js';
 import type { RoomSessionPlacePort } from '../../workspace/room-session-place.js';
 import type { SessionFacts } from '../../extensions/agent-send/agent-send-defaults.js';
@@ -890,7 +895,14 @@ export class ChatMessageService {
   /** Follow a sent message through the receiving chat's queue and turn. */
   private onDispatch(event: DispatchLifecycleEvent): void {
     const rows = this.deps.store.listByQueueMessage(event.messageId);
-    if (rows.length === 0) return;
+    if (rows.length === 0) {
+      // A turn no chat message rides on — a person's, a schedule's — is
+      // somebody asking: its finish may notify, whatever the turn before was.
+      if (event.phase === 'started') noteOtherTurnStarted(event.sessionId);
+      return;
+    }
+    if (event.phase === 'started') noteChatTurnStarted(event.sessionId, this.now());
+    else if (event.phase === 'settled') noteChatTurnSettled(event.sessionId);
     for (const row of rows) {
       let status: ChatMessageStatus | null = null;
       let failureReason: string | undefined;

@@ -6,6 +6,7 @@
  *
  * @module shared/model/chat-message-types
  */
+import type { ChatMessageStamp, ChatStopNotice } from '@dorkos/shared/chat-messages';
 import type {
   AlwaysAllowScope,
   QuestionItem,
@@ -28,6 +29,12 @@ export interface ChatMessage {
   compactMetadata?: CompactMetadata;
   commandName?: string;
   commandArgs?: string;
+  /**
+   * Messages another chat sent, when this user message carried them (spec
+   * `spin-off-chats` §2). Stamped by the server; the row draws the sender from
+   * here and never from the text.
+   */
+  chatMessages?: ChatMessageStamp[];
   /** @internal Client-only tag for streaming messages awaiting server ID reconciliation. */
   _streaming?: boolean;
   /**
@@ -37,6 +44,12 @@ export interface ChatMessage {
    * transcript entry — visibly not a turn — rather than a message bubble.
    */
   _stagedContext?: boolean;
+  /**
+   * @internal Client-only: this row is a "Stopped by <agent> · <chat>" line,
+   * placed in the transcript where another chat stopped this one (spec
+   * `spin-off-chats` §6). Never a message anybody wrote.
+   */
+  _chatStop?: ChatStopNotice;
 }
 
 /** Client-side view of a single hook execution attached to a tool call. */

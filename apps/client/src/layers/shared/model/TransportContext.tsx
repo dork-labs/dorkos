@@ -35,3 +35,13 @@ export function useTransport(): Transport {
   }
   return transport;
 }
+
+/**
+ * The transport when a provider supplies one, else null — for a read that is
+ * an extra rather than the point of the component calling it, so the
+ * component still renders where nothing provides a server (a test, a
+ * showcase).
+ */
+export function useOptionalTransport(): Transport | null {
+  return useContext(TransportContext);
+}

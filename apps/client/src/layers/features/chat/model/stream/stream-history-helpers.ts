@@ -75,6 +75,7 @@ export function mapHistoryMessage(m: HistoryMessage): ChatMessage {
     compactMetadata: m.compactMetadata,
     commandName: m.commandName,
     commandArgs: m.commandArgs,
+    ...(m.chatMessages && m.chatMessages.length > 0 ? { chatMessages: m.chatMessages } : {}),
   };
 }
 
