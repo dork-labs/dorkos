@@ -27,7 +27,7 @@ import type {
 } from '@modelcontextprotocol/sdk/shared/auth.js';
 
 import type { McpOAuthFlowStore } from './agent-mcp-oauth-flow-store.js';
-import type { McpOAuthSecretStore } from './agent-mcp-oauth-secret-store.js';
+import type { McpOAuthSecretStore, StoredMcpClientInfo } from './agent-mcp-oauth-secret-store.js';
 
 /** The OAuth grant types DorkOS drives: the initial code exchange plus silent refresh. */
 const GRANT_TYPES = ['authorization_code', 'refresh_token'] as const;
@@ -138,14 +138,16 @@ export class McpOAuthClientProvider implements OAuthClientProvider {
   }
 
   async saveClientInformation(info: OAuthClientInformationFull): Promise<void> {
-    // Only reached on the automatic-registration path — an operator-supplied
-    // client is written directly by the service and short-circuits the SDK here.
+    // Reached after automatic registration, and also when the SDK (>= 1.31)
+    // re-saves a stored client to stamp the issuer that holds it. That second
+    // save hands back the record we stored, origin included, so keep it: an
+    // operator-supplied client must not turn into an automatic one.
     if (this.ctx.progress) this.ctx.progress.stage = 'authorize';
     await this.ctx.secrets.saveClientInformation(
       this.ctx.agentId,
       this.ctx.serverName,
       info,
-      'dcr'
+      (info as StoredMcpClientInfo).origin ?? 'dcr'
     );
   }
 
