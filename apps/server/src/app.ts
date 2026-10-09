@@ -51,6 +51,7 @@ import { auditRequestFallback } from './middleware/audit-request-fallback.js';
 import { getAuth, toNodeHandler, sessionGate } from './services/core/auth/index.js';
 import { type BrowserOriginPolicy, isTrustedBrowserOrigin } from './lib/trusted-origins.js';
 import { resolveBrowserOriginFacts } from './middleware/browser-origin.js';
+import { expressRequestFacts } from './http/request-facts.js';
 import { logger } from './lib/logger.js';
 import { testControlRouter } from './routes/test-control.js';
 import { createMockMcpOAuthRouter } from './routes/mock-mcp-oauth-server.js';
@@ -150,7 +151,7 @@ function buildCors(): express.RequestHandler {
         // policy's to answer.
         if (
           isTrustedBrowserOrigin(
-            resolveBrowserOriginFacts(req, { hostCheckInert: false }),
+            resolveBrowserOriginFacts(expressRequestFacts(req), { hostCheckInert: false }),
             CORS_ORIGIN_POLICY
           )
         ) {
