@@ -250,6 +250,16 @@ describe('the dorkos tool server on a Codex turn', () => {
   let agentDir: string;
   let db: ReturnType<typeof createTestDb>;
 
+  type NativeFixture = Awaited<ReturnType<typeof nativeRoomAuthorityFixture>>;
+  const selectedNativeCase = 'same-target two batches retain busy second original';
+  let selectedNativeOwner:
+    | {
+        fixture: Promise<NativeFixture>;
+        run(work: () => Promise<void>): Promise<void>;
+        drain(): Promise<void>;
+      }
+    | undefined;
+
   beforeEach(async () => {
     sdkMocks.constructorOptions.length = 0;
     sdkMocks.prompts.length = 0;
@@ -280,7 +290,61 @@ describe('the dorkos tool server on a Codex turn', () => {
     initAgentIdentityService(db);
   });
 
+  beforeEach(async (context) => {
+    selectedNativeOwner = undefined;
+    if (
+      context.task.name !==
+      `consumes genuine native COMMIT/private FIRST at Codex SDK boundary: ${selectedNativeCase}`
+    )
+      return;
+    let active = true;
+    let bodyPending: Promise<void> | undefined;
+    let fixtureCleanup: (() => Promise<void>) | undefined;
+    let draining: Promise<void> | undefined;
+    const assertActive = () => {
+      if (!active) throw new Error('Selected native case ended before admission.');
+    };
+    const pending = nativeRoomAuthorityFixture(
+      agentDir,
+      'codex',
+      'native-source',
+      '01JAGENT0000000000000000'
+    ).then((h) => {
+      const originalCleanup = h.cleanup;
+      let cleanupPending: Promise<void> | undefined;
+      fixtureCleanup = () => (cleanupPending ??= Promise.resolve().then(() => originalCleanup()));
+      h.cleanup = fixtureCleanup;
+      assertActive();
+      return h;
+    });
+    void pending.catch(() => {});
+    selectedNativeOwner = {
+      fixture: pending,
+      run(work) {
+        assertActive();
+        bodyPending = work();
+        void bodyPending.catch(() => {});
+        return bodyPending;
+      },
+      drain() {
+        active = false;
+        draining ??= (async () => {
+          await Promise.allSettled([pending]);
+          // The body retains its original prepared-owner/producer stop-before-join cleanup.
+          // Keep its DB and agent directory alive until that entire body has settled.
+          if (bodyPending) await Promise.allSettled([bodyPending]);
+          // Also owns a late fixture when setup timed out and the body was skipped.
+          if (fixtureCleanup) await fixtureCleanup();
+        })();
+        return draining;
+      },
+    };
+    await pending;
+  });
+
   afterEach(async () => {
+    await selectedNativeOwner?.drain();
+    selectedNativeOwner = undefined;
     resetAgentIdentityService();
     await rm(agentDir, { recursive: true, force: true });
   });
@@ -1384,818 +1448,837 @@ describe('the dorkos tool server on a Codex turn', () => {
   ] as const)(
     'consumes genuine native COMMIT/private FIRST at Codex SDK boundary: %s',
     async (scenario) => {
-      const h = await nativeRoomAuthorityFixture(
-        agentDir,
-        'codex',
-        'native-source',
-        '01JAGENT0000000000000000'
-      );
-      let ownedRuntime: CodexRuntime | undefined;
-      let ownedProducer: AsyncGenerator<StreamEvent> | undefined;
-      let producerDone: Promise<void> | undefined;
-      let prepared:
-        | import('../../../canvas/doc-channel/current/current-operation-types.js').PreparedRoomResponder
-        | undefined;
-      let failed = false,
-        first: unknown;
-      let preparedRetirement: Promise<void> | undefined;
-      let verifiedRetirementFailure = false,
-        verifiedRetirementCause: unknown;
-      // Inner scenario and outer fixture join the same original prepared owner.
-      const retirePrepared = (): Promise<void> => {
-        if (!prepared || !ownedRuntime) return Promise.resolve();
-        return (preparedRetirement ??= Promise.resolve().then(() =>
-          retireCodexPreparedRoomResponder(ownedRuntime!, prepared!)
-        ));
-      };
-      // Join this scope to its captured cleanup before returning or reporting failure.
-      const drainOriginalCleanup = async () => {
-        const cleanup = async (work: () => unknown | Promise<unknown>) => {
-          try {
-            await work();
-          } catch (cause) {
-            if (!failed) {
-              failed = true;
-              first = cause;
+      const runOriginalCase = async () => {
+        const h =
+          scenario === selectedNativeCase
+            ? await selectedNativeOwner!.fixture
+            : await nativeRoomAuthorityFixture(
+                agentDir,
+                'codex',
+                'native-source',
+                '01JAGENT0000000000000000'
+              );
+        let ownedRuntime: CodexRuntime | undefined;
+        let ownedProducer: AsyncGenerator<StreamEvent> | undefined;
+        let producerDone: Promise<void> | undefined;
+        let prepared:
+          | import('../../../canvas/doc-channel/current/current-operation-types.js').PreparedRoomResponder
+          | undefined;
+        let failed = false,
+          first: unknown;
+        let preparedRetirement: Promise<void> | undefined;
+        let verifiedRetirementFailure = false,
+          verifiedRetirementCause: unknown;
+        // Inner scenario and outer fixture join the same original prepared owner.
+        const retirePrepared = (): Promise<void> => {
+          if (!prepared || !ownedRuntime) return Promise.resolve();
+          return (preparedRetirement ??= Promise.resolve().then(() =>
+            retireCodexPreparedRoomResponder(ownedRuntime!, prepared!)
+          ));
+        };
+        // Join this scope to its captured cleanup before returning or reporting failure.
+        const drainOriginalCleanup = async () => {
+          const cleanup = async (work: () => unknown | Promise<unknown>) => {
+            try {
+              await work();
+            } catch (cause) {
+              if (!failed) {
+                failed = true;
+                first = cause;
+              }
             }
-          }
+          };
+          await cleanup(async () => {
+            try {
+              await retirePrepared();
+            } catch (cause) {
+              if (!verifiedRetirementFailure) throw cause;
+              expect(cause).toBe(verifiedRetirementCause);
+            }
+          });
+          await cleanup(() => sdkMocks.releaseParked?.());
+          if (ownedProducer) await cleanup(() => ownedProducer!.return(undefined));
+          if (producerDone) await cleanup(() => producerDone);
+          await cleanup(() => h.cleanup());
+          if (failed) throw first;
         };
-        await cleanup(async () => {
-          try {
-            await retirePrepared();
-          } catch (cause) {
-            if (!verifiedRetirementFailure) throw cause;
-            expect(cause).toBe(verifiedRetirementCause);
-          }
-        });
-        await cleanup(() => sdkMocks.releaseParked?.());
-        if (ownedProducer) await cleanup(() => ownedProducer!.return(undefined));
-        if (producerDone) await cleanup(() => producerDone);
-        await cleanup(() => h.cleanup());
-        if (failed) throw first;
-      };
-      try {
-        const activeRuntime = new CodexRuntime({
-          transport: 'exec',
-          threadMap: new CodexThreadMap(h.db),
-          resolveBinary: async () => '/bin/codex',
-          defaultCwd: agentDir,
-        });
-        ownedRuntime = activeRuntime;
-        activeRuntime.setMeshCore(meshWithAgent(agentDir));
-        activeRuntime.setConnectorRuntimeTools({
-          principals: h.principals,
-          listenerUrl: 'http://127.0.0.1:4341/mcp',
-          agentToolsUrl: 'http://127.0.0.1:4341/agent-mcp',
-          isConnectorCapabilityId: (id) => id.startsWith('connectors.'),
-        });
-        const holder = { on: vi.fn() };
-        expect(activeRuntime.acquireLock('native-source', 'producer-holder', holder)).toBe(true);
-        sdkMocks.behavior = 'park-past-abort';
-        const activeProducer = sendCodexOriginalLockedMessage(
-          activeRuntime,
-          'native-source',
-          'actual producer',
-          { cwd: agentDir },
-          holder,
-          'native-source'
-        )!;
-        ownedRuntime = activeRuntime;
-        ownedProducer = activeProducer;
-        producerDone = drain(activeProducer);
-        const runtime = activeRuntime,
-          producer = activeProducer;
-        await vi.waitFor(() => expect(sdkMocks.releaseParked).toEqual(expect.any(Function)));
-        const originalPrincipal = await actualCodexProducerPrincipal(h.principals, agentDir);
-        const physical = h.db
-          .select()
-          .from(canvasDocuments)
-          .where(eq(canvasDocuments.id, h.documentId))
-          .get()!;
-        const channel = h.http.channels.getChannel(h.documentId)!;
-        const event = {
-          v: 1 as const,
-          id: randomUUID(),
-          type: 'md.comment',
-          payload: { text: 'original native acceptance' },
-        };
-        const accepted = await submitCurrentDocEvent(
-          h.http.service,
-          h.documentId,
-          event,
-          { surface: 'capability', principal: originalPrincipal },
-          { expectedGeneration: docDocumentGeneration(physical, channel) }
-        );
-        expect(accepted.receipt.id).toBe(event.id);
-        await new Promise<void>((resolve) => setTimeout(resolve, 110));
-        wakeAuthorizedRoomDue(h.http.authorization);
-        let secondOriginal: { eventId: string; batchId: string } | undefined;
-        if (scenario === 'same-target two batches retain busy second original') {
-          const secondEvent = {
+        try {
+          const activeRuntime = new CodexRuntime({
+            transport: 'exec',
+            threadMap: new CodexThreadMap(h.db),
+            resolveBinary: async () => '/bin/codex',
+            defaultCwd: agentDir,
+          });
+          ownedRuntime = activeRuntime;
+          activeRuntime.setMeshCore(meshWithAgent(agentDir));
+          activeRuntime.setConnectorRuntimeTools({
+            principals: h.principals,
+            listenerUrl: 'http://127.0.0.1:4341/mcp',
+            agentToolsUrl: 'http://127.0.0.1:4341/agent-mcp',
+            isConnectorCapabilityId: (id) => id.startsWith('connectors.'),
+          });
+          const holder = { on: vi.fn() };
+          expect(activeRuntime.acquireLock('native-source', 'producer-holder', holder)).toBe(true);
+          sdkMocks.behavior = 'park-past-abort';
+          const activeProducer = sendCodexOriginalLockedMessage(
+            activeRuntime,
+            'native-source',
+            'actual producer',
+            { cwd: agentDir },
+            holder,
+            'native-source'
+          )!;
+          ownedRuntime = activeRuntime;
+          ownedProducer = activeProducer;
+          producerDone = drain(activeProducer);
+          const runtime = activeRuntime,
+            producer = activeProducer;
+          await vi.waitFor(() => expect(sdkMocks.releaseParked).toEqual(expect.any(Function)));
+          const originalPrincipal = await actualCodexProducerPrincipal(h.principals, agentDir);
+          const physical = h.db
+            .select()
+            .from(canvasDocuments)
+            .where(eq(canvasDocuments.id, h.documentId))
+            .get()!;
+          const channel = h.http.channels.getChannel(h.documentId)!;
+          const event = {
             v: 1 as const,
             id: randomUUID(),
             type: 'md.comment',
-            payload: { text: 'second genuine same-target batch' },
+            payload: { text: 'original native acceptance' },
           };
-          const secondAccepted = await submitCurrentDocEvent(
+          const accepted = await submitCurrentDocEvent(
             h.http.service,
             h.documentId,
-            secondEvent,
+            event,
             { surface: 'capability', principal: originalPrincipal },
             { expectedGeneration: docDocumentGeneration(physical, channel) }
           );
-          expect(secondAccepted.receipt.id).toBe(secondEvent.id);
-          const firstBatch = h.http.channels.listDeliveries(h.documentId, event.id)[0]!.batchId!;
-          const secondBatch = h.http.channels.listDeliveries(h.documentId, secondEvent.id)[0]!
-            .batchId!;
-          expect(secondBatch).not.toBe(firstBatch);
-          expect(h.http.channels.getBatch(firstBatch)!.status).toBe('accepted');
-          const pendingBatch = h.http.channels.getBatch(secondBatch)!;
-          const pendingReceipt = h.http.channels.getEvent(h.documentId, secondEvent.id)!;
-          const pendingDeliveries = h.http.channels.listDeliveries(h.documentId, secondEvent.id);
-          expect(pendingBatch.status).toMatch(/^(?:pending|waiting)$/);
-          retainDocHistory(
-            h.http.channels,
-            new Date(Date.parse(pendingReceipt.receivedAt) + 86400_000).toISOString(),
-            { ageMs: 1, documentBytes: 1, installationBytes: 1 }
-          );
-          expect(h.http.channels.getBatch(secondBatch)).toEqual(pendingBatch);
-          expect(h.http.channels.getEvent(h.documentId, secondEvent.id)).toEqual(pendingReceipt);
-          expect(h.http.channels.listDeliveries(h.documentId, secondEvent.id)).toEqual(
-            pendingDeliveries
-          );
-          // Floors describe the contiguous tail, not membership of this protected
-          // older input. A real reset must still disclose its retained receipt.
-          const retainedReplay = await replayServiceCurrentDoc(
-            h.http.service,
-            h.documentId,
-            { surface: 'capability', principal: originalPrincipal },
-            0
-          );
-          expect(retainedReplay.resetRequired).toBe(true);
-          expect(retainedReplay.retentionFloor).toBe(
-            h.http.channels.getChannel(h.documentId)!.retentionFloor
-          );
-          expect(retainedReplay.receiptRetentionFloor).toBe(
-            h.http.channels.getChannel(h.documentId)!.receiptRetentionFloor
-          );
-          expect(retainedReplay.receipts).toContainEqual({
-            receipt: { id: secondEvent.id, status: 'recorded', docSeq: pendingReceipt.docSeq },
-            deliveries: expect.any(Array),
-            payloadAvailable: true,
-          });
-          // Configured 100 ms window belongs to the real acceptance, not a fake timer/DTO.
+          expect(accepted.receipt.id).toBe(event.id);
           await new Promise<void>((resolve) => setTimeout(resolve, 110));
           wakeAuthorizedRoomDue(h.http.authorization);
-          expect(h.http.channels.getBatch(secondBatch)!.status).toBe('accepted');
-          secondOriginal = { eventId: secondEvent.id, batchId: secondBatch };
-        }
-        const returned = producer.return(undefined);
-        sdkMocks.releaseParked!();
-        await returned;
-        await producerDone;
-        const modelsBefore = sdkMocks.prompts.length;
-        const bindingsBefore = h.db.select().from(connectorRuntimeBindings).all().length;
-        if (scenario === 'known busy retains original source') {
-          // A real competing acquisition blocks this holder before any native setup or claim.
-          runtime.releaseLock('native-source', 'producer-holder');
-          const busyHolder = { on: vi.fn() };
-          expect(runtime.acquireLock('native-source', 'competing-holder', busyHolder)).toBe(true);
-          expect(
-            await prepareServiceOriginalRoomResponder(
+          let secondOriginal: { eventId: string; batchId: string } | undefined;
+          if (scenario === 'same-target two batches retain busy second original') {
+            const secondEvent = {
+              v: 1 as const,
+              id: randomUUID(),
+              type: 'md.comment',
+              payload: { text: 'second genuine same-target batch' },
+            };
+            const secondAccepted = await submitCurrentDocEvent(
               h.http.service,
-              runtime,
-              holder,
-              'native-source'
-            )
-          ).toBeUndefined();
-          expect(sdkMocks.prompts).toHaveLength(modelsBefore);
-          expect(h.db.select().from(connectorRuntimeBindings).all()).toHaveLength(bindingsBefore);
-          expect(h.db.get<{ n: number }>(sql`SELECT count(*) AS n FROM room_turn_spend`)!.n).toBe(
-            0
-          );
-          expect(
-            h.db.get<{ status: string }>(sql`SELECT status FROM canvas_doc_batches
+              h.documentId,
+              secondEvent,
+              { surface: 'capability', principal: originalPrincipal },
+              { expectedGeneration: docDocumentGeneration(physical, channel) }
+            );
+            expect(secondAccepted.receipt.id).toBe(secondEvent.id);
+            const firstBatch = h.http.channels.listDeliveries(h.documentId, event.id)[0]!.batchId!;
+            const secondBatch = h.http.channels.listDeliveries(h.documentId, secondEvent.id)[0]!
+              .batchId!;
+            expect(secondBatch).not.toBe(firstBatch);
+            expect(h.http.channels.getBatch(firstBatch)!.status).toBe('accepted');
+            const pendingBatch = h.http.channels.getBatch(secondBatch)!;
+            const pendingReceipt = h.http.channels.getEvent(h.documentId, secondEvent.id)!;
+            const pendingDeliveries = h.http.channels.listDeliveries(h.documentId, secondEvent.id);
+            expect(pendingBatch.status).toMatch(/^(?:pending|waiting)$/);
+            retainDocHistory(
+              h.http.channels,
+              new Date(Date.parse(pendingReceipt.receivedAt) + 86400_000).toISOString(),
+              { ageMs: 1, documentBytes: 1, installationBytes: 1 }
+            );
+            expect(h.http.channels.getBatch(secondBatch)).toEqual(pendingBatch);
+            expect(h.http.channels.getEvent(h.documentId, secondEvent.id)).toEqual(pendingReceipt);
+            expect(h.http.channels.listDeliveries(h.documentId, secondEvent.id)).toEqual(
+              pendingDeliveries
+            );
+            // Floors describe the contiguous tail, not membership of this protected
+            // older input. A real reset must still disclose its retained receipt.
+            const retainedReplay = await replayServiceCurrentDoc(
+              h.http.service,
+              h.documentId,
+              { surface: 'capability', principal: originalPrincipal },
+              0
+            );
+            expect(retainedReplay.resetRequired).toBe(true);
+            expect(retainedReplay.retentionFloor).toBe(
+              h.http.channels.getChannel(h.documentId)!.retentionFloor
+            );
+            expect(retainedReplay.receiptRetentionFloor).toBe(
+              h.http.channels.getChannel(h.documentId)!.receiptRetentionFloor
+            );
+            expect(retainedReplay.receipts).toContainEqual({
+              receipt: { id: secondEvent.id, status: 'recorded', docSeq: pendingReceipt.docSeq },
+              deliveries: expect.any(Array),
+              payloadAvailable: true,
+            });
+            // Configured 100 ms window belongs to the real acceptance, not a fake timer/DTO.
+            await new Promise<void>((resolve) => setTimeout(resolve, 110));
+            wakeAuthorizedRoomDue(h.http.authorization);
+            expect(h.http.channels.getBatch(secondBatch)!.status).toBe('accepted');
+            secondOriginal = { eventId: secondEvent.id, batchId: secondBatch };
+          }
+          const returned = producer.return(undefined);
+          sdkMocks.releaseParked!();
+          await returned;
+          await producerDone;
+          const modelsBefore = sdkMocks.prompts.length;
+          const bindingsBefore = h.db.select().from(connectorRuntimeBindings).all().length;
+          if (scenario === 'known busy retains original source') {
+            // A real competing acquisition blocks this holder before any native setup or claim.
+            runtime.releaseLock('native-source', 'producer-holder');
+            const busyHolder = { on: vi.fn() };
+            expect(runtime.acquireLock('native-source', 'competing-holder', busyHolder)).toBe(true);
+            expect(
+              await prepareServiceOriginalRoomResponder(
+                h.http.service,
+                runtime,
+                holder,
+                'native-source'
+              )
+            ).toBeUndefined();
+            expect(sdkMocks.prompts).toHaveLength(modelsBefore);
+            expect(h.db.select().from(connectorRuntimeBindings).all()).toHaveLength(bindingsBefore);
+            expect(h.db.get<{ n: number }>(sql`SELECT count(*) AS n FROM room_turn_spend`)!.n).toBe(
+              0
+            );
+            expect(
+              h.db.get<{ status: string }>(sql`SELECT status FROM canvas_doc_batches
             WHERE document_id=${h.documentId}`)?.status
-          ).toBe('accepted');
-          runtime.releaseLock('native-source', 'competing-holder');
-          expect(runtime.acquireLock('native-source', 'producer-holder', holder)).toBe(true);
-        }
-        prepared = await prepareServiceOriginalRoomResponder(
-          h.http.service,
-          runtime,
-          holder,
-          'native-source'
-        );
-        if (!prepared) throw new Error('Genuine original responder unexpectedly unavailable.');
-        const originalPrepared = readCodexPreparedRoomResponder(runtime, prepared);
-        if (!originalPrepared) throw new Error('Actual original preparation missing.');
-        const operation = originalPrepared.nativeOperation;
-        const operationTime = captureOriginalPreparedNativeTime(h.principals, h.db, operation);
-        const operationBinding = readOriginalPreparedNativePrincipal(
-          h.principals,
-          h.db,
-          operation,
-          operationTime,
-          h.db
-        );
-        if (!operationBinding) throw new Error('Actual prepared native binding missing.');
-        const operationBindingId = operationBinding.id;
-        const commitsBefore = h.db.get<{ n: number }>(
-          sql`SELECT count(*) AS n FROM room_turn_spend`
-        )!.n;
-        const peerDecisions: ReturnType<typeof h.budget.tryReserve>[] = [];
-        const actualConfig = configManager.get.bind(configManager);
-        const peerPolicy =
-          scenario === 'same budget blocks configured callback peer reserve'
-            ? vi.spyOn(configManager, 'get').mockImplementation((...args) => {
-                const value = actualConfig(...args);
-                if (args[0] === 'rooms') peerDecisions.push(h.budget.tryReserve(h.roomId));
-                return value;
-              })
-            : undefined;
-        let committed: ReturnType<typeof commitServiceOriginalRoomResponder>;
-        try {
-          committed = commitServiceOriginalRoomResponder(h.http.service, runtime, prepared);
-        } finally {
-          peerPolicy?.mockRestore();
-        }
-        if (scenario === 'same budget blocks configured callback peer reserve') {
-          // Assertions live outside the caught configuration read; a failed assertion cannot default away.
-          expect(peerDecisions.length).toBeGreaterThan(0);
-          for (const decision of peerDecisions)
-            expect(decision).toEqual({ allowed: false, counted: false, prepared: true });
-        }
-        expect(h.db.get<{ n: number }>(sql`SELECT count(*) AS n FROM room_turn_spend`)!.n).toBe(
-          commitsBefore + 1
-        );
-        expect(
-          h.db.get<{ status: string }>(sql`SELECT status FROM room_doc_admissions
-        WHERE document_id=${h.documentId}`)?.status
-        ).toBe('claimed');
-        const nativeBindingsAfterCommit = h.db.select().from(connectorRuntimeBindings).all().length;
-        sdkMocks.behavior = 'complete';
-        if (scenario === 'same-target two batches retain busy second original') {
-          if (!secondOriginal) throw new Error('Second authentic batch was not produced.');
-          const firstBatchId = h.http.channels.listDeliveries(h.documentId, event.id)[0]!.batchId!;
-          expect(
-            h.db.get<{ batchId: string }>(sql`SELECT batch_id AS batchId
-            FROM room_doc_admissions WHERE document_id=${h.documentId}`)
-          ).toEqual({ batchId: firstBatchId });
-          const beforeSecond = h.http.channels.getBatch(secondOriginal.batchId)!;
-          const beforeReceipt = h.http.channels.getEvent(h.documentId, secondOriginal.eventId)!;
-          const beforeDeliveries = h.http.channels.listDeliveries(
-            h.documentId,
-            secondOriginal.eventId
-          );
-          // Actual installed first native entry occupies the target, even for the same lock holder.
-          expect(
-            await prepareServiceOriginalRoomResponder(
-              h.http.service,
-              runtime,
-              holder,
-              'native-source'
-            )
-          ).toBeUndefined();
-          expect(h.http.channels.getBatch(secondOriginal.batchId)).toEqual(beforeSecond);
-          expect(h.http.channels.getEvent(h.documentId, secondOriginal.eventId)).toEqual(
-            beforeReceipt
-          );
-          expect(h.http.channels.listDeliveries(h.documentId, secondOriginal.eventId)).toEqual(
-            beforeDeliveries
-          );
-          expect(sdkMocks.prompts).toHaveLength(modelsBefore);
-          expect(h.db.get<{ n: number }>(sql`SELECT count(*) AS n FROM room_turn_spend`)!.n).toBe(
-            commitsBefore + 1
-          );
-          const firstStream = startCodexCommittedRoomResponder(runtime, prepared, committed);
-          await feedProjector(getOrCreateProjector('native-source'), firstStream, {
-            originalRoomStream: firstStream,
-          });
-          const next = await prepareServiceOriginalRoomResponder(
+            ).toBe('accepted');
+            runtime.releaseLock('native-source', 'competing-holder');
+            expect(runtime.acquireLock('native-source', 'producer-holder', holder)).toBe(true);
+          }
+          prepared = await prepareServiceOriginalRoomResponder(
             h.http.service,
             runtime,
             holder,
             'native-source'
           );
-          if (!next) throw new Error('Known pre-effect busy lost accepted-unclaimed original.');
-          prepared = next;
-          const nextOwn = readCodexPreparedRoomResponder(runtime, next);
-          if (!nextOwn) throw new Error('Second actual native preparation missing.');
-          expect(nextOwn.source).not.toBe(originalPrepared.source);
-          const nextCommit = commitServiceOriginalRoomResponder(h.http.service, runtime, next);
-          const admitted = h.db.all<{ batchId: string; status: string }>(sql`SELECT
-            batch_id AS batchId,status FROM room_doc_admissions WHERE document_id=${h.documentId}`);
-          expect(admitted).toEqual(
-            expect.arrayContaining([
-              { batchId: firstBatchId, status: 'settled' },
-              { batchId: secondOriginal.batchId, status: 'claimed' },
-            ])
+          if (!prepared) throw new Error('Genuine original responder unexpectedly unavailable.');
+          const originalPrepared = readCodexPreparedRoomResponder(runtime, prepared);
+          if (!originalPrepared) throw new Error('Actual original preparation missing.');
+          const operation = originalPrepared.nativeOperation;
+          const operationTime = captureOriginalPreparedNativeTime(h.principals, h.db, operation);
+          const operationBinding = readOriginalPreparedNativePrincipal(
+            h.principals,
+            h.db,
+            operation,
+            operationTime,
+            h.db
           );
-          expect(admitted).toHaveLength(2);
-          const secondStream = startCodexCommittedRoomResponder(runtime, next, nextCommit);
-          await feedProjector(getOrCreateProjector('native-source'), secondStream, {
-            originalRoomStream: secondStream,
-          });
-          expect(sdkMocks.prompts).toHaveLength(modelsBefore + 2);
+          if (!operationBinding) throw new Error('Actual prepared native binding missing.');
+          const operationBindingId = operationBinding.id;
+          const commitsBefore = h.db.get<{ n: number }>(
+            sql`SELECT count(*) AS n FROM room_turn_spend`
+          )!.n;
+          const peerDecisions: ReturnType<typeof h.budget.tryReserve>[] = [];
+          const actualConfig = configManager.get.bind(configManager);
+          const peerPolicy =
+            scenario === 'same budget blocks configured callback peer reserve'
+              ? vi.spyOn(configManager, 'get').mockImplementation((...args) => {
+                  const value = actualConfig(...args);
+                  if (args[0] === 'rooms') peerDecisions.push(h.budget.tryReserve(h.roomId));
+                  return value;
+                })
+              : undefined;
+          let committed: ReturnType<typeof commitServiceOriginalRoomResponder>;
+          try {
+            committed = commitServiceOriginalRoomResponder(h.http.service, runtime, prepared);
+          } finally {
+            peerPolicy?.mockRestore();
+          }
+          if (scenario === 'same budget blocks configured callback peer reserve') {
+            // Assertions live outside the caught configuration read; a failed assertion cannot default away.
+            expect(peerDecisions.length).toBeGreaterThan(0);
+            for (const decision of peerDecisions)
+              expect(decision).toEqual({ allowed: false, counted: false, prepared: true });
+          }
           expect(h.db.get<{ n: number }>(sql`SELECT count(*) AS n FROM room_turn_spend`)!.n).toBe(
-            commitsBefore + 2
+            commitsBefore + 1
           );
-          expect(() => startCodexCommittedRoomResponder(runtime!, next, nextCommit)).toThrow();
           expect(
-            await prepareServiceOriginalRoomResponder(
+            h.db.get<{ status: string }>(sql`SELECT status FROM room_doc_admissions
+        WHERE document_id=${h.documentId}`)?.status
+          ).toBe('claimed');
+          const nativeBindingsAfterCommit = h.db
+            .select()
+            .from(connectorRuntimeBindings)
+            .all().length;
+          sdkMocks.behavior = 'complete';
+          if (scenario === 'same-target two batches retain busy second original') {
+            if (!secondOriginal) throw new Error('Second authentic batch was not produced.');
+            const firstBatchId = h.http.channels.listDeliveries(h.documentId, event.id)[0]!
+              .batchId!;
+            expect(
+              h.db.get<{ batchId: string }>(sql`SELECT batch_id AS batchId
+            FROM room_doc_admissions WHERE document_id=${h.documentId}`)
+            ).toEqual({ batchId: firstBatchId });
+            const beforeSecond = h.http.channels.getBatch(secondOriginal.batchId)!;
+            const beforeReceipt = h.http.channels.getEvent(h.documentId, secondOriginal.eventId)!;
+            const beforeDeliveries = h.http.channels.listDeliveries(
+              h.documentId,
+              secondOriginal.eventId
+            );
+            // Actual installed first native entry occupies the target, even for the same lock holder.
+            expect(
+              await prepareServiceOriginalRoomResponder(
+                h.http.service,
+                runtime,
+                holder,
+                'native-source'
+              )
+            ).toBeUndefined();
+            expect(h.http.channels.getBatch(secondOriginal.batchId)).toEqual(beforeSecond);
+            expect(h.http.channels.getEvent(h.documentId, secondOriginal.eventId)).toEqual(
+              beforeReceipt
+            );
+            expect(h.http.channels.listDeliveries(h.documentId, secondOriginal.eventId)).toEqual(
+              beforeDeliveries
+            );
+            expect(sdkMocks.prompts).toHaveLength(modelsBefore);
+            expect(h.db.get<{ n: number }>(sql`SELECT count(*) AS n FROM room_turn_spend`)!.n).toBe(
+              commitsBefore + 1
+            );
+            const firstStream = startCodexCommittedRoomResponder(runtime, prepared, committed);
+            await feedProjector(getOrCreateProjector('native-source'), firstStream, {
+              originalRoomStream: firstStream,
+            });
+            const next = await prepareServiceOriginalRoomResponder(
               h.http.service,
               runtime,
               holder,
               'native-source'
-            )
-          ).toBeUndefined();
-          return;
-        }
-        if (scenario === 'entered pending next direct return') {
-          sdkMocks.behavior = 'room-wait-abort-close';
-          const raw = startCodexCommittedRoomResponder(runtime, prepared, committed);
-          const pending = raw.next().then(
-            (result) => ({ failed: false as const, result }),
-            (cause: unknown) => ({ failed: true as const, cause })
-          );
-          let pendingSettled = false;
-          void pending.then(() => {
-            pendingSettled = true;
-          });
-          let scenarioFailed = false,
-            scenarioCause: unknown;
-          const retainScenarioCause = (cause: unknown) => {
-            if (!scenarioFailed) {
-              scenarioFailed = true;
-              scenarioCause = cause;
-            }
-          };
-          try {
-            await vi.waitFor(() => expect(sdkMocks.waitingSignal).toBeDefined());
-            const child = sdkMocks.waitingChild;
-            if (!child) throw new Error('Actual supplied SDK child was not started');
-            expect(child.exitCode).toBeNull();
-            expect(child.signalCode).toBeNull();
-            expect(sdkMocks.waitingSignal!.aborted).toBe(false);
-            const returned = raw.return(undefined).then(
+            );
+            if (!next) throw new Error('Known pre-effect busy lost accepted-unclaimed original.');
+            prepared = next;
+            const nextOwn = readCodexPreparedRoomResponder(runtime, next);
+            if (!nextOwn) throw new Error('Second actual native preparation missing.');
+            expect(nextOwn.source).not.toBe(originalPrepared.source);
+            const nextCommit = commitServiceOriginalRoomResponder(h.http.service, runtime, next);
+            const admitted = h.db.all<{ batchId: string; status: string }>(sql`SELECT
+            batch_id AS batchId,status FROM room_doc_admissions WHERE document_id=${h.documentId}`);
+            expect(admitted).toEqual(
+              expect.arrayContaining([
+                { batchId: firstBatchId, status: 'settled' },
+                { batchId: secondOriginal.batchId, status: 'claimed' },
+              ])
+            );
+            expect(admitted).toHaveLength(2);
+            const secondStream = startCodexCommittedRoomResponder(runtime, next, nextCommit);
+            await feedProjector(getOrCreateProjector('native-source'), secondStream, {
+              originalRoomStream: secondStream,
+            });
+            expect(sdkMocks.prompts).toHaveLength(modelsBefore + 2);
+            expect(h.db.get<{ n: number }>(sql`SELECT count(*) AS n FROM room_turn_spend`)!.n).toBe(
+              commitsBefore + 2
+            );
+            expect(() => startCodexCommittedRoomResponder(runtime!, next, nextCommit)).toThrow();
+            expect(
+              await prepareServiceOriginalRoomResponder(
+                h.http.service,
+                runtime,
+                holder,
+                'native-source'
+              )
+            ).toBeUndefined();
+            return;
+          }
+          if (scenario === 'entered pending next direct return') {
+            sdkMocks.behavior = 'room-wait-abort-close';
+            const raw = startCodexCommittedRoomResponder(runtime, prepared, committed);
+            const pending = raw.next().then(
               (result) => ({ failed: false as const, result }),
               (cause: unknown) => ({ failed: true as const, cause })
             );
-            // No interruptQuery, supplied release, polling timeout or second turn
-            // may make this return progress: its exact native owner must cancel.
-            expect(sdkMocks.waitingSignal!.aborted).toBe(true);
-            await vi.waitFor(() => expect(pendingSettled).toBe(true));
-            const read = await pending;
-            expect(read.failed).toBe(true);
-            if (!read.failed) throw new Error('Original pending read did not retain cancellation');
-            expect(read.cause).toMatchObject({ name: 'AbortError' });
-            expect(await returned).toEqual({
-              failed: false,
-              result: { done: true, value: undefined },
+            let pendingSettled = false;
+            void pending.then(() => {
+              pendingSettled = true;
             });
-            expect(child.exitCode !== null || child.signalCode !== null).toBe(true);
-            expect(child.stdin.destroyed && child.stdout.destroyed && child.stderr.destroyed).toBe(
-              true
-            );
-            expect(readCodexNativeOperation(operation)).toBeUndefined();
-            expect(readCodexPreparedRoomResponder(runtime, prepared)).toBeUndefined();
-            expect(
-              h.db.get<{ revoked: string | null }>(sql`SELECT revoked_at AS revoked
+            let scenarioFailed = false,
+              scenarioCause: unknown;
+            const retainScenarioCause = (cause: unknown) => {
+              if (!scenarioFailed) {
+                scenarioFailed = true;
+                scenarioCause = cause;
+              }
+            };
+            try {
+              await vi.waitFor(() => expect(sdkMocks.waitingSignal).toBeDefined());
+              const child = sdkMocks.waitingChild;
+              if (!child) throw new Error('Actual supplied SDK child was not started');
+              expect(child.exitCode).toBeNull();
+              expect(child.signalCode).toBeNull();
+              expect(sdkMocks.waitingSignal!.aborted).toBe(false);
+              const returned = raw.return(undefined).then(
+                (result) => ({ failed: false as const, result }),
+                (cause: unknown) => ({ failed: true as const, cause })
+              );
+              // No interruptQuery, supplied release, polling timeout or second turn
+              // may make this return progress: its exact native owner must cancel.
+              expect(sdkMocks.waitingSignal!.aborted).toBe(true);
+              await vi.waitFor(() => expect(pendingSettled).toBe(true));
+              const read = await pending;
+              expect(read.failed).toBe(true);
+              if (!read.failed)
+                throw new Error('Original pending read did not retain cancellation');
+              expect(read.cause).toMatchObject({ name: 'AbortError' });
+              expect(await returned).toEqual({
+                failed: false,
+                result: { done: true, value: undefined },
+              });
+              expect(child.exitCode !== null || child.signalCode !== null).toBe(true);
+              expect(
+                child.stdin.destroyed && child.stdout.destroyed && child.stderr.destroyed
+              ).toBe(true);
+              expect(readCodexNativeOperation(operation)).toBeUndefined();
+              expect(readCodexPreparedRoomResponder(runtime, prepared)).toBeUndefined();
+              expect(
+                h.db.get<{ revoked: string | null }>(sql`SELECT revoked_at AS revoked
               FROM connector_runtime_bindings WHERE id=${operationBindingId}`)?.revoked
-            ).not.toBeNull();
-            expect(
-              h.db.get<{ status: string }>(sql`SELECT status FROM room_doc_admissions
+              ).not.toBeNull();
+              expect(
+                h.db.get<{ status: string }>(sql`SELECT status FROM room_doc_admissions
               WHERE document_id=${h.documentId}`)?.status
-            ).toBe('in_doubt');
-            expect(sdkMocks.prompts).toHaveLength(modelsBefore + 1);
-            expect(h.db.get<{ n: number }>(sql`SELECT count(*) AS n FROM room_turn_spend`)!.n).toBe(
-              commitsBefore + 1
-            );
-          } catch (cause) {
-            retainScenarioCause(cause);
-          } finally {
-            // Failure-only fixture release cannot satisfy the successful native cancellation assertion.
-            if (scenarioFailed) sdkMocks.releaseWaiting?.();
-            // Attempt all original owners and retain the assertion/operation's first cause.
-            for (const cleanup of [retirePrepared, () => raw.return(undefined), () => pending]) {
-              try {
-                await cleanup();
-              } catch (cause) {
-                retainScenarioCause(cause);
+              ).toBe('in_doubt');
+              expect(sdkMocks.prompts).toHaveLength(modelsBefore + 1);
+              expect(
+                h.db.get<{ n: number }>(sql`SELECT count(*) AS n FROM room_turn_spend`)!.n
+              ).toBe(commitsBefore + 1);
+            } catch (cause) {
+              retainScenarioCause(cause);
+            } finally {
+              // Failure-only fixture release cannot satisfy the successful native cancellation assertion.
+              if (scenarioFailed) sdkMocks.releaseWaiting?.();
+              // Attempt all original owners and retain the assertion/operation's first cause.
+              for (const cleanup of [retirePrepared, () => raw.return(undefined), () => pending]) {
+                try {
+                  await cleanup();
+                } catch (cause) {
+                  retainScenarioCause(cause);
+                }
               }
             }
+            if (scenarioFailed) throw scenarioCause;
+            return;
           }
-          if (scenarioFailed) throw scenarioCause;
-          return;
-        }
-        if (
-          scenario === 'held settings direct return' ||
-          scenario === 'held settings durable revoke'
-        ) {
-          const setupPort = runtime as unknown as {
-            resolveTurnSettings(...args: unknown[]): Promise<unknown>;
-          };
-          const actualSettings = setupPort.resolveTurnSettings.bind(setupPort);
-          let release: (() => void) | undefined;
-          const hold = new Promise<void>((resolve) => {
-            release = resolve;
-          });
-          let entered = false;
-          const settings = vi
-            .spyOn(setupPort, 'resolveTurnSettings')
-            .mockImplementationOnce(async (...args) => {
-              const result = await actualSettings(...args);
-              entered = true;
-              await hold;
-              return result;
+          if (
+            scenario === 'held settings direct return' ||
+            scenario === 'held settings durable revoke'
+          ) {
+            const setupPort = runtime as unknown as {
+              resolveTurnSettings(...args: unknown[]): Promise<unknown>;
+            };
+            const actualSettings = setupPort.resolveTurnSettings.bind(setupPort);
+            let release: (() => void) | undefined;
+            const hold = new Promise<void>((resolve) => {
+              release = resolve;
             });
-          const constructorsBefore = sdkMocks.constructorOptions.length;
-          const raw = startCodexCommittedRoomResponder(runtime, prepared, committed);
-          let firstPull: Promise<unknown> | undefined;
-          let close: Promise<unknown> | undefined;
-          let failedHere = false;
-          let primaryHere: unknown;
-          const remember = (cause: unknown) => {
-            if (!failedHere) {
-              failedHere = true;
-              primaryHere = cause;
-            }
-          };
-          try {
-            firstPull = raw.next().then(
-              (value) => ({ failed: false as const, value }),
-              (cause: unknown) => ({ failed: true as const, cause })
-            );
-            await vi.waitFor(() => expect(entered).toBe(true));
-            expect(readCodexNativeOperation(operation)).toBeDefined();
-            if (scenario === 'held settings direct return') {
-              close = raw.return(undefined).then(
+            let entered = false;
+            const settings = vi
+              .spyOn(setupPort, 'resolveTurnSettings')
+              .mockImplementationOnce(async (...args) => {
+                const result = await actualSettings(...args);
+                entered = true;
+                await hold;
+                return result;
+              });
+            const constructorsBefore = sdkMocks.constructorOptions.length;
+            const raw = startCodexCommittedRoomResponder(runtime, prepared, committed);
+            let firstPull: Promise<unknown> | undefined;
+            let close: Promise<unknown> | undefined;
+            let failedHere = false;
+            let primaryHere: unknown;
+            const remember = (cause: unknown) => {
+              if (!failedHere) {
+                failedHere = true;
+                primaryHere = cause;
+              }
+            };
+            try {
+              firstPull = raw.next().then(
                 (value) => ({ failed: false as const, value }),
                 (cause: unknown) => ({ failed: true as const, cause })
               );
-              // The genuine wrapper retires synchronously; queued generator return alone cannot.
+              await vi.waitFor(() => expect(entered).toBe(true));
+              expect(readCodexNativeOperation(operation)).toBeDefined();
+              if (scenario === 'held settings direct return') {
+                close = raw.return(undefined).then(
+                  (value) => ({ failed: false as const, value }),
+                  (cause: unknown) => ({ failed: true as const, cause })
+                );
+                // The genuine wrapper retires synchronously; queued generator return alone cannot.
+                expect(readCodexNativeOperation(operation)).toBeUndefined();
+              } else {
+                const at = captureOriginalPreparedNativeTime(h.principals, h.db, operation);
+                await h.principals.revoke(operationBindingId, 'turn_cancelled');
+                expect(
+                  readOriginalPreparedNativePrincipal(h.principals, h.db, operation, at, h.db)
+                ).toBeUndefined();
+              }
+              expect(sdkMocks.prompts).toHaveLength(modelsBefore);
+              release!();
+              await firstPull;
+              if (close) await close;
+              else await raw.return(undefined);
+              expect(settings).toHaveBeenCalledTimes(1);
+              expect(sdkMocks.constructorOptions).toHaveLength(constructorsBefore);
+              expect(sdkMocks.prompts).toHaveLength(modelsBefore);
               expect(readCodexNativeOperation(operation)).toBeUndefined();
-            } else {
-              const at = captureOriginalPreparedNativeTime(h.principals, h.db, operation);
-              await h.principals.revoke(operationBindingId, 'turn_cancelled');
               expect(
-                readOriginalPreparedNativePrincipal(h.principals, h.db, operation, at, h.db)
-              ).toBeUndefined();
+                h.db.get<{ revoked: string | null }>(sql`SELECT revoked_at AS revoked
+              FROM connector_runtime_bindings WHERE id=${operationBindingId}`)?.revoked
+              ).not.toBeNull();
+              expect(
+                h.db.get<{ status: string }>(sql`SELECT status FROM room_doc_admissions
+              WHERE document_id=${h.documentId}`)?.status
+              ).toBe('in_doubt');
+              expect(
+                h.db.get<{ n: number }>(sql`SELECT count(*) AS n FROM room_turn_spend`)!.n
+              ).toBe(commitsBefore + 1);
+              expect(() =>
+                startCodexCommittedRoomResponder(runtime!, prepared!, committed)
+              ).toThrow();
+            } catch (cause) {
+              remember(cause);
+            } finally {
+              try {
+                release?.();
+              } catch (cause) {
+                remember(cause);
+              }
+              try {
+                if (firstPull) await firstPull;
+              } catch (cause) {
+                remember(cause);
+              }
+              try {
+                if (close) await close;
+                else await raw.return(undefined);
+              } catch (cause) {
+                remember(cause);
+              }
+              try {
+                settings.mockRestore();
+              } catch (cause) {
+                remember(cause);
+              }
             }
+            if (failedHere) throw primaryHere;
+            return;
+          }
+          if (scenario.startsWith('early settings') || scenario === 'early credits refusal') {
+            // Inject failure at the actual installed runtime's setup method only.
+            // Genuine source, preparation, private acquisition, native COMMIT and
+            // FIRST above are unchanged; this port cannot issue any authority.
+            const constructorsBefore = sdkMocks.constructorOptions.length;
+            const setupPort = runtime as unknown as {
+              resolveTurnSettings(...args: unknown[]): Promise<unknown>;
+              creditsLaunchFor(...args: unknown[]): Promise<unknown>;
+            };
+            const primary =
+              scenario === 'early settings undefined'
+                ? undefined
+                : scenario === 'early credits refusal'
+                  ? new CreditsUnavailableError('not-linked', 'Codex')
+                  : new Error('actual entered settings read');
+            const setupFault =
+              scenario === 'early credits refusal'
+                ? vi.spyOn(setupPort, 'creditsLaunchFor').mockImplementationOnce(async () => {
+                    throw primary;
+                  })
+                : vi.spyOn(setupPort, 'resolveTurnSettings').mockImplementationOnce(async () => {
+                    throw primary;
+                  });
+            try {
+              const raw = startCodexCommittedRoomResponder(runtime, prepared, committed);
+              const observed: StreamEvent[] = [];
+              const result = await (async () => {
+                for await (const event of raw) observed.push(event);
+              })().then(
+                () => ({ failed: false as const }),
+                (cause: unknown) => ({ failed: true as const, cause })
+              );
+              if (scenario === 'early credits refusal') {
+                expect(result).toEqual({ failed: false });
+                expect(observed).toEqual([
+                  expect.objectContaining({
+                    type: 'error',
+                    data: expect.objectContaining({ code: 'credits_unavailable' }),
+                  }),
+                ]);
+              } else expect(result).toEqual({ failed: true, cause: primary });
+              expect(setupFault).toHaveBeenCalledTimes(1);
+              expect(sdkMocks.constructorOptions).toHaveLength(constructorsBefore);
+              expect(h.db.select().from(connectorRuntimeBindings).all()).toHaveLength(
+                nativeBindingsAfterCommit
+              );
+              expect(readCodexNativeOperation(operation)).toBeUndefined();
+              expect(readCodexPreparedRoomResponder(runtime, prepared)).toBeUndefined();
+              expect(sdkMocks.prompts).toHaveLength(modelsBefore);
+              expect(
+                h.db.get<{ status: string }>(sql`SELECT status FROM room_doc_admissions
+              WHERE document_id=${h.documentId}`)?.status
+              ).toBe('in_doubt');
+              expect(
+                h.db.get<{ revoked: string | null }>(sql`SELECT revoked_at AS revoked
+              FROM connector_runtime_bindings WHERE id=${operationBindingId}`)?.revoked
+              ).not.toBeNull();
+              expect(
+                h.db.get<{ n: number }>(sql`SELECT count(*) AS n FROM room_turn_spend`)!.n
+              ).toBe(commitsBefore + 1);
+              expect(() =>
+                startCodexCommittedRoomResponder(runtime!, prepared!, committed)
+              ).toThrow();
+            } finally {
+              setupFault.mockRestore();
+            }
+            return;
+          }
+          if (
+            scenario === 'early mesh Error with cleanup Error' ||
+            scenario === 'early mesh undefined with cleanup Error'
+          ) {
+            const primary =
+              scenario === 'early mesh Error with cleanup Error'
+                ? new Error('original entered mesh setup')
+                : undefined;
+            const secondary = new Error('secondary genuine revoke failure');
+            const revoke = h.principals.revoke.bind(h.principals);
+            const revokeSpy = vi
+              .spyOn(h.principals, 'revoke')
+              .mockImplementation(async (...args) => {
+                await revoke(...args);
+                throw secondary;
+              });
+            runtime.setMeshCore({
+              getByPath: () => {
+                throw primary;
+              },
+              updateLastSeen: () => {},
+              listWithPaths: () => [],
+            });
+            try {
+              await expect(
+                drain(startCodexCommittedRoomResponder(runtime, prepared, committed))
+              ).rejects.toBe(primary);
+              expect(revokeSpy).toHaveBeenCalled();
+              expect(readCodexNativeOperation(operation)).toBeUndefined();
+              expect(sdkMocks.prompts).toHaveLength(modelsBefore);
+              expect(
+                h.db.get<{ status: string }>(sql`SELECT status FROM room_doc_admissions
+              WHERE document_id=${h.documentId}`)?.status
+              ).toBe('in_doubt');
+              expect(
+                h.db.get<{ revoked: string | null }>(sql`SELECT revoked_at AS revoked
+              FROM connector_runtime_bindings WHERE id=${operationBindingId}`)?.revoked
+              ).not.toBeNull();
+              // The original retirement memo retains the injected secondary failure.
+              // Prove it explicitly after preserving the entered operation's primary cause.
+              await expect(retirePrepared()).rejects.toBe(secondary);
+              verifiedRetirementFailure = true;
+              verifiedRetirementCause = secondary;
+            } finally {
+              revokeSpy.mockRestore();
+            }
+            return;
+          }
+          if (scenario === 'durable native binding revocation bypasses public select') {
+            h.db
+              .run(sql`UPDATE connector_runtime_bindings SET revoked_at=${new Date().toISOString()}
+            WHERE id=${operationBindingId}`);
+            const originalSelect = h.db.select.bind(h.db);
+            const publicBindingSelect = vi.fn();
+            const spoof = vi.spyOn(h.db, 'select').mockImplementation((fields) => {
+              const query = originalSelect(fields);
+              const from = query.from;
+              Object.defineProperty(query, 'from', {
+                value: (table: unknown) => {
+                  if (table === connectorRuntimeBindings) {
+                    publicBindingSelect();
+                    throw new Error('replaceable public SELECT must not run in final native read');
+                  }
+                  return Reflect.apply(from, query, [table]);
+                },
+              });
+              return query;
+            });
+            try {
+              await expect(
+                drain(startCodexCommittedRoomResponder(runtime, prepared, committed))
+              ).rejects.toThrow();
+              // Published durable thread metadata still uses its ordinary query.
+              // The revoked connector authority must use its captured native read.
+              expect(spoof).toHaveBeenCalled();
+              expect(publicBindingSelect).not.toHaveBeenCalled();
+              expect(sdkMocks.prompts).toHaveLength(modelsBefore);
+              expect(readCodexNativeOperation(operation)).toBeUndefined();
+            } finally {
+              spoof.mockRestore();
+            }
+            return;
+          }
+          if (
+            scenario === 'onTurnStart Error before first pull' ||
+            scenario === 'onTurnStart undefined with failing child sweep'
+          ) {
+            const primary =
+              scenario === 'onTurnStart Error before first pull'
+                ? new Error('original pre-pull observer')
+                : undefined;
+            const projector = getOrCreateProjector('native-source');
+            projector.ingest({
+              type: 'subagent_update',
+              taskId: 'actual-stranded-child',
+              status: 'running',
+            });
+            expect(projector.listRunningSubagents()).toContain('actual-stranded-child');
+            const sweep =
+              scenario === 'onTurnStart undefined with failing child sweep'
+                ? vi.spyOn(projector, 'listRunningSubagents').mockImplementation(() => {
+                    throw new Error('secondary sweep failure');
+                  })
+                : undefined;
+            const stream = startCodexCommittedRoomResponder(runtime, prepared, committed);
+            try {
+              await expect(
+                feedProjector(projector, stream, {
+                  originalRoomStream: stream,
+                  onTurnStart: () => {
+                    throw primary;
+                  },
+                })
+              ).rejects.toBe(primary);
+              expect(sdkMocks.prompts).toHaveLength(modelsBefore);
+              expect(readCodexNativeOperation(operation)).toBeUndefined();
+              expect(
+                h.db.get<{ status: string }>(sql`SELECT status FROM room_doc_admissions
+              WHERE document_id=${h.documentId}`)?.status
+              ).toBe('in_doubt');
+              await retireOriginalRoomResponderStream(stream);
+            } finally {
+              sweep?.mockRestore();
+              disposeProjector('native-source');
+            }
+            return;
+          }
+          if (scenario === 'foreign original runtime') {
+            const peer = makeRuntime(); // Actual second constructor; it owns no part of this preparation.
+            expect(() => startCodexCommittedRoomResponder(peer, prepared!, committed)).toThrow(
+              'Room responder preparation is not original.'
+            );
             expect(sdkMocks.prompts).toHaveLength(modelsBefore);
-            release!();
-            await firstPull;
-            if (close) await close;
-            else await raw.return(undefined);
-            expect(settings).toHaveBeenCalledTimes(1);
-            expect(sdkMocks.constructorOptions).toHaveLength(constructorsBefore);
+          }
+          if (scenario === 'return before first pull') {
+            const neverPulled = startCodexCommittedRoomResponder(runtime, prepared, committed);
+            await neverPulled.return(undefined);
             expect(sdkMocks.prompts).toHaveLength(modelsBefore);
             expect(readCodexNativeOperation(operation)).toBeUndefined();
             expect(
-              h.db.get<{ revoked: string | null }>(sql`SELECT revoked_at AS revoked
-              FROM connector_runtime_bindings WHERE id=${operationBindingId}`)?.revoked
-            ).not.toBeNull();
-            expect(
               h.db.get<{ status: string }>(sql`SELECT status FROM room_doc_admissions
-              WHERE document_id=${h.documentId}`)?.status
+          WHERE document_id=${h.documentId}`)?.status
             ).toBe('in_doubt');
+            expect(() => startCodexCommittedRoomResponder(runtime, prepared!, committed)).toThrow();
+          } else if (
+            scenario === 'fixed projector and terminal' ||
+            scenario === 'projection observer revokes grant' ||
+            scenario === 'foreign same-id projector'
+          ) {
+            const projector =
+              scenario === 'foreign same-id projector'
+                ? new SessionStateProjector('native-source')
+                : getOrCreateProjector('native-source');
+            const forgedPublic = vi.spyOn(projector, 'ingest').mockImplementation(() => {
+              throw new Error('Mutable public projection must not be consulted.');
+            });
+            const originalStream = startCodexCommittedRoomResponder(runtime, prepared, committed);
+            const onTurnStart = vi.fn(() => {
+              if (scenario === 'projection observer revokes grant')
+                h.db.run(
+                  sql`UPDATE canvas_doc_grants SET revoked_at=${new Date().toISOString()} WHERE grant_id=${h.granted.grant.grantId}`
+                );
+            });
+            const projected = feedProjector(projector, originalStream, {
+              originalRoomStream: originalStream,
+              onTurnStart,
+            });
+            if (scenario === 'fixed projector and terminal') {
+              await projected;
+              expect(sdkMocks.prompts).toHaveLength(modelsBefore + 1);
+              expect(
+                h.db.get<{ status: string; outcome: string; projected: string | null }>(
+                  sql`SELECT status,outcome,turn_id AS projected FROM room_doc_admissions WHERE document_id=${h.documentId}`
+                )
+              ).toEqual({
+                status: 'settled',
+                outcome: 'turn_done',
+                projected: expect.stringMatching(/^native-source:/),
+              });
+              expect(onTurnStart).toHaveBeenCalledTimes(1);
+              // Completed original cleanup is idempotent and cannot rewrite durable success.
+              await retireOriginalRoomResponderStream(originalStream);
+              await retireOriginalRoomResponderStream(originalStream);
+              expect(
+                h.db.get<{ status: string; outcome: string }>(sql`SELECT status,outcome
+              FROM room_doc_admissions WHERE document_id=${h.documentId}`)
+              ).toEqual({
+                status: 'settled',
+                outcome: 'turn_done',
+              });
+            } else {
+              await expect(projected).rejects.toThrow();
+              expect(sdkMocks.prompts).toHaveLength(modelsBefore);
+              expect(
+                h.db.get<{ status: string }>(
+                  sql`SELECT status FROM room_doc_admissions WHERE document_id=${h.documentId}`
+                )?.status
+              ).toBe('in_doubt');
+              expect(onTurnStart).toHaveBeenCalledTimes(
+                scenario === 'foreign same-id projector' ? 0 : 1
+              );
+            }
+            expect(forgedPublic).not.toHaveBeenCalled();
+            forgedPublic.mockRestore();
+            disposeProjector('native-source');
             expect(h.db.get<{ n: number }>(sql`SELECT count(*) AS n FROM room_turn_spend`)!.n).toBe(
               commitsBefore + 1
             );
-            expect(() =>
-              startCodexCommittedRoomResponder(runtime!, prepared!, committed)
-            ).toThrow();
-          } catch (cause) {
-            remember(cause);
-          } finally {
-            try {
-              release?.();
-            } catch (cause) {
-              remember(cause);
-            }
-            try {
-              if (firstPull) await firstPull;
-            } catch (cause) {
-              remember(cause);
-            }
-            try {
-              if (close) await close;
-              else await raw.return(undefined);
-            } catch (cause) {
-              remember(cause);
-            }
-            try {
-              settings.mockRestore();
-            } catch (cause) {
-              remember(cause);
-            }
-          }
-          if (failedHere) throw primaryHere;
-          return;
-        }
-        if (scenario.startsWith('early settings') || scenario === 'early credits refusal') {
-          // Inject failure at the actual installed runtime's setup method only.
-          // Genuine source, preparation, private acquisition, native COMMIT and
-          // FIRST above are unchanged; this port cannot issue any authority.
-          const constructorsBefore = sdkMocks.constructorOptions.length;
-          const setupPort = runtime as unknown as {
-            resolveTurnSettings(...args: unknown[]): Promise<unknown>;
-            creditsLaunchFor(...args: unknown[]): Promise<unknown>;
-          };
-          const primary =
-            scenario === 'early settings undefined'
-              ? undefined
-              : scenario === 'early credits refusal'
-                ? new CreditsUnavailableError('not-linked', 'Codex')
-                : new Error('actual entered settings read');
-          const setupFault =
-            scenario === 'early credits refusal'
-              ? vi.spyOn(setupPort, 'creditsLaunchFor').mockImplementationOnce(async () => {
-                  throw primary;
-                })
-              : vi.spyOn(setupPort, 'resolveTurnSettings').mockImplementationOnce(async () => {
-                  throw primary;
-                });
-          try {
-            const raw = startCodexCommittedRoomResponder(runtime, prepared, committed);
-            const observed: StreamEvent[] = [];
-            const result = await (async () => {
-              for await (const event of raw) observed.push(event);
-            })().then(
-              () => ({ failed: false as const }),
-              (cause: unknown) => ({ failed: true as const, cause })
-            );
-            if (scenario === 'early credits refusal') {
-              expect(result).toEqual({ failed: false });
-              expect(observed).toEqual([
-                expect.objectContaining({
-                  type: 'error',
-                  data: expect.objectContaining({ code: 'credits_unavailable' }),
-                }),
-              ]);
-            } else expect(result).toEqual({ failed: true, cause: primary });
-            expect(setupFault).toHaveBeenCalledTimes(1);
-            expect(sdkMocks.constructorOptions).toHaveLength(constructorsBefore);
+          } else if (scenario === 'grant revoked after commit') {
+            h.db.run(sql`UPDATE canvas_doc_grants SET revoked_at=${new Date().toISOString()}
+          WHERE grant_id=${h.granted.grant.grantId}`);
+            await expect(
+              drain(startCodexCommittedRoomResponder(runtime, prepared, committed))
+            ).rejects.toThrow('Original Room source/approved target changed.');
+            expect(sdkMocks.prompts).toHaveLength(modelsBefore);
+            expect(
+              h.db.get<{ status: string }>(sql`SELECT status FROM room_doc_admissions
+          WHERE document_id=${h.documentId}`)?.status
+            ).toBe('in_doubt');
+          } else {
+            await drain(startCodexCommittedRoomResponder(runtime, prepared, committed));
+            expect(sdkMocks.prompts).toHaveLength(modelsBefore + 1);
             expect(h.db.select().from(connectorRuntimeBindings).all()).toHaveLength(
               nativeBindingsAfterCommit
             );
             expect(readCodexNativeOperation(operation)).toBeUndefined();
-            expect(readCodexPreparedRoomResponder(runtime, prepared)).toBeUndefined();
-            expect(sdkMocks.prompts).toHaveLength(modelsBefore);
-            expect(
-              h.db.get<{ status: string }>(sql`SELECT status FROM room_doc_admissions
-              WHERE document_id=${h.documentId}`)?.status
-            ).toBe('in_doubt');
-            expect(
-              h.db.get<{ revoked: string | null }>(sql`SELECT revoked_at AS revoked
-              FROM connector_runtime_bindings WHERE id=${operationBindingId}`)?.revoked
-            ).not.toBeNull();
+            expect(() => startCodexCommittedRoomResponder(runtime, prepared!, committed)).toThrow();
+            expect(sdkMocks.prompts).toHaveLength(modelsBefore + 1);
             expect(h.db.get<{ n: number }>(sql`SELECT count(*) AS n FROM room_turn_spend`)!.n).toBe(
               commitsBefore + 1
             );
-            expect(() =>
-              startCodexCommittedRoomResponder(runtime!, prepared!, committed)
-            ).toThrow();
-          } finally {
-            setupFault.mockRestore();
           }
-          return;
+        } catch (cause) {
+          failed = true;
+          first = cause;
+        } finally {
+          await drainOriginalCleanup();
         }
-        if (
-          scenario === 'early mesh Error with cleanup Error' ||
-          scenario === 'early mesh undefined with cleanup Error'
-        ) {
-          const primary =
-            scenario === 'early mesh Error with cleanup Error'
-              ? new Error('original entered mesh setup')
-              : undefined;
-          const secondary = new Error('secondary genuine revoke failure');
-          const revoke = h.principals.revoke.bind(h.principals);
-          const revokeSpy = vi.spyOn(h.principals, 'revoke').mockImplementation(async (...args) => {
-            await revoke(...args);
-            throw secondary;
-          });
-          runtime.setMeshCore({
-            getByPath: () => {
-              throw primary;
-            },
-            updateLastSeen: () => {},
-            listWithPaths: () => [],
-          });
-          try {
-            await expect(
-              drain(startCodexCommittedRoomResponder(runtime, prepared, committed))
-            ).rejects.toBe(primary);
-            expect(revokeSpy).toHaveBeenCalled();
-            expect(readCodexNativeOperation(operation)).toBeUndefined();
-            expect(sdkMocks.prompts).toHaveLength(modelsBefore);
-            expect(
-              h.db.get<{ status: string }>(sql`SELECT status FROM room_doc_admissions
-              WHERE document_id=${h.documentId}`)?.status
-            ).toBe('in_doubt');
-            expect(
-              h.db.get<{ revoked: string | null }>(sql`SELECT revoked_at AS revoked
-              FROM connector_runtime_bindings WHERE id=${operationBindingId}`)?.revoked
-            ).not.toBeNull();
-            // The original retirement memo retains the injected secondary failure.
-            // Prove it explicitly after preserving the entered operation's primary cause.
-            await expect(retirePrepared()).rejects.toBe(secondary);
-            verifiedRetirementFailure = true;
-            verifiedRetirementCause = secondary;
-          } finally {
-            revokeSpy.mockRestore();
-          }
-          return;
-        }
-        if (scenario === 'durable native binding revocation bypasses public select') {
-          h.db.run(sql`UPDATE connector_runtime_bindings SET revoked_at=${new Date().toISOString()}
-            WHERE id=${operationBindingId}`);
-          const originalSelect = h.db.select.bind(h.db);
-          const publicBindingSelect = vi.fn();
-          const spoof = vi.spyOn(h.db, 'select').mockImplementation((fields) => {
-            const query = originalSelect(fields);
-            const from = query.from;
-            Object.defineProperty(query, 'from', {
-              value: (table: unknown) => {
-                if (table === connectorRuntimeBindings) {
-                  publicBindingSelect();
-                  throw new Error('replaceable public SELECT must not run in final native read');
-                }
-                return Reflect.apply(from, query, [table]);
-              },
-            });
-            return query;
-          });
-          try {
-            await expect(
-              drain(startCodexCommittedRoomResponder(runtime, prepared, committed))
-            ).rejects.toThrow();
-            // Published durable thread metadata still uses its ordinary query.
-            // The revoked connector authority must use its captured native read.
-            expect(spoof).toHaveBeenCalled();
-            expect(publicBindingSelect).not.toHaveBeenCalled();
-            expect(sdkMocks.prompts).toHaveLength(modelsBefore);
-            expect(readCodexNativeOperation(operation)).toBeUndefined();
-          } finally {
-            spoof.mockRestore();
-          }
-          return;
-        }
-        if (
-          scenario === 'onTurnStart Error before first pull' ||
-          scenario === 'onTurnStart undefined with failing child sweep'
-        ) {
-          const primary =
-            scenario === 'onTurnStart Error before first pull'
-              ? new Error('original pre-pull observer')
-              : undefined;
-          const projector = getOrCreateProjector('native-source');
-          projector.ingest({
-            type: 'subagent_update',
-            taskId: 'actual-stranded-child',
-            status: 'running',
-          });
-          expect(projector.listRunningSubagents()).toContain('actual-stranded-child');
-          const sweep =
-            scenario === 'onTurnStart undefined with failing child sweep'
-              ? vi.spyOn(projector, 'listRunningSubagents').mockImplementation(() => {
-                  throw new Error('secondary sweep failure');
-                })
-              : undefined;
-          const stream = startCodexCommittedRoomResponder(runtime, prepared, committed);
-          try {
-            await expect(
-              feedProjector(projector, stream, {
-                originalRoomStream: stream,
-                onTurnStart: () => {
-                  throw primary;
-                },
-              })
-            ).rejects.toBe(primary);
-            expect(sdkMocks.prompts).toHaveLength(modelsBefore);
-            expect(readCodexNativeOperation(operation)).toBeUndefined();
-            expect(
-              h.db.get<{ status: string }>(sql`SELECT status FROM room_doc_admissions
-              WHERE document_id=${h.documentId}`)?.status
-            ).toBe('in_doubt');
-            await retireOriginalRoomResponderStream(stream);
-          } finally {
-            sweep?.mockRestore();
-            disposeProjector('native-source');
-          }
-          return;
-        }
-        if (scenario === 'foreign original runtime') {
-          const peer = makeRuntime(); // Actual second constructor; it owns no part of this preparation.
-          expect(() => startCodexCommittedRoomResponder(peer, prepared!, committed)).toThrow(
-            'Room responder preparation is not original.'
-          );
-          expect(sdkMocks.prompts).toHaveLength(modelsBefore);
-        }
-        if (scenario === 'return before first pull') {
-          const neverPulled = startCodexCommittedRoomResponder(runtime, prepared, committed);
-          await neverPulled.return(undefined);
-          expect(sdkMocks.prompts).toHaveLength(modelsBefore);
-          expect(readCodexNativeOperation(operation)).toBeUndefined();
-          expect(
-            h.db.get<{ status: string }>(sql`SELECT status FROM room_doc_admissions
-          WHERE document_id=${h.documentId}`)?.status
-          ).toBe('in_doubt');
-          expect(() => startCodexCommittedRoomResponder(runtime, prepared!, committed)).toThrow();
-        } else if (
-          scenario === 'fixed projector and terminal' ||
-          scenario === 'projection observer revokes grant' ||
-          scenario === 'foreign same-id projector'
-        ) {
-          const projector =
-            scenario === 'foreign same-id projector'
-              ? new SessionStateProjector('native-source')
-              : getOrCreateProjector('native-source');
-          const forgedPublic = vi.spyOn(projector, 'ingest').mockImplementation(() => {
-            throw new Error('Mutable public projection must not be consulted.');
-          });
-          const originalStream = startCodexCommittedRoomResponder(runtime, prepared, committed);
-          const onTurnStart = vi.fn(() => {
-            if (scenario === 'projection observer revokes grant')
-              h.db.run(
-                sql`UPDATE canvas_doc_grants SET revoked_at=${new Date().toISOString()} WHERE grant_id=${h.granted.grant.grantId}`
-              );
-          });
-          const projected = feedProjector(projector, originalStream, {
-            originalRoomStream: originalStream,
-            onTurnStart,
-          });
-          if (scenario === 'fixed projector and terminal') {
-            await projected;
-            expect(sdkMocks.prompts).toHaveLength(modelsBefore + 1);
-            expect(
-              h.db.get<{ status: string; outcome: string; projected: string | null }>(
-                sql`SELECT status,outcome,turn_id AS projected FROM room_doc_admissions WHERE document_id=${h.documentId}`
-              )
-            ).toEqual({
-              status: 'settled',
-              outcome: 'turn_done',
-              projected: expect.stringMatching(/^native-source:/),
-            });
-            expect(onTurnStart).toHaveBeenCalledTimes(1);
-            // Completed original cleanup is idempotent and cannot rewrite durable success.
-            await retireOriginalRoomResponderStream(originalStream);
-            await retireOriginalRoomResponderStream(originalStream);
-            expect(
-              h.db.get<{ status: string; outcome: string }>(sql`SELECT status,outcome
-              FROM room_doc_admissions WHERE document_id=${h.documentId}`)
-            ).toEqual({
-              status: 'settled',
-              outcome: 'turn_done',
-            });
-          } else {
-            await expect(projected).rejects.toThrow();
-            expect(sdkMocks.prompts).toHaveLength(modelsBefore);
-            expect(
-              h.db.get<{ status: string }>(
-                sql`SELECT status FROM room_doc_admissions WHERE document_id=${h.documentId}`
-              )?.status
-            ).toBe('in_doubt');
-            expect(onTurnStart).toHaveBeenCalledTimes(
-              scenario === 'foreign same-id projector' ? 0 : 1
-            );
-          }
-          expect(forgedPublic).not.toHaveBeenCalled();
-          forgedPublic.mockRestore();
-          disposeProjector('native-source');
-          expect(h.db.get<{ n: number }>(sql`SELECT count(*) AS n FROM room_turn_spend`)!.n).toBe(
-            commitsBefore + 1
-          );
-        } else if (scenario === 'grant revoked after commit') {
-          h.db.run(sql`UPDATE canvas_doc_grants SET revoked_at=${new Date().toISOString()}
-          WHERE grant_id=${h.granted.grant.grantId}`);
-          await expect(
-            drain(startCodexCommittedRoomResponder(runtime, prepared, committed))
-          ).rejects.toThrow('Original Room source/approved target changed.');
-          expect(sdkMocks.prompts).toHaveLength(modelsBefore);
-          expect(
-            h.db.get<{ status: string }>(sql`SELECT status FROM room_doc_admissions
-          WHERE document_id=${h.documentId}`)?.status
-          ).toBe('in_doubt');
-        } else {
-          await drain(startCodexCommittedRoomResponder(runtime, prepared, committed));
-          expect(sdkMocks.prompts).toHaveLength(modelsBefore + 1);
-          expect(h.db.select().from(connectorRuntimeBindings).all()).toHaveLength(
-            nativeBindingsAfterCommit
-          );
-          expect(readCodexNativeOperation(operation)).toBeUndefined();
-          expect(() => startCodexCommittedRoomResponder(runtime, prepared!, committed)).toThrow();
-          expect(sdkMocks.prompts).toHaveLength(modelsBefore + 1);
-          expect(h.db.get<{ n: number }>(sql`SELECT count(*) AS n FROM room_turn_spend`)!.n).toBe(
-            commitsBefore + 1
-          );
-        }
-      } catch (cause) {
-        failed = true;
-        first = cause;
-      } finally {
-        await drainOriginalCleanup();
+      };
+      if (scenario === selectedNativeCase) {
+        if (!selectedNativeOwner) throw new Error('Selected genuine fixture was not prepared.');
+        await selectedNativeOwner.run(runOriginalCase);
+      } else {
+        await runOriginalCase();
       }
     }
   );

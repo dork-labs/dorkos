@@ -15,7 +15,7 @@ import { fork } from 'node:child_process';
 import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { canvasDocChannels, canvasDocWriteIntents, type DbTransaction } from '@dorkos/db';
 import { fixture as makeFixture, AuthorityRefused } from './checkbox-fixture.js';
 import { DocCheckboxWriteService } from '../checkbox-service.js';
@@ -894,63 +894,128 @@ it('raw fence reuse still decodes replaced evidence codecs and refuses malformed
   expect(h.counts()).toEqual({ events: { n: 0 }, batches: { n: 0 } });
 });
 
-it('bounded recovery progresses through 101 original intents with a stable keyset and no effects', async () => {
-  const started = process.hrtime.bigint();
-  const phase = (value: string) =>
-    console.error(
-      'ORIGINAL_101_RECOVERY_PHASE',
-      JSON.stringify({
-        phase: value,
-        elapsedMs: Number(process.hrtime.bigint() - started) / 1_000_000,
-      })
-    );
-  phase('fixture-start');
-  const h = await fixture({}, phase);
-  phase('fixture-ready');
-  const before = await readFile(h.path);
-  h.failCompletion(true);
-  await expect(h.service.toggle(await h.request(), h.actor)).rejects.toThrow();
-  await writeFile(h.path, before);
-  const base = h.store.getWriteIntent(h.row().intentId)!;
-  h.db.$client.prepare("UPDATE canvas_doc_write_intents SET status='prepared'").run();
-  phase('seed-start');
-  for (let i = 0; i < 100; i++) {
-    const intentId = randomUUID(),
-      eventId = randomUUID();
-    const input = { ...(base.input as CheckboxRequest), eventId };
-    const evidence = {
-      ...h.service.validate(base),
-      tempPath: join(h.dir, `.dork-checkbox-${intentId}.tmp`),
+describe('bounded original-intent recovery census', () => {
+  let h: Awaited<ReturnType<typeof fixture>>;
+  let before: Buffer;
+  let phase: (value: string) => void;
+  let assertActive: () => void;
+  let runBody: (work: () => Promise<void>) => Promise<void>;
+
+  beforeEach(async () => {
+    let active = true;
+    let bodyPending: Promise<void> | undefined;
+    let current: Awaited<ReturnType<typeof fixture>> | undefined;
+    let draining: Promise<void> | undefined;
+    assertActive = () => {
+      if (!active) throw new Error('Recovery census test ended.');
     };
-    const seeded = {
-      ...base,
-      intentId,
-      eventId,
-      input,
-      envelopeHash: rawByteHash(Buffer.from(JSON.stringify(input))),
-      evidence,
-      status: 'prepared' as const,
+    runBody = (work) => {
+      assertActive();
+      bodyPending = work();
+      void bodyPending.catch(() => {});
+      return bodyPending;
     };
-    h.service.validate(seeded);
-    // Synthetic census setup; ordinary admission and its UUID guards are tested separately.
-    h.store.transaction((tx) => tx.insert(canvasDocWriteIntents).values(seeded).run());
-    h.service.validate(h.store.getWriteIntent(intentId)!);
-  }
-  phase('seed-ready');
-  const one = await recoverCheckboxPage(h.service);
-  phase('page-one-returned');
-  expect(one).toMatchObject({ selected: 100, verified: 0, retryableFailures: 0, hasMore: true });
-  const two = await recoverCheckboxPage(h.service, one.cursor);
-  phase('page-two-returned');
-  expect(two).toMatchObject({ selected: 1, verified: 0, retryableFailures: 0, hasMore: false });
-  expect(one.cursor).not.toEqual(two.cursor);
-  expect(await readFile(h.path)).toEqual(before);
-  expect(h.counts()).toEqual({ events: { n: 0 }, batches: { n: 0 } });
-  await expect(
-    recoverCheckboxPage(h.service, { updatedAt: 'invalid', intentId: 'x' })
-  ).rejects.toThrow('cursor');
-  await expect(recoverCheckboxPage(h.service, undefined, 101)).rejects.toThrow('limit');
-  phase('assertions-complete');
+    // The existing file owner drains these before any fixture DB/directory cleanup.
+    crashTests.push({
+      drain() {
+        active = false;
+        draining ??= (async () => {
+          await Promise.allSettled([setupPending]);
+          // Stop the genuine service before joining a timed-out operation.
+          // This closes admission and joins its original tracked recovery calls.
+          if (current) await current.service.stop();
+          if (bodyPending) await Promise.allSettled([bodyPending]);
+        })();
+        return draining;
+      },
+    });
+    const setupPending = (async () => {
+      const started = process.hrtime.bigint();
+      phase = (value: string) =>
+        console.error(
+          'ORIGINAL_101_RECOVERY_PHASE',
+          JSON.stringify({
+            phase: value,
+            elapsedMs: Number(process.hrtime.bigint() - started) / 1_000_000,
+          })
+        );
+      phase('fixture-start');
+      h = await fixture({}, phase);
+      current = h;
+      assertActive();
+      phase('fixture-ready');
+      before = await readFile(h.path);
+      assertActive();
+      h.failCompletion(true);
+      const request = await h.request();
+      assertActive();
+      await expect(h.service.toggle(request, h.actor)).rejects.toThrow();
+      assertActive();
+      await writeFile(h.path, before);
+      assertActive();
+      const base = h.store.getWriteIntent(h.row().intentId)!;
+      h.db.$client.prepare("UPDATE canvas_doc_write_intents SET status='prepared'").run();
+      phase('seed-start');
+      for (let i = 0; i < 100; i++) {
+        const intentId = randomUUID(),
+          eventId = randomUUID();
+        const input = { ...(base.input as CheckboxRequest), eventId };
+        const evidence = {
+          ...h.service.validate(base),
+          tempPath: join(h.dir, `.dork-checkbox-${intentId}.tmp`),
+        };
+        const seeded = {
+          ...base,
+          intentId,
+          eventId,
+          input,
+          envelopeHash: rawByteHash(Buffer.from(JSON.stringify(input))),
+          evidence,
+          status: 'prepared' as const,
+        };
+        h.service.validate(seeded);
+        // Synthetic census setup; ordinary admission and its UUID guards are tested separately.
+        h.store.transaction((tx) => tx.insert(canvasDocWriteIntents).values(seeded).run());
+        h.service.validate(h.store.getWriteIntent(intentId)!);
+      }
+      phase('seed-ready');
+      assertActive();
+    })();
+    void setupPending.catch(() => {});
+    await setupPending;
+  });
+
+  it('bounded recovery progresses through 101 original intents with a stable keyset and no effects', async () => {
+    const currentFixture = h;
+    await runBody(async () => {
+      const h = currentFixture;
+      phase('body-start');
+      const one = await recoverCheckboxPage(h.service);
+      phase('page-one-returned');
+      assertActive();
+      expect(one).toMatchObject({
+        selected: 100,
+        verified: 0,
+        retryableFailures: 0,
+        hasMore: true,
+      });
+      const two = await recoverCheckboxPage(h.service, one.cursor);
+      phase('page-two-returned');
+      assertActive();
+      expect(two).toMatchObject({ selected: 1, verified: 0, retryableFailures: 0, hasMore: false });
+      expect(one.cursor).not.toEqual(two.cursor);
+      const recoveredBytes = await readFile(h.path);
+      assertActive();
+      expect(recoveredBytes).toEqual(before);
+      expect(h.counts()).toEqual({ events: { n: 0 }, batches: { n: 0 } });
+      await expect(
+        recoverCheckboxPage(h.service, { updatedAt: 'invalid', intentId: 'x' })
+      ).rejects.toThrow('cursor');
+      assertActive();
+      await expect(recoverCheckboxPage(h.service, undefined, 101)).rejects.toThrow('limit');
+      phase('assertions-complete');
+    });
+  });
 });
 
 it('does not remove an unowned exclusive-create collider during failure or recovery', async () => {

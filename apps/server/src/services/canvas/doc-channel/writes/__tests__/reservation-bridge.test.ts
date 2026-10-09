@@ -5,6 +5,7 @@ import fs from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { CanvasChannelCheckboxRequestSchema } from '@dorkos/shared/canvas-channel-schemas';
+import { loadCeilingMs, loadScaledMs } from '@dorkos/shared/test-budget';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ZodError } from 'zod';
 import {
@@ -752,40 +753,64 @@ const importEntries = [
   canvasEntry,
   roomCanvasEntry,
 ];
-it.each(importEntries)('cold-loads the declarations-only cycle starting at %s', async (first) => {
-  const program =
-    `const originalImportStarted = performance.now();
+it.each(importEntries)(
+  'cold-loads the declarations-only cycle starting at %s',
+  async (first) => {
+    const program =
+      `const originalImportStarted = performance.now();
 const originalImportPhase = phase => console.log('ORIGINAL_COLD_PHASE ' + phase + ' ' + Math.round(performance.now() - originalImportStarted));
 originalImportPhase('first-start');
 const first = await import(${JSON.stringify(first)});
 originalImportPhase('first-ready');
 ` +
-    importEntries
-      .filter((entry) => entry !== first)
-      .map(
-        (entry, index) =>
-          `originalImportPhase('remaining-${index}-start');
+      importEntries
+        .filter((entry) => entry !== first)
+        .map(
+          (entry, index) =>
+            `originalImportPhase('remaining-${index}-start');
 await import(${JSON.stringify(entry)});
 originalImportPhase('remaining-${index}-ready');`
-      )
-      .join('\n') +
-    `\noriginalImportPhase('remaining-ready');
+        )
+        .join('\n') +
+      `\noriginalImportPhase('remaining-ready');
 const canvas = await import(${JSON.stringify(canvasEntry)});
 const roomCanvas = await import(${JSON.stringify(roomCanvasEntry)});
 if (canvas.MAX_CANVAS_DOCUMENTS !== 12 || roomCanvas.MAX_ROOM_CANVAS_DOCUMENTS !== 12)
   throw new Error('Uninitialized original canvas capacity');
 if (!Object.keys(first).length) throw new Error('Empty entry'); console.log('cold-import-complete');`;
-  const argv = ['--import', 'tsx', '--input-type=module', '-e', program];
-  const invokedAt = new Date().toISOString(),
-    started = performance.now();
-  const running = promisify(execFile)(process.execPath, argv, { cwd: process.cwd() });
-  void running.catch(() => {});
-  const owned = trackColdImport(running.child, [process.execPath, ...argv], invokedAt, started);
-  const { stdout, stderr } = await running;
-  await owned.closed;
-  expect(stdout).toContain('cold-import-complete');
-  expect(stderr).not.toContain('before initialization');
-});
+    const argv = ['--import', 'tsx', '--input-type=module', '-e', program];
+    const invokedAt = new Date().toISOString(),
+      started = performance.now();
+    const running = promisify(execFile)(process.execPath, argv, {
+      cwd: process.cwd(),
+      timeout: loadScaledMs(5000),
+    });
+    void running.catch(() => {});
+    const owned = trackColdImport(running.child, [process.execPath, ...argv], invokedAt, started);
+    let failed = false,
+      firstCause: unknown;
+    try {
+      const { stdout, stderr } = await running;
+      await owned.closed;
+      expect(stdout).toContain('cold-import-complete');
+      expect(stderr).not.toContain('before initialization');
+    } catch (cause) {
+      failed = true;
+      firstCause = cause;
+    } finally {
+      try {
+        await drainColdImports();
+      } catch (cause) {
+        if (!failed) {
+          failed = true;
+          firstCause = cause;
+        }
+      }
+    }
+    if (failed) throw firstCause;
+  },
+  loadCeilingMs(5000) + 2 * 1000
+);
 
 describe('prepared original scope obligations', () => {
   it('rolls back a valid prepared-row update before the genuine A scope exits', async () => {
