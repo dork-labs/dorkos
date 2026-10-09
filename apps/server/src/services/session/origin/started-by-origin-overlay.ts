@@ -21,6 +21,16 @@ const TITLE_MEMORY = 2_000;
  */
 const knownTitles = new Map<string, string>();
 
+/**
+ * A chat's title as this process last listed it, or null when it has not
+ * listed that chat (or the chat has no title).
+ *
+ * @param sessionId - The chat.
+ */
+export function rememberedChatTitle(sessionId: string): string | null {
+  return knownTitles.get(sessionId) ?? null;
+}
+
 function rememberTitle(session: Session): void {
   if (!session.title) return;
   knownTitles.delete(session.id);

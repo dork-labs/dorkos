@@ -491,7 +491,10 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // note names it, with each runtime's prefix, so it is always loaded.
     // 120 -> 121 for `audit_verify` (DOR-2738): no prompt block names it, so it
     // stays deferred and unprefixed.
-    expect(advertised.size).toBe(121);
+    // 121 -> 124 for `chat_send`, `chat_read` and `chat_stop` (spec
+    // `spin-off-chats` §1): capabilities on the in-session server; no block
+    // names them until the relay teaching moves onto them (spec §7).
+    expect(advertised.size).toBe(124);
     for (const name of [
       'configure_doc_channel',
       'approve_doc_route',

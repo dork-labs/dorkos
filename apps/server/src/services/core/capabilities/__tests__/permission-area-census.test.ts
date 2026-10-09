@@ -83,6 +83,10 @@ const EXPECTED_MEMBERS: Record<string, readonly string[]> = {
   // One action, an agent summarizing its own conversation (DOR-2732).
   own_chat: ['session.compact'],
   messages: [
+    // Chats messaging chats (spec `spin-off-chats` §1).
+    'chat.read',
+    'chat.send',
+    'chat.stop',
     'relay_get_metrics',
     'relay_get_trace',
     'relay_inbox',

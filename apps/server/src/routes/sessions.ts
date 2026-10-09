@@ -25,6 +25,9 @@ import type {
 } from '@dorkos/shared/types';
 import type { AgentRuntime, PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import type { MeshCore } from '@dorkos/mesh';
+import { getChatMessageService } from '../services/session/chat-messages/chat-message-service.js';
+import type { ChatActivityResponse } from '@dorkos/shared/chat-messages';
+import { stampHistory } from '../services/session/chat-messages/chat-message-stamps.js';
 import { filterKickoffHistory } from '@dorkos/shared/kickoff';
 import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import { isAutonomyStop, needsConsentRitual } from '@dorkos/shared/permission-semantics';
@@ -596,7 +599,15 @@ router.get('/:id/messages', async (req, res) => {
   // (M4): whatever the runtime stored, the synthetic "introduce yourself"
   // record never leaves the server as a user message. Role-scoped (user only),
   // first-user-record-scoped, exact-envelope-shaped — see @dorkos/shared/kickoff.
-  res.json({ messages: filterKickoffHistory(messages) });
+  // A message another chat sent carries its sender, stamped here from the
+  // server's own record of the send (spec `spin-off-chats` §2), never read
+  // from the text.
+  res.json({
+    messages: stampHistory(
+      [...new Set([sessionId, internalSessionId])],
+      filterKickoffHistory(messages)
+    ),
+  });
 });
 
 /**
@@ -1104,6 +1115,26 @@ router.post('/:id/messages', async (req, res) => {
 // POST /api/sessions/:id/opened — the chat page is showing this chat (spec
 // `your-activity-first` D3). Handler in `session-touch-handler.ts`.
 router.post('/:id/opened', sessionOpenedHandler);
+
+// GET /api/sessions/:id/chat-messages - What this chat sent other chats, and
+// when another chat stopped it (spec `spin-off-chats` §6): the Sent cards and
+// the "Stopped by" lines. Re-read on every `chat_activity` stream nudge.
+router.get('/:id/chat-messages', async (req, res) => {
+  const sessionId = parseSessionId(req.params.id);
+  if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
+  const service = getChatMessageService();
+  if (!service) {
+    const empty: ChatActivityResponse = { sent: [], stops: [] };
+    return res.json(empty);
+  }
+  // An id no runtime knows has sent nothing and been stopped by nobody.
+  const canonical = await runtimeRegistry
+    .resolveForSession(sessionId)
+    .then((runtime) => runtime.getInternalSessionId(sessionId) ?? sessionId)
+    .catch(() => sessionId);
+  const body: ChatActivityResponse = await service.activityOf(canonical);
+  res.json(body);
+});
 
 // GET|PATCH|DELETE /api/sessions/:id/queue — the messages waiting on a session.
 // Handlers live in `session-queue-handler.ts` so this file stays under the size

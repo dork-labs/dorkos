@@ -147,3 +147,16 @@ describe('deriveSessionTitle', () => {
     );
   });
 });
+
+describe('deriveSessionTitle — a first message another chat sent (spin-off-chats §2)', () => {
+  it('names the chat after the message, not the line the fence opens with', async () => {
+    const { renderChatMessage } =
+      await import('../../../session/chat-messages/chat-message-fence.js');
+    const { text } = renderChatMessage(
+      { agentName: 'Coordinator', agentId: 'a1', chatId: 'chat-a', chatTitle: 'Plan the week' },
+      'start',
+      'Cut the v0.102.0 release'
+    );
+    expect(deriveSessionTitle(text)).toBe('Cut the v0.102.0 release');
+  });
+});

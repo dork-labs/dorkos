@@ -21,7 +21,8 @@ export const AGENT_SEND_KEY_MAX = 200;
 /**
  * The launch origins (`TurnOrigin.kind`, as `session_metadata.launch_origin`
  * records it) of chats an extension may write into: a person's own chat, one
- * an agent or an extension started, and a carry-over or resume of one. The two
+ * an agent or an extension started, an agent's DM chat a chat message opened,
+ * and a carry-over or resume of one. The two
  * extension kinds are further limited to the extension's OWN chats
  * (`AgentSendService.resolveTarget` in `agent-send.ts`).
  *
@@ -38,6 +39,7 @@ export const AGENT_SEND_KEY_MAX = 200;
 export const MESSAGEABLE_ORIGINS: ReadonlySet<string> = new Set([
   'interactive',
   'agent-launch',
+  'chat-message',
   'extension-start',
   'extension-message',
   'account-handoff',

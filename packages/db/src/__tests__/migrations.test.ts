@@ -169,6 +169,12 @@ describe('Database Migrations', () => {
       // 0096). Cascades with its room; archiving one keeps the rows and freezes
       // them.
       'canvas_documents',
+      // The DM chat one agent keeps with another, the messages chats send each
+      // other (the server's record of who sent what), and how far one chat has
+      // read another (spec spin-off-chats §1-§2).
+      'chat_agent_dms',
+      'chat_messages',
+      'chat_read_cursors',
       'codex_threads',
       // Remote community enrollment, mirrored history, and durable delivery.
       'community_agent_enrollments',
