@@ -63,6 +63,13 @@ export const sessionStartedBy = sqliteTable(
      * runtimes' declarations are in hand. NULL where the levels are.
      */
     permissionSameAsStarter: integer('permission_same_as_starter', { mode: 'boolean' }),
+    /**
+     * Whether a `kind = 'chat'` start reports back to the chat that started it
+     * when a turn ends finished, failed, needing the person or paused at a
+     * limit (spec `spin-off-chats` §5). On unless `session_start` was told
+     * `reportBack: 'off'`; an extension's start never reports to a chat.
+     */
+    reportBack: integer('report_back', { mode: 'boolean' }).notNull().default(true),
     /** When it was started (ISO 8601). */
     createdAt: text('created_at').notNull(),
   },

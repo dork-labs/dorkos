@@ -9,6 +9,7 @@
  * The launch service is real here, down to the dispatcher, so what reaches the
  * turn (the account hint, the origin, the cap) is what production sends.
  */
+import { setChatMessageService } from '../../../../session/chat-messages/chat-message-service.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -754,6 +755,46 @@ describe('session_start records who started the new session (spec flow-multiproj
       reason: 'Split off the tests',
     });
     expect(store.get(sessionId.replace(/^canon-/, ''))).toBeNull();
+  });
+
+  /** A chat service whose parent chats can, or cannot, take chat messages. */
+  function wireChats(canReceive: boolean): void {
+    setChatMessageService({
+      canReceive: async () => canReceive,
+      beginStart: async (_c: unknown, _s: string, prompt: string) => ({
+        id: 'cm',
+        content: prompt,
+      }),
+      settleStart: () => {},
+    } as never);
+  }
+  afterEach(() => setChatMessageService(undefined));
+
+  it('promises no reports to a parent that cannot take chat messages (a room, a run)', async () => {
+    wireChats(false);
+    const result = payloadOf(await fromChat('parent-chat')(BASE)) as { sessionId: string };
+    expect(store.get(result.sessionId)?.reportBack).toBe(false);
+    const seed = vi.mocked(dispatchMessage).mock.calls.at(-1)![0].seedContext as string;
+    expect(seed).toContain('does not hear from you on its own');
+  });
+
+  it('reports back by default, and not when told reportBack off (spec spin-off-chats §5)', async () => {
+    wireChats(true);
+    const on = payloadOf(await fromChat('parent-chat')(BASE)) as { sessionId: string };
+    expect(store.get(on.sessionId)?.reportBack).toBe(true);
+    const off = payloadOf(await fromChat('parent-chat')({ ...BASE, reportBack: 'off' })) as {
+      sessionId: string;
+    };
+    expect(store.get(off.sessionId)?.reportBack).toBe(false);
+  });
+
+  it('tells the new chat who started it and how it reports, ahead of the starter’s background', async () => {
+    wireChats(true);
+    await fromChat('parent-chat')({ ...BASE, seedContext: 'The repo is in /work.' });
+    const seed = vi.mocked(dispatchMessage).mock.calls.at(-1)![0].seedContext as string;
+    expect(seed).toContain('parent-chat');
+    expect(seed).toContain('goes back to that chat on its own');
+    expect(seed.indexOf('parent-chat')).toBeLessThan(seed.indexOf('The repo is in /work.'));
   });
 
   it('takes an optional reason of at most 200 characters', () => {

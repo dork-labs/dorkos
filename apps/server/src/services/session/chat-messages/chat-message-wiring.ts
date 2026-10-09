@@ -9,7 +9,7 @@
 import type { MeshCore } from '@dorkos/mesh';
 import type { Db } from '@dorkos/db';
 import { filterKickoffHistory } from '@dorkos/shared/kickoff';
-import type { HistoryMessage } from '@dorkos/shared/types';
+import type { HistoryMessage, PendingInteractionDTO } from '@dorkos/shared/types';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
 import { lastTurnLevelOf } from '../../core/turn-power/turn-levels.js';
 import {
@@ -23,12 +23,18 @@ import { deliverSteer, setQueuedChatCeilingResolver } from '../message-dispatche
 import { rememberedChatTitle } from '../origin/started-by-origin-overlay.js';
 import { getSessionStartedByStore } from '../origin/session-started-by-store.js';
 import { resolveSessionCwdOrNull } from '../resolution/resolve-read-cwd.js';
-import { peekProjector } from '../session-state-projector.js';
+import {
+  onProjectorInteractionChange,
+  onProjectorStatusChange,
+  onProjectorTurnBoundary,
+  peekProjector,
+} from '../session-state-projector.js';
 import { logError, logger } from '../../../lib/logger.js';
 import type { ChatCaller } from './chat-message-service.js';
 import { ChatMessageService, setChatMessageService } from './chat-message-service.js';
 import { setChatMessageStore, type ChatMessageStore } from './chat-message-store.js';
 import { stampHistory } from './chat-message-stamps.js';
+import { ChatReportBack } from './chat-report-back.js';
 import type { ChatReadDeps } from './chat-read.js';
 
 /** How far down a chat's chain of spin-offs a reader may follow. */
@@ -197,6 +203,7 @@ export function wireChatMessaging(deps: WireChatMessagingDeps): {
     emitActivity: emitChatActivity,
   });
   setChatMessageService(service);
+  wireChatReportBack(service, deps.store);
   setQueuedChatCeilingResolver((messageId) => service.ceilingForQueuedMessage(messageId));
   const read: ChatReadDeps = {
     store: deps.store,
@@ -237,4 +244,130 @@ export function wireChatMessaging(deps: WireChatMessagingDeps): {
     },
   };
   return { service, read };
+}
+
+/**
+ * What an ask is about, in one plain line, for a spin-off's "needs the person"
+ * report.
+ *
+ * @param interaction - The pending ask.
+ */
+export function describeAsk(interaction: PendingInteractionDTO): string {
+  switch (interaction.type) {
+    case 'approval':
+      return `It asks to use ${interaction.displayName ?? interaction.toolName}${
+        interaction.description ? `: ${interaction.description}` : '.'
+      }`;
+    case 'question':
+      return `It asks: ${interaction.questions.map((q) => q.question).join(' / ')}`;
+    case 'elicitation':
+      return `${interaction.serverName} asks: ${interaction.message}`;
+    default:
+      return 'It is waiting for an answer.';
+  }
+}
+
+/** How many carry-overs and moves a report follows before it gives up. */
+const CARRY_DEPTH = 10;
+
+/**
+ * The parent a chat reports to, or null when it does not report: the chat
+ * that started it, found past any account moves on either side. A chat
+ * carried to another account reports for the chat it replaced, to that
+ * chat's starter; and a parent that was carried reports onward to the chat
+ * it was carried to, not to the one on the exhausted account.
+ *
+ * @param sessionId - The chat whose turn ended.
+ */
+export function reportTargetOf(sessionId: string): { parentSessionId: string } | null {
+  const startedBy = getSessionStartedByStore();
+  let record = startedBy?.get(sessionId) ?? null;
+  for (let i = 0; record?.carried && record.startedBySessionId && i < CARRY_DEPTH; i += 1) {
+    record = startedBy?.get(record.startedBySessionId) ?? null;
+  }
+  if (!record || record.kind !== 'chat' || !record.reportBack || !record.startedBySessionId) {
+    return null;
+  }
+  let parent = record.startedBySessionId;
+  for (let i = 0; i < CARRY_DEPTH; i += 1) {
+    const next = startedBy?.carriedSuccessorOf(parent);
+    if (!next) break;
+    parent = next;
+  }
+  return { parentSessionId: parent };
+}
+
+/**
+ * Make spin-off chats report back on their own (spec `spin-off-chats` §5):
+ * listen for every turn that ends and every ask that opens, on every runtime.
+ *
+ * @param service - The chat-message service the reports are sent through.
+ * @param store - The chat-message store.
+ * @returns A function that stops listening.
+ */
+export function wireChatReportBack(
+  service: ChatMessageService,
+  store: ChatMessageStore
+): () => void {
+  const reportBack = new ChatReportBack({
+    service,
+    store,
+    reportTargetOf: (sessionId) => reportTargetOf(sessionId),
+    agentPathOf: (sessionId) => runtimeRegistry.getSessionAgentPath(sessionId),
+    holdsBackgroundWork: async (sessionId) => {
+      const runtime = await runtimeRegistry.resolveForSession(sessionId);
+      return runtime.holdsBackgroundWork?.(sessionId) === true;
+    },
+    statusOf: (sessionId) => peekProjector(sessionId)?.getStatus() ?? null,
+    history: chatHistoryOf,
+  });
+  // What each chat's open ask is about, kept from the interaction events so the
+  // "needs the person" report can say it; a DorkOS capability hold has none.
+  const askWhat = new Map<string, string>();
+  const turnStarts = new Map<string, number>();
+  const offTurn = onProjectorTurnBoundary((sessionId, kind) => {
+    if (kind !== 'turn_end') return;
+    // Read NOW, in the boundary itself: a queued message starts the next turn
+    // a moment later and would change both.
+    const ended = peekProjector(sessionId)?.getStatus() ?? null;
+    const window = { from: turnStarts.get(sessionId), to: Date.now() };
+    turnStarts.delete(sessionId);
+    void reportBack.onTurnEnd(sessionId, ended, window).catch((err: unknown) =>
+      logger.warn('[chat report-back] turn end could not be reported', {
+        sessionId,
+        ...logError(err),
+      })
+    );
+  });
+  const offAsk = onProjectorInteractionChange((change) => {
+    if (change.type === 'pending') askWhat.set(change.sessionId, describeAsk(change.interaction));
+    else askWhat.delete(change.sessionId);
+  });
+  // Every way a chat starts waiting on the person — an approval, a question,
+  // an MCP form, a DorkOS capability hold — moves its lifecycle to `blocked`.
+  let waits = 0;
+  const offStatus = onProjectorStatusChange(({ sessionId, status }) => {
+    // When each turn starts, so its report reads only the words it wrote.
+    if (status.lifecycle === 'streaming' && !turnStarts.has(sessionId)) {
+      turnStarts.set(sessionId, Date.now());
+    }
+    if (status.lifecycle !== 'blocked') return;
+    waits += 1;
+    void reportBack
+      .onWaiting(sessionId, {
+        key: `${sessionId}:${waits}`,
+        what: askWhat.get(sessionId) ?? 'It is waiting for the person to approve something.',
+      })
+      .catch((err: unknown) =>
+        logger.warn('[chat report-back] a wait could not be reported', {
+          sessionId,
+          ...logError(err),
+        })
+      );
+  });
+  return () => {
+    offTurn();
+    offAsk();
+    offStatus();
+  };
 }

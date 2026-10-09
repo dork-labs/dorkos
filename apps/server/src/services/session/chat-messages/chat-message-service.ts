@@ -297,8 +297,10 @@ export class ChatMessageService {
     const sender = this.agentFacts(caller.agentPath);
     const fromChatTitle = await this.deps.chatTitle(caller.sessionId).catch(() => null);
     const replyToId = this.replyTarget(caller, target.sessionId, input.replyTo);
+    const messageId = crypto.randomUUID();
     const rendered = renderChatMessage(
       {
+        messageId,
         agentName: sender.agentName,
         agentId: sender.agentId,
         chatId: caller.sessionId,
@@ -313,7 +315,7 @@ export class ChatMessageService {
     // watching it can match the message to its sender from the first event.
     if (target.sessionId === null) target.newSessionId = crypto.randomUUID();
     const row = this.deps.store.insert({
-      id: crypto.randomUUID(),
+      id: messageId,
       toSessionId: target.sessionId ?? target.newSessionId ?? '',
       fromSessionId: caller.sessionId,
       fromAgentPath: caller.agentPath,
@@ -588,6 +590,22 @@ export class ChatMessageService {
     return facts;
   }
 
+  /**
+   * Whether a chat can be sent chat messages at all: one bound here that is
+   * not a room's, a bridged chat, or a scheduled run. A spin-off of a chat
+   * that cannot is never promised reports it could not deliver.
+   *
+   * @param sessionId - The chat.
+   */
+  async canReceive(sessionId: string): Promise<boolean> {
+    try {
+      await this.assertSendable(sessionId, true);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   /** Whether two ids name the same chat (a request id and its canonical one). */
   private async sameChat(a: string, b: string): Promise<boolean> {
     const [ca, cb] = await Promise.all([
@@ -645,8 +663,10 @@ export class ChatMessageService {
   ): Promise<{ id: string; content: string }> {
     const sender = this.agentFacts(caller.agentPath);
     const fromChatTitle = await this.deps.chatTitle(caller.sessionId).catch(() => null);
+    const startId = crypto.randomUUID();
     const rendered = renderChatMessage(
       {
+        messageId: startId,
         agentName: sender.agentName,
         agentId: sender.agentId,
         chatId: caller.sessionId,
@@ -657,7 +677,7 @@ export class ChatMessageService {
       this.deps.nonce?.()
     );
     const row = this.deps.store.insert({
-      id: crypto.randomUUID(),
+      id: startId,
       toSessionId,
       fromSessionId: caller.sessionId,
       fromAgentPath: caller.agentPath,
