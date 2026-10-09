@@ -10,7 +10,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { once } from 'node:events';
 import http, { type RequestListener, type Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
+import net, { type AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import multer from 'multer';
@@ -27,12 +27,11 @@ vi.mock('../../services/core/config-manager.js', () => ({
 }));
 
 import { collectDurableEvents } from '@dorkos/test-utils/sse-test-helpers';
-import { honoListener } from '@dorkos/test-utils/listening-server';
 import { KeepAwakeStatusSchema } from '@dorkos/shared/schemas';
 import { createApp, finalizeApp } from '../../app.js';
 import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import { attachUpgradeRouter } from '../../services/core/streams/upgrade-router.js';
-import { createFrontDoor, createFrontDoorServer } from '../front-door.js';
+import { createFrontDoor, createFrontDoorServer, frontDoorListener } from '../front-door.js';
 
 const TWO_MB = 2 * 1024 * 1024;
 
@@ -92,6 +91,10 @@ function fixtureApp(): express.Express {
   });
   app.get('/head', (_req, res) => {
     res.set('X-Fixture', 'yes').send('a body HEAD must not carry');
+  });
+  // Refuses without reading the body, as an auth check ahead of an upload does.
+  app.post('/refuse', (_req, res) => {
+    res.status(401).json({ error: 'no' });
   });
   app.get('/boom', () => {
     throw new Error('fixture failure');
@@ -188,7 +191,7 @@ describe('front door', () => {
   });
 
   it('streams SSE, and a Last-Event-ID reconnect resumes after it', async () => {
-    const listener = honoListener(createFrontDoor(fixtureApp()));
+    const listener = frontDoorListener(createFrontDoor(fixtureApp()));
 
     const first = await collectDurableEvents(listener, 'fixture', {
       until: (frames) => frames.length >= 2,
@@ -218,6 +221,64 @@ describe('front door', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('x-fixture')).toBe('yes');
     expect(await res.text()).toBe('');
+  });
+
+  /** Send raw bytes to the front door and return the status line and the rest. */
+  async function rawRequest(base: string, request: string): Promise<string> {
+    const socket = net.connect(Number(new URL(base).port), '127.0.0.1');
+    socket.end(request);
+    let raw = '';
+    socket.setEncoding('utf8').on('data', (chunk: string) => (raw += chunk));
+    await once(socket, 'close');
+    return raw;
+  }
+
+  it.each([
+    ['no Host at all (HTTP/1.0)', 'GET /head HTTP/1.0\r\n\r\n'],
+    ['a Host in capitals', 'GET /head HTTP/1.1\r\nHost: LocalHost:1\r\nConnection: close\r\n\r\n'],
+    [
+      'a port out of range',
+      'GET /head HTTP/1.1\r\nHost: localhost:99999\r\nConnection: close\r\n\r\n',
+    ],
+    [
+      'a Host with a path in it',
+      'GET /head HTTP/1.1\r\nHost: example.com/x\r\nConnection: close\r\n\r\n',
+    ],
+  ])('hands Express a request Hono cannot read: %s', async (_name, request) => {
+    const base = await serveThroughFrontDoor(fixtureApp());
+    const raw = await rawRequest(base, request);
+    expect(raw.split('\r\n')[0]).toBe('HTTP/1.1 200 OK');
+    expect(raw).toMatch(/x-fixture: yes/i);
+  });
+
+  it('hands Express an OPTIONS * request', async () => {
+    const legacy: RequestListener = (req, res) => res.end(`legacy saw ${req.method} ${req.url}`);
+    const base = await serveThroughFrontDoor(legacy);
+    const raw = await rawRequest(
+      base,
+      'OPTIONS * HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n'
+    );
+    expect(raw).toMatch(/legacy saw OPTIONS \*$/);
+  });
+
+  it('keeps the connection when Express answers before a slow body has arrived', async () => {
+    const base = await serveThroughFrontDoor(fixtureApp());
+    const socket = net.connect(Number(new URL(base).port), '127.0.0.1');
+    let raw = '';
+    socket.setEncoding('utf8').on('data', (chunk: string) => (raw += chunk));
+    const half = 'x'.repeat(1024);
+    socket.write(
+      `POST /refuse HTTP/1.1\r\nHost: localhost\r\nContent-Length: ${half.length * 2}\r\n\r\n`
+    );
+    socket.write(half);
+    await vi.waitFor(() => expect(raw).toMatch(/^HTTP\/1\.1 401/));
+    // The rest of the body arrives well after the reply, as an upload over a
+    // slow link would. Node reads and discards it, and the socket stays usable.
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    socket.write(half);
+    socket.end('GET /head HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n');
+    await once(socket, 'close');
+    expect(raw).toMatch(/HTTP\/1\.1 200 OK[\s\S]*x-fixture: yes/i);
   });
 
   it("keeps Express's own error answer", async () => {
