@@ -174,6 +174,52 @@ describe('RuntimeRegistry', () => {
       expect(found.getCapabilities().supportsResume).toBe(true);
     });
 
+    // Spec `audit-trail` PR3: the one seam every turn passes through records
+    // every tool call, so a runtime registered here cannot run a tool unseen.
+    it('wraps a registered runtime so its tool calls reach the audit log', async () => {
+      const { initAuditTrail, resetAuditTrail } = await import('../../audit/audit-trail.js');
+      const { AuditLog } = await import('../../audit/audit-log.js');
+      const { AccountIds } = await import('../../audit/account-ids.js');
+      const { auditEvents } = await import('@dorkos/db');
+      const db = createTestDb();
+      initAuditTrail({
+        log: new AuditLog(db),
+        accounts: new AccountIds({ db, installId: 'inst-1', readOwnerAccount: () => null }),
+      });
+      try {
+        registry.register({
+          ...createMockRuntime('claude-code'),
+          sendMessage: async function* () {
+            yield {
+              type: 'tool_call_start',
+              data: {
+                toolCallId: 't1',
+                toolName: 'Bash',
+                input: '{"command":"ls"}',
+                status: 'running',
+              },
+            };
+            yield {
+              type: 'tool_result',
+              data: { toolCallId: 't1', toolName: 'Bash', status: 'complete' },
+            };
+          },
+        } as AgentRuntime);
+        for await (const _event of registry.get('claude-code').sendMessage('s1', 'go', {})) {
+          // drain
+        }
+        expect(
+          db
+            .select()
+            .from(auditEvents)
+            .all()
+            .map((row) => [row.action, row.targetId])
+        ).toEqual([['runtime.tool_used', 'ls']]);
+      } finally {
+        resetAuditTrail();
+      }
+    });
+
     it('throws when getting an unregistered type', () => {
       expect(() => registry.get('nonexistent')).toThrow("Runtime 'nonexistent' not registered");
     });

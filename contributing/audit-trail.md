@@ -58,6 +58,18 @@ The request scope is lazy: the actor and credential are read the first time some
 | `room.merged` (the merger, not the commit author)                                                                                                                       | `rooms/repo/room-merge-service.ts`                                                                   |
 | `http.<method>` for any mutating `/api` request nothing else recorded                                                                                                   | `middleware/audit-request-fallback.ts`                                                               |
 
+## Runtime tool calls (PR3)
+
+`services/audit/record-tool-use.ts` wraps every runtime at the registration seam (`core/runtime-seam/decorate-runtime.ts`) and writes one `runtime.tool_used` row per tool call when it settles (`status` `complete` or `error`). It reads only the runtime-neutral `StreamEvent`s, so a new runtime is covered as long as its mapper emits `toolCallId`, `toolName`, `input` and a terminal `status`. Rules a change here must keep:
+
+- Claude's `tool_call_end` is not terminal (DOR-2011); only a terminal status settles a call, and a call settles once.
+- DorkOS's own tools are skipped, as each runtime spells them (`mcp__dorkos__*` for Claude Code and Codex, `dorkos_*` for OpenCode, the bare `MCP_TOOL_TIERS` name for Doe); the gate records them. Only the running runtime's spelling counts.
+- A call still open when the turn ends is recorded once as `runtime.tool_started` and remembered for its session; its result, in a later turn or by another route, records `runtime.tool_used` once (`recordRuntimeToolCall` settles by session and call id). Never record a guessed `failed`.
+- Helper agents: Claude Code's helper calls never reach the stream, so `runtimes/claude-code/audit-tool-hooks.ts` records them from the SDK `PostToolUse`/`PostToolUseFailure` hooks (only inputs with an `agent_id`); Doe's arrive through `DoeTurnEvents.onHelperTool`. Codex and OpenCode report only a helper's start (`runtime.helper_started`), and the guide says so.
+- The actor is the agent whose home the turn stands in, resolved by `resolveAgentHome` like every other turn-path identity check (`toolActorOf`), named by its mesh id and display name.
+- The actor is named explicitly on each row: an async generator's body runs in its consumer's ALS context, so the scope is not reliable there.
+- Target extraction is `toolTarget`; add a tool shape there with a row in its test table. Never record a full input or output: the transcript already has it. A target is swept for secrets before it is cut short, and the writer sweeps `target.id` as well as `target.name`.
+
 ## One or the other, never both
 
 A choke point records an action in ONE of two ways:

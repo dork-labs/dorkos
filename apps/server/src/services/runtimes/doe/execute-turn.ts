@@ -17,6 +17,8 @@ import type {
 import type { StreamEvent } from '@dorkos/shared/types';
 import { DoeInferenceConfigSchema, type DoeInferenceConfig } from '@dorkos/shared/config-schema';
 import { clampModeToCeiling } from '@dorkos/shared/permission-semantics';
+import type { AuditActor } from '@dorkos/shared/audit-schemas';
+import { recordRuntimeToolCall, toolActorOf } from '../../audit/record-tool-use.js';
 import {
   homeOf,
   resolveAgentHome,
@@ -152,6 +154,27 @@ export async function executeDoeTurn(
       compact ? 'manual' : 'auto',
       () => hostState.sessions.models.costTotal(id)
     );
+    let helperActor: AuditActor | undefined;
+    mapper.onHelperTool = (call) => {
+      try {
+        const actor = (helperActor ??= toolActorOf('doe', { ...(opts ?? {}), cwd }));
+        if (!actor) return;
+        recordRuntimeToolCall(
+          {
+            runtime: 'doe',
+            sessionId: id,
+            toolCallId: call.callId,
+            name: call.name,
+            input: call.input,
+            actor,
+            helperId: call.helper,
+          },
+          call.failed ? 'failed' : 'ok'
+        );
+      } catch {
+        // Recording is never worth a turn.
+      }
+    };
     let connectorInjection: ConnectorRuntimeMcpInjection | null = null;
     if (agentPath && hostState.mesh?.getByPath(agentPath) && hostState.connectorTools) {
       binding = await hostState.connectorTools.principals.openTurn(
