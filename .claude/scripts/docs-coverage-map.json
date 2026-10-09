@@ -950,6 +950,14 @@
       ]
     },
     {
+      "doc": "docs/guides/spin-off-chats.mdx",
+      "description": "Spin-off chats: starting one, who sent a message, report-back, stopping one, helpers vs spin-offs",
+      "patterns": [
+        "services/session/chat-messages/",
+        "packages/operating-skills/"
+      ]
+    },
+    {
       "doc": "docs/guides/workspaces.mdx",
       "description": "Workspaces user guide",
       "patterns": [
