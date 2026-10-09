@@ -4,13 +4,21 @@
  *
  * @module features/chat/model/messaging/use-chat-activity
  */
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { useContext } from 'react';
+import { QueryClient, QueryClientContext, keepPreviousData, useQuery } from '@tanstack/react-query';
 import type { ChatActivityResponse } from '@dorkos/shared/chat-messages';
-import { useTransport } from '@/layers/shared/model';
+import { useOptionalTransport } from '@/layers/shared/model';
 import { useChatActivityVersion } from '@/layers/entities/session';
 
 /** The empty answer, stable so a chat with no messaging renders nothing new. */
 const EMPTY: ChatActivityResponse = { sent: [], stops: [] };
+
+/**
+ * Stands in where no query provider is mounted (a component test, a
+ * showcase): the read is then disabled and the answer is {@link EMPTY}, so the
+ * transcript around it renders exactly as it would with no messaging.
+ */
+const NO_PROVIDER_CLIENT = new QueryClient();
 
 /**
  * Read a chat's messaging, and read it again every time the chat's stream says
@@ -20,14 +28,18 @@ const EMPTY: ChatActivityResponse = { sent: [], stops: [] };
  * @param sessionId - The chat, or null before one resolves.
  */
 export function useChatActivity(sessionId: string | null | undefined): ChatActivityResponse {
-  const transport = useTransport();
+  const transport = useOptionalTransport();
+  const client = useContext(QueryClientContext);
   const version = useChatActivityVersion(sessionId ?? '');
-  const { data } = useQuery({
-    queryKey: ['chat-activity', sessionId, version],
-    queryFn: () => transport.getChatActivity(sessionId!),
-    enabled: Boolean(sessionId),
-    placeholderData: keepPreviousData,
-    staleTime: 30_000,
-  });
+  const { data } = useQuery(
+    {
+      queryKey: ['chat-activity', sessionId, version],
+      queryFn: () => transport!.getChatActivity(sessionId!),
+      enabled: Boolean(sessionId) && transport !== null && client !== undefined,
+      placeholderData: keepPreviousData,
+      staleTime: 30_000,
+    },
+    client ?? NO_PROVIDER_CLIENT
+  );
   return data ?? EMPTY;
 }

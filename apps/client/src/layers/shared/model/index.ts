@@ -3,7 +3,7 @@
  *
  * @module shared/model
  */
-export { TransportProvider, useTransport } from './TransportContext';
+export { TransportProvider, useOptionalTransport, useTransport } from './TransportContext';
 export { useAppStore, type RecentCwd } from './app-store';
 export {
   useAppTabsStore,
