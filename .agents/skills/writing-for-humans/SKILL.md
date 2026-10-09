@@ -78,6 +78,10 @@ A concepts page that slides from "what you get" into file paths and type names l
 Before: "An AgentManifest is assembled from discovery hints merged with any overrides you provide."
 After: "DorkOS builds each agent's profile from what it finds on disk, plus any details you add."
 
+## Name things people can find
+
+Never show a raw id to a person: not a chat id like `48f74bb4`, not a run id, not a database key. Name the thing by the title they see in the app, and link it when they can open it. A chat is `[Chat title](/session?session=<full id>)`; a ticket or a pull request is its number linked, then its title (rule 2 above). If a thing has no name a person would recognise, describe it ("the chat Scout started this morning") instead of printing its id.
+
 ## Self-checks before you ship
 
 Run all five on the finished prose:

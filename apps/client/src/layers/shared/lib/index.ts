@@ -80,6 +80,8 @@ export {
   declaredScheme,
   describeRefusal,
   internalRoutePath,
+  plainAppAddress,
+  LAUNCH_SEARCH_PARAMS,
   isWebUrl,
   linkRefusalHere,
   openLink,

@@ -9,6 +9,8 @@ import {
   declaredScheme,
   internalRoutePath,
   isWebUrl,
+  LAUNCH_SEARCH_PARAMS,
+  plainAppAddress,
   openExternalLink,
   openExternalWindowLater,
   openLink,
@@ -19,6 +21,8 @@ import {
   supportsSeparateWindow,
   type LinkNavigation,
 } from '../link-navigation';
+import { sessionSearchSchema } from '../session-link';
+import { dialogSearchSchema } from '@/layers/shared/model/dialog-search-schema';
 
 import { enterDesktopShell, leaveDesktopShell } from '@/test-helpers/desktop-shell';
 
@@ -888,5 +892,54 @@ describe('redactForLog', () => {
     openExternalLink('irc://irc.example.com/secret-room?key=abc');
     expect(JSON.stringify(warn.mock.calls)).not.toContain('secret-room');
     warn.mockRestore();
+  });
+});
+
+describe('plainAppAddress — which agent-written links open without asking (DOR-2824)', () => {
+  it('passes a chat link, relative or absolute at our own origin', () => {
+    expect(plainAppAddress('/session?session=abc', FROM)).toBe('/session?session=abc');
+    expect(plainAppAddress(`${ORIGIN}/session?session=abc`, FROM)).toBe('/session?session=abc');
+    expect(plainAppAddress('/team', FROM)).toBe('/team');
+  });
+
+  it.each([
+    ['an API path', '/api/sessions'],
+    ['a path that normalises onto the API', '/session/../api/sessions'],
+    ['an encoded traversal', '/session/%2e%2e/api/sessions'],
+    ['a protocol-relative host', '//evil.example/session?session=abc'],
+    ['a backslash host', '/\\evil.example/session'],
+    ['another origin', 'https://evil.example/session?session=abc'],
+    ['another port on our host', 'http://localhost:6666/session?session=abc'],
+    ['an extension page', '/x/some-extension/page'],
+    ['a dev path the router never sees', '/dev/playground'],
+    ['a launch that sends as the person', '/session?agentId=a&prompt=hi&send=1'],
+    ['a launch with only a prompt', '/session?agentId=a&prompt=hi'],
+    ['a launch with an encoded key', '/session?agentId=a&%70rompt=hi&%73end=1'],
+    ['a seeded launch', '/session?seed=dorkbot-help'],
+    ['a query-only launch merged onto this page', '?prompt=hi&send=1'],
+    ['a refused scheme', 'javascript:alert(1)'],
+  ])('refuses %s', (_label, href) => {
+    expect(plainAppAddress(href, FROM)).toBeNull();
+  });
+
+  it('sorts every /session param into launch or address, so a new one forces a decision', () => {
+    // A param that can act for the person must be in LAUNCH_SEARCH_PARAMS; a
+    // param that only says where to look goes in this list. A new key in
+    // `sessionSearchSchema` that is in neither fails here.
+    const addressOnly = new Set([
+      'session',
+      'agentId',
+      'launchRef',
+      'draft',
+      'dir',
+      'message',
+      'runtime',
+      'continuedFrom',
+      ...Object.keys(dialogSearchSchema.shape),
+    ]);
+    const unsorted = Object.keys(sessionSearchSchema.shape).filter(
+      (key) => !addressOnly.has(key) && !LAUNCH_SEARCH_PARAMS.has(key)
+    );
+    expect(unsorted).toEqual([]);
   });
 });

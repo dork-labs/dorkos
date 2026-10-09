@@ -16,8 +16,11 @@
  *
  * This component is passed to every Streamdown instance in the app —
  * unconditionally — as `components={{ a: MarkdownLink }}`, so Streamdown's
- * own `a` never mounts and its default is never in play. An unmodified left
- * click still opens {@link LinkSafetyModal} before anything loads. A modified
+ * own `a` never mounts and its default is never in play. A plain address on
+ * one of the app's own pages (`plainAppAddress`) opens without asking: in
+ * place on a plain click, in another tab on cmd/ctrl-click (DOR-2824). Every
+ * other unmodified left click still opens {@link LinkSafetyModal} before
+ * anything loads. A modified
  * click (cmd/ctrl/shift/alt) or a non-primary button is left to the browser
  * **only when the href is an absolute `http:`/`https:` URL** — a cmd-click on
  * a `tel:`/`irc:`/`xmpp:` link would otherwise reach an OS protocol handler
@@ -43,7 +46,13 @@
  * app's link-dispatch policy.
  */
 import { memo, useCallback, useState, type ComponentProps, type MouseEvent } from 'react';
-import { isWebUrl, openExternalLink } from '@/layers/shared/lib/link-navigation';
+import {
+  classifyLink,
+  isWebUrl,
+  openExternalLink,
+  openLink,
+  plainAppAddress,
+} from '@/layers/shared/lib/link-navigation';
 import { cn } from '@/layers/shared/lib/utils';
 import { LinkSafetyModal } from './link-safety-modal';
 
@@ -52,6 +61,11 @@ export type MarkdownLinkProps = Omit<ComponentProps<'a'>, 'onClick'> & {
    * prop shape matches what Streamdown's `Components['a']` slot passes. */
   node?: unknown;
 };
+
+/** Whether `href` is one of the app's own pages that does more than show it. */
+function isAppLaunch(href: string): boolean {
+  return classifyLink(href).kind === 'internal' && plainAppAddress(href) === null;
+}
 
 function MarkdownLinkImpl({ href, className, children, node: _node, ...rest }: MarkdownLinkProps) {
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
@@ -67,6 +81,23 @@ function MarkdownLinkImpl({ href, className, children, node: _node, ...rest }: M
       // genuine `click` event.
       const isModified =
         event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey;
+      // A link to one of the app's own pages — `[Chat title](/session?session=…)`
+      // — goes there without asking (DOR-2824). `plainAppAddress` is the gate,
+      // not the href's shape: only a same-origin URL on a core route, carrying
+      // no launch params, qualifies. `/api/…`, `//other.host/session`, a path
+      // that normalises off the route list, an extension page and a
+      // `?prompt=…&send=1` launch all still confirm below. A plain click
+      // navigates in place through the router; cmd/ctrl asks for another tab
+      // and shift for another window, the requests the browser would make of an
+      // ordinary link. Alt (save the link) and a non-primary button fall
+      // through to the old rules.
+      const address = href === undefined ? null : plainAppAddress(href);
+      if (address !== null && event.button === 0 && !event.altKey) {
+        event.preventDefault();
+        const target = event.metaKey || event.ctrlKey ? 'tab' : event.shiftKey ? 'window' : 'here';
+        openLink(address, { target });
+        return;
+      }
       // The reader is directly asking the browser for something — a new tab,
       // a new window — and an absolute http(s) URL is safe to hand it
       // straight to that request. Anything else (a relative path `isWebUrl`
@@ -82,7 +113,12 @@ function MarkdownLinkImpl({ href, className, children, node: _node, ...rest }: M
       // does — but "may the browser have this click without asking?", and only
       // a scheme whose worst case is a new tab qualifies. `mailto:` and `tel:`
       // dispatch through the seam yet still confirm here.
-      if (isModified && href !== undefined && isWebUrl(href)) return;
+      //
+      // An internal link that is NOT a plain address (a launch link, an
+      // extension page) is never handed to the browser, absolute or not: a
+      // cmd-click on `http://<this host>/session?…&send=1` would otherwise send
+      // words as the person in a new tab without a word of warning.
+      if (isModified && href !== undefined && isWebUrl(href) && !isAppLaunch(href)) return;
       event.preventDefault();
       setIsConfirmOpen(true);
     },
@@ -98,9 +134,8 @@ function MarkdownLinkImpl({ href, className, children, node: _node, ...rest }: M
     // silence for any scheme the allowlist refuses.
     //
     // `openExternalLink`, not `openLink`: the modal's contract is "this leaves
-    // what you are looking at", so a markdown link that happens to name one of
-    // our own routes still opens a tab rather than navigating the reply out
-    // from under the reader.
+    // what you are looking at". An app route never asks (see `handleClick`),
+    // so what reaches here is a link that leaves, and it opens a tab.
     if (href) openExternalLink(href);
     setIsConfirmOpen(false);
   }, [href]);
@@ -119,6 +154,12 @@ function MarkdownLinkImpl({ href, className, children, node: _node, ...rest }: M
         rel="noopener noreferrer"
         target="_blank"
         onClick={handleClick}
+        // A middle click arrives as `auxclick`, which the browser acts on by
+        // itself. Only an app link that does more than show a page is stopped;
+        // a plain left click on it still confirms.
+        onAuxClick={(event) => {
+          if (href !== undefined && isAppLaunch(href)) event.preventDefault();
+        }}
         // Stop the row's own right-click menu (Radix `ContextMenuTrigger`,
         // `the room's body renderer`) from ever seeing this event, so the BROWSER's
         // native link menu wins instead — "Copy Link Address", "Open Link in

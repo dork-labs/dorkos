@@ -85,6 +85,10 @@ Story copy describes outcomes, not mechanisms. Technical docs may use the exact 
 
 Retired taglines nobody should re-propose: "All Your Agents. One Place.", "Every Agent You Run. One Window.", "Your Agents, Any Vendor.", "Your Plugins Already Work Here." and "Some Code Never Leaves. Now the Agent Doesn't Either."
 
+## Name things people can find
+
+A person reads a name, never an id. When an agent or a page points at a chat, an agent, a channel, a ticket or a pull request, it uses the title the person sees in the app and links it where they can open it: "[Rooms: always answer people](/session?session=…)", not "chat `48f74bb4`". A chat link is `[Chat title](/session?session=<full id>)`, and DorkOS's chat tools hand agents one ready to use. A chat with no title yet is a "New chat". Outside DorkOS (a Telegram or Slack chat), the title alone. Agents read this rule in their own context on every runtime.
+
 ## How to say ownership
 
 - Lead with: "Your agents, tools, files and data stay yours, wherever they run."

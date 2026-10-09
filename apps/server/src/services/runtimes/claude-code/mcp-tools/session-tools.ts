@@ -58,7 +58,7 @@ import {
   LEDGER_RUNTIMES,
   type LedgerRuntime,
 } from '@dorkos/shared/account-usage';
-import { sessionPath } from '@dorkos/shared/session-link';
+import { chatMarkdownLink, sessionPath } from '@dorkos/shared/session-link';
 import { START_WORK_LIMITS } from '@dorkos/shared/extension-decision-schemas';
 import type { EffortLevel, PermissionMode } from '@dorkos/shared/types';
 import { validateBoundaryOrDorkHome } from '../../../../lib/boundary.js';
@@ -81,6 +81,7 @@ import {
 } from '../../../session/launch/launch-session.js';
 import { getStartWorkService, type StartReservation } from '../../../extensions/start-work.js';
 import { getChatMessageService } from '../../../session/chat-messages/chat-message-service.js';
+import { nameStartedChat, startedChatTitle } from '../../../session/launch/started-chat-title.js';
 import {
   NO_CHAT_CEILING_RUNTIME,
   resolveStartPermission,
@@ -130,6 +131,16 @@ export type SessionStartCallerResolver = () =>
 /** The input `session_start` accepts. */
 export const SessionStartInputShape = {
   prompt: z.string().min(1).describe('The first message of the new session.'),
+  title: z
+    .string()
+    .trim()
+    .min(1)
+    .max(START_WORK_LIMITS.title)
+    .optional()
+    .describe(
+      'A short, plain title people see in the sidebar and tabs, like "Rooms: always answer ' +
+        'people" (at most 80 characters). Write one: without it the title comes from `reason`.'
+    ),
   cwd: z
     .string()
     .min(1)
@@ -185,6 +196,7 @@ export const SessionStartInputShape = {
 /** Parsed `session_start` arguments. */
 export interface SessionStartArgs {
   prompt: string;
+  title?: string;
   cwd: string;
   account?: string;
   runtime?: string;
@@ -200,6 +212,10 @@ export interface SessionStartArgs {
 export interface SessionStartResult {
   /** The session's canonical id. */
   sessionId: string;
+  /** The chat's title, or `null` when it was given no title and no reason. */
+  title: string | null;
+  /** A markdown link that opens the chat, to use instead of its id. */
+  link: string;
   /** The runtime it runs on. */
   runtime: string;
   /** The account it was started on, or `null` when the usual choice decides. */
@@ -504,6 +520,11 @@ export function createSessionStartHandler(
       if (stamped) chatMessages?.settleStart(stamped.id, canonical);
     };
 
+    // The chat's title: the agent's own, else one from its reason, never from
+    // the brief (DOR-2824). Set once the launch is accepted; see below.
+    const title = startedChatTitle(args.title, args.reason);
+    let lastTitleTry: (() => void) | null = null;
+
     let result: Awaited<ReturnType<typeof dispatchSessionMessage>>;
     try {
       result = await dispatchSessionMessage({
@@ -523,7 +544,10 @@ export function createSessionStartHandler(
         // A session minted here is in no room.
         roomSessionPlace: undefined,
         countsTowardLaunchCap: true,
-        onSettled: () => reservation?.settle(),
+        onSettled: () => {
+          reservation?.settle();
+          lastTitleTry?.();
+        },
       });
     } catch (err) {
       reservation?.cancel();
@@ -553,7 +577,19 @@ export function createSessionStartHandler(
     const canonicalId = result.canonicalId ?? sessionId;
     settleStamp(canonicalId);
     if (canonicalId !== sessionId) reservation?.rekey(canonicalId);
+    if (title) {
+      lastTitleTry = nameStartedChat({
+        sessionId: canonicalId,
+        rename: () =>
+          runtime.renameSession(
+            runtime.getInternalSessionId(canonicalId) ?? canonicalId,
+            title,
+            cwd
+          ),
+      });
+    }
     const accountName = account ? (account.label ?? account.id) : null;
+    const named = title ? `"${title}"` : 'a chat';
     void deps.activityService?.emit({
       actorType: 'agent',
       actorLabel: caller.label,
@@ -562,9 +598,10 @@ export function createSessionStartHandler(
       eventType: 'agent.session_started',
       resourceType: 'session',
       resourceId: canonicalId,
+      ...(title ? { resourceLabel: title } : {}),
       summary: accountName
-        ? `Started a session in ${cwd} on the account ${accountName}`
-        : `Started a session in ${cwd}`,
+        ? `Started ${named} in ${cwd} on the account ${accountName}`
+        : `Started ${named} in ${cwd}`,
       linkPath: sessionPath({ session: canonicalId }),
       metadata: {
         cwd,
@@ -576,6 +613,8 @@ export function createSessionStartHandler(
 
     const body: SessionStartResult = {
       sessionId: canonicalId,
+      title,
+      link: chatMarkdownLink(canonicalId, title),
       runtime: runtimeType,
       account: account ? { id: account.id, label: account.label } : null,
       permission,
@@ -601,7 +640,9 @@ export function getSessionTools(deps: McpToolDeps, resolveCaller?: SessionStartC
         'tool lists them), which the account policy must allow; otherwise the usual account is ' +
         'used. The session runs at your own permission level unless you ask for a lower one; a ' +
         'higher one is refused, and Full autonomy is granted only when named in permissionMode. ' +
-        'At most 8 sessions started this way run at once.',
+        'At most 8 sessions started this way run at once. Give it a short `title`. The result ' +
+        'has `link`, a ready markdown link to the chat: when you tell a person about it, use ' +
+        'that link, never the id.',
       SessionStartInputShape,
       createSessionStartHandler(deps, resolveCaller)
     ),

@@ -256,6 +256,44 @@ export function internalRoutePath(href: string): string | null {
   return link.kind === 'internal' ? link.path : null;
 }
 
+/**
+ * Search params that make a link DO something for the person rather than show
+ * them a page: `prompt` fills a new chat's composer, `send=1` sends it as the
+ * person, and `seed` shapes what the agent is told (`sessionSearchSchema`).
+ * A link carrying any of them is a launch, not an address, and it asks first.
+ * `link-navigation.test.ts` fails when the `/session` route grows a param
+ * nobody has sorted into this list or the plain-address one.
+ */
+export const LAUNCH_SEARCH_PARAMS: ReadonlySet<string> = new Set(['prompt', 'send', 'seed']);
+
+/**
+ * The router path for a link an agent wrote that may open without asking
+ * first, or `null` when it must confirm (DOR-2824).
+ *
+ * Narrower than {@link internalRoutePath} on purpose. It answers "is this only
+ * an address in this app?", and two kinds of internal link are more than that:
+ *
+ * - **A launch link** ({@link LAUNCH_SEARCH_PARAMS}). One click on
+ *   `/session?agentId=…&prompt=…&send=1` would send words the person never
+ *   read, as them, so it still confirms.
+ * - **An extension page** (`/x/<id>/…`). Core cannot know what an extension
+ *   does with the search params it is handed, so only core routes qualify.
+ *
+ * @param href - The link exactly as written.
+ * @param from - Absolute URL to resolve against. Defaults to the current page.
+ * @returns Path + search + hash for the router, or `null`.
+ */
+export function plainAppAddress(href: string, from: string = currentHref()): string | null {
+  const link = classifyLink(href, from);
+  if (link.kind !== 'internal') return null;
+  const url = new URL(link.url);
+  if (!APP_ROUTE_SET.has(normalizePathname(url.pathname))) return null;
+  for (const key of url.searchParams.keys()) {
+    if (LAUNCH_SEARCH_PARAMS.has(key)) return null;
+  }
+  return link.path;
+}
+
 /** An internal navigation request handed to the router. */
 export interface LinkNavigation {
   /** Router-relative path + search + hash, e.g. `/session?dir=%2Ftmp`. */

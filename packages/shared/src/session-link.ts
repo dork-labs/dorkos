@@ -69,3 +69,26 @@ export function sessionPath(params: SessionLinkParams): string {
   const search = query.toString();
   return search ? `${SESSION_ROUTE}?${search}` : SESSION_ROUTE;
 }
+
+/** What a chat with no title yet is called, the same words the app shows. */
+export const UNTITLED_CHAT_TITLE = 'New chat';
+
+/**
+ * A markdown link that opens a chat in the DorkOS app, ready for an agent to
+ * paste into what it writes: `[Chat title](/session?session=<id>)` (DOR-2824).
+ *
+ * Agents are told to name a chat by its title and link it, never to show its
+ * id, so the tools that hand an agent a chat hand it this too and nobody has to
+ * build one. A blank title reads as {@link UNTITLED_CHAT_TITLE}. Square
+ * brackets and backslashes in the title are escaped, and line breaks become
+ * spaces, so a title can never end the link text early or start a new block.
+ *
+ * @param sessionId - The chat's full id.
+ * @param title - Its title, or null when it has none.
+ * @returns The markdown link.
+ */
+export function chatMarkdownLink(sessionId: string, title: string | null | undefined): string {
+  const words = (title ?? '').replace(/\s+/g, ' ').trim() || UNTITLED_CHAT_TITLE;
+  const text = words.replace(/[\\[\]]/g, (char) => `\\${char}`);
+  return `[${text}](${sessionPath({ session: sessionId })})`;
+}
