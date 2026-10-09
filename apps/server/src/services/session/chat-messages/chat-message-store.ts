@@ -113,21 +113,6 @@ export class ChatMessageStore {
   }
 
   /**
-   * Several chat messages by id, in no particular order.
-   *
-   * @param ids - Receipt ids.
-   */
-  getMany(ids: readonly string[]): ChatMessageRow[] {
-    const out: ChatMessageRow[] = [];
-    for (let i = 0; i < ids.length; i += BATCH) {
-      const chunk = ids.slice(i, i + BATCH);
-      if (chunk.length === 0) continue;
-      out.push(...this.db.select().from(chatMessages).where(inArray(chatMessages.id, chunk)).all());
-    }
-    return out;
-  }
-
-  /**
    * Change a chat message. Writes nothing when the patch is empty.
    *
    * @param id - The receipt id.
@@ -240,7 +225,7 @@ export class ChatMessageStore {
           eq(chatMessages.fromSessionId, fromSessionId),
           eq(chatMessages.toSessionId, toSessionId),
           inArray(chatMessages.kind, ['message', 'start']),
-          inArray(chatMessages.status, ['queued', 'working', 'delivered', 'steered', 'interrupted'])
+          inArray(chatMessages.status, ['queued', 'working', 'delivered', 'steered'])
         )
       )
       .orderBy(desc(chatMessages.createdAt))
@@ -248,18 +233,24 @@ export class ChatMessageStore {
   }
 
   /**
-   * Every chat a chat has exchanged messages with, either way.
+   * The chats that have sent this chat a message (a message, a report or a
+   * first message; never a stop). Sending a chat a message does not make it
+   * readable; being written to by it does (spec `spin-off-chats` §4).
    *
    * @param sessionId - The chat.
    */
-  correspondentsOf(sessionId: string): Set<string> {
+  sendersTo(sessionId: string): Set<string> {
     const rows = this.db
-      .select({ from: chatMessages.fromSessionId, to: chatMessages.toSessionId })
+      .select({ from: chatMessages.fromSessionId })
       .from(chatMessages)
-      .where(or(eq(chatMessages.fromSessionId, sessionId), eq(chatMessages.toSessionId, sessionId)))
+      .where(
+        and(
+          eq(chatMessages.toSessionId, sessionId),
+          inArray(chatMessages.kind, ['message', 'report', 'start'])
+        )
+      )
       .all();
-    const out = new Set<string>();
-    for (const row of rows) out.add(row.from === sessionId ? row.to : row.from);
+    const out = new Set(rows.map((row) => row.from));
     out.delete(sessionId);
     return out;
   }

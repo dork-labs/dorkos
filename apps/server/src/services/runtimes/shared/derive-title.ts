@@ -1,3 +1,4 @@
+import { chatMessageWords } from '@dorkos/shared/chat-messages';
 import { TRANSCRIPT } from '../../../config/constants.js';
 
 /**
@@ -110,9 +111,11 @@ export function deriveSessionTitle(
   firstUserMessage: string,
   options?: DeriveSessionTitleOptions
 ): string {
-  const source = options?.stripLeadingMention
-    ? firstUserMessage.replace(LEADING_MENTION, '')
-    : firstUserMessage;
+  // A first message another chat sent (a spin-off's, an agent's DM) is named
+  // after its words, never after the constant line the fence opens with (spec
+  // `spin-off-chats` §2).
+  const words = chatMessageWords(firstUserMessage) ?? firstUserMessage;
+  const source = options?.stripLeadingMention ? words.replace(LEADING_MENTION, '') : words;
   const lines = source.split('\n');
 
   for (const raw of lines) {

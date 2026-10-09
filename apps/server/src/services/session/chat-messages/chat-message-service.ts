@@ -50,7 +50,6 @@ import type {
   ChatStopNotice,
   SentChatMessage,
 } from '@dorkos/shared/chat-messages';
-import type { HistoryMessage } from '@dorkos/shared/types';
 import { logError, logger } from '../../../lib/logger.js';
 import { recordAudit } from '../../audit/audit-trail.js';
 import {
@@ -66,6 +65,7 @@ import {
   type DispatchLifecycleEvent,
 } from '../message-dispatcher.js';
 import { getMessageQueueStore } from '../message-queue-store.js';
+import { queueKeyOf } from '../resolution/session-key-registry.js';
 import { cancelQueuedMessage } from '../queued-message-edits.js';
 import type { RoomSessionPlacePort } from '../../workspace/room-session-place.js';
 import type { SessionFacts } from '../../extensions/agent-send/agent-send-defaults.js';
@@ -185,6 +185,14 @@ export interface ChatMessageServiceDeps {
   isBusy: (sessionId: string) => Promise<boolean>;
   /** The send itself. */
   dispatch?: (opts: DispatchSessionMessageOpts) => Promise<DispatchSessionMessageResult>;
+  /**
+   * Join a chat's running turn with a message (a steer), whoever's window
+   * holds that turn. True when it landed. Agents can do what people can; the
+   * service has already checked the turn runs no looser than the sender.
+   */
+  steerInto: (sessionId: string, content: string, messageId: string) => Promise<boolean>;
+  /** The id a chat is known by now, whichever id it was named by. */
+  canonicalId: (sessionId: string) => Promise<string>;
   /** Stop a chat's running turn. True when one was running and was asked to stop. */
   interruptTurn: (sessionId: string) => Promise<boolean>;
   /** The level a chat's latest turn ran at, or undefined when not known. */
@@ -211,6 +219,8 @@ interface Target {
   sessionId: string | null;
   /** Set when the target is an agent. */
   agent?: { id: string; path: string };
+  /** The id a new DM chat is opened under, minted before the send. */
+  newSessionId?: string;
 }
 
 /** The chat-message service. See the module documentation. */
@@ -299,9 +309,12 @@ export class ChatMessageService {
       this.deps.nonce?.()
     );
     const ceiling = senderCeiling(this.deps.turnLevelOf(caller.sessionId));
+    // A new DM chat's id is minted here, before the row, so a window already
+    // watching it can match the message to its sender from the first event.
+    if (target.sessionId === null) target.newSessionId = crypto.randomUUID();
     const row = this.deps.store.insert({
       id: crypto.randomUUID(),
-      toSessionId: target.sessionId ?? '',
+      toSessionId: target.sessionId ?? target.newSessionId ?? '',
       fromSessionId: caller.sessionId,
       fromAgentPath: caller.agentPath,
       fromAgentId: sender.agentId,
@@ -357,19 +370,32 @@ export class ChatMessageService {
       if (batched) return batched;
     }
 
-    let disposition: 'steer' | undefined;
     let note: string | undefined;
-    if (delivery === 'steer') {
-      if (target.sessionId !== null && busy && this.maySteer(caller.sessionId, target.sessionId)) {
-        disposition = 'steer';
-      } else if (busy) {
+    if (delivery === 'steer' && target.sessionId !== null && busy) {
+      // Only into a turn that runs no looser than the sender: a running turn
+      // cannot be lowered to the sender's ceiling.
+      if (!this.maySteer(caller.sessionId, target.sessionId)) {
         note =
-          'It waits in the queue instead of joining the running turn, because that turn may do ' +
-          'more than your chat can.';
+          'It waits for the turn to end instead of joining it, because that turn may do more ' +
+          'than your chat can.';
+      } else if (row.queueMessageId) {
+        const landed = await this.deps
+          .steerInto(target.sessionId, content, row.queueMessageId)
+          .catch(() => false);
+        if (landed) {
+          this.deps.store.update(row.id, {
+            toSessionId: target.sessionId,
+            status: 'steered',
+            queueMessageId: null,
+          });
+          return { messageId: row.id, chatId: target.sessionId, status: 'steered' };
+        }
+        note =
+          'That chat can’t take a message mid-turn right now, so it waits for the turn to end.';
       }
     }
 
-    const sessionId = target.sessionId ?? crypto.randomUUID();
+    const sessionId = target.sessionId ?? target.newSessionId ?? crypto.randomUUID();
     const cwd = target.sessionId ? await this.deps.sessionCwd(target.sessionId) : undefined;
     const result = await this.dispatch({
       origin: { kind: 'chat-message' },
@@ -379,7 +405,6 @@ export class ChatMessageService {
         content,
         ...(cwd ? { cwd } : {}),
         ...(target.agent ? { agentPath: target.agent.path } : {}),
-        ...(disposition ? { disposition } : {}),
       },
       clientId: chatClientId(caller.sessionId),
       meshCore: this.deps.meshCore() as MeshCore | undefined,
@@ -401,25 +426,15 @@ export class ChatMessageService {
       this.deps.store.keepDmChat(caller.agentPath, target.agent.id, chatId);
     }
 
-    const steered = result.outcome.applied === 'steer';
-    if (delivery === 'steer' && !steered && !note && result.queued) {
-      note = 'This chat can’t take a message mid-turn, so it waits for the turn to end.';
-    }
     // A turn that started inside the dispatch already moved the row on.
     const current = this.deps.store.get(row.id);
-    const status: ChatMessageStatus = steered
-      ? 'steered'
-      : current && current.status !== 'queued'
+    const status: ChatMessageStatus =
+      current && current.status !== 'queued'
         ? current.status
         : result.queued
           ? 'queued'
           : 'working';
-    this.deps.store.update(row.id, {
-      toSessionId: chatId,
-      status,
-      // A steer joined a running turn and has no queue row of its own.
-      ...(steered ? { queueMessageId: null } : {}),
-    });
+    this.deps.store.update(row.id, { toSessionId: chatId, status });
 
     let position = result.queued ? result.queuePosition : undefined;
     if (delivery === 'interrupt' && result.queued && row.queueMessageId) {
@@ -449,7 +464,7 @@ export class ChatMessageService {
   ): ChatSendReceipt | null {
     const queue = getMessageQueueStore();
     if (!queue) return null;
-    const rows = queue.list(sessionId);
+    const rows = queue.list(queueKeyOf(sessionId));
     const tail = rows.at(-1);
     if (!tail || !isChatClientId(tail.enqueuedBy) || tail.disposition !== 'queue') return null;
     if (this.now() - tail.enqueuedAt > CHAT_BATCH_WINDOW_MS) return null;
@@ -471,7 +486,7 @@ export class ChatMessageService {
   /** Move a queue row to the head of its chat's queue; its new position. */
   private moveToHead(sessionId: string, queueMessageId: string): number {
     const queue = getMessageQueueStore();
-    const head = queue?.list(sessionId)[0];
+    const head = queue?.list(queueKeyOf(sessionId))[0];
     if (queue && head && head.id !== queueMessageId) {
       queue.move(queueMessageId, { before: head.id });
       emitQueueUpdate(sessionId);
@@ -537,7 +552,7 @@ export class ChatMessageService {
       }
       return { sessionId: null, agent };
     }
-    if (to === caller.sessionId) {
+    if (to === caller.sessionId || (await this.sameChat(to, caller.sessionId))) {
       throw new ChatMessageError(
         'SELF',
         'That is your own chat. Send to another chat or agent, or just keep working.'
@@ -571,6 +586,15 @@ export class ChatMessageService {
       );
     }
     return facts;
+  }
+
+  /** Whether two ids name the same chat (a request id and its canonical one). */
+  private async sameChat(a: string, b: string): Promise<boolean> {
+    const [ca, cb] = await Promise.all([
+      this.deps.canonicalId(a).catch(() => a),
+      this.deps.canonicalId(b).catch(() => b),
+    ]);
+    return ca === cb;
   }
 
   /** The lock key for sends that may open an agent's DM chat, or null for a chat id. */
@@ -688,7 +712,7 @@ export class ChatMessageService {
     caller: ChatCaller,
     input: { chat: string; reason?: string }
   ): Promise<{ stopped: boolean; chatId: string; droppedMessages: number; note: string }> {
-    if (input.chat === caller.sessionId) {
+    if (input.chat === caller.sessionId || (await this.sameChat(input.chat, caller.sessionId))) {
       throw new ChatMessageError('SELF', 'That is your own chat. End your turn instead.');
     }
     await this.assertSendable(input.chat, this.deps.meshCore() !== undefined);
@@ -701,7 +725,7 @@ export class ChatMessageService {
     // below cannot release one of them.
     let dropped = 0;
     const queue = getMessageQueueStore();
-    for (const queued of queue?.list(input.chat) ?? []) {
+    for (const queued of queue?.list(queueKeyOf(input.chat)) ?? []) {
       if (!isChatClientId(queued.enqueuedBy)) continue;
       for (const chatRow of this.deps.store.listByQueueMessage(queued.id)) {
         this.deps.store.update(chatRow.id, {
@@ -801,7 +825,9 @@ export class ChatMessageService {
       const chatTitle = await titleOf(row.toSessionId);
       let position: number | undefined;
       if (row.status === 'queued' && row.queueMessageId && queue) {
-        const index = queue.list(row.toSessionId).findIndex((q) => q.id === row.queueMessageId);
+        const index = queue
+          .list(queueKeyOf(row.toSessionId))
+          .findIndex((q) => q.id === row.queueMessageId);
         if (index >= 0) position = index + 1;
       }
       const reply = this.deps.store
@@ -904,9 +930,6 @@ function parseCeiling(json: string): TurnPermissionBound {
   }
   return 'runtime-default';
 }
-
-/** Kept for the history reader: what a message is, read back. */
-export type { HistoryMessage };
 
 let current: ChatMessageService | undefined;
 

@@ -47,7 +47,7 @@ export const chatMessages = sqliteTable(
      * running, answered, or never delivered.
      */
     status: text('status', {
-      enum: ['queued', 'delivered', 'steered', 'interrupted', 'working', 'replied', 'failed'],
+      enum: ['queued', 'delivered', 'steered', 'working', 'replied', 'failed'],
     }).notNull(),
     /** Why it failed, in plain words, or NULL. */
     failureReason: text('failure_reason'),

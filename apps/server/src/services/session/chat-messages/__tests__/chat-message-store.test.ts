@@ -63,18 +63,6 @@ describe('ChatMessageStore — rows', () => {
     const inserted = store.insert(message());
     expect(store.update('m1', {})).toEqual(inserted);
   });
-
-  it('getMany returns exactly the asked-for rows', () => {
-    store.insert(message({ id: 'm1', nonce: '00000001' }));
-    store.insert(message({ id: 'm2', nonce: '00000002' }));
-    store.insert(message({ id: 'm3', nonce: '00000003' }));
-    expect(
-      store
-        .getMany(['m1', 'm3', 'missing'])
-        .map((r) => r.id)
-        .sort()
-    ).toEqual(['m1', 'm3']);
-  });
 });
 
 describe('ChatMessageStore — findByNonces', () => {
@@ -132,7 +120,7 @@ describe('ChatMessageStore — queue rows and threads', () => {
     expect(store.latestUnanswered('chat-x', 'chat-b')).toBeUndefined();
   });
 
-  it('correspondentsOf names chats in both directions, never the chat itself', () => {
+  it('sendersTo names only chats that wrote to this one, never a stop or the chat itself', () => {
     store.insert(
       message({ id: 'out', fromSessionId: 'me', toSessionId: 'sent-to', nonce: '00000001' })
     );
@@ -140,11 +128,21 @@ describe('ChatMessageStore — queue rows and threads', () => {
       message({ id: 'in', fromSessionId: 'heard-from', toSessionId: 'me', nonce: '00000002' })
     );
     store.insert(
+      message({
+        id: 'stop',
+        fromSessionId: 'stopper',
+        toSessionId: 'me',
+        kind: 'stop',
+        nonce: null,
+      })
+    );
+    store.insert(
       message({ id: 'unrelated', fromSessionId: 'x', toSessionId: 'y', nonce: '00000003' })
     );
 
-    expect([...store.correspondentsOf('me')].sort()).toEqual(['heard-from', 'sent-to']);
-    expect([...store.correspondentsOf('nobody')]).toEqual([]);
+    // Writing to a chat, or stopping it, never makes it readable.
+    expect([...store.sendersTo('me')]).toEqual(['heard-from']);
+    expect([...store.sendersTo('nobody')]).toEqual([]);
   });
 });
 

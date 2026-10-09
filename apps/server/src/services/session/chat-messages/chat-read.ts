@@ -222,7 +222,13 @@ export async function readChat(
     selected = history.filter((m) => ids.has(m.id));
   } else if (cursorAt !== null) {
     const index = history.findIndex((m) => m.id === cursorAt.id);
-    selected = index >= 0 ? history.slice(index) : history;
+    if (index < 0) {
+      throw new ChatMessageError(
+        'NOT_FOUND',
+        'That cursor names a message this chat no longer has. Read again without it.'
+      );
+    }
+    selected = history.slice(index);
   } else {
     const since = input.since ?? 'last-read';
     const afterId =
@@ -281,7 +287,11 @@ export async function readChat(
       }
       const room = budget - used;
       const taken = room > 0 ? Math.min(room, piece.text.length) : 0;
-      if (taken > 0) messages.push({ ...piece, text: piece.text.slice(0, taken), trimmed: true });
+      if (taken > 0) {
+        // A cut message keeps its words only: its tool lines would overrun the budget.
+        const { tools: _tools, ...words } = piece;
+        messages.push({ ...words, text: piece.text.slice(0, taken), trimmed: true });
+      }
       cursor = formatReadCursor(history.id, p, already + taken);
       more = true;
       break outer;

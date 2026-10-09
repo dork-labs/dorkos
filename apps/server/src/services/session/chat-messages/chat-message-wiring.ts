@@ -19,7 +19,7 @@ import {
 } from '../../extensions/agent-send/agent-send-defaults.js';
 import { searchMessages } from '../../search/query.js';
 import type { RoomSessionPlacePort } from '../../workspace/room-session-place.js';
-import { setQueuedChatCeilingResolver } from '../message-dispatcher.js';
+import { deliverSteer, setQueuedChatCeilingResolver } from '../message-dispatcher.js';
 import { rememberedChatTitle } from '../origin/started-by-origin-overlay.js';
 import { getSessionStartedByStore } from '../origin/session-started-by-store.js';
 import { resolveSessionCwdOrNull } from '../resolution/resolve-read-cwd.js';
@@ -67,6 +67,39 @@ export async function interruptChatTurn(sessionId: string): Promise<boolean> {
 }
 
 /**
+ * Join a chat's running turn with another chat's message — a steer — through
+ * the dispatcher's one steer path, as the window that holds the turn. True when
+ * it landed. The caller has already checked the turn runs no looser than the
+ * sender (`ChatMessageService.maySteer`).
+ *
+ * @param sessionId - The chat.
+ * @param content - What the agent reads.
+ * @param messageId - The message's id, which the `turn_input` carries.
+ */
+export async function steerChatTurn(
+  sessionId: string,
+  content: string,
+  messageId: string
+): Promise<boolean> {
+  const runtime = await runtimeRegistry.resolveForSession(sessionId);
+  const lockKey = runtime.getInternalSessionId(sessionId) ?? sessionId;
+  const holder = runtime.getLockInfo(lockKey)?.clientId;
+  if (!holder) return false;
+  const result = await deliverSteer({ sessionId, clientId: holder, content, messageId, runtime });
+  return result.authorized && result.delivered;
+}
+
+/**
+ * The id a chat is known by now.
+ *
+ * @param sessionId - Either id it answers to.
+ */
+export async function canonicalChatId(sessionId: string): Promise<string> {
+  const runtime = await runtimeRegistry.resolveForSession(sessionId);
+  return runtime.getInternalSessionId(sessionId) ?? sessionId;
+}
+
+/**
  * Tell a chat's open windows its messaging changed.
  *
  * @param sessionId - The chat.
@@ -93,8 +126,9 @@ export async function chatHistoryOf(sessionId: string): Promise<HistoryMessage[]
 
 /**
  * Every chat a chat may read (spec `spin-off-chats` §4): itself, the chat that
- * started it, the chats it started and theirs, and the chats it has exchanged
- * messages with.
+ * started it, the chats it started and theirs, and the chats that have sent it
+ * a message. Sending a chat a message, or stopping it, does not make it
+ * readable: send reaches further than read until roles exist.
  *
  * @param store - The chat-message store.
  * @param caller - The reading chat.
@@ -104,7 +138,7 @@ export function mayReadChat(store: ChatMessageStore, caller: ChatCaller, target:
   if (target === caller.sessionId) return true;
   const startedBy = getSessionStartedByStore();
   if (startedBy?.get(caller.sessionId)?.startedBySessionId === target) return true;
-  if (store.correspondentsOf(caller.sessionId).has(target)) return true;
+  if (store.sendersTo(caller.sessionId).has(target)) return true;
   if (!startedBy) return false;
   let frontier = [caller.sessionId];
   const seen = new Set(frontier);
@@ -157,6 +191,8 @@ export function wireChatMessaging(deps: WireChatMessagingDeps): {
     sessionCwd: liveSessionCwd,
     isBusy: isSessionBusy,
     interruptTurn: interruptChatTurn,
+    steerInto: steerChatTurn,
+    canonicalId: canonicalChatId,
     turnLevelOf: lastTurnLevelOf,
     emitActivity: emitChatActivity,
   });

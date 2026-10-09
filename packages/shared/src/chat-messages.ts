@@ -81,7 +81,7 @@ export type ChatDelivery = z.infer<typeof ChatDeliverySchema>;
 
 /** Where a chat message is now. */
 export const ChatMessageStatusSchema = z
-  .enum(['queued', 'delivered', 'steered', 'interrupted', 'working', 'replied', 'failed'])
+  .enum(['queued', 'delivered', 'steered', 'working', 'replied', 'failed'])
   .openapi('ChatMessageStatus');
 
 /** One of {@link ChatMessageStatusSchema}. */
@@ -237,3 +237,28 @@ export const ChatActivityResponseSchema = z
 
 /** One of {@link ChatActivityResponseSchema}. */
 export type ChatActivityResponse = z.infer<typeof ChatActivityResponseSchema>;
+
+/**
+ * The words of the first chat-message fence in a message, without the fence,
+ * its preamble or its header — what a title is derived from, so a spin-off is
+ * named after its first message rather than the constant line before it.
+ * Null when the message carries no chat-message fence.
+ *
+ * Like {@link chatMessageFenceNonces}, a shape only: it says nothing about who
+ * sent the words.
+ *
+ * @param content - A user message's raw text.
+ */
+export function chatMessageWords(content: string): string | null {
+  FENCE_PATTERN.lastIndex = 0;
+  const match = FENCE_PATTERN.exec(content);
+  FENCE_PATTERN.lastIndex = 0;
+  if (!match) return null;
+  const lines = match[0].split('\n').slice(1, -1);
+  const kind = lines.findIndex((line) => line.startsWith('Kind: '));
+  if (kind === -1) return null;
+  return lines
+    .slice(kind + 1)
+    .join('\n')
+    .trim();
+}

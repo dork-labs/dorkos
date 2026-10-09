@@ -1127,8 +1127,11 @@ router.get('/:id/chat-messages', async (req, res) => {
     const empty: ChatActivityResponse = { sent: [], stops: [] };
     return res.json(empty);
   }
-  const runtime = await runtimeRegistry.resolveForSession(sessionId);
-  const canonical = runtime.getInternalSessionId(sessionId) ?? sessionId;
+  // An id no runtime knows has sent nothing and been stopped by nobody.
+  const canonical = await runtimeRegistry
+    .resolveForSession(sessionId)
+    .then((runtime) => runtime.getInternalSessionId(sessionId) ?? sessionId)
+    .catch(() => sessionId);
   const body: ChatActivityResponse = await service.activityOf(canonical);
   res.json(body);
 });

@@ -53,6 +53,11 @@ let levels: Map<string, TurnPermissionLevel>;
 let dispatched: DispatchSessionMessageOpts[];
 let dispatchImpl: (opts: DispatchSessionMessageOpts) => Promise<DispatchSessionMessageResult>;
 let interruptTurn: ReturnType<typeof vi.fn<(sessionId: string) => Promise<boolean>>>;
+let steerInto: ReturnType<
+  typeof vi.fn<(sessionId: string, content: string, messageId: string) => Promise<boolean>>
+>;
+/** Other ids a chat answers to, mapped to its canonical id. */
+let aliases: Map<string, string>;
 let emitActivity: ReturnType<typeof vi.fn<(sessionId: string) => void>>;
 let lifecycle: ((event: DispatchLifecycleEvent) => void) | undefined;
 let nonceCounter: number;
@@ -137,6 +142,8 @@ function build(overrides: Partial<ChatMessageServiceDeps> = {}): ChatMessageServ
       return dispatchImpl(opts);
     },
     interruptTurn,
+    steerInto: (id, content, messageId) => steerInto(id, content, messageId),
+    canonicalId: async (id) => aliases.get(id) ?? id,
     turnLevelOf: (id) => levels.get(id),
     emitActivity,
     onLifecycle: (listener) => {
@@ -172,6 +179,8 @@ beforeEach(() => {
   dispatched = [];
   dispatchImpl = defaultDispatch;
   interruptTurn = vi.fn(async () => true);
+  steerInto = vi.fn(async () => true);
+  aliases = new Map();
   emitActivity = vi.fn();
   lifecycle = undefined;
   nonceCounter = 0xa0;
@@ -486,22 +495,37 @@ describe('send — steer', () => {
 
     const receipt = await service.send(ANA, { to: 'chat-b', message: 'hi', delivery: 'steer' });
 
-    expect(dispatched[0]!.request.disposition).toBe('steer');
+    expect(steerInto).toHaveBeenCalledTimes(1);
+    expect(steerInto.mock.calls[0]![0]).toBe('chat-b');
+    // It joined the turn: nothing went through the queue.
+    expect(dispatched).toHaveLength(0);
     expect(receipt.status).toBe('steered');
     expect(receipt.note).toBeUndefined();
     // A steer has no queue row of its own.
     expect(sentByAna()[0]!.queueMessageId).toBeNull();
   });
 
-  it('waits in the queue, with a note, when the running turn is looser than the sender', async () => {
+  it('waits in the queue, with a note, when the steer could not land', async () => {
+    levels.set(ANA.sessionId, MIDDLE);
+    levels.set('chat-b', TIGHT);
+    steerInto.mockResolvedValueOnce(false);
+
+    const receipt = await service.send(ANA, { to: 'chat-b', message: 'hi', delivery: 'steer' });
+
+    expect(dispatched).toHaveLength(1);
+    expect(receipt.status).toBe('queued');
+    expect(receipt.note).toMatch(/waits for the turn to end/);
+  });
+
+  it('never steers into a turn looser than the sender: it waits, with a note', async () => {
     levels.set(ANA.sessionId, MIDDLE);
     levels.set('chat-b', LOOSE);
 
     const receipt = await service.send(ANA, { to: 'chat-b', message: 'hi', delivery: 'steer' });
 
-    expect(dispatched[0]!.request.disposition).toBeUndefined();
+    expect(steerInto).not.toHaveBeenCalled();
     expect(receipt.status).toBe('queued');
-    expect(receipt.note).toMatch(/waits in the queue/);
+    expect(receipt.note).toMatch(/may do more than your chat can/);
   });
 
   it.each([
@@ -514,8 +538,20 @@ describe('send — steer', () => {
 
     const receipt = await service.send(ANA, { to: 'chat-b', message: 'hi', delivery: 'steer' });
 
-    expect(dispatched[0]!.request.disposition).toBeUndefined();
+    expect(steerInto).not.toHaveBeenCalled();
     expect(receipt.note).toBeDefined();
+  });
+});
+
+describe('send — the same chat under another id', () => {
+  it('refuses a send to your own chat named by its other id', async () => {
+    aliases.set('request-id-of-a', ANA.sessionId);
+    chat('request-id-of-a');
+    await expect(service.send(ANA, { to: 'request-id-of-a', message: 'hi' })).rejects.toMatchObject(
+      {
+        code: 'SELF',
+      }
+    );
   });
 });
 
