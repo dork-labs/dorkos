@@ -308,9 +308,12 @@ function runOwnedScenario(bodyAdmission: Promise<void>): Promise<void> {
       const port = currentRoomDueServicePort(actual.http.service);
       // Reach the declaration's actual due time before invoking the fixed one-shot pump.
       phase('original-due-time:start');
-      await new Promise<void>((resolve) =>
-        setTimeout(resolve, Math.max(0, Date.parse(batch.dueAt) - Date.now()))
-      );
+      const dueAt = Date.parse(batch.dueAt);
+      let remaining = dueAt - Date.now();
+      while (remaining > 0) {
+        await new Promise<void>((resolve) => setTimeout(resolve, remaining));
+        remaining = dueAt - Date.now();
+      }
       phase('original-due-time:done');
       requireOpenScenario();
       // Due-time passage does not mint frozen custody: invoke the original native wake first.
