@@ -185,7 +185,8 @@ export function spinOffBriefing(opts: {
       'When you end a turn finished, failed, waiting on the person, or paused at a usage ' +
         'limit, your last message goes back to that chat on its own. So end each turn with a ' +
         'short report: what you did and what is left.',
-      `Send milestones before then with chat_send to ${opts.parentChatId}; nobody has to ask.`,
+      `Send milestones before then with chat_send to ${opts.parentChatId}; nobody has to ask. ` +
+        'Do not send your final result that way too: it already goes back on its own.',
       'If you are waiting on CI, a timer or a helper, keep your turn alive (for example ' +
         '`gh pr checks --watch` or a short sleep loop). A turn that ends only to wait sends nothing.'
     );
