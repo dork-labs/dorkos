@@ -121,8 +121,12 @@ describe('private browser package boundaries', () => {
       'supervisor-crash-recovery.fixture.test.ts',
     ]);
     const manifest = JSON.parse(readFileSync(path.join(packageRoot, 'package.json'), 'utf8'));
+    expect(manifest.scripts.build).toBe('tsc -p tsconfig.build.json');
+    expect(manifest.scripts['build:native-fixture']).toBe(
+      'node --experimental-strip-types scripts/build-native-observer.ts'
+    );
     expect(manifest.scripts['test:fixture']).toBe(
-      'pnpm build && vitest run --config vitest.fixture.config.ts'
+      'pnpm build && pnpm build:native-fixture && vitest run --config vitest.fixture.config.ts'
     );
     // Chromium campaigns require their browser preflight; the read-only Node
     // observer campaign has separate explicit helper/worker arms and no Chrome.

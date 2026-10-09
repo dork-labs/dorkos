@@ -1,5 +1,7 @@
 import { validateEngineConfiguration, type EngineConfiguration } from '@dorkos/browser';
 import { createProductionBrowserRuntimeOwner } from '../../../runtime/production-owner.js';
+import { BrowserRegistryStore } from '../../../registry/store.js';
+import { installedPublisherAnchor } from '../../../runtime/installed-publisher-anchor.mjs';
 import { logger } from '../../../../../lib/logger.js';
 import { createBrowserRuntimeOwnerResolution } from '../../../runtime/runtime-owner-resolution.js';
 import { createHash } from 'node:crypto';
@@ -161,6 +163,7 @@ async function fixture(
   construction?: {
     runtimeOwner: NonNullable<Parameters<typeof createBrowserAuthorityCore>[1]>;
     configuration: EngineConfiguration;
+    observeOriginalRegistry?(store: BrowserRegistryStore): void;
   }
 ) {
   const home = await mkdtemp(join(tmpdir(), 'browser-live-authority-'));
@@ -252,6 +255,8 @@ async function fixture(
         'fixture-workspace',
         new AbortController().signal
       );
+  const registryStore = construction ? new BrowserRegistryStore(db, 'fixture-vm-boot') : undefined;
+  if (registryStore) construction?.observeOriginalRegistry?.(registryStore);
   beforeOpen?.(authority, grant);
   const { binding } = await authority
     .openEngine(
@@ -259,7 +264,7 @@ async function fixture(
       construction?.configuration ?? (network ? { network: { kind: 'owned' } } : {}),
       {},
       network,
-      participants
+      registryStore && participants ? { ...participants, registryStore } : participants
     )
     .catch((value) => {
       acceptedAuthorityFailures.push(value);
@@ -1149,34 +1154,16 @@ it.each([false, undefined])(
   }
 );
 
-it('forwards configured Chrome identity through actual authority into the verified production constructor', async () => {
-  const hash = 'b'.repeat(64);
-  const verified = {
-    state: 'verified-reused',
-    installationId: 'original_chrome_installation',
-    executableSHA256: hash,
-    currentManifestDigest: hash,
-    observedVersion: '153.0.8010.12',
-    platform: 'darwin',
-    arch: 'arm64',
-  };
-  originalPackage.resolve.mockResolvedValue({
-    configuration: { cacheRoot: '/owned/cache', libraryRoot: '/owned/library' },
-    installation: {
-      verifyExisting: async () => verified,
-      inspectExisting: async () => ({
-        state: 'installed-files',
-        installationId: verified.installationId,
-        executableSHA256: hash,
-        currentManifestDigest: hash,
-        lastFreshVerifiedVersion: verified.observedVersion,
-        platform: 'darwin',
-        arch: 'arm64',
-      }),
-    },
-  });
+it('refuses an empty installed VM catalogue through real registry-backed authority and joins both owners', async () => {
   const runtimeOwner = createProductionBrowserRuntimeOwner();
-  cleanup.push(() => runtimeOwner.close());
+  const expected: { failure?: { value: unknown } } = {};
+  cleanup.push(async () => {
+    try {
+      await runtimeOwner.close();
+    } catch (value) {
+      if (!expected.failure || !Object.is(value, expected.failure.value)) throw value;
+    }
+  });
   const configuration = validateEngineConfiguration({
     dataDir: '/owned/browser',
     runtime: {
@@ -1204,41 +1191,79 @@ it('forwards configured Chrome identity through actual authority into the verifi
     },
     policy: { authorizeAction: async () => 'refused', verifyBrokerLease: async () => 'unknown' },
   });
-  const constructed: EngineConfiguration[] = [];
-  lifecycle.consumeConfiguration = (value) => {
-    const actual = validateEngineConfiguration(value);
-    constructed.push(actual);
-    lifecycle.runtime = createHash('sha256').update(JSON.stringify(actual.runtime)).digest('hex');
-  };
-  const peer = Object.freeze({
-    url: 'http://127.0.0.1:6401',
-    credentials: Object.freeze({ username: 'dorkos', password: 'fixture-only' }),
-    isCustodyKnown: () => true,
-    close: async () => {},
+  expect(installedPublisherAnchor).toBeNull();
+  const oldConstructor = vi.fn();
+  lifecycle.consumeConfiguration = oldConstructor;
+  const prepare = vi.fn(async () => {
+    throw new Error('UNENTERED_NETWORK');
   });
-  await fixture(
-    'CONNECT',
-    { prepare: async () => peer, activate: async () => {} },
-    undefined,
-    {
-      bindEngine: () => {},
-      input: { registerDispatcher: () => {} },
-      capture: { registerDispatcher: () => {} },
-      navigation: { registerDispatcher: () => {} },
-      registerBirth: () => {},
-      refuseBirth: () => {},
-    },
-    undefined,
-    undefined,
-    { runtimeOwner, configuration }
-  );
-  expect(constructed).toHaveLength(1);
-  expect(constructed[0].runtime.identity.mode).toBe('chrome-compatible');
-  expect(constructed[0].runtime.library.rootDir).toBe('/owned/library');
-  expect(constructed[0].runtime.executable.path).toContain(
-    '/owned/cache/candidates/original_chrome_installation/'
-  );
-  expect(constructed[0].runtime.executable.sha256).toBe(hash);
+  const activate = vi.fn(async () => {});
+  const bindEngine = vi.fn();
+  const registerInput = vi.fn();
+  const registerCapture = vi.fn();
+  const registerNavigation = vi.fn();
+  const registerBirth = vi.fn();
+  const refuseBirth = vi.fn();
+  const originals: {
+    authority?: ReturnType<typeof createBrowserAuthorityCore>;
+    registry?: BrowserRegistryStore;
+  } = {};
+  const [opening] = await Promise.allSettled([
+    fixture(
+      'CONNECT',
+      { prepare, activate },
+      (authority) => {
+        originals.authority = authority;
+      },
+      {
+        bindEngine,
+        input: { registerDispatcher: registerInput },
+        capture: { registerDispatcher: registerCapture },
+        navigation: { registerDispatcher: registerNavigation },
+        registerBirth,
+        refuseBirth,
+      },
+      undefined,
+      undefined,
+      {
+        runtimeOwner,
+        configuration,
+        observeOriginalRegistry(store) {
+          originals.registry = store;
+        },
+      }
+    ),
+  ]);
+  if (opening.status !== 'rejected') throw new Error('EXPECTED_INSTALLED_VM_REFUSAL');
+  expected.failure = { value: opening.reason }; // Retain exact original before assertions/teardown.
+  const { authority: originalAuthority, registry: originalRegistry } = originals;
+  if (!originalAuthority || !originalRegistry) throw new Error('ORIGINAL_AUTHORITY_NOT_CAPTURED');
+  // Enter both independent cleanup duties before observing either result.
+  const joined = await Promise.allSettled([runtimeOwner.close(), originalAuthority.stopAndJoin()]);
+  expect(opening.reason).toMatchObject({
+    message:
+      process.platform === 'darwin' && process.arch === 'arm64'
+        ? 'INSTALLED_PUBLISHER_ANCHOR_REQUIRED'
+        : 'INSTALLED_RUNTIME_STAGE',
+  });
+  for (const result of joined) {
+    expect(result.status).toBe('rejected');
+    if (result.status === 'rejected') expect(result.reason).toBe(opening.reason);
+  }
+  expect(originalRegistry.rows()).toHaveLength(0);
+  expect(originalPackage.resolve).not.toHaveBeenCalled();
+  for (const call of [
+    oldConstructor,
+    prepare,
+    activate,
+    bindEngine,
+    registerInput,
+    registerCapture,
+    registerNavigation,
+    registerBirth,
+    refuseBirth,
+  ])
+    expect(call).not.toHaveBeenCalled();
 });
 
 it.each(['CONNECT', 'HTTP', 'WS'] as const)(

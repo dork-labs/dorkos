@@ -85,14 +85,14 @@ describe('browser registry migration on real SQLite', () => {
       );
       expect(position).toBeGreaterThan(0);
       expect(journal.entries[position]).toMatchObject({
-        idx: 148,
-        tag: '20261008072835_browser_profile_import',
-        when: 1791444515000,
+        idx: 149,
+        tag: '20261009020219_browser_profile_import_and_disks',
+        when: 1791511339735,
       });
       expect(journal.entries[position - 1]).toMatchObject({
-        idx: 147,
-        tag: '20261007230701_private_session_identity',
-        when: 1791414421355,
+        idx: 148,
+        tag: '20261008170031_session_touches',
+        when: 1791478831717,
       });
       const auditPosition = journal.entries.findIndex(
         (entry) => entry.tag === '20261006231015_audit_events'
