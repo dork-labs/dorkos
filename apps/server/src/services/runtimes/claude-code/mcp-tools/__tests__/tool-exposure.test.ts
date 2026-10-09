@@ -467,8 +467,13 @@ describe('in-session tool exposure', () => {
     // 120 -> 121 for `audit_verify` (spec `audit-trail`), DEFERRED: checking
     // the audit log is a deliberate step a turn can search for. Both counts
     // move by the same one.
-    expect(tools).toHaveLength(121);
-    expect(deferred).toHaveLength(110);
+    // 121 -> 124 for `chat_send`, `chat_read` and `chat_stop` (spec
+    // `spin-off-chats` §1), all three DEFERRED: no prompt block names them
+    // yet (PR 4 of the spec moves the relay teaching onto them), so a turn
+    // that messages another chat searches for them like the relay tools it
+    // replaces. Both counts move by the same three.
+    expect(tools).toHaveLength(124);
+    expect(deferred).toHaveLength(113);
     for (const name of [
       'configure_doc_channel',
       'approve_doc_route',

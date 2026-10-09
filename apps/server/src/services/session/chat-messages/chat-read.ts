@@ -45,7 +45,7 @@ export interface ChatReadInput {
   maxChars?: number;
   /** Only messages matching these words. */
   query?: string;
-  /** Continue a trimmed read: `<messageId>:<offset>`. */
+  /** Continue a trimmed read: the `cursor` a cut read returned. */
   cursor?: string;
 }
 
@@ -152,6 +152,28 @@ function readMessages(message: HistoryMessage, include: 'text' | 'tools'): ChatR
   return [{ id: message.id, from: 'agent', ...at, text: message.content, ...tools }];
 }
 
+/**
+ * A cut read's place: the message, which of its parts (a user message carrying
+ * several chat messages reads as several), and how far into that part.
+ */
+interface ReadCursor {
+  id: string;
+  part: number;
+  offset: number;
+}
+
+/** Write a {@link ReadCursor} as `<messageId>:<part>:<offset>`. */
+function formatReadCursor(id: string, part: number, offset: number): string {
+  return `${id}:${part}:${offset}`;
+}
+
+/** Read a cursor {@link formatReadCursor} wrote, or null when it is not one. */
+function parseReadCursor(cursor: string): ReadCursor | null {
+  const match = /^(.+):(\d+):(\d+)$/u.exec(cursor);
+  if (!match) return null;
+  return { id: match[1]!, part: Number(match[2]), offset: Number(match[3]) };
+}
+
 /** The size a message costs against the budget. */
 function costOf(message: ChatReadMessage): number {
   return message.text.length + (message.tools?.reduce((n, t) => n + t.length + 1, 0) ?? 0);
@@ -188,15 +210,18 @@ export async function readChat(
   if (include === 'status') return { chat, messages: [], more: false };
 
   const history = await deps.history(input.chat);
+  const cursorAt = input.cursor !== undefined ? parseReadCursor(input.cursor) : null;
+  if (input.cursor !== undefined && cursorAt === null) {
+    throw new ChatMessageError('INVALID_INPUT', 'That cursor is not one chat_read gave out.');
+  }
   let selected = history;
   const moveCursor = input.query === undefined;
 
   if (input.query !== undefined) {
     const ids = new Set(await deps.search(input.chat, input.query, CHAT_READ_MAX_LAST));
     selected = history.filter((m) => ids.has(m.id));
-  } else if (input.cursor !== undefined) {
-    const id = input.cursor.slice(0, input.cursor.lastIndexOf(':'));
-    const index = history.findIndex((m) => m.id === id);
+  } else if (cursorAt !== null) {
+    const index = history.findIndex((m) => m.id === cursorAt.id);
     selected = index >= 0 ? history.slice(index) : history;
   } else {
     const since = input.since ?? 'last-read';
@@ -234,20 +259,20 @@ export async function readChat(
     Math.max(input.maxChars ?? CHAT_READ_DEFAULT_MAX_CHARS, CHAT_READ_MIN_MAX_CHARS),
     CHAT_READ_MAX_MAX_CHARS
   );
-  const startOffset =
-    input.cursor !== undefined
-      ? Number(input.cursor.slice(input.cursor.lastIndexOf(':') + 1)) || 0
-      : 0;
   const messages: ChatReadMessage[] = [];
   let used = 0;
   let cursor: string | undefined;
   let lastWholeId: string | undefined;
   outer: for (const [i, history] of selected.entries()) {
     const parts = readMessages(history, include);
-    let offset = i === 0 ? startOffset : 0;
-    for (const part of parts) {
-      const piece = offset > 0 ? { ...part, text: part.text.slice(offset) } : part;
-      offset = 0;
+    // A continued read starts at the part, and the place in it, the cut read
+    // stopped at: one user message can carry several chat messages, and each
+    // is its own part.
+    const resume = i === 0 && cursorAt !== null ? cursorAt : null;
+    for (const [p, part] of parts.entries()) {
+      if (resume && p < resume.part) continue;
+      const already = resume && p === resume.part ? resume.offset : 0;
+      const piece = already > 0 ? { ...part, text: part.text.slice(already) } : part;
       const cost = costOf(piece);
       if (used + cost <= budget) {
         messages.push(piece);
@@ -255,13 +280,9 @@ export async function readChat(
         continue;
       }
       const room = budget - used;
-      if (room > 0 && piece.text.length > 0) {
-        const taken = Math.min(room, piece.text.length);
-        messages.push({ ...piece, text: piece.text.slice(0, taken), trimmed: true });
-        cursor = `${history.id}:${(i === 0 ? startOffset : 0) + taken}`;
-      } else {
-        cursor = `${history.id}:${i === 0 ? startOffset : 0}`;
-      }
+      const taken = room > 0 ? Math.min(room, piece.text.length) : 0;
+      if (taken > 0) messages.push({ ...piece, text: piece.text.slice(0, taken), trimmed: true });
+      cursor = formatReadCursor(history.id, p, already + taken);
       more = true;
       break outer;
     }

@@ -75,8 +75,10 @@ export function renderChatMessage(
   text: string,
   nonce: string = mintFenceNonce()
 ): { text: string; nonce: string } {
-  const agent = sanitizeIdentity(sender.agentName) ?? 'an agent';
-  const title = sender.chatTitle ? sanitizeIdentity(sender.chatTitle) : null;
+  // Names are someone's words too: reduced to a label, and kept from reading
+  // as a fence marker, exactly as the message is.
+  const agent = defuseMarkers(sanitizeIdentity(sender.agentName) ?? 'an agent');
+  const title = sender.chatTitle ? defuseMarkers(sanitizeIdentity(sender.chatTitle) ?? '') : null;
   const header = [
     `From: ${agent}${sender.agentId ? ` (agent ${sender.agentId})` : ''}`,
     `Chat: ${title ? `"${title}" ` : ''}(chat ${sender.chatId})`,

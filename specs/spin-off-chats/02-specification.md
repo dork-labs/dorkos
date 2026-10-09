@@ -8,7 +8,7 @@ Four PRs, each titled with DOR-2790, in this order: (1) server, (2) automatic re
 
 Declared once each as capabilities in a new `chat` domain (`apps/server/src/services/session/chat-messages/`), so every runtime gets them through the DorkOS tools: Claude Code through its in-session server, Codex, OpenCode and Doe through the authenticated runtime listener. They are `in-session` only. The caller is always the verified turn (`context.sessionId` + `context.identity`), never an argument: a tool with no calling chat refuses, because the sender stamp IS the calling chat.
 
-Area `messages` (Messages: "Message other agents, and message you"), tier `act`. Allowed in every preset, as today's relay tools are.
+Area `messages` (Messages: "Message other agents, and message you"). `chat_send` and `chat_stop` are tier `act`; `chat_read` is tier `observe`, since reading changes nothing but its own cursor. Allowed in every preset, as today's relay tools are.
 
 ### `chat_send({ to, message, summary?, delivery?, replyTo? })`
 
@@ -20,7 +20,7 @@ Area `messages` (Messages: "Message other agents, and message you"), tier `act`.
 - `summary`: optional, at most 80 characters. The Sent card's one-line label. Absent: the message's first line, trimmed.
 - `delivery`: `queue` (default) | `steer` | `interrupt`.
 - `replyTo`: optional id of the chat message this answers, so both sides can thread.
-- Returns a receipt: `{ messageId, chatId, status, position?, note? }`, `status` one of `queued | delivered | steered | interrupted | failed`.
+- Returns a receipt: `{ messageId, chatId, status, position?, note? }`, `status` one of `queued | working | steered | failed` at send time. An `interrupt` answers `queued` at position 1: it runs as soon as the stopped turn ends.
 
 ### `chat_read({ chat, since?, last?, include?, maxChars?, query?, cursor? })`
 
@@ -30,7 +30,7 @@ Area `messages` (Messages: "Message other agents, and message you"), tier `act`.
 - `since`: `'last-read'` (default; a per-reader cursor in `chat_read_cursors` keyed by reader chat and target chat), a message id, or an ISO time.
 - `last`: the newest n messages instead (default 10, max 100). `since` and `last` together: the newest `last` after `since`.
 - `include`: `text` (default; the person's and agents' words), `tools` (also tool calls, one line each), `status` (no messages: the cheapest check; does not move the cursor).
-- `maxChars`: default 8,000. When the page would pass it, the last message that fits is trimmed and `cursor` says where to continue (`<messageId>:<offset>`). Passing `cursor` continues from there.
+- `maxChars`: default 8,000. When the page would pass it, the last message that fits is trimmed and `cursor` says where to continue (`<messageId>:<part>:<offset>`; a user message carrying several chat messages reads as several parts). Passing `cursor` continues from there.
 - `query`: only messages matching the words, through the message search index (`searchMessages`, one container scope on the target chat). The cursor is not moved.
 - A received chat message reads as `{ from: { chatId, agentId, agentName, chatTitle }, kind, text }`, never as the raw fence.
 
@@ -38,7 +38,7 @@ Area `messages` (Messages: "Message other agents, and message you"), tier `act`.
 
 - Stops a running turn exactly as the Stop button does (`runtime.interruptQuery`), and drops queued messages OTHER chats sent there. The person's own queued words stay and run next: an agent's stop never erases what a person typed.
 - `reason`: optional, at most 200 characters.
-- Recorded in the audit trail (`chat.stopped`), and shown in the stopped chat as "Stopped by <agent> · <chat>: <reason>" (a durable `chat_notice` event on its stream).
+- Recorded in the audit trail (`chat.stopped`), and shown in the stopped chat as "Stopped by <agent> · <chat>: <reason>" (a `kind: 'stop'` row in `chat_messages`, read through `GET /api/sessions/:id/chat-messages`, with a `chat_activity` stream event telling open windows to re-read).
 - Any chat the caller may send to (§4) may be stopped. Stopping your own chat is refused (`SELF`): end your turn instead.
 
 `session_start` stays. Its first message gets the same sender stamp, and it gains `reportBack: 'auto' | 'off'` (default `auto`, PR 2).
@@ -58,7 +58,7 @@ Area `messages` (Messages: "Message other agents, and message you"), tier `act`.
 - **Steer (opt-in).** The dispatcher's `steer` disposition. A runtime that cannot steer falls back to the queue; the receipt says `queued` with a note.
 - **Interrupt (opt-in).** Stop the receiver's running turn (the agent's queued messages there stay), then deliver at the head of the queue.
 - **The level ceiling.** A `chat-message` turn runs no looser than the sending chat's latest turn (`lastTurnLevelOf`), captured at send time and stored on the row; unknown is `runtime-default`. A batched turn is held to every sender's bound (a list ceiling). The ceiling is applied when the queued row LAUNCHES, read from `chat_messages` by queue row id, so a row adopted after a restart keeps it; an agent-sent row with no record runs at `runtime-default` (fails closed).
-- **No loop guard, no turn cap** (Dorian 2026-10-08). The launch cap (`AGENT_LAUNCH_MAX_LIVE`) still counts a send that starts a turn on an idle chat, because it limits machine load, not conversation; a send refused by it is held and retried, never dropped.
+- **No loop guard, no turn cap** (Dorian 2026-10-08). The launch cap (`AGENT_LAUNCH_MAX_LIVE`) still counts a send that starts a turn on an idle chat, because it limits machine load, not conversation; a send it refuses answers `UNAVAILABLE` with the plain reason, and the sender tries again.
 - **Notifications.** A turn started by a chat message never sounds the turn-finished notification for the person (it is not their turn).
 
 ## 4. Who can reach what

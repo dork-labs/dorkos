@@ -30,7 +30,7 @@ An agent could start a chat (`session_start`) but not send to one that exists. A
 - **Power flows downstream.** A chat-message turn runs no looser than the sending chat's latest turn, read at send time and kept on the row; unknown is the receiving runtime's default. The ceiling is applied when the row launches, so it survives the queue and a restart.
 - **Queue by default.** Never interrupt; an idle receiver starts at once (that is how a parent wakes). `steer` and `interrupt` are opt-in.
 - **The person first.** A person's queued message is placed ahead of agent-sent ones. Agent messages that wait together run as one turn.
-- **No loop guard and no turn cap.** Chats may talk to each other for days, weeks or months with no person in between. Loop protection, if it comes, is its own decision. The machine-load launch cap still applies, and a send it refuses is held, not dropped.
+- **No loop guard and no turn cap.** Chats may talk to each other for days, weeks or months with no person in between. Loop protection, if it comes, is its own decision. The machine-load launch cap still applies; a send it refuses is answered with the reason, and the sender tries again.
 - **Agents can do what people can.** An agent may stop or interrupt any chat it can send to, like the Stop button. Each stop is recorded in the audit trail and shown in the stopped chat with who did it. An agent's stop never erases a person's queued words.
 - **Spin-offs report back by themselves** when a turn ends finished, failed, needing the person, or paused at a limit; never when it ends only to wait.
 - **The relay agent tools retire:** `relay_send`, `relay_send_and_wait`, `relay_send_async`, `relay_inbox` and the endpoint tools only they used.
