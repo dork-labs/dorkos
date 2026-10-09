@@ -7557,6 +7557,16 @@
         "apps/server/src/services/session/origin/turn-origin.ts",
         "packages/mesh/src/topology.ts"
       ]
+    },
+    {
+      "id": "261009-171114",
+      "slug": "chat-message-origin-and-delivery-rules",
+      "title": "Chats message chats with a stamped chat-message origin; queue by default, person first, no loop guard",
+      "status": "accepted",
+      "created": "2026-10-09",
+      "extractedFrom": null,
+      "specSlug": "spin-off-chats",
+      "amends": ["261006-235240", "0077", "0081"]
     }
   ]
 }

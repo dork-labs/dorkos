@@ -2,6 +2,14 @@
   "version": 1,
   "specs": [
     {
+      "id": "261009-171114",
+      "slug": "spin-off-chats",
+      "title": "Spin-off chats: chats message each other, show who sent it, report back",
+      "created": "2026-10-09",
+      "status": "specified",
+      "linearIssue": "DOR-2790"
+    },
+    {
       "id": "261008-052829",
       "slug": "doe-runtime",
       "title": "DorkOS runtime backed by Doe",
