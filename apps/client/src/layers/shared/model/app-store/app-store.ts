@@ -184,8 +184,6 @@ export const useAppStore = create<AppState>()(
         setIsTextStreaming: (v) => set({ isTextStreaming: v }),
         isWaitingForUser: false,
         setIsWaitingForUser: (v) => set({ isWaitingForUser: v }),
-        activeForm: null,
-        setActiveForm: (v) => set({ activeForm: v }),
         tasksBadgeCount: 0,
         setTasksBadgeCount: (v) => set({ tasksBadgeCount: v }),
 

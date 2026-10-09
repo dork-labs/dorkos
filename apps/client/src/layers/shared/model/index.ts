@@ -39,7 +39,7 @@ export { useIsBelowDesktop } from './media/use-is-below-desktop';
 export { useIsTouchOnly } from './media/use-is-touch-only';
 export { useVisualViewportBottomInset } from './viewport/use-visual-viewport-inset';
 export { useFavicon } from './use-favicon';
-export { useDocumentTitle } from './use-document-title';
+export { useDocumentTitle, type DocumentTitleState } from './use-document-title';
 export { useElapsedTime } from './use-elapsed-time';
 export {
   useIdleDetector,

@@ -1,65 +1,42 @@
 /**
- * What the browser tab has to say about rooms.
+ * The room open on `/channels`, and how many rooms are waiting.
  *
- * The two facts `useDocumentTitle` needs and cannot fetch for itself: the room
- * you are reading, and how many rooms are waiting. The hook lives in
- * `shared/model`, which may not reach into `entities/` — so the app shell reads
- * the rooms and hands the answers down, the same way it already hands down the
- * current agent's name and emoji.
+ * Two facts the app shell needs and resolves once: the open room, which the
+ * channel bar reads, and the count of rooms with unread entries, which the
+ * window title shows as `(N)` while the window is hidden.
  *
- * @module app/use-room-document-title
+ * @module app/use-open-room
  */
 import { useMemo } from 'react';
-import {
-  communityAccessState,
-  useCommunityConnections,
-  useRemoteCommunityRoom,
-} from '@/layers/entities/community';
 import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { useSafePathname, useSafeSearch } from '@/layers/shared/model';
-import {
-  hasUnread,
-  roomDisplayTitle,
-  useRoom,
-  useRoomListStream,
-  useRooms,
-} from '@/layers/entities/room';
+import { hasUnread, useRoom, useRoomListStream, useRooms } from '@/layers/entities/room';
 
 /** The one route whose search params name an open room. */
 const ROOMS_PATHNAME = '/channels';
 
-/** The room facts the document title is built from. */
-export interface RoomDocumentTitle {
+/** The room facts the app shell reads. */
+export interface OpenRoom {
   /**
-   * The open room on `/channels`, roster and all, or `null`.
+   * The open local room on `/channels`, roster and all, or `null`.
    *
-   * The tab needs only its name, but the channel bar needs the room — archived,
-   * bridge visibility, working count, head count — and this is the one place the
-   * open room is resolved. Handing back the object rather than a second copy of
-   * the query is what keeps the bar and the tab reading the same room (spec
-   * `one-bar-header` §3.4).
+   * The channel bar needs the room — archived, bridge visibility, working
+   * count, head count — and this is the one place the open room is resolved,
+   * so the bar and the page read the same room (spec `one-bar-header` §3.4).
+   * A connected community's room is read through that community, not here.
    */
   room: RoomWithRoster | null;
-  /** The open room, written the way it is spoken (`#general`), or `null`. */
-  roomTitle: string | null;
   /** How many rooms hold unread entries. */
   unreadRoomCount: number;
 }
 
 /**
- * Read the open room's name and the number of rooms with unread entries.
- *
- * The name comes from `useRoom`, not from the list, so the tab can never
- * disagree with the header on the same screen — and it costs no request, since
- * `ChannelsPage` reads the same query.
+ * Read the open room and the number of rooms with unread entries.
  *
  * Rooms are counted, not messages: `hasUnread` treats a `null` count as "not a
  * member", which is not zero, so a room the operator has only ever looked at is
- * never counted (spec `rooms` §13.1).
- *
- * `id` is the whole address, matching `ChannelsPage`. The count is read on
- * every route, because a tab you have left is exactly the one that needs to say
- * a room is waiting.
+ * never counted (spec `rooms` §13.1). The count is read on every route, because
+ * a tab you have left is exactly the one that needs to say a room is waiting.
  *
  * **This hook owns the room list's live subscription, deliberately.**
  * `useRoomListStream` used to be called by `DashboardSidebar`, which was fine
@@ -72,37 +49,17 @@ export interface RoomDocumentTitle {
  * consumer rather than one route's worth of UI, and cannot drift from it again.
  * The query is shared, so the sidebar keeps getting fresh rows for free.
  */
-export function useRoomDocumentTitle(): RoomDocumentTitle {
+export function useOpenRoom(): OpenRoom {
   useRoomListStream();
 
   const pathname = useSafePathname();
   const search = useSafeSearch() as { id?: string; community?: string };
-  const roomId = pathname === ROOMS_PATHNAME ? (search.id ?? null) : null;
+  const roomId = pathname === ROOMS_PATHNAME && !search.community ? (search.id ?? null) : null;
 
-  const { data: room } = useRoom(search.community ? null : roomId);
-  const connections = useCommunityConnections(Boolean(search.community));
-  const connection = connections.data?.find((item) => item.ref === search.community);
-  const access = communityAccessState(connection?.access);
-  const remote = useRemoteCommunityRoom(
-    search.community ?? '',
-    roomId ?? '',
-    Boolean(search.community && roomId && access.capabilities.read),
-    access.fingerprint
-  );
+  const { data: room } = useRoom(roomId);
   const { data: rooms } = useRooms();
 
   const unreadRoomCount = useMemo(() => (rooms ?? []).filter(hasUnread).length, [rooms]);
 
-  const open = !search.community && roomId && room ? room : null;
-
-  return {
-    room: open,
-    roomTitle:
-      search.community && roomId
-        ? (remote.data?.title ?? null)
-        : open
-          ? roomDisplayTitle(open)
-          : null,
-    unreadRoomCount,
-  };
+  return { room: roomId && room ? room : null, unreadRoomCount };
 }
