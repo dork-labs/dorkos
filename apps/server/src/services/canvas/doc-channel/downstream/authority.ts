@@ -17,7 +17,7 @@ export interface DocResponderPorts {
   resolveScope(scope: string): string;
   revalidateRuntime(proof: ServerPrincipalProof): Promise<boolean>;
 }
-/** Compose owning-scope writes and separate exact approved responder authority; room responses remain explicitly unavailable. */
+/** Compose owning-scope writes and approved runtime preflight; Room sends still require native responder custody. */
 export function createDocDownstreamAuthority(
   store: DocChannelStore,
   authorization: DocChannelAuthorization,
@@ -62,8 +62,7 @@ export function createDocDownstreamAuthority(
       )
         refuse();
       grants.refreshGrantedAuthority(batch!.grantId);
-      if (batch!.scope.startsWith('room:'))
-        throw new DocDownstreamError('ROOM_APP_ACK_RESPONDER_UNAVAILABLE', 409);
+      // Room preflight does not authorize a write: send must enter the original committed emission frame.
     },
     requireWriteCurrent(documentId, actor, tx) {
       const identity = authorization.requireCurrent(documentId, actor, true, tx);

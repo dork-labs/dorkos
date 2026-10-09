@@ -1,3 +1,4 @@
+import { isServerPrincipal } from '../../../connectors/principal/server-principal.js';
 import { executeDocumentWork } from '../storage/store-transaction.js';
 import type {
   CanvasChannelSendRequest,
@@ -47,6 +48,7 @@ import { readRoomDocBudgetFirst } from '../../../rooms/limits/turn-budget.js';
 import {
   captureOriginalPreparedNativeTime,
   resolveOriginalNativePrincipal,
+  isOriginalResolvedRuntimePrincipal,
   requireSameOriginalNativePrincipalPorts,
   readOriginalPreparedNativePrincipal,
   captureOriginalRoomEmissionPrincipal,
@@ -91,6 +93,56 @@ const committedRoomResponders = new WeakMap<
   OriginalCommittedRoomResponder,
   OriginalRoomCommittedData
 >();
+interface RoomCapabilityResponder {
+  token: OriginalCommittedRoomResponder;
+  runtime: object;
+  prepared: PreparedRoomResponder;
+  operation: object;
+  documentId: string;
+  batchId: string;
+  principals: ConnectorRuntimePrincipalService;
+}
+const capabilityResponders = new WeakMap<Db, Set<RoomCapabilityResponder>>();
+const preparedCapabilityResponders = new WeakMap<PreparedRoomResponder, RoomCapabilityResponder>();
+/** Lookup actual committed runtime custody; neither caller claims nor accepted batch DATA mint it. */
+export async function resolveOriginalRoomCapabilityResponder(
+  db: Db,
+  principal: import('../../../connectors/principal/server-principal.js').ServerPrincipalProof,
+  selection: Readonly<{ documentId: string; batchId: string }>
+): Promise<RoomCapabilityResponder | undefined> {
+  if (!isServerPrincipal(principal) || principal.claims.kind !== 'runtime') return undefined;
+  const claims = principal.claims;
+  for (const responder of capabilityResponders.get(db) ?? []) {
+    if (
+      !isOriginalResolvedRuntimePrincipal(responder.principals, principal) ||
+      responder.documentId !== selection.documentId ||
+      responder.batchId !== selection.batchId ||
+      committedRoomResponders.get(responder.token)?.consumed !== true
+    )
+      continue;
+    const resolved = await resolveOriginalNativePrincipal(
+      responder.principals,
+      responder.operation
+    );
+    if (resolved.status !== 'resolved' || resolved.principal.claims.kind !== 'runtime') continue;
+    const current = resolved.principal.claims;
+    if (
+      current.bindingId !== claims.bindingId ||
+      current.agentId !== claims.agentId ||
+      current.runtime !== claims.runtime ||
+      current.canonicalSessionId !== claims.canonicalSessionId ||
+      current.agentPath !== claims.agentPath
+    )
+      continue;
+    if (
+      preparedCapabilityResponders.get(responder.prepared) !== responder ||
+      committedRoomResponders.get(responder.token)?.consumed !== true
+    )
+      continue;
+    return responder;
+  }
+  return undefined;
+}
 interface ActiveEmissionOwner {
   db: Db;
   prepare: () => Promise<OriginalRoomEmissionStage>;
@@ -468,6 +520,9 @@ export class OriginalRoomResponderOperation {
         runtime: own.runtime,
         runtimeHandle: own.runtimeHandle,
       });
+    const responder = preparedCapabilityResponders.get(prepared);
+    if (responder) capabilityResponders.get(this.#db)?.delete(responder);
+    preparedCapabilityResponders.delete(prepared);
     this.#prepared.delete(prepared);
   }
   constructor(
@@ -886,6 +941,19 @@ export class OriginalRoomResponderOperation {
         }
       },
     });
+    const responder: RoomCapabilityResponder = {
+      token,
+      runtime,
+      prepared,
+      operation: own.nativeOperation,
+      documentId: source.documentId,
+      batchId: source.batchId,
+      principals: this.#principals,
+    };
+    const responders = capabilityResponders.get(this.#db) ?? new Set<RoomCapabilityResponder>();
+    capabilityResponders.set(this.#db, responders);
+    responders.add(responder);
+    preparedCapabilityResponders.set(prepared, responder);
     const committedOwner = committedRoomResponders.get(token)!;
     activeEmissionOwners.set(token, {
       db: this.#db,

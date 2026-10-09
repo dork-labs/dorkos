@@ -257,11 +257,12 @@ describe('ClaudeConnectorTurnContext', () => {
       cwd: '/repo',
     });
     await context.resolvePrincipal();
+    const resolutionCountBeforeLeaseLoss = vi.mocked(principals.resolve).mock.calls.length;
 
     leaseLost = true;
     await expect(context.resolvePrincipal()).rejects.toThrow('Start a new turn');
     expect(principals.openTurn).toHaveBeenCalledOnce();
-    expect(principals.resolve).toHaveBeenCalledOnce();
+    expect(principals.resolve).toHaveBeenCalledTimes(resolutionCountBeforeLeaseLoss);
   });
 
   it('keeps the real turn principal renewable for 72 hours and closes it at terminal', async () => {

@@ -1,3 +1,4 @@
+import { noopLogger } from '@dorkos/shared/logger';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { once } from 'node:events';
 import * as originalCreditsSidecar from '../credits-sidecar.js';
@@ -2909,6 +2910,7 @@ describe('genuine original OpenCode Room source', () => {
   });
   it.each([
     'same entry once',
+    'capability app ACK',
     'entered pending next direct return',
     'early settings Error',
     'early settings undefined',
@@ -3399,6 +3401,45 @@ describe('genuine original OpenCode Room source', () => {
           await vi.waitFor(() =>
             expect(harness.client.session.promptAsync).toHaveBeenCalledTimes(promptsBefore + 1)
           );
+          if (scenario === 'capability app ACK') {
+            const { resolveOriginalNativePrincipal } =
+              await import('../../../connectors/principal/runtime-principal-service.js');
+            const { createDocChannelDownstreamCapabilities } =
+              await import('../../../canvas/doc-channel/downstream/capabilities.js');
+            const responder = await resolveOriginalNativePrincipal(
+              h.principals,
+              original.nativeOperation
+            );
+            if (responder.status !== 'resolved')
+              throw new Error('Actual OpenCode responder missing');
+            const send = createDocChannelDownstreamCapabilities(h.http.downstream)[0]!;
+            const request = {
+              documentId: h.documentId,
+              roomId: h.roomId,
+              eventId: randomUUID(),
+              type: 'app.ack',
+              payload: {
+                batchId: accepted.deliveries[0]!.batchId!,
+                routeId: accepted.deliveries[0]!.routeId,
+                eventIds: [input.id],
+                outcome: 'handled',
+              },
+            };
+            await send.invoke({ logger: noopLogger }, request, {
+              serverPrincipal: responder.principal,
+            });
+            expect(h.http.channels.listDeliveries(h.documentId, input.id)[0]!.ackOutcome).toBe(
+              'handled'
+            );
+            expect(
+              h.http.channels.listDeliveries(h.documentId, input.id)[0]!.ackEvidence
+            ).toMatchObject({
+              bindingId:
+                responder.principal.claims.kind === 'runtime'
+                  ? responder.principal.claims.bindingId
+                  : null,
+            });
+          }
           for (const event of opencodeSimpleTurn(OC_SESSION_A, 'actual responder complete'))
             harness.source.latest().push(globalEvent(agentDir, event));
           await projected;

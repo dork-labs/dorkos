@@ -203,6 +203,9 @@ import {
 } from '../../../../session/session-state-projector.js';
 import { agents, canvasDocuments, connectorRuntimeBindings, eq, sql } from '@dorkos/db';
 import { randomUUID } from 'node:crypto';
+import { noopLogger } from '@dorkos/shared/logger';
+import { createDocChannelDownstreamCapabilities } from '../../../../canvas/doc-channel/downstream/capabilities.js';
+import { resolveOriginalNativePrincipal } from '../../../../connectors/principal/runtime-principal-service.js';
 import fs from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -3614,6 +3617,7 @@ describe('genuine native COMMIT on the installed persistent process', () => {
   });
   it.each([
     'warm same entry once',
+    'warm capability app ACK',
     'early mesh Error with secondary revoke',
     'early mesh undefined with secondary revoke',
     'cold same entry once',
@@ -3988,8 +3992,40 @@ describe('genuine native COMMIT on the installed persistent process', () => {
             );
           };
         }
+        if (scenario === 'warm capability app ACK') process.goSilent();
         const projector = getOrCreateProjector(sessionId);
         const projected = feedProjector(projector, raw, { originalRoomStream: raw });
+        if (scenario === 'warm capability app ACK') {
+          await vi.waitFor(() => expect(process.inbox).toHaveLength(2));
+          const identity = await resolveOriginalNativePrincipal(
+            h.principals,
+            native.nativeOperation
+          );
+          if (identity.status !== 'resolved')
+            throw new Error('Actual admitted Claude responder proof missing');
+          const delivery = accepted.deliveries[0]!;
+          const send = createDocChannelDownstreamCapabilities(h.http.downstream)[0]!;
+          await send.invoke(
+            { logger: noopLogger },
+            {
+              documentId: h.documentId,
+              roomId: h.roomId,
+              eventId: randomUUID(),
+              type: 'app.ack',
+              payload: {
+                batchId: delivery.batchId!,
+                routeId: delivery.routeId,
+                eventIds: [event.id],
+                outcome: 'handled',
+              },
+            },
+            { serverPrincipal: identity.principal }
+          );
+          expect(h.http.channels.listDeliveries(h.documentId, event.id)[0]!.ackOutcome).toBe(
+            'handled'
+          );
+          process.answer(process.received[1]!);
+        }
         if (scenario === 'dedicated crash cannot replay') {
           process.goSilent();
           await vi.waitFor(() => expect(process.inbox).toHaveLength(2));

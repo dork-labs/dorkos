@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { agents, user, authors, eq, sessionMetadata, createDb, runMigrations } from '@dorkos/db';
 import { initAuth, readOwnerAccount } from '../../../../core/auth/index.js';
+import { initConfigManager } from '../../../../core/config-manager.js';
 import { env } from '../../../../../env.js';
 import { ApprovalService } from '../../../../core/approvals/approval-service.js';
 import { createRoomSubsystem, resolveOperatorAuthor } from '../../../../rooms/index.js';
@@ -417,6 +418,7 @@ export async function nativeRoomAuthorityFixture(
     const db = opened.db;
     returnedDb = db;
     runMigrations(db);
+    initConfigManager(dir);
     const auth = initAuth(db, dir);
     // Onboard the actual first account through the original auth handler. The
     // Room pre-effect witness requires its real owner row, not a fixture DTO.
@@ -651,6 +653,24 @@ export interface NativeRoomCodexObservation {
   completeFutureTurns(): void;
   holdFutureTurns?(): void;
   isProducerHeld?(): boolean;
+  /** Exercise the real capability surface while the genuine SDK responder is held. */
+  beforeResponder?(input: {
+    fixture: NativeRoomAuthorityFixture;
+    principal: import('../../../../connectors/principal/server-principal.js').ServerPrincipalProof;
+    batchId: string;
+  }): Promise<void>;
+  beforeClaim?(input: {
+    fixture: NativeRoomAuthorityFixture;
+    principal: import('../../../../connectors/principal/server-principal.js').ServerPrincipalProof;
+    batchId: string;
+  }): Promise<void>;
+  acknowledgeCapability?(input: {
+    fixture: NativeRoomAuthorityFixture;
+    principal: import('../../../../connectors/principal/server-principal.js').ServerPrincipalProof;
+    request: import('@dorkos/shared/canvas-channel-schemas').CanvasChannelSendRequest;
+    /** Retire genuine runtime custody, never remove a test-manufactured tuple. */
+    retireResponder(): Promise<void>;
+  }): Promise<boolean>;
 }
 /** Test-only composition: it cannot issue a principal or admission from caller data. */
 export async function nativeCommittedCodexRoomFixture(
@@ -852,6 +872,11 @@ export async function nativeCommittedCodexRoomFixture(
       );
       if (accepted.receipt.id !== input.id)
         throw new Error('Original acceptance identity changed.');
+      await observed.beforeResponder?.({
+        fixture: h,
+        principal: resolved.principal,
+        batchId: accepted.deliveries[0]!.batchId!,
+      });
       await new Promise<void>((resolve) => setTimeout(resolve, 110));
       wakeAuthorizedRoomDue(h.http.authorization);
       observed.releaseProducer();
@@ -867,6 +892,20 @@ export async function nativeCommittedCodexRoomFixture(
       if (!originalPrepared) throw new Error('Original constructor preparation missing.');
       const bindingCount = h.db.select().from(connectorRuntimeBindings).all().length;
       const spendCount = h.db.get<{ n: number }>(sql`SELECT count(*) AS n FROM room_turn_spend`)!.n;
+      if (observed.beforeClaim) {
+        const { resolveOriginalNativePrincipal } =
+          await import('../../../../connectors/principal/runtime-principal-service.js');
+        const identity = await resolveOriginalNativePrincipal(
+          h.principals,
+          originalPrepared.nativeOperation
+        );
+        if (identity.status !== 'resolved') throw new Error('Prepared responder principal missing');
+        await observed.beforeClaim({
+          fixture: h,
+          principal: identity.principal,
+          batchId: accepted.deliveries[0]!.batchId!,
+        });
+      }
       const committed = commitServiceOriginalRoomResponder(h.http.service, runtime, prepared);
       if (
         h.db.get<{ n: number }>(sql`SELECT count(*) AS n FROM room_turn_spend`)!.n !==
@@ -911,12 +950,7 @@ export async function nativeCommittedCodexRoomFixture(
             let failed = false,
               first: unknown;
             try {
-              await sendOriginalRoomResponderEvent(
-                emitter,
-                committed,
-                runtime,
-                prepared,
-                live.nativeOperation,
+              const request: import('@dorkos/shared/canvas-channel-schemas').CanvasChannelSendRequest =
                 {
                   documentId: h.documentId,
                   roomId: h.roomId,
@@ -928,8 +962,37 @@ export async function nativeCommittedCodexRoomFixture(
                     eventIds: [input.id],
                     outcome: 'handled',
                   },
-                }
-              );
+                };
+              if (observed.acknowledgeCapability) {
+                const { resolveOriginalNativePrincipal } =
+                  await import('../../../../connectors/principal/runtime-principal-service.js');
+                const identity = await resolveOriginalNativePrincipal(
+                  h.principals,
+                  live.nativeOperation
+                );
+                if (identity.status !== 'resolved')
+                  throw new Error('Actual responder principal missing.');
+                await observed.acknowledgeCapability({
+                  fixture: h,
+                  principal: identity.principal,
+                  request,
+                  retireResponder: async () => {
+                    const retiring = retireCodexPreparedRoomResponder(runtime!, prepared!);
+                    observed.releaseProducer();
+                    await retiring;
+                    await committedFeed?.catch(() => {});
+                  },
+                });
+              } else {
+                await sendOriginalRoomResponderEvent(
+                  emitter,
+                  committed,
+                  runtime,
+                  prepared,
+                  live.nativeOperation,
+                  request
+                );
+              }
             } catch (cause) {
               failed = true;
               first = cause;
@@ -952,7 +1015,7 @@ export async function nativeCommittedCodexRoomFixture(
             }
             if (failed) throw first;
             const delivery = h.http.channels.listDeliveries(h.documentId, input.id)[0];
-            if (delivery?.ackOutcome !== 'handled')
+            if (!observed.acknowledgeCapability && delivery?.ackOutcome !== 'handled')
               throw new Error('Original native acknowledgment missing.');
           } else await committedFeed;
         }
@@ -1032,6 +1095,7 @@ export async function reopenNativeRoomAuthorityFixture(
     const db = opened.db;
     returnedDb = db;
     runMigrations(db);
+    initConfigManager(original.dir);
     initAuth(db, original.dir);
     const rooms = createRoomSubsystem({ db });
     const principals = nativeFixturePrincipals(db, original.originalTarget);

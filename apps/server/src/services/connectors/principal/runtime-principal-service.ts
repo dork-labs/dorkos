@@ -59,6 +59,28 @@ export {
 } from '../runtime-principal-port.js';
 
 const nativePrincipalCores = new WeakMap<object, PrincipalData.NativePrincipalCore>();
+const resolvedRuntimePrincipals = new WeakMap<ServerPrincipalProof, object>();
+function resolvedRuntimePrincipal(
+  service: object,
+  claims: Extract<import('./server-principal.js').ServerPrincipalClaims, { kind: 'runtime' }>
+): ServerPrincipalProof {
+  const principal = createServerPrincipal(claims);
+  resolvedRuntimePrincipals.set(principal, service);
+  return principal;
+}
+/** Recognize a proof issued by this original credential resolver, not copied runtime claims. */
+export function isOriginalResolvedRuntimePrincipal(
+  service: object,
+  principal: ServerPrincipalProof
+): boolean {
+  const issuer = resolvedRuntimePrincipals.get(principal);
+  return (
+    !!issuer &&
+    originalNativePrincipalCore(issuer) === originalNativePrincipalCore(service) &&
+    originalNativePrincipalCore(service) !== undefined
+  );
+}
+
 const roomEmissionPrincipalCaptures = new WeakMap<
   PrincipalData.NativePrincipalCore,
   (
@@ -325,7 +347,7 @@ export class ConnectorRuntimePrincipalService
         const row = readOriginalPreparedNativePrincipal(this, db, operation, time, db);
         if (!row || this.#nativeOwners.get(claims.bindingId) !== original)
           return { status: 'refused', reason: 'revoked' };
-        return { status: 'resolved', principal: createServerPrincipal(claims) };
+        return { status: 'resolved', principal: resolvedRuntimePrincipal(this, claims) };
       },
       recognizesPreparedOperation: (operation) =>
         [...this.#nativeOwners.values()].some((own) => own.token === operation),
@@ -690,7 +712,7 @@ export class ConnectorRuntimePrincipalService
     if (!this.hasCurrentOwner(row.id)) {
       return { status: 'refused', reason: 'revoked' };
     }
-    return { status: 'resolved', principal: createServerPrincipal(claims) };
+    return { status: 'resolved', principal: resolvedRuntimePrincipal(this, claims) };
   }
 
   /** Check the authentic current boot binding and its live turn owner without awaiting. */
