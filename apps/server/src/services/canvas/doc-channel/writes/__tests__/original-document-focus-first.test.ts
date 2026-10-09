@@ -1,6 +1,7 @@
 /** Approved host focus reaches the original native Room FIRST, separately from its HTTP receipt. */
 import express from 'express';
 import { randomUUID } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 import fs from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -32,6 +33,20 @@ let sessionId: string;
 let fixture: Awaited<ReturnType<typeof nativeRoomAuthorityFixture>> | undefined;
 let setupPending: Promise<void>;
 let bodyPending: Promise<void> | undefined;
+let phaseStartedAt = 0;
+const phase = (name: string) => {
+  try {
+    process.stderr.write(
+      `ORIGINAL_ROOM_BODY_PHASE ${JSON.stringify({
+        test: 'focus-first',
+        phase: name,
+        elapsedMs: Math.round(performance.now() - phaseStartedAt),
+      })}\n`
+    );
+  } catch {
+    // Diagnostic output cannot replace the original operation or cleanup cause.
+  }
+};
 let bodyCleanupCompleted = false;
 let fallbackCleanup: Promise<void> | undefined;
 let lifecycleFailed = false;
@@ -43,6 +58,8 @@ const rememberLifecycle = (cause: unknown) => {
   }
 };
 beforeEach(async () => {
+  phaseStartedAt = performance.now();
+  phase('setup:start');
   fixture = undefined;
   bodyPending = undefined;
   bodyCleanupCompleted = false;
@@ -56,19 +73,29 @@ beforeEach(async () => {
   })();
   // Observe rejection immediately while retaining this exact owning setup promise.
   void setupPending.catch(rememberLifecycle);
+  phase('setup:join:start');
   await setupPending;
+  phase('setup:join:done');
 });
 afterEach(async () => {
+  phase('after-each:start');
   await (fallbackCleanup ??= (async () => {
     // A Vitest timeout is not cancellation. Never close resources ahead of late setup/body work.
+    phase('after-each:join-owners:start');
     await setupPending.catch(rememberLifecycle);
     if (bodyPending) await bodyPending.catch(rememberLifecycle);
-    if (bodyCleanupCompleted) return;
+    phase('after-each:join-owners:done');
+    if (bodyCleanupCompleted) {
+      phase('after-each:body-cleanup-completed');
+      return;
+    }
     // No completed body teardown owns a returned fixture. Its genuine cleanup joins native drains.
     let closed = false;
     if (fixture) {
       try {
+        phase('after-each:fixture-cleanup:start');
         await fixture.cleanup();
+        phase('after-each:fixture-cleanup:done');
         closed = true;
       } catch (cause) {
         rememberLifecycle(cause);
@@ -76,7 +103,9 @@ afterEach(async () => {
     }
     if (closed) {
       try {
+        phase('after-each:remove-directory:start');
         await fs.rm(agentPath, { recursive: true, force: true });
+        phase('after-each:remove-directory:done');
       } catch (cause) {
         rememberLifecycle(cause);
       }
@@ -86,6 +115,7 @@ afterEach(async () => {
 });
 
 it('admits one genuine native turn for operator-approved focus and correlates its ACK and remaining reply', () => {
+  phase('body:start');
   bodyPending = (async () => {
     const h = fixture;
     if (!h) throw new Error('Original per-test native fixture did not finish setup');
@@ -101,6 +131,7 @@ it('admits one genuine native turn for operator-approved focus and correlates it
     };
     try {
       const actual = h;
+      phase('configure-and-approve:start');
       actual.http.grants.configure(
         actual.documentId,
         {
@@ -133,7 +164,9 @@ it('admits one genuine native turn for operator-approved focus and correlates it
       );
       expect(granted.kind).toBe('granted');
       if (granted.kind !== 'granted') throw new Error('Original consumed focus approval missing');
+      phase('configure-and-approve:done');
 
+      phase('runtime-and-http-arrangement:start');
       const previousMode = serverEnv.DORKOS_TEST_RUNTIME;
       let runtime: TestModeRuntime;
       try {
@@ -158,12 +191,17 @@ it('admits one genuine native turn for operator-approved focus and correlates it
       app.use('/docs', router);
       const server = target.mount(app),
         path = `/docs/${actual.documentId}/presence`;
+      phase('runtime-and-http-arrangement:done');
+      phase('mount-http:start');
       const mounted = await request(server).post(path).send({ action: 'mount' });
+      phase('mount-http:done');
       expect(mounted.status).toBe(200);
       const viewerId = mounted.body.viewerId;
+      phase('focus-true-http:start');
       expect(
         (await request(server).post(path).send({ action: 'focus', viewerId, focused: true })).status
       ).toBe(200);
+      phase('focus-true-http:done');
       const rows = () =>
         actual.db
           .select()
@@ -178,11 +216,15 @@ it('admits one genuine native turn for operator-approved focus and correlates it
       expect(admissions()).toEqual([]);
       expect(readTestModeOriginalScenarioCounts(runtime)).toEqual({ scenarioStarts: 0 });
       // Exercise the real burst boundary; no timer, TTL or native clock is replaced.
+      phase('original-burst-boundary:start');
       await new Promise<void>((resolve) => setTimeout(resolve, 500));
+      phase('original-burst-boundary:done');
+      phase('focus-false-http:start');
       expect(
         (await request(server).post(path).send({ action: 'focus', viewerId, focused: false }))
           .status
       ).toBe(200);
+      phase('focus-false-http:done');
       const focus = rows().filter((row) => row.type === 'host.focus');
       expect(focus.map((row) => row.payload)).toEqual([{ focused: true }, { focused: false }]);
       const batches = actual.db
@@ -207,11 +249,15 @@ it('admits one genuine native turn for operator-approved focus and correlates it
       };
       const port = currentRoomDueServicePort(actual.http.service);
       // Reach the declaration's actual due time before invoking the fixed one-shot pump.
+      phase('original-due-time:start');
       await new Promise<void>((resolve) =>
         setTimeout(resolve, Math.max(0, Date.parse(batch.dueAt) - Date.now()))
       );
+      phase('original-due-time:done');
       // Due-time passage does not mint frozen custody: invoke the original native wake first.
+      phase('original-wake:start');
       port.wake();
+      phase('original-wake:done');
       expect(
         actual.db
           .select()
@@ -221,7 +267,9 @@ it('admits one genuine native turn for operator-approved focus and correlates it
       ).toBe('accepted');
       expect(admissions()).toEqual([]);
       expect(readTestModeOriginalScenarioCounts(runtime)).toEqual({ scenarioStarts: 0 });
+      phase('start-pump:start');
       pump = port.pump(registry);
+      phase('start-pump:done');
       void pump.catch(remember);
       const delivery = (eventId: string) =>
         actual.db
@@ -234,7 +282,9 @@ it('admits one genuine native turn for operator-approved focus and correlates it
             )
           )
           .get()!;
+      phase('first-ack:start');
       await vi.waitFor(() => expect(delivery(focus[0]!.eventId).ackOutcome).toBe('handled'));
+      phase('first-ack:done');
       expect(admissions()).toHaveLength(1);
       expect(admissions()[0]).toMatchObject({ batch_id: batch.batchId, status: 'turn_started' });
       expect(admissions()[0]!.turn_id).not.toBeNull();
@@ -247,13 +297,19 @@ it('admits one genuine native turn for operator-approved focus and correlates it
           .get()!.status
       ).toBe('turn_started');
       // A repeated current focus is quiet while the genuine admitted turn remains held.
+      phase('repeat-focus-false-http:start');
       expect(
         (await request(server).post(path).send({ action: 'focus', viewerId, focused: false }))
           .status
       ).toBe(200);
+      phase('repeat-focus-false-http:done');
       expect(rows().filter((row) => row.type === 'host.focus')).toEqual(focus);
+      phase('release-held-scenario:start');
       await vi.waitFor(() => expect(interactionGate.step(sessionId)).toBe(true));
+      phase('release-held-scenario:done');
+      phase('join-pump:start');
       await pump;
+      phase('join-pump:done');
       expect(delivery(focus[0]!.eventId).ackOutcome).toBe('handled');
       expect(delivery(focus[1]!.eventId).ackOutcome).toBeNull();
       expect(
@@ -354,6 +410,7 @@ it('admits one genuine native turn for operator-approved focus and correlates it
     // Start genuine stop before joining the held stream; UNKNOWN retains its native resources.
     if (h) {
       let stopClosed = false;
+      phase('cleanup:stop-and-join-pump:start');
       await Promise.allSettled([
         Promise.resolve()
           .then(() => currentRoomDueServicePort(h!.http.service).stopPump())
@@ -363,9 +420,12 @@ it('admits one genuine native turn for operator-approved focus and correlates it
           .catch(remember),
         ...(pump ? [pump.catch(remember)] : []),
       ]);
+      phase('cleanup:stop-and-join-pump:done');
       if (stopClosed) {
         try {
+          phase('cleanup:fixture:start');
           await h.cleanup();
+          phase('cleanup:fixture:done');
           closed = true;
         } catch (cause) {
           remember(cause);
@@ -374,18 +434,23 @@ it('admits one genuine native turn for operator-approved focus and correlates it
     }
     // Scenario DATA cleanup is attempted independently, including failed/UNKNOWN native stop.
     try {
+      phase('cleanup:scenario:start');
       scenarioStore.clearSession(sessionId);
+      phase('cleanup:scenario:done');
     } catch (cause) {
       remember(cause);
     }
     if (closed) {
       try {
+        phase('cleanup:directory:start');
         await fs.rm(agentPath, { recursive: true, force: true });
+        phase('cleanup:directory:done');
       } catch (cause) {
         remember(cause);
       }
     }
     bodyCleanupCompleted = true;
+    phase('body:cleanup-completed');
     if (failed) throw first;
   })();
   void bodyPending.catch(rememberLifecycle);
