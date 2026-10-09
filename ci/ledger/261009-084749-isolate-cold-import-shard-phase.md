@@ -1,6 +1,6 @@
 ---
 id: 261009-084749
-title: Run cold import controls after ordinary shard work finishes
+title: Run Room replay and cold import controls after ordinary shard work finishes
 kind: incident-fix
 status: proposed
 actor: agent
@@ -23,34 +23,44 @@ Two later cold entries passed; seven other shards and both communities passed.
 This supports testing a scheduling hypothesis, not a claim that contention was
 the measured cause. Preserve this failed run and all original assertions.
 
+Actual15ea required run37915819697 passed the isolated cold shard and all
+seven fresh cold processes at their original deadlines. Its only test failure
+was the unchanged whole Room replay assertion at BODY5000 on ordinary shard6.
+No inner Room frontier was observed. This is a scheduling experiment, not
+proof that competition caused that timeout or that this proposal repairs it.
+
 Await the existing full/affected ordinary Turbo sweep, excluding only the
-whole reservation-bridge file, then run that whole33 file through the same
-server task in a second phase. Its seven fresh processes, timeout/load-scaling,
-max20/outer22 bounds, worker cap4, native auth and teardown are unchanged.
+whole Room replay and reservation-bridge files. Run whole Room replay next,
+then whole33 reservation through the same canonical server task, each only
+after the preceding native command closes. Room keeps its body5/setup10 and
+owned teardown; cold keeps seven fresh processes, five-second base deadline,
+load scaling, max20/outer22, worker cap4, native auth and teardown unchanged.
 Package concurrency1, eight shards, PR retry0, original queue retry1/reporting,
 required contexts/fan-in and thirty-minute job deadline stay unchanged.
-The cold phase runs even after an ordinary failure; both results are retained.
+Both isolated phases run even after an ordinary or Room failure; the first
+native failure survives. Unknown affected selection refuses expansion with86.
 PR affected-server selection comes from the fresh original task summary.
 
 CLI filtering precedes Vitest sharding, so this is a NEW complete partition,
 not an assertion that old shard ownership is unchanged. Source simulation of
-1698 current server files proves1697 ordinary plus one cold file, no overlap,
-complete eight-way union. The singleton cold file belongs to shard1; one
-ordinary file moves shard2 to shard1. Other task graphs are retained.
+1698 current server files proves1696 ordinary plus one Room and one cold
+file, no overlap, complete eight-way union. Both singleton phases belong to
+shard1. Exact ordinary ownership changes are listed in PARTITION-PROOF.json;
+old shard ownership is not claimed unchanged. Other task graphs are retained.
 Pure static simulation is not actual native discovery or performance proof.
 
-Genuine ordinary/cold report bodies are retained. Canonical JSON counters and
+Genuine ordinary/Room/cold report bodies are retained. Canonical JSON counters and
 full failing assertions are composed from disjoint reports; retry records from
-both phases survive. Existing quarantine/file-union/report consumers read those
+all three phases survive. Existing quarantine/file-union/report consumers read those
 canonical reports. The whole-workspace execution guard explicitly reads the
-ordinary summary, not the later server-only summary. Cold phase separately
+ordinary summary, not the later server-only summary. Each isolated phase separately
 requires an actual uncached server task and exact collected singleton shard;
 empty owner collection cannot pass merely because --passWithNoTests was set.
 
-A second server invocation adds runner startup and may revisit build cache;
+Two additional server invocations add runner startup and may revisit build cache;
 no cache equivalence or runtime speedup is claimed. The existing eight-shard
 experiment on the same gate can confound the collector verdict. Observe both
 job duration/headroom and runner cost; do not label this experiment verified.
 Revert or revise if failure_rate misses0.025 in the seven-day after-window,
-any discovery/union/affected-selection/report guard fails, cold failures
+any discovery/union/affected-selection/report guard fails, Room or cold failures
 persist, or duration worsens against the unchanged thirty-minute job budget.

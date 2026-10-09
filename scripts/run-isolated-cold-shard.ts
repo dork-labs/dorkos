@@ -1,4 +1,4 @@
-/** Keep the real cold-import whole file behind a completed ordinary task sweep. */
+/** Keep real Room replay and cold-import files behind completed ordinary task work. */
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
@@ -16,6 +16,8 @@ import { pathToFileURL } from 'node:url';
 
 export const COLD_FILE =
   'src/services/canvas/doc-channel/writes/__tests__/reservation-bridge.test.ts';
+export const ROOM_FILE =
+  'src/services/canvas/doc-channel/__tests__/original-reviewed-room-replay.test.ts';
 const SERVER_TASK = '@dorkos/server#test';
 const COUNTERS = [
   'numTotalTestSuites',
@@ -49,9 +51,10 @@ export function serverSelected(summary: Json): boolean {
   return summary.tasks.some((task: Json) => task.task === 'test' && task.taskId === SERVER_TASK);
 }
 
-/** Split the original eight-shard command into ordinary and cold phases without changing its flags. */
+/** Split the original eight-shard command into ordinary, Room and cold phases without changing its flags. */
 export function commands(original: string[]): {
   ordinary: string[];
+  room: string[];
   cold: string[];
   shard: number;
   reports: boolean;
@@ -74,21 +77,14 @@ export function commands(original: string[]): {
   const reports = flags.includes('--reporter=json');
   const ordinaryPrefix = original.slice(0, separator);
   if (!ordinaryPrefix.includes('--summarize')) ordinaryPrefix.push('--summarize');
-  const coldFlags = flags.map((arg) =>
-    arg === '--outputFile.json=vitest-shard-report.json'
-      ? '--outputFile.json=vitest-cold-shard-report.json'
-      : arg
-  );
-  if (!reports)
-    coldFlags.push(
-      '--reporter=default',
-      '--reporter=json',
-      '--outputFile.json=vitest-cold-shard-report.json'
+  function isolated(file: string, output: string): string[] {
+    const phaseFlags = flags.map((arg) =>
+      arg === '--outputFile.json=vitest-shard-report.json' ? `--outputFile.json=${output}` : arg
     );
-  return {
-    ordinary: [...ordinaryPrefix, '--', ...flags, `--exclude=${COLD_FILE}`],
-    // Same Turbo server task: same package cwd, filtered env, build prerequisites and Vitest config.
-    cold: [
+    if (!reports)
+      phaseFlags.push('--reporter=default', '--reporter=json', `--outputFile.json=${output}`);
+    // Same Turbo server task: package cwd, filtered env, build dependencies and config stay intact.
+    return [
       'pnpm',
       'exec',
       'turbo',
@@ -98,9 +94,20 @@ export function commands(original: string[]): {
       '--concurrency=1',
       '--filter=@dorkos/server',
       '--',
-      ...coldFlags,
-      COLD_FILE,
+      ...phaseFlags,
+      file,
+    ];
+  }
+  return {
+    ordinary: [
+      ...ordinaryPrefix,
+      '--',
+      ...flags,
+      `--exclude=${ROOM_FILE}`,
+      `--exclude=${COLD_FILE}`,
     ],
+    room: isolated(ROOM_FILE, 'vitest-room-shard-report.json'),
+    cold: isolated(COLD_FILE, 'vitest-cold-shard-report.json'),
     shard,
     reports,
   };
@@ -108,14 +115,20 @@ export function commands(original: string[]): {
 
 /** Await each selected phase and retain the first failure or unknown-selection refusal. */
 export async function bothPhases(
-  run: (phase: 'ordinary' | 'cold') => Promise<number>,
+  run: (phase: 'ordinary' | 'room' | 'cold') => Promise<number>,
   selected: () => boolean | null
-): Promise<{ ordinary: number; cold: number | null; exitCode: number }> {
-  // A failed ordinary task is a result, never a reason to skip the second phase.
+): Promise<{ ordinary: number; room: number | null; cold: number | null; exitCode: number }> {
+  // A failed ordinary task is a result, never a reason to skip either isolated phase.
   const ordinary = await run('ordinary');
   const selection = selected();
+  const room = selection === true ? await run('room') : null;
   const cold = selection === true ? await run('cold') : null;
-  return { ordinary, cold, exitCode: selection === null ? 86 : ordinary || cold || 0 };
+  return {
+    ordinary,
+    room,
+    cold,
+    exitCode: selection === null ? 86 : ordinary || room || cold || 0,
+  };
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Snapshot metadata is recursively type-checked; unknown unequal values fail closed.
@@ -175,20 +188,25 @@ export function mergeReports(ordinary: Json, cold: Json): Json {
   return merged;
 }
 
-/** Require the owning shard to execute all cold assertions and other shards to collect none. */
-export function validateCold(report: Json, shard: number, expectedPath: string): void {
-  if (!Array.isArray(report.testResults)) throw new Error('cold phase did not write a report');
+function validateIsolated(
+  report: Json,
+  shard: number,
+  expectedPath: string,
+  count: number,
+  label: string
+): void {
+  if (!Array.isArray(report.testResults)) throw new Error(`${label} phase did not write a report`);
   const expected = shard === 1 ? [expectedPath] : [];
   if (
     JSON.stringify(report.testResults.map((file: Json) => file.name)) !== JSON.stringify(expected)
   )
-    throw new Error('cold phase did not collect its exact singleton shard');
+    throw new Error(`${label} phase did not collect its exact singleton shard`);
   const assertions = report.testResults.flatMap((file: Json) => file.assertionResults ?? []);
   if (
-    assertions.length !== (shard === 1 ? 33 : 0) ||
+    assertions.length !== (shard === 1 ? count : 0) ||
     assertions.some((assertion: Json) => !['passed', 'failed'].includes(assertion.status))
   ) {
-    throw new Error('cold phase did not execute all original assertions');
+    throw new Error(`${label} phase did not execute all original assertions`);
   }
   if (
     report.numPendingTests !== 0 ||
@@ -198,9 +216,19 @@ export function validateCold(report: Json, shard: number, expectedPath: string):
     report.numFailedTests !==
       assertions.filter((assertion: Json) => assertion.status === 'failed').length
   )
-    throw new Error('cold phase assertion status accounting is inconsistent');
-  if (report.numTotalTests !== (shard === 1 ? 33 : 0))
-    throw new Error('cold whole-file assertions changed or were not executed');
+    throw new Error(`${label} phase assertion status accounting is inconsistent`);
+  if (report.numTotalTests !== (shard === 1 ? count : 0))
+    throw new Error(`${label} whole-file assertions changed or were not executed`);
+}
+
+/** Require all 33 cold assertions on the owner shard and none on the other seven shards. */
+export function validateCold(report: Json, shard: number, expectedPath: string): void {
+  validateIsolated(report, shard, expectedPath, 33, 'cold');
+}
+
+/** Require the unchanged Room assertion on the owner shard and none on the other seven shards. */
+export function validateRoom(report: Json, shard: number, expectedPath: string): void {
+  validateIsolated(report, shard, expectedPath, 1, 'Room');
 }
 
 /** Run a child command and report its result only after the process has closed. */
@@ -246,22 +274,27 @@ async function main(original: string[]): Promise<number> {
       if (
         directory.isDirectory() &&
         `${category}/${directory.name}` !== 'apps/server' &&
-        existsSync(path.join(root, category, directory.name, COLD_FILE))
+        [ROOM_FILE, COLD_FILE].some((file) =>
+          existsSync(path.join(root, category, directory.name, file))
+        )
       )
-        throw new Error('cold exclusion collides with another package');
+        throw new Error('isolated exclusion collides with another package');
     }
   }
   const server = path.join(root, 'apps/server');
   const report = path.join(server, 'vitest-shard-report.json');
   const flake = path.join(server, 'vitest-flake-report.json');
+  const roomReport = path.join(server, 'vitest-room-shard-report.json');
   const coldReport = path.join(server, 'vitest-cold-shard-report.json');
   const evidence = path.join(root, '.turbo', `cold-phases-${plan.shard}`);
   mkdirSync(evidence, { recursive: true });
-  for (const file of [report, flake, coldReport]) rmSync(file, { force: true });
+  for (const file of [report, flake, roomReport, coldReport]) rmSync(file, { force: true });
   let selected: boolean | null = null; // A missing selection proof never expands affected server work.
   let protocolFailure = false;
   let ordinaryReport: Json | undefined;
   let ordinaryFlake: Json | undefined;
+  let roomReportBody: Json | undefined;
+  let roomFlake: Json | undefined;
   let ordinarySummary = '';
   const archivedReports: { path: string; sha256: string; bytes: number }[] = [];
   function archive(source: string, name: string): void {
@@ -291,37 +324,47 @@ async function main(original: string[]): Promise<number> {
             ordinaryReport = parsedOrdinaryReport;
             ordinaryFlake = JSON.parse(readFileSync(flake, 'utf8'));
             if (
-              parsedOrdinaryReport.testResults.some(
-                (file: Json) => file.name === path.join(server, COLD_FILE)
+              parsedOrdinaryReport.testResults.some((file: Json) =>
+                [ROOM_FILE, COLD_FILE].some((isolated) => file.name === path.join(server, isolated))
               )
             )
-              throw new Error('ordinary phase collected the excluded cold file');
+              throw new Error('ordinary phase collected the excluded isolated file');
           }
-          rmSync(flake, { force: true }); // Require a fresh cold reporter, never an ordinary-phase leftover.
+          rmSync(flake, { force: true }); // Require a fresh isolated reporter, never an ordinary-phase leftover.
         } else {
+          if (!serverSelected(summary.report)) throw new Error('isolated server task is missing');
           const tasks = summary.report.tasks.filter((task: Json) => task.task === 'test');
           if (
             tasks.length !== 1 ||
             tasks[0].taskId !== SERVER_TASK ||
             tasks[0].cache?.status !== 'MISS'
           )
-            throw new Error('cold task did not execute exactly once without a cache replay');
-          archive(coldReport, 'vitest-cold-phase.raw.json');
-          if (plan.reports) archive(flake, 'vitest-cold-flake.raw.json');
-          const actual = JSON.parse(readFileSync(coldReport, 'utf8'));
-          validateCold(actual, plan.shard, path.join(server, COLD_FILE));
-          if (plan.reports) {
-            const actualFlake = JSON.parse(readFileSync(flake, 'utf8'));
+            throw new Error(`${phase} task did not execute exactly once without a cache replay`);
+          const phaseReport = phase === 'room' ? roomReport : coldReport;
+          archive(phaseReport, `vitest-${phase}-phase.raw.json`);
+          if (plan.reports) archive(flake, `vitest-${phase}-flake.raw.json`);
+          const actual: Json = JSON.parse(readFileSync(phaseReport, 'utf8'));
+          if (phase === 'room') validateRoom(actual, plan.shard, path.join(server, ROOM_FILE));
+          else validateCold(actual, plan.shard, path.join(server, COLD_FILE));
+          if (phase === 'room') {
+            roomReportBody = actual;
+            if (plan.reports) roomFlake = JSON.parse(readFileSync(flake, 'utf8'));
+          } else if (plan.reports) {
+            const actualFlake: Json = JSON.parse(readFileSync(flake, 'utf8'));
             if (
+              !ordinaryReport ||
+              !roomReportBody ||
               ordinaryFlake?.cwd !== actualFlake.cwd ||
+              roomFlake?.cwd !== actualFlake.cwd ||
               !Array.isArray(ordinaryFlake?.flaky) ||
+              !Array.isArray(roomFlake?.flaky) ||
               !Array.isArray(actualFlake.flaky)
             )
-              throw new Error('invalid phase flake metadata');
-            save(report, mergeReports(ordinaryReport!, actual));
+              throw new Error('invalid or missing three-phase report/flake metadata');
+            save(report, mergeReports(mergeReports(ordinaryReport, roomReportBody), actual));
             save(flake, {
               cwd: actualFlake.cwd,
-              flaky: [...ordinaryFlake.flaky, ...actualFlake.flaky],
+              flaky: [...ordinaryFlake.flaky, ...roomFlake.flaky, ...actualFlake.flaky],
             });
           }
         }
@@ -329,6 +372,7 @@ async function main(original: string[]): Promise<number> {
         console.error(error);
         protocolFailure = true;
       }
+      if (phase === 'room') rmSync(flake, { force: true });
       return code;
     },
     () => selected

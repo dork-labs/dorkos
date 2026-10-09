@@ -680,9 +680,9 @@ jobs:
           printf '%s/8\n' '${{ matrix.shard }}' > "$RUNNER_TEMP/shard.txt"
 
       # Cold subprocess probes retain their real five-second deadline. The
-      # dispatcher first awaits the ordinary full/affected Turbo sweep, then
-      # runs the whole reservation file alone through the same server task.
-      # Both failures survive. The disjoint phase reports are combined into
+      # dispatcher awaits ordinary full/affected work, then the whole Room
+      # replay file, then the whole reservation file through the same server task.
+      # All three failures survive. The disjoint phase reports are combined into
       # the original canonical reports consumed by every gate below; raw phase
       # bodies are retained alongside them. No tests or project selectors change.
       - name: Run every package's test suite (shard ${{ matrix.shard }}/8)
@@ -932,8 +932,10 @@ jobs:
             apps/*/vitest-shard-report.json
             apps/*/vitest-flake-report.json
             apps/server/vitest-ordinary-phase.raw.json
+            apps/server/vitest-room-phase.raw.json
             apps/server/vitest-cold-phase.raw.json
             apps/server/vitest-ordinary-flake.raw.json
+            apps/server/vitest-room-flake.raw.json
             apps/server/vitest-cold-flake.raw.json
             .turbo/cold-phases-${{ matrix.shard }}/*.json
             packages/*/vitest-shard-report.json
