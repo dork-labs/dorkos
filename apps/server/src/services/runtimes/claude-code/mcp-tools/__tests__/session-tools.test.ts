@@ -756,6 +756,23 @@ describe('session_start records who started the new session (spec flow-multiproj
     expect(store.get(sessionId.replace(/^canon-/, ''))).toBeNull();
   });
 
+  it('reports back by default, and not when told reportBack off (spec spin-off-chats §5)', async () => {
+    const on = payloadOf(await fromChat('parent-chat')(BASE)) as { sessionId: string };
+    expect(store.get(on.sessionId)?.reportBack).toBe(true);
+    const off = payloadOf(await fromChat('parent-chat')({ ...BASE, reportBack: 'off' })) as {
+      sessionId: string;
+    };
+    expect(store.get(off.sessionId)?.reportBack).toBe(false);
+  });
+
+  it('tells the new chat who started it and how it reports, ahead of the starter’s background', async () => {
+    await fromChat('parent-chat')({ ...BASE, seedContext: 'The repo is in /work.' });
+    const seed = vi.mocked(dispatchMessage).mock.calls.at(-1)![0].seedContext as string;
+    expect(seed).toContain('parent-chat');
+    expect(seed).toContain('goes back to that chat on its own');
+    expect(seed.indexOf('parent-chat')).toBeLessThan(seed.indexOf('The repo is in /work.'));
+  });
+
   it('takes an optional reason of at most 200 characters', () => {
     const schema = z.object(SessionStartInputShape);
     expect(schema.safeParse(BASE).success).toBe(true);

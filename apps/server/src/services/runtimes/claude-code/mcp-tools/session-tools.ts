@@ -81,6 +81,8 @@ import {
 } from '../../../session/launch/launch-session.js';
 import { getStartWorkService, type StartReservation } from '../../../extensions/start-work.js';
 import { getChatMessageService } from '../../../session/chat-messages/chat-message-service.js';
+import { spinOffBriefing } from '../../../session/chat-messages/chat-report-back.js';
+import { rememberedChatTitle } from '../../../session/origin/started-by-origin-overlay.js';
 import {
   NO_CHAT_CEILING_RUNTIME,
   resolveStartPermission,
@@ -180,6 +182,14 @@ export const SessionStartInputShape = {
       'Why you are starting it, in plain words (at most 200 characters). The new session ' +
         'shows it as its first line: "Started from <this chat>: <reason>".'
     ),
+  reportBack: z
+    .enum(['auto', 'off'])
+    .optional()
+    .describe(
+      '`auto` (default): whenever the new chat ends a turn finished, failed, needing the ' +
+        'person or paused at an account limit, its last message comes back to this chat as a ' +
+        'message. `off`: it never reports back on its own.'
+    ),
 };
 
 /** Parsed `session_start` arguments. */
@@ -194,6 +204,7 @@ export interface SessionStartArgs {
   seedContext?: string;
   agentPath?: string;
   reason?: string;
+  reportBack?: 'auto' | 'off';
 }
 
 /** The result of a started session. */
@@ -274,7 +285,8 @@ function reserveChatStart(
   sessionId: string,
   parentSessionId: string | null,
   reason: string | undefined,
-  permission: SessionStartPermission
+  permission: SessionStartPermission,
+  reportBack: boolean
 ): { ok: true; reservation: StartReservation | null } | { ok: false; message: string } {
   const service = getStartWorkService();
   if (!parentSessionId || !service) return { ok: true, reservation: null };
@@ -285,6 +297,7 @@ function reserveChatStart(
     permissionMode: permission.mode,
     starterPermissionMode: permission.callerMode,
     permissionSameAsStarter: permission.sameAsCaller,
+    reportBack,
   });
   return claimed.ok
     ? { ok: true, reservation: claimed.reservation }
@@ -465,7 +478,8 @@ export function createSessionStartHandler(
       sessionId,
       caller.chat?.sessionId ?? null,
       args.reason,
-      permission
+      permission,
+      args.reportBack !== 'off'
     );
     if (!claimed.ok) return refuse(claimed.message, 'START_LIMIT');
     const reservation = claimed.reservation;
@@ -516,7 +530,22 @@ export function createSessionStartHandler(
           runtime: runtimeType,
           ...(account ? { account: account.id } : {}),
           agentPath,
-          ...(args.seedContext !== undefined ? { seedContext: args.seedContext } : {}),
+          ...(() => {
+            // A spin-off is told who started it and how it reports back (spec
+            // `spin-off-chats` §5), ahead of whatever background the starter gave.
+            const briefing = caller.chat?.sessionId
+              ? spinOffBriefing({
+                  parentChatId: caller.chat.sessionId,
+                  parentTitle: rememberedChatTitle(caller.chat.sessionId),
+                  parentAgentName: caller.label,
+                  reportBack: args.reportBack !== 'off',
+                })
+              : null;
+            const seed = [briefing, args.seedContext].filter((p): p is string => Boolean(p));
+            return seed.length > 0
+              ? { seedContext: seed.join('\n\n').slice(0, SEED_CONTEXT_MAX_LENGTH) }
+              : {};
+          })(),
         },
         clientId: SESSION_START_CLIENT_ID,
         meshCore: deps.meshCore,

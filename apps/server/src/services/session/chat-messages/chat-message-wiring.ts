@@ -9,7 +9,7 @@
 import type { MeshCore } from '@dorkos/mesh';
 import type { Db } from '@dorkos/db';
 import { filterKickoffHistory } from '@dorkos/shared/kickoff';
-import type { HistoryMessage } from '@dorkos/shared/types';
+import type { HistoryMessage, PendingInteractionDTO } from '@dorkos/shared/types';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
 import { lastTurnLevelOf } from '../../core/turn-power/turn-levels.js';
 import {
@@ -23,12 +23,17 @@ import { deliverSteer, setQueuedChatCeilingResolver } from '../message-dispatche
 import { rememberedChatTitle } from '../origin/started-by-origin-overlay.js';
 import { getSessionStartedByStore } from '../origin/session-started-by-store.js';
 import { resolveSessionCwdOrNull } from '../resolution/resolve-read-cwd.js';
-import { peekProjector } from '../session-state-projector.js';
+import {
+  onProjectorInteractionChange,
+  onProjectorTurnBoundary,
+  peekProjector,
+} from '../session-state-projector.js';
 import { logError, logger } from '../../../lib/logger.js';
 import type { ChatCaller } from './chat-message-service.js';
 import { ChatMessageService, setChatMessageService } from './chat-message-service.js';
 import { setChatMessageStore, type ChatMessageStore } from './chat-message-store.js';
 import { stampHistory } from './chat-message-stamps.js';
+import { ChatReportBack } from './chat-report-back.js';
 import type { ChatReadDeps } from './chat-read.js';
 
 /** How far down a chat's chain of spin-offs a reader may follow. */
@@ -197,6 +202,7 @@ export function wireChatMessaging(deps: WireChatMessagingDeps): {
     emitActivity: emitChatActivity,
   });
   setChatMessageService(service);
+  wireChatReportBack(service, deps.store);
   setQueuedChatCeilingResolver((messageId) => service.ceilingForQueuedMessage(messageId));
   const read: ChatReadDeps = {
     store: deps.store,
@@ -237,4 +243,84 @@ export function wireChatMessaging(deps: WireChatMessagingDeps): {
     },
   };
   return { service, read };
+}
+
+/**
+ * What an ask is about, in one plain line, for a spin-off's "needs the person"
+ * report.
+ *
+ * @param interaction - The pending ask.
+ */
+export function describeAsk(interaction: PendingInteractionDTO): string {
+  switch (interaction.type) {
+    case 'approval':
+      return `It asks to use ${interaction.displayName ?? interaction.toolName}${
+        interaction.description ? `: ${interaction.description}` : '.'
+      }`;
+    case 'question':
+      return `It asks: ${interaction.questions.map((q) => q.question).join(' / ')}`;
+    case 'elicitation':
+      return `${interaction.serverName} asks: ${interaction.message}`;
+    default:
+      return 'It is waiting for an answer.';
+  }
+}
+
+/**
+ * Make spin-off chats report back on their own (spec `spin-off-chats` §5):
+ * listen for every turn that ends and every ask that opens, on every runtime.
+ *
+ * @param service - The chat-message service the reports are sent through.
+ * @param store - The chat-message store.
+ * @returns A function that stops listening.
+ */
+export function wireChatReportBack(
+  service: ChatMessageService,
+  store: ChatMessageStore
+): () => void {
+  const reportBack = new ChatReportBack({
+    service,
+    store,
+    reportTargetOf: (sessionId) => {
+      const record = getSessionStartedByStore()?.get(sessionId);
+      if (!record || record.kind !== 'chat' || !record.reportBack || !record.startedBySessionId) {
+        return null;
+      }
+      return { parentSessionId: record.startedBySessionId };
+    },
+    agentPathOf: (sessionId) => runtimeRegistry.getSessionAgentPath(sessionId),
+    holdsBackgroundWork: async (sessionId) => {
+      const runtime = await runtimeRegistry.resolveForSession(sessionId);
+      return runtime.holdsBackgroundWork?.(sessionId) === true;
+    },
+    statusOf: (sessionId) => peekProjector(sessionId)?.getStatus() ?? null,
+    history: chatHistoryOf,
+  });
+  const offTurn = onProjectorTurnBoundary((sessionId, kind) => {
+    if (kind !== 'turn_end') return;
+    void reportBack.onTurnEnd(sessionId).catch((err: unknown) =>
+      logger.warn('[chat report-back] turn end could not be reported', {
+        sessionId,
+        ...logError(err),
+      })
+    );
+  });
+  const offAsk = onProjectorInteractionChange((change) => {
+    if (change.type !== 'pending') return;
+    void reportBack
+      .onAsk(change.sessionId, {
+        id: change.interaction.id,
+        what: describeAsk(change.interaction),
+      })
+      .catch((err: unknown) =>
+        logger.warn('[chat report-back] an ask could not be reported', {
+          sessionId: change.sessionId,
+          ...logError(err),
+        })
+      );
+  });
+  return () => {
+    offTurn();
+    offAsk();
+  };
 }
