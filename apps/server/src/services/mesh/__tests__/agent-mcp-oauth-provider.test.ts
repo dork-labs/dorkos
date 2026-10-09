@@ -194,6 +194,41 @@ describe('McpOAuthClientProvider.invalidateCredentials — recovering from a rev
   });
 });
 
+describe('McpOAuthClientProvider.saveClientInformation — the SDK binding a stored client to its issuer', () => {
+  it('keeps an operator-supplied client marked as theirs when the SDK re-saves it', async () => {
+    const { provider, secrets } = await makeProvider();
+    // Written the way the service writes operator credentials: no issuer stamp.
+    await secrets.saveClientInformation(
+      AGENT_ID,
+      SERVER,
+      { client_id: 'their-client-id', redirect_uris: [CALLBACK] },
+      'manual'
+    );
+    await secrets.saveTokens(
+      AGENT_ID,
+      SERVER,
+      { access_token: 'old', token_type: 'Bearer', refresh_token: 'still-good' },
+      SERVER_URL
+    );
+
+    const refreshingFetch: typeof fetch = async (input, init) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (init?.method === 'POST' && url.endsWith('/token')) {
+        return json({ access_token: 'new', token_type: 'Bearer', refresh_token: 'next' });
+      }
+      return revokingFetch([])(input, init);
+    };
+    const result = await auth(provider, { serverUrl: SERVER_URL, fetchFn: refreshingFetch });
+
+    expect(result).toBe('AUTHORIZED');
+    // The SDK (>= 1.31) re-saves an unstamped client to bind it to its issuer.
+    // That save must not relabel the operator's own app as an automatic one.
+    expect(await secrets.clientOrigin(AGENT_ID, SERVER)).toBe('manual');
+    expect((await secrets.clientInformation(AGENT_ID, SERVER))?.client_id).toBe('their-client-id');
+    expect((await secrets.tokens(AGENT_ID, SERVER))?.access_token).toBe('new');
+  });
+});
+
 describe('McpOAuthSecretStore.serverNames', () => {
   it('recovers one agent’s server names from the key namespace, and only that agent’s', async () => {
     const { secrets } = await makeProvider();
