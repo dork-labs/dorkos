@@ -576,7 +576,11 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // 97 -> 99 for `marketplace_update` (DOR-2195): `<marketplace_tools>` names it
     // twice, once among the confirmation-gated mutations and once for its
     // signature, as it does every other mutation.
-    expect(prefixed.length).toBe(99);
+    //
+    // 99 -> 100 for durable timers (DOR-2717): `<tasks_tools>` names
+    // `tasks_create` once more, as the scheduler to use instead of a durable
+    // CronCreate job.
+    expect(prefixed.length).toBe(100);
   });
 
   it('names only advertised tools in the agent-session variant of the prompt too', async () => {

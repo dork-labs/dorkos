@@ -232,6 +232,21 @@ describe('buildSystemPromptAppend', () => {
     expect(result).toContain('<marketplace_tools>');
   });
 
+  it('steers schedules that must outlive the chat to DorkOS Tasks, not durable CronCreate (DOR-2717)', async () => {
+    // A durable CronCreate job only fires while a Claude Code process for this
+    // session is running, and DorkOS ends idle processes; the session-only
+    // timers it does hold are not durable ones (the Stop hook's
+    // `session_crons` lists only the in-memory store).
+    vi.mocked(isTasksEnabled).mockReturnValue(true);
+    const result = (await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir')).text;
+    const tasksBlock = result.slice(
+      result.indexOf('<tasks_tools>'),
+      result.indexOf('</tasks_tools>')
+    );
+    expect(tasksBlock).toContain('durable: true');
+    expect(tasksBlock).toMatch(/tasks_create.*must run on a schedule/s);
+  });
+
   it('includes the marketplace tools block even when every other feature is off (DOR-529)', async () => {
     // Marketplace has no feature flag — only its permission area can take it
     // away, so it must survive every other block being switched off.

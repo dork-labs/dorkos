@@ -211,7 +211,7 @@ Every cell that is not `yes`, `no` or `n/a`, planned work first.
 | ID | Runtime | Status | Ticket | Why |
 | --- | --- | --- | --- | --- |
 | RT-LIFE-03 | opencode | planned | DOR-2717 | Nothing delivers work that finishes after an OpenCode turn. |
-| RT-LIFE-03 | claude-code | partial | DOR-2717 | Helpers report back on a warm session; background shells, timers and hooks do not yet. |
+| RT-LIFE-03 | claude-code | partial | DOR-2717 | Helpers, shells and session timers report back on a warm session; async hooks and durable timers do not. |
 | RT-LIFE-03 | codex | partial | DOR-2717 | Background commands wake the chat; a helper agent that outlives its turn is tracked but not yet proven against Codex. |
 | RT-SES-03 | codex | unverified |  | Resumes its thread by id; no test pins a resumed turn seeing earlier history. |
 | RT-SES-03 | opencode | unverified |  | Resumes its session by id; no test pins a resumed turn seeing earlier history. |
