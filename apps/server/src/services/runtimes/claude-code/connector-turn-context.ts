@@ -27,7 +27,7 @@ export interface ClaudeConnectorTurnContextOptions {
 }
 
 /**
- * Lazily opens and resolves one Claude connector principal.
+ * Lazily opens and resolves one Claude runtime principal.
  *
  * A persistent Claude process may host many DorkOS turns. This object belongs
  * to exactly one turn and is read through the mutable `AgentSession` at tool
@@ -105,19 +105,37 @@ export class ClaudeConnectorTurnContext {
     return this.#fixedOptions.tools.isConnectorCapabilityId(id);
   }
 
-  /** Open and resolve the structural principal on the first connector call. */
+  /** Lazily open one binding and revalidate its authority on each capability call. */
   async resolvePrincipal(): Promise<ServerPrincipalProof> {
     return this.#resolvePrincipal();
   }
 
   async #resolvePrincipal(): Promise<ServerPrincipalProof> {
-    if (!this.active) throw new Error('Original Claude connector context is retired.');
+    this.#assertCurrent();
     this.supervisor?.assertUsable();
     this.opening ??= this.#openAndResolve();
-    const principal = await this.opening;
-    if (!this.active) throw new Error('Original Claude connector context is retired.');
+    await this.opening;
+    this.#assertCurrent();
+    const binding = this.binding;
+    if (!binding) throw new Error('Original Claude connector binding is unavailable.');
+    this.#assertCurrent();
+    const resolved = await this.#fixedOptions.tools.principals.resolve({
+      bearer: binding.bearer,
+      expectedRuntime: 'claude-code',
+      expectedCanonicalCwd: this.#fixedOptions.cwd,
+    });
+    this.#assertCurrent();
     this.supervisor?.assertUsable();
-    return principal;
+    if (resolved.status === 'refused') {
+      await this.revoke('setup_failed');
+      throw new Error('Runtime tools are unavailable for this Claude turn.');
+    }
+    return resolved.principal;
+  }
+
+  #assertCurrent(): void {
+    if (!this.active) throw new Error('Original Claude connector context is retired.');
+    this.controller.signal.throwIfAborted();
   }
 
   /** Cancel pending setup and revoke an already-open binding immediately. */
@@ -205,6 +223,7 @@ export class ClaudeConnectorTurnContext {
       await this.revokeBinding('turn_cancelled');
       throw this.controller.signal.reason;
     }
+    this.#assertCurrent();
 
     const resolved = await this.#fixedOptions.tools.principals.resolve({
       bearer: binding.bearer,
@@ -215,6 +234,7 @@ export class ClaudeConnectorTurnContext {
       await this.revokeBinding('setup_failed');
       throw new Error('Connector tools are unavailable for this Claude turn.');
     }
+    this.#assertCurrent();
     const createSupervisor =
       this.#fixedOptions.tools.createLeaseSupervisor ??
       ((options) => new ConnectorTurnLeaseSupervisor(options));

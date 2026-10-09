@@ -185,9 +185,9 @@ The preview app-extension methods are `dorkos/app.emit` and `dorkos/app.event`.
 Check your installed release before using these extension methods.
 These are not standard `ui` methods.
 They require the hosting document's current permission; `tools/call` remains refused.
-The current agent MCP tools are `canvas_send` and `canvas_patch_state`.
+The current agent MCP tools are `configure_doc_channel`, `approve_doc_route`, `canvas_patch_state`, and `canvas_send`.
 `canvas_send` returns a retained event receipt; an authorized `app.ack` settles only its named inputs.
-Neither tool replaces the page app-extension methods.
+These agent tools do not replace the page app-extension methods.
 Native checkbox writes also need their own durable writer receipt.
 Neither host may equate file saving with runtime completion.
 
@@ -205,6 +205,24 @@ Token `doc.event` frames are filtered by the token's exact types, directions, an
 Their `reset` frame carries document ID, retention floor, and high watermark; it is not a full state, routing, or viewer snapshot.
 Do not use a standalone token reset as a bound widget state snapshot.
 Do not enable a standalone app until its current document-only authority and stream invalidation path is available.
+
+## Agent acknowledgements in rooms
+
+An agent can use `canvas_send` to acknowledge document inputs during its active room turn.
+DorkOS must first accept that agent's original document batch and confirm its running turn.
+Room membership or a caller-supplied agent ID cannot authorize a response.
+
+An `app.ack` must name the accepted batch, route, and input event IDs.
+It settles only those inputs. A saved file or completed turn does not replace this acknowledgement.
+DorkOS checks the current agent identity, document, room, permissions, and original turn before recording it.
+Repeated identical requests return the original receipt. A changed request cannot reuse that event ID.
+
+Revoked access, an archived room, or a changed agent turn prevents the acknowledgement from settling inputs.
+A retained batch does not let an agent acknowledge after its turn ends or after a server restart.
+Do not create a replacement acknowledgement for that old turn.
+
+This agent-tool path does not enable the Doc extension for Room-owned MCP Apps.
+The separate app-extension limits below still apply.
 
 ## Migrating an existing app
 

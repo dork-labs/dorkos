@@ -35,6 +35,7 @@ import type {
   OriginalRoomEmissionStage,
 } from '../current/current-operation-types.js';
 import {
+  resolveOriginalRoomCapabilityResponder,
   prepareOriginalRoomResponderEmission,
   refreshOriginalRoomEmissionStage,
   readOriginalRoomEmissionPrincipal,
@@ -73,7 +74,7 @@ interface OriginalEmitterBinding {
   send: (stage: OriginalRoomEmissionStage, raw: unknown) => Promise<{ receipt: IngestReceipt }>;
 }
 const originalEmitters = new WeakMap<OriginalDownstreamRoomEmitter, OriginalEmitterBinding>();
-const originalEmitterStores = new WeakSet<DocChannelStore>();
+const originalEmitterStores = new WeakMap<DocChannelStore, OriginalDownstreamRoomEmitter>();
 
 /** Lookup-only actual captured child closure. No stop, reporter or exception-class inference. */
 export function requireOriginalDownstreamRoomEmissionClosed(
@@ -374,7 +375,7 @@ export class DocChannelDownstream {
       inside: (stage, tx, request) =>
         downstream.#sendNativeRoomInsideFrame(emitter, stage, tx, request),
     };
-    originalEmitterStores.add(store);
+    originalEmitterStores.set(store, emitter);
     originalEmitters.set(emitter, own);
     return Object.freeze({ downstream, emitter, stop: () => stopOriginalEmitter(emitter) });
   }
@@ -409,6 +410,9 @@ export class DocChannelDownstream {
     this.#actor(actor);
     const replyBatchId =
       request.type === 'agent.reply' ? this.#replyBatch(request, actor)?.batchId : undefined;
+    const batchId = ack?.batchId ?? replyBatchId;
+    if (batchId && this.#store.getBatch(batchId)?.scope.startsWith('room:'))
+      return this.#sendRoomCapability(request, actor, batchId);
     await this.#authority.prepare(request.documentId, actor, ack?.batchId ?? replyBatchId);
     return this.#atomic(() =>
       this.#store.transaction((tx) => {
@@ -524,7 +528,7 @@ export class DocChannelDownstream {
       if (
         !batch ||
         batch.documentId !== request.documentId ||
-        !batch.scope.startsWith('session:') ||
+        (!batch.scope.startsWith('session:') && !batch.scope.startsWith('room:')) ||
         !ids.every((id) => batch.inputEventIds.includes(id))
       )
         continue;
@@ -546,9 +550,44 @@ export class DocChannelDownstream {
       candidates.set(batch.batchId, batch);
     }
     // Before preflight, select only an identifier; disclose ambiguity after current responder authorization.
+    if (
+      candidates.size > 1 &&
+      [...candidates.values()].some((batch) => batch.scope.startsWith('room:'))
+    )
+      throw new DocDownstreamError('CANVAS_DOCUMENT_NOT_FOUND', 404);
     if (tx && candidates.size > 1)
       throw new DocDownstreamError('INVALID_AGENT_REPLY_CORRELATION', 409);
     return candidates.values().next().value;
+  }
+  async #sendRoomCapability(
+    request: CanvasChannelSendRequest,
+    actor: DocChannelActor,
+    batchId: string
+  ): Promise<{ receipt: IngestReceipt }> {
+    const emitter = originalEmitterStores.get(this.#store);
+    const own = emitter && originalEmitters.get(emitter);
+    if (
+      !own ||
+      own.retired ||
+      actor.surface !== 'capability' ||
+      !isServerPrincipal(actor.principal) ||
+      actor.principal.claims.kind !== 'runtime'
+    )
+      throw new DocDownstreamError('CANVAS_DOCUMENT_NOT_FOUND', 404);
+    await this.#authority.prepare(request.documentId, actor, batchId);
+    const responder = await resolveOriginalRoomCapabilityResponder(own.db, actor.principal, {
+      documentId: request.documentId,
+      batchId,
+    });
+    if (!responder) throw new DocDownstreamError('CANVAS_DOCUMENT_NOT_FOUND', 404);
+    return enqueueOriginalRoomResponderEvent(
+      emitter!,
+      responder.token,
+      responder.runtime,
+      responder.prepared,
+      responder.operation,
+      { ...request, roomId: request.roomId ?? this.#store.getBatch(batchId)!.scope.slice(5) }
+    );
   }
   async #sendNativeRoom(
     emitter: OriginalDownstreamRoomEmitter,

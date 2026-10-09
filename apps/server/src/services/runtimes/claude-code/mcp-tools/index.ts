@@ -399,7 +399,7 @@ export function createDorkOsToolServer(
   // …and WHERE that session lives, so a capability whose work outlives the
   // process (a sign-in the person finishes in a browser) can be resumed in the
   // right directory after a restart (DOR-981).
-  const resolveCapabilityContext = async (capabilityId: string, signal?: AbortSignal) => {
+  const resolveCapabilityContext = async (_capabilityId: string, signal?: AbortSignal) => {
     const base = await resolveContext();
     const invokingSessionId = session?.sdkSessionId || sessionId;
     const invocation = {
@@ -412,8 +412,12 @@ export function createDorkOsToolServer(
       handTools: hand.reach,
     };
     const connectorTurn = session?.connectorTurn;
-    if (!connectorTurn?.isConnectorCapabilityId(capabilityId)) return invocation;
+    // The principal identifies the calling turn, not a connector tool family.
+    // Each registered capability retains its own scope and authority checks.
+    if (!connectorTurn) return invocation;
+    signal?.throwIfAborted();
     const serverPrincipal = await connectorTurn.resolvePrincipal();
+    signal?.throwIfAborted();
     return { ...invocation, serverPrincipal };
   };
   // The in-session hold seam (DOR-939): only with BOTH a live session (an event
