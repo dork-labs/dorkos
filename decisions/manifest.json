@@ -2,6 +2,27 @@
   "version": 1,
   "decisions": [
     {
+      "id": "261009-192542",
+      "slug": "move-the-local-server-to-hono",
+      "title": "Move the local server to Hono behind a front door, one route group at a time",
+      "status": "proposed",
+      "created": "2026-10-09",
+      "extractedFrom": null,
+      "specSlug": null,
+      "supersedes": null,
+      "amends": ["260916-210001"],
+      "affects": [
+        "apps/server/src/app.ts",
+        "apps/server/src/index.ts",
+        "apps/server/src/middleware/**",
+        "apps/server/src/routes/**",
+        "packages/a2a-gateway/**",
+        "packages/extension-api/src/server-extension-api.ts",
+        "packages/test-utils/src/**",
+        "packages/cli/scripts/build.ts"
+      ]
+    },
+    {
       "id": "261008-052830",
       "slug": "doe-host-boundaries",
       "title": "Doe uses platform boundaries and explicit inference sources",
