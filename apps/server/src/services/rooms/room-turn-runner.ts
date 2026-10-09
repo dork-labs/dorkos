@@ -80,13 +80,15 @@ import {
   getOrCreateProjector,
   onProjectorRekey,
   peekProjector,
-  deriveSessionActivity,
-  persistenceModeFor,
+} from '../session/session-state-projector.js';
+import { deriveSessionActivity } from '../session/activity/derive-activity.js';
+import { persistenceModeFor } from '../session/projector-persistence.js';
+import {
   resolveUnattendedSessionDefaults,
   resolveUnattendedPermissionMode,
   readAgentExecutionDefaults,
-  type SessionStateProjector,
-} from '../session/index.js';
+} from '../session/resolution/resolve-session-defaults.js';
+import type { SessionStateProjector } from '../session/index.js';
 import {
   dispatchOriginalRoomMessage,
   type DispatchMessageOpts,

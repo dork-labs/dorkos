@@ -32,11 +32,61 @@ import { scenarioStore } from '../../../runtimes/test-mode/scenario-store.js';
 import { interactionGate } from '../../../runtimes/test-mode/interaction-gate.js';
 import { env as serverEnv } from '../../../../env.js';
 
+type NativeRoomFixture = Awaited<ReturnType<typeof nativeRoomAuthorityFixture>>;
+
+async function prepareReviewContext(actual: NativeRoomFixture) {
+  const previousMode = serverEnv.DORKOS_TEST_RUNTIME;
+  let runtime: TestModeRuntime;
+  try {
+    serverEnv.DORKOS_TEST_RUNTIME = true;
+    runtime = new TestModeRuntime('claude-code', actual.principals);
+  } finally {
+    serverEnv.DORKOS_TEST_RUNTIME = previousMode;
+  }
+  captureTestModeOriginalRoomEmitter(
+    runtime,
+    actual.http.fileWrites,
+    actual.db,
+    actual.http.channels
+  );
+  const registry = new RuntimeRegistry();
+  registry.setDb(actual.db);
+  registry.register(runtime);
+  scenarioStore.setForSession(sessionId, 'native-room-partial-ack-reply');
+  const physical = actual.db
+    .select()
+    .from(canvasDocuments)
+    .where(eq(canvasDocuments.id, actual.documentId))
+    .get()!;
+  const channel = actual.db
+    .select()
+    .from(canvasDocChannels)
+    .where(eq(canvasDocChannels.documentId, actual.documentId))
+    .get()!;
+  const condition = { expectedGeneration: docDocumentGeneration(physical, channel) };
+  const events = [0, 1].map((index) => ({
+    v: 1 as const,
+    id: randomUUID(),
+    type: 'md.comment',
+    payload: { text: `Reviewed input ${index}` },
+  }));
+  for (const event of events)
+    await submitCurrentDocEvent(
+      actual.http.service,
+      actual.documentId,
+      event,
+      actual.operator,
+      condition
+    );
+  return { actual, runtime, registry, condition, events };
+}
+
 // Arrangement has its own default hook budget; operational work retains the default body budget.
 let agentPath: string;
 let sessionId: string;
 let agentId: string;
 let fixture: Awaited<ReturnType<typeof nativeRoomAuthorityFixture>> | undefined;
+let prepared: Awaited<ReturnType<typeof prepareReviewContext>> | undefined;
 let setupPending: Promise<void>;
 let bodyPending: Promise<void> | undefined;
 let bodyCleanupCompleted = false;
@@ -51,6 +101,7 @@ const rememberLifecycle = (cause: unknown) => {
 };
 beforeEach(async () => {
   fixture = undefined;
+  prepared = undefined;
   bodyPending = undefined;
   bodyCleanupCompleted = false;
   fallbackCleanup = undefined;
@@ -63,6 +114,7 @@ beforeEach(async () => {
     fixture = await nativeRoomAuthorityFixture(agentPath, 'claude-code', sessionId, agentId, {
       coalesceWindowMs: 60000,
     });
+    prepared = await prepareReviewContext(fixture);
   })();
   // Observe rejection immediately while retaining this exact owning setup promise.
   void setupPending.catch(rememberLifecycle);
@@ -110,50 +162,9 @@ it('reviews expired never-admitted Room inputs once, preserves original inputs a
       }
     };
     try {
-      const actual = h;
-      const previousMode = serverEnv.DORKOS_TEST_RUNTIME;
-      let runtime: TestModeRuntime;
-      try {
-        serverEnv.DORKOS_TEST_RUNTIME = true;
-        runtime = new TestModeRuntime('claude-code', actual.principals);
-      } finally {
-        serverEnv.DORKOS_TEST_RUNTIME = previousMode;
-      }
-      captureTestModeOriginalRoomEmitter(
-        runtime,
-        actual.http.fileWrites,
-        actual.db,
-        actual.http.channels
-      );
-      const registry = new RuntimeRegistry();
-      registry.setDb(actual.db);
-      registry.register(runtime);
-      scenarioStore.setForSession(sessionId, 'native-room-partial-ack-reply');
-      const physical = actual.db
-        .select()
-        .from(canvasDocuments)
-        .where(eq(canvasDocuments.id, actual.documentId))
-        .get()!;
-      const channel = actual.db
-        .select()
-        .from(canvasDocChannels)
-        .where(eq(canvasDocChannels.documentId, actual.documentId))
-        .get()!;
-      const condition = { expectedGeneration: docDocumentGeneration(physical, channel) };
-      const events = [0, 1].map((index) => ({
-        v: 1 as const,
-        id: randomUUID(),
-        type: 'md.comment',
-        payload: { text: `Reviewed input ${index}` },
-      }));
-      for (const event of events)
-        await submitCurrentDocEvent(
-          actual.http.service,
-          actual.documentId,
-          event,
-          actual.operator,
-          condition
-        );
+      const context = prepared;
+      if (!context) throw new Error('Original review inputs did not finish setup');
+      const { actual, runtime, registry, condition, events } = context;
       const old = actual.db
         .select()
         .from(canvasDocBatches)

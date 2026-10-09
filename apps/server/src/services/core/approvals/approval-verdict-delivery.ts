@@ -82,12 +82,9 @@ import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import { logger } from '../../../lib/logger.js';
 import { eventFanOut } from '../event-fan-out.js';
 import { runtimeRegistry } from '../runtime-registry.js';
-import {
-  dispatchMessage,
-  getOrCreateProjector,
-  peekProjector,
-  persistenceModeFor,
-} from '../../session/index.js';
+import { dispatchMessage } from '../../session/message-dispatcher.js';
+import { getOrCreateProjector, peekProjector } from '../../session/session-state-projector.js';
+import { persistenceModeFor } from '../../session/projector-persistence.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import type { ApprovalService } from './approval-service.js';
 

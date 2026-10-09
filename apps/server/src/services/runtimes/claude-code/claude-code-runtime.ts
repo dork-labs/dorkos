@@ -671,13 +671,13 @@ import { predictLaunchBillsPerToken, readPerTokenSignals } from './messaging/per
 import {
   disposeProjector,
   getOrCreateProjector,
-  overlayApprovalReceipts,
-  overlayModelSubstitutions,
-  overlayAgentCompactions,
-  overlayPermissionDenials,
   peekProjector,
   streamGenerationOf,
-} from '../../session/index.js';
+} from '../../session/session-state-projector.js';
+import { overlayApprovalReceipts } from '../../session/overlays/approval-receipt-overlay.js';
+import { overlayModelSubstitutions } from '../../session/overlays/model-substitution-overlay.js';
+import { overlayAgentCompactions } from '../../session/overlays/agent-compaction-overlay.js';
+import { overlayPermissionDenials } from '../../session/overlays/permission-denial-overlay.js';
 import { mcpAuthEvidenceFrom } from '../../mesh/mcp-revocation.js';
 import type { McpAuthEvidencePort } from '../../mesh/mcp-revocation.js';
 

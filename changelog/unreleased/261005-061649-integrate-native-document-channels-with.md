@@ -22,6 +22,7 @@ covers:
   - 'fix(canvas): retain earliest relay failure during concurrent shutdown'
   - 'fix(runtime): correct document shutdown typing'
   - 'fix(test): join original Codex retirement once'
+  - 'refactor(server): narrow session imports and own document regression setup'
 ---
 
 ### Added

@@ -44,7 +44,7 @@ const TARGET = { agentId: AGENT_ID, serverName: SERVER, serverUrl: SERVER_URL };
 const tempDirs: string[] = [];
 afterEach(async () => {
   resetKeyCache();
-  vi.doUnmock('../../session/index.js');
+  vi.doUnmock('../../session/session-state-projector.js');
   vi.resetModules();
   for (const dir of tempDirs.splice(0)) await fs.rm(dir, { recursive: true, force: true });
 });
@@ -203,7 +203,7 @@ async function buildWorld(
 ) {
   vi.resetModules();
   const ingested: Ingested = [];
-  vi.doMock('../../session/index.js', () => ({
+  vi.doMock('../../session/session-state-projector.js', () => ({
     peekProjector: () =>
       options.projector === false
         ? undefined

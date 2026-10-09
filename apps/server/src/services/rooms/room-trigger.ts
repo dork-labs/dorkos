@@ -150,7 +150,8 @@ import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { logError, logger } from '../../lib/logger.js';
 import { runInDispatch } from '../../lib/dispatch-context.js';
 import { recordDispatchEnd, recordDispatchStart } from '../observability/dispatch-buffers.js';
-import { ACTIVITY_FANOUT_THROTTLE_MS, isTurnInFlight } from '../session/index.js';
+import { ACTIVITY_FANOUT_THROTTLE_MS } from '../session/session-state-projector.js';
+import { isTurnInFlight } from '../session/message-dispatcher.js';
 import {
   selectTriggerTargets,
   standDownFallbackSeat,
