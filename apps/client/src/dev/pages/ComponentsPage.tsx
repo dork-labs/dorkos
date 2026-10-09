@@ -5,6 +5,7 @@ import { ControlShowcases } from '../showcases/ControlShowcases';
 import { BannerShowcases } from '../showcases/BannerShowcases';
 import { FeedbackShowcases } from '../showcases/FeedbackShowcases';
 import { NavigationShowcases } from '../showcases/NavigationShowcases';
+import { TabStripInteractionsShowcases } from '../showcases/TabStripInteractionsShowcases';
 import { SidebarShowcases } from '../showcases/SidebarShowcases';
 import { VerbLadderShowcases } from '../showcases/VerbLadderShowcases';
 import { OverlayShowcases } from '../showcases/OverlayShowcases';
@@ -28,6 +29,7 @@ export function ComponentsPage() {
       <BannerShowcases />
       <FeedbackShowcases />
       <NavigationShowcases />
+      <TabStripInteractionsShowcases />
       <SidebarShowcases />
       <VerbLadderShowcases />
       <OverlayShowcases />
