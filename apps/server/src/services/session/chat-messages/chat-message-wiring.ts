@@ -324,13 +324,15 @@ export function wireChatReportBack(
   // What each chat's open ask is about, kept from the interaction events so the
   // "needs the person" report can say it; a DorkOS capability hold has none.
   const askWhat = new Map<string, string>();
+  const turnStarts = new Map<string, number>();
   const offTurn = onProjectorTurnBoundary((sessionId, kind) => {
     if (kind !== 'turn_end') return;
     // Read NOW, in the boundary itself: a queued message starts the next turn
     // a moment later and would change both.
     const ended = peekProjector(sessionId)?.getStatus() ?? null;
-    const endedAt = Date.now();
-    void reportBack.onTurnEnd(sessionId, ended, endedAt).catch((err: unknown) =>
+    const window = { from: turnStarts.get(sessionId), to: Date.now() };
+    turnStarts.delete(sessionId);
+    void reportBack.onTurnEnd(sessionId, ended, window).catch((err: unknown) =>
       logger.warn('[chat report-back] turn end could not be reported', {
         sessionId,
         ...logError(err),
@@ -345,6 +347,10 @@ export function wireChatReportBack(
   // an MCP form, a DorkOS capability hold — moves its lifecycle to `blocked`.
   let waits = 0;
   const offStatus = onProjectorStatusChange(({ sessionId, status }) => {
+    // When each turn starts, so its report reads only the words it wrote.
+    if (status.lifecycle === 'streaming' && !turnStarts.has(sessionId)) {
+      turnStarts.set(sessionId, Date.now());
+    }
     if (status.lifecycle !== 'blocked') return;
     waits += 1;
     void reportBack

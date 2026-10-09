@@ -43,7 +43,8 @@ function harness(over: Partial<ChatReportBackDeps> = {}) {
   };
   const reportBack = new ChatReportBack(deps);
   /** The turn ends with the chat's status as the boundary reads it. */
-  const end = () => reportBack.onTurnEnd(CHILD, deps.statusOf(CHILD), NOW);
+  const end = () =>
+    reportBack.onTurnEnd(CHILD, deps.statusOf(CHILD), { from: NOW - 60_000, to: NOW });
   return { reportBack, send, end };
 }
 
@@ -175,11 +176,19 @@ describe('the review findings (DOR-2790 PR 2)', () => {
           content: 'Wrote the haiku.',
           timestamp: '2026-10-09T11:59:59.000Z',
         },
-        { id: 'u2', role: 'user', content: 'next', timestamp: '2026-10-09T12:00:05.000Z' },
+        // Claude Code records no time on a message somebody sent.
+        { id: 'u2', role: 'user', content: 'next' },
+        {
+          id: 'a2',
+          role: 'assistant',
+          content: 'Added the title.',
+          timestamp: '2026-10-09T12:00:06.000Z',
+        },
       ],
     });
     await expect(end()).resolves.toBe('finished');
     expect(send.mock.calls[0]![1].message).toContain('Wrote the haiku.');
+    expect(send.mock.calls[0]![1].message).not.toContain('Added the title.');
   });
 
   it('sends nothing while a helper is still running', async () => {
