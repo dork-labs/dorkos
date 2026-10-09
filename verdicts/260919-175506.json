@@ -1,9 +1,9 @@
 {
  "schema": 1,
  "id": "260919-175506",
- "verdict": "pending",
- "reason": "The after-window runs to 2026-10-08T11:42:29Z; the verdict is computed on 2026-10-09.",
- "computed_at": "2026-10-08T11:54:40.495Z",
+ "verdict": "verified",
+ "reason": "hook.pre-commit.duration_p90 reached 131.2 against a target of 150 (baseline 282.3).",
+ "computed_at": "2026-10-09T11:46:28.623Z",
  "hypothesis_hash": "8b1f91cfb74de69b",
  "metric": "hook.pre-commit.duration_p90",
  "anchor": "2026-09-24T11:42:29Z",
@@ -25,8 +25,8 @@
  "after": {
   "from": "2026-09-24T11:42:29Z",
   "to": "2026-10-08T11:42:29Z",
-  "n": 5308,
-  "value": 134
+  "n": 5439,
+  "value": 131.2
  },
  "confounders": [],
  "slo": {

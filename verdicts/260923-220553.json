@@ -1,9 +1,9 @@
 {
  "schema": 1,
  "id": "260923-220553",
- "verdict": "pending",
- "reason": "The after-window runs to 2026-10-08T09:21:26Z; the verdict is computed on 2026-10-09.",
- "computed_at": "2026-10-08T11:54:40.495Z",
+ "verdict": "failed",
+ "reason": "gate.wf.test.community-pg.failure_rate@pull_request is 0.0363 against a target of 0, less than halfway from the baseline of 0.045.",
+ "computed_at": "2026-10-09T11:46:28.623Z",
  "hypothesis_hash": "f90bf74cafdba1c8",
  "metric": "gate.wf.test.community-pg.failure_rate@pull_request",
  "anchor": "2026-09-24T09:21:26Z",
