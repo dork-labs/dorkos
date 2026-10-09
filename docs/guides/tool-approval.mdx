@@ -78,9 +78,12 @@ Certain tools are always auto-approved regardless of permission mode. Two differ
 
 **DorkOS agent tools** are auto-approved because they are checked by their own rules instead, not because they are read-only: messaging other chats (`chat_send`, `chat_read`, `chat_stop`), Relay (`relay_notify_user`, `relay_list_endpoints`), Mesh discovery (`mesh_list`, `mesh_inspect`, `mesh_discover`, `mesh_register`, `mesh_status`, `mesh_query_topology`, `get_agent`), and UI control tools (`control_ui`, `get_ui_state`).
 
-Some of these do change things. `chat_send` starts work in another chat, and `chat_stop` stops it. They are auto-approved anyway because agents message each other's chats as a matter of course: a card on every message would arrive dozens of times an hour, and a person who learns to click through those cards stops reading every other card too. What protects you instead is that every message lands in a chat you can open, DorkOS marks who sent it so no agent can pass as another, and every stop is recorded in the [audit trail](/docs/guides/audit-trail). If you want to be asked first, set the **Messages** permission to Ask on the agent's Permissions page.
+Some of these do change things. `chat_send` starts work in another chat, and `chat_stop` stops it. They are auto-approved anyway because agents message each other's chats as a matter of course: a card on every message would arrive dozens of times an hour, and a person who learns to click through those cards stops reading every other card too. What protects you instead is that every message lands in a chat you can open, DorkOS marks who sent it so no agent can pass as another, and every stop is recorded in the [audit trail](/docs/guides/audit-trail). Two cases still ask you:
 
-These tools never produce an approval card. That list is short and hand-picked, not a rule about DorkOS tools in general: everything else an agent can ask DorkOS for prompts like any other tool, and the things an agent cannot take back stop and ask you no matter which permission mode the session is in. See [Action approvals](/docs/guides/action-approvals).
+- **You asked to be asked.** Set the **Messages** permission to Ask on the agent's Permissions page, and you get a card before each message or stop.
+- **The work came from outside.** When another agent's message or someone outside your team started the agent's current turn, stopping a chat, or cutting into a chat's running turn, waits for your yes. Sending a message that waits its turn, and reading a chat, still go straight through.
+
+Otherwise these tools never produce an approval card. That list is short and hand-picked, not a rule about DorkOS tools in general: everything else an agent can ask DorkOS for prompts like any other tool, and the things an agent cannot take back stop and ask you no matter which permission mode the session is in. See [Action approvals](/docs/guides/action-approvals).
 
 ## Always Allow
 

@@ -47,6 +47,7 @@ import {
 } from '../sessions/tool-result-outcome.js';
 import { randomUUID } from 'node:crypto';
 import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
+import { CHAT_SEND_TOOL, CHAT_STOP_TOOL } from '@dorkos/shared/chat-messages';
 import { turnPermissionMode } from '../turn-permission.js';
 
 // ---------------------------------------------------------------------------
@@ -176,7 +177,9 @@ export const DORKOS_AGENT_TOOLS = new Set(
     'relay_notify_user',
     'relay_list_endpoints',
     // Chats messaging chats (spec `spin-off-chats`). The sender is the verified
-    // calling chat, never an argument, and each tool refuses without one.
+    // calling chat, never an argument, and each tool refuses without one. In a
+    // turn held to a ceiling, `chat_stop` and a steering or interrupting
+    // `chat_send` still ask — see isAutoAllowedCall.
     'chat_send',
     'chat_read',
     'chat_stop',
@@ -436,6 +439,10 @@ export const IDENTITY_SCOPED_TOOLS = new Set(
 /** The multiplexer on {@link DORKOS_AGENT_TOOLS}: one name, 22 different effects. */
 const CONTROL_UI_TOOL = inSessionToolName('control_ui');
 
+/** The qualified chat-send and chat-stop names, for {@link isAutoAllowedCall}. */
+const CHAT_SEND_QUALIFIED = inSessionToolName(CHAT_SEND_TOOL);
+const CHAT_STOP_QUALIFIED = inSessionToolName(CHAT_STOP_TOOL);
+
 /** The SDK's own ask-the-person tool, which is routed rather than approved. */
 const ASK_USER_QUESTION_TOOL = 'AskUserQuestion';
 
@@ -455,11 +462,29 @@ const ASK_USER_QUESTION_TOOL = 'AskUserQuestion';
  * to {@link resolveModeDecision}, which raises a card in every mode but
  * `bypassPermissions`.
  *
+ * **A turn held to a ceiling cannot cut into another chat unasked.** A turn
+ * another agent's message or an outside sender started carries a permission
+ * ceiling, and trust never extends to strangers. So in such a turn `chat_stop`,
+ * and `chat_send` with `delivery` `steer` or `interrupt` (or any value that is
+ * not the default `queue`), ask. A queued `chat_send` and `chat_read` still skip
+ * the card: they only add a message to a chat a person can read.
+ *
  * @param toolName - The tool the model called.
  * @param input - The raw arguments it called with.
+ * @param turnHasCeiling - Whether the current turn carries a permission ceiling.
  * @returns `true` to skip the card, `false` to hand the call to the mode table.
  */
-function isAutoAllowedCall(toolName: string, input: Record<string, unknown>): boolean {
+function isAutoAllowedCall(
+  toolName: string,
+  input: Record<string, unknown>,
+  turnHasCeiling: boolean
+): boolean {
+  if (turnHasCeiling) {
+    if (toolName === CHAT_STOP_QUALIFIED) return false;
+    if (toolName === CHAT_SEND_QUALIFIED) {
+      return input.delivery === undefined || input.delivery === 'queue';
+    }
+  }
   if (toolName !== CONTROL_UI_TOOL) return true;
   const parsed = UiCommandSchema.safeParse(input);
   if (!parsed.success) return false;
@@ -1075,7 +1100,7 @@ export function createCanUseTool(
       // itself `dorkos` presents the same `mcp__dorkos__…` names, and its call
       // falls through to the mode table like any other foreign tool.
       isHostServedOrUnattributed(context.mcpServer) &&
-      isAutoAllowedCall(toolName, input) &&
+      isAutoAllowedCall(toolName, input, session.turnPermissionCeiling !== undefined) &&
       // The owner-facing verbs skip the card only for a session that resolves an
       // agent identity: without one the rooms verbs run as the OWNER — who sees
       // every room on the install and posts as a person — and a proactive note
