@@ -679,13 +679,21 @@ jobs:
           # COMPLETE set of copies before intersecting them.
           printf '%s/8\n' '${{ matrix.shard }}' > "$RUNNER_TEMP/shard.txt"
 
+      # Cold subprocess probes retain their real five-second deadline. The
+      # dispatcher first awaits the ordinary full/affected Turbo sweep, then
+      # runs the whole reservation file alone through the same server task.
+      # Both failures survive. The disjoint phase reports are combined into
+      # the original canonical reports consumed by every gate below; raw phase
+      # bodies are retained alongside them. No tests or project selectors change.
       - name: Run every package's test suite (shard ${{ matrix.shard }}/8)
         id: sweep
         if: ${{ github.event_name != 'pull_request' }}
         run: |
           set +e
-          pnpm exec turbo test --summarize --continue --concurrency=1 -- --run --shard=${{ matrix.shard }}/8 --retry=1 --passWithNoTests --reporter=default --reporter=json --outputFile.json=vitest-shard-report.json --reporter=../../scripts/vitest-flake-reporter.ts
+          node scripts/run-isolated-cold-shard.ts -- pnpm exec turbo test --summarize --continue --concurrency=1 -- --run --shard=${{ matrix.shard }}/8 --retry=1 --passWithNoTests --reporter=default --reporter=json --outputFile.json=vitest-shard-report.json --reporter=../../scripts/vitest-flake-reporter.ts
           code=$?
+          # Missing phase execution evidence is never a quarantined test failure.
+          [ "$code" -ne 86 ] || exit 86
           echo "exit-code=$code" >> "$GITHUB_OUTPUT"
           if [ "$code" -ne 0 ]; then
             echo "::notice::the sweep exited $code; the quarantine gate below decides whether that fails this shard."
@@ -723,12 +731,10 @@ jobs:
       # scope — and deliberately NOT the queue leg's line with one flag
       # changed, because three of its flags must not ride here:
       #
-      #   --summarize   writes the run summary assert-tests-executed.sh reads,
-      #                 and that step is gated to `merge_group` — so on this
-      #                 line the flag would produce a file nothing opens. It
-      #                 could not be ungated either: the assertion demands that
-      #                 EVERY package's `test` task ran, which an affected
-      #                 subset cannot satisfy by construction.
+      #   --summarize   is added by the dispatcher ONLY to authenticate whether
+      #                 this affected task selection includes server:test. The
+      #                 full-workspace execution assertion remains queue-only;
+      #                 an affected subset cannot satisfy it by construction.
       #   --retry=1     is half of a bargain whose other half is the naming
       #                 step below, and that step is queue-only. A retry with
       #                 nothing naming what it absorbed is the SILENT retry the
@@ -766,7 +772,7 @@ jobs:
         if: ${{ github.event_name == 'pull_request' }}
         env:
           TURBO_SCM_BASE: ${{ github.event.pull_request.base.sha }}
-        run: pnpm exec turbo test --affected --continue --concurrency=1 --log-order=stream -- --run --shard=${{ matrix.shard }}/8 --passWithNoTests
+        run: node scripts/run-isolated-cold-shard.ts -- pnpm exec turbo test --affected --continue --concurrency=1 --log-order=stream -- --run --shard=${{ matrix.shard }}/8 --passWithNoTests
 
       # THE POINT OF THIS STEP: turbo caches `test`, and a full cache hit prints
       # "Tasks: 31 successful, 31 total" — one per package declaring a `test`
@@ -796,7 +802,7 @@ jobs:
       # execution proof because it never had one.
       - name: Prove the suite actually executed
         if: ${{ success() && github.event_name != 'pull_request' }}
-        run: bash scripts/assert-tests-executed.sh
+        run: bash scripts/assert-tests-executed.sh "${{ steps.sweep.outputs.ordinary-summary }}"
 
       # The price of the retry on the suite line above: every test it absorbed
       # is named here, in the log, in the job summary, and as a `::warning`
@@ -925,6 +931,11 @@ jobs:
           path: |
             apps/*/vitest-shard-report.json
             apps/*/vitest-flake-report.json
+            apps/server/vitest-ordinary-phase.raw.json
+            apps/server/vitest-cold-phase.raw.json
+            apps/server/vitest-ordinary-flake.raw.json
+            apps/server/vitest-cold-flake.raw.json
+            .turbo/cold-phases-${{ matrix.shard }}/*.json
             packages/*/vitest-shard-report.json
             packages/*/vitest-flake-report.json
           if-no-files-found: warn
