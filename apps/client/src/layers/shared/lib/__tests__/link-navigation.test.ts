@@ -9,7 +9,6 @@ import {
   declaredScheme,
   internalRoutePath,
   isWebUrl,
-  LAUNCH_SEARCH_PARAMS,
   plainAppAddress,
   openExternalLink,
   openExternalWindowLater,
@@ -21,8 +20,6 @@ import {
   supportsSeparateWindow,
   type LinkNavigation,
 } from '../link-navigation';
-import { sessionSearchSchema } from '../session-link';
-import { dialogSearchSchema } from '@/layers/shared/model/dialog-search-schema';
 
 import { enterDesktopShell, leaveDesktopShell } from '@/test-helpers/desktop-shell';
 
@@ -922,24 +919,25 @@ describe('plainAppAddress — which agent-written links open without asking (DOR
     expect(plainAppAddress(href, FROM)).toBeNull();
   });
 
-  it('sorts every /session param into launch or address, so a new one forces a decision', () => {
-    // A param that can act for the person must be in LAUNCH_SEARCH_PARAMS; a
-    // param that only says where to look goes in this list. A new key in
-    // `sessionSearchSchema` that is in neither fails here.
-    const addressOnly = new Set([
-      'session',
-      'agentId',
-      'launchRef',
-      'draft',
-      'dir',
-      'message',
-      'runtime',
-      'continuedFrom',
-      ...Object.keys(dialogSearchSchema.shape),
-    ]);
-    const unsorted = Object.keys(sessionSearchSchema.shape).filter(
-      (key) => !addressOnly.has(key) && !LAUNCH_SEARCH_PARAMS.has(key)
+  it.each([
+    ['a chosen folder', '/session?session=abc&dir=/etc'],
+    ['a new chat for an agent', '/session?agentId=a'],
+    ['a prepared launch', '/session?launchRef=r1'],
+    ['a draft', '/session?session=abc&draft=1'],
+    ['a runtime pick', '/session?session=abc&runtime=codex'],
+    ['a settings dialog', '/session?session=abc&settings=open'],
+    ['a param no route knows yet', '/team?doSomething=1'],
+    ['a different case of a known key', '/session?Session=abc'],
+  ])('refuses a link carrying %s', (_label, href) => {
+    expect(plainAppAddress(href, FROM)).toBeNull();
+  });
+
+  it('keeps a hash and every address param', () => {
+    expect(plainAppAddress('/channels?id=r1&thread=t1&entry=4#top', FROM)).toBe(
+      '/channels?id=r1&thread=t1&entry=4#top'
     );
-    expect(unsorted).toEqual([]);
+    expect(plainAppAddress('/session?session=abc&message=m1', FROM)).toBe(
+      '/session?session=abc&message=m1'
+    );
   });
 });

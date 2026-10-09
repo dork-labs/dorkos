@@ -34,32 +34,42 @@ export const RENAME_RETRY_DELAYS_MS = [1_000, 3_000, 10_000, 30_000] as const;
  */
 export function titleFromReason(reason: string | undefined): string | null {
   const words = (reason ?? '').replace(/\s+/g, ' ').trim();
-  if (!words) return null;
+  if (!/[\p{L}\p{N}]/u.test(words)) return null;
   // The first sentence: up to a full stop, question or exclamation mark that
   // ends a word. "v0.101.0" and "e.g." in the middle of a word stay whole.
   const sentence = (words.match(/^.+?[.!?](?=\s|$)/)?.[0] ?? words).replace(/[.!]+$/, '').trim();
+  // Counted in characters, not UTF-16 units, so a cut never splits an emoji.
+  const chars = Array.from(sentence);
   let title = sentence;
-  if (title.length > REASON_TITLE_MAX) {
-    const cut = title.slice(0, REASON_TITLE_MAX - 1);
+  if (chars.length > REASON_TITLE_MAX) {
+    const cut = chars.slice(0, REASON_TITLE_MAX - 1).join('');
     const lastSpace = cut.lastIndexOf(' ');
     title = `${(lastSpace > REASON_TITLE_MAX / 2 ? cut.slice(0, lastSpace) : cut).replace(/[\s,;:–—-]+$/, '')}…`;
   }
-  if (!title) return null;
-  return title.charAt(0).toUpperCase() + title.slice(1);
+  // "fix the docs" reads "Fix the docs"; "iOS build" stays as written.
+  const [first = '', second = ''] = Array.from(title);
+  const keep = second !== '' && second === second.toUpperCase() && second !== second.toLowerCase();
+  return keep ? title : first.toUpperCase() + title.slice(first.length);
 }
 
 /**
- * The title a started chat gets: the agent's own, else one from its reason.
+ * The title a started chat gets: the agent's own, else one from its reason,
+ * else "Started by <agent>". Never the brief. Always a title, so the link the
+ * agent is handed names the chat the way the sidebar does.
  *
  * @param title - The title the agent gave, if any.
  * @param reason - The reason it gave, if any.
+ * @param agentName - The starting agent's name, for the last fallback.
  */
 export function startedChatTitle(
   title: string | undefined,
-  reason: string | undefined
-): string | null {
-  const own = title?.replace(/\s+/g, ' ').trim().slice(0, START_WORK_LIMITS.title);
-  return own || titleFromReason(reason);
+  reason: string | undefined,
+  agentName: string
+): string {
+  const own = Array.from(title?.replace(/\s+/g, ' ').trim() ?? '')
+    .slice(0, START_WORK_LIMITS.title)
+    .join('');
+  return own || titleFromReason(reason) || `Started by ${agentName}`;
 }
 
 /** What {@link nameStartedChat} needs. */
@@ -77,7 +87,8 @@ export interface NameStartedChatOptions {
 /**
  * Give a started chat its title: now, else after each of
  * {@link RENAME_RETRY_DELAYS_MS}, else once more when the first turn settles.
- * Stops at the first success. Never throws.
+ * Stops at the first success, and never tries again after the settle's last
+ * try. Never throws.
  *
  * @param options - See {@link NameStartedChatOptions}.
  * @returns A callback for the first turn's settle: the last try.
@@ -96,22 +107,32 @@ export function nameStartedChat(options: NameStartedChatOptions): () => void {
 
   const tryRename = (last: boolean): void => {
     if (named) return;
-    rename().then(
-      () => {
-        named = true;
-      },
-      (err: unknown) => {
-        if (last) {
-          logger.warn('[session_start] could not give a started chat its title', {
-            sessionId,
-            ...logError(err),
-          });
-          return;
+    // Through a promise, so a rename that throws before it returns one is a
+    // refusal like any other, never an uncaught throw from a timer.
+    Promise.resolve()
+      .then(rename)
+      .then(
+        () => {
+          named = true;
+        },
+        (err: unknown) => {
+          if (last) {
+            logger.warn('[session_start] could not give a started chat its title', {
+              sessionId,
+              ...logError(err),
+            });
+            return;
+          }
+          const delay = delays[attempt++];
+          // A retry that comes due after the settle's last try does not run:
+          // by then a person may have renamed the chat themselves.
+          if (delay !== undefined && !settled) {
+            schedule(() => {
+              if (!settled) tryRename(false);
+            }, delay);
+          }
         }
-        const delay = delays[attempt++];
-        if (delay !== undefined && !settled) schedule(() => tryRename(false), delay);
-      }
-    );
+      );
   };
 
   tryRename(false);

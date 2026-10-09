@@ -716,17 +716,25 @@ describe('session_start', () => {
       );
     });
 
-    it('leaves a chat with no title and no reason unnamed, and still links it', async () => {
+    it('names a chat with no title and no reason after the agent that started it', async () => {
       const deps = makeDeps();
       const result = await asScout(deps)(BASE);
 
       const body = payloadOf(result);
-      expect(body.title).toBeNull();
-      expect(body.link).toBe(`[New chat](/session?session=${body.sessionId})`);
-      expect(claude.renameSession).not.toHaveBeenCalled();
-      expect(deps.activityService.emit.mock.calls[0]![0]).toMatchObject({
-        summary: 'Started a chat in /work/project',
-      });
+      expect(body.title).toBe('Started by Scout');
+      expect(body.link).toBe(`[Started by Scout](/session?session=${body.sessionId})`);
+      expect(claude.renameSession).toHaveBeenCalledWith(
+        body.sessionId,
+        'Started by Scout',
+        '/work/project'
+      );
+    });
+
+    it('falls back from a blank title instead of refusing the start', async () => {
+      const result = await asScout()({ ...BASE, title: '   ', reason: 'tidy the docs' });
+
+      expect(result.isError).toBeUndefined();
+      expect(payloadOf(result).title).toBe('Tidy the docs');
     });
 
     it('tries the rename again once the first turn settles when the transcript was not there yet', async () => {
@@ -756,7 +764,7 @@ describe('session_start', () => {
         actorId: AGENT_HOME,
         category: 'agent',
         eventType: 'agent.session_started',
-        summary: 'Started a chat in /work/project on the account WORK',
+        summary: 'Started "Started by Scout" in /work/project on the account WORK',
         metadata: {
           cwd: '/work/project',
           runtime: 'claude-code',

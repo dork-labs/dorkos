@@ -69,6 +69,7 @@ import {
   sessionRunsOnCredits,
 } from '../../../core/cloud/credits-model-gate.js';
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
+import { nameStartedChat, startedChatTitle } from '../../../session/launch/started-chat-title.js';
 import { checkAccountLaunch } from '../../../core/usage/account-ranking.js';
 import { getAccountUsageStore } from '../../../core/usage/current-usage-store.js';
 import { resolveAccountRef, type RuntimeAccount } from '../../../core/usage/runtime-accounts.js';
@@ -81,7 +82,6 @@ import {
 } from '../../../session/launch/launch-session.js';
 import { getStartWorkService, type StartReservation } from '../../../extensions/start-work.js';
 import { getChatMessageService } from '../../../session/chat-messages/chat-message-service.js';
-import { nameStartedChat, startedChatTitle } from '../../../session/launch/started-chat-title.js';
 import {
   NO_CHAT_CEILING_RUNTIME,
   resolveStartPermission,
@@ -134,12 +134,12 @@ export const SessionStartInputShape = {
   title: z
     .string()
     .trim()
-    .min(1)
     .max(START_WORK_LIMITS.title)
     .optional()
     .describe(
       'A short, plain title people see in the sidebar and tabs, like "Rooms: always answer ' +
-        'people" (at most 80 characters). Write one: without it the title comes from `reason`.'
+        'people" (at most 80 characters). Write one: without it the title comes from `reason`, ' +
+        'or is "Started by <you>".'
     ),
   cwd: z
     .string()
@@ -212,8 +212,8 @@ export interface SessionStartArgs {
 export interface SessionStartResult {
   /** The session's canonical id. */
   sessionId: string;
-  /** The chat's title, or `null` when it was given no title and no reason. */
-  title: string | null;
+  /** The chat's title, as the sidebar shows it once the rename lands. */
+  title: string;
   /** A markdown link that opens the chat, to use instead of its id. */
   link: string;
   /** The runtime it runs on. */
@@ -522,7 +522,7 @@ export function createSessionStartHandler(
 
     // The chat's title: the agent's own, else one from its reason, never from
     // the brief (DOR-2824). Set once the launch is accepted; see below.
-    const title = startedChatTitle(args.title, args.reason);
+    const title = startedChatTitle(args.title, args.reason, caller.label);
     let lastTitleTry: (() => void) | null = null;
 
     let result: Awaited<ReturnType<typeof dispatchSessionMessage>>;
@@ -577,19 +577,12 @@ export function createSessionStartHandler(
     const canonicalId = result.canonicalId ?? sessionId;
     settleStamp(canonicalId);
     if (canonicalId !== sessionId) reservation?.rekey(canonicalId);
-    if (title) {
-      lastTitleTry = nameStartedChat({
-        sessionId: canonicalId,
-        rename: () =>
-          runtime.renameSession(
-            runtime.getInternalSessionId(canonicalId) ?? canonicalId,
-            title,
-            cwd
-          ),
-      });
-    }
+    lastTitleTry = nameStartedChat({
+      sessionId: canonicalId,
+      rename: () =>
+        runtime.renameSession(runtime.getInternalSessionId(canonicalId) ?? canonicalId, title, cwd),
+    });
     const accountName = account ? (account.label ?? account.id) : null;
-    const named = title ? `"${title}"` : 'a chat';
     void deps.activityService?.emit({
       actorType: 'agent',
       actorLabel: caller.label,
@@ -598,10 +591,10 @@ export function createSessionStartHandler(
       eventType: 'agent.session_started',
       resourceType: 'session',
       resourceId: canonicalId,
-      ...(title ? { resourceLabel: title } : {}),
+      resourceLabel: title,
       summary: accountName
-        ? `Started ${named} in ${cwd} on the account ${accountName}`
-        : `Started ${named} in ${cwd}`,
+        ? `Started "${title}" in ${cwd} on the account ${accountName}`
+        : `Started "${title}" in ${cwd}`,
       linkPath: sessionPath({ session: canonicalId }),
       metadata: {
         cwd,

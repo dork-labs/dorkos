@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(chats): friendly chat links, by title, that open in place (DOR-2824)'
+  - 'fix(chats): only plain addresses skip the confirm; safer chat titles (DOR-2824)'
 ---
 
 ### Changed

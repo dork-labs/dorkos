@@ -81,7 +81,7 @@ export {
   describeRefusal,
   internalRoutePath,
   plainAppAddress,
-  LAUNCH_SEARCH_PARAMS,
+  ADDRESS_SEARCH_PARAMS,
   isWebUrl,
   linkRefusalHere,
   openLink,

@@ -84,9 +84,10 @@ function MarkdownLinkImpl({ href, className, children, node: _node, ...rest }: M
       // A link to one of the app's own pages — `[Chat title](/session?session=…)`
       // — goes there without asking (DOR-2824). `plainAppAddress` is the gate,
       // not the href's shape: only a same-origin URL on a core route, carrying
-      // no launch params, qualifies. `/api/…`, `//other.host/session`, a path
-      // that normalises off the route list, an extension page and a
-      // `?prompt=…&send=1` launch all still confirm below. A plain click
+      // only params that say which chat or message to show, qualifies.
+      // `/api/…`, `//other.host/session`, a path that normalises off the route
+      // list, an extension page, a `?prompt=…&send=1` launch and a `?dir=…`
+      // draft all still confirm below. A plain click
       // navigates in place through the router; cmd/ctrl asks for another tab
       // and shift for another window, the requests the browser would make of an
       // ordinary link. Alt (save the link) and a non-primary button fall
@@ -114,10 +115,11 @@ function MarkdownLinkImpl({ href, className, children, node: _node, ...rest }: M
       // a scheme whose worst case is a new tab qualifies. `mailto:` and `tel:`
       // dispatch through the seam yet still confirm here.
       //
-      // An internal link that is NOT a plain address (a launch link, an
-      // extension page) is never handed to the browser, absolute or not: a
+      // A click on an internal link that is NOT a plain address (a launch link,
+      // an extension page) is never handed to the browser, absolute or not: a
       // cmd-click on `http://<this host>/session?…&send=1` would otherwise send
-      // words as the person in a new tab without a word of warning.
+      // words as the person in a new tab without a word of warning. (The
+      // browser's own right-click "Open in new tab" is out of reach here.)
       if (isModified && href !== undefined && isWebUrl(href) && !isAppLaunch(href)) return;
       event.preventDefault();
       setIsConfirmOpen(true);
