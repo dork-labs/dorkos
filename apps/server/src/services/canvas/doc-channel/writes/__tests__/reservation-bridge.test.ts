@@ -830,6 +830,44 @@ if (!Object.keys(first).length) throw new Error('Empty entry'); console.log('col
     } catch (cause) {
       failed = true;
       firstCause = cause;
+      try {
+        const details = cause as {
+          code?: unknown;
+          signal?: unknown;
+          killed?: unknown;
+          stdout?: unknown;
+          stderr?: unknown;
+        };
+        const stderrBytes =
+          typeof details?.stderr === 'string'
+            ? Buffer.from(details.stderr, 'utf8')
+            : Buffer.isBuffer(details?.stderr)
+              ? details.stderr
+              : Buffer.alloc(0);
+        const stdout = typeof details?.stdout === 'string' ? details.stdout : '';
+        const phases = stdout
+          .split('\n')
+          .filter((line) =>
+            /^ORIGINAL_COLD_PHASE (first-start|first-ready|remaining-ready|remaining-[0-5]-(?:start|ready)) [0-9]+$/.test(
+              line
+            )
+          )
+          .slice(0, 15);
+        console.error(
+          'ORIGINAL_COLD_FAILURE',
+          JSON.stringify({
+            code: typeof details?.code === 'number' ? details.code : null,
+            signal: typeof details?.signal === 'string' ? details.signal.slice(0, 32) : null,
+            killed: typeof details?.killed === 'boolean' ? details.killed : null,
+            stderrBytes: stderrBytes.byteLength,
+            stderrTruncated: stderrBytes.byteLength > 4096,
+            stderr: stderrBytes.subarray(0, 4096).toString('utf8'),
+            phases,
+          })
+        );
+      } catch {
+        // Bounded diagnostic DATA cannot replace the original failed child cause.
+      }
     } finally {
       try {
         await drainColdImports();

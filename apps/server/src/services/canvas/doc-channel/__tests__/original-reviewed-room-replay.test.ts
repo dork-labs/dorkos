@@ -1,5 +1,6 @@
 /** Explicit Room review uses the original operator, native source freeze and actual FIRST/ACK. */
 import { randomUUID } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 import fs from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -89,7 +90,33 @@ let fixture: Awaited<ReturnType<typeof nativeRoomAuthorityFixture>> | undefined;
 let prepared: Awaited<ReturnType<typeof prepareReviewContext>> | undefined;
 let setupPending: Promise<void>;
 let bodyPending: Promise<void> | undefined;
-let bodyCleanupCompleted = false;
+let bodySettled = false;
+let admissionOpen = true;
+let pumpPending: Promise<void> | undefined;
+let stopPending: Promise<void> | undefined;
+let stopClosed = false;
+let bodyStartedAt = 0;
+let phaseStartedAt = 0;
+let lastPhase = 'not-started';
+const phase = (name: string) => {
+  lastPhase = name;
+  phaseStartedAt = performance.now();
+};
+const reportUnsettledBody = () => {
+  try {
+    const now = performance.now();
+    console.error(
+      'ORIGINAL_REVIEW_BODY_UNSETTLED',
+      JSON.stringify({
+        phase: lastPhase,
+        bodyElapsedMs: Math.round(now - bodyStartedAt),
+        phaseElapsedMs: Math.round(now - phaseStartedAt),
+      })
+    );
+  } catch {
+    // Diagnostic DATA must not replace the original operational or cleanup failure.
+  }
+};
 let fallbackCleanup: Promise<void> | undefined;
 let lifecycleFailed = false;
 let lifecycleFirst: unknown;
@@ -103,7 +130,14 @@ beforeEach(async () => {
   fixture = undefined;
   prepared = undefined;
   bodyPending = undefined;
-  bodyCleanupCompleted = false;
+  bodySettled = false;
+  admissionOpen = true;
+  pumpPending = undefined;
+  stopPending = undefined;
+  stopClosed = false;
+  bodyStartedAt = 0;
+  phaseStartedAt = 0;
+  lastPhase = 'not-started';
   fallbackCleanup = undefined;
   lifecycleFailed = false;
   lifecycleFirst = undefined;
@@ -121,14 +155,29 @@ beforeEach(async () => {
   await setupPending;
 });
 afterEach(async () => {
+  // Retire admission before any await: a timed-out body cannot start a late pump.
+  admissionOpen = false;
+  if (bodyPending && !bodySettled) reportUnsettledBody();
   await (fallbackCleanup ??= (async () => {
-    // A Vitest timeout is not cancellation. Never close resources ahead of late setup/body work.
+    // A timeout is not cancellation. Join late setup before selecting its genuine owner.
     await setupPending.catch(rememberLifecycle);
-    if (bodyPending) await bodyPending.catch(rememberLifecycle);
-    if (bodyCleanupCompleted) return;
-    // No completed body teardown owns a returned fixture. Its genuine cleanup joins native drains.
-    let closed = false;
     if (fixture) {
+      // Start genuine stop BEFORE joining a body that may itself be waiting on the pump.
+      stopPending ??= Promise.resolve()
+        .then(() => currentRoomDueServicePort(fixture!.http.service).stopPump())
+        .then(() => {
+          stopClosed = true;
+        });
+      void stopPending.catch(rememberLifecycle);
+    }
+    await Promise.allSettled([
+      ...(stopPending ? [stopPending.catch(rememberLifecycle)] : []),
+      ...(bodyPending ? [bodyPending.catch(rememberLifecycle)] : []),
+    ]);
+    // Body settlement closes pump admission; join the exact pump before touching its database.
+    if (pumpPending) await pumpPending.catch(rememberLifecycle);
+    let closed = false;
+    if (fixture && stopClosed) {
       try {
         await fixture.cleanup();
         closed = true;
@@ -136,6 +185,7 @@ afterEach(async () => {
         rememberLifecycle(cause);
       }
     }
+    // UNKNOWN stop/cleanup custody never closes or removes the fixture's directory.
     if (closed) {
       try {
         await fs.rm(agentPath, { recursive: true, force: true });
@@ -148,14 +198,16 @@ afterEach(async () => {
 });
 
 it('reviews expired never-admitted Room inputs once, preserves original inputs and starts one genuine acknowledged native turn', () => {
+  bodyStartedAt = performance.now();
+  phase('initial-assertions');
   bodyPending = (async () => {
     const h = fixture;
     if (!h) throw new Error('Original per-test native fixture did not finish setup');
     let pump: Promise<void> | undefined;
     let failed = false,
-      first: unknown,
-      closed = false;
+      first: unknown;
     const remember = (cause: unknown) => {
+      rememberLifecycle(cause);
       if (!failed) {
         failed = true;
         first = cause;
@@ -205,6 +257,7 @@ it('reviews expired never-admitted Room inputs once, preserves original inputs a
         expectedBatchGeneration: old.generation,
         grantId: actual.granted.grant.grantId,
       };
+      phase('management-read');
       const review = await readServiceOriginalDocManagement(
         actual.http.service,
         actual.documentId,
@@ -217,6 +270,7 @@ it('reviews expired never-admitted Room inputs once, preserves original inputs a
       actual.http.grants.revalidateGrant = () => {
         throw new Error('Reflected replay authority used');
       };
+      phase('original-replay');
       const replayed = await replayServiceOriginalExpiredDocBatch(
         actual.http.service,
         request,
@@ -237,9 +291,13 @@ it('reviews expired never-admitted Room inputs once, preserves original inputs a
           sql`SELECT count(*) AS n FROM room_doc_admissions WHERE document_id=${actual.documentId}`
         )!.n
       ).toBe(0);
+      if (!admissionOpen) throw new Error('Original review pump admission retired');
+      phase('pump-start');
       const port = currentRoomDueServicePort(actual.http.service);
       pump = port.pump(registry);
+      pumpPending = pump;
       void pump.catch(remember);
+      phase('first-ack');
       await vi.waitFor(() => {
         const firstDelivery = actual.db
           .select()
@@ -259,9 +317,11 @@ it('reviews expired never-admitted Room inputs once, preserves original inputs a
         )!.n
       ).toBe(1);
       expect(readTestModeOriginalScenarioCounts(runtime)).toEqual({ scenarioStarts: 1 });
+      phase('duplicate-replay');
       expect(
         await replayServiceOriginalExpiredDocBatch(actual.http.service, request, actual.operator)
       ).toEqual({ ...replayed, status: 'duplicate' });
+      phase('different-input-rejection');
       await expect(
         replayServiceOriginalExpiredDocBatch(
           actual.http.service,
@@ -269,8 +329,11 @@ it('reviews expired never-admitted Room inputs once, preserves original inputs a
           actual.operator
         )
       ).rejects.toThrow();
+      phase('interaction-gate');
       await vi.waitFor(() => expect(interactionGate.step(sessionId)).toBe(true));
+      phase('pump-join');
       await pump;
+      phase('final-assertions');
       const finalDeliveries = events.map((event) =>
         actual.db
           .select()
@@ -341,38 +404,10 @@ it('reviews expired never-admitted Room inputs once, preserves original inputs a
     } catch (cause) {
       remember(cause);
     }
-    // The genuine stop starts before joining a possibly held scenario; UNKNOWN never closes its database.
-    if (h) {
-      let stopClosed = false;
-      await Promise.allSettled([
-        Promise.resolve()
-          .then(() => currentRoomDueServicePort(h!.http.service).stopPump())
-          .then(() => {
-            stopClosed = true;
-          })
-          .catch(remember),
-        ...(pump ? [pump.catch(remember)] : []),
-      ]);
-      if (stopClosed) {
-        try {
-          await h.cleanup();
-          closed = true;
-        } catch (cause) {
-          remember(cause);
-        }
-      }
-    }
-    // A constructor that did not return a fixture may still retain native custody.
-    if (closed) {
-      try {
-        await fs.rm(agentPath, { recursive: true, force: true });
-      } catch (cause) {
-        remember(cause);
-      }
-    }
-    bodyCleanupCompleted = true;
     if (failed) throw first;
-  })();
+  })().finally(() => {
+    bodySettled = true;
+  });
   void bodyPending.catch(rememberLifecycle);
   return bodyPending;
 });
