@@ -1,4 +1,5 @@
 import { expect, it, onTestFinished, vi } from 'vitest';
+import { createServer, type Socket } from 'node:net';
 const originals = vi.hoisted(() => ({
   info: vi.fn(),
   native: vi.fn(() => true),
@@ -7,6 +8,9 @@ const originals = vi.hoisted(() => ({
   known: vi.fn(() => true),
   close: vi.fn(async () => {}),
   open: vi.fn(),
+  start: vi.fn(),
+  listener: vi.fn(),
+  brokerClose: vi.fn(),
 }));
 vi.mock('../../../../../lib/logger.js', () => ({ logger: { info: originals.info } }));
 vi.mock('@dorkos/browser', () => ({
@@ -46,15 +50,64 @@ vi.mock('../../node-resolver.js', () => ({
 }));
 vi.mock('../production-broker.js', () => ({
   createPreparedProductionBroker: () => ({
-    start: async () => ({ server: 'http://127.0.0.1:12345', credential: 'private-test' }),
-    ownedListener: () => ({ identity: {} }),
+    start: originals.start,
+    ownedListener: originals.listener,
     isCustodyKnown: originals.known,
-    close: async () => true,
+    close: originals.brokerClose,
   }),
 }));
 import { createProductionLiveBrowserComposition } from '../live/production-composition.js';
 
 async function originalComposition() {
+  // Only the admission prerequisites are controlled. The listener and every
+  // delivered connection retain their genuine Node ownership and close.
+  const server = createServer();
+  const sockets = new Set<Socket>();
+  let closing: Promise<boolean> | undefined;
+  server.on('connection', (socket) => {
+    sockets.add(socket);
+    socket.on('error', () => socket.destroy());
+    socket.once('close', () => sockets.delete(socket));
+  });
+  server.on('error', () => {});
+  const closeListener = () =>
+    (closing ??= new Promise<boolean>((resolve, reject) => {
+      const originalCloses = [...sockets].map(
+        (socket) =>
+          new Promise<void>((done) => {
+            socket.once('close', done);
+            socket.destroy();
+          })
+      );
+      if (!server.listening) {
+        void Promise.all(originalCloses).then(() => resolve(true), reject);
+        return;
+      }
+      server.close((error) => {
+        void Promise.all(originalCloses).then(
+          () => (error ? reject(error) : resolve(true)),
+          reject
+        );
+      });
+    }));
+  onTestFinished(async () => {
+    await closeListener();
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      server.removeListener('error', reject);
+      resolve();
+    });
+  });
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('Original fixture listener refused');
+  const listener = { identity: server, port: address.port, isCustodyKnown: () => server.listening };
+  originals.start
+    .mockReset()
+    .mockResolvedValue({ server: `http://127.0.0.1:${address.port}`, credential: 'private-test' });
+  originals.listener.mockReset().mockReturnValue(listener);
+  originals.brokerClose.mockReset().mockImplementation(closeListener);
   originals.info.mockReset();
   originals.native.mockReset().mockReturnValue(true);
   originals.authorize.mockReset();
@@ -67,7 +120,11 @@ async function originalComposition() {
     browserId: 'browser',
     browserGeneration: 1,
   };
-  const receiver = { browserId: binding.browserId, browserGeneration: binding.browserGeneration };
+  const receiver = {
+    browserId: binding.browserId,
+    browserGeneration: binding.browserGeneration,
+    isOrdinary: () => true,
+  };
   originals.open.mockReset().mockImplementation(async (...args: unknown[]) => {
     const network = args[3] as { prepare(context: unknown): Promise<unknown> };
     await network.prepare({

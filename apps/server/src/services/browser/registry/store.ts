@@ -7,6 +7,7 @@ import {
   browserProfiles,
   browserInstances,
   browserAttachments,
+  browserProfileDisks,
   type Db,
   type BrowserInstanceRow,
 } from '@dorkos/db';
@@ -23,6 +24,14 @@ import { BrowserRegistryError } from './errors.js';
 /** Acquisition metadata never carries a native profile path or content. */
 export type RegistryMode =
   Readonly<{ mode: 'persistent'; profileId: string }> | Readonly<{ mode: 'ephemeral' }>;
+
+/** Private storage selection, independent of browser generation and native authority. */
+export type PersistentBrowserDisk = Readonly<{
+  profileId: string;
+  generation: string;
+  backend: 'qemu-hvf';
+  formatVersion: 1;
+}>;
 
 /** Owner-qualified durable metadata. All lifecycle writes are transactional. */
 export class BrowserRegistryStore {
@@ -169,6 +178,79 @@ export class BrowserRegistryStore {
       throw refusal;
     }
     return row;
+  }
+
+  /** Select one stable VM disk only inside this boot's exact opening profile reservation. */
+  reserveProfileDisk(
+    owner: string,
+    browserId: string,
+    browserGeneration: number
+  ): PersistentBrowserDisk {
+    return this.db.transaction((tx) => {
+      const instance = tx
+        .select()
+        .from(browserInstances)
+        .where(
+          and(
+            eq(browserInstances.ownerAuthorId, owner),
+            eq(browserInstances.browserId, browserId),
+            eq(browserInstances.browserGeneration, browserGeneration)
+          )
+        )
+        .get();
+      if (!instance) throw new BrowserRegistryError('inaccessible');
+      if (instance.bootId !== this.bootId || instance.status !== 'opening')
+        throw new BrowserRegistryError('staleBinding');
+      if (instance.mode !== 'persistent' || !instance.profileId)
+        throw new BrowserRegistryError('inaccessible');
+      const profile = tx
+        .select()
+        .from(browserProfiles)
+        .where(
+          and(
+            eq(browserProfiles.profileId, instance.profileId),
+            eq(browserProfiles.ownerAuthorId, owner)
+          )
+        )
+        .get();
+      if (!profile) throw new BrowserRegistryError('inaccessible');
+      if (profile.status === 'quarantined' || profile.importState === 'failed')
+        throw new BrowserRegistryError('profileUncertain');
+      if (profile.status !== 'inUse' || profile.importState === 'pending')
+        throw new BrowserRegistryError('profileInUse');
+      // Query by profile identity as well as validating owner: a foreign/corrupted row cannot
+      // be concealed by an owner filter and replaced with a different disk selection.
+      let disk = tx
+        .select()
+        .from(browserProfileDisks)
+        .where(eq(browserProfileDisks.profileId, profile.profileId))
+        .get();
+      if (!disk) {
+        const created = {
+          profileId: profile.profileId,
+          ownerAuthorId: owner,
+          generation: randomBytes(16).toString('base64url'),
+          backend: 'qemu-hvf' as const,
+          formatVersion: 1,
+          createdAt: new Date().toISOString(),
+        };
+        tx.insert(browserProfileDisks).values(created).run();
+        disk = created;
+      }
+      if (disk.ownerAuthorId !== owner) throw new BrowserRegistryError('inaccessible');
+      if (
+        disk.backend !== 'qemu-hvf' ||
+        disk.formatVersion !== 1 ||
+        !/^[A-Za-z0-9_-]{22}$/u.test(disk.generation)
+      )
+        throw new BrowserRegistryError('profileUncertain');
+      return Object.freeze({
+        profileId: disk.profileId,
+        generation: disk.generation,
+        backend: 'qemu-hvf',
+        formatVersion: 1,
+      });
+    });
   }
 
   /** Internal metadata inventory, never a liveness observation. */

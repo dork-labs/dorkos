@@ -152,3 +152,34 @@ export const browserAttachments = sqliteTable(
 export type BrowserProfileRow = typeof browserProfiles.$inferSelect;
 export type BrowserInstanceRow = typeof browserInstances.$inferSelect;
 export type BrowserAttachmentRow = typeof browserAttachments.$inferSelect;
+
+/** Stable disk selection only; this row never proves native exclusion or disk recovery. */
+export const browserProfileDisks = sqliteTable(
+  'browser_profile_disks',
+  {
+    profileId: text('profile_id').primaryKey(),
+    ownerAuthorId: text('owner_author_id').notNull(),
+    generation: text('generation').notNull(),
+    backend: text('backend', { enum: ['qemu-hvf'] }).notNull(),
+    formatVersion: integer('format_version').notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => [
+    foreignKey({
+      columns: [t.profileId, t.ownerAuthorId],
+      foreignColumns: [browserProfiles.profileId, browserProfiles.ownerAuthorId],
+    }).onDelete('restrict'),
+    uniqueIndex('browser_profile_disks_generation').on(t.generation),
+    check(
+      'browser_profile_disks_generation_shape',
+      sql`length(${t.generation}) = 22 AND ${t.generation} NOT GLOB '*[^A-Za-z0-9_-]*'`
+    ),
+    check('browser_profile_disks_backend', sql`${t.backend} = 'qemu-hvf'`),
+    check(
+      'browser_profile_disks_format',
+      sql`typeof(${t.formatVersion}) = 'integer' AND ${t.formatVersion} = 1`
+    ),
+  ]
+);
+
+export type BrowserProfileDiskRow = typeof browserProfileDisks.$inferSelect;

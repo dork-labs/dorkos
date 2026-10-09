@@ -90,7 +90,11 @@ export type PrivateLiveBrowserParticipants = Pick<
 
 /** Exact private peer returned by the server-owned cold listener. */
 export interface PrivateLiveNetworkPeer {
-  readonly authenticationWarmup?: Readonly<{ url: string; confirm(): Promise<void> }>;
+  readonly originalSerialProxyEndpoint?: () => import('./production-composition.js').OriginalPreparedBrokerEndpoint;
+  readonly authenticationWarmup?: Readonly<{
+    url: string;
+    confirm(): Promise<void>;
+  }>;
   readonly url: string;
   readonly credentials: Readonly<{ username: string; password: string }>;
   isCustodyKnown(): boolean;
@@ -324,7 +328,9 @@ export function createBrowserAuthorityCore(
   };
   const readCurrent = (binding: EgressBinding): AuthorityObservation => {
     const original = originals.get(key(binding));
-    const decision: { stage: BrowserViewerDiagnosticStage } = { stage: 'authority.original' };
+    const decision: { stage: BrowserViewerDiagnosticStage } = {
+      stage: 'authority.original',
+    };
     try {
       if (!original) throw new BrokerError('AUTHORITY_REFUSED');
       decision.stage = 'authority.active';

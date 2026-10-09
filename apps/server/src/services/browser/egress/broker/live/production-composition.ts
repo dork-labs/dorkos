@@ -1,3 +1,4 @@
+import { Server, Socket } from 'node:net';
 import {
   createOriginalBrowserViewerDiagnostic,
   type BrowserViewerDiagnosticStage,
@@ -17,6 +18,112 @@ import type {
 } from './authority-core.js';
 import type { EgressPolicyOptions } from '../../settings.js';
 import type { OwnedListener } from '../transport.js';
+
+/** Only the genuine prepared production branch below can mint this handle. */
+export interface OriginalPreparedBrokerEndpoint {
+  readonly kind: 'original-prepared-broker-endpoint';
+}
+type OriginalEndpoint = {
+  check(): Readonly<{ port: number }>;
+  sockets: Set<OriginalBrokerConnection>;
+  retired: boolean;
+};
+const originalEndpoints = new WeakMap<object, OriginalEndpoint>();
+export interface OriginalBrokerConnection {
+  readonly socket: Socket;
+  readonly connected: Promise<void>;
+  readonly closed: Promise<void>;
+  check(): void;
+  close(): Promise<void>;
+}
+/** Genuine Node Socket; its original close is captured before connect or guards.
+ * The consumer must retain every entered read/write callback and join close(). */
+export function connectOriginalPreparedBrokerEndpoint(token: unknown): OriginalBrokerConnection {
+  const state =
+    typeof token === 'object' && token !== null ? originalEndpoints.get(token) : undefined;
+  if (!state) throw new BrokerError('AUTHORITY_REFUSED');
+  if (state.retired || state.sockets.size >= 16) throw new BrokerError('CLOSED');
+  const socket = new Socket({ allowHalfOpen: true });
+  let done!: () => void, yes!: () => void, no!: (value: unknown) => void;
+  let finished = false,
+    ready = false,
+    closing = false,
+    first: { value: unknown } | undefined;
+  const closed = new Promise<void>((resolve) => {
+    done = resolve;
+  });
+  const connected = new Promise<void>((resolve, reject) => {
+    yes = resolve;
+    no = reject;
+  });
+  void connected.catch(() => {});
+  const check = () => {
+    if (first) throw first.value;
+    if (closing || finished || state.retired) throw new BrokerError('CLOSED');
+    state.check();
+    if (closing || finished || state.retired) throw new BrokerError('CLOSED');
+  };
+  const connection: OriginalBrokerConnection = Object.freeze({
+    socket,
+    connected,
+    closed,
+    check,
+    close() {
+      closing = true;
+      socket.destroy();
+      return closed;
+    },
+  });
+  state.sockets.add(connection); // Original retained before any fallible authority lookup.
+  socket.once('close', () => {
+    finished = true;
+    if (!ready) no(first ? first.value : new BrokerError('CLOSED'));
+    state.sockets.delete(connection);
+    done();
+  });
+  socket.on('error', (value) => {
+    first ??= { value };
+    no(first.value);
+    socket.destroy();
+  });
+  socket.once('connect', () => {
+    try {
+      check();
+      ready = true;
+      yes();
+    } catch (value) {
+      first ??= { value };
+      no(first.value);
+      socket.destroy();
+    }
+  });
+  try {
+    const endpoint = state.check();
+    check();
+    socket.connect({ host: '127.0.0.1', port: endpoint.port });
+  } catch (value) {
+    first ??= { value };
+    no(first.value);
+    socket.destroy();
+  }
+  return connection;
+}
+function retireOriginalEndpoint(state: OriginalEndpoint): Promise<void> {
+  state.retired = true;
+  const jobs: Promise<unknown>[] = [];
+  let first: { value: unknown } | undefined;
+  for (const original of state.sockets) {
+    try {
+      jobs.push(original.close());
+    } catch (value) {
+      first ??= { value };
+    }
+  }
+  return Promise.allSettled(jobs).then((rows) => {
+    for (const row of rows) if (row.status === 'rejected') first ??= { value: row.reason };
+    if (first) throw first.value;
+  });
+}
 
 /** Production original session/native/lease/protected-boundary assembly, with no fixture creator,
  * fixture-origin grants or caller-supplied DNS/IO/readiness. The startup owner retains close. */
@@ -51,9 +158,11 @@ export function createProductionLiveBrowserComposition(
       policy?: EgressPolicyOptions;
       sealed?: number;
       sealStarted: boolean;
+      activateEndpoint(): void;
     }
   >();
   const retained = new Set<ReturnType<typeof createPreparedProductionBroker>>();
+  const endpoints = new Set<OriginalEndpoint>();
   let retainedFailure: Readonly<{ value: unknown }> | undefined;
   let stopped = false,
     closing: Promise<void> | undefined;
@@ -108,6 +217,7 @@ export function createProductionLiveBrowserComposition(
     if (retainedFailure) record(retainedFailure.value);
     const jobs: Promise<unknown>[] = [];
     for (const effect of [
+      ...[...endpoints].map((endpoint) => () => retireOriginalEndpoint(endpoint)),
       () => authority.close(),
       () => resolver.close(),
       ...[...retained].map((broker) => async () => {
@@ -277,7 +387,69 @@ export function createProductionLiveBrowserComposition(
                   inventory.retainListener(listener, context.receiver);
                   const known = broker.isCustodyKnown.bind(broker),
                     originalClose = broker.close.bind(broker);
+                  const originalServer = listener.identity;
+                  if (!(originalServer instanceof Server))
+                    throw new BrokerError('AUTHORITY_REFUSED');
+                  const address = originalServer.address();
+                  if (
+                    !address ||
+                    typeof address === 'string' ||
+                    address.address !== '127.0.0.1' ||
+                    address.port !== listener.port
+                  )
+                    throw new BrokerError('AUTHORITY_REFUSED');
+                  const port = address.port;
+                  const ordinary = context.receiver.isOrdinary.bind(context.receiver);
+                  let activated = false;
+                  const endpoint: OriginalEndpoint = {
+                    retired: false,
+                    sockets: new Set(),
+                    check() {
+                      const original = peers.get(peer);
+                      if (
+                        stopped ||
+                        endpoint.retired ||
+                        !original ||
+                        original.listener !== listener ||
+                        original.receiver !== context.receiver ||
+                        !broker.isCustodyKnown() ||
+                        listener.isCustodyKnown?.() !== true
+                      )
+                        throw new BrokerError('AUTHORITY_REFUSED');
+                      if (!ordinary()) throw new BrokerError('AUTHORITY_REFUSED');
+                      if (activated) issuer.check(run);
+                      else issuer.checkPrepared(run, context.receiver);
+                      const current = originalServer.address();
+                      if (
+                        !current ||
+                        typeof current === 'string' ||
+                        current.address !== '127.0.0.1' ||
+                        current.port !== port ||
+                        listener.identity !== originalServer ||
+                        listener.port !== port
+                      )
+                        throw new BrokerError('AUTHORITY_REFUSED');
+                      if (
+                        stopped ||
+                        endpoint.retired ||
+                        peers.get(peer) !== original ||
+                        !broker.isCustodyKnown() ||
+                        !ordinary()
+                      )
+                        throw new BrokerError('AUTHORITY_REFUSED');
+                      return Object.freeze({ port });
+                    },
+                  };
+                  const endpointToken = Object.freeze({
+                    kind: 'original-prepared-broker-endpoint' as const,
+                  });
+                  originalEndpoints.set(endpointToken, endpoint);
+                  endpoints.add(endpoint);
                   const peer: PrivateLiveNetworkPeer = Object.freeze({
+                    originalSerialProxyEndpoint() {
+                      endpoint.check();
+                      return endpointToken;
+                    },
                     url: descriptor.server,
                     authenticationWarmup: descriptor.authenticationWarmup,
                     credentials: Object.freeze({
@@ -286,7 +458,24 @@ export function createProductionLiveBrowserComposition(
                     }),
                     isCustodyKnown: () => !stopped && known(),
                     async close() {
-                      if (!(await originalClose())) throw new BrokerError('CLOSED');
+                      endpoint.retired = true;
+                      let failure: { value: unknown } | undefined;
+                      const join = (job: Promise<unknown>) =>
+                        job.catch((value) => {
+                          failure ??= { value };
+                          throw value;
+                        });
+                      const joined = await Promise.allSettled([
+                        join(retireOriginalEndpoint(endpoint)),
+                        join(
+                          Promise.resolve().then(async () => {
+                            if (!(await originalClose())) throw new BrokerError('CLOSED');
+                          })
+                        ),
+                      ]);
+                      if (failure) throw failure.value;
+                      for (const row of joined) if (row.status === 'rejected') throw row.reason;
+                      endpoints.delete(endpoint);
                       peers.delete(peer);
                       retained.delete(broker);
                     },
@@ -298,6 +487,10 @@ export function createProductionLiveBrowserComposition(
                     run,
                     grant,
                     sealStarted: false,
+                    activateEndpoint: () => {
+                      activated = true;
+                      endpoint.check();
+                    },
                   });
                   return peer;
                 } catch (error) {
@@ -324,6 +517,7 @@ export function createProductionLiveBrowserComposition(
                 )
                   throw new BrokerError('AUTHORITY_REFUSED');
                 await original.broker.activate(receiver);
+                original.activateEndpoint();
                 if (stopped || !peer.isCustodyKnown()) throw new BrokerError('AUTHORITY_REFUSED');
               },
             },
