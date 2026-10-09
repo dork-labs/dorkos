@@ -115,10 +115,14 @@ export {
 export { useGlobalSessionStream } from './model/stream/use-global-session-stream';
 export { RECENT_SESSIONS_WINDOW, useRecentSessions } from './model/query/use-recent-sessions';
 
-export { useSessionBorderState } from './model/status/use-session-border-state';
+export {
+  useSessionBorderState,
+  useSessionStatusSignals,
+} from './model/status/use-session-border-state';
 export type {
   SessionBorderKind,
   SessionBorderState,
+  SessionStatusSignals,
 } from './model/status/use-session-border-state';
 export { useAgentHottestStatus } from './model/status/use-agent-hottest-status';
 // Context-health merge resolver (list vs live, live wins) + its pure core.
