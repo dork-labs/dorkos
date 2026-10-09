@@ -474,13 +474,15 @@ export function createSessionStartHandler(
     // Who started it, and the start limits of the extension at the root of the
     // calling chat's chain: asked before the settings write, so a refused start
     // leaves nothing behind.
-    const claimed = reserveChatStart(
-      sessionId,
-      caller.chat?.sessionId ?? null,
-      args.reason,
-      permission,
-      args.reportBack !== 'off'
-    );
+    // Reports go back only to a chat that can take chat messages: a room's
+    // turn, a scheduled run or a bridged chat cannot, so its spin-offs are
+    // never promised one (spec `spin-off-chats` §5).
+    const parentChatId = caller.chat?.sessionId ?? null;
+    const reportBack =
+      args.reportBack !== 'off' &&
+      parentChatId !== null &&
+      ((await getChatMessageService()?.canReceive(parentChatId)) ?? false);
+    const claimed = reserveChatStart(sessionId, parentChatId, args.reason, permission, reportBack);
     if (!claimed.ok) return refuse(claimed.message, 'START_LIMIT');
     const reservation = claimed.reservation;
     // What the pre-launch picker saves, saved the same way: an unbound settings
@@ -538,13 +540,16 @@ export function createSessionStartHandler(
                   parentChatId: caller.chat.sessionId,
                   parentTitle: rememberedChatTitle(caller.chat.sessionId),
                   parentAgentName: caller.label,
-                  reportBack: args.reportBack !== 'off',
+                  reportBack,
                 })
               : null;
-            const seed = [briefing, args.seedContext].filter((p): p is string => Boolean(p));
-            return seed.length > 0
-              ? { seedContext: seed.join('\n\n').slice(0, SEED_CONTEXT_MAX_LENGTH) }
-              : {};
+            // The starter's own background is never cut: the briefing gives
+            // way first when the two would pass the cap together.
+            const own = args.seedContext ?? '';
+            const room = SEED_CONTEXT_MAX_LENGTH - own.length - (own ? 2 : 0);
+            const lead = briefing && room > 0 ? briefing.slice(0, room) : null;
+            const seed = [lead, own].filter((p): p is string => Boolean(p));
+            return seed.length > 0 ? { seedContext: seed.join('\n\n') } : {};
           })(),
         },
         clientId: SESSION_START_CLIENT_ID,

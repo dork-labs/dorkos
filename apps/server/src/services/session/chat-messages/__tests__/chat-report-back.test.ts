@@ -17,6 +17,7 @@ import {
 
 const CHILD = 'child-chat';
 const PARENT = 'parent-chat';
+const NOW = Date.parse('2026-10-09T12:00:00.000Z');
 
 function status(over: Partial<SessionStatus> = {}): SessionStatus {
   return { lifecycle: 'idle', limit: null, ...over } as SessionStatus;
@@ -30,7 +31,7 @@ function harness(over: Partial<ChatReportBackDeps> = {}) {
   const send = vi.fn().mockResolvedValue({ messageId: 'r1', chatId: PARENT, status: 'working' });
   const deps: ChatReportBackDeps = {
     service: { send },
-    store: { listStopsOf: () => [] },
+    store: { listStopsOf: () => [], latestInterruptFrom: () => undefined },
     reportTargetOf: (id) => (id === CHILD ? { parentSessionId: PARENT } : null),
     agentPathOf: async () => '/agents/builder',
     holdsBackgroundWork: async () => false,
@@ -40,13 +41,16 @@ function harness(over: Partial<ChatReportBackDeps> = {}) {
     now: () => Date.parse('2026-10-09T12:00:00.000Z'),
     ...over,
   };
-  return { reportBack: new ChatReportBack(deps), send };
+  const reportBack = new ChatReportBack(deps);
+  /** The turn ends with the chat's status as the boundary reads it. */
+  const end = () => reportBack.onTurnEnd(CHILD, deps.statusOf(CHILD), NOW);
+  return { reportBack, send, end };
 }
 
 describe('ChatReportBack.onTurnEnd', () => {
   it('sends the last turn to the parent as a report when the turn finished', async () => {
-    const { reportBack, send } = harness();
-    await expect(reportBack.onTurnEnd(CHILD)).resolves.toBe('finished');
+    const { send, end } = harness();
+    await expect(end()).resolves.toBe('finished');
     expect(send).toHaveBeenCalledTimes(1);
     const [caller, input, kind] = send.mock.calls[0]!;
     expect(caller).toEqual({ sessionId: CHILD, agentPath: '/agents/builder' });
@@ -73,82 +77,128 @@ describe('ChatReportBack.onTurnEnd', () => {
         'Paused at a usage limit',
       ],
     ] as const) {
-      const { reportBack, send } = harness({ statusOf: () => s });
-      await reportBack.onTurnEnd(CHILD);
+      const { send, end } = harness({ statusOf: () => s });
+      await end();
       expect(send.mock.calls[0]![1].summary).toBe(summary);
     }
   });
 
   it('sends nothing when the turn ended only to wait on background work', async () => {
-    const { reportBack, send } = harness({ holdsBackgroundWork: async () => true });
-    await expect(reportBack.onTurnEnd(CHILD)).resolves.toBeNull();
+    const { send, end } = harness({ holdsBackgroundWork: async () => true });
+    await expect(end()).resolves.toBeNull();
     expect(send).not.toHaveBeenCalled();
   });
 
   it('sends nothing for a chat that does not report back, or has no parent', async () => {
-    const { reportBack, send } = harness({ reportTargetOf: () => null });
-    await expect(reportBack.onTurnEnd(CHILD)).resolves.toBeNull();
+    const { send, end } = harness({ reportTargetOf: () => null });
+    await expect(end()).resolves.toBeNull();
     expect(send).not.toHaveBeenCalled();
   });
 
   it('sends nothing for a finished turn that said nothing', async () => {
-    const { reportBack, send } = harness({
+    const { send, end } = harness({
       history: async () => history(['assistant', 'earlier answer'], ['user', 'summarize']),
     });
-    await expect(reportBack.onTurnEnd(CHILD)).resolves.toBeNull();
+    await expect(end()).resolves.toBeNull();
     expect(send).not.toHaveBeenCalled();
   });
 
   it('does not report a stop the parent itself made just now', async () => {
-    const { reportBack, send } = harness({
+    const { send, end } = harness({
       statusOf: () => status({ lifecycle: 'interrupted' }),
       store: {
         listStopsOf: () =>
           [{ fromSessionId: PARENT, createdAt: '2026-10-09T11:59:50.000Z' }] as never,
+        latestInterruptFrom: () => undefined,
       },
     });
-    await expect(reportBack.onTurnEnd(CHILD)).resolves.toBeNull();
+    await expect(end()).resolves.toBeNull();
     expect(send).not.toHaveBeenCalled();
   });
 
   it('still reports a stop somebody else made', async () => {
-    const { reportBack, send } = harness({
+    const { send, end } = harness({
       statusOf: () => status({ lifecycle: 'interrupted' }),
       store: {
         listStopsOf: () =>
           [{ fromSessionId: 'someone-else', createdAt: '2026-10-09T11:59:50.000Z' }] as never,
+        latestInterruptFrom: () => undefined,
       },
     });
-    await expect(reportBack.onTurnEnd(CHILD)).resolves.toBe('stopped');
+    await expect(end()).resolves.toBe('stopped');
     expect(send).toHaveBeenCalledTimes(1);
   });
 
   it('a send that throws is logged, never thrown at the projector', async () => {
-    const { reportBack } = harness({
+    const { end } = harness({
       service: { send: vi.fn().mockRejectedValue(new Error('no room')) },
     });
-    await expect(reportBack.onTurnEnd(CHILD)).resolves.toBe('finished');
+    await expect(end()).resolves.toBe('finished');
   });
 });
 
-describe('ChatReportBack.onAsk', () => {
-  it('reports waiting on the person once per ask, with what it asks', async () => {
-    const { reportBack, send } = harness();
-    await expect(
-      reportBack.onAsk(CHILD, { id: 'ask-1', what: 'It asks to use Bash.' })
-    ).resolves.toBe(true);
-    await expect(
-      reportBack.onAsk(CHILD, { id: 'ask-1', what: 'It asks to use Bash.' })
-    ).resolves.toBe(false);
+describe('ChatReportBack.onWaiting', () => {
+  it('reports waiting on the person once per wait, with what it asks', async () => {
+    const { reportBack, send } = harness({ statusOf: () => status({ lifecycle: 'blocked' }) });
+    const wait = { key: 'w1', what: 'It asks to use Bash.' };
+    await expect(reportBack.onWaiting(CHILD, wait)).resolves.toBe(true);
+    await expect(reportBack.onWaiting(CHILD, wait)).resolves.toBe(false);
     expect(send).toHaveBeenCalledTimes(1);
     const [, input] = send.mock.calls[0]!;
     expect(input.summary).toBe('Needs the person');
     expect(input.message).toContain('It asks to use Bash.');
   });
 
+  it('sends nothing for an ask answered before the settle: nobody is woken for nothing', async () => {
+    const { reportBack, send } = harness({ statusOf: () => status({ lifecycle: 'streaming' }) });
+    await expect(reportBack.onWaiting(CHILD, { key: 'w2', what: 'x' })).resolves.toBe(false);
+    expect(send).not.toHaveBeenCalled();
+  });
+
   it('a turn ending while still waiting on the person sends nothing more', async () => {
-    const { reportBack, send } = harness({ statusOf: () => status({ lifecycle: 'blocked' }) });
-    await expect(reportBack.onTurnEnd(CHILD)).resolves.toBeNull();
+    const { send, end } = harness({ statusOf: () => status({ lifecycle: 'blocked' }) });
+    await expect(end()).resolves.toBeNull();
+    expect(send).not.toHaveBeenCalled();
+  });
+});
+
+describe('the review findings (DOR-2790 PR 2)', () => {
+  it('reads THIS turn’s words even when the next turn’s message is already in the history', async () => {
+    // The parent's follow-up queued behind the turn, started the next turn,
+    // and reached the history before the report read it.
+    const { send, end } = harness({
+      history: async () => [
+        { id: 'u1', role: 'user', content: 'go', timestamp: '2026-10-09T11:59:00.000Z' },
+        {
+          id: 'a1',
+          role: 'assistant',
+          content: 'Wrote the haiku.',
+          timestamp: '2026-10-09T11:59:59.000Z',
+        },
+        { id: 'u2', role: 'user', content: 'next', timestamp: '2026-10-09T12:00:05.000Z' },
+      ],
+    });
+    await expect(end()).resolves.toBe('finished');
+    expect(send.mock.calls[0]![1].message).toContain('Wrote the haiku.');
+  });
+
+  it('sends nothing while a helper is still running', async () => {
+    const { send, end } = harness({
+      statusOf: () => status({ runningSubagentCount: 1 } as Partial<SessionStatus>),
+    });
+    await expect(end()).resolves.toBeNull();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('does not report the parent’s own interrupt back to it', async () => {
+    const { send, end } = harness({
+      statusOf: () => status({ lifecycle: 'interrupted' }),
+      store: {
+        listStopsOf: () => [],
+        latestInterruptFrom: () => ({ createdAt: '2026-10-09T11:59:55.000Z' }) as never,
+      },
+    });
+    await expect(end()).resolves.toBeNull();
     expect(send).not.toHaveBeenCalled();
   });
 });

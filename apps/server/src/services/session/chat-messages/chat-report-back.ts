@@ -79,8 +79,8 @@ export interface ReportTarget {
 export interface ChatReportBackDeps {
   /** The sender. */
   service: Pick<ChatMessageService, 'send'>;
-  /** The chat-message store (stops). */
-  store: Pick<ChatMessageStore, 'listStopsOf'>;
+  /** The chat-message store (stops and interrupts). */
+  store: Pick<ChatMessageStore, 'listStopsOf' | 'latestInterruptFrom'>;
   /** The parent a chat reports to, or null when it does not report. */
   reportTargetOf: (sessionId: string) => ReportTarget | null;
   /** The chat's agent home, or null. */
@@ -97,16 +97,30 @@ export interface ChatReportBackDeps {
   now?: () => number;
 }
 
+/** How far past a turn's end a message may be stamped and still belong to it. */
+const TURN_END_GRACE_MS = 1_000;
+
 /**
  * The words of the chat's latest turn: the assistant messages after the last
  * message somebody sent it, joined. Empty when the turn said nothing.
  *
+ * With `endedAt`, messages stamped after the turn ended are left out first, so
+ * a message that started the NEXT turn (queued behind this one) cannot hide
+ * this turn's words or lend it the next turn's.
+ *
  * @param history - The chat's history, in order.
+ * @param endedAt - When the turn ended (epoch ms), when known.
  */
-export function lastTurnText(history: readonly HistoryMessage[]): string {
-  let start = history.length;
-  while (start > 0 && history[start - 1]!.role === 'assistant') start -= 1;
-  return history
+export function lastTurnText(history: readonly HistoryMessage[], endedAt?: number): string {
+  const upTo =
+    endedAt === undefined
+      ? history
+      : history.filter(
+          (m) => !m.timestamp || Date.parse(m.timestamp) <= endedAt + TURN_END_GRACE_MS
+        );
+  let start = upTo.length;
+  while (start > 0 && upTo[start - 1]!.role === 'assistant') start -= 1;
+  return upTo
     .slice(start)
     .map((m) => m.content.trim())
     .filter((t) => t !== '')
@@ -167,7 +181,7 @@ export function spinOffBriefing(opts: {
 export class ChatReportBack {
   private readonly delay: (ms: number) => Promise<void>;
   private readonly now: () => number;
-  /** Asks already reported, so one ask sends one report. */
+  /** Waits already reported, so one wait sends one report. */
   private readonly reportedAsks = new Set<string>();
 
   /**
@@ -184,52 +198,74 @@ export class ChatReportBack {
    * A turn ended on a chat. Reports when the chat is a spin-off that reports,
    * the turn did not end only to wait, and there is something to say.
    *
+   * Called synchronously from the turn boundary: `ended` is the chat's status
+   * at that instant, before a queued message can start the next turn and
+   * change it, and `endedAt` is when, so the words read later are the ones
+   * that turn said and not the next one's.
+   *
    * @param sessionId - The chat.
+   * @param ended - The chat's status as the turn ended, or null.
+   * @param endedAt - When the turn ended (epoch ms).
    * @returns The reason a report went, or null when none did.
    */
-  async onTurnEnd(sessionId: string): Promise<ReportReason | null> {
+  async onTurnEnd(
+    sessionId: string,
+    ended: SessionStatus | null,
+    endedAt: number = this.now()
+  ): Promise<ReportReason | null> {
     const target = this.deps.reportTargetOf(sessionId);
     if (!target) return null;
+    // Ended only to wait: a helper still running, or background work the
+    // runtime holds. More is coming; the turn that ends holding nothing reports.
+    if ((ended?.runningSubagentCount ?? 0) > 0) return null;
     if (await this.deps.holdsBackgroundWork(sessionId).catch(() => false)) return null;
-    const status = this.deps.statusOf(sessionId);
-    const reason = reasonOf(status);
+    const reason = reasonOf(ended);
     if (reason === null) return null;
-    if (reason === 'stopped' && this.stoppedByParent(sessionId, target.parentSessionId))
+    if (reason === 'stopped' && this.stoppedByParent(sessionId, target.parentSessionId)) {
       return null;
+    }
     await this.delay(REPORT_SETTLE_MS);
-    const text = lastTurnText(await this.deps.history(sessionId).catch(() => []));
+    const text = lastTurnText(await this.deps.history(sessionId).catch(() => []), endedAt);
     if (reason === 'finished' && text === '') return null;
     await this.report(sessionId, target, reason, text);
     return reason;
   }
 
   /**
-   * A chat started waiting on the person. Reports once per ask when the chat
-   * is a spin-off that reports.
+   * A chat started waiting on the person (an approval, a question, a DorkOS
+   * capability hold). Reports once per wait, after a short settle and only if
+   * it is still waiting, so an ask answered at once wakes nobody.
    *
    * @param sessionId - The chat.
-   * @param ask - The ask's id and what it asks, in plain words.
+   * @param wait - A key for this wait, and what it asks in plain words.
    * @returns Whether a report went.
    */
-  async onAsk(sessionId: string, ask: { id: string; what: string }): Promise<boolean> {
+  async onWaiting(sessionId: string, wait: { key: string; what: string }): Promise<boolean> {
     const target = this.deps.reportTargetOf(sessionId);
     if (!target) return false;
-    if (this.reportedAsks.has(ask.id)) return false;
-    this.reportedAsks.add(ask.id);
+    if (this.reportedAsks.has(wait.key)) return false;
+    this.reportedAsks.add(wait.key);
     if (this.reportedAsks.size > 5_000) {
       const oldest = this.reportedAsks.values().next().value;
       if (oldest !== undefined) this.reportedAsks.delete(oldest);
     }
+    await this.delay(REPORT_SETTLE_MS);
+    if (this.deps.statusOf(sessionId)?.lifecycle !== 'blocked') return false;
     const text = lastTurnText(await this.deps.history(sessionId).catch(() => []));
-    await this.report(sessionId, target, 'needs-you', text, ask.what);
+    await this.report(sessionId, target, 'needs-you', text, wait.what);
     return true;
   }
 
-  /** Whether the parent itself stopped this chat just now. */
+  /**
+   * Whether the parent itself stopped this chat just now: with `chat_stop`,
+   * or by sending it a message with `delivery: 'interrupt'`.
+   */
   private stoppedByParent(sessionId: string, parentSessionId: string): boolean {
-    const last = this.deps.store.listStopsOf(sessionId).at(-1);
-    if (!last || last.fromSessionId !== parentSessionId) return false;
-    return this.now() - Date.parse(last.createdAt) < OWN_STOP_WINDOW_MS;
+    const recent = (iso: string) => this.now() - Date.parse(iso) < OWN_STOP_WINDOW_MS;
+    const stop = this.deps.store.listStopsOf(sessionId).at(-1);
+    if (stop && stop.fromSessionId === parentSessionId && recent(stop.createdAt)) return true;
+    const interrupt = this.deps.store.latestInterruptFrom(parentSessionId, sessionId);
+    return interrupt !== undefined && recent(interrupt.createdAt);
   }
 
   /** Send one report, from the spin-off to its parent. */
@@ -266,8 +302,8 @@ export class ChatReportBack {
 
 /**
  * Why a turn that just ended is worth a report, read off the chat's status:
- * null when it is still waiting on the person (its ask already reported) or
- * when no live status says how it ended.
+ * null when it is still waiting on the person (that wait reports on its own),
+ * and `finished` when no live status says otherwise.
  *
  * @param status - The chat's live status, or null.
  */

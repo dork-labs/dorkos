@@ -162,6 +162,28 @@ export class SessionStartedByStore {
   }
 
   /**
+   * The chat a chat was carried to on another account, when it was (a
+   * `carried` start whose starter is this chat), or null.
+   *
+   * @param sessionId - The chat that was carried away.
+   */
+  carriedSuccessorOf(sessionId: string): string | null {
+    return (
+      this.db
+        .select({ sessionId: sessionStartedBy.sessionId })
+        .from(sessionStartedBy)
+        .where(
+          and(
+            eq(sessionStartedBy.startedBySessionId, sessionId),
+            eq(sessionStartedBy.carried, true)
+          )
+        )
+        .orderBy(sessionStartedBy.createdAt)
+        .get()?.sessionId ?? null
+    );
+  }
+
+  /**
    * The chats a chat started (`kind = 'chat'`), oldest first: its spin-offs.
    *
    * @param sessionId - The starting chat.

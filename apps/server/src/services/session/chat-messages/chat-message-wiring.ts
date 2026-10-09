@@ -25,6 +25,7 @@ import { getSessionStartedByStore } from '../origin/session-started-by-store.js'
 import { resolveSessionCwdOrNull } from '../resolution/resolve-read-cwd.js';
 import {
   onProjectorInteractionChange,
+  onProjectorStatusChange,
   onProjectorTurnBoundary,
   peekProjector,
 } from '../session-state-projector.js';
@@ -266,6 +267,36 @@ export function describeAsk(interaction: PendingInteractionDTO): string {
   }
 }
 
+/** How many carry-overs and moves a report follows before it gives up. */
+const CARRY_DEPTH = 10;
+
+/**
+ * The parent a chat reports to, or null when it does not report: the chat
+ * that started it, found past any account moves on either side. A chat
+ * carried to another account reports for the chat it replaced, to that
+ * chat's starter; and a parent that was carried reports onward to the chat
+ * it was carried to, not to the one on the exhausted account.
+ *
+ * @param sessionId - The chat whose turn ended.
+ */
+export function reportTargetOf(sessionId: string): { parentSessionId: string } | null {
+  const startedBy = getSessionStartedByStore();
+  let record = startedBy?.get(sessionId) ?? null;
+  for (let i = 0; record?.carried && record.startedBySessionId && i < CARRY_DEPTH; i += 1) {
+    record = startedBy?.get(record.startedBySessionId) ?? null;
+  }
+  if (!record || record.kind !== 'chat' || !record.reportBack || !record.startedBySessionId) {
+    return null;
+  }
+  let parent = record.startedBySessionId;
+  for (let i = 0; i < CARRY_DEPTH; i += 1) {
+    const next = startedBy?.carriedSuccessorOf(parent);
+    if (!next) break;
+    parent = next;
+  }
+  return { parentSessionId: parent };
+}
+
 /**
  * Make spin-off chats report back on their own (spec `spin-off-chats` §5):
  * listen for every turn that ends and every ask that opens, on every runtime.
@@ -281,13 +312,7 @@ export function wireChatReportBack(
   const reportBack = new ChatReportBack({
     service,
     store,
-    reportTargetOf: (sessionId) => {
-      const record = getSessionStartedByStore()?.get(sessionId);
-      if (!record || record.kind !== 'chat' || !record.reportBack || !record.startedBySessionId) {
-        return null;
-      }
-      return { parentSessionId: record.startedBySessionId };
-    },
+    reportTargetOf: (sessionId) => reportTargetOf(sessionId),
     agentPathOf: (sessionId) => runtimeRegistry.getSessionAgentPath(sessionId),
     holdsBackgroundWork: async (sessionId) => {
       const runtime = await runtimeRegistry.resolveForSession(sessionId);
@@ -296,9 +321,16 @@ export function wireChatReportBack(
     statusOf: (sessionId) => peekProjector(sessionId)?.getStatus() ?? null,
     history: chatHistoryOf,
   });
+  // What each chat's open ask is about, kept from the interaction events so the
+  // "needs the person" report can say it; a DorkOS capability hold has none.
+  const askWhat = new Map<string, string>();
   const offTurn = onProjectorTurnBoundary((sessionId, kind) => {
     if (kind !== 'turn_end') return;
-    void reportBack.onTurnEnd(sessionId).catch((err: unknown) =>
+    // Read NOW, in the boundary itself: a queued message starts the next turn
+    // a moment later and would change both.
+    const ended = peekProjector(sessionId)?.getStatus() ?? null;
+    const endedAt = Date.now();
+    void reportBack.onTurnEnd(sessionId, ended, endedAt).catch((err: unknown) =>
       logger.warn('[chat report-back] turn end could not be reported', {
         sessionId,
         ...logError(err),
@@ -306,15 +338,23 @@ export function wireChatReportBack(
     );
   });
   const offAsk = onProjectorInteractionChange((change) => {
-    if (change.type !== 'pending') return;
+    if (change.type === 'pending') askWhat.set(change.sessionId, describeAsk(change.interaction));
+    else askWhat.delete(change.sessionId);
+  });
+  // Every way a chat starts waiting on the person — an approval, a question,
+  // an MCP form, a DorkOS capability hold — moves its lifecycle to `blocked`.
+  let waits = 0;
+  const offStatus = onProjectorStatusChange(({ sessionId, status }) => {
+    if (status.lifecycle !== 'blocked') return;
+    waits += 1;
     void reportBack
-      .onAsk(change.sessionId, {
-        id: change.interaction.id,
-        what: describeAsk(change.interaction),
+      .onWaiting(sessionId, {
+        key: `${sessionId}:${waits}`,
+        what: askWhat.get(sessionId) ?? 'It is waiting for the person to approve something.',
       })
       .catch((err: unknown) =>
-        logger.warn('[chat report-back] an ask could not be reported', {
-          sessionId: change.sessionId,
+        logger.warn('[chat report-back] a wait could not be reported', {
+          sessionId,
           ...logError(err),
         })
       );
@@ -322,5 +362,6 @@ export function wireChatReportBack(
   return () => {
     offTurn();
     offAsk();
+    offStatus();
   };
 }

@@ -588,6 +588,22 @@ export class ChatMessageService {
     return facts;
   }
 
+  /**
+   * Whether a chat can be sent chat messages at all: one bound here that is
+   * not a room's, a bridged chat, or a scheduled run. A spin-off of a chat
+   * that cannot is never promised reports it could not deliver.
+   *
+   * @param sessionId - The chat.
+   */
+  async canReceive(sessionId: string): Promise<boolean> {
+    try {
+      await this.assertSendable(sessionId, true);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   /** Whether two ids name the same chat (a request id and its canonical one). */
   private async sameChat(a: string, b: string): Promise<boolean> {
     const [ca, cb] = await Promise.all([
