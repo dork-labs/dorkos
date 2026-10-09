@@ -1,3 +1,4 @@
+import { retainOriginalNavigationRefusal, type OriginalNavigationRefusalPhase } from './refusal.js';
 import { parseBrowserCommand, type BrowserBinding } from '../contracts.js';
 import type { EngineConfiguration } from '../configuration.js';
 import type { BrowserRecord } from '../lifecycle/records.js';
@@ -32,15 +33,22 @@ export async function navigateOwned(
   token: OwnedNavigationWork,
   signal?: AbortSignal
 ): Promise<Readonly<BrowserBinding>> {
+  let phase: OriginalNavigationRefusalPhase = 'owned.admission';
   if (config.network.kind !== 'owned')
-    throw new BrowserLifecycleError('NETWORK_POLICY_UNSUPPORTED');
+    throw retainOriginalNavigationRefusal(
+      new BrowserLifecycleError('NETWORK_POLICY_UNSUPPORTED'),
+      phase
+    );
   const end = performance.now() + 5000;
   const command = parseBrowserCommand(value);
-  if (command.kind !== 'navigate') throw new BrowserLifecycleError('COMMAND_UNSUPPORTED');
+  if (command.kind !== 'navigate')
+    throw retainOriginalNavigationRefusal(new BrowserLifecycleError('COMMAND_UNSUPPORTED'), phase);
   const originalTab = record.tabs.get(command.binding.tabId);
-  if (!originalTab) throw new BrowserLifecycleError('STALE_BINDING');
+  if (!originalTab)
+    throw retainOriginalNavigationRefusal(new BrowserLifecycleError('STALE_BINDING'), phase);
   // Host viewer loss has already stopped new captures. Retain the genuine raw
   // screenshot receiver through natural settlement before claiming its tab.
+  phase = 'owned.capture-join';
   try {
     await deadline(
       Promise.resolve().then(async () => {
@@ -51,17 +59,21 @@ export async function navigateOwned(
       'NAVIGATION_TIMEOUT'
     );
   } catch (reason) {
+    retainOriginalNavigationRefusal(reason, phase);
     record.lifetime.uncertain = true;
     record.lifetime.requestRetirement('engineFault');
     throw reason;
   }
   if (record.tabs.get(command.binding.tabId) !== originalTab)
-    throw new BrowserLifecycleError('STALE_BINDING');
+    throw retainOriginalNavigationRefusal(new BrowserLifecycleError('STALE_BINDING'), phase);
+  phase = 'owned.claim';
   const owner = claimNavigation(record, command.binding, current);
-  if (!owner) throw new BrowserLifecycleError('STALE_BINDING');
+  if (!owner)
+    throw retainOriginalNavigationRefusal(new BrowserLifecycleError('STALE_BINDING'), phase);
+  phase = 'owned.token';
   if (!consumeOwnedNavigationWork(token, command, owner)) {
     finishNavigation(owner, false);
-    throw new BrowserLifecycleError('POLICY_REFUSED');
+    throw retainOriginalNavigationRefusal(new BrowserLifecycleError('POLICY_REFUSED'), phase);
   }
   const slot = record.lifetime.inputs.get(owner.tab);
   const handle = slot?.handle;
@@ -107,7 +119,11 @@ export async function navigateOwned(
       record.tabs.get(owner.before.tabId) !== owner.tab ||
       owner.tab.page !== owner.page
     )
-      throw new BrowserLifecycleError('STALE_BINDING');
+      throw retainOriginalNavigationRefusal(
+        new BrowserLifecycleError('STALE_BINDING'),
+        phase,
+        !custody ? 'custody' : !canonical ? 'canonical' : !authorized ? 'authority' : 'state'
+      );
   };
   const abort = new AbortController();
   const abortOriginal = abort.abort;
@@ -122,6 +138,7 @@ export async function navigateOwned(
     record.lifetime.requestRetirement('engineFault');
   };
   let removeAbort: (() => void) | undefined;
+  phase = 'owned.abort-listener';
   try {
     if (signal) {
       const add = signal.addEventListener,
@@ -130,6 +147,7 @@ export async function navigateOwned(
       Reflect.apply(add, signal, ['abort', onAbort, { once: true }]);
     }
   } catch (error) {
+    retainOriginalNavigationRefusal(error, phase);
     owner.cleanupUncertain = true;
     record.lifetime.uncertain = true;
     record.lifetime.requestRetirement('engineFault');
@@ -148,6 +166,7 @@ export async function navigateOwned(
   let settled = false;
   let failedWait = false;
   const original = ownOperation(record, async () => {
+    phase = 'owned.target';
     if (command.kind !== 'navigate' || !sameBinding(command.binding, owner.before))
       throw new BrowserLifecycleError('COMMAND_UNSUPPORTED');
     const target = new URL(command.url);
@@ -160,17 +179,21 @@ export async function navigateOwned(
       throw new BrowserLifecycleError('NETWORK_POLICY_UNSUPPORTED');
     owner.target = target.href;
     guard();
+    phase = 'owned.authorize-first';
     if (
       (await authorizeOwnedNavigation(token, owner, owner.binding, command.url, abort.signal)) !==
       'allowed'
     )
       throw new BrowserLifecycleError('POLICY_REFUSED');
     guard();
+    phase = 'owned.reset';
     const reset = await resetInput(record, owner.before, owner);
     guard();
+    phase = 'owned.reset-observed';
     if (reset.status !== 'ready' || !navigationResetObserved(owner, reset.binding))
       throw new BrowserLifecycleError('STALE_BINDING');
     guard();
+    phase = 'owned.action-authority';
     const authorize = config.policy.authorizeAction;
     guard();
     if (
@@ -178,12 +201,14 @@ export async function navigateOwned(
     )
       throw new BrowserLifecycleError('POLICY_REFUSED');
     guard();
+    phase = 'owned.authorize-second';
     if (
       (await authorizeOwnedNavigation(token, owner, owner.binding, command.url, abort.signal)) !==
       'allowed'
     )
       throw new BrowserLifecycleError('POLICY_REFUSED');
     guard();
+    phase = 'owned.listeners';
     const on = owner.page.on,
       off = owner.page.off,
       goto = owner.page.goto;
@@ -233,10 +258,12 @@ export async function navigateOwned(
       Reflect.apply(on, owner.page, ['request', observe]);
       guard();
       owner.phase = 'entered';
+      phase = 'owned.goto';
       const response = (await Reflect.apply(goto, owner.page, [
         owner.target,
         { timeout: 5000, waitUntil: 'domcontentloaded' },
       ])) as Awaited<ReturnType<typeof goto>>;
+      phase = 'owned.commit';
       guard();
       if (
         !response ||
@@ -251,11 +278,14 @@ export async function navigateOwned(
     } catch (error) {
       hasPrimary = true;
       primary = error;
+      retainOriginalNavigationRefusal(error, phase);
     }
     if (registered) {
+      phase = 'owned.listener-release';
       try {
         Reflect.apply(off, owner.page, ['request', observe]);
       } catch (error) {
+        retainOriginalNavigationRefusal(error, phase);
         owner.cleanupUncertain = true;
         record.lifetime.uncertain = true;
         record.lifetime.requestRetirement('engineFault');
@@ -266,6 +296,7 @@ export async function navigateOwned(
       }
     }
     if (hasPrimary) throw primary;
+    phase = 'owned.authorize-final';
     guard();
     if (
       (await authorizeOwnedNavigation(
@@ -284,6 +315,7 @@ export async function navigateOwned(
     )
       throw new BrowserLifecycleError('POLICY_REFUSED');
     guard();
+    phase = 'owned.result';
     if (
       !result ||
       !(committed() && owner.adopted && currentNavigation(owner)) ||
@@ -299,7 +331,8 @@ export async function navigateOwned(
       settled = true;
       if (failedWait) finishNavigation(owner, false);
     },
-    () => {
+    (reason) => {
+      retainOriginalNavigationRefusal(reason, phase);
       releaseAbort();
       settled = true;
       record.lifetime.requestRetirement('engineFault');
@@ -312,6 +345,7 @@ export async function navigateOwned(
       Math.max(0, end - performance.now()),
       'NAVIGATION_TIMEOUT'
     );
+    phase = 'owned.finish';
     cancel();
     guard();
     if (
@@ -323,6 +357,7 @@ export async function navigateOwned(
     finishNavigation(owner, true);
     return result;
   } catch (error) {
+    retainOriginalNavigationRefusal(error, phase);
     failedWait = true;
     if (!settled) record.lifetime.uncertain = true;
     record.lifetime.requestRetirement('engineFault');

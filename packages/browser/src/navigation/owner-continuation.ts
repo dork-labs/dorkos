@@ -52,7 +52,7 @@ export async function installOwnerNavigation(
   current: () => boolean,
   continuation: PrivateOwnerNavigationContinuation
 ): Promise<void> {
-  if (record.mode !== 'ephemeral' || config.network.kind !== 'owned')
+  if (config.network.kind !== 'owned')
     throw new BrowserLifecycleError('NETWORK_POLICY_UNSUPPORTED');
   const page = tab.page,
     frame = page.mainFrame(),
@@ -70,7 +70,6 @@ export async function installOwnerNavigation(
     const custody = currentAuthorityCustody(record, current);
     return (
       custody &&
-      record.mode === 'ephemeral' &&
       record.status === 'running' &&
       !record.lifetime.gate.stopped &&
       !record.lifetime.uncertain &&

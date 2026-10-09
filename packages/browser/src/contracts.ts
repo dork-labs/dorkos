@@ -11,6 +11,14 @@ const text = z
   .string()
   .max(MAX_TEXT_BYTES)
   .refine((value) => Buffer.byteLength(value) <= MAX_TEXT_BYTES);
+const compositionText = z
+  .string()
+  .max(2048)
+  .refine(
+    (value) =>
+      Buffer.byteLength(value) <= 2048 &&
+      !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(value)
+  );
 const BindingSchema = z
   .object({
     browserId: BrowserIdSchema,
@@ -53,6 +61,19 @@ const StepSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('text'), text }).strict(),
   z
     .object({
+      kind: z.literal('composition'),
+      text: compositionText,
+      selectionStart: z.number().int().nonnegative().max(2048),
+      selectionEnd: z.number().int().nonnegative().max(2048),
+    })
+    .strict()
+    .refine(
+      (value) =>
+        value.selectionStart <= value.selectionEnd && value.selectionEnd <= value.text.length
+    ),
+  z.object({ kind: z.literal('compositionCommit'), text: compositionText }).strict(),
+  z
+    .object({
       kind: z.literal('wheel'),
       deltaX: z.number().finite().min(-MAX_COORDINATE).max(MAX_COORDINATE),
       deltaY: z.number().finite().min(-MAX_COORDINATE).max(MAX_COORDINATE),
@@ -81,7 +102,11 @@ const CommandSchema = z.union([
     })
     .strict(),
   z
-    .object({ kind: z.literal('open'), requestId: RequestIdSchema, mode: z.literal('ephemeral') })
+    .object({
+      kind: z.literal('open'),
+      requestId: RequestIdSchema,
+      mode: z.literal('ephemeral'),
+    })
     .strict(),
   z
     .object({
@@ -100,7 +125,11 @@ const CommandSchema = z.union([
     })
     .strict(),
   z
-    .object({ kind: z.literal('capture'), requestId: RequestIdSchema, binding: BindingSchema })
+    .object({
+      kind: z.literal('capture'),
+      requestId: RequestIdSchema,
+      binding: BindingSchema,
+    })
     .strict(),
   z
     .object({
@@ -130,7 +159,11 @@ const openedFields = {
 const OpenedSchema = z
   .discriminatedUnion('mode', [
     z
-      .object({ ...openedFields, mode: z.literal('persistent'), profileId: ProfileIdSchema })
+      .object({
+        ...openedFields,
+        mode: z.literal('persistent'),
+        profileId: ProfileIdSchema,
+      })
       .strict(),
     z.object({ ...openedFields, mode: z.literal('ephemeral') }).strict(),
   ])
@@ -217,4 +250,40 @@ export function parseBrowserResult(value: unknown): BrowserResult {
 /** Parse only the existing seven-field binding; this trusted seam does not grant controller authority. */
 export function parseBrowserBinding(value: unknown): BrowserBinding {
   return parseValidated(BindingSchema, value, 'INVALID_COMMAND');
+}
+
+const UploadSchema = z
+  .object({
+    kind: z.literal('upload'),
+    requestId: RequestIdSchema,
+    binding: BindingSchema,
+    artifactId: z
+      .string()
+      .min(22)
+      .max(64)
+      .regex(/^[A-Za-z0-9_-]+$/),
+    activation: z.object({ x: coordinate, y: coordinate }).strict(),
+  })
+  .strict();
+export type BrowserUpload = z.infer<typeof UploadSchema>;
+/** Private upload parsing grants no permission and accepts no path/selector/protocol operation. */
+export function parseBrowserUpload(value: unknown): BrowserUpload {
+  return parseValidated(UploadSchema, value, 'INVALID_COMMAND');
+}
+
+const DownloadSchema = UploadSchema.omit({ artifactId: true })
+  .extend({ kind: z.literal('download') })
+  .strict();
+export type BrowserDownload = z.infer<typeof DownloadSchema>;
+/** Private response transfer parsing conveys neither permissions nor filesystem paths. */
+export function parseBrowserDownload(value: unknown): BrowserDownload {
+  return parseValidated(DownloadSchema, value, 'INVALID_COMMAND');
+}
+
+const CopySelectionSchema = z
+  .object({ requestId: RequestIdSchema, binding: BindingSchema })
+  .strict();
+/** Constructor-private read request; binding metadata supplies no authority. */
+export function parseCopySelectionRequest(value: unknown) {
+  return parseValidated(CopySelectionSchema, value, 'INVALID_COMMAND');
 }

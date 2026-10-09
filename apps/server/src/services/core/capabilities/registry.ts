@@ -240,7 +240,11 @@ export interface HandToolReach {
   request(
     name: string,
     args: Record<string, unknown>,
-    options: { identity: AgentIdentity; reason: string; approvalToken?: string }
+    options: {
+      identity: AgentIdentity;
+      reason: string;
+      approvalToken?: string;
+    }
   ): Promise<unknown>;
 }
 
@@ -641,9 +645,29 @@ export function composeRegistry(
   // contribution returns `catalogVersion` to exactly what it was before. Only
   // `generatedAt` is refreshed per read, which keeps the timestamp honest.
   let serializedCache: { capabilities: SerializedCapability[]; catalogVersion: string } | undefined;
+  let serializedIds: string | undefined;
 
-  const lookup = (id: string): CapabilityDefinition | undefined =>
-    byId.get(id) ?? extensionById.get(id);
+  const availability = new Map<string, () => boolean>();
+  for (const domain of domains) {
+    if (!domain.available) continue;
+    const original = domain.available.bind(domain);
+    const read = () => original(deps);
+    for (const definition of domain.capabilities) availability.set(definition.id, read);
+  }
+  const visible = () => {
+    const observations = new Map<() => boolean, boolean>();
+    return capabilities.filter((definition) => {
+      const read = availability.get(definition.id);
+      if (!read) return true;
+      if (!observations.has(read)) observations.set(read, read());
+      return observations.get(read) === true;
+    });
+  };
+  const lookup = (id: string): CapabilityDefinition | undefined => {
+    const definition = byId.get(id) ?? extensionById.get(id);
+    const read = availability.get(id);
+    return definition && (!read || read() === true) ? definition : undefined;
+  };
 
   /** Rebuild the live list, drop the catalog cache, and tell every listener. */
   const changed = (): void => {
@@ -667,7 +691,10 @@ export function composeRegistry(
     if (!checked.ok) return { ok: false, reason: checked.reason };
     const { owner, displayName } = checked.value;
     if (contributions.has(owner)) {
-      return { ok: false, reason: `${displayName} already has tools registered` };
+      return {
+        ok: false,
+        reason: `${displayName} already has tools registered`,
+      };
     }
     const definitions = Object.freeze(
       buildExtensionDefinitions(checked.value, EXTENSION_TOOLS_AREA)
@@ -680,12 +707,18 @@ export function composeRegistry(
     // name, which is free-form, can. Every table is still consulted, so that
     // loosening a rule later fails closed instead of shadowing a tool.
     for (const definition of definitions) {
-      if (lookup(definition.id)) {
-        return { ok: false, reason: `"${definition.id}" is already registered` };
+      if (byId.has(definition.id) || extensionById.has(definition.id)) {
+        return {
+          ok: false,
+          reason: `"${definition.id}" is already registered`,
+        };
       }
       const toolName = definition.surfaces.mcp!.toolName;
       if (mcpToolNames.has(toolName) || extensionToolNames.has(toolName)) {
-        return { ok: false, reason: `the tool name "${toolName}" is already taken` };
+        return {
+          ok: false,
+          reason: `the tool name "${toolName}" is already taken`,
+        };
       }
     }
     for (const definition of definitions) {
@@ -715,7 +748,7 @@ export function composeRegistry(
 
   const registry: CapabilityRegistry = {
     get capabilities() {
-      return capabilities;
+      return Object.freeze(visible());
     },
     get(id) {
       return lookup(id);
@@ -803,7 +836,10 @@ export function composeRegistry(
       };
       const invocationContext: CapabilityHandlerContext = supplied.trusted
         ? { trusted: supplied.trusted, ...surface }
-        : { ...(supplied.identity ? { identity: supplied.identity } : {}), ...surface };
+        : {
+            ...(supplied.identity ? { identity: supplied.identity } : {}),
+            ...surface,
+          };
 
       const preflight = capability.preflight
         ? await capability.preflight(deps, parsed, supplied)
@@ -912,12 +948,17 @@ export function composeRegistry(
       }
     },
     catalog() {
+      // Availability is a fresh service observation, not a cached startup flag.
+      const listed = visible();
+      const listedIds = listed.map((entry) => entry.id).join('\0');
+      if (listedIds !== serializedIds) serializedCache = undefined;
       if (!serializedCache) {
+        serializedIds = listedIds;
         // One entry that cannot be serialized is left out and logged rather
         // than throwing the whole catalog for everyone. `contribute` already
         // refuses an extension schema that cannot render; this is the second
         // wall, so no future entry can take discovery down either.
-        const serialized = capabilities.flatMap((capability) => {
+        const serialized = listed.flatMap((capability) => {
           try {
             return [serializeCapability(capability)];
           } catch (err) {

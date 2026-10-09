@@ -34,18 +34,18 @@ function disk(dir: string) {
 }
 describe('Shared browser configuration foundation', () => {
   it('defaults the enclosing section and the explicit empty section off', () => {
-    expect(USER_CONFIG_DEFAULTS.browser).toEqual({ enabled: false });
+    expect(USER_CONFIG_DEFAULTS.browser).toEqual({ enabled: false, chromeUserAgent: false });
     expect(UserConfigSchema.parse({ version: 1, browser: {} }).browser.enabled).toBe(false);
   });
   it('boots fresh and pre-section real disk configurations off without losing another section', () => {
     const fresh = mkdtempSync(join(tmpdir(), 'browser-setting-'));
     homes.push(fresh);
     new ConfigManager(fresh);
-    expect(disk(fresh).browser).toEqual({ enabled: false });
+    expect(disk(fresh).browser).toEqual({ enabled: false, chromeUserAgent: false });
     const stale = home();
     new ConfigManager(stale);
     // Top-level defaults write before migrations; this is an upgrade-boot assertion.
-    expect(disk(stale).browser).toEqual({ enabled: false });
+    expect(disk(stale).browser).toEqual({ enabled: false, chromeUserAgent: false });
     expect(disk(stale).relay.enabled).toBe(true);
   });
   it('really persists the nested leaf for an existing empty browser section', () => {
@@ -62,8 +62,10 @@ describe('Shared browser configuration foundation', () => {
     expect(disk(dir).browser.enabled).toBe(true);
     new ConfigManager(dir);
     expect(disk(dir).browser.enabled).toBe(true);
-    expect(() => manager.set('browser', { enabled: true })).toThrow(BROWSER_SETTING_UNAVAILABLE);
-    manager.set('browser', { enabled: false });
+    expect(() => manager.set('browser', { enabled: true, chromeUserAgent: false })).toThrow(
+      BROWSER_SETTING_UNAVAILABLE
+    );
+    manager.set('browser', { enabled: false, chromeUserAgent: false });
     expect(disk(dir).browser.enabled).toBe(false);
   });
   it('refuses an entire mixed patch before another section can be persisted', () => {
@@ -91,7 +93,9 @@ describe('Shared browser configuration foundation', () => {
     const dir = home();
     const manager = new ConfigManager(dir);
     const before = readFileSync(join(dir, 'config.json'), 'utf8');
-    expect(() => manager.set('browser', { enabled: true })).toThrow(BROWSER_SETTING_UNAVAILABLE);
+    expect(() => manager.set('browser', { enabled: true, chromeUserAgent: false })).toThrow(
+      BROWSER_SETTING_UNAVAILABLE
+    );
     expect(() => manager.setDot('browser.enabled', true)).toThrow(BROWSER_SETTING_UNAVAILABLE);
     expect(readFileSync(join(dir, 'config.json'), 'utf8')).toBe(before);
     manager.setDot('browser.enabled', false);

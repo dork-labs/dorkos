@@ -16,6 +16,7 @@
  * @module shared/model/server-config/use-account-usage
  */
 import { useMemo } from 'react';
+import type { EffectOwner } from '@/layers/shared/lib/extension-effect-owner';
 import { skipToken, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import type { AccountUsage } from '@dorkos/shared/account-usage';
 import { useTransport } from '../TransportContext';
@@ -85,7 +86,11 @@ export function mergeAccountUsage(
  * @param queryClient - The client whose cache to write.
  * @param records - Usage records already on the wire, such as the session list's `accountUsage`.
  */
-export function seedAccountUsage(queryClient: QueryClient, records: readonly AccountUsage[]): void {
+export function seedAccountUsage(
+  queryClient: QueryClient,
+  records: readonly AccountUsage[],
+  owner?: EffectOwner
+): void {
   const byRuntime = new Map<string, AccountUsage[]>();
   for (const usage of records) {
     const group = byRuntime.get(usage.runtime);
@@ -93,7 +98,7 @@ export function seedAccountUsage(queryClient: QueryClient, records: readonly Acc
     else byRuntime.set(usage.runtime, [usage]);
   }
   for (const [runtime, group] of byRuntime) {
-    upsertAccountUsage(queryClient, runtime, group);
+    upsertAccountUsage(queryClient, runtime, group, owner);
   }
 }
 
@@ -105,13 +110,20 @@ export function seedAccountUsage(queryClient: QueryClient, records: readonly Acc
 export function upsertAccountUsage(
   queryClient: QueryClient,
   runtime: string,
-  records: readonly AccountUsage[]
+  records: readonly AccountUsage[],
+  owner?: EffectOwner
 ): void {
   const key = accountKeys.usage(runtime);
   const fetchedAt = queryClient.getQueryState(key)?.dataUpdatedAt ?? 0;
-  queryClient.setQueryData<AccountUsage[]>(key, (prev) => mergeAccountUsage(prev ?? [], records), {
-    updatedAt: fetchedAt,
-  });
+  const method = queryClient.setQueryData;
+  const update = (prev: AccountUsage[] | undefined) => {
+    const value = mergeAccountUsage(prev ?? [], records);
+    owner?.beforeEffect();
+    return value;
+  };
+  const options = { updatedAt: fetchedAt };
+  owner?.beforeEffect();
+  Reflect.apply(method, queryClient, [key, update, options]);
 }
 
 /** Options for {@link useAccountUsage}. */

@@ -234,6 +234,9 @@ describe('ExtensionManager — server lifecycle', () => {
         extensionName: expect.any(String),
         // The manifest declares no tools, so `ctx.tools` binds nothing (DOR-2685).
         toolChecks: [],
+        registrationRecovery: 'restart-app',
+        requireCurrent: expect.any(Function),
+        ownOriginal: expect.any(Function),
       });
     });
 
@@ -291,7 +294,7 @@ describe('ExtensionManager — server lifecycle', () => {
       expect(result.error).toBe('Syntax error in server.ts');
     });
 
-    it('returns ok:false when register function throws', async () => {
+    it('preserves the original registrar failure and refuses an unverified retry', async () => {
       const record = makeRecord('throw-srv', {
         status: 'compiled',
         hasServerEntry: true,
@@ -304,14 +307,29 @@ describe('ExtensionManager — server lifecycle', () => {
         sourceHash: 'throwhash',
       });
 
+      // The real context disposer also releases its tracked account listeners.
+      mockDispose.mockImplementationOnce(() => mockReleaseListeners());
+      // Startup enters the original registrar; no cleanup receipt returns from it.
       await manager.initialize(null);
-      mockReleaseListeners.mockClear();
+      expect(logger.error).toHaveBeenCalledWith(
+        '[Extensions] Server init failed for throw-srv:',
+        expect.objectContaining({ message: 'register failed' })
+      );
+      expect(logger.warn).toHaveBeenCalledWith(
+        '[Extensions] Server init skipped for throw-srv: register failed'
+      );
+      const compiled = mockCompileServer.mock.calls.length;
 
       const result = await manager.initializeServer('throw-srv');
 
-      expect(result.ok).toBe(false);
-      expect(result.error).toBe('register failed');
-      // An account listener or advisor it added before throwing does not outlive it.
+      expect(result).toEqual({
+        ok: false,
+        error: 'Extension server cleanup is unverified. Restart DorkOS before trying again.',
+      });
+      expect(mockCompileServer).toHaveBeenCalledTimes(compiled);
+      expect(manager.getServerRouter('throw-srv')).toBeNull();
+      // Known context cleanup runs once; it cannot prove arbitrary registrar effects ended.
+      expect(mockDispose).toHaveBeenCalledTimes(1);
       expect(mockReleaseListeners).toHaveBeenCalledTimes(1);
     });
 
@@ -797,6 +815,45 @@ describe('ExtensionManager — server lifecycle', () => {
     });
   });
 
+  describe('unverified original registration retirement', () => {
+    it.each([false, undefined])(
+      'retains exact cleanup cause %s and refuses replacement code',
+      async (cause) => {
+        const record = makeRecord('shutdown-ext', {
+          status: 'enabled',
+          hasServerEntry: true,
+          serverEntryPath: '/fake/extensions/shutdown-ext/server.ts',
+        });
+        mockConfigGet.mockReturnValue({
+          enabled: ['shutdown-ext'],
+          disabled: [],
+          ...approved(['shutdown-ext']),
+        });
+        mockDiscover.mockResolvedValue([record]);
+        mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
+        mockCompileServer.mockResolvedValue({
+          code: `module.exports = function register() { return function cleanup() { throw ${cause === false ? 'false' : 'undefined'}; }; };`,
+          sourceHash: 'original-server',
+        });
+        await manager.initialize('/my/project');
+        expect(manager.getServerRouter('shutdown-ext')).not.toBeNull();
+        const before = mockCompileServer.mock.calls.length;
+        await expect(manager.shutdownServer('shutdown-ext')).rejects.toBe(cause);
+        expect(mockScheduledCleanup).toHaveBeenCalledTimes(1);
+        expect(mockReleaseListeners).toHaveBeenCalledTimes(1);
+        expect(mockDispose).toHaveBeenCalledTimes(1);
+        expect(manager.getServerRouter('shutdown-ext')).toBeNull();
+        await expect(manager.shutdownServer('shutdown-ext')).rejects.toBe(cause);
+        expect(mockReleaseListeners).toHaveBeenCalledTimes(1);
+        await expect(manager.initializeServer('shutdown-ext')).resolves.toMatchObject({
+          ok: false,
+          error: expect.stringContaining('cleanup is unverified'),
+        });
+        expect(mockCompileServer).toHaveBeenCalledTimes(before);
+      }
+    );
+  });
+
   describe('a register() that never finishes (security review, DOR-2527)', () => {
     it('stops waiting, marks it as unable to start, and lets every later scan run', async () => {
       const hung = makeRecord('hangs', {
@@ -830,7 +887,7 @@ describe('ExtensionManager — server lifecycle', () => {
       expect(timed.getServerRouter('hangs')).toBeNull();
       expect(timed.get('hangs')?.serverError).toMatchObject({ code: 'server_start_timeout' });
       expect(timed.get('hangs')?.serverError?.message).toBe(
-        'hangs took too long to start. Reload it to try again.'
+        'hangs took too long to start. Restart the DorkOS app before trying again.'
       );
       // Its context is disposed: what it scheduled is cancelled, what it
       // registered released, and anything it tries later does nothing.
@@ -839,11 +896,13 @@ describe('ExtensionManager — server lifecycle', () => {
       expect(timed.getServerRouter('fine')).not.toBeNull();
       await expect(timed.reload()).resolves.toEqual(expect.any(Array));
 
-      // Retrying does not stack instances: each attempt is disposed in turn,
-      // and none of them is ever mounted.
-      await timed.reloadExtension('hangs');
-      await timed.reloadExtension('hangs');
-      expect(mockDispose).toHaveBeenCalledTimes(3);
+      // An original registrar is still pending: reload must not run another copy.
+      await expect(timed.reloadExtension('hangs')).rejects.toThrow('cleanup is unverified');
+      await expect(timed.reloadExtension('hangs')).rejects.toThrow('cleanup is unverified');
+      expect(mockDispose).toHaveBeenCalledTimes(1);
+      expect(mockCompileServer.mock.calls.filter(([record]) => record.id === 'hangs')).toHaveLength(
+        1
+      );
       expect(timed.getServerRouter('hangs')).toBeNull();
     });
   });

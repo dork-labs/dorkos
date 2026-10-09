@@ -14,4 +14,5 @@ export const appRoutes = {
   marketplace: () => linkOptions({ to: '/marketplace' }),
   marketplaceSources: () => linkOptions({ to: '/marketplace/sources' }),
   feedbackRequests: () => linkOptions({ to: '/feedback-requests' }),
+  browser: () => linkOptions({ to: '/browser' }),
 };

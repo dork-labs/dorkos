@@ -1,0 +1,728 @@
+import { readOriginalBrowserRuntimeClass } from '../admission/runtime-class.js';
+import { createPrivateBrowserQualification } from '../admission/accepted-mode.js';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { EventEmitter } from 'node:events';
+import type { Request, Response as ExpressResponse } from 'express';
+import { createProductionBrowserRuntimeRoutes } from '../runtime-routes.js';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createDb, runMigrations, session, authors, browserProfiles } from '@dorkos/db';
+import { eq } from 'drizzle-orm';
+import { AuthorRegistry } from '../../../rooms/author-registry.js';
+import { findOwnerAccount } from '../../../core/auth/accounts.js';
+import { BrowserProductionOpenRequestSchema } from '@dorkos/shared/browser-schemas';
+import { expect, it, onTestFinished, vi } from 'vitest';
+import { createAuth } from '../../../core/auth/index.js';
+import { ConfigManager } from '../../../core/config-manager.js';
+import { createActivationAuthentication } from '../activation/activation-auth.js';
+import { mintProductionBrowserEnablePermit } from '../activation/activation-permit.js';
+import { BrowserRegistryStore } from '../../registry/store.js';
+import { createProductionBrowserStartupMode, isOriginalStartupRefusal } from '../startup-mode.js';
+
+it.each(['off', 'aborted', 'unsigned', 'capacity'] as const)(
+  'refuses %s import before allocating a new profile or native instance',
+  async (scenario) => {
+    const f = await fixture();
+    if (scenario !== 'off')
+      f.config.enableOwnedBrowser(mintProductionBrowserEnablePermit(f.config, () => true));
+    const mode = createProductionBrowserStartupMode({
+      db: f.db,
+      auth: f.auth,
+      config: f.config,
+      inventory: {} as Parameters<typeof createProductionBrowserStartupMode>[0]['inventory'],
+    });
+    f.beforeDispose(async () => {
+      try {
+        await mode.close();
+      } catch (value) {
+        if (!isOriginalStartupRefusal(value)) throw value;
+      }
+    });
+    const signal = new AbortController();
+    if (scenario === 'aborted') signal.abort();
+    let before = 0;
+    if (scenario === 'capacity') {
+      const actor = await mode.captureOwner({ cookie: f.cookie }, new AbortController().signal);
+      for (let i = 0; i < 64; i++) mode.store.createProfile(actor.ownerId, 'Existing ' + i);
+      before = 64;
+    }
+    const request = {
+      requestId: 'request_import_reference_0001',
+      label: 'Imported',
+      workspaceId: 'workspace_owned_reference_0001',
+      storageState: { cookies: [], origins: [] },
+    };
+    await expect(
+      mode.importProfile(
+        { cookie: scenario === 'unsigned' ? undefined : f.cookie },
+        request,
+        signal.signal
+      )
+    ).rejects.toSatisfy(isOriginalStartupRefusal);
+    expect(f.db.select().from(browserProfiles).all()).toHaveLength(before);
+    expect(mode.store.rows()).toEqual([]);
+  }
+);
+const readinessOriginals = vi.hoisted(() => ({
+  resolve: vi.fn(),
+  native: vi.fn(),
+  journal: vi.fn(),
+  runtime: vi.fn(),
+}));
+vi.mock('../admission/runtime-class.js', async (load) => {
+  const original = await load<typeof import('../admission/runtime-class.js')>();
+  readinessOriginals.runtime.mockImplementation(original.readOriginalBrowserRuntimeClass);
+  return { ...original, readOriginalBrowserRuntimeClass: readinessOriginals.runtime };
+});
+vi.mock('../installed-package.js', () => ({
+  resolveServerBrowserRuntimePackage: readinessOriginals.resolve,
+}));
+vi.mock('@dorkos/browser/runtime-installation', async (load) => ({
+  ...(await load<typeof import('@dorkos/browser/runtime-installation')>()),
+  verifyInstalledNativeJournal: readinessOriginals.native,
+  resolveInstalledNativeJournal: readinessOriginals.journal,
+}));
+
+function fixture() {
+  type Result = {
+    config: ConfigManager;
+    db: ReturnType<typeof createDb>;
+    auth: ReturnType<typeof createAuth>;
+    cookie: string;
+    beforeDispose(duty: () => Promise<unknown> | void): void;
+  };
+  const originals: {
+    home?: string;
+    acquisition?: Promise<string>;
+    db?: ReturnType<typeof createDb>;
+    setup?: Promise<Result>;
+    signup?: Promise<Response>;
+  } = {};
+  const participants: Array<() => Promise<unknown> | void> = [];
+  let closed = false;
+  const admissionClosed = new Error('FIXTURE_ADMISSION_CLOSED');
+  const guard = () => {
+    if (closed) throw admissionClosed;
+  };
+  onTestFinished(async () => {
+    closed = true;
+    let failure: Readonly<{ value: unknown }> | undefined;
+    const setup = originals.setup,
+      signup = originals.signup,
+      acquisition = originals.acquisition;
+    const joined = await Promise.allSettled([
+      ...(setup ? [setup] : []),
+      ...(signup ? [signup] : []),
+      ...(acquisition ? [acquisition] : []),
+    ]);
+    for (const result of joined)
+      if (result.status === 'rejected' && result.reason !== admissionClosed)
+        failure ??= { value: result.reason };
+    // Participant mode/auth/schema originals return before SQLite/home disposal, regardless of
+    // Vitest finalizer ordering. Admission is already closed, so no late participant can enter.
+    for (const duty of participants) {
+      try {
+        await duty();
+      } catch (value) {
+        failure ??= { value };
+      }
+    }
+    try {
+      originals.db?.$client.close();
+    } catch (value) {
+      failure ??= { value };
+    }
+    try {
+      if (originals.acquisition) originals.home ??= await originals.acquisition;
+      if (originals.home) await rm(originals.home, { recursive: true, force: true });
+    } catch (value) {
+      failure ??= { value };
+    }
+    if (failure) throw failure.value;
+  });
+  // The whole setup is admitted before any filesystem/auth producer can enter.
+  originals.setup = Promise.resolve().then(async () => {
+    guard();
+    originals.acquisition = mkdtemp(join(tmpdir(), 'browser-activation-auth-'));
+    originals.home = await originals.acquisition;
+    guard();
+    const config = new ConfigManager(originals.home);
+    config.set('auth', { enabled: true });
+    guard();
+    originals.db = createDb(join(originals.home, 'fixture.db'));
+    const db = originals.db;
+    runMigrations(db);
+    guard();
+    const auth = createAuth(db, originals.home);
+    guard();
+    originals.signup = auth.api.signUpEmail({
+      body: {
+        name: 'Fixture owner',
+        email: 'fixture@dork.test',
+        password: 'fixture-password-not-personal',
+      },
+      asResponse: true,
+    });
+    const response = await originals.signup;
+    guard();
+    expect(response.status).toBe(200);
+    const cookie = response.headers
+      .getSetCookie()
+      .map((value) => value.split(';')[0])
+      .join('; ');
+    guard();
+    return {
+      config,
+      db,
+      auth,
+      cookie,
+      beforeDispose(duty: () => Promise<unknown> | void) {
+        guard();
+        participants.push(duty);
+      },
+    };
+  });
+  return originals.setup;
+}
+
+it('original configuration getter revocation precedes final actual SQLite credential observation', async () => {
+  const f = await fixture(),
+    originalGet = f.config.get.bind(f.config);
+  let revoke = false;
+  const spy = vi.spyOn(f.config, 'get').mockImplementation(((
+    key: Parameters<ConfigManager['get']>[0]
+  ) => {
+    const value = originalGet(key);
+    if (key === 'auth' && revoke) f.db.delete(session).run();
+    return value;
+  }) as ConfigManager['get']);
+  f.beforeDispose(() => spy.mockRestore());
+  const authenticate = createActivationAuthentication(
+    f.db,
+    f.config,
+    () => f.auth,
+    () => true
+  );
+  const current = await authenticate(f.cookie, new AbortController().signal);
+  expect(current()).toBe(true);
+  revoke = true;
+  expect(current()).toBe(false);
+  expect(f.db.select().from(session).all()).toHaveLength(0);
+});
+
+it.each(['close', 'abort'] as const)(
+  'does not enter unstarted original auth producer after immediate %s',
+  async (choice) => {
+    const f = await fixture(),
+      originalGetSession = f.auth.api.getSession.bind(f.auth.api);
+    const getSession = vi.spyOn(f.auth.api, 'getSession').mockImplementation(originalGetSession);
+    f.beforeDispose(() => getSession.mockRestore());
+    const mode = createProductionBrowserStartupMode({
+      db: f.db,
+      auth: f.auth,
+      config: f.config,
+      inventory: {} as Parameters<typeof createProductionBrowserStartupMode>[0]['inventory'],
+    });
+    const originals: { capture?: Promise<unknown>; close?: Promise<void> } = {};
+    f.beforeDispose(async () => {
+      originals.close ??= mode.close();
+      const results = await Promise.allSettled(Object.values(originals));
+      for (const result of results)
+        if (result.status === 'rejected' && !isOriginalStartupRefusal(result.reason))
+          throw result.reason;
+    });
+    const controller = new AbortController();
+    originals.capture = mode.captureOwner({ cookie: f.cookie }, controller.signal);
+    void originals.capture.catch(() => {});
+    if (choice === 'close') originals.close = mode.close();
+    else controller.abort();
+    const result = await Promise.allSettled([originals.capture]);
+    expect(result[0]!.status).toBe('rejected');
+    expect(getSession).not.toHaveBeenCalled();
+    originals.close ??= mode.close();
+    await originals.close;
+  }
+);
+
+it('original auth configuration getter can close inside the producer fence without sending auth', async () => {
+  const f = await fixture(),
+    originalGet = f.config.get.bind(f.config),
+    originalGetSession = f.auth.api.getSession.bind(f.auth.api);
+  const originals: { capture?: Promise<unknown>; close?: Promise<void> } = {};
+  const owners: { mode?: ReturnType<typeof createProductionBrowserStartupMode> } = {};
+  let armed = false,
+    authReads = 0;
+  const getSession = vi.spyOn(f.auth.api, 'getSession').mockImplementation(originalGetSession);
+  const getter = vi.spyOn(f.config, 'get').mockImplementation(((
+    key: Parameters<ConfigManager['get']>[0]
+  ) => {
+    const value = originalGet(key);
+    if (armed && key === 'auth' && ++authReads === 2) {
+      originals.close = owners.mode!.close();
+      void originals.close.catch(() => {});
+    }
+    return value;
+  }) as ConfigManager['get']);
+  f.beforeDispose(async () => {
+    let failure: Readonly<{ value: unknown }> | undefined;
+    if (owners.mode) originals.close ??= owners.mode.close();
+    const results = await Promise.allSettled(Object.values(originals));
+    for (const result of results)
+      if (result.status === 'rejected' && !isOriginalStartupRefusal(result.reason))
+        failure ??= { value: result.reason };
+    for (const restore of [() => getter.mockRestore(), () => getSession.mockRestore()]) {
+      try {
+        restore();
+      } catch (value) {
+        failure ??= { value };
+      }
+    }
+    if (failure) throw failure.value;
+  });
+  owners.mode = createProductionBrowserStartupMode({
+    db: f.db,
+    auth: f.auth,
+    config: f.config,
+    inventory: {} as Parameters<typeof createProductionBrowserStartupMode>[0]['inventory'],
+  });
+  armed = true;
+  originals.capture = owners.mode.captureOwner({ cookie: f.cookie }, new AbortController().signal);
+  void originals.capture.catch(() => {});
+  const result = await Promise.allSettled([originals.capture]);
+  expect(authReads).toBe(2);
+  expect(result[0]!.status).toBe('rejected');
+  expect(getSession).not.toHaveBeenCalled();
+  expect(originals.close).toBeDefined();
+  await originals.close;
+});
+
+it('creates exact authenticated owner metadata without a browser birth and refuses a revoked session', async () => {
+  const f = await fixture();
+  const owners: { mode?: ReturnType<typeof createProductionBrowserStartupMode> } = {};
+  const originals: {
+    created?: Promise<unknown>;
+    actor?: Promise<unknown>;
+    revoked?: Promise<unknown>;
+    close?: Promise<void>;
+  } = {};
+  f.beforeDispose(async () => {
+    if (owners.mode) originals.close ??= owners.mode.close();
+    const results = await Promise.allSettled(Object.values(originals));
+    for (const result of results)
+      if (result.status === 'rejected' && !isOriginalStartupRefusal(result.reason))
+        throw result.reason;
+  });
+  const localAuthor = new AuthorRegistry(f.db).localHuman(),
+    account = findOwnerAccount(f.db);
+  if (!account) throw new Error('FIXTURE_ORIGINAL_OWNER_MISSING');
+  f.config.enableOwnedBrowser(mintProductionBrowserEnablePermit(f.config, () => true));
+  owners.mode = createProductionBrowserStartupMode({
+    db: f.db,
+    auth: f.auth,
+    config: f.config,
+    inventory: {} as Parameters<typeof createProductionBrowserStartupMode>[0]['inventory'],
+  });
+  const request = { requestId: 'request_profile_create_0000001', label: 'Work account' };
+  originals.created = owners.mode.createProfile(
+    { cookie: f.cookie },
+    request,
+    new AbortController().signal
+  );
+  const receipt = (await originals.created) as Awaited<
+    ReturnType<typeof owners.mode.createProfile>
+  >;
+  originals.actor = owners.mode.captureOwner({ cookie: f.cookie }, new AbortController().signal);
+  const actor = (await originals.actor) as Awaited<
+    ReturnType<NonNullable<typeof owners.mode>['captureOwner']>
+  >;
+  expect(receipt.requestId).toBe(request.requestId);
+  expect(actor.ownerId).toBe(localAuthor.id);
+  expect(actor.ownerId).not.toBe(account.id);
+  expect(new AuthorRegistry(f.db).isOwner(actor.ownerId, account.id)).toBe(true);
+  expect(f.db.select().from(browserProfiles).get()?.ownerAuthorId).toBe(actor.ownerId);
+  expect(owners.mode.store.profiles(account.id)).toEqual([]);
+  const persistent = {
+    workspaceId: 'workspace_reference_000000001',
+    request: {
+      requestId: 'request_profile_open_00000001',
+      mode: 'persistent' as const,
+      profileId: receipt.profile.profileId,
+    },
+  };
+  expect(BrowserProductionOpenRequestSchema.parse(persistent)).toEqual(persistent);
+  expect(() =>
+    BrowserProductionOpenRequestSchema.parse({
+      ...persistent,
+      request: { ...persistent.request, path: '/caller-owned-path' },
+    })
+  ).toThrow();
+  expect(owners.mode.store.profiles(actor.ownerId)).toEqual([receipt.profile]);
+  expect(owners.mode.store.rows()).toEqual([]);
+  const originalAuthor = f.db.select().from(authors).where(eq(authors.id, actor.ownerId)).get();
+  if (!originalAuthor) throw new Error('FIXTURE_ORIGINAL_AUTHOR_MISSING');
+  f.db
+    .update(authors)
+    .set({ naturalKey: 'foreign-owner-mapping' })
+    .where(eq(authors.id, actor.ownerId))
+    .run();
+  expect(actor()).toBe(false);
+  f.db.delete(session).run();
+  originals.revoked = owners.mode.createProfile(
+    { cookie: f.cookie },
+    { ...request, requestId: 'request_profile_revoke_0000001' },
+    new AbortController().signal
+  );
+  const result = await Promise.allSettled([originals.revoked]);
+  expect(result[0]!.status).toBe('rejected');
+  expect(owners.mode.store.profiles(actor.ownerId)).toHaveLength(1);
+  originals.close = owners.mode.close();
+  await originals.close;
+});
+
+it.each([undefined, false])(
+  'joins original metadata insertion failure %s and preserves it through mode close',
+  async (reason) => {
+    const f = await fixture();
+    const originalCreate = BrowserRegistryStore.prototype.createProfile;
+    const originals: { create?: Promise<unknown>; close?: Promise<void> } = {};
+    const owners: {
+      mode?: ReturnType<typeof createProductionBrowserStartupMode>;
+      restore?: () => void;
+    } = {};
+    f.beforeDispose(async () => {
+      let failure: Readonly<{ value: unknown }> | undefined;
+      try {
+        if (owners.mode) originals.close ??= owners.mode.close();
+        const results = await Promise.allSettled(Object.values(originals));
+        for (const result of results)
+          if (result.status === 'rejected' && !Object.is(result.reason, reason))
+            failure ??= { value: result.reason };
+      } catch (value) {
+        if (!Object.is(value, reason)) failure ??= { value };
+      }
+      try {
+        owners.restore?.();
+      } catch (value) {
+        failure ??= { value };
+      }
+      if (failure) throw failure.value;
+    });
+    f.config.enableOwnedBrowser(mintProductionBrowserEnablePermit(f.config, () => true));
+    const insertion = vi
+      .spyOn(BrowserRegistryStore.prototype, 'createProfile')
+      .mockImplementation(function (this: BrowserRegistryStore, owner, label) {
+        Reflect.apply(originalCreate, this, [owner, label]);
+        throw reason;
+      });
+    owners.restore = () => insertion.mockRestore();
+    owners.mode = createProductionBrowserStartupMode({
+      db: f.db,
+      auth: f.auth,
+      config: f.config,
+      inventory: {} as Parameters<typeof createProductionBrowserStartupMode>[0]['inventory'],
+    });
+    originals.create = owners.mode.createProfile(
+      { cookie: f.cookie },
+      { requestId: 'request_profile_create_0000001', label: 'Work account' },
+      new AbortController().signal
+    );
+    void originals.create.catch(() => {});
+    await expect(originals.create).rejects.toBe(reason);
+    expect(insertion).toHaveBeenCalledOnce();
+    originals.close = owners.mode.close();
+    await expect(originals.close).rejects.toBe(reason);
+    expect(owners.mode.store.rows()).toEqual([]);
+  }
+);
+
+// Consume the actual mode's WeakSet-minted refusals and actual mounted route handlers.
+// SQLite/auth/profile effects remain real; no browser/native acquisition is needed.
+it.each(['unknown-binding', 'stale-generation', 'profile-capacity'] as const)(
+  'a genuine %s refusal leaves the next valid profile request available',
+  async (scenario) => {
+    const f = await fixture();
+    f.config.enableOwnedBrowser(mintProductionBrowserEnablePermit(f.config, () => true));
+    const mode = createProductionBrowserStartupMode({
+      db: f.db,
+      auth: f.auth,
+      config: f.config,
+      inventory: {} as Parameters<typeof createProductionBrowserStartupMode>[0]['inventory'],
+    });
+    const routes = createProductionBrowserRuntimeRoutes(mode);
+    f.beforeDispose(() => routes.close());
+    const actor = await mode.captureOwner({ cookie: f.cookie }, new AbortController().signal);
+    let removable: string | undefined;
+    if (scenario === 'profile-capacity') {
+      for (let i = 0; i < 64; i++)
+        removable = mode.store.createProfile(actor.ownerId, `Profile ${i}`).profileId;
+    }
+    const submit = (path: string, body: unknown) => {
+      const layer = routes.router.stack.find((entry) => entry.route?.path === path)!;
+      const handler = layer.route!.stack[0]!.handle;
+      const req = Object.assign(new EventEmitter(), {
+        headers: { cookie: f.cookie, host: 'localhost:4242', origin: 'http://localhost:4242' },
+        socket: { encrypted: false },
+        method: 'POST',
+        body,
+        aborted: false,
+      });
+      let returned!: (value: { status: number; body: Record<string, unknown> }) => void;
+      const published = new Promise<{ status: number; body: Record<string, unknown> }>(
+        (resolve) => {
+          returned = resolve;
+        }
+      );
+      const res = Object.assign(new EventEmitter(), {
+        destroyed: false,
+        writableEnded: false,
+        writableFinished: false,
+        finished: false,
+        writable: true,
+        statusCode: 200,
+        status(code: number) {
+          this.statusCode = code;
+          return this;
+        },
+        type() {
+          return this;
+        },
+        destroy() {
+          this.destroyed = true;
+          return this;
+        },
+        end(bytes: Buffer, done: (reason?: unknown) => void) {
+          const body = JSON.parse(bytes.toString()) as Record<string, unknown>;
+          done();
+          returned({ status: this.statusCode, body });
+          return this;
+        },
+      });
+      handler(req as unknown as Request, res as unknown as ExpressResponse, () => {});
+      return published;
+    };
+    const profileRequest = {
+      requestId: 'request_profile_refusal_00001',
+      label: 'Valid after refusal',
+    };
+    const refusal =
+      scenario === 'profile-capacity'
+        ? await submit('/runtime/profiles', profileRequest)
+        : await submit('/runtime/navigate', {
+            controllerId: 'controller_reference_0000001',
+            command: {
+              requestId: 'request_navigate_refusal_0001',
+              kind: 'navigate',
+              url: 'https://example.com',
+              binding: {
+                browserId: 'browser_reference_missing001',
+                browserGeneration: scenario === 'stale-generation' ? 1 : 0,
+                tabId: 'tab_reference_missing_000001',
+                navigationGeneration: 0,
+                viewportVersion: 0,
+                epoch: 0,
+                inputGeneration: 0,
+              },
+            },
+          });
+    expect(refusal.status).toBe(503);
+    expect(refusal.body).toHaveProperty('error');
+    if (removable)
+      f.db.delete(browserProfiles).where(eq(browserProfiles.profileId, removable)).run();
+    const successful = await submit('/runtime/profiles', profileRequest);
+    expect(successful.status).toBe(200);
+    expect(successful.body.requestId).toBe(profileRequest.requestId);
+    expect(successful.body.profile).toMatchObject({ label: profileRequest.label });
+    expect(await mode.captureOwner({ cookie: f.cookie }, new AbortController().signal)).toEqual(
+      expect.any(Function)
+    );
+  }
+);
+
+// Production consumer composition with real original auth/config/SQLite. Controlled installation
+// ports and the matching runtime-class reader are sequencing fixtures, not native qualification
+// or accepted catalogue entries. Never change the actual host's process.platform/process.arch.
+async function readinessFixture(
+  qualify?: () => Promise<ReturnType<typeof createPrivateBrowserQualification>>,
+  cohort: Readonly<{ platform: 'darwin' | 'linux'; arch: 'arm64' | 'x64' }> = {
+    platform: 'darwin',
+    arch: 'arm64',
+  }
+) {
+  const originalRuntimeReader = readinessOriginals.runtime.getMockImplementation();
+  if (!originalRuntimeReader) throw new Error('FIXTURE_RUNTIME_READER_UNAVAILABLE');
+  const runtime = Object.freeze({ ...readOriginalBrowserRuntimeClass(), ...cohort });
+  const f = await fixture();
+  f.beforeDispose(() => {
+    readinessOriginals.runtime.mockImplementation(originalRuntimeReader);
+  });
+  readinessOriginals.runtime.mockReturnValue(runtime);
+  vi.stubGlobal('__BROWSER_PRODUCTION_SUBJECT__', 'b'.repeat(64));
+  f.beforeDispose(() => {
+    vi.unstubAllGlobals();
+  });
+  const hash = 'a'.repeat(64);
+  const verified = {
+    state: 'verified-reused',
+    cause: null,
+    installationId: 'original-installation',
+    attemptId: 'original-attempt',
+    generation: 1,
+    observedVersion: '153.0.8010.12',
+    executableSHA256: hash,
+    platform: runtime.platform,
+    arch: runtime.arch,
+    currentManifestDigest: hash,
+    journalDigest: hash,
+    readiness: { state: 'unavailable', cause: 'VERIFICATION_UNAVAILABLE' },
+  };
+  const actual = {
+    schemaVersion: 1,
+    pinnedPackageVersion: '1.63.0',
+    chromiumRevision: '1243',
+    platform: runtime.platform,
+    arch: runtime.arch,
+    observation: 'files-only',
+    readiness: verified.readiness,
+    state: 'installed-files',
+    cause: null,
+    installationId: verified.installationId,
+    executableSHA256: hash,
+    currentManifestDigest: hash,
+    lastFreshVerifiedVersion: verified.observedVersion,
+    historicalAttemptId: 'original-history',
+    historicalGeneration: 1,
+    verificationDigest: hash,
+  };
+  const journal = Object.freeze({
+    artifact: { path: '/original/helper', sha256: hash },
+    launcher: { executable: '/original/node', nodeRuntime: 'node' },
+    workerPath: '/original/worker',
+    browserWorkerPath: '/original/browser-worker',
+    duration: 30000,
+    continuous: true,
+    maxGap: 5000,
+  });
+  const verify = vi.fn(async () => verified),
+    inspect = vi.fn(async () => actual);
+  readinessOriginals.resolve.mockResolvedValue({
+    configuration: {
+      cacheRoot: '/original/cache',
+      libraryRoot: '/original/library',
+      nodeExecutable: '/original/node',
+      nodeExecutableSHA256: hash,
+      nodeRuntime: 'node',
+      verifierEntry: '/original/verifier',
+      controllerEntry: '/original/controller',
+      sourceManifestPath: '/original/manifest',
+      sourceVintage: { sourceManifestSHA256: hash, controllerSHA256: hash, verifierSHA256: hash },
+      platform: runtime.platform,
+      arch: runtime.arch,
+      workMilliseconds: 100,
+      finalMilliseconds: 200,
+    },
+    installation: { verifyExisting: verify, inspectExisting: inspect },
+  });
+  readinessOriginals.native.mockResolvedValue({ journal });
+  readinessOriginals.journal.mockResolvedValue(journal);
+  const mode = createProductionBrowserStartupMode({
+    db: f.db,
+    auth: f.auth,
+    config: f.config,
+    inventory: {} as Parameters<typeof createProductionBrowserStartupMode>[0]['inventory'],
+    ...(qualify ? { qualification: qualify } : {}),
+  });
+  const accepted: unknown[] = [];
+  f.beforeDispose(async () => {
+    try {
+      await mode.close();
+    } catch (value) {
+      if (!isOriginalStartupRefusal(value) && !accepted.some((reason) => Object.is(reason, value)))
+        throw value;
+    }
+  });
+  return { ...f, mode, verify, inspect, hash, accepted };
+}
+it('fresh installed originals cannot enable production without a reviewed exact-mode record', async () => {
+  const f = await readinessFixture();
+  const enabled = vi.spyOn(f.config, 'enableOwnedBrowser');
+  f.beforeDispose(() => enabled.mockRestore());
+  await expect(
+    f.mode.setEnabled(true, { cookie: f.cookie }, new AbortController().signal)
+  ).rejects.toSatisfy(isOriginalStartupRefusal);
+  expect(f.verify).toHaveBeenCalledOnce();
+  expect(f.inspect).toHaveBeenCalled();
+  expect(enabled).not.toHaveBeenCalled();
+  expect(f.config.get('browser').enabled).toBe(false);
+});
+it('a controlled unsupported platform is refused before the private qualification producer', async () => {
+  const qualify = vi.fn(async () =>
+    createPrivateBrowserQualification({ current: () => true, check: () => true })
+  );
+  const f = await readinessFixture(qualify, { platform: 'linux', arch: 'x64' });
+  await expect(
+    f.mode.setEnabled(true, { cookie: f.cookie }, new AbortController().signal)
+  ).rejects.toSatisfy(isOriginalStartupRefusal);
+  expect(f.verify).toHaveBeenCalledOnce();
+  expect(qualify).not.toHaveBeenCalled();
+  expect(f.config.get('browser').enabled).toBe(false);
+});
+
+it('the original explicit fixture capability runs qualification without reporting accepted readiness', async () => {
+  const qualify = vi.fn(async () =>
+    createPrivateBrowserQualification({
+      current: () => true,
+      check: (subject) => subject.executableSHA256 === 'a'.repeat(64) && subject.mode === 'native',
+    })
+  );
+  const f = await readinessFixture(qualify);
+  const result = await f.mode.setEnabled(true, { cookie: f.cookie }, new AbortController().signal);
+  expect(qualify).toHaveBeenCalled();
+  expect(result).toMatchObject({ state: 'qualification', enabled: true, readiness: 'unverified' });
+  expect(f.mode.modeCurrent()).toBe(true);
+  await f.mode.setEnabled(false, { cookie: f.cookie }, new AbortController().signal);
+  expect(f.config.get('browser').enabled).toBe(false);
+});
+it.each([false, undefined])(
+  'retains a genuine qualification producer fault %s without writing enabled',
+  async (reason) => {
+    const qualify = vi.fn(async () => {
+      throw reason;
+    });
+    const f = await readinessFixture(qualify);
+    f.accepted.push(reason);
+    await expect(
+      f.mode.setEnabled(true, { cookie: f.cookie }, new AbortController().signal)
+    ).rejects.toBe(reason);
+    expect(qualify).toHaveBeenCalledOnce();
+    expect(f.config.get('browser').enabled).toBe(false);
+    await expect(f.mode.close()).rejects.toBe(reason);
+  }
+);
+
+it.each(['ui.communityNavigation', 'auth', 'browser.chromeUserAgent', 'tunnel'] as const)(
+  'retained startup owner only loses its config epoch for relevant %s changes',
+  async (path) => {
+    const f = await fixture();
+    const mode = createProductionBrowserStartupMode({
+      db: f.db,
+      auth: f.auth,
+      config: f.config,
+      inventory: {} as Parameters<typeof createProductionBrowserStartupMode>[0]['inventory'],
+    });
+    f.beforeDispose(() => mode.close());
+    const owner = await mode.captureOwner({ cookie: f.cookie }, new AbortController().signal);
+    expect(owner()).toBe(true);
+    if (path === 'ui.communityNavigation') f.config.setDot(path, { version: 1, owners: [] });
+    else if (path === 'browser.chromeUserAgent') {
+      // The real private chooser emits the identity transition, without inventing native readiness.
+      const { mintBrowserIdentityChoicePermit } =
+        await import('../activation/identity-choice-permit.js');
+      f.config.chooseOwnedBrowserIdentity(
+        true,
+        mintBrowserIdentityChoicePermit(f.config, true, () => true)
+      );
+    } else f.config.set(path, { ...f.config.get(path) });
+    expect(owner()).toBe(path === 'ui.communityNavigation');
+    expect(f.db.select().from(session).all()).toHaveLength(1);
+  }
+);

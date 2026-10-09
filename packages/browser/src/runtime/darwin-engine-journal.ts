@@ -1,6 +1,13 @@
+import {
+  readOriginalObserverFailure,
+  createOriginalObserverFailureSink,
+  readOriginalUnknownJournalDiagnostic,
+  createOriginalUnknownJournalDiagnosticSink,
+} from './journal/unknown-diagnostic.js';
 import { randomUUID } from 'node:crypto';
 import {
   readDarwinJournalDiagnostic,
+  createOriginalChildBatchDiagnosticSink,
   type DarwinJournalDiagnostic,
 } from './darwin-journal-diagnostic.js';
 import type { ProcessIdentity } from '../configuration.js';
@@ -42,6 +49,10 @@ export async function startDarwinEngineJournal(
   options: Readonly<{
     parentDirectory: string;
     binding: Omit<JournalBinding, 'bootScope'>;
+    launcher?: Readonly<{
+      executable: string;
+      nodeRuntime: 'node' | 'electron-node';
+    }>;
     workerPath: string;
     artifact: Readonly<{ path: string; sha256: string }>;
     duration: number;
@@ -51,7 +62,10 @@ export async function startDarwinEngineJournal(
   }>
 ): Promise<DarwinEngineJournal> {
   const continuous = options.continuous === true;
-  const onDiagnostic = options.onDiagnostic;
+  const injectedDiagnostic = options.onDiagnostic;
+  const onDiagnostic = injectedDiagnostic ?? createOriginalChildBatchDiagnosticSink();
+  const onUnknownDiagnostic = createOriginalUnknownJournalDiagnosticSink();
+  const onOriginalFailure = createOriginalObserverFailureSink(undefined, true);
   const manager = ProcessIdentitySchema.parse(options.binding.manager);
   if (manager.pid !== process.pid) throw new Error('JOURNAL_MANAGER_MISMATCH');
   const observer = createDarwinProcessObserver(options.artifact);
@@ -104,6 +118,7 @@ export async function startDarwinEngineJournal(
     firstCause: null,
   });
   const worker = await startDarwinJournalWorker({
+    launcher: options.launcher,
     workerPath: options.workerPath,
     artifact: options.artifact,
     duration: options.duration,
@@ -118,7 +133,12 @@ export async function startDarwinEngineJournal(
   });
   retained.add(worker);
   const observationKnown = worker.isObservationKnown?.bind(worker);
-  const originalStderr = onDiagnostic ? worker.stderr.bind(worker) : undefined;
+  let originalStderr: (() => Uint8Array) | undefined;
+  try {
+    originalStderr = worker.stderr.bind(worker);
+  } catch (value) {
+    if (injectedDiagnostic) throw value;
+  }
   let historyGapped = false;
   let pending = true,
     uncertain = false,
@@ -143,13 +163,29 @@ export async function startDarwinEngineJournal(
         (uncertain || (result !== 'recorded-gone' && result !== 'campaign-closed'))
       ) {
         try {
-          const diagnostic = readDarwinJournalDiagnostic(
-            originalStderr(),
+          const originalBytes = originalStderr();
+          try {
+            const failure = readOriginalObserverFailure(originalBytes);
+            if (failure) await onOriginalFailure(failure);
+          } catch {
+            /* Optional failure output cannot alter original refusal or custody. */
+          }
+          const diagnostic = readDarwinJournalDiagnostic(originalBytes, initial.binding.journalId);
+          // Parse both closed kinds from the same completed bank; duplicates stay refused.
+          const unknown = readOriginalUnknownJournalDiagnostic(
+            originalBytes,
             initial.binding.journalId
           );
-          if (diagnostic) await onDiagnostic(diagnostic);
+          if (unknown) {
+            try {
+              await onUnknownDiagnostic(unknown);
+            } catch {
+              /* Optional fixed output cannot alter original refusal or custody. */
+            }
+          } else if (diagnostic) await onDiagnostic(diagnostic);
         } catch {
-          uncertain = true;
+          // A newly installed default diagnostic cannot alter original custody or cleanup result.
+          if (injectedDiagnostic) uncertain = true;
         }
       }
       pending = false;

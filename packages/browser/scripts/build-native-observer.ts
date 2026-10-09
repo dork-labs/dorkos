@@ -244,5 +244,10 @@ export async function buildNativeObserver(
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  await buildNativeObserver();
+  // Desktop's tsx build imports this module through CommonJS. Keep asynchronous
+  // execution inside the entry-point branch so that importing it needs no top-level await.
+  void buildNativeObserver().catch((reason: unknown) => {
+    console.error(reason);
+    process.exitCode = 1;
+  });
 }

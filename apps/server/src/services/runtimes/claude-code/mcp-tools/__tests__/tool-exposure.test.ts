@@ -464,12 +464,35 @@ describe('in-session tool exposure', () => {
     // from the docs registry, which composes no extension. Extension tools are
     // guarded separately, against a contributed fixture, in
     // `extension-tools-every-list.test.ts`.
-    // 120 -> 121 for `audit_verify` (spec `audit-trail`), DEFERRED: checking
-    // the audit log is a deliberate step a turn can search for. Both counts
-    // move by the same one.
-    expect(tools).toHaveLength(121);
-    expect(deferred).toHaveLength(110);
+    // 120 -> 134: the 8 core and 6 optional managed-browser tools are all deferred.
+    // 134 -> 135 for main's audit_verify; it remains searchable and deferred.
+    // Docs metadata exposes the complete vocabulary; each actual operation still
+    // resolves its original runtime principal, current graph and explicit grants.
+    expect(tools).toHaveLength(135);
+    expect(deferred).toHaveLength(124);
+    expect(
+      deferred
+        .map((tool) => tool.name)
+        .filter((name) => name.startsWith('managed_browser_'))
+        .sort()
+    ).toEqual([
+      'managed_browser_close',
+      'managed_browser_control',
+      'managed_browser_diagnostics',
+      'managed_browser_download',
+      'managed_browser_file_access',
+      'managed_browser_input',
+      'managed_browser_navigate',
+      'managed_browser_open',
+      'managed_browser_open_delegated',
+      'managed_browser_semantic_action',
+      'managed_browser_semantic_read',
+      'managed_browser_stage_upload',
+      'managed_browser_tabs',
+      'managed_browser_upload',
+    ]);
     for (const name of [
+      'audit_verify',
       'configure_doc_channel',
       'approve_doc_route',
       'revoke_doc_route',

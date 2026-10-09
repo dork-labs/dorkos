@@ -14,14 +14,6 @@
 #
 # A purpose is one plain sentence saying what the gate catches or does.
 gates:
-  # --- browser-native-release-artifact.yml ---
-  - id: wf.browser-native-release-artifact.build-darwin
-    source: .github/workflows/browser-native-release-artifact.yml
-    purpose: Builds and attests the exact Mac browser observer and workers for the release source commit.
-  - id: wf.browser-native-release-artifact.verify-linux-handoff
-    source: .github/workflows/browser-native-release-artifact.yml
-    purpose: Checks that the Linux CLI build accepts the exact attested Mac browser assets from the same source commit.
-
   # --- browser-test.yml ---
   - id: wf.browser-test.browser-shard
     source: .github/workflows/browser-test.yml

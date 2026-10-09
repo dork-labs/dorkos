@@ -32,6 +32,7 @@ import { registerConnectorEventOpenApi } from '../connectors/events/openapi.js';
 import { registerSessionContinueOpenApi } from '../session/fleet/continue-openapi.js';
 import { registerSessionLocationsOpenApi } from '../session/resolution/session-locations-openapi.js';
 import { registerProjectsOpenApi } from '../projects/projects-openapi.js';
+import { registerBrowserOpenApi } from '../browser/runtime/browser-openapi.js';
 import { registerAccountEligibilityOpenApi } from './usage/account-eligibility-openapi.js';
 import { registerKeepAwakeOpenApi } from './keep-awake/keep-awake-openapi.js';
 import { registerExtensionDecisionsOpenApi } from '../extensions/inbox/extension-decisions-openapi.js';
@@ -477,14 +478,26 @@ const LocalPermissionPreviewSchema = z.object({
     })
   ),
   lspServers: z.array(
-    z.object({ name: z.string(), command: z.string(), args: z.array(z.string()) })
+    z.object({
+      name: z.string(),
+      command: z.string(),
+      args: z.array(z.string()),
+    })
   ),
   monitors: z.array(
-    z.object({ name: z.string(), command: z.string(), when: z.string().optional() })
+    z.object({
+      name: z.string(),
+      command: z.string(),
+      when: z.string().optional(),
+    })
   ),
   executables: z.array(z.string()),
   skillTools: z.array(
-    z.object({ source: z.string(), skill: z.string(), tools: z.array(z.string()) })
+    z.object({
+      source: z.string(),
+      skill: z.string(),
+      tools: z.array(z.string()),
+    })
   ),
   skillCommands: z
     .array(
@@ -530,7 +543,11 @@ const LocalPermissionPreviewSchema = z.object({
     })
   ),
   npmDependencies: z.array(
-    z.object({ name: z.string(), range: z.string(), optional: z.boolean().optional() })
+    z.object({
+      name: z.string(),
+      range: z.string(),
+      optional: z.boolean().optional(),
+    })
   ),
   externalHosts: z.array(z.string()),
   requires: z.array(
@@ -645,6 +662,7 @@ registerConnectorEventOpenApi(registry);
 registerSessionContinueOpenApi(registry);
 registerSessionLocationsOpenApi(registry);
 registerProjectsOpenApi(registry);
+registerBrowserOpenApi(registry);
 registerAccountEligibilityOpenApi(registry);
 registerKeepAwakeOpenApi(registry);
 
@@ -727,7 +745,9 @@ registry.registerPath({
   responses: {
     200: {
       description: 'Every pending prompt, with the room each belongs to when it has one',
-      content: { 'application/json': { schema: PendingInteractionsResponseSchema } },
+      content: {
+        'application/json': { schema: PendingInteractionsResponseSchema },
+      },
     },
   },
 });
@@ -1175,13 +1195,17 @@ registry.registerPath({
   request: {
     params: z.object({ id: z.string().uuid(), messageId: z.string() }),
     body: {
-      content: { 'application/json': { schema: UpdateQueuedMessageRequestSchema } },
+      content: {
+        'application/json': { schema: UpdateQueuedMessageRequestSchema },
+      },
     },
   },
   responses: {
     200: {
       description: 'The edited message and the queue around it',
-      content: { 'application/json': { schema: UpdateQueuedMessageResponseSchema } },
+      content: {
+        'application/json': { schema: UpdateQueuedMessageResponseSchema },
+      },
     },
     400: {
       description: 'Invalid ids, or a body that asks for no change',
@@ -1202,7 +1226,9 @@ registry.registerPath({
   description:
     'Takes a waiting message off the queue; it will not run. Any client may remove any ' +
     "message on the session's queue.",
-  request: { params: z.object({ id: z.string().uuid(), messageId: z.string() }) },
+  request: {
+    params: z.object({ id: z.string().uuid(), messageId: z.string() }),
+  },
   responses: {
     200: {
       description: 'The queue as it now stands',
@@ -1450,18 +1476,16 @@ registry.registerPath({
   request: {
     query: z.object({
       runtime: z.string().optional().openapi({ description: 'The runtime whose models to list' }),
-      sessionId: z
-        .string()
-        .optional()
-        .openapi({ description: 'The session whose runtime and account decide the menu' }),
+      sessionId: z.string().optional().openapi({
+        description: 'The session whose runtime and account decide the menu',
+      }),
       account: z.string().optional().openapi({
         description:
           'The account the person picked for a session that has not started, or `dorkos-credits` with no session to ask about credits directly',
       }),
-      cwd: z
-        .string()
-        .optional()
-        .openapi({ description: 'The folder a session that has not started runs in' }),
+      cwd: z.string().optional().openapi({
+        description: 'The folder a session that has not started runs in',
+      }),
     }),
   },
   responses: {
@@ -1502,7 +1526,9 @@ registry.registerPath({
     200: {
       description: "The runtime's accounts and their usage",
       content: {
-        'application/json': { schema: z.object({ accounts: z.array(AccountUsageSchema) }) },
+        'application/json': {
+          schema: z.object({ accounts: z.array(AccountUsageSchema) }),
+        },
       },
     },
     400: { description: 'Unknown runtime slug' },
@@ -1523,9 +1549,9 @@ registry.registerPath({
     'has no plan limits), `failed` (with a `reason`) and `throttled` recorded nothing.',
   request: {
     params: z.object({
-      id: z
-        .string()
-        .openapi({ description: "A registry id, or `default` for this computer's own sign-in." }),
+      id: z.string().openapi({
+        description: "A registry id, or `default` for this computer's own sign-in.",
+      }),
     }),
   },
   responses: {
@@ -1541,7 +1567,9 @@ registry.registerPath({
         },
       },
     },
-    404: { description: 'No Claude Code account has that id (`code: "UNKNOWN_ACCOUNT"`)' },
+    404: {
+      description: 'No Claude Code account has that id (`code: "UNKNOWN_ACCOUNT"`)',
+    },
     503: { description: 'The usage store is not running yet' },
   },
 });
@@ -1560,7 +1588,9 @@ registry.registerPath({
     200: {
       description: 'The folders to offer, possibly none',
       content: {
-        'application/json': { schema: z.object({ folders: z.array(FoundClaudeFolderSchema) }) },
+        'application/json': {
+          schema: z.object({ folders: z.array(FoundClaudeFolderSchema) }),
+        },
       },
     },
   },
@@ -1576,12 +1606,18 @@ registry.registerPath({
     'read-modify-write, so it stays hidden across restarts. A folder that is already registered ' +
     'or dismissed answers 204 as well.',
   request: {
-    body: { content: { 'application/json': { schema: DismissFoundFolderRequestSchema } } },
+    body: {
+      content: {
+        'application/json': { schema: DismissFoundFolderRequestSchema },
+      },
+    },
   },
   responses: {
     204: { description: 'The folder is hidden' },
     400: { description: 'No path, or a folder the found list does not offer' },
-    403: { description: 'An agent, or (with login on) a caller that is not signed in' },
+    403: {
+      description: 'An agent, or (with login on) a caller that is not signed in',
+    },
   },
 });
 
@@ -1749,7 +1785,9 @@ registry.registerPath({
   responses: {
     200: {
       description: 'Directory listing',
-      content: { 'application/json': { schema: BrowseDirectoryResponseSchema } },
+      content: {
+        'application/json': { schema: BrowseDirectoryResponseSchema },
+      },
     },
     400: {
       description: 'Invalid path',
@@ -1983,7 +2021,9 @@ registry.registerPath({
   responses: {
     200: {
       description: 'Deleted',
-      content: { 'application/json': { schema: z.object({ success: z.boolean() }) } },
+      content: {
+        'application/json': { schema: z.object({ success: z.boolean() }) },
+      },
     },
     404: {
       description: 'Schedule not found',
@@ -2003,7 +2043,9 @@ registry.registerPath({
   responses: {
     201: {
       description: 'Run started',
-      content: { 'application/json': { schema: z.object({ runId: z.string() }) } },
+      content: {
+        'application/json': { schema: z.object({ runId: z.string() }) },
+      },
     },
     404: {
       description: 'Schedule not found',
@@ -2135,7 +2177,9 @@ registry.registerPath({
     "Publish a message using the caller-supplied `from`. Reserved server senders, destinations, and reply addresses are refused. `from` is a caller's claim, not authenticated attribution. HTTP authentication permits the request but does not bind the sender to the authenticated person. A program run by an agent can also choose a permitted `relay.human.*` address.\n\nWith login off, no app credential is required. The Host allowlist permits loopback addresses, configured trusted hosts, and the live tunnel unless `DORKOS_ALLOW_INSECURE_BIND` disables it. With login on, a session cookie or per-user bearer API key is required and the Host guard is off. CORS browser-origin policy still applies and permits requests without Origin; it does not authenticate the sender.\n\nA permitted human sender may supply `payload.cwd`, `payload.forAgent` (agent home path), and `payload.__bindingPermissions.permissionMode`. Existing folder and agent checks apply. The nested mode defaults to `default`; top-level `payload.permissionMode` does not set it. Supported approval modes depend on the receiving runtime. MCP send tools instead publish a server-resolved sender under separate MCP authentication and tool permissions. Agent, session, and external MCP sender addresses cannot use those three turn-shaping fields. Account selection follows separate host policy for new conversations and grants no sender authority.",
   request: {
     body: {
-      content: { 'application/json': { schema: RelaySendMessageRequestSchema } },
+      content: {
+        'application/json': { schema: RelaySendMessageRequestSchema },
+      },
     },
   },
   responses: {
@@ -2183,7 +2227,9 @@ registry.registerPath({
   responses: {
     200: {
       description: 'Minimized delivery receipt',
-      headers: { 'Cache-Control': { schema: { type: 'string', const: 'no-store' } } },
+      headers: {
+        'Cache-Control': { schema: { type: 'string', const: 'no-store' } },
+      },
       content: { 'application/json': { schema: RelayDeliveryReceiptSchema } },
     },
     400: {
@@ -2201,7 +2247,9 @@ registry.registerPath({
     },
     503: {
       description: 'Receipt observer/storage/caller transaction unavailable',
-      content: { 'application/json': { schema: RelayReceiptAvailabilityErrorSchema } },
+      content: {
+        'application/json': { schema: RelayReceiptAvailabilityErrorSchema },
+      },
     },
   },
 });
@@ -2278,7 +2326,12 @@ registry.registerPath({
       description: 'Array of endpoints',
       content: {
         'application/json': {
-          schema: z.array(z.object({ subject: z.string(), description: z.string().optional() })),
+          schema: z.array(
+            z.object({
+              subject: z.string(),
+              description: z.string().optional(),
+            })
+          ),
         },
       },
     },
@@ -2595,7 +2648,10 @@ registry.registerPath({
       description: 'Agent removed',
       content: {
         'application/json': {
-          schema: z.object({ success: z.boolean(), blockedFromDiscovery: z.boolean() }),
+          schema: z.object({
+            success: z.boolean(),
+            blockedFromDiscovery: z.boolean(),
+          }),
         },
       },
     },
@@ -2651,7 +2707,9 @@ registry.registerPath({
     'open far more traffic than the caller asked for.',
   request: {
     body: {
-      content: { 'application/json': { schema: UpdateAccessRuleRequestSchema } },
+      content: {
+        'application/json': { schema: UpdateAccessRuleRequestSchema },
+      },
     },
   },
   responses: {
@@ -2750,7 +2808,10 @@ const MarketplaceSourceSchema = z.object({
  */
 const SourceListingOutcomeSchema = z
   .discriminatedUnion('fetched', [
-    z.object({ fetched: z.literal(true), packageCount: z.number().int().nonnegative() }),
+    z.object({
+      fetched: z.literal(true),
+      packageCount: z.number().int().nonnegative(),
+    }),
     z.object({ fetched: z.literal(false), reason: z.string() }),
   ])
   .describe(
@@ -2773,7 +2834,11 @@ const SourceLastFetchSchema = z
       checkedAt: z.string(),
       packageCount: z.number().int().nonnegative(),
     }),
-    z.object({ state: z.literal('failed'), checkedAt: z.string(), reason: z.string() }),
+    z.object({
+      state: z.literal('failed'),
+      checkedAt: z.string(),
+      reason: z.string(),
+    }),
     z.object({
       state: z.literal('stale'),
       checkedAt: z.string(),
@@ -2928,7 +2993,11 @@ registry.registerPath({
       content: {
         'application/json': {
           schema: z.object({
-            sources: z.array(MarketplaceSourceSchema.extend({ lastFetch: SourceLastFetchSchema })),
+            sources: z.array(
+              MarketplaceSourceSchema.extend({
+                lastFetch: SourceLastFetchSchema,
+              })
+            ),
           }),
         },
       },
@@ -2960,7 +3029,9 @@ registry.registerPath({
     'cached copy; a failed fetch is reported in `listing` and never fails the add.',
   request: {
     body: {
-      content: { 'application/json': { schema: AddMarketplaceSourceBodySchema } },
+      content: {
+        'application/json': { schema: AddMarketplaceSourceBodySchema },
+      },
     },
   },
   responses: {
@@ -2974,7 +3045,9 @@ registry.registerPath({
     },
     403: {
       description: 'Caller is not the operator',
-      content: { 'application/json': { schema: MarketplaceSourceRefusalSchema } },
+      content: {
+        'application/json': { schema: MarketplaceSourceRefusalSchema },
+      },
     },
     409: {
       description: 'Duplicate source name',
@@ -3001,7 +3074,9 @@ registry.registerPath({
     204: { description: 'Source removed' },
     403: {
       description: 'Caller is not the operator',
-      content: { 'application/json': { schema: MarketplaceSourceRefusalSchema } },
+      content: {
+        'application/json': { schema: MarketplaceSourceRefusalSchema },
+      },
     },
   },
 });
@@ -3107,7 +3182,9 @@ registry.registerPath({
       description: 'Installations of the package',
       content: {
         'application/json': {
-          schema: z.object({ installations: z.array(InstalledPackageDetailSchema) }),
+          schema: z.object({
+            installations: z.array(InstalledPackageDetailSchema),
+          }),
         },
       },
     },
@@ -3150,13 +3227,17 @@ registry.registerPath({
     'Runs the same sweep the server runs after every fetch and at startup. Keeps every tree an installation records, the most recently used tree of each installed package, and anything used in the last 15 minutes. Takes no options.',
   request: {
     body: {
-      content: { 'application/json': { schema: PruneMarketplaceCacheBodySchema } },
+      content: {
+        'application/json': { schema: PruneMarketplaceCacheBodySchema },
+      },
     },
   },
   responses: {
     200: {
       description: 'Prune result',
-      content: { 'application/json': { schema: PruneMarketplaceCacheResponseSchema } },
+      content: {
+        'application/json': { schema: PruneMarketplaceCacheResponseSchema },
+      },
     },
     400: {
       description: 'Validation error',
@@ -3232,7 +3313,9 @@ registry.registerPath({
   request: {
     params: z.object({ name: z.string() }),
     body: {
-      content: { 'application/json': { schema: LocalInstallRequestBodySchema } },
+      content: {
+        'application/json': { schema: LocalInstallRequestBodySchema },
+      },
     },
   },
   responses: {
@@ -3273,7 +3356,9 @@ registry.registerPath({
   request: {
     params: z.object({ name: z.string() }),
     body: {
-      content: { 'application/json': { schema: LocalInstallRequestBodySchema } },
+      content: {
+        'application/json': { schema: LocalInstallRequestBodySchema },
+      },
     },
   },
   responses: {
@@ -3534,7 +3619,9 @@ registry.registerPath({
   responses: {
     200: {
       description: 'One check per installation, in scan order',
-      content: { 'application/json': { schema: LocalInstallationUpdatesResultSchema } },
+      content: {
+        'application/json': { schema: LocalInstallationUpdatesResultSchema },
+      },
     },
     400: {
       description: 'projectPath given more than once',
@@ -3590,7 +3677,9 @@ registry.registerPath({
   responses: {
     200: {
       description: 'One check per installation, with `applied` or `applyError` where one ran',
-      content: { 'application/json': { schema: LocalInstallationUpdatesResultSchema } },
+      content: {
+        'application/json': { schema: LocalInstallationUpdatesResultSchema },
+      },
     },
     202: {
       description: "An agent's apply waits for a person to approve the card; nothing ran",
@@ -3666,7 +3755,9 @@ registry.registerPath({
     200: {
       description: 'Every held-back package',
       content: {
-        'application/json': { schema: z.object({ packages: z.array(LocalHeldBackPackageSchema) }) },
+        'application/json': {
+          schema: z.object({ packages: z.array(LocalHeldBackPackageSchema) }),
+        },
       },
     },
   },
@@ -3681,7 +3772,11 @@ registry.registerPath({
   responses: {
     202: {
       description: 'The card is raised; a person decides on it',
-      content: { 'application/json': { schema: z.object({ status: z.literal('asked') }) } },
+      content: {
+        'application/json': {
+          schema: z.object({ status: z.literal('asked') }),
+        },
+      },
     },
     409: {
       description: 'Not held back, or cannot be shown on a card (the error says what to do)',
@@ -3896,7 +3991,11 @@ registry.registerPath({
     },
     202: {
       description: 'A person has been asked; retry with the approval token',
-      content: { 'application/json': { schema: z.object({ status: z.string() }).passthrough() } },
+      content: {
+        'application/json': {
+          schema: z.object({ status: z.string() }).passthrough(),
+        },
+      },
     },
     400: {
       description: 'Not linkable, or a malformed body',
@@ -3926,7 +4025,9 @@ registry.registerPath({
   request: {
     params: z.object({ name: z.string() }),
     body: {
-      content: { 'application/json': { schema: z.object(DevLinkScopeBody).strict() } },
+      content: {
+        'application/json': { schema: z.object(DevLinkScopeBody).strict() },
+      },
     },
   },
   responses: {
@@ -3963,9 +4064,9 @@ registry.registerPath({
 const CloudLinkStateSchema = z.enum(['idle', 'pending', 'linked', 'expired', 'denied', 'unlinked']);
 
 const StartLinkResultSchema = z.object({
-  userCode: z
-    .string()
-    .openapi({ description: 'The 8-character code the human enters at the cloud.' }),
+  userCode: z.string().openapi({
+    description: 'The 8-character code the human enters at the cloud.',
+  }),
   verificationUri: z.string().openapi({ description: 'Where the human goes to approve the link.' }),
   expiresAt: z.string().openapi({ description: 'ISO timestamp after which the code is dead.' }),
 });
@@ -4029,7 +4130,9 @@ const CLOUD_OWNER_ONLY_ERROR = {
 const CLOUD_OWNER_ONLY_ENVELOPE = {
   403: {
     description: OWNER_ONLY_403,
-    content: { 'application/json': { schema: CloudOwnerOnlyEnvelopeDocSchema } },
+    content: {
+      'application/json': { schema: CloudOwnerOnlyEnvelopeDocSchema },
+    },
   },
 };
 
@@ -4094,7 +4197,9 @@ registry.registerPath({
   responses: {
     200: {
       description: 'Unlinked',
-      content: { 'application/json': { schema: z.object({ ok: z.boolean() }) } },
+      content: {
+        'application/json': { schema: z.object({ ok: z.boolean() }) },
+      },
     },
     ...CLOUD_OWNER_ONLY_ERROR,
     500: {
@@ -4226,25 +4331,35 @@ registry.registerPath({
     params: z.object({ page: z.enum(['portal', 'checkout', 'topup']) }),
     body: {
       required: false,
-      content: { 'application/json': { schema: z.object({ skuId: z.string().optional() }) } },
+      content: {
+        'application/json': {
+          schema: z.object({ skuId: z.string().optional() }),
+        },
+      },
     },
   },
   responses: {
     200: {
       description: 'The page address, or a refusal',
-      content: { 'application/json': { schema: CloudBillingSessionResponseDocSchema } },
+      content: {
+        'application/json': { schema: CloudBillingSessionResponseDocSchema },
+      },
     },
     ...CLOUD_OWNER_ONLY_ENVELOPE,
     400: {
       description: 'A checkout that names no offer',
       content: {
-        'application/json': { schema: z.object({ ok: z.literal(false), message: z.string() }) },
+        'application/json': {
+          schema: z.object({ ok: z.literal(false), message: z.string() }),
+        },
       },
     },
     404: {
       description: 'Not a billing page this server opens',
       content: {
-        'application/json': { schema: z.object({ ok: z.literal(false), message: z.string() }) },
+        'application/json': {
+          schema: z.object({ ok: z.literal(false), message: z.string() }),
+        },
       },
     },
   },
@@ -4284,7 +4399,9 @@ registry.registerPath({
   responses: {
     200: {
       description: 'Where the export stands, or a refusal',
-      content: { 'application/json': { schema: CloudAccountExportResponseDocSchema } },
+      content: {
+        'application/json': { schema: CloudAccountExportResponseDocSchema },
+      },
     },
     ...CLOUD_OWNER_ONLY_ENVELOPE,
   },
@@ -4299,10 +4416,9 @@ const CloudAccountDeletionResponseDocSchema = z
         confirmationSentTo: z.string().openapi({
           description: 'Where the confirmation link went, as the service chose to show it.',
         }),
-        confirmBy: z
-          .string()
-          .nullable()
-          .openapi({ description: 'When the emailed link stops working, or null for no limit.' }),
+        confirmBy: z.string().nullable().openapi({
+          description: 'When the emailed link stops working, or null for no limit.',
+        }),
       }),
     }),
     z.object({ ok: z.literal(false), problem: CloudProblemDocSchema }),
@@ -4322,7 +4438,9 @@ registry.registerPath({
   responses: {
     200: {
       description: 'Where the confirmation link went, or a refusal',
-      content: { 'application/json': { schema: CloudAccountDeletionResponseDocSchema } },
+      content: {
+        'application/json': { schema: CloudAccountDeletionResponseDocSchema },
+      },
     },
     ...CLOUD_OWNER_ONLY_ENVELOPE,
   },
@@ -4419,7 +4537,9 @@ registry.registerPath({
       description: 'Installed Shapes',
       content: {
         'application/json': {
-          schema: z.object({ shapes: z.array(LocalInstalledShapeSummarySchema) }),
+          schema: z.object({
+            shapes: z.array(LocalInstalledShapeSummarySchema),
+          }),
         },
       },
     },
@@ -4456,7 +4576,9 @@ registry.registerPath({
     'Clones an installed Shape into a new, independently-editable one and stamps `lineage`. `captureCurrent` snapshots the live arrangement when forking the active Shape: the currently-enabled extensions (read server-side) plus the caller’s `liveLayout`. `liveLayout` is a PARTIAL chrome snapshot merged field-wise over the source Shape’s `layout` — every field the caller omits keeps the source’s value, so a client never overwrites chrome it cannot observe.',
   request: {
     params: z.object({ name: z.string() }),
-    body: { content: { 'application/json': { schema: ForkShapeRequestSchema } } },
+    body: {
+      content: { 'application/json': { schema: ForkShapeRequestSchema } },
+    },
   },
   responses: {
     201: {
@@ -4522,13 +4644,17 @@ registry.registerPath({
   request: {
     params: z.object({ provider: z.string() }),
     body: {
-      content: { 'application/json': { schema: z.object({ secret: z.string().min(1) }) } },
+      content: {
+        'application/json': { schema: z.object({ secret: z.string().min(1) }) },
+      },
     },
   },
   responses: {
     200: {
       description: 'The provider status after the reload',
-      content: { 'application/json': { schema: ConnectorProviderStatusSchema } },
+      content: {
+        'application/json': { schema: ConnectorProviderStatusSchema },
+      },
     },
     400: {
       description: 'Unknown provider or empty secret',
@@ -4551,7 +4677,9 @@ registry.registerPath({
   responses: {
     200: {
       description: 'The provider status after the reload',
-      content: { 'application/json': { schema: ConnectorProviderStatusSchema } },
+      content: {
+        'application/json': { schema: ConnectorProviderStatusSchema },
+      },
     },
     400: {
       description: 'Unknown provider',
@@ -4581,7 +4709,9 @@ registry.registerPath({
   responses: {
     200: {
       description: 'Account-free connector catalog page',
-      content: { 'application/json': { schema: ConnectorCatalogResourcePageSchema } },
+      content: {
+        'application/json': { schema: ConnectorCatalogResourcePageSchema },
+      },
     },
     400: {
       description: 'Invalid catalog query or cursor',
@@ -4601,7 +4731,9 @@ registry.registerPath({
     'host, keeps it under the DorkOS data directory, and serves it with `nosniff` and a ' +
     'sandboxing Content-Security-Policy. The browser never loads a third-party URL.',
   request: {
-    params: z.object({ serviceSlug: z.string().regex(CONNECTOR_LOGO_SERVICE_ID) }),
+    params: z.object({
+      serviceSlug: z.string().regex(CONNECTOR_LOGO_SERVICE_ID),
+    }),
   },
   responses: {
     200: {
@@ -4628,7 +4760,9 @@ registry.registerPath({
   responses: {
     200: {
       description: 'Owner-scoped stable connection inventory',
-      content: { 'application/json': { schema: ConnectorConnectionListResourceSchema } },
+      content: {
+        'application/json': { schema: ConnectorConnectionListResourceSchema },
+      },
     },
     403: {
       description: 'Verified operator authority is required',
@@ -4644,13 +4778,19 @@ registry.registerPath({
   summary: 'Start a restart-safe connector authentication flow',
   request: {
     body: {
-      content: { 'application/json': { schema: ConnectorAuthenticationFlowCreateRequestSchema } },
+      content: {
+        'application/json': {
+          schema: ConnectorAuthenticationFlowCreateRequestSchema,
+        },
+      },
     },
   },
   responses: {
     201: {
       description: 'Durable owner-only authentication flow state',
-      content: { 'application/json': { schema: ConnectorAuthenticationFlowStateSchema } },
+      content: {
+        'application/json': { schema: ConnectorAuthenticationFlowStateSchema },
+      },
     },
     403: {
       description: 'Verified operator authority is required',
@@ -4676,7 +4816,9 @@ registry.registerPath({
   responses: {
     200: {
       description: 'Current owner-only authentication state',
-      content: { 'application/json': { schema: ConnectorAuthenticationFlowStateSchema } },
+      content: {
+        'application/json': { schema: ConnectorAuthenticationFlowStateSchema },
+      },
     },
     404: {
       description: 'Flow absent or owned by someone else',
@@ -4694,7 +4836,9 @@ registry.registerPath({
   responses: {
     200: {
       description: 'Owner-visible connection detail',
-      content: { 'application/json': { schema: ConnectorConnectionDetailSchema } },
+      content: {
+        'application/json': { schema: ConnectorConnectionDetailSchema },
+      },
     },
     404: {
       description: 'Connection absent or owned by someone else',
@@ -4710,12 +4854,18 @@ registry.registerPath({
   summary: 'Rename one stable connection',
   request: {
     params: z.object({ connectionId: z.string().min(1) }),
-    body: { content: { 'application/json': { schema: ConnectorConnectionPatchSchema } } },
+    body: {
+      content: {
+        'application/json': { schema: ConnectorConnectionPatchSchema },
+      },
+    },
   },
   responses: {
     200: {
       description: 'Updated lifecycle projection',
-      content: { 'application/json': { schema: ConnectorLifecycleResultSchema } },
+      content: {
+        'application/json': { schema: ConnectorLifecycleResultSchema },
+      },
     },
     404: {
       description: 'Connection absent or owned by someone else',
@@ -4734,7 +4884,9 @@ registry.registerPath({
   responses: {
     200: {
       description: 'Local lifecycle and external cleanup state',
-      content: { 'application/json': { schema: ConnectorLifecycleResultSchema } },
+      content: {
+        'application/json': { schema: ConnectorLifecycleResultSchema },
+      },
     },
     404: {
       description: 'Connection absent or owned by someone else',
@@ -4790,7 +4942,9 @@ registry.registerPath({
   responses: {
     200: {
       description: 'Current grant, session, and subscription impact',
-      content: { 'application/json': { schema: ConnectorDisconnectImpactSchema } },
+      content: {
+        'application/json': { schema: ConnectorDisconnectImpactSchema },
+      },
     },
     404: {
       description: 'Connection absent or owned by someone else',
@@ -4825,12 +4979,18 @@ registry.registerPath({
   summary: 'Start an idempotent reconnect flow',
   request: {
     params: z.object({ connectionId: z.string().min(1) }),
-    body: { content: { 'application/json': { schema: ConnectorReconnectRequestSchema } } },
+    body: {
+      content: {
+        'application/json': { schema: ConnectorReconnectRequestSchema },
+      },
+    },
   },
   responses: {
     201: {
       description: 'Durable owner-only authentication flow state',
-      content: { 'application/json': { schema: ConnectorAuthenticationFlowStateSchema } },
+      content: {
+        'application/json': { schema: ConnectorAuthenticationFlowStateSchema },
+      },
     },
     404: {
       description: 'Connection absent or owned by someone else',
@@ -4853,7 +5013,9 @@ for (const action of ['pause', 'resume'] as const) {
     responses: {
       200: {
         description: 'Local lifecycle and managed authority synchronization state',
-        content: { 'application/json': { schema: ConnectorLifecycleResultSchema } },
+        content: {
+          'application/json': { schema: ConnectorLifecycleResultSchema },
+        },
       },
       404: {
         description: 'Connection absent or owned by someone else',
@@ -4872,7 +5034,9 @@ registry.registerPath({
   responses: {
     200: {
       description: 'Canonical agent connection grants',
-      content: { 'application/json': { schema: ConnectorAgentConnectionsSchema } },
+      content: {
+        'application/json': { schema: ConnectorAgentConnectionsSchema },
+      },
     },
     404: {
       description: 'Agent absent or owned by someone else',
@@ -4891,7 +5055,9 @@ registry.registerPath({
   responses: {
     200: {
       description: 'Connections every agent can use, and at which level',
-      content: { 'application/json': { schema: ConnectorEveryAgentGrantsSchema } },
+      content: {
+        'application/json': { schema: ConnectorEveryAgentGrantsSchema },
+      },
     },
   },
 });
@@ -4905,7 +5071,9 @@ registry.registerPath({
   responses: {
     200: {
       description: 'Canonical session connector access',
-      content: { 'application/json': { schema: ConnectorSessionConnectionsSchema } },
+      content: {
+        'application/json': { schema: ConnectorSessionConnectionsSchema },
+      },
     },
     404: {
       description: 'Session absent or owned by someone else',
@@ -4922,13 +5090,22 @@ registry.registerPath({
   description:
     'Owner-only. Off hides the app from the chat’s agent in this chat alone. On only undoes Off: the chat gets back the access it had (its own hand-picked access, or else the agent’s account-wide access), and never more. Only apps the agent was given account-wide can be switched; switching to the state the chat is already in changes nothing.',
   request: {
-    params: z.object({ sessionId: z.string().min(1), connectionId: z.string().min(1) }),
-    body: { content: { 'application/json': { schema: ConnectorSessionAccessUpdateSchema } } },
+    params: z.object({
+      sessionId: z.string().min(1),
+      connectionId: z.string().min(1),
+    }),
+    body: {
+      content: {
+        'application/json': { schema: ConnectorSessionAccessUpdateSchema },
+      },
+    },
   },
   responses: {
     200: {
       description: 'The chat’s connector access after the change',
-      content: { 'application/json': { schema: ConnectorSessionConnectionsSchema } },
+      content: {
+        'application/json': { schema: ConnectorSessionConnectionsSchema },
+      },
     },
     400: {
       description: 'Invalid request body or connection id',
@@ -4957,7 +5134,11 @@ registry.registerPath({
   summary: 'Create an owner-reviewed connector management request',
   request: {
     body: {
-      content: { 'application/json': { schema: ConnectorManagementReviewCreateRequestSchema } },
+      content: {
+        'application/json': {
+          schema: ConnectorManagementReviewCreateRequestSchema,
+        },
+      },
     },
   },
   responses: {
@@ -4992,7 +5173,9 @@ registry.registerPath({
   responses: {
     200: {
       description: 'Requester-safe lifecycle and outcome',
-      content: { 'application/json': { schema: ConnectorProgramReviewStatusSchema } },
+      content: {
+        'application/json': { schema: ConnectorProgramReviewStatusSchema },
+      },
     },
     404: {
       description: 'Review absent or belongs to another requester',
@@ -5006,7 +5189,9 @@ registry.registerPath({
   path: '/api/connectors/reviews',
   tags: ['Connectors'],
   summary: 'List owner-visible connector reviews',
-  request: { query: z.object({ state: z.enum(['pending', 'resolved']).optional() }) },
+  request: {
+    query: z.object({ state: z.enum(['pending', 'resolved']).optional() }),
+  },
   responses: {
     200: {
       description: 'Owner-visible reviews',
@@ -5028,7 +5213,9 @@ registry.registerPath({
   responses: {
     200: {
       description: 'Owner-visible review context and lifecycle',
-      content: { 'application/json': { schema: ConnectorManagementReviewItemSchema } },
+      content: {
+        'application/json': { schema: ConnectorManagementReviewItemSchema },
+      },
     },
     404: {
       description: 'Review absent or owned by someone else',
@@ -5044,12 +5231,20 @@ registry.registerPath({
   summary: 'Resolve one pending connector review',
   request: {
     params: z.object({ reviewRequestId: z.string().min(1) }),
-    body: { content: { 'application/json': { schema: ConnectorManagementReviewDecisionSchema } } },
+    body: {
+      content: {
+        'application/json': { schema: ConnectorManagementReviewDecisionSchema },
+      },
+    },
   },
   responses: {
     200: {
       description: 'Durably resolved review',
-      content: { 'application/json': { schema: ConnectorManagementReviewDecisionResultSchema } },
+      content: {
+        'application/json': {
+          schema: ConnectorManagementReviewDecisionResultSchema,
+        },
+      },
     },
     409: {
       description: 'Review is no longer pending or the target changed',
@@ -5065,13 +5260,19 @@ registry.registerPath({
   summary: 'Preview a complete immutable grant revision',
   request: {
     body: {
-      content: { 'application/json': { schema: ConnectorReconciliationPreviewRequestSchema } },
+      content: {
+        'application/json': {
+          schema: ConnectorReconciliationPreviewRequestSchema,
+        },
+      },
     },
   },
   responses: {
     201: {
       description: 'Complete immutable grant preview',
-      content: { 'application/json': { schema: ConnectorReconciliationPreviewSchema } },
+      content: {
+        'application/json': { schema: ConnectorReconciliationPreviewSchema },
+      },
     },
     409: {
       description: 'The connection must be reconciled before it can be edited',
@@ -5091,7 +5292,9 @@ registry.registerPath({
   responses: {
     200: {
       description: 'How many shared actions ended',
-      content: { 'application/json': { schema: ConnectorEveryAgentRevokeResponseSchema } },
+      content: {
+        'application/json': { schema: ConnectorEveryAgentRevokeResponseSchema },
+      },
     },
     404: {
       description: 'Connection absent or owned by someone else',
@@ -5107,13 +5310,21 @@ registry.registerPath({
   summary: 'Apply an exact grant replacement from one preview',
   request: {
     body: {
-      content: { 'application/json': { schema: ConnectorReconciliationApplyRequestSchema } },
+      content: {
+        'application/json': {
+          schema: ConnectorReconciliationApplyRequestSchema,
+        },
+      },
     },
   },
   responses: {
     200: {
       description: 'Exact persisted grants and hosted authority synchronization state',
-      content: { 'application/json': { schema: ConnectorReconciliationApplyResponseSchema } },
+      content: {
+        'application/json': {
+          schema: ConnectorReconciliationApplyResponseSchema,
+        },
+      },
     },
     409: {
       description: 'The preview was consumed, expired, or superseded',
@@ -5131,7 +5342,11 @@ registry.registerPath({
   responses: {
     200: {
       description: 'Agent-scoped accessible connections',
-      content: { 'application/json': { schema: ConnectorAccessibleConnectionsResponseSchema } },
+      content: {
+        'application/json': {
+          schema: ConnectorAccessibleConnectionsResponseSchema,
+        },
+      },
     },
     401: {
       description: 'A verified program credential is required',
@@ -5152,7 +5367,11 @@ registry.registerPath({
   responses: {
     200: {
       description: 'Exact agent-scoped operation revisions',
-      content: { 'application/json': { schema: ConnectorAccessibleOperationsResponseSchema } },
+      content: {
+        'application/json': {
+          schema: ConnectorAccessibleOperationsResponseSchema,
+        },
+      },
     },
     404: {
       description: 'Connection absent, ungranted, or owned by someone else',
@@ -5172,13 +5391,19 @@ for (const surface of ['executions', 'cli/executions'] as const) {
         : 'Execute one exact connector operation from the CLI',
     request: {
       body: {
-        content: { 'application/json': { schema: LocalConnectorProgramExecutionRequestSchema } },
+        content: {
+          'application/json': {
+            schema: LocalConnectorProgramExecutionRequestSchema,
+          },
+        },
       },
     },
     responses: {
       200: {
         description: 'Brokered execution result with durable attempt identity',
-        content: { 'application/json': { schema: ConnectorExecutionResponseSchema } },
+        content: {
+          'application/json': { schema: ConnectorExecutionResponseSchema },
+        },
       },
       202: {
         description: 'Owner approval is required before execution',
@@ -5245,7 +5470,9 @@ registry.registerPath({
     'session mappings so the next inbound message starts fresh under the new agent.',
   request: {
     params: z.object({ id: z.string() }),
-    body: { content: { 'application/json': { schema: MoveBindingRequestSchema } } },
+    body: {
+      content: { 'application/json': { schema: MoveBindingRequestSchema } },
+    },
   },
   responses: {
     200: {
@@ -5281,7 +5508,9 @@ registry.registerPath({
   responses: {
     200: {
       description: 'Matching unclaimed chats',
-      content: { 'application/json': { schema: UnclaimedChatListResponseSchema } },
+      content: {
+        'application/json': { schema: UnclaimedChatListResponseSchema },
+      },
     },
   },
 });
@@ -5300,12 +5529,18 @@ registry.registerPath({
     '`bridgeError` rather than failing the claim.',
   request: {
     params: z.object({ id: z.string() }),
-    body: { content: { 'application/json': { schema: ClaimUnclaimedChatRequestSchema } } },
+    body: {
+      content: {
+        'application/json': { schema: ClaimUnclaimedChatRequestSchema },
+      },
+    },
   },
   responses: {
     201: {
       description: 'The binding created from this claim, optionally bridged',
-      content: { 'application/json': { schema: ClaimUnclaimedChatResponseSchema } },
+      content: {
+        'application/json': { schema: ClaimUnclaimedChatResponseSchema },
+      },
     },
     400: {
       description: 'Unknown agent',
@@ -5371,7 +5606,9 @@ registry.registerPath({
   responses: {
     200: {
       description: 'Pending approvals',
-      content: { 'application/json': { schema: PendingApprovalsResponseSchema } },
+      content: {
+        'application/json': { schema: PendingApprovalsResponseSchema },
+      },
     },
   },
 });
@@ -5392,7 +5629,9 @@ registry.registerPath({
   responses: {
     200: {
       description: 'Extensions waiting to be turned on',
-      content: { 'application/json': { schema: PendingExtensionApprovalsResponseSchema } },
+      content: {
+        'application/json': { schema: PendingExtensionApprovalsResponseSchema },
+      },
     },
   },
 });
@@ -5417,7 +5656,9 @@ registry.registerPath({
     params: z.object({ id: z.string() }),
     body: {
       required: false,
-      content: { 'application/json': { schema: ApproveExtensionRequestSchema } },
+      content: {
+        'application/json': { schema: ApproveExtensionRequestSchema },
+      },
     },
   },
   responses: {
@@ -5472,7 +5713,11 @@ registry.registerPath({
     'is on. There is no MCP tool for this.',
   request: {
     params: z.object({ id: z.string() }),
-    body: { content: { 'application/json': { schema: DismissExtensionApprovalRequestSchema } } },
+    body: {
+      content: {
+        'application/json': { schema: DismissExtensionApprovalRequestSchema },
+      },
+    },
   },
   responses: {
     204: { description: 'Declined for now' },
@@ -5545,7 +5790,9 @@ registry.registerPath({
     'posture, and a signed-in person is required when login is on. Only the app’s own screens ' +
     'call this; there is no MCP tool or extension API for it.',
   request: {
-    body: { content: { 'application/json': { schema: TrustedSourceRequestSchema } } },
+    body: {
+      content: { 'application/json': { schema: TrustedSourceRequestSchema } },
+    },
   },
   responses: {
     200: {
@@ -5570,7 +5817,9 @@ registry.registerPath({
     'own approval, pinned to that copy. A newer copy or a new extension from the source waits ' +
     'for a person again. The same person bar as trusting applies.',
   request: {
-    body: { content: { 'application/json': { schema: TrustedSourceRequestSchema } } },
+    body: {
+      content: { 'application/json': { schema: TrustedSourceRequestSchema } },
+    },
   },
   responses: {
     200: {
@@ -5608,12 +5857,16 @@ registry.registerPath({
     'anything is granted.',
   request: {
     params: z.object({ id: z.string() }),
-    body: { content: { 'application/json': { schema: GrantApprovalBodySchema } } },
+    body: {
+      content: { 'application/json': { schema: GrantApprovalBodySchema } },
+    },
   },
   responses: {
     200: {
       description: 'Approval granted',
-      content: { 'application/json': { schema: ApprovalDecisionResponseSchema } },
+      content: {
+        'application/json': { schema: ApprovalDecisionResponseSchema },
+      },
     },
     403: {
       description:
@@ -5654,12 +5907,16 @@ registry.registerPath({
     'local login is enabled.',
   request: {
     params: z.object({ id: z.string() }),
-    body: { content: { 'application/json': { schema: DenyApprovalBodySchema } } },
+    body: {
+      content: { 'application/json': { schema: DenyApprovalBodySchema } },
+    },
   },
   responses: {
     200: {
       description: 'Approval denied',
-      content: { 'application/json': { schema: ApprovalDecisionResponseSchema } },
+      content: {
+        'application/json': { schema: ApprovalDecisionResponseSchema },
+      },
     },
     403: {
       description:
@@ -5785,12 +6042,20 @@ registry.registerPath({
     'Sets the preset every area starts from and clears the changes on top of the old one. ' +
     "`applyToAgents` also clears those agents' own settings, so they follow the new preset. " +
     'Records one `permission.changed` Activity event.',
-  request: { body: { content: { 'application/json': { schema: SetPermissionPresetBodySchema } } } },
+  request: {
+    body: {
+      content: {
+        'application/json': { schema: SetPermissionPresetBodySchema },
+      },
+    },
+  },
   responses: {
     200: {
       description: 'The preset changed',
       content: {
-        'application/json': { schema: PermissionWriteResponseSchema(PermissionsResponseSchema) },
+        'application/json': {
+          schema: PermissionWriteResponseSchema(PermissionsResponseSchema),
+        },
       },
     },
     ...PERMISSION_WRITE_REFUSALS,
@@ -5807,13 +6072,19 @@ registry.registerPath({
     "change. `applyToAgents` removes those agents' own settings for the same keys in the same " +
     'write. Records one `permission.changed` Activity event naming every agent touched.',
   request: {
-    body: { content: { 'application/json': { schema: PatchPermissionDefaultsBodySchema } } },
+    body: {
+      content: {
+        'application/json': { schema: PatchPermissionDefaultsBodySchema },
+      },
+    },
   },
   responses: {
     200: {
       description: 'The defaults changed',
       content: {
-        'application/json': { schema: PermissionWriteResponseSchema(PermissionsResponseSchema) },
+        'application/json': {
+          schema: PermissionWriteResponseSchema(PermissionsResponseSchema),
+        },
       },
     },
     ...PERMISSION_WRITE_REFUSALS,
@@ -5832,7 +6103,9 @@ registry.registerPath({
   responses: {
     200: {
       description: 'Permission changes',
-      content: { 'application/json': { schema: PermissionHistoryResponseSchema } },
+      content: {
+        'application/json': { schema: PermissionHistoryResponseSchema },
+      },
     },
   },
 });
@@ -5875,7 +6148,9 @@ registry.registerPath({
     body: {
       content: {
         'application/json': {
-          schema: CreateAgentOptionsSchema.omit({ skipTemplateDownload: true }).extend({
+          schema: CreateAgentOptionsSchema.omit({
+            skipTemplateDownload: true,
+          }).extend({
             approvedTemplateHash: z.string().optional(),
             confirmationToken: z.string().optional(),
             package: z
@@ -5935,12 +6210,18 @@ registry.registerPath({
     '(`suggestionRestored`). A key already back where the change found it is nothing to do.',
   request: {
     params: z.object({ eventId: z.string() }),
-    body: { content: { 'application/json': { schema: UndoPermissionChangeBodySchema } } },
+    body: {
+      content: {
+        'application/json': { schema: UndoPermissionChangeBodySchema },
+      },
+    },
   },
   responses: {
     200: {
       description: 'What the Undo changed, and what it left alone',
-      content: { 'application/json': { schema: UndoPermissionChangeResponseSchema } },
+      content: {
+        'application/json': { schema: UndoPermissionChangeResponseSchema },
+      },
     },
     ...PERMISSION_WRITE_REFUSALS,
     404: {
@@ -5972,7 +6253,9 @@ registry.registerPath({
   responses: {
     200: {
       description: "The agent's permissions",
-      content: { 'application/json': { schema: AgentPermissionsResponseSchema } },
+      content: {
+        'application/json': { schema: AgentPermissionsResponseSchema },
+      },
     },
     404: {
       description: 'No such agent (`UNKNOWN_AGENT`)',
@@ -5991,7 +6274,11 @@ registry.registerPath({
     '`permission.changed` Activity event.',
   request: {
     params: z.object({ id: z.string() }),
-    body: { content: { 'application/json': { schema: PatchAgentPermissionsBodySchema } } },
+    body: {
+      content: {
+        'application/json': { schema: PatchAgentPermissionsBodySchema },
+      },
+    },
   },
   responses: {
     200: {
@@ -6025,7 +6312,9 @@ const RoomMemberParams = RoomIdParams.extend({ authorId: z.string().min(1) });
 /** `:id` plus the `:entryId` a reaction attaches to — the entry's ULID, not its seq. */
 const RoomEntryParams = RoomIdParams.extend({ entryId: z.string().min(1) });
 /** `:id` plus the `:attachmentId` a stored file is served under. */
-const RoomAttachmentParams = RoomIdParams.extend({ attachmentId: z.string().min(1) });
+const RoomAttachmentParams = RoomIdParams.extend({
+  attachmentId: z.string().min(1),
+});
 
 /** 404 body shared by every room path: an unknown room and one the caller may not see. */
 const roomNotFound = {
@@ -6131,7 +6420,11 @@ registry.registerPath({
   summary: 'Open a channel or a DM',
   description:
     'The room and its seeded roster are written in one transaction, including any agent named by `agentPaths` — so creating a DM is one call and a failed resolve leaves no room behind. A DM may name any number of agents; one gives a one-to-one conversation and several give a group. **Creating a DM is idempotent on its member set**: when a direct message already holds exactly these authors (the creator included, order irrelevant, neither a superset nor a subset), that room is returned instead of a second one being minted, and an archived match is un-archived first. The existing room keeps its own title and its place in the activity order — opening a conversation is not activity in it. Read the status to tell the two apart: **201** means a room was created, **200** means one was already there. The body is identical either way, so the status is the only signal.',
-  request: { body: { content: { 'application/json': { schema: CreateRoomRequestSchema } } } },
+  request: {
+    body: {
+      content: { 'application/json': { schema: CreateRoomRequestSchema } },
+    },
+  },
   responses: {
     201: {
       description: 'A new room, with its roster',
@@ -6200,7 +6493,9 @@ registry.registerPath({
     'Archiving a channel releases its slug. Un-archiving reclaims it, and is refused with 409 when another channel took it meanwhile.',
   request: {
     params: RoomIdParams,
-    body: { content: { 'application/json': { schema: UpdateRoomRequestSchema } } },
+    body: {
+      content: { 'application/json': { schema: UpdateRoomRequestSchema } },
+    },
   },
   responses: {
     200: {
@@ -6270,7 +6565,9 @@ registry.registerPath({
     'Returns 202 with the entry identity only. The entry itself reaches every reader — including the poster — over `GET /api/rooms/{id}/events`, mirroring `POST /api/sessions/{id}/messages` (ADR-0264). The author is resolved server-side from the caller identity and is never read from the body — an agent presenting a valid `X-DorkOS-Agent` posts as itself, and one presenting a token this machine cannot verify is refused with 401 rather than posting as the operator. Every agent member the post addresses is then triggered, bounded by the cascade guard; their replies arrive on the same stream.',
   request: {
     params: RoomIdParams,
-    body: { content: { 'application/json': { schema: PostToRoomRequestSchema } } },
+    body: {
+      content: { 'application/json': { schema: PostToRoomRequestSchema } },
+    },
   },
   responses: {
     202: {
@@ -6309,7 +6606,9 @@ registry.registerPath({
   responses: {
     200: {
       description: 'Stored; ids to reference in the post that follows',
-      content: { 'application/json': { schema: RoomAttachmentUploadResponseSchema } },
+      content: {
+        'application/json': { schema: RoomAttachmentUploadResponseSchema },
+      },
     },
     400: roomValidationError,
     401: roomAgentUnverified,
@@ -6346,7 +6645,9 @@ registry.registerPath({
       description: 'The bytes, typed and dispositioned by what they were verified to be',
       content: { '*/*': { schema: { type: 'string', format: 'binary' } } },
     },
-    304: { description: 'Not modified — the `If-None-Match` ETag still matches' },
+    304: {
+      description: 'Not modified — the `If-None-Match` ETag still matches',
+    },
     400: {
       description: 'The id could never name a stored file',
       content: { 'application/json': { schema: ErrorResponseSchema } },
@@ -6367,7 +6668,9 @@ registry.registerPath({
     'Keyed on `(you, this entry, this emoji)`, which holds at most one reaction however many times anyone asks. With no `on` in the body this is a TOGGLE — the same emoji again removes it — which is what a click means and is exactly not idempotent, hence POST rather than PUT. **Do not retry a bare toggle**: a timeout does not say whether the write landed, and re-sending the flip undoes it. Send `{"emoji": "👍", "on": true}` or `on: false` instead, which names the state you want and is safe to repeat; `on: true` on a reaction you already have does not restamp it, so the pill keeps its place in a row ordered by first appearance. Returns 202 with which way it went and your recomputed quick row — but **treat the event stream as authoritative, not this body**: the entry\'s new reaction set reaches every reader, this one included, over `GET /api/rooms/{id}/events` as a `reaction` frame carrying the WHOLE current set, while this body says only what YOUR call did and somebody else may have reacted in between. **A reaction is costless by design**: it takes no turn, writes no entry, sends no notice, starts no cascade and does not move the room in the activity order. When it lands on an agent-authored entry the agent is told on its next turn, in its room context, as an acknowledgment it never replies to. **An agent may react too** — ADR 260814-195522 reverses etiquette E16b, so what bounds a machine here is an hourly ceiling per room (`REACTION_RATE_LIMITED`, 429) rather than what kind of author it is, and the pill it leaves carries the AGENT\'s id. A caller presenting an `X-DorkOS-Agent` token this machine cannot verify is refused with 401: a revoked agent has no allowance to spend.',
   request: {
     params: RoomEntryParams,
-    body: { content: { 'application/json': { schema: ToggleReactionRequestSchema } } },
+    body: {
+      content: { 'application/json': { schema: ToggleReactionRequestSchema } },
+    },
   },
   responses: {
     202: {
@@ -6405,7 +6708,9 @@ registry.registerPath({
     'Add by `authorId`, or by `agentPath` to mint an agent author on first use. `responseMode` is seeded from the room kind when omitted. Operator-only: an agent that could widen a room-mate addressing could drive replies nobody asked for.',
   request: {
     params: RoomIdParams,
-    body: { content: { 'application/json': { schema: AddRoomMemberRequestSchema } } },
+    body: {
+      content: { 'application/json': { schema: AddRoomMemberRequestSchema } },
+    },
   },
   responses: {
     201: {
@@ -6430,7 +6735,11 @@ registry.registerPath({
     'Operator-only. `responseMode` decides when an agent answers without being addressed, so an agent able to turn it up on a room-mate could manufacture a conversation.',
   request: {
     params: RoomMemberParams,
-    body: { content: { 'application/json': { schema: UpdateMembershipRequestSchema } } },
+    body: {
+      content: {
+        'application/json': { schema: UpdateMembershipRequestSchema },
+      },
+    },
   },
   responses: {
     200: {
@@ -6472,7 +6781,9 @@ registry.registerPath({
     'A handle is what somebody types after an `@` to reach exactly one author: lowercase, 2–32 characters of `[a-z0-9._-]`, starting and ending alphanumeric, and unique across this install (case-folded). The server normalizes what it is given, so a client that skipped its own check cannot store something the grammar forbids, and an empty string clears the handle. **Human-initiated only** — any caller presenting `X-DorkOS-Agent` is refused, 403 when the token resolves to a live agent and 401 when it does not. There is no MCP tool and no capability for this: an agent able to rename itself in a loop would grow the tombstone table a row at a time forever, and removing the mechanism beats throttling it. A released handle stays reserved to the author who gave it up; they may take it back, and nobody else may take it at all.',
   request: {
     params: z.object({ authorId: z.string().min(1) }),
-    body: { content: { 'application/json': { schema: SetAuthorHandleRequestSchema } } },
+    body: {
+      content: { 'application/json': { schema: SetAuthorHandleRequestSchema } },
+    },
   },
   responses: {
     200: {
@@ -6509,7 +6820,9 @@ registry.registerPath({
     'A thread is a relation between entries in this room, not a room of its own, so there is nothing to create first: this posts the first reply and every later one. The reply keeps the room roster, the room read cursor and the room budget, and answers to the same rules any post does — the caller must be a member, and an archived room refuses. One level only: a reply whose root is itself a reply is refused with 400 (`NESTED_THREAD`). Trigger-only, like `POST /api/rooms/{id}/entries`: 202 with the entry identity, while the entry itself rides the room event stream to every reader.',
   request: {
     params: RoomIdParams,
-    body: { content: { 'application/json': { schema: PostThreadReplyRequestSchema } } },
+    body: {
+      content: { 'application/json': { schema: PostThreadReplyRequestSchema } },
+    },
   },
   responses: {
     202: {
@@ -6823,7 +7136,9 @@ registry.registerPath({
     "Writes one file into the room's own copy and commits it, **as one commit authored by the person who saved it**. The file is named in the body rather than the URL, so a save and a read spell a path the same way. **People only**: a member AGENT is refused 403 `PEOPLE_ONLY` — it has a working copy of its own and `merge_to_room_main` to bring work back through, and a second writer in the integration tree is the one-writer rule undone. Membership is still asked first, so a non-member gets the same 404 an unknown room gets. **Optimistic locking is about the FILE**: `baseCommit` is the commit the editor read it at, and the save is refused 409 `FILE_CHANGED` only if THAT PATH changed since — not merely because the room moved on, which it does every time anybody merges. That refusal carries `conflict` — the commit `main` is at now, and who last touched the file — which is what a reload / keep-mine choice is drawn from; sending the conflict's own commit back as `baseCommit` is how a person overwrites deliberately. Saving text that is byte-for-byte what the file already held commits nothing and answers `committed: false`. A save that commits posts one quiet entry in the room (`body.fileChange`, `kind: 'edit'` or `'add'`) that addresses nobody and wakes no agent. With login on, the commit is authored as the signed-in person (`person-<authorId>@dorkos.local`); with login off, as the operator. Refused otherwise with: `ROOM_FILE_PATH_INVALID` (a path that could mean somewhere else, or that names the room's own git directory in any of its spellings), `ROOM_FILE_NOT_READABLE` (a folder, a link, or another repository — a save never writes through a link — or a name that differs only in capital letters from a file or folder the room already has, which is the same name on macOS and Windows; the message names the real one), **missing folders above the file are created**, and a folder in the path that is really a file is `ROOM_FILE_PATH_INVALID`, `ROOM_FILE_NOT_TEXT` (a `NUL` byte, which would make the file unreadable through the read route), `FILE_TOO_LARGE` and `REPO_CAP_EXCEEDED` against the room's own frozen caps, `MAIN_CHECKOUT_DIRTY` while something outside DorkOS has written in the room's copy, and `ROOM_ARCHIVED`. **Two ceilings, two answers**: the request body limit is 1 MB, below the default file cap, so a very large save never reaches the room's own cap at all — it is refused 413 `REQUEST_TOO_LARGE` by the request parser, where a save that fits the request and not the room is refused 409 `FILE_TOO_LARGE`.",
   request: {
     params: RoomIdParams,
-    body: { content: { 'application/json': { schema: RoomFileSaveRequestSchema } } },
+    body: {
+      content: { 'application/json': { schema: RoomFileSaveRequestSchema } },
+    },
   },
   responses: {
     200: {
@@ -6937,7 +7252,9 @@ registry.registerPath({
     "One commit, `Rename <from> to <to>` (a folder is written with a trailing `/`), authored as the person, and one quiet room entry (`kind: 'rename'`). `baseCommit` is required: every file under `from` must be unchanged since it, or 409 `FILE_CHANGED` with the conflict. `to` must not exist (409 `ROOM_FILE_EXISTS`); missing folders above it are created, and a folder segment that differs only in capitals from one the room has is refused, naming the real one. A file keeps its executable bit. A link or another repository inside a moved folder is refused rather than carried. A rename that only changes capitals is allowed.",
   request: {
     params: RoomIdParams,
-    body: { content: { 'application/json': { schema: RoomFileMoveRequestSchema } } },
+    body: {
+      content: { 'application/json': { schema: RoomFileMoveRequestSchema } },
+    },
   },
   responses: roomFileChangeResponses,
 });
@@ -6951,7 +7268,9 @@ registry.registerPath({
     "One commit, `Delete <path>` (a folder with a trailing `/`), authored as the person, and one quiet room entry (`kind: 'delete'`). `baseCommit` is required, and every file under `path` must be unchanged since it — nobody deletes a file they have not seen — or 409 `FILE_CHANGED`. The room's history keeps what was deleted: it is a commit, so an agent or git can bring it back. POST rather than DELETE because the request carries a body.",
   request: {
     params: RoomIdParams,
-    body: { content: { 'application/json': { schema: RoomFileDeleteRequestSchema } } },
+    body: {
+      content: { 'application/json': { schema: RoomFileDeleteRequestSchema } },
+    },
   },
   responses: roomFileChangeResponses,
 });
@@ -6965,7 +7284,11 @@ registry.registerPath({
     "Copies a file somebody attached to a message in THIS room into the room's files, under `name` (the attachment's own name when omitted) in `dir`. One commit, `Add <path> from the chat`, authored as the person, and one quiet room entry (`kind: 'from-attachment'`). The attachment must be on a posted message in this room — another room's attachment, an unposted upload and an unknown id are all 404 `ATTACHMENT_NOT_FOUND`, the attachments route's own answer. A name the folder already holds is 409 `ROOM_FILE_EXISTS`.",
   request: {
     params: RoomIdParams,
-    body: { content: { 'application/json': { schema: RoomFileFromAttachmentRequestSchema } } },
+    body: {
+      content: {
+        'application/json': { schema: RoomFileFromAttachmentRequestSchema },
+      },
+    },
   },
   responses: {
     ...roomFileChangeResponses,
@@ -6986,7 +7309,9 @@ registry.registerPath({
     'A room’s own copy has one writer and it is DorkOS, so anything uncommitted in it came from outside — a person with a terminal — and while it is there, every merge and every save in the room refuses `MAIN_CHECKOUT_DIRTY`. This is the way out. `{"action":"commit"}` keeps everything as one commit authored by you; `{"action":"discard","paths":[…]}` throws away exactly the files named, and every one of them has to be a path `GET /repo/status` is reporting as changed right now — anything else is 404, so a screen drawn ten minutes ago cannot delete something that arrived since. Committing keeps work and loses nothing, which is why it needs no list; discarding is the only irreversible act on this surface, which is why it demands one. **Operator-only** (403 `OPERATOR_ONLY`). A room’s copy that is on some other branch is refused rather than fixed — DorkOS does not check out over work it did not put there. `clean` in the answer says whether the room is unstuck: discarding some of the changes and not others leaves it paused, honestly.',
   request: {
     params: RoomIdParams,
-    body: { content: { 'application/json': { schema: RoomMainRepairRequestSchema } } },
+    body: {
+      content: { 'application/json': { schema: RoomMainRepairRequestSchema } },
+    },
   },
   responses: {
     200: {
@@ -7039,7 +7364,9 @@ registry.registerPath({
   responses: {
     200: {
       description: 'The file, or why its bytes are not here',
-      content: { 'application/json': { schema: RoomFileContentResponseSchema } },
+      content: {
+        'application/json': { schema: RoomFileContentResponseSchema },
+      },
     },
     400: {
       description:
@@ -7080,7 +7407,9 @@ registry.registerPath({
   responses: {
     200: {
       description: "The room's canvas, pinned first then most recently active",
-      content: { 'application/json': { schema: CanvasDocumentListResponseSchema } },
+      content: {
+        'application/json': { schema: CanvasDocumentListResponseSchema },
+      },
     },
     401: roomAgentUnverified,
     404: roomNotFound,
@@ -7114,7 +7443,11 @@ registry.registerPath({
     'Opens a document as YOU — the author is resolved from the request and never sent. Content with a natural identity (a file path, a URL) DEDUPES: opening something that is already on the table refreshes that document rather than adding a second tab beside it, which is what makes the canvas a table rather than a pile. `json` and `widget` have no such identity, so every open of one is a fresh document. Past twelve unpinned documents the least recently active is dropped to make room, and every viewer is told. Refused on an archived room.',
   request: {
     params: RoomIdParams,
-    body: { content: { 'application/json': { schema: OpenCanvasDocumentRequestSchema } } },
+    body: {
+      content: {
+        'application/json': { schema: OpenCanvasDocumentRequestSchema },
+      },
+    },
   },
   responses: {
     201: {
@@ -7141,7 +7474,11 @@ registry.registerPath({
     "Three independent changes, any of which may be omitted: replace what the document shows, pin or unpin it, and move it to the front of the list. **`activate` changes the ORDER and nobody's open tab.** A shared canvas that yanked everyone's view when somebody clicked would be the pixel version of interrupting, so ordering on the server is not a remote-control verb. Refused on an archived room, and refused while another member is editing the document.",
   request: {
     params: RoomCanvasParams,
-    body: { content: { 'application/json': { schema: UpdateCanvasDocumentRequestSchema } } },
+    body: {
+      content: {
+        'application/json': { schema: UpdateCanvasDocumentRequestSchema },
+      },
+    },
   },
   responses: {
     200: {
@@ -7186,7 +7523,9 @@ registry.registerPath({
     'While you hold this, an agent\'s change to the same document is HELD rather than applied, and the agent is told it was held instead of being told it succeeded. Refresh it about every fifteen seconds while an editor is focused; it lapses on its own about forty-five seconds after the last refresh, so a browser that crashed mid-edit cannot leave a document nobody can touch. Send `{"editing": false}` on save, on close, and when you look away without changing anything.',
   request: {
     params: RoomCanvasParams,
-    body: { content: { 'application/json': { schema: CanvasEditingRequestSchema } } },
+    body: {
+      content: { 'application/json': { schema: CanvasEditingRequestSchema } },
+    },
   },
   responses: {
     200: {
@@ -7296,7 +7635,11 @@ registry.registerPath({
     'While you follow somebody, your Browser tab goes where theirs goes. Call this again about every ten seconds to say you are still there: a claim nobody restates lapses after thirty, which is what makes a closed tab, a crashed browser and a lost connection the same event. Following somebody new replaces whoever you were following — a panel can only be in one place. The person you follow is told, and starts sharing their position only then, so a room where nobody follows anybody carries nothing extra at all.',
   request: {
     params: RoomIdParams,
-    body: { content: { 'application/json': { schema: FollowRoomMemberRequestSchema } } },
+    body: {
+      content: {
+        'application/json': { schema: FollowRoomMemberRequestSchema },
+      },
+    },
   },
   responses: {
     204: { description: 'Following' },
@@ -7340,12 +7683,16 @@ registry.registerPath({
     'Send at most once every 250 ms, and only while somebody is following you. It carries which document you are on, the page your browser is showing and how far down you have scrolled — never anything that is IN the page. The answer says whether anybody was following: `false` means stop sending, which is how a tab that missed the "nobody is following you any more" message goes quiet on its own.',
   request: {
     params: RoomIdParams,
-    body: { content: { 'application/json': { schema: PublishRoomViewRequestSchema } } },
+    body: {
+      content: { 'application/json': { schema: PublishRoomViewRequestSchema } },
+    },
   },
   responses: {
     200: {
       description: 'Whether anybody was following, and the position therefore passed on',
-      content: { 'application/json': { schema: PublishRoomViewResponseSchema } },
+      content: {
+        'application/json': { schema: PublishRoomViewResponseSchema },
+      },
     },
     400: roomValidationError,
     401: roomAgentUnverified,
@@ -7384,12 +7731,18 @@ registry.registerPath({
     'How turning a hunk down lands: the whole file, conditional on the hash the diff was computed against. A file the agent changed in between answers `ok: false` carrying what it holds now — a conflict is control flow, and the screen recomputes rather than clobbering work that carried on. **People only** (403 `PEOPLE_ONLY`), on the same instrument `PUT /:id/files/content` uses: this writes into a colleague’s checkout, and an agent doing that leaves that colleague dirty — the state their own merge then refuses. Membership is asked first, so a non-member still gets 404. Any member who is a person may send a hunk back; only the owner may merge. Archived rooms refuse it 409, like every other canvas write.',
   request: {
     params: RoomCanvasParams,
-    body: { content: { 'application/json': { schema: RoomCanvasDiffWriteRequestSchema } } },
+    body: {
+      content: {
+        'application/json': { schema: RoomCanvasDiffWriteRequestSchema },
+      },
+    },
   },
   responses: {
     200: {
       description: 'What was written, or what the file holds now',
-      content: { 'application/json': { schema: RoomCanvasDiffWriteResultSchema } },
+      content: {
+        'application/json': { schema: RoomCanvasDiffWriteResultSchema },
+      },
     },
     400: {
       description:
@@ -7476,7 +7829,9 @@ registry.registerPath({
   responses: {
     200: {
       description: 'The session’s canvas, pinned first then most recently active',
-      content: { 'application/json': { schema: CanvasDocumentListResponseSchema } },
+      content: {
+        'application/json': { schema: CanvasDocumentListResponseSchema },
+      },
     },
     400: sessionCanvasInvalidId,
     401: sessionCanvasIdentityUnverified,
@@ -7515,7 +7870,11 @@ registry.registerPath({
     'Content with a natural identity (a file path, a URL) DEDUPES: opening something already on the canvas refreshes that document rather than adding a second tab beside it, so two windows of one session land on one document. `json` and `widget` have no such identity, so every open of one is a fresh document. Past twelve unpinned documents the least recently active is dropped, and every window is told.',
   request: {
     params: SessionCanvasIdParams,
-    body: { content: { 'application/json': { schema: OpenCanvasDocumentRequestSchema } } },
+    body: {
+      content: {
+        'application/json': { schema: OpenCanvasDocumentRequestSchema },
+      },
+    },
   },
   responses: {
     201: {
@@ -7546,7 +7905,11 @@ registry.registerPath({
     'Three independent changes, any of which may be omitted: replace what the document shows, pin or unpin it, and move it to the front of the list.',
   request: {
     params: SessionCanvasParams,
-    body: { content: { 'application/json': { schema: UpdateCanvasDocumentRequestSchema } } },
+    body: {
+      content: {
+        'application/json': { schema: UpdateCanvasDocumentRequestSchema },
+      },
+    },
   },
   responses: {
     200: {
@@ -7588,7 +7951,9 @@ registry.registerPath({
     "While you hold this, the agent's change to the same document is HELD rather than applied, and the agent is told it was held instead of being told it succeeded. Refresh it about every fifteen seconds while an editor is focused; it lapses on its own about forty-five seconds after the last refresh, so a browser that crashed mid-edit cannot leave a document nobody can touch.",
   request: {
     params: SessionCanvasParams,
-    body: { content: { 'application/json': { schema: CanvasEditingRequestSchema } } },
+    body: {
+      content: { 'application/json': { schema: CanvasEditingRequestSchema } },
+    },
   },
   responses: {
     200: {
@@ -7612,7 +7977,9 @@ registry.registerPath({
     'Puts a small face on that document’s tab for everybody else looking at this room, and takes it off again when you send `{"documentId": null}`. **Nothing is written down.** The whole effect is one live-only frame on the room’s stream, so a reader who connects afterwards never learns it and a reconnect forgets it — a face left on a document somebody walked away from ten minutes ago would be worse than no face. Send it when the document you are looking at changes, and once with `null` on the way out. It answers for an archived room, because looking at one is allowed.',
   request: {
     params: RoomIdParams,
-    body: { content: { 'application/json': { schema: CanvasViewingRequestSchema } } },
+    body: {
+      content: { 'application/json': { schema: CanvasViewingRequestSchema } },
+    },
   },
   responses: {
     204: { description: 'Told the room' },
@@ -7652,7 +8019,9 @@ registry.registerPath({
         'SSE stream: a RoomSnapshot frame on a cold connect, then RoomEvent frames. A ' +
         'WebSocket upgrade of the same path answers `101` with the identical sequence.',
       content: {
-        'text/event-stream': { schema: z.union([RoomSnapshotSchema, LocalRoomEventSchema]) },
+        'text/event-stream': {
+          schema: z.union([RoomSnapshotSchema, LocalRoomEventSchema]),
+        },
       },
     },
     404: roomNotFound,
@@ -7688,7 +8057,9 @@ registry.registerPath({
   request: {
     params: ReadCursorParamsSchema,
     body: {
-      content: { 'application/json': { schema: SetReadCursorPositionRequestSchema } },
+      content: {
+        'application/json': { schema: SetReadCursorPositionRequestSchema },
+      },
     },
   },
   responses: {
@@ -7897,7 +8268,9 @@ registry.registerPath({
     'dismisses the "Suggested by <agent>" note the roster and the account menu draw over a name an ' +
     'agent set through `config_patch` (DOR-1022).',
   request: {
-    body: { content: { 'application/json': { schema: ProfileUpdateRequestSchema } } },
+    body: {
+      content: { 'application/json': { schema: ProfileUpdateRequestSchema } },
+    },
   },
   responses: {
     200: {
@@ -8057,12 +8430,18 @@ registry.registerPath({
     'the stored URL carries is what makes a replaced photo appear at once without turning ' +
     'caching off; a matching `If-None-Match` answers 304. The id is opaque — one that could be ' +
     'read as a path is answered 404 rather than followed.',
-  request: { params: z.object({ id: z.string().openapi({ description: 'The identity id' }) }) },
+  request: {
+    params: z.object({
+      id: z.string().openapi({ description: 'The identity id' }),
+    }),
+  },
   responses: {
     200: {
       description: 'The image',
       content: {
-        'image/png': { schema: z.string().openapi({ type: 'string', format: 'binary' }) },
+        'image/png': {
+          schema: z.string().openapi({ type: 'string', format: 'binary' }),
+        },
       },
     },
     304: { description: 'The caller already has this exact photo' },
@@ -8289,7 +8668,9 @@ registry.registerPath({
   responses: {
     200: {
       description: 'One page of history, with the unfiltered unread count',
-      content: { 'application/json': { schema: ListNotificationsResponseSchema } },
+      content: {
+        'application/json': { schema: ListNotificationsResponseSchema },
+      },
     },
     400: {
       description: 'Validation error',
@@ -8307,7 +8688,9 @@ registry.registerPath({
   responses: {
     200: {
       description: 'How many rows moved, and the unread count after',
-      content: { 'application/json': { schema: MarkNotificationsReadResponseSchema } },
+      content: {
+        'application/json': { schema: MarkNotificationsReadResponseSchema },
+      },
     },
     403: {
       description: 'Only the operator may move read state',
@@ -8324,7 +8707,9 @@ registry.registerPath({
   responses: {
     200: {
       description: 'How many rows moved, and the unread count after',
-      content: { 'application/json': { schema: MarkNotificationsReadResponseSchema } },
+      content: {
+        'application/json': { schema: MarkNotificationsReadResponseSchema },
+      },
     },
     403: {
       description: 'Only the operator may move read state',
@@ -8364,7 +8749,9 @@ registry.registerPath({
   responses: {
     200: {
       description: 'Every subscribed browser, newest first',
-      content: { 'application/json': { schema: ListPushSubscriptionsResponseSchema } },
+      content: {
+        'application/json': { schema: ListPushSubscriptionsResponseSchema },
+      },
     },
     403: {
       description: 'Only the operator may list push devices',
@@ -8383,13 +8770,17 @@ registry.registerPath({
     'browser rotated without accumulating dead rows.',
   request: {
     body: {
-      content: { 'application/json': { schema: RegisterPushSubscriptionRequestSchema } },
+      content: {
+        'application/json': { schema: RegisterPushSubscriptionRequestSchema },
+      },
     },
   },
   responses: {
     200: {
       description: 'The subscription as it now stands',
-      content: { 'application/json': { schema: RegisterPushSubscriptionResponseSchema } },
+      content: {
+        'application/json': { schema: RegisterPushSubscriptionResponseSchema },
+      },
     },
     400: {
       description: 'Validation error',
@@ -8411,7 +8802,9 @@ registry.registerPath({
   responses: {
     200: {
       description: 'How many rows went away — 0 when it was already gone',
-      content: { 'application/json': { schema: DeletePushSubscriptionResponseSchema } },
+      content: {
+        'application/json': { schema: DeletePushSubscriptionResponseSchema },
+      },
     },
     403: {
       description: 'Only the operator may remove a push device',

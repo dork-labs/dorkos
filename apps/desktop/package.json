@@ -30,6 +30,7 @@
     "@anthropic-ai/sdk": "0.123.0",
     "@asteasolutions/zod-to-openapi": "9.1.0",
     "@composio/core": "0.21.0",
+    "@dorkos/browser": "workspace:*",
     "@dorkos/db": "workspace:*",
     "@dorkos/server": "workspace:*",
     "@dorkos/shared": "workspace:*",
@@ -48,7 +49,8 @@
     "express": "^5.2.1",
     "node-pty": "^1.1.0",
     "uuid": "^13.0.2",
-    "zod": "^4.6.2"
+    "zod": "^4.6.2",
+    "playwright-core": "1.63.0"
   },
   "devDependencies": {
     "@dorkos/client": "workspace:*",

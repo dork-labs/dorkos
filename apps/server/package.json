@@ -19,11 +19,11 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "dev:tunnel": "TUNNEL_ENABLED=true tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.build.json && node -e \"require('fs').cpSync('src/core-extensions','dist/core-extensions',{recursive:true})\"",
+    "build": "tsc -p tsconfig.build.json && node -e \"require('fs').cpSync('src/core-extensions','dist/core-extensions',{recursive:true})\" && node scripts/copy-vm-release.mjs",
     "start": "NODE_ENV=production node dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "node --max-old-space-size=6144 ./node_modules/typescript/bin/tsc --noEmit",
     "lint": "eslint ."
   },
   "dependencies": {

@@ -153,6 +153,7 @@ describe('Database Migrations', () => {
       'authors',
       'browser_attachments',
       'browser_instances',
+      'browser_profile_disks',
       'browser_profiles',
       // Durable document channels, route authority, input outcomes and recovery
       // evidence (spec `doc-channel`, migration 0137). These survive physical

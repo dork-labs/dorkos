@@ -150,12 +150,20 @@ export class BrowserRegistry {
     }
   }
 
-  private refresh(row: BrowserInstanceRow): BrowserInstanceRow {
+  private refresh(
+    row: BrowserInstanceRow,
+    onOriginalDenial?: (value: BrowserRegistryError) => void
+  ): BrowserInstanceRow {
     const original = this.originals.get(row.browserId);
     if (this.faulted.has(row.browserId)) throw new BrowserRegistryError('profileUncertain');
     if (!original) {
       if (row.status !== 'stopped') this.store.transition(row, 'uncertain');
-      return this.store.instance(row.ownerAuthorId, row.browserId, row.browserGeneration);
+      return this.store.instance(
+        row.ownerAuthorId,
+        row.browserId,
+        row.browserGeneration,
+        onOriginalDenial
+      );
     }
     if (
       original &&
@@ -178,26 +186,57 @@ export class BrowserRegistry {
         }
       }
     }
-    return this.store.instance(row.ownerAuthorId, row.browserId, row.browserGeneration);
+    return this.store.instance(
+      row.ownerAuthorId,
+      row.browserId,
+      row.browserGeneration,
+      onOriginalDenial
+    );
+  }
+
+  private publicRow(
+    owner: string,
+    browserId: string,
+    generation: number,
+    onOriginalDenial?: (value: BrowserRegistryError) => void
+  ): BrowserInstanceRow {
+    const row = this.store.instance(owner, browserId, generation, onOriginalDenial);
+    if (row.profileId && this.store.isProfileImport(owner, row.profileId)) {
+      const refusal = new BrowserRegistryError('inaccessible');
+      onOriginalDenial?.(refusal);
+      throw refusal;
+    }
+    return row;
   }
 
   /** Return live metadata only after querying the original engine, never database status alone. */
-  instance(owner: string, browserId: string, generation: number): BrowserInstance {
-    return this.store.project(this.refresh(this.store.instance(owner, browserId, generation)));
+  instance(
+    owner: string,
+    browserId: string,
+    generation: number,
+    onOriginalDenial?: (value: BrowserRegistryError) => void
+  ): BrowserInstance {
+    return this.store.project(
+      this.refresh(this.publicRow(owner, browserId, generation, onOriginalDenial), onOriginalDenial)
+    );
   }
 
   /** List only authenticated owner's metadata, refreshing actual owned engine authority. */
   instances(owner: string): BrowserInstance[] {
     return this.store
       .rows()
-      .filter((row) => row.ownerAuthorId === owner)
+      .filter(
+        (row) =>
+          row.ownerAuthorId === owner &&
+          !(row.profileId && this.store.isProfileImport(owner, row.profileId))
+      )
       .map((row) => this.store.project(this.refresh(row)));
   }
 
   /** Associate only an independently authorized target with a genuinely current owned browser. */
   attach(owner: string, browserId: string, generation: number, target: BrowserAttachment): string {
     const attachment = Object.freeze(BrowserAttachmentSchema.parse(target));
-    const row = this.refresh(this.store.instance(owner, browserId, generation));
+    const row = this.refresh(this.publicRow(owner, browserId, generation));
     if (row.status !== 'running') throw new BrowserRegistryError('stopped');
     if (!this.authorizeAttachment(owner, attachment))
       throw new BrowserRegistryError('inaccessible');

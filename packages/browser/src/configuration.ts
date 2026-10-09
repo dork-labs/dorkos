@@ -107,6 +107,13 @@ const ConfigurationSchema = z
       .strict(),
     nativeJournal: z
       .object({
+        launcher: z
+          .object({
+            executable: AbsolutePathSchema,
+            nodeRuntime: z.enum(['node', 'electron-node']),
+          })
+          .strict()
+          .optional(),
         workerPath: AbsolutePathSchema,
         browserWorkerPath: AbsolutePathSchema.optional(),
         artifact: z
@@ -125,6 +132,10 @@ const ConfigurationSchema = z
       .strict()
       .optional(),
     recordedRecovery: z.custom<RecordedProfileRecovery>(callback).optional(),
+    // Constructor-only reviewed limit; absence retains the structural ceiling, not capacity.
+    tabsPerBrowser: z.number().int().min(1).max(64).safe().optional(),
+    // Constructor-only measured interval; absence makes no capture-rate qualification.
+    captureMinimumIntervalMilliseconds: z.number().finite().positive().max(2000).optional(),
     policy: z
       .object({
         authorizeAction: z.custom<EnginePolicy['authorizeAction']>(callback),

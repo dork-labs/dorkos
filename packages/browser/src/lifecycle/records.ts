@@ -10,8 +10,29 @@ import type { ProfileReservation } from '../profiles/reservation.js';
 import type { OwnedDirectory } from '../profiles/owned-directory.js';
 import type { FixtureProxy } from '../network/fixture-proxy.js';
 
+/** Private fixed close observations; never a public result or authority grant. */
+export type RetirementCloseRefusalStage =
+  | 'entry'
+  | 'aggregate'
+  | 'terminal'
+  | 'setup'
+  | 'snapshot'
+  | 'navigation'
+  | 'context'
+  | 'inputs'
+  | 'proxy'
+  | 'connection'
+  | 'network'
+  | 'journal'
+  | 'observe-gone'
+  | 'final-custody'
+  | 'directory'
+  | 'release';
+
 /** Internal acquisition ledger, allocated before any owned browser can launch. */
 export interface BrowserRecord {
+  tabsPerBrowser?: number;
+  retirementCloseRefusal?: RetirementCloseRefusalStage;
   ownerNavigationObserver?: Readonly<{ close(): Promise<void> }>;
   ownerNavigationObserverClose?: Promise<void>;
   diagnosticsBudget: DiagnosticsBudget;
@@ -21,6 +42,7 @@ export interface BrowserRecord {
   mode: 'persistent' | 'ephemeral';
   profileId?: ProfileId;
   profileDir?: string;
+  initialStorageState?: import('../profiles/storage-state.js').ProfileStorageState;
   directory?: OwnedDirectory;
   dataRoot?: OwnedDirectory;
   reservation?: ProfileReservation;
@@ -28,11 +50,25 @@ export interface BrowserRecord {
   supervisor?: Awaited<
     ReturnType<typeof import('../runtime/darwin-supervisor-client.js').startDarwinSupervisorClient>
   >;
+  controllerCloseBarrier?: Promise<void>;
   supervisorStopBarrier?: Promise<void>;
   controllerBrowser?: import('playwright-core').Browser;
+  controllerWire?: ReturnType<
+    typeof import('../runtime/identity/supervisor-protocol-wire.js').createSupervisorProtocolWire
+  >;
+  controllerAuthentication?: ReturnType<
+    typeof import('../runtime/identity/controller-proxy-authentication.js').createControllerProxyAuthentication
+  >;
+  controllerAuthenticationPreparation?: Promise<void>;
+  controllerWireClose?: Promise<void>;
   context?: BrowserContext;
   proxy?: FixtureProxy;
   verifiedRuntime?: Readonly<{ runtimeIdentity: string; policyRevision: number }>;
+  authenticationWarmup?: import('../network/private-proxy-warmup.js').PrivateProxyAuthenticationWarmup;
+  privateProxyWarmup?: ReturnType<
+    typeof import('../network/private-proxy-warmup.js').ownPrivateProxyWarmupPage
+  >;
+  privateProxyWarmupPage?: import('playwright-core').Page;
   networkPeer?: import('../engine.js').PrivateBrowserNetworkPeer;
   networkEndpoint?: Readonly<{
     url: string;

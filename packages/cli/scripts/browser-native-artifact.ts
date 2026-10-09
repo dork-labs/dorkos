@@ -364,7 +364,12 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const root = resolve(fileURLToPath(new URL('../../../', import.meta.url)));
   const destination = process.argv[2];
   if (!destination) throw Error('NATIVE_HANDOFF_DESTINATION_REQUIRED');
-  console.log(
-    await exportBrowserNativeArtifact(root, join(root, 'packages/cli/dist'), resolve(destination))
-  );
+  // Desktop imports these producers through tsx's CommonJS boundary; only the
+  // direct CLI entry may start the original asynchronous export.
+  void exportBrowserNativeArtifact(root, join(root, 'packages/cli/dist'), resolve(destination))
+    .then((result) => console.log(result))
+    .catch((reason: unknown) => {
+      console.error(reason);
+      process.exitCode = 1;
+    });
 }

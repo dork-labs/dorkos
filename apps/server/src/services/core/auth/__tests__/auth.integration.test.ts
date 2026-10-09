@@ -8,12 +8,14 @@ import path from 'node:path';
 import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import { createDb, runMigrations, user, apikey, eq, type Db } from '@dorkos/db';
+import { createDb, runMigrations, user, session, apikey, eq, type Db } from '@dorkos/db';
 import { defaultKeyHasher } from '@better-auth/api-key';
 import { createAuth, toNodeHandler, isBetterAuthBaseUrlAdvisory } from '../index.js';
 import { initConfigManager } from '../../config-manager.js';
 import { env } from '../../../../env.js';
 import { logger } from '../../../../lib/logger.js';
+import { authSessionRemovals } from '../session-removals.js';
+import { eventFanOut } from '../../event-fan-out.js';
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
@@ -116,6 +118,41 @@ describe('Better Auth — local identity core (integration)', () => {
     expect(res.status).toBe(200);
     expect(res.body?.user?.email).toBe(OWNER_EMAIL);
     expect(res.body?.user?.role).toBe('owner');
+  });
+
+  it('publishes actual sign-out privately after the original session row is deleted', async () => {
+    const signIn = await request(fixtureServer)
+      .post('/api/auth/sign-in/email')
+      .set('Origin', ORIGIN)
+      .send({ email: OWNER_EMAIL, password: OWNER_PASSWORD });
+    const cookies = signIn.headers['set-cookie'] as unknown as string[];
+    const current = await request(fixtureServer)
+      .get('/api/auth/get-session')
+      .set('Cookie', cookies);
+    const removed: unknown[] = [],
+      streamed: unknown[] = [];
+    const unsubscribe = authSessionRemovals.subscribe((value) => {
+      expect(
+        db.select().from(session).where(eq(session.id, value.sessionId)).get()
+      ).toBeUndefined();
+      removed.push(value);
+    });
+    const unstream = eventFanOut.subscribe((event, value) => streamed.push({ event, value }));
+    try {
+      const result = await request(fixtureServer)
+        .post('/api/auth/sign-out')
+        .set('Origin', ORIGIN)
+        .set('Cookie', cookies)
+        .send({});
+      expect(result.status).toBe(200);
+      expect(removed).toEqual([
+        { sessionId: current.body.session.id, userId: current.body.user.id },
+      ]);
+      expect(streamed).toEqual([]);
+    } finally {
+      unsubscribe();
+      unstream();
+    }
   });
 
   it('does not trust an arbitrary origin (no wildcard leaks into trustedOrigins)', async () => {

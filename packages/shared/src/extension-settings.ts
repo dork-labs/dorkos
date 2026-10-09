@@ -26,9 +26,14 @@ export class ExtensionSettingsStore {
    *
    * @param dorkHome - Resolved data directory.
    * @param extensionId - The extension whose settings this store reads and writes.
+   * @param requireCurrent - Optional private original server occurrence guard.
    * @throws {InvalidExtensionIdError} If the id could name a file outside `dorkHome`.
    */
-  constructor(dorkHome: string, extensionId: string) {
+  constructor(
+    dorkHome: string,
+    extensionId: string,
+    private readonly requireCurrent?: () => void
+  ) {
     assertValidExtensionId(extensionId);
     const dir = join(dorkHome, 'extension-settings');
     this.filePath = join(dir, `${extensionId}.json`);
@@ -81,9 +86,13 @@ export class ExtensionSettingsStore {
     change: (data: Record<string, string | number | boolean>) => void
   ): Promise<void> {
     await withFileLock(this.filePath, async (write) => {
+      this.requireCurrent?.();
       const data = await this.loadAll();
+      this.requireCurrent?.();
       change(data);
-      await write(JSON.stringify(data, null, 2));
+      const serialized = JSON.stringify(data, null, 2);
+      this.requireCurrent?.();
+      await write(serialized);
     });
   }
 }

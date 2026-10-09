@@ -182,6 +182,12 @@ const CANVAS_CONTENT_CATALOG: Record<UiCanvasContent['type'], CanvasContentEntry
     sentence:
       'A page in the embedded browser: an external URL, a local dev server, or a file in the working directory. browser_navigate is the easier way to open one.',
   },
+  managed_browser: {
+    shape:
+      '{ type: "managed_browser", attachmentId: string, browserId: string, browserGeneration: number, tabId: string, ownerAuthorId: string, scope: { kind: "session", sessionId: string } | { kind: "room", roomId: string }, title?: string }',
+    sentence:
+      'A reference returned by an explicit browser canvas attachment. Reuse only that returned reference; writing one does not open a browser or grant access. Viewing always checks current permission again.',
+  },
   diff: {
     shape: '{ type: "diff", sourcePath: string, mediaKind?: "text"|"image", title?: string }',
     sentence:
@@ -232,7 +238,10 @@ const UI_ACTION_CATALOG: Record<UiCommand['action'], UiActionEntry> = {
     sentence:
       "Pop this session's NEWEST inline dorkos-ui widget into the floating picture-in-picture panel (a bottom sheet on phones). The panel FOLLOWS the live widget fence, so you MUST first send the widget as an inline ```dorkos-ui fence in a message, THEN call this. Sending that fence again updates the panel in place. Use this — NOT open_canvas — when somebody asks for PIP, a floating panel, a pop-out or picture-in-picture: those words mean the floating panel, and open_canvas opens the side canvas instead, which is the wrong surface.",
   },
-  close_pip: { args: '', sentence: 'Close the floating picture-in-picture panel.' },
+  close_pip: {
+    args: '',
+    sentence: 'Close the floating picture-in-picture panel.',
+  },
   open_file: {
     args: '{ sourcePath: string }',
     sentence:

@@ -11,6 +11,9 @@ vi.mock('sonner', () => ({
 
 import { toast } from 'sonner';
 import { useAppStore } from '@/layers/shared/model';
+import { ExtensionLoader, type ExtensionLoadOutcome } from '../model/extension-loader';
+import type { ExtensionAPIDeps } from '../model/types';
+import { getExtensionLoadAdmission } from '@/layers/shared/lib';
 import { useCwdExtensionSync } from '../model/use-cwd-extension-sync';
 
 // Mock fetch globally
@@ -40,7 +43,7 @@ function mockCwdResponse(body: { changed: boolean; added: string[]; removed: str
 describe('useCwdExtensionSync', () => {
   it('does not call the server on initial mount', () => {
     const onChanged = vi.fn();
-    renderHook(() => useCwdExtensionSync(onChanged));
+    renderHook(() => useCwdExtensionSync(onChanged, isOutcomeCurrent));
 
     expect(mockFetch).not.toHaveBeenCalled();
     expect(onChanged).not.toHaveBeenCalled();
@@ -49,7 +52,7 @@ describe('useCwdExtensionSync', () => {
   it('calls POST /api/extensions/cwd-changed when CWD changes', async () => {
     mockFetch.mockReturnValue(mockCwdResponse({ changed: false, added: [], removed: [] }));
 
-    renderHook(() => useCwdExtensionSync(vi.fn()));
+    renderHook(() => useCwdExtensionSync(vi.fn(), isOutcomeCurrent));
 
     // Simulate a CWD change via the store
     act(() => {
@@ -66,11 +69,11 @@ describe('useCwdExtensionSync', () => {
     });
   });
 
-  it('does not remount or toast when extensions are unchanged', async () => {
+  it('reconciles unchanged ids without a success toast', async () => {
     mockFetch.mockReturnValue(mockCwdResponse({ changed: false, added: [], removed: [] }));
 
-    const onChanged = vi.fn();
-    renderHook(() => useCwdExtensionSync(onChanged));
+    const onChanged = vi.fn(authenticOutcome);
+    renderHook(() => useCwdExtensionSync(onChanged, isOutcomeCurrent));
 
     act(() => {
       useAppStore.getState().setSelectedCwd('/project-a');
@@ -81,21 +84,21 @@ describe('useCwdExtensionSync', () => {
     });
 
     expect(toast.info).not.toHaveBeenCalled();
-    expect(onChanged).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(onChanged).toHaveBeenCalledOnce());
   });
 
   it('remounts extensions and toasts success only after the remount resolves', async () => {
     mockFetch.mockReturnValue(mockCwdResponse({ changed: true, added: ['ext-new'], removed: [] }));
 
     // Deferred remount — the success toast must wait for it.
-    let resolveRemount!: () => void;
+    let resolveRemount!: (outcome: ExtensionLoadOutcome) => void;
     const onChanged = vi.fn(
       () =>
-        new Promise<void>((resolve) => {
+        new Promise<ExtensionLoadOutcome>((resolve) => {
           resolveRemount = resolve;
         })
     );
-    renderHook(() => useCwdExtensionSync(onChanged));
+    renderHook(() => useCwdExtensionSync(onChanged, isOutcomeCurrent));
 
     act(() => {
       useAppStore.getState().setSelectedCwd('/project-b');
@@ -107,7 +110,7 @@ describe('useCwdExtensionSync', () => {
     // Remount still pending — no toast yet.
     expect(toast.info).not.toHaveBeenCalled();
 
-    resolveRemount();
+    resolveRemount(await authenticOutcome());
 
     await vi.waitFor(() => {
       expect(toast.info).toHaveBeenCalledWith('Project extensions updated');
@@ -115,20 +118,19 @@ describe('useCwdExtensionSync', () => {
     expect(toast.error).not.toHaveBeenCalled();
   });
 
-  it('shows an error toast (not success) when the remount fails', async () => {
+  it('an unbound rejection cannot announce a current load failure', async () => {
     mockFetch.mockReturnValue(mockCwdResponse({ changed: true, added: ['ext-new'], removed: [] }));
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     const onChanged = vi.fn().mockRejectedValue(new Error('fetch boom'));
-    renderHook(() => useCwdExtensionSync(onChanged));
+    renderHook(() => useCwdExtensionSync(onChanged, isOutcomeCurrent));
 
     act(() => {
       useAppStore.getState().setSelectedCwd('/project-fail');
     });
 
-    await vi.waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith('Couldn’t load this project’s extensions');
-    });
+    await vi.waitFor(() => expect(errorSpy).toHaveBeenCalled());
+    expect(toast.error).not.toHaveBeenCalled();
     expect(toast.info).not.toHaveBeenCalled();
     expect(errorSpy).toHaveBeenCalledWith(
       '[extensions] Failed to apply the new extension set:',
@@ -153,7 +155,7 @@ describe('useCwdExtensionSync', () => {
     });
 
     const onChanged = vi.fn();
-    renderHook(() => useCwdExtensionSync(onChanged));
+    renderHook(() => useCwdExtensionSync(onChanged, isOutcomeCurrent));
 
     act(() => {
       useAppStore.getState().setSelectedCwd('/project-c');
@@ -180,7 +182,7 @@ describe('useCwdExtensionSync', () => {
     useAppStore.setState({ selectedCwd: '/same/project' });
 
     const onChanged = vi.fn();
-    renderHook(() => useCwdExtensionSync(onChanged));
+    renderHook(() => useCwdExtensionSync(onChanged, isOutcomeCurrent));
 
     // Clear any mocks that may have fired during mount
     mockFetch.mockClear();
@@ -210,7 +212,7 @@ describe('useCwdExtensionSync', () => {
 
       mockFetch.mockReturnValue(mockCwdResponse({ changed: false, added: [], removed: [] }));
 
-      renderHook(() => useCwdExtensionSync(vi.fn()));
+      renderHook(() => useCwdExtensionSync(vi.fn(), isOutcomeCurrent));
 
       act(() => {
         useAppStore.getState().setSelectedCwd('/desktop/project');
@@ -231,7 +233,7 @@ describe('useCwdExtensionSync', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     const onChanged = vi.fn();
-    renderHook(() => useCwdExtensionSync(onChanged));
+    renderHook(() => useCwdExtensionSync(onChanged, isOutcomeCurrent));
 
     act(() => {
       useAppStore.getState().setSelectedCwd('/error/project');
@@ -245,5 +247,69 @@ describe('useCwdExtensionSync', () => {
     expect(onChanged).not.toHaveBeenCalled();
 
     errorSpy.mockRestore();
+  });
+});
+
+// The hook's success authority comes from a genuine loader outcome, not a status-shaped mock.
+const outcomeOwners = new WeakMap<ExtensionLoadOutcome, ExtensionLoader>();
+function isOutcomeCurrent(outcome: ExtensionLoadOutcome): boolean {
+  return outcomeOwners.get(outcome)?.isOutcomeCurrent(outcome) ?? false;
+}
+async function authenticOutcome(failed = false): Promise<ExtensionLoadOutcome> {
+  const previousFetch = globalThis.fetch;
+  const deps: ExtensionAPIDeps = {
+    registry: {
+      register: vi.fn(() => () => {}),
+      getContributions: vi.fn(() => []),
+      setTabMarker: vi.fn(),
+      clearTabMarkers: vi.fn(),
+    },
+    dispatcherContext: {
+      getStore: () => ({}) as ReturnType<ExtensionAPIDeps['dispatcherContext']['getStore']>,
+      setTheme: vi.fn(),
+    },
+    appStore: { getState: vi.fn(() => ({})), subscribe: vi.fn(() => () => {}) },
+    navigate: vi.fn(),
+    availableSlots: new Set(),
+    registerCommandHandler: vi.fn(),
+    unregisterCommandHandler: vi.fn(),
+    eventBridge: { subscribe: vi.fn(() => () => {}) },
+  };
+  const loader = new ExtensionLoader(deps, getExtensionLoadAdmission(), vi.fn());
+  globalThis.fetch = vi.fn().mockResolvedValue({ ok: !failed, status: 503, json: async () => [] });
+  try {
+    const outcome = await loader.initialize();
+    outcomeOwners.set(outcome, loader);
+    return outcome;
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+}
+
+describe('genuine CWD load outcomes', () => {
+  it('announces a current authenticated failure rather than success', async () => {
+    mockFetch.mockReturnValue(mockCwdResponse({ changed: true, added: [], removed: [] }));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    renderHook(() => useCwdExtensionSync(() => authenticOutcome(true), isOutcomeCurrent));
+    act(() => useAppStore.getState().setSelectedCwd('/failed-load'));
+    await vi.waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith('Couldn’t load this project’s extensions')
+    );
+    expect(toast.info).not.toHaveBeenCalled();
+  });
+  it('ignores a structurally forged completed outcome', async () => {
+    mockFetch.mockReturnValue(mockCwdResponse({ changed: true, added: [], removed: [] }));
+    const forged = {
+      status: 'completed',
+      failures: [],
+      extensions: [],
+      loaded: new Map(),
+    } as ExtensionLoadOutcome;
+    const onChanged = vi.fn().mockResolvedValue(forged);
+    renderHook(() => useCwdExtensionSync(onChanged, isOutcomeCurrent));
+    act(() => useAppStore.getState().setSelectedCwd('/forged-load'));
+    await vi.waitFor(() => expect(onChanged).toHaveBeenCalledOnce());
+    expect(toast.info).not.toHaveBeenCalled();
+    expect(toast.error).not.toHaveBeenCalled();
   });
 });

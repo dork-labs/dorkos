@@ -42,6 +42,31 @@ const replySchema = z
               kind: z.literal('unknown'),
               pid: z.number().int().positive().max(2147483647),
               error: z.number().int(),
+              // Same original inspect only; optional for older exact producer replies.
+              inspection: z
+                .object({
+                  membershipBefore: z.boolean(),
+                  membershipAfter: z.boolean(),
+                  firstError: z.number().int().min(0).max(2147483647),
+                  secondError: z.number().int().min(0).max(2147483647),
+                  firstZombie: z.boolean().nullable(),
+                  secondZombie: z.boolean().nullable(),
+                  birthChanged: z.boolean().nullable(),
+                  parentChanged: z.boolean().nullable(),
+                })
+                .strict()
+                .optional(),
+              uncertainty: z
+                .enum([
+                  'birth-changed',
+                  'parent-changed',
+                  'alive-to-zombie',
+                  'zombie-to-alive',
+                  'membership-disappeared',
+                  'membership-appeared',
+                  'membership-absent-with-present-reads',
+                ])
+                .optional(),
             })
             .strict(),
         ])
@@ -60,6 +85,17 @@ const childrenSchema = replySchema
     parentBefore: identity.nullable(),
     parentAfter: identity.nullable(),
     complete: z.boolean(),
+    // Optional private native evidence; older exact producer replies remain parseable.
+    parentObservation: z
+      .object({
+        beforeError: z.number().int().min(0).max(2147483647),
+        afterError: z.number().int().min(0).max(2147483647),
+        beforeZombie: z.boolean().nullable(),
+        afterZombie: z.boolean().nullable(),
+        identityChanged: z.boolean().nullable(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 export type DarwinChildrenBatch = z.infer<typeof childrenSchema>;
@@ -73,6 +109,21 @@ export function parseDarwinChildrenBatch(
     JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))
   );
   if (BigInt(batch.bootMicroseconds) >= 1000000n)
+    throw new Error('PROCESS_OBSERVATION_UNAVAILABLE');
+  const parentObservation = batch.parentObservation;
+  if (
+    parentObservation &&
+    ((parentObservation.beforeError === 0) !== (batch.parentBefore !== null) ||
+      (parentObservation.afterError === 0) !== (batch.parentAfter !== null) ||
+      (parentObservation.beforeZombie === null) !== (batch.parentBefore === null) ||
+      (parentObservation.afterZombie === null) !== (batch.parentAfter === null) ||
+      (parentObservation.identityChanged === null) !==
+        (!batch.parentBefore || !batch.parentAfter) ||
+      (batch.parentBefore &&
+        batch.parentAfter &&
+        parentObservation.identityChanged !==
+          (darwinBirth(batch.parentBefore).birth !== darwinBirth(batch.parentAfter).birth)))
+  )
     throw new Error('PROCESS_OBSERVATION_UNAVAILABLE');
   const pids = new Set<number>();
   for (const fact of batch.processes) {
@@ -132,6 +183,72 @@ export function parseDarwinProcessBatch(
 const heldReads = new Set<FileHandle>();
 const heldChildren = new Set<ChildProcess>();
 let readCustodyUncertain = false;
+/** Fresh exact helper read and original descriptor close for every native request. */
+export async function verifyOriginalDarwinObserverArtifact(
+  descriptor: Readonly<{ path: string; sha256: string }>
+): Promise<void> {
+  if (
+    readCustodyUncertain ||
+    process.platform !== 'darwin' ||
+    !/^[a-f0-9]{64}$/.test(descriptor.sha256)
+  )
+    throw new Error('PROCESS_OBSERVATION_UNAVAILABLE');
+  if ((await realpath(descriptor.path)) !== descriptor.path)
+    throw new Error('PROCESS_OBSERVATION_UNAVAILABLE');
+  const file = await open(
+    descriptor.path,
+    constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK
+  );
+  heldReads.add(file);
+  let primary: unknown,
+    failed = false;
+  try {
+    const before = await file.stat({ bigint: true });
+    if (!before.isFile() || before.size > 4n * 1024n * 1024n || (before.mode & 0o111n) === 0n)
+      throw new Error('PROCESS_OBSERVATION_UNAVAILABLE');
+    const hash = createHash('sha256');
+    const buffer = new Uint8Array(65536);
+    let bytes = 0;
+    for (;;) {
+      const read = await file.read(
+        buffer,
+        0,
+        Math.min(buffer.length, 4 * 1024 * 1024 + 1 - bytes),
+        null
+      );
+      if (!read.bytesRead) break;
+      bytes += read.bytesRead;
+      if (bytes > 4 * 1024 * 1024) throw new Error('PROCESS_OBSERVATION_UNAVAILABLE');
+      hash.update(buffer.subarray(0, read.bytesRead));
+    }
+    const after = await file.stat({ bigint: true });
+    const named = await lstat(descriptor.path, { bigint: true });
+    if (!named.isFile() || named.dev !== after.dev || named.ino !== after.ino)
+      throw new Error('PROCESS_OBSERVATION_UNAVAILABLE');
+    if (
+      hash.digest('hex') !== descriptor.sha256 ||
+      before.dev !== after.dev ||
+      before.ino !== after.ino ||
+      before.size !== after.size ||
+      before.mtimeNs !== after.mtimeNs ||
+      before.ctimeNs !== after.ctimeNs
+    )
+      throw new Error('PROCESS_OBSERVATION_UNAVAILABLE');
+  } catch (error) {
+    primary = error;
+    failed = true;
+  }
+  try {
+    await file.close();
+    heldReads.delete(file);
+  } catch (error) {
+    readCustodyUncertain = true;
+    if (!failed) primary = error;
+    failed = true;
+  }
+  if (failed) throw primary;
+  if (readCustodyUncertain) throw new Error('PROCESS_OBSERVATION_UNAVAILABLE');
+}
 /** Create only from the trusted package's exact helper artifact, never an HTTP request path. */
 export function createDarwinProcessObserver(
   artifact: Readonly<{ path: string; sha256: string }>
@@ -148,61 +265,7 @@ export function createDarwinProcessObserver(
       pids.some((pid) => !Number.isSafeInteger(pid) || pid < 1 || pid > 2147483647)
     )
       throw new Error('PROCESS_OBSERVATION_UNAVAILABLE');
-    if ((await realpath(descriptor.path)) !== descriptor.path)
-      throw new Error('PROCESS_OBSERVATION_UNAVAILABLE');
-    const file = await open(
-      descriptor.path,
-      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK
-    );
-    heldReads.add(file);
-    let primary: unknown,
-      failed = false;
-    try {
-      const before = await file.stat({ bigint: true });
-      if (!before.isFile() || before.size > 4n * 1024n * 1024n || (before.mode & 0o111n) === 0n)
-        throw new Error('PROCESS_OBSERVATION_UNAVAILABLE');
-      const hash = createHash('sha256');
-      const buffer = new Uint8Array(65536);
-      let bytes = 0;
-      for (;;) {
-        const read = await file.read(
-          buffer,
-          0,
-          Math.min(buffer.length, 4 * 1024 * 1024 + 1 - bytes),
-          null
-        );
-        if (!read.bytesRead) break;
-        bytes += read.bytesRead;
-        if (bytes > 4 * 1024 * 1024) throw new Error('PROCESS_OBSERVATION_UNAVAILABLE');
-        hash.update(buffer.subarray(0, read.bytesRead));
-      }
-      const after = await file.stat({ bigint: true });
-      const named = await lstat(descriptor.path, { bigint: true });
-      if (!named.isFile() || named.dev !== after.dev || named.ino !== after.ino)
-        throw new Error('PROCESS_OBSERVATION_UNAVAILABLE');
-      if (
-        hash.digest('hex') !== descriptor.sha256 ||
-        before.dev !== after.dev ||
-        before.ino !== after.ino ||
-        before.size !== after.size ||
-        before.mtimeNs !== after.mtimeNs ||
-        before.ctimeNs !== after.ctimeNs
-      )
-        throw new Error('PROCESS_OBSERVATION_UNAVAILABLE');
-    } catch (error) {
-      primary = error;
-      failed = true;
-    }
-    try {
-      await file.close();
-      heldReads.delete(file);
-    } catch (error) {
-      readCustodyUncertain = true;
-      if (!failed) primary = error;
-      failed = true;
-    }
-    if (failed) throw primary;
-    if (readCustodyUncertain) throw new Error('PROCESS_OBSERVATION_UNAVAILABLE');
+    await verifyOriginalDarwinObserverArtifact(descriptor);
     // Retain each real child/pipe until natural terminal; overflow refuses without replacing the child.
     const child = spawn(descriptor.path, [command, ...pids.map(String)], {
       shell: false,

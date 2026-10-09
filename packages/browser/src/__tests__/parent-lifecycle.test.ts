@@ -273,3 +273,103 @@ it.each([false, true])(
     expect(contextClose).toHaveBeenCalledTimes(1);
   }
 );
+
+it.each(['settled', 'false', 'undefined', 'expired'] as const)(
+  'joins original local controller closure before native peer stop without renewing its bound (%s)',
+  async (mode) => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    const r = record();
+    let release!: () => void, enter!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const entered = new Promise<void>((resolve) => {
+      enter = resolve;
+    });
+    let releasePreparation!: () => void, enterPreparation!: () => void;
+    const preparationHeld = new Promise<void>((resolve) => {
+      releasePreparation = resolve;
+    });
+    const preparationEntered = new Promise<void>((resolve) => {
+      enterPreparation = resolve;
+    });
+    r.journal = {
+      prepareClose: async () => {
+        enterPreparation();
+        await preparationHeld;
+      },
+      stop: async () => 'campaign-closed',
+      custody: () => ({ pending: false, uncertain: false }),
+    } as unknown as BrowserRecord['journal'];
+    let localReturned = false;
+    const localClose = async () => {
+      enter();
+      await held;
+      localReturned = true;
+      if (mode === 'false') throw false;
+      if (mode === 'undefined') throw undefined;
+    };
+    const defaultContextClose = vi.fn(async () => {});
+    r.context = { close: defaultContextClose } as unknown as BrowserContext;
+    r.controllerBrowser = { close: localClose } as unknown as BrowserRecord['controllerBrowser'];
+    r.controllerAuthentication = {
+      prepareClose: async () => {},
+      close: localClose,
+    } as unknown as BrowserRecord['controllerAuthentication'];
+    r.supervisor = {
+      custody: () => ({ pending: false, uncertain: false }),
+    } as unknown as BrowserRecord['supervisor'];
+    const nativeStop = vi.fn(async () => {
+      await r.supervisorStopBarrier;
+    });
+    r.proxy = { close: nativeStop } as unknown as BrowserRecord['proxy'];
+    const originals: { operation?: Promise<unknown> } = {};
+    onTestFinished(async () => {
+      releasePreparation();
+      release();
+      try {
+        if (originals.operation) await originals.operation;
+        await held;
+        await Promise.allSettled([...r.lifetime.pending]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+    // Observe native entry after its actual production barrier, not only proxy call entry.
+    let nativeEntered = false;
+    nativeStop.mockImplementation(async () => {
+      await r.supervisorStopBarrier;
+      nativeEntered = true;
+    });
+    originals.operation = closeRecord(config(), r);
+    await preparationEntered;
+    await vi.advanceTimersByTimeAsync(0);
+    expect(localReturned).toBe(false);
+    expect(nativeEntered).toBe(false);
+    releasePreparation();
+    await entered;
+    await vi.advanceTimersByTimeAsync(0);
+    expect(defaultContextClose).not.toHaveBeenCalled();
+    expect(localReturned).toBe(false);
+    expect(nativeEntered, 'NATIVE_STOP_BEFORE_ORIGINAL_CONTROLLER_RETURN').toBe(false);
+    const inputEnd = r.lifetime.inputEnd;
+    const parentEnd = r.lifetime.parentEnd;
+    if (mode === 'expired') {
+      await vi.advanceTimersByTimeAsync(2001);
+      expect(nativeEntered).toBe(true);
+      expect(localReturned).toBe(false);
+      expect(r.lifetime.uncertain).toBe(true);
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(await originals.operation).not.toEqual({ cleanup: 'observed' });
+      release();
+    } else {
+      release();
+      expect(await originals.operation).toEqual(
+        mode === 'settled' ? { cleanup: 'observed' } : { cleanup: 'failed', reason: 'closeFailed' }
+      );
+      expect(nativeEntered).toBe(true);
+    }
+    expect(r.lifetime.inputEnd).toBe(inputEnd);
+    expect(r.lifetime.parentEnd).toBe(parentEnd);
+  }
+);

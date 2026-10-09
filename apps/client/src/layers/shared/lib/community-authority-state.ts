@@ -22,7 +22,7 @@ export interface ConfirmedCommunityAuthority extends CommunityAuthoritySnapshot 
 }
 
 type Listener = () => void;
-type Cleanup = () => void;
+type Cleanup = (requireCurrent?: () => void) => void;
 
 let snapshot: CommunityAuthoritySnapshot = { epoch: 0, ownerKey: null };
 const listeners = new Set<Listener>();
@@ -56,10 +56,19 @@ export function registerCommunityAuthorityCleanup(handler: Cleanup): () => void 
 }
 
 /** Invalidate authority before credentials, protected caches, or UI state change. */
-export function invalidateCommunityAuthority(): CommunityAuthoritySnapshot {
+export function invalidateCommunityAuthority(
+  requireCurrent?: () => void
+): CommunityAuthoritySnapshot {
+  requireCurrent?.();
   snapshot = { epoch: snapshot.epoch + 1, ownerKey: null };
-  cleanup?.();
-  listeners.forEach((listener) => listener());
+  const originalCleanup = cleanup;
+  requireCurrent?.();
+  originalCleanup?.(requireCurrent);
+  listeners.forEach((listener) => {
+    requireCurrent?.();
+    listener();
+  });
+  requireCurrent?.();
   return snapshot;
 }
 

@@ -1,9 +1,11 @@
+import { copyBrowserVMRelease } from '../../../scripts/browser-vm-release-copy.mjs';
+import { browserProductionSubject } from '../../../scripts/browser-production-subject.js';
 import { build, formatMessages, type Message, type Plugin } from 'esbuild';
 import { execSync } from 'child_process';
 import { createHash } from 'node:crypto';
 import { builtinModules } from 'node:module';
-import { buildNativeObserver } from '../../browser/scripts/build-native-observer.ts';
-import { importBrowserNativeArtifact } from './browser-native-artifact.ts';
+import { buildNativeObserver } from '../../browser/scripts/build-native-observer.js';
+import { importBrowserNativeArtifact } from './browser-native-artifact.js';
 import fs from 'fs/promises';
 import { cpSync, readFileSync, readdirSync } from 'fs';
 import path from 'path';
@@ -257,8 +259,12 @@ async function assertNoUnexpectedWarnings(label: string, warnings: Message[]): P
 }
 
 /** Compile the fresh verifier from this checkout and bind it to the actual CLI output. */
-export async function buildBrowserRuntimeAssets(root = ROOT, output = OUT): Promise<void> {
-  const controller = path.join(output, 'bin/cli.js');
+export async function buildBrowserRuntimeAssets(
+  root = ROOT,
+  output = OUT,
+  controllerRelative = 'bin/cli.js'
+): Promise<void> {
+  const controller = path.join(output, controllerRelative);
   const controllerBytes = await fs.readFile(controller);
   const verifier = path.join(output, 'browser/fresh-verifier.mjs');
   const result = await build({
@@ -311,7 +317,11 @@ export async function buildBrowserRuntimeAssets(root = ROOT, output = OUT): Prom
 
 /** Package actual original native workers/helper; unsupported build hosts remain unavailable.
  * No runtime compiler/download, fixture path, or source-only ready callback is emitted. */
-export async function buildBrowserNativeAssets(root = ROOT, output = OUT): Promise<void> {
+export async function buildBrowserNativeAssets(
+  root = ROOT,
+  output = OUT,
+  controllerRelative = 'bin/cli.js'
+): Promise<void> {
   const assets = path.join(output, 'browser/native');
   await fs.mkdir(assets, { recursive: true });
   const artifactDirectory = process.env.DORKOS_BROWSER_DARWIN_ARTIFACT_DIRECTORY;
@@ -376,7 +386,7 @@ export async function buildBrowserNativeAssets(root = ROOT, output = OUT): Promi
   if (artifactDirectory)
     native = await importBrowserNativeArtifact(root, assets, artifactDirectory, artifactSHA256!);
   if (!native) throw new Error('Browser native producer is missing.');
-  const controller = await fs.readFile(path.join(output, 'bin/cli.js'));
+  const controller = await fs.readFile(path.join(output, controllerRelative));
   const nativeManifest = await fs.readFile(
     path.join(assets, 'darwin-process-observer.manifest.json')
   );
@@ -398,8 +408,13 @@ async function buildCLI() {
 
   // 1. Build client (Vite)
   console.log('[1/3] Building client...');
-  execSync('pnpm turbo build --filter=@dorkos/client', { cwd: ROOT, stdio: 'inherit' });
-  await fs.cp(path.join(ROOT, 'apps/client/dist'), path.join(OUT, 'client'), { recursive: true });
+  execSync('pnpm turbo build --filter=@dorkos/client', {
+    cwd: ROOT,
+    stdio: 'inherit',
+  });
+  await fs.cp(path.join(ROOT, 'apps/client/dist'), path.join(OUT, 'client'), {
+    recursive: true,
+  });
 
   // 2. Bundle server (esbuild) — inlines @dorkos/shared, externalizes node_modules
   console.log('[2/3] Bundling server...');
@@ -448,6 +463,7 @@ async function buildCLI() {
     ],
     plugins: [dorkosSourcePlugin()],
     define: {
+      __BROWSER_PRODUCTION_SUBJECT__: JSON.stringify(await browserProductionSubject(ROOT)),
       __CLI_VERSION__: JSON.stringify(version),
       __COMMUNITY_MIGRATION_COMPATIBILITY_ID__: JSON.stringify(communityMigrationId),
     },
@@ -484,7 +500,9 @@ async function buildCLI() {
   // path.join(dirname(fileURLToPath(import.meta.url)), '../drizzle'). In the CLI bundle that
   // directory is dist/server/, so ../drizzle resolves to dist/drizzle/. Both the migrator and
   // the pre-migration snapshot (which reads meta/_journal.json) go through that one function.
-  cpSync(path.join(ROOT, 'packages/db/drizzle'), path.join(OUT, 'drizzle'), { recursive: true });
+  cpSync(path.join(ROOT, 'packages/db/drizzle'), path.join(OUT, 'drizzle'), {
+    recursive: true,
+  });
   console.log('  ✓ Copied Drizzle migrations to dist/drizzle/');
 
   // 2.6: Copy bundled core-extension source (hello-world, linear-issues,
@@ -560,8 +578,11 @@ async function buildCLI() {
   });
 
   await assertNoUnexpectedWarnings('CLI', cliBundle.warnings);
-  await buildBrowserRuntimeAssets();
-  await buildBrowserNativeAssets();
+  if (process.platform !== 'darwin') {
+    await buildBrowserRuntimeAssets();
+    await buildBrowserNativeAssets();
+  }
+  await copyBrowserVMRelease(ROOT, OUT);
 
   // Make executable
   await fs.chmod(path.join(OUT, 'bin/cli.js'), 0o755);

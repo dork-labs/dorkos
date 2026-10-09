@@ -331,7 +331,8 @@ export function validateJournalSnapshot(value: unknown): JournalSnapshot {
         depth = 0;
       const visited = new Set([processKey(r.identity)]);
       while (ancestor) {
-        const key = processKey(ancestor);
+        const originalAncestor = ancestor;
+        const key = processKey(originalAncestor);
         insist(!visited.has(key) && ++depth <= JOURNAL_LIMITS.depth, 'association-missing');
         visited.add(key);
         const parent = identities.get(key);
@@ -423,16 +424,51 @@ function successor(prior: JournalSnapshot, next: JournalSnapshot): void {
     }
   for (const added of next.retainedIdentities)
     if (!prior.retainedIdentities.some((r) => sameProcess(r.identity, added.identity))) {
-      const parent = prior.retainedIdentities.find(
-        (r) => added.parent && sameProcess(r.identity, added.parent)
-      );
       insist(
-        added.role !== 'manager' &&
-          added.firstSeenSequence === next.sequence &&
-          parent &&
-          parent.lifecycle === 'alive',
+        added.role !== 'manager' && added.firstSeenSequence === next.sequence,
         'association-missing'
       );
+      const originalParent = prior.retainedIdentities.find(
+        (r) => added.parent && sameProcess(r.identity, added.parent)
+      );
+      if (originalParent) {
+        insist(originalParent.lifecycle === 'alive', 'association-missing');
+        continue;
+      }
+      let node = added;
+      const visited = new Set<string>();
+      for (;;) {
+        const key = processKey(node.identity);
+        insist(!visited.has(key) && visited.size < JOURNAL_LIMITS.depth, 'association-missing');
+        visited.add(key);
+        const window = node.relationWindow;
+        insist(
+          node.role !== 'manager' &&
+            node.lifecycle === 'alive' &&
+            node.firstSeenSequence === next.sequence &&
+            node.lastSeenSequence === next.sequence &&
+            node.acquisitionEpoch === next.writer.epoch &&
+            window.startSequence === next.sequence &&
+            window.checkpointSequence === next.sequence &&
+            window.endSequence === next.sequence &&
+            window.startMonotonic === next.observationWindow.startMonotonic &&
+            window.endMonotonic <= next.observationWindow.endMonotonic &&
+            node.parent,
+          'association-missing'
+        );
+        const identity = node.parent;
+        const priorParent = prior.retainedIdentities.find((r) => sameProcess(r.identity, identity));
+        if (priorParent) {
+          insist(priorParent.lifecycle === 'alive', 'association-missing');
+          break;
+        }
+        const parent = next.retainedIdentities.find((r) => sameProcess(r.identity, identity));
+        insist(
+          parent && parent.relationWindow.endMonotonic <= window.endMonotonic,
+          'association-missing'
+        );
+        node = parent;
+      }
     }
 }
 

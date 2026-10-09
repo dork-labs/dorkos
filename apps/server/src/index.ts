@@ -1,3 +1,11 @@
+import { readOriginalProcessNativeProjection } from './services/browser/runtime/private-native-projection.js';
+import {
+  readPrivateBrowserAcceptance,
+  joinOriginalProjectionStartupFailure,
+} from './services/browser/runtime/private-acceptance.js';
+import { joinBrowserBeforeShutdown } from './services/browser/runtime/shutdown-join.js';
+import { createServer as createHttpServer } from 'node:http';
+import { createExperimentalBrowserStartup } from './services/browser/runtime/startup.js';
 import { DocChannelMetrics } from './services/observability/doc-channel-metrics.js';
 import { subscribeCommittedDocEvents } from './services/canvas/doc-channel/committed-events.js';
 import { DocChannelLiveBuffer } from './services/canvas/doc-channel/streams/live-buffer.js';
@@ -41,6 +49,7 @@ import {
 } from './services/core/runtime-registry.js';
 import {
   initAuth,
+  getAuth,
   seedLegacyMcpApiKey,
   resolveMcpLocalToken,
   readOwnerAccount,
@@ -895,6 +904,7 @@ let terminalManager: TerminalManager | undefined;
 // shutdownServices() rather than shutdown(), because the admin restart path runs
 // the former and then spawns a successor that must find the directory free.
 let releaseInstanceLock: (() => void) | undefined;
+let browserStartup: ReturnType<typeof createExperimentalBrowserStartup> | undefined;
 
 /**
  * Re-prime the managed-MCP OAuth token cache from disk on boot (DOR-942): for
@@ -919,7 +929,11 @@ async function warmMcpOAuthTokens(
       const servers = await service.list(agent.id);
       for (const s of servers) {
         if (s.enabled && s.connection.transport !== 'stdio') {
-          targets.push({ agentId: agent.id, serverName: s.name, serverUrl: s.connection.url });
+          targets.push({
+            agentId: agent.id,
+            serverName: s.name,
+            serverUrl: s.connection.url,
+          });
         }
       }
     } catch {
@@ -949,6 +963,8 @@ function takeDailySnapshot(db: Db, backupsDir: string): void {
 }
 
 async function start() {
+  const privateBrowserAcceptance = readPrivateBrowserAcceptance();
+  privateBrowserAcceptance?.captureShutdownServices(shutdownServices);
   /**
    * Which optional routers this boot actually mounted, reported as ONE line.
    *
@@ -979,7 +995,11 @@ async function start() {
   // opens and before any reconciler starts, because a second instance sharing
   // this directory would corrupt both. The port check further down catches only
   // the case where both listen on the same port; this catches the rest.
-  const lock = acquireInstanceLock({ dorkHome, port: PORT, version: SERVER_VERSION });
+  const lock = acquireInstanceLock({
+    dorkHome,
+    port: PORT,
+    version: SERVER_VERSION,
+  });
   if (!lock.acquired) {
     logger.error(lock.reason);
     // Also to stderr: an operator starting from a terminal must see this even
@@ -1137,7 +1157,9 @@ async function start() {
   // boot with nobody asked. Deliberately NOT wrapped in a try/catch: if the
   // snapshot cannot be written, the right answer is to stop and say so rather
   // than take an irreversible step with no way back (`snapshotBeforeMigrations`).
-  const preMigrationSnapshot = snapshotBeforeMigrations(db, { dir: backupsDir });
+  const preMigrationSnapshot = snapshotBeforeMigrations(db, {
+    dir: backupsDir,
+  });
   if (preMigrationSnapshot) {
     logger.info(`[DB] Snapshot taken before migrating: ${preMigrationSnapshot}`);
   }
@@ -1167,12 +1189,17 @@ async function start() {
   } as const;
   const connectorRegistry = new ConnectorRegistry({
     db,
-    configuredOwner: { ownerKind: 'local_install', ownerId: connectorInstallationId },
+    configuredOwner: {
+      ownerKind: 'local_install',
+      ownerId: connectorInstallationId,
+    },
     catalogCache: new ConnectorCatalogCache({
       dir: path.join(dorkHome, 'cache', 'connectors', 'catalog'),
     }),
   });
-  const connectorAuthorityCleanup = new ConnectorAuthorityCleanupService({ db });
+  const connectorAuthorityCleanup = new ConnectorAuthorityCleanupService({
+    db,
+  });
   const connectorBootEpoch = randomUUID();
   const sessionConnectorAttachmentStore = new SessionConnectorAttachmentStore(db);
 
@@ -1470,7 +1497,10 @@ async function start() {
   // startup arms a timer through the module-level `armEscalation`, which is a
   // no-op until this line runs.
   const pushSubscriptions = new PushSubscriptionStore(db);
-  const webPushChannel = new WebPushChannel({ dorkHome, subscriptions: pushSubscriptions });
+  const webPushChannel = new WebPushChannel({
+    dorkHome,
+    subscriptions: pushSubscriptions,
+  });
   setEscalationService(
     new EscalationService({
       store: notificationStore,
@@ -1853,12 +1883,18 @@ async function start() {
             // How turns reach Codex (ADR 261005-113107). Read once: a change
             // takes effect at the next start, because clients cache capabilities.
             transport: resolveCodexTransport(codexConfig.transport),
+            ...(privateBrowserAcceptance
+              ? {
+                  observeOriginalTransport: privateBrowserAcceptance.wrapCodexTransport,
+                }
+              : {}),
             creditsRelay: () => creditsRelay ?? undefined,
           });
           // Durable per-session settings hydrate/write-through (ADR-0260), same
           // port the Claude adapter uses.
           codexRuntime.setSessionSettings(runtimeRegistry);
           runtimeRegistry.register(codexRuntime);
+          privateBrowserAcceptance?.captureCodexRuntime(codexRuntime);
           // Non-blocking session hydration — re-seeds the in-memory registry from
           // the durable `codex_threads` rows so past sessions survive a restart.
           // The registry emits session_upserted per hydrated session, so the live
@@ -1943,7 +1979,9 @@ async function start() {
   await getAgentSendService()
     ?.start()
     .catch((err: unknown) =>
-      logger.warn('[DorkOS] could not resume extension messages', { err: String(err) })
+      logger.warn('[DorkOS] could not resume extension messages', {
+        err: String(err),
+      })
     );
 
   // Workspace subsystem (DOR-84) — server-managed isolated workspaces. Sessions
@@ -2012,12 +2050,16 @@ async function start() {
   const readCursorService = new ReadCursorService(new ReadCursorStore(db));
   setReadCursorService(readCursorService);
 
-  const docChannelRuntimePrincipals: { current?: ConnectorRuntimePrincipalService } = {};
+  const docChannelRuntimePrincipals: {
+    current?: ConnectorRuntimePrincipalService;
+  } = {};
   const roomAttachmentBytes = new LocalRoomAttachmentStore(dorkHome);
   // Both the worker and native stream lifecycle must remain inert until Mesh
   // has reconciled the on-disk manifest registry for this process boot.
   let meshStartupReconciled = false;
-  const remoteCommunityBridge: { current: RemoteRoomSubscriptionBridge | undefined } = {
+  const remoteCommunityBridge: {
+    current: RemoteRoomSubscriptionBridge | undefined;
+  } = {
     current: undefined,
   };
   const {
@@ -2348,7 +2390,10 @@ async function start() {
       hasTranscript: async (agentPath, sessionId) =>
         (await transcripts.hasTranscript(agentPath, sessionId)).exists,
     };
-    void repairRoomSessionBindings({ store: roomStore, ...roomBindingTranscripts }).then(
+    void repairRoomSessionBindings({
+      store: roomStore,
+      ...roomBindingTranscripts,
+    }).then(
       (report) => {
         // Every non-clean outcome, including the two that mean a repair did not
         // land (`refused`, `failed`) — a boot that quietly dropped those would
@@ -2911,7 +2956,9 @@ async function start() {
   // layer (team-room-home spec D3.4). So the setting has to move the membership:
   // change the default agent in Settings and the next thing you type in #team
   // goes to the new one, without a restart.
-  watchDefaultAgent(teamRoomDeps, { onChange: (listener) => configManager.onChange(listener) });
+  watchDefaultAgent(teamRoomDeps, {
+    onChange: (listener) => configManager.onChange(listener),
+  });
 
   // An agent registered, renamed or removed, and a settings write, each reaching
   // every window that should hear it (DOR-2052). Both decisions — the global
@@ -3010,7 +3057,10 @@ async function start() {
         // run's summary and no further. Built here because this is the only
         // place that holds the whole `TaskStore` and the activity feed at once.
         ...(taskStore && {
-          onRefusedAsk: createRelayRefusedAskEmitter({ taskStore, activityService }),
+          onRefusedAsk: createRelayRefusedAskEmitter({
+            taskStore,
+            activityService,
+          }),
         }),
         relayCore,
         meshCore, // meshCore is now available
@@ -3244,12 +3294,18 @@ async function start() {
   // Subscribe to lifecycle signals for diagnostic logging
   if (meshSignalEmitter && meshCore) {
     meshSignalEmitter.subscribe('mesh.agent.lifecycle.>', (subject, signal) => {
-      logger.info(`[mesh] lifecycle: ${signal.state}`, { subject, data: signal.data });
+      logger.info(`[mesh] lifecycle: ${signal.state}`, {
+        subject,
+        data: signal.data,
+      });
     });
   }
 
   const connectorEventSubscriptions = new ConnectorSubscriptionStore(db);
-  const connectorEventInbox = new ConnectorEventInboxStore({ db, bootEpoch: connectorBootEpoch });
+  const connectorEventInbox = new ConnectorEventInboxStore({
+    db,
+    bootEpoch: connectorBootEpoch,
+  });
   const connectorEventSettings = new ConnectorEventSettingsService(
     db,
     credentialProvider,
@@ -3284,6 +3340,14 @@ async function start() {
     },
   });
 
+  browserStartup = createExperimentalBrowserStartup();
+  await browserStartup.start({
+    app,
+    db,
+    config: configManager,
+    auth: getAuth,
+    installationId: connectorInstallationId,
+  });
   app.use('/api/session-locations', createSessionLocationsRouter(db));
 
   // Build mcpToolDeps and register factory only when ClaudeCodeRuntime is available.
@@ -3485,7 +3549,10 @@ async function start() {
   if (env.DORKOS_TEST_RUNTIME) {
     const { startTestComposioFixture } =
       await import('./services/connectors/providers/test-composio/fixture.js');
-    testComposioFixture = await startTestComposioFixture({ testRuntime: true, localOrigin });
+    testComposioFixture = await startTestComposioFixture({
+      testRuntime: true,
+      localOrigin,
+    });
     const { testControlRouter } = await import('./routes/test-control.js');
     testControlRouter.use('/composio', testComposioFixture.router);
   }
@@ -3496,14 +3563,18 @@ async function start() {
     cloud: getCloudLinkManager(),
   });
   const connectorBootstrapper = new ConnectorProviderBootstrapper({
-    ...(testComposioFixture && { composioBaseUrl: testComposioFixture.baseUrl }),
+    ...(testComposioFixture && {
+      composioBaseUrl: testComposioFixture.baseUrl,
+    }),
     registry: connectorRegistry,
     credentials: credentialProvider,
     composioWebhookSecretRef: () =>
       connectorEventSettings.webhookSecretRef(legacyDefaultProviderInstanceId('composio')),
     nangoEnv: () => ({
       ...(env.NANGO_BASE_URL !== undefined && { baseUrl: env.NANGO_BASE_URL }),
-      ...(env.NANGO_ENCRYPTION_KEY !== undefined && { encryptionKey: env.NANGO_ENCRYPTION_KEY }),
+      ...(env.NANGO_ENCRYPTION_KEY !== undefined && {
+        encryptionKey: env.NANGO_ENCRYPTION_KEY,
+      }),
     }),
     rawMcpPendingConnect: createRawMcpPendingConnectResolver({
       db,
@@ -4170,7 +4241,9 @@ async function start() {
       ...(relayCore && { relayCore }),
       ...(adapterManager && { adapterManager }),
       ...(adapterManager && { bindingStore: adapterManager.getBindingStore() }),
-      ...(adapterManager && { bindingRouter: adapterManager.getBindingRouter() }),
+      ...(adapterManager && {
+        bindingRouter: adapterManager.getBindingRouter(),
+      }),
       bridgeStore: roomBridges,
       ...(traceStore && { traceStore }),
       ...(meshCore && { meshCore }),
@@ -4331,7 +4404,10 @@ async function start() {
     });
     // The ONE registration seam, shared by every writer that can change what a
     // task's schedule is: these routes, the file watcher, and the reconciler.
-    taskRegistrar = new TaskRegistrar({ store: taskStore, scheduler: schedulerService });
+    taskRegistrar = new TaskRegistrar({
+      store: taskStore,
+      scheduler: schedulerService,
+    });
     app.use(
       '/api/tasks',
       createTasksRouter(
@@ -4856,7 +4932,10 @@ async function start() {
         })
       : {
           listSchedules: () => [],
-          createSchedule: async () => ({ created: false, reason: 'schedules-disabled' }),
+          createSchedule: async () => ({
+            created: false,
+            reason: 'schedules-disabled',
+          }),
           rebindSchedule: async () => undefined,
           deleteSchedulesForShape: async () => [],
         };
@@ -4887,7 +4966,9 @@ async function start() {
   // (create, the register route, the mesh_register tool, a discovery scan)
   // reaches the listener, so this is where an arriving folder's own
   // permission settings are screened (review D1).
-  const arrivalScreen: { run?: (agentId: string) => Promise<{ written: boolean }> } = {};
+  const arrivalScreen: {
+    run?: (agentId: string) => Promise<{ written: boolean }>;
+  } = {};
   const onArrival = createArrivalStep({
     arrivals: arrivalRecord,
     screen: () => arrivalScreen.run,
@@ -4902,7 +4983,9 @@ async function start() {
     // apps shared with every agent is announced — never silently (ADR
     // 260926-192625). A failure must not fail the arrival.
     await announceEveryAgentInheritance(agent).catch((err: unknown) =>
-      logger.warn('[Connectors] Could not record every-agent inheritance', { err })
+      logger.warn('[Connectors] Could not record every-agent inheritance', {
+        err,
+      })
     );
     momentDetectors.agentCreated(agent);
     // Migrate anything this agent's project still keeps in the old shape, then
@@ -5094,7 +5177,11 @@ async function start() {
         // can catch the new name still carrying the previous writer's stamp.
         // `set` rather than two `setDot`s for exactly that reason (DOR-1022);
         // WHICH source is the route's call, not this line's.
-        configManager.set('profile', { ...before, displayName, displayNameSource: source });
+        configManager.set('profile', {
+          ...before,
+          displayName,
+          displayNameSource: source,
+        });
         logConfigWrite('the profile route', 'profile', before, configManager.get('profile'));
       },
     })
@@ -5153,7 +5240,10 @@ async function start() {
   // this install can push at all.
   app.use(
     '/api/push',
-    createPushRouter({ subscriptions: pushSubscriptions, channel: webPushChannel })
+    createPushRouter({
+      subscriptions: pushSubscriptions,
+      channel: webPushChannel,
+    })
   );
   mountedRouters.push('push');
 
@@ -5350,7 +5440,10 @@ async function start() {
       agentRegistry: marketplaceAgentRegistry,
       logger,
     });
-    const marketplaceSkillPackFlow = new SkillPackInstallFlow({ dorkHome, logger });
+    const marketplaceSkillPackFlow = new SkillPackInstallFlow({
+      dorkHome,
+      logger,
+    });
     const marketplaceAdapterFlow = new AdapterInstallFlow({
       dorkHome,
       adapterManager,
@@ -5375,7 +5468,10 @@ async function start() {
       // An install made before installed-files records existed gets one rebuilt
       // from the commit it was installed at (DOR-2245 §9).
       rebuildLegacy: (installRoot: string) =>
-        rebuildInstalledFiles(installRoot, { fetcher: marketplaceFetcher, logger }),
+        rebuildInstalledFiles(installRoot, {
+          fetcher: marketplaceFetcher,
+          logger,
+        }),
       logger,
     });
 
@@ -5479,7 +5575,9 @@ async function start() {
       // the merged per-cwd plugin set.
       const refreshed =
         claudeRuntime?.refreshActivatedPlugins(projectPath).catch((err) => {
-          logger.warn('[Marketplace] Post-install plugin refresh failed', { err });
+          logger.warn('[Marketplace] Post-install plugin refresh failed', {
+            err,
+          });
         }) ?? Promise.resolve();
       // A global change can leave a package held back from every session until
       // a person approves what it runs (DOR-2306): ask now, in the background.
@@ -5497,7 +5595,9 @@ async function start() {
         // service is internally best-effort and never throws, but we still
         // catch here to honor the no-floating-promise convention.
         runAutoProjection(ctx, { dorkHome, approvals: approvalService }).catch((err) => {
-          logger.warn('[Marketplace] Harness auto-projection failed', { err });
+          logger.warn('[Marketplace] Harness auto-projection failed', {
+            err,
+          });
         });
       } catch (err) {
         logger.warn('[Marketplace] Post-change notification failed', { err });
@@ -5776,6 +5876,14 @@ async function start() {
       // rules, one cascade guard, one budget, one merge queue, whichever surface
       // reaches them.
       roomDeps: { rooms: roomService, merges: roomMerges },
+      ...(browserStartup && connectorRuntimePrincipals
+        ? {
+            managedBrowserDeps: browserStartup.capabilities(
+              connectorRuntimePrincipals,
+              roomService.authorRegistry
+            ),
+          }
+        : {}),
       // How a saved note learns which room it was written in (DOR-632). The
       // room service answers for the CALLING session, so the label is derived
       // rather than supplied — a model that could name its own provenance could
@@ -5860,7 +5968,10 @@ async function start() {
     void recordPermissionChange(activityService, {
       changes: moves.map((move) => ({
         target: { kind: 'default' },
-        key: { kind: 'files', ...(move.runtime ? { runtime: move.runtime } : {}) },
+        key: {
+          kind: 'files',
+          ...(move.runtime ? { runtime: move.runtime } : {}),
+        },
         before: move.before,
         after: move.after,
       })),
@@ -5907,17 +6018,32 @@ async function start() {
         return createAgentRuntimeMcpServer(capabilityRegistry!, principal, identity, hidden);
       },
     });
+    const originalConnectorRuntimeTools: Parameters<
+      ConnectorRuntimeToolConsumer['setConnectorRuntimeTools']
+    >[0] = Object.freeze({
+      principals: agentScopedRuntimePrincipals,
+      threadKeys: connectorThreadKeys,
+      listenerUrl: connectorRuntimeMcpListener.url,
+      agentToolsUrl: connectorRuntimeMcpListener.agentUrl,
+      isConnectorCapabilityId: isConnectorRuntimeCapabilityId,
+      accessSnapshot: (agentId: string, sessionId: string) =>
+        connectorAccess.accessSnapshot(connectorOwner, agentId, sessionId),
+    });
     for (const runtime of runtimeRegistry.listRuntimes()) {
-      connectorRuntimeConsumer(runtime)?.setConnectorRuntimeTools({
-        principals: agentScopedRuntimePrincipals,
-        threadKeys: connectorThreadKeys,
-        listenerUrl: connectorRuntimeMcpListener.url,
-        agentToolsUrl: connectorRuntimeMcpListener.agentUrl,
-        isConnectorCapabilityId: isConnectorRuntimeCapabilityId,
-        accessSnapshot: (agentId, sessionId) =>
-          connectorAccess.accessSnapshot(connectorOwner, agentId, sessionId),
-      });
+      connectorRuntimeConsumer(runtime)?.setConnectorRuntimeTools(originalConnectorRuntimeTools);
     }
+    if (privateBrowserAcceptance && !meshCore)
+      throw new Error('PRIVATE_ACCEPTANCE_ORIGINAL_MESH_REQUIRED');
+    if (privateBrowserAcceptance && meshCore)
+      privateBrowserAcceptance.capturePrincipalComposition({
+        principals: connectorRuntimePrincipals,
+        snapshots: agentScopedRuntimePrincipals,
+        connectorTools: originalConnectorRuntimeTools,
+        runtimeRegistry,
+        authors: roomAuthors,
+        mesh: meshCore,
+        db,
+      });
     if (env.DORKOS_TEST_RUNTIME) {
       const callRuntimeConnectorTool = async (input: {
         readonly sessionId: string;
@@ -6068,8 +6194,16 @@ async function start() {
 
   const server = startMainListener({
     admission: mainRequestAdmission,
-    listen: () => app.listen(PORT, host),
+    listen: () =>
+      browserStartup!.listen(
+        () => app.listen(PORT, host),
+        () => createHttpServer(app),
+        (original) => {
+          original.listen(PORT, host);
+        }
+      ),
     onListening: (server) => {
+      privateBrowserAcceptance?.captureListener(server);
       logger.info(`[DorkOS] server running on http://${host}:${PORT}`);
 
       // One upgrade listener for the whole server (ADR 260805-041016): the three
@@ -6133,6 +6267,7 @@ async function start() {
     },
   });
   if (!server) return;
+  privateBrowserAcceptance?.captureOriginalListener(server);
 
   // Surface port conflicts with an actionable message instead of a raw EADDRINUSE stack trace
   server.on('error', (err: NodeJS.ErrnoException) => {
@@ -6330,7 +6465,9 @@ async function start() {
           url,
           port: bootTunnel.config.port,
           auth: bootTunnel.config.basicAuth ? 'basic auth enabled' : 'none (open)',
-          ...(isDevPort && { mode: `dev (Vite on :${bootTunnel.config.port})` }),
+          ...(isDevPort && {
+            mode: `dev (Vite on :${bootTunnel.config.port})`,
+          }),
         });
       } catch (err) {
         logger.warn(
@@ -6414,7 +6551,16 @@ let docNotificationCleanup: (() => void) | undefined;
 
 async function shutdownServices() {
   mainRequestAdmission.close();
-  await workspaceReconcilerLifecycle.dispose();
+  // Both owners fence synchronously; neither a held browser nor a workspace failure skips the other.
+  await joinBrowserBeforeShutdown(
+    () => browserStartup?.close(),
+    shutdownRemainingServices,
+    () => workspaceReconcilerLifecycle.dispose()
+  );
+}
+
+async function shutdownRemainingServices() {
+  browserStartup = undefined;
   await stopDocDelivery?.();
   stopDocDelivery = undefined;
   docNotificationCleanup?.();
@@ -6428,7 +6574,9 @@ async function shutdownServices() {
   if (accountUsageStore) {
     accountUsageStore.stop();
     await accountUsageStore.flush().catch((err: unknown) => {
-      logger.warn('[DorkOS] account usage flush failed at shutdown', { err: String(err) });
+      logger.warn('[DorkOS] account usage flush failed at shutdown', {
+        err: String(err),
+      });
     });
     setAccountUsageStore(undefined);
     accountUsageStore = undefined;
@@ -6551,7 +6699,16 @@ async function shutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
   logger.info('[DorkOS] shutting down');
-  await shutdownServices();
+  try {
+    await shutdownServices();
+  } catch (reason) {
+    // Every entered shutdown original has settled; preserve failure as a nonzero exit.
+    try {
+      logger.error('[DorkOS] Shutdown failed', { reason });
+    } finally {
+      process.exit(1);
+    }
+  }
   process.exit(0);
 }
 
@@ -6587,23 +6744,61 @@ process.on('unhandledRejection', (reason) => {
   void captureServerError(reason);
 });
 
-start().catch(async (err) => {
+// Capture the explicitly armed original IPC sender before startup can create any browser.
+// Ordinary CLI processes and unarmed IPC forks return without installing an observer.
+const originalNativeProjection = readOriginalProcessNativeProjection();
+const originalServerStartup = start();
+readPrivateBrowserAcceptance()?.captureStartup(originalServerStartup);
+originalServerStartup.catch(async (err) => {
   mainRequestAdmission.close();
+  // Enter the original private sender close before cleanup awaits; keep startup's exact cause.
+  const projectionFailureJoin = joinOriginalProjectionStartupFailure(originalNativeProjection, err);
+  const startupCleanupFailures: Array<{ message: string; cause: unknown }> = [];
   try {
-    await workspaceReconcilerLifecycle.dispose();
-  } catch (cleanupError) {
-    logger.error(
-      '[workspace] Reconciliation disposal failed during startup cleanup:',
-      cleanupError
-    );
+    try {
+      await workspaceReconcilerLifecycle.dispose();
+    } catch (cleanupError) {
+      startupCleanupFailures.push({
+        message: '[workspace] Reconciliation disposal failed during startup cleanup:',
+        cause: cleanupError,
+      });
+    }
+    // A later startup failure must not leave the owned offline listener running.
+    try {
+      await testComposioFixture?.close();
+    } catch (cleanupError) {
+      startupCleanupFailures.push({
+        message: '[DorkOS] Offline listener cleanup failed during startup:',
+        cause: cleanupError,
+      });
+    } finally {
+      testComposioFixture = undefined;
+    }
+    try {
+      await stopDocDelivery?.();
+    } catch (cleanupError) {
+      startupCleanupFailures.push({
+        message: '[DorkOS] Doc delivery cleanup failed during startup:',
+        cause: cleanupError,
+      });
+    } finally {
+      stopDocDelivery = undefined;
+    }
+    try {
+      docNotificationCleanup?.();
+    } catch (cleanupError) {
+      startupCleanupFailures.push({
+        message: '[DorkOS] Doc notification cleanup failed during startup:',
+        cause: cleanupError,
+      });
+    } finally {
+      docNotificationCleanup = undefined;
+    }
+  } finally {
+    await projectionFailureJoin;
   }
-  // A later startup failure must not leave the owned offline listener running.
-  await testComposioFixture?.close();
-  testComposioFixture = undefined;
-  await stopDocDelivery?.();
-  stopDocDelivery = undefined;
-  docNotificationCleanup?.();
-  docNotificationCleanup = undefined;
+  // Box every cleanup outcome, including false/undefined, until all independent duties join.
+  for (const failure of startupCleanupFailures) logger.error(failure.message, failure.cause);
   // Two startup failures are addressed to the operator rather than to whoever
   // maintains DorkOS: a database that will not open, and a backup that could not
   // be written. Both carry instructions in their message and both are resolved

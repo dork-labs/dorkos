@@ -1,3 +1,10 @@
+import type { SelectionCopy } from './selection-copy.js';
+import { observeOriginalNativeInput, observeOriginalReset } from './acceptance-observer.js';
+import type { NativeSemanticTarget } from '../semantic/native-target.js';
+import type { NativeSemanticState } from '../semantic/native-effect.js';
+import { inspectSemanticInputWork, type OwnedSemanticInputWork } from './semantic-work.js';
+import type { OwnedResponseDownload, OwnedDownloadSink } from '../files/response-download.js';
+import { type OwnedUploadChooser, type OwnedUploadLease } from '../files/upload-chooser.js';
 import {
   registerNavigationInput,
   adoptNavigation,
@@ -45,7 +52,21 @@ export interface EngineInputOptions {
 }
 /** Private fixture composition; no Page, protocol target or authority comes from command bodies. */
 export interface EngineTabInput {
+  copySelection?(signal: AbortSignal, current: () => boolean): Promise<SelectionCopy>;
+  /** Existing original Page session only; never a request target selector. */
+  semanticTarget?(signal: AbortSignal): Promise<string>;
+  semanticEffect?(
+    target: NativeSemanticTarget,
+    focus: boolean,
+    signal: AbortSignal,
+    current: () => boolean
+  ): Promise<NativeSemanticState>;
+  /** Constructor-private bounded response transfer, never a caller-supplied native receiver. */
+  download?(sink: OwnedDownloadSink, current: () => boolean): OwnedResponseDownload;
+  /** Constructor-private upload owner, never a Page/session supplied by a request. */
+  upload?(lease: OwnedUploadLease, current: () => boolean): OwnedUploadChooser;
   readonly ready: Promise<void>;
+  submitSemantic(work: OwnedSemanticInputWork, signal?: AbortSignal): Promise<InputResult>;
   submit(command: unknown, signal?: AbortSignal, ownedWork?: OwnedInputWork): Promise<InputResult>;
   reset(): Promise<ResetResult>;
   retire(end: number): Promise<CleanupObservation>;
@@ -62,6 +83,19 @@ export function createEngineInput(options: EngineInputOptions): EngineTabInput {
   const owner = new EngineInputOwner(options);
   const handle = Object.freeze({
     ready: owner.ready,
+    copySelection: (signal: AbortSignal, current: () => boolean) =>
+      owner.copySelection(signal, current),
+    download: (sink: OwnedDownloadSink, current: () => boolean) => owner.download(sink, current),
+    upload: (lease: OwnedUploadLease, current: () => boolean) => owner.upload(lease, current),
+    semanticTarget: (signal: AbortSignal) => owner.semanticTarget(signal),
+    semanticEffect: (
+      target: NativeSemanticTarget,
+      focus: boolean,
+      signal: AbortSignal,
+      current: () => boolean
+    ) => owner.semanticEffect(target, focus, signal, current),
+    submitSemantic: (work: OwnedSemanticInputWork, signal?: AbortSignal) =>
+      owner.submitSemantic(work, signal),
     submit: (command: unknown, signal?: AbortSignal, ownedWork?: OwnedInputWork) =>
       owner.submit(command, signal, ownedWork),
     reset: () => owner.reset(),
@@ -185,10 +219,15 @@ class EngineInputOwner {
             cleanup: this.options.cleanup,
             readBinding: () =>
               this.current() ? Object.freeze({ ...this.options.tab.binding }) : null,
-            publishResetBinding: (binding) => this.publish(binding),
+            publishResetBinding: (binding) => {
+              this.publish(binding);
+              observeOriginalReset(binding);
+            },
             authorize: (binding, _step, signal) =>
               this.options.policy.authorizeAction(binding, signal),
-            native: this.transport!.native,
+            native: observeOriginalNativeInput(this.transport!.native, () =>
+              this.canonicalBinding()
+            ),
             stopGate: this.options.stopGate,
           });
           if (!this.current()) throw new Error('INPUT_TARGET_REFUSED');
@@ -203,6 +242,57 @@ class EngineInputOwner {
       this.reject(error);
       this.invalidate();
     }
+  }
+
+  copySelection(signal: AbortSignal, current: () => boolean): Promise<SelectionCopy> {
+    if (
+      !this.transport ||
+      !this.current() ||
+      navigationPending(this.options.tab) ||
+      initialNavigationInputFenced(this.options.tab) ||
+      popupPending(this.options.tab)
+    )
+      throw new Error('COPY_TARGET_REFUSED');
+    return this.transport.copySelection(signal, current);
+  }
+  semanticEffect(
+    target: NativeSemanticTarget,
+    focus: boolean,
+    signal: AbortSignal,
+    current: () => boolean
+  ): Promise<NativeSemanticState> {
+    if (
+      !this.transport ||
+      !this.current() ||
+      navigationPending(this.options.tab) ||
+      initialNavigationInputFenced(this.options.tab) ||
+      popupPending(this.options.tab)
+    )
+      return Promise.reject(new Error('SEMANTIC_BINDING_REFUSED'));
+    return this.transport.semanticEffect(target, focus, signal, current);
+  }
+  submitSemantic(work: OwnedSemanticInputWork, signal?: AbortSignal): Promise<InputResult> {
+    const original = inspectSemanticInputWork(work);
+    if (
+      navigationPending(this.options.tab) ||
+      initialNavigationInputFenced(this.options.tab) ||
+      popupPending(this.options.tab) ||
+      this.resetPromise ||
+      !this.queue ||
+      !this.current() ||
+      !sameBinding(this.options.tab.binding, original.binding)
+    )
+      return Promise.resolve(
+        Object.freeze({
+          kind: 'action',
+          requestId: original.requestId,
+          binding: original.binding,
+          outcome: 'rejected',
+          reason: this.options.stopGate.stopped ? 'stopped' : 'staleBinding',
+        })
+      );
+    this.inputEverEntered = true;
+    return this.queue.submitSemantic(work, signal);
   }
 
   async submit(
@@ -421,6 +511,24 @@ class EngineInputOwner {
     return this.closePromise;
   }
 
+  /** Require genuine ready canonical target before delegating to its original retained session. */
+  semanticTarget(signal: AbortSignal): Promise<string> {
+    if (!this.current() || !this.transport) throw new Error('SEMANTIC_TARGET_REFUSED');
+    return this.transport.semanticTarget(signal);
+  }
+
+  /** Delegate only to the original retained Page input transport. */
+  download(sink: OwnedDownloadSink, current: () => boolean): OwnedResponseDownload {
+    if (!this.current() || !this.transport) throw new Error('DOWNLOAD_SESSION_REFUSED');
+    return this.transport.download(sink, () => this.current() && current() && this.current());
+  }
+
+  /** Require genuine ready canonical target before delegating to its original retained session. */
+  upload(lease: OwnedUploadLease, current: () => boolean): OwnedUploadChooser {
+    if (!this.current() || !this.transport) throw new Error('UPLOAD_TARGET_REFUSED');
+    return this.transport.upload(lease, () => this.current() && current() && this.current());
+  }
+
   hasNeverEnteredInput(): boolean {
     return !this.inputEverEntered && !this.resetPromise && this.isCustodyKnown();
   }
@@ -472,7 +580,10 @@ class EngineInputOwner {
         detached: false,
         uncertain: true,
       });
-    return Object.freeze({ ...custody, uncertain: custody.uncertain || this.cleanupUncertain });
+    return Object.freeze({
+      ...custody,
+      uncertain: custody.uncertain || this.cleanupUncertain,
+    });
   }
 
   /** Observe genuine canonical membership without treating retirement as a replacement. */
@@ -543,7 +654,11 @@ class EngineInputOwner {
       binding.epoch !== before.epoch + 1 ||
       binding.inputGeneration !== before.inputGeneration + 1 ||
       !sameBinding(
-        { ...binding, epoch: before.epoch, inputGeneration: before.inputGeneration },
+        {
+          ...binding,
+          epoch: before.epoch,
+          inputGeneration: before.inputGeneration,
+        },
         before
       )
     )

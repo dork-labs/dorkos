@@ -18,6 +18,7 @@
 export const APP_ROUTE_PATHS = [
   '/',
   '/activity',
+  '/browser',
   '/agents',
   '/channels',
   '/connections',

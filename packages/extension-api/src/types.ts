@@ -262,6 +262,8 @@ export interface ExtensionRecordPublic {
    */
   restartingAt?: string | null;
   bundleReady: boolean;
+  /** Exact advertised bundle/copy correspondence; never a load approval. */
+  bundleGeneration?: string;
   hasServerEntry: boolean;
   hasDataProxy: boolean;
   /**

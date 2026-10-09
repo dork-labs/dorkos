@@ -372,6 +372,8 @@ export const CONFIG_WRITE_POLICY = {
   'relay.maxAgentTurnsTotalPerHour': 'operator-only',
 
   'browser.enabled': 'operator-only',
+  // The person's outbound browser identity choice cannot be changed by agents.
+  'browser.chromeUserAgent': 'operator-only',
   // Whether this DorkOS joins and talks to spaces on other servers (DOR-2740).
   // Another "who can this instance reach" door, so a person opens it, never an
   // agent.
@@ -1071,6 +1073,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
     area: 'reach',
     description: 'What leaves this machine',
     paths: [
+      'browser.chromeUserAgent',
       'telemetry.userHasDecided',
       'telemetry.install',
       'telemetry.heartbeat',

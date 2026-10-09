@@ -1,3 +1,21 @@
+import {
+  createOriginalObserverFailureSink,
+  projectOriginalObserverFailure,
+  type OriginalObserverPhase,
+} from './journal/unknown-diagnostic.js';
+import {
+  recordDarwinJournalGap,
+  matchesDarwinJournalBoot,
+  createDarwinJournalSweep,
+  applyDarwinJournalFacts,
+} from './journal/sweep.js';
+import {
+  consumeOriginalLeafTerminal,
+  originalLeafDiagnostic,
+  type DarwinLeafEventOwner,
+} from './darwin-leaf-event-owner.js';
+import type { JournalIdentityRefusalCode } from './supervisor-uncertainty-diagnostic.js';
+import type { OriginalChildBatchReason } from './darwin-journal-diagnostic.js';
 import type { ProcessIdentity } from '../configuration.js';
 import {
   copyJournalData,
@@ -8,7 +26,6 @@ import {
   type JournalLocation,
   type JournalSnapshot,
   type JournalCause,
-  type ObservationWindow,
 } from '../lifecycle/process-journal.js';
 import {
   darwinBirth,
@@ -25,7 +42,21 @@ export async function observeDarwinJournal(
     root: ProcessIdentity | Promise<ProcessIdentity | null>;
     rootSupervisor?: () => ProcessIdentity | undefined;
     onEnrolled?: () => Promise<void>;
-    onIncompleteChildren?: (parent: ProcessIdentity, batch: DarwinChildrenBatch) => Promise<void>;
+    onIncompleteChildren?: (
+      parent: ProcessIdentity,
+      batch: DarwinChildrenBatch,
+      original: Readonly<{ sequence: number; reason: OriginalChildBatchReason }>
+    ) => Promise<void>;
+    onUnknownIdentity?: (
+      original: Readonly<{
+        sequence: number;
+        fact: Extract<DarwinProcessBatch['processes'][number], { kind: 'unknown' }>;
+        leaf: ReturnType<typeof originalLeafDiagnostic> | null;
+      }>
+    ) => Promise<void>;
+    onOriginalFailure?: (
+      original: ReturnType<typeof projectOriginalObserverFailure>
+    ) => Promise<void>;
     logicalManager?: ProcessIdentity;
     exitingObserver?: ProcessIdentity;
     endBrowser?: () => boolean;
@@ -43,12 +74,14 @@ export async function observeDarwinJournal(
     ) => Promise<void>;
     launchNotEntered?: () => boolean;
     observer: DarwinProcessObserver;
+    /** Original worker-owned event receiver; optional only for old callers/platforms. */
+    leafEvents?: DarwinLeafEventOwner;
     monotonicNow: () => number;
     pause: () => Promise<void>;
     endMonotonic: number;
     /** Renew only this original durable campaign after each complete gap-free native sweep. */
     continuousWindowMilliseconds?: number;
-    onObservationFault?: () => Promise<void>;
+    onObservationFault?: (reason?: JournalIdentityRefusalCode) => Promise<void>;
     /** Emitted only after an original gap-free sweep is durably committed. */
     onCheckpoint?: (
       checkpoint: Readonly<{
@@ -88,12 +121,13 @@ export async function observeDarwinJournal(
   )
     return 'uncertain';
   let currentWindowEnd = options.endMonotonic;
+  const refusal: { value?: JournalIdentityRefusalCode } = {};
   let faultReported = false;
   let enumerationClosed = false;
   const reportFault = async () => {
     if (options.continuousWindowMilliseconds === undefined || faultReported) return;
     faultReported = true;
-    await options.onObservationFault?.();
+    await options.onObservationFault?.(refusal.value);
   };
   const opened = await openJournalWriter({
     ...options.location,
@@ -109,29 +143,23 @@ export async function observeDarwinJournal(
     | 'retained'
     | 'uncertain' = 'uncertain';
   let refusalCause: JournalCause = 'observer-lost';
-  const gap = (
-    next: JournalSnapshot,
-    cause: JournalCause,
-    identity: ProcessIdentity | null = null
-  ) => {
-    const prior = next.gaps.find((value) => value.cause === cause);
-    if (prior) prior.count = Math.min(Number.MAX_SAFE_INTEGER, prior.count + 1);
-    else
-      next.gaps.push({
-        cause,
-        identity,
-        firstSequence: next.sequence,
-        count: 1,
-      });
-    next.firstCause ??= { cause, sequence: next.sequence };
-  };
-  const checkBoot = (batch: DarwinProcessBatch) =>
-    current.binding.bootScope.kind === 'observed' &&
-    current.binding.bootScope.value ===
-      `darwin-boot:${batch.bootSeconds}:${batch.bootMicroseconds}`;
+  const gap = recordDarwinJournalGap;
+  const checkBoot = (batch: DarwinProcessBatch) => matchesDarwinJournalBoot(current, batch);
+  let originalPhase: OriginalObserverPhase = 'initial-commit';
+  let originalLeafIdentity: ProcessIdentity | undefined;
+  let originalFailure:
+    | {
+        value: unknown;
+        phase: OriginalObserverPhase;
+        sequence: number;
+        leafIdentity?: ProcessIdentity;
+      }
+    | undefined;
+  const reportOriginalFailure = createOriginalObserverFailureSink();
   try {
     if ((await opened.writer.commitSnapshot(current)).state !== 'durable-recorded')
       throw new Error('JOURNAL_UNCERTAIN');
+    originalPhase = 'owner-inspect';
     const owner = await options.observer.inspect([current.binding.manager.pid]);
     const ownerFact = owner.processes[0];
     if (
@@ -143,7 +171,9 @@ export async function observeDarwinJournal(
       refusalCause = checkBoot(owner) ? 'identity-unknown' : 'boot-changed';
       throw new Error('OWNER_UNAVAILABLE');
     }
+    originalPhase = 'enrolled';
     await options.onEnrolled?.();
+    originalPhase = 'root';
     const root = await options.root;
     const supervisor = options.rootSupervisor?.();
     const selectedRoot = supervisor ?? root;
@@ -173,18 +203,10 @@ export async function observeDarwinJournal(
           result = 'retained';
           break;
         }
-        const next = copyJournalData(current) as JournalSnapshot;
-        next.sequence++;
-        const window: ObservationWindow = {
-          startSequence: next.sequence,
-          checkpointSequence: next.sequence,
-          endSequence: next.sequence,
-          startMonotonic: start,
-          endMonotonic: start,
-        };
-        next.observationWindow = window;
+        const { next, window } = createDarwinJournalSweep(current, start);
         if (start - current.observationWindow.endMonotonic > options.maxGap)
           gap(next, 'observer-lost');
+        originalPhase = 'sweep-inspect';
         const batch = await options.observer.inspect([
           ...new Set([
             ...current.retainedIdentities.map((value) => value.identity.pid),
@@ -193,83 +215,43 @@ export async function observeDarwinJournal(
         ]);
         const validBoot = checkBoot(batch);
         if (!validBoot) gap(next, 'boot-changed');
-        const facts = new Map(
-          batch.processes.map((fact) => [
-            fact.kind === 'present' ? fact.identity.pid : fact.pid,
-            fact,
-          ])
+        const { facts, ownerGone } = applyDarwinJournalFacts(
+          options,
+          current,
+          next,
+          batch,
+          validBoot,
+          refusal
         );
-        for (const retained of next.retainedIdentities) {
-          const fact = facts.get(retained.identity.pid);
-          retained.lastSeenSequence = next.sequence;
-          if (!validBoot || !fact || fact.kind === 'unknown') {
-            retained.lifecycle = 'unknown';
-            gap(next, 'identity-unknown', retained.identity);
-          } else if (fact.kind === 'absent') {
-            retained.lifecycle = 'dead';
-            retained.currentParent = null;
-          } else if (!sameProcess(darwinBirth(fact.identity), retained.identity)) {
-            retained.lifecycle = 'replacement';
-            retained.currentParent = null;
-          } else if (fact.zombie) {
-            const prior = current.retainedIdentities.find((row) =>
-              sameProcess(row.identity, retained.identity)
+        // Complete diagnostic lookup/projection/output isolation after the original gap.
+        try {
+          const unknown = batch.processes.find((fact) => fact.kind === 'unknown');
+          const observeUnknown = options.onUnknownIdentity;
+          if (unknown?.kind === 'unknown' && observeUnknown) {
+            const retained = current.retainedIdentities.find(
+              (row) => row.identity.pid === unknown.pid
             );
-            const parent = retained.parent && facts.get(retained.parent.pid);
-            const parentKnown =
-              parent?.kind === 'absent' ||
-              (parent?.kind === 'present' &&
-                !parent.zombie &&
-                retained.parent &&
-                sameProcess(darwinBirth(parent.identity), retained.parent));
-            if (
-              retained.role === 'descendant' &&
-              retained.association &&
-              retained.parent &&
-              prior &&
-              (prior.lifecycle === 'alive' || prior.lifecycle === 'exited-unreaped') &&
-              parentKnown
-            ) {
-              // Exact enrolled terminal original: nonexecuting, not reaped or custody returned.
-              retained.lifecycle = 'exited-unreaped';
-              retained.currentParent =
-                parent?.kind === 'present' && fact.parentPid === parent.identity.pid
-                  ? retained.parent
-                  : null;
-            } else {
-              gap(next, 'custody-pending', retained.identity);
-            }
-          } else if (retained.lifecycle === 'exited-unreaped') {
-            // The exact terminal original cannot become executable again; a contradictory fact is unknown.
-            retained.lifecycle = 'unknown';
-            gap(next, 'identity-unknown', retained.identity);
-          } else {
-            retained.lifecycle = 'alive';
-            const parent = facts.get(fact.parentPid);
-            retained.currentParent =
-              parent?.kind === 'present' ? darwinBirth(parent.identity) : null;
+            await observeUnknown.call(
+              options,
+              Object.freeze({
+                sequence: next.sequence,
+                fact: unknown,
+                leaf:
+                  retained && options.leafEvents
+                    ? originalLeafDiagnostic(options.leafEvents, retained.identity)
+                    : null,
+              })
+            );
           }
+        } catch {
+          /* Diagnostic lookup/output faults never override original refusal/custody. */
         }
-        const manager = next.retainedIdentities.find((value) => value.role === 'manager')!;
-        let ownerGone = manager.lifecycle === 'dead' || manager.lifecycle === 'replacement';
-        if (options.logicalManager) {
-          const ownerFact = facts.get(options.logicalManager.pid);
-          ownerGone =
-            ownerFact?.kind === 'absent' ||
-            (ownerFact?.kind === 'present' &&
-              !sameProcess(darwinBirth(ownerFact.identity), options.logicalManager));
-          if (
-            !ownerFact ||
-            ownerFact.kind === 'unknown' ||
-            (ownerFact.kind === 'present' && ownerFact.zombie)
-          )
-            gap(next, 'identity-unknown', options.logicalManager);
-        }
-        if (ownerGone) next.phase = 'manager-lost';
-        // Enumerate only previously enrolled live parents. Additions cannot invent an old parent relationship.
-        for (const parent of current.retainedIdentities.filter(
-          (value) => value.lifecycle === 'alive'
-        )) {
+        // New descendants have an exact same-window parent association from the preceding
+        // original census. Census them in breadth-first order before publication, so their
+        // existing complete-zero path can enroll a leaf without an unobserved extra sweep.
+        const parents = current.retainedIdentities.filter((value) => value.lifecycle === 'alive');
+        const originalParentCount = parents.length;
+        for (const [index, parent] of parents.entries()) {
           const now = next.retainedIdentities.find((value) =>
             sameProcess(value.identity, parent.identity)
           )!;
@@ -289,12 +271,27 @@ export async function observeDarwinJournal(
           )
             continue;
           if (options.enumerationCloseRequested?.()) continue;
+          if (index >= originalParentCount) {
+            // Newly discovered work cannot enter after this original sampling window expires.
+            const beforeChildren = options.monotonicNow();
+            if (
+              !Number.isFinite(beforeChildren) ||
+              beforeChildren < start ||
+              beforeChildren >= currentWindowEnd ||
+              beforeChildren - start > options.maxGap
+            ) {
+              gap(next, 'observer-lost');
+              break;
+            }
+          }
           let childFacts: DarwinProcessBatch['processes'];
+          let childBatch: DarwinChildrenBatch | undefined;
           if (parent.role === 'manager') {
             // This generation enrolls one selected root, not every controller auxiliary.
             // Bind its native parent PID to the independently observed parent lifetime on both sides.
             if (current.root.kind === 'attributed') continue;
             const before = facts.get(parent.identity.pid);
+            originalPhase = 'root-association';
             const selected = await options.observer.inspect([selectedRoot!.pid]);
             const afterBatch = await options.observer.inspect([parent.identity.pid]);
             const fact = selected.processes[0],
@@ -318,13 +315,71 @@ export async function observeDarwinJournal(
             }
             childFacts = [fact];
           } else {
-            const children = await options.observer.children!(parent.identity);
-            if (!children.complete || !checkBoot(children)) {
-              await options.onIncompleteChildren?.(parent.identity, children);
+            originalPhase = 'children';
+            const enrollBaseline =
+              index >= originalParentCount && parent.role === 'descendant'
+                ? options.leafEvents?.enrollBaseline
+                : undefined;
+            originalPhase = enrollBaseline ? 'leaf-baseline' : 'children';
+            // Diagnostic custody only: preserve the exact discovered identity if its original W refuses.
+            originalLeafIdentity = enrollBaseline
+              ? { pid: parent.identity.pid, birth: parent.identity.birth }
+              : undefined;
+            const baseline = enrollBaseline
+              ? await enrollBaseline.call(options.leafEvents, parent.identity, next.sequence)
+              : undefined;
+            if (enrollBaseline && !baseline) throw new Error('LEAF_EVENT_BASELINE_UNAVAILABLE');
+            originalLeafIdentity = undefined;
+            originalPhase = 'children';
+            const children = baseline ?? (await options.observer.children!(parent.identity));
+            const complete = children.complete;
+            if (!complete || !checkBoot(children)) {
+              if (
+                parent.role === 'descendant' &&
+                !next.retainedIdentities.some(
+                  (row) =>
+                    row.parent &&
+                    sameProcess(row.parent, parent.identity) &&
+                    row.lifecycle !== 'dead' &&
+                    row.lifecycle !== 'replacement'
+                ) &&
+                options.leafEvents &&
+                (await consumeOriginalLeafTerminal(
+                  options.leafEvents,
+                  parent.identity,
+                  next.sequence,
+                  children
+                ))
+              ) {
+                // The preceding inspect remains a historical positive sample.
+                // This private proof qualifies only the missing leaf census,
+                // never marks dead/zombie or releases its original identity.
+                continue;
+              }
+              await options.onIncompleteChildren?.(parent.identity, children, {
+                sequence: next.sequence,
+                reason: complete ? 'CHILD_BOOT_MISMATCH' : 'CHILDREN_INCOMPLETE',
+              });
               gap(next, 'association-missing', parent.identity);
               continue;
             }
+            childBatch = children;
             childFacts = children.processes;
+            if (
+              parent.role === 'descendant' &&
+              !childFacts.length &&
+              options.leafEvents &&
+              !next.retainedIdentities.some(
+                (row) =>
+                  row.parent &&
+                  sameProcess(row.parent, parent.identity) &&
+                  row.lifecycle !== 'dead' &&
+                  row.lifecycle !== 'replacement'
+              )
+            ) {
+              originalPhase = 'leaf-enroll';
+              await options.leafEvents.enroll(parent.identity, next.sequence);
+            }
           }
           for (const fact of childFacts) {
             // Enumeration may still include an already enrolled unreaped child; it admits no new parent/work.
@@ -347,6 +402,16 @@ export async function observeDarwinJournal(
             }
             if (fact.kind !== 'present' || fact.zombie) {
               gap(next, 'association-missing', parent.identity);
+              if (childBatch) {
+                try {
+                  await options.onIncompleteChildren?.(parent.identity, childBatch, {
+                    sequence: next.sequence,
+                    reason: 'CHILD_UNQUALIFIED',
+                  });
+                } catch {
+                  /* Diagnostic failure cannot alter this already-recorded refusal. */
+                }
+              }
               continue;
             }
             const child = darwinBirth(fact.identity);
@@ -375,7 +440,7 @@ export async function observeDarwinJournal(
               parentDeathSequence: null,
             };
             const isRoot = sameProcess(child, root);
-            next.retainedIdentities.push({
+            const enrolled: JournalSnapshot['retainedIdentities'][number] = {
               identity: child,
               role: isRoot ? 'root' : 'descendant',
               parent: parent.identity,
@@ -386,7 +451,9 @@ export async function observeDarwinJournal(
               lastSeenSequence: next.sequence,
               relationWindow: relation,
               lifecycle: 'alive',
-            });
+            };
+            next.retainedIdentities.push(enrolled);
+            if (!isRoot) parents.push(enrolled);
             if (isRoot) {
               next.root = { kind: 'attributed', identity: child, association };
               if (next.phase === 'allocated') next.phase = 'observing';
@@ -413,11 +480,13 @@ export async function observeDarwinJournal(
           (!options.logicalManager || ownerGone || options.endBrowser?.());
         const gone = next.root.kind === 'attributed' && admittedGone;
         if (gone) next.phase = 'observation-ended';
+        originalPhase = 'snapshot-commit';
         const commit = await opened.writer.commitSnapshot(next);
         if (commit.state !== 'durable-recorded') {
           result = 'uncertain';
           break;
         }
+        originalPhase = 'snapshot-validate';
         current = validateJournalSnapshot(next);
         if (!enumerationClosed && options.enumerationCloseRequested?.()) {
           if (
@@ -430,6 +499,7 @@ export async function observeDarwinJournal(
           )
             throw new Error('JOURNAL_PRECLOSE_REFUSED');
           enumerationClosed = true;
+          originalPhase = 'enumeration-close';
           await options.onEnumerationClosed?.({
             sequence: current.sequence,
             monotonic: end,
@@ -454,12 +524,14 @@ export async function observeDarwinJournal(
             result = 'retained';
             break;
           }
-          if (!gone && current.root.kind === 'attributed')
+          if (!gone && current.root.kind === 'attributed') {
+            originalPhase = 'checkpoint';
             await options.onCheckpoint?.({
               sequence: current.sequence,
               monotonic: end,
               root: current.root.identity,
             });
+          }
           currentWindowEnd = nextEnd;
         }
         if (current.gaps.length && admittedGone) {
@@ -485,10 +557,17 @@ export async function observeDarwinJournal(
               : 'recorded-gone';
           break;
         }
+        originalPhase = 'pause';
         await options.pause();
       }
-  } catch {
+  } catch (value) {
     result = 'uncertain';
+    originalFailure = {
+      value,
+      phase: originalPhase,
+      sequence: current.sequence,
+      ...(originalLeafIdentity ? { leafIdentity: originalLeafIdentity } : {}),
+    };
   }
   if (
     result !== 'recorded-gone' &&
@@ -501,6 +580,22 @@ export async function observeDarwinJournal(
       await reportFault();
     } catch {
       result = 'uncertain';
+    }
+    if (originalFailure) {
+      try {
+        const report = options.onOriginalFailure ?? reportOriginalFailure;
+        await report.call(
+          options,
+          projectOriginalObserverFailure(
+            originalFailure.sequence,
+            originalFailure.phase,
+            originalFailure.value,
+            originalFailure.leafIdentity
+          )
+        );
+      } catch {
+        /* Original refusal and cleanup remain authoritative. */
+      }
     }
     const refusal = copyJournalData(current) as JournalSnapshot;
     refusal.sequence++;

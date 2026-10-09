@@ -18,6 +18,7 @@ import { dirname, join, relative, sep } from 'node:path';
 import * as fsPromises from 'node:fs/promises';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { verifiedLibrary } from '../runtime/public-library.js';
+import { acquireBrowser, nativeRuntimeForAcquisition } from '../lifecycle/acquisition.js';
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>();
   return { ...actual, open: vi.fn(actual.open) };
@@ -70,6 +71,49 @@ describe.skipIf(process.platform === 'win32')(
       await mkdir(bins, { recursive: true });
       return join(bins, 'playwright-core');
     };
+    it('strictly refuses a Chrome candidate and verifies its exact acquisition native baseline', async () => {
+      const candidate: BrowserRuntimeDescriptor = {
+        ...runtime,
+        identity: { ...runtime.identity, mode: 'chrome-compatible' },
+      };
+      await expect(verifiedLibrary(candidate)).rejects.toMatchObject({
+        code: 'IDENTITY_MODE_UNAVAILABLE',
+      });
+      const baseline = nativeRuntimeForAcquisition(candidate);
+      expect(baseline.library).toBe(candidate.library);
+      expect(baseline.executable).toBe(candidate.executable);
+      expect(baseline.identity).toEqual({ ...candidate.identity, mode: 'native' });
+      expect(candidate.identity.mode).toBe('chrome-compatible');
+      expect((await verifiedLibrary(baseline)).name()).toBe('chromium');
+      expect(nativeRuntimeForAcquisition(runtime)).toBe(runtime);
+    });
+    it.each([undefined, { browserWorkerPath: undefined }])(
+      'refuses Chrome acquisition without an original supervised worker before verification or profile mutation',
+      async (nativeJournal) => {
+        const effects = vi.fn(() => {
+          throw new Error('ACQUISITION_EFFECT_ENTERED');
+        });
+        // Deliberately expose only the entry boundary: any clock or profile read is a failure.
+        const config = {
+          network: { kind: 'fixture', origin: 'http://127.0.0.1:4242' },
+          runtime: { ...runtime, identity: { ...runtime.identity, mode: 'chrome-compatible' } },
+          nativeJournal,
+          get clock() {
+            return effects();
+          },
+          get dataDir() {
+            return effects();
+          },
+        } as unknown as Parameters<typeof acquireBrowser>[0];
+        const record = { diagnosticsBudget: {} } as Parameters<typeof acquireBrowser>[1];
+        vi.mocked(fsPromises.open).mockClear();
+        await expect(acquireBrowser(config, record, () => false)).rejects.toMatchObject({
+          code: 'IDENTITY_MODE_UNAVAILABLE',
+        });
+        expect(effects).not.toHaveBeenCalled();
+        expect(fsPromises.open).not.toHaveBeenCalled();
+      }
+    );
     it('loads the unchanged official package without generated metadata', async () => {
       expect((await verifiedLibrary(runtime)).name()).toBe('chromium');
     });

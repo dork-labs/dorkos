@@ -15,13 +15,15 @@ import { advanceCounter } from '../counters.js';
 import { parseBrowserResult, type BrowserBinding, type BrowserResult } from '../contracts.js';
 import type { BrowserRecord, CaptureCommand, TabRecord } from '../lifecycle/records.js';
 import { BrowserLifecycleError } from '../lifecycle/errors.js';
-import { ownOperation } from '../lifecycle/ownership.js';
+import { ownCaptureOperation } from '../lifecycle/ownership.js';
 import { deadline } from '../lifecycle/deadline.js';
 
 /** Actual bytes and attributed frame metadata; consumers receive no Page or path. */
 export interface BrowserCapture {
   readonly receipt: Extract<BrowserResult, { kind: 'frame' }>;
   readonly bytes: Uint8Array;
+  /** Backend-only original screenshot/JPEG encoding elapsed time, never a wire receipt. */
+  readonly encodingMilliseconds?: number;
 }
 
 function matches(left: BrowserBinding, right: BrowserBinding): boolean {
@@ -63,6 +65,9 @@ async function approved(
 }
 
 const nativeCaptures = new WeakMap<TabRecord, Set<Promise<Uint8Array>>>();
+// Admission is per original canonical Tab, shared by all its viewers. There is no
+// extra request queue: only the already admitted serialized front may own one timer.
+const captureStarts = new WeakMap<TabRecord, number>();
 /** Join exact original native screenshot work; a caller deadline never substitutes its return. */
 export async function joinTabCaptureOriginals(tab: TabRecord): Promise<void> {
   await Promise.allSettled([...(nativeCaptures.get(tab) ?? [])]);
@@ -159,12 +164,55 @@ async function acquire(
   if (!valid()) refuse();
   const pointerBefore = tab.pointer.read();
   let bytes: Uint8Array;
+  let encodingMilliseconds: number;
+  const captureNow = config.clock.monotonicNow.bind(config.clock);
   try {
     const screenshot = page.screenshot;
     if (!valid()) refuse();
     const originals = nativeCaptures.get(tab) ?? new Set<Promise<Uint8Array>>();
     nativeCaptures.set(tab, originals);
-    const original = ownOperation(
+    let encodingStarted = captureNow();
+    if (!valid()) refuse();
+    const interval = config.captureMinimumIntervalMilliseconds;
+    if (interval !== undefined) {
+      if (!Number.isFinite(encodingStarted) || encodingStarted < 0)
+        throw new BrowserLifecycleError('CAPTURE_FAILED');
+      const prior = captureStarts.get(tab);
+      if (prior !== undefined && encodingStarted - prior < interval) {
+        const remaining = interval - (encodingStarted - prior);
+        if (remaining > 2000) throw new BrowserLifecycleError('CAPTURE_FAILED');
+        await new Promise<void>((resolve) => {
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          let remove: (() => void) | null = null;
+          const finish = () => {
+            if (timer !== undefined) clearTimeout(timer);
+            remove?.();
+            resolve();
+          };
+          // Original parent stop wakes the wait; it does not authorize a screenshot.
+          remove = record.lifetime.gate.register(command.binding, finish);
+          try {
+            if (!remove || !valid()) {
+              finish();
+              return;
+            }
+            timer = setTimeout(finish, Math.min(2000, Math.ceil(remaining) + 1));
+          } catch (value) {
+            if (timer !== undefined) clearTimeout(timer);
+            remove?.();
+            throw value;
+          }
+        });
+        if (!valid()) refuse();
+        encodingStarted = captureNow();
+        if (!valid()) refuse();
+        if (!Number.isFinite(encodingStarted) || encodingStarted - prior < interval)
+          throw new BrowserLifecycleError('CAPTURE_FAILED');
+      }
+      // A failed native attempt consumed work. All viewers share this original Tab.
+      captureStarts.set(tab, encodingStarted);
+    }
+    const original = ownCaptureOperation(
       record,
       () =>
         Reflect.apply(screenshot, page, [
@@ -177,6 +225,9 @@ async function acquire(
       () => originals.delete(original)
     );
     bytes = await deadline(original, 2000, 'CAPTURE_TIMEOUT');
+    encodingMilliseconds = captureNow() - encodingStarted;
+    if (!Number.isFinite(encodingMilliseconds) || encodingMilliseconds < 0)
+      throw new BrowserLifecycleError('CAPTURE_FAILED');
   } catch (error) {
     if (error instanceof BrowserLifecycleError) throw error;
     throw new BrowserLifecycleError('CAPTURE_FAILED');
@@ -238,5 +289,5 @@ async function acquire(
   if (!valid()) refuse();
   const copiedBytes = new Uint8Array(bytes);
   if (!valid()) refuse();
-  return Object.freeze({ receipt, bytes: copiedBytes });
+  return Object.freeze({ receipt, bytes: copiedBytes, encodingMilliseconds });
 }

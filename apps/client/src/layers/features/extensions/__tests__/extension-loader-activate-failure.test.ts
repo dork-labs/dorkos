@@ -64,6 +64,7 @@ const record: ExtensionRecordPublic = {
   scope: 'global',
   origin: 'user',
   bundleReady: true,
+  bundleGeneration: 'a'.repeat(64),
   hasServerEntry: false,
   hasDataProxy: false,
   approvedToRun: true,

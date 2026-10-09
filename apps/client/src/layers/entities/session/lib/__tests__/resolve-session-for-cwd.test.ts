@@ -260,3 +260,94 @@ describe('cachedSessionForCwd', () => {
     expect(cachedSessionForCwd(queryClient, CWD)).toBeNull();
   });
 });
+
+// Originating-occurrence controls preserve the captured request and publication boundary.
+describe('resolveSessionForCwd originating occurrence', () => {
+  it.each([false, true])('does not publish a retired held lookup, retired=%s', async (retired) => {
+    let deliver!: (value: { sessions: Session[] }) => void;
+    let current = true;
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const transport = createMockTransport({
+      listSessions: vi.fn(
+        () =>
+          new Promise<Parameters<typeof deliver>[0]>((resolve) => {
+            deliver = resolve;
+          })
+      ),
+    });
+    const owner = {
+      beforeEffect: () => {
+        if (!current) throw new Error('EXTENSION_RETIRED');
+      },
+    };
+    const running = resolveSessionForCwd({ queryClient, transport, effectOwner: owner }, CWD);
+    current = !retired;
+    deliver({ sessions: [session('mine', 1)] });
+    if (retired) {
+      await expect(running).rejects.toThrow('EXTENSION_RETIRED');
+      expect(queryClient.getQueryData(sessionKeys.list(CWD))).toBeUndefined();
+    } else {
+      await expect(running).resolves.toMatchObject({ sessionId: 'mine' });
+      expect(queryClient.getQueryData(sessionKeys.list(CWD))).toHaveLength(1);
+    }
+  });
+});
+
+// Combined policy: upstream touch ranking must not bypass the original extension occurrence.
+describe('touch-ranked lookup with originating occurrence', () => {
+  it.each([false, true])(
+    'retains touch selection and refuses a retired original, retired=%s',
+    async (retired) => {
+      let deliver!: (value: { sessions: Session[] }) => void;
+      let current = true;
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const transport = createMockTransport({
+        listSessions: vi.fn(
+          () =>
+            new Promise<Parameters<typeof deliver>[0]>((resolve) => {
+              deliver = resolve;
+            })
+        ),
+      });
+      const effectOwner = {
+        beforeEffect() {
+          if (!current) throw new Error('EXTENSION_RETIRED');
+        },
+      };
+      const running = resolveSessionForCwd({ queryClient, transport, effectOwner }, CWD);
+      current = !retired;
+      deliver({
+        sessions: [spinOff('busy', 0), { ...session('touched', 90), lastTouchedByYouAt: ago(1) }],
+      });
+      if (retired) {
+        await expect(running).rejects.toThrow('EXTENSION_RETIRED');
+        expect(queryClient.getQueryData(sessionKeys.list(CWD))).toBeUndefined();
+      } else {
+        await expect(running).resolves.toMatchObject({ sessionId: 'touched' });
+        expect(cachedSessionForCwd(queryClient, CWD)).toBe('touched');
+      }
+    }
+  );
+});
+
+it('refuses an occurrence retired by the captured touch-store read before returning a destination', async () => {
+  const queryClient = clientWith([{ ...session('touched', 90), lastTouchedByYouAt: ago(1) }]);
+  let current = true;
+  const effectOwner = {
+    beforeEffect() {
+      if (!current) throw new Error('EXTENSION_RETIRED');
+    },
+  };
+  const state = useInteractionStore.getState();
+  const read = vi.spyOn(useInteractionStore, 'getState').mockImplementationOnce(() => {
+    current = false;
+    return state;
+  });
+  try {
+    await expect(
+      resolveSessionForCwd({ queryClient, transport, effectOwner }, CWD)
+    ).rejects.toThrow('EXTENSION_RETIRED');
+  } finally {
+    read.mockRestore();
+  }
+});

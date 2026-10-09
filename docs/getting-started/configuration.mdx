@@ -1244,12 +1244,20 @@ Use `dorkos config path` to print the path to your config file, and `dorkos conf
       type: 'boolean',
       default: 'false',
     },
+    'browser.chromeUserAgent': {
+      description:
+        'Chrome user agent choice for the Shared browser experiment. Change it in Settings while Shared browser is off. Checks with the installed browser are still pending.',
+      type: 'boolean',
+      default: 'false',
+    },
   }}
 />
 
 Settings → Advanced → Experiments lists **Shared browser**, off by default. People can change this in Settings. Agents can read it but cannot change it.
 
-The choice applies to all users of this installation without sharing their profiles. Enabling is currently refused before any settings are written. It does not download a browser or skip safety checks. Browser use and safe stopping are not yet available through this setting.
+The choice applies to all users of this installation without sharing their profiles. Availability depends on checks of the installed browser. Keep the experiment off until those checks are complete.
+
+The experiment also lists **Use Chrome user agent**, off by default. A user agent tells websites which browser is visiting. Only the signed-in owner can change this choice, while Shared browser is off. Agents can read the choice but cannot change it. Checks with the installed browser are still pending.
 
 ### Spaces experiment
 

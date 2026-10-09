@@ -2,12 +2,26 @@ import type { ProcessIdentity, ProcessObserver } from '../configuration.js';
 import { sameProcess } from '../lifecycle/process-journal.js';
 import { BrowserLifecycleError } from '../lifecycle/errors.js';
 import { nativeHolderPid } from './host-identity.js';
-import { createDarwinProcessObserver, darwinBirth } from './darwin-process-observer.js';
+import {
+  createDarwinProcessObserver,
+  darwinBirth,
+  type DarwinChildrenBatch,
+} from './darwin-process-observer.js';
 
 /** Native lifetimes for one private engine; legacy fixture identities stay separate. */
 export function createDarwinEngineProcesses(artifact: Readonly<{ path: string; sha256: string }>) {
   const observer = createDarwinProcessObserver(artifact);
   let boot: string | undefined;
+  let treeSequence = 0;
+  let treeFailure:
+    | Readonly<{
+        sequence: number;
+        parent: ProcessIdentity;
+        stage: 'children' | 'boot' | 'completeness' | 'identity';
+        batch: DarwinChildrenBatch | undefined;
+        cause: unknown;
+      }>
+    | undefined;
   const checkBoot = (batch: { bootSeconds: string; bootMicroseconds: string }) => {
     const value = `${batch.bootSeconds}:${batch.bootMicroseconds}`;
     if (boot !== undefined && boot !== value) throw new Error('BOOT_CHANGED');
@@ -38,15 +52,24 @@ export function createDarwinEngineProcesses(artifact: Readonly<{ path: string; s
       }
     },
     async descendants(original, signal) {
+      const sequence = ++treeSequence;
+      let parent = original;
+      let stage: 'children' | 'boot' | 'completeness' | 'identity' = 'children';
+      let batch: DarwinChildrenBatch | undefined;
       try {
         const identities = [original];
         const pids = new Set([original.pid]);
         for (let index = 0; index < identities.length; index++) {
           if (signal.aborted || !observer.children) throw new Error();
-          const parent = identities[index]!;
-          const batch = await observer.children(parent);
+          parent = identities[index]!;
+          stage = 'children';
+          batch = undefined;
+          batch = await observer.children(parent);
+          stage = 'boot';
           checkBoot(batch);
+          stage = 'completeness';
           if (!batch.complete || signal.aborted) throw new Error();
+          stage = 'identity';
           for (const fact of batch.processes) {
             if (
               fact.kind !== 'present' ||
@@ -61,7 +84,10 @@ export function createDarwinEngineProcesses(artifact: Readonly<{ path: string; s
           }
         }
         return { status: 'complete', identities };
-      } catch {
+      } catch (cause) {
+        // Exact first failure and its ORIGINAL bounded batch are diagnostic data only.
+        // Completeness and the empty unknown result remain unchanged; no retry or exclusion.
+        treeFailure ??= Object.freeze({ sequence, parent, stage, batch, cause });
         return { status: 'unknown', identities: [] };
       }
     },
@@ -69,6 +95,8 @@ export function createDarwinEngineProcesses(artifact: Readonly<{ path: string; s
   return Object.freeze({
     identity,
     processes,
+    /** Private diagnostic only; never a cleanup or profile-release observation. */
+    treeObservationFailure: () => treeFailure,
     /** Only for terminal descendants after original root-child/pipe return; never recovery. */
     async observeTerminated(original: ProcessIdentity, signal: AbortSignal) {
       if (signal.aborted) return { status: 'unknown' as const };

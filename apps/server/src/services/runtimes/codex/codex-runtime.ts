@@ -215,6 +215,8 @@ export interface CodexRuntimeOptions {
    * back to a transport the product does not default to.
    */
   transport: CodexTransportKind | CodexTransport;
+  /** Constructor-private acceptance retains/wraps the actual selected transport before any turn. */
+  observeOriginalTransport?: (original: CodexTransport) => CodexTransport;
   /**
    * The loopback credits relay, when boot started one. Only the app-server
    * transport uses it: a credits thread's provider points at the relay, so the
@@ -307,7 +309,11 @@ export class CodexRuntime implements AgentRuntime {
     this.resolveBinary = options.resolveBinary ?? resolveCodexBinaryPath;
     this.modelCatalog =
       options.modelCatalog ?? new CodexModelCatalog({ resolveBinary: this.resolveBinary });
-    this.transport = this.buildTransport(options.transport, options.creditsRelay);
+    const originalTransportObserver = options.observeOriginalTransport;
+    const originalTransport = this.buildTransport(options.transport, options.creditsRelay);
+    this.transport = originalTransportObserver
+      ? originalTransportObserver(originalTransport)
+      : originalTransport;
     // Capability-gated members exist only where the transport backs them, so a
     // runtime on exec keeps the shape it always had.
     if (this.transport.getSessionWarmth) {
@@ -422,7 +428,10 @@ export class CodexRuntime implements AgentRuntime {
         });
       }
       if (context !== undefined && locked) {
-        yield { type: 'system_status', data: { message: WAKE_BUDGET_SPENT_COPY } };
+        yield {
+          type: 'system_status',
+          data: { message: WAKE_BUDGET_SPENT_COPY },
+        };
       }
       yield { type: 'done', data: { sessionId } };
       return;
@@ -528,11 +537,11 @@ export class CodexRuntime implements AgentRuntime {
     // On app-server the credits home is a long-lived process: stop it too, so
     // nothing paid for by the old link keeps running (its relay key revokes
     // with it).
-    void this.transport
-      .closeCreditsProcess?.()
-      .catch((err: unknown) =>
-        logger.warn('[CodexRuntime] could not stop the credits Codex process', { err: String(err) })
-      );
+    void this.transport.closeCreditsProcess?.().catch((err: unknown) =>
+      logger.warn('[CodexRuntime] could not stop the credits Codex process', {
+        err: String(err),
+      })
+    );
   }
 
   /**
@@ -650,7 +659,10 @@ export class CodexRuntime implements AgentRuntime {
       opts.permissionMode !== undefined &&
       this.activeTurns.has(sessionId) &&
       tightensDeclaredMode(CODEX_MODES, prevMode, opts.permissionMode);
-    return { updated: true, ...(pending ? { permissionModePendingUntilNextTurn: true } : {}) };
+    return {
+      updated: true,
+      ...(pending ? { permissionModePendingUntilNextTurn: true } : {}),
+    };
   }
 
   /**
@@ -805,7 +817,10 @@ export class CodexRuntime implements AgentRuntime {
       try {
         listener(sessionId);
       } catch (err) {
-        logger.warn('[CodexRuntime] a dispatched-turn listener threw', { sessionId, err });
+        logger.warn('[CodexRuntime] a dispatched-turn listener threw', {
+          sessionId,
+          err,
+        });
       }
     }
     // A dispatched turn is somebody's word: the agent may wake again.
@@ -848,7 +863,10 @@ export class CodexRuntime implements AgentRuntime {
       try {
         this.threadMap.backfillCwd(sessionId, cwd);
       } catch (err) {
-        logger.warn('[CodexRuntime] failed to backfill binding cwd', { sessionId, err });
+        logger.warn('[CodexRuntime] failed to backfill binding cwd', {
+          sessionId,
+          err,
+        });
       }
     }
     if (origin === 'dispatched') {
@@ -1058,7 +1076,10 @@ export class CodexRuntime implements AgentRuntime {
             })
           : undefined;
       const turnOpts = accessContext
-        ? { ...opts, additionalContext: [...(opts?.additionalContext ?? []), accessContext.entry] }
+        ? {
+            ...opts,
+            additionalContext: [...(opts?.additionalContext ?? []), accessContext.entry],
+          }
         : opts;
       // No room marker: `control_ui` is a `ui` capability now, and its handler
       // reads the room this turn is answering in from the runtime-neutral turn
@@ -1369,7 +1390,10 @@ export class CodexRuntime implements AgentRuntime {
     try {
       this.threadMap.updateMetadata(sessionId, this.toMetadataPatch(tracked));
     } catch (err) {
-      logger.warn('[CodexRuntime] failed to persist session metadata', { sessionId, err });
+      logger.warn('[CodexRuntime] failed to persist session metadata', {
+        sessionId,
+        err,
+      });
     }
   }
 
@@ -1443,7 +1467,11 @@ export class CodexRuntime implements AgentRuntime {
    */
   async stopTask(sessionId: string, taskId: string): Promise<InterruptReceipt> {
     if (this.transport.stopTask) return this.transport.stopTask(sessionId, taskId);
-    return { outcome: 'not-running', reason: 'no-open-turn', runtime: this.type };
+    return {
+      outcome: 'not-running',
+      reason: 'no-open-turn',
+      runtime: this.type,
+    };
   }
 
   /**
@@ -1458,7 +1486,12 @@ export class CodexRuntime implements AgentRuntime {
    */
   async interruptQuery(sessionId: string): Promise<InterruptReceipt> {
     const controller = this.activeTurns.get(sessionId);
-    if (!controller) return { outcome: 'not-running', reason: 'no-open-turn', runtime: this.type };
+    if (!controller)
+      return {
+        outcome: 'not-running',
+        reason: 'no-open-turn',
+        runtime: this.type,
+      };
     this.activeTurns.delete(sessionId);
     const connectorBindingId = this.activeConnectorBindings.get(controller);
     this.activeConnectorBindings.delete(controller);
@@ -1588,10 +1621,9 @@ export class CodexRuntime implements AgentRuntime {
     sinceCursor?: number,
     signal?: AbortSignal
   ): AsyncIterable<SessionEvent> {
-    return getOrCreateProjector(sessionId, ctx.cwd, { persist: 'history' }).subscribe(
-      sinceCursor,
-      signal
-    );
+    return getOrCreateProjector(sessionId, ctx.cwd, {
+      persist: 'history',
+    }).subscribe(sinceCursor, signal);
   }
 
   /**
@@ -1628,7 +1660,10 @@ export class CodexRuntime implements AgentRuntime {
     return null;
   }
 
-  async getLastMessageIds(): Promise<{ user: string; assistant: string } | null> {
+  async getLastMessageIds(): Promise<{
+    user: string;
+    assistant: string;
+  } | null> {
     return null;
   }
 

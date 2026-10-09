@@ -1,3 +1,4 @@
+import { BrowserReferenceSchema, BrowserCounterSchema } from './browser-schema-json.js';
 import { CanvasChannelDeclarationSchema } from './canvas-channel-schemas.js';
 /**
  * Zod schemas — single source of truth for all shared types and OpenAPI metadata.
@@ -315,7 +316,10 @@ export type SessionLifecycle = z.infer<typeof SessionLifecycleSchema>;
  */
 export const LimitPlanSchema = z
   .discriminatedUnion('mode', [
-    z.object({ mode: z.literal('ask'), carryOver: z.literal(false).optional() }),
+    z.object({
+      mode: z.literal('ask'),
+      carryOver: z.literal(false).optional(),
+    }),
     z.object({
       mode: z.literal('auto'),
       target: z.string(),
@@ -329,7 +333,11 @@ export const LimitPlanSchema = z
       unconfirmed: z.literal(true).optional(),
       carryOver: z.literal(false).optional(),
     }),
-    z.object({ mode: z.literal('continued'), sessionId: z.string(), accountId: z.string() }),
+    z.object({
+      mode: z.literal('continued'),
+      sessionId: z.string(),
+      accountId: z.string(),
+    }),
   ])
   .openapi('LimitPlan');
 
@@ -1555,7 +1563,9 @@ export const UiActionRequestSchema = z
       .refine(
         (payload) =>
           payload === undefined || JSON.stringify(payload).length <= UI_ACTION_PAYLOAD_MAX_LENGTH,
-        { message: `payload exceeds ${UI_ACTION_PAYLOAD_MAX_LENGTH} serialized characters` }
+        {
+          message: `payload exceeds ${UI_ACTION_PAYLOAD_MAX_LENGTH} serialized characters`,
+        }
       ),
     /** The widget document `title`, forwarded so the agent knows which widget was used. */
     widgetTitle: z.string().max(UI_ACTION_TITLE_MAX_LENGTH).optional(),
@@ -4318,7 +4328,9 @@ export const ExecutionDefaultsSchema = z
           }),
         })
       )
-      .openapi({ description: 'One entry per runtime that has a config section' }),
+      .openapi({
+        description: 'One entry per runtime that has a config section',
+      }),
   })
   .openapi('ExecutionDefaults');
 
@@ -4343,10 +4355,12 @@ export const ExperimentStateSchema = z
       description:
         'Dot-path of the boolean setting this switch writes, e.g. "runtimes.claudeCode.persistentSession". Also the entry identity: the client splits it into the nested PATCH /api/config body',
     }),
-    title: z.string().openapi({ description: 'What the experiment is called, in plain words' }),
-    description: z
-      .string()
-      .openapi({ description: 'What turning it on does for the person. Benefit first' }),
+    title: z.string().openapi({
+      description: 'What the experiment is called, in plain words',
+    }),
+    description: z.string().openapi({
+      description: 'What turning it on does for the person. Benefit first',
+    }),
     costNote: z.string().optional().openapi({
       description:
         'What it costs them — memory, spend, exposure — when there is a real cost worth stating. Absent when there is not',
@@ -4375,16 +4389,16 @@ export const ServerConfigSchema = z
     latestVersion: z.string().nullable().openapi({
       description: 'Latest available version from npm, or null if dev mode or unknown',
     }),
-    isDevMode: z
-      .boolean()
-      .openapi({ description: 'Whether the server is running a development build' }),
+    isDevMode: z.boolean().openapi({
+      description: 'Whether the server is running a development build',
+    }),
     isLocalCaller: z.boolean().openapi({
       description:
         'Whether THIS request reached DorkOS from the machine it runs on. The one field here that describes the caller rather than the server: it is answered per request by the same predicate that guards the loopback-only connect endpoints (`lib/caller-authority.ts`), so a client can be told in advance what those endpoints would do instead of discovering it from a 403. False for a phone or any browser arriving over the tunnel, over the LAN, or through a reverse proxy. True whenever `DORKOS_ALLOW_INSECURE_BIND` is set, because under that flag those endpoints accept',
     }),
-    dismissedUpgradeVersions: z
-      .array(z.string())
-      .openapi({ description: 'Versions the user has dismissed upgrade notifications for' }),
+    dismissedUpgradeVersions: z.array(z.string()).openapi({
+      description: 'Versions the user has dismissed upgrade notifications for',
+    }),
     dismissedPromoIds: z.array(z.string()).openapi({
       description:
         'Feature-promo ids the user has waved away. Server-held rather than per-browser, so dismissing a card on one device settles it on all of them',
@@ -4448,7 +4462,9 @@ export const ServerConfigSchema = z
               }),
             })
           )
-          .openapi({ description: 'The Claude accounts the operator has registered' }),
+          .openapi({
+            description: 'The Claude accounts the operator has registered',
+          }),
         defaultAccountColor: z.string().nullable().optional().openapi({
           description:
             "The color the operator chose for the standalone default account (this computer's own Claude sign-in when no registered account has its folder), as lowercase #rrggbb, or null when it shows the default for its position. Ignored while a registered account has the default folder: that account's own color wins. Absent on a server too old to report it",
@@ -4562,10 +4578,9 @@ export const ServerConfigSchema = z
           description:
             'True when `DORKOS_TASKS_ENABLED` is set in the server environment. That variable wins over the setting, so a client should not offer to change it',
         }),
-        initError: z
-          .string()
-          .optional()
-          .openapi({ description: 'Initialization error message, if scheduler failed to start' }),
+        initError: z.string().optional().openapi({
+          description: 'Initialization error message, if scheduler failed to start',
+        }),
       })
       .optional()
       .openapi({ description: 'Tasks scheduler feature state' }),
@@ -4580,10 +4595,9 @@ export const ServerConfigSchema = z
           description:
             'True when `DORKOS_RELAY_ENABLED` is set in the server environment. That variable wins over the setting, so a client should not offer to change it',
         }),
-        initError: z
-          .string()
-          .optional()
-          .openapi({ description: 'Initialization error message, if relay failed to start' }),
+        initError: z.string().optional().openapi({
+          description: 'Initialization error message, if relay failed to start',
+        }),
       })
       .optional()
       .openapi({ description: 'Relay message bus feature state' }),
@@ -4593,22 +4607,20 @@ export const ServerConfigSchema = z
           .number()
           .int()
           .openapi({ description: 'Maximum concurrent task runs (1-10)' }),
-        retentionCount: z
-          .number()
-          .int()
-          .openapi({ description: 'Number of task run history records to retain' }),
+        retentionCount: z.number().int().openapi({
+          description: 'Number of task run history records to retain',
+        }),
       })
       .optional()
       .openapi({ description: 'Task scheduler configuration' }),
     logging: z
       .object({
-        level: z
-          .string()
-          .openapi({ description: 'Log verbosity level (fatal, error, warn, info, debug, trace)' }),
-        maxLogSizeKb: z
-          .number()
-          .int()
-          .openapi({ description: 'Maximum log file size in KB before rotation' }),
+        level: z.string().openapi({
+          description: 'Log verbosity level (fatal, error, warn, info, debug, trace)',
+        }),
+        maxLogSizeKb: z.number().int().openapi({
+          description: 'Maximum log file size in KB before rotation',
+        }),
         maxLogFiles: z
           .number()
           .int()
@@ -4616,25 +4628,23 @@ export const ServerConfigSchema = z
       })
       .optional()
       .openapi({ description: 'Logging configuration' }),
-    boundary: z
-      .string()
-      .openapi({ description: 'Server boundary path (home directory or configured boundary)' }),
-    dorkHome: z
-      .string()
-      .openapi({ description: 'Data directory path (~/.dork or configured DORK_HOME)' }),
+    boundary: z.string().openapi({
+      description: 'Server boundary path (home directory or configured boundary)',
+    }),
+    dorkHome: z.string().openapi({
+      description: 'Data directory path (~/.dork or configured DORK_HOME)',
+    }),
     mesh: z
       .object({
-        enabled: z
-          .boolean()
-          .openapi({ description: 'Whether the Mesh agent discovery subsystem is enabled' }),
-        scanRoots: z
-          .array(z.string())
-          .optional()
-          .openapi({ description: 'User-configured scan roots for agent discovery' }),
-        initError: z
-          .string()
-          .optional()
-          .openapi({ description: 'Initialization error message, if mesh failed to start' }),
+        enabled: z.boolean().openapi({
+          description: 'Whether the Mesh agent discovery subsystem is enabled',
+        }),
+        scanRoots: z.array(z.string()).optional().openapi({
+          description: 'User-configured scan roots for agent discovery',
+        }),
+        initError: z.string().optional().openapi({
+          description: 'Initialization error message, if mesh failed to start',
+        }),
       })
       .optional()
       .openapi({ description: 'Mesh agent discovery feature state' }),
@@ -4644,14 +4654,12 @@ export const ServerConfigSchema = z
           .array(z.string())
           .openapi({ description: 'Steps the user has completed' }),
         skippedSteps: z.array(z.string()).openapi({ description: 'Steps the user has skipped' }),
-        startedAt: z
-          .string()
-          .nullable()
-          .openapi({ description: 'ISO timestamp when onboarding was started' }),
-        dismissedAt: z
-          .string()
-          .nullable()
-          .openapi({ description: 'ISO timestamp when onboarding was dismissed' }),
+        startedAt: z.string().nullable().openapi({
+          description: 'ISO timestamp when onboarding was started',
+        }),
+        dismissedAt: z.string().nullable().openapi({
+          description: 'ISO timestamp when onboarding was dismissed',
+        }),
         completedAt: z.string().nullable().openapi({
           description: 'ISO timestamp when onboarding was completed (finish line reached)',
         }),
@@ -4671,16 +4679,15 @@ export const ServerConfigSchema = z
       .openapi({ description: 'DorkBot living-tour state (DOR-419)' }),
     profile: z
       .object({
-        roles: z
-          .array(z.string())
-          .openapi({ description: 'What kind of work the user does (free-form; canon suggested)' }),
-        tools: z
-          .array(z.string())
-          .openapi({ description: 'Tools/services the user works with (e.g. "Gmail")' }),
-        displayName: z
-          .string()
-          .nullable()
-          .openapi({ description: 'What the user likes to be called, or null' }),
+        roles: z.array(z.string()).openapi({
+          description: 'What kind of work the user does (free-form; canon suggested)',
+        }),
+        tools: z.array(z.string()).openapi({
+          description: 'Tools/services the user works with (e.g. "Gmail")',
+        }),
+        displayName: z.string().nullable().openapi({
+          description: 'What the user likes to be called, or null',
+        }),
         rolePromptDismissedAt: z.string().nullable().openapi({
           description:
             'ISO timestamp when the one-time existing-user role prompt was dismissed, or null',
@@ -4700,9 +4707,9 @@ export const ServerConfigSchema = z
         defaultDirectory: z
           .string()
           .openapi({ description: 'Default directory for agent workspaces' }),
-        defaultAgent: z
-          .string()
-          .openapi({ description: 'Slug of the default agent to launch after onboarding' }),
+        defaultAgent: z.string().openapi({
+          description: 'Slug of the default agent to launch after onboarding',
+        }),
       })
       .optional()
       .openapi({ description: 'Agent creation and defaults configuration' }),
@@ -4762,7 +4769,9 @@ export const ServerConfigSchema = z
         }),
       })
       .optional()
-      .openapi({ description: 'Telemetry consent state (shared per-channel namespace)' }),
+      .openapi({
+        description: 'Telemetry consent state (shared per-channel namespace)',
+      }),
     auth: z
       .object({
         enabled: z.boolean().openapi({
@@ -4883,7 +4892,9 @@ export const ServerConfigSchema = z
         }),
       })
       .optional()
-      .openapi({ description: 'Cockpit UI preferences surfaced to the client' }),
+      .openapi({
+        description: 'Cockpit UI preferences surfaced to the client',
+      }),
     experiments: z.array(ExperimentStateSchema).optional().openapi({
       description:
         'The staged opt-ins Settings → Experiments offers, already resolved, in the order to show them. An EMPTY array is a normal answer — it means every experiment has graduated or been withdrawn. A server that omits the block has no Experiments section at all',
@@ -5012,10 +5023,9 @@ export const SubagentInfoSchema = z
   .object({
     name: z.string().openapi({ description: 'Agent type identifier (e.g. "Explore")' }),
     description: z.string().openapi({ description: 'Description of when to use this agent' }),
-    model: z
-      .string()
-      .optional()
-      .openapi({ description: 'Model alias this agent uses, or undefined to inherit parent' }),
+    model: z.string().optional().openapi({
+      description: 'Model alias this agent uses, or undefined to inherit parent',
+    }),
   })
   .openapi('SubagentInfo');
 
@@ -5966,8 +5976,32 @@ const CanvasMediaSrcSchema = z.string().min(1);
  * - `{ type: 'video', src: string, title? }` — HTML5 `<video>`; `src` follows the same rules as `image`
  * - `{ type: 'widget', definition: WidgetDocument, title? }` — a Tier-1 generative-UI widget
  */
+export const ManagedBrowserCanvasReferenceSchema = z
+  .object({
+    type: z.literal('managed_browser'),
+    attachmentId: BrowserReferenceSchema,
+    browserId: BrowserReferenceSchema,
+    browserGeneration: BrowserCounterSchema,
+    tabId: BrowserReferenceSchema,
+    ownerAuthorId: z.string().min(1).max(128),
+    scope: z.discriminatedUnion('kind', [
+      z
+        .object({
+          kind: z.literal('session'),
+          sessionId: z.string().min(1).max(128),
+        })
+        .strict(),
+      z.object({ kind: z.literal('room'), roomId: z.string().min(1).max(128) }).strict(),
+    ]),
+    title: z.string().max(128).optional(),
+  })
+  .strict();
+/** Durable presentation reference only. Access, live binding, pixels and grants are never replayed. */
+export type ManagedBrowserCanvasReference = z.infer<typeof ManagedBrowserCanvasReferenceSchema>;
+
 export const UiCanvasContentSchema = z
   .discriminatedUnion('type', [
+    ManagedBrowserCanvasReferenceSchema,
     z.object({
       type: z.literal('url'),
       url: z.string().url(),

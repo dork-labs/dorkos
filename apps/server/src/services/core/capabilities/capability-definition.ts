@@ -349,4 +349,6 @@ export interface CapabilityDomain {
    * @throws If a required dependency is absent.
    */
   assertDeps?(deps: CapabilityDeps): void;
+  /** Fresh private service availability, used for discovery only; handlers still authorize each call. */
+  available?(deps: CapabilityDeps): boolean;
 }

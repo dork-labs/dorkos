@@ -6,7 +6,8 @@ export function expandInput(steps: readonly BrowserInputStep[]): readonly Native
   const expanded: NativeInputStep[] = [];
   let textBytes = 0;
   for (const step of steps) {
-    if (step.kind === 'text') textBytes += Buffer.byteLength(step.text);
+    if (step.kind === 'text' || step.kind === 'composition' || step.kind === 'compositionCommit')
+      textBytes += Buffer.byteLength(step.text);
     if (step.kind === 'click') {
       expanded.push(
         { kind: 'mouseMove', x: step.x, y: step.y },

@@ -3,10 +3,9 @@
  * belongs to (ADR 260911-200304).
  *
  * The split is drawn by the renderer, not by a hand-kept list: `CanvasViews`
- * dispatches exactly two content types — `url` and `browser` — to
- * `CanvasBrowserContent`, and the other twelve to eleven other viewers. So the
- * Browser view is "the documents the embedded browser renders" and the Canvas
- * view is everything else. One definition means the tab split can never drift
+ * dispatches `url` and `browser` to the embedded browser and
+ * `managed_browser` to the authenticated managed viewer. The Browser view holds
+ * those pages; the Canvas view holds the other document viewers. One definition means the tab split can never drift
  * from the viewer dispatch, and `mcp_app` stays in Canvas without being an
  * exception: it has its own viewer, so it is an app rather than a page.
  *
@@ -29,8 +28,10 @@ export type CanvasView = 'canvas' | 'browser';
  * The view a document belongs to, derived from the viewer its content renders in.
  *
  * @param content - The document's content variant.
- * @returns `'browser'` for the two types the embedded browser renders, else `'canvas'`.
+ * @returns `'browser'` for embedded and managed pages, else `'canvas'`.
  */
 export function canvasViewForContent(content: UiCanvasContent): CanvasView {
-  return content.type === 'url' || content.type === 'browser' ? 'browser' : 'canvas';
+  return content.type === 'url' || content.type === 'browser' || content.type === 'managed_browser'
+    ? 'browser'
+    : 'canvas';
 }

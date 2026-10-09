@@ -4,7 +4,7 @@ import {
   createBrowserLifetime,
   installRetirementDriver,
 } from '../lifecycle/ownership.js';
-import { currentAuthorityCustody } from '../lifecycle/live-custody.js';
+import { currentAuthorityCustody, readAuthorityCustodyRefusal } from '../lifecycle/live-custody.js';
 import type { BrowserRecord, TabRecord } from '../lifecycle/records.js';
 import type { InputOwnerSlot } from '../lifecycle/input-owner.js';
 
@@ -137,4 +137,47 @@ it('rechecks original custody when reset starts during the producer observation'
     return true;
   });
   expect(f.observe()).toBe(false);
+});
+
+it('records only the actual fixed custody cause and clears it after a fresh positive observation', () => {
+  const f = fixture();
+  f.slot.uncertain = true;
+  expect(f.observe()).toBe(false);
+  expect(readAuthorityCustodyRefusal(f.record)).toBe('slot');
+  f.slot.uncertain = false;
+  f.known.mockReturnValue(false);
+  expect(f.observe()).toBe(false);
+  expect(readAuthorityCustodyRefusal(f.record)).toBe('transport');
+  f.known.mockReturnValue(true);
+  expect(f.observe()).toBe(true);
+  expect(readAuthorityCustodyRefusal(f.record)).toBeUndefined();
+});
+it.each([false, undefined])(
+  'does not inspect a falsy producer failure %s or heal its failed decision',
+  (cause) => {
+    const f = fixture();
+    f.known.mockImplementation(() => {
+      throw cause;
+    });
+    expect(f.observe()).toBe(false);
+    expect(readAuthorityCustodyRefusal(f.record)).toBe('exception');
+    expect(f.known).toHaveBeenCalledOnce();
+    expect(readAuthorityCustodyRefusal(f.record)).toBe('exception');
+    expect(f.known).toHaveBeenCalledOnce();
+  }
+);
+it('distinguishes original observer loss from post-producer membership loss', () => {
+  const f = fixture();
+  f.record.supervisor = {
+    custody: () => ({ pending: true, uncertain: true }),
+  } as unknown as NonNullable<BrowserRecord['supervisor']>;
+  expect(f.observe()).toBe(false);
+  expect(readAuthorityCustodyRefusal(f.record)).toBe('supervisor');
+  f.record.supervisor = undefined;
+  f.known.mockImplementation(() => {
+    f.lifetime.inputs.delete(f.tab);
+    return true;
+  });
+  expect(f.observe()).toBe(false);
+  expect(readAuthorityCustodyRefusal(f.record)).toBe('reentrant');
 });

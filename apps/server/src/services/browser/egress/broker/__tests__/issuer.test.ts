@@ -382,3 +382,37 @@ it.each(['ownerId', 'workspaceId', 'browserId', 'browserGeneration'] as const)(
     f.issuer.releaseRun(second);
   }
 );
+
+it.each([undefined, false, new Error('inventory producer')])(
+  'inventory failure %s invalidates outstanding authority before retaining its original cause',
+  async (value) => {
+    const f = fixture();
+    const run = await f.issuer.retainRun(binding, 10000);
+    const permit = await f.issuer.continuation(run, 0, 10000);
+    const before = f.issuer.snapshot(run);
+    const invalidated = vi.fn(() => {
+      expect(f.issuer.snapshot(run).state).toBe('suspended');
+      expect(f.issuer.ledger.snapshot().permits).toBe(0);
+    });
+    f.issuer.onInvalidation(run, invalidated);
+    f.ports.readInventory.mockImplementationOnce(() => {
+      throw value;
+    });
+    let caught: { value: unknown } | undefined;
+    try {
+      f.issuer.check(run);
+    } catch (reason) {
+      caught = { value: reason };
+    }
+    expect(caught).toEqual({ value });
+    expect(invalidated).toHaveBeenCalledOnce();
+    expect(f.issuer.snapshot(run)).toMatchObject({
+      state: 'suspended',
+      sequence: before.sequence,
+      deadline: before.deadline,
+    });
+    expect(() => f.issuer.consume(run, 0, permit)).toThrow('CLOSED');
+    await expect(f.issuer.current(run)).rejects.toThrow('CLOSED');
+    await expect(f.issuer.continuation(run, 0)).rejects.toThrow('CLOSED');
+  }
+);

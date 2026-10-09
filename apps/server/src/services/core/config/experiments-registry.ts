@@ -85,8 +85,15 @@ export const EXPERIMENTS: readonly ExperimentEntry[] = [
   {
     path: 'browser.enabled',
     title: 'Shared browser',
-    description: 'View your agents’ browser and share control.',
-    costNote: 'Unavailable while safety checks continue.',
+    description: 'Open a separate browser and control it from the app.',
+    costNote: 'Requires sign-in and a verified browser installation.',
+    graduationIssue: 'DOR-2671',
+  },
+  {
+    path: 'browser.chromeUserAgent',
+    title: 'Use Chrome user agent',
+    description: "Use the installed browser's Chrome identity when loading websites.",
+    costNote: 'Turn off Shared browser before changing this choice.',
     graduationIssue: 'DOR-2671',
   },
   {

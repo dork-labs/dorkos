@@ -1124,3 +1124,37 @@ it('a throwing original permission check remains an unclassified refusal', async
   expect(isOwnedCaptureCancellation(error)).toBe(false);
   expect(h.raw.screenshot).not.toHaveBeenCalled();
 });
+
+it('retirement joins the original capture wrapper and screenshot without inventing acquisition gaps', async () => {
+  const fixture = await captureEngineFixture();
+  const entered = deferred<void>();
+  const pixels = deferred<Uint8Array>();
+  const screenshot = vi.spyOn(fixture.h.raw, 'screenshot').mockImplementation(() => {
+    entered.resolve();
+    return pixels.promise;
+  });
+  const operation = fixture.engine.capture(fixture.command);
+  const refusal = operation.catch((value: unknown) => value);
+  const retained: { closing?: ReturnType<typeof fixture.engine.shutdown> } = {};
+  onTestFinished(async () => {
+    pixels.resolve(fakeJPEG());
+    await Promise.allSettled([operation, retained.closing ?? fixture.engine.shutdown()]);
+    screenshot.mockRestore();
+  });
+  await entered.promise;
+  expect(fixture.record.lifetime.pending.size).toBe(2);
+  const closing = fixture.engine.shutdown();
+  retained.closing = closing;
+  let settled = false;
+  void closing.then(() => {
+    settled = true;
+  });
+  await tick();
+  expect(settled).toBe(false);
+  expect(fixture.record.lifetime.ordinary.retirement.pendingCoverage.size).toBe(2);
+  pixels.resolve(fakeJPEG());
+  expect(await refusal).toMatchObject({ code: 'STALE_BINDING' });
+  expect((await closing).every((result) => result.cleanup === 'observed')).toBe(true);
+  expect(fixture.record.lifetime.ordinary.retirement.pendingCoverage.size).toBe(0);
+  expect(fixture.record.lifetime.ordinary.retirement.coverageUnavailable).toBe(false);
+});

@@ -1,3 +1,4 @@
+import { originalStartupCleanup } from '../../../__tests__/startup-root-wiring.js';
 /** Structural root wiring plus isolated cleanup execution; this does not boot the server. */
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
@@ -7,6 +8,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { MainRequestAdmission } from '../main-request-admission.js';
 import { WorkspaceReconciler } from '../../../workspace/workspace-reconciler.js';
 import { WorkspaceReconcilerLifecycle } from '../../../workspace/workspace-reconciler-lifecycle.js';
+import { joinBrowserBeforeShutdown } from '../../../browser/runtime/shutdown-join.js';
 import { WorkspaceService } from '../../../workspace/workspace-service.js';
 import type { WorkspaceStore } from '../../../workspace/workspace-store.js';
 
@@ -112,12 +114,21 @@ describe('main admission root adoption', () => {
     const factory = property(opts, 'listen');
     if (!ts.isArrowFunction(factory) || !ts.isCallExpression(factory.body))
       throw new Error('Main listen must be acquired by the guarded factory');
+    const acquisition = factory.body;
     expect(
-      ts.isPropertyAccessExpression(factory.body.expression) &&
-        ts.isIdentifier(factory.body.expression.expression) &&
-        factory.body.expression.expression.text === 'app' &&
-        factory.body.expression.name.text === 'listen'
+      ts.isPropertyAccessExpression(acquisition.expression) &&
+        acquisition.expression.expression.getText(source) === 'browserStartup!' &&
+        acquisition.expression.name.text === 'listen'
     ).toBe(true);
+    const rawFactory = acquisition.arguments[0];
+    if (!ts.isArrowFunction(rawFactory) || !ts.isCallExpression(rawFactory.body))
+      throw new Error('Missing original app listener factory');
+    expect(rawFactory.body.expression.getText(source)).toBe('app.listen');
+    const nativeFactory = acquisition.arguments[1];
+    if (!ts.isArrowFunction(nativeFactory) || !ts.isCallExpression(nativeFactory.body))
+      throw new Error('Missing original native listener factory');
+    expect(nativeFactory.body.expression.getText(source)).toBe('createHttpServer');
+    expect(nativeFactory.body.arguments[0].getText(source)).toBe('app');
     const callback = property(opts, 'onListening');
     if (!ts.isArrowFunction(callback) || !ts.isBlock(callback.body))
       throw new Error('Expected guarded listening callback');
@@ -142,37 +153,25 @@ describe('main admission root adoption', () => {
           node.expression.expression.text === 'app' &&
           node.expression.name.text === 'listen'
       );
-    expect(listeners).toEqual([factory.body]);
+    expect(listeners).toEqual([rawFactory.body]);
   });
 
   it('closes admission then immediately invokes workspace disposal in both cleanup entries', () => {
     const ordinary = rootFunction('shutdownServices').body!.statements;
     closeFirst(ordinary[0]);
-    disposeNext(ordinary[1]);
-    const startup = source.statements
-      .filter(ts.isExpressionStatement)
-      .map((node) => node.expression)
-      .find(
-        (node) =>
-          ts.isCallExpression(node) &&
-          ts.isPropertyAccessExpression(node.expression) &&
-          node.expression.name.text === 'catch' &&
-          ts.isCallExpression(node.expression.expression) &&
-          ts.isIdentifier(node.expression.expression.expression) &&
-          node.expression.expression.expression.text === 'start'
-      );
-    if (
-      !startup ||
-      !ts.isCallExpression(startup) ||
-      !ts.isArrowFunction(startup.arguments[0]) ||
-      !ts.isBlock(startup.arguments[0].body)
-    )
-      throw new Error('Missing startup cleanup');
-    const statements = startup.arguments[0].body.statements;
-    closeFirst(statements[0]);
-    const scoped = statements[1];
-    if (!ts.isTryStatement(scoped))
-      throw new Error('Workspace startup failure containment must remain scoped');
+    const join = ordinary[1];
+    if (!ts.isExpressionStatement(join) || !ts.isAwaitExpression(join.expression))
+      throw new Error('Expected joined original shutdown owners');
+    const joined = call(join.expression.expression, 'joinBrowserBeforeShutdown');
+    expect(joined.arguments).toHaveLength(3);
+    const workspace = joined.arguments[2];
+    if (!ts.isArrowFunction(workspace) || !ts.isCallExpression(workspace.body))
+      throw new Error('Missing synchronous workspace disposal factory');
+    expect(workspace.body.expression.getText(source)).toBe('workspaceReconcilerLifecycle.dispose');
+    expect(workspace.body.arguments).toHaveLength(0);
+    const { callback, workspace: scoped } = originalStartupCleanup(source);
+    if (!ts.isBlock(callback.body)) throw new Error('Missing startup block');
+    closeFirst(callback.body.statements[0]);
     expect(scoped.tryBlock.statements).toHaveLength(1);
     disposeNext(scoped.tryBlock.statements[0]);
   });
@@ -207,12 +206,17 @@ describe('main admission root adoption', () => {
       throw stopAfterPrefix;
     });
     const docNotificationCleanup = vi.fn();
-    const compiled = ts.transpileModule(`(${rootFunction('shutdownServices').getText(source)})`, {
-      compilerOptions: { target: ts.ScriptTarget.ES2022 },
-    }).outputText;
+    const compiled = ts.transpileModule(
+      `${rootFunction('shutdownRemainingServices').getText(source)}\n(${rootFunction('shutdownServices').getText(source)})`,
+      {
+        compilerOptions: { target: ts.ScriptTarget.ES2022 },
+      }
+    ).outputText;
     const cleanup = runInNewContext(compiled, {
       mainRequestAdmission: admission,
       workspaceReconcilerLifecycle: owner,
+      joinBrowserBeforeShutdown,
+      browserStartup: undefined,
       stopDocDelivery,
       logger: { info: laterCleanup },
       docNotificationCleanup,

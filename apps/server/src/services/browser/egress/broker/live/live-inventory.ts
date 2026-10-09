@@ -11,6 +11,7 @@ type AdminProof = Readonly<{
 type AdminOwner = { verifiedBrowserAdminEndpoint(): AdminProof | null };
 /** Combine the actual server census with permanently retained private original endpoint denies. */
 export function createLiveBrowserInventory(base: ReturnType<typeof createServerInventory>) {
+  const retainAdministrativeAuthority = base.retainAdministrativeAuthority.bind(base);
   const originals = new Map<
     object,
     {
@@ -77,6 +78,7 @@ export function createLiveBrowserInventory(base: ReturnType<typeof createServerI
   };
   return Object.freeze({
     acquire: base.acquire,
+    retainAdministrativeAuthority,
     observe,
     readInventory: () => observe().inventory,
     retainListener(original: OwnedListener, receiver: AdminOwner) {

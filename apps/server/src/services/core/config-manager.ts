@@ -114,7 +114,15 @@ import type { UserConfig, SidebarItemRef } from '@dorkos/shared/config-schema';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import { logger, logError } from '../../lib/logger.js';
 import { SERVER_VERSION } from '../../lib/version.js';
+import {
+  consumeBrowserIdentityChoicePermit,
+  type BrowserIdentityChoicePermit,
+} from '../browser/runtime/activation/identity-choice-permit.js';
 import { browserSettingRefusal } from './config/browser-setting.js';
+import {
+  consumeProductionBrowserEnablePermit,
+  type ProductionBrowserEnablePermit,
+} from '../browser/runtime/activation/activation-permit.js';
 import { restoreProtectedState } from './safe-defaults/protected-state.js';
 import { backupConfigFile } from './config/backups.js';
 import { preserveUnknownKeys, schemaNodeAt, tolerateUnknownKeys } from './config/version-skew.js';
@@ -4864,6 +4872,19 @@ export const CONFIG_MIGRATIONS = {
     seedCodexTransport(store);
   },
   '0.101.0': seedDoeRuntime,
+  // Default-off Chrome identity choice; merged migrations above stay frozen.
+  '0.102.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    const browser = store.get('browser');
+    if (browser !== null && typeof browser === 'object' && !Array.isArray(browser)) {
+      store.set('browser', {
+        ...browser,
+        chromeUserAgent: (browser as { chromeUserAgent?: unknown }).chromeUserAgent === true,
+      });
+    }
+  },
 } as const;
 
 /**
@@ -5627,15 +5648,49 @@ export class ConfigManager {
    * @param keyPath - A top-level section, or a dot-path into one.
    * @param value - The value to store.
    */
-  private write(keyPath: string, value: unknown): void {
-    const browserRefusal = browserSettingRefusal(keyPath, value);
-    if (browserRefusal) throw new Error(browserRefusal);
+  private write(
+    keyPath: string,
+    value: unknown,
+    browserPermit?: ProductionBrowserEnablePermit,
+    identityPermit?: BrowserIdentityChoicePermit
+  ): void {
+    const assertBrowserCurrent =
+      browserPermit && keyPath === 'browser.enabled' && value === true
+        ? consumeProductionBrowserEnablePermit(browserPermit, this)
+        : undefined;
+    const assertIdentityCurrent =
+      identityPermit && keyPath === 'browser.chromeUserAgent'
+        ? consumeBrowserIdentityChoicePermit(identityPermit, this, value)
+        : undefined;
+    const browserRefusal = browserSettingRefusal(
+      keyPath,
+      value,
+      keyPath === 'browser' ? this.get('browser').chromeUserAgent : false
+    );
+    if (browserRefusal && !assertBrowserCurrent && !assertIdentityCurrent)
+      throw new Error(browserRefusal);
     const stored = this.store.get(keyPath as keyof UserConfig);
     const { skewed } = repairWidenedLeaves(keyPath, stored, WIDENED_LEAF_POLICY);
     const kept = preserveWidenedLeaves(skewed, keyPath, value);
     const node = schemaNodeAt(CONF_JSON_SCHEMA, keyPath);
     const merged = preserveUnknownKeys(node, stored, kept);
-    this.store.set(keyPath as keyof UserConfig, merged as UserConfig[keyof UserConfig]);
+    assertBrowserCurrent?.();
+    assertIdentityCurrent?.();
+    try {
+      this.store.set(keyPath as keyof UserConfig, merged as UserConfig[keyof UserConfig]);
+      assertBrowserCurrent?.();
+      assertIdentityCurrent?.();
+    } catch (reason) {
+      // A partial original write or lost post-write admission still independently attempts Off.
+      if (assertBrowserCurrent) {
+        try {
+          this.store.set('browser.enabled', false);
+        } catch (rollback) {
+          logger.error('[Config] browser opt-in rollback failed', { rollback });
+        }
+      }
+      throw reason;
+    }
   }
 
   /**
@@ -5698,6 +5753,18 @@ export class ConfigManager {
         logger.warn('[Config] a change listener threw; the write itself is unaffected', { err });
       }
     }
+  }
+
+  /** Only the original startup owner/native admission can enable this experiment. */
+  enableOwnedBrowser(permit: ProductionBrowserEnablePermit): void {
+    this.write('browser.enabled', true, permit);
+    this.emitChange(['browser'], ['browser.enabled']);
+  }
+
+  /** Only the original Off runtime owner may consume this exact one-use choice. */
+  chooseOwnedBrowserIdentity(value: boolean, permit: BrowserIdentityChoicePermit): void {
+    this.write('browser.chromeUserAgent', value, undefined, permit);
+    this.emitChange(['browser'], ['browser.chromeUserAgent']);
   }
 
   /** Set a nested value via dot-path. Returns warning if key is sensitive. */

@@ -379,14 +379,14 @@ describe('BC-44 — the version number leaves the chrome', () => {
    */
   const ALLOWED = [
     'dashboard-sidebar/ui/header-block-menu.ts',
-    'dashboard-sidebar/ui/SidebarFooterMenu.tsx',
+    'dashboard-sidebar/ui/footer/SidebarFooterMenu.tsx',
     'dashboard-sidebar/ui/bottom-slot/UpdatePill.tsx',
   ];
 
   it('scans every sidebar implementation, not just the one this task owns', () => {
     const scanned = [...SIDEBAR_SOURCE.keys()];
     expect(scanned).toContain('dashboard-sidebar/ui/header-block-menu.ts');
-    expect(scanned).toContain('dashboard-sidebar/ui/SidebarFooterStrip.tsx');
+    expect(scanned).toContain('dashboard-sidebar/ui/footer/SidebarFooterStrip.tsx');
     expect(scanned).toContain('dashboard-sidebar/ui/bottom-slot/UpdatePill.tsx');
     // Pins the third SIDEBAR_DIRS entry: deleting it must red this line, not
     // silently shrink the scan (the review proved the entry was unobservable).

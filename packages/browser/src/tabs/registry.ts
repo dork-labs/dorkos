@@ -11,6 +11,16 @@ import { advanceCounter } from '../counters.js';
 import { parseTabId } from '../ids.js';
 import type { BrowserRecord, TabRecord } from '../lifecycle/records.js';
 
+// Match the existing native target census and tab-binding protocol ceiling. This is
+// a structural bound, not a CPU/RSS capacity estimate.
+const maximumRegisteredTabs = 64;
+const tabLimitRefusals = new WeakSet<object>();
+
+/** Recognize only this registration producer's refusal; foreign failures remain unchanged. */
+export function isOriginalTabLimitRefusal(value: unknown): boolean {
+  return typeof value === 'object' && value !== null && tabLimitRefusals.has(value);
+}
+
 /** Own the canonical record before Page callbacks; parent retirement precedes child listeners. */
 export function trackPage(
   record: BrowserRecord,
@@ -22,6 +32,13 @@ export function trackPage(
   if (!ordinaryRecord(record)) throw new Error('PAGE_REGISTRATION_REFUSED');
   const prior = [...record.tabs.values()].find((tab) => tab.page === page);
   if (prior) return prior;
+  const limit = record.tabsPerBrowser ?? maximumRegisteredTabs;
+  if (record.tabs.size >= limit) {
+    const refusal = new Error('TAB_REGISTRATION_LIMIT');
+    tabLimitRefusals.add(refusal);
+    record.lifetime.requestRetirement('engineFault');
+    throw refusal;
+  }
   const currentBinding = () =>
     tab &&
     ordinaryRecord(record) &&

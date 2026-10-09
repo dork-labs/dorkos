@@ -36,9 +36,8 @@ import {
 import { openTabAt } from '@/layers/features/app-tabs';
 import { AuthGuard, OwnerSetupHost } from '@/layers/features/auth';
 import { renderCreditsOffer } from '@/layers/widgets/credits-offer';
-import { initSessionStreamBinding, switchAgentCwd } from '@/layers/entities/session';
+import { initSessionStreamBinding } from '@/layers/entities/session';
 import { eraseCommunityOwnerState } from '@/layers/entities/community';
-import { applyShapeAction } from '@/layers/entities/shapes';
 import { useAutoOpenDiff } from '@/layers/features/diff-review';
 import { ExtensionProvider, createExtensionEventBridge } from '@/layers/features/extensions';
 import type { ExtensionAPIDeps } from '@/layers/features/extensions';
@@ -47,11 +46,14 @@ import {
   unregisterPaletteCommandHandler,
 } from '@/layers/features/command-palette';
 import { initializeExtensions } from './app/init-extensions';
+import { createExtensionUiActions } from './app/extension-ui-actions';
 import { ErrorBoundary } from 'react-error-boundary';
 import { AppCrashFallback } from '@/layers/shared/ui/app-crash-fallback';
 import './index.css';
 
-registerCommunityAuthorityCleanup(() => eraseCommunityOwnerState(queryClient));
+registerCommunityAuthorityCleanup((requireCurrent) =>
+  eraseCommunityOwnerState(queryClient, requireCurrent)
+);
 
 // Dev playground — lazy-loaded, tree-shaken from production builds
 const DevPlayground = import.meta.env.DEV ? React.lazy(() => import('./dev/DevPlayground')) : null;
@@ -413,37 +415,19 @@ const extensionDeps: ExtensionAPIDeps = {
         });
       },
     },
-    // Wires the agent's `control_ui switch_agent` command to the same CWD switch
-    // the command palette performs (DOR-354). Reads the store fresh per call and
-    // drives the router directly since dispatch happens outside React.
-    switchAgent: (cwd: string) =>
-      switchAgentCwd(cwd, {
-        store: useAppStore.getState(),
-        queryClient,
-        transport,
-        currentLocation: () => router.state.location,
-        navigate: (search) => void router.navigate(toSession(search)),
-      }),
-    // Wires the agent's `control_ui apply_layout` command (and the switcher UI's
-    // shared action) to the real apply flow (DOR-355 task 3.1). Each restored
-    // chrome command applies against live state — the dispatcher re-reads the
-    // store per dispatch — and the arrival agent's auto-follow (W1a) reuses the
-    // same cwd switch. The `extensionDeps` self-reference resolves at call time,
-    // never construction.
-    applyShape: (shape: string) =>
-      void applyShapeAction(shape, {
-        transport,
-        queryClient,
-        dispatch: (command) => executeUiCommand(extensionDeps.dispatcherContext, command, 'agent'),
-        switchAgent: (cwd) =>
-          switchAgentCwd(cwd, {
-            store: useAppStore.getState(),
-            queryClient,
-            transport,
-            currentLocation: () => router.state.location,
-            navigate: (search) => void router.navigate(toSession(search)),
-          }),
-      }),
+    ...createExtensionUiActions({
+      transport,
+      queryClient,
+      getStore: useAppStore.getState,
+      currentLocation: () => router.state.location,
+      getDispatcherContext: () => extensionDeps.dispatcherContext,
+      navigate: (search, owner) => {
+        const navigate = router.navigate;
+        const request = toSession(search);
+        owner?.beforeEffect();
+        void Reflect.apply(navigate, router, [request]);
+      },
+    }),
   },
   // The real router (spec `flow-multiproject` D4). It used to be a stub that
   // only warned, so every extension's `api.navigate` did nothing in the app.

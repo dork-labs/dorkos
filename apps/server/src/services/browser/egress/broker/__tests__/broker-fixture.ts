@@ -1,3 +1,4 @@
+import type { OriginalConnectDenialObserver } from '../connect-denial.js';
 import { vi, afterEach } from 'vitest';
 import { createBrokerIssuer } from '../issuer.js';
 import { createPrivateBroker } from '../broker.js';
@@ -9,7 +10,10 @@ const binding = {
   browserGeneration: 1,
 };
 const cleanup = new Set<ReturnType<typeof createPrivateBroker>>();
-export async function fixture(limits?: Parameters<typeof createBrokerIssuer>[0]['limits']) {
+export async function fixture(
+  limits?: Parameters<typeof createBrokerIssuer>[0]['limits'],
+  connectDenials?: OriginalConnectDenialObserver
+) {
   let time = 0,
     revision = 1,
     valid = true;
@@ -65,6 +69,7 @@ export async function fixture(limits?: Parameters<typeof createBrokerIssuer>[0][
       run,
       policy: policyOptions(),
       transport,
+      connectDenials,
     });
     cleanup.add(b);
     return b;

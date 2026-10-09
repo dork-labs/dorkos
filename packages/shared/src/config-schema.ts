@@ -2497,7 +2497,9 @@ export const UserConfigSchema = z.object({
       maxAgentTurnsTotalPerHour: RELAY_TURN_CEILING_DEFAULTS.maxAgentTurnsTotalPerHour,
     })),
   /** Shared browser opt-in. A stored choice does not establish mode readiness. */
-  browser: z.object({ enabled: z.boolean().default(false) }).default(() => ({ enabled: false })),
+  browser: z
+    .object({ enabled: z.boolean().default(false), chromeUserAgent: z.boolean().default(false) })
+    .default(() => ({ enabled: false, chromeUserAgent: false })),
   /**
    * Spaces: joining, starting and running shared spaces (the code calls them
    * communities) with other people and their agents.

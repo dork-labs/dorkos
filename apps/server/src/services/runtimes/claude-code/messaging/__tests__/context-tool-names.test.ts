@@ -489,10 +489,29 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // composes no extension. `extension-tools-every-list.test.ts` guards those.
     // 119 -> 120 for `compact_my_session` (DOR-2732): the `<context_warning>`
     // note names it, with each runtime's prefix, so it is always loaded.
-    // 120 -> 121 for `audit_verify` (DOR-2738): no prompt block names it, so it
-    // stays deferred and unprefixed.
-    expect(advertised.size).toBe(121);
+    // 120 -> 134: exact complete managed-browser vocabulary from the docs registry.
+    // 134 -> 135 for main's audit_verify; no prompt block names this deferred tool.
+    // These deferred tools add no prompt instructions; the exact prefix count and
+    // bare/unknown-name guards below stay unchanged.
+    expect(advertised.size).toBe(135);
+    expect([...advertised].filter((name) => name.startsWith('managed_browser_')).sort()).toEqual([
+      'managed_browser_close',
+      'managed_browser_control',
+      'managed_browser_diagnostics',
+      'managed_browser_download',
+      'managed_browser_file_access',
+      'managed_browser_input',
+      'managed_browser_navigate',
+      'managed_browser_open',
+      'managed_browser_open_delegated',
+      'managed_browser_semantic_action',
+      'managed_browser_semantic_read',
+      'managed_browser_stage_upload',
+      'managed_browser_tabs',
+      'managed_browser_upload',
+    ]);
     for (const name of [
+      'audit_verify',
       'configure_doc_channel',
       'approve_doc_route',
       'revoke_doc_route',

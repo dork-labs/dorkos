@@ -9,11 +9,21 @@ vi.mock('sonner', () => ({
 }));
 
 // Mock ui-action-dispatcher (pulled in transitively by extension-api-factory)
-vi.mock('@/layers/shared/lib/ui-action-dispatcher', () => ({
+vi.mock('@/layers/shared/lib/ui-action-dispatcher', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/lib/ui-action-dispatcher')>()),
   executeUiCommand: vi.fn(),
 }));
 
 import { ExtensionLoader } from '../model/extension-loader';
+import { enterContribution } from '../model/extension-registration-owner';
+import {
+  getExtensionLoadAdmission,
+  registerExtensionLoadOwner,
+  beginExtensionAuthOperation,
+  authenticateExtensionAuthOperation,
+  resumeExtensionLoads,
+} from '@/layers/shared/lib';
+import { createInitialSlots, useExtensionRegistry } from '@/layers/shared/model';
 import type { ExtensionAPIDeps } from '../model/types';
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
 
@@ -59,6 +69,7 @@ function makeRecord(overrides: Partial<ExtensionRecordPublic> = {}): ExtensionRe
     hasDataProxy: false,
     approvedToRun: true,
     shadowedBy: null,
+    bundleGeneration: 'a'.repeat(64),
     ...overrides,
   };
 }
@@ -94,7 +105,7 @@ describe('ExtensionLoader', () => {
       makeRecord({ id: 'broken', status: 'compile_error', bundleReady: false }),
     ]);
 
-    const loader = new ExtensionLoader(makeDeps());
+    const loader = makeLoader(makeDeps());
     const { loaded, extensions } = await loader.initialize();
 
     expect(loaded.size).toBe(0);
@@ -117,7 +128,7 @@ describe('ExtensionLoader', () => {
     // does not was filtered out before the import.
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-    const loader = new ExtensionLoader(makeDeps());
+    const loader = makeLoader(makeDeps());
     const { extensions } = await loader.initialize();
 
     // Both records still reach the caller, so the settings tab can render the card
@@ -136,7 +147,7 @@ describe('ExtensionLoader', () => {
   // do after a successful import) and asserting getLoaded() reflects the state.
   // The error-isolation path (import throws → extension skipped) is tested in #8.
   it('getLoaded reflects extensions seeded after successful activation', () => {
-    const loader = new ExtensionLoader(makeDeps());
+    const loader = makeLoader(makeDeps());
 
     const activate = vi.fn().mockReturnValue(vi.fn()); // returns a deactivate fn
     const loadedMap = (loader as unknown as { loaded: Map<string, unknown> }).loaded;
@@ -164,7 +175,7 @@ describe('ExtensionLoader', () => {
       makeRecord({ id: 'e', status: 'compile_error', bundleReady: false }),
     ]);
 
-    const loader = new ExtensionLoader(makeDeps());
+    const loader = makeLoader(makeDeps());
     const { loaded } = await loader.initialize();
 
     // None pass the compiled+bundleReady filter
@@ -179,7 +190,7 @@ describe('ExtensionLoader', () => {
     ];
     mockFetch(records);
 
-    const loader = new ExtensionLoader(makeDeps());
+    const loader = makeLoader(makeDeps());
     const { extensions } = await loader.initialize();
 
     expect(extensions).toHaveLength(2);
@@ -187,8 +198,8 @@ describe('ExtensionLoader', () => {
   });
 
   // 5. deactivateAll: calls deactivate function and all cleanups for each loaded extension
-  it('deactivateAll calls deactivate and all cleanups', () => {
-    const loader = new ExtensionLoader(makeDeps());
+  it('deactivateAll calls deactivate and all cleanups', async () => {
+    const loader = makeLoader(makeDeps());
 
     const deactivate1 = vi.fn();
     const cleanup1a = vi.fn();
@@ -196,26 +207,12 @@ describe('ExtensionLoader', () => {
     const deactivate2 = vi.fn();
     const cleanup2 = vi.fn();
 
-    // Directly seed the loaded map to test deactivation independently from
-    // the dynamic-import path (which cannot resolve /api/extensions/…/bundle
-    // in the jsdom environment).
-    const loaded = (loader as unknown as { loaded: Map<string, unknown> }).loaded;
-    loaded.set('ext-1', {
-      id: 'ext-1',
-      manifest: { name: 'Ext 1', version: '1.0.0', entry: 'index.js' },
-      module: {},
-      api: {},
-      cleanups: [cleanup1a, cleanup1b],
-      deactivate: deactivate1,
-    });
-    loaded.set('ext-2', {
-      id: 'ext-2',
-      manifest: { name: 'Ext 2', version: '1.0.0', entry: 'index.js' },
-      module: {},
-      api: {},
-      cleanups: [cleanup2],
-      deactivate: deactivate2,
-    });
+    // Deliver fixture modules through the real loader activation path.
+
+    await activateFixtures(loader, [
+      { id: 'ext-1', cleanups: [cleanup1a, cleanup1b], deactivate: deactivate1 },
+      { id: 'ext-2', cleanups: [cleanup2], deactivate: deactivate2 },
+    ]);
 
     loader.deactivateAll();
 
@@ -228,8 +225,8 @@ describe('ExtensionLoader', () => {
   });
 
   // 6. deactivateAll error resilience: if one cleanup throws, others still run
-  it('deactivateAll continues running cleanups after a failure', () => {
-    const loader = new ExtensionLoader(makeDeps());
+  it('deactivateAll continues running cleanups after a failure', async () => {
+    const loader = makeLoader(makeDeps());
 
     const cleanupGood1 = vi.fn();
     const cleanupThrows = vi.fn().mockImplementation(() => {
@@ -237,15 +234,13 @@ describe('ExtensionLoader', () => {
     });
     const cleanupGood2 = vi.fn();
 
-    const loaded = (loader as unknown as { loaded: Map<string, unknown> }).loaded;
-    loaded.set('ext-resilience', {
-      id: 'ext-resilience',
-      manifest: { name: 'Resilience', version: '1.0.0', entry: 'index.js' },
-      module: {},
-      api: {},
-      cleanups: [cleanupGood1, cleanupThrows, cleanupGood2],
-      deactivate: undefined,
-    });
+    await activateFixtures(loader, [
+      {
+        id: 'ext-resilience',
+        cleanups: [cleanupGood1, cleanupThrows, cleanupGood2],
+        deactivate: undefined,
+      },
+    ]);
 
     expect(() => loader.deactivateAll()).not.toThrow();
     expect(cleanupGood1).toHaveBeenCalledOnce();
@@ -255,22 +250,14 @@ describe('ExtensionLoader', () => {
   });
 
   // 7. deactivateAll error resilience: if deactivate() throws, cleanups still run
-  it('deactivateAll continues with cleanups even when deactivate() throws', () => {
-    const loader = new ExtensionLoader(makeDeps());
+  it('deactivateAll continues with cleanups even when deactivate() throws', async () => {
+    const loader = makeLoader(makeDeps());
     const cleanup = vi.fn();
     const deactivate = vi.fn().mockImplementation(() => {
       throw new Error('deactivate boom');
     });
 
-    const loaded = (loader as unknown as { loaded: Map<string, unknown> }).loaded;
-    loaded.set('ext-bad-deactivate', {
-      id: 'ext-bad-deactivate',
-      manifest: { name: 'Bad Deactivate', version: '1.0.0', entry: 'index.js' },
-      module: {},
-      api: {},
-      cleanups: [cleanup],
-      deactivate,
-    });
+    await activateFixtures(loader, [{ id: 'ext-bad-deactivate', cleanups: [cleanup], deactivate }]);
 
     expect(() => loader.deactivateAll()).not.toThrow();
     expect(deactivate).toHaveBeenCalledOnce();
@@ -288,7 +275,7 @@ describe('ExtensionLoader', () => {
     // throw and returns an empty loaded map (error isolation).
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-    const loader = new ExtensionLoader(makeDeps());
+    const loader = makeLoader(makeDeps());
     const { loaded } = await loader.initialize();
 
     expect(loaded.size).toBe(0);
@@ -302,14 +289,16 @@ describe('ExtensionLoader', () => {
   });
 
   // 9. No extensions to load logs the expected message
-  it('logs when no extensions are ready to load', async () => {
+  it('completes an authenticated empty extension list', async () => {
     mockFetch([]);
     const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    const loader = new ExtensionLoader(makeDeps());
-    await loader.initialize();
+    const loader = makeLoader(makeDeps());
+    const outcome = await loader.initialize();
 
-    expect(consoleSpy).toHaveBeenCalledWith('[extensions] No extensions to load');
+    expect(outcome.status).toBe('completed');
+    expect(loader.isOutcomeCurrent(outcome)).toBe(true);
+    expect(outcome.loaded.size).toBe(0);
     consoleSpy.mockRestore();
   });
 
@@ -318,37 +307,34 @@ describe('ExtensionLoader', () => {
     global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 500 });
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-    const loader = new ExtensionLoader(makeDeps());
+    const loader = makeLoader(makeDeps());
     const { extensions, loaded } = await loader.initialize();
 
     expect(extensions).toHaveLength(0);
     expect(loaded.size).toBe(0);
-    expect(consoleSpy).toHaveBeenCalledWith('[extensions] Failed to fetch extension list:', 500);
+    expect(consoleSpy).toHaveBeenCalledWith(
+      '[extensions] Load failed:',
+      expect.objectContaining({ message: 'Failed to fetch extension list: 500' })
+    );
 
     consoleSpy.mockRestore();
   });
 
   // 11. getLoaded reflects the current state
   it('getLoaded returns the current loaded map', () => {
-    const loader = new ExtensionLoader(makeDeps());
+    const loader = makeLoader(makeDeps());
     expect(loader.getLoaded()).toBeInstanceOf(Map);
     expect(loader.getLoaded().size).toBe(0);
   });
 
   // 12. deactivateAll on extension with no deactivate function (optional field)
-  it('deactivateAll works when deactivate is undefined', () => {
-    const loader = new ExtensionLoader(makeDeps());
+  it('deactivateAll works when deactivate is undefined', async () => {
+    const loader = makeLoader(makeDeps());
     const cleanup = vi.fn();
 
-    const loaded = (loader as unknown as { loaded: Map<string, unknown> }).loaded;
-    loaded.set('no-deactivate', {
-      id: 'no-deactivate',
-      manifest: { name: 'No Deactivate', version: '0.1.0', entry: 'index.js' },
-      module: {},
-      api: {},
-      cleanups: [cleanup],
-      deactivate: undefined,
-    });
+    await activateFixtures(loader, [
+      { id: 'no-deactivate', cleanups: [cleanup], deactivate: undefined },
+    ]);
 
     expect(() => loader.deactivateAll()).not.toThrow();
     expect(cleanup).toHaveBeenCalledOnce();
@@ -357,7 +343,7 @@ describe('ExtensionLoader', () => {
 
   // 13. deactivateAll sets disposed flag preventing further activations
   it('deactivateAll prevents subsequent initialize activations (StrictMode safety)', () => {
-    const loader = new ExtensionLoader(makeDeps());
+    const loader = makeLoader(makeDeps());
 
     // Call deactivateAll before any load — simulates StrictMode unmount
     // happening before the async initialize() completes.
@@ -372,20 +358,14 @@ describe('ExtensionLoader', () => {
   });
 
   // 14. Multiple extensions loaded — deactivateAll clears all
-  it('deactivateAll clears all extensions from the loaded map', () => {
-    const loader = new ExtensionLoader(makeDeps());
+  it('deactivateAll clears all extensions from the loaded map', async () => {
+    const loader = makeLoader(makeDeps());
     const loaded = (loader as unknown as { loaded: Map<string, unknown> }).loaded;
 
-    for (let i = 0; i < 3; i++) {
-      loaded.set(`ext-${i}`, {
-        id: `ext-${i}`,
-        manifest: { name: `Ext ${i}`, version: '1.0.0', entry: 'index.js' },
-        module: {},
-        api: {},
-        cleanups: [],
-        deactivate: undefined,
-      });
-    }
+    await activateFixtures(
+      loader,
+      Array.from({ length: 3 }, (_, i) => ({ id: `ext-${i}` }))
+    );
 
     expect(loaded.size).toBe(3);
     loader.deactivateAll();
@@ -421,17 +401,12 @@ describe('ExtensionLoader server lifecycle coordination', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    const loader = new ExtensionLoader(makeDeps());
+    const loader = makeLoader(makeDeps());
     await loader.initialize();
 
-    // The bundle import fails in jsdom, so activation won't happen and
-    // init-server won't be called. However, we can test the init-server
-    // path by seeding the loader and calling initialize with a successful
-    // module load. Since we can't mock dynamic import() in jsdom, we test
-    // the initServerExtension logic indirectly through the fetch calls.
-    // The first call is GET /api/extensions, the second would be POST init-server
-    // only if activation succeeded. Since dynamic import fails, only one call.
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    // Failed delivery still performs the final generation correspondence read; no init-server.
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(fetchSpy.mock.calls.every(([url]) => url === '/api/extensions')).toBe(true);
   });
 
   // 15. No server init for browser-only extension
@@ -448,11 +423,11 @@ describe('ExtensionLoader server lifecycle coordination', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    const loader = new ExtensionLoader(makeDeps());
+    const loader = makeLoader(makeDeps());
     await loader.initialize();
 
-    // Only the initial GET /api/extensions call should have been made
-    expect(global.fetch).toHaveBeenCalledTimes(1);
+    // Initial and final correspondence lists; no server request may follow a failed import.
+    expect(global.fetch).toHaveBeenCalledTimes(2);
     expect(global.fetch).toHaveBeenCalledWith('/api/extensions');
   });
 
@@ -474,7 +449,7 @@ describe('ExtensionLoader server lifecycle coordination', () => {
       mockFetch([]);
       vi.spyOn(console, 'log').mockImplementation(() => {});
 
-      const loader = new ExtensionLoader(makeDeps());
+      const loader = makeLoader(makeDeps());
       await loader.initialize();
 
       expect(global.fetch).toHaveBeenCalledWith('http://localhost:6242/api/extensions');
@@ -500,7 +475,7 @@ describe('ExtensionLoader server lifecycle coordination', () => {
       vi.spyOn(console, 'error').mockImplementation(() => {});
       vi.spyOn(console, 'log').mockImplementation(() => {});
 
-      const loader = new ExtensionLoader(makeDeps());
+      const loader = makeLoader(makeDeps());
       await loader.initialize();
 
       // The bundle import fails in jsdom, so activation (and thus init-server)
@@ -526,30 +501,23 @@ describe('ExtensionLoader server lifecycle coordination', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    const loader = new ExtensionLoader(makeDeps());
+    const loader = makeLoader(makeDeps());
     await loader.initialize();
 
     // Dynamic import fails in jsdom so init-server won't be triggered via
     // the normal flow. We verify the fetch was only called once (list endpoint).
-    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(global.fetch).toHaveBeenCalledTimes(2);
   });
 
   // 17. Server init failure is non-blocking — test via direct invocation pattern
   // Since dynamic import() can't succeed in jsdom, we test the initServerExtension
   // function's error handling by seeding the loader and verifying fetch behavior.
   it('server init failure does not block client activation (seeded test)', async () => {
-    const loader = new ExtensionLoader(makeDeps());
+    const loader = makeLoader(makeDeps());
 
     // Seed a loaded extension to verify the loader still functions
-    const loaded = (loader as unknown as { loaded: Map<string, unknown> }).loaded;
-    loaded.set('resilient-ext', {
-      id: 'resilient-ext',
-      manifest: { name: 'Resilient', version: '1.0.0', entry: 'index.js' },
-      module: { activate: vi.fn() },
-      api: {},
-      cleanups: [],
-      deactivate: undefined,
-    });
+
+    await activateFixtures(loader, [{ id: 'resilient-ext', cleanups: [], deactivate: undefined }]);
 
     // Extension is loaded despite any hypothetical server init failure
     expect(loader.getLoaded().has('resilient-ext')).toBe(true);
@@ -579,7 +547,7 @@ describe('ExtensionLoader server lifecycle coordination', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    const loader = new ExtensionLoader(makeDeps());
+    const loader = makeLoader(makeDeps());
     await loader.initialize();
 
     // Dynamic import fails, so init-server not reached. Verify no crash.
@@ -604,7 +572,7 @@ describe('ExtensionLoader server lifecycle coordination', () => {
 
     vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    const loader = new ExtensionLoader(makeDeps());
+    const loader = makeLoader(makeDeps());
     await loader.initialize();
 
     // Dynamic import fails, so init-server not reached. Verify no crash.
@@ -633,18 +601,8 @@ describe('ExtensionLoader auto-register config tab', () => {
       },
     });
 
-    // Seed the loader's loaded map to bypass dynamic import
-    const loader = new ExtensionLoader(deps);
-    const cleanups: Array<() => void> = [];
-
-    // Access the private method to test directly
-    const autoRegister = (
-      loader as unknown as {
-        autoRegisterConfigTab: (rec: ExtensionRecordPublic, cleanups: Array<() => void>) => void;
-      }
-    ).autoRegisterConfigTab.bind(loader);
-
-    autoRegister(rec, cleanups);
+    const loader = makeLoader(deps);
+    await activateFixtures(loader, [{ id: rec.id, record: rec }]);
 
     // Verify registry.register was called with 'settings.tabs'
     expect(deps.registry.register).toHaveBeenCalledWith(
@@ -672,15 +630,8 @@ describe('ExtensionLoader auto-register config tab', () => {
       },
     });
 
-    const loader = new ExtensionLoader(deps);
-    const cleanups: Array<() => void> = [];
-    const autoRegister = (
-      loader as unknown as {
-        autoRegisterConfigTab: (rec: ExtensionRecordPublic, cleanups: Array<() => void>) => void;
-      }
-    ).autoRegisterConfigTab.bind(loader);
-
-    autoRegister(rec, cleanups);
+    const loader = makeLoader(deps);
+    await activateFixtures(loader, [{ id: rec.id, record: rec }]);
 
     // Should register exactly ONE tab (unified), not two
     expect(deps.registry.register).toHaveBeenCalledTimes(1);
@@ -693,7 +644,7 @@ describe('ExtensionLoader auto-register config tab', () => {
     );
   });
 
-  it('does not auto-register config tab when extension has no secrets or settings', () => {
+  it('does not auto-register config tab when extension has no secrets or settings', async () => {
     const deps = makeDeps();
     const rec = makeRecord({
       manifest: {
@@ -703,20 +654,13 @@ describe('ExtensionLoader auto-register config tab', () => {
       },
     });
 
-    const loader = new ExtensionLoader(deps);
-    const cleanups: Array<() => void> = [];
-    const autoRegister = (
-      loader as unknown as {
-        autoRegisterConfigTab: (rec: ExtensionRecordPublic, cleanups: Array<() => void>) => void;
-      }
-    ).autoRegisterConfigTab.bind(loader);
-
-    autoRegister(rec, cleanups);
+    const loader = makeLoader(deps);
+    await activateFixtures(loader, [{ id: rec.id, record: rec }]);
 
     expect(deps.registry.register).not.toHaveBeenCalled();
   });
 
-  it('does not auto-register when secrets and settings are empty arrays', () => {
+  it('does not auto-register when secrets and settings are empty arrays', async () => {
     const deps = makeDeps();
     const rec = makeRecord({
       manifest: {
@@ -731,20 +675,13 @@ describe('ExtensionLoader auto-register config tab', () => {
       },
     });
 
-    const loader = new ExtensionLoader(deps);
-    const cleanups: Array<() => void> = [];
-    const autoRegister = (
-      loader as unknown as {
-        autoRegisterConfigTab: (rec: ExtensionRecordPublic, cleanups: Array<() => void>) => void;
-      }
-    ).autoRegisterConfigTab.bind(loader);
-
-    autoRegister(rec, cleanups);
+    const loader = makeLoader(deps);
+    await activateFixtures(loader, [{ id: rec.id, record: rec }]);
 
     expect(deps.registry.register).not.toHaveBeenCalled();
   });
 
-  it('cleanup function from register is tracked in cleanups array', () => {
+  it('cleanup function from register is tracked in cleanups array', async () => {
     const unsubFn = vi.fn();
     const deps = makeDeps({
       registry: {
@@ -766,17 +703,578 @@ describe('ExtensionLoader auto-register config tab', () => {
       },
     });
 
-    const loader = new ExtensionLoader(deps);
-    const cleanups: Array<() => void> = [];
-    const autoRegister = (
-      loader as unknown as {
-        autoRegisterConfigTab: (rec: ExtensionRecordPublic, cleanups: Array<() => void>) => void;
+    const loader = makeLoader(deps);
+    await activateFixtures(loader, [{ id: rec.id, record: rec }]);
+    const cleanups = loader.getLoaded().get(rec.id)!.cleanups;
+
+    expect(cleanups).not.toHaveLength(0);
+    expect(new Set(cleanups).size).toBe(1);
+    expect(loader.deactivateAll()).toBe(true);
+    expect(unsubFn).toHaveBeenCalledOnce();
+  });
+});
+
+// A virtual bundle substitutes only module delivery; activation and cleanup stay real.
+describe('genuine loader activation custody', () => {
+  it('activates a delivered bundle and releases its registered contribution', async () => {
+    const cleanup = vi.fn();
+    const deps = makeDeps();
+    vi.mocked(deps.registry.register).mockReturnValue(cleanup);
+    const generation = 'a'.repeat(64);
+    const url = `/api/extensions/owned-fixture/bundle?generation=${generation}`;
+    vi.doMock(url, () => ({
+      activate(api: import('@dorkos/extension-api').ExtensionAPI) {
+        api.registerComponent('dashboard.sections', 'owned', () => null);
+      },
+    }));
+    mockFetch([makeRecord({ id: 'owned-fixture', bundleGeneration: generation })]);
+    const loader = new ExtensionLoader(deps, getExtensionLoadAdmission(), vi.fn());
+    const outcome = await loader.initialize();
+    expect(outcome.status).toBe('completed');
+    expect(outcome.loaded.has('owned-fixture')).toBe(true);
+    expect(deps.registry.register).toHaveBeenCalledOnce();
+    loader.deactivateAll();
+    expect(cleanup).toHaveBeenCalledOnce();
+    vi.doUnmock(url);
+  });
+});
+
+/** Real loader/factory ownership; only bundle delivery and host ports are mocked. */
+const fixtureDeps = new WeakMap<ExtensionLoader, ExtensionAPIDeps>();
+function makeLoader(deps: ExtensionAPIDeps): ExtensionLoader {
+  const loader = new ExtensionLoader(deps, getExtensionLoadAdmission(), vi.fn());
+  fixtureDeps.set(loader, deps);
+  return loader;
+}
+async function activateFixtures(
+  loader: ExtensionLoader,
+  entries: Array<{
+    id: string;
+    deactivate?: () => void;
+    cleanups?: Array<() => void>;
+    record?: ExtensionRecordPublic;
+    activate?: (api: import('@dorkos/extension-api').ExtensionAPI) => void;
+  }>
+): Promise<void> {
+  const deps = fixtureDeps.get(loader)!;
+  const previousFetch = globalThis.fetch;
+  const records = entries.map((entry) => entry.record ?? makeRecord({ id: entry.id }));
+  const urls = records.map(
+    (record) => '/api/extensions/' + record.id + '/bundle?generation=' + record.bundleGeneration
+  );
+  entries.forEach((entry, index) =>
+    vi.doMock(urls[index], () => ({
+      activate(api: import('@dorkos/extension-api').ExtensionAPI) {
+        entry.activate?.(api);
+        for (const [n, cleanup] of (entry.cleanups ?? []).entries()) {
+          vi.mocked(deps.registry.register).mockReturnValueOnce(cleanup);
+          api.registerComponent('dashboard.sections', 'fixture-' + n, () => null);
+        }
+        return entry.deactivate;
+      },
+    }))
+  );
+  globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => records });
+  try {
+    const outcome = await loader.initialize();
+    expect(outcome.status).toBe('completed');
+    expect(outcome.loaded.size).toBe(entries.length);
+  } finally {
+    globalThis.fetch = previousFetch;
+    urls.forEach((url) => vi.doUnmock(url));
+  }
+}
+
+describe('genuine loader command occurrence custody', () => {
+  it.each([false, true])(
+    'old caller cleanup before replacement=%s never removes the new same-ID handler',
+    async (early) => {
+      const deps = makeDeps();
+      const handlers = new Map<string, () => void>();
+      const rows = new Map<string, unknown>();
+      const releases: Array<ReturnType<typeof vi.fn>> = [];
+      vi.mocked(deps.registry.register).mockImplementation((_slot, contribution) => {
+        const id = (contribution as { id: string }).id;
+        rows.set(id, contribution);
+        const release = vi.fn(() => rows.delete(id));
+        releases.push(release);
+        return release;
+      });
+      vi.mocked(deps.registerCommandHandler).mockImplementation((id, callback) => {
+        handlers.set(id, callback);
+      });
+      vi.mocked(deps.unregisterCommandHandler).mockImplementation((id) => {
+        handlers.delete(id);
+      });
+      const loader = makeLoader(deps);
+      const oldCallback = vi.fn();
+      const newCallback = vi.fn();
+      let oldCleanup!: () => void;
+      let newCleanup!: () => void;
+      await activateFixtures(loader, [
+        {
+          id: 'command-owner',
+          activate(api) {
+            oldCleanup = api.registerCommand('same', 'Original', oldCallback);
+            if (early) oldCleanup();
+            newCleanup = api.registerCommand('same', 'Replacement', newCallback);
+          },
+        },
+      ]);
+      const originalRemovalCount = early ? 1 : 0;
+      oldCleanup();
+      expect(releases[0]).toHaveBeenCalledTimes(originalRemovalCount);
+      expect(rows.size).toBe(1);
+      expect(handlers.has('ext:command-owner:same')).toBe(true);
+      handlers.get('ext:command-owner:same')!();
+      expect(newCallback).toHaveBeenCalledOnce();
+      expect(oldCallback).not.toHaveBeenCalled();
+      expect(deps.unregisterCommandHandler).toHaveBeenCalledTimes(originalRemovalCount);
+      expect(loader.deactivateAll()).toBe(true);
+      expect(rows.size).toBe(0);
+      expect(handlers.size).toBe(0);
+      expect(releases[1]).toHaveBeenCalledOnce();
+      expect(deps.unregisterCommandHandler).toHaveBeenCalledTimes(originalRemovalCount + 1);
+      oldCleanup();
+      newCleanup();
+      expect(releases[1]).toHaveBeenCalledOnce();
+      expect(deps.unregisterCommandHandler).toHaveBeenCalledTimes(originalRemovalCount + 1);
+    }
+  );
+  it('a throwing contribution release still attempts the independently recorded handler removal once', async () => {
+    const deps = makeDeps();
+    const release = vi.fn(() => {
+      throw new Error('OWNED_RELEASE_FAILED');
+    });
+    vi.mocked(deps.registry.register).mockReturnValue(release);
+    const loader = makeLoader(deps);
+    await activateFixtures(loader, [
+      {
+        id: 'failed-command',
+        activate(api) {
+          api.registerCommand('same', 'Fixture', () => {});
+        },
+      },
+    ]);
+    expect(loader.deactivateAll()).toBe(false);
+    expect(release).toHaveBeenCalledOnce();
+    expect(deps.unregisterCommandHandler).toHaveBeenCalledOnce();
+    expect(loader.deactivateAll()).toBe(false);
+    expect(release).toHaveBeenCalledOnce();
+    expect(deps.unregisterCommandHandler).toHaveBeenCalledOnce();
+  });
+});
+
+describe('genuine loader subscription occurrence custody', () => {
+  it.each(['store', 'events'] as const)(
+    'caller %s unsubscribe and later retirement share one cleanup',
+    async (kind) => {
+      const deps = makeDeps();
+      const release = vi.fn();
+      if (kind === 'store') vi.mocked(deps.appStore.subscribe).mockReturnValue(release);
+      else vi.mocked(deps.eventBridge.subscribe).mockReturnValue(release);
+      const loader = makeLoader(deps);
+      let unsubscribe!: () => void;
+      await activateFixtures(loader, [
+        {
+          id: 'subscription-owner',
+          record: makeRecord({
+            id: 'subscription-owner',
+            manifest: { ...makeRecord().manifest, capabilities: { events: ['turn.completed'] } },
+          }),
+          activate(api) {
+            unsubscribe =
+              kind === 'store'
+                ? api.subscribe(
+                    () => null,
+                    () => {}
+                  )
+                : api.events.subscribe(['turn.completed'], () => {});
+          },
+        },
+      ]);
+      expect(release).not.toHaveBeenCalled();
+      unsubscribe();
+      expect(release).toHaveBeenCalledOnce();
+      expect(loader.deactivateAll()).toBe(true);
+      unsubscribe();
+      expect(release).toHaveBeenCalledOnce();
+    }
+  );
+});
+
+describe('caller cleanup failure remains lifetime uncertainty', () => {
+  it.each(['store', 'events', 'command'] as const)(
+    '%s failed cleanup is not replayed or healed by retirement',
+    async (kind) => {
+      const deps = makeDeps();
+      const cause = new Error('OWNED_CLEANUP_FAILED');
+      const release = vi.fn(() => {
+        throw cause;
+      });
+      if (kind === 'store') vi.mocked(deps.appStore.subscribe).mockReturnValue(release);
+      if (kind === 'events') vi.mocked(deps.eventBridge.subscribe).mockReturnValue(release);
+      if (kind === 'command') vi.mocked(deps.registry.register).mockReturnValue(release);
+      const loader = makeLoader(deps);
+      let unsubscribe!: () => void;
+      await activateFixtures(loader, [
+        {
+          id: 'failed-subscription',
+          record: makeRecord({
+            id: 'failed-subscription',
+            manifest: { ...makeRecord().manifest, capabilities: { events: ['turn.completed'] } },
+          }),
+          activate(api) {
+            if (kind === 'command')
+              unsubscribe = api.registerCommand('fixture', 'Fixture', () => {});
+            else
+              unsubscribe =
+                kind === 'store'
+                  ? api.subscribe(
+                      () => null,
+                      () => {}
+                    )
+                  : api.events.subscribe(['turn.completed'], () => {});
+          },
+        },
+      ]);
+      expect(() => unsubscribe()).toThrow(cause);
+      expect(release).toHaveBeenCalledOnce();
+      expect(loader.deactivateAll()).toBe(false);
+      expect(loader.deactivateAll()).toBe(false);
+      expect(release).toHaveBeenCalledOnce();
+      if (kind === 'command') expect(deps.unregisterCommandHandler).toHaveBeenCalledOnce();
+    }
+  );
+});
+
+describe('caller cleanup return remains unobserved settlement', () => {
+  it.each(['store', 'events', 'command'] as const)(
+    '%s preserves an unsupported returned thenable for later retirement',
+    async (kind) => {
+      const deps = makeDeps();
+      const pending = { then() {} };
+      const release = vi.fn(() => pending);
+      if (kind === 'store') vi.mocked(deps.appStore.subscribe).mockReturnValue(release);
+      if (kind === 'events') vi.mocked(deps.eventBridge.subscribe).mockReturnValue(release);
+      if (kind === 'command') vi.mocked(deps.registry.register).mockReturnValue(release);
+      const loader = makeLoader(deps);
+      let unsubscribe!: () => void;
+      await activateFixtures(loader, [
+        {
+          id: 'pending-subscription',
+          record: makeRecord({
+            id: 'pending-subscription',
+            manifest: { ...makeRecord().manifest, capabilities: { events: ['turn.completed'] } },
+          }),
+          activate(api) {
+            if (kind === 'command')
+              unsubscribe = api.registerCommand('fixture', 'Fixture', () => {});
+            else
+              unsubscribe =
+                kind === 'store'
+                  ? api.subscribe(
+                      () => null,
+                      () => {}
+                    )
+                  : api.events.subscribe(['turn.completed'], () => {});
+          },
+        },
+      ]);
+      unsubscribe();
+      expect(release).toHaveBeenCalledOnce();
+      expect(loader.deactivateAll()).toBe(false);
+      expect(release).toHaveBeenCalledOnce();
+      if (kind === 'command') expect(deps.unregisterCommandHandler).toHaveBeenCalledOnce();
+    }
+  );
+});
+
+/** Real Zustand commit notifications; only module delivery is substituted. */
+async function unreturnedReceiptFixture(kind: 'healthy' | 'getter' | 'entered' | 'committed') {
+  const id = 'receipt-' + kind;
+  const record = makeCompiledRecord(id);
+  const url = '/api/extensions/' + id + '/bundle?generation=' + record.bundleGeneration;
+  const previousFetch = globalThis.fetch;
+  useExtensionRegistry.setState({ slots: createInitialSlots() });
+  const registry = useExtensionRegistry.getState();
+  const failure = vi.fn();
+  const register = vi.fn(() => {
+    throw new Error('ENTERED_WITHOUT_RECEIPT');
+  });
+  const port = kind === 'entered' ? { ...registry, register } : { ...registry };
+  if (kind === 'getter')
+    Object.defineProperty(port, 'register', {
+      get() {
+        throw new Error('REFUSED_BEFORE_ENTRY');
+      },
+    });
+  let notified = false;
+  const stop = useExtensionRegistry.subscribe(() => {
+    if (kind === 'committed' && !notified) {
+      notified = true;
+      throw new Error('COMMITTED_NOTIFICATION_FAILED');
+    }
+  });
+  const loader = new ExtensionLoader(
+    makeDeps({ registry: port as unknown as ExtensionAPIDeps['registry'] }),
+    getExtensionLoadAdmission(),
+    failure
+  );
+  vi.doMock(url, () => ({
+    activate(api: import('@dorkos/extension-api').ExtensionAPI) {
+      api.registerComponent('dashboard.sections', 'one', () => null);
+    },
+  }));
+  mockFetch([record]);
+  const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const outcome = await loader.initialize();
+    return { loader, failure, outcome, register, registry };
+  } finally {
+    stop();
+    errors.mockRestore();
+    globalThis.fetch = previousFetch;
+    vi.doUnmock(url);
+  }
+}
+
+describe('activation publication belongs to its original admission', () => {
+  it('retires the activation that signs out before its cleanup is returned', async () => {
+    const rec = makeRecord({ id: 'post-activate-retirement' });
+    const url = '/api/extensions/' + rec.id + '/bundle?generation=' + rec.bundleGeneration;
+    const cleanup = vi.fn();
+    const deactivate = vi.fn();
+    const deps = makeDeps();
+    vi.mocked(deps.registry.register).mockReturnValue(cleanup);
+    const loader = makeLoader(deps);
+    const unregister = registerExtensionLoadOwner(
+      {},
+      getExtensionLoadAdmission(),
+      () => loader.deactivateAll(),
+      async () => {}
+    );
+    vi.doMock(url, () => ({
+      activate(api: import('@dorkos/extension-api').ExtensionAPI) {
+        api.registerComponent('dashboard.sections', 'original', () => null);
+        beginExtensionAuthOperation({}, 'signOut');
+        return deactivate;
+      },
+    }));
+    mockFetch([rec]);
+    try {
+      const outcome = await loader.initialize();
+      expect(outcome.status).toBe('stale');
+      expect(outcome.loaded.size).toBe(0);
+      expect(loader.isOutcomeCurrent(outcome)).toBe(false);
+      expect(cleanup).toHaveBeenCalledOnce();
+      expect(deactivate).toHaveBeenCalledOnce();
+      expect(global.fetch).not.toHaveBeenCalledWith(
+        expect.stringContaining('init-server'),
+        expect.anything()
+      );
+    } finally {
+      unregister();
+      loader.deactivateAll();
+      vi.doUnmock(url);
+      const owner = {};
+      const token = beginExtensionAuthOperation(owner, 'signIn');
+      expect(authenticateExtensionAuthOperation(owner, token)).toBe(true);
+      expect(resumeExtensionLoads(owner, token)).not.toBeNull();
+    }
+  });
+
+  it('never activates delivered code after its advertised generation is replaced', async () => {
+    const original = makeRecord({ id: 'replaced-delivery' });
+    const url =
+      '/api/extensions/' + original.id + '/bundle?generation=' + original.bundleGeneration;
+    const activate = vi.fn();
+    vi.doMock(url, () => ({ activate }));
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => [original] })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => [{ ...original, bundleGeneration: 'b'.repeat(64) }],
+      });
+    const loader = makeLoader(makeDeps());
+    try {
+      const outcome = await loader.initialize();
+      expect(outcome.loaded.size).toBe(0);
+      expect(activate).not.toHaveBeenCalled();
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+    } finally {
+      loader.deactivateAll();
+      vi.doUnmock(url);
+    }
+  });
+});
+
+describe('late original contribution receipt', () => {
+  it('never removes a newer same-ID occurrence after reentrant missing-receipt retirement', () => {
+    useExtensionRegistry.setState({ slots: createInitialSlots() });
+    const registry = useExtensionRegistry.getState();
+    const originalRegister = registry.register;
+    const releases: Array<ReturnType<typeof vi.fn<() => void>>> = [];
+    let oldCleanup: (() => void) | undefined;
+    let newCleanup: (() => void) | undefined;
+    let retired = false;
+    let first: unknown;
+    const newer = () => null;
+    const method = (slot: string, contribution: { id: string }) => {
+      const remove: () => void = Reflect.apply(originalRegister, registry, [slot, contribution]);
+      const release = vi.fn(remove);
+      releases.push(release);
+      return release;
+    };
+    const stop = useExtensionRegistry.subscribe(() => {
+      if (retired) return;
+      retired = true;
+      try {
+        oldCleanup?.();
+      } catch (value) {
+        first = value;
       }
-    ).autoRegisterConfigTab.bind(loader);
+      newCleanup = enterContribution(registry, method, {
+        slot: 'dashboard.sections',
+        contribution: Object.assign({ id: 'same' }, { component: newer }),
+        requireCurrent: () => {},
+        track: () => {},
+      });
+    });
+    try {
+      const cleanup = enterContribution(registry, method, {
+        slot: 'dashboard.sections',
+        contribution: Object.assign({ id: 'same' }, { component: () => null }),
+        requireCurrent: () => {},
+        track: (work) => {
+          if (retired) work();
+          else oldCleanup = work;
+        },
+      });
+      expect(first).toBeInstanceOf(Error);
+      expect(() => cleanup()).toThrow('Extension registration cleanup is unknown.');
+      expect(useExtensionRegistry.getState().slots['dashboard.sections'][0].component).toBe(newer);
+      expect(releases[1]).not.toHaveBeenCalled();
+      newCleanup?.();
+      expect(releases[0]).toHaveBeenCalledOnce();
+      expect(useExtensionRegistry.getState().slots['dashboard.sections']).toHaveLength(0);
+    } finally {
+      stop();
+      newCleanup?.();
+      useExtensionRegistry.setState({ slots: createInitialSlots() });
+    }
+  });
+});
 
-    autoRegister(rec, cleanups);
-
-    expect(cleanups).toHaveLength(1);
-    expect(cleanups[0]).toBe(unsubFn);
+describe('unreturned registration receipt custody', () => {
+  afterEach(() => useExtensionRegistry.setState({ slots: createInitialSlots() }));
+  it.each(['healthy', 'getter'] as const)(
+    '%s remains conclusive with real registry state',
+    async (kind) => {
+      const { loader, outcome, failure } = await unreturnedReceiptFixture(kind);
+      expect(outcome.loaded.size).toBe(kind === 'healthy' ? 1 : 0);
+      expect(useExtensionRegistry.getState().slots['dashboard.sections']).toHaveLength(
+        kind === 'healthy' ? 1 : 0
+      );
+      expect(loader.deactivateAll()).toBe(true);
+      expect(useExtensionRegistry.getState().slots['dashboard.sections']).toHaveLength(0);
+      expect(failure).not.toHaveBeenCalled();
+    }
+  );
+  it.each(['entered', 'committed'] as const)(
+    '%s without a receipt retains sticky unknown custody',
+    async (kind) => {
+      const { loader, outcome, failure, register } = await unreturnedReceiptFixture(kind);
+      expect(outcome.loaded.size).toBe(0);
+      expect(useExtensionRegistry.getState().slots['dashboard.sections']).toHaveLength(
+        kind === 'committed' ? 1 : 0
+      );
+      if (kind === 'entered') expect(register).toHaveBeenCalledOnce();
+      expect(loader.deactivateAll()).toBe(false);
+      expect(loader.deactivateAll()).toBe(false);
+      expect(failure).toHaveBeenCalledOnce();
+    }
+  );
+  it('unknown old occurrence never removes a genuine same-ID replacement', async () => {
+    const { loader, registry } = await unreturnedReceiptFixture('committed');
+    const component = () => null;
+    const release = registry.register('dashboard.sections', {
+      id: 'receipt-committed:one',
+      component,
+    });
+    expect(loader.deactivateAll()).toBe(false);
+    expect(useExtensionRegistry.getState().slots['dashboard.sections'][0].component).toBe(
+      component
+    );
+    release();
+    expect(useExtensionRegistry.getState().slots['dashboard.sections']).toHaveLength(0);
+  });
+  it('genuine reentrant sign-out retires a late original receipt once and keeps admission failed', async () => {
+    const rec = makeRecord({ id: 'late-provider-receipt' });
+    const url = '/api/extensions/' + rec.id + '/bundle?generation=' + rec.bundleGeneration;
+    const registry = useExtensionRegistry.getState();
+    const originalRegister = registry.register;
+    const releases: Array<ReturnType<typeof vi.fn<() => void>>> = [];
+    const deps = makeDeps({
+      registry: {
+        ...registry,
+        getContributions: (slot) => {
+          if (!Object.hasOwn(registry.slots, slot)) return [];
+          return registry.getContributions(slot as keyof typeof registry.slots);
+        },
+        register: (slot, contribution) => {
+          const remove: () => void = Reflect.apply(originalRegister, registry, [
+            slot,
+            contribution,
+          ]);
+          const release = vi.fn(remove);
+          releases.push(release);
+          return release;
+        },
+      },
+    });
+    const loader = makeLoader(deps);
+    const unregister = registerExtensionLoadOwner(
+      {},
+      getExtensionLoadAdmission(),
+      () => loader.deactivateAll(),
+      async () => {}
+    );
+    let retired = false;
+    const stop = useExtensionRegistry.subscribe(() => {
+      if (retired) return;
+      retired = true;
+      beginExtensionAuthOperation({}, 'signOut');
+    });
+    vi.doMock(url, () => ({
+      activate(api: import('@dorkos/extension-api').ExtensionAPI) {
+        api.registerComponent('dashboard.sections', 'one', () => null);
+      },
+    }));
+    mockFetch([rec]);
+    try {
+      const outcome = await loader.initialize();
+      expect(outcome.status).toBe('stale');
+      expect(outcome.loaded.size).toBe(0);
+      expect(releases).toHaveLength(1);
+      expect(releases[0]).toHaveBeenCalledOnce();
+      expect(useExtensionRegistry.getState().slots['dashboard.sections']).toHaveLength(0);
+      expect(loader.deactivateAll()).toBe(false);
+      expect(loader.deactivateAll()).toBe(false);
+      expect(releases[0]).toHaveBeenCalledOnce();
+      const owner = {};
+      const token = beginExtensionAuthOperation(owner, 'signIn');
+      expect(authenticateExtensionAuthOperation(owner, token)).toBe(true);
+      expect(resumeExtensionLoads(owner, token)).toBeNull();
+      expect(getExtensionLoadAdmission().suspended).toBe(true);
+      expect(getExtensionLoadAdmission().retirementFailed).toBe(true);
+    } finally {
+      stop();
+      unregister();
+      loader.deactivateAll();
+      for (const release of releases) if (release.mock.calls.length === 0) release();
+      vi.doUnmock(url);
+    }
   });
 });

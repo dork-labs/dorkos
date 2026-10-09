@@ -10,11 +10,11 @@
  * back. A suite that stubbed both hooks would pass against a tab that had
  * hardcoded its two rows.
  */
-import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock, onTestFinished } from 'vitest';
 import { render, screen, cleanup, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { Transport } from '@dorkos/shared/transport';
+import type { Transport, BrowserProductionTransport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { ExperimentsTab, buildNestedPatch } from '../ui/ExperimentsTab';
@@ -49,11 +49,15 @@ const A2A: WireExperiment = {
 let updateConfig: Mock<(patch: Record<string, unknown>) => Promise<void>>;
 
 /** Mount the tab over a transport reporting `experiments`. */
-function renderTab(experiments: WireExperiment[] | undefined): void {
+function renderTab(
+  experiments: WireExperiment[] | undefined,
+  browserProduction?: BrowserProductionTransport
+) {
   updateConfig = vi.fn().mockResolvedValue(undefined);
   const transport: Transport = createMockTransport({
     getConfig: vi.fn().mockResolvedValue({ version: '1.0.0', experiments }),
     updateConfig,
+    browserProduction,
   });
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
@@ -63,6 +67,7 @@ function renderTab(experiments: WireExperiment[] | undefined): void {
       </TransportProvider>
     </QueryClientProvider>
   );
+  return { transport, queryClient };
 }
 
 beforeEach(() => {
@@ -213,5 +218,196 @@ describe('ExperimentsTab', () => {
     renderTab([WARM]);
 
     expect(await screen.findByText(/These start off\./)).toBeInTheDocument();
+  });
+});
+
+const BROWSER: WireExperiment = {
+  key: 'browser.enabled',
+  title: 'Shared browser',
+  description: 'Open a browser that you and your agents can use together.',
+  enabled: false,
+  lockedByEnv: false,
+};
+function browserPort(
+  setBrowserRuntimeEnabled: BrowserProductionTransport['setBrowserRuntimeEnabled']
+): BrowserProductionTransport {
+  return {
+    createBrowserProfile: vi.fn(),
+    setBrowserRuntimeEnabled,
+    readBrowserRuntimeStatus: vi.fn(),
+    openBrowserRuntime: vi.fn(),
+    getBrowserBindings: vi.fn(),
+    takeBrowserControl: vi.fn(),
+  };
+}
+// Semantic port doubles with real query/mutation hooks, not native/auth/startup acceptance.
+describe('Shared browser experiment operation', () => {
+  it('uses explicit verified activation instead of generic config PATCH', async () => {
+    const set = vi.fn<BrowserProductionTransport['setBrowserRuntimeEnabled']>().mockResolvedValue({
+      state: 'ready',
+      enabled: true,
+      workspaces: [],
+    });
+    renderTab([BROWSER], browserPort(set));
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('switch', { name: 'Shared browser' }));
+    await waitFor(() => expect(set).toHaveBeenCalledWith(true, expect.any(AbortSignal)));
+    expect(updateConfig).not.toHaveBeenCalled();
+  });
+  it('retains the original off operation and disables duplicate writes until cleanup actually settles', async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let returned = false;
+    const set = vi.fn<BrowserProductionTransport['setBrowserRuntimeEnabled']>(async () => {
+      await held;
+      returned = true;
+      return { state: 'disabled', enabled: false };
+    });
+    onTestFinished(async () => {
+      release();
+      await Promise.allSettled(set.mock.results.map((row) => row.value));
+    });
+    renderTab([{ ...BROWSER, enabled: true }], browserPort(set));
+    const user = userEvent.setup();
+    const toggle = await screen.findByRole('switch', { name: 'Shared browser' });
+    await user.click(toggle);
+    await user.click(toggle);
+    expect(set).toHaveBeenCalledOnce();
+    expect(set).toHaveBeenCalledWith(false, expect.any(AbortSignal));
+    expect(toggle).toBeDisabled();
+    expect(toggle).toBeChecked();
+    expect(returned).toBe(false);
+    expect(updateConfig).not.toHaveBeenCalled();
+    release();
+    await waitFor(() => expect(returned).toBe(true));
+  });
+  it('keeps the stored position and exposes refusal instead of falling back to generic PATCH', async () => {
+    const set = vi
+      .fn<BrowserProductionTransport['setBrowserRuntimeEnabled']>()
+      .mockRejectedValue(undefined);
+    renderTab([BROWSER], browserPort(set));
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('switch', { name: 'Shared browser' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Shared browser could not be changed.'
+    );
+    expect(screen.getByRole('switch', { name: 'Shared browser' })).not.toBeChecked();
+    expect(updateConfig).not.toHaveBeenCalled();
+  });
+  it('refuses activation when the server provides no semantic capability', async () => {
+    renderTab([BROWSER]);
+    expect(await screen.findByRole('switch', { name: 'Shared browser' })).toBeDisabled();
+    expect(updateConfig).not.toHaveBeenCalled();
+  });
+});
+
+describe('Chrome user agent experiment choice', () => {
+  const CHROME: WireExperiment = {
+    key: 'browser.chromeUserAgent',
+    title: 'Use Chrome user agent',
+    description: 'Use Chrome identity.',
+    enabled: false,
+    lockedByEnv: false,
+  };
+  it('uses the retained runtime owner operation while Shared browser is Off', async () => {
+    const user = userEvent.setup();
+    const set = vi
+      .fn<BrowserProductionTransport['setBrowserRuntimeEnabled']>()
+      .mockResolvedValue({ state: 'disabled', enabled: false });
+    const port = browserPort(set);
+    vi.mocked(port.readBrowserRuntimeStatus).mockResolvedValue({
+      state: 'disabled',
+      enabled: false,
+    });
+    renderTab([BROWSER, CHROME], port);
+    await waitFor(() =>
+      expect(screen.getByRole('switch', { name: 'Use Chrome user agent' })).not.toBeDisabled()
+    );
+    await user.click(await screen.findByRole('switch', { name: 'Use Chrome user agent' }));
+    await waitFor(() =>
+      expect(set).toHaveBeenCalledWith(false, expect.any(AbortSignal), { chromeUserAgent: true })
+    );
+  });
+  it('cannot change identity while Shared browser is enabled', async () => {
+    renderTab([{ ...BROWSER, enabled: true }, CHROME]);
+    expect(await screen.findByRole('switch', { name: 'Use Chrome user agent' })).toBeDisabled();
+    expect(updateConfig).not.toHaveBeenCalled();
+  });
+  it('keeps Chrome selection disabled until the original held runtime status confirms Off', async () => {
+    let release!: (
+      value: Awaited<ReturnType<BrowserProductionTransport['readBrowserRuntimeStatus']>>
+    ) => void;
+    const held = new Promise<
+      Awaited<ReturnType<BrowserProductionTransport['readBrowserRuntimeStatus']>>
+    >((resolve) => {
+      release = resolve;
+    });
+    const port = browserPort(vi.fn().mockResolvedValue({ state: 'disabled', enabled: false }));
+    vi.mocked(port.readBrowserRuntimeStatus).mockReturnValue(held);
+    onTestFinished(() => release({ state: 'disabled', enabled: false }));
+    renderTab([BROWSER, CHROME], port);
+    const choice = await screen.findByRole('switch', { name: 'Use Chrome user agent' });
+    expect(choice).toBeDisabled();
+    await userEvent.click(choice);
+    expect(port.setBrowserRuntimeEnabled).not.toHaveBeenCalled();
+    release({ state: 'disabled', enabled: false });
+    await waitFor(() => expect(choice).not.toBeDisabled());
+  });
+  it('keeps Chrome selection disabled when original runtime status fails', async () => {
+    const port = browserPort(vi.fn());
+    vi.mocked(port.readBrowserRuntimeStatus).mockRejectedValue(undefined);
+    renderTab([BROWSER, CHROME], port);
+    const choice = await screen.findByRole('switch', { name: 'Use Chrome user agent' });
+    await waitFor(() => expect(port.readBrowserRuntimeStatus).toHaveBeenCalledOnce());
+    expect(choice).toBeDisabled();
+    await userEvent.click(choice);
+    expect(port.setBrowserRuntimeEnabled).not.toHaveBeenCalled();
+  });
+  it.each([
+    { state: 'ready' as const, enabled: true as const, workspaces: [] },
+    { state: 'unavailable' as const, enabled: false, cause: 'nativeUnavailable' as const },
+  ])(
+    'refuses Chrome selection when runtime status is $state despite stored Off',
+    async (status) => {
+      const port = browserPort(vi.fn());
+      vi.mocked(port.readBrowserRuntimeStatus).mockResolvedValue(status);
+      renderTab([BROWSER, CHROME], port);
+      const choice = await screen.findByRole('switch', { name: 'Use Chrome user agent' });
+      await waitFor(() => expect(port.readBrowserRuntimeStatus).toHaveBeenCalledOnce());
+      expect(choice).toBeDisabled();
+      await userEvent.click(choice);
+      expect(port.setBrowserRuntimeEnabled).not.toHaveBeenCalled();
+    }
+  );
+  it('disables selection while a fresh status observation is held over cached Off', async () => {
+    let release!: (
+      value: Awaited<ReturnType<BrowserProductionTransport['readBrowserRuntimeStatus']>>
+    ) => void;
+    const held = new Promise<
+      Awaited<ReturnType<BrowserProductionTransport['readBrowserRuntimeStatus']>>
+    >((resolve) => {
+      release = resolve;
+    });
+    const port = browserPort(vi.fn());
+    vi.mocked(port.readBrowserRuntimeStatus)
+      .mockResolvedValueOnce({ state: 'disabled', enabled: false })
+      .mockReturnValueOnce(held);
+    onTestFinished(() => release({ state: 'disabled', enabled: false }));
+    const { queryClient } = renderTab([BROWSER, CHROME], port);
+    const choice = await screen.findByRole('switch', { name: 'Use Chrome user agent' });
+    await waitFor(() => expect(choice).not.toBeDisabled());
+    const refresh = queryClient.invalidateQueries({ queryKey: ['browser', 'runtime-status'] });
+    onTestFinished(async () => {
+      release({ state: 'disabled', enabled: false });
+      await refresh;
+    });
+    await waitFor(() => expect(choice).toBeDisabled());
+    await userEvent.click(choice);
+    expect(port.setBrowserRuntimeEnabled).not.toHaveBeenCalled();
+    release({ state: 'disabled', enabled: false });
+    await refresh;
+    await waitFor(() => expect(choice).not.toBeDisabled());
   });
 });

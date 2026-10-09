@@ -300,23 +300,29 @@ export class ProjectRegistry {
    * @returns The project, null (no repository, or the extension is at its
    *   cap), or `'outside'` when the folder or its root is outside the boundary.
    */
-  async resolveWithin(dir: string, extensionId?: string): Promise<BoundedResolution> {
+  async resolveWithin(
+    dir: string,
+    extensionId?: string,
+    requireCurrent?: () => void
+  ): Promise<BoundedResolution> {
     const root = await this.boundedRoot(dir);
+    requireCurrent?.();
     if (root === 'outside' || root === null) return root;
     const known = this.byRoot.get(root);
     if (known) {
       // A lookup refreshes only a lookup's own row: a seen project's
       // `lastSeenAt` means a real session, agent, workspace or install folder.
       const used = extensionId === undefined && known.source === 'reported';
-      return toRef(used ? this.touch(known, 'reported') : known);
+      return toRef(used ? this.touch(known, 'reported', requireCurrent) : known);
     }
     if (extensionId === undefined) {
-      const project = await this.remember(root, 'reported');
+      const project = await this.remember(root, 'reported', requireCurrent);
       this.forgetOldLookups(root);
       return toRef(project);
     }
     return this.withSlot(extensionId, root, async () => {
-      const project = await this.remember(root, 'reported');
+      const project = await this.remember(root, 'reported', requireCurrent);
+      requireCurrent?.();
       this.addReporter(root, extensionId, 'resolve');
       return toRef(project);
     });
@@ -332,11 +338,17 @@ export class ProjectRegistry {
    * @param extensionId - The extension reporting it.
    * @returns The project, or null.
    */
-  async report(dir: string, extensionId: string): Promise<ProjectRef | null> {
+  async report(
+    dir: string,
+    extensionId: string,
+    requireCurrent?: () => void
+  ): Promise<ProjectRef | null> {
     const root = await this.boundedRoot(dir);
+    requireCurrent?.();
     if (root === 'outside' || root === null) return null;
     return this.withSlot(extensionId, root, async () => {
-      const project = await this.remember(root, 'reported');
+      const project = await this.remember(root, 'reported', requireCurrent);
+      requireCurrent?.();
       this.addReporter(root, extensionId, 'report');
       return toRef(project);
     });
@@ -679,22 +691,39 @@ export class ProjectRegistry {
     }
   }
 
-  private remember(root: string, how: RecordHow): Promise<KnownProject> {
+  private remember(
+    root: string,
+    how: RecordHow,
+    requireCurrent?: () => void
+  ): Promise<KnownProject> {
+    requireCurrent?.();
     const existing = this.byRoot.get(root);
-    if (existing) return Promise.resolve(this.touch(existing, how));
+    if (existing) return Promise.resolve(this.touch(existing, how, requireCurrent));
     const inFlight = this.recording.get(root);
-    if (inFlight) return inFlight.then((project) => this.touch(project, how));
-    const recorded = this.record(root, how).finally(() => this.recording.delete(root));
+    if (inFlight)
+      return inFlight.then((project) => {
+        requireCurrent?.();
+        return this.touch(project, how, requireCurrent);
+      });
+    const recorded = this.record(root, how, requireCurrent).finally(() =>
+      this.recording.delete(root)
+    );
     this.recording.set(root, recorded);
     return recorded;
   }
 
-  private async record(root: string, how: RecordHow): Promise<KnownProject> {
+  private async record(
+    root: string,
+    how: RecordHow,
+    requireCurrent?: () => void
+  ): Promise<KnownProject> {
     const originRepo = await this.deps.readOriginRepo(root);
+    requireCurrent?.();
     // A batch may have recorded it while the origin was read.
     const meanwhile = this.byRoot.get(root);
-    if (meanwhile) return this.touch(meanwhile, how);
+    if (meanwhile) return this.touch(meanwhile, how, requireCurrent);
     const project = this.newProject(root, how, originRepo);
+    requireCurrent?.();
     try {
       this.insert(project);
     } catch (err) {
@@ -703,7 +732,7 @@ export class ProjectRegistry {
       // the next try picks a free name instead of repeating the clash.
       this.learnFromStore();
       const adopted = this.byRoot.get(root);
-      if (adopted) return this.touch(adopted, how);
+      if (adopted) return this.touch(adopted, how, requireCurrent);
       throw err;
     }
     return project;
@@ -749,8 +778,9 @@ export class ProjectRegistry {
     this.changed();
   }
 
-  private touch(project: KnownProject, how: RecordHow): KnownProject {
+  private touch(project: KnownProject, how: RecordHow, requireCurrent?: () => void): KnownProject {
     const now = this.deps.now();
+    requireCurrent?.();
     const upgrade = how === 'seen' && project.source === 'reported';
     const stale = now - (this.lastWritten.get(project.root) ?? 0) >= LAST_SEEN_WRITE_INTERVAL_MS;
     if (!upgrade && !stale) return project;

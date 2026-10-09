@@ -1,3 +1,4 @@
+import { retainCleanup, releaseTogether } from '../extensions/server-lifecycle/retained-cleanup.js';
 /**
  * `ctx.projects`: an extension's view of the project registry (spec
  * `flow-multiproject` §6.1, §11.2).
@@ -29,7 +30,8 @@ import type { ProjectRegistry } from './project-registry.js';
  */
 export function createProjectsApi(
   extensionId: string,
-  registry: ProjectRegistry
+  registry: ProjectRegistry,
+  requireCurrent?: () => void
 ): { projects: ProjectsApi; release: () => void } {
   const removers = new Set<() => void>();
   let released = false;
@@ -58,9 +60,10 @@ export function createProjectsApi(
     resolve(cwd) {
       if (typeof cwd !== 'string' || cwd.length === 0) return Promise.resolve(null);
       return orNull(
-        registry
-          .resolveWithin(cwd, extensionId)
-          .then((project) => (project === 'outside' ? null : project))
+        (requireCurrent
+          ? registry.resolveWithin(cwd, extensionId, requireCurrent)
+          : registry.resolveWithin(cwd, extensionId)
+        ).then((project) => (project === 'outside' ? null : project))
       );
     },
     list() {
@@ -68,7 +71,11 @@ export function createProjectsApi(
     },
     report(dir) {
       return typeof dir === 'string' && dir.length > 0
-        ? orNull(registry.report(dir, extensionId))
+        ? orNull(
+            requireCurrent
+              ? registry.report(dir, extensionId, requireCurrent)
+              : registry.report(dir, extensionId)
+          )
         : Promise.resolve(null);
     },
     onChange(listener) {
@@ -81,13 +88,10 @@ export function createProjectsApi(
         throw new TypeError('projects.onChange needs a listener function.');
       }
       const remove = registry.onChange(listener);
-      let removed = false;
-      const once = () => {
-        if (removed) return;
-        removed = true;
-        removers.delete(once);
+      const once = retainCleanup(() => {
         remove();
-      };
+        removers.delete(once);
+      });
       removers.add(once);
       return once;
     },
@@ -97,7 +101,7 @@ export function createProjectsApi(
     projects,
     release: () => {
       released = true;
-      for (const remove of [...removers]) remove();
+      releaseTogether([...removers]);
     },
   };
 }

@@ -1,3 +1,7 @@
+import {
+  hasOriginalDesktopQualification,
+  transferOriginalDesktopQualification,
+} from './browser-qualification/bootstrap';
 import { app, utilityProcess } from 'electron';
 import { fork, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -207,7 +211,7 @@ function resolveServerEntry(): string {
     // flat dist/) so the bundle's own `__dirname`-relative reads — Drizzle
     // migrations, core-extension source — land inside the desktop package
     // instead of escaping it. See that script for the full layout rationale.
-    return path.join(__dirname, '../server/server-entry.mjs');
+    return path.join(process.resourcesPath, 'app.asar.unpacked', 'dist/server/server-entry.mjs');
   }
   // Dev: run the original TypeScript source directly via tsx (system Node),
   // not Electron's UtilityProcess — see spawnServer for why.
@@ -396,7 +400,10 @@ function buildServerEnv(
 export function spawnServer(port: number): ServerChild {
   const entryPath = resolveServerEntry();
   const workingDirectory = app.isPackaged ? resolveServerCwd() : null;
-  const env: NodeJS.ProcessEnv = { ...process.env, ...buildServerEnv(port, workingDirectory) };
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    ...buildServerEnv(port, workingDirectory),
+  };
   if (app.isPackaged) {
     // A packaged app inherits whatever the launching environment exported, and
     // spreading an object that simply omits this key cannot unset an inherited
@@ -406,6 +413,8 @@ export function spawnServer(port: number): ServerChild {
     delete env.DORKOS_PARENT_PID;
     delete env.DORKOS_PARENT_STARTED_AT;
   }
+  delete env.DORKOS_BROWSER_DESKTOP_QUALIFICATION_CHANNEL;
+  delete env.DORKOS_PRIVATE_DESKTOP_QUALIFICATION;
   const tail = createStderrTail();
 
   if (app.isPackaged) {
@@ -413,13 +422,20 @@ export function spawnServer(port: number): ServerChild {
     // rather than the resolved default — a spawned tool, a relative path in a
     // config file — otherwise gets `/`, which is what a Finder-launched app
     // inherits.
+    // Original main executable is the qualified Electron-as-Node child launcher.
+    env.DORKOS_BROWSER_DESKTOP_NODE_EXECUTABLE = app.getPath('exe');
+    if (hasOriginalDesktopQualification()) env.DORKOS_BROWSER_DESKTOP_QUALIFICATION_CHANNEL = '1';
     const proc = utilityProcess.fork(entryPath, [], {
       env,
       stdio: 'pipe',
       cwd: workingDirectory?.cwd,
     });
     forwardOutputToLog(proc.stdout, proc.stderr, tail);
-    return wrapUtilityProcess(proc, tail);
+    const wrapped = wrapUtilityProcess(proc, tail);
+    // Register only: this exact child must announce its installed private
+    // receiver before any port or grant is transferred.
+    transferOriginalDesktopQualification(proc);
+    return wrapped;
   }
 
   // Dev mode: system Node via child_process.fork. The entry file is

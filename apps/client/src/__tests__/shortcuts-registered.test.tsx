@@ -186,7 +186,7 @@ const DECLARED: Record<string, string> = {
   // transport, query client), so its `devOnly` flag is proved against the panel
   // listing below instead (DOR-567) — the handler keeps its own
   // `import.meta.env.DEV` guard as defense in depth.
-  'dev-playground': 'features/dashboard-sidebar/ui/SidebarFooterStrip (dev only)',
+  'dev-playground': 'features/dashboard-sidebar/ui/footer/SidebarFooterStrip (dev only)',
   // Composer keys — the chat composer's own `onKeyDown`.
   'new-line': 'features/chat composer',
   'new-line-alt': 'features/chat composer',

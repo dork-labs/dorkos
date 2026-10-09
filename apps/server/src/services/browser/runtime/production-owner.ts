@@ -1,19 +1,19 @@
-import { createHash } from 'node:crypto';
-import { join } from 'node:path';
+import { resolveDorkHome } from '../../../lib/dork-home.js';
+import { BrowserRegistryStore } from '../registry/store.js';
+import { constructOriginalManagedVMEngine } from '../vm/engine.mjs';
+import { openOriginalInstalledPrebuiltRelease } from './prebuilt-release.mjs';
 import {
-  parseRuntimeDescriptor,
-  type EngineConfiguration,
-  type BrowserRuntimeDescriptor,
-} from '@dorkos/browser';
-import {
-  constructOwnedBrowserEngine,
-  type BrowserLifecycleEngine,
-  type PrivateBrowserBirthOwner,
-  type PrivateBrowserRetirementReceiver,
+  issueOriginalVMRuntimeSubject,
+  inspectOriginalVMRuntimeSubject,
+} from './runtime-subject.mjs';
+import type { EngineConfiguration, BrowserRuntimeDescriptor } from '@dorkos/browser';
+import type {
+  BrowserLifecycleEngine,
+  PrivateBrowserBirthOwner,
+  PrivateBrowserRetirementReceiver,
 } from '@dorkos/browser/server-owner';
-import { resolveServerBrowserRuntimePackage } from './installed-package.js';
 
-/** Closed private diagnostics; no arbitrary producer text reaches product status. */
+/** Refuses runtime work when the installed browser cannot be admitted safely. */
 export class ProductionRuntimeRefusal extends Error {
   constructor(
     readonly code:
@@ -23,33 +23,12 @@ export class ProductionRuntimeRefusal extends Error {
     this.name = 'ProductionRuntimeRefusal';
   }
 }
-
-interface Birth {
-  readonly receiver: PrivateBrowserRetirementReceiver;
-  readonly ordinary: () => boolean;
-  readonly current: () => boolean;
-  readonly runtime: PrivateBrowserRetirementReceiver['verifiedRuntimeBinding'];
-  refused: boolean;
-}
-
-/** One production acquisition owner. Construction supplies neither actor authority nor opt-in.
- * The startup host must retain this owner, supply its genuine authenticated birth/network/input/
- * capture participants, and join close before releasing them. No fixture or repair fallback exists. */
+/** Fixed installed VM selection. No runtime path, generic executable, private
+ * developer sign token or prior-process JSON capability enters this owner. */
 export function createProductionBrowserRuntimeOwner() {
-  const abort = new AbortController();
-  const stopVerification = abort.abort.bind(abort);
-  let closed = false;
-  let failed = false;
-  let failure: unknown;
-  const fail = (reason: unknown) => {
-    if (!failed) {
-      failed = true;
-      failure = reason;
-    }
-  };
-  // Retain package/installation facade, actual open and shutdown receivers through all uncertainty.
-  let packaged: Awaited<ReturnType<typeof resolveServerBrowserRuntimePackage>> | undefined;
-  let work:
+  let closed = false,
+    first: Readonly<{ value: unknown }> | undefined;
+  let originalOpen:
     | Promise<
         Readonly<{
           engine: BrowserLifecycleEngine;
@@ -57,352 +36,265 @@ export function createProductionBrowserRuntimeOwner() {
         }>
       >
     | undefined;
-  let engine: BrowserLifecycleEngine | undefined;
-  let shutdown: BrowserLifecycleEngine['shutdown'] | undefined;
-  let shutdownWork: ReturnType<BrowserLifecycleEngine['shutdown']> | undefined;
-  let birth: Birth | undefined;
-  let expected: Readonly<{ runtimeIdentity: string; policyRevision: number }> | undefined;
-  let opened = false;
-  let closeWork: Promise<void> | undefined;
+  let engine: BrowserLifecycleEngine | undefined,
+    release: unknown,
+    shutdown: ReturnType<BrowserLifecycleEngine['shutdown']> | undefined,
+    closing: Promise<void> | undefined;
+  let birth:
+    | Readonly<{
+        receiver: PrivateBrowserRetirementReceiver;
+        ordinary: () => boolean;
+        current: () => boolean;
+        binding: PrivateBrowserRetirementReceiver['verifiedRuntimeBinding'];
+      }>
+    | undefined;
   let removeLoss: (() => void) | undefined;
+  let expected: Readonly<{ runtimeIdentity: string; policyRevision: number }> | undefined,
+    opened = false,
+    refusedBirth = false;
+  const abort = new AbortController();
+  const fail = (value: unknown) => {
+    first ??= Object.freeze({ value });
+  };
   const check = () => {
-    if (closed || abort.signal.aborted)
-      throw failed ? failure : new ProductionRuntimeRefusal('CLOSED');
+    if (first) throw first.value;
+    if (closed || abort.signal.aborted) throw new ProductionRuntimeRefusal('CLOSED');
   };
   const enterShutdown = () => {
-    if (shutdown && !shutdownWork) {
+    if (engine && !shutdown)
       try {
-        shutdownWork = Reflect.apply(shutdown, engine, []);
-      } catch (error) {
-        fail(error);
+        shutdown = engine.shutdown();
+      } catch (value) {
+        fail(value);
       }
-    }
   };
-  const close = (): Promise<void> => {
-    if (closeWork) return closeWork;
-    let resolve!: () => void, reject!: (reason: unknown) => void;
-    closeWork = new Promise<void>((done, refused) => {
-      resolve = done;
-      reject = refused;
+  const close = () => {
+    if (closing) return closing;
+    let yes!: () => void, no!: (value: unknown) => void;
+    closing = new Promise<void>((resolve, reject) => {
+      yes = resolve;
+      no = reject;
     });
     closed = true;
     opened = false;
     try {
-      stopVerification(failed ? failure : new ProductionRuntimeRefusal('CLOSED'));
-    } catch (error) {
-      fail(error);
+      abort.abort(first?.value);
+    } catch (value) {
+      fail(value);
     }
     try {
       removeLoss?.();
-    } catch (error) {
-      fail(error);
+    } catch (value) {
+      fail(value);
     }
-    enterShutdown(); // Original shutdown synchronously fences all existing records before joins.
+    enterShutdown();
     void (async () => {
-      if (work) {
-        try {
-          await work;
-        } catch (error) {
-          fail(error);
-        }
-      }
+      if (originalOpen)
+        for (const row of await Promise.allSettled([originalOpen]))
+          if (row.status === 'rejected') fail(row.reason);
       enterShutdown();
-      if (shutdownWork) {
-        try {
-          const outcomes = await shutdownWork;
-          if (outcomes.some((outcome) => outcome.cleanup !== 'observed'))
-            fail(new ProductionRuntimeRefusal('CUSTODY_UNCERTAIN'));
-        } catch (error) {
-          fail(error);
-        }
+      if (shutdown) {
+        const [row] = await Promise.allSettled([shutdown]);
+        if (row.status === 'rejected') fail(row.reason);
+        else if (row.value.some((value) => value.cleanup !== 'observed'))
+          fail(new ProductionRuntimeRefusal('CUSTODY_UNCERTAIN'));
       }
-      // The actual installation facade remains retained even when an uncertain DTO has returned.
-      void packaged;
-      if (failed) reject(failure);
-      else resolve();
-    })().catch((error) => {
-      fail(error);
-      reject(failure);
+      // Keep the actual release capability and uncertain records retained; an
+      // original VM return is not a guest filesystem/profile durability grant.
+      void release;
+      if (first) throw first.value;
+    })().then(yes, (value) => {
+      fail(value);
+      no(first!.value);
     });
-    return closeWork;
+    return closing;
+  };
+  const nativeCurrent = (receiver: PrivateBrowserRetirementReceiver) => {
+    if (closed || first || !birth || birth.receiver !== receiver || refusedBirth || !expected)
+      return false;
+    try {
+      if (!birth.ordinary() || !birth.current()) return false;
+      const value = birth.binding();
+      return (
+        !closed &&
+        !first &&
+        !refusedBirth &&
+        value?.runtimeIdentity === expected.runtimeIdentity &&
+        value.policyRevision === expected.policyRevision &&
+        birth.current()
+      );
+    } catch (value) {
+      fail(value);
+      void close().catch(() => {});
+      return false;
+    }
   };
   return Object.freeze({
-    /** Fresh existing-only verification precedes exactly one original native-owned browser birth.
-     * Caller configuration supplies real clocks, native journal and authenticated ordinary policy.
-     * Runtime paths/hashes are replaced from the actual verified package, never accepted from wire. */
+    close,
     open(
       configuration: Omit<EngineConfiguration, 'runtime'>,
-      participant: PrivateBrowserBirthOwner & {
-        bindEngine(engine: BrowserLifecycleEngine): void;
-      },
+      participant: PrivateBrowserBirthOwner & { bindEngine(engine: BrowserLifecycleEngine): void },
       command: unknown,
-      signal?: AbortSignal
+      signal: AbortSignal | undefined,
+      identityMode: BrowserRuntimeDescriptor['identity']['mode'] = 'native',
+      initialStorageState?: unknown,
+      selection?: Readonly<{ registry: BrowserRegistryStore; ownerId: string }>
     ) {
-      if (closed) return Promise.reject(failed ? failure : new ProductionRuntimeRefusal('CLOSED'));
-      if (work) return Promise.reject(new ProductionRuntimeRefusal('BUSY'));
-      let resolveOpen!: (
-        value: Readonly<{
-          engine: BrowserLifecycleEngine;
-          opened: Awaited<ReturnType<BrowserLifecycleEngine['open']>>;
-        }>
-      ) => void;
-      let rejectOpen!: (reason: unknown) => void;
-      // Register the whole admission before any captured participant getter can reenter close.
-      work = new Promise((resolve, reject) => {
-        resolveOpen = resolve;
-        rejectOpen = reject;
+      if (closed)
+        return Promise.reject(first ? first.value : new ProductionRuntimeRefusal('CLOSED'));
+      if (originalOpen) return Promise.reject(new ProductionRuntimeRefusal('BUSY'));
+      let yes!: (
+          value: Readonly<{
+            engine: BrowserLifecycleEngine;
+            opened: Awaited<ReturnType<BrowserLifecycleEngine['open']>>;
+          }>
+        ) => void,
+        no!: (value: unknown) => void;
+      originalOpen = new Promise((resolve, reject) => {
+        yes = resolve;
+        no = reject;
       });
-      void work.catch((reason) => {
-        fail(reason);
+      void originalOpen.catch((value) => {
+        fail(value);
         void close().catch(() => {});
       });
-      try {
-        // Capture constructor participants once, before any asynchronous package producer.
-        const input = participant.input;
-        const capture = participant.capture;
-        const navigation = participant.navigation;
-        const native = participant.network;
-        const network = Object.freeze({ ...configuration.network });
-        // Do not enter the verifier for fixture networks or absent genuine native egress ownership.
-        if (network.kind !== 'owned' || !native || !input || !capture || !navigation)
-          throw new ProductionRuntimeRefusal('UNSUPPORTED');
-        const clock = configuration.clock;
-        const processes = configuration.processes;
-        const policy = configuration.policy;
-        const nativeJournal = configuration.nativeJournal;
-        const recovery = configuration.recordedRecovery;
-        const settings = Object.freeze({
-          dataDir: configuration.dataDir,
-          network,
-          clock: Object.freeze({
-            wallNow: clock.wallNow.bind(clock),
-            monotonicNow: clock.monotonicNow.bind(clock),
-          }),
-          processes: Object.freeze({
-            observe: processes.observe.bind(processes),
-            descendants: processes.descendants.bind(processes),
-          }),
-          policy: Object.freeze({
-            authorizeAction: policy.authorizeAction.bind(policy),
-            verifyBrokerLease: policy.verifyBrokerLease.bind(policy),
-          }),
-          ...(nativeJournal
-            ? {
-                nativeJournal: Object.freeze({
-                  workerPath: nativeJournal.workerPath,
-                  browserWorkerPath: nativeJournal.browserWorkerPath,
-                  artifact: Object.freeze({ ...nativeJournal.artifact }),
-                  duration: nativeJournal.duration,
-                  continuous: nativeJournal.continuous,
-                  maxGap: nativeJournal.maxGap,
-                  onDiagnostic: nativeJournal.onDiagnostic?.bind(nativeJournal),
-                }),
-              }
-            : {}),
-          ...(recovery ? { recordedRecovery: recovery } : {}),
-        });
-        const registerInput = input.registerDispatcher;
-        const registerCapture = capture.registerDispatcher;
-        const registerNavigation = navigation.registerDispatcher;
-        if (
-          typeof registerInput !== 'function' ||
-          typeof registerCapture !== 'function' ||
-          typeof registerNavigation !== 'function'
-        )
-          throw new ProductionRuntimeRefusal('UNSUPPORTED');
-        const observeLifetime = navigation.observeLifetime;
-        const continuation = navigation.continuation;
-        const ownedContinuation = continuation
-          ? Object.freeze({
-              acquire: continuation.acquire.bind(continuation),
-              joinPublications: continuation.joinPublications.bind(continuation),
-              observeTransition: continuation.observeTransition?.bind(continuation),
-            })
-          : undefined;
-        const ownedNavigation = Object.freeze({
-          registerDispatcher: registerNavigation.bind(navigation),
-          ...(observeLifetime ? { observeLifetime: observeLifetime.bind(navigation) } : {}),
-          ...(ownedContinuation ? { continuation: ownedContinuation } : {}),
-        });
-        const bindNetwork = native.bindBeforeLaunch;
-        const activateNetwork = native.activateReady;
-        const ownedInput = Object.freeze({ registerDispatcher: registerInput.bind(input) });
-        const ownedCapture = Object.freeze({ registerDispatcher: registerCapture.bind(capture) });
-        const ownedNetwork = Object.freeze({
-          bindBeforeLaunch: bindNetwork.bind(native),
-          activateReady: activateNetwork.bind(native),
-        });
-        const bindEngine = participant.bindEngine;
-        const register = participant.registerBirth;
-        const refuse = participant.refuseBirth;
-        const addSignal = signal?.addEventListener;
-        const removeSignal = signal?.removeEventListener;
-        const production = Promise.resolve().then(async () => {
-          check();
-          if (signal) {
-            const lost = () => {
-              fail(signal.reason);
-              void close().catch(() => {});
-            };
-            removeLoss = () => Reflect.apply(removeSignal!, signal, ['abort', lost]);
-            check();
-            Reflect.apply(addSignal!, signal, ['abort', lost, { once: true }]);
-            if (signal.aborted) lost();
-            check();
-          }
-          packaged = await resolveServerBrowserRuntimePackage();
-          check();
-          const original = packaged.installation;
-          const verify = original.verifyExisting;
-          const inspect = original.inspectExisting;
-          check();
-          const verified = await Reflect.apply(verify, original, [{ signal: abort.signal }]);
+      // Whole original admission is registered before fallible participant reads.
+      void Promise.resolve()
+        .then(async () => {
           check();
           if (
-            verified.state !== 'verified-reused' ||
-            verified.platform !== 'darwin' ||
-            verified.arch !== 'arm64'
+            !(selection?.registry instanceof BrowserRegistryStore) ||
+            typeof selection.ownerId !== 'string' ||
+            !selection.ownerId ||
+            initialStorageState !== undefined ||
+            !['native', 'chrome-compatible'].includes(identityMode)
           )
-            throw new ProductionRuntimeRefusal('VERIFICATION_UNAVAILABLE');
-          const current = await Reflect.apply(inspect, original, [{ signal: abort.signal }]);
-          check();
+            throw new ProductionRuntimeRefusal('UNSUPPORTED');
+          const registry = selection.registry,
+            ownerId = selection.ownerId;
+          const input = participant.input,
+            capture = participant.capture,
+            navigation = participant.navigation,
+            network = participant.network;
           if (
-            current.state !== 'installed-files' ||
-            current.installationId !== verified.installationId ||
-            current.executableSHA256 !== verified.executableSHA256 ||
-            current.currentManifestDigest !== verified.currentManifestDigest ||
-            current.lastFreshVerifiedVersion !== verified.observedVersion ||
-            current.platform !== verified.platform ||
-            current.arch !== verified.arch
+            !input ||
+            !capture ||
+            !navigation ||
+            !network ||
+            configuration.network.kind !== 'owned'
           )
-            throw new ProductionRuntimeRefusal('VERIFICATION_UNAVAILABLE');
-          const runtime: BrowserRuntimeDescriptor = parseRuntimeDescriptor({
-            library: {
-              package: 'playwright-core',
-              version: '1.63.0',
-              rootDir: packaged.configuration.libraryRoot,
-              assets: { manifest: 'browsers.json', cli: 'cli.js' },
-            },
-            executable: {
-              path: join(
-                packaged.configuration.cacheRoot,
-                'candidates',
-                verified.installationId,
-                'payload/chromium-1243/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing'
-              ),
-              sha256: verified.executableSHA256,
-              revision: '1243',
-              version: verified.observedVersion,
-              platform: 'darwin',
-              arch: 'arm64',
-            },
-            identity: {
-              mode: 'native',
-              policyRevision: network.policyRevision,
-            },
+            throw new ProductionRuntimeRefusal('UNSUPPORTED');
+          const bindEngine = participant.bindEngine.bind(participant),
+            register = participant.registerBirth.bind(participant),
+            refuse = participant.refuseBirth.bind(participant);
+          const dataHome = resolveDorkHome(),
+            revision = configuration.network.policyRevision;
+          const policy = Object.freeze({
+            authorizeAction: configuration.policy.authorizeAction.bind(configuration.policy),
+            verifyBrokerLease: configuration.policy.verifyBrokerLease.bind(configuration.policy),
           });
-          expected = Object.freeze({
-            runtimeIdentity: createHash('sha256').update(JSON.stringify(runtime)).digest('hex'),
-            policyRevision: network.policyRevision,
-          });
-          const owner: PrivateBrowserBirthOwner = Object.freeze({
-            input: ownedInput,
-            capture: ownedCapture,
-            navigation: ownedNavigation,
-            network: ownedNetwork,
+          const owned: PrivateBrowserBirthOwner = Object.freeze({
+            input: Object.freeze({ registerDispatcher: input.registerDispatcher.bind(input) }),
+            capture: Object.freeze({
+              registerDispatcher: capture.registerDispatcher.bind(capture),
+            }),
+            navigation: Object.freeze({
+              registerDispatcher: navigation.registerDispatcher.bind(navigation),
+            }),
+            ...(participant.upload
+              ? {
+                  upload: Object.freeze({
+                    registerDispatcher: participant.upload.registerDispatcher.bind(
+                      participant.upload
+                    ),
+                  }),
+                }
+              : {}),
+            ...(participant.download
+              ? {
+                  download: Object.freeze({
+                    registerDispatcher: participant.download.registerDispatcher.bind(
+                      participant.download
+                    ),
+                  }),
+                }
+              : {}),
+            ...(participant.semantic
+              ? {
+                  semantic: Object.freeze({
+                    registerDispatcher: participant.semantic.registerDispatcher.bind(
+                      participant.semantic
+                    ),
+                  }),
+                }
+              : {}),
+            network: Object.freeze({
+              bindBeforeLaunch: network.bindBeforeLaunch.bind(network),
+              activateReady: network.activateReady.bind(network),
+            }),
             registerBirth(receiver: PrivateBrowserRetirementReceiver) {
               check();
               if (birth) throw new ProductionRuntimeRefusal('BUSY');
-              const ordinary = receiver.isOrdinary,
-                authority = receiver.isAuthorityCurrent,
-                binding = receiver.verifiedRuntimeBinding;
-              birth = {
+              birth = Object.freeze({
                 receiver,
-                ordinary: ordinary.bind(receiver),
-                current: authority.bind(receiver),
-                runtime: binding.bind(receiver),
-                refused: false,
-              };
+                ordinary: receiver.isOrdinary.bind(receiver),
+                current: receiver.isAuthorityCurrent.bind(receiver),
+                binding: receiver.verifiedRuntimeBinding.bind(receiver),
+              });
+              register(receiver);
               check();
-              Reflect.apply(register, participant, [receiver]);
-              check();
+              if (!birth.ordinary()) throw new ProductionRuntimeRefusal('CLOSED');
             },
             refuseBirth(receiver: PrivateBrowserRetirementReceiver) {
-              if (birth?.receiver === receiver) birth.refused = true;
-              Reflect.apply(refuse, participant, [receiver]);
+              if (birth?.receiver === receiver) refusedBirth = true;
+              refuse(receiver);
             },
           });
-          check();
-          engine = constructOwnedBrowserEngine({ ...settings, runtime }, owner);
-          shutdown = engine.shutdown;
-          check();
-          Reflect.apply(bindEngine, participant, [engine]);
-          check();
-          const originalOpen = engine.open;
-          check();
-          const result = await Reflect.apply(originalOpen, engine, [command]);
-          check();
-          opened = true;
-          return Object.freeze({ engine, opened: result });
-        });
-        void production.then(resolveOpen, rejectOpen);
-        return work;
-      } catch (reason) {
-        fail(reason);
-        rejectOpen(reason);
-        return work;
-      }
+          {
+            if (signal) {
+              const lost = () => {
+                fail(signal.reason);
+                void close().catch(() => {});
+              };
+              signal.addEventListener('abort', lost, { once: true });
+              removeLoss = () => signal.removeEventListener('abort', lost);
+              if (signal.aborted) lost();
+            }
+            check();
+            release = await openOriginalInstalledPrebuiltRelease({
+              dataHome,
+              current: () => !closed && !first && !abort.signal.aborted,
+            });
+            check();
+            const subject = await issueOriginalVMRuntimeSubject(release, revision);
+            check();
+            expected = inspectOriginalVMRuntimeSubject(subject, release).binding;
+            engine = constructOriginalManagedVMEngine({
+              registry,
+              owner: ownerId,
+              dataHome,
+              release,
+              width: 1280,
+              height: 800,
+              birthOwner: owned,
+              policy,
+              policyRevision: revision,
+            });
+            check();
+            bindEngine(engine);
+            check();
+            const result = await engine.open(command);
+            check();
+            opened = true;
+            return Object.freeze({ engine, opened: result });
+          }
+        })
+        .then(yes, no);
+      return originalOpen;
     },
-    /** Original registered birth only, including cold native activation before open returns.
-     * No caller receiver/copy enters this bank; authority also checks its original SQL/grant/lease. */
-    isOriginalNativeCurrent(receiver: PrivateBrowserRetirementReceiver): boolean {
-      if (closed || !birth || birth.receiver !== receiver || birth.refused || !expected)
-        return false;
-      try {
-        if (!birth.ordinary() || !birth.current()) return false;
-        const proof = birth.runtime();
-        return (
-          !closed &&
-          !birth.refused &&
-          proof?.runtimeIdentity === expected.runtimeIdentity &&
-          proof.policyRevision === expected.policyRevision &&
-          birth.current() &&
-          !closed
-        );
-      } catch (error) {
-        fail(error);
-        void close().catch(() => {});
-        return false;
-      }
+    isOriginalNativeCurrent: nativeCurrent,
+    isNativeCurrent(candidate: BrowserLifecycleEngine) {
+      return opened && candidate === engine && !!birth && nativeCurrent(birth.receiver);
     },
-    /** Private installation/native custody only; installation readiness stays unavailable.
-     * This predicate never activates a public route or grants actor/controller/view permission.
-     * Callers must separately check current config/auth/grants and the exact selected binding. */
-    isNativeCurrent(candidate: BrowserLifecycleEngine): boolean {
-      if (closed || !opened || candidate !== engine || !birth || birth.refused || !expected)
-        return false;
-      const lost = () => {
-        fail(new ProductionRuntimeRefusal('CUSTODY_UNCERTAIN'));
-        void close().catch(() => {});
-        return false;
-      };
-      try {
-        if (!birth.ordinary() || !birth.current()) return lost();
-        const proof = birth.runtime();
-        if (
-          !proof ||
-          proof.runtimeIdentity !== expected.runtimeIdentity ||
-          proof.policyRevision !== expected.policyRevision ||
-          !birth.current()
-        )
-          return lost();
-        return !closed && opened && !birth.refused;
-      } catch (error) {
-        fail(error);
-        void close().catch(() => {});
-        return false;
-      }
-    },
-    close,
   });
 }

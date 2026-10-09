@@ -1,3 +1,4 @@
+import { getExtensionLoadAdmission } from '@/layers/shared/lib';
 /**
  * @vitest-environment jsdom
  */
@@ -9,12 +10,13 @@ vi.mock('sonner', () => ({
 }));
 
 // Mock ui-action-dispatcher (pulled in transitively by extension-api-factory)
-vi.mock('@/layers/shared/lib/ui-action-dispatcher', () => ({
+vi.mock('@/layers/shared/lib/ui-action-dispatcher', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/lib/ui-action-dispatcher')>()),
   executeUiCommand: vi.fn(),
 }));
 
 import { ExtensionLoader } from '../model/extension-loader';
-import type { ExtensionAPIDeps, LoadedExtension } from '../model/types';
+import type { ExtensionAPIDeps } from '../model/types';
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
 
 // --- Helpers ---
@@ -59,33 +61,9 @@ function makeRecord(overrides: Partial<ExtensionRecordPublic> = {}): ExtensionRe
     hasDataProxy: false,
     approvedToRun: true,
     shadowedBy: null,
+    bundleGeneration: 'a'.repeat(64),
     ...overrides,
   };
-}
-
-/**
- * Seed a loaded extension into the loader's internal map.
- *
- * Since dynamic import() cannot resolve /api/extensions/... URLs in jsdom,
- * we seed the loaded map directly to test deactivation/reload paths.
- */
-function seedLoaded(
-  loader: ExtensionLoader,
-  entry: {
-    id: string;
-    deactivate?: () => void;
-    cleanups?: Array<() => void>;
-  }
-): void {
-  const loaded = (loader as unknown as { loaded: Map<string, LoadedExtension> }).loaded;
-  loaded.set(entry.id, {
-    id: entry.id,
-    manifest: { id: entry.id, name: `Ext ${entry.id}`, version: '1.0.0' },
-    module: { activate: vi.fn() },
-    api: {} as LoadedExtension['api'],
-    cleanups: entry.cleanups ?? [],
-    deactivate: entry.deactivate,
-  });
 }
 
 // --- Tests ---
@@ -109,8 +87,8 @@ describe('ExtensionLoader.reloadExtensions', () => {
     const cleanup = vi.fn();
 
     // Seed an already-loaded extension
-    const loader = new ExtensionLoader(makeDeps());
-    seedLoaded(loader, { id: 'my-ext', deactivate, cleanups: [cleanup] });
+    const loader = makeLoader(makeDeps());
+    await activateFixtures(loader, [{ id: 'my-ext', deactivate, cleanups: [cleanup] }]);
 
     // Mock fetch for the updated extension list
     global.fetch = vi.fn().mockResolvedValue({
@@ -126,9 +104,9 @@ describe('ExtensionLoader.reloadExtensions', () => {
     expect(cleanup).toHaveBeenCalledOnce();
   });
 
-  it('imports new bundle with cache-busted URL containing timestamp', async () => {
-    const loader = new ExtensionLoader(makeDeps());
-    seedLoaded(loader, { id: 'my-ext' });
+  it('imports a bundle bound to its advertised generation', async () => {
+    const loader = makeLoader(makeDeps());
+    await activateFixtures(loader, [{ id: 'my-ext' }]);
 
     const records = [makeRecord({ id: 'my-ext', status: 'compiled', bundleReady: true })];
     global.fetch = vi.fn().mockResolvedValue({
@@ -148,17 +126,16 @@ describe('ExtensionLoader.reloadExtensions', () => {
 
     // But the error log should indicate a reimport was attempted
     expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining('[extensions] Failed to hot-reload my-ext:'),
+      expect.stringContaining('[extensions] Failed to import my-ext:'),
       expect.anything()
     );
   });
 
   it('preserves other extensions during targeted reload', async () => {
-    const loader = new ExtensionLoader(makeDeps());
+    const loader = makeLoader(makeDeps());
 
     // Seed two extensions
-    seedLoaded(loader, { id: 'ext-a' });
-    seedLoaded(loader, { id: 'ext-b' });
+    await activateFixtures(loader, [{ id: 'ext-a' }, { id: 'ext-b' }]);
 
     expect(loader.getLoaded().size).toBe(2);
 
@@ -181,8 +158,8 @@ describe('ExtensionLoader.reloadExtensions', () => {
   });
 
   it('handles reactivation failure gracefully', async () => {
-    const loader = new ExtensionLoader(makeDeps());
-    seedLoaded(loader, { id: 'bad-ext' });
+    const loader = makeLoader(makeDeps());
+    await activateFixtures(loader, [{ id: 'bad-ext' }]);
 
     // Return the extension as compiled + bundleReady so loader attempts reimport
     global.fetch = vi.fn().mockResolvedValue({
@@ -202,8 +179,8 @@ describe('ExtensionLoader.reloadExtensions', () => {
   });
 
   it('skips reimport for extensions no longer compiled or bundle-ready', async () => {
-    const loader = new ExtensionLoader(makeDeps());
-    seedLoaded(loader, { id: 'removed-ext' });
+    const loader = makeLoader(makeDeps());
+    await activateFixtures(loader, [{ id: 'removed-ext' }]);
 
     // Server says the extension is no longer compiled
     global.fetch = vi.fn().mockResolvedValue({
@@ -221,8 +198,8 @@ describe('ExtensionLoader.reloadExtensions', () => {
   });
 
   it('skips reimport when extension is not in updated list from server', async () => {
-    const loader = new ExtensionLoader(makeDeps());
-    seedLoaded(loader, { id: 'gone-ext' });
+    const loader = makeLoader(makeDeps());
+    await activateFixtures(loader, [{ id: 'gone-ext' }]);
 
     // Server returns empty list — extension was removed
     global.fetch = vi.fn().mockResolvedValue({
@@ -237,18 +214,19 @@ describe('ExtensionLoader.reloadExtensions', () => {
   });
 
   it('handles deactivation error during reload without crashing', async () => {
-    const loader = new ExtensionLoader(makeDeps());
-    seedLoaded(loader, {
+    const loader = makeLoader(makeDeps());
+    const failedOwner = {
       id: 'crash-deactivate',
-      deactivate: () => {
+      deactivate: vi.fn(() => {
         throw new Error('deactivate boom');
-      },
+      }),
       cleanups: [
-        () => {
+        vi.fn(() => {
           throw new Error('cleanup boom');
-        },
+        }),
       ],
-    });
+    };
+    await activateFixtures(loader, [failedOwner]);
 
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
@@ -261,20 +239,15 @@ describe('ExtensionLoader.reloadExtensions', () => {
     // Should not throw even though deactivate and cleanup both throw
     await expect(loader.reloadExtensions(['crash-deactivate'])).resolves.toBeDefined();
 
-    // Errors were logged
-    expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining('[extensions] Error deactivating crash-deactivate:'),
-      expect.anything()
-    );
-    expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining('[extensions] Error in cleanup for crash-deactivate:'),
-      expect.anything()
-    );
+    expect(failedOwner.deactivate).toHaveBeenCalledOnce();
+    expect(failedOwner.cleanups[0]).toHaveBeenCalledOnce();
+    expect(loader.deactivateAll()).toBe(false);
+    expect(failedOwner.deactivate).toHaveBeenCalledOnce();
   });
 
   it('returns refreshed extension list from server', async () => {
-    const loader = new ExtensionLoader(makeDeps());
-    seedLoaded(loader, { id: 'ext-a' });
+    const loader = makeLoader(makeDeps());
+    await activateFixtures(loader, [{ id: 'ext-a' }]);
 
     const serverRecords = [
       makeRecord({ id: 'ext-a', status: 'compiled', bundleReady: true }),
@@ -296,10 +269,14 @@ describe('ExtensionLoader.reloadExtensions', () => {
     const deactivateA = vi.fn();
     const deactivateB = vi.fn();
 
-    const loader = new ExtensionLoader(makeDeps());
-    seedLoaded(loader, { id: 'ext-a', deactivate: deactivateA });
-    seedLoaded(loader, { id: 'ext-b', deactivate: deactivateB });
-    seedLoaded(loader, { id: 'ext-c' }); // This one stays
+    const loader = makeLoader(makeDeps());
+    await activateFixtures(loader, [
+      { id: 'ext-a', deactivate: deactivateA },
+      { id: 'ext-b', deactivate: deactivateB },
+      { id: 'ext-c' },
+    ]);
+
+    // This one stays
 
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
@@ -322,7 +299,7 @@ describe('ExtensionLoader.reloadExtensions', () => {
   });
 
   it('handles reload of extension not in loaded map (no-op deactivation)', async () => {
-    const loader = new ExtensionLoader(makeDeps());
+    const loader = makeLoader(makeDeps());
 
     // No extensions seeded — reload a nonexistent one
     global.fetch = vi.fn().mockResolvedValue({
@@ -356,9 +333,11 @@ describe('ExtensionLoader.reloadAll', () => {
     const deactivateB = vi.fn();
     const cleanupB = vi.fn();
 
-    const loader = new ExtensionLoader(makeDeps());
-    seedLoaded(loader, { id: 'ext-a', deactivate: deactivateA, cleanups: [cleanupA] });
-    seedLoaded(loader, { id: 'ext-b', deactivate: deactivateB, cleanups: [cleanupB] });
+    const loader = makeLoader(makeDeps());
+    await activateFixtures(loader, [
+      { id: 'ext-a', deactivate: deactivateA, cleanups: [cleanupA] },
+      { id: 'ext-b', deactivate: deactivateB, cleanups: [cleanupB] },
+    ]);
 
     // The new working directory's set from the server.
     global.fetch = vi.fn().mockResolvedValue({
@@ -382,8 +361,8 @@ describe('ExtensionLoader.reloadAll', () => {
   });
 
   it('re-fetches and returns the extension set for the new working directory', async () => {
-    const loader = new ExtensionLoader(makeDeps());
-    seedLoaded(loader, { id: 'ext-old' });
+    const loader = makeLoader(makeDeps());
+    await activateFixtures(loader, [{ id: 'ext-old' }]);
 
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -399,8 +378,8 @@ describe('ExtensionLoader.reloadAll', () => {
   });
 
   it('keeps the loader live (not disposed) so it can reload again', async () => {
-    const loader = new ExtensionLoader(makeDeps());
-    seedLoaded(loader, { id: 'ext-a' });
+    const loader = makeLoader(makeDeps());
+    await activateFixtures(loader, [{ id: 'ext-a' }]);
 
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
@@ -417,18 +396,19 @@ describe('ExtensionLoader.reloadAll', () => {
   });
 
   it('does not throw when a teardown handler fails during reload', async () => {
-    const loader = new ExtensionLoader(makeDeps());
-    seedLoaded(loader, {
+    const loader = makeLoader(makeDeps());
+    const failedOwner = {
       id: 'crash-ext',
-      deactivate: () => {
+      deactivate: vi.fn(() => {
         throw new Error('deactivate boom');
-      },
+      }),
       cleanups: [
-        () => {
+        vi.fn(() => {
           throw new Error('cleanup boom');
-        },
+        }),
       ],
-    });
+    };
+    await activateFixtures(loader, [failedOwner]);
 
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
@@ -437,22 +417,18 @@ describe('ExtensionLoader.reloadAll', () => {
 
     await expect(loader.reloadAll()).resolves.toBeDefined();
 
-    expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining('[extensions] Error calling deactivate for crash-ext:'),
-      expect.anything()
-    );
-    expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining('[extensions] Error in cleanup for crash-ext:'),
-      expect.anything()
-    );
+    expect(failedOwner.deactivate).toHaveBeenCalledOnce();
+    expect(failedOwner.cleanups[0]).toHaveBeenCalledOnce();
+    expect(loader.deactivateAll()).toBe(false);
+    expect(failedOwner.deactivate).toHaveBeenCalledOnce();
   });
 
   it('leaves the current extension set live when the list fetch fails (fetch-then-swap)', async () => {
     const deactivate = vi.fn();
     const cleanup = vi.fn();
 
-    const loader = new ExtensionLoader(makeDeps());
-    seedLoaded(loader, { id: 'ext-live', deactivate, cleanups: [cleanup] });
+    const loader = makeLoader(makeDeps());
+    await activateFixtures(loader, [{ id: 'ext-live', deactivate, cleanups: [cleanup] }]);
 
     global.fetch = vi.fn().mockResolvedValue({
       ok: false,
@@ -460,8 +436,10 @@ describe('ExtensionLoader.reloadAll', () => {
       json: () => Promise.resolve({ error: 'boom' }),
     });
 
-    // The reload rejects — the caller surfaces an error toast.
-    await expect(loader.reloadAll()).rejects.toThrow('Failed to fetch extension list: 500');
+    const outcome = await loader.reloadAll();
+    expect(outcome.status).toBe('partial');
+    expect(outcome.failures).toEqual([{ id: '', stage: 'load' }]);
+    expect(loader.isOutcomeCurrent(outcome)).toBe(true);
 
     // Nothing was torn down: the previous extensions are still fully live.
     expect(deactivate).not.toHaveBeenCalled();
@@ -497,8 +475,8 @@ describe('ExtensionLoader generation guard (rapid-switch races)', () => {
 
   it('a superseded reloadAll neither tears down nor activates (rapid cwd switch)', async () => {
     const deactivate = vi.fn();
-    const loader = new ExtensionLoader(makeDeps());
-    seedLoaded(loader, { id: 'ext-old', deactivate });
+    const loader = makeLoader(makeDeps());
+    await activateFixtures(loader, [{ id: 'ext-old', deactivate }]);
 
     const fetch1 = deferredFetch();
     const fetch2 = deferredFetch();
@@ -532,8 +510,8 @@ describe('ExtensionLoader generation guard (rapid-switch races)', () => {
   });
 
   it('a superseded SSE reload does not resurrect extensions after a cwd-switch reloadAll', async () => {
-    const loader = new ExtensionLoader(makeDeps());
-    seedLoaded(loader, { id: 'ext-a' });
+    const loader = makeLoader(makeDeps());
+    await activateFixtures(loader, [{ id: 'ext-a' }]);
 
     const sseFetch = deferredFetch();
     global.fetch = vi
@@ -561,3 +539,42 @@ describe('ExtensionLoader generation guard (rapid-switch races)', () => {
     );
   });
 });
+
+/** Real loader/factory ownership; only bundle delivery and host ports are mocked. */
+const fixtureDeps = new WeakMap<ExtensionLoader, ExtensionAPIDeps>();
+function makeLoader(deps: ExtensionAPIDeps): ExtensionLoader {
+  const loader = new ExtensionLoader(deps, getExtensionLoadAdmission(), vi.fn());
+  fixtureDeps.set(loader, deps);
+  return loader;
+}
+async function activateFixtures(
+  loader: ExtensionLoader,
+  entries: Array<{ id: string; deactivate?: () => void; cleanups?: Array<() => void> }>
+): Promise<void> {
+  const deps = fixtureDeps.get(loader)!;
+  const previousFetch = globalThis.fetch;
+  const records = entries.map((entry) => makeRecord({ id: entry.id }));
+  const urls = records.map(
+    (record) => '/api/extensions/' + record.id + '/bundle?generation=' + record.bundleGeneration
+  );
+  entries.forEach((entry, index) =>
+    vi.doMock(urls[index], () => ({
+      activate(api: import('@dorkos/extension-api').ExtensionAPI) {
+        for (const [n, cleanup] of (entry.cleanups ?? []).entries()) {
+          vi.mocked(deps.registry.register).mockReturnValueOnce(cleanup);
+          api.registerComponent('dashboard.sections', 'fixture-' + n, () => null);
+        }
+        return entry.deactivate;
+      },
+    }))
+  );
+  globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => records });
+  try {
+    const outcome = await loader.initialize();
+    expect(outcome.status).toBe('completed');
+    expect(outcome.loaded.size).toBe(entries.length);
+  } finally {
+    globalThis.fetch = previousFetch;
+    urls.forEach((url) => vi.doUnmock(url));
+  }
+}

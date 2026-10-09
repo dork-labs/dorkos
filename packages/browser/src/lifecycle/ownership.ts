@@ -255,6 +255,8 @@ export function fenceOrdinary(
   return slot;
 }
 
+const captureSlots = new WeakSet<Promise<void>>();
+
 /** Capture closed producer membership after fencing, before any external cleanup observation. */
 export function snapshotRetirementOwners(record: BrowserRecord, slot: RetirementSlot): void {
   const cell = record.lifetime.ordinary;
@@ -277,7 +279,9 @@ export function snapshotRetirementOwners(record: BrowserRecord, slot: Retirement
   }
   for (const pending of record.lifetime.pending) slot.pendingCoverage.add(pending);
   // A constructing owner or pending duty is accounted as a gap until genuine exact settlement.
-  slot.coverageUnavailable = slot.missingOwners.size !== 0 || slot.pendingCoverage.size !== 0;
+  slot.coverageUnavailable =
+    slot.missingOwners.size !== 0 ||
+    [...slot.pendingCoverage].some((pending) => !captureSlots.has(pending));
   // A generic Promise is not producer correspondence. Its later fulfillment does not close this gap.
 }
 
@@ -367,14 +371,33 @@ export function ownOperation<T>(
   enter: () => T | PromiseLike<T>,
   accept?: (value: T) => void
 ): Promise<T> {
+  return ownRegisteredOperation(record, enter, accept, false);
+}
+
+/** Exact capture work cannot acquire an owner; its original return closes only its own custody slot. */
+export function ownCaptureOperation<T>(
+  record: BrowserRecord,
+  enter: () => T | PromiseLike<T>
+): Promise<T> {
+  return ownRegisteredOperation(record, enter, undefined, true);
+}
+
+function ownRegisteredOperation<T>(
+  record: BrowserRecord,
+  enter: () => T | PromiseLike<T>,
+  accept: ((value: T) => void) | undefined,
+  capture: boolean
+): Promise<T> {
   const owner = record.lifetime;
   let settle!: () => void;
   const slot = new Promise<void>((done) => {
     settle = done;
   });
+  if (capture) captureSlots.add(slot);
   owner.pending.add(slot);
   const done = () => {
     owner.pending.delete(slot);
+    if (captureSlots.has(slot)) owner.ordinary.retirement.pendingCoverage.delete(slot);
     settle();
   };
   try {
@@ -418,7 +441,7 @@ export function closeOwned(
   map.set(subject, shared);
   void shared.catch(() => {});
   void ownOperation(record, async () => {
-    if (kind === 'context' && record.supervisor) await record.supervisorStopBarrier;
+    if (kind === 'context' && record.supervisor) await record.controllerCloseBarrier;
     // The supervisor owns persistent-context termination. The controller owns only its
     // public CDP connection; closing the default context here would race that owner.
     const resource =
@@ -453,7 +476,11 @@ export function drainRetirement(
   slot.cleanupPromise = new Promise((done) => {
     complete = done;
   });
-  const operations: Promise<void>[] = [];
+  // Only original capture slots have known nonacquiring producer correspondence.
+  // The unchanged parent deadline bounds this join; unknown acquisition remains a sticky gap.
+  const operations: Promise<void>[] = [...slot.pendingCoverage].filter((pending) =>
+    captureSlots.has(pending)
+  );
   for (const cohort of slot.cohorts.values()) {
     const owner = cohort.owner;
     const unknown = () => {

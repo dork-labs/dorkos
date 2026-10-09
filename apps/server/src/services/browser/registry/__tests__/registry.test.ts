@@ -15,6 +15,91 @@ import type { PrivateBrowserRetirementReceiver } from '@dorkos/browser/server-ow
 import { BrowserRegistryStore } from '../store.js';
 import { BrowserRegistry } from '../registry.js';
 
+it('keeps an import busy through native stop and never releases a failed import on a later observed stop', () => {
+  const { store, registry } = fixture();
+  const existing = store.createProfile('alice', 'Existing');
+  const profile = store.beginProfileImport('alice', 'Imported');
+  expect(profile.profileId).not.toBe(existing.profileId);
+  expect(profile.status).toBe('inUse');
+  expect(store.profiles('bob')).toEqual([]);
+  expect(() =>
+    store.birth(
+      'bob',
+      { mode: 'persistent', profileId: profile.profileId },
+      'browser_foreign_0000000001',
+      0
+    )
+  ).toThrow();
+  expect(() => store.finishProfileImport('bob', profile.profileId, true)).toThrow();
+  store.birth(
+    'alice',
+    { mode: 'persistent', profileId: profile.profileId },
+    'browser_imported_0000000001',
+    0
+  );
+  expect(registry.instances('alice')).toEqual([]);
+  expect(() => registry.instance('alice', 'browser_imported_0000000001', 0)).toThrow(
+    'inaccessible'
+  );
+  const row = store.instance('alice', 'browser_imported_0000000001', 0);
+  store.transition(row, 'uncertain');
+  expect(store.finishProfileImport('alice', profile.profileId, false).status).toBe('quarantined');
+  store.transition(row, 'stopped');
+  expect(
+    store.profiles('alice').find((value) => value.profileId === profile.profileId)?.status
+  ).toBe('quarantined');
+  expect(store.profiles('alice').find((value) => value.profileId === existing.profileId)).toEqual(
+    existing
+  );
+});
+it('publishes the imported profile only after the original generation stopped', () => {
+  const { store } = fixture();
+  const profile = store.beginProfileImport('alice', 'Imported');
+  store.birth(
+    'alice',
+    { mode: 'persistent', profileId: profile.profileId },
+    'browser_imported_0000000001',
+    0
+  );
+  store.transition(store.instance('alice', 'browser_imported_0000000001', 0), 'stopped');
+  expect(store.profiles('alice')[0].status).toBe('inUse');
+  expect(store.finishProfileImport('alice', profile.profileId, true).status).toBe('available');
+  expect(store.isProfileImport('alice', profile.profileId)).toBe(false);
+});
+it.each(['failed', 'abandoned'] as const)(
+  'retains %s import quarantine across original database close/reopen and later stopped reconciliation',
+  (kind) => {
+    const folder = mkdtempSync(path.join(os.tmpdir(), 'browser-import-restart-'));
+    folders.push(folder);
+    const file = path.join(folder, 'registry.sqlite');
+    const original = fixture(database(file));
+    const profile = original.store.beginProfileImport('alice', 'Imported');
+    original.store.birth(
+      'alice',
+      { mode: 'persistent', profileId: profile.profileId },
+      'browser_imported_restart_00001',
+      0
+    );
+    const row = original.store.instance('alice', 'browser_imported_restart_00001', 0);
+    original.store.transition(row, 'uncertain');
+    if (kind === 'failed') original.store.finishProfileImport('alice', profile.profileId, false);
+    original.db.$client.close();
+    const reopened = fixture(database(file), 'boot-two');
+    expect(reopened.store.isProfileImport('alice', profile.profileId)).toBe(false);
+    expect(reopened.store.profiles('alice')[0].status).toBe('quarantined');
+    reopened.store.transition(reopened.store.instance('alice', row.browserId, 0), 'stopped');
+    expect(reopened.store.profiles('alice')[0].status).toBe('quarantined');
+    expect(() =>
+      reopened.store.birth(
+        'alice',
+        { mode: 'persistent', profileId: profile.profileId },
+        'browser_after_import_restart_01',
+        1
+      )
+    ).toThrow('profileUncertain');
+    expect(() => original.store.finishProfileImport('alice', profile.profileId, true)).toThrow();
+  }
+);
 const handles: Db[] = [],
   folders: string[] = [];
 afterEach(() => {

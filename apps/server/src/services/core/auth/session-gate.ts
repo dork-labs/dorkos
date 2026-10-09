@@ -59,6 +59,15 @@ export interface RequestUser {
   credentialId?: string;
 }
 
+/** Private verified session metadata: never attached to a JSON response or request field. */
+export type VerifiedRequestSession = Readonly<{ id: string; userId: string; expiresAt: number }>;
+const verifiedRequestSessions = new WeakMap<RequestUser, VerifiedRequestSession>();
+
+/** Only original cookie identities produced by verifyRequestAuth have a session entry. */
+export function verifiedRequestSession(user: RequestUser): VerifiedRequestSession | undefined {
+  return verifiedRequestSessions.get(user);
+}
+
 /** Paths the gate protects: the API surface and the external MCP endpoint. */
 function isGatedPath(path: string): boolean {
   return path.startsWith('/api/') || path === '/mcp' || path.startsWith('/mcp/');
@@ -148,6 +157,8 @@ export interface VerifyRequestAuthOptions {
   bearerIsNotAnApiKey?: boolean;
   /** Bypass this deployment's cookie cache for a fresh database observation. */
   sessionFreshness?: 'server-store';
+  /** Preserve an original session producer failure for a private owner that joins it. */
+  sessionFailure?: 'propagate';
 }
 
 /**
@@ -156,9 +167,10 @@ export interface VerifyRequestAuthOptions {
  * Tries the Better Auth session cookie first (the cookie cache keeps hot paths
  * like SSE reconnect off the DB), then a per-user API key presented as
  * `Authorization: Bearer <key>`. Returns `null` when neither credential is
- * present or valid. Verification failures never throw: a malformed cookie or an
+ * present or valid. By default verification failures never throw: a malformed cookie or an
  * invalid/revoked key resolves to `null` (fail closed) so callers can respond
- * with a uniform 401.
+ * with a uniform 401. A private owner may select `sessionFailure: 'propagate'`
+ * to retain the exact original session producer rejection before logging or fallback.
  *
  * Shared by {@link sessionGate}, the MCP auth middleware, and the WebSocket
  * upgrade gate so there is exactly one credential-verification path.
@@ -199,9 +211,27 @@ export async function verifyRequestAuth(
         : {}),
     });
     if (result?.user?.id) {
-      return { userId: result.user.id, credential: 'cookie' };
+      const user: RequestUser = { userId: result.user.id, credential: 'cookie' };
+      // Only explicit private propagation observes metadata. Ordinary shipped cookie
+      // acceptance/fallback keeps its original reads, even for an unusual session shape.
+      if (options.sessionFailure === 'propagate') {
+        const originalSession = result.session;
+        const id = originalSession?.id,
+          userId = originalSession?.userId,
+          expiry = originalSession?.expiresAt;
+        const expiresAt = expiry instanceof Date ? Date.prototype.getTime.call(expiry) : NaN;
+        if (
+          typeof id === 'string' &&
+          id.length > 0 &&
+          userId === user.userId &&
+          Number.isFinite(expiresAt)
+        )
+          verifiedRequestSessions.set(user, Object.freeze({ id, userId, expiresAt }));
+      }
+      return user;
     }
   } catch (error) {
+    if (options.sessionFailure === 'propagate') throw error;
     logger.debug('[Auth] Session cookie verification failed', {
       error: error instanceof Error ? error.message : String(error),
     });

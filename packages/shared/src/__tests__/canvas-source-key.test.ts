@@ -1,5 +1,5 @@
 /**
- * The dedupe rule, driven over every one of the fourteen canvas content types.
+ * The dedupe rule, driven over every canvas content type.
  *
  * It is ONE function rather than two, and that is the point of testing it here:
  * the browser's session canvas and the server's room canvas both import it, so
@@ -20,6 +20,18 @@ const CASES: Array<{ content: UiCanvasContent; key: string | null }> = [
   {
     content: { type: 'browser', url: 'http://localhost:5173/' },
     key: 'browser:http://localhost:5173/',
+  },
+  {
+    content: {
+      type: 'managed_browser',
+      attachmentId: 'attachment_original_reference_001',
+      browserId: 'browser_original_reference_000001',
+      browserGeneration: 1,
+      tabId: 'tab_original_reference_000000001',
+      ownerAuthorId: 'actual_owner_author',
+      scope: { kind: 'room', roomId: 'actual_room' },
+    },
+    key: 'managed-browser:attachment_original_reference_001',
   },
   {
     content: { type: 'markdown', content: '# hi', sourcePath: 'docs/a.md' },
@@ -54,7 +66,7 @@ describe('canvasSourceKey', () => {
   });
 
   it('covers every variant the schema accepts', () => {
-    // The guard that keeps this table honest: a fifteenth content type added to
+    // The guard that keeps this table honest: a new content type added to
     // the union without a case here would leave its dedupe rule untested, and
     // the failure mode of an untested dedupe rule is a duplicate tab nobody
     // reports as a bug.
@@ -63,7 +75,7 @@ describe('canvasSourceKey', () => {
     );
     const covered = new Set(CASES.map((testCase) => testCase.content.type));
     expect([...declared].sort()).toEqual([...covered].sort());
-    expect(declared.size).toBe(14);
+    expect(declared.size).toBe(15);
   });
 
   it('coalesces a diff on its PATH, so an edit burst refreshes one document', () => {

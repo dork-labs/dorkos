@@ -592,6 +592,9 @@ importers:
       '@composio/core':
         specifier: 0.21.0
         version: 0.21.0(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.3)(ws@8.22.0)(zod@4.6.5)
+      '@dorkos/browser':
+        specifier: workspace:*
+        version: link:../../packages/browser
       '@dorkos/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -643,6 +646,9 @@ importers:
       node-pty:
         specifier: ^1.1.0
         version: 1.1.0
+      playwright-core:
+        specifier: 1.63.0
+        version: 1.63.0
       uuid:
         specifier: ^13.0.2
         version: 13.0.2
@@ -735,6 +741,9 @@ importers:
       '@dorkos/eslint-config':
         specifier: workspace:*
         version: link:../../packages/eslint-config
+      '@dorkos/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@dorkos/test-utils':
         specifier: workspace:*
         version: link:../../packages/test-utils
@@ -1236,6 +1245,9 @@ importers:
 
   packages/browser:
     dependencies:
+      '@dorkos/shared':
+        specifier: workspace:*
+        version: link:../shared
       playwright-core:
         specifier: 1.63.0
         version: 1.63.0

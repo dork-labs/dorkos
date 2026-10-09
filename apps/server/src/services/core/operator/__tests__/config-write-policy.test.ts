@@ -71,6 +71,7 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'activity.retentionDays',
       'agents.defaultDirectory',
       'auth.enabled',
+      'browser.chromeUserAgent',
       'browser.enabled',
       'cloud.credits.agents',
       'cloud.credits.defaults',

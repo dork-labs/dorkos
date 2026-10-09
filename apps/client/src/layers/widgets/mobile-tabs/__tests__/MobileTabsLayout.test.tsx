@@ -118,7 +118,7 @@ vi.mock('@/layers/features/dashboard-sidebar/model/use-legacy-pin-migration', ()
 vi.mock('@/layers/features/dashboard-sidebar/ui/SidebarHeaderBlock', () => ({
   SidebarHeaderBlock: () => <div data-testid="sidebar-header-block">Header block</div>,
 }));
-vi.mock('@/layers/features/dashboard-sidebar/ui/SidebarFooterStrip', () => ({
+vi.mock('@/layers/features/dashboard-sidebar/ui/footer/SidebarFooterStrip', () => ({
   SidebarFooterStrip: () => <div data-testid="sidebar-footer-strip">Footer strip</div>,
   useAskDorkBot: () => ({ ask: mockAsk, ready: mockDorkBotReady }),
 }));

@@ -647,7 +647,9 @@ describe('GET /api/extensions/:id/bundle', () => {
   });
 
   it('serves nothing for an extension the person has not approved', async () => {
-    const res = await request(fixtureServer).get('/api/extensions/my-ext/bundle');
+    const res = await request(fixtureServer).get(
+      '/api/extensions/my-ext/bundle?generation=' + 'a'.repeat(64)
+    );
 
     expect(res.status).toBe(404);
     expect(res.text).not.toContain('activate');
@@ -656,7 +658,9 @@ describe('GET /api/extensions/:id/bundle', () => {
   it('serves it once the person approves', async () => {
     state.extensions = { ...state.extensions, approvedToRun: ['my-ext'] };
 
-    const res = await request(fixtureServer).get('/api/extensions/my-ext/bundle');
+    const res = await request(fixtureServer).get(
+      '/api/extensions/my-ext/bundle?generation=' + 'a'.repeat(64)
+    );
 
     expect(res.status).toBe(200);
     expect(res.text).toContain('activate');

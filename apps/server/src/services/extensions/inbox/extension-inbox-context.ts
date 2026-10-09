@@ -1,3 +1,4 @@
+import { retainCleanup, releaseTogether } from '../server-lifecycle/retained-cleanup.js';
 /**
  * The three `ctx` members that keep an extension's asks and settings with a
  * person (spec `flow-multiproject` §7.1, §7.6, §7.10): `ctx.inbox`,
@@ -31,15 +32,22 @@ function inboxOrThrow(): ExtensionInboxService {
  */
 export function createInboxApi(
   extensionId: string,
-  extensionName: string
+  extensionName: string,
+  requireCurrent?: () => void
 ): { inbox: InboxApi; release: () => void } {
   let unregister: (() => void) | null = null;
   let released = false;
 
   const inbox: InboxApi = {
-    raise: (input) => inboxOrThrow().raise(extensionId, extensionName, input),
+    raise: (input) =>
+      requireCurrent
+        ? inboxOrThrow().raise(extensionId, extensionName, input, requireCurrent)
+        : inboxOrThrow().raise(extensionId, extensionName, input),
     resolve: (key, opts) => inboxOrThrow().resolve(extensionId, key, opts),
-    record: (input) => inboxOrThrow().record(extensionId, extensionName, input),
+    record: (input) =>
+      requireCurrent
+        ? inboxOrThrow().record(extensionId, extensionName, input, requireCurrent)
+        : inboxOrThrow().record(extensionId, extensionName, input),
     list: async () => inboxOrThrow().list(extensionId),
     onAction(handler) {
       if (released) {
@@ -51,13 +59,10 @@ export function createInboxApi(
         throw new TypeError('inbox.onAction needs a handler function.');
       unregister?.();
       const remove = inboxOrThrow().setHandler(extensionId, handler);
-      let removed = false;
-      const once = () => {
-        if (removed) return;
-        removed = true;
-        if (unregister === once) unregister = null;
+      const once = retainCleanup(() => {
         remove();
-      };
+        if (unregister === once) unregister = null;
+      });
       unregister = once;
       return once;
     },
@@ -121,16 +126,20 @@ export function createRequirePerson(extensionName: string): RequestHandler {
  */
 export function createProjectSettingsReader(
   extensionId: string,
-  dorkHome: string
+  dorkHome: string,
+  requireCurrent?: () => void
 ): { projectSettings: ProjectSettingsReader; release: () => void } {
   const store = projectSettingsStore(dorkHome);
   const removers = new Set<() => void>();
   const projectSettings: ProjectSettingsReader = {
     async get<T = unknown>(projectRoot: string): Promise<T | null> {
       if (typeof projectRoot !== 'string' || !projectRoot) return null;
-      const resolved = await projectRegistry
-        .resolveWithin(projectRoot, extensionId)
-        .catch(() => null);
+      const resolved = await (
+        requireCurrent
+          ? projectRegistry.resolveWithin(projectRoot, extensionId, requireCurrent)
+          : projectRegistry.resolveWithin(projectRoot, extensionId)
+      ).catch(() => null);
+      requireCurrent?.();
       if (!resolved || resolved === 'outside') return null;
       const stored = await store.read(extensionId, resolved.root);
       return (stored?.value as T | undefined) ?? null;
@@ -142,17 +151,18 @@ export function createProjectSettingsReader(
       const remove = store.onChange((changedExtension, root) => {
         if (changedExtension === extensionId) listener(root);
       });
-      removers.add(remove);
-      return () => {
-        removers.delete(remove);
+      const once = retainCleanup(() => {
         remove();
-      };
+        removers.delete(once);
+      });
+      removers.add(once);
+      return once;
     },
   };
   return {
     projectSettings,
     release: () => {
-      for (const remove of [...removers]) remove();
+      releaseTogether([...removers]);
       removers.clear();
     },
   };

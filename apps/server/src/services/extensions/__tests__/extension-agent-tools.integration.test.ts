@@ -31,6 +31,7 @@ vi.mock('../../core/config-manager.js', () => ({
 }));
 
 import { ExtensionManager } from '../extension-manager.js';
+import { logger } from '../../../lib/logger.js';
 import { composeRegistry, type CapabilityRegistry } from '../../core/capabilities/registry.js';
 import { CapabilityToolError } from '../../core/capabilities/mcp-envelope.js';
 import { extensionDeclarationDigest } from '../agent-tools/declaration-digest.js';
@@ -52,6 +53,7 @@ let extDir: string;
 let manager: ExtensionManager;
 let registry: CapabilityRegistry;
 let forget: ReturnType<typeof vi.fn<(id: string, name: string) => Promise<unknown>>>;
+let expectedShutdownFailure: { kind: 'original'; value: unknown } | { kind: 'unknown' } | undefined;
 
 /** Copy the fixture in, optionally replacing its server.ts or editing its manifest. */
 async function install(serverTs?: string, editManifest?: (m: Record<string, unknown>) => void) {
@@ -88,6 +90,8 @@ function statuses(): Record<string, string> {
 }
 
 beforeEach(async () => {
+  expectedShutdownFailure = undefined;
+  vi.mocked(logger.error).mockClear();
   dorkHome = await fs.mkdtemp(path.join(os.tmpdir(), 'dor-2685-tools-'));
   extDir = path.join(dorkHome, 'extensions', ID);
   stored.value = {
@@ -101,12 +105,44 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  await manager?.shutdownServer(ID);
-  // The fixture ships a skill, so every change republishes the running-skills
-  // ledger in the background; let it finish before the folder goes.
-  await manager?.whenSkillsSettled();
-  await fs.rm(dorkHome, { recursive: true, force: true });
+  let first: { value: unknown } | undefined;
+  try {
+    const original = manager?.shutdownServer(ID);
+    if (expectedShutdownFailure?.kind === 'original') {
+      await expect(original).rejects.toBe(expectedShutdownFailure.value);
+    } else if (expectedShutdownFailure?.kind === 'unknown') {
+      await expect(original).rejects.toThrow('Extension server cleanup is unverified.');
+    } else {
+      await original;
+    }
+  } catch (value) {
+    first = { value };
+  }
+  // Join the original skills publication even when shutdown rightly refuses
+  // to claim that arbitrary registrar effects have ended.
+  try {
+    await manager?.whenSkillsSettled();
+  } catch (value) {
+    first ??= { value };
+  }
+  try {
+    await fs.rm(dorkHome, { recursive: true, force: true });
+  } catch (value) {
+    first ??= { value };
+  }
+  if (first) throw first.value;
 });
+
+/** Capture the original failure logged by this test's real registrar. */
+function retainRegistrarFailure(message: string): void {
+  const entry = vi
+    .mocked(logger.error)
+    .mock.calls.find(([label]) => label === `[Extensions] Server init failed for ${ID}:`);
+  if (!entry) throw new Error('Original registrar failure was not logged.');
+  expectedShutdownFailure = { kind: 'original', value: entry[1] };
+  expect(entry[1]).toBeInstanceOf(Error);
+  expect(entry[1]).toMatchObject({ message });
+}
 
 describe('extension agent tools through the real lifecycle', () => {
   it('holds tools until the registry is attached, then registers every handled tool', async () => {
@@ -124,7 +160,11 @@ describe('extension agent tools through the real lifecycle', () => {
 
     manager.attachAgentTools({ registry, forgetToolPermissions: forget });
     expect(registered().sort()).toEqual([...TOOL_IDS].sort());
-    expect(statuses()).toEqual({ echo: 'active', bump_counter: 'active', delete_note: 'active' });
+    expect(statuses()).toEqual({
+      echo: 'active',
+      bump_counter: 'active',
+      delete_note: 'active',
+    });
     expect(await registry.invoke('ext_agent_tools_ext.echo', { message: 'hi' })).toEqual({
       message: 'hi',
     });
@@ -141,6 +181,7 @@ describe('extension agent tools through the real lifecycle', () => {
       }`
     );
     await boot();
+    retainRegistrarFailure('boom');
     expect(registered()).toEqual([]);
     expect(statuses().echo).toBe('inactive');
   }, 30_000);
@@ -157,6 +198,7 @@ describe('extension agent tools through the real lifecycle', () => {
       }`
     );
     await boot(100);
+    expectedShutdownFailure = { kind: 'unknown' };
     await new Promise((resolve) => setTimeout(resolve, 600));
     expect(registered()).toEqual([]);
   }, 30_000);
@@ -186,8 +228,17 @@ describe('extension agent tools through the real lifecycle', () => {
       }`
     );
     await boot();
+    retainRegistrarFailure(
+      'agent-tools-ext handles "not_declared", but extension.json declares no tool by that name.'
+    );
+    // The first registrar error is retained; a second start cannot prove its
+    // arbitrary effects ended or enter another registrar beside it.
     const result = await manager.initializeServer(ID);
-    expect(result).toMatchObject({ ok: false, error: expect.stringMatching(/declares no tool/) });
+    expect(result).toEqual({
+      ok: false,
+      error: 'Extension server cleanup is unverified. Restart DorkOS before trying again.',
+    });
+    expect(vi.mocked(logger.error)).toHaveBeenCalledTimes(1);
     expect(registered()).toEqual([]);
   }, 30_000);
 
@@ -310,7 +361,9 @@ describe('extension agent tools through the real lifecycle', () => {
     manager = new ExtensionManager(dorkHome, []);
     manager.attachAgentTools({ registry, forgetToolPermissions: forget });
     const booting = manager.initialize(null);
-    await vi.waitFor(() => expect(g.__dor2685_starts).toBe(1), { timeout: 20_000 });
+    await vi.waitFor(() => expect(g.__dor2685_starts).toBe(1), {
+      timeout: 20_000,
+    });
     const a = manager.initializeServer(ID);
     const b = manager.initializeServer(ID);
     open();
@@ -329,7 +382,9 @@ describe('extension agent tools through the real lifecycle', () => {
     manager = new ExtensionManager(dorkHome, []);
     manager.attachAgentTools({ registry, forgetToolPermissions: forget });
     const booting = manager.initialize(null);
-    await vi.waitFor(() => expect(g.__dor2685_starts).toBe(1), { timeout: 20_000 });
+    await vi.waitFor(() => expect(g.__dor2685_starts).toBe(1), {
+      timeout: 20_000,
+    });
     const changes: number[] = [];
     registry.onChange((v) => changes.push(v));
     const disabling = manager.disable(ID);
@@ -366,7 +421,11 @@ describe('extensionDeclarationDigest', () => {
         title: 'Echo',
         description: 'Echoes.',
         tier: 'observe',
-        inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+        inputSchema: {
+          type: 'object',
+          properties: {},
+          additionalProperties: false,
+        },
       },
     ],
   };
@@ -380,7 +439,10 @@ describe('extensionDeclarationDigest', () => {
     expect(digest({ tools, ...rest })).toBe(original);
     expect(digest({ ...base, skills: ['tidy-notes'] })).not.toBe(original);
     expect(
-      digest({ ...base, tools: [{ ...base.tools[0], tier: 'act', approvalDisplayFields: [] }] })
+      digest({
+        ...base,
+        tools: [{ ...base.tools[0], tier: 'act', approvalDisplayFields: [] }],
+      })
     ).not.toBe(original);
   });
 });

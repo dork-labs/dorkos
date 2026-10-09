@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, mkdir, writeFile, rm, symlink, realpath } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, symlink, realpath, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -37,7 +37,9 @@ async function setup() {
     bytes: Buffer.byteLength('original binary'),
   };
   for (const row of [...workers, ...sources]) await writeFile(join(directory, row.name), row.name);
-  await writeFile(join(directory, binary.name), 'original binary', { mode: 0o755 });
+  await writeFile(join(directory, binary.name), 'original binary', {
+    mode: 0o755,
+  });
   const native = {
     version: 1,
     platform: 'darwin',
@@ -66,6 +68,11 @@ async function setup() {
   vi.stubGlobal('process', { ...process, platform: 'darwin', arch: 'arm64' });
   const configuration = {
     controllerEntry,
+    nodeExecutable: await realpath(process.execPath),
+    nodeExecutableSHA256: createHash('sha256')
+      .update(await readFile(process.execPath))
+      .digest('hex'),
+    nodeRuntime: 'node',
     platform: 'darwin',
     arch: 'arm64',
     sourceVintage: { controllerSHA256: hash('original cli') },

@@ -111,9 +111,9 @@ export function createBrokerIssuer(options: {
     let i: InventoryObservation;
     try {
       i = inventory();
-    } catch {
+    } catch (error) {
       suspend(run);
-      throw new BrokerError('AUTHORITY_REFUSED');
+      throw error;
     }
     if (r.state !== 'active') throw new BrokerError('CLOSED');
     if (i.revision !== r.inventory) {

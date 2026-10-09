@@ -1,5 +1,7 @@
 import type { Options } from 'canvas-confetti';
 import type { CelebrationKind } from '@dorkos/shared/types';
+import type { EffectOwner } from '../extension-effect-owner';
+import { TimerBag } from './celebration-timers';
 
 /**
  * The canvas-confetti instance type, derived from the lazy import so it matches
@@ -27,14 +29,14 @@ export interface CelebrationOrigin {
   y: number;
 }
 
-/** A no-op cleanup returned when nothing was scheduled (e.g. reduced motion). */
-const NOOP = (): void => {};
-
 /**
  * Where a celebration erupts when the caller supplies no origin — slightly
  * above screen-center so gravity carries particles down through the viewport.
  */
-export const DEFAULT_CELEBRATION_ORIGIN: CelebrationOrigin = { x: 0.5, y: 0.62 };
+export const DEFAULT_CELEBRATION_ORIGIN: CelebrationOrigin = {
+  x: 0.5,
+  y: 0.62,
+};
 
 /** The house gold — the DorkOS celebration identity, used by `burst`/`stars`/`rain`. */
 const GOLD = ['#FFD700', '#FFC107', '#F7B500', '#FFFFFF'];
@@ -96,60 +98,31 @@ function randomInRange(min: number, max: number): number {
   return Math.random() * (max - min) + min;
 }
 
-/**
- * Tracks every timer a celebration schedules so cleanup can cancel them all.
- * Timeout and interval ids share the numeric handle space in the browser, so a
- * single set plus a clear-both cleanup is safe and simple.
- */
-class TimerBag {
-  private readonly handles = new Set<ReturnType<typeof setTimeout>>();
-
-  /** Run `fn` once after `ms`, tracked so a mid-flight cleanup cancels it. */
-  after(ms: number, fn: () => void): void {
-    const id = setTimeout(() => {
-      this.handles.delete(id);
-      fn();
-    }, ms);
-    this.handles.add(id);
-  }
-
-  /** Run `fn` every `stepMs` for `durationMs`, then stop. Tracked for cleanup. */
-  every(stepMs: number, durationMs: number, fn: () => void): void {
-    const start = Date.now();
-    const id = setInterval(() => {
-      if (Date.now() - start >= durationMs) {
-        clearInterval(id);
-        this.handles.delete(id);
-        return;
-      }
-      fn();
-    }, stepMs);
-    this.handles.add(id);
-  }
-
-  /** Cancel every scheduled timer and interval. */
-  clear(): void {
-    for (const id of this.handles) {
-      clearTimeout(id);
-      clearInterval(id);
-    }
-    this.handles.clear();
-  }
-}
+type Fire = ((options: Options) => ReturnType<Confetti>) & {
+  /** The owned emoji style uses only canvas-confetti's object overload. */
+  shapeFromText: (
+    ...args: Parameters<Confetti['shapeFromText']>
+  ) => ReturnType<Confetti['shapeFromText']>;
+};
 
 /** Shared base every fire call inherits — reduced-motion is belt-and-suspenders with the top gate. */
 const BASE: Options = { disableForReducedMotion: true, ticks: 200 };
 
 /** A proper multi-stage pop from the origin: a dense core, a wide halo, and a delayed echo. */
 function fireBurst(
-  confetti: Confetti,
+  confetti: Fire,
   origin: CelebrationOrigin,
-  colors: string[],
-  particleCount: number,
-  bag: TimerBag
+  input: { colors: string[]; particleCount: number; bag: TimerBag }
 ): void {
+  const { colors, particleCount, bag } = input;
   const base = { ...BASE, origin, colors, gravity: 1.1 };
-  confetti({ ...base, particleCount, spread: 78, startVelocity: 46, scalar: 1.05 });
+  confetti({
+    ...base,
+    particleCount,
+    spread: 78,
+    startVelocity: 46,
+    scalar: 1.05,
+  });
   confetti({
     ...base,
     particleCount: Math.round(particleCount * 0.6),
@@ -171,20 +144,38 @@ function fireBurst(
 
 /** Golden star-shaped burst — the "gold star" moment for a job well done. */
 function fireStars(
-  confetti: Confetti,
+  confetti: Fire,
   origin: CelebrationOrigin,
   colors: string[],
   bag: TimerBag
 ): void {
-  const base = { ...BASE, origin, colors, shapes: ['star'] as Options['shapes'], gravity: 0.9 };
-  confetti({ ...base, particleCount: 40, spread: 90, startVelocity: 40, scalar: 1.25 });
+  const base = {
+    ...BASE,
+    origin,
+    colors,
+    shapes: ['star'] as Options['shapes'],
+    gravity: 0.9,
+  };
+  confetti({
+    ...base,
+    particleCount: 40,
+    spread: 90,
+    startVelocity: 40,
+    scalar: 1.25,
+  });
   bag.after(140, () =>
-    confetti({ ...base, particleCount: 22, spread: 120, startVelocity: 28, scalar: 0.95 })
+    confetti({
+      ...base,
+      particleCount: 22,
+      spread: 120,
+      startVelocity: 28,
+      scalar: 0.95,
+    })
   );
 }
 
 /** ~2.5s of randomized aerial shells bursting across the top half of the screen. */
-function fireFireworks(confetti: Confetti, colors: string[], bag: TimerBag): void {
+function fireFireworks(confetti: Fire, colors: string[], bag: TimerBag): void {
   bag.every(240, 2500, () => {
     confetti({
       ...BASE,
@@ -201,8 +192,15 @@ function fireFireworks(confetti: Confetti, colors: string[], bag: TimerBag): voi
 }
 
 /** Side cannons crossfiring from the screen edges toward center for ~1.2s. */
-function fireCannons(confetti: Confetti, colors: string[], bag: TimerBag): void {
-  const shot = { ...BASE, particleCount: 14, spread: 58, startVelocity: 58, colors, scalar: 1.05 };
+function fireCannons(confetti: Fire, colors: string[], bag: TimerBag): void {
+  const shot = {
+    ...BASE,
+    particleCount: 14,
+    spread: 58,
+    startVelocity: 58,
+    colors,
+    scalar: 1.05,
+  };
   bag.every(180, 1200, () => {
     confetti({ ...shot, angle: 60, origin: { x: 0, y: 0.68 } });
     confetti({ ...shot, angle: 120, origin: { x: 1, y: 0.68 } });
@@ -210,21 +208,23 @@ function fireCannons(confetti: Confetti, colors: string[], bag: TimerBag): void 
 }
 
 /** An emoji-particle burst from the origin using a text-derived shape. */
-function fireEmoji(
-  confetti: Confetti,
-  origin: CelebrationOrigin,
-  emoji: string,
-  bag: TimerBag
-): void {
+function fireEmoji(confetti: Fire, origin: CelebrationOrigin, emoji: string, bag: TimerBag): void {
   // Emoji scalar and shape scalar must agree or the glyph renders at the wrong size.
   const shape = confetti.shapeFromText({ text: emoji, scalar: 2.2 });
-  const base = { ...BASE, origin, shapes: [shape], scalar: 2.2, gravity: 1, flat: true } as Options;
+  const base = {
+    ...BASE,
+    origin,
+    shapes: [shape],
+    scalar: 2.2,
+    gravity: 1,
+    flat: true,
+  } as Options;
   confetti({ ...base, particleCount: 26, spread: 90, startVelocity: 44 });
   bag.after(120, () => confetti({ ...base, particleCount: 16, spread: 120, startVelocity: 30 }));
 }
 
 /** A calm ~2s drizzle of confetti sifting down from above the top edge. */
-function fireRain(confetti: Confetti, colors: string[], bag: TimerBag): void {
+function fireRain(confetti: Fire, colors: string[], bag: TimerBag): void {
   bag.every(120, 2000, () => {
     confetti({
       ...BASE,
@@ -257,45 +257,252 @@ function fireRain(confetti: Confetti, colors: string[], bag: TimerBag): void {
  * @param options.emoji - Glyph for the `emoji` kind; defaults to 🎉.
  * @param options.colors - Palette override; defaults to the kind's palette.
  * @param options.particleCount - Density override for `burst`'s core stage.
+ * @param owner - Optional originating extension occurrence and retained cancellation.
  */
-export async function fireCelebration(options?: {
-  kind?: CelebrationKind;
-  origin?: CelebrationOrigin;
-  emoji?: string;
-  colors?: string[];
-  particleCount?: number;
-}): Promise<() => void> {
-  if (prefersReducedMotion()) return NOOP;
+export async function fireCelebration(
+  options?: {
+    kind?: CelebrationKind;
+    origin?: CelebrationOrigin;
+    emoji?: string;
+    colors?: string[];
+    particleCount?: number;
+  },
+  owner?: EffectOwner
+): Promise<() => void> {
+  const custody = createCelebrationCustody(owner);
+  const { bag, cancel, requireCurrent } = custody;
+  try {
+    const reduced = prefersReducedMotion();
+    requireCurrent();
+    if (reduced) {
+      custody.finished();
+      return cancel;
+    }
+    const loaded = await import('canvas-confetti');
+    requireCurrent();
+    const confetti = loaded.default;
+    const kind = options?.kind ?? 'burst';
+    const suppliedOrigin = options?.origin ?? DEFAULT_CELEBRATION_ORIGIN;
+    const origin = { x: suppliedOrigin.x, y: suppliedOrigin.y };
+    const colors = options?.colors ?? PALETTES[kind];
+    const count = options?.particleCount ?? 60;
+    const emoji = options?.emoji || DEFAULT_EMOJI;
+    // No options or origin accessor remains behind the final entry guard.
+    let producer: (options: Options) => ReturnType<Confetti> = confetti;
+    if (owner) {
+      const create = confetti.create;
+      const input = { resize: true, useWorker: false };
+      requireCurrent();
+      const original = Reflect.apply(create, confetti, [undefined, input]);
+      const reset = original.reset;
+      custody.setReset(() => Reflect.apply(reset, original, []));
+      producer = original;
+    }
+    const fire = createOwnedFire(
+      confetti,
+      producer,
+      requireCurrent,
+      custody.animation,
+      custody.perform
+    );
+    requireCurrent();
+    runCelebrationStyle({ kind, fire, origin, colors, count, emoji, bag });
+    custody.finished();
+    if (owner) return cancel;
+    // Preserve the existing nonextension returned-cleanup contract.
+    return () => {
+      cancel();
+      const reset = confetti.reset;
+      Reflect.apply(reset, confetti, []);
+    };
+  } catch (error) {
+    custody.failed(error);
+    // Preserve the first ordinary failure; installed cleanup remains callable
+    // and will surface any unverified timer-clear observation independently.
+    try {
+      cancel();
+    } catch {
+      /* TimerBag retains cleanup uncertainty. */
+    }
+    throw error;
+  }
+}
 
-  const confetti = (await import('canvas-confetti')).default;
-  const kind = options?.kind ?? 'burst';
-  const origin = options?.origin ?? DEFAULT_CELEBRATION_ORIGIN;
-  const colors = options?.colors ?? PALETTES[kind];
-  const bag = new TimerBag();
+function createCelebrationCustody(owner?: EffectOwner) {
+  let cancelled = false,
+    stylesFinished = false,
+    pending = 0,
+    entered = 0;
+  let reset: (() => void) | undefined,
+    resetEntered = false;
+  let release: (() => void) | undefined;
+  let first: { value: unknown } | undefined;
+  const before = owner?.beforeEffect;
+  const requireCurrent = () => {
+    if (cancelled) throw new Error('Celebration owner retired.');
+    if (before) Reflect.apply(before, owner, []);
+    if (cancelled) throw new Error('Celebration owner retired.');
+  };
+  const cancel = () => {
+    cancelled = true;
+    try {
+      bag.clear();
+    } catch (value) {
+      first ??= { value };
+    }
+    if (reset && !resetEntered && entered === 0) {
+      resetEntered = true;
+      try {
+        reset();
+      } catch (value) {
+        first ??= { value };
+      }
+    }
+    if (first) throw first.value;
+  };
+  const settled = () => {
+    if (!owner || cancelled || !stylesFinished || pending || !bag.idle()) return;
+    try {
+      requireCurrent();
+      cancel();
+      release?.();
+      release = undefined;
+    } catch {
+      /* Exact cancellation duty remains retained if completion is refused. */
+    }
+  };
+  const bag = new TimerBag(requireCurrent, settled);
+  // Publish exact cancellation before motion observation, lazy import or library entry.
+  if (owner) {
+    const register = owner.registerCleanup;
+    requireCurrent();
+    if (register) release = Reflect.apply(register, owner, [cancel]) ?? undefined;
+    requireCurrent();
+  }
+  return {
+    bag,
+    cancel,
+    requireCurrent,
+    failed(value: unknown) {
+      first ??= { value };
+    },
+    perform<Result>(producer: () => Result): Result {
+      entered++;
+      let result!: Result;
+      let primary: { value: unknown } | undefined;
+      try {
+        result = producer();
+      } catch (value) {
+        primary = { value };
+      } finally {
+        entered--;
+        if (cancelled) {
+          try {
+            cancel();
+          } catch (value) {
+            primary ??= { value };
+          }
+        }
+      }
+      if (primary) throw primary.value;
+      return result;
+    },
+    setReset(original: () => void) {
+      reset = original;
+      if (cancelled) cancel();
+    },
+    finished() {
+      stylesFinished = true;
+      settled();
+    },
+    animation(original: ReturnType<Confetti>) {
+      if (!owner) return;
+      pending++;
+      void Promise.resolve(original).then(
+        () => {
+          pending--;
+          settled();
+        },
+        (value) => {
+          pending--;
+          first ??= { value };
+          try {
+            cancel();
+          } catch {
+            /* Original duty retains failure. */
+          }
+        }
+      );
+    },
+  };
+}
 
+function createOwnedFire(
+  confetti: Confetti,
+  producer: (options: Options) => ReturnType<Confetti>,
+  requireCurrent: () => void,
+  animation: (original: ReturnType<Confetti>) => void,
+  perform: <Result>(producer: () => Result) => Result
+): Fire {
+  const invoke = <Args extends unknown[], Result>(
+    receiver: unknown,
+    method: (...args: Args) => Result,
+    args: Args
+  ): Result => {
+    requireCurrent();
+    return Reflect.apply(method, receiver, args);
+  };
+  const fire: Fire = Object.assign(
+    (args: Options) => {
+      // Spread preparation happens here before the final check, including
+      // caller-supplied palette entries passed to the owned library entry.
+      const prepared = { ...args, colors: args.colors?.slice() };
+      const method = producer;
+      return perform(() => {
+        const original = invoke(undefined, method, [prepared]);
+        animation(original);
+        requireCurrent();
+        return original;
+      });
+    },
+    {
+      shapeFromText: (...args: Parameters<Confetti['shapeFromText']>) => {
+        const method = confetti.shapeFromText;
+        return invoke(confetti, method, args);
+      },
+    }
+  );
+  return fire;
+}
+
+function runCelebrationStyle(input: {
+  kind: CelebrationKind;
+  fire: Fire;
+  origin: CelebrationOrigin;
+  colors: string[];
+  count: number;
+  emoji: string;
+  bag: TimerBag;
+}): void {
+  const { kind, fire, origin, colors, count, emoji, bag } = input;
   switch (kind) {
     case 'burst':
-      fireBurst(confetti, origin, colors, options?.particleCount ?? 60, bag);
+      fireBurst(fire, origin, { colors, particleCount: count, bag });
       break;
     case 'stars':
-      fireStars(confetti, origin, colors, bag);
+      fireStars(fire, origin, colors, bag);
       break;
     case 'fireworks':
-      fireFireworks(confetti, colors, bag);
+      fireFireworks(fire, colors, bag);
       break;
     case 'cannons':
-      fireCannons(confetti, colors, bag);
+      fireCannons(fire, colors, bag);
       break;
     case 'emoji':
-      fireEmoji(confetti, origin, options?.emoji || DEFAULT_EMOJI, bag);
+      fireEmoji(fire, origin, emoji, bag);
       break;
     case 'rain':
-      fireRain(confetti, colors, bag);
+      fireRain(fire, colors, bag);
       break;
   }
-
-  return () => {
-    bag.clear();
-    confetti.reset();
-  };
 }

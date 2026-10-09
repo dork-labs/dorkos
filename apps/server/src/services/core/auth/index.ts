@@ -55,6 +55,7 @@ import { resolveAuthTrustedOrigins } from '../../../lib/trusted-origins.js';
 import { findOwnerAccount, type Account } from './accounts.js';
 import { resolveBetterAuthSecret } from './secret.js';
 import { seedLegacyMcpApiKey } from './seed-legacy-mcp-key.js';
+import { authSessionRemovals } from './session-removals.js';
 
 /**
  * The parts of the auth options that shape the instance's TYPE: the plugins
@@ -265,7 +266,22 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
       // Better Auth keeps sessions, not their history.
       session: {
         create: { after: async (created) => recordSignedIn(created) },
-        delete: { after: async (deleted, ctx) => recordSessionEnded(deleted, ctx?.path) },
+        delete: {
+          after: async (deleted, ctx) => {
+            let first: { value: unknown } | undefined;
+            try {
+              authSessionRemovals.remove({ sessionId: deleted.id, userId: deleted.userId });
+            } catch (value) {
+              first = { value };
+            }
+            try {
+              recordSessionEnded(deleted, ctx?.path);
+            } catch (value) {
+              first ??= { value };
+            }
+            if (first) throw first.value;
+          },
+        },
       },
     },
     // Failed sign-ins and API keys created or revoked, in the audit log.

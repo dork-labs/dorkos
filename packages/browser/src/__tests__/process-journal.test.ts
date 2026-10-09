@@ -137,6 +137,109 @@ describe('recorded process journal Node persistence', () => {
         .state
     ).toBe('busy');
   });
+  it.each([
+    'complete-chain',
+    'cycle',
+    'disconnected',
+    'nonlive-new-parent',
+    'wrong-epoch',
+    'wrong-window',
+    'stale-valid-window',
+    'stale-monotonic-window',
+    'leaf-wrong-epoch',
+    'parent-after-child',
+  ] as const)(
+    'retains same-sweep native association chain only with original live ancestry (%s)',
+    async (mode) => {
+      const originalWriter = { ...writerIdentity, epoch: 1 };
+      const opened = await openJournalWriter({
+        ...location,
+        writer: originalWriter,
+        prior: { kind: 'absent' },
+      });
+      expect(opened.state).toBe('allocated');
+      if (opened.state !== 'allocated') throw new Error('ORIGINAL_WRITER_REQUIRED');
+      const writer = opened.writer;
+      writers.push(writer);
+      const prior = snapshot(0, originalWriter);
+      expect((await writer.commitSnapshot(prior)).state).toBe('durable-recorded');
+      const next = snapshot(1, originalWriter);
+      const identities = [
+        { pid: 20, birth: 'root-A' },
+        { pid: 30, birth: 'child-A' },
+        { pid: 40, birth: 'grandchild-A' },
+      ];
+      for (const [index, identity] of identities.entries()) {
+        const parent = index === 0 ? binding.manager : identities[index - 1]!;
+        const window = { ...next.observationWindow };
+        const association = {
+          parentBefore: parent,
+          parentAfter: parent,
+          child: identity,
+          childParentPid: parent.pid,
+          window,
+          recordedSequence: 1,
+          parentDeathSequence: null,
+        };
+        next.retainedIdentities.push({
+          identity,
+          role: index === 0 ? 'root' : 'descendant',
+          parent,
+          currentParent: parent,
+          association,
+          acquisitionEpoch: 1,
+          firstSeenSequence: 1,
+          lastSeenSequence: 1,
+          relationWindow: window,
+          lifecycle: 'alive',
+        });
+        if (index === 0) next.root = { kind: 'attributed', identity, association };
+      }
+      next.phase = 'observing';
+      const child = next.retainedIdentities[2]!;
+      if (mode === 'cycle' || mode === 'disconnected') {
+        const parent = mode === 'cycle' ? identities[2]! : { pid: 99, birth: 'foreign-A' };
+        child.parent = parent;
+        child.currentParent = parent;
+        child.association!.parentBefore = parent;
+        child.association!.parentAfter = parent;
+        child.association!.childParentPid = parent.pid;
+      }
+      if (mode === 'nonlive-new-parent') child.lifecycle = 'dead';
+      if (mode === 'wrong-epoch') child.acquisitionEpoch = 0;
+      if (mode === 'wrong-window') child.relationWindow.endMonotonic = 0;
+      if (mode === 'stale-valid-window') {
+        child.relationWindow.startSequence = 0;
+        child.relationWindow.checkpointSequence = 0;
+        child.relationWindow.endSequence = 0;
+        child.relationWindow.startMonotonic = 0;
+        child.relationWindow.endMonotonic = 0;
+      }
+      if (mode === 'stale-monotonic-window') {
+        child.relationWindow.startMonotonic = 0;
+        child.relationWindow.endMonotonic = 0;
+      }
+      if (mode === 'leaf-wrong-epoch') next.retainedIdentities[3]!.acquisitionEpoch = 0;
+      if (mode === 'parent-after-child') {
+        next.observationWindow.endMonotonic = 2;
+        child.relationWindow.endMonotonic = 2;
+      }
+      if (
+        mode === 'stale-valid-window' ||
+        mode === 'stale-monotonic-window' ||
+        mode === 'leaf-wrong-epoch' ||
+        mode === 'wrong-epoch' ||
+        mode === 'parent-after-child'
+      )
+        expect(() => validateJournalSnapshot(next)).not.toThrow();
+      const result = await writer.commitSnapshot(next);
+      expect(result.state).toBe(mode === 'complete-chain' ? 'durable-recorded' : 'uncertain');
+      const read = await readJournal(location);
+      expect(read.state).toBe('valid-recorded-data');
+      if (read.state !== 'valid-recorded-data') throw new Error('ORIGINAL_CHECKPOINT_REQUIRED');
+      expect(read.snapshot).toEqual(mode === 'complete-chain' ? next : prior);
+    }
+  );
   it('admits only one concurrent cooperating writer, without replacing the winner marker', async () => {
     const results = await Promise.all([
       openJournalWriter({ ...location, writer: writerIdentity, prior: { kind: 'absent' } }),

@@ -44,6 +44,7 @@ const authorityCurrent = (receiver: PrivateBrowserRetirementReceiver): boolean =
 
 /** Exact private peer returned by the server-owned cold listener. */
 export interface PrivateLiveNetworkPeer {
+  readonly authenticationWarmup?: Readonly<{ url: string; confirm(): Promise<void> }>;
   readonly url: string;
   readonly credentials: Readonly<{ username: string; password: string }>;
   isCustodyKnown(): boolean;

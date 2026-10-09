@@ -35,6 +35,7 @@ const CONTENT_TYPE_ICONS = {
   video: FileVideo,
   csv: Table,
   browser: Globe,
+  managed_browser: Globe,
   diff: GitCompare,
 } as const satisfies Record<UiCanvasContent['type'], unknown>;
 

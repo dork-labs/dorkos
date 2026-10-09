@@ -48,6 +48,10 @@ import { resolveChildEntry } from './isolation/child-entry.js';
 import { createIsolatedRouter } from './isolation/isolated-router.js';
 import { RestartPolicy, type RestartPolicyOptions } from './isolation/restart-policy.js';
 import { env } from '../../env.js';
+import {
+  RegistrationCustody,
+  type RegistrationOccurrence,
+} from './server-lifecycle/registration-custody.js';
 
 const require = createRequire(import.meta.url);
 
@@ -154,6 +158,8 @@ export interface ServerLifecycleOptions {
  */
 export class ExtensionServerLifecycle {
   private serverExtensions = new Map<string, ActiveServerExtension>();
+  private readonly registrationCustody = new RegistrationCustody();
+  private readonly registrations = new WeakMap<ActiveServerExtension, RegistrationOccurrence>();
   /**
    * The live capability registry, once boot has composed it. Extensions start
    * before it exists; their tools wait on their running instance and are
@@ -223,7 +229,8 @@ export class ExtensionServerLifecycle {
   private stillWanted(record: ExtensionRecord): boolean {
     return (
       ['enabled', 'compiled', 'active'].includes(record.status) &&
-      mayRunExtensionCode(record, configManager.get('extensions'))
+      mayRunExtensionCode(record, configManager.get('extensions')) &&
+      (!this.options.recordOf || this.options.recordOf(record.id) === record)
     );
   }
 
@@ -318,6 +325,11 @@ export class ExtensionServerLifecycle {
     id: string,
     record: ExtensionRecord
   ): Promise<{ ok: boolean; error?: string }> {
+    if (!this.registrationCustody.permits(id))
+      return {
+        ok: false,
+        error: 'Extension server cleanup is unverified. Restart DorkOS before trying again.',
+      };
     const active = this.serverExtensions.get(id);
     const hasServerCapability = record.hasServerEntry || record.hasDataProxy;
     if (!hasServerCapability || !['enabled', 'compiled', 'active'].includes(record.status)) {
@@ -426,7 +438,14 @@ export class ExtensionServerLifecycle {
       // Not in cache yet
     }
 
-    let registered: (() => void) | undefined;
+    if (!this.stillWanted(record))
+      return { ok: false, error: 'Extension was turned off while it was starting' };
+    const occurrence = this.registrationCustody.begin(id);
+    let registrarEntered = false;
+    let registrarSettled = false;
+    let disposeContext: (() => void) | undefined;
+    let originalCleanup: (() => void) | undefined;
+    let published: ActiveServerExtension | undefined;
     let closeTools: (() => void) | undefined;
     try {
       const mod = require(tempFile);
@@ -448,12 +467,20 @@ export class ExtensionServerLifecycle {
           dorkHome: this.dorkHome,
           extensionName: record.manifest.name,
           toolChecks,
+          registrationRecovery: 'restart-app',
+          ownOriginal: (enter) => occurrence.runOriginal(enter),
+          requireCurrent: () => {
+            if (!this.stillWanted(record))
+              throw new Error('Extension server registration was replaced.');
+            occurrence.requireCurrent();
+          },
         });
       // A register() that throws after adding an account listener or advisor
       // must not leave it behind: this instance never becomes active.
-      registered = releaseListeners;
+      disposeContext = dispose;
       closeTools = () => tools.close();
 
+      registrarEntered = true;
       const outcome = await settleWithin(
         Promise.resolve(registerFn(router, ctx)),
         this.registerTimeoutMs
@@ -461,25 +488,29 @@ export class ExtensionServerLifecycle {
       if (outcome.timedOut) {
         // It may still finish later. Whatever it hands back then is cleaned up
         // and never mounted: this instance is not active.
-        void outcome.late.then(
-          (late) => {
-            if (typeof late === 'function') (late as () => void)();
-          },
-          () => undefined
-        );
+        occurrence.unknown();
+        void outcome.late
+          .then(
+            (late) => {
+              if (typeof late === 'function') return occurrence.late(late as () => void);
+            },
+            (value: unknown) => occurrence.fail(value)
+          )
+          .catch(() => undefined);
         // Cancel what it scheduled, release what it registered, and make
-        // anything it still tries later a no-op: a retry then starts a fresh
-        // instance, and nothing of this one keeps running beside it.
-        dispose();
-        registered = undefined;
+        // anything it still tries later a no-op. Missing registrar return remains
+        // UNKNOWN: later reloads cannot start another copy beside this one.
+        await occurrence.retire([dispose]);
         const seconds = Math.round(this.registerTimeoutMs / 1000);
-        const message = extensionServerErrorCopy(REGISTER_TIMEOUT_ERROR, record.manifest.name)!;
+        const message = `${record.manifest.name} took too long to start. Restart the DorkOS app before trying again.`;
         record.serverError = { code: REGISTER_TIMEOUT_ERROR, message };
         logger.warn(`[Extensions] Server init timed out for ${id} after ${seconds}s`);
         return { ok: false, error: message };
       }
+      registrarSettled = true;
       const result = outcome.value;
       const cleanup = typeof result === 'function' ? result : null;
+      originalCleanup = cleanup ?? undefined;
 
       // register() finished: no more handlers. Only an instance that started
       // has tools, and only the declared tools it handled (DOR-2685).
@@ -494,16 +525,7 @@ export class ExtensionServerLifecycle {
       // Asked again now that register() has run: a turn-off or revoke that
       // arrived meanwhile wins, and this instance is released, not stored.
       if (!this.stillWanted(record)) {
-        tools.close();
-        dispose();
-        registered = undefined;
-        if (cleanup) {
-          try {
-            cleanup();
-          } catch (err) {
-            logger.warn(`[Extensions] Cleanup error for ${id}:`, err);
-          }
-        }
+        await occurrence.retire([dispose, ...(cleanup ? [cleanup] : [])]);
         // Started (above) lifted the stop on its messages; nothing runs now.
         getAgentSendService()?.extensionStopped(id);
         logger.info(`[Extensions] ${id} was turned off or stopped while starting; left off`);
@@ -513,7 +535,7 @@ export class ExtensionServerLifecycle {
       // this one takes its place.
       await this.stop(id);
 
-      this.serverExtensions.set(id, {
+      const instance: ActiveServerExtension = {
         extensionId: id,
         router,
         cleanup,
@@ -521,8 +543,11 @@ export class ExtensionServerLifecycle {
         releaseListeners,
         sourceKey,
         agentTools,
-      });
-      registered = undefined;
+        disposeCtx: dispose,
+      };
+      this.registrations.set(instance, occurrence);
+      this.serverExtensions.set(id, instance);
+      published = instance;
 
       // Only now, with the instance active, can agents reach its tools. A
       // refusal leaves the extension running without them and says why on
@@ -542,9 +567,26 @@ export class ExtensionServerLifecycle {
       logger.info(`[Extensions] Server initialized for ${id}`);
       return { ok: true };
     } catch (err) {
-      registered?.();
-      // Nor are its tools ever offered: it never started.
-      closeTools?.();
+      // Reserve the original failure before cleanup; falsy causes are not absence.
+      occurrence.fail(err);
+      if (registrarEntered && !registrarSettled) occurrence.unknown();
+      if (published) {
+        // A publication callback can throw; retire the exact instance, not a successor.
+        try {
+          await this.stop(id);
+        } catch {
+          /* The bank retains the original failure. */
+        }
+      } else {
+        try {
+          await occurrence.retire([
+            ...(disposeContext ? [disposeContext] : closeTools ? [closeTools] : []),
+            ...(originalCleanup ? [originalCleanup] : []),
+          ]);
+        } catch {
+          /* The original registrar failure remains primary. */
+        }
+      }
       logger.error(`[Extensions] Server init failed for ${id}:`, err);
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
@@ -574,6 +616,26 @@ export class ExtensionServerLifecycle {
     const active = this.serverExtensions.get(id);
     if (!active) {
       this.cancelRestart(id);
+      this.registrationCustody.requireReleased(id);
+      return;
+    }
+
+    const occurrence = this.registrations.get(active);
+    if (occurrence) {
+      // Unpublish exact authority before callbacks; the bank survives removal.
+      if (this.serverExtensions.get(id) === active) this.serverExtensions.delete(id);
+      this.cancelRestart(id);
+      await occurrence.retire([
+        () => active.agentTools?.stop(),
+        () => getExtensionInbox()?.markStopped(id),
+        () => getAgentSendService()?.extensionStopped(id),
+        ...active.scheduledCleanups,
+        ...(active.cleanup ? [() => active.cleanup?.()] : []),
+        ...(active.releaseListeners ? [() => active.releaseListeners?.()] : []),
+        ...(active.closeTools ? [() => active.closeTools?.()] : []),
+        ...(active.disposeCtx ? [() => active.disposeCtx?.()] : []),
+      ]);
+      logger.info(`[Extensions] Server shutdown for ${id}`);
       return;
     }
 

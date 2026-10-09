@@ -1,3 +1,8 @@
+import { BrowserStorageStateSchema } from './browser-storage-state-schemas.js';
+export {
+  BrowserStorageStateSchema,
+  type BrowserStorageState,
+} from './browser-storage-state-schemas.js';
 import { createBrowserCaptureSchemas } from './browser-capture-schemas.js';
 /** Strict browser-safe managed-browser projections. Parsing never authorizes an actor or activates a runtime. */
 import { z } from 'zod';
@@ -31,13 +36,14 @@ export const BrowserPermissionSchema = z.enum([
   'browser.secretInput',
   'browser.diagnostics',
   'browser.download',
+  'browser.upload',
   'browser.artifact',
   'browser.manageProfile',
 ]);
 const permissions = z
   .array(BrowserPermissionSchema)
   .min(1)
-  .max(7)
+  .max(8)
   .refine((items) => new Set(items).size === items.length);
 /** Scoped attachment reference; room/session membership alone grants no browser access. */
 export const BrowserAttachmentSchema = z.discriminatedUnion('kind', [
@@ -163,7 +169,11 @@ export const BrowserControlSchema = boundedBrowserJson(
 /** Disposable viewer reference contains no stream credentials or authority ticket. */
 export const BrowserViewerSchema = boundedBrowserJson(
   z
-    .object({ viewerId: ref, binding: BrowserBindingSchema, expiresAt: BrowserTimestampSchema })
+    .object({
+      viewerId: ref,
+      binding: BrowserBindingSchema,
+      expiresAt: BrowserTimestampSchema,
+    })
     .strict()
 );
 /** Capture request binds the canonical Page without asking for private engine objects. */
@@ -195,13 +205,33 @@ const key = z.enum([
 /** Structured bounded pixel/keyboard steps, excluding selectors, evaluation and executable commands. */
 export const BrowserInputStepSchema = boundedBrowserJson(
   z.discriminatedUnion('kind', [
-    z.object({ kind: z.literal('click'), x: coordinate, y: coordinate, button }).strict(),
+    z
+      .object({
+        kind: z.literal('click'),
+        x: coordinate,
+        y: coordinate,
+        button,
+      })
+      .strict(),
     z.object({ kind: z.literal('mouseMove'), x: coordinate, y: coordinate }).strict(),
     z.object({ kind: z.literal('mouseDown'), button }).strict(),
     z.object({ kind: z.literal('mouseUp'), button }).strict(),
     z.object({ kind: z.literal('keyDown'), key }).strict(),
     z.object({ kind: z.literal('keyUp'), key }).strict(),
     z.object({ kind: z.literal('text'), text: browserText(2048) }).strict(),
+    z
+      .object({
+        kind: z.literal('composition'),
+        text: browserText(2048),
+        selectionStart: z.number().int().nonnegative().max(2048),
+        selectionEnd: z.number().int().nonnegative().max(2048),
+      })
+      .strict()
+      .refine(
+        (value) =>
+          value.selectionStart <= value.selectionEnd && value.selectionEnd <= value.text.length
+      ),
+    z.object({ kind: z.literal('compositionCommit'), text: browserText(2048) }).strict(),
     z
       .object({
         kind: z.literal('wheel'),
@@ -284,7 +314,11 @@ export const BrowserErrorSchema = boundedBrowserJson(
 export const BrowserActionReceiptSchema = boundedBrowserJson(
   z.union([
     z
-      .object({ requestId: ref, binding: BrowserBindingSchema, outcome: z.literal('completed') })
+      .object({
+        requestId: ref,
+        binding: BrowserBindingSchema,
+        outcome: z.literal('completed'),
+      })
       .strict(),
     z
       .object({
@@ -358,7 +392,10 @@ export const BrowserDiagnosticSchema = boundedBrowserJson(
 
 /** New negotiated projections; existing binding/frame/ACK schema identities stay unchanged. */
 export const { BrowserFramePointerEnvelopeSchema, BrowserDiagnosticSummarySchema } =
-  createBrowserCaptureSchemas({ binding: BrowserBindingSchema, frame: BrowserFrameSchema });
+  createBrowserCaptureSchemas({
+    binding: BrowserBindingSchema,
+    frame: BrowserFrameSchema,
+  });
 /** Exact inferred capture geometry projection. */
 export type BrowserFramePointerEnvelope = z.infer<typeof BrowserFramePointerEnvelopeSchema>;
 /** Exact inferred scalar diagnostic summary. */
@@ -413,3 +450,423 @@ export type BrowserControl = z.infer<typeof BrowserControlSchema>;
 export type BrowserViewer = z.infer<typeof BrowserViewerSchema>;
 /** Canonical capture request. */
 export type BrowserCaptureRequest = z.infer<typeof BrowserCaptureRequestSchema>;
+
+/** Initial document URL for a newly acquired clean browser, before any controller/input.
+ * Native ordinary policy and protected egress admission remain independent required checks. */
+export const BrowserProductionInitialUrlSchema = z
+  .string()
+  .max(2048)
+  .refine((value) => {
+    try {
+      const url = new URL(value);
+      return (
+        ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password && !url.hash
+      );
+    } catch {
+      return false;
+    }
+  });
+/** Explicit clean or existing named-profile acquisition; no caller path or storage seeding. */
+export const BrowserProductionOpenRequestSchema = boundedBrowserJson(
+  z
+    .object({
+      workspaceId: ref,
+      initialUrl: BrowserProductionInitialUrlSchema.optional(),
+      request: BrowserOpenRequestSchema,
+    })
+    .strict()
+);
+/** Actual original acquisition correlation; a response cannot select a different instance/binding. */
+export const BrowserProductionOpenReceiptSchema = boundedBrowserJson(
+  z
+    .object({
+      requestId: ref,
+      instance: BrowserInstanceSchema,
+      binding: BrowserBindingSchema,
+    })
+    .strict()
+    .refine(
+      (value) =>
+        value.instance.status === 'running' &&
+        value.instance.browserId === value.binding.browserId &&
+        value.instance.browserGeneration === value.binding.browserGeneration,
+      'Browser acquisition does not match its current binding'
+    )
+);
+/** Actual production owner projection. Stored enabled/capability presence never imply this ready
+ * branch means verified startup-mode admission, not an acquired Page; each open must freshly acquire original incoming actor/native/lease/config authority. */
+export const BrowserProductionStatusSchema = boundedBrowserJson(
+  z.discriminatedUnion('state', [
+    z.object({ state: z.literal('disabled'), enabled: z.literal(false) }).strict(),
+    z
+      .object({
+        state: z.literal('unavailable'),
+        enabled: z.boolean(),
+        cause: z.enum([
+          'authRequired',
+          'nativeUnavailable',
+          'ownerUnavailable',
+          'custodyUnavailable',
+        ]),
+      })
+      .strict(),
+    z
+      .object({
+        state: z.literal('qualification'),
+        enabled: z.literal(true),
+        readiness: z.literal('unverified'),
+        workspaces: z
+          .array(z.object({ workspaceId: ref, label: browserPlainText(512) }).strict())
+          .max(64),
+      })
+      .strict(),
+    z
+      .object({
+        state: z.literal('ready'),
+        enabled: z.literal(true),
+        readiness: z.literal('accepted').optional(),
+        workspaces: z
+          .array(z.object({ workspaceId: ref, label: browserPlainText(512) }).strict())
+          .max(64),
+      })
+      .strict(),
+  ])
+);
+/** Canonical bounded current-tab snapshot, empty only for an actual original empty snapshot. */
+export const BrowserProductionBindingsSchema = boundedBrowserJson(
+  z.object({ bindings: z.array(BrowserBindingSchema).max(64) }).strict()
+);
+/** Human control request; body carries no owner/controller/grant manufacturing fields. */
+export const BrowserProductionControlRequestSchema = boundedBrowserJson(
+  z.object({ binding: BrowserBindingSchema }).strict()
+);
+/** Correlated original production acquisition projection. */
+export type BrowserProductionOpenReceipt = z.infer<typeof BrowserProductionOpenReceiptSchema>;
+/** Owner-qualified production mode status, never Page permission. */
+export type BrowserProductionStatus = z.infer<typeof BrowserProductionStatusSchema>;
+
+/** Explicit Settings opt-in; the boolean carries no native/actor authority. */
+export const BrowserProductionEnableRequestSchema = boundedBrowserJson(
+  z
+    .object({ enabled: z.boolean(), chromeUserAgent: z.boolean().optional() })
+    .strict()
+    .refine((value) => value.chromeUserAgent === undefined || value.enabled === false, {
+      message: 'Choose Chrome identity only while Shared browser is off.',
+    })
+);
+
+/** Explicit owner/controller navigation request. Wire references never mint private permission. */
+export const BrowserProductionNavigateRequestSchema = boundedBrowserJson(
+  z
+    .object({
+      command: BrowserNavigateRequestSchema,
+      controllerId: ref,
+    })
+    .strict()
+);
+/** Exact original request correlation and observed successor document binding. */
+export const BrowserProductionNavigateReceiptSchema = boundedBrowserJson(
+  z
+    .object({
+      requestId: ref,
+      binding: BrowserBindingSchema,
+    })
+    .strict()
+);
+/** Metadata returned only after original authenticated navigation settlement. */
+export type BrowserProductionNavigateReceipt = z.infer<
+  typeof BrowserProductionNavigateReceiptSchema
+>;
+
+/** Owner-authenticated creation of named metadata only; no storage/path or actor DTO. */
+export const BrowserProductionProfileCreateRequestSchema = boundedBrowserJson(
+  z
+    .object({
+      requestId: ref,
+      label: browserPlainText(512).refine((value) => value.trim().length > 0),
+    })
+    .strict()
+);
+export const BrowserProductionProfileCreateReceiptSchema = boundedBrowserJson(
+  z.object({ requestId: ref, profile: BrowserProfileSchema }).strict()
+);
+/** Owner-authorized import always allocates a new named profile; no destination ID is accepted. */
+export const BrowserProductionProfileImportRequestSchema = boundedBrowserJson(
+  z
+    .object({
+      requestId: ref,
+      label: browserPlainText(512).refine((value) => value.trim().length > 0),
+      workspaceId: ref,
+      storageState: BrowserStorageStateSchema,
+    })
+    .strict()
+);
+export const BrowserProductionProfileImportReceiptSchema =
+  BrowserProductionProfileCreateReceiptSchema;
+export type BrowserProductionProfileImportRequest = z.infer<
+  typeof BrowserProductionProfileImportRequestSchema
+>;
+export type BrowserProductionProfileImportReceipt = z.infer<
+  typeof BrowserProductionProfileImportReceiptSchema
+>;
+export type BrowserProductionProfileCreateRequest = z.infer<
+  typeof BrowserProductionProfileCreateRequestSchema
+>;
+export type BrowserProductionProfileCreateReceipt = z.infer<
+  typeof BrowserProductionProfileCreateReceiptSchema
+>;
+
+/** Explicit separate diagnostics grant; controller/view tickets cannot replace it. */
+export const BrowserDiagnosticsRequestSchema = boundedBrowserJson(
+  z
+    .object({
+      binding: BrowserBindingSchema,
+      grant: z.object({ grantId: ref, revision: counter }).strict(),
+    })
+    .strict()
+);
+export type BrowserDiagnosticsRequest = z.infer<typeof BrowserDiagnosticsRequestSchema>;
+
+/** Exact staged ID and canonical click coordinates; independent upload/artifact/control grants remain required. */
+export const BrowserUploadRequestSchema = boundedBrowserJson(
+  z
+    .object({
+      kind: z.literal('upload'),
+      requestId: ref,
+      binding: BrowserBindingSchema,
+      artifactId: ref,
+      activation: z
+        .object({
+          x: z.number().finite().min(0).max(16384),
+          y: z.number().finite().min(0).max(16384),
+        })
+        .strict(),
+    })
+    .strict()
+);
+export type BrowserUploadRequest = z.infer<typeof BrowserUploadRequestSchema>;
+
+/** One explicitly admitted same-tab native response; activation alone never grants a download. */
+export const BrowserDownloadRequestSchema = boundedBrowserJson(
+  z
+    .object({
+      kind: z.literal('download'),
+      requestId: ref,
+      binding: BrowserBindingSchema,
+      activation: z
+        .object({
+          x: z.number().finite().min(0).max(16384),
+          y: z.number().finite().min(0).max(16384),
+        })
+        .strict(),
+    })
+    .strict()
+);
+export type BrowserDownloadRequest = z.infer<typeof BrowserDownloadRequestSchema>;
+
+/** An owner explicitly approves one loopback HTTP endpoint for this browser, never an app endpoint. */
+export const BrowserLocalDestinationRequestSchema = boundedBrowserJson(
+  z
+    .object({
+      requestId: ref,
+      binding: BrowserBindingSchema,
+      endpoint: z
+        .string()
+        .max(512)
+        .refine((value) => {
+          try {
+            const url = new URL(value);
+            return (
+              url.protocol === 'http:' &&
+              ['127.0.0.1', '[::1]'].includes(url.hostname) &&
+              !url.username &&
+              !url.password &&
+              url.pathname === '/' &&
+              !url.search &&
+              !url.hash
+            );
+          } catch {
+            return false;
+          }
+        }),
+      ttlMilliseconds: z.number().int().min(1).max(300000),
+    })
+    .strict()
+);
+export const BrowserLocalDestinationReceiptSchema = boundedBrowserJson(
+  z
+    .object({
+      requestId: ref,
+      binding: BrowserBindingSchema,
+      endpoint: z.string().max(512),
+      expiresAt: z.string().datetime(),
+    })
+    .strict()
+);
+export type BrowserLocalDestinationRequest = z.infer<typeof BrowserLocalDestinationRequestSchema>;
+export type BrowserLocalDestinationReceipt = z.infer<typeof BrowserLocalDestinationReceiptSchema>;
+
+/** Explicit self grant; identity/recipient are resolved by the server, never supplied by this DTO. */
+export const BrowserHumanGrantRequestSchema = boundedBrowserJson(
+  z
+    .object({
+      binding: BrowserBindingSchema,
+      attachment: BrowserAttachmentSchema,
+      permissions: z
+        .array(
+          z.enum(['browser.diagnostics', 'browser.artifact', 'browser.upload', 'browser.download'])
+        )
+        .min(1)
+        .max(4)
+        .refine((values) => new Set(values).size === values.length),
+      expiresInMs: z.number().int().min(1).max(300000),
+    })
+    .strict()
+);
+export const BrowserFileGrantReferenceSchema = z
+  .object({ grantId: ref, revision: counter })
+  .strict();
+export const BrowserHumanGrantRevokeSchema = boundedBrowserJson(
+  z
+    .object({
+      binding: BrowserBindingSchema,
+      grant: BrowserFileGrantReferenceSchema,
+      permission: z.enum([
+        'browser.diagnostics',
+        'browser.artifact',
+        'browser.upload',
+        'browser.download',
+      ]),
+    })
+    .strict()
+);
+/** Bounded base64 fits the original app's 1 MiB JSON body limit; native staging remains independently bounded. */
+export const BrowserHumanStageRequestSchema = boundedBrowserJson(
+  z
+    .object({
+      binding: BrowserBindingSchema,
+      artifactGrant: BrowserFileGrantReferenceSchema,
+      name: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._ -]{0,127}$/u),
+      mimeType: z.enum(['text/plain', 'application/pdf', 'image/png', 'image/jpeg']),
+      base64: z
+        .string()
+        .min(4)
+        .max(699052)
+        .regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u),
+    })
+    .strict(),
+  720000
+);
+export const BrowserHumanStageReceiptSchema = boundedBrowserJson(
+  z.object({ artifactId: ref, byteLength: z.number().int().min(1).max(524288) }).strict()
+);
+const humanCommand = {
+  binding: BrowserBindingSchema,
+  controllerId: ref,
+  artifactGrant: BrowserFileGrantReferenceSchema,
+  transferGrant: BrowserFileGrantReferenceSchema,
+  controlGrant: BrowserFileGrantReferenceSchema.optional(),
+};
+const sameFileBinding = (value: {
+  binding: BrowserBinding;
+  command: { binding: BrowserBinding };
+}) =>
+  Object.keys(value.binding).every(
+    (key) =>
+      value.binding[key as keyof BrowserBinding] ===
+      value.command.binding[key as keyof BrowserBinding]
+  );
+export const BrowserHumanUploadRequestSchema = boundedBrowserJson(
+  z
+    .object({ ...humanCommand, command: BrowserUploadRequestSchema })
+    .strict()
+    .refine(sameFileBinding)
+);
+export const BrowserHumanDownloadRequestSchema = boundedBrowserJson(
+  z
+    .object({ ...humanCommand, command: BrowserDownloadRequestSchema })
+    .strict()
+    .refine(sameFileBinding)
+);
+export const BrowserHumanArtifactReadRequestSchema = boundedBrowserJson(
+  z
+    .object({
+      binding: BrowserBindingSchema,
+      artifactGrant: BrowserFileGrantReferenceSchema,
+      artifactId: ref,
+    })
+    .strict()
+);
+export const BrowserHumanDownloadReceiptSchema = boundedBrowserJson(
+  z
+    .object({
+      input: BrowserActionReceiptSchema,
+      artifact: z
+        .object({
+          artifactId: ref,
+          byteLength: z.number().int().min(1).max(2097152),
+          name: z.string().max(128),
+          mimeType: z.string().max(128),
+        })
+        .strict(),
+    })
+    .strict()
+    .refine((value) => value.input.outcome === 'completed')
+);
+export const BrowserHumanArtifactReceiptSchema = boundedBrowserJson(
+  z
+    .object({
+      artifactId: ref,
+      byteLength: z.number().int().min(1).max(2097152),
+      name: z.string().max(128),
+      mimeType: z.string().max(128),
+      base64: z
+        .string()
+        .min(4)
+        .max(2796204)
+        .regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u),
+    })
+    .strict(),
+  2820000
+);
+export type BrowserHumanGrantRequest = z.infer<typeof BrowserHumanGrantRequestSchema>;
+export type BrowserHumanGrantRevoke = z.infer<typeof BrowserHumanGrantRevokeSchema>;
+export type BrowserHumanStageRequest = z.infer<typeof BrowserHumanStageRequestSchema>;
+export type BrowserHumanStageReceipt = z.infer<typeof BrowserHumanStageReceiptSchema>;
+export type BrowserHumanUploadRequest = z.infer<typeof BrowserHumanUploadRequestSchema>;
+export type BrowserHumanDownloadRequest = z.infer<typeof BrowserHumanDownloadRequestSchema>;
+export type BrowserHumanDownloadReceipt = z.infer<typeof BrowserHumanDownloadReceiptSchema>;
+export type BrowserHumanArtifactReadRequest = z.infer<typeof BrowserHumanArtifactReadRequestSchema>;
+export type BrowserHumanArtifactReceipt = z.infer<typeof BrowserHumanArtifactReceiptSchema>;
+
+/** Copy reads only a bounded, non-secret selection under the current controller. */
+export const BrowserCopySelectionRequestSchema = boundedBrowserJson(
+  z
+    .object({
+      requestId: ref,
+      binding: BrowserBindingSchema,
+    })
+    .strict()
+);
+export const BrowserCopySelectionReceiptSchema = boundedBrowserJson(
+  z.discriminatedUnion('outcome', [
+    z
+      .object({
+        requestId: ref,
+        binding: BrowserBindingSchema,
+        outcome: z.literal('selected'),
+        text: browserText(2048).refine((value) => value.length > 0),
+      })
+      .strict(),
+    z
+      .object({
+        requestId: ref,
+        binding: BrowserBindingSchema,
+        outcome: z.literal('refused'),
+        reason: z.enum(['secret', 'selection', 'unsupported', 'capacity']),
+      })
+      .strict(),
+  ])
+);
+export type BrowserCopySelectionRequest = z.infer<typeof BrowserCopySelectionRequestSchema>;
+export type BrowserCopySelectionReceipt = z.infer<typeof BrowserCopySelectionReceiptSchema>;

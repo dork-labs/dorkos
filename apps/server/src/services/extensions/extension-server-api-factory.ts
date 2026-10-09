@@ -1,3 +1,4 @@
+import { retainCleanup, releaseTogether } from './server-lifecycle/retained-cleanup.js';
 /**
  * Factory for building a {@link DataProviderContext} per server-side extension.
  *
@@ -18,7 +19,6 @@ import {
   type DataProviderContext,
 } from '@dorkos/extension-api/server';
 import { LEDGER_RUNTIMES, type LedgerRuntime } from '@dorkos/shared/account-usage';
-import { writeFileAtomic } from '@dorkos/shared/atomic-write';
 import { ExtensionSecretStore } from '@dorkos/shared/extension-secrets';
 import { ExtensionSettingsStore } from '@dorkos/shared/extension-settings';
 import { eventFanOut } from '../core/event-fan-out.js';
@@ -34,12 +34,16 @@ import {
   createProjectSettingsReader,
   createRequirePerson,
 } from './inbox/extension-inbox-context.js';
-import fs from 'fs/promises';
 import { mkdirSync } from 'fs';
 import path from 'path';
 import { logger } from '../../lib/logger.js';
 import { createToolBinding, type ToolBinding } from './agent-tools/tool-binding.js';
 import type { ExtensionToolCheck } from '@dorkos/extension-api/tool-check';
+import {
+  captureContextCurrentness,
+  createContextStorage,
+  scopeContextOccurrence,
+} from './server-lifecycle/context-occurrence.js';
 import { isolatedFilesDir } from './isolation/grants.js';
 
 /** Minimum scheduling interval in seconds (prevents tight loops). */
@@ -83,14 +87,13 @@ function createAccountsApi(extensionId: string): { accounts: AccountsApi; releas
   }
 
   function track(remove: () => void): () => void {
-    let removed = false;
-    const once = () => {
-      if (removed) return;
-      removed = true;
-      releases.delete(once);
+    const once = retainCleanup(() => {
       remove();
-    };
+      releases.delete(once);
+    });
     releases.add(once);
+    // The producer may synchronously release this context before returning its receipt.
+    if (released) once();
     return once;
   }
 
@@ -144,16 +147,10 @@ function createAccountsApi(extensionId: string): { accounts: AccountsApi; releas
 
   return {
     accounts,
-    release: () => {
+    release: retainCleanup(() => {
       released = true;
-      for (const remove of [...releases]) {
-        try {
-          remove();
-        } catch (err) {
-          logger.warn(`[ext:${extensionId}] releasing an account listener failed:`, err);
-        }
-      }
-    },
+      releaseTogether([...releases]);
+    }),
   };
 }
 
@@ -205,23 +202,21 @@ function createAgentApi(extensionId: string): { agent: AgentApi; release: () => 
         return () => {};
       }
       const remove = service.subscribe(extensionId, listener);
-      let removed = false;
-      const once = () => {
-        if (removed) return;
-        removed = true;
-        releases.delete(once);
+      const once = retainCleanup(() => {
         remove();
-      };
+        releases.delete(once);
+      });
       releases.add(once);
+      if (released) once();
       return once;
     },
   };
   return {
     agent,
-    release: () => {
+    release: retainCleanup(() => {
       released = true;
-      for (const remove of [...releases]) remove();
-    },
+      releaseTogether([...releases]);
+    }),
   };
 }
 
@@ -238,6 +233,12 @@ interface CreateContextDeps {
    * means the extension declares none, and every `handle` call is refused.
    */
   toolChecks?: readonly ExtensionToolCheck[];
+  /** Private in-process registrar recovery; an isolated child keeps its ordinary reload path. */
+  registrationRecovery?: 'restart-app';
+  /** Private original in-process registration guard; never sent to isolated children. */
+  requireCurrent?: () => void;
+  /** Private original context duty bank; retirement joins entered work. */
+  ownOriginal?: <T>(enter: () => Promise<T>) => Promise<T>;
 }
 
 /**
@@ -279,20 +280,37 @@ export function createDataProviderContext(deps: CreateContextDeps): {
   // Set when this instance was given up on (its `register()` never finished):
   // whatever it still does afterwards must start nothing (see `dispose`).
   let disposed = false;
+  const originalCurrent = deps.requireCurrent;
+  const ownOriginal = deps.ownOriginal?.bind(deps);
+  const requireCurrent = captureContextCurrentness(deps, originalCurrent, () => disposed);
   let toldDisposed = false;
+  const recovery =
+    deps.registrationRecovery === 'restart-app'
+      ? 'Restart the DorkOS app before trying again.'
+      : 'Reload the extension to try again.';
+  const stoppedRecovery =
+    deps.registrationRecovery === 'restart-app' ? recovery : 'Reload it to try again.';
   const inert = (what: string): (() => void) => {
     if (!toldDisposed) {
       toldDisposed = true;
       logger.warn(
         `[ext:${extensionId}] ${what} was called after DorkOS stopped waiting for this ` +
-          `extension to start; it does nothing. Reload the extension to try again.`
+          `extension to start; it does nothing. ${recovery}`
       );
     }
     return () => undefined;
   };
 
-  const secrets = new ExtensionSecretStore(extensionId, dorkHome);
-  const settings = new ExtensionSettingsStore(dorkHome, extensionId);
+  const secrets = new ExtensionSecretStore(
+    extensionId,
+    dorkHome,
+    originalCurrent ? requireCurrent : undefined
+  );
+  const settings = new ExtensionSettingsStore(
+    dorkHome,
+    extensionId,
+    originalCurrent ? requireCurrent : undefined
+  );
 
   const dataPath = path.join(dorkHome, 'extension-data', extensionId, 'data.json');
 
@@ -306,19 +324,7 @@ export function createDataProviderContext(deps: CreateContextDeps): {
     logger.warn(`[ext:${extensionId}] couldn't create its files folder:`, err);
   }
 
-  const storage = {
-    async loadData<T = unknown>(): Promise<T | null> {
-      try {
-        const raw = await fs.readFile(dataPath, 'utf-8');
-        return JSON.parse(raw) as T;
-      } catch {
-        return null;
-      }
-    },
-    async saveData<T = unknown>(data: T): Promise<void> {
-      await writeFileAtomic(dataPath, JSON.stringify(data, null, 2));
-    },
-  };
+  const storage = createContextStorage(dataPath, requireCurrent);
 
   function schedule(intervalSeconds: number, fn: () => Promise<void>): () => void {
     if (disposed) return inert('ctx.schedule');
@@ -328,22 +334,34 @@ export function createDataProviderContext(deps: CreateContextDeps): {
         logger.error(`[ext:${extensionId}] Scheduled task error:`, err);
       });
     }, clamped * 1000);
-    const cancel = () => clearInterval(interval);
+    const cancel = retainCleanup(() => clearInterval(interval));
     scheduledCleanups.push(cancel);
     return cancel;
   }
 
   function emit(event: string, data: unknown): void {
-    eventFanOut.broadcast(`ext:${extensionId}:${event}`, data);
+    const broadcast = eventFanOut.broadcast;
+    const name = `ext:${extensionId}:${event}`;
+    requireCurrent();
+    broadcast.call(eventFanOut, name, data);
   }
 
   const extensionName = deps.extensionName ?? extensionId;
   const { accounts, release: releaseAccounts } = createAccountsApi(extensionId);
-  const { projects, release: releaseProjects } = createProjectsApi(extensionId, projectRegistry);
-  const { inbox, release: releaseInbox } = createInboxApi(extensionId, extensionName);
+  const { projects, release: releaseProjects } = createProjectsApi(
+    extensionId,
+    projectRegistry,
+    originalCurrent ? requireCurrent : undefined
+  );
+  const { inbox, release: releaseInbox } = createInboxApi(
+    extensionId,
+    extensionName,
+    originalCurrent ? requireCurrent : undefined
+  );
   const { projectSettings, release: releaseProjectSettings } = createProjectSettingsReader(
     extensionId,
-    dorkHome
+    dorkHome,
+    originalCurrent ? requireCurrent : undefined
   );
   const { agent, release: releaseAgent } = createAgentApi(extensionId);
   const tools = createToolBinding(extensionId, deps.toolChecks ?? []);
@@ -374,7 +392,7 @@ export function createDataProviderContext(deps: CreateContextDeps): {
         inert('agent.send');
         throw new AgentSendError(
           'stopped',
-          'This extension was stopped before it finished starting, so it cannot send messages. Reload it to try again.'
+          `This extension was stopped before it finished starting, so it cannot send messages. ${stoppedRecovery}`
         );
       }
       return agent.send(input);
@@ -409,7 +427,7 @@ export function createDataProviderContext(deps: CreateContextDeps): {
         if (disposed) {
           inert('sessions.start');
           throw new Error(
-            'This extension was stopped before it finished starting, so it cannot start chats. Reload it to try again.'
+            `This extension was stopped before it finished starting, so it cannot start chats. ${stoppedRecovery}`
           );
         }
         const service = getStartWorkService();
@@ -421,16 +439,22 @@ export function createDataProviderContext(deps: CreateContextDeps): {
     tools: tools.api,
   };
 
-  const releaseListeners = () => {
-    releaseAccounts();
-    releaseProjects();
-    releaseInbox();
-    releaseProjectSettings();
-    releaseAgent();
-  };
+  const listenerReleases = [
+    releaseAccounts,
+    releaseProjects,
+    releaseInbox,
+    releaseProjectSettings,
+    releaseAgent,
+  ].map(retainCleanup);
+  const releaseListeners = retainCleanup(() => releaseTogether(listenerReleases));
+  const closeTools = retainCleanup(() => tools.close());
+  const dispose = retainCleanup(() => {
+    disposed = true;
+    releaseTogether([closeTools, ...scheduledCleanups.splice(0), releaseListeners]);
+  });
 
   return {
-    ctx,
+    ctx: originalCurrent ? scopeContextOccurrence(ctx, requireCurrent, ownOriginal) : ctx,
     getScheduledCleanups: () => [...scheduledCleanups],
     releaseListeners,
     tools,
@@ -440,18 +464,6 @@ export function createDataProviderContext(deps: CreateContextDeps): {
      * no-op (logged once). For a `register()` DorkOS stopped waiting for, which
      * may still run on in the background (`extension-server-lifecycle.ts`).
      */
-    dispose: () => {
-      disposed = true;
-      // A given-up instance never offers tools, whatever it binds later.
-      tools.close();
-      for (const cancel of scheduledCleanups.splice(0)) {
-        try {
-          cancel();
-        } catch {
-          /* swallow cancellation errors */
-        }
-      }
-      releaseListeners();
-    },
+    dispose,
   };
 }

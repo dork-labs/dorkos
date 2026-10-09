@@ -18,6 +18,8 @@
  * @module shared/lib/auth-signal
  */
 
+import { suspendExtensionLoads } from './extension-remount';
+
 import { invalidateCommunityAuthority } from './community-authority-state';
 
 type Listener = () => void;
@@ -25,6 +27,7 @@ type Listener = () => void;
 // ── auth-required signal ─────────────────────────────────────────────────────
 
 let authRequired = false;
+let authSignalOccurrence: object = {};
 const authRequiredListeners = new Set<Listener>();
 
 /** Whether a gated request has reported that login is required. */
@@ -34,10 +37,29 @@ export function getAuthRequired(): boolean {
 
 /** Flip the app-wide auth-required state (set true on a 401 AUTH_REQUIRED, false after sign-in). */
 export function setAuthRequired(value: boolean): void {
-  if (authRequired === value) return;
-  if (value) invalidateCommunityAuthority();
+  const turn = {};
+  authSignalOccurrence = turn;
+  const changed = authRequired !== value;
   authRequired = value;
-  authRequiredListeners.forEach((l) => l());
+  if (value) {
+    // Admission closes before community cleanup or signal listeners can reenter.
+    suspendExtensionLoads();
+    if (authSignalOccurrence !== turn) return;
+    try {
+      invalidateCommunityAuthority();
+    } catch {
+      /* No extension admission is restored. */
+    }
+  }
+  if (authSignalOccurrence !== turn || !changed) return;
+  for (const listener of [...authRequiredListeners]) {
+    if (authSignalOccurrence !== turn) return;
+    try {
+      listener();
+    } catch {
+      /* Attempt remaining current listeners. */
+    }
+  }
 }
 
 /** Subscribe to auth-required changes; returns an unsubscribe function. */

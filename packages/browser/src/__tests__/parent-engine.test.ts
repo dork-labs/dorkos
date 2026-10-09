@@ -290,14 +290,18 @@ it('capture deadline does not certify its still-held Page call settled or releas
   const h = fixture(),
     engine = createBrowserEngine(h.config),
     opened = await engine.open(command),
-    image = deferred<Uint8Array>();
-  h.raw.screenshot.mockImplementation(() => image.promise);
+    image = deferred<Uint8Array>(),
+    screenshotEntered = deferred<void>();
+  h.raw.screenshot.mockImplementation(() => {
+    screenshotEntered.resolve();
+    return image.promise;
+  });
   const capture = engine.capture({ kind: 'capture', requestId, binding: opened.tab });
   const failure = capture.then(
     () => null,
     (error: unknown) => error
   );
-  await tick();
+  await screenshotEntered.promise;
   await vi.advanceTimersByTimeAsync(2001);
   expect(await failure).toMatchObject({ code: 'CAPTURE_TIMEOUT' });
   const closing = engine.close({
@@ -306,6 +310,15 @@ it('capture deadline does not certify its still-held Page call settled or releas
     browserId: opened.browserId,
     browserGeneration: 0,
   });
+  let closeSettled = false;
+  void closing.then(() => {
+    closeSettled = true;
+  });
+  await tick();
+  expect(closeSettled).toBe(false);
+  expect(h.release).not.toHaveBeenCalled();
+  // Retirement joins the original screenshot under its unchanged input deadline.
+  await vi.advanceTimersByTimeAsync(2001);
   expect((await closing).cleanup).toBe('unverified');
   expect(h.release).not.toHaveBeenCalled();
   image.resolve(fakeJPEG(100, 80));

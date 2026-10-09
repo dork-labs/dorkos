@@ -7,7 +7,7 @@ import { FakeBody, FakeSocket } from './fake-transport.js';
 import { readWebSocketConnectHandshake } from '../websocket-connect.js';
 import { frameRequest } from '../framing.js';
 import { BROKER_LIMITS } from '../limits.js';
-import { ownNodeSocket } from '../node-transport-socket.js';
+import { ownNodeSocket } from '../node/node-transport-socket.js';
 
 const key = 'dGhlIHNhbXBsZSBub25jZQ==';
 const handshake = (authority = '127.0.0.1:43124', extra = '') =>
@@ -160,7 +160,7 @@ it.each(denied)(
 it('real broker CONNECT validates inner upgrade, exchanges text and closes on original revocation', async () => {
   const { createServer: createHTTPServer } = await import('node:http');
   const { WebSocket, WebSocketServer } = await import('ws');
-  const { createNodeBrokerTransport } = await import('../node-transport.js');
+  const { createNodeBrokerTransport } = await import('../node/node-transport.js');
   const originSockets = new Set<Socket>();
   let connections = 0,
     upgrades = 0;
@@ -248,7 +248,7 @@ it('real broker CONNECT validates inner upgrade, exchanges text and closes on or
 it.each(denied)(
   'real broker denies %s on accepted original before numeric dial',
   async (_name, bytes) => {
-    const { createNodeBrokerTransport } = await import('../node-transport.js');
+    const { createNodeBrokerTransport } = await import('../node/node-transport.js');
     const transport = createNodeBrokerTransport();
     const dial = vi.fn(transport.dial);
     const f = await fixture(),

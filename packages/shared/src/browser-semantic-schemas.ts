@@ -201,7 +201,10 @@ const snapshot = z
   .strict()
   .superRefine((value, context) => {
     const issue = () =>
-      context.addIssue({ code: 'custom', message: 'Invalid semantic graph or completeness' });
+      context.addIssue({
+        code: 'custom',
+        message: 'Invalid semantic graph or completeness',
+      });
     if ((value.completeness === 'complete') !== (value.reason === undefined)) issue();
     if (value.completeness !== 'complete' && value.nodes.some((item) => item.actions.length))
       issue();
@@ -266,25 +269,30 @@ const operation = z.discriminatedUnion('kind', [
     .strict(),
   z.object({ kind: z.literal('key'), key: SemanticKeyV1Schema }).strict(),
 ]);
+/** Canonical bounded action fields for private facades; this object carries no event-stream authority. */
+export const SemanticActionInputV1Schema = z
+  .object({
+    requestId: ref,
+    identity: SemanticIdentityV1Schema,
+    frameId: ref,
+    frameNavigationGeneration: counter,
+    nodeRef: ref,
+    focusRevision: counter,
+    action: operation,
+  })
+  .strict();
 /** Text edits require a stream; keys permit it structurally and require trusted context validation. */
 export const SemanticActionV1Schema = boundedBrowserJson(
-  z
-    .object({
-      requestId: ref,
-      identity: SemanticIdentityV1Schema,
-      frameId: ref,
-      frameNavigationGeneration: counter,
-      nodeRef: ref,
-      focusRevision: counter,
-      eventStreamId: ref.optional(),
-      action: operation,
-    })
-    .strict()
-    .superRefine((value, context) => {
-      const edit = ['insertText', 'replaceText', 'writeSecret'].includes(value.action.kind);
-      if (value.action.kind !== 'key' && edit !== (value.eventStreamId !== undefined))
-        context.addIssue({ code: 'custom', message: 'Edit stream required only for edits' });
-    })
+  SemanticActionInputV1Schema.extend({
+    eventStreamId: ref.optional(),
+  }).superRefine((value, context) => {
+    const edit = ['insertText', 'replaceText', 'writeSecret'].includes(value.action.kind);
+    if (value.action.kind !== 'key' && edit !== (value.eventStreamId !== undefined))
+      context.addIssue({
+        code: 'custom',
+        message: 'Edit stream required only for edits',
+      });
+  })
 );
 /** Closed admitted refusal vocabulary; unauthorized objects must use inaccessible in the service. */
 export const SemanticRefusalReasonV1Schema = z.enum([
@@ -413,7 +421,11 @@ const eventBase = {
 };
 const event = z.union([
   z
-    .object({ ...eventBase, type: z.literal('ready'), reason: z.enum(['initial', 'refreshed']) })
+    .object({
+      ...eventBase,
+      type: z.literal('ready'),
+      reason: z.enum(['initial', 'refreshed']),
+    })
     .strict(),
   z
     .object({
@@ -460,7 +472,10 @@ const event = z.union([
       type: z.literal('controlChanged'),
       reason: z.enum(['acquired', 'takenOver', 'handedOff', 'disconnected']),
       control: z
-        .object({ controllerId: ref.nullable(), status: z.enum(['ready', 'barrier', 'stopped']) })
+        .object({
+          controllerId: ref.nullable(),
+          status: z.enum(['ready', 'barrier', 'stopped']),
+        })
         .strict(),
     })
     .strict(),

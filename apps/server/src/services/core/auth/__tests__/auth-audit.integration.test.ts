@@ -11,8 +11,9 @@ import path from 'node:path';
 import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import { createDb, runMigrations, auditEvents, type Db } from '@dorkos/db';
+import { createDb, runMigrations, auditEvents, session, eq, type Db } from '@dorkos/db';
 import { createAuth, toNodeHandler } from '../index.js';
+import { authSessionRemovals } from '../session-removals.js';
 import { initConfigManager } from '../../config-manager.js';
 import { env } from '../../../../env.js';
 import { AuditLog } from '../../../audit/audit-log.js';
@@ -154,15 +155,34 @@ describe('auth events in the audit log (integration)', () => {
     );
   });
 
-  it('records a sign-out', async () => {
-    const from = lastSeq();
-    const res = await request(fixtureServer)
-      .post('/api/auth/sign-out')
+  it('records a sign-out and revokes its original Browser session after deletion', async () => {
+    const current = await request(fixtureServer)
+      .get('/api/auth/get-session')
       .set('Origin', ORIGIN)
-      .set('Cookie', cookies)
-      .send({});
-    expect(res.status).toBe(200);
-    expect(rowsSince(from)).toEqual([['auth.signed_out', 'admins']]);
+      .set('Cookie', cookies);
+    expect(current.status).toBe(200);
+    const removed: Array<{ sessionId: string; userId: string }> = [];
+    const rowsAtRemoval: unknown[] = [];
+    const unsubscribe = authSessionRemovals.subscribe((value) => {
+      removed.push(value);
+      rowsAtRemoval.push(db.select().from(session).where(eq(session.id, value.sessionId)).get());
+    });
+    try {
+      const from = lastSeq();
+      const res = await request(fixtureServer)
+        .post('/api/auth/sign-out')
+        .set('Origin', ORIGIN)
+        .set('Cookie', cookies)
+        .send({});
+      expect(res.status).toBe(200);
+      expect(removed).toEqual([
+        { sessionId: current.body.session.id, userId: current.body.user.id },
+      ]);
+      expect(rowsAtRemoval).toEqual([undefined]);
+      expect(rowsSince(from)).toEqual([['auth.signed_out', 'admins']]);
+    } finally {
+      unsubscribe();
+    }
   });
 
   it('names an expired session as expired, whatever removed it', async () => {

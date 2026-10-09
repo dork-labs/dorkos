@@ -19,13 +19,15 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && node --experimental-strip-types scripts/build-native-observer.ts",
+    "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "lint": "eslint .",
-    "test:fixture": "pnpm build && vitest run --config vitest.fixture.config.ts"
+    "test:fixture": "pnpm build && pnpm build:native-fixture && vitest run --config vitest.fixture.config.ts",
+    "build:native-fixture": "node --experimental-strip-types scripts/build-native-observer.ts"
   },
   "dependencies": {
+    "@dorkos/shared": "workspace:*",
     "playwright-core": "1.63.0",
     "zod": "^4.6.2"
   },

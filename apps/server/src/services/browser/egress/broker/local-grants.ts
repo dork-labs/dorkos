@@ -15,7 +15,12 @@ export function brokerLocalGrants(
 ) {
   const records = new Map<
     string,
-    { grant: LocalDestinationGrant; deadline: number; revision: number; charge: Charge }
+    {
+      grant: LocalDestinationGrant;
+      deadline: number;
+      revision: number;
+      charge: Charge;
+    }
   >();
   const key = (url: string, transport: LocalTransport) =>
     `${transport}:${parseDestination({ url }).authority}`;
@@ -44,7 +49,18 @@ export function brokerLocalGrants(
     }
   };
   return Object.freeze({
-    issue(url: string, transport: LocalTransport, ttl: number) {
+    issue(
+      url: string,
+      transport: LocalTransport,
+      ttl: number,
+      onOriginalDenial?: (value: BrokerError) => void
+    ) {
+      const report = onOriginalDenial;
+      const denial = (reason: 'AUTHORITY_REFUSED' | 'PERMIT_REFUSED') => {
+        const original = new BrokerError(reason);
+        report?.(original);
+        return original;
+      };
       const state = issuer.check(run),
         target = parseDestination({ url }),
         i = issuer.inventory();
@@ -63,9 +79,9 @@ export function brokerLocalGrants(
           target.scheme !== 'ws') ||
         (transport === 'opaque-connect' && target.scheme !== 'https')
       )
-        throw new BrokerError('AUTHORITY_REFUSED');
+        throw denial('AUTHORITY_REFUSED');
       const id = key(url, transport);
-      if (records.has(id)) throw new BrokerError('PERMIT_REFUSED');
+      if (records.has(id)) throw denial('PERMIT_REFUSED');
       const charge = issuer.ledger.reserve('permit');
       try {
         const deadline = issuer.now() + ttl;

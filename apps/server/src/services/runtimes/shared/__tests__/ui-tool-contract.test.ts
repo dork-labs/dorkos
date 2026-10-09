@@ -59,14 +59,15 @@ const CONTENT_TYPES = canvasContentTypes();
 const ACTIONS = uiActionNames();
 
 describe('the schemas are what the catalogs are derived from', () => {
-  it('reads all 14 canvas content types off UiCanvasContentSchema', () => {
+  it('reads all 15 canvas content types off UiCanvasContentSchema', () => {
     // The count is pinned as well as the set: a variant DELETED from the schema
     // and from a surface together would leave the set check green.
-    expect(CONTENT_TYPES).toHaveLength(14);
+    expect(CONTENT_TYPES).toHaveLength(15);
     expect([...CONTENT_TYPES].sort()).toEqual(
       [
         'audio',
         'browser',
+        'managed_browser',
         'csv',
         'diff',
         'file',
@@ -137,7 +138,10 @@ describe('the tool input schema can carry every action it teaches', () => {
     // `success` and simply acted without it. `documentId` shipped that way.
     const advertised = new Set(Object.keys(CONTROL_UI_INPUT));
     const missing: string[] = [];
-    for (const line of buildUiActionCatalog({ indent: '', sentences: false }).split('\n')) {
+    for (const line of buildUiActionCatalog({
+      indent: '',
+      sentences: false,
+    }).split('\n')) {
       const args = line.slice(line.indexOf(':') + 1);
       if (!args.includes('{')) continue;
       // Top-level keys only: a name right after `{` or `,`, never one inside a
@@ -181,7 +185,10 @@ describe('the tool input schema can carry every action it teaches', () => {
     // green result above is a fact about the input and not about the matcher.
     const withRecord = JSON.stringify(
       z.toJSONSchema(
-        z.object({ ...CONTROL_UI_INPUT, content: z.record(z.string(), z.unknown()).optional() }),
+        z.object({
+          ...CONTROL_UI_INPUT,
+          content: z.record(z.string(), z.unknown()).optional(),
+        }),
         { io: 'input' }
       )
     );
@@ -199,18 +206,18 @@ describe('the tool input schema can carry every action it teaches', () => {
 });
 
 describe('a variant the schema accepts and no table teaches cannot ship', () => {
-  it('refuses to render a 15th content type that has no sentence', () => {
-    const fifteen = z.discriminatedUnion('type', [
+  it('refuses to render a 16th content type that has no sentence', () => {
+    const sixteen = z.discriminatedUnion('type', [
       ...UiCanvasContentSchema.options,
       z.object({ type: z.literal('spreadsheet'), src: z.string() }),
     ]);
 
     // The walk itself still succeeds — the schema is a real one.
-    expect(canvasContentTypes(fifteen)).toHaveLength(15);
-    expect(canvasContentTypes(fifteen)).toContain('spreadsheet');
+    expect(canvasContentTypes(sixteen)).toHaveLength(16);
+    expect(canvasContentTypes(sixteen)).toContain('spreadsheet');
 
     // Rendering it is what fails, and the message says where to write the line.
-    expect(() => buildCanvasContentCatalog({ names: canvasContentTypes(fifteen) })).toThrow(
+    expect(() => buildCanvasContentCatalog({ names: canvasContentTypes(sixteen) })).toThrow(
       /spreadsheet.*CANVAS_CONTENT_CATALOG/s
     );
   });

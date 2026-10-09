@@ -29,6 +29,10 @@ import {
   type CapabilityInvocationObserver,
   type CapabilityRegistry,
 } from '../capabilities/index.js';
+import {
+  managedBrowserDomain,
+  managedBrowserOptionalDomain,
+} from '../../browser/runtime/browser-capabilities.js';
 import { operatorDomain } from '../operator/operator-capabilities.js';
 import { marketplaceDomain } from '../../marketplace-mcp/marketplace-capabilities.js';
 import { connectorDomain } from '../../connectors/connector-capabilities.js';
@@ -61,6 +65,7 @@ export function composeDorkOsCapabilityRegistry(
   onInvocation?: CapabilityInvocationObserver
 ): CapabilityRegistry {
   const domains: CapabilityDomain[] = [];
+  if (deps.managedBrowserDeps) domains.push(managedBrowserDomain, managedBrowserOptionalDomain);
   if (deps.operatorDeps) domains.push(operatorDomain);
   if (deps.marketplaceDeps) domains.push(marketplaceDomain);
   if (deps.connectorDeps) domains.push(connectorDomain);
@@ -124,6 +129,8 @@ export function composeDorkOsCapabilityRegistry(
  */
 export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
   const domains: CapabilityDomain[] = [
+    managedBrowserDomain,
+    managedBrowserOptionalDomain,
     operatorDomain,
     marketplaceDomain,
     connectorDomain,
@@ -139,6 +146,31 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
   ];
   const deps: CapabilityDeps = {
     logger: noopLogger,
+    managedBrowserDeps: {
+      current: () => true,
+      optionalAvailable: () => true,
+      describeFileApproval: () => {
+        throw new Error('Documentation cannot approve browser files.');
+      },
+      issueFileApproval: async () => {
+        throw new Error('Documentation cannot approve browser files.');
+      },
+      describeDelegation: () => {
+        throw new Error('Documentation cannot approve managed browsers.');
+      },
+      openDelegated: async () => {
+        throw new Error('Documentation cannot acquire managed browsers.');
+      },
+      open: async () => {
+        throw new Error('Documentation cannot acquire managed browsers.');
+      },
+      close: async () => {
+        throw new Error('Documentation cannot close managed browsers.');
+      },
+      resolve: () => {
+        throw new Error('Documentation cannot invoke managed browser tools.');
+      },
+    },
     operatorDeps: {} as CapabilityDeps['operatorDeps'],
     marketplaceDeps: {} as CapabilityDeps['marketplaceDeps'],
     connectorDeps: {} as CapabilityDeps['connectorDeps'],

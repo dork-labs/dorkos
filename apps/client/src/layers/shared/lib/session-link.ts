@@ -173,13 +173,21 @@ export async function newSessionTarget(
     createSessionLocation(cwd: string): Promise<{ id: string }>;
     getDefaultCwd(): Promise<{ path: string }>;
   },
-  search: SessionSearch & { dir?: string }
+  search: SessionSearch & { dir?: string },
+  owner?: import('./extension-effect-owner').EffectOwner
 ): Promise<SessionTarget<SessionSearch>> {
   const { dir, ...rest } = search;
-  const cwd =
-    dir ??
-    (search.agentId || search.launchRef ? undefined : (await transport.getDefaultCwd()).path);
-  const launchRef = cwd ? (await transport.createSessionLocation(cwd)).id : search.launchRef;
+  owner?.beforeEffect();
+  let cwd = dir;
+  if (cwd === undefined && !search.agentId && !search.launchRef) {
+    const readDefault = transport.getDefaultCwd;
+    owner?.beforeEffect();
+    cwd = (await Reflect.apply(readDefault, transport, [])).path;
+  }
+  const create = transport.createSessionLocation;
+  owner?.beforeEffect();
+  const launchRef = cwd ? (await Reflect.apply(create, transport, [cwd])).id : search.launchRef;
+  owner?.beforeEffect();
   return toSession({
     ...rest,
     launchRef,

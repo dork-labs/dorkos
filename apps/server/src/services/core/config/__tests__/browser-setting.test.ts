@@ -8,3 +8,15 @@ describe('browser setting admission', () => {
     expect(browserSettingRefusal('browser', {})).toBeNull();
   });
 });
+
+it('generic config writes cannot select another Chrome identity, even while Off', () => {
+  expect(browserSettingRefusal('browser.chromeUserAgent', true)).not.toBeNull();
+  expect(browserSettingRefusal('browser.chromeUserAgent', false)).not.toBeNull();
+  expect(
+    browserSettingRefusal('browser', { enabled: false, chromeUserAgent: true }, false)
+  ).not.toBeNull();
+  expect(
+    browserSettingRefusal('browser', { enabled: false, chromeUserAgent: true }, true)
+  ).toBeNull();
+  expect(browserSettingRefusal('browser.enabled', false)).toBeNull();
+});
