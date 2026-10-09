@@ -152,7 +152,7 @@ export async function writeStorageState(file: string, state: StorageState): Prom
 export class UnreadableStorageStateError extends Error {
   constructor(file: string) {
     super(
-      `The saved session file at ${file} is not a browser session DorkOS can read. ` +
+      `The saved sign-in file at ${file} is not one DorkOS can read. ` +
         'Run `dorkos browser login` to save a fresh one (it replaces this file).'
     );
     this.name = 'UnreadableStorageStateError';

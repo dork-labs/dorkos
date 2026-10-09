@@ -501,7 +501,7 @@ describe('runHarnessSync', () => {
     const printed = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
     expect(printed).toContain('plugin layers:');
     expect(printed).toContain(
-      '- plugin "globex": installed for all your projects. Only the Claude Code sessions ' +
+      '- plugin "globex": installed for all your projects. Only the Claude Code chats ' +
         'DorkOS runs can see it. Its 1 skill is not shared with this project: nightly'
     );
     expect(printed).not.toMatch(/global sync/);
@@ -519,7 +519,7 @@ describe('runHarnessSync', () => {
     // And what it says about Claude Code is what is true before slice A3 writes
     // anything into the user tier.
     expect(printed).toContain(
-      'In a session DorkOS runs, Claude Code sees both copies, under different names.'
+      'In a chat DorkOS runs, Claude Code sees both copies, under different names.'
     );
     expect(printed).not.toContain('uses the all-projects copy, even here');
   });
@@ -1464,7 +1464,7 @@ describe('runHarnessSync — withholding a package’s hooks', () => {
 
     const first = printed();
     expect(first).toContain('Created .claude/skills/, which is where Claude Code reads skills.');
-    expect(first).toContain('restart any Claude Code session you');
+    expect(first).toContain('restart any Claude Code chat you');
     expect(first).toContain('https://code.claude.com/docs/en/skills#live-change-detection');
 
     // Said once. On every later sync the folder is already there, Claude Code IS
@@ -1659,7 +1659,7 @@ describe('runHarnessHooks', () => {
 
     await runHarnessHooks({ list: true });
 
-    expect(printed()).toContain('globex — for the globally installed package, in every session');
+    expect(printed()).toContain('globex — for the globally installed package, in every chat');
   });
 
   it('--list says the file could not be read rather than "nothing stored yet"', async () => {

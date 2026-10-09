@@ -577,7 +577,7 @@ export function ChannelView({
               <div className="pt-12 text-center">
                 <MessageCircle size={30} className="mx-auto mb-3 text-[var(--accent)]" />
                 <h3>A quiet start.</h3>
-                <p className="muted">Say hello to begin the conversation.</p>
+                <p className="muted">Say hello to get things started.</p>
               </div>
             )}
             {entries.map((entry) => (

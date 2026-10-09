@@ -28,7 +28,7 @@ Everything below this point is deep reference: raw API calls, JSON shapes, and i
 
 ## Reference: Agent Delivery Receipts
 
-An HTTP message sent to a `relay.agent.*` destination returns a `receipt` and `statusUrl`. Other destinations keep their existing response. Read that URL using your normal session cookie or per-user API key when sign-in is on:
+An HTTP message sent to a `relay.agent.*` destination returns a `receipt` and `statusUrl`. Other destinations keep their existing response. Read that URL using your normal sign-in cookie or per-user API key when sign-in is on:
 
 ```bash
 curl http://localhost:4242/api/relay/messages/01ARZ3NDEKTSV4RRFFQ69G5FAV/status \
@@ -54,7 +54,7 @@ Receipts expire exactly seven days after acceptance. Reads and delivery updates 
 
 With sign-in on, the verified account that sent the request owns the receipt. A caller-chosen `from` or `replyTo` does not grant access. Receipts created with sign-in off use local trust; after sign-in is enabled, only the verified install owner can read them. Turning sign-in off restores local-trust access.
 
-Receipts are authoritative records in the database. Normal restarts and message-index rebuilds retain them. If that database file is corrupted, mailbox files cannot reconstruct receipt truth. A receipt is an observation, not a durable queue, an exactly-once guarantee, a task result or permission to retry delivery. It does not grant access to private sessions.
+Receipts are authoritative records in the database. Normal restarts and message-index rebuilds retain them. If that database file is corrupted, mailbox files cannot reconstruct receipt truth. A receipt is an observation, not a durable queue, an exactly-once guarantee, a task result or permission to retry delivery. It does not grant access to private chats.
 
 Trace history is separate and retained for eight days. That history does not extend a receipt's seven-day status window. Rebuilding the derived message index does not recreate receipts or change their recorded outcome.
 

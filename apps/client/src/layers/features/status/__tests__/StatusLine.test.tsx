@@ -43,7 +43,7 @@ describe('StatusLine', () => {
       // no state in which the Session panel becomes unreachable.
       render(<StatusLine items={[]} trailing={<button>more</button>} />);
       const toolbar = screen.getByRole('toolbar');
-      expect(toolbar).toHaveAttribute('aria-label', 'Session status');
+      expect(toolbar).toHaveAttribute('aria-label', 'Chat status');
       expect(toolbar).toHaveAttribute('aria-live', 'polite');
       expect(screen.getByRole('button', { name: 'more' })).toBeInTheDocument();
     });
@@ -109,11 +109,11 @@ describe('StatusLine', () => {
       render(
         <StatusLine
           items={budgeted}
-          trailing={<button aria-label={`Session details, ${overflow} more`}>anchor</button>}
+          trailing={<button aria-label={`Chat details, ${overflow} more`}>anchor</button>}
         />
       );
 
-      expect(screen.getByRole('button', { name: 'Session details, 2 more' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Chat details, 2 more' })).toBeInTheDocument();
       expect(screen.getByTestId('status-item-agent')).toBeInTheDocument();
       expect(screen.queryByTestId('status-item-cwd')).not.toBeInTheDocument();
       expect(screen.queryByTestId('status-item-model')).not.toBeInTheDocument();

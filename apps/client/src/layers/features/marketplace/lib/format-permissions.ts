@@ -653,7 +653,7 @@ export type DisclosureScope = 'global' | 'project';
  * are not started from it.
  */
 const PROGRAMS_START: Record<DisclosureScope, string> = {
-  global: 'Starts in every session.',
+  global: 'Starts in every chat.',
   project: 'Declared, but not started for a project install.',
 };
 

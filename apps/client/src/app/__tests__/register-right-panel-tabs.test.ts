@@ -43,7 +43,7 @@ describe('registerRightPanelTabs', () => {
 
     const contributions = useExtensionRegistry.getState().getContributions('right-panel');
     const session = contributions.find((c) => c.id === 'session');
-    expect(session?.title).toBe('Session');
+    expect(session?.title).toBe('Chat');
     expect(session?.isGlobal).toBeUndefined();
     expect(session?.visibleWhen?.(ctx(true))).toBe(true);
     expect(session?.visibleWhen?.({ ...ctx(true), pathname: '/team' })).toBe(false);

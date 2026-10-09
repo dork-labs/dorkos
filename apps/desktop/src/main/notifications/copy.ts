@@ -40,8 +40,8 @@ const EXTENSIONS_SETTINGS_TAB = 'extensions';
  * @param cwd - The session's working directory.
  */
 export function sessionLabelFor(cwd: string | undefined): string {
-  if (!cwd) return 'A session';
-  return path.basename(cwd) || 'A session';
+  if (!cwd) return 'A chat';
+  return path.basename(cwd) || 'A chat';
 }
 
 /**

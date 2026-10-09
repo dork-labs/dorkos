@@ -100,10 +100,9 @@ async function startFleetTurn(turn: FleetTurn): Promise<void> {
  *   Staggering the triggers alongside the clicks keeps every row live through
  *   both.
  *
- * The old drive waited on `[data-testid="session-row"]`, which the redesign
- * stopped mounting in the sidebar entirely — the panel builds its rows from
- * `SidebarRowModel` now (`[data-sidebar-row]`), and `SessionRowFull`/`Compact`
- * survive only on the profile's Sessions page.
+ * The old drive waited on `[data-testid="session-row"]`, which no longer
+ * exists: the panel builds its rows from `SidebarRowModel` (`[data-sidebar-row]`),
+ * and an agent's chats are the shared chat list (`[data-slot="chat-list-row"]`).
  */
 export async function driveMultiSession(page: Page): Promise<void> {
   const turns = planFleetTurns();

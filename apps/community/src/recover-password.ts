@@ -121,8 +121,8 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
       });
       process.stdout.write(
         keepLinked
-          ? 'Password changed. Existing sessions, local connections, agent credentials, server API keys and invitation links have been revoked.\n'
-          : 'Password changed. Existing sessions, local connections, agent credentials, server API keys, invitation links, and Google, GitHub or single sign-on links have been removed.\n'
+          ? 'Password changed. Existing sign-ins, local connections, agent credentials, server API keys and invitation links have been revoked.\n'
+          : 'Password changed. Existing sign-ins, local connections, agent credentials, server API keys, invitation links, and Google, GitHub or single sign-on links have been removed.\n'
       );
     } catch {
       // Database errors can carry connection details. Report no secret or raw error.

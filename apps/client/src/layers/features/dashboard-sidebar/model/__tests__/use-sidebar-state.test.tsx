@@ -18,6 +18,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, cleanup, renderHook } from '@testing-library/react';
 import type { SessionStatus } from '@dorkos/shared/session-stream';
+import type { Session } from '@dorkos/shared/types';
 import { useSessionListStore } from '@/layers/entities/session';
 
 const FIXED_NOW = 1_786_000_000_000;
@@ -46,7 +47,8 @@ vi.mock('@/layers/shared/model', async (importOriginal) => ({
 // the store, which is exactly what is under test.
 const AGENT_PATHS = [{ id: 'm1', name: 'alpha', projectPath: '/projects/alpha' }];
 const MANIFESTS = { '/projects/alpha': null };
-const RECENT = { sessions: [], agentActivity: {}, warnings: [] };
+// Mutable on purpose: one test fills the window and puts it back.
+const RECENT = { sessions: [] as Session[], agentActivity: {}, warnings: [] };
 const ROOMS: unknown[] = [];
 // Hoisted, and that matters: a mock that answered with a fresh `[]` per call
 // would move the snapshot's identity by itself and make this suite pass or fail
@@ -275,5 +277,42 @@ describe('useSidebarState — referential stability (spec §H)', () => {
     // A verb in the snapshot is the one thing the whole design forbids.
     expect(result.current.sessionStatuses).toEqual({ s1: 'streaming' });
     expect(JSON.stringify(result.current.sessionStatuses)).not.toContain('Read');
+  });
+});
+
+describe('useSidebarState — the whole recent window (your-activity-first D10)', () => {
+  afterEach(() => {
+    RECENT.sessions = [];
+    cleanup();
+  });
+
+  it('reads every session the window carries, so ten newer agent chats cannot push yours out', () => {
+    // Twelve newer agent chats, then a chat you used on another device. The
+    // sidebar once sliced the window to ten BEFORE deciding whose each chat
+    // was, which is exactly what dropped this one.
+    const at = new Date(FIXED_NOW - 2 * 3_600_000).toISOString();
+    RECENT.sessions = [
+      ...Array.from({ length: 12 }, (_, index): Session => ({
+        id: `agent-${index}`,
+        title: `Agent ${index}`,
+        createdAt: at,
+        updatedAt: new Date(FIXED_NOW - index * 1000).toISOString(),
+        permissionMode: 'default',
+        runtime: 'claude-code',
+        origin: 'agent',
+      })),
+      {
+        id: 'mine',
+        title: 'Mine',
+        createdAt: at,
+        updatedAt: at,
+        permissionMode: 'default',
+        runtime: 'claude-code',
+        lastTouchedByYouAt: at,
+      },
+    ];
+    const { result } = renderHook(() => useSidebarState());
+    expect(result.current.sessions.map((entry) => entry.id)).toContain('mine');
+    expect(result.current.lastTouchedByYouAt).toEqual({ 'session:mine': at });
   });
 });

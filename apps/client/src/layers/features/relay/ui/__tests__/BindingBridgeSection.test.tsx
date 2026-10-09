@@ -107,7 +107,7 @@ describe('BindingBridgeSection — refusals render their reason, not a dead butt
   it('a real broadcast binding (platformChatType: channel) shows the broadcast reason and offers no bridge button', () => {
     renderSection(makeBinding({ platformChatType: 'channel', channelType: 'group' }));
     expect(screen.getByText(/Can’t bridge this chat/i)).toBeInTheDocument();
-    expect(screen.getByText(/broadcast channel, not a two-way conversation/i)).toBeInTheDocument();
+    expect(screen.getByText(/broadcast channel, not a two-way chat/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /bridge to a channel/i })).not.toBeInTheDocument();
   });
 

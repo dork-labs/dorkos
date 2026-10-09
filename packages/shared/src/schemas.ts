@@ -37,6 +37,8 @@ import type { PermissionStop } from './agent-runtime.js';
 // A leaf module (zod only), so this value import forms no load-time cycle.
 import { AccountUsageSchema } from './account-usage.js';
 import { ProjectRefSchema } from './project-schemas.js';
+// A leaf module (zod only), so this value import forms no load-time cycle.
+import { ChatMessageStampSchema } from './chat-messages.js';
 
 extendZodWithOpenApiOnce();
 
@@ -3679,6 +3681,13 @@ export const HistoryMessageSchema = z
     compactMetadata: CompactMetadataSchema.optional(),
     commandName: z.string().optional(),
     commandArgs: z.string().optional(),
+    /**
+     * Messages another chat sent, when this user message carried them (spec
+     * `spin-off-chats` §2). Stamped by the server only where a fence's nonce
+     * matches its own record of the send; the app draws the sender from here
+     * and never from the text.
+     */
+    chatMessages: z.array(ChatMessageStampSchema).optional(),
   })
   .openapi('HistoryMessage');
 

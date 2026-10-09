@@ -352,9 +352,7 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
       footer:
         section.rows.length === 0 ? (
           <p className="text-sidebar-foreground/50 px-3 py-1.5 text-xs italic">
-            {isSmart
-              ? 'No agents match these rules'
-              : 'Drag channels, conversations or agents here'}
+            {isSmart ? 'No agents match these rules' : 'Drag channels, DMs or agents here'}
           </p>
         ) : undefined,
       dialogs: (

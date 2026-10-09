@@ -427,12 +427,13 @@ test.describe('Runtime UX — multi-runtime test server', () => {
       timeout: 10_000,
     });
 
-    // The fleet's session rows live on the Profile's Sessions page. They used to
-    // be the Agent Hub's Sessions TAB, which was the right panel's default on
-    // `/session`; the Profile's root is a property list, so `session-row`
-    // resolves to nothing until the page is opened (spec `profile-unification`).
+    // An agent's chats live on the Profile's Sessions page, drawn by the shared
+    // chat list; the Profile's root is a property list, so the rows resolve to
+    // nothing until the page is opened. The list marks each row's runtime only
+    // because these two chats run on different ones (spec `your-activity-first`
+    // D12).
     await new RightPanelPage(page).openProfilePage('sessions', agentDir);
-    const rows = page.getByTestId('session-row');
+    const rows = page.locator('[data-slot="chat-list-row"]');
     await expect(
       rows.filter({ has: page.locator('[aria-label="Runs on Test Mode"]') })
     ).toHaveCount(1);
@@ -505,7 +506,7 @@ test.describe('Command Intents — inline palette dedupe + alias hints', () => {
 
     // The plain-language intent descriptions render (writing-for-humans).
     await expect(
-      chatPage.commandPalette.getByText('Shrink the conversation to free up context')
+      chatPage.commandPalette.getByText('Shrink the chat to free up context')
     ).toBeVisible();
   });
 
@@ -536,51 +537,6 @@ test.describe('Command Intents — inline palette dedupe + alias hints', () => {
     const compactRow = chatPage.paletteRow('/compact');
     await expect(compactRow).toHaveCount(1);
     await expect(compactRow).toHaveAttribute('aria-disabled', 'false');
-  });
-});
-
-// Fleet-level context health surfaces (DOR-113, task 4.3). Backed by the
-// test-mode runtime, which emits NO context reading — no `contextTokens` on its
-// list rows and no `contextUsage` on its `session_status` fan-out — so every row
-// resolves to the honest "unknown" gauge and the fleet summary bar correctly
-// hides (nothing to report). This is the one state test-mode can drive; the
-// populated "N near full" bar and a live known gauge require a real reading and
-// are covered by the RTL tests (SessionContextGauge / FleetContextBar /
-// useFleetContextRollup).
-test.describe('Fleet context health — per-row gauge + honest unknown', () => {
-  test('each session row shows a context gauge that reads as a deliberate unknown state', async ({
-    page,
-    request,
-  }) => {
-    await request.post(`${API_URL}/api/test/scenario`, { data: { name: 'simple-text' } });
-
-    // Create a real session so the sidebar list has a row to gauge.
-    const chatPage = new ChatPage(page);
-    await chatPage.goto(undefined, { dir: agentDir });
-    await chatPage.sendMessage('Hello');
-    // Scoped to the transcript — see GOTCHAS (announcer duplicates the echo).
-    await expect(page.getByTestId('transcript-feed').getByText('Echo: Hello')).toBeVisible({
-      timeout: 10_000,
-    });
-
-    // Same move as the runtime-marks case above: these rows are the Profile's
-    // Sessions page now, not a sidebar or hub list.
-    await new RightPanelPage(page).openProfilePage('sessions', agentDir);
-
-    // The session list carries a per-row context gauge.
-    const row = page.getByTestId('session-row').first();
-    await expect(row).toBeVisible({ timeout: 10_000 });
-    await expect(row.getByTestId('session-context-gauge')).toBeVisible();
-
-    // With no reading available, the gauge reads as a deliberate MUTED
-    // "unknown" — never a fabricated 0% or a broken/error state.
-    await expect(row.getByLabel('Context usage unknown')).toBeVisible();
-    await expect(row.getByText('0%')).toHaveCount(0);
-
-    // Every row is unknown ⇒ nothing to summarize ⇒ the fleet summary bar hides
-    // itself (spec §8b: hidden when nothing to report), rather than showing a
-    // hollow "0 near full".
-    await expect(page.getByTestId('fleet-context-bar')).toHaveCount(0);
   });
 });
 

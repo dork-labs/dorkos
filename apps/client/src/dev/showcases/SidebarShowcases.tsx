@@ -1,20 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Hash, Pin } from 'lucide-react';
-import type { Session } from '@dorkos/shared/types';
-import {
-  CHANNEL_ORIGIN_SESSION,
-  GROUPED_SESSIONS,
-  MOCK_SESSIONS,
-  TASK_ORIGIN_SESSION,
-} from './session-list-fixtures';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { SessionsView } from '@/layers/features/session-list';
 import { SidebarFooterStrip } from '@/layers/features/dashboard-sidebar';
 import { configKeys } from '@/layers/entities/config';
-import { useSessionChatStore, useSessionListStore, SessionRow } from '@/layers/entities/session';
 import { RoomAvatar } from '@/layers/entities/room';
 import {
   SectionHeader,
@@ -27,42 +18,6 @@ import {
 import { useRovingFocus } from '@/layers/shared/model';
 
 // ---------------------------------------------------------------------------
-// Mock data
-// ---------------------------------------------------------------------------
-
-// Session IDs used to seed specific activity indicator states in the store
-const INDICATOR_SESSION_IDS = {
-  streaming: 'dev-indicator-streaming',
-  pendingApproval: 'dev-indicator-pending-approval',
-  error: 'dev-indicator-error',
-  unseenActivity: 'dev-indicator-unseen-activity',
-} as const;
-
-function makeIndicatorSession(id: string, title: string): Session {
-  return {
-    id,
-    title,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    permissionMode: 'default',
-    runtime: 'claude-code',
-  };
-}
-
-const INDICATOR_SESSIONS: Record<keyof typeof INDICATOR_SESSION_IDS, Session> = {
-  streaming: makeIndicatorSession(INDICATOR_SESSION_IDS.streaming, 'Running agent task…'),
-  pendingApproval: makeIndicatorSession(
-    INDICATOR_SESSION_IDS.pendingApproval,
-    'Waiting for tool approval'
-  ),
-  error: makeIndicatorSession(INDICATOR_SESSION_IDS.error, 'Session encountered an error'),
-  unseenActivity: makeIndicatorSession(
-    INDICATOR_SESSION_IDS.unseenActivity,
-    'New messages since last visit'
-  ),
-};
-
-// ---------------------------------------------------------------------------
 // Showcases
 // ---------------------------------------------------------------------------
 
@@ -71,8 +26,6 @@ export function SidebarShowcases() {
   return (
     <>
       <SidebarRowShowcase />
-      <SessionRowShowcase />
-      <SessionsViewShowcase />
       <SidebarFooterStripShowcase />
     </>
   );
@@ -144,7 +97,7 @@ function SidebarRowShowcase() {
             trailingAction={{
               content: <LiveChip />,
               onClick: () => {},
-              label: '3 live sessions',
+              label: '3 live chats',
             }}
           />
         </RowFrame>
@@ -240,7 +193,7 @@ function SidebarRowShowcase() {
             trailingAction={{
               content: <LiveChip />,
               onClick: () => {},
-              label: '3 live sessions',
+              label: '3 live chats',
             }}
           />
         </RowFrame>
@@ -261,7 +214,7 @@ function SidebarRowShowcase() {
             trailingAction={{
               content: <LiveChip />,
               onClick: () => {},
-              label: '3 live sessions',
+              label: '3 live chats',
             }}
           />
         </RowFrame>
@@ -322,7 +275,7 @@ function SidebarRowShowcase() {
                 trailingAction={{
                   content: <LiveChip />,
                   onClick: () => {},
-                  label: '3 live sessions',
+                  label: '3 live chats',
                 }}
               />
             </RowFrame>
@@ -366,209 +319,6 @@ function RowFrame({
     >
       <SidebarMenu className="gap-0">{children}</SidebarMenu>
     </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// SessionRow
-// ---------------------------------------------------------------------------
-
-function SessionRowShowcase() {
-  const [showNew, setShowNew] = useState(false);
-  const updateSession = useSessionChatStore((s) => s.updateSession);
-
-  useEffect(() => {
-    updateSession(INDICATOR_SESSION_IDS.streaming, { sdkState: 'running' });
-    updateSession(INDICATOR_SESSION_IDS.pendingApproval, { sdkState: 'requires_action' });
-    updateSession(INDICATOR_SESSION_IDS.error, { status: 'error' });
-    useSessionListStore.getState().markUnseen(INDICATOR_SESSION_IDS.unseenActivity);
-  }, [updateSession]);
-
-  return (
-    <PlaygroundSection
-      title="SessionRow"
-      description="Sidebar row for a single session with expandable details, permission badge, and entrance animation."
-    >
-      <ShowcaseLabel>Default (inactive)</ShowcaseLabel>
-      <ShowcaseDemo>
-        <SidebarItemWrapper>
-          <SessionRow
-            variant="full"
-            session={MOCK_SESSIONS[0]}
-            isActive={false}
-            onClick={() => {}}
-          />
-        </SidebarItemWrapper>
-      </ShowcaseDemo>
-
-      <ShowcaseLabel>Active</ShowcaseLabel>
-      <ShowcaseDemo>
-        <SidebarItemWrapper>
-          <SessionRow
-            variant="full"
-            session={MOCK_SESSIONS[0]}
-            isActive={true}
-            onClick={() => {}}
-          />
-        </SidebarItemWrapper>
-      </ShowcaseDemo>
-
-      <ShowcaseLabel>Full power — green bolt, not a red shield</ShowcaseLabel>
-      <ShowcaseDemo>
-        <SidebarItemWrapper>
-          <SessionRow
-            variant="full"
-            session={MOCK_SESSIONS[3]}
-            isActive={false}
-            onClick={() => {}}
-          />
-        </SidebarItemWrapper>
-      </ShowcaseDemo>
-
-      <ShowcaseLabel>Origin — channel (Telegram)</ShowcaseLabel>
-      <ShowcaseDemo>
-        <SidebarItemWrapper>
-          <SessionRow
-            variant="full"
-            session={CHANNEL_ORIGIN_SESSION}
-            isActive={false}
-            onClick={() => {}}
-          />
-        </SidebarItemWrapper>
-      </ShowcaseDemo>
-
-      <ShowcaseLabel>Origin — task (Scheduled task)</ShowcaseLabel>
-      <ShowcaseDemo>
-        <SidebarItemWrapper>
-          <SessionRow
-            variant="full"
-            session={TASK_ORIGIN_SESSION}
-            isActive={false}
-            onClick={() => {}}
-          />
-        </SidebarItemWrapper>
-      </ShowcaseDemo>
-
-      <ShowcaseLabel>Activity indicator — streaming (green pulse)</ShowcaseLabel>
-      <ShowcaseDemo>
-        <SidebarItemWrapper>
-          <SessionRow
-            variant="full"
-            session={INDICATOR_SESSIONS.streaming}
-            isActive={false}
-            onClick={() => {}}
-          />
-        </SidebarItemWrapper>
-      </ShowcaseDemo>
-
-      <ShowcaseLabel>Activity indicator — pending approval (amber pulse)</ShowcaseLabel>
-      <ShowcaseDemo>
-        <SidebarItemWrapper>
-          <SessionRow
-            variant="full"
-            session={INDICATOR_SESSIONS.pendingApproval}
-            isActive={false}
-            onClick={() => {}}
-          />
-        </SidebarItemWrapper>
-      </ShowcaseDemo>
-
-      <ShowcaseLabel>Activity indicator — error (red)</ShowcaseLabel>
-      <ShowcaseDemo>
-        <SidebarItemWrapper>
-          <SessionRow
-            variant="full"
-            session={INDICATOR_SESSIONS.error}
-            isActive={false}
-            onClick={() => {}}
-          />
-        </SidebarItemWrapper>
-      </ShowcaseDemo>
-
-      <ShowcaseLabel>Activity indicator — unseen activity (blue)</ShowcaseLabel>
-      <ShowcaseDemo>
-        <SidebarItemWrapper>
-          <SessionRow
-            variant="full"
-            session={INDICATOR_SESSIONS.unseenActivity}
-            isActive={false}
-            onClick={() => {}}
-          />
-        </SidebarItemWrapper>
-      </ShowcaseDemo>
-
-      <ShowcaseLabel>New session entrance</ShowcaseLabel>
-      <ShowcaseDemo>
-        <div className="space-y-2">
-          <button
-            onClick={() => {
-              setShowNew(false);
-              requestAnimationFrame(() => setShowNew(true));
-            }}
-            className="text-muted-foreground hover:text-foreground rounded-md border px-2 py-1 text-xs transition-colors"
-          >
-            Replay entrance
-          </button>
-          {showNew && (
-            <SidebarItemWrapper>
-              <SessionRow
-                variant="full"
-                session={MOCK_SESSIONS[0]}
-                isActive={false}
-                onClick={() => {}}
-                isNew
-              />
-            </SidebarItemWrapper>
-          )}
-        </div>
-      </ShowcaseDemo>
-    </PlaygroundSection>
-  );
-}
-
-/** Wraps a SessionRow in sidebar menu markup for correct styling context. */
-function SidebarItemWrapper({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="w-64">
-      <SidebarGroup>
-        <SidebarMenu>
-          <SidebarMenuItem>{children}</SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarGroup>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// SessionsView
-// ---------------------------------------------------------------------------
-
-function SessionsViewShowcase() {
-  const [activeId, setActiveId] = useState<string | null>(MOCK_SESSIONS[0].id);
-
-  return (
-    <PlaygroundSection
-      title="SessionsView"
-      description="Grouped session list with time-based buckets and empty state."
-    >
-      <ShowcaseLabel>Grouped list</ShowcaseLabel>
-      <ShowcaseDemo>
-        <div className="border-border h-80 w-64 overflow-hidden rounded-lg border">
-          <SessionsView
-            activeSessionId={activeId}
-            groupedSessions={GROUPED_SESSIONS}
-            onSessionClick={setActiveId}
-          />
-        </div>
-      </ShowcaseDemo>
-
-      <ShowcaseLabel>Empty state</ShowcaseLabel>
-      <ShowcaseDemo>
-        <div className="border-border h-40 w-64 overflow-hidden rounded-lg border">
-          <SessionsView activeSessionId={null} groupedSessions={[]} onSessionClick={() => {}} />
-        </div>
-      </ShowcaseDemo>
-    </PlaygroundSection>
   );
 }
 

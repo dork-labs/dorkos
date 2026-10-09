@@ -643,7 +643,7 @@ test.describe("DorkBot's one quiet suggestion @smoke", () => {
     // this test deliberately earns both registry candidates.
     await dismissSuggestion('schedules', 'Dismiss suggestion: Run agents on a schedule');
     await expect(suggestion).toHaveCount(1);
-    await dismissSuggestion('agent-chat', 'Dismiss suggestion: Agent-to-agent conversations');
+    await dismissSuggestion('agent-chat', 'Dismiss suggestion: Agents working together');
     expect(dismissed).toEqual(['schedules', 'agent-chat']);
     await expect(suggestion).toHaveCount(0);
     // The line above it stays — dismissing the offer is not dismissing the news.

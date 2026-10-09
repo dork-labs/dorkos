@@ -117,7 +117,7 @@ describe('useSessionTarget', () => {
     // Its OWN sentence. Borrowing the room target's "Still opening this
     // conversation…" would promise something that never arrives: nothing is
     // loading, there is simply nothing selected.
-    expect(result.current.canSendReason).toBe('Pick a conversation, or start a new one.');
+    expect(result.current.canSendReason).toBe('Pick a chat, or start a new one.');
   });
 
   it('is sendable the moment the session has an id', () => {

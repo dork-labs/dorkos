@@ -374,7 +374,7 @@ export function StatusShowcases() {
 
       <PlaygroundSection
         title="ContextItem"
-        description="How full the conversation window is. It shows whenever there is a reading, from the moment a session opens: a reopened session shows its last known context at once, and the tooltip says how fresh it is. It turns amber, then red, near the limit."
+        description="How full the context window is. It shows whenever there is a reading, from the moment a session opens: a reopened session shows its last known context at once, and the tooltip says how fresh it is. It turns amber, then red, near the limit."
       >
         <TooltipProvider>
           <ShowcaseLabel>Cached on open — hover for “as of 12 min ago”</ShowcaseLabel>

@@ -81,7 +81,7 @@ export async function sessionRouteLoader({
       }
       // A copied draft resolves its launch location before any composer can run.
 
-      if (!cwd) throw new Error('Session location is unavailable.');
+      if (!cwd) throw new Error('This chat’s folder isn’t available.');
       selectCwd(
         deps.session,
         cwd,
@@ -100,7 +100,7 @@ export async function sessionRouteLoader({
     // Existing-session lookup errors are real errors. A missing ID cannot launch
     // a new conversation or choose a different runtime on someone's behalf.
     const session = await context.transport.getSession(deps.session, cwd);
-    if (!session) throw new Error('Session is unavailable.');
+    if (!session) throw new Error('This chat isn’t available.');
     if (session.cwd) {
       selectCwd(deps.session, session.cwd, false, session.runtime);
       context.queryClient.setQueryData(sessionKeys.detail(deps.session, session.cwd), session);
@@ -126,7 +126,7 @@ export async function sessionRouteLoader({
   const resolvedCwd = cwd ?? resolved.cwd;
   let launchRef: string | undefined;
   if (resolved.isNew) {
-    if (!resolvedCwd) throw new Error('Session location is unavailable.');
+    if (!resolvedCwd) throw new Error('This chat’s folder isn’t available.');
     launchRef = (await context.transport.createSessionLocation(resolvedCwd)).id;
     selectCwd(resolved.sessionId, resolvedCwd, true, deps.runtime);
   }

@@ -62,8 +62,8 @@ export function creditsRunsOnNote(
 ): string {
   const reach =
     scope === 'runtime'
-      ? `A change moves every ${name} conversation, so it can't be made while ${name} is in the middle of a reply.`
-      : `A change applies to new ${name} conversations. One already going stays on what it started on.`;
+      ? `A change moves every ${name} chat, so it can't be made while ${name} is in the middle of a reply.`
+      : `A change applies to new ${name} chats. One already going stays on what it started on.`;
   return chosenByDorkos
     ? `DorkOS chose credits when you linked, because ${name} had no sign-in. ${reach}`
     : reach;

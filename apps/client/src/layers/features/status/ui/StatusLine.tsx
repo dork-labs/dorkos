@@ -64,7 +64,7 @@ export function StatusLine({ items, trailing }: StatusLineProps) {
   return (
     <div
       role="toolbar"
-      aria-label="Session status"
+      aria-label="Chat status"
       aria-live="polite"
       data-testid="status-line"
       className="text-muted-foreground flex items-center gap-2 overflow-hidden px-1 text-xs whitespace-nowrap pointer-coarse:min-h-11"

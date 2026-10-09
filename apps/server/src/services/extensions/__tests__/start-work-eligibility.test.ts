@@ -28,7 +28,7 @@ vi.mock('../../core/config-manager.js', () => ({
 vi.mock('../../../env.js', () => ({ env: { DORKOS_PORT: 7777 } }));
 vi.stubEnv('VITE_PORT', '7779');
 vi.mock('../../session/launch/launch-session.js', () => ({
-  AGENT_LAUNCH_CAP_MESSAGE: 'Too many agent-started sessions are running (8).',
+  AGENT_LAUNCH_CAP_MESSAGE: 'Too many spin-off chats are running (8).',
   isSessionLaunchRefusal: (result: object) => 'refused' in result,
   dispatchSessionMessage: vi.fn(async (opts: { sessionId: string }) => {
     launches.push(opts);

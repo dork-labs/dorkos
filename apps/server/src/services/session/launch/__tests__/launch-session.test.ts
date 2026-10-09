@@ -122,7 +122,7 @@ describe('dispatchSessionMessage', () => {
 
     expect(result).toEqual({
       refused: 'INVALID_AGENT_PATH',
-      message: 'Choose a registered agent before starting this session',
+      message: 'Choose a registered agent before starting this chat',
     });
     expect(runtimeRegistry.persistSessionRuntime).not.toHaveBeenCalled();
     expect(dispatchMessage).not.toHaveBeenCalled();

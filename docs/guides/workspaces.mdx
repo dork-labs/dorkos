@@ -11,11 +11,11 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 DorkOS can give every task its own private copy of your repo. Ask for one workspace for issue `DOR-84` and another for `DOR-91`, and each gets its own folder, its own dev-server ports, and its own uncommitted changes. Neither can step on the other.
 
-That folder is called a **workspace**. Today, workspaces are created on request: a tool or script asks the server for one (the [API](#api-reference) below), and DorkOS provisions it. Nothing in the DorkOS app creates them on its own yet. If you never ask for one, sessions run in whatever folder they always did.
+That folder is called a **workspace**. Today, workspaces are created on request: a tool or script asks the server for one (the [API](#api-reference) below), and DorkOS provisions it. Nothing in the DorkOS app creates them on its own yet. If you never ask for one, chats run in whatever folder they always did.
 
 ## Quick look: what you'll see
 
-Open the **Workspaces** tab on Home and you'll see every separate copy of your code that exists in your workspaces folder, grouped by project. Each row tells you its branch, how many files have unsaved changes, how it compares to the remote, and when it last got a commit. While you work, the session's status bar shows a small chip like `⎇ DOR-84 · core · ● 3 changes`, so you always know which workspace a session is sitting in. Both are covered in detail below.
+Open the **Workspaces** tab on Home and you'll see every separate copy of your code that exists in your workspaces folder, grouped by project. Each row tells you its branch, how many files have unsaved changes, how it compares to the remote, and when it last got a commit. While you work, the chat's status bar shows a small chip like `⎇ DOR-84 · core · ● 3 changes`, so you always know which workspace a chat is sitting in. Both are covered in detail below.
 
 ## Why workspaces exist
 
@@ -23,14 +23,14 @@ If two agents edit the same folder at the same time, bad things happen: racing c
 
 Doing that by hand means creating a `git worktree` (a second working copy of your repo that shares history with the original, so you're not re-cloning gigabytes for every task), picking a dev-server port that isn't already taken, and remembering to clean it up without losing uncommitted work. Workspaces automate all of it:
 
-- **Isolation**: each task gets its own checkout, so parallel sessions never share a folder.
+- **Isolation**: each task gets its own checkout, so parallel chats never share a folder.
 - **Collision-free ports**: the server hands each workspace its own block of ports, so two workspaces can both run a dev server at once.
 - **Dirty-safe cleanup**: removing a workspace refuses to delete unsaved work unless you explicitly say to.
-- **Visibility**: the Workspaces page and the session status bar show you what exists and where each session is working.
+- **Visibility**: the Workspaces page and the chat status bar show you what exists and where each chat is working.
 
 <Callout type="info">
-  A workspace is just a folder. A session is "in" a workspace when its working directory (the folder
-  it's running commands in) points at one, nothing else about the session changes.
+  A workspace is just a folder. A chat is "in" a workspace when its working directory (the folder
+  it's running commands in) points at one, nothing else about the chat changes.
 </Callout>
 
 ## The /workspaces page
@@ -54,18 +54,18 @@ The page also refuses to guess when it doesn't know. If a whole folder can't be 
 
 ## Knowing which workspace you're in
 
-When a session's working directory is a managed workspace, the **Git Status** item in the session status bar leads with the workspace identity instead of a bare branch name:
+When a chat's working directory is a managed workspace, the **Git Status** item in the chat status bar leads with the workspace identity instead of a bare branch name:
 
 ```
 ⎇ DOR-84 · core · ● 3 changes
 ```
 
-That reads as: you're in the `DOR-84` workspace of the `core` project, with 3 uncommitted changes. (Yes, `DOR-84` is a real ticket. We used it while building this feature and never got around to swapping in a placeholder.) Hovering the chip reveals the branch, checkout kind, allocated ports, and pinned state. If the session is in an ordinary folder instead of a managed workspace, the item just shows the normal branch chip, nothing changes.
+That reads as: you're in the `DOR-84` workspace of the `core` project, with 3 uncommitted changes. (Yes, `DOR-84` is a real ticket. We used it while building this feature and never got around to swapping in a placeholder.) Hovering the chip reveals the branch, checkout kind, allocated ports, and pinned state. If the chat is in an ordinary folder instead of a managed workspace, the item just shows the normal branch chip, nothing changes.
 
 <Callout type="info">
   The status line stays quiet about git while the working tree is clean and you're on the default
-  branch. If you'd rather always see it, open the Session panel from the `⋯` at the end of the
-  status line and pin the Git row.
+  branch. If you'd rather always see it, open the **Chat details** panel from the `⋯` at the end of
+  the status line and pin the Git row.
 </Callout>
 
 ---
@@ -93,7 +93,7 @@ Every workspace has a stable identity and a provisioned checkout:
     path: {
       type: 'string',
       description:
-        'Absolute path to the isolated checkout on disk. This is what a session uses as its cwd.',
+        'Absolute path to the isolated checkout on disk. This is what a chat uses as its cwd.',
     },
     provider: {
       type: "'worktree' | 'clone'",
@@ -123,11 +123,11 @@ Every workspace has a stable identity and a provisioned checkout:
 
 The `projectKey` + `key` pair is unique, so asking for the same unit of work twice returns the **same** workspace rather than provisioning a duplicate.
 
-### Binding a session to a workspace
+### Binding a chat to a workspace
 
 Binding is opt-in. Nothing in the DorkOS app sends a `workspaceKey` yet, so today binding happens only when you (or a tool you run) call the API directly. Here is the reference form.
 
-When you send a message to a session, include a `workspaceKey` (and optionally a `workspaceProvider`) and the server will ensure the workspace exists, provisioning it on first use, then run the turn with the workspace's checkout as the working directory and its port block injected into the environment:
+When you send a message to a chat, include a `workspaceKey` (and optionally a `workspaceProvider`) and the server will ensure the workspace exists, provisioning it on first use, then run the turn with the workspace's checkout as the working directory and its port block injected into the environment:
 
 ```bash
 curl -X POST http://localhost:4242/api/sessions/{sessionId}/messages \
@@ -140,7 +140,7 @@ curl -X POST http://localhost:4242/api/sessions/{sessionId}/messages \
   }'
 ```
 
-Omit `workspaceKey` and the session runs in whatever `cwd` it already had, the path is byte-for-byte unchanged. If the WorkspaceManager is disabled, or fails to provision for any reason, the turn falls back to the supplied `cwd` instead of erroring, so binding can never break a session.
+Omit `workspaceKey` and the chat runs in whatever `cwd` it already had, the path is byte-for-byte unchanged. If the WorkspaceManager is disabled, or fails to provision for any reason, the turn falls back to the supplied `cwd` instead of erroring, so binding can never break a chat.
 
 ### Ports
 
@@ -193,7 +193,7 @@ Workspaces are configured under `workspace` in `~/.dork/config.json`:
     enabled: {
       type: 'boolean',
       description:
-        'Whether the WorkspaceManager is active (binding sessions, allocating ports). Disable to fall back to plain cwd behavior.',
+        'Whether the WorkspaceManager is active (binding chats, allocating ports). Disable to fall back to plain cwd behavior.',
       default: 'true',
     },
     rootPath: {
@@ -229,16 +229,16 @@ Workspaces are configured under `workspace` in `~/.dork/config.json`:
 
 All endpoints are under `/api/workspaces`:
 
-| Method & path                  | Purpose                                                                                   |
-| ------------------------------ | ----------------------------------------------------------------------------------------- |
-| `GET /api/workspaces/scan`     | Read-only scan of the workspace root: every checkout on disk. Backs the Workspaces page.  |
-| `GET /api/workspaces`          | List workspaces (optionally `?projectKey=`), each with attached sessions and dirty state. |
-| `GET /api/workspaces/resolve`  | Resolve a workspace from an absolute `?path=`: powers the session status-bar indicator.   |
-| `POST /api/workspaces/ports`   | Preview the port block a given checkout `path` would receive.                             |
-| `POST /api/workspaces`         | Ensure a workspace (`{ projectKey, key, source, provider? }`). A new one is shown first.  |
-| `GET /api/workspaces/:id`      | Fetch a single workspace.                                                                 |
-| `POST /api/workspaces/:id/pin` | Pin or unpin (`{ pinned: boolean }`).                                                     |
-| `DELETE /api/workspaces/:id`   | Remove (`?force=true` to override a dirty refusal).                                       |
+| Method & path                  | Purpose                                                                                  |
+| ------------------------------ | ---------------------------------------------------------------------------------------- |
+| `GET /api/workspaces/scan`     | Read-only scan of the workspace root: every checkout on disk. Backs the Workspaces page. |
+| `GET /api/workspaces`          | List workspaces (optionally `?projectKey=`), each with attached chats and dirty state.   |
+| `GET /api/workspaces/resolve`  | Resolve a workspace from an absolute `?path=`: powers the chat status-bar indicator.     |
+| `POST /api/workspaces/ports`   | Preview the port block a given checkout `path` would receive.                            |
+| `POST /api/workspaces`         | Ensure a workspace (`{ projectKey, key, source, provider? }`). A new one is shown first. |
+| `GET /api/workspaces/:id`      | Fetch a single workspace.                                                                |
+| `POST /api/workspaces/:id/pin` | Pin or unpin (`{ pinned: boolean }`).                                                    |
+| `DELETE /api/workspaces/:id`   | Remove (`?force=true` to override a dirty refusal).                                      |
 
 <Callout type="warn">
   A new workspace is shown to you before anything runs there. A copy can bring its own settings,
@@ -258,8 +258,8 @@ All endpoints are under `/api/workspaces`:
 ## Next Steps
 
 <Cards>
-  <Card title="Sessions" href="/docs/concepts/sessions">
-    How DorkOS sessions work (the thing a workspace binds to).
+  <Card title="Chats" href="/docs/concepts/sessions">
+    How DorkOS chats work (the thing a workspace binds to).
   </Card>
   <Card title="Agent Identity" href="/docs/guides/agents">
     Give your projects a name, color, and emoji so you think in agents, not file paths.

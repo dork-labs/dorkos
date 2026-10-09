@@ -260,7 +260,7 @@ export function createAgentColumns(
               // `ArrowUpRight` is this app's "takes you there" mark
               // (`SessionConnectorsGroup`); `MessageSquare` is its DM/session
               // glyph and read as the message this button does not send.
-              aria-label={`Open session with ${getAgentDisplayName(agent)}`}
+              aria-label={`Open chat with ${getAgentDisplayName(agent)}`}
             >
               <ArrowUpRight className="size-4" />
             </Button>

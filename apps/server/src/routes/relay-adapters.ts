@@ -81,7 +81,7 @@ function resolveAdapterName(adapterManager: AdapterManager, adapterId: string): 
  * channel.
  */
 const BRIDGE_BROADCAST_REASON =
-  "This is a broadcast channel, not a two-way conversation, so it can't become a " +
+  "This is a broadcast channel, not a two-way chat, so it can't become a " +
   'channel here: your agent would have no one to reply to, and a broadcast is a one-way ' +
   'feed by design.';
 

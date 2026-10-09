@@ -304,8 +304,8 @@ export function describeScheduleArrival(startsEnabled: boolean): string {
  * here.
  */
 export const HOOK_EVENT_SUMMARY: Record<string, string> = {
-  SessionStart: 'when a session starts',
-  SessionEnd: 'when a session ends',
+  SessionStart: 'when a chat starts',
+  SessionEnd: 'when a chat ends',
   UserPromptSubmit: 'when you send a message',
   PreToolUse: 'before the agent uses a tool',
   PostToolUse: 'after the agent uses a tool',
@@ -314,8 +314,8 @@ export const HOOK_EVENT_SUMMARY: Record<string, string> = {
   SubagentStart: 'when a subagent starts',
   SubagentStop: 'when a subagent finishes',
   Stop: 'when the agent finishes',
-  PreCompact: 'before the conversation is shortened',
-  PostCompact: 'after the conversation is shortened',
+  PreCompact: 'before the chat is shortened',
+  PostCompact: 'after the chat is shortened',
 };
 
 /**
@@ -468,7 +468,7 @@ export interface UnreadableDeclaration {
  * none of these are among them.
  */
 export const PLUGIN_PROGRAMS_SCOPE_NOTE =
-  'A plugin installed for everyone is loaded into every session, and these start with it. ' +
+  'A plugin installed for everyone is loaded into every chat, and these start with it. ' +
   'A plugin installed in one project does not start them.';
 
 /**

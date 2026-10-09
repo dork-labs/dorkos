@@ -130,7 +130,7 @@ test.describe('Rooms — posting, switching and staying live @smoke', () => {
     const composer = roomsPage.composer(`#${slug}`);
     await composer.fill('This one has nowhere to go.');
     await expect(
-      page.getByText('This conversation is archived. You can read it, but not add to it.')
+      page.getByText('This room is archived. You can read it, but not add to it.')
     ).toBeVisible();
 
     const send = page.getByRole('button', { name: 'Send message' });

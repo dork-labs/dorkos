@@ -78,7 +78,7 @@ const LOCK_RETRY_STEP_MS = 250;
 
 /** What a run is failed with when the session never came free. */
 export const SESSION_BUSY_ERROR =
-  'This task shares a session that somebody else was using the whole time, so the run never started.';
+  'This task shares a chat that somebody else was using the whole time, so the run never started.';
 
 /**
  * The runtime seams a run's turn needs. Every `AgentRuntime` satisfies it.

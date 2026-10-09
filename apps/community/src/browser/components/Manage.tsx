@@ -304,7 +304,7 @@ export function Manage({
             ? 'The server admin has put this space on hold. History stays readable and the owner can still export it. Nothing else can change until the server admin releases the hold, but members can still leave.'
             : readOnly
               ? 'History and exports remain available. Restore this space before changing content or access.'
-              : 'Manage channels and access without leaving the conversation.'}
+              : 'Manage channels and access without leaving the space.'}
         </p>
         <nav className="row mb-6" aria-label="Settings sections">
           {sections.map((item) => (

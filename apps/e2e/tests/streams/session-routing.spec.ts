@@ -72,7 +72,7 @@ test.describe('Private session routes @smoke', () => {
     await page.keyboard.press('Escape');
     const defaultOffer = page
       .getByRole('status')
-      .filter({ hasText: 'Start every new session in Ask first?' });
+      .filter({ hasText: 'Start every new chat in Ask first?' });
     await expect(defaultOffer).toBeVisible();
     await defaultOffer.getByRole('button', { name: 'Dismiss', exact: true }).click();
     expect(new URL(page.url()).searchParams.has('draft')).toBe(true);

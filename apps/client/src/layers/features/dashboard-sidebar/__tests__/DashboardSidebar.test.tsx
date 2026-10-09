@@ -498,17 +498,17 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
   // assertion about a second line an assertion about the stub.
   SessionVerbLine: (await importOriginal<typeof import('@/layers/entities/session')>())
     .SessionVerbLine,
-  SessionRow: () => null,
   SessionOriginMark: () => null,
   // Real, not stubbed. Both are pure functions over a list, and this file used
   // to carry a hand-written mirror of the partition — a second spelling of the
   // one rule that says what counts as automated, in a wholesale mock, which is
   // precisely the drift DOR-1137 was about. Importing them costs nothing and
   // cannot disagree with the product.
-  partitionSessionsByOrigin: (await importOriginal<typeof import('@/layers/entities/session')>())
-    .partitionSessionsByOrigin,
-  humanOriginSessionIds: (await importOriginal<typeof import('@/layers/entities/session')>())
-    .humanOriginSessionIds,
+  chatOwnership: (await importOriginal<typeof import('@/layers/entities/session')>()).chatOwnership,
+  partitionSessionsByOwnership: (await importOriginal<typeof import('@/layers/entities/session')>())
+    .partitionSessionsByOwnership,
+  nonAutomatedSessionIds: (await importOriginal<typeof import('@/layers/entities/session')>())
+    .nonAutomatedSessionIds,
 }));
 
 // The slot's candidates come from three features and a config read; this file
@@ -1273,7 +1273,7 @@ describe('DashboardSidebar', () => {
       mockSidebarPrefs.mockReturnValue(makePrefs({ groups: [group({ items: [] })] }));
       renderWithProviders(<DashboardSidebar />);
       await screen.findByRole('heading', { name: /Clients/, level: 3 });
-      expect(screen.getByText(/Drag channels, conversations or agents here/)).toBeInTheDocument();
+      expect(screen.getByText(/Drag channels, DMs or agents here/)).toBeInTheDocument();
     });
 
     it('tells a smart section with no matches so, rather than hiding it', async () => {

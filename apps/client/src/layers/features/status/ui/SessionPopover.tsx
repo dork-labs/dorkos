@@ -127,7 +127,7 @@ export function SessionPopover({
                 data-testid="status-reveal"
                 // The count belongs in the label, not just the glyph: `aria-label`
                 // replaces the button's text, so a visible `+2` would be silent.
-                aria-label={hidden ? `Session details, ${overflowCount} more` : 'Session details'}
+                aria-label={hidden ? `Chat details, ${overflowCount} more` : 'Chat details'}
                 className="text-muted-foreground/50 hover:text-muted-foreground inline-flex shrink-0 items-center justify-center gap-0.5 transition-colors duration-150 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
               >
                 <MoreHorizontal className="size-4" />
@@ -136,12 +136,12 @@ export function SessionPopover({
             </TooltipTrigger>
           </ResponsivePopoverTrigger>
           <TooltipContent side="top">
-            {hidden ? `Session details, ${overflowCount} more` : 'Session details'}
+            {hidden ? `Chat details, ${overflowCount} more` : 'Chat details'}
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
-      <ResponsivePopoverContent side="top" align="end" className="w-80 p-3" aria-label="Session">
-        <ResponsivePopoverTitle>Session</ResponsivePopoverTitle>
+      <ResponsivePopoverContent side="top" align="end" className="w-80 p-3" aria-label="Chat">
+        <ResponsivePopoverTitle>Chat</ResponsivePopoverTitle>
 
         {urgentAction && (
           <Button
@@ -186,7 +186,7 @@ export function SessionPopover({
               {group.group === 'diagnostics' && (
                 <>
                   <PlainRow label="Queued messages" value={String(diagnostics.queueDepth)} />
-                  <PlainRow label="Session ID" value={diagnostics.sessionId || '—'} />
+                  <PlainRow label="Chat ID" value={diagnostics.sessionId || '—'} />
                 </>
               )}
             </section>

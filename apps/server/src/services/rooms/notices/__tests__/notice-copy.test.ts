@@ -34,7 +34,7 @@ describe('buildWaitingNotice', () => {
     const { text } = buildWaitingNotice('Ana', 'author-ana', 'approval');
 
     expect(text).toBe(
-      "Ana is waiting for you to approve something before it can carry on. Open Ana's session to answer. It will wait, but not forever."
+      "Ana is waiting for you to approve something before it can carry on. Open Ana's chat to answer. It will wait, but not forever."
     );
   });
 
@@ -100,8 +100,8 @@ function everyNotice(): RoomEntryBody[] {
   return Object.values(NOTICES).flatMap((build) => build());
 }
 
-/** Words that send the reader to a session: "Open Ana's session …". */
-const SENDS_TO_SESSION = /\bopen\b[^.]*\bsession\b/i;
+/** Words that send the reader to a session: "Open Ana's chat …". */
+const SENDS_TO_SESSION = /\bopen\b[^.]*'s chat\b/i;
 
 describe('notices that send the reader to a session (DOR-2077)', () => {
   it('builds every notice the module exports, so none can slip past the checks below', () => {
@@ -133,9 +133,9 @@ describe('notices that send the reader to a session (DOR-2077)', () => {
     for (const code of SESSION_POINTER_NOTICE_CODES) expect(pointing).toContain(code);
   });
 
-  it('recognises the words it is looking for, and not a mention of a session', () => {
+  it('recognises the words it is looking for, and not a mention of a chat', () => {
     // Purpose: prove the matcher can fail, so an empty violation list means something.
-    expect(SENDS_TO_SESSION.test("Open Ana's session to answer.")).toBe(true);
-    expect(SENDS_TO_SESSION.test('Ana was busy in its own session.')).toBe(false);
+    expect(SENDS_TO_SESSION.test("Open Ana's chat to answer.")).toBe(true);
+    expect(SENDS_TO_SESSION.test('Ana was busy in its own chat.')).toBe(false);
   });
 });

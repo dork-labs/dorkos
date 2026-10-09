@@ -115,7 +115,7 @@ describe('session route identity and launch lifecycle', () => {
       Object.assign(new Error('Missing draft'), { status: 404 })
     );
     await expect(run({ session: 'missing-location', draft: '1' })).rejects.toThrow(
-      'Session location is unavailable'
+      'This chat’s folder isn’t available'
     );
     expect(transport.getDefaultCwd).not.toHaveBeenCalled();
   });

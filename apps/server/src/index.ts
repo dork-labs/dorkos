@@ -655,6 +655,8 @@ import {
   setAgentSendService,
 } from './services/extensions/agent-send/agent-send.js';
 import { AgentSendStore } from './services/extensions/agent-send/agent-send-store.js';
+import { ChatMessageStore } from './services/session/chat-messages/chat-message-store.js';
+import { wireChatMessaging } from './services/session/chat-messages/chat-message-wiring.js';
 import {
   SessionStartedByStore,
   getSessionStartedByStore,
@@ -1387,6 +1389,16 @@ async function start() {
       roomSessionPlace: () => roomSessionPlacePort,
     })
   );
+  // Chats messaging chats (spec `spin-off-chats`): `chat_send`, `chat_read`
+  // and `chat_stop`, the sender stamp, and the ceiling a chat-sent queue row
+  // launches under. Wired before any runtime turn can run, so a row adopted
+  // after a restart already finds its ceiling.
+  const chatMessaging = wireChatMessaging({
+    db,
+    store: new ChatMessageStore(db),
+    meshCore: () => meshCore,
+    roomSessionPlace: () => roomSessionPlacePort,
+  });
   // Sharing with every agent that ends as a side effect (a disconnect, a move
   // to a DorkOS account) is recorded too, so every change to it leaves a
   // trace. Set here, before any provider registers, so boot-time changes count.
@@ -5926,6 +5938,8 @@ async function start() {
       // tool servers that reach it.
       // `audit.verify`: anyone may check the audit log's chain (spec `audit-trail`).
       auditDeps: { log: auditLog },
+      // Chats messaging chats (spec `spin-off-chats`).
+      chatMessageDeps: chatMessaging,
       sessionCompactionDeps: {
         compaction: new AgentCompactionService({
           resolveRuntime: (sessionId: string) => runtimeRegistry.resolveForSession(sessionId),

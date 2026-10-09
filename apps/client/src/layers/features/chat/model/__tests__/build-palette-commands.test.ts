@@ -40,7 +40,7 @@ describe('buildPaletteCommands', () => {
     expect(countByToken(rows, '/compact')).toBe(1);
     // The surviving row is the intent's (its description), not the runtime's.
     expect(rows.find((r) => r.fullCommand === '/compact')?.description).toBe(
-      'Shrink the conversation to free up context'
+      'Shrink the chat to free up context'
     );
   });
 

@@ -414,7 +414,7 @@ export function ClaudeAccountsSection() {
           only the fallback. */}
       <SettingRow
         label="Default account"
-        description="New sessions run on this unless the agent or the session picks another."
+        description="New chats run on this unless the agent or the chat picks another."
       >
         <Select
           value={activeValue}
@@ -455,7 +455,7 @@ export function ClaudeAccountsSection() {
       )}
       {credits?.isDefault && !credits.available && (
         <div className="text-muted-foreground text-xs" data-testid="claude-credits-unavailable">
-          <p>DorkOS credits aren’t available, so new sessions here won’t start.</p>
+          <p>DorkOS credits aren’t available, so new chats here won’t start.</p>
           <p>Sign in to your DorkOS account again, or pick another account.</p>
         </div>
       )}
@@ -465,7 +465,7 @@ export function ClaudeAccountsSection() {
           When a row stands for that folder, its "in use" already says it. */}
       {claudeCode?.launchOverride && !resolvedAccountId && (
         <p className="text-muted-foreground text-xs" data-testid="claude-account-launch-override">
-          New sessions use {shortenHomePath(claudeCode.launchOverride.path)}, from the server’s
+          New chats use {shortenHomePath(claudeCode.launchOverride.path)}, from the server’s
           $CLAUDE_CONFIG_DIR.
         </p>
       )}
@@ -754,7 +754,7 @@ function AccountRow({
             data-testid="claude-account-not-ready"
           >
             <CircleAlert className="text-destructive mt-px size-3 shrink-0" aria-hidden />
-            <span>Not a Claude Code account yet. No sessions show from it.</span>
+            <span>Not a Claude Code account yet. No chats show from it.</span>
           </p>
         )}
       </div>

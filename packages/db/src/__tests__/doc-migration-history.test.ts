@@ -20,6 +20,12 @@ const hashes = [
   '934167d31e86442927414b4ef1790e60ddc3d1d7af51285b59411d135514fc49',
   'f85a83fc7fc5adc1764d1c10e089acdd3d0ea874139c5757bbff58ca77ed0825',
 ];
+const canonicalDocTimes = [1791478832000, 1791478833000, 1791478834000];
+const historicalTags = [
+  '20261008170032_doc_room_admissions',
+  '20261008170033_doc_room_pending_sources',
+  '20261008170034_lowly_molecule_man',
+];
 const dirs: string[] = [];
 
 afterEach(() => {
@@ -33,7 +39,14 @@ function migrationFolder(entries: Entry[]): string {
   mkdirSync(path.join(dir, 'meta'));
   writeFileSync(path.join(dir, 'meta/_journal.json'), JSON.stringify({ ...journal, entries }));
   for (const entry of entries) {
-    copyFileSync(path.join(folder, `${entry.tag}.sql`), path.join(dir, `${entry.tag}.sql`));
+    copyFileSync(
+      path.join(
+        folder,
+        ...(historicalTags.includes(entry.tag) ? ['legacy-doc'] : []),
+        `${entry.tag}.sql`
+      ),
+      path.join(dir, `${entry.tag}.sql`)
+    );
   }
   return dir;
 }
@@ -60,10 +73,12 @@ function schema(db: ReturnType<typeof createDb>) {
 function legacyEntries(count: number): Entry[] {
   return [
     ...journal.entries.slice(0, 148),
-    ...journal.entries.slice(149, 149 + count).map((entry, i) => ({
-      ...entry,
+    ...historicalTags.slice(0, count).map((tag, i) => ({
       idx: 148 + i,
+      version: '6',
       when: oldTimes[i]!,
+      tag,
+      breakpoints: true,
     })),
   ];
 }
@@ -126,17 +141,27 @@ function rows(db: ReturnType<typeof createDb>, hasDoc: boolean) {
 
 function verifyFinal(db: ReturnType<typeof createDb>) {
   const applied = history(db);
-  expect(applied).toHaveLength(journal.entries.length);
+  const legacy = applied.some((row) => hashes.includes(row.hash));
+  expect(applied).toHaveLength(journal.entries.length + (legacy ? 3 : 0));
   for (const [i, hash] of hashes.entries()) {
     const matching = applied.filter((row) => row.hash === hash);
-    expect(matching).toHaveLength(1);
-    expect(matching[0]!.created_at).toBe(journal.entries[149 + i]!.when);
+    expect(matching).toHaveLength(legacy ? 1 : 0);
+    if (legacy) expect(matching[0]!.created_at).toBe(canonicalDocTimes[i]);
   }
   const main = journal.entries[148]!;
   const mainHash = createHash('sha256')
     .update(readFileSync(path.join(folder, `${main.tag}.sql`)))
     .digest('hex');
   expect(applied.filter((row) => row.hash === mainHash)).toHaveLength(1);
+  for (const entry of journal.entries.slice(149, 151)) {
+    const hash = createHash('sha256')
+      .update(readFileSync(path.join(folder, `${entry.tag}.sql`)))
+      .digest('hex');
+    expect(applied.filter((row) => row.hash === hash)).toHaveLength(1);
+  }
+  expect(
+    db.$client.prepare("SELECT name FROM sqlite_master WHERE name='chat_messages'").get()
+  ).toBeDefined();
   expect(
     db.$client
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'session_touches'")
@@ -198,7 +223,7 @@ describe('Doc migration history across shipped session touches', () => {
           expect(history(db).slice(0, before.length)).toEqual(
             before.map((row) => {
               const doc = hashes.indexOf(row.hash);
-              return doc < 0 ? row : { ...row, created_at: journal.entries[149 + doc]!.when };
+              return doc < 0 ? row : { ...row, created_at: canonicalDocTimes[doc]! };
             })
           );
           expect(rows(db, count > 0)).toEqual(data);
@@ -209,6 +234,32 @@ describe('Doc migration history across shipped session touches', () => {
       });
     }
   }
+
+  it('upgrades the published canonical three-Doc history without replaying its DDL or changing its rows', () => {
+    const db = createDb(':memory:');
+    try {
+      const entries = [
+        ...journal.entries.slice(0, 149),
+        ...historicalTags.map((tag, i) => ({
+          idx: 149 + i,
+          version: '6',
+          when: canonicalDocTimes[i]!,
+          tag,
+          breakpoints: true,
+        })),
+      ];
+      migrate(db, { migrationsFolder: migrationFolder(entries) });
+      seed(db, true);
+      const before = history(db),
+        data = rows(db, true);
+      runMigrations(db);
+      expect(history(db).slice(0, before.length)).toEqual(before);
+      expect(rows(db, true)).toEqual(data);
+      verifyFinal(db);
+    } finally {
+      db.$client.close();
+    }
+  });
 
   it('rolls back every legacy timestamp on retime failure and resumes after the committed Main migration', () => {
     const db = createDb(':memory:');
@@ -239,7 +290,7 @@ describe('Doc migration history across shipped session touches', () => {
       expect(history(db).slice(0, before.length)).toEqual(
         before.map((row) => {
           const doc = hashes.indexOf(row.hash);
-          return doc < 0 ? row : { ...row, created_at: journal.entries[149 + doc]!.when };
+          return doc < 0 ? row : { ...row, created_at: canonicalDocTimes[doc]! };
         })
       );
       verifyFinal(db);

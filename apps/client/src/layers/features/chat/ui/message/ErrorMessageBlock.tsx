@@ -29,7 +29,7 @@ const ERROR_COPY: Record<ErrorCategory, { heading: string; subtext: string; retr
     },
     budget_exceeded: {
       heading: 'Cost limit reached',
-      subtext: 'This session hit its spending limit.',
+      subtext: 'This chat hit its spending limit.',
       retryable: false,
     },
     output_format_error: {

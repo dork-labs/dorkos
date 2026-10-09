@@ -96,7 +96,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
 /** The note an upgrade event carries for an agent that was limited to reading. */
 export const OBSERVE_CEILING_NOTE =
   'This agent was limited to reading. Every area is now Blocked for it, but it can still ' +
-  'post and react in its conversations, save its own notes, and use its own window.';
+  'post and react in its rooms, save its own notes, and use its own window.';
 
 /** The raw area map of a manifest's `permissions`, or an empty one. */
 function rawAreas(raw: Record<string, unknown>): Record<string, unknown> {

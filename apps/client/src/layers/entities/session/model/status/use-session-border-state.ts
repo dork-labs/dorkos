@@ -84,7 +84,7 @@ export const BORDER_LABELS: Record<SessionBorderKind, string> = {
   pendingApproval: 'Awaiting your approval',
   streaming: 'Working',
   limited: 'Out of usage',
-  error: 'Error: check session',
+  error: 'Error: check chat',
   unseen: 'New activity',
 };
 

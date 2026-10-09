@@ -38,7 +38,7 @@ The stages below use a few words worth pinning down:
 - **It doesn't wait for permission to start.** `/flow` can run the whole path on its own. No stage requires a human to kick it off.
 - **It asks because it's unsure, not because of what stage it's in.** A human gets pulled in when the engine is genuinely uncertain (plus a small, fixed set of safety checks, more on those below), never just because the work reached a particular stage. That's why early brainstorming asks you lots of questions and late-stage building rarely does: it's one rule, not nine different policies per stage.
 
-You're always in charge. Pause the loop, turn off any part of it, take back any item, or step into a session yourself, at any point.
+You're always in charge. Pause the loop, turn off any part of it, take back any item, or step into a chat yourself, at any point.
 
 ## One path, start to finish
 
@@ -91,7 +91,7 @@ The stages above are the same either way. What changes is who presses the button
 |                                     | Running it by hand                                                     | Letting it run itself                                                                                              |
 | ----------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | **How you use it**                  | One stage at a time: `/flow:specify`, then `/flow:execute`, and so on. | Point it at the queue with `/flow auto`. It drains the ready work and stops at each gate.                          |
-| **When it has a question**          | Asked right in your current session.                                   | Parked somewhere durable and sent to you; picks back up when you reply.                                            |
+| **When it has a question**          | Asked right in your current chat.                                      | Parked somewhere durable and sent to you; picks back up when you reply.                                            |
 | **Do you need the server running?** | No, it runs entirely from your terminal.                               | Draining the queue from your terminal doesn't need the server either. An always-on unattended runner does need it. |
 | **Best for**                        | Learning how `/flow` works, or careful one-off changes.                | Clearing a backlog of ready work while you do something else.                                                      |
 
@@ -101,7 +101,7 @@ The stages above are the same either way. What changes is who presses the button
 
 - You're new to `/flow` and want to watch each stage happen before you trust it. Think of it as training wheels, not a downgrade.
 - The work is sensitive, exploratory, or a one-off where you want to approve every step.
-- You want any questions answered in the session you're already in.
+- You want any questions answered in the chat you're already in.
 
 **Hand it to autopilot when:**
 

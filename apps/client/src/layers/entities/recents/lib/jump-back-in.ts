@@ -14,7 +14,7 @@ import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import type { Session } from '@dorkos/shared/types';
 import { interactionKey, type InteractionTimestamps } from '@/layers/entities/interactions';
 import { hasUnread, roomDisplayTitle } from '@/layers/entities/room';
-import { partitionSessionsByOrigin, sessionDisplayTitle } from '@/layers/entities/session';
+import { partitionSessionsByOwnership, sessionDisplayTitle } from '@/layers/entities/session';
 
 /**
  * How many rows "Jump back in" ever shows.
@@ -89,8 +89,9 @@ export interface JumpBackInModel {
    */
   items: JumpBackInItem[];
   /**
-   * Sessions somebody else started — a room's own turn, a scheduled run, a
-   * bridged chat, an agent calling an agent. Kept OUT of
+   * Chats somebody else started that you never touched — a room's own turn, a
+   * scheduled run, a bridged chat, a spin-off chat another chat started
+   * (`partitionSessionsByOwnership`'s spin-offs and automated). Kept OUT of
    * {@link JumpBackInModel.items} and offered behind a reveal, because "jump
    * back in" means the threads you were in.
    */
@@ -234,10 +235,10 @@ function interactionKeyOf(item: JumpBackInItem): string {
  * placed by the record — an agent posting in a channel cannot move it — and a
  * row without one keeps the activity ordering this list has always used.
  *
- * The other half of BC-16's key, `userLastMessageAt`, has no source on the wire
- * yet (spec §F makes it an additive, optional field on `GET
- * /api/sessions/recent`). When it arrives it joins the `Math.max` here; until
- * then the interaction record alone governs — omission, never a guess.
+ * A chat also carries the server's own record of you: `lastTouchedByYouAt` and
+ * `userLastMessageAt` (spec `your-activity-first` D10), which join the local
+ * record in one `Math.max` so a chat you used on another device is placed by
+ * that use too.
  *
  * An unparseable timestamp sorts last rather than throwing: one bad row must
  * not empty the list.
@@ -246,8 +247,13 @@ function interactionKeyOf(item: JumpBackInItem): string {
  * @param interactions - When the operator last opened each thread.
  */
 function recencyMs(item: JumpBackInItem, interactions: InteractionTimestamps): number {
-  const opened = epochMs(interactions[interactionKeyOf(item)]);
-  if (opened !== null) return opened;
+  const touched = [
+    epochMs(interactions[interactionKeyOf(item)]),
+    ...(item.kind === 'session'
+      ? [epochMs(item.session.lastTouchedByYouAt), epochMs(item.session.userLastMessageAt)]
+      : []),
+  ].filter((ms): ms is number => ms !== null);
+  if (touched.length > 0) return Math.max(...touched);
   return epochMs(item.lastActivityAt) ?? Number.NEGATIVE_INFINITY;
 }
 
@@ -298,11 +304,13 @@ function isJumpBackInRoom(room: RoomSummary, mutedRoomIds: ReadonlySet<string>):
 /**
  * Merge sessions and rooms into one ordered, deduped, capped list.
  *
- * **One row per thread, and the origin is what decides.** A session somebody
- * else started — a room's own turn, a scheduled run, a Telegram message, one
- * agent calling another — is an engine run under a thread that is already in
- * this list under its own name, so it never gets a row of its own; it goes to
- * {@link JumpBackInModel.automated} instead.
+ * **One row per thread, and whose the chat is decides** (spec
+ * `your-activity-first` D7). A chat somebody else started that you never
+ * touched — a room's own turn, a scheduled run, a Telegram message, one agent
+ * calling another — is an engine run under a thread that is already in this
+ * list under its own name, so it never gets a row of its own; it goes to
+ * {@link JumpBackInModel.automated} instead. Once you open or write in it, it
+ * is yours and takes a row like any other.
  *
  * That is the whole dedupe, and it rests entirely on the origin being TRUE.
  * A room turn carries no marker in its own transcript, so the server assigns
@@ -327,15 +335,15 @@ export function mergeJumpBackIn({
   interactions = {},
   limit = MAX_JUMP_BACK_IN,
 }: MergeJumpBackInInput): JumpBackInModel {
-  const { conversations, automated } = partitionSessionsByOrigin([...sessions]);
+  const { yours, spinOffs, automated } = partitionSessionsByOwnership(sessions);
   const order = byRecency(interactions);
   const merged = [
-    ...conversations.map(sessionItem),
+    ...yours.map(sessionItem),
     ...rooms.filter((room) => isJumpBackInRoom(room, mutedRoomIds)).map(roomItem),
   ].sort(order);
 
   return {
     items: dedupe(merged).slice(0, limit),
-    automated: automated.map(sessionItem).sort(order).slice(0, limit),
+    automated: [...spinOffs, ...automated].map(sessionItem).sort(order).slice(0, limit),
   };
 }

@@ -195,7 +195,7 @@ async function finish(req: Request, res: Response, err: unknown): Promise<void> 
   } catch (writeErr) {
     devtoolsCaptureStore.resolveRecordingUpload(lease, {
       ok: false,
-      error: 'The recording could not be saved to this session working directory.',
+      error: 'The recording couldn’t be saved to this chat’s folder.',
       provenance: 'host',
     });
     if (sendPathError(res, writeErr)) return;

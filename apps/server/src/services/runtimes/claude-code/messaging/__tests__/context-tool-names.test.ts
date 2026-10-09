@@ -487,10 +487,9 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // which it does not use), so it stays deferred and unprefixed.
     // Unchanged by extension tools (DOR-2685): the docs registry this reads
     // composes no extension. `extension-tools-every-list.test.ts` guards those.
-    // Four operator management tools and one native task writer remain deferred.
-    // Upstream compact_my_session is also advertised and always loaded.
-    // The upstream audit_verify tool remains advertised and deferred.
-    expect(advertised.size).toBe(126);
+    // Advertise both the published Doc tools and upstream three chat capabilities.
+    // Published126 plus chat_send, chat_read and chat_stop gives129.
+    expect(advertised.size).toBe(129);
     for (const name of [
       'audit_verify',
       'configure_doc_channel',

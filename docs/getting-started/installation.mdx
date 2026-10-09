@@ -126,7 +126,7 @@ bun add -g dorkos
 export ANTHROPIC_API_KEY="your-key-here"
 ```
 
-Add this to your shell profile (`~/.bashrc`, `~/.zshrc`, or similar) to persist it across sessions.
+Add this to your shell profile (`~/.bashrc`, `~/.zshrc`, or similar) so it stays set in every new terminal.
 
 </Step>
 <Step>
@@ -229,7 +229,7 @@ docker run -d --name dorkos \
   ghcr.io/dork-labs/dorkos:latest
 ```
 
-The `-v dorkos-data:/home/node/.dork` part creates a Docker volume, a small chunk of storage that survives even if you remove the container, so your sessions and settings stick around.
+The `-v dorkos-data:/home/node/.dork` part creates a Docker volume, a small chunk of storage that survives even if you remove the container, so your chats and settings stick around.
 
 </Step>
 <Step>
@@ -420,4 +420,4 @@ Replace `0.11.0` with the version you want. Available versions are listed on [np
 
 ## Next steps
 
-Head to the [Quickstart](/docs/getting-started/quickstart) to open your first session, or [Configuration](/docs/getting-started/configuration) to customize your setup.
+Head to the [Quickstart](/docs/getting-started/quickstart) to open your first chat, or [Configuration](/docs/getting-started/configuration) to customize your setup.

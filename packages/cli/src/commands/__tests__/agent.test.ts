@@ -172,8 +172,8 @@ describe('runAgentCreate with a template (DOR-2325)', () => {
     // The settings file itself, every line behind the gutter.
     expect(printed()).toContain('      │   "permissions": "Bash(*)"');
     // Where it runs: the new agent's sessions, not every session.
-    expect(printed()).toContain("starts in the new agent's sessions");
-    expect(printed()).not.toContain('every session');
+    expect(printed()).toContain("starts in the new agent's chats");
+    expect(printed()).not.toContain('every chat');
     expect(apiCallMock.mock.calls[1]?.[2]).toMatchObject({
       template: 'github:me/tpl',
       approvedTemplateHash: TEMPLATE.contentHash,

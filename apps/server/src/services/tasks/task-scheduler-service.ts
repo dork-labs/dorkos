@@ -1153,8 +1153,8 @@ export class TaskSchedulerService {
    */
   private stickyBusyReason(): string {
     return (
-      'This task resumes one session every run, and its previous run was still going when this ' +
-      'one came round — so it was skipped rather than starting a second turn on the same session'
+      'This task resumes one chat every run, and its previous run was still going when this ' +
+      'one came round — so it was skipped rather than starting a second turn on the same chat'
     );
   }
 

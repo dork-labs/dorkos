@@ -141,15 +141,15 @@ Authorization: Bearer <token>
 
 Agent Cards advertise the spec-standard `http`/`bearer` security scheme, and they always say a bearer token is required — because it always is. The requirement is about **calling** an agent, not about reading the card: while login is off you can still fetch a card without a token, and the card itself tells you the call that follows needs one. Cards never say where your token lives; that stays between you and your own machine.
 
-### `contextId`: grouping turns into a session
+### `contextId`: grouping turns into one chat
 
-Set `message.contextId` to group related messages into one continuing agent session; reuse the same `contextId` across calls to keep context. A2A-originated sessions are keyed on `agentId + contextId`.
+Set `message.contextId` to group related messages into one continuing agent chat; reuse the same `contextId` across calls to keep context. A2A-originated chats are keyed on `agentId + contextId`.
 
 <Callout type="warn">
   **`contextId` is a shared secret, not a per-caller boundary.** Under a single static
-  `MCP_API_KEY`, any caller who learns another caller's `contextId` can deliberately join that
-  session. Use unguessable values (UUIDs) and treat `contextId` as a secret shared between a caller
-  and the gateway. Per-principal isolation is future work.
+  `MCP_API_KEY`, any caller who learns another caller's `contextId` can deliberately join that chat.
+  Use unguessable values (UUIDs) and treat `contextId` as a secret shared between a caller and the
+  gateway. Per-principal isolation is future work.
 </Callout>
 
 ### Quick check with curl

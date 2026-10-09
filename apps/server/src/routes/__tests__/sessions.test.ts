@@ -1200,7 +1200,7 @@ describe('Sessions Routes', () => {
 
       expect(res.status).toBe(400);
       expect(res.body).toEqual({
-        error: 'Choose a registered agent before starting this session',
+        error: 'Choose a registered agent before starting this chat',
         code: 'INVALID_AGENT_PATH',
       });
       expect(runtimeRegistry.persistSessionRuntime).not.toHaveBeenCalled();

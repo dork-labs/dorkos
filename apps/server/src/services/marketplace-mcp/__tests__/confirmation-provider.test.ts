@@ -608,13 +608,13 @@ describe('TokenConfirmationProvider — updates', () => {
     expect(detail).toContain('"flow" (plugin, installed globally): "1.0.0" → "1.2.0"');
     expect(detail).toContain('runs "echo \\"new hook\\"" when the agent finishes');
     expect(detail).toContain('scheduled job "nightly": runs on "0 3 * * *"');
-    expect(detail).toContain('MCP server "db" (in every session): "npx" "-y" "db-mcp"');
+    expect(detail).toContain('MCP server "db" (in every chat): "npx" "-y" "db-mcp"');
     expect(detail).toContain('installed in "/work/alpha" for "Alpha"');
     expect(detail).toContain('runs nothing on its own');
   });
 
   it('says a project copy does not start its programs, and lists language servers, monitors and bin commands', async () => {
-    // Purpose: "in every session" is only true of a global plugin; a project
+    // Purpose: "in every chat" is only true of a global plugin; a project
     // install is projected as files and none of these start.
     await provider.requestInstallConfirmation(
       updateRequest([
@@ -638,7 +638,7 @@ describe('TokenConfirmationProvider — updates', () => {
     );
     expect(detail).toContain('background monitor "watch"');
     expect(detail).toContain(`adds the command "git" to the agent's PATH`);
-    expect(detail).not.toContain('in every session');
+    expect(detail).not.toContain('in every chat');
   });
 
   it('shows a hidden direction-changing character instead of letting it rewrite the card', async () => {

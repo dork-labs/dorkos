@@ -179,7 +179,7 @@ describe('the room panel fixture reaches every state', () => {
     await openSheet({ label: 'DM', read: DM_ROOM, holds: DM_ROOM });
 
     expect(
-      await screen.findByText('Adding a second agent turns this into a group conversation.')
+      await screen.findByText('Adding a second agent turns this into a group message.')
     ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'How loud Mio Clicker PM is here' }));

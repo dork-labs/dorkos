@@ -173,7 +173,7 @@ export class RoomBridgeCreation {
       case 'channel':
         throw new RoomError(
           'BROADCAST_NOT_BRIDGEABLE',
-          'A broadcast channel is not a conversation and cannot be bridged'
+          'A broadcast channel is not a two-way chat and cannot be bridged'
         );
       default: {
         const unrecognized: string = request.chatType;

@@ -55,12 +55,12 @@ describe('sessionLabelFor', () => {
     expect(sessionLabelFor('/Users/dork/projects/dorkos')).toBe('dorkos');
   });
 
-  it('falls back to "A session" with no cwd', () => {
-    expect(sessionLabelFor(undefined)).toBe('A session');
+  it('falls back to "A chat" with no cwd', () => {
+    expect(sessionLabelFor(undefined)).toBe('A chat');
   });
 
-  it('falls back to "A session" for a root path with no basename', () => {
-    expect(sessionLabelFor('/')).toBe('A session');
+  it('falls back to "A chat" for a root path with no basename', () => {
+    expect(sessionLabelFor('/')).toBe('A chat');
   });
 });
 

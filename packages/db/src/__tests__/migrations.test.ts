@@ -233,16 +233,15 @@ describe('Database Migrations', () => {
       expect(
         db.$client.prepare('SELECT * FROM session_native_bindings ORDER BY session_id').all()
       ).toEqual(publishedBindings);
-      expect(journal.entries.slice(148).map((entry) => entry.idx)).toEqual([148, 149, 150, 151]);
+      expect(journal.entries.slice(148).map((entry) => entry.idx)).toEqual([148, 149, 150]);
       expect(db.$client.prepare('SELECT * FROM audit_events ORDER BY seq').all()).toEqual(
         publishedAudit
       );
-      // All three unchanged Doc SQL hashes must occur once after published private-session main.
-      for (const hash of [
-        'c156544a648a0d5dd48a5147f2488420d8460da5ea9e0c596afdd407486adc84',
-        '934167d31e86442927414b4ef1790e60ddc3d1d7af51285b59411d135514fc49',
-        'f85a83fc7fc5adc1764d1c10e089acdd3d0ea874139c5757bbff58ca77ed0825',
-      ]) {
+      // Fresh/main-only upgrades apply immutable Chat149 and the genuine consolidated Doc150 once.
+      for (const entry of journal.entries.slice(149, 151)) {
+        const hash = createHash('sha256')
+          .update(readFileSync(path.join(DRIZZLE_DIR, `${entry.tag}.sql`)))
+          .digest('hex');
         expect(history.filter((row) => (row as { hash: string }).hash === hash)).toHaveLength(1);
       }
       const schema = db.$client
@@ -335,6 +334,12 @@ describe('Database Migrations', () => {
       // 0096). Cascades with its room; archiving one keeps the rows and freezes
       // them.
       'canvas_documents',
+      // The DM chat one agent keeps with another, the messages chats send each
+      // other (the server's record of who sent what), and how far one chat has
+      // read another (spec spin-off-chats §1-§2).
+      'chat_agent_dms',
+      'chat_messages',
+      'chat_read_cursors',
       'codex_threads',
       // Remote community enrollment, mirrored history, and durable delivery.
       'community_agent_enrollments',

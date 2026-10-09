@@ -150,17 +150,17 @@ const GLOBAL_ROW: HarnessRow = {
     'claude-code': {
       state: 'dropped',
       reason:
-        'installed for all your projects. Only the Claude Code sessions DorkOS runs can see it. Its 1 skill is not shared with this project: release. Its skills that run on a timer now work.',
+        'installed for all your projects. Only the Claude Code chats DorkOS runs can see it. Its 1 skill is not shared with this project: release. Its skills that run on a timer now work.',
     },
     codex: {
       state: 'dropped',
       reason:
-        'installed for all your projects. Only the Claude Code sessions DorkOS runs can see it. Its 1 skill is not shared with this project: release. Its skills that run on a timer now work.',
+        'installed for all your projects. Only the Claude Code chats DorkOS runs can see it. Its 1 skill is not shared with this project: release. Its skills that run on a timer now work.',
     },
     cursor: {
       state: 'dropped',
       reason:
-        'installed for all your projects. Only the Claude Code sessions DorkOS runs can see it. Its 1 skill is not shared with this project: release. Its skills that run on a timer now work.',
+        'installed for all your projects. Only the Claude Code chats DorkOS runs can see it. Its 1 skill is not shared with this project: release. Its skills that run on a timer now work.',
     },
   },
 };

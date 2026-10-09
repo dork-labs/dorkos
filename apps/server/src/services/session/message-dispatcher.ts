@@ -164,6 +164,7 @@ import type {
   MessageOpts,
   RuntimeCapabilities,
   RuntimeDeliveryResult,
+  TurnPermissionBound,
   TurnPermissionCeiling,
 } from '@dorkos/shared/agent-runtime';
 import type {
@@ -219,6 +220,7 @@ import {
   noteContextWarningBoundary,
 } from './agent-compaction/context-warning.js';
 import { ROOMS, SESSIONS } from '../../config/constants.js';
+import { isChatClientId } from './chat-messages/chat-client-id.js';
 import { logger } from '../../lib/logger.js';
 import { captureDispatchScope, runInDispatch } from '../../lib/dispatch-context.js';
 import { recordDispatchEnd, recordDispatchStart } from '../observability/dispatch-buffers.js';
@@ -344,6 +346,57 @@ const privateLaunches = new Map<AbortSignal, Set<Promise<TriggerTurnResult>>>();
  * server that never restarted.
  */
 const launching = new Set<string>();
+
+/**
+ * The ceiling a queued message another chat sent launches under (spec
+ * `spin-off-chats` §3), read from that chat's own record of the send at the
+ * moment the turn LAUNCHES, not when it was accepted: a batched row gains
+ * senders while it waits, and a row adopted after a restart has no in-memory
+ * plan to carry one. Wired at boot by the chat-message service.
+ */
+type QueuedChatCeilingResolver = (messageId: string) => TurnPermissionCeiling;
+
+let queuedChatCeiling: QueuedChatCeilingResolver | undefined;
+
+/**
+ * Wire (or clear) how a chat-sent queue row's ceiling is read.
+ *
+ * @param resolver - Reads a row's ceiling; `undefined` clears it.
+ */
+export function setQueuedChatCeilingResolver(
+  resolver: QueuedChatCeilingResolver | undefined
+): void {
+  queuedChatCeiling = resolver;
+}
+
+/**
+ * The ceiling a launching message runs under: the caller's own, plus, for a
+ * row another chat sent, its senders' bound. A chat-sent row with no resolver
+ * wired is held to the receiving runtime's default: it fails closed.
+ */
+function launchCeiling(
+  clientId: string,
+  messageId: string,
+  own: TurnPermissionCeiling | undefined
+): TurnPermissionCeiling | undefined {
+  if (!isChatClientId(clientId)) return own;
+  const chat = queuedChatCeiling?.(messageId) ?? 'runtime-default';
+  if (own === undefined) return chat;
+  const list = (c: TurnPermissionCeiling): readonly TurnPermissionBound[] =>
+    Array.isArray(c) ? (c as readonly TurnPermissionBound[]) : [c as TurnPermissionBound];
+  return [...list(own), ...list(chat)];
+}
+
+/**
+ * Whether a queued message is being launched right now: its words are being
+ * read into a turn, so anything appended to its row would be lost. A caller
+ * that batches into a waiting row asks this first, in the same tick.
+ *
+ * @param messageId - The queue row's id.
+ */
+export function isQueuedMessageLaunching(messageId: string): boolean {
+  return launching.has(messageId);
+}
 /** A summary the agent asked for, waiting for its session to come free (DOR-2732). */
 interface PendingAgentCompaction {
   /** The id the agent called from — the runtime's lock may be held under its canonical id. */
@@ -1682,9 +1735,10 @@ function launchDispatchInner(
       ...(turn.newSessionPermissionMode !== undefined
         ? { newSessionPermissionMode: turn.newSessionPermissionMode }
         : {}),
-      ...(turn.permissionCeiling !== undefined
-        ? { permissionCeiling: turn.permissionCeiling }
-        : {}),
+      ...(() => {
+        const ceiling = launchCeiling(clientId, messageId, turn.permissionCeiling);
+        return ceiling !== undefined ? { permissionCeiling: ceiling } : {};
+      })(),
       ...(turn.stallTimeoutMs !== undefined ? { stallTimeoutMs: turn.stallTimeoutMs } : {}),
       ...(turn.privateReceiptId !== undefined ? { privateReceiptId: turn.privateReceiptId } : {}),
       ...(turn.privateDispatchSignal ? { privateDispatchSignal: turn.privateDispatchSignal } : {}),
@@ -2084,6 +2138,18 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
           context: opts.context ?? null,
         })
       : undefined;
+  // **The person first** (spec `spin-off-chats` §3): a message a person (or
+  // anything but another chat) queues goes ahead of every row another chat
+  // sent, so a busy agent answers its person before its peers. Done as a real
+  // move, so the queue a window shows is the order it runs in, and a person can
+  // still reorder by hand afterwards.
+  if (record && !isChatClientId(clientId)) {
+    const store = getMessageQueueStore();
+    const firstChatRow = store
+      ?.list(queueKey)
+      .find((row) => row.id !== record.id && isChatClientId(row.enqueuedBy));
+    if (store && firstChatRow) store.move(record.id, { before: firstChatRow.id });
+  }
   const messageId = record?.id ?? opts.messageId ?? crypto.randomUUID();
   // A row gives a real position. Without one the answer depends on WHY there is
   // no row: a refusing caller is deliberately rowless and reports `0` (it is on

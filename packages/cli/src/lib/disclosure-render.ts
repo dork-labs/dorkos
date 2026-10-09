@@ -29,9 +29,9 @@ export type DisclosureScope = 'global' | 'project' | 'agent';
 
 /** When a package's own programs start, by where it is installed. */
 const PROGRAMS_START: Record<DisclosureScope, string> = {
-  global: 'starts in every session',
+  global: 'starts in every chat',
   project: 'declared, not started for a project install',
-  agent: "starts in the new agent's sessions",
+  agent: "starts in the new agent's chats",
 };
 
 /**

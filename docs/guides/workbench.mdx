@@ -10,7 +10,7 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 Chat is where you talk to your agent. The workbench is where you can see and touch what it's actually doing: the files it's editing, a shell to run commands in, and a browser to check its work in.
 
-It lives in the panel to the right of chat, as a set of tabs: **Files**, **Canvas**, **Browser**, and **Terminal**. Open a session and they're right there, no setup needed.
+It lives in the panel to the right of chat, as a set of tabs: **Files**, **Canvas**, **Browser**, and **Terminal**. Open a chat and they're right there, no setup needed.
 
 <ProductShot
   id="workbench"
@@ -19,7 +19,7 @@ It lives in the panel to the right of chat, as a set of tabs: **Files**, **Canva
 
 ## Quick Win: Open a File in 5 Seconds
 
-1. Open a session (any project you've added to DorkOS works).
+1. Open a chat (any project you've added to DorkOS works).
 2. Click the **Files** tab in the right panel.
 3. Click any file in the tree.
 
@@ -27,7 +27,7 @@ It opens in the **Canvas** tab, in a viewer built for what it is: code gets an e
 
 ## Files: Browse, Create, Rename, Move, Delete
 
-The Files tab shows a tree rooted at your session's working directory. If that directory is a git checkout, a small branch badge tells you which one, so you always know which workspace you're looking at.
+The Files tab shows a tree rooted at your chat's working directory. If that directory is a git checkout, a small branch badge tells you which one, so you always know which workspace you're looking at.
 
 - **Browse**: folders expand on click, loading their contents as you go (large projects stay fast because DorkOS only loads what's on screen).
 - **Create**: the New File and New Folder buttons in the tab's toolbar add an entry inside the selected folder (or the root, if nothing's selected).
@@ -68,7 +68,7 @@ If the file changed on disk while you had it open (say, the agent edited it too)
 
 ## Terminal: A Real Shell, Right There
 
-Open the Terminal tab and you get an actual shell, running in your session's working directory. No extra window, no `cd`-ing back to where you were.
+Open the Terminal tab and you get an actual shell, running in your chat's working directory. No extra window, no `cd`-ing back to where you were.
 
 - **Multiple tabs**: click the `+` to open another terminal; each gets its own numbered tab.
 - **Survives a refresh**: close the browser tab or hit reload, and your terminals are still running when you come back. DorkOS reattaches to the same live shell instead of starting a fresh one.
@@ -98,7 +98,7 @@ Each tab also remembers where you were. Switch to Browser and back, and the file
 
 If you (or the agent) open something that's already open, DorkOS switches to that existing tab instead of opening a duplicate.
 
-Your tabs live on your DorkOS machine, not in one browser. Open the same session on your phone and the same things are open; close one there and it closes on your laptop too. Clearing your browser data doesn't cost you your tabs, and a second window on the same session shows the same set rather than its own.
+Your tabs live on your DorkOS machine, not in one browser. Open the same chat on your phone and the same things are open; close one there and it closes on your laptop too. Clearing your browser data doesn't cost you your tabs, and a second window on the same chat shows the same set rather than its own.
 
 ## Reviewing Changes: See Exactly What the Agent Edited
 
@@ -109,11 +109,11 @@ Every changed block (a "hunk") has two controls in the margin:
 - **Accept** keeps the agent's change and settles the block out of your way.
 - **Reject** undoes that one block on disk — the lines snap back to how they were before the agent touched them. Everything else the agent did stays.
 
-Above the diff you can **Reject all** (undo every change to the file at once) or **Mark reviewed** (you're happy — later edits will diff from here). On a wide screen, a toggle switches between the stacked inline view and a side-by-side before/after. A second toggle compares against your **last commit** instead of the session's starting point, if you'd rather see it that way.
+Above the diff you can **Reject all** (undo every change to the file at once) or **Mark reviewed** (you're happy — later edits will diff from here). On a wide screen, a toggle switches between the stacked inline view and a side-by-side before/after. A second toggle compares against your **last commit** instead of the chat's starting point, if you'd rather see it that way.
 
 If the file changes underneath you — say the agent edits it again while you're reviewing — you get a calm "this file changed" notice with a Refresh button, never a silent overwrite. A change that fails to write (a permissions problem, a dropped connection) tells you so too, so you can try again.
 
-Sometimes DorkOS has no snapshot from when the agent started — for example, if the server restarted mid-session. When that happens the header says so plainly and compares against your last commit instead. In that state, **Reject all** asks you to confirm first, because it would also undo edits you made yourself before the session.
+Sometimes DorkOS has no snapshot from when the agent started — for example, if the server restarted mid-chat. When that happens the header says so plainly and compares against your last commit instead. In that state, **Reject all** asks you to confirm first, because it would also undo edits you made yourself before the chat.
 
 Changed images get their own comparison, in the style you may know from GitHub: **2-up** shows before and after side by side, **Swipe** puts them in the same frame with a divider you drag, and **Onion skin** blends between them with a slider. Because an image changes as a whole, the review is whole-file: **Restore previous** puts the old image back on disk (it asks you to confirm first), and **Mark reviewed** keeps the new one. An image the agent just created has no previous version — the panel says so instead of pretending there's something to compare.
 
@@ -130,11 +130,11 @@ An agent isn't limited to describing what it did in text. It can act directly on
 
 It can also **read what's already there**. Ask "what have we got open?" and the agent gets the real list — every tab, what it is, what it's called, and which one is at the front — and it can read one back, like the chart it drew for you last turn. Before, it could only guess from whatever your window last mentioned.
 
-This only reaches into the session you're actively viewing. An agent running unattended in the background can't reach into a workbench you have open elsewhere.
+This only reaches into the chat you're actively viewing. An agent running unattended in the background can't reach into a workbench you have open elsewhere.
 
 Using a page works on a preview DorkOS is serving for you — a local HTML file, or a dev server on your machine. A page loaded straight from the internet is shown, not driven, and your agent is told so in a sentence instead of trying and waiting.
 
-With the same conversation open in two windows, an agent acts in the one that most recently brought a preview to the front, and only that one. The other window sees nothing. Your agent can also name a specific tab when it has several open.
+With the same chat open in two windows, an agent acts in the one that most recently brought a preview to the front, and only that one. The other window sees nothing. Your agent can also name a specific tab when it has several open.
 
 ### In a room, the canvas belongs to everyone
 

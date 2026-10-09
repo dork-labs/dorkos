@@ -129,7 +129,7 @@ describe('the link card shows what its yes covers', () => {
     // them, not a count.
     const shown = await service().describeApproval({ path: work, scope: 'global' });
     expect(shown).toContain(JSON.stringify(STOP.command));
-    expect(shown).toContain('Approving lets these start in every session.');
+    expect(shown).toContain('Approving lets these start in every chat.');
     const projectCard = await service().describeApproval({
       path: work,
       scope: 'project',

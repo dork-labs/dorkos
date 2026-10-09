@@ -273,9 +273,9 @@ describe('AgentRowMenuItems variant parity', () => {
         // The two acts that are satellites of the row on a pointer device — the
         // "N live" chip and the face — and have no target big enough to draw
         // under a thumb, so the menu is where a phone reaches them (P4.2).
-        'Switch session…',
+        'Switch chat…',
         'View profile',
-        'New session',
+        'New chat',
         // Submenu contents:
         'Clients',
         'Experiments',

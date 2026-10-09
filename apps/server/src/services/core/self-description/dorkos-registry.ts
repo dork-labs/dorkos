@@ -13,7 +13,7 @@
  * A domain is included only when its service handles are present in `deps`:
  * `operatorDeps` gates the operator domain, `marketplaceDeps` the marketplace
  * domain, `roomDeps` the rooms domain, `sessionCompactionDeps` the session
- * domain, `auditDeps` the audit domain, and the memory, `ui` and self-description
+ * domain, `chatMessageDeps` the chat domain, `auditDeps` the audit domain, and the memory, `ui` and self-description
  * domains are always present. Every included
  * domain's `assertDeps` runs inside `composeRegistry`, so a domain admitted
  * without its deps fails fast at boot.
@@ -38,6 +38,7 @@ import { mcpDomain } from '../../mesh/mcp-capabilities.js';
 import { roomsDomain } from '../../rooms/room-capabilities.js';
 import { memoryDomain } from '../../memory/memory-capabilities.js';
 import { sessionDomain } from '../../session/agent-compaction/compaction-capabilities.js';
+import { chatDomain } from '../../session/chat-messages/chat-capabilities.js';
 import { uiDomain } from '../../session/browser-seat/ui-capabilities.js';
 import { capabilitiesDomain } from './capabilities-domain.js';
 import { permissionsDomain } from '../permissions/permission-capabilities.js';
@@ -70,6 +71,7 @@ export function composeDorkOsCapabilityRegistry(
   if (deps.mcpDeps) domains.push(mcpDomain);
   if (deps.roomDeps) domains.push(roomsDomain);
   if (deps.sessionCompactionDeps) domains.push(sessionDomain);
+  if (deps.chatMessageDeps) domains.push(chatDomain);
   if (deps.auditDeps) domains.push(auditDomain);
   // Unconditional, unlike every domain above it: memory has no service handle to
   // switch off. Every install has a filesystem, the builtin provider needs
@@ -133,6 +135,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     mcpDomain,
     roomsDomain,
     sessionDomain,
+    chatDomain,
     auditDomain,
     memoryDomain,
     uiDomain,
@@ -148,6 +151,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     mcpDeps: {} as CapabilityDeps['mcpDeps'],
     roomDeps: {} as CapabilityDeps['roomDeps'],
     sessionCompactionDeps: {} as CapabilityDeps['sessionCompactionDeps'],
+    chatMessageDeps: {} as CapabilityDeps['chatMessageDeps'],
     auditDeps: {} as CapabilityDeps['auditDeps'],
   };
   return composeRegistry(domains, deps);

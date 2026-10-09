@@ -556,7 +556,7 @@ describe('AgentsList', () => {
       wrapper: createWrapper(),
     });
 
-    expect(screen.getByRole('button', { name: 'Open session with Alpha' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open chat with Alpha' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Chat with/ })).not.toBeInTheDocument();
   });
 
@@ -574,11 +574,11 @@ describe('AgentsList', () => {
     });
 
     // Each of the 3 agents should have both action buttons
-    expect(screen.getByRole('button', { name: 'Open session with Agent A' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open chat with Agent A' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Open Agent A’s profile' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Open session with Agent B' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open chat with Agent B' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Open Agent B’s profile' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Open session with Agent C' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open chat with Agent C' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Open Agent C’s profile' })).toBeInTheDocument();
   });
 
@@ -598,7 +598,7 @@ describe('AgentsList', () => {
       );
 
       expect(
-        screen.queryByRole('button', { name: 'Open session with Agent A' })
+        screen.queryByRole('button', { name: 'Open chat with Agent A' })
       ).not.toBeInTheDocument();
       expect(screen.getByText(/This table lists agents/)).toBeInTheDocument();
     });
@@ -606,7 +606,7 @@ describe('AgentsList', () => {
     it('leaves the fleet alone when no roster filter is driving it', () => {
       render(<AgentsList agents={multiNsAgents} isLoading={false} />, { wrapper: createWrapper() });
 
-      expect(screen.getByRole('button', { name: 'Open session with Agent A' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Open chat with Agent A' })).toBeInTheDocument();
       expect(screen.queryByText(/This table lists agents/)).not.toBeInTheDocument();
     });
   });

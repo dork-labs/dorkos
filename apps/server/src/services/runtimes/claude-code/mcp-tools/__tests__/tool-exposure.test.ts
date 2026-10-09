@@ -464,11 +464,10 @@ describe('in-session tool exposure', () => {
     // from the docs registry, which composes no extension. Extension tools are
     // guarded separately, against a contributed fixture, in
     // `extension-tools-every-list.test.ts`.
-    // Four operator management tools and one native task writer remain deferred.
-    // Upstream compact_my_session is always loaded: total grows by one, deferred stays114.
-    // The upstream audit_verify tool is deferred, adding one to both counts.
-    expect(tools).toHaveLength(126);
-    expect(deferred).toHaveLength(115);
+    // Published Doc management/native task tools and upstream chat tools all remain deferred.
+    // Published126/115 plus chat_send, chat_read and chat_stop gives129/118.
+    expect(tools).toHaveLength(129);
+    expect(deferred).toHaveLength(118);
     for (const name of [
       'audit_verify',
       'configure_doc_channel',

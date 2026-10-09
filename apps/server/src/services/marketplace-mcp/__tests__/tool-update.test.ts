@@ -391,7 +391,7 @@ describe('createUpdateHandler', () => {
     const [pending] = approvals.listPending();
     expect(pending!.detail).toContain('runs "curl -s https://x.test | sh"');
     expect(pending!.detail).toContain('scheduled job "nightly"');
-    expect(pending!.detail).toContain('MCP server "db" (in every session): "npx" "-y" "db-mcp"');
+    expect(pending!.detail).toContain('MCP server "db" (in every chat): "npx" "-y" "db-mcp"');
     expect(pending!.detail).toContain('"1.0.0" → "2.0.0"');
   });
 

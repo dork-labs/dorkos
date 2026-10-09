@@ -28,9 +28,9 @@ The browser, phone web app, and desktop renderer use HttpTransport. Tests can in
 
 ## The Transport Interface
 
-The Transport interface (`packages/shared/src/transport.ts`) defines all client-server communication. It is large (100+ methods spanning sessions, tasks, relay, mesh, and marketplace) and still evolving alongside the product, so treat it as an internal contract rather than a versioned public API: method signatures can change between releases without a deprecation cycle. All request and response types are exported from `@dorkos/shared`.
+The Transport interface (`packages/shared/src/transport.ts`) defines all client-server communication. It is large (100+ methods spanning chats, tasks, relay, mesh, and marketplace) and still evolving alongside the product, so treat it as an internal contract rather than a versioned public API: method signatures can change between releases without a deprecation cycle. All request and response types are exported from `@dorkos/shared`.
 
-Here is the session-and-tool slice, the part most custom clients touch first:
+Here is the chat-and-tool slice, the part most custom clients touch first:
 
 ```typescript
 interface Transport {
@@ -131,9 +131,9 @@ The full interface also covers Tasks (`listTasks`, `createTask`, `triggerTask`, 
 **HttpTransport** is used by the browser, phone web app, and desktop renderer. It communicates with the Express server over HTTP and WebSocket:
 
 - Standard `fetch()` for CRUD operations
-- `postMessage()` triggers a turn (`202` with the canonical session id)
+- `postMessage()` triggers a turn (`202` with the canonical chat ID)
 - `subscribeSession()` consumes the durable WebSocket stream `GET /api/sessions/:id/events`; `subscribeSessionList()` consumes `GET /api/events`. The same routes also support SSE for external clients.
-- Includes `X-Client-Id` header for session write coordination
+- Includes `X-Client-Id` header so only one client writes to a chat at a time
 
 ## Building a Custom Client
 
@@ -171,7 +171,7 @@ Content-Type: application/json
   running, or see the [API Reference](/docs/api).
 </Callout>
 
-**Authentication.** By default, local login is off (`auth.enabled: false`), so a local DorkOS instance accepts these requests with no credentials, same as the web app talking to its own server. If you turn local login on, every `/api/*` and `/mcp` request needs either a Better Auth session cookie or a per-user API key sent as `Authorization: Bearer <key>`. The separate external MCP server at `/mcp` is the exception to the first sentence: even with login off it wants this instance's local MCP token for anything that changes state, and only the handshake, discovery calls, and read-only tools answer without one. In headless or CI deployments you can set a static `MCP_API_KEY` and hand that to every client instead.
+**Authentication.** By default, local login is off (`auth.enabled: false`), so a local DorkOS instance accepts these requests with no credentials, same as the web app talking to its own server. If you turn local login on, every `/api/*` and `/mcp` request needs either a Better Auth sign-in cookie or a per-user API key sent as `Authorization: Bearer <key>`. The separate external MCP server at `/mcp` is the exception to the first sentence: even with login off it wants this instance's local MCP token for anything that changes state, and only the handshake, discovery calls, and read-only tools answer without one. In headless or CI deployments you can set a static `MCP_API_KEY` and hand that to every client instead.
 
 </Tab>
 
@@ -244,7 +244,7 @@ All DorkOS hooks (`useSessions`, `useChatSession`, etc.) consume the Transport f
 
 ## SessionEvent Types
 
-Events delivered on the session event stream. Every event carries a per-session monotonic `seq` for gap-free resumption:
+Events delivered on a chat's event stream. Every event carries a per-chat monotonic `seq` for gap-free resumption:
 
 <TypeTable
   type={{
@@ -281,7 +281,7 @@ Events delivered on the session event stream. Every event carries a per-session 
     },
     status_change: {
       type: 'SessionEvent',
-      description: 'Partial session status update (tokens, cost, model, lifecycle)',
+      description: 'Partial chat status update (tokens, cost, model, lifecycle)',
     },
     todo_update: { type: 'SessionEvent', description: 'Todo list updated' },
     subagent_update: { type: 'SessionEvent', description: 'Background subagent lifecycle update' },

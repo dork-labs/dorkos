@@ -123,7 +123,7 @@ export function watchAskResolution(): () => void {
       'ask.pending',
       askPayload(change.interactionId, {
         sessionId: remembered?.sessionId ?? change.sessionId,
-        sessionLabel: remembered?.sessionLabel ?? 'A session',
+        sessionLabel: remembered?.sessionLabel ?? 'A chat',
         // An Ask this process never saw parked — one raised before a restart —
         // still deserves an honest row. It says less, not nothing.
         summary: remembered?.summary ?? 'Asked you something',

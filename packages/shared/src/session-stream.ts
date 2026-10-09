@@ -18,6 +18,8 @@
  */
 import { z } from 'zod';
 import { extendZodWithOpenApiOnce } from './zod-openapi.js';
+// A leaf module (zod only), so this value import forms no load-time cycle.
+import { ChatMessageStampSchema } from './chat-messages.js';
 
 import { PendingApprovalSchema, CapabilityApprovalOutcomeSchema } from './approval-schemas.js';
 import {
@@ -786,6 +788,12 @@ export const SessionEventSchema = z
        * two projections cannot disagree about which turns were asked for.
        */
       origin: z.enum(['user', 'runtime']).optional(),
+      /**
+       * Messages another chat sent, when `userMessage` carries them (spec
+       * `spin-off-chats` §2). Stamped by the server at the wire boundary;
+       * never written by a runtime.
+       */
+      chatMessages: z.array(ChatMessageStampSchema).optional(),
     }),
     // The end of an assistant turn.
     z.object({
@@ -831,6 +839,8 @@ export const SessionEventSchema = z
       content: z.string(),
       disposition: z.literal('steer'),
       messageId: z.string(),
+      /** Messages another chat steered in, stamped as on `turn_start`. */
+      chatMessages: z.array(ChatMessageStampSchema).optional(),
     }),
     // An agent-issued imperative UI command (the `control_ui` MCP tool →
     // `ui-tools.ts`). Transient and side-effecting, NOT a durable state
@@ -999,6 +1009,16 @@ export const SessionEventSchema = z
       content: z.string(),
       /** The server-minted correlation id for this staged message. */
       messageId: z.string(),
+    }),
+    // A message this chat sent another chat, or one another chat sent or did to
+    // it, changed (spec `spin-off-chats` §6): sent, delivered, answered, failed,
+    // or a stop. A nudge, not the data: the window re-reads the chat's
+    // messaging (`GET /api/sessions/:id/chat-messages`), the same full
+    // replacement `queue_update` uses, so a missed nudge is corrected by the
+    // next one.
+    z.object({
+      ...seqShape,
+      type: z.literal('chat_activity'),
     }),
   ])
   .openapi('SessionEvent');

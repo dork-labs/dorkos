@@ -107,7 +107,7 @@ export interface DispatchSessionMessageOpts {
 export const AGENT_LAUNCH_MAX_LIVE = 8;
 
 /** The sentence a launch refused by the cap answers with. */
-export const AGENT_LAUNCH_CAP_MESSAGE = `Too many agent-started sessions are running (${AGENT_LAUNCH_MAX_LIVE}). Try again when one finishes.`;
+export const AGENT_LAUNCH_CAP_MESSAGE = `Too many spin-off chats are running (${AGENT_LAUNCH_MAX_LIVE}). Try again when one finishes.`;
 
 /** One entry per capped launch whose turn has not settled yet. */
 const liveCappedLaunches = new Set<symbol>();
@@ -361,7 +361,7 @@ async function launchSessionMessage(
     if (!isRegistered) {
       return {
         refused: 'INVALID_AGENT_PATH',
-        message: 'Choose a registered agent before starting this session',
+        message: 'Choose a registered agent before starting this chat',
       };
     }
     verifiedAgentPath = agentPath;
@@ -464,7 +464,7 @@ async function launchSessionMessage(
     return {
       refused: 'DESK_NOT_OWN',
       message:
-        `This conversation would run inside a room's files ("${path.resolve(effectiveCwd)}"), ` +
+        `This chat would run inside a room's files ("${path.resolve(effectiveCwd)}"), ` +
         `which is never where an agent works. Start it in the agent's own folder instead.`,
     };
   }

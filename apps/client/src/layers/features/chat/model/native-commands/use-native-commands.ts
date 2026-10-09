@@ -179,7 +179,7 @@ export function useNativeCommands(
           return { handled: true, ran: false };
         }
         if (!sessionId) {
-          toast.error('No active session to compact');
+          toast.error('No open chat to compact');
           return { handled: true, ran: false };
         }
         // Trigger-only (202); the compaction rides the durable /events stream. Do
@@ -223,7 +223,7 @@ export function useNativeCommands(
           // an optimistic success toast would double-toast a failed rename.
           confirmed = renameMutate({ sessionId, title }).then(
             () => {
-              toast.success(`Renamed session to “${title}”`);
+              toast.success(`Renamed chat to “${title}”`);
               return true;
             },
             () => false

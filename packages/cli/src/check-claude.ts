@@ -60,7 +60,7 @@ export function checkClaude(): boolean {
       ? 'irm https://claude.ai/install.ps1 | iex'
       : 'curl -fsSL https://claude.ai/install.sh | bash';
   console.warn(`${yellow}[Warning] Claude Code CLI not found.${reset}`);
-  console.warn('  Agent sessions require the Claude Code CLI.');
+  console.warn('  Agent chats need the Claude Code CLI.');
   console.warn(`  Install it with:  ${installCmd}`);
   console.warn('  More info: https://docs.anthropic.com/en/docs/claude-code');
   console.warn('');

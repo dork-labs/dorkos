@@ -34,7 +34,7 @@ A work, organization or client account belongs in kept out.
 
 The app and flow share one list of accounts, so an account you add in Settings shows up in `flow accounts setup` too, and the reverse.
 
-**Schedules** don't pick an account themselves. A scheduled run uses its agent's account (**Runs on** in the agent's profile), or else your default. When flow starts sessions on its own, it picks the account by role.
+**Schedules** don't pick an account themselves. A scheduled run uses its agent's account (**Runs on** in the agent's profile), or else your default. When flow starts chats on its own, it picks the account by role.
 
 ## Keep an account to its projects
 
@@ -92,7 +92,7 @@ Without `--rotation`, `--yes` never puts an account in the rotation. Apart from 
 ## Keep an eye on it
 
 - `flow accounts` lists every account with its role, how much is held back, and how much room it has left.
-- `flow fleet` shows every account's usage next to every running session.
+- `flow fleet` shows every account's usage next to every running chat.
 
 While you have several accounts flow could use and only your default is in the rotation, `flow status`, `flow fleet` and `flow next` end with one reminder line. Work, client and kept-out accounts don't count. To turn it off, set `"fleet": { "nudge": false }` in your project's flow config. Outside a project there is no config to read, so the line stays until you run setup.
 

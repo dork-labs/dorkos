@@ -11,7 +11,7 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 A **DorkOS account** is your sign-in at [dorkos.ai](https://dorkos.ai). Creating one is free. Link a computer to it and the **DorkOS account** tab in Settings shows your plan, your credits and your seats, and dorkos.ai lists every computer you run DorkOS on.
 
-You don't need an account to run DorkOS. Your agents, sessions, channels and connections all work without one. Two things do need an account: starting a space that runs on DorkOS, and running agents on DorkOS credits.
+You don't need an account to run DorkOS. Your agents, chats, channels and connections all work without one. Two things do need an account: starting a space that runs on DorkOS, and running agents on DorkOS credits.
 
 Your account is separate from the optional [login](/docs/self-hosting/securing-your-instance) that protects DorkOS on one computer. The login guards that one machine. The account is what your computers _attach_ to. You can have a login with no account, an account with no login, or both.
 
@@ -33,7 +33,7 @@ Once this computer is linked, the **DorkOS account** tab in Settings shows:
 
 ### Deleting your DorkOS account
 
-**Delete your DorkOS account** first says what goes (your plan, credits you haven't used, your seats and everything else the account holds) and what stays (everything on this computer: your agents, sessions, projects and files). It offers a copy of your data, then asks you to type `delete`. DorkOS emails you a link, and nothing is deleted until you follow it. Once you do, this computer unlinks itself and keeps working on its own. If something on the account has to be sorted out first, the app says what and where. Where your account doesn't offer this from the app yet, it says so.
+**Delete your DorkOS account** first says what goes (your plan, credits you haven't used, your seats and everything else the account holds) and what stays (everything on this computer: your agents, chats, projects and files). It offers a copy of your data, then asks you to type `delete`. DorkOS emails you a link, and nothing is deleted until you follow it. Once you do, this computer unlinks itself and keeps working on its own. If something on the account has to be sorted out first, the app says what and where. Where your account doesn't offer this from the app yet, it says so.
 
 At [dorkos.ai/account/instances](https://dorkos.ai/account/instances) you also get:
 
@@ -156,7 +156,7 @@ On [/account/instances](https://dorkos.ai/account/instances), click **Revoke** n
 
 The next time that computer checks in, it is turned away, clears its saved key, and shows **"This computer was unlinked."** Re-link anytime with `dorkos cloud login` or the Settings panel.
 
-Revoking only removes the cloud link. Running sessions, agents, and everything stored on that machine keep working, untouched. The one thing it does end is any app that machine connected through your DorkOS account: those apps are signed out at the service too, so none stays signed in with no way left to reach it.
+Revoking only removes the cloud link. Running chats, agents, and everything stored on that machine keep working, untouched. The one thing it does end is any app that machine connected through your DorkOS account: those apps are signed out at the service too, so none stays signed in with no way left to reach it.
 
 </Step>
 </Steps>

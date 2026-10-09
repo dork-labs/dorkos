@@ -65,6 +65,10 @@ const TABLE: ReadonlyArray<readonly [TurnOrigin, OriginPermissionSeed]> = [
   // An extension sent an agent a message: app data, not a person's request,
   // so the chat it opens seeds no operator stop.
   [{ kind: 'extension-message' }, 'none'],
+  // Another chat sent this one a message (spec `spin-off-chats` §2): the
+  // sending chat's work, held to its level by the launch ceiling, so the
+  // operator's stop (a promise to a person) is not seeded for it.
+  [{ kind: 'chat-message' }, 'none'],
   // A limited session's work carried over to another account: the settings
   // row copied from the source session is its power, and the origin adds none.
   [{ kind: 'account-handoff' }, 'none'],

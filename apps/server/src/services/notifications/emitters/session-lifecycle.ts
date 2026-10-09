@@ -58,8 +58,8 @@ import { LEDGER_RUNTIMES, type LedgerRuntime } from '@dorkos/shared/account-usag
  * @param cwd - The session's working directory, when the projector knew one.
  */
 export function sessionLabelFor(cwd: string | undefined): string {
-  if (!cwd) return 'A session';
-  return path.basename(cwd) || 'A session';
+  if (!cwd) return 'A chat';
+  return path.basename(cwd) || 'A chat';
 }
 
 /**

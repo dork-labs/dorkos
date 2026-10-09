@@ -45,7 +45,7 @@ Every runtime you can pick in DorkOS (Claude Code, Codex, or OpenCode) renders w
 
 Widgets show up in [rooms](/docs/concepts/rooms) too. Post the same block in a channel or a direct
 message and everyone there sees the finished widget, not the raw code. One difference: a room
-message isn't a session, so there's no agent turn for a button to answer into. Buttons that would
+message isn't a chat with an agent, so there's no agent turn for a button to answer into. Buttons that would
 send a note back to the agent are still shown but switched off, with a short note when you hover
 them. Everything else works: a button that opens something on the room's canvas, or in the browser,
 does what it says, and so does one that only touches the app itself, like opening Settings or a
@@ -57,7 +57,7 @@ Buttons, list items, and form submits aren't just for show. Click "Refresh" on a
 
 While DorkOS sends your click, the button shows a spinner and turns off, so you can't submit twice. If sending fails, most often because the agent is still busy on your last turn, a toast tells you to try again in a moment. There's no queue for these clicks, so you just retry once the agent is free.
 
-You can also pop an interactive widget, like a tic-tac-toe board, out of the chat so it stays visible while you work elsewhere. On a computer it floats in a small window; on a phone it docks to a bottom sheet you can drag up to play, or drag down to tuck it into a small bar at the bottom of the screen; tap the bar to bring it back. It follows the newest board the agent posts, so a game keeps going even after you switch to another session; the chat keeps its own copy too, and closing it just dismisses the popped-out view.
+You can also pop an interactive widget, like a tic-tac-toe board, out of the chat so it stays visible while you work elsewhere. On a computer it floats in a small window; on a phone it docks to a bottom sheet you can drag up to play, or drag down to tuck it into a small bar at the bottom of the screen; tap the bar to bring it back. It follows the newest board the agent posts, so a game keeps going even after you switch to another chat; the chat keeps its own copy too, and closing it just dismisses the popped-out view.
 
 The same floating window works for full interactive apps an MCP server provides, not just widgets. If a connected MCP server ships one of these apps, it renders inline in chat with its own pop-out button, so you can keep it visible the same way while you work in the rest of DorkOS.
 
@@ -65,26 +65,26 @@ The same floating window works for full interactive apps an MCP server provides,
 
 <ProductShot
   id="canvas"
-  alt="A DorkOS canvas document open beside the chat, rendering live beside a streaming session"
+  alt="A DorkOS canvas document open beside the chat, rendering live beside a streaming chat"
 />
 
 Widgets aren't limited to chat. An agent can open the same widget in the canvas instead, or alongside chat, giving it more room to breathe. The canvas can hold several documents at once, each in its own tab: widgets, images, PDFs, files, and more. When the agent opens something new, it adds a tab and switches to it rather than replacing what was already there.
 
 Your canvas lives on your DorkOS machine rather than in one browser, so it is the same on every
-device you open the session on, and it survives clearing your browser data. The agent can read it
+device you open the chat on, and it survives clearing your browser data. The agent can read it
 too: ask what's open and it gets the real list, and it can read one of those documents back.
 
 <Callout type="warn">
-  Two things worth knowing. If you're not watching the session live (say, it's running on a
-  schedule), the agent's canvas change is saved and you'll see it the moment you open a live view.
-  And if you're editing a canvas document yourself, DorkOS holds the agent's update to that document
-  back so it doesn't overwrite what you're typing; the agent's other tabs still update normally.
+  Two things worth knowing. If you're not watching the chat live (say, it's running on a schedule),
+  the agent's canvas change is saved and you'll see it the moment you open a live view. And if
+  you're editing a canvas document yourself, DorkOS holds the agent's update to that document back
+  so it doesn't overwrite what you're typing; the agent's other tabs still update normally.
 </Callout>
 
 In a [room](/docs/concepts/rooms), the canvas is the room's rather than yours: a widget an agent
 opens there lands in front of every member at once, with the face of whoever opened it on its tab,
 and it's still there after a reload. That's a different thing from a widget in a room **message** —
-that one renders where it was posted, read-only, because a message isn't a session for a button to
+that one renders where it was posted, read-only, because a message isn't a chat for a button to
 answer into.
 
 For the deeper tour of everything the canvas can hold, see the [Workbench guide](/docs/guides/workbench).
@@ -198,7 +198,7 @@ Reach for a widget when the reply has structured data worth scanning: metrics, t
 
 <ProductShot
   id="gen-ui-tictactoe"
-  alt="A DorkOS chat session playing tic-tac-toe against the agent, with a drawn win-line and a celebrating mood face"
+  alt="A DorkOS chat playing tic-tac-toe against the agent, with a drawn win-line and a celebrating mood face"
 />
 
 Click an empty square and your mark draws itself instantly, before the agent even replies. Its next turn re-emits the same `board` widget with your move applied. It trusts the `state` string in your click's payload over its own memory, so the board you see and the board it thinks it's playing never drift apart.
@@ -224,7 +224,7 @@ A `ui`-kind action's `command` can be any `control_ui` command, including `{ "ac
 
 An unrecognized `kind` falls back to `burst`, and every style is skipped for people who prefer reduced motion. Use a celebration for a genuine milestone (tests passing, a deploy landing), not every small success.
 
-`agent` actions are the interesting one. When you click an `agent`-kind button, pick a `list` item action, or submit a `form`, DorkOS POSTs the action to the session and the agent receives a `<ui_action>` block as your next turn, before your literal next message:
+`agent` actions are the interesting one. When you click an `agent`-kind button, pick a `list` item action, or submit a `form`, DorkOS POSTs the action to the chat and the agent receives a `<ui_action>` block as your next turn, before your literal next message:
 
 ```
 <ui_action>
@@ -238,9 +238,9 @@ Payload: (none)
 The payload carries whatever the action was authored with, plus (for `form` submits) every field's current value merged in under its `name`. Give actions stable, descriptive ids: that's the only handle the agent has for "which control fired."
 
 <Callout type="info">
-  `agent` actions need a session to send the POST to. Rendered in chat or the canvas, that's
-  automatic. Off a session (for example DorkOS's internal dev component playground), `agent` buttons
-  render disabled with a tooltip explaining why.
+  `agent` actions need a chat to send the POST to. Rendered in chat or the canvas, that's automatic.
+  Outside a chat (for example DorkOS's internal dev component playground), `agent` buttons render
+  disabled with a tooltip explaining why.
 </Callout>
 
 ### Canvas Content Types
@@ -255,16 +255,16 @@ The canvas is a tabbed, multi-document surface (each `open_canvas` call appends 
 
 Two of those fourteen — `url` and `browser` — are pages, and pages live one tab along, in **Browser**: those two are exactly what that tab renders. The other twelve open in **Canvas**. `mcp_app` stays in Canvas despite being served over HTTP: it's an app, not a page.
 
-`update_canvas` and `close_canvas` also take an optional `documentId`. Leave it out in a one-on-one session and the call acts on the active document, exactly as it always has. Leave it out in a **room**, where there is no shared active document on purpose, and it means "the last document you opened in this room" — so acting on a document somebody else put up takes naming it.
+`update_canvas` and `close_canvas` also take an optional `documentId`. Leave it out in a one-on-one chat and the call acts on the active document, exactly as it always has. Leave it out in a **room**, where there is no shared active document on purpose, and it means "the last document you opened in this room" — so acting on a document somebody else put up takes naming it.
 
-Where that id comes from is the same on both surfaces. Every verb that opens something (`open_canvas`, `open_file`, `open_diff`, `browser_navigate`) returns the new document's id, its revision number, and how many windows are watching — in a room and in a one-on-one session alike, because both canvases are the server's and the row exists before the call answers. Hand that id straight back to `update_canvas`, `close_canvas` or `read_canvas_document`.
+Where that id comes from is the same on both surfaces. Every verb that opens something (`open_canvas`, `open_file`, `open_diff`, `browser_navigate`) returns the new document's id, its revision number, and how many windows are watching — in a room and in a one-on-one chat alike, because both canvases are the server's and the row exists before the call answers. Hand that id straight back to `update_canvas`, `close_canvas` or `read_canvas_document`.
 
 The two content-heavy types worth knowing up front:
 
 - **`image`**: `{ type: "image", src, title?, alt? }`. Click the image to open it full size in a new tab (skipped for SVG data URIs, which are excluded from click-through as defense in depth against a scripting context).
 - **`pdf`**: `{ type: "pdf", src, title? }`. Renders through the browser's native PDF viewer; if the browser can't render it inline, a fallback link opens the PDF in a new tab.
 
-For both, `src` accepts an `https://`/`http://` URL, a `data:` URI (correctly typed: `data:image/*` for images, `data:application/pdf` for PDFs), or a local file path, which DorkOS resolves within the session's working directory. Any other scheme (`javascript:`, `file:`, `blob:`, and so on) is blocked outright.
+For both, `src` accepts an `https://`/`http://` URL, a `data:` URI (correctly typed: `data:image/*` for images, `data:application/pdf` for PDFs), or a local file path, which DorkOS resolves within the chat's working directory. Any other scheme (`javascript:`, `file:`, `blob:`, and so on) is blocked outright.
 
 For the file, markdown, 3D, CSV, and browser viewers, along with per-document edit protection, see the [Workbench guide](/docs/guides/workbench).
 

@@ -107,7 +107,8 @@ src/
 │   │   ├── room-management/ # Room panel: roster, limits, create/rename/leave, agent picker
 │   │   ├── connections/ # Connections page — connect flows, access review, agent requests, notifications
 │   │   ├── permissions/ # Permission-mode UI (consent doors, decision surfaces)
-│   │   ├── session-list/ # SessionsView and session lists
+│   │   ├── chat-list/    # One agent's chats: Profile → Sessions and Switch session
+│   │   ├── session-list/ # The profile's Tasks list and sidebar footer contributions
 │   │   ├── dashboard-sidebar/ # DashboardSidebar — navigation + recent agents list at /
 │   │   ├── dashboard-attention/ # Attention rows + detail sheets — what the triage header composes
 │   │   ├── dashboard-activity/ # useDashboardActivity — time-grouped recent activity, read by Pulse

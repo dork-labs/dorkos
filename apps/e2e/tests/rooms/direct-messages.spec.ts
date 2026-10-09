@@ -61,13 +61,13 @@ test.describe('Rooms — starting a direct message @smoke', () => {
     await roomsPage.openDirectMessagePicker();
     // The rule is stated before the button changes its words.
     await expect(
-      page.getByText('One agent opens a session. Two or more start a group message.')
+      page.getByText('One agent opens a chat. Two or more start a group message.')
     ).toBeVisible();
     await roomsPage.chooseAgent(ana.name);
     await expect(roomsPage.agentChip(ana.name)).toBeVisible();
     // One agent is one door: the agent's own session, exactly where its sidebar
     // row goes.
-    await expect(roomsPage.startConversationButton).toHaveText(`Open session with ${ana.name}`);
+    await expect(roomsPage.startConversationButton).toHaveText(`Open chat with ${ana.name}`);
     await roomsPage.startConversationButton.click();
 
     await expect(page).toHaveURL(/\/session\?.*session=/, { timeout: SERVER_ROUND_TRIP_MS });
@@ -209,7 +209,7 @@ test.describe('Rooms — starting a direct message @smoke', () => {
 
     // Navigate away so the second open is a real navigation rather than a no-op.
     await page.goto('/channels');
-    await expect(page.getByText('Pick a conversation')).toBeVisible();
+    await expect(page.getByText('Pick a channel or DM')).toBeVisible();
 
     // The picker never hides an agent that already has a conversation — that
     // filter was how duplicates were prevented, and it had to go so a group

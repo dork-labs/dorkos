@@ -261,6 +261,16 @@ export interface SidebarState {
    */
   userLastMessageAt: Readonly<Record<string, string>>;
   /**
+   * `session:<id>` → when YOU last touched that chat on any device — opened it
+   * on the chat page or wrote in it from the app — ISO-8601, from
+   * `Session.lastTouchedByYouAt` (spec `your-activity-first` D1, D10). The
+   * third input to Today's order key, beside {@link interactions} (this
+   * browser's opens, which land instantly) and {@link userLastMessageAt}.
+   *
+   * A chat the server has no touch for has no entry: omission, never a guess.
+   */
+  lastTouchedByYouAt: Readonly<Record<string, string>>;
+  /**
    * Room id → how many times the operator is @mentioned above their read
    * cursor.
    *

@@ -517,7 +517,7 @@ export function buildPlan(input: {
    * agent tool — `harness.global.harnesses` being non-empty.
    *
    * Read by ONE line: the drop each globally installed package earns says who
-   * can see it, and "only the Claude Code sessions DorkOS runs" stops being true
+   * can see it, and "only the Claude Code chats DorkOS runs" stops being true
    * the moment somebody answers the sharing question. Injected, like every other
    * answer this engine is handed, because that list is a `~/.dork/config.json`
    * key and nothing here reads config. Omitted, the drop reads as not-shared,

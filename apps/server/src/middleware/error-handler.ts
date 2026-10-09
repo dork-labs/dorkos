@@ -49,9 +49,7 @@ export function errorHandler(err: Error, req: Request, res: Response, next: Next
   // answer. `runtime` still rides the body as the raw type, for a client that
   // wants to route on it rather than print it.
   if (err instanceof BoundaryError) {
-    res
-      .status(403)
-      .json({ error: 'This session is outside the allowed directory.', code: err.code });
+    res.status(403).json({ error: 'This chat is outside the allowed directory.', code: err.code });
     return;
   }
 
@@ -68,7 +66,7 @@ export function errorHandler(err: Error, req: Request, res: Response, next: Next
   if (err instanceof RuntimeNotRegisteredError) {
     const program = runtimeDisplayName(err.runtime);
     res.status(503).json({
-      error: `This session runs on ${program}, which isn't running on this machine. Turn ${program} back on to pick it up, or start a new session to use what's running now.`,
+      error: `This chat runs on ${program}, which isn't running on this machine. Turn ${program} back on to pick it up, or start a new chat to use what's running now.`,
       code: 'RUNTIME_NOT_AVAILABLE',
       runtime: err.runtime,
     });

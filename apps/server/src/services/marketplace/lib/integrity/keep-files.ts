@@ -47,9 +47,9 @@ function describeKept(
 ): string {
   const files = count === 1 ? `The file ${name} kept is` : `The ${count} files ${name} kept are`;
   const base = `${files} yours now. Nothing was moved or deleted.`;
-  if (global?.approved) return `${base} ${name} loads into sessions from the next message on.`;
+  if (global?.approved) return `${base} ${name} loads into chats from the next message on.`;
   if (global?.stillHeldBack) {
-    return `${base} ${name} still waits for your Review before it runs in sessions.`;
+    return `${base} ${name} still waits for your Review before it runs in chats.`;
   }
   return base;
 }

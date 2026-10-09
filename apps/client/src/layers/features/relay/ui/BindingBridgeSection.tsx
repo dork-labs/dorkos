@@ -77,7 +77,7 @@ export function BindingBridgeSection({ binding, onDone }: BindingBridgeSectionPr
   // states the reason instead of a dead button.
   if (binding.platformChatType === 'channel') {
     return (
-      <BridgeRefusal reason="This is a broadcast channel, not a two-way conversation. Your agent can’t reply." />
+      <BridgeRefusal reason="This is a broadcast channel, not a two-way chat. Your agent can’t reply." />
     );
   }
   const isDirectMessage = binding.channelType == null || binding.channelType === 'dm';

@@ -41,7 +41,6 @@ import {
   useRecentSessions,
   useSessionListStore,
 } from '@/layers/entities/session';
-import type { RecentSessionsResponse } from '@dorkos/shared/types';
 import type { SidebarTarget } from './build-sidebar-model';
 import { useBootState } from './boot/use-boot-state';
 import { useDigestFacts } from './use-digest-facts';
@@ -60,17 +59,6 @@ import type { AgentRosterEntry, SidebarModelPrefs, SidebarState } from './sideba
 export const SIDEBAR_CLOCK_TICK_MS = 60_000;
 
 /**
- * How many recent sessions the model reads.
- *
- * Fewer than the cockpit fetches ({@link RECENT_SESSIONS_WINDOW}) on purpose:
- * Today is a short list and the rules that read this array are O(n). The wider
- * window is what "Jump back in" and the attention list need, and asking for a
- * narrower one here would be a second request for the same fact — so the panel
- * narrows the shared answer instead (spec `sidebar-simplification` D6).
- */
-const SIDEBAR_RECENT_LIMIT = 10;
-
-/**
  * No fleet, as one identity.
  *
  * A shared empty rather than a fresh `[]`, because it is what the roster reads
@@ -87,19 +75,6 @@ const NO_PATHS: string[] = [];
  * `{}`, so it is never the reason a memo below it rebuilds.
  */
 const NO_MENTIONS: Record<string, number> = {};
-
-/**
- * The sidebar's slice of the shared recent-sessions answer.
- *
- * Module-level so its identity is stable: a `select` declared inside the hook
- * would re-run on every render and hand the memo below a fresh object each time.
- *
- * @param data - The shared answer, at the full window.
- */
-function sidebarRecentWindow(data: RecentSessionsResponse): RecentSessionsResponse {
-  if (data.sessions.length <= SIDEBAR_RECENT_LIMIT) return data;
-  return { ...data, sessions: data.sessions.slice(0, SIDEBAR_RECENT_LIMIT) };
-}
 
 /**
  * The value a slot was last given, until it is given a different one by the
@@ -258,7 +233,13 @@ export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarSt
   // on. `useShallow` is what makes that true in practice as well as in type: the
   // status objects in the store carry the verb, so selecting them raw would put
   // a new identity in front of the memo on every tool call.
-  const recentQuery = useRecentSessions(RECENT_SESSIONS_WINDOW, { select: sidebarRecentWindow });
+  //
+  // The WHOLE shared window, never a slice of it (spec `your-activity-first`
+  // D10). The request also carries every chat you touched since 04:00 beyond
+  // the window (`useRecentSessions`), and whose each chat is gets decided on
+  // all of it BEFORE any cap — slicing first is what dropped a chat you typed
+  // in once ten agent chats were newer.
+  const recentQuery = useRecentSessions(RECENT_SESSIONS_WINDOW);
   const sessions = useMemo(() => recentQuery.data?.sessions ?? [], [recentQuery.data]);
   const sessionStatuses = useSessionListStore(
     useShallow((s): Record<string, SessionLifecycle> => {
@@ -395,6 +376,23 @@ export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarSt
       return written;
     }, [sessions])
   );
+  // ── When YOU last touched each chat, on any device ──
+  //
+  // `Session.lastTouchedByYouAt` (spec `your-activity-first` D1, D10): the
+  // server's record of you opening or writing in a chat, so Today agrees
+  // between the desktop, the phone and a second browser. The third input to
+  // Today's order key beside the local open record and `userLastMessageAt`.
+  // Guarded for the same reason as the map above.
+  const lastTouchedByYouAt = useShallowStable(
+    useMemo(() => {
+      const touched: Record<string, string> = {};
+      for (const session of sessions) {
+        const at = session.lastTouchedByYouAt;
+        if (at !== undefined) touched[`session:${session.id}`] = at;
+      }
+      return touched;
+    }, [sessions])
+  );
 
   // ── Preferences, and the recents list they filter ──
   const storedPrefs = useSidebarPrefs();
@@ -495,6 +493,7 @@ export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarSt
       prefs,
       interactions,
       userLastMessageAt,
+      lastTouchedByYouAt,
       // No client source counts @mentions above a read cursor. A source that
       // cannot say has no entry — omission, never a guess (BC-40).
       mentions: NO_MENTIONS,
@@ -520,6 +519,7 @@ export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarSt
       prefs,
       interactions,
       userLastMessageAt,
+      lastTouchedByYouAt,
       todayAutomatedExpanded,
       activeTarget,
       journey.facts,

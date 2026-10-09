@@ -152,6 +152,6 @@ describe('sessionDisplayTitle', () => {
   });
 
   it('calls an unnamed session new rather than untitled', () => {
-    expect(UNTITLED_SESSION_LABEL).toBe('New session');
+    expect(UNTITLED_SESSION_LABEL).toBe('New chat');
   });
 });

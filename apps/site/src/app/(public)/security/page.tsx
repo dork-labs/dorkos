@@ -79,7 +79,7 @@ export default function SecurityPage() {
             network, it becomes a networked service. So DorkOS requires an owner account before it
             will do that. Start a tunnel with login off and it walks you through creating one first.
             Bind to a public network address with no login and it refuses to start. Remote visitors
-            get a sign-in screen, and every request needs a valid session.
+            get a sign-in screen, and every request needs a valid sign-in.
           </p>
         </section>
 

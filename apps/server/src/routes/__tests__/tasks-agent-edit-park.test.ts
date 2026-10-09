@@ -437,7 +437,7 @@ describe('PATCH /api/tasks/:id — an agent edits a file-backed schedule (DOR-23
       expect(res.body).toEqual({
         code: 'STICKY_ACCOUNT_LOCKED',
         error:
-          "This schedule keeps one conversation, so it stays on the account it started on. Turn off 'Keep one conversation' to change it.",
+          "This schedule picks up where its last run left off, so it stays on the account it started on. Turn off 'Remember the last run' to change it.",
       });
       expect(store.getTask(task.id)!.account).toBeNull();
       expect(readFileSync(filePath, 'utf-8')).not.toContain('account');
@@ -468,7 +468,7 @@ describe('PATCH /api/tasks/:id — an agent edits a file-backed schedule (DOR-23
 
     it('refuses turning one conversation on and changing the account together, once it has run', async () => {
       // The merged schedule is what runs: its next run resumes the last run's
-      // conversation, so the account cannot move with it.
+      // chat, so the account cannot move with it.
       const task = await approvedTask();
       const run = store.createRun(task.id, 'scheduled');
       store.updateRun(run.id, { sessionId: '0f6c1d7e-7d0e-4c55-9f55-000000000003' });

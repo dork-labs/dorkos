@@ -76,7 +76,7 @@ function projectErasure(row: ErasureRow): CommunityWireErasure {
 /** Erasure belongs to the person: no connection grant, agent, or host key may reach it. */
 function refuseBearer(c: Context): void {
   if (c.req.header('authorization'))
-    throw new ApiError(403, 'FORBIDDEN', 'Erasing needs your own signed-in browser session.');
+    throw new ApiError(403, 'FORBIDDEN', 'To erase your account, sign in from your own browser.');
 }
 
 async function requireAccount(c: Context, auth: CommunityAuth) {

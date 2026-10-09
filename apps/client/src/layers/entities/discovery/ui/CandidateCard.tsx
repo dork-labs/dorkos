@@ -28,7 +28,7 @@ function strategyDescription(strategy: string): string {
 // Human-readable descriptions for known agent capabilities
 const CAPABILITY_DESCRIPTIONS: Record<string, string> = {
   'code-review': 'Reviews code for bugs, style issues, and correctness.',
-  summarize: 'Summarizes documents, conversations, or code.',
+  summarize: 'Summarizes documents, chats, or code.',
   'file-ops': 'Reads and writes files on the filesystem.',
   test: 'Generates and runs tests for a codebase.',
   search: 'Searches code, files, or the web for relevant information.',

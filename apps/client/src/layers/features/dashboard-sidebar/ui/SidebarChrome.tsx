@@ -356,11 +356,11 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
 
   const openSession = useCallback(
     (sessionId: string, cwd: string | null) => {
-      useInteractionStore.getState().recordOpened('session', sessionId);
-      // The agent too, on the same key space. Today is ordered by the session
-      // record; the New menu's "starts with <name> (last used)" is answered by
-      // the agent one, and it has to survive walking away to Marketplace or
-      // Team — which the router's `?dir` does not.
+      // The chat page records the chat itself as opened, wherever you came from
+      // (`useRecordChatOpened`, spec `your-activity-first` D3). The agent is
+      // recorded here: the New menu's "starts with <name> (last used)" is
+      // answered by that record, and it has to survive walking away to
+      // Marketplace or Team — which the router's `?dir` does not.
       if (cwd !== null) useInteractionStore.getState().recordOpened('agent', cwd);
       navigate(toSession({ dir: cwd ?? undefined, session: sessionId }));
     },

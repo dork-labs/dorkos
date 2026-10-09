@@ -327,7 +327,7 @@ describe('FailedRunDetailSheet', () => {
 
     renderSheet();
 
-    expect(screen.getByRole('button', { name: 'View session' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'View chat' })).toBeInTheDocument();
   });
 
   it('does not render View session button when run has no sessionId', () => {
@@ -339,7 +339,7 @@ describe('FailedRunDetailSheet', () => {
 
     renderSheet();
 
-    expect(screen.queryByRole('button', { name: 'View session' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'View chat' })).not.toBeInTheDocument();
   });
 
   it('View session button navigates to /session with correct session param', () => {
@@ -351,15 +351,16 @@ describe('FailedRunDetailSheet', () => {
 
     renderSheet();
 
-    fireEvent.click(screen.getByRole('button', { name: 'View session' }));
+    fireEvent.click(screen.getByRole('button', { name: 'View chat' }));
 
     expect(mockNavigate).toHaveBeenCalledWith({
       to: '/session',
       search: { session: 'sess-xyz' },
     });
-    // The other half of the attention section's door (DOR-1156). No directory
-    // here — a run's detail carries the session and nothing else.
-    expect(Object.keys(useInteractionStore.getState().opened)).toEqual(['session:sess-xyz']);
+    // The chat page records the chat when it shows it (spec
+    // `your-activity-first` D3), so the button records nothing itself. No
+    // directory here either — a run's detail carries the chat and nothing else.
+    expect(Object.keys(useInteractionStore.getState().opened)).toEqual([]);
   });
 
   it('renders Cancel button when run status is running', () => {

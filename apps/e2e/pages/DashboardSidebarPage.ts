@@ -77,7 +77,7 @@ export class DashboardSidebarPage {
 
   constructor(page: Page) {
     this.page = page;
-    this.newSessionButton = page.getByRole('button', { name: /new session/i });
+    this.newSessionButton = page.getByRole('button', { name: /new (chat|session)/i });
     this.newMenu = new NewMenuPage(page);
   }
 

@@ -85,7 +85,7 @@ export function UserRow({ user, isSelf }: { user: AdminUserView; isSelf: boolean
             <AdminAction
               label="Ban"
               title={`Ban ${user.email}?`}
-              description="Blocks sign-in and revokes their sessions and API keys (linked instances go offline). Reversible via Unban."
+              description="Blocks sign-in, signs them out everywhere and revokes their API keys (linked instances go offline). Reversible via Unban."
               confirmLabel="Ban"
               variant="destructive"
               field={{ label: 'Reason (optional)', placeholder: 'e.g. terms violation' }}
@@ -98,23 +98,23 @@ export function UserRow({ user, isSelf }: { user: AdminUserView; isSelf: boolean
           <AdminAction
             label="Impersonate"
             title={`Impersonate ${user.email}?`}
-            description="Signs you into a capped session as this user in this browser. Every use is audited. Use the banner to stop."
+            description="Signs you in as this user in this browser, for a limited time. Every use is audited. Use the banner to stop."
             confirmLabel="Impersonate"
             onConfirm={() => adminImpersonateUser({ userId: user.id })}
           />
 
           <AdminAction
-            label="Revoke sessions"
-            title={`Revoke all sessions for ${user.email}?`}
+            label="Sign out everywhere"
+            title={`Sign ${user.email} out everywhere?`}
             description="Signs this user out of every device. They can sign back in unless also banned."
-            confirmLabel="Revoke"
+            confirmLabel="Sign out"
             onConfirm={() => adminRevokeUserSessions({ userId: user.id })}
           />
 
           <AdminAction
             label="Delete"
             title={`Permanently delete ${user.email}?`}
-            description="Irreversibly erases this account and cascades to their sessions, sign-in methods, API keys, and linked instances. This cannot be undone."
+            description="Irreversibly erases this account, signs them out everywhere and erases their sign-in methods, API keys and linked instances. This cannot be undone."
             confirmLabel="Delete account"
             variant="destructive"
             typedConfirm={user.email}

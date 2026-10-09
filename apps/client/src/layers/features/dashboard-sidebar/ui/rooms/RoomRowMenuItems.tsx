@@ -299,7 +299,7 @@ function buildMoveToGroupItems(model: RoomRowMenuModel): RoomRowMenuNode[] {
 export function buildRoomRowMenuNodes(model: RoomRowMenuModel): RoomRowMenuNode[] {
   const isChannel = model.kind === 'channel';
   /** The noun every room-level label ends in, so one room is called one thing. */
-  const noun = isChannel ? 'channel' : 'conversation';
+  const noun = isChannel ? 'channel' : 'DM';
   const nodes: RoomRowMenuNode[] = [];
 
   if (model.hasUnread) {
@@ -449,7 +449,7 @@ export function buildRoomRowMenuNodes(model: RoomRowMenuModel): RoomRowMenuNode[
     id: 'archive',
     // Named like "Delete section" is: the verb plus the noun it acts on, so the
     // item still reads correctly out of context.
-    label: isChannel ? 'Archive channel' : 'Archive conversation',
+    label: isChannel ? 'Archive channel' : 'Archive DM',
     icon: Archive,
     // A confirmation alert does not earn an ellipsis — the command IS complete
     // when chosen; the alert only asks whether you meant it.

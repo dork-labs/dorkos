@@ -199,10 +199,10 @@ function ConversationPreview({
     );
   }
   if (isError) {
-    return <p className="text-muted-foreground text-xs">Couldn’t load the conversation preview.</p>;
+    return <p className="text-muted-foreground text-xs">Couldn’t load the chat preview.</p>;
   }
   if (!text) {
-    return <p className="text-muted-foreground text-xs">No recent conversation to attach.</p>;
+    return <p className="text-muted-foreground text-xs">No recent chat to attach.</p>;
   }
   return (
     <div className="flex flex-col gap-2">
@@ -290,7 +290,7 @@ export function FeedbackPreviewDialog({
             )}
           >
             <TabsTrigger value="diagnostics">Diagnostics</TabsTrigger>
-            {showConversation && <TabsTrigger value="conversation">Conversation</TabsTrigger>}
+            {showConversation && <TabsTrigger value="conversation">Chat</TabsTrigger>}
             {screenshotDataUrl && <TabsTrigger value="screenshot">Screenshot</TabsTrigger>}
           </TabsList>
 

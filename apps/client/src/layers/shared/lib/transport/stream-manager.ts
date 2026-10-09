@@ -202,6 +202,10 @@ const SESSION_EVENT_TYPES = [
   // indistinguishable from a dropped message, which is the exact failure the
   // event exists to prevent.
   'context_staged',
+  // A chat's messaging with other chats changed (spec `spin-off-chats` §6):
+  // the nudge the Sent cards and "Stopped by" lines re-read on. Registered with
+  // the contract: a dropped nudge leaves a card saying Queued long after it ran.
+  'chat_activity',
 ] as const;
 
 /** Broadcast names forwarded from the unified events stream to subscribers. */

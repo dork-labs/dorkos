@@ -232,7 +232,7 @@ export class WorkspaceNeedsReviewError extends Error {
    */
   constructor(readonly inspection: WorkspaceInspection) {
     super(
-      'This workspace brings settings, links or commands that run in its sessions or from ' +
+      'This workspace brings settings, links or commands that run in its chats or from ' +
         'DorkOS itself. Look at them, then ask again with the review hash you were shown.'
     );
     this.name = 'WorkspaceNeedsReviewError';

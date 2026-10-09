@@ -570,7 +570,7 @@ describe('RoomPanel', () => {
       await rosterSection();
 
       expect(
-        addSection().getByText('Adding a second agent turns this into a group conversation.')
+        addSection().getByText('Adding a second agent turns this into a group message.')
       ).toBeInTheDocument();
     });
 
@@ -590,7 +590,7 @@ describe('RoomPanel', () => {
 
       expect(
         addSection().getByText(
-          'Ana is no longer on your team. Adding an agent makes this a group conversation.'
+          'Ana is no longer on your team. Adding an agent makes this a group message.'
         )
       ).toBeInTheDocument();
     });
@@ -821,7 +821,7 @@ describe('RoomPanel', () => {
 
     removeThroughMenu();
     const confirm = screen.getByRole('group', { name: 'Remove Ana from #general?' });
-    expect(confirm).toHaveTextContent('Adding it back starts a fresh session.');
+    expect(confirm).toHaveTextContent('Adding it back starts it fresh.');
     expect(transport.removeRoomMember).not.toHaveBeenCalled();
 
     fireEvent.click(within(confirm).getByRole('button', { name: 'Remove' }));

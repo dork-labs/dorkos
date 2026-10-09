@@ -75,7 +75,7 @@ function InferenceFields({ saved, onConnected }: Props & { saved: DoeInferenceSt
         void queryClient.invalidateQueries({ queryKey });
       onConnected?.({
         title: 'DorkOS model settings saved',
-        body: 'New conversations use this source and model.',
+        body: 'New chats use this source and model.',
       });
     },
     onError: () => setError('Couldn’t save model settings. Try again.'),

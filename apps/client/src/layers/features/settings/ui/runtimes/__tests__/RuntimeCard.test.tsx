@@ -384,7 +384,7 @@ describe('RuntimeCard — write paths', () => {
     await pickEffort('High');
 
     expect(await screen.findByTestId('runtime-card-timing-codex')).toHaveTextContent(
-      'Applies to new conversations'
+      'Applies to new chats'
     );
   });
 
@@ -637,7 +637,7 @@ describe('RuntimeCard — connecting and reconnecting', () => {
     renderCard({ isDefault: true }, { checkRequirements: vi.fn().mockResolvedValue(NOT_READY) });
 
     expect(await screen.findByTestId('runtime-default-broken-codex')).toHaveTextContent(
-      'new conversations can’t start'
+      'new chats can’t start'
     );
     expect(screen.getByTestId('runtime-default-pill-codex')).toBeInTheDocument();
     expect(await screen.findByTestId('runtime-card-connect-codex')).toBeInTheDocument();

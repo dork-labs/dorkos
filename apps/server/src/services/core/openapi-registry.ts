@@ -24,6 +24,7 @@
  *
  * @module services/openapi-registry
  */
+import { ChatActivityResponseSchema } from '@dorkos/shared/chat-messages';
 import { CreateAgentOptionsSchema } from '@dorkos/shared/mesh-schemas';
 import { RUNTIME_CREDITS_PROTOCOLS } from '@dorkos/shared/agent-runtime';
 import { OpenAPIRegistry, OpenApiGeneratorV31 } from '@asteasolutions/zod-to-openapi';
@@ -1136,6 +1137,29 @@ registry.registerPath({
     204: { description: 'Accepted; recorded when the caller is a person at the app' },
     400: {
       description: 'The id is not a session id (`INVALID_SESSION_ID`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/sessions/{id}/chat-messages',
+  tags: ['Sessions'],
+  summary: 'What a chat sent other chats, and who stopped it',
+  description:
+    'The messages this chat sent other chats with `chat_send` or `session_start`, with ' +
+    'where each one is now (queued, working, delivered, replied, failed), and the times ' +
+    'another chat stopped this one with `chat_stop`. The app re-reads it whenever the ' +
+    "session's event stream carries a `chat_activity` event.",
+  request: { params: z.object({ id: z.string().uuid() }) },
+  responses: {
+    200: {
+      description: "The chat's messaging",
+      content: { 'application/json': { schema: ChatActivityResponseSchema } },
+    },
+    400: {
+      description: 'Invalid session id',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

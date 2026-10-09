@@ -32,7 +32,7 @@ Three pieces make this work: **Mesh** finds your agents and gives each one an ad
 
    > Use relay_send to tell the frontend agent about the new `/users` endpoint.
 
-4. Watch the message arrive: DorkOS starts (or resumes) a session for the receiving agent and hands it your message as a prompt, the same way a person would type it in.
+4. Watch the message arrive: DorkOS starts (or resumes) a chat for the receiving agent and hands it your message as a prompt, the same way a person would type it in.
 
 That is the whole loop: discover, approve, send, watch it land. Everything past this point is reference material for when you want to control access rules, chain agents into pipelines, or see exactly what's on the wire.
 
@@ -115,7 +115,7 @@ curl -X PUT http://localhost:4242/api/mesh/topology/access \
 
 ### Direct messaging
 
-Every Claude session an agent runs has an MCP tool server injected into it (MCP is the standard that lets AI tools call functions like this one). That's what exposes `relay_send`:
+Every Claude Code chat an agent runs has an MCP tool server injected into it (MCP is the standard that lets AI tools call functions like this one). That's what exposes `relay_send`:
 
 ```
 Agent "api" notifies "web" about an API change:
@@ -126,7 +126,7 @@ Agent "api" notifies "web" about an API change:
 >           Please update the UserList component to fetch from this endpoint."
 ```
 
-DorkOS starts (or resumes) a session in the `web` agent's working directory and passes the content as a prompt, so the web agent replies with the same working-directory context it always has.
+DorkOS starts (or resumes) a chat in the `web` agent's working directory and passes the content as a prompt, so the web agent replies with the same working-directory context it always has.
 
 ### Request-reply
 

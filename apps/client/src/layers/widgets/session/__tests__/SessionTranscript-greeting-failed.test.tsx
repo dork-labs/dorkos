@@ -70,12 +70,12 @@ describe('SessionTranscript — greeting-failed empty state (M4)', () => {
     // The dishonest part — a dead Retry — must never appear.
     expect(screen.queryByRole('button', { name: /retry/i })).toBeNull();
     // It replaces the generic empty copy, not stacks with it.
-    expect(screen.queryByText('Start a conversation')).toBeNull();
+    expect(screen.queryByText('Start a chat')).toBeNull();
   });
 
   it('shows the generic empty copy for a normal session (no birth record)', () => {
     render(<SessionTranscript {...props('ordinary')} />);
-    expect(screen.getByText('Start a conversation')).toBeInTheDocument();
+    expect(screen.getByText('Start a chat')).toBeInTheDocument();
     expect(screen.queryByTestId('greeting-failed-empty')).toBeNull();
   });
 
@@ -85,7 +85,7 @@ describe('SessionTranscript — greeting-failed empty state (M4)', () => {
     // empty copy holds in this pre-fire window.
     useAgentBirthStore.getState().register('s1', RECORD);
     render(<SessionTranscript {...props('s1')} />);
-    expect(screen.getByText('Start a conversation')).toBeInTheDocument();
+    expect(screen.getByText('Start a chat')).toBeInTheDocument();
     expect(screen.queryByTestId('greeting-failed-empty')).toBeNull();
     expect(screen.queryByTestId('first-light')).toBeNull();
   });

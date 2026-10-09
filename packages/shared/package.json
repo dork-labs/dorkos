@@ -480,6 +480,10 @@
     "./browser-frame-wire": {
       "types": "./src/browser-frame-wire.ts",
       "default": "./dist/browser-frame-wire.js"
+    },
+    "./chat-messages": {
+      "types": "./src/chat-messages.ts",
+      "default": "./dist/chat-messages.js"
     }
   },
   "scripts": {

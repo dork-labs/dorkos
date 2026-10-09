@@ -504,7 +504,7 @@ describe('SessionComposer — a failed attachment blocks the send (DOR-480)', ()
     expect(props.canSubmit).toBe(false);
     // Its own sentence, never the room's "Still opening this conversation…":
     // nothing is opening, and there is a way out to name.
-    expect(props.canSubmitReason).toBe('Pick a conversation, or start a new one.');
+    expect(props.canSubmitReason).toBe('Pick a chat, or start a new one.');
   });
 
   it('sends nothing at all when no conversation is selected', () => {

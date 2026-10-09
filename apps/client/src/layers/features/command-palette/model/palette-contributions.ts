@@ -116,7 +116,7 @@ export const PALETTE_QUICK_ACTIONS: CommandPaletteContribution[] = [
   },
   {
     id: 'new-session',
-    label: 'New session',
+    label: 'New chat',
     icon: 'Plus',
     action: 'newSession',
     category: 'quick-action',

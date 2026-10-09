@@ -101,7 +101,7 @@ function TextDiffReview({ content }: CanvasDiffContentProps) {
   useAgentEditRefresh(cwd, content.sourcePath, review.revalidate);
 
   if (cwd === null || sessionId === null) {
-    return <DiffMessage>Open a session to review changes.</DiffMessage>;
+    return <DiffMessage>Open a chat to review changes.</DiffMessage>;
   }
   if (review.isLoading) {
     return <DiffMessage>Loading changes…</DiffMessage>;
@@ -255,7 +255,7 @@ function DiffHeader({
         {/* Compare-against toggle — session snapshot (default) vs last commit. */}
         <div className="flex items-center rounded-md border p-0.5">
           <ModeButton active={mode === 'session'} onClick={() => onModeChange('session')}>
-            Session start
+            Chat start
           </ModeButton>
           <ModeButton active={mode === 'head'} onClick={() => onModeChange('head')}>
             <GitCommitHorizontal className="mr-1 size-3" />

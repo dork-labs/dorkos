@@ -122,7 +122,7 @@ async function fakeDispatch(
   dispatched.push(opts);
   if (dispatchGate) await dispatchGate;
   if (opts.countsTowardLaunchCap && capFull) {
-    return { refused: 'LAUNCH_CAP_FULL', message: 'Too many agent-started sessions are running.' };
+    return { refused: 'LAUNCH_CAP_FULL', message: 'Too many spin-off chats are running.' };
   }
   // A new chat is bound by its first dispatch, as the real launch path does.
   if (!sessions.has(opts.sessionId)) {

@@ -385,7 +385,7 @@ export function executeUiCommand(
     case 'open_terminal': {
       if (ctx.supportsTerminal === false) {
         toast.info('The terminal isn’t available here', {
-          description: 'Open this session in the web app.',
+          description: 'Open this chat in the web app.',
         });
         break;
       }
@@ -425,7 +425,7 @@ export function executeUiCommand(
       // `dorkos-ui` fence (LiveSessionWidget), so re-emitting the fence updates
       // it live.
       if (ctx.sessionId === undefined) {
-        toast.info('Picture-in-picture needs an active session', {
+        toast.info('Picture-in-picture needs an open chat', {
           description: 'Open a chat, then pop out its widget.',
         });
         break;
