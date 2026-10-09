@@ -34,7 +34,7 @@
  *
  * @module services/notifications/emitters/session-lifecycle
  */
-import { isChatStartedTurn } from '../../session/chat-messages/chat-message-service.js';
+import { isChatStartedTurn } from '../../session/chat-messages/chat-started-turns.js';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import type { SessionLifecycle, SessionLimit } from '@dorkos/shared/session-stream';

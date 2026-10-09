@@ -25,7 +25,7 @@ afterEach(() => clearTestHomes());
 vi.mock('../../relay/relay-state.js', () => ({ isRelayEnabled: vi.fn(() => true) }));
 // Which chats' running turn another chat's message started (spec spin-off-chats §6).
 const chatStarted = vi.hoisted(() => new Set<string>());
-vi.mock('../../session/chat-messages/chat-message-service.js', () => ({
+vi.mock('../../session/chat-messages/chat-started-turns.js', () => ({
   isChatStartedTurn: (sessionId: string) => chatStarted.has(sessionId),
 }));
 

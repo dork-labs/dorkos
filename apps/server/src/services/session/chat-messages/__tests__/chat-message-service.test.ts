@@ -36,6 +36,12 @@ import {
   ChatMessageService,
   type ChatMessageServiceDeps,
 } from '../chat-message-service.js';
+import {
+  CHAT_TURN_LINGER_MS,
+  isChatStartedTurn,
+  resetChatStartedTurns,
+} from '../chat-started-turns.js';
+import { linkSessionId, resetSessionKeys } from '../../resolution/session-key-registry.js';
 
 const ANA = { sessionId: 'chat-a', agentPath: '/agents/ana' };
 const PERSON = 'window-a';
@@ -692,6 +698,48 @@ describe('the lifecycle of a sent message', () => {
     const { ids } = await queuedPair();
     lifecycle!({ phase: 'settled', messageId: 'someone-else', sessionId: 'chat-b', outcome: 'ok' });
     expect(ids.map((id) => store.get(id)!.status)).toEqual(['queued', 'queued']);
+  });
+
+  describe('whether the latest turn was one another chat started', () => {
+    beforeEach(() => resetChatStartedTurns());
+    afterEach(() => {
+      vi.useRealTimers();
+      resetSessionKeys();
+      resetChatStartedTurns();
+    });
+
+    it('is true from the start, lingers past the settle, then forgets', async () => {
+      const { queueId } = await queuedPair();
+      vi.useFakeTimers();
+      expect(isChatStartedTurn('chat-b')).toBe(false);
+      lifecycle!({ phase: 'started', messageId: queueId, sessionId: 'chat-b' });
+      expect(isChatStartedTurn('chat-b')).toBe(true);
+      lifecycle!({ phase: 'settled', messageId: queueId, sessionId: 'chat-b', outcome: 'ok' });
+      // The "finished" status change may land after the settle.
+      expect(isChatStartedTurn('chat-b')).toBe(true);
+      vi.advanceTimersByTime(CHAT_TURN_LINGER_MS + 1);
+      expect(isChatStartedTurn('chat-b')).toBe(false);
+    });
+
+    it('forgets at once when a turn no chat message rides on starts (a person’s)', async () => {
+      const { queueId } = await queuedPair();
+      vi.useFakeTimers();
+      lifecycle!({ phase: 'started', messageId: queueId, sessionId: 'chat-b' });
+      lifecycle!({ phase: 'settled', messageId: queueId, sessionId: 'chat-b', outcome: 'ok' });
+      lifecycle!({ phase: 'started', messageId: 'person-typed', sessionId: 'chat-b' });
+      expect(isChatStartedTurn('chat-b')).toBe(false);
+    });
+
+    it('matches the chat under its canonical id after a rekey', async () => {
+      const { queueId } = await queuedPair();
+      vi.useFakeTimers();
+      lifecycle!({ phase: 'started', messageId: queueId, sessionId: 'chat-b' });
+      linkSessionId('chat-b', 'chat-b-canonical');
+      expect(isChatStartedTurn('chat-b-canonical')).toBe(true);
+      lifecycle!({ phase: 'settled', messageId: queueId, sessionId: 'chat-b', outcome: 'ok' });
+      vi.advanceTimersByTime(CHAT_TURN_LINGER_MS + 1);
+      expect(isChatStartedTurn('chat-b-canonical')).toBe(false);
+    });
   });
 
   it('stops listening when the service stops', () => {
