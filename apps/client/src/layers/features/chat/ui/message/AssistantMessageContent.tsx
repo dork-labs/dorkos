@@ -31,15 +31,23 @@ import { TouchChipStrip } from '../chips';
 import { approvalHeading } from '@dorkos/shared/approval-schemas';
 import { ApprovalCard } from '@/layers/features/approvals';
 import { ChatAgentRequest, isConnectionRequestTool } from '@/layers/features/connections';
+import { isMessagingToolName } from '@dorkos/shared/chat-messages';
+import { SentChatCard } from '../messaging/SentChatCard';
+import { useChatActivity } from '../../model/messaging/use-chat-activity';
 
 /**
  * Whether a part folds into a run of finished work. Questions, approvals and an
- * agent's request for an app never do: each asks the reader for something.
+ * agent's request for an app never do: each asks the reader for something. A
+ * message to another chat never does either: it is conversation, not tool use
+ * (spec `spin-off-chats` §6).
  */
 function isCollapsiblePart(part: NonNullable<ChatMessage['parts']>[number]): boolean {
   if (part.type === 'thinking') return true;
   return (
-    part.type === 'tool_call' && !part.interactiveType && !isConnectionRequestTool(part.toolName)
+    part.type === 'tool_call' &&
+    !part.interactiveType &&
+    !isConnectionRequestTool(part.toolName) &&
+    !isMessagingToolName(part.toolName)
   );
 }
 
@@ -69,6 +77,9 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
   } = useMessageContext();
   const { expandToolCalls, autoHideToolCalls } = useAppStore();
   const parts = message.parts ?? [];
+  // What this chat sent other chats — the Sent cards' live state. One shared
+  // read per chat however many messages ask for it.
+  const { sent } = useChatActivity(sessionId);
 
   const approvalRefCallback = useCallback(
     (handle: ApprovalPromptHandle | null) => {
@@ -396,6 +407,20 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
           onDecided={
             onToolDecided ? (answers) => onToolDecided(toolPart.toolCallId, answers) : undefined
           }
+        />
+      );
+    }
+    // A message to another chat, a spin-off started, or a chat stopped: drawn
+    // as conversation, never as a tool card, so neither "Auto-hide tool calls"
+    // nor a tool group can hide it (spec `spin-off-chats` §6).
+    if (isMessagingToolName(toolPart.toolName)) {
+      return (
+        <SentChatCard
+          key={toolPart.toolCallId}
+          part={toolPart}
+          sent={sent}
+          {...(message.timestamp ? { at: message.timestamp } : {})}
+          {...(sessionId ? { sessionId } : {})}
         />
       );
     }

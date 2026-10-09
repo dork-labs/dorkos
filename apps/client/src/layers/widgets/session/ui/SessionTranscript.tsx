@@ -46,6 +46,8 @@ import {
   type InteractiveToolHandle,
   type ListRow,
   type MessageAuthorContext,
+  interleaveStopNotices,
+  useChatActivity,
 } from '@/layers/features/chat';
 import { SessionMessage } from './SessionMessage';
 import { useRenderSlot } from '@/layers/shared/lib';
@@ -158,7 +160,7 @@ interface SessionTranscriptProps {
  * @param props - The transcript and everything a row needs to be interactive.
  */
 export function SessionTranscript({
-  messages,
+  messages: transcript,
   sessionId,
   isLoadingHistory = false,
   hydrated = false,
@@ -177,6 +179,11 @@ export function SessionTranscript({
   landOnRow,
   foldFirstPrompt = false,
 }: SessionTranscriptProps) {
+  // A "Stopped by" line wherever another chat's agent stopped this one (spec
+  // `spin-off-chats` §6), placed by when it happened. Every row rule below reads
+  // this list, so a line is a row like any other and no index skips it.
+  const { stops } = useChatActivity(sessionId);
+  const messages = useMemo(() => interleaveStopNotices(transcript, stops), [transcript, stops]);
   // How long the transcript was when this mount first had one — the line between
   // history and what arrived since, which decides which rows animate. Latched in
   // a slot rather than state: it is read in the same render that captures it, and

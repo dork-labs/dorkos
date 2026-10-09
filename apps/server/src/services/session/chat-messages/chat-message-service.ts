@@ -107,6 +107,27 @@ export const CHAT_SUMMARY_MAX = 80;
 /** The longest stop reason. */
 export const CHAT_STOP_REASON_MAX = 200;
 
+/**
+ * Chats whose running turn another chat's message started, with when it
+ * started. Read by the turn-finished notification, so a turn agents started
+ * for each other never notifies the person (spec `spin-off-chats` §6). Kept a
+ * moment past the turn's end, because the "finished" status change and the
+ * dispatcher's settle can arrive in either order.
+ */
+const chatStartedTurns = new Map<string, number>();
+
+/** How long a chat-started turn is remembered after it settles. */
+const CHAT_TURN_LINGER_MS = 10_000;
+
+/**
+ * Whether the chat's latest turn was started by another chat's message.
+ *
+ * @param sessionId - The chat.
+ */
+export function isChatStartedTurn(sessionId: string): boolean {
+  return chatStartedTurns.has(sessionId);
+}
+
 /** The calling chat, as the verified turn names it. */
 export interface ChatCaller {
   /** The calling chat's id. */
@@ -871,6 +892,17 @@ export class ChatMessageService {
   private onDispatch(event: DispatchLifecycleEvent): void {
     const rows = this.deps.store.listByQueueMessage(event.messageId);
     if (rows.length === 0) return;
+    if (event.phase === 'started') {
+      chatStartedTurns.set(event.sessionId, this.now());
+    } else if (event.phase === 'settled') {
+      const startedAt = chatStartedTurns.get(event.sessionId);
+      const timer = setTimeout(() => {
+        if (chatStartedTurns.get(event.sessionId) === startedAt) {
+          chatStartedTurns.delete(event.sessionId);
+        }
+      }, CHAT_TURN_LINGER_MS);
+      timer.unref?.();
+    }
     for (const row of rows) {
       let status: ChatMessageStatus | null = null;
       let failureReason: string | undefined;

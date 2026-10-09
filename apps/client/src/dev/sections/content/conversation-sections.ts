@@ -48,6 +48,24 @@ export const CONVERSATION_SECTIONS: PlaygroundSection[] = [
       'shared',
     ],
   },
+  // ChatMessagingShowcases (spec spin-off-chats §6)
+  {
+    id: 'chat-messaging',
+    title: 'Chat messaging',
+    page: 'conversation',
+    category: 'Messages',
+    keywords: [
+      'chat',
+      'spin-off',
+      'sent',
+      'received',
+      'report',
+      'stop',
+      'chat_send',
+      'session_start',
+      'agent to agent',
+    ],
+  },
   {
     id: 'conversation-dividers',
     title: 'Conversation dividers',

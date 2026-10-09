@@ -134,6 +134,42 @@ describe('useSessionStreamStore', () => {
     expect(steer).toMatchObject({ content: 'also check the docs', messageId: 'm-1' });
   });
 
+  it('a turn another chat started does not count as the person asking (spin-off-chats §6)', () => {
+    const store = useSessionStreamStore.getState();
+    store.applySnapshot(SID, snapshot());
+    const before = useSessionStreamStore.getState().getSession(SID).userTurnCount;
+    // Seqs above the snapshot's cursor (5), so the store applies them.
+    store.applyEvent(SID, { type: 'turn_start', seq: 6 });
+    store.applyEvent(SID, { type: 'turn_end', seq: 7 });
+    const afterPerson = useSessionStreamStore.getState().getSession(SID).userTurnCount;
+    expect(afterPerson).toBe(before + 1);
+    store.applyEvent(SID, {
+      type: 'turn_start',
+      seq: 8,
+      userMessage: 'fenced',
+      chatMessages: [
+        {
+          id: 'cm-1',
+          kind: 'report',
+          from: { chatId: 'chat-b', agentName: 'Builder' },
+          text: 'Done.',
+          delivery: 'queue',
+          status: 'working',
+          sentAt: '2026-10-09T10:00:00.000Z',
+        },
+      ],
+    });
+    expect(useSessionStreamStore.getState().getSession(SID).userTurnCount).toBe(afterPerson);
+  });
+
+  it('chat_activity moves the version the Sent cards re-read on', () => {
+    const store = useSessionStreamStore.getState();
+    store.applySnapshot(SID, snapshot());
+    const before = useSessionStreamStore.getState().getSession(SID).chatActivityVersion;
+    store.applyEvent(SID, { type: 'chat_activity', seq: 6 });
+    expect(useSessionStreamStore.getState().getSession(SID).chatActivityVersion).toBe(before + 1);
+  });
+
   it('setHistoryMessages clears inProgressTurn by default but preserves it on request', () => {
     // Real failure mode: the turn_end reconcile reload resolves AFTER the next
     // turn already started (queued-flush race) — clearing then would wipe the

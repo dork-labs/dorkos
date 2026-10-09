@@ -32,7 +32,7 @@ import { feedArticleProps } from '@/layers/shared/model';
 import type { FeedPosition, MessageAuthor } from '@/layers/shared/model';
 import { Message, formatTime } from '@/layers/features/conversation';
 import type { ChatMessage, MessageGrouping } from '@/layers/shared/model';
-import { MessageProvider, type InteractiveToolHandle } from '@/layers/features/chat';
+import { ChatFromMark, MessageProvider, type InteractiveToolHandle } from '@/layers/features/chat';
 import { renderSessionBody } from './render-session-body';
 
 interface SessionMessageProps {
@@ -140,8 +140,13 @@ export function SessionMessage({
   // result (often a wide ANSI table), so it takes the assistant's lighter
   // typography rather than reading as something the human typed (DOR-126).
   const isUserPrompt = isUser && message.messageType !== 'local_command_output';
+  // Words another chat sent: the author line says which chat (spec
+  // `spin-off-chats` §6), and they are not this person's to run elsewhere.
+  const fromChat = isUser ? message.chatMessages?.[0] : undefined;
   const showRunWith =
     isUserPrompt &&
+    fromChat === undefined &&
+    message._chatStop === undefined &&
     message.messageType !== 'command' &&
     message.messageType !== 'compaction' &&
     message.content.trim().length > 0;
@@ -188,7 +193,12 @@ export function SessionMessage({
       >
         <Message.Gutter author={author} at={at} />
         <Message.Body>
-          <Message.Author id={headerId} author={author} at={at} />
+          <Message.Author
+            id={headerId}
+            author={author}
+            at={at}
+            {...(fromChat ? { mark: <ChatFromMark stamp={fromChat} /> } : {})}
+          />
           <Message.Content id={contentId}>
             {renderSessionBody(message, { rowId: message.id, isStreaming })}
           </Message.Content>
