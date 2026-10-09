@@ -1,7 +1,10 @@
 ---
 covers:
-  - 'feat(relay): retire the relay agent send, inbox and endpoint tools (DOR-2790)'
+  - 'refactor(relay): remove the inbound turn budgets and two unused relay schemas (DOR-2790)'
+  - 'fix(runtime): ask before a turn from outside stops or cuts into another chat (DOR-2790)'
+  - 'fix(runtime): teach the chat tools only where they work, and say what is really loaded (DOR-2790)'
   - 'feat(operating-skills): teach agents to work with spin-off chats (DOR-2790)'
+  - 'feat(relay): retire the relay agent send, inbox and endpoint tools (DOR-2790)'
 ---
 
 ### Added
