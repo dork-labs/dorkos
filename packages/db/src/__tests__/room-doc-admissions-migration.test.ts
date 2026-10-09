@@ -689,19 +689,42 @@ it('migrates an existing Room queue without giving private acceptance or claimed
   ) as {
     entries: { idx: number; tag: string }[];
   };
-  const queueMigrations = journal.entries.filter((entry) =>
-    readFileSync(path.join(migrationDir, `${entry.tag}.sql`), 'utf8').includes(
-      "AND (delivery_kind IS NOT 'room_app_event' OR status IS NOT 'accepted')"
-    )
+  // Recreate the actual published pre-queue schema. The regenerated migration
+  // combines all three historical Doc migrations, so its current journal prefix
+  // alone no longer contains the Room custody columns exercised below.
+  expect(journal.entries[148]?.tag).toBe('20261008170031_session_touches');
+  const historical = [
+    {
+      idx: 149,
+      version: '6',
+      when: 1791478832000,
+      tag: '20261008170032_doc_room_admissions',
+      breakpoints: true,
+    },
+    {
+      idx: 150,
+      version: '6',
+      when: 1791478833000,
+      tag: '20261008170033_doc_room_pending_sources',
+      breakpoints: true,
+    },
+  ];
+  const queueSql = readFileSync(
+    path.join(migrationDir, 'legacy-doc/20261008170034_lowly_molecule_man.sql'),
+    'utf8'
   );
-  expect(queueMigrations).toHaveLength(1);
-  const queueMigration = queueMigrations[0];
-  if (!queueMigration) throw new Error('The original Room queue migration is missing');
-  journal.entries = journal.entries.filter((entry) => entry.idx < queueMigration.idx);
+  expect(queueSql).toContain(
+    "AND (delivery_kind IS NOT 'room_app_event' OR status IS NOT 'accepted')"
+  );
+  journal.entries = [...journal.entries.filter((entry) => entry.idx <= 148), ...historical];
   writeFileSync(path.join(folder, 'meta/_journal.json'), JSON.stringify(journal));
   for (const entry of journal.entries)
     copyFileSync(
-      path.join(migrationDir, `${entry.tag}.sql`),
+      path.join(
+        migrationDir,
+        ...(historical.some((old) => old.tag === entry.tag) ? ['legacy-doc'] : []),
+        `${entry.tag}.sql`
+      ),
       path.join(folder, `${entry.tag}.sql`)
     );
   const migrationFolder = vi.spyOn(migrationLocation, 'migrationsFolder').mockReturnValue(folder);
@@ -743,9 +766,31 @@ it('migrates an existing Room queue without giving private acceptance or claimed
   expect(db.$client.prepare('SELECT * FROM canvas_doc_batches ORDER BY batch_id').all()).toEqual(
     before
   );
-  expect(db.$client.prepare('SELECT * FROM __drizzle_migrations ORDER BY id').all()).toHaveLength(
-    historyBefore.length + 1
-  );
+  const upgradedHistory = db.$client
+    .prepare('SELECT * FROM __drizzle_migrations ORDER BY id')
+    .all();
+  expect(upgradedHistory.slice(0, historyBefore.length)).toEqual(historyBefore);
+  // Complete the archived queue fix, then apply shipped Chats and record the
+  // schema-equivalent regenerated Doc migration without replaying its CREATEs.
+  expect(
+    upgradedHistory.slice(historyBefore.length).map((row) => {
+      const entry = row as { hash: string; created_at: number };
+      return { hash: entry.hash, created_at: entry.created_at };
+    })
+  ).toEqual([
+    {
+      hash: 'f85a83fc7fc5adc1764d1c10e089acdd3d0ea874139c5757bbff58ca77ed0825',
+      created_at: 1791478834000,
+    },
+    {
+      hash: '55b1201b98db390ccf33bb4069645f6c542ef20739f8bd1a2e4c1078275582fc',
+      created_at: 1791565991417,
+    },
+    {
+      hash: '44321f0c067d6ce35619f22ac071fcd08bdddd8dec4a7b099f8ce31998b1324f',
+      created_at: 1791577212201,
+    },
+  ]);
   insert(db, 'canvas_doc_batches', room('room-second'));
   insert(db, 'canvas_doc_batches', { ...legacy, batch_id: 'private-first' });
   expect(() => insert(db, 'canvas_doc_batches', { ...legacy, batch_id: 'private-second' })).toThrow(
