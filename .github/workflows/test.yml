@@ -4,7 +4,7 @@ name: test
 # monorepo on merge groups, where it is a REQUIRED check of the merge queue
 # (ruleset "main: merge queue"), and the affected packages on pull requests,
 # where the same required context has to report before a PR may enqueue at all.
-# Both are split four ways; see TWO EVENTS, TWO DEPTHS below.
+# Both are split eight ways; see TWO EVENTS, TWO DEPTHS below.
 #
 # Before this workflow existed, NO CI job ran the tests. The only enforcement
 # was the lefthook `pre-push` gate — and that gate ran every package's suite in
@@ -24,13 +24,13 @@ name: test
 # tip catches it. `--continue` so one red package still reports every other
 # package's result instead of hiding behind the first failure.
 #
-# SHARDED ACROSS FOUR RUNNERS (2026-08-29, queue leg; 2026-09-06, PR leg too).
+# SHARDED ACROSS EIGHT RUNNERS (original four-way split: 2026-08-29 queue; 2026-09-06 PR).
 # The queue leg previously ran as a single serialized job and took 19–29 minutes
 # wall clock — the ceiling comment below said "split the job rather than raising
 # this again", and this is that split. Every shard runs the FULL `turbo test`
-# task graph; the split happens inside vitest (`--shard=N/4`), which partitions
-# each package's test FILES across the four runners. Coverage is unchanged: the
-# union of the four shards is exactly the old single run, and each shard still
+# task graph; the split happens inside vitest (`--shard=N/8`), which partitions
+# each package's test FILES across the eight runners. Coverage is unchanged: the
+# union of the eight shards is exactly the old single run, and each shard still
 # executes every package's suite (so the per-shard assert step below keeps its
 # "every package with a `test` script ran" guarantee). File-level sharding was
 # chosen over package-level filters because the suite's wall clock is dominated
@@ -42,8 +42,8 @@ name: test
 # merge-queue test job runs @dorkos/server unsharded"). It does not. Run
 # 34080120717's four shard-files artifacts hold 241 / 240 / 240 / 240
 # apps/server test files, union 961, with ZERO files appearing in two shards.
-# The queue leg's shards measure 8–13 minutes each; it has never been the slow
-# one. The 46-minute cancellation that prompted the ticket (run 33711507309, PR
+# Those historical four-way queue shards measured 8–13 minutes each; they were
+# not the slow leg. The 46-minute cancellation that prompted the ticket (run 33711507309, PR
 # #1486) was `event: pull_request` with `test-shard` skipped — the PR leg, which
 # really did run unsharded until this change. See the fan-in job's ceiling
 # comment for the numbers that made splitting it worth ~27% more runner-minutes.
@@ -59,7 +59,7 @@ name: test
 # `ulimit` or `maxWorkers` on this evidence.
 #
 # `--passWithNoTests` rides ONLY the sharded legs: a package with three
-# test files legitimately contributes zero files to one of four shards, and
+# test files legitimately contributes zero files to one of eight shards, and
 # without the flag vitest exits 1 on an empty selection. The flag also removes
 # vitest's zero-collected-files safety net, so the net is rebuilt one level up
 # where it can actually discriminate: every shard records the test files
@@ -158,10 +158,10 @@ name: test
 # two same-named runs on one commit is not documented anywhere we could pin.
 # Do not rename this job's rendered name without updating the ruleset.
 #
-# The `test-shard (N/4)` checks the matrix renders are NOT required contexts
+# The `test-shard (N/8)` checks the matrix renders are NOT required contexts
 # and must not become them — they already existed on `merge_group` and, since
 # DOR-1731, appear on pull requests too (where they previously reported as a
-# single skipped `test-shard (${{ matrix.shard }}/4)`). Nothing depends on
+# single skipped `test-shard (N/4)`). Nothing depends on
 # their names: a red shard reddens `test` through the fan-in gate, and
 # scripts/should-arm-automerge.sh refuses to arm on any failing or cancelled
 # check regardless of name.
@@ -522,7 +522,7 @@ jobs:
           include-hidden-files: true
           if-no-files-found: ignore
 
-  # The suite, split four ways at the vitest file level (see the header), on
+  # The suite, split eight ways at the vitest file level (see the header), on
   # BOTH events: the full monorepo sweep on `merge_group`, the affected-only
   # sweep on `pull_request`. What differs between the two is one `run:` step
   # and the four proof steps that only the queue leg carries; everything above
@@ -530,19 +530,19 @@ jobs:
   # nothing about it depends on which sweep runs.
   test-shard:
     strategy:
-      # All four shards report even when one is red — the matrix equivalent of
+      # All eight shards report even when one is red — the matrix equivalent of
       # `--continue`, and the same reason: one red package must not hide the
       # other seventeen packages' results.
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
-    name: test-shard (${{ matrix.shard }}/4)
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+    name: test-shard (${{ matrix.shard }}/8)
     runs-on: ubuntu-latest
-    # A quarter of the measured 19-29 minute sweep plus ~5 minutes of
-    # checkout/install/build. 30 keeps a hung watch-mode suite from burning
-    # the old 45; if a healthy shard ever crosses ~20 minutes, raise the shard
-    # count rather than this number. (DOR-1363 is the run a too-tight ceiling
-    # cancelled with the work already finished — leave headroom.)
+    # Eight file shards reduce each runner's serial test work; every runner still
+    # pays its original dependency builds. The 30-minute job ceiling is unchanged.
+    # The previous four-way shard1 spent 2m41 in build slots and 9m32 in earlier
+    # tests before server:test, then reached this ceiling with server still active.
+    # More file shards are a scheduling experiment, not a waiver of failing tests.
     timeout-minutes: 30
     # Raise the V8 old-space ceiling for every Node process this job spawns —
     # pnpm, turbo, and each `vitest run` worker inherit NODE_OPTIONS. A single
@@ -674,17 +674,17 @@ jobs:
             --runner vitest \
             --out "$RUNNER_TEMP/quarantine.json" \
             --lines "$RUNNER_TEMP/quarantine.txt" \
-            --title "Quarantine lane — test shard ${{ matrix.shard }}/4"
+            --title "Quarantine lane — test shard ${{ matrix.shard }}/8"
           # Its own shard identity beside it, so the fan-in can prove it has a
           # COMPLETE set of copies before intersecting them.
-          printf '%s/4\n' '${{ matrix.shard }}' > "$RUNNER_TEMP/shard.txt"
+          printf '%s/8\n' '${{ matrix.shard }}' > "$RUNNER_TEMP/shard.txt"
 
-      - name: Run every package's test suite (shard ${{ matrix.shard }}/4)
+      - name: Run every package's test suite (shard ${{ matrix.shard }}/8)
         id: sweep
         if: ${{ github.event_name != 'pull_request' }}
         run: |
           set +e
-          pnpm exec turbo test --summarize --continue --concurrency=1 -- --run --shard=${{ matrix.shard }}/4 --retry=1 --passWithNoTests --reporter=default --reporter=json --outputFile.json=vitest-shard-report.json --reporter=../../scripts/vitest-flake-reporter.ts
+          pnpm exec turbo test --summarize --continue --concurrency=1 -- --run --shard=${{ matrix.shard }}/8 --retry=1 --passWithNoTests --reporter=default --reporter=json --outputFile.json=vitest-shard-report.json --reporter=../../scripts/vitest-flake-reporter.ts
           code=$?
           echo "exit-code=$code" >> "$GITHUB_OUTPUT"
           if [ "$code" -ne 0 ]; then
@@ -717,7 +717,7 @@ jobs:
             --suite-exit "${{ steps.sweep.outputs.exit-code }}" \
             --list "$RUNNER_TEMP/quarantine.json" \
             "${args[@]}" \
-            --title "Quarantine gate — test shard ${{ matrix.shard }}/4"
+            --title "Quarantine gate — test shard ${{ matrix.shard }}/8"
 
       # The PR leg's quarter. Same split, same `--concurrency=1`, narrower
       # scope — and deliberately NOT the queue leg's line with one flag
@@ -750,23 +750,23 @@ jobs:
       # not resolve here.
       #
       # It is a SHA and not `origin/<base_ref>`, and that matters more now than
-      # it did when one job ran this alone. Four shards check out
+      # it did when one job ran this alone. Eight shards check out
       # independently, seconds to minutes apart; a ref is resolved at each
       # checkout, so a merge landing on `main` in that window gives two shards
       # DIFFERENT affected sets. The failure that produces is silent and
       # exactly the kind this workflow exists to prevent: a package present in
-      # one shard's set and absent from another's gets a quarter of its files
+      # one shard's set and absent from another's gets an eighth of its files
       # run and nothing notices, because the PR leg has no union check to
       # notice with. `github.event.pull_request.base.sha` is fixed for the
-      # whole run, identical across all four shards, and is precisely the base
+      # whole run, identical across all eight shards, and is precisely the base
       # commit of the merge ref actions/checkout materialised — so
       # base.sha...HEAD is the PR's own diff and nobody else's. `fetch-depth:
       # 0` above is what guarantees the commit is present to diff against.
-      - name: Run the affected packages' test suites (shard ${{ matrix.shard }}/4)
+      - name: Run the affected packages' test suites (shard ${{ matrix.shard }}/8)
         if: ${{ github.event_name == 'pull_request' }}
         env:
           TURBO_SCM_BASE: ${{ github.event.pull_request.base.sha }}
-        run: pnpm exec turbo test --affected --continue --concurrency=1 --log-order=stream -- --run --shard=${{ matrix.shard }}/4 --passWithNoTests
+        run: pnpm exec turbo test --affected --continue --concurrency=1 --log-order=stream -- --run --shard=${{ matrix.shard }}/8 --passWithNoTests
 
       # THE POINT OF THIS STEP: turbo caches `test`, and a full cache hit prints
       # "Tasks: 31 successful, 31 total" — one per package declaring a `test`
@@ -783,7 +783,7 @@ jobs:
       # Per SHARD, unchanged from the single-job era: every shard runs the full
       # task graph (the split is inside vitest, not across packages), so "every
       # package declaring a `test` script executed, none from cache" holds on
-      # each of the four runners independently. What this step CANNOT see is a package whose
+      # each of the eight runners independently. What this step CANNOT see is a package whose
       # vitest collected zero files — that is the union check's job, in the
       # fan-in below.
       #
@@ -849,14 +849,14 @@ jobs:
             exit 1
           fi
           if [ -z "$named" ]; then
-            echo "shard ${{ matrix.shard }}/4: no test needed a retry to pass."
+            echo "shard ${{ matrix.shard }}/8: no test needed a retry to pass."
             exit 0
           fi
           count=$(printf '%s\n' "$named" | wc -l | tr -d ' ')
           printf 'WARNING — %s test(s) only passed on a retry:\n' "$count"
           printf '%s\n' "$named" | sed 's/^/  /'
           {
-            printf '### Shard %s/4 — %s test(s) only passed on a retry\n\n' '${{ matrix.shard }}' "$count"
+            printf '### Shard %s/8 — %s test(s) only passed on a retry\n\n' '${{ matrix.shard }}' "$count"
             printf '%s\n' "$named" | sed 's/^/- `/; s/$/`/'
             printf '\nA test named here three times over is a flake to fix (DOR-1007), not a retry budget to widen.\n\n'
           } >> "$GITHUB_STEP_SUMMARY"
@@ -1055,7 +1055,7 @@ jobs:
       # when a shard is red — without it, GitHub would skip this job and a
       # SKIPPED check run satisfies a required check, which is precisely the
       # false green this workflow exists to prevent.
-      - name: Require all four shards green
+      - name: Require all eight shards green
         run: |
           result="${{ needs.test-shard.result }}"
           echo "shard matrix result: $result"
@@ -1088,7 +1088,7 @@ jobs:
           path: shard-files
 
       # Every package that declares a `test` script must have contributed at
-      # least one collected test file across the union of the four shards —
+      # least one collected test file across the union of the eight shards —
       # the zero-collected-files net --passWithNoTests removed, rebuilt at the
       # only level that can tell "empty because sharded" from "empty because
       # broken". Fixtures: scripts/test-assert-shard-union.sh.

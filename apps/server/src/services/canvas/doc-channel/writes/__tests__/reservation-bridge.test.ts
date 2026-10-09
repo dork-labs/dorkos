@@ -4,6 +4,7 @@ import { promisify } from 'node:util';
 import fs from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
+import os from 'node:os';
 import { CanvasChannelCheckboxRequestSchema } from '@dorkos/shared/canvas-channel-schemas';
 import { loadCeilingMs, loadScaledMs } from '@dorkos/shared/test-budget';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -37,6 +38,28 @@ import {
 import { validateCheckboxEvidence } from '../checkbox-evidence.js';
 import type { DocWriteIntentRow, DocEventRow } from '../../store.js';
 
+/** Numeric invocation context only; diagnostic failures cannot affect the owned child. */
+function coldImportInvocationMetadata(timeoutMs: number) {
+  const numeric = (read: () => number): number | 'unavailable' => {
+    try {
+      const value = read();
+      return Number.isFinite(value) && value >= 0 ? value : 'unavailable';
+    } catch {
+      return 'unavailable';
+    }
+  };
+  return {
+    timeoutMs,
+    loadavg1: numeric(() => os.loadavg()[0]!),
+    cpuCount: numeric(() => os.cpus().length),
+    availableParallelism: numeric(() => os.availableParallelism()),
+    parentRssMiB: numeric(() => Math.round(process.memoryUsage().rss / 1024 / 1024)),
+    freeMemMiB: numeric(() => Math.round(os.freemem() / 1024 / 1024)),
+    totalMemMiB: numeric(() => Math.round(os.totalmem() / 1024 / 1024)),
+    tsxDiskCacheEnabled: !process.env.TSX_DISABLE_CACHE,
+  };
+}
+
 interface OwnedColdImport {
   child: ChildProcess;
   closed: Promise<void>;
@@ -46,7 +69,8 @@ function trackColdImport(
   child: ChildProcess,
   argv: string[],
   invokedAt: string,
-  started: number
+  started: number,
+  invocationMetadata: ReturnType<typeof coldImportInvocationMetadata>
 ): OwnedColdImport {
   const importPhases: { phase: string; elapsedMs: number }[] = [];
   const receipt: Record<string, unknown> = {
@@ -54,6 +78,7 @@ function trackColdImport(
     invokedAt,
     pid: child.pid ?? null,
     importPhases,
+    invocationMetadata,
   };
   let phaseLine = '';
   child.stdout?.on('data', (chunk: Buffer) => {
@@ -779,14 +804,22 @@ if (canvas.MAX_CANVAS_DOCUMENTS !== 12 || roomCanvas.MAX_ROOM_CANVAS_DOCUMENTS !
   throw new Error('Uninitialized original canvas capacity');
 if (!Object.keys(first).length) throw new Error('Empty entry'); console.log('cold-import-complete');`;
     const argv = ['--import', 'tsx', '--input-type=module', '-e', program];
+    const timeoutMs = loadScaledMs(5000);
+    const invocationMetadata = coldImportInvocationMetadata(timeoutMs);
     const invokedAt = new Date().toISOString(),
       started = performance.now();
     const running = promisify(execFile)(process.execPath, argv, {
       cwd: process.cwd(),
-      timeout: loadScaledMs(5000),
+      timeout: timeoutMs,
     });
     void running.catch(() => {});
-    const owned = trackColdImport(running.child, [process.execPath, ...argv], invokedAt, started);
+    const owned = trackColdImport(
+      running.child,
+      [process.execPath, ...argv],
+      invokedAt,
+      started,
+      invocationMetadata
+    );
     let failed = false,
       firstCause: unknown;
     try {

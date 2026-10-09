@@ -27,12 +27,25 @@ import { env as serverEnv } from '../../../../../env.js';
 
 const target = swappableServer();
 
-// Arrangement has its own default hook budget; operational work retains the default body budget.
+// Genuine arrangement has the default hook budget; remaining operational assertions retain the default body budget.
 let agentPath: string;
 let sessionId: string;
 let fixture: Awaited<ReturnType<typeof nativeRoomAuthorityFixture>> | undefined;
 let setupPending: Promise<void>;
 let bodyPending: Promise<void> | undefined;
+let scenarioPending: Promise<void> | undefined;
+let admitBody: () => void;
+let refuseBody: (cause: unknown) => void;
+let arrangementReady: Promise<void>;
+let completeArrangement: () => void;
+let failArrangement: (cause: unknown) => void;
+let closing = false;
+let stopOwnedWork: (() => Promise<void>) | undefined;
+let stopOwnedMemo: Promise<void> | undefined;
+const requireOpenScenario = () => {
+  if (closing) throw new Error('Original owned scenario is closing');
+};
+
 let phaseStartedAt = 0;
 const phase = (name: string) => {
   try {
@@ -60,16 +73,40 @@ const rememberLifecycle = (cause: unknown) => {
 beforeEach(async () => {
   phaseStartedAt = performance.now();
   phase('setup:start');
+  closing = false;
+  scenarioPending = undefined;
+  stopOwnedWork = undefined;
+  stopOwnedMemo = undefined;
+  arrangementReady = new Promise<void>((resolve, reject) => {
+    completeArrangement = resolve;
+    failArrangement = reject;
+  });
+  // Observe the hook gate immediately, including failures before it is awaited.
+  void arrangementReady.catch(rememberLifecycle);
   fixture = undefined;
   bodyPending = undefined;
   bodyCleanupCompleted = false;
   fallbackCleanup = undefined;
   lifecycleFailed = false;
   lifecycleFirst = undefined;
+  const bodyAdmission = new Promise<void>((resolve, reject) => {
+    admitBody = resolve;
+    refuseBody = reject;
+  });
+  void bodyAdmission.catch(rememberLifecycle);
   setupPending = (async () => {
     agentPath = await fs.realpath(await fs.mkdtemp(join(tmpdir(), 'focus-first-')));
+    requireOpenScenario();
     sessionId = randomUUID();
     fixture = await nativeRoomAuthorityFixture(agentPath, 'claude-code', sessionId, randomUUID());
+    requireOpenScenario();
+    scenarioPending = runOwnedScenario(bodyAdmission);
+    void scenarioPending.then(
+      () => failArrangement(new Error('Original scenario ended before body admission')),
+      failArrangement
+    );
+    void scenarioPending.catch(rememberLifecycle);
+    await arrangementReady;
   })();
   // Observe rejection immediately while retaining this exact owning setup promise.
   void setupPending.catch(rememberLifecycle);
@@ -79,14 +116,26 @@ beforeEach(async () => {
 });
 afterEach(async () => {
   phase('after-each:start');
+  // Retire admission before any await; a skipped body must not leave its gate held.
+  closing = true;
+  refuseBody(new Error('Original body admission closed during owned teardown'));
   await (fallbackCleanup ??= (async () => {
     // A Vitest timeout is not cancellation. Never close resources ahead of late setup/body work.
     phase('after-each:join-owners:start');
+    // Genuine stop begins before joining a held scenario, including a timed-out hook/body.
+    const stopping = bodyCleanupCompleted
+      ? Promise.resolve()
+      : Promise.resolve()
+          .then(() => stopOwnedWork?.())
+          .catch(rememberLifecycle);
     await setupPending.catch(rememberLifecycle);
+    if (scenarioPending) await scenarioPending.catch(rememberLifecycle);
+    await stopping;
     if (bodyPending) await bodyPending.catch(rememberLifecycle);
     phase('after-each:join-owners:done');
     if (bodyCleanupCompleted) {
       phase('after-each:body-cleanup-completed');
+      if (lifecycleFailed) throw lifecycleFirst;
       return;
     }
     // No completed body teardown owns a returned fixture. Its genuine cleanup joins native drains.
@@ -114,12 +163,15 @@ afterEach(async () => {
   })());
 });
 
-it('admits one genuine native turn for operator-approved focus and correlates its ACK and remaining reply', () => {
-  phase('body:start');
-  bodyPending = (async () => {
+function runOwnedScenario(bodyAdmission: Promise<void>): Promise<void> {
+  return (async () => {
     const h = fixture;
     if (!h) throw new Error('Original per-test native fixture did not finish setup');
     let pump: Promise<void> | undefined;
+    stopOwnedWork = () =>
+      (stopOwnedMemo ??= Promise.resolve().then(() =>
+        currentRoomDueServicePort(h.http.service).stopPump()
+      ));
     let failed = false,
       first: unknown,
       closed = false;
@@ -165,6 +217,7 @@ it('admits one genuine native turn for operator-approved focus and correlates it
       expect(granted.kind).toBe('granted');
       if (granted.kind !== 'granted') throw new Error('Original consumed focus approval missing');
       phase('configure-and-approve:done');
+      requireOpenScenario();
 
       phase('runtime-and-http-arrangement:start');
       const previousMode = serverEnv.DORKOS_TEST_RUNTIME;
@@ -192,9 +245,11 @@ it('admits one genuine native turn for operator-approved focus and correlates it
       const server = target.mount(app),
         path = `/docs/${actual.documentId}/presence`;
       phase('runtime-and-http-arrangement:done');
+      requireOpenScenario();
       phase('mount-http:start');
       const mounted = await request(server).post(path).send({ action: 'mount' });
       phase('mount-http:done');
+      requireOpenScenario();
       expect(mounted.status).toBe(200);
       const viewerId = mounted.body.viewerId;
       phase('focus-true-http:start');
@@ -202,6 +257,7 @@ it('admits one genuine native turn for operator-approved focus and correlates it
         (await request(server).post(path).send({ action: 'focus', viewerId, focused: true })).status
       ).toBe(200);
       phase('focus-true-http:done');
+      requireOpenScenario();
       const rows = () =>
         actual.db
           .select()
@@ -219,12 +275,14 @@ it('admits one genuine native turn for operator-approved focus and correlates it
       phase('original-burst-boundary:start');
       await new Promise<void>((resolve) => setTimeout(resolve, 500));
       phase('original-burst-boundary:done');
+      requireOpenScenario();
       phase('focus-false-http:start');
       expect(
         (await request(server).post(path).send({ action: 'focus', viewerId, focused: false }))
           .status
       ).toBe(200);
       phase('focus-false-http:done');
+      requireOpenScenario();
       const focus = rows().filter((row) => row.type === 'host.focus');
       expect(focus.map((row) => row.payload)).toEqual([{ focused: true }, { focused: false }]);
       const batches = actual.db
@@ -254,10 +312,12 @@ it('admits one genuine native turn for operator-approved focus and correlates it
         setTimeout(resolve, Math.max(0, Date.parse(batch.dueAt) - Date.now()))
       );
       phase('original-due-time:done');
+      requireOpenScenario();
       // Due-time passage does not mint frozen custody: invoke the original native wake first.
       phase('original-wake:start');
       port.wake();
       phase('original-wake:done');
+      requireOpenScenario();
       expect(
         actual.db
           .select()
@@ -270,6 +330,7 @@ it('admits one genuine native turn for operator-approved focus and correlates it
       phase('start-pump:start');
       pump = port.pump(registry);
       phase('start-pump:done');
+      requireOpenScenario();
       void pump.catch(remember);
       const delivery = (eventId: string) =>
         actual.db
@@ -285,6 +346,12 @@ it('admits one genuine native turn for operator-approved focus and correlates it
       phase('first-ack:start');
       await vi.waitFor(() => expect(delivery(focus[0]!.eventId).ackOutcome).toBe('handled'));
       phase('first-ack:done');
+      requireOpenScenario();
+      phase('arrangement:ready');
+      completeArrangement();
+      await bodyAdmission;
+      requireOpenScenario();
+      phase('operational-body:admitted');
       expect(admissions()).toHaveLength(1);
       expect(admissions()[0]).toMatchObject({ batch_id: batch.batchId, status: 'turn_started' });
       expect(admissions()[0]!.turn_id).not.toBeNull();
@@ -303,13 +370,16 @@ it('admits one genuine native turn for operator-approved focus and correlates it
           .status
       ).toBe(200);
       phase('repeat-focus-false-http:done');
+      requireOpenScenario();
       expect(rows().filter((row) => row.type === 'host.focus')).toEqual(focus);
       phase('release-held-scenario:start');
       await vi.waitFor(() => expect(interactionGate.step(sessionId)).toBe(true));
       phase('release-held-scenario:done');
+      requireOpenScenario();
       phase('join-pump:start');
       await pump;
       phase('join-pump:done');
+      requireOpenScenario();
       expect(delivery(focus[0]!.eventId).ackOutcome).toBe('handled');
       expect(delivery(focus[1]!.eventId).ackOutcome).toBeNull();
       expect(
@@ -453,6 +523,13 @@ it('admits one genuine native turn for operator-approved focus and correlates it
     phase('body:cleanup-completed');
     if (failed) throw first;
   })();
-  void bodyPending.catch(rememberLifecycle);
+}
+
+it('admits one genuine native turn for operator-approved focus and correlates its ACK and remaining reply', () => {
+  phase('body:start');
+  requireOpenScenario();
+  if (!scenarioPending) throw new Error('Original arrangement did not finish setup');
+  bodyPending = scenarioPending;
+  admitBody();
   return bodyPending;
 });

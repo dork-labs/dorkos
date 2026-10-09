@@ -24,12 +24,25 @@ import {
 } from '../service.js';
 import { docDocumentGeneration } from '../identity/incarnation.js';
 
-// Arrangement has its own default hook budget; operational work retains the default body budget.
+// Genuine arrangement has the default hook budget; remaining operational assertions retain the default body budget.
 let dir: string;
 let sessionId: string;
 let fixture: Awaited<ReturnType<typeof nativeRoomAuthorityFixture>> | undefined;
 let setupPending: Promise<void>;
 let bodyPending: Promise<void> | undefined;
+let scenarioPending: Promise<void> | undefined;
+let admitBody: () => void;
+let refuseBody: (cause: unknown) => void;
+let arrangementReady: Promise<void>;
+let completeArrangement: () => void;
+let failArrangement: (cause: unknown) => void;
+let closing = false;
+let stopOwnedWork: (() => Promise<void>) | undefined;
+let stopOwnedMemo: Promise<void> | undefined;
+const requireOpenScenario = () => {
+  if (closing) throw new Error('Original owned scenario is closing');
+};
+
 let phaseStartedAt = 0;
 const phase = (name: string) => {
   try {
@@ -58,6 +71,16 @@ let previousTestMode: boolean;
 beforeEach(async () => {
   phaseStartedAt = performance.now();
   phase('setup:start');
+  closing = false;
+  scenarioPending = undefined;
+  stopOwnedWork = undefined;
+  stopOwnedMemo = undefined;
+  arrangementReady = new Promise<void>((resolve, reject) => {
+    completeArrangement = resolve;
+    failArrangement = reject;
+  });
+  // Observe the hook gate immediately, including failures before it is awaited.
+  void arrangementReady.catch(rememberLifecycle);
   fixture = undefined;
   bodyPending = undefined;
   bodyCleanupCompleted = false;
@@ -65,13 +88,27 @@ beforeEach(async () => {
   lifecycleFailed = false;
   lifecycleFirst = undefined;
   previousTestMode = serverEnv.DORKOS_TEST_RUNTIME;
+  const bodyAdmission = new Promise<void>((resolve, reject) => {
+    admitBody = resolve;
+    refuseBody = reject;
+  });
+  void bodyAdmission.catch(rememberLifecycle);
   setupPending = (async () => {
     dir = await fs.mkdtemp(join(tmpdir(), 'original-room-relay-hint-'));
+    requireOpenScenario();
     serverEnv.DORKOS_TEST_RUNTIME = true;
     sessionId = randomUUID();
     fixture = await nativeRoomAuthorityFixture(dir, 'claude-code', sessionId, randomUUID(), {
       coalesceWindowMs: 1000,
     });
+    requireOpenScenario();
+    scenarioPending = runOwnedScenario(bodyAdmission);
+    void scenarioPending.then(
+      () => failArrangement(new Error('Original scenario ended before body admission')),
+      failArrangement
+    );
+    void scenarioPending.catch(rememberLifecycle);
+    await arrangementReady;
   })();
   // Observe rejection immediately while retaining this exact owning setup promise.
   void setupPending.catch(rememberLifecycle);
@@ -81,14 +118,26 @@ beforeEach(async () => {
 });
 afterEach(async () => {
   phase('after-each:start');
+  // Retire admission before any await; a skipped body must not leave its gate held.
+  closing = true;
+  refuseBody(new Error('Original body admission closed during owned teardown'));
   await (fallbackCleanup ??= (async () => {
     // A Vitest timeout is not cancellation. Never close resources ahead of late setup/body work.
     phase('after-each:join-owners:start');
+    // Genuine stop begins before joining a held scenario, including a timed-out hook/body.
+    const stopping = bodyCleanupCompleted
+      ? Promise.resolve()
+      : Promise.resolve()
+          .then(() => stopOwnedWork?.())
+          .catch(rememberLifecycle);
     await setupPending.catch(rememberLifecycle);
+    if (scenarioPending) await scenarioPending.catch(rememberLifecycle);
+    await stopping;
     if (bodyPending) await bodyPending.catch(rememberLifecycle);
     phase('after-each:join-owners:done');
     if (bodyCleanupCompleted) {
       phase('after-each:body-cleanup-completed');
+      if (lifecycleFailed) throw lifecycleFirst;
       return;
     }
     // No completed body teardown owns a returned fixture. Its genuine cleanup joins native drains.
@@ -117,15 +166,35 @@ afterEach(async () => {
   })());
 });
 
-it('protected Relay identifiers preserve the original Room deadline and duplicate hints still produce one native Room handoff', () => {
-  phase('body:start');
-  bodyPending = (async () => {
+function runOwnedScenario(bodyAdmission: Promise<void>): Promise<void> {
+  return (async () => {
     const h = fixture;
     if (!h) throw new Error('Original per-test native fixture did not finish setup');
     let port: ReturnType<typeof currentRoomDueServicePort> | undefined;
     let bus: RelayCore | undefined;
     let adapters: AdapterRegistry | undefined;
     let sourceOwner: ReturnType<typeof createDocumentRelaySourceAuthority> | undefined;
+    stopOwnedWork = () =>
+      (stopOwnedMemo ??= (async () => {
+        let stopFailed = false;
+        let stopFirst: unknown;
+        const retainStop = (cause: unknown) => {
+          if (!stopFailed) {
+            stopFailed = true;
+            stopFirst = cause;
+          }
+        };
+        // Start both genuine cancellations independently before joining either owner.
+        await Promise.allSettled([
+          Promise.resolve()
+            .then(() => sourceOwner?.stopOriginalNativeSink())
+            .catch(retainStop),
+          Promise.resolve()
+            .then(() => port?.stopPump())
+            .catch(retainStop),
+        ]);
+        if (stopFailed) throw stopFirst;
+      })());
     let nativeClosed = true;
     let failed = false,
       first: unknown;
@@ -167,6 +236,7 @@ it('protected Relay identifiers preserve the original Room deadline and duplicat
         { expectedGeneration: docDocumentGeneration(physical, channel) }
       );
       phase('submit-document-event:done');
+      requireOpenScenario();
       const before = h.db.get<{
         batch_id: string;
         generation: string;
@@ -207,6 +277,7 @@ it('protected Relay identifiers preserve the original Room deadline and duplicat
       phase('register-adapter:start');
       await adapters.register(installed.adapter);
       phase('register-adapter:done');
+      requireOpenScenario();
       sourceOwner = createDocumentRelaySourceAuthority(
         created.origin,
         h.http.channels,
@@ -221,10 +292,12 @@ it('protected Relay identifiers preserve the original Room deadline and duplicat
       await sourceOwner.publishAcceptedWake(before.batch_id, before.generation);
       await sourceOwner.publishAcceptedWake(before.batch_id, before.generation);
       phase('duplicate-wakes:done');
+      requireOpenScenario();
       expect(port.nextDueAt()).toBe(before.due_at);
       phase('pump-before-deadline:start');
       await port.pump(registry);
       phase('pump-before-deadline:done');
+      requireOpenScenario();
       expect(h.db.get<{ n: number }>(sql`SELECT count(*) AS n FROM room_doc_admissions`)!.n).toBe(
         0
       );
@@ -235,11 +308,21 @@ it('protected Relay identifiers preserve the original Room deadline and duplicat
         setTimeout(resolve, Math.max(0, Date.parse(before.due_at) - Date.now()) + 25)
       );
       phase('original-due-time:done');
+      requireOpenScenario();
       // More than the finite concurrent publication bound must release each sequential slot.
       phase('sequential-110-wakes:start');
-      for (let i = 0; i < 110; i++)
+      for (let i = 0; i < 110; i++) {
+        requireOpenScenario();
         await sourceOwner.publishAcceptedWake(before.batch_id, before.generation);
+        requireOpenScenario();
+      }
       phase('sequential-110-wakes:done');
+      requireOpenScenario();
+      phase('arrangement:ready');
+      completeArrangement();
+      await bodyAdmission;
+      requireOpenScenario();
+      phase('operational-body:admitted');
       expect(sourceOwner.readOriginalSinkDiagnostic()).toMatchObject({
         active: 0,
         operationalFailed: false,
@@ -247,6 +330,7 @@ it('protected Relay identifiers preserve the original Room deadline and duplicat
       phase('concurrent-pumps:start');
       await Promise.all([port.pump(registry), port.pump(registry)]);
       phase('concurrent-pumps:done');
+      requireOpenScenario();
       expect(h.db.get<{ n: number }>(sql`SELECT count(*) AS n FROM room_doc_admissions`)!.n).toBe(
         1
       );
@@ -271,6 +355,7 @@ it('protected Relay identifiers preserve the original Room deadline and duplicat
       phase('delayed-wake:start');
       await sourceOwner.publishAcceptedWake(before.batch_id, before.generation);
       phase('delayed-wake:done');
+      requireOpenScenario();
       expect(sourceOwner.readOriginalSinkDiagnostic()).toMatchObject({
         active: 0,
         operationalFailed: false,
@@ -278,10 +363,12 @@ it('protected Relay identifiers preserve the original Room deadline and duplicat
       phase('pump-after-completion:start');
       await port.pump(registry);
       phase('pump-after-completion:done');
+      requireOpenScenario();
       expect(h.db.get<{ n: number }>(sql`SELECT count(*) AS n FROM room_turn_spend`)!.n).toBe(1);
       phase('stop-pump-before-assertion:start');
       await port.stopPump();
       phase('stop-pump-before-assertion:done');
+      requireOpenScenario();
       expect(port.hintRelay(h.documentId, before.batch_id, before.generation)).toBe(false);
     } catch (cause) {
       failed = true;
@@ -322,6 +409,13 @@ it('protected Relay identifiers preserve the original Room deadline and duplicat
     phase('body:cleanup-completed');
     if (failed) throw first;
   })();
-  void bodyPending.catch(rememberLifecycle);
+}
+
+it('protected Relay identifiers preserve the original Room deadline and duplicate hints still produce one native Room handoff', () => {
+  phase('body:start');
+  requireOpenScenario();
+  if (!scenarioPending) throw new Error('Original arrangement did not finish setup');
+  bodyPending = scenarioPending;
+  admitBody();
   return bodyPending;
 });
