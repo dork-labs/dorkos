@@ -200,7 +200,7 @@ You can subscribe with wildcards: `*` stands in for exactly one segment, `>` for
 
 ### What happens when Relay is running
 
-Agents publish messages to named subjects, and Relay routes each one to the right recipient. Agents don't need to know about each other directly; they just need to agree on a subject name.
+Relay carries messages between DorkOS and the outside: your Telegram and Slack chats, webhooks, and your own programs. It also carries the notes an agent sends to reach you when you are away from the app. Each message goes to a named subject, and Relay routes it to whoever listens there. Agents do not use it to talk to each other; they message each other's chats.
 
 Along the way, a message passes through a few checks: is the subject valid, is the sender allowed to send it, is it within its rate limit and budget. If delivery to a recipient keeps failing, Relay's circuit breaker (a safety switch that stops sending to something that's clearly broken) pauses deliveries to it rather than retrying forever. Anything that can't be delivered lands in the dead letter queue, and the full path a message took is recorded so you can look it up later (see [Tracing](#message-tracing) below).
 

@@ -14,7 +14,7 @@
  * That bites because the two halves live in different files. The registration side
  * (`mcp-tools/*.ts`, `services/**\/*-capabilities.ts`) names tools bare, correctly,
  * because the MCP protocol carries bare names. The TEACHING side — the
- * `<relay_tools>`, `<room_tools>`, … blocks in `messaging/context-builder.ts` —
+ * `<chat_tools>`, `<room_tools>`, … blocks in `messaging/context-builder.ts` —
  * used to name them bare too, and a model that copies what it reads copied a
  * string it could not call.
  *
