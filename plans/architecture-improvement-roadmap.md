@@ -2,7 +2,7 @@
 
 **Recorded:** 2026-09-25. **Public source baseline:** `dbff5a6f6b3005d4e9815d1b3d485446528f2900`.
 
-This preserves the five ranked recommendations from the September architecture review and turns them into independently selectable workstreams. The original assessment was 7.5/10: strong boundaries and direction, with contracts and lifecycle wiring that had grown too broad. That was a judgment at the time, not a measured score or a new audit result.
+This preserves the September recommendations and subsequent assessments as dated history. The October 9 vision-reset assessment owns the current architectural direction below. The original assessment was 7.5/10: strong boundaries and direction, with contracts and lifecycle wiring that had grown too broad. That was a judgment at the time, not a measured score or a new audit result.
 
 The [system architecture atlas](../contributing/system-architecture.md) describes the system. This roadmap records improvement rationale, scope and handoffs. Linear owns live status, assignments, dependencies and execution order. The evidence below is a dated snapshot, not a second status database.
 
@@ -12,18 +12,42 @@ The [system architecture atlas](../contributing/system-architecture.md) describe
 
 These documents remain in the public repository. Start with the atlas for the current system, then the assessment and ranked work below. Earlier ideation and evidence records remain available as dated history.
 
-| Document                                                                                 | Purpose                                                                                                         |
-| ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| [System architecture atlas](../contributing/system-architecture.md)                      | Current service boundaries, communication, replaceable interfaces, data authority and rendered diagrams.        |
-| [October 4 assessment](../research/20261004-architecture-assessment.md)                  | Code evidence, strengths, ranked improvements and bounded acceptance criteria.                                  |
-| [Diagram sources and rendering](../contributing/diagrams/architecture/README.md)         | Editable Mermaid sources, generated SVG locations and regeneration procedure.                                   |
-| [Cloud retirement readiness](../research/20260928-cloud-retirement-readiness.md)         | Current forwarding correction, historical evidence and prerequisites for retiring local account implementation. |
-| [Shared design-system ideation](../specs/shared-design-system/01-ideation.md)            | Original brief; current implementation and consumer receipts are linked from its reading-context note.          |
-| [Shutdown/handoff specification](../specs/shutdown-handoff-outcomes/02-specification.md) | Existing design for the first recommended implementation chunk.                                                 |
+| Document                                                                                          | Purpose                                                                                                         |
+| ------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| [System architecture atlas](../contributing/system-architecture.md)                               | Current service boundaries, communication, replaceable interfaces, data authority and rendered diagrams.        |
+| [October 9 vision-reset assessment](../research/20261009-vision-reset-architecture-assessment.md) | Current direction, source/tracker distinctions, ranked risks and bounded implementation chunks.                 |
+| [Vision brief](2026-10-vision-reset.md) and [decisions](2026-10-vision-reset-decisions.md)        | Agreed rationale; the north-star set in `meta/` remains canon.                                                  |
+| [October 4 assessment](../research/20261004-architecture-assessment.md)                           | Historical source evidence; its permanent-topology recommendation is superseded.                                |
+| [Diagram sources and rendering](../contributing/diagrams/architecture/README.md)                  | Editable Mermaid sources, generated SVG locations and regeneration procedure.                                   |
+| [Cloud retirement readiness](../research/20260928-cloud-retirement-readiness.md)                  | Current forwarding correction, historical evidence and prerequisites for retiring local account implementation. |
+| [Shared design-system ideation](../specs/shared-design-system/01-ideation.md)                     | Original brief; current implementation and consumer receipts are linked from its reading-context note.          |
+| [Shutdown/handoff specification](../specs/shutdown-handoff-outcomes/02-specification.md)          | Existing design for the first recommended implementation chunk.                                                 |
 
 This roadmap owns priority and scope rationale. Linear owns live assignments and execution state; implementation receipts own delivery evidence.
 
-## Current assessment, 2026-10-04
+## Current assessment, 2026-10-09
+
+**Public source:** `417bd3a33fb99a80c0184800a33432f09e44f4f8`. The vision reset changes the target to **one DorkOS program and one app, runnable locally or hosted**, with free accountless local use and optional Cloud. The [assessment](../research/20261009-vision-reset-architecture-assessment.md) and [planned target diagram](../contributing/diagrams/architecture/vision-reset-target.mmd) replace the October 4 recommendation to keep the current server split permanently. The split remains current implementation until the accepted Hono/convergence migration lands.
+
+Keep DOR-2344 as cross-programme coordination rather than folding it entirely into DOR-2742. The latter owns the framework/server migration; audit/privacy, proactive work, terminal ownership, messaging and package trust have their own delivery homes. No second architecture project or duplicate issue set is needed.
+
+| Rank | Architectural outcome                                                       | First bounded chunk and existing owner                                                                                                                                                                                                               |
+| ---- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | Readable action evidence, privacy and intervention before wider trust       | DOR-2738 → DOR-2739: inventory effects and readers, prove outsider authority cannot widen, close runtime-tool coverage and pause/read-side gaps. A hash chain alone does not prove complete recording.                                               |
+| 2    | One admission/lifetime contract for proactive work                          | DOR-2783/2784/2788, with DOR-2778: reuse delivered Doe engine/runtime (DOR-2786/2787), core launch services and explicit payer resolution. Specify duplicate wakes, restart, pause, recipient batching and the still-open no-credit triage behavior. |
+| 3    | Safe terminal handoff and future one-executor placement                     | Continue DOR-2482's disposable-store laboratory, including a refusing Doe-like owner. Unconfirmed cleanup grants no DB close, delete, lock release or successor launch. DOR-2483/2484 retain startup/retention scope.                                |
+| 4    | Shared workspace invariants through staged server and messaging convergence | DOR-2742 is already In Progress; its docs-only plan is PR #2696. Preserve its route/middleware parity strategy and owner. Later DOR-2743 → DOR-2754 → DOR-2744 consolidate actor authority and conversation acceptance before Maildir retirement.    |
+| 5    | Portable business projects and executable package ownership                 | DOR-2755, DOR-2758/2759 and later DOR-2748: separate business identity from Git checkout bindings; one plugin manifest preserves code approval, isolation, version and uninstall ownership.                                                          |
+
+These ranks identify risk and bounded acceptance, not a replacement launch schedule. Before launch, the existing audit/trust, first-run/heartbeat, official-space and managed-remote owners retain delivery. Preserve the canonical after-launch order for Hono/server convergence, actor/access model, programmable APIs, message unification, business projects, outside accounts, plugins/mini apps, portable execution and live documents.
+
+Hono timing needs reconciliation: the canonical roadmap lists it after launch, the founder's decision record says as soon as possible, and the [open migration plan at its reviewed head](https://github.com/dork-labs/dorkos/blob/e3e1d62f949873bdad14e3ad6aa83c44e64bd1fd/plans/2026-10-express-to-hono.md) assumes a start now and explicitly asks the operator to settle timing and the extension-router bridge. This roadmap preserves the owner and technical approach without silently changing the launch cut.
+
+At this source, Doe is registered and isolated extension backends have production activation. Decision bridges exist but no production consumer was found; the beat runner is not implemented. DOR-2763 settled managed remote contract rows; consumer/deployed acceptance remain separate. DOR-2764 reads Done while its latest comment retains operator prerequisites and the canon still prohibits claiming the official space works. DOR-2786/2787 delivery is separate from DOR-2782's still-open first-run bundle. These are reconciliation tasks for existing owners, not reasons to make new public readiness claims.
+
+Keep DOR-2348/2349 and the shipped lifecycle, identity, shared UI and recovery receipts as evidence inputs. Cloud retirement still requires a full production release after handover without rollback; paid gates remain explicit. Source implementation, publication, release and live deployment are separate claims. This review selects no new paid run, rollout, cleanup or overlapping implementation.
+
+## Historical assessment, 2026-10-04
 
 Public source: `116297e14f7c357d24010ba34b9ceaa1b44aef99`. The [deep assessment](../research/20261004-architecture-assessment.md) and [atlas](../contributing/system-architecture.md) supersede current-state assumptions in the dated snapshots below. Keep local execution, independent Community content authority and optional Cloud control operations as the topology. The main remaining debt is ownership after acceptance: lifetime, revocation, recovery and permission to hand off resources.
 

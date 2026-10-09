@@ -1,8 +1,8 @@
 flowchart TB
   accTitle: Runtime execution and tool access
-  accDescr: The local server starts runtimes separately from providing tools. Claude Code calls tools in process; agent-bound Codex and OpenCode turns use a loopback MCP listener with turn-bound credentials. Room speech requires a tool action. External MCP has separate authentication.
+  accDescr: The local server starts runtimes separately from providing tools. Claude Code calls DorkOS tools in process; agent-bound Codex, OpenCode and Doe turns use a loopback MCP listener with turn-bound credentials. Doe also assembles local engine tools. Room speech requires a tool action. External MCP has separate authentication.
   dispatch["Local MessageDispatcher"] -->|"AgentRuntime"| claude["Claude Code"]
-  dispatch -->|"AgentRuntime"| other["Codex / OpenCode"]
+  dispatch -->|"AgentRuntime"| other["Codex / OpenCode / Doe"]
   claude -->|"In-process tool server"| tools["DorkOS capabilities<br/>Identity + authorization checks"]
   other -->|"MCP Streamable HTTP<br/>Short-lived turn credential"| loopback["Loopback-only runtime listener"]
   loopback --> tools

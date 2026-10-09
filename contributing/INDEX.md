@@ -9,6 +9,8 @@ This file is the single source of truth for documentation coverage mapping and m
 
 ## Retirement maintenance
 
+2026-10-09: Reconciled the architecture atlas and roadmap with the vision reset. Current-state diagrams retain today's separate servers; the separately marked target shows planned convergence. Added Doe and decision foundations, settled managed-remote contracts, audit/proactivity limits and a source-backed assessment. Earlier assessments remain dated history.
+
 2026-10-07 (DOR-2736 sweep): merged `adapter-catalog.md` into `relay-adapters.md` and moved what was left of `parallel-execution.md` into the `orchestrating-parallel-work` skill; both files are retired. Renamed the "cockpit" in guide prose to "the app" (identifiers keep their names), and corrected dead file paths in `architecture.md`, `interactive-tools.md`, `browser-testing.md`, `design-system.md`, `state-management.md`, `marketplace-installs.md` and `project-structure.md`.
 
 2026-10-04: Reconciled architecture credits payer scopes, managed compatibility forwarding, executable contributions and document/browser implementation boundaries. The dated assessment and roadmap rank lifecycle proof, recovery evidence and remaining migration ownership.
