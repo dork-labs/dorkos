@@ -6,11 +6,13 @@ import { describe, expect, it } from 'vitest';
 import type { ChatMessageStamp, SentChatMessage } from '@dorkos/shared/chat-messages';
 import type { ChatMessage } from '@/layers/shared/model';
 import {
+  chatFactsFor,
   deliveryLabel,
   interleaveStopNotices,
   readMessagingCall,
   sentRecordFor,
   sentSummary,
+  shortReason,
   stampTags,
   transcriptIdForChatMessage,
 } from '../chat-messaging';
@@ -88,6 +90,51 @@ describe('readMessagingCall', () => {
     ).toMatchObject({ tool: 'chat_stop', to: 'chat-b', reason: 'wrong branch' });
   });
 
+  it('reads a call the runtime marked as an error as failed, with its words', () => {
+    expect(
+      readMessagingCall({
+        toolName: 'chat_send',
+        input: '{}',
+        result: 'The server went away.',
+        status: 'error',
+      })?.error
+    ).toBe('The server went away.');
+    expect(readMessagingCall({ toolName: 'chat_send', input: '{}', status: 'error' })?.error).toBe(
+      'It could not be sent.'
+    );
+  });
+
+  it('reads a capability gate: denied is failed, approval_required is waiting', () => {
+    const denied = readMessagingCall({
+      toolName: 'mcp__dorkos__chat_send',
+      input: '{}',
+      result: JSON.stringify({ status: 'denied', message: 'Messaging is Blocked for this agent.' }),
+    });
+    expect(denied?.error).toBe('Messaging is Blocked for this agent.');
+    const held = readMessagingCall({
+      toolName: 'mcp__dorkos__chat_send',
+      input: '{}',
+      result: JSON.stringify({ status: 'approval_required', message: 'Waiting.' }),
+    });
+    expect(held?.error).toBeUndefined();
+    expect(held?.waiting).toBe(true);
+    expect(deliveryLabel(undefined, { ...held! }).label).toBe('Waiting for approval');
+  });
+
+  it('reads a chat_stop that found nothing running', () => {
+    const call = readMessagingCall({
+      toolName: 'chat_stop',
+      input: JSON.stringify({ chat: 'chat-b' }),
+      result: JSON.stringify({
+        stopped: false,
+        chatId: 'chat-b',
+        note: 'Nothing was running there.',
+      }),
+    });
+    expect(call?.notRunning).toBe(true);
+    expect(call?.error).toBeUndefined();
+  });
+
   it('is null for every other tool, chat_read included', () => {
     expect(readMessagingCall({ toolName: 'Read', input: '{}' })).toBeNull();
     expect(readMessagingCall({ toolName: 'mcp__dorkos__chat_read', input: '{}' })).toBeNull();
@@ -110,6 +157,22 @@ describe('the Sent card words', () => {
     expect(deliveryLabel({ ...SENT, status: 'replied' }, {}).label).toBe('Replied');
     expect(deliveryLabel(undefined, { pending: true }).label).toBe('Sending');
     expect(deliveryLabel(SENT, { error: 'no' }).tone).toBe('error');
+  });
+
+  it('shortens a reason to its first sentence, cut at a word', () => {
+    expect(shortReason('That chat belongs to a room. Try another.')).toBe(
+      'That chat belongs to a room.'
+    );
+    const long = shortReason('word '.repeat(30));
+    expect(long.length).toBeLessThanOrEqual(61);
+    expect(long.endsWith('word…')).toBe(true);
+  });
+
+  it('names a chat from anything sent to it, newest first', () => {
+    const older = { ...SENT, to: { chatId: 'chat-b', chatTitle: 'Old' } };
+    const newer = { ...SENT, id: 'cm-2', to: { chatId: 'chat-b', chatTitle: 'Fix it' } };
+    expect(chatFactsFor('chat-b', [older, newer])?.chatTitle).toBe('Fix it');
+    expect(chatFactsFor('chat-z', [older])).toBeUndefined();
   });
 
   it('summarizes with the label, else the first line', () => {
@@ -143,6 +206,14 @@ describe('placing and finding chat messages in a transcript', () => {
     );
     expect(out.map((m) => m.id)).toEqual(['a', 'chat-stop-s1', 'b']);
     expect(out[1]!._chatStop?.id).toBe('s1');
+  });
+
+  it('never places a stop below the live turn: rows with no time are newest', () => {
+    const out = interleaveStopNotices(
+      [msg('a', '2026-10-09T10:00:00Z'), msg('live', ''), msg('steer', '')],
+      [{ id: 's1', by: STAMP.from, at: '2026-10-09T12:00:00Z' }]
+    );
+    expect(out.map((m) => m.id)).toEqual(['a', 'chat-stop-s1', 'live', 'steer']);
   });
 
   it('finds the row a chat message id lives in, on either side', () => {

@@ -19,10 +19,12 @@ import { AgentAvatar } from '@/layers/entities/agent';
 import { formatTime } from '@/layers/features/conversation';
 import { StreamingText } from '../message/StreamingText';
 import {
+  chatFactsFor,
   deliveryLabel,
   readMessagingCall,
   sentRecordFor,
   sentSummary,
+  shortReason,
   type MessagingCall,
 } from '../../lib/chat-messaging';
 
@@ -46,6 +48,11 @@ const TONE: Record<ReturnType<typeof deliveryLabel>['tone'], string> = {
   error: 'text-destructive',
 };
 
+/** The words with their first letter capitalized, for the start of a sentence. */
+function sentenceCase(words: string): string {
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
 /** Where the message is, in a plain sentence. */
 function receiptSentence(
   call: MessagingCall,
@@ -53,8 +60,12 @@ function receiptSentence(
   agent: string
 ): string {
   if (call.error) return call.error;
-  if (call.tool === 'chat_stop') return call.note ?? 'Asked it to stop.';
+  if (call.waiting) return 'Waiting for a person to approve it.';
+  if (call.tool === 'chat_stop') {
+    return call.note ?? (call.notRunning ? 'Nothing was running there.' : 'Asked it to stop.');
+  }
   if (!record) return call.note ?? 'Sent.';
+  const Agent = sentenceCase(agent);
   switch (record.status) {
     case 'queued':
       return record.position
@@ -64,17 +75,29 @@ function receiptSentence(
       return `Joined ${agent}’s running turn.`;
     case 'working':
       return record.delivery === 'interrupt'
-        ? `Stopped ${agent}’s turn. ${agent} is on this now.`
-        : `${agent} is working on it.`;
+        ? `Stopped ${agent}’s turn. ${Agent} is on this now.`
+        : `${Agent} is working on it.`;
     case 'delivered':
-      return `${agent} read it and finished its turn.`;
+      return `${Agent} read it and finished its turn.`;
     case 'replied':
-      return `${agent} replied.`;
+      return `${Agent} replied.`;
     case 'failed':
       return record.failureReason ?? 'It was not delivered.';
     default:
       return 'Sent.';
   }
+}
+
+/** The state words for a `chat_stop` call. */
+function stopState(
+  call: MessagingCall,
+  pending: boolean
+): { label: string; tone: 'muted' | 'done' | 'error' } {
+  if (call.error) return { label: 'Failed', tone: 'error' };
+  if (call.waiting) return { label: 'Waiting for approval', tone: 'muted' };
+  if (pending) return { label: 'Stopping', tone: 'muted' };
+  if (call.notRunning) return { label: 'Not running', tone: 'muted' };
+  return { label: 'Stopped', tone: 'done' };
 }
 
 /**
@@ -91,28 +114,49 @@ export function SentChatCard({ part, sent, at, sessionId }: SentChatCardProps) {
 
   const pending = part.status === 'pending' || part.status === 'running';
   const record = sentRecordFor(call, sent);
-  const chatId = record?.to.chatId ?? call.chatId ?? call.to;
-  const agentName = record?.to.agentName ?? 'the agent';
-  const chatTitle = record?.to.chatTitle;
-  const visual = resolveAgentVisual({ id: record?.to.agentId ?? chatId ?? 'chat' });
+  // The chat it reached. Never the input's `to` for a send: that may name an
+  // agent, not a chat. A stop's input always names a chat.
+  const chatId =
+    record?.to.chatId ?? call.chatId ?? (call.tool === 'chat_stop' ? call.to : undefined);
+  // Who and what it reached, from its own record, else from anything else this
+  // chat sent there (a stop carries no receipt of its own).
+  const facts = record?.to ?? chatFactsFor(chatId, sent);
+  const agentName = facts?.agentName ?? 'the agent';
+  const chatTitle = facts?.chatTitle;
+  // Seeded on the receiver, so the face does not change when the record lands.
+  const visual = resolveAgentVisual({ id: facts?.agentId ?? call.to ?? chatId ?? 'chat' });
   const state =
     call.tool === 'chat_stop'
-      ? call.error
-        ? { label: 'Failed', tone: 'error' as const }
-        : { label: pending ? 'Stopping' : 'Stopped', tone: 'done' as const }
+      ? stopState(call, pending)
       : deliveryLabel(record, { ...call, pending });
   const summary = sentSummary(record?.summary ?? call.summary, record?.text ?? call.message);
   const time = at ? formatTime(at) : record ? formatTime(record.sentAt) : '';
-  // What it is about, beside who it went to — unless it only repeats the chat's title.
-  const aside = call.tool === 'chat_stop' ? call.reason : summary !== chatTitle ? summary : '';
+  // What it is about, beside who it went to — unless it only repeats the
+  // chat's title. A call that did not happen says why instead.
+  const failure = call.error ?? (record?.status === 'failed' ? record.failureReason : undefined);
+  const aside = failure
+    ? shortReason(failure)
+    : call.tool === 'chat_stop'
+      ? call.reason
+      : summary !== chatTitle
+        ? summary
+        : '';
   const Icon =
     call.tool === 'session_start' ? GitBranchPlus : call.tool === 'chat_stop' ? CircleStop : Send;
   const verb =
     call.tool === 'session_start'
       ? 'Started spin-off chat'
       : call.tool === 'chat_stop'
-        ? 'Stopped'
+        ? call.error || call.notRunning
+          ? 'Tried to stop'
+          : 'Stopped'
         : 'To';
+  const target =
+    call.tool === 'session_start'
+      ? (chatTitle ?? (summary || 'a new chat'))
+      : call.tool === 'chat_stop'
+        ? (chatTitle ?? 'a chat')
+        : (facts?.agentName ?? chatTitle ?? 'a chat');
 
   const openChat = () => {
     if (!chatId) return;
@@ -130,25 +174,25 @@ export function SentChatCard({ part, sent, at, sessionId }: SentChatCardProps) {
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        aria-controls={bodyId}
+        {...(open ? { 'aria-controls': bodyId } : {})}
         className="focus-ring hover:bg-muted/40 flex w-full min-w-0 items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors duration-150"
       >
         <AgentAvatar size="xs" emoji={visual.emoji} color={visual.color} />
         <Icon aria-hidden className="text-muted-foreground hidden size-3.5 shrink-0 sm:block" />
         <span className="min-w-0 flex-1 truncate">
           <span className="text-muted-foreground">{verb} </span>
-          {call.tool === 'session_start' ? (
-            <span className="font-medium">{chatTitle ?? (summary || 'a new chat')}</span>
-          ) : (
-            <>
-              <span className="font-medium">{record?.to.agentName ?? chatTitle ?? 'a chat'}</span>
-              {chatTitle && record?.to.agentName && (
-                <span className="text-muted-foreground"> · {chatTitle}</span>
-              )}
-            </>
+          <span className="font-medium">{target}</span>
+          {call.tool === 'chat_send' && chatTitle && facts?.agentName && (
+            <span className="text-muted-foreground"> · {chatTitle}</span>
           )}
-          {call.tool !== 'session_start' && (aside || null) && (
-            <span className="text-muted-foreground hidden sm:inline"> · {aside}</span>
+          {aside && (call.tool !== 'session_start' || failure) && (
+            <span
+              data-testid="sent-chat-aside"
+              className={cn('text-muted-foreground', !failure && 'hidden sm:inline')}
+            >
+              {' '}
+              · {aside}
+            </span>
           )}
         </span>
         <span className="flex shrink-0 items-center gap-2">
@@ -184,7 +228,7 @@ export function SentChatCard({ part, sent, at, sessionId }: SentChatCardProps) {
             {receiptSentence(call, record, agentName)}
             {call.note && call.tool !== 'chat_stop' && record ? ` ${call.note}` : ''}
           </p>
-          {chatId && !call.error && (
+          {chatId && !call.error && !call.waiting && (
             <button
               type="button"
               onClick={openChat}

@@ -5,7 +5,7 @@
  * @module features/chat/model/messaging/use-chat-activity
  */
 import { useContext } from 'react';
-import { QueryClient, QueryClientContext, keepPreviousData, useQuery } from '@tanstack/react-query';
+import { QueryClient, QueryClientContext, useQuery } from '@tanstack/react-query';
 import type { ChatActivityResponse } from '@dorkos/shared/chat-messages';
 import { useOptionalTransport } from '@/layers/shared/model';
 import { useChatActivityVersion } from '@/layers/entities/session';
@@ -36,7 +36,10 @@ export function useChatActivity(sessionId: string | null | undefined): ChatActiv
       queryKey: ['chat-activity', sessionId, version],
       queryFn: () => transport!.getChatActivity(sessionId!),
       enabled: Boolean(sessionId) && transport !== null && client !== undefined,
-      placeholderData: keepPreviousData,
+      // The last answer stays on screen while a new version lands — but only
+      // this chat's: another chat's Sent cards must never stand in for these.
+      placeholderData: (previous, previousQuery) =>
+        previousQuery?.queryKey[1] === sessionId ? previous : undefined,
       staleTime: 30_000,
     },
     client ?? NO_PROVIDER_CLIENT

@@ -170,6 +170,14 @@ describe('useSessionStreamStore', () => {
     expect(useSessionStreamStore.getState().getSession(SID).chatActivityVersion).toBe(before + 1);
   });
 
+  it('a reconnect moves the chat-activity version, so cards re-read after a gap', () => {
+    const store = useSessionStreamStore.getState();
+    store.applySnapshot(SID, snapshot());
+    const before = useSessionStreamStore.getState().getSession(SID).chatActivityVersion;
+    store.applySnapshot(SID, snapshot());
+    expect(useSessionStreamStore.getState().getSession(SID).chatActivityVersion).toBe(before + 1);
+  });
+
   it('setHistoryMessages clears inProgressTurn by default but preserves it on request', () => {
     // Real failure mode: the turn_end reconcile reload resolves AFTER the next
     // turn already started (queued-flush race) — clearing then would wipe the

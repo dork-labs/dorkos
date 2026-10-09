@@ -8,8 +8,9 @@
  * @module features/chat/ui/messaging/ReceivedChatMessage
  */
 import { useNavigate } from '@tanstack/react-router';
+import { CornerUpLeft } from 'lucide-react';
 import type { ChatMessageStamp } from '@dorkos/shared/chat-messages';
-import { cn, toSession } from '@/layers/shared/lib';
+import { toSession } from '@/layers/shared/lib';
 import { StreamingText } from '../message/StreamingText';
 import { stampTags } from '../../lib/chat-messaging';
 
@@ -66,6 +67,27 @@ export function ChatFromMark({ stamp }: { stamp: ChatMessageStamp }) {
 }
 
 /**
+ * "Reply to your message": a received message that answers one this chat
+ * sent links back to that message's Sent card, in this chat.
+ *
+ * @param props - This chat, and the chat message the reply answers.
+ */
+function ReplyToYourMessage({ sessionId, messageId }: { sessionId: string; messageId: string }) {
+  const navigate = useNavigate();
+  return (
+    <button
+      type="button"
+      data-testid="chat-reply-to"
+      onClick={() => void navigate(toSession({ session: sessionId, message: messageId }))}
+      className="focus-ring text-muted-foreground hover:text-foreground focus-visible:text-foreground mb-1 inline-flex items-center gap-1 text-xs underline-offset-4 hover:underline"
+    >
+      <CornerUpLeft aria-hidden className="size-3" />
+      Reply to your message
+    </button>
+  );
+}
+
+/**
  * The body of a user message that carries messages from other chats: each
  * one's words, in a tinted block. Several stamps mean agent messages that
  * waited together and ran as one turn; each beyond the first says who sent it.
@@ -86,11 +108,11 @@ export function ReceivedChatMessages({
           key={stamp.id}
           data-testid="received-chat-message"
           data-kind={stamp.kind}
-          className={cn(
-            'border-l-2 border-sky-500/60 bg-sky-500/[0.06] py-1.5 pr-2 pl-3 dark:border-sky-400/50 dark:bg-sky-400/[0.07]',
-            'rounded-r-md'
-          )}
+          className="border-status-info-border bg-status-info-bg rounded-r-md border-l-2 py-1.5 pr-2 pl-3"
         >
+          {stamp.replyToId && sessionId && (
+            <ReplyToYourMessage sessionId={sessionId} messageId={stamp.replyToId} />
+          )}
           {index > 0 && (
             <div className="text-muted-foreground mb-1 flex flex-wrap items-center gap-1.5 text-xs">
               <span className="text-foreground/80 font-medium">{stamp.from.agentName}</span>

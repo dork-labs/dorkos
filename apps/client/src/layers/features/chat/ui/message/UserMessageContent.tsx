@@ -8,7 +8,6 @@ import { formatCompactionLabel } from '../../lib/format-compaction';
 import { FileAttachmentList } from './FileAttachmentList';
 import { OutputRenderer } from './OutputRenderer';
 import { useOptionalMessageContext } from './MessageContext';
-import { ChatStopLine } from '../messaging/ChatStopLine';
 import { ReceivedChatMessages } from '../messaging/ReceivedChatMessage';
 
 /**
@@ -27,8 +26,6 @@ export function UserMessageContent({ message }: { message: ChatMessage }) {
   const uiAction = useMemo(() => parseUiActionMessage(message.content), [message.content]);
   if (uiAction) return <UiActionChip action={uiAction} />;
 
-  // Another chat's agent stopped this chat here (spec `spin-off-chats` §6).
-  if (message._chatStop) return <ChatStopLine notice={message._chatStop} />;
   // Words another chat sent, stamped by the server: drawn from the stamps,
   // never from the fenced text the agent read.
   if (message.chatMessages && message.chatMessages.length > 0) {

@@ -109,6 +109,18 @@ const RECEIVED = [
     ],
   },
   {
+    label: 'A reply to a message this chat sent',
+    stamps: [
+      {
+        ...STAMP,
+        id: 'stamp-5',
+        from: { chatId: 'chat-b', chatTitle: 'Fix the flaky upload test', ...BUILDER },
+        text: 'Yes, the staging bucket. Done.',
+        replyToId: 'm-replied',
+      },
+    ],
+  },
+  {
     label: 'Steered into a running turn',
     stamps: [
       {
@@ -205,6 +217,16 @@ export function ChatMessagingShowcases() {
             sent={SENT}
             at={AT}
           />
+          <SentChatCard
+            part={{
+              toolName: 'mcp__dorkos__chat_send',
+              input: JSON.stringify({ to: 'chat-b', message: 'Ship it.' }),
+              result: JSON.stringify({ status: 'approval_required', message: 'Held.' }),
+              status: 'complete',
+            }}
+            sent={SENT}
+            at={AT}
+          />
         </div>
       </ShowcaseDemo>
 
@@ -231,6 +253,21 @@ export function ChatMessagingShowcases() {
                 chatId: 'chat-b',
                 droppedMessages: 0,
                 note: 'Stopped.',
+              }),
+              status: 'complete',
+            }}
+            sent={SENT}
+            at={AT}
+          />
+          <SentChatCard
+            part={{
+              toolName: 'mcp__dorkos__chat_stop',
+              input: JSON.stringify({ chat: 'chat-b' }),
+              result: JSON.stringify({
+                stopped: false,
+                chatId: 'chat-b',
+                droppedMessages: 0,
+                note: 'Nothing was running there.',
               }),
               status: 'complete',
             }}

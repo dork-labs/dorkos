@@ -146,7 +146,6 @@ export function SessionMessage({
   const showRunWith =
     isUserPrompt &&
     fromChat === undefined &&
-    message._chatStop === undefined &&
     message.messageType !== 'command' &&
     message.messageType !== 'compaction' &&
     message.content.trim().length > 0;

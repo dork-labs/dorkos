@@ -97,7 +97,16 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
 
   // Which receipt speaks for each answered approval — computed once per render
   // so a batch answer collapses to a single line instead of one line per ask.
-  const receiptGroups = groupApprovalReceipts(parts);
+  // A messaging call is conversation even once an approval let it run: it
+  // draws as its Sent card, never inside an approval receipt (spec
+  // `spin-off-chats` §6), so it takes no part in the receipts.
+  const receiptGroups = groupApprovalReceipts(
+    parts.map((part) =>
+      part.type === 'tool_call' && isMessagingToolName(part.toolName)
+        ? { ...part, interactiveType: undefined }
+        : part
+    )
+  );
 
   // Find the last text part for streaming cursor placement
   let lastTextPartIndex = -1;

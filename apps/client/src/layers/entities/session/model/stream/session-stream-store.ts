@@ -1183,6 +1183,9 @@ export const useSessionStreamStore: SessionStreamStore = create<
             // Marks every lifecycle value the snapshot carries as hydration, not
             // a live transition (the turn-end reconcile re-baselines on this).
             session.hydrationGeneration += 1;
+            // A (re)connect may have skipped `chat_activity` nudges in the gap,
+            // so the Sent cards and "Stopped by" lines re-read (spin-off-chats §6).
+            session.chatActivityVersion += 1;
             // A snapshot whose history already ends with the optimistic message
             // means the send was persisted server-side before this (re)connect —
             // e.g. a mid-turn reconnect, where the user message is written at turn

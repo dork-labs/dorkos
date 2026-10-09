@@ -72,6 +72,12 @@ function buildSteerUserMessage(event: Extract<SessionEvent, { type: 'turn_input'
     parts: [{ type: 'text', text: event.content }],
     timestamp: '',
     _streaming: true,
+    // A steer another chat sent carries the server's stamp, so the row draws
+    // the sender and the words, never "You" and the fenced text (spec
+    // `spin-off-chats` §6).
+    ...(event.chatMessages && event.chatMessages.length > 0
+      ? { chatMessages: event.chatMessages }
+      : {}),
   };
 }
 

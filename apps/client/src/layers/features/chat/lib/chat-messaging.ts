@@ -39,6 +39,10 @@ export interface MessagingCall {
   chatId?: string;
   /** The server's refusal, in its own words. */
   error?: string;
+  /** The call is held for a person to approve, and has not run. */
+  waiting?: boolean;
+  /** A `chat_stop` that found nothing running: nothing was stopped. */
+  notRunning?: boolean;
   /** A plain note the server added to its receipt. */
   note?: string;
 }
@@ -87,12 +91,14 @@ export function readMessagingCall(part: {
   toolName: string;
   input?: string;
   result?: string;
+  status?: string;
 }): MessagingCall | null {
   const tool = messagingToolOf(part.toolName);
   if (tool !== 'chat_send' && tool !== 'session_start' && tool !== 'chat_stop') return null;
   const input = parseObject(part.input);
   const result = resultObject(part.result);
-  const refused = result?.ok === false || typeof result?.error === 'string';
+  const error = refusalOf(part, result);
+  const waiting = error === undefined && result?.status === 'approval_required';
   const delivery = str(input, 'delivery');
   return {
     tool,
@@ -111,9 +117,71 @@ export function readMessagingCall(part: {
     ...((str(result, 'chatId') ?? str(result, 'sessionId')) !== undefined
       ? { chatId: str(result, 'chatId') ?? str(result, 'sessionId') }
       : {}),
-    ...(refused ? { error: str(result, 'error') ?? 'It could not be sent.' } : {}),
+    ...(error !== undefined ? { error } : {}),
+    ...(waiting ? { waiting } : {}),
+    ...(tool === 'chat_stop' && error === undefined && result?.stopped === false
+      ? { notRunning: true }
+      : {}),
     ...(str(result, 'note') !== undefined ? { note: str(result, 'note') } : {}),
   };
+}
+
+/** What a call that did not happen says when it gives no reason of its own. */
+const UNSENT_REASON = 'It could not be sent.';
+
+/**
+ * Why a call did not happen, or undefined when it did (or has not finished):
+ * the server's refusal (`ok: false`), a capability gate's denial
+ * (`status: 'denied'`), or a call the runtime marked as an error, whose result
+ * is then the reason in plain text.
+ */
+function refusalOf(
+  part: { result?: string; status?: string },
+  result: Record<string, unknown> | undefined
+): string | undefined {
+  if (result?.status === 'denied') return str(result, 'message') ?? UNSENT_REASON;
+  if (result?.ok === false || typeof result?.error === 'string') {
+    return str(result, 'error') ?? str(result, 'message') ?? UNSENT_REASON;
+  }
+  if (part.status === 'error') {
+    if (result) return str(result, 'error') ?? str(result, 'message') ?? UNSENT_REASON;
+    return part.result?.trim() || UNSENT_REASON;
+  }
+  return undefined;
+}
+
+/**
+ * A reason short enough for the closed card's one line: its first sentence,
+ * cut at a word near `max` characters.
+ *
+ * @param reason - The reason, in the server's words.
+ * @param max - The longest it may be.
+ */
+export function shortReason(reason: string, max = 60): string {
+  const first = reason.trim().split(/(?<=[.!?])\s/)[0] ?? '';
+  if (first.length <= max) return first;
+  const cut = first.slice(0, max);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > max / 2 ? cut.slice(0, space) : cut).replace(/[\s,;:.]+$/, '')}…`;
+}
+
+/**
+ * What the server knows of a chat this one messaged: its title and agent, from
+ * the newest record of anything sent to it. For a card whose own record the
+ * server cannot name (a `chat_stop` returns no receipt id).
+ *
+ * @param chatId - The chat.
+ * @param sent - What this chat sent, as the server reported it.
+ */
+export function chatFactsFor(
+  chatId: string | undefined,
+  sent: readonly SentChatMessage[]
+): SentChatMessage['to'] | undefined {
+  if (!chatId) return undefined;
+  for (let i = sent.length - 1; i >= 0; i--) {
+    if (sent[i]!.to.chatId === chatId) return sent[i]!.to;
+  }
+  return undefined;
 }
 
 /**
@@ -145,9 +213,10 @@ export function sentSummary(summary: string | undefined, text: string | undefine
 /** The words a Sent card says about where a message is. */
 export function deliveryLabel(
   record: Pick<SentChatMessage, 'status' | 'delivery' | 'position' | 'failureReason'> | undefined,
-  call: Pick<MessagingCall, 'error'> & { pending?: boolean }
+  call: Pick<MessagingCall, 'error' | 'waiting'> & { pending?: boolean }
 ): { label: string; tone: 'muted' | 'active' | 'done' | 'error' } {
   if (call.error) return { label: 'Failed', tone: 'error' };
+  if (call.waiting) return { label: 'Waiting for approval', tone: 'muted' };
   if (!record) return { label: call.pending ? 'Sending' : 'Sent', tone: 'muted' };
   switch (record.status) {
     case 'queued':
@@ -218,6 +287,12 @@ export function transcriptIdForChatMessage(
  * The transcript with a "Stopped by" line for each time another chat stopped
  * it, placed after the last message sent at or before the stop.
  *
+ * A row with no timestamp is a live one — the turn in flight, a steer into
+ * it — and is newer than any stop the server has recorded, so every stop
+ * still waiting is placed before the first such row. A stop never lands below
+ * the live turn, where it would take the "newest message" place the
+ * streaming announcer, Retry and the streaming flag all read.
+ *
  * @param messages - The rendered transcript, oldest first.
  * @param stops - The stops, oldest first.
  */
@@ -237,8 +312,11 @@ export function interleaveStopNotices(
     _chatStop: stop,
   });
   for (const message of messages) {
-    const at = message.timestamp ? Date.parse(message.timestamp) : Number.NaN;
-    while (next < stops.length && !Number.isNaN(at) && Date.parse(stops[next]!.at) < at) {
+    const live = message.timestamp === '';
+    const at = live ? Number.NaN : Date.parse(message.timestamp);
+    const before = (stop: ChatStopNotice) =>
+      live || (!Number.isNaN(at) && Date.parse(stop.at) < at);
+    while (next < stops.length && before(stops[next]!)) {
       out.push(notice(stops[next]!));
       next += 1;
     }
