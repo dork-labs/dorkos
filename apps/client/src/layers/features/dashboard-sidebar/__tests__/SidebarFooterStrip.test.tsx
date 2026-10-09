@@ -148,7 +148,7 @@ import { TooltipProvider } from '@/layers/shared/ui';
 import { takeAskDorkBotOrigin } from '@/layers/shared/lib';
 import { buildSidebarModel } from '../model/build-sidebar-model';
 import { busyFixture } from '../model/fixtures';
-import { SidebarFooterStrip } from '../ui/SidebarFooterStrip';
+import { SidebarFooterStrip } from '../ui/footer/SidebarFooterStrip';
 
 /** Mount the strip with the one provider its tooltips need. */
 function renderStrip() {

@@ -50,6 +50,9 @@ describe('one recent-sessions request on boot', () => {
     await waitFor(() => expect(result.current.jumpBackIn.isLoading).toBe(false));
 
     expect(transport.listRecentSessions).toHaveBeenCalledTimes(1);
-    expect(transport.listRecentSessions).toHaveBeenCalledWith(RECENT_SESSIONS_WINDOW);
+    expect(transport.listRecentSessions).toHaveBeenCalledWith(
+      RECENT_SESSIONS_WINDOW,
+      expect.any(String)
+    );
   });
 });

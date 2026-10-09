@@ -794,8 +794,26 @@ export const SessionSchema = z
      *
      * Best-effort and never a security boundary — the markers it reads are the
      * same advisory ones {@link Session.origin} is derived from.
+     *
+     * One exception to 4 (spec `your-activity-first` D5): a message you wrote
+     * from the app into such a chat is recorded on the server when it is sent,
+     * so the field comes back as that time. The transcript's value for those
+     * origins is still dropped first; only your own recorded write returns.
      */
     userLastMessageAt: z.string().datetime().optional(),
+    /**
+     * ISO-8601 timestamp of the last time YOU touched this chat — opened it on
+     * the chat page or wrote in it from the app, whichever is later (spec
+     * `your-activity-first` D1, D5). Held on the server, so every device and
+     * browser agrees on it, and recorded only for a person at the app: an
+     * agent, a room turn, a task or a script never moves it.
+     *
+     * It is what Today, the agent click and the chat lists order your chats by,
+     * and what makes a chat yours whatever started it. Absent when you have not
+     * touched the chat since this was recorded — there is no backfill from old
+     * transcripts.
+     */
+    lastTouchedByYouAt: z.string().datetime().optional(),
     cwd: z.string().optional(),
   })
   .openapi('Session');
@@ -1704,6 +1722,13 @@ export type SessionListResponse = z.infer<typeof SessionListResponseSchema>;
 export const RecentSessionsQuerySchema = z
   .object({
     limit: z.coerce.number().int().min(1).max(50).default(10),
+    /**
+     * Also return every chat you touched at or after this ISO-8601 time
+     * ({@link SessionSchema}'s `lastTouchedByYouAt`), beyond `limit` (spec
+     * `your-activity-first` D6). The sidebar passes the start of its day, so
+     * no window can drop a chat you used today however busy the agents are.
+     */
+    touchedSince: z.string().datetime({ offset: true }).optional(),
   })
   .openapi('RecentSessionsQuery');
 

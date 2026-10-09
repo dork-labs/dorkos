@@ -42,6 +42,8 @@ X-Client-Id: your-client-uuid
 
 `X-Client-Id` is optional. Omit it and the server generates a UUID for you, but then it can't tell your own reconnects apart from a fresh client, so you lose track of which queued messages are yours across a page reload. Send a stable id if your integration reconnects.
 
+`X-Client-Id` also tells DorkOS a person is at the app. With login off, a message sent with it and without an `X-DorkOS-Agent` header counts as you writing in that chat, so the app lists the chat as yours. If your program sends messages on its own, leave the header out or send its agent header.
+
 The endpoint is trigger-only, and it never waits: it validates the request, gives the message to the session, and responds straight away whether or not the turn can start yet.
 
 ```

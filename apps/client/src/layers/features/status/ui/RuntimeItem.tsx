@@ -146,8 +146,8 @@ export function RuntimeItem({
 
   // Which account this session is actually spending, for the tooltip (DOR-1970).
   // Named whenever the session HAS one, not only when several are registered:
-  // the multi-account guard `AccountMark` carries is a LIST argument (an
-  // identical badge on every row says nothing), and a tooltip costs a reader
+  // a multi-account guard is a LIST argument (an identical badge on every row
+  // says nothing), and a tooltip costs a reader
   // nothing until they ask for it. `nameFor` falls back to the directory name,
   // so a line is never rendered blank.
   const accountLine = sessionAccount ? `Account: ${accountName(sessionAccount)}` : null;

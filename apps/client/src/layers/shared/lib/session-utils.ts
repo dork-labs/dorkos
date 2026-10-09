@@ -1,58 +1,5 @@
-import type { Session } from '@dorkos/shared/types';
 import { bucketElapsedMs } from './bucket-elapsed-ms';
 import { TIME_UNITS } from './constants';
-
-export type TimeGroup = 'Today' | 'Yesterday' | 'Previous 7 days' | 'Previous 30 days' | 'Older';
-
-export interface GroupedSessions {
-  label: TimeGroup;
-  sessions: Session[];
-}
-
-const GROUP_ORDER: TimeGroup[] = [
-  'Today',
-  'Yesterday',
-  'Previous 7 days',
-  'Previous 30 days',
-  'Older',
-];
-
-/**
- * Group sessions into temporal buckets based on updatedAt.
- * Sessions are already sorted newest-first from the API.
- * Returns only non-empty groups.
- */
-export function groupSessionsByTime(sessions: Session[]): GroupedSessions[] {
-  const now = new Date();
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const yesterdayStart = new Date(todayStart);
-  yesterdayStart.setDate(yesterdayStart.getDate() - 1);
-  const sevenDaysAgo = new Date(todayStart);
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-  const thirtyDaysAgo = new Date(todayStart);
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-  const groups: Record<TimeGroup, Session[]> = {
-    Today: [],
-    Yesterday: [],
-    'Previous 7 days': [],
-    'Previous 30 days': [],
-    Older: [],
-  };
-
-  for (const session of sessions) {
-    const date = new Date(session.updatedAt);
-    if (date >= todayStart) groups['Today'].push(session);
-    else if (date >= yesterdayStart) groups['Yesterday'].push(session);
-    else if (date >= sevenDaysAgo) groups['Previous 7 days'].push(session);
-    else if (date >= thirtyDaysAgo) groups['Previous 30 days'].push(session);
-    else groups['Older'].push(session);
-  }
-
-  return GROUP_ORDER.map((label) => ({ label, sessions: groups[label] })).filter(
-    (group) => group.sessions.length > 0
-  );
-}
 
 /**
  * Shorten an absolute path by replacing the home directory prefix with ~.

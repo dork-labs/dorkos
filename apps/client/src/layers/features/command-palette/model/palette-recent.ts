@@ -16,7 +16,7 @@ import type {
   SessionStatus,
 } from '@dorkos/shared/session-stream';
 import type { Session } from '@dorkos/shared/types';
-import { humanOriginSessionIds } from '@/layers/entities/session';
+import { nonAutomatedSessionIds } from '@/layers/entities/session';
 import type { PaletteSessionItem } from './palette-sessions';
 
 /**
@@ -41,10 +41,10 @@ export interface ContinueEntry {
 }
 
 /**
- * The sessions Continue is about: the human ones actually doing something.
+ * The sessions Continue is about: the ones that are not automated, actually doing something.
  *
- * **Human-origin only, from the shared definition** ({@link
- * humanOriginSessionIds}, `design-decisions.md` §18). A scheduled run or a
+ * **No automated chats, from the shared definition** ({@link
+ * nonAutomatedSessionIds}, `design-decisions.md` §18). A scheduled run or a
  * room's own turn is an engine run under a thread already listed under its own
  * name, and Recent has always dropped it for that reason — so a Continue that
  * promoted the very session Recent suppressed made one dialog give two answers
@@ -72,7 +72,7 @@ export function selectContinueEntries(
   statuses: Record<string, SessionStatus | undefined>,
   sessions: readonly Session[]
 ): ContinueEntry[] {
-  const live = new Set(humanOriginSessionIds(Object.keys(statuses), sessions));
+  const live = new Set(nonAutomatedSessionIds(Object.keys(statuses), sessions));
   const entries: ContinueEntry[] = [];
   for (const [sessionId, status] of Object.entries(statuses)) {
     if (!status) continue;
@@ -99,8 +99,8 @@ export type PaletteRecentEntry =
 /** Inputs to {@link buildPaletteRecent}. */
 export interface BuildPaletteRecentInput {
   /**
-   * Conversations, most recent first. Automated runs must already be filtered
-   * out by the caller (`partitionSessionsByOrigin`) — a room's own turn or a
+   * Your chats, most recent first. Spin-off and automated chats must already be
+   * filtered out by the caller (`partitionSessionsByOwnership`) — a room's own turn or a
    * scheduled run is an engine run under a thread that is already in this list
    * under its own name, so it never takes a row of its own. They stay
    * searchable; they just do not claim space in a list about where you were.

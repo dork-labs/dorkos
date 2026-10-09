@@ -357,9 +357,10 @@ describe('FailedRunDetailSheet', () => {
       to: '/session',
       search: { session: 'sess-xyz' },
     });
-    // The other half of the attention section's door (DOR-1156). No directory
-    // here — a run's detail carries the session and nothing else.
-    expect(Object.keys(useInteractionStore.getState().opened)).toEqual(['session:sess-xyz']);
+    // The chat page records the chat when it shows it (spec
+    // `your-activity-first` D3), so the button records nothing itself. No
+    // directory here either — a run's detail carries the chat and nothing else.
+    expect(Object.keys(useInteractionStore.getState().opened)).toEqual([]);
   });
 
   it('renders Cancel button when run status is running', () => {

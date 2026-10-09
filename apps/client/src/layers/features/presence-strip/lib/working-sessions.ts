@@ -10,7 +10,7 @@
  */
 import type { Session } from '@dorkos/shared/types';
 import type { SessionStatus } from '@dorkos/shared/session-stream';
-import { humanOriginSessionIds } from '@/layers/entities/session';
+import { nonAutomatedSessionIds } from '@/layers/entities/session';
 import type { WorkingSession } from './presence-rows';
 
 /**
@@ -24,29 +24,31 @@ import type { WorkingSession } from './presence-rows';
  * - **Attribution.** A session reaches this only once its runtime reported a
  *   working directory for it. An unattributable turn is not presence — it is a
  *   fact about the machine with nobody's name on it.
- * - **Origin.** Human sessions only (`design-decisions.md` §18), the same rule
+ * - **Ownership.** No automated chats (`design-decisions.md` §18), the same rule
  *   Heads up's "N working" counts by — and Heads up's rollup NAVIGATES to this strip, so
  *   the two saying different numbers was a disagreement the operator could see
  *   in one click.
  *
- * The origin gate is this half's alone. The strip's other half is room claims,
+ * The ownership gate is this half's alone. The strip's other half is room claims,
  * which are automated by definition: an agent answering a trigger in `#team`
  * IS "replying in #team", and applying the rule there would empty the feature.
  *
  * @param statuses - The session-list store's status map.
  * @param statusCwds - Its session-id → directory map, filled by the same events.
- * @param sessions - Its session-metadata map, read for one field: `origin`.
+ * @param sessions - Its session-metadata map, read for whose each chat is.
  */
 export function selectWorkingSessions(
   statuses: Readonly<Record<string, SessionStatus | undefined>>,
   statusCwds: Readonly<Record<string, string>>,
   sessions: Readonly<Record<string, Session>>
 ): WorkingSession[] {
-  const human = new Set(humanOriginSessionIds(Object.keys(statusCwds), Object.values(sessions)));
+  const countsAsLive = new Set(
+    nonAutomatedSessionIds(Object.keys(statusCwds), Object.values(sessions))
+  );
   const out: WorkingSession[] = [];
   for (const [sessionId, cwd] of Object.entries(statusCwds)) {
     if (statuses[sessionId]?.lifecycle !== 'streaming') continue;
-    if (!human.has(sessionId)) continue;
+    if (!countsAsLive.has(sessionId)) continue;
     out.push({ sessionId, cwd });
   }
   return out;

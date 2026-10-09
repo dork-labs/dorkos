@@ -24,21 +24,29 @@ import { fanOutAgentSessions } from '../agent-session-fanout.js';
  * the global trim so it is complete even for agents with no session in the top
  * `limit`.
  *
+ * `keepBeyondLimit` names the sessions that stay however far down the merged
+ * order they fall (spec `your-activity-first` D6: every chat you touched today).
+ * They are kept in their `updatedAt` place rather than pulled to the top, so
+ * the answer is still one list in one order, only longer.
+ *
  * @param opts - Fan-out inputs.
  * @param opts.runtimes - Runtimes to fan out across (already registry-resolved).
  * @param opts.agentPaths - Agent project directories to scan (deduped internally).
- * @param opts.limit - Maximum merged sessions to return.
+ * @param opts.limit - Maximum merged sessions to return, before the kept ones.
+ * @param opts.keepBeyondLimit - Batched pick over every merged session: the ids
+ *   to return even past `limit`. Batched because the answer is a store read.
  */
 export async function listRecentSessions(opts: {
   runtimes: AgentRuntime[];
   agentPaths: string[];
   limit: number;
+  keepBeyondLimit?: (merged: readonly Session[]) => ReadonlySet<string>;
 }): Promise<{
   sessions: Session[];
   agentActivity: Record<string, string>;
   warnings: SessionListWarning[];
 }> {
-  const { runtimes, agentPaths, limit } = opts;
+  const { runtimes, agentPaths, limit, keepBeyondLimit } = opts;
   const { perPath, warnings } = await fanOutAgentSessions({ runtimes, agentPaths });
 
   const merged: Session[] = [];
@@ -57,5 +65,18 @@ export async function listRecentSessions(opts: {
   }
 
   merged.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
-  return { sessions: merged.slice(0, limit), agentActivity, warnings };
+  const sessions = merged.slice(0, limit);
+  const kept = keepBeyondLimit?.(merged);
+  if (kept && kept.size > 0) {
+    // A chat two runtimes or two agent paths both list appears twice in
+    // `merged`; past the window, it is added once, and never again when the
+    // window already holds it.
+    const listed = new Set(sessions.map((session) => session.id));
+    for (const session of merged.slice(limit)) {
+      if (!kept.has(session.id) || listed.has(session.id)) continue;
+      listed.add(session.id);
+      sessions.push(session);
+    }
+  }
+  return { sessions, agentActivity, warnings };
 }

@@ -552,15 +552,17 @@ describe('selectTodayItems — membership', () => {
   });
 });
 
-describe('BC-19 — an automated run never claims a Today row', () => {
-  it('keeps a bridged chat off the top level, and the reveal off an empty Today', () => {
-    // `partitionSessionsByOrigin` classes every non-user origin as automated,
-    // and BC-19 keeps those off Today's top level.
+describe('BC-19 — an untouched automated chat never claims a Today row', () => {
+  it('keeps an untouched bridged chat off the top level, and the reveal off an empty Today', () => {
+    // Amended by `your-activity-first` (D7): what makes a chat yours is what
+    // you did in it. A bridged chat nobody opened here is automated and stays
+    // behind the reveal.
     const automatedOnly: SidebarState = {
       ...busyFixture,
       sessions: [session({ id: 'ses-tg', title: 'From Telegram', origin: 'channel' })],
-      interactions: { 'session:ses-tg': hoursAgo(0.05) },
+      interactions: {},
       userLastMessageAt: {},
+      lastTouchedByYouAt: {},
       activeTarget: null,
     };
     // No session row — which is the point — and no reveal either: the reveal
@@ -569,21 +571,142 @@ describe('BC-19 — an automated run never claims a Today row', () => {
     expect(selectTodayItems(automatedOnly)).toEqual([]);
 
     // With something to stand beside, it appears — and still draws no session
-    // row of its own, so the origin mark remains unreachable from here.
+    // row of its own.
     const withCompany: SidebarState = {
       ...automatedOnly,
       sessions: [
         ...automatedOnly.sessions,
         session({ id: 'ses-mine', title: 'Ship the parser', cwd: '/Users/dev/code/tangerine' }),
       ],
-      interactions: {
-        'session:ses-tg': hoursAgo(0.05),
-        'session:ses-mine': hoursAgo(0.05),
-      },
+      interactions: { 'session:ses-mine': hoursAgo(0.05) },
     };
     const keys = selectTodayItems(withCompany).map((row) => row.key);
     expect(keys).toContain('rollup:automated');
     expect(keys).not.toContain('session:ses-tg');
+  });
+
+  it('gives a bridged chat you opened a row of its own: opening it made it yours', () => {
+    const opened: SidebarState = {
+      ...busyFixture,
+      sessions: [session({ id: 'ses-tg', title: 'From Telegram', origin: 'channel' })],
+      interactions: { 'session:ses-tg': hoursAgo(0.05) },
+      userLastMessageAt: {},
+      lastTouchedByYouAt: {},
+      activeTarget: null,
+    };
+    expect(selectTodayItems(opened).map((row) => row.key)).toEqual(['session:ses-tg']);
+  });
+});
+
+describe('your-activity-first — Today keeps the chats you used (D10)', () => {
+  const TANGERINE = '/Users/dev/code/tangerine';
+
+  /** Twelve agent chats, all busier and newer than anything of yours. */
+  function busyAgentChats(): Session[] {
+    return Array.from({ length: 12 }, (_, index) =>
+      session({
+        id: `ses-agent-${index}`,
+        title: `Agent work ${index}`,
+        cwd: TANGERINE,
+        updatedAt: hoursAgo(0.01 * (index + 1)),
+        // Every third is a spin-off, which carries no origin of its own.
+        ...(index % 3 === 0
+          ? {
+              startedBy: {
+                kind: 'chat' as const,
+                sessionId: 'ses-mine',
+                title: 'Ship the parser',
+                reason: null,
+                permission: null,
+              },
+            }
+          : { origin: index % 2 === 0 ? ('agent' as const) : ('task' as const) }),
+      })
+    );
+  }
+
+  it('leave a chat you typed in and it stays in Today, with more than ten newer agent chats ahead of it', () => {
+    // The ticket's own shape: you typed in a room-born chat, left it, and a
+    // dozen agent chats have been busier since. Nothing in this browser
+    // records it (you used it on another device); only the server's touch
+    // and write times say it is yours.
+    const mine = session({
+      id: 'ses-mine',
+      title: 'Ship the parser',
+      cwd: TANGERINE,
+      origin: 'room',
+      updatedAt: hoursAgo(3),
+      userLastMessageAt: hoursAgo(2),
+      lastTouchedByYouAt: hoursAgo(2),
+    });
+    const state: SidebarState = {
+      ...quietFixture,
+      // Newest first, as the server returns them: yours is thirteenth.
+      sessions: [...busyAgentChats(), mine],
+      interactions: {},
+      userLastMessageAt: { 'session:ses-mine': hoursAgo(2) },
+      lastTouchedByYouAt: { 'session:ses-mine': hoursAgo(2) },
+      activeTarget: null,
+    };
+    const keys = todayKeys(state);
+    expect(keys).toContain('session:ses-mine');
+    expect(keys.filter((key) => key.startsWith('session:ses-agent-'))).toEqual([]);
+    // Untouched spin-offs and automated chats wait behind the reveal.
+    const reveal = todayRows(state).find((row) => row.key === 'rollup:automated');
+    expect(reveal?.primary).toBe('+ 12 automated');
+  });
+
+  it('admits a chat you only opened on another device since 04:00', () => {
+    // Nothing in this browser and no message: the server's touch is the one
+    // fact that says it is yours and that you were in it today.
+    const state: SidebarState = {
+      ...quietFixture,
+      sessions: [
+        session({
+          id: 'ses-phone',
+          title: 'Opened on the phone',
+          cwd: TANGERINE,
+          lastTouchedByYouAt: hoursAgo(1),
+        }),
+      ],
+      interactions: {},
+      userLastMessageAt: {},
+      lastTouchedByYouAt: { 'session:ses-phone': hoursAgo(1) },
+      activeTarget: null,
+    };
+    expect(selectTodayItems(state).map((row) => row.key)).toContain('session:ses-phone');
+    expect(todayKeys(state)).toContain('session:ses-phone');
+  });
+
+  it('orders by the latest of this browser’s open, the server’s touch and your last message', () => {
+    const state: SidebarState = {
+      ...quietFixture,
+      sessions: [
+        session({ id: 'ses-a', title: 'A', cwd: TANGERINE }),
+        session({ id: 'ses-b', title: 'B', cwd: TANGERINE, lastTouchedByYouAt: hoursAgo(0.5) }),
+      ],
+      // Opened here an hour ago; touched on the phone half an hour ago.
+      interactions: { 'session:ses-a': hoursAgo(1), 'session:ses-b': hoursAgo(5) },
+      userLastMessageAt: {},
+      lastTouchedByYouAt: { 'session:ses-b': hoursAgo(0.5) },
+      activeTarget: null,
+    };
+    const sessionKeys = todayKeys(state).filter((key) => key.startsWith('session:'));
+    expect(sessionKeys).toEqual(['session:ses-b', 'session:ses-a']);
+  });
+
+  it('archives a chat touched only before 04:00, wherever it was touched', () => {
+    const state: SidebarState = {
+      ...quietFixture,
+      sessions: [
+        session({ id: 'ses-old', title: 'Old', cwd: TANGERINE, lastTouchedByYouAt: hoursAgo(30) }),
+      ],
+      interactions: {},
+      userLastMessageAt: {},
+      lastTouchedByYouAt: { 'session:ses-old': hoursAgo(30) },
+      activeTarget: null,
+    };
+    expect(todayKeys(state)).not.toContain('session:ses-old');
   });
 });
 

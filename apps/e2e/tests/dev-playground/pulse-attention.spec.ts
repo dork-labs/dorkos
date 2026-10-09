@@ -90,12 +90,7 @@ test.describe('Dev Playground — the Pulse attention showcase is populated @smo
     // …and the sections beside it are still the sections beside it. Named
     // individually rather than counted, because a count that drifts when
     // somebody adds a showcase is a count somebody will relax.
-    for (const neighbour of [
-      'TasksPanel',
-      'Jump back in rows',
-      'AgentFleetTable',
-      'SessionRow (compact)',
-    ]) {
+    for (const neighbour of ['TasksPanel', 'Jump back in rows', 'AgentFleetTable']) {
       await expect(
         page.getByRole('heading', { name: neighbour }),
         `the ${neighbour} showcase must still render beside the seeded one`

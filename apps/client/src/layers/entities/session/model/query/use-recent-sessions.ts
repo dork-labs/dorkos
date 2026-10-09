@@ -10,6 +10,7 @@
  */
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { RecentSessionsResponse } from '@dorkos/shared/types';
+import { overnightBoundary } from '@/layers/shared/lib/overnight-boundary';
 import { useTransport } from '@/layers/shared/model';
 // Same-slice import via the sibling module (not the entities/session barrel) to
 // avoid a self-referential barrel import within this slice.
@@ -37,6 +38,15 @@ export const RECENT_SESSIONS_WINDOW = 24;
  * Fetch the most-recent sessions across every agent, plus the per-agent
  * activity map that drives the per-group "Recent activity" sort.
  *
+ * **Every chat you touched since the last 04:00 comes back too, beyond
+ * `limit`** (spec `your-activity-first` D6, D10). The request names that
+ * boundary as `touchedSince`, so no window can drop a chat you used today,
+ * however many agent chats are newer. The boundary is read when the request
+ * goes out and is deliberately NOT part of the cache key: it is the same
+ * question asked at a different moment, every consumer of the window shares one
+ * entry, and the persisted boot cache keeps recognising it. The next refetch
+ * after 04:00 asks with the new boundary.
+ *
  * @param limit - Maximum sessions to return (1-50). Defaults to
  *   {@link RECENT_SESSIONS_WINDOW} — leave it alone unless you truly need a
  *   different window, because a different number is a different request.
@@ -61,7 +71,8 @@ export function useRecentSessions<TData = RecentSessionsResponse>(
     queryKey: sessionKeys.recent(limit),
     queryFn: async () => {
       const observedAt = Date.now();
-      const response = await transport.listRecentSessions(limit);
+      const touchedSince = new Date(overnightBoundary(observedAt)).toISOString();
+      const response = await transport.listRecentSessions(limit, touchedSince);
       // The third place server-authoritative rows arrive, through the same
       // settings overlay as the other two — so it keeps the detail cache current
       // on the same terms. Nothing this query feeds shows a permission mode

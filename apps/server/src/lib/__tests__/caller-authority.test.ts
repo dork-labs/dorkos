@@ -12,6 +12,7 @@ import { describe, it, expect } from 'vitest';
 import type { Response } from 'express';
 import {
   OPERATOR_COOKIE_REQUIRED_CODE,
+  isPersonAtTheApp,
   requireOperatorCookieUnderLogin,
 } from '../caller-authority.js';
 
@@ -50,5 +51,32 @@ describe('requireOperatorCookieUnderLogin', () => {
         () => true
       )
     ).toBeUndefined();
+  });
+});
+
+describe('isPersonAtTheApp', () => {
+  const app = { headers: { 'x-client-id': 'window-1' } };
+  const off = () => false;
+  const on = () => true;
+
+  it('counts a window of the app with login off', () => {
+    expect(isPersonAtTheApp(app, responseWith(), off)).toBe(true);
+  });
+
+  it('refuses a caller that names itself an agent, even from a window', () => {
+    const agent = { headers: { 'x-client-id': 'window-1', 'x-dorkos-agent': 'token' } };
+    expect(isPersonAtTheApp(agent, responseWith(), off)).toBe(false);
+  });
+
+  it('refuses a script that sends no client id', () => {
+    expect(isPersonAtTheApp({ headers: {} }, responseWith(), off)).toBe(false);
+    expect(isPersonAtTheApp({ headers: { 'x-client-id': '' } }, responseWith(), off)).toBe(false);
+  });
+
+  it('refuses an API key under login-on, and counts a browser session', () => {
+    const key = responseWith({ userId: 'user_owner', credential: 'api-key' });
+    const cookie = responseWith({ userId: 'user_owner', credential: 'cookie' });
+    expect(isPersonAtTheApp(app, key, on)).toBe(false);
+    expect(isPersonAtTheApp(app, cookie, on)).toBe(true);
   });
 });

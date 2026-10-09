@@ -758,7 +758,7 @@ registry.registerPath({
   tags: ['Sessions'],
   summary: 'List recent sessions across all agents',
   description:
-    'Fans out session listing across every registered agent (DOR-329), merges by `updatedAt` descending, trims to `limit`, and returns a per-agent latest-activity map plus per-runtime `warnings[]` (ADR-0310).',
+    'Fans out session listing across every registered agent (DOR-329), merges by `updatedAt` descending, trims to `limit`, and returns a per-agent latest-activity map plus per-runtime `warnings[]` (ADR-0310). With `touchedSince`, every session whose `lastTouchedByYouAt` is at or after that time is returned too, beyond `limit`, in its `updatedAt` place.',
   request: {
     query: RecentSessionsQuerySchema,
   },
@@ -1130,6 +1130,30 @@ registry.registerPath({
         '(`DESK_NOT_OWN`, `ROOM_SESSION_MOVED`), or because the account may not work in ' +
         'this project (`account_not_allowed_here`, whose body also names `project` and ' +
         '`accountId`); the body says what to do instead',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/sessions/{id}/opened',
+  tags: ['Sessions'],
+  summary: 'Mark a session opened by you',
+  description:
+    'Called by the app each time its chat page shows a session, so the session carries ' +
+    '`lastTouchedByYouAt` on every device (spec `your-activity-first` D3). Recorded only ' +
+    'for a person at the app: no `X-DorkOS-Agent` header, an `X-Client-Id` header, and ' +
+    'with login on, a browser session rather than an API key. Any other caller gets the ' +
+    'same `204` and nothing is recorded, so an agent or a script can never make a session ' +
+    'read as yours. Takes no body.',
+  request: {
+    params: z.object({ id: z.string().uuid() }),
+  },
+  responses: {
+    204: { description: 'Accepted; recorded when the caller is a person at the app' },
+    400: {
+      description: 'The id is not a session id (`INVALID_SESSION_ID`)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

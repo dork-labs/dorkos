@@ -26,10 +26,10 @@ export { useSwitchContextShortcut } from './model/use-switch-context-shortcut';
 // nav implementation in the panel now: the four destinations moved here off the
 // retired `SidebarNavHeader`, tour anchor and all, so the tour-anchor guard
 // mounts THIS at both widths for the reason it always mounted that.
-export { SidebarFooterStrip, useAskDorkBot } from './ui/SidebarFooterStrip';
+export { SidebarFooterStrip, useAskDorkBot } from './ui/footer/SidebarFooterStrip';
 export { YouRows } from './ui/context/YouRows';
 // The panel's one bottom card — arbitrated, pinned above the footer, and
-// mounted by the phone cockpit's Home panel too (spec `sidebar-simplification`
+// mounted by the phone's Home panel too (spec `sidebar-simplification`
 // D4).
 export { SidebarBottomSlot } from './ui/bottom-slot/SidebarBottomSlot';
 export { UpdatePill } from './ui/bottom-slot/UpdatePill';

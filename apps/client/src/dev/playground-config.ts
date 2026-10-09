@@ -374,7 +374,7 @@ export const PAGE_CONFIGS: PageConfig[] = [
     id: 'sidebar-model',
     label: 'Sidebar Model',
     description:
-      'buildSidebarModel over its four journey fixtures — every zone, section and row, each carrying the reason it is there. Row-level primitives (SidebarRow, SessionRow) live on Components; the boot sequence and its motion have their own page.',
+      'buildSidebarModel over its four journey fixtures — every zone, section and row, each carrying the reason it is there. Row-level primitives (SidebarRow) live on Components; the boot sequence and its motion have their own page.',
     icon: PanelLeft,
     group: 'app-shell',
     sections: SIDEBAR_MODEL_SECTIONS,

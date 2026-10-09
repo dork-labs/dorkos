@@ -168,20 +168,18 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
    * Callers pass the directory the session belongs to — the agent's own, in the
    * sub-menu's case, which is rarely the one on screen.
    *
-   * The open is recorded under `session:<id>`, which is what makes a
-   * conversation you were just in rank above one you have not touched in a week
-   * the next time you go looking for it (design-decisions §15) — **and under
-   * `agent:<dir>` as well**, because opening a conversation is also reaching the
-   * agent whose project it runs in. The sidebar's own row has always written
-   * both (`SidebarChrome.openSession`); ⌘K wrote only the first, so the same act
-   * built a weaker memory depending on which door a person used.
+   * The chat itself is recorded as opened by the chat page when it shows it
+   * (`useRecordChatOpened`, spec `your-activity-first` D3), which is what makes
+   * a chat you were just in rank above one you have not touched in a week
+   * (design-decisions §15). The open is recorded **under `agent:<dir>`** here,
+   * because opening a chat is also reaching the agent whose project it runs
+   * in — the same memory the sidebar's own row leaves (`SidebarChrome.openSession`).
    *
    * @param sessionId - The conversation to open.
    * @param dir - The working directory it belongs to.
    */
   const handleSessionSelect = useCallback(
     (sessionId: string, dir?: string | null) => {
-      useInteractionStore.getState().recordOpened('session', sessionId);
       if (dir) recordAgentOpened(dir);
       closePalette();
       navigate(toSession({ session: sessionId, dir: dir ?? undefined }));
@@ -221,10 +219,8 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
           }
           // Recorded here and not before the resolve, for the reason
           // `handleAgentSelect` defers its own write: the lookup can fail, and
-          // a conversation nobody reached is not one to rank (DOR-928). This
-          // row lands a person IN a conversation exactly as the session rows
-          // above do, so it leaves the same memory behind.
-          useInteractionStore.getState().recordOpened('session', resolved.sessionId);
+          // an agent nobody reached is not one to rank (DOR-928). The chat
+          // itself is recorded by the chat page when it shows it.
           if (selectedCwd) recordAgentOpened(selectedCwd);
           const store = useSessionChatStore.getState();
           const draft = store.getSession(resolved.sessionId).input;

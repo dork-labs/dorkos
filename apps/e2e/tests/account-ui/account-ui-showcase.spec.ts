@@ -35,7 +35,6 @@ const PAGES: { path: string; sections: string[] }[] = [
   },
   { path: '/dev/settings', sections: ['claude-code-accounts', 'runtime-usage'] },
   { path: '/dev/one-bar', sections: ['accountbadge'] },
-  { path: '/dev/sidebar-model', sections: ['accountmark'] },
   { path: '/dev/tokens', sections: ['account-palette'] },
 ];
 
@@ -202,21 +201,6 @@ test.describe('Claude account UI showcases @smoke', () => {
           await page.keyboard.press('Escape');
         }
       }
-
-      // A session row's context gauge, on the same inverted tooltip. Only the
-      // tooltip is scanned here, not the row.
-      await page.goto('/dev/sidebar-model');
-      const rows = page.locator('#accountmark');
-      await expect(rows).toBeVisible({ timeout: PLAYGROUND_COLD_START_MS });
-      await setTheme(page, theme);
-      const gauge = rows.locator('[aria-label^="Context "][aria-label$="% full"]').first();
-      await gauge.scrollIntoViewIfNeeded();
-      await gauge.hover();
-      const gaugeTip = page.locator('[data-slot="tooltip-content"]');
-      await expect(gaugeTip.getByText(/^as of /)).toBeVisible();
-      violations.push(
-        ...(await scan(page, '[data-slot="tooltip-content"]', 'the session row context tooltip'))
-      );
 
       expect(violations, `axe found a11y defects in the ${theme} theme`).toEqual([]);
     });

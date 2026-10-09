@@ -14,6 +14,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
 import type { Session, SessionOrigin } from '@dorkos/shared/types';
 import { createMockTransport } from '@dorkos/test-utils';
+import { useInteractionStore } from '@/layers/entities/interactions';
 import { sessionKeys } from '../../api/query-keys';
 import { cachedSessionForCwd, resolveSessionForCwd } from '../resolve-session-for-cwd';
 
@@ -49,6 +50,83 @@ const transport = createMockTransport();
 
 beforeEach(() => {
   vi.clearAllMocks();
+  useInteractionStore.setState({ opened: {}, counts: {} });
+});
+
+/** A time `minutesAgo` minutes in the past, ISO-8601. */
+function ago(minutesAgo: number): string {
+  return new Date(Date.now() - minutesAgo * 60_000).toISOString();
+}
+
+/** A chat another chat started (`session_start`), `minutesAgo` old. */
+function spinOff(id: string, minutesAgo: number): Session {
+  // A real spin-off carries no origin: `session_start` stamps only `startedBy`.
+  return {
+    ...session(id, minutesAgo),
+    startedBy: { kind: 'chat', sessionId: 'parent', title: null, reason: null, permission: null },
+  };
+}
+
+describe('the agent click opens the chat you were last in (your-activity-first D9)', () => {
+  it('a busy spin-off chat never wins an agent click', async () => {
+    // The ticket's shape: a spin-off chat is the newest by activity — it is
+    // working right now — and you never touched it. Your own chat, touched an
+    // hour ago, is the one you were in.
+    const queryClient = clientWith([
+      spinOff('busy-spin-off', 0),
+      { ...session('mine', 90), lastTouchedByYouAt: ago(60) },
+    ]);
+    const resolved = await resolveSessionForCwd({ queryClient, transport }, CWD);
+    expect(resolved?.sessionId).toBe('mine');
+    expect(cachedSessionForCwd(queryClient, CWD)).toBe('mine');
+  });
+
+  it('never opens an untouched spin-off even when you have no other chat', async () => {
+    const queryClient = clientWith([spinOff('busy-spin-off', 0)]);
+    const resolved = await resolveSessionForCwd({ queryClient, transport }, CWD);
+    expect(resolved?.isNew).toBe(true);
+    expect(cachedSessionForCwd(queryClient, CWD)).toBeNull();
+  });
+
+  it('opens the chat you touched last, not the newest by activity', async () => {
+    const queryClient = clientWith([
+      { ...session('newer', 1), lastTouchedByYouAt: ago(120) },
+      { ...session('older', 200), lastTouchedByYouAt: ago(5) },
+    ]);
+    expect((await resolveSessionForCwd({ queryClient, transport }, CWD))?.sessionId).toBe('older');
+  });
+
+  it('falls back to the newest chat of yours by updatedAt, whatever order the list is in', async () => {
+    // Nothing touched anywhere. The list arrives out of order, so taking the
+    // first chat of yours would open the older one.
+    const queryClient = clientWith([
+      session('older', 90),
+      spinOff('busy-spin-off', 0),
+      session('newest', 5),
+      session('middle', 30),
+    ]);
+    expect((await resolveSessionForCwd({ queryClient, transport }, CWD))?.sessionId).toBe('newest');
+    expect(cachedSessionForCwd(queryClient, CWD)).toBe('newest');
+  });
+
+  it('a room-born chat you touched is a valid target', async () => {
+    const queryClient = clientWith([
+      session('mine', 1),
+      { ...session('room-chat', 30, 'room'), lastTouchedByYouAt: ago(2) },
+    ]);
+    expect((await resolveSessionForCwd({ queryClient, transport }, CWD))?.sessionId).toBe(
+      'room-chat'
+    );
+  });
+
+  it('merges this browser’s own open record, so the click is right before the server answers', async () => {
+    const queryClient = clientWith([
+      { ...session('server-touched', 1), lastTouchedByYouAt: ago(30) },
+      session('just-opened', 200),
+    ]);
+    useInteractionStore.getState().recordOpened('session', 'just-opened', Date.now() - 60_000);
+    expect(cachedSessionForCwd(queryClient, CWD)).toBe('just-opened');
+  });
 });
 
 describe('resolveSessionForCwd', () => {
@@ -213,4 +291,63 @@ describe('resolveSessionForCwd originating occurrence', () => {
       expect(queryClient.getQueryData(sessionKeys.list(CWD))).toHaveLength(1);
     }
   });
+});
+
+// Combined policy: upstream touch ranking must not bypass the original extension occurrence.
+describe('touch-ranked lookup with originating occurrence', () => {
+  it.each([false, true])(
+    'retains touch selection and refuses a retired original, retired=%s',
+    async (retired) => {
+      let deliver!: (value: { sessions: Session[] }) => void;
+      let current = true;
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const transport = createMockTransport({
+        listSessions: vi.fn(
+          () =>
+            new Promise<Parameters<typeof deliver>[0]>((resolve) => {
+              deliver = resolve;
+            })
+        ),
+      });
+      const effectOwner = {
+        beforeEffect() {
+          if (!current) throw new Error('EXTENSION_RETIRED');
+        },
+      };
+      const running = resolveSessionForCwd({ queryClient, transport, effectOwner }, CWD);
+      current = !retired;
+      deliver({
+        sessions: [spinOff('busy', 0), { ...session('touched', 90), lastTouchedByYouAt: ago(1) }],
+      });
+      if (retired) {
+        await expect(running).rejects.toThrow('EXTENSION_RETIRED');
+        expect(queryClient.getQueryData(sessionKeys.list(CWD))).toBeUndefined();
+      } else {
+        await expect(running).resolves.toMatchObject({ sessionId: 'touched' });
+        expect(cachedSessionForCwd(queryClient, CWD)).toBe('touched');
+      }
+    }
+  );
+});
+
+it('refuses an occurrence retired by the captured touch-store read before returning a destination', async () => {
+  const queryClient = clientWith([{ ...session('touched', 90), lastTouchedByYouAt: ago(1) }]);
+  let current = true;
+  const effectOwner = {
+    beforeEffect() {
+      if (!current) throw new Error('EXTENSION_RETIRED');
+    },
+  };
+  const state = useInteractionStore.getState();
+  const read = vi.spyOn(useInteractionStore, 'getState').mockImplementationOnce(() => {
+    current = false;
+    return state;
+  });
+  try {
+    await expect(
+      resolveSessionForCwd({ queryClient, transport, effectOwner }, CWD)
+    ).rejects.toThrow('EXTENSION_RETIRED');
+  } finally {
+    read.mockRestore();
+  }
 });

@@ -65,7 +65,9 @@ const mockSessionTitle = vi.fn<() => string | undefined>(() => undefined);
 const mockUseSessionDetail = vi.fn((_id: unknown, _options: unknown) => ({
   data: mockSessionTitle(),
 }));
+const mockRecordChatOpened = vi.fn<(sessionId: string | null) => void>();
 vi.mock('@/layers/entities/session', () => ({
+  useRecordChatOpened: (sessionId: string | null) => mockRecordChatOpened(sessionId),
   useSessionDetail: (id: unknown, options: unknown) => mockUseSessionDetail(id, options),
   useSessionId: () => ['session-abc', vi.fn()],
   useSessionSearch: () => mockUseSessionSearch(),
@@ -106,6 +108,13 @@ describe('SessionPage', () => {
       'session-abc',
       expect.objectContaining({ enabled: false })
     );
+  });
+
+  it('records the chat in the URL as opened, with no click involved (your-activity-first D3)', () => {
+    // A deep link, a reload or a notification lands here with nothing but the
+    // URL; the page itself records the open, so all of them count.
+    render(<SessionPage />);
+    expect(mockRecordChatOpened).toHaveBeenCalledWith('session-abc');
   });
 
   it('says "Session" while the session has no title yet', () => {

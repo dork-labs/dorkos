@@ -1,8 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { createMockSessionLimit } from '@dorkos/test-utils';
-import { sessionLimitDisplay, sessionLimitText } from '../session-limit-text';
+import type { SessionLimitView } from '@/layers/shared/lib';
+import { sessionLimitDisplay } from '../session-limit-text';
 
-describe('sessionLimitText', () => {
+/** The words alone, or null when the limit shows nothing. */
+function sessionLimitText(limit: SessionLimitView | null | undefined): string | null {
+  return sessionLimitDisplay(limit)?.text ?? null;
+}
+
+describe('sessionLimitDisplay words', () => {
   it('says "out · handing off" while the work is about to move on its own', () => {
     expect(sessionLimitText(createMockSessionLimit('auto'))).toBe('out · handing off');
   });

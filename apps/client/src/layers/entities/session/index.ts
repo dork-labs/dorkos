@@ -39,6 +39,7 @@ export type { SessionLimitDisplay } from './lib/session-limit-text';
 export { useSessionRuntime } from './model/query/use-session-runtime';
 export { useSessionId, useStartNewSession } from './model/navigation/use-session-id';
 export type { SetSessionIdOptions } from './model/navigation/use-session-id';
+export { useRecordChatOpened } from './model/navigation/use-record-chat-opened';
 // Two hooks, two questions. This one is the session's SETTINGS — its model,
 // permission mode, effort, and any change still in flight. `useSessionChatStatus`
 // below is whether the chat is idle, streaming or waiting.
@@ -47,14 +48,6 @@ export type { SessionStatusData } from './model/settings/use-session-status';
 // Query-key factory — the one place a session cache key is built, so a reader
 // can never look in an entry no writer fills (DOR-482).
 export { sessionKeys } from './api/query-keys';
-// Permission mode — the single client answer to "will this agent ask me first?".
-// `isBypassPermissionMode` is in `shared/lib`, not here: an integration binding is
-// an entity and cannot import a sibling entity, and it is one of the three surfaces
-// that must agree about what a bypass mode covers.
-//
-// `FULL_POWER_MARK_LABEL` is published so the row tests assert the exact shipped
-// string instead of re-hardcoding it — one source of truth for the mark's copy.
-export { FULL_POWER_MARK_LABEL } from './lib/permission-mode';
 // What a conversation nobody has written to yet WILL run at — the display twin
 // of the server's seed, for the window in which no row exists to read (DOR-2103).
 export { useSessionStartMode } from './model/settings/use-session-start-mode';
@@ -134,9 +127,6 @@ export {
   resolveSessionContextHealth,
 } from './model/context/use-session-context-health';
 export type { SessionContextHealth } from './model/context/use-session-context-health';
-// Fleet-level context rollup — runtime-neutral counts for the summary surfaces.
-export { useFleetContextRollup } from './model/context/use-fleet-context-rollup';
-export type { FleetContextRollup } from './model/context/use-fleet-context-rollup';
 export { useAgentsAggregateStatus } from './model/status/use-agents-aggregate-status';
 export type { UseAgentsAggregateStatusOptions } from './model/status/use-agents-aggregate-status';
 export { usePulseMotion, shouldPulse } from './model/status/use-pulse-motion';
@@ -150,27 +140,23 @@ export {
 } from './model/status/agent-attention';
 export type { AttentionState, LiveBorderKind } from './model/status/agent-attention';
 export { useRenameSession } from './model/rename/use-rename-session';
+// Rename in place: the chat list's rows open it from their menu.
+export { useInlineRename } from './model/rename/use-inline-rename';
 
-// UI — session row display primitive
-export { SessionRow } from './ui/SessionRow';
-export type { SessionRowProps } from './ui/SessionRow';
-export { SessionContextGauge } from './ui/SessionContextGauge';
 // The leaf that holds the live verb, so the sidebar model never has to (R1).
 export { SessionVerbLine } from './ui/SessionVerbLine';
 export type { SessionVerbLineProps } from './ui/SessionVerbLine';
 
-// Origin — session-origin-legibility: descriptor registry, the row glyph, and the sidebar partition selector.
+// Origin — session-origin-legibility: descriptor registry, the row glyph. Ownership — whose a chat is (spec `your-activity-first` D7).
 export { ORIGIN_DESCRIPTORS, getOriginDescriptor } from './config/origin-descriptors';
 export type { OriginDescriptor } from './config/origin-descriptors';
 export { SessionOriginMark } from './ui/SessionOriginMark';
-// The sidebar's account dot (spec `claude-account-ui` §6.2); the Dev
-// Playground shows it by palette color.
-export { AccountMark } from './ui/AccountMark';
 export {
-  humanOriginSessionIds,
-  partitionSessionsByOrigin,
-} from './lib/partition-sessions-by-origin';
-export type { SessionOriginPartition } from './lib/partition-sessions-by-origin';
+  chatOwnership,
+  nonAutomatedSessionIds,
+  partitionSessionsByOwnership,
+} from './lib/chat-ownership';
+export type { ChatOwnership, ChatOwnershipPartition } from './lib/chat-ownership';
 export { useSessionOrigin, useSessionStartedBy } from './model/query/use-sessions';
 export type { SessionOriginData } from './model/query/use-sessions';
 

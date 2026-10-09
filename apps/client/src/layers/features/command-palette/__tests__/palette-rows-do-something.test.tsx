@@ -327,7 +327,9 @@ describe('a slash command row', () => {
     // person IN a conversation, so ranking has to know it happened. Recorded
     // AFTER the resolve, never before: a lookup that failed is not an open.
     const { opened } = useInteractionStore.getState();
-    expect(opened['session:session-current']).toBeDefined();
+    // The chat page records the chat itself when it shows it (spec
+    // `your-activity-first` D3); the row records the agent it reached.
+    expect(opened['session:session-current']).toBeUndefined();
     expect(opened[`agent:${ACTIVE_CWD}`]).toBeDefined();
   });
 
