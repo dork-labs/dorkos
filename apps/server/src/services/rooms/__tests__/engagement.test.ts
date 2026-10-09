@@ -263,6 +263,52 @@ describe('the engaged window', () => {
       expect(inThread('root-b')).toBe(false);
     });
 
+    /**
+     * DOR-2823: "@ana …" that STARTS a thread is the mention, and the root row
+     * is top-level, so a thread-scoped read that only matched
+     * `thread_root_entry_id` never saw it.
+     */
+    it('counts the thread root as part of the thread', () => {
+      const store = freshStore();
+      write(store, { id: 'root', mentions: [ANA], minutesAgo: 3 });
+      write(store, { id: 'ana-reply', authorId: ANA, threadRootEntryId: 'root', minutesAgo: 2 });
+      write(store, { id: 'follow-up', threadRootEntryId: 'root', minutesAgo: 1 });
+
+      const open = engagementFor(
+        { store },
+        { roomId: ROOM, threadRootEntryId: 'root', authorId: ANA, window: WINDOW, now: NOW }
+      );
+      expect(open).not.toBeNull();
+      // The follow-up is one message by somebody else since the root.
+      expect(open?.postsLeft).toBe(WINDOW.posts - 2);
+    });
+
+    it('lets the root decay like any other post once the thread is full', () => {
+      const store = freshStore();
+      write(store, { id: 'root', mentions: [ANA], minutesAgo: 3 });
+      for (let i = 0; i < WINDOW.posts; i++) {
+        write(store, { id: `reply-${i}`, threadRootEntryId: 'root', minutesAgo: 1 });
+      }
+      expect(
+        engagementFor(
+          { store },
+          { roomId: ROOM, threadRootEntryId: 'root', authorId: ANA, window: WINDOW, now: NOW }
+        )
+      ).toBeNull();
+    });
+
+    it('does not count a root the agent wrote itself', () => {
+      const store = freshStore();
+      write(store, { id: 'root', authorId: ANA, mentions: [ANA], minutesAgo: 3 });
+      write(store, { id: 'follow-up', threadRootEntryId: 'root', minutesAgo: 1 });
+      expect(
+        engagementFor(
+          { store },
+          { roomId: ROOM, threadRootEntryId: 'root', authorId: ANA, window: WINDOW, now: NOW }
+        )
+      ).toBeNull();
+    });
+
     it('does not decay a thread window with traffic in the channel around it', () => {
       const store = freshStore();
       write(store, { id: 'root', minutesAgo: 6 });
@@ -408,14 +454,16 @@ describe('the engaged window', () => {
       write(store, { id: 'in-thread', mentions: [ANA], threadRootEntryId: 'root', minutesAgo: 1 });
       for (let i = 0; i < 300; i++) write(store, { id: `filler-${i}`, minutesAgo: 1 });
 
-      const [plan, ...rest] = plansOf(db, () =>
+      const [plan, rootPlan, ...rest] = plansOf(db, () =>
         engagementFor(
           { store },
           { roomId: ROOM, threadRootEntryId: 'root', authorId: ANA, window: WINDOW, now: NOW }
         )
       );
-      // One read, so the plan below is unambiguously the one that matters.
+      // Two reads: the thread's replies, then its root (DOR-2823), which is a
+      // single-row lookup on the `(room_id, id)` unique index.
       expect(rest).toEqual([]);
+      expect(rootPlan).toContain('room_entries_room_id_entry_id_unique');
       expect(plan).toContain('idx_room_entries_thread_root');
       // The primary key is the wrong index HERE and the right one below, so
       // naming it is the discriminating half of this assertion.
@@ -467,6 +515,11 @@ function plansOf(db: Db, body: () => void): string[] {
       seen.push({ sql: source, params });
       return all(...(params as never[])) as unknown[];
     }) as typeof statement.all;
+    const get = statement.get.bind(statement);
+    statement.get = ((...params: unknown[]) => {
+      seen.push({ sql: source, params });
+      return get(...(params as never[]));
+    }) as typeof statement.get;
     return statement;
   }) as typeof client.prepare;
   try {
