@@ -149,7 +149,7 @@ function renderRow(row: SidebarRowModel) {
 
 /** The "N live" chip, or `null` when the row drew none. */
 function chip() {
-  return screen.queryByRole('button', { name: /live sessions, open the session switcher/i });
+  return screen.queryByRole('button', { name: /live chats, open the chat switcher/i });
 }
 
 // ---------------------------------------------------------------------------
@@ -171,7 +171,7 @@ describe('SidebarModelRow hands an agent row its liveCount', () => {
     const control = chip();
     expect(control).not.toBeNull();
     expect(control).toHaveTextContent('2 live');
-    expect(control).toHaveAccessibleName(expect.stringContaining('2 live sessions'));
+    expect(control).toHaveAccessibleName(expect.stringContaining('2 live chats'));
   });
 
   it('passes the number through rather than a threshold of its own', () => {

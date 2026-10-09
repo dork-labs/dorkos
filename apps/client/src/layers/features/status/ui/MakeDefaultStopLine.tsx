@@ -120,7 +120,7 @@ export function MakeDefaultStopLine({
                 {error}
               </>
             ) : (
-              <>Start every new session in {stopLabel(stop)}?</>
+              <>Start every new chat in {stopLabel(stop)}?</>
             )}
           </span>{' '}
           {/* Never `truncate`, and no `flex-wrap` either: whatever the sentence

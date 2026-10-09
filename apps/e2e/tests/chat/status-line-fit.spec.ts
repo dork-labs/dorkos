@@ -436,7 +436,7 @@ test.describe('Status line — the tier floors, under a degraded session', () =>
     const row = demo.getByTestId('make-default-slot');
     await expect(row).toBeVisible();
     await expect(demo.getByTestId('make-default-offer')).toContainText(
-      'Start every new session in Full autonomy?'
+      'Start every new chat in Full autonomy?'
     );
     // Bring the row on screen the way a real click would. Clicking the radio
     // above scrolled the RADIO into view — often to the bottom edge of the

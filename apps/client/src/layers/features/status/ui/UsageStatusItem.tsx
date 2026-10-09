@@ -86,7 +86,7 @@ function costBasisNote(usage: UsageStatus): string | null {
  * @param usage - The runtime-neutral usage descriptor.
  */
 function costHeading(usage: UsageStatus): string {
-  return usage.costBasis === 'unknown' ? 'Estimated session cost' : 'Session cost';
+  return usage.costBasis === 'unknown' ? 'Estimated chat cost' : 'Chat cost';
 }
 
 /**

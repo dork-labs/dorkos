@@ -186,7 +186,7 @@ function AccountPicker({
           className="text-muted-foreground text-2xs px-2 pb-1 leading-snug"
           data-testid="account-scope-note"
         >
-          This session only. Locked after the first message.
+          This chat only. Locked after the first message.
         </p>
         <ResponsiveDropdownMenuRadioGroup
           value={accountSwitch.selectedValue}

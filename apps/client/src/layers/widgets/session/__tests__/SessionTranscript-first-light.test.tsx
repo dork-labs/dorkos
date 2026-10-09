@@ -88,7 +88,7 @@ describe('SessionTranscript — first light (newborn waking state, M4)', () => {
     // The quiet typing-dots affordance is present.
     expect(within(firstLight).getByTestId('typing-dots')).toBeInTheDocument();
     // First light stands in for the generic empty copy, never stacks with it.
-    expect(screen.queryByText('Start a conversation')).toBeNull();
+    expect(screen.queryByText('Start a chat')).toBeNull();
   });
 
   it('falls back to a graceful name when the birth record carries no display name', () => {
@@ -118,7 +118,7 @@ describe('SessionTranscript — first light (newborn waking state, M4)', () => {
 
   it('shows the generic empty copy for an ordinary session (no birth record)', () => {
     render(<SessionTranscript {...props('ordinary')} />);
-    expect(screen.getByText('Start a conversation')).toBeInTheDocument();
+    expect(screen.getByText('Start a chat')).toBeInTheDocument();
     expect(screen.queryByTestId('first-light')).toBeNull();
   });
 
@@ -128,7 +128,7 @@ describe('SessionTranscript — first light (newborn waking state, M4)', () => {
     registerFired('s1', { ...RECORD, kind: 'first-message' });
     render(<SessionTranscript {...props('s1')} />);
     expect(screen.queryByTestId('first-light')).toBeNull();
-    expect(screen.getByText('Start a conversation')).toBeInTheDocument();
+    expect(screen.getByText('Start a chat')).toBeInTheDocument();
   });
 
   it('does not claim "waking up" on an unhydrated revisit (empty but snapshot not yet landed)', () => {
@@ -137,7 +137,7 @@ describe('SessionTranscript — first light (newborn waking state, M4)', () => {
     // Before hydration confirms the emptiness is real, first light stays hidden —
     // the neutral empty treatment holds rather than falsely announcing a wake.
     expect(screen.queryByTestId('first-light')).toBeNull();
-    expect(screen.getByText('Start a conversation')).toBeInTheDocument();
+    expect(screen.getByText('Start a chat')).toBeInTheDocument();
   });
 
   it('a revisited birth session shows its landed greeting, never first light (hydration false → true)', () => {

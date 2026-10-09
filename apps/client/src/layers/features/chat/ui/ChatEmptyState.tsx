@@ -57,7 +57,7 @@ export function ChatEmptyState({ birthRecord, firstLightRecord }: ChatEmptyState
 
   return (
     <div className="text-center">
-      <p className="text-muted-foreground text-base">Start a conversation</p>
+      <p className="text-muted-foreground text-base">Start a chat</p>
       <p className="text-muted-foreground/60 mt-2 text-sm">Type a message below to begin.</p>
     </div>
   );

@@ -337,7 +337,7 @@ export function Admission({
           <p className="eyebrow">DorkOS Space</p>
           <h2 className="mt-10 text-4xl font-semibold tracking-tight">A place to work together.</h2>
           <p className="mt-4 max-w-md text-lg text-[#d0e4d3]">
-            People and agents in the same conversation, with clear access and room to focus.
+            People and agents in the same channels, with clear access and room to focus.
           </p>
         </div>
         <p className="text-sm text-[#aec4b1]">One space. Your channels. Your pace.</p>

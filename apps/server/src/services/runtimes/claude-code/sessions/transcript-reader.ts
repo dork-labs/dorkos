@@ -376,7 +376,7 @@ export class TranscriptReader {
           message:
             `Claude account ${account}: ${unreadable.length} project folder` +
             `${unreadable.length === 1 ? '' : 's'} could not be read, so some of ` +
-            `this project's sessions may be missing`,
+            `this project's chats may be missing`,
         });
       }
     }
@@ -817,7 +817,7 @@ export class TranscriptReader {
 
     const derivedTitle =
       deriveSessionTitle(firstUserMessage) ||
-      `Session ${sessionId.slice(0, TRANSCRIPT.SESSION_ID_PREVIEW_LENGTH)}`;
+      `Chat ${sessionId.slice(0, TRANSCRIPT.SESSION_ID_PREVIEW_LENGTH)}`;
     // Which Claude account this session belongs to: the root the file was found
     // under, read straight off the path — no syscall, no config read. Resolved
     // here rather than at the assignment below because the SDK title lookup is

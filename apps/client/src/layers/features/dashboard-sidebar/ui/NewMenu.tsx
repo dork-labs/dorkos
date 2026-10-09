@@ -171,7 +171,7 @@ export function buildNewMenuNodes(model: NewMenuModel): SidebarMenuNode[] {
     {
       kind: 'action',
       id: 'new-session' satisfies NewMenuItemId,
-      label: 'Session',
+      label: 'Chat',
       icon: MessageSquarePlus,
       opensInput: false,
       ...(model.showSessionShortcut ? { hint: formatShortcutKey(SHORTCUTS.NEW_SESSION) } : {}),

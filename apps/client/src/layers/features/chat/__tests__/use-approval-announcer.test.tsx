@@ -74,7 +74,7 @@ describe('useApprovalAnnouncer', () => {
     expect(spoken()).toBe('');
 
     rerender(<Announcer parts={[answered('tc-1', 'allowed')]} />);
-    expect(spoken()).toBe('Allowed Run "npm test". Recorded in the conversation.');
+    expect(spoken()).toBe('Allowed Run "npm test". Recorded in the chat.');
   });
 
   it('names a denial as a denial', () => {
@@ -107,7 +107,7 @@ describe('useApprovalAnnouncer', () => {
         ]}
       />
     );
-    expect(spoken()).toBe('Answered 3 permission requests. Recorded in the conversation.');
+    expect(spoken()).toBe('Answered 3 permission requests. Recorded in the chat.');
   });
 
   it('does not repeat itself when the transcript re-renders', () => {
@@ -119,7 +119,7 @@ describe('useApprovalAnnouncer', () => {
     expect(spoken()).not.toBe('');
 
     rerender(<Announcer parts={[...settled]} />);
-    expect(spoken()).toBe('Allowed Run "npm test". Recorded in the conversation.');
+    expect(spoken()).toBe('Allowed Run "npm test". Recorded in the chat.');
   });
 
   it('empties itself so a later remount is silent', async () => {

@@ -38,7 +38,7 @@ The email is a **local identifier only**: it is never verified and no email is e
 <Step>
 ### You're signed in
 
-Once the owner account exists, login is required. Your session persists for 7 days with sliding refresh, so you stay signed in across reloads and restarts. Sign out anytime from **Settings → Login & security**.
+Once the owner account exists, login is required. Your sign-in lasts 7 days and renews each time you use DorkOS, so you stay signed in across reloads and restarts. Sign out anytime from **Settings → Login & security**.
 
 Turning **Require login** back off doesn't delete the owner account, it just stops asking for it: the account and any API keys stay put, and the instance goes back to the no-login default.
 
@@ -57,7 +57,7 @@ Want to reach DorkOS from your phone or another computer? Turn on login first. I
 - **Starting a tunnel** with login off routes you into owner-account creation first, with the copy _"Exposing DorkOS requires a login."_ After the owner exists and login is on, the tunnel starts.
 - **Binding to a non-loopback host** (setting `DORKOS_HOST` to anything other than `localhost` / `127.0.0.1` / `::1`) with login not configured **refuses to start** with an actionable error. Enable login first, then restart.
 
-Remote visitors reaching an exposed instance get the **sign-in screen**: static assets load so the login page renders, but every API call requires a valid session.
+Remote visitors reaching an exposed instance get the **sign-in screen**: static assets load so the login page renders, but every API call requires a valid sign-in.
 
 <Callout type="warn">
   **Docker operators, this is you.** The official Docker image bakes in
@@ -143,7 +143,7 @@ curl -H "Authorization: Bearer dork_..." http://localhost:4242/mcp
 
 <Callout type="warn">
   **`MCP_API_KEY` does not open a side door past login.** Once login is on, the login gate answers
-  `/mcp` first, and it only accepts a session or a per-user API key — a client sending nothing but
+  `/mcp` first, and it only accepts a sign-in or a per-user API key — a client sending nothing but
   `MCP_API_KEY` gets a `401`. Use it for a **headless** setup (a server nobody signs into, like CI
   or a background job) where login stays off: there it is a fixed key you can hand to every client,
   it wins over the local token, and it can only be changed in the environment, never revoked from

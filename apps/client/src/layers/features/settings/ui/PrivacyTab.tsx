@@ -78,7 +78,7 @@ export function PrivacyTab() {
           />
           <SwitchSettingRow
             label="Share AI run metadata"
-            description="Model, tokens, time and cost per turn. Never your prompts, code or conversations."
+            description="Model, tokens, time and cost per turn. Never your prompts, code or chats."
             checked={telemetry?.aiMetadata ?? false}
             onCheckedChange={(v) => setChannel('aiMetadata', v)}
             disabled={updateConfig.isPending}

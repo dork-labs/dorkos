@@ -43,7 +43,7 @@ const nextLaunch = vi.hoisted(() => ({
 }));
 
 vi.mock('../../session/launch/launch-session.js', () => ({
-  AGENT_LAUNCH_CAP_MESSAGE: 'Too many agent-started sessions are running (8).',
+  AGENT_LAUNCH_CAP_MESSAGE: 'Too many spin-off chats are running (8).',
   isSessionLaunchRefusal: (result: object) => 'refused' in result,
   dispatchSessionMessage: vi.fn(async (opts: (typeof launches)[number]) => {
     launches.push(opts);

@@ -396,7 +396,7 @@ describe('a turn that finishes', () => {
     await flush();
 
     const [row] = service.list({ limit: 25, unread: false }).notifications;
-    expect(row).toMatchObject({ kind: 'turn.completed', title: 'A session finished' });
+    expect(row).toMatchObject({ kind: 'turn.completed', title: 'A chat finished' });
     expect(row.agentId).toBeUndefined();
   });
 });

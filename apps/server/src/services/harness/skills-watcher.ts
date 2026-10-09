@@ -556,8 +556,8 @@ function claudeCodeRestartNote(createdTheDirectory: boolean): {
 } {
   const facts = skillsFactsFor('claude-code');
   const hint = createdTheDirectory
-    ? 'DorkOS had to create .claude/skills/ for this project. Claude Code only watches that folder if it was already there when the session started, so restart any Claude Code session you have open before looking for the new skill.'
-    : 'Claude Code picks up a new skill in .claude/skills/ without a restart, as long as that folder was already there when the session started. If it was not, restart the session.';
+    ? 'DorkOS had to create .claude/skills/ for this project. Claude Code only watches that folder if it was already there when the chat started, so restart any Claude Code chat you have open before looking for the new skill.'
+    : 'Claude Code picks up a new skill in .claude/skills/ without a restart, as long as that folder was already there when the chat started. If it was not, restart the chat.';
   return { hint, source: `${facts.source.url}, read ${facts.source.fetchedAt}` };
 }
 

@@ -109,8 +109,7 @@ export const STRAY_COMPACTION_WATCH_MS = 5 * 60_000;
 export const NOTHING_TO_SUMMARIZE_COPY = 'There is nothing to summarize yet.';
 
 /** The copy when Codex no longer has the conversation a compaction was asked for. */
-export const CONVERSATION_GONE_COPY =
-  'Codex no longer has this conversation, so it can’t be summarized.';
+export const CONVERSATION_GONE_COPY = 'Codex no longer has this chat, so it can’t be summarized.';
 
 /** The copy when Codex accepted a compaction but never started it. */
 export const COMPACTION_NOT_STARTED_COPY = 'Codex did not start the summary. Try again.';
@@ -1528,7 +1527,7 @@ export class AppServerCodexTransport implements CodexTransport {
   private failedCompaction(mapper: AppServerTurnMapper, err: unknown): StreamEvent[] {
     if (err instanceof CodexProcessExitedError) return mapper.closeOnCrash(err.detail);
     logger.warn('[CodexAppServer] thread/compact/start failed', { err: String(err) });
-    const message = 'Codex could not summarize this conversation. Try again.';
+    const message = 'Codex could not summarize this chat. Try again.';
     return [
       {
         type: 'operation_progress',

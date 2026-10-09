@@ -18,7 +18,7 @@ describe('resolveSubjectLabelLocal', () => {
 
   it('resolves the other system subjects it owns', () => {
     expect(resolveSubjectLabelLocal('relay.system.console')).toBe('System console');
-    expect(resolveSubjectLabelLocal('relay.human.console.abc')).toBe('Your browser session');
+    expect(resolveSubjectLabelLocal('relay.human.console.abc')).toBe('You, in the browser');
   });
 
   it('shortens an agent subject to a readable id', () => {

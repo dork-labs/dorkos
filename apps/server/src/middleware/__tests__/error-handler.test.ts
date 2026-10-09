@@ -49,7 +49,7 @@ describe('errorHandler', () => {
     );
     expect(res.status).toHaveBeenCalledWith(409);
     expect(res.json).toHaveBeenCalledWith({
-      error: 'This session ID matches multiple conversations.',
+      error: 'This chat ID matches multiple chats.',
       code: 'SESSION_ID_AMBIGUOUS',
     });
   });

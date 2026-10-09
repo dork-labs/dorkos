@@ -141,8 +141,7 @@ export function CreditsGauge() {
                     different thing from the credits above: on credits, the
                     DorkOS cost is the bill and this is not. */}
                 {local.totalUsd.toFixed(2)} across {local.sessionCount}{' '}
-                {local.sessionCount === 1 ? 'open session' : 'open sessions'}, by their own
-                estimate.
+                {local.sessionCount === 1 ? 'open chat' : 'open chats'}, by their own estimate.
               </p>
             )}
             {local.runtimesWithoutCost.length > 0 && (

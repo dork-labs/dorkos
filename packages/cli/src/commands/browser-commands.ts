@@ -187,7 +187,7 @@ async function saveAndReport(
   const sites = summarizeStorageState(state, deps.now().getTime() / 1000).filter((s) => !s.expired);
   deps.log('');
   if (sites.length === 0) {
-    deps.log('Saved, but no site has a session yet. Sign in to a site in the agent browser,');
+    deps.log('Saved, but no site is signed in yet. Sign in to a site in the agent browser,');
     deps.log('then run this again.');
     return 0;
   }
@@ -408,7 +408,9 @@ export async function runBrowserStatus(
     return 0;
   }
   if (sites.length === 0) {
-    deps.log('The saved session has no sites in it. Run `dorkos browser login <site>` to add one.');
+    deps.log(
+      'The saved sign-in file has no sites in it. Run `dorkos browser login <site>` to add one.'
+    );
     return 0;
   }
   deps.log(

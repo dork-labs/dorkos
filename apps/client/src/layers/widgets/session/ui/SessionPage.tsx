@@ -80,7 +80,7 @@ export function SessionPage() {
 
   return (
     <>
-      <PageHeading>{sessionTitle?.trim() ? sessionTitle : 'Session'}</PageHeading>
+      <PageHeading>{sessionTitle?.trim() ? sessionTitle : 'Chat'}</PageHeading>
       <ChatPanel
         sessionId={activeSessionId}
         launchRuntime={runtime}

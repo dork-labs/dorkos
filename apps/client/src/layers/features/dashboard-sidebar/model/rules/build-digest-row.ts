@@ -63,7 +63,7 @@ export function buildDigestRow(state: SidebarState): SidebarRowModel | null {
     target,
     glyph: { kind: 'icon', icon: 'digest' },
     primary: 'While you were away…',
-    ...(idle > 0 ? { secondary: `${idle} session${idle === 1 ? '' : 's'} idle` } : {}),
+    ...(idle > 0 ? { secondary: `${idle} chat${idle === 1 ? '' : 's'} idle` } : {}),
     reservesVerbLine: false,
     unread: { tier: 'none' },
     muted: false,

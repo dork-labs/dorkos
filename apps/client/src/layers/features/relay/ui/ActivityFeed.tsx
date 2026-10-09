@@ -197,7 +197,7 @@ export function ActivityFeed({
             placeholder="Filter by agent or message…"
             value={searchFilter}
             onChange={(e) => setSearchFilter(e.target.value)}
-            aria-label="Search conversations"
+            aria-label="Search chats"
           />
 
           {hasActiveFilters && (

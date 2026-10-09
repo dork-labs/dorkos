@@ -327,7 +327,7 @@ describe('FailedRunDetailSheet', () => {
 
     renderSheet();
 
-    expect(screen.getByRole('button', { name: 'View session' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'View chat' })).toBeInTheDocument();
   });
 
   it('does not render View session button when run has no sessionId', () => {
@@ -339,7 +339,7 @@ describe('FailedRunDetailSheet', () => {
 
     renderSheet();
 
-    expect(screen.queryByRole('button', { name: 'View session' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'View chat' })).not.toBeInTheDocument();
   });
 
   it('View session button navigates to /session with correct session param', () => {
@@ -351,7 +351,7 @@ describe('FailedRunDetailSheet', () => {
 
     renderSheet();
 
-    fireEvent.click(screen.getByRole('button', { name: 'View session' }));
+    fireEvent.click(screen.getByRole('button', { name: 'View chat' }));
 
     expect(mockNavigate).toHaveBeenCalledWith({
       to: '/session',

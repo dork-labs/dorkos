@@ -104,7 +104,7 @@ export function AgentFilesAndCommandsRow({
             <span className="text-sm font-medium">Files &amp; commands</span>
           </div>
           <p className="text-muted-foreground text-sm">
-            Editing files and running commands in this agent’s sessions
+            Editing files and running commands in this agent’s chats
           </p>
           <p className="text-muted-foreground text-xs">
             <span>{inheritedText}</span> ·{' '}

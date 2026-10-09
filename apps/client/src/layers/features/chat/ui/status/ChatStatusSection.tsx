@@ -580,7 +580,7 @@ export function ChatStatusSection({
             urgentAction={
               promotedCompactAction
                 ? {
-                    label: `Compact conversation · ${compaction.percent}% full`,
+                    label: `Compact chat · ${compaction.percent}% full`,
                     onAction: compaction.onCompact,
                     pending: compaction.pending,
                   }

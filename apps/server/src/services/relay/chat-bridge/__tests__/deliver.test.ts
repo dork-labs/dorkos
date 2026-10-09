@@ -810,7 +810,7 @@ describe('ChatBridgeDelivery (chats-as-channels §6, §10)', () => {
         // It still never names the other conversation (`notice-copy.ts`'s own
         // rule), so nothing about somebody else's room crosses to this chat.
         expect(deliveredText()).toBe(
-          "Ana has been working in another conversation for a long time, so it hasn't got to your message yet. It will read it the next time it picks up work here."
+          "Ana has been working in another chat for a long time, so it hasn't got to your message yet. It will read it the next time it picks up work here."
         );
       });
 
@@ -1017,7 +1017,7 @@ describe('ChatBridgeDelivery (chats-as-channels §6, §10)', () => {
       binding = makeBinding({ canReply: true, canInitiate: true });
       const ana = harness.authors.resolveAgent(AGENT_PATH, 'Ana');
       const notice = harness.service.postNotice(dm.id, {
-        text: "Ana ran into a problem and could not answer here. Open Ana's session to see what went wrong.",
+        text: "Ana ran into a problem and could not answer here. Open Ana's chat to see what went wrong.",
         notice: 'turn_failed',
         subjectAuthorId: ana.id,
       });

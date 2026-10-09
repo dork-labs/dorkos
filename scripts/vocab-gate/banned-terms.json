@@ -67,6 +67,12 @@
         "discord.com/invite",
         "discordapp.com/invite"
       ]
+    },
+    {
+      "id": "wave-7",
+      "issue": "DOR-2789",
+      "note": "A conversation with an agent is a \"chat\" in everything people read (operator decision D13, 2026-10-08). \"Session\" and \"conversation\" were two more names for the same thing, so both are retired as user-facing nouns; singular and plural are listed because a term is fenced with a word boundary. Rooms, channels and DMs keep their own names, so room talk is never renamed to \"chat\", and a room's reply thread is still a thread. A sign-in session is a different meaning: copy says \"sign-in\" instead. What stays is everything a person does not read as copy: identifiers, API paths and the /session route, MCP tool names, and text only an agent reads (tool descriptions and results), each allowlisted per file in allowlist.json with its reason. Docs prose is scanned for this wave too (MDX_SCANNED_WAVES); an identifier that keeps the word belongs in inline code.",
+      "terms": ["session", "sessions", "conversation", "conversations"]
     }
   ]
 }

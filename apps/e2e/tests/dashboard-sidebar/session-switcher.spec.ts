@@ -355,13 +355,13 @@ test.describe('session switcher @smoke', { tag: SOLE_SIDEBAR_TAG }, () => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(SHOWCASE_PATH);
 
-    const chip = page.getByRole('button', { name: /live sessions, open the session switcher/ });
+    const chip = page.getByRole('button', { name: /live chats, open the chat switcher/ });
     await expect(chip.first()).toBeVisible();
     await expect(chip.first()).toContainText('3 live');
 
     // The chip is a satellite of the row, never a button inside one.
     const nested = await page.evaluate(() =>
-      Array.from(document.querySelectorAll('button[aria-label*="session switcher"]')).some(
+      Array.from(document.querySelectorAll('button[aria-label*="chat switcher"]')).some(
         (b) => b.parentElement?.closest('button') !== null
       )
     );
@@ -402,13 +402,13 @@ test.describe('session switcher @smoke', { tag: SOLE_SIDEBAR_TAG }, () => {
     // the "⋮" in the keyboard lane.
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(SHOWCASE_PATH);
-    const chip = page.getByRole('button', { name: /live sessions, open the session switcher/ });
+    const chip = page.getByRole('button', { name: /live chats, open the chat switcher/ });
     await expect(chip.first()).toBeVisible();
 
     // 1. It rides the transform. Applied to the same node dnd-kit moves, so a
     //    chip parked outside the drag wrapper would stay put while the row left.
     const ridesDrag = await page.evaluate(() => {
-      const button = document.querySelector<HTMLElement>('button[aria-label*="session switcher"]')!;
+      const button = document.querySelector<HTMLElement>('button[aria-label*="chat switcher"]')!;
       const item = button.closest('li')!;
       const wrapper = item.firstElementChild as HTMLElement;
       const before = button.getBoundingClientRect().top;
@@ -560,7 +560,7 @@ test.describe('session switcher, from ⌘K', { tag: SOLE_SIDEBAR_TAG }, () => {
     await expect(page.locator('[cmdk-item]').first()).toBeVisible();
     await page.keyboard.press('Enter');
 
-    const browse = page.locator('[cmdk-item]', { hasText: 'Browse sessions' });
+    const browse = page.locator('[cmdk-item]', { hasText: 'Browse chats' });
     await expect(browse).toBeVisible();
     await browse.click();
 

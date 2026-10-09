@@ -15,7 +15,7 @@ The retirement removes the DorkOS sidebar inside Obsidian. It also removes autom
 
 The normal app does not know which note you are reading. Tell your agent which files to use. You can keep Obsidian open alongside DorkOS to read or edit your notes.
 
-The retirement does not delete your notes or conversation history. DorkOS does not uninstall an old plugin from your vault automatically.
+The retirement does not delete your notes or chat history. DorkOS does not uninstall an old plugin from your vault automatically.
 
 ## Work with a vault in the normal app
 
@@ -25,7 +25,7 @@ The retirement does not delete your notes or conversation history. DorkOS does n
 
 DorkOS and the agent need permission to access that folder. Your configured folder boundary and normal approval settings still apply. A vault on another device must be available to the computer running the DorkOS server; opening the phone app alone does not transfer it.
 
-The old plugin used the vault's **parent folder** as its working folder. To find its earlier Claude Code conversations, check that parent folder in DorkOS under the same local account. This is a place to look, not a promise that every old conversation will appear. Keep your existing agent history while checking.
+The old plugin used the vault's **parent folder** as its working folder. To find its earlier Claude Code chats, check that parent folder in DorkOS under the same local account. This is a place to look, not a promise that every old chat will appear. Keep your existing agent history while checking.
 
 ## Remove an old plugin install
 
@@ -33,7 +33,7 @@ The old plugin used the vault's **parent folder** as its working folder. To find
 2. Use **Uninstall** if available. For a manual install, remove only `<vault>/.obsidian/plugins/dorkos-copilot/`.
 3. If that path is a symbolic link, remove the link itself, not the source folder it points to.
 
-Keep your vault, your DorkOS data folder, and your agent's conversation history. The plugin used `DORK_HOME` when set, otherwise `~/.dork`, and Claude Code's own transcript storage. Its data was not confined to the plugin folder. There is no need to erase any of these folders to retire the plugin.
+Keep your vault, your DorkOS data folder, and your agent's chat history. The plugin used `DORK_HOME` when set, otherwise `~/.dork`, and Claude Code's own transcript storage. Its data was not confined to the plugin folder. There is no need to erase any of these folders to retire the plugin.
 
 ## Historical source and recovery
 

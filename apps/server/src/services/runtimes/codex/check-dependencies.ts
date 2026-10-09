@@ -132,7 +132,7 @@ export function resolveCodexBinaryPath(): Promise<string | null> {
 /** Check that the Codex CLI binary resolves and answers `--version`. */
 async function checkCliBinary(binary: string | null): Promise<DependencyCheck> {
   const name = 'Codex CLI';
-  const description = 'The OpenAI Codex CLI powers Codex agent sessions in DorkOS.';
+  const description = 'The OpenAI Codex CLI powers Codex agent chats in DorkOS.';
 
   if (binary) {
     try {

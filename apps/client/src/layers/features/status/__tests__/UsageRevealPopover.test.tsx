@@ -130,7 +130,7 @@ describe('UsageRevealPopover — the account windows (spec claude-account-ui §6
         now={NOW}
       />
     );
-    expect(screen.getByText('Estimated session cost')).toBeInTheDocument();
+    expect(screen.getByText('Estimated chat cost')).toBeInTheDocument();
     expect(screen.getByText('Estimated. This model has no listed price.')).toBeInTheDocument();
     expect(screen.getByText('Using overage capacity')).toBeInTheDocument();
     expect(screen.getByText('Rate limit reached')).toBeInTheDocument();

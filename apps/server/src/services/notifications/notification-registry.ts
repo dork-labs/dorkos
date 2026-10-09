@@ -1171,7 +1171,7 @@ const ENTRIES: NotificationRegistryMap = {
         : `${p.accountLabel} hit its ${limitWindowPhrase(p.window)} limit`,
     body: (p) =>
       p.autoMoveFailed
-        ? 'DorkOS could not move it automatically, so the session is waiting for you.'
+        ? 'DorkOS could not move it automatically, so the chat is waiting for you.'
         : undefined,
     actions: () => OPEN_ACTION,
     // Per account EPISODE: five sessions hitting one account's weekly limit

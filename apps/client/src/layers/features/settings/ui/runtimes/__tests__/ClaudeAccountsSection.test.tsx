@@ -174,7 +174,7 @@ describe('ClaudeAccountsSection', () => {
 
     await waitFor(() => expect(screen.getByText('Default account')).toBeInTheDocument());
     expect(
-      screen.getByText('New sessions run on this unless the agent or the session picks another.')
+      screen.getByText('New chats run on this unless the agent or the chat picks another.')
     ).toBeInTheDocument();
   });
 
@@ -1015,7 +1015,7 @@ describe('ClaudeAccountsSection: usage, colors and the Flow note', () => {
       );
       await screen.findByRole('button', { name: `Color for ${MAIN}` });
       expect(screen.getByTestId('claude-account-launch-override')).toHaveTextContent(
-        'New sessions use ~/.claude-env, from the server’s $CLAUDE_CONFIG_DIR.'
+        'New chats use ~/.claude-env, from the server’s $CLAUDE_CONFIG_DIR.'
       );
       expect(screen.queryByText('in use')).not.toBeInTheDocument();
     });
@@ -1301,7 +1301,7 @@ describe('ClaudeAccountsSection — DorkOS credits in Runs on (ADR 261001-000811
       },
     });
     expect(await screen.findByTestId('claude-credits-unavailable')).toHaveTextContent(
-      'new sessions here won’t start'
+      'new chats here won’t start'
     );
   });
 });

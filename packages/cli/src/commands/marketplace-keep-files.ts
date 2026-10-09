@@ -161,9 +161,7 @@ export async function runMarketplaceKeepFiles(args: MarketplaceKeepFilesArgs): P
     if (held?.effects && held.bindsTo) {
       review = { effects: held.effects, bindsTo: held.bindsTo };
       console.log('');
-      console.log(
-        `${args.name} is held back from sessions. Keeping also lets it run, in every session:`
-      );
+      console.log(`${args.name} is held back from chats. Keeping also lets it run, in every chat:`);
       for (const line of renderDisclosureLines(held.effects, 'global')) console.log(line);
     }
   }

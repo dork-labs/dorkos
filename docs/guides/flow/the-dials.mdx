@@ -86,7 +86,7 @@ schedule:
 | `schedule.cron`        | When each tick fires. One tick claims and carries one item forward. | `0 * * * *` (top of each hour) | Tighten for a busier queue; loosen to ease up on the tracker. |
 | `schedule.timezone`    | The timezone the schedule is evaluated in.                          | `America/Los_Angeles`          | Match your working hours.                                     |
 | `schedule.max-runtime` | Hard ceiling on how long a single tick may run.                     | `2h`                           | Raise for large items; lower to fail fast.                    |
-| `schedule.permissions` | How much the unattended session is allowed to do without asking.    | `acceptEdits`                  | Tighten for a more cautious unattended posture.               |
+| `schedule.permissions` | How much the unattended chat is allowed to do without asking.       | `acceptEdits`                  | Tighten for a more cautious unattended posture.               |
 
 <Callout type="warn">
   The schedule ships `schedule.enabled: false`, and that flag is your intent, not your permission. A
@@ -153,7 +153,7 @@ When the engine asks you first versus just proceeds, under `involvement`:
 | `nudge.relay`                     | Send a Relay ping when a question is waiting on you.              | `false`                                                                                 |
 | `nudge.telegram`                  | Send a Telegram ping when a question is waiting on you.           | `false`                                                                                 |
 
-The `comms` setting is the one that shapes tone day to day. The engine reads where a request came from (you, live in a `/flow` session, versus an unattended tick) and checks it against the calibration rules above. That's why IDEATE tends to ask a lot and EXECUTE tends to just proceed: it's one rule reacting to context, not a separate switch per stage.
+The `comms` setting is the one that shapes tone day to day. The engine reads where a request came from (you, live in a `/flow` chat, versus an unattended tick) and checks it against the calibration rules above. That's why IDEATE tends to ask a lot and EXECUTE tends to just proceed: it's one rule reacting to context, not a separate switch per stage.
 
 <Callout type="warn">
   `calibration.alwaysAsk` is a **floor, not a preference**. The file requires at least one entry

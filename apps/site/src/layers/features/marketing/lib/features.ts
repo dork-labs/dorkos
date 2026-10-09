@@ -263,7 +263,7 @@ export const features: Feature[] = [
     benefits: [
       'Sign in with your own Claude Code or Codex account',
       'Pick a different tool for each job, not just at setup',
-      'One list shows every session and how much room it has left',
+      'One list shows every chat and how much room it has left',
       'They write the code, send the email, and plan the week',
       "Never build your week around one company's tool",
     ],
@@ -271,7 +271,7 @@ export const features: Feature[] = [
       'Your writing agent runs on Claude Code and your coding agent on Codex, each on your own sign-in. When a better tool comes along, you move one agent to it and keep everything else.',
     media: {
       surface: 'multi-session',
-      alt: "Four DorkOS sessions in one list, each showing whether it's working or done",
+      alt: "Four DorkOS chats in one list, each showing whether it's working or done",
       loop: true,
     },
     docsUrl: '/docs/guides/runtimes',
@@ -295,7 +295,7 @@ export const features: Feature[] = [
       'Switch accounts without restarting anything',
     ],
     moment:
-      'Your work agent bills the work account, and your side project bills your own. You choose once per agent, and every session it starts follows that choice.',
+      'Your work agent bills the work account, and your side project bills your own. You choose once per agent, and every chat it starts follows that choice.',
     relatedFeatures: ['every-agent-one-place', 'control-center', 'workspaces'],
     sortOrder: 2,
   },
@@ -338,7 +338,7 @@ export const features: Feature[] = [
     benefits: [
       'Open DorkOS and land in a room with your whole team',
       'The sidebar leads with whatever is waiting on you',
-      'Press ⌘K to jump to any conversation by name',
+      'Press ⌘K to jump to any chat by name',
       'One line of news when you come back after hours away',
       'The room marks real events, like a new agent joining',
     ],
@@ -361,7 +361,7 @@ export const features: Feature[] = [
     category: 'chat',
     tagline: 'Watch your agent work in a browser tab, not a terminal window',
     description:
-      'Stop opening a terminal to check on your agent. The Console gives every session a chat window in your browser, with live updates as the agent works.',
+      'Stop opening a terminal to check on your agent. The Console gives every chat a window in your browser, with live updates as the agent works.',
     status: 'ga',
     benefits: [
       'Live output streams in as the agent writes it',
@@ -371,10 +371,10 @@ export const features: Feature[] = [
       'Works from any browser: laptop, phone, or tablet',
     ],
     moment:
-      'You ask for one change and the session splits into a few agents working at the same time. You watch them go, and the whole job finishes faster than one agent alone could manage.',
+      'You ask for one change and the chat splits into a few agents working at the same time. You watch them go, and the whole job finishes faster than one agent alone could manage.',
     media: {
       surface: 'subagents',
-      alt: "A DorkOS chat session with several agents working at once, each showing what it's doing",
+      alt: "A DorkOS chat with several agents working at once, each showing what it's doing",
       loop: true,
     },
     relatedFeatures: ['session-durability', 'tool-approval', 'question-prompts', 'file-uploads'],
@@ -387,11 +387,11 @@ export const features: Feature[] = [
     category: 'agent-control',
     tagline: 'Real work from your phone, not just a screen to watch',
     description:
-      'Most tools give your phone a read-only view. DorkOS runs real sessions in any phone browser, so you can watch live and answer your agents on the go.',
+      'Most tools give your phone a read-only view. DorkOS runs real chats in any phone browser, so you can watch live and answer your agents on the go.',
     status: 'ga',
     featured: true,
     benefits: [
-      'Watch sessions stream live from your phone',
+      'Watch chats stream live from your phone',
       'Approve or say no to an agent action on the go',
       'Add DorkOS to your home screen, like an app',
       'Get a push alert when an agent needs you',
@@ -401,7 +401,7 @@ export const features: Feature[] = [
       "You're on the train when an agent stops to ask before touching something risky. You read what it wants to do on your phone, say yes, and it keeps going.",
     media: {
       surface: 'mobile-sessions',
-      alt: 'The DorkOS screen on a phone, showing a live session and a pending approval',
+      alt: 'The DorkOS screen on a phone, showing a live chat and a pending approval',
       frame: 'phone',
     },
     relatedFeatures: ['chat-interface', 'tool-approval', 'tunnel'],
@@ -409,24 +409,24 @@ export const features: Feature[] = [
   },
   {
     slug: 'session-durability',
-    name: 'Session Durability',
+    name: 'Chat Durability',
     product: 'console',
     category: 'infrastructure',
-    tagline: 'Refresh, restart, reconnect: your session is right where you left it',
+    tagline: 'Refresh, restart, reconnect: your chat is right where you left it',
     description:
-      'Refresh the tab, swap to your phone, restart the server: nothing is lost. Every message replays in order, so a live session survives the interruption.',
+      'Refresh the tab, swap to your phone, restart the server: nothing is lost. Every message replays in order, so a live chat survives the interruption.',
     status: 'ga',
     benefits: [
       'Every message replays in the order it happened',
       'Refresh or reconnect with nothing lost',
-      'Pick up on any device, mid-conversation',
+      'Pick up on any device, mid-chat',
       'Every open tab stays in sync automatically',
     ],
     moment:
-      'You lose Wi-Fi mid-run and the tab goes quiet. A minute later it reconnects, and the session is exactly where it was, every message still in place.',
+      'You lose Wi-Fi mid-run and the tab goes quiet. A minute later it reconnects, and the chat is exactly where it was, every message still in place.',
     media: {
       surface: 'chat-streaming',
-      alt: 'A DorkOS session streaming output that survives a refresh or reconnect',
+      alt: 'A DorkOS chat streaming output that survives a refresh or reconnect',
       loop: true,
       crop: 'top',
     },
@@ -470,14 +470,14 @@ export const features: Feature[] = [
       'Stop alt-tabbing to check what your agent did. Open a real terminal, browse and edit project files, and preview pages without leaving DorkOS.',
     status: 'ga',
     benefits: [
-      "Run a real shell in your session's working directory",
+      "Run a real shell in your chat's working directory",
       'Open several terminals in tabs; they survive a page refresh',
       'Browse, create, rename, and edit project files in place',
       'Preview any URL, local page, or dev server in an embedded browser',
       'Agents can open files, reveal the terminal, or drive the browser',
     ],
     moment:
-      'Your agent says the tests pass. You pop open the Terminal tab, run one command to double-check, and close it, without ever leaving the session.',
+      'Your agent says the tests pass. You pop open the Terminal tab, run one command to double-check, and close it, without ever leaving the chat.',
     docsUrl: '/docs/guides/workbench',
     relatedFeatures: ['canvas', 'chat-interface'],
     sortOrder: 5,
@@ -493,7 +493,7 @@ export const features: Feature[] = [
     status: 'ga',
     benefits: [
       'See the exact file and action before you decide',
-      'Approve one action, or approve everything for a session',
+      'Approve one action, or approve everything for a chat',
       'Answer from the header, the sidebar, or the home screen',
       'If you step away, the agent keeps going after a short wait',
       'Get the same prompt in Slack or Telegram',
@@ -564,7 +564,7 @@ export const features: Feature[] = [
     benefits: [
       'Multiple-choice questions, so answering takes one tap',
       'Answer from the Console, Slack, or Telegram',
-      'Every past answer is saved in the conversation',
+      'Every past answer is saved in the chat',
       'The agent picks up the moment you answer',
     ],
     docsUrl: '/docs/concepts/answering-agents',
@@ -582,7 +582,7 @@ export const features: Feature[] = [
     status: 'ga',
     benefits: [
       'Drag a file in, or click to choose one',
-      'Files show up right in the conversation',
+      'Files show up right in the chat',
       'Works with images, PDFs, text, and code files',
     ],
     relatedFeatures: ['chat-interface', 'canvas'],
@@ -593,18 +593,18 @@ export const features: Feature[] = [
     name: 'Workspaces',
     product: 'console',
     category: 'agent-control',
-    tagline: 'Point a session at a project, and the right agent is already there',
+    tagline: 'Point a chat at a project, and the right agent is already there',
     description:
       'Bind a workspace to a project folder, and the right agent loads with it already there. No re-explaining which project you mean, every time you start.',
     status: 'ga',
     benefits: [
-      'Link a session to a project folder',
+      'Link a chat to a project folder',
       'The right agent loads for the right project automatically',
       "No need to re-explain which project you're working in",
       'Each workspace keeps its own settings and context',
     ],
     moment:
-      'You open a session for the API project and the right agent is already loaded. You never had to point it at the folder again; the workspace remembered for you.',
+      'You open a chat for the API project and the right agent is already loaded. You never had to point it at the folder again; the workspace remembered for you.',
     docsUrl: '/docs/guides/workspaces',
     relatedFeatures: ['chat-interface', 'every-agent-one-place'],
     sortOrder: 8,
@@ -628,7 +628,7 @@ export const features: Feature[] = [
       "You're waiting on a build, so you challenge your agent to tic-tac-toe right in the chat. You click a square, your mark draws itself, and the agent's comeback streams in with the win-line already drawn.",
     media: {
       surface: 'gen-ui-tictactoe',
-      alt: 'A DorkOS chat session playing tic-tac-toe against the agent, with a drawn win-line and a celebrating mood face',
+      alt: 'A DorkOS chat playing tic-tac-toe against the agent, with a drawn win-line and a celebrating mood face',
       loop: true,
     },
     docsUrl: '/docs/guides/generative-ui',
@@ -666,17 +666,17 @@ export const features: Feature[] = [
       'Power settings hide across Settings, Runtimes, and Tasks. Control Center puts every dial in one panel, open with ⌘⇧L from anywhere in DorkOS.',
     status: 'ga',
     benefits: [
-      'See where new sessions stop for approval, at a glance',
+      'See where new chats stop for approval, at a glance',
       'Let agents message across projects with one switch',
       'Cap how far agents keep replying to each other, with one switch',
       'Keep agents warm between messages, and cap concurrent scheduled runs',
       'An Exceptions list links straight to what to fix',
     ],
     moment:
-      'You open Control Center to check which sessions skip approval. Two show up in Exceptions, each one a click from the setting that put them there.',
+      'You open Control Center to check which chats skip approval. Two show up in Exceptions, each one a click from the setting that put them there.',
     media: {
       surface: 'control-center',
-      alt: 'The DorkOS Control Center panel open over the main screen, showing where new sessions stop for approval and the switches under it',
+      alt: 'The DorkOS Control Center panel open over the main screen, showing where new chats stop for approval and the switches under it',
       crop: 'top',
     },
     relatedFeatures: [
@@ -757,7 +757,7 @@ export const features: Feature[] = [
     category: 'discovery',
     tagline: 'Find any message by what was said in it, across every agent',
     description:
-      'You remember the sentence, not where you said it. One search reads your channels, your DMs, and every Claude Code, Codex and OpenCode conversation.',
+      'You remember the sentence, not where you said it. One search reads your channels, your DMs, and every Claude Code, Codex and OpenCode chat.',
     status: 'ga',
     benefits: [
       'Press Cmd-Shift-F and type what you remember somebody saying',
@@ -909,7 +909,7 @@ export const features: Feature[] = [
     status: 'ga',
     benefits: [
       'Cap how many replies your agents may trade in a row',
-      'Cap how much of one conversation a single agent may take',
+      'Cap how much of one room’s talk a single agent may take',
       'Cap replies per room each hour, and across every room',
       'Set the dials once, or set them room by room',
       'No room can skip the hourly cap that covers everything',
@@ -1224,12 +1224,12 @@ export const features: Feature[] = [
     category: 'agent-control',
     tagline: 'Tell an agent something once, and it still knows next week',
     description:
-      'An agent that forgets every conversation makes you repeat yourself forever. Each one now keeps a short notes file it reads before every turn.',
+      'An agent that forgets every chat makes you repeat yourself forever. Each one now keeps a short notes file it reads before every turn.',
     status: 'ga',
     benefits: [
       'Say it once in a DM, and a channel next week knows it',
       'Plain markdown you can open, correct, or delete by hand',
-      'Every note records the conversation that taught it',
+      'Every note records where it was learned',
       'Small on purpose, so the agent tidies rather than hoards',
       'Lives on your machine, beside the agent it belongs to',
     ],

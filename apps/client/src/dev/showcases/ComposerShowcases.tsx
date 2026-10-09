@@ -369,7 +369,7 @@ export function ComposerShowcases() {
   const sessionQueued = buildSessionTarget();
   const sessionNoConversation = buildSessionTarget({
     canSend: false,
-    canSendReason: 'Pick a conversation, or start a new one.',
+    canSendReason: 'Pick a chat, or start a new one.',
   });
   const roomIdle = buildRoomTarget();
   const roomTyping = buildRoomTarget();

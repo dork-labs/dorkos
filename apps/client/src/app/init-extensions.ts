@@ -183,7 +183,7 @@ export function registerRightPanelTabs(register: RegisterFn): void {
 
   register('right-panel', {
     id: 'session',
-    title: 'Session',
+    title: 'Chat',
     icon: Gauge,
     component: lazy(() =>
       import('@/layers/features/status').then((m) => ({ default: m.SessionInspector }))

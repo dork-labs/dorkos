@@ -41,8 +41,8 @@ export default function TelemetryPage() {
             DorkOS is made by {company.legalName}. It sends us nothing unless you turn it on. If you
             choose to help, you can share a little anonymous data so we can see roughly how many
             people run it. It is anonymous, not personal: no prompts, no code, no file paths, no
-            session content, ever. This page shows the exact data, word for word, and how to switch
-            it on or off.
+            chat content, ever. This page shows the exact data, word for word, and how to switch it
+            on or off.
           </p>
         </header>
 
@@ -57,7 +57,7 @@ export default function TelemetryPage() {
               The first time you run DorkOS, it shows you a notice with the payload below. If you do
               nothing, nothing is ever sent.
             </li>
-            <li>It is anonymous. No prompts, no code, no file paths, no session content, ever.</li>
+            <li>It is anonymous. No prompts, no code, no file paths, no chat content, ever.</li>
             <li>
               Turn it off any time: run <span className="font-mono">dorkos telemetry disable</span>,
               set <span className="font-mono">DO_NOT_TRACK=1</span>, or use the Privacy and Data tab
@@ -117,7 +117,7 @@ export default function TelemetryPage() {
           <p className="text-warm-gray leading-relaxed">
             The list above is the complete payload. It is enforced in code and in tests, so nothing
             can sneak in. In particular it never includes your prompts, your code, file paths, your
-            hostname or username, IP address, or anything from your sessions. This is what makes it
+            hostname or username, IP address, or anything from your chats. This is what makes it
             anonymous rather than personal. If we ever want to add a field, we change this page
             first.
           </p>
@@ -171,7 +171,7 @@ export default function TelemetryPage() {
               line), and nothing else. We do{' '}
               <span className="text-charcoal font-semibold">not</span> send the error message text
               at all, because a message can contain whatever your code put in it. No prompts, no
-              code, no file paths, no session data.
+              code, no file paths, no chat data.
             </li>
           </ul>
           <p className="text-warm-gray leading-relaxed">

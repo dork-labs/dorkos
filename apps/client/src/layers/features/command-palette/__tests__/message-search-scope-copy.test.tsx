@@ -143,7 +143,7 @@ describe('the box states its own scope, before anything is typed', () => {
     expect(
       screen.getByText('Your channels and direct messages, as soon as they’re posted.')
     ).toBeInTheDocument();
-    expect(screen.getByText('DorkOS conversations can lag five minutes.')).toBeInTheDocument();
+    expect(screen.getByText('DorkOS chats can lag five minutes.')).toBeInTheDocument();
     // The five-minute lag on transcripts is stated rather than averaged away:
     // DorkOS owns the room write and indexes it on the spot, and a Claude Code,
     // Codex or OpenCode conversation is written by somebody else, picked up by
@@ -151,7 +151,7 @@ describe('the box states its own scope, before anything is typed', () => {
     // that sweep (DOR-683, DOR-688).
     expect(
       screen.getByText(
-        'Claude Code, Codex and OpenCode conversations, even outside DorkOS. These can lag five minutes.'
+        'Claude Code, Codex and OpenCode chats, even outside DorkOS. These can lag five minutes.'
       )
     ).toBeInTheDocument();
   });
@@ -226,7 +226,7 @@ describe('the box keeps stating its scope wherever a person is asking why', () =
     expect(scopeLine()).toBeInTheDocument();
     expect(
       screen.getByText(
-        'Claude Code, Codex and OpenCode conversations, even outside DorkOS. These can lag five minutes.'
+        'Claude Code, Codex and OpenCode chats, even outside DorkOS. These can lag five minutes.'
       )
     ).toBeInTheDocument();
     expect(
@@ -259,7 +259,7 @@ describe('the box keeps stating its scope wherever a person is asking why', () =
     revealScopeDetail();
     expect(
       screen.getByText(
-        'Claude Code, Codex and OpenCode conversations, even outside DorkOS. These can lag five minutes.'
+        'Claude Code, Codex and OpenCode chats, even outside DorkOS. These can lag five minutes.'
       )
     ).toBeInTheDocument();
   });
@@ -316,7 +316,7 @@ describe('the box keeps stating its scope wherever a person is asking why', () =
     expect(screen.queryByText(SEARCH_SCOPE_GAPS[0]!)).toBeNull();
     expect(
       screen.getByText(
-        'Searches channels, direct messages, and DorkOS, Claude Code, Codex and OpenCode conversations. Not tool output.'
+        'Searches channels, direct messages, and DorkOS, Claude Code, Codex and OpenCode chats. Not tool output.'
       )
     ).toBeInTheDocument();
 

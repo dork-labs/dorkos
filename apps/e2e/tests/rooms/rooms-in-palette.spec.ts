@@ -202,11 +202,9 @@ test.describe('Rooms in the command palette @smoke', () => {
     await palette.input.fill(`@${agent.name}`);
 
     // Two rows, two different acts: open the conversation, or open the agent.
-    const conversation = palette.options
-      .filter({ hasText: `Open conversation with ${agent.name}` })
-      .first();
+    const conversation = palette.options.filter({ hasText: `Open DM with ${agent.name}` }).first();
     await expect(conversation).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
-    await expect(conversation).toHaveAccessibleName(`Open conversation with ${agent.name}`);
+    await expect(conversation).toHaveAccessibleName(`Open DM with ${agent.name}`);
     // Exactly two RESULTS: the conversation and the agent. Not "more than one"
     // — the number is knowable, and a third result would be a duplicate nobody
     // wants.

@@ -298,8 +298,8 @@ function workRows(ctx: ProfileRowsContext): ProfileRowModel[] {
     {
       id: 'sessions',
       kind: 'nav',
-      label: 'Sessions',
-      value: countValue(facts?.sessions?.count, 'conversation', 'conversations'),
+      label: 'Chats',
+      value: countValue(facts?.sessions?.count, 'chat', 'chats'),
       meta: lastWords(facts?.sessions?.newestAt ?? null),
       page: 'sessions',
     },

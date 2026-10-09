@@ -361,12 +361,12 @@ describe('BC-22 — the morning digest', () => {
     // "idle", not "went quiet": a run that finished exactly as asked and one
     // that stalled look identical from a session record, so the row claims only
     // the stillness it can actually see (DOR-1391 review).
-    expect(buildDigestRow(quietFixture)?.secondary).toBe('2 sessions idle');
+    expect(buildDigestRow(quietFixture)?.secondary).toBe('2 chats idle');
   });
 
   it('says it in the singular for one', () => {
     const one = { ...quietFixture, digest: { finishedWhileAwayCount: 3, idleWhileAwayCount: 1 } };
-    expect(buildDigestRow(one)?.secondary).toBe('1 session idle');
+    expect(buildDigestRow(one)?.secondary).toBe('1 chat idle');
   });
 
   it('says nothing about idle sessions when there were none', () => {

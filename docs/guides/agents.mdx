@@ -24,7 +24,7 @@ When a directory has an agent registered:
 - **Favicon**: reflects the agent's color
 - **Directory picker**: recents show agent names for registered directories
 - **Task schedules**: display agent identity instead of paths
-- **Claude sessions**: receive agent identity context in the system prompt
+- **Claude Code chats**: receive agent identity context in the system prompt
 
 Unregistered directories work exactly as before, with zero changes.
 
@@ -67,7 +67,7 @@ You can also create the file directly. It's the source of truth (a database copy
 
 ## Customizing Your Agent
 
-Every agent has one **profile**, and it is the only place you go. Open it from an agent's face anywhere in the app, from **View profile** in its menu, or with `Cmd+Shift+A` while you are in its session. On a session it docks into the right panel; everywhere else it slides in from the side.
+Every agent has one **profile**, and it is the only place you go. Open it from an agent's face anywhere in the app, from **View profile** in its menu, or with `Cmd+Shift+A` while you are in its chat. In a chat it docks into the right panel; everywhere else it slides in from the side.
 
 The top of the profile is a portrait: the face, the name, the `@handle`, one sentence saying what the agent is doing, and who it belongs to. Tap the face to change its color and emoji.
 
@@ -82,9 +82,9 @@ Under that is a list of rows. A row with a **›** opens a full page; a row with
 
 ### Its work
 
-- **Sessions**: every chat this agent has had, newest first, with a search box.
+- **Chats**: every chat this agent has had, newest first, with a search box.
 - **Tasks**: its scheduled runs, and what ran recently.
-- **Rooms**: the channels and conversations it sits in.
+- **Rooms**: the channels and DMs it sits in.
 
 ### What it can do
 
@@ -95,9 +95,9 @@ Under that is a list of rows. A row with a **›** opens a full page; a row with
 - **Instructions** and **Boundaries**: the two files you write an agent's behavior into, each with the whole page to itself. Both pages end with a preview showing how your agent will be told who it is, how it should sound, and what it must not do — assembled the way it will get them, so you can read it before you save. See the [Persona Injection](/docs/guides/persona) guide.
 
 <Callout type="info">
-  Mesh and Relay power discovery and cross-agent routing, and Rooms — DorkOS's multi-agent
-  conversations — are generally available. Test your specific multi-agent setup before leaning on it
-  for anything time-sensitive.
+  Mesh and Relay power discovery and cross-agent routing, and Rooms — DorkOS's multi-agent channels
+  and DMs — are generally available. Test your specific multi-agent setup before leaning on it for
+  anything time-sensitive.
 </Callout>
 
 ## Removing an Agent
@@ -144,4 +144,4 @@ These endpoints are always available, no feature flag needed, and all paths are 
 
 ### MCP Tool
 
-Claude sessions can query an agent's identity via the `get_agent` MCP tool, providing either an `agent_id` (a ULID, an ID that also records when it was created) or `cwd` (working directory path). This is always available, regardless of whether Mesh is configured.
+Claude Code chats can query an agent's identity via the `get_agent` MCP tool, providing either an `agent_id` (a ULID, an ID that also records when it was created) or `cwd` (working directory path). This is always available, regardless of whether Mesh is configured.

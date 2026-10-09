@@ -54,7 +54,7 @@ const PROFILE_PAGES: Partial<Record<ProfilePageId, ProfilePageDefinition>> = {
     component: lazy(() => import('./AppearancePage').then((m) => ({ default: m.AppearancePage }))),
   },
   sessions: {
-    title: 'Sessions',
+    title: 'Chats',
     component: lazy(() => import('./SessionsPage').then((m) => ({ default: m.SessionsPage }))),
   },
   tasks: {

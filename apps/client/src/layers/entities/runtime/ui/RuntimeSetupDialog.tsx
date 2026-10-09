@@ -706,8 +706,8 @@ export function RuntimeSetupDialog({
               : descriptor
                 ? isScopedReady
                   ? 'Ready to use.'
-                  : 'Connect it to start a session.'
-                : 'Connect one to start a session.'}
+                  : 'Connect it to start a chat.'
+                : 'Connect one to start a chat.'}
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
         <ResponsiveDialogBody>

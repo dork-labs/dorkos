@@ -400,7 +400,7 @@ export function SessionSwitcherShowcase() {
   return (
     <PlaygroundSection
       title="SessionSwitcher"
-      description="Switch session: the shared ChatList on one responsive surface, a dialog on the desktop and a bottom sheet on a phone. ↵ opens, ⌘↵ starts a new chat, ⇧↵ forks."
+      description="Switch chat: the shared ChatList on one responsive surface, a dialog on the desktop and a bottom sheet on a phone. ↵ opens, ⌘↵ starts a new chat, ⇧↵ forks."
     >
       <ShowcaseLabel>Open the switcher</ShowcaseLabel>
       <ShowcaseDemo>
@@ -442,7 +442,7 @@ export function ChatListShowcase() {
   return (
     <PlaygroundSection
       title="ChatList"
-      description="One agent's chats, drawn by Profile → Sessions and Switch session alike. Needs you first, then running chats, then the rest by when you last used them. Spin-offs fold under the chat that started them; one that needs you is lifted out. Automated chats fold into one group."
+      description="One agent's chats, drawn by Profile → Chats and Switch chat alike. Needs you first, then running chats, then the rest by when you last used them. Spin-offs fold under the chat that started them; one that needs you is lifted out. Automated chats fold into one group."
     >
       <ShowcaseLabel>
         Every case: needs you, running, spin-offs, automated, two runtimes

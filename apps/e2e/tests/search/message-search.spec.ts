@@ -129,11 +129,11 @@ test.describe('Message search', () => {
     // block had been deleted. `aria-expanded` on the trigger is the assertion
     // that can actually fail.
     await expect(scopeLine).toHaveAttribute('aria-expanded', 'false');
-    const dorkosDelay = dialog.getByText('DorkOS conversations can lag five minutes.', {
+    const dorkosDelay = dialog.getByText('DorkOS chats can lag five minutes.', {
       exact: true,
     });
     const vendorDelay = dialog.getByText(
-      'Claude Code, Codex and OpenCode conversations, even outside DorkOS. These can lag five minutes.',
+      'Claude Code, Codex and OpenCode chats, even outside DorkOS. These can lag five minutes.',
       { exact: true }
     );
     await expect(dorkosDelay).toBeHidden();

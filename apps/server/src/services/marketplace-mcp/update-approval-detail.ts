@@ -42,7 +42,7 @@ function placeOf(update: ApprovableUpdate): string {
  */
 function whenProgramsStart(update: ApprovableUpdate): string {
   return update.scope === 'global'
-    ? 'in every session'
+    ? 'in every chat'
     : 'declared, but not started for a project install';
 }
 

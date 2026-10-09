@@ -62,7 +62,7 @@ export const GLOBAL_ACTIVATION_CAPABILITY_ID = 'marketplace.activate_global_plug
 
 /** The card's title. */
 export const GLOBAL_ACTIVATION_CAPABILITY_TITLE =
-  'Let a globally installed package run programs in every session';
+  'Let a globally installed package run programs in every chat';
 
 /** At most one card per package per this long, unless a person asks for one. */
 export const CARD_COOLDOWN_MS = 10 * 60_000;
@@ -126,7 +126,7 @@ export function summariseGlobalActivation(name: string, effects: DisclosedEffect
   return (
     `Let the globally installed package ${quoteSummaryValue(name)} run ` +
     `${count === 1 ? '1 program or command' : `${count} programs and commands`} in every ` +
-    'session. Everything it runs is listed below.'
+    'chat. Everything it runs is listed below.'
   );
 }
 
@@ -150,7 +150,7 @@ export function describeGlobalActivationInFull(
       ? 'It was reinstalled or changed what it runs since it was last approved.'
       : plugin.reason === 'unrecorded'
         ? 'It was installed before DorkOS recorded what an approval covers, so it is shown as it is now.'
-        : 'Nobody has approved it as it is now, so it is held back from every session.',
+        : 'Nobody has approved it as it is now, so it is held back from every chat.',
     ...(linked !== undefined
       ? [
           `Linked: it runs whatever is in ${JSON.stringify(linked)}. DorkOS does not check ` +
@@ -159,7 +159,7 @@ export function describeGlobalActivationInFull(
       : []),
     `Version ${JSON.stringify(origin.version ?? 'not recorded')}, from ${JSON.stringify(origin.source ?? 'a source that was not recorded')}.`,
     '',
-    ...describeEffectsInFull(plugin.effects, 'in every session'),
+    ...describeEffectsInFull(plugin.effects, 'in every chat'),
   ].join('\n');
 }
 

@@ -356,7 +356,7 @@ describe('P3 AC-3 — @agent produces a visible chip that filters', () => {
       const headings = screen
         .getAllByText((_, el) => el?.getAttribute('cmdk-group-heading') !== null)
         .map((el) => el.textContent);
-      expect(headings).toContain('Conversations with Orbit');
+      expect(headings).toContain('Chats with Orbit');
       expect(headings).not.toContain('Conversations');
     });
   });
@@ -435,7 +435,7 @@ describe('#channel behaves identically for rooms', () => {
     await highlight('quiet');
     press('Tab');
 
-    expect(await screen.findByText('No conversations came from #quiet.')).toBeInTheDocument();
+    expect(await screen.findByText('No chats came from #quiet.')).toBeInTheDocument();
   });
 
   it('pops on Backspace exactly as an agent chip does', async () => {
@@ -537,7 +537,7 @@ describe('a prefix inside a scope is a character, not a mode', () => {
     // `#` matched no conversation title, so the list is empty — but the palette
     // says "nothing matched", not "this agent has no conversations", which is
     // the sentence that was wrong.
-    await waitFor(() => expect(screen.queryByText('No conversations with Orbit yet.')).toBeNull());
+    await waitFor(() => expect(screen.queryByText('No chats with Orbit yet.')).toBeNull());
   });
 
   it('searches for the character when a title contains it', async () => {

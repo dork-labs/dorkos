@@ -644,12 +644,12 @@ describe('what "Always Allow" says it grants (DOR-1462)', () => {
     );
 
     const button = screen.getByRole('button', { name: /always allow/i });
-    expect(button.textContent).toContain('all your Claude sessions');
+    expect(button.textContent).toContain('all your Claude chats');
     // And in the ACCESSIBLE name, not only on screen: the reach is half of what
     // this button does, so a screen-reader user must hear it before the press —
     // as one deterministic sentence, not whatever the engine assembles from the
     // children.
-    expect(screen.getByRole('button', { name: 'Always allow, all your Claude sessions' })).toBe(
+    expect(screen.getByRole('button', { name: 'Always allow, all your Claude chats' })).toBe(
       button
     );
 
@@ -673,7 +673,7 @@ describe('what "Always Allow" says it grants (DOR-1462)', () => {
       <ApprovalPrompt {...baseProps} approvalHasSuggestions approvalAlwaysAllowScope="session" />
     );
     expect(screen.getByRole('button', { name: /always allow/i }).textContent).toContain(
-      'this session'
+      'this chat'
     );
   });
 
@@ -682,14 +682,14 @@ describe('what "Always Allow" says it grants (DOR-1462)', () => {
     // always did, rather than guessing at a promise nobody made.
     render(<ApprovalPrompt {...baseProps} approvalHasSuggestions />);
     const button = screen.getByRole('button', { name: 'Always allow' });
-    expect(button.textContent).not.toContain('this session');
+    expect(button.textContent).not.toContain('this chat');
     expect(button.textContent).not.toContain('this project');
-    expect(button.textContent).not.toContain('all your Claude sessions');
+    expect(button.textContent).not.toContain('all your Claude chats');
   });
 
   it('draws no scope where there is no button', () => {
     render(<ApprovalPrompt {...baseProps} approvalAlwaysAllowScope="user" />);
     expect(screen.queryByRole('button', { name: /always allow/i })).toBeNull();
-    expect(screen.queryByText(/all your Claude sessions/)).toBeNull();
+    expect(screen.queryByText(/all your Claude chats/)).toBeNull();
   });
 });

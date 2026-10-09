@@ -56,7 +56,7 @@ Packages:
                                 sort them with
   outdated                    List only the packages that have an update
                                 (exits 1 when any do, for scripts)
-  held-back                   List global packages held back from sessions,
+  held-back                   List global packages held back from chats,
                                 and allow or turn one down
   link <path>                 Run a package straight from a folder on this
                                 computer, while you work on it
@@ -142,7 +142,7 @@ Examples:
   'held-back': `
 Usage: dorkos marketplace held-back [--allow <name> [--yes] | --refuse <name>]
 
-A package you installed for all your projects loads into every session. If it
+A package you installed for all your projects loads into every chat. If it
 runs commands or programs of its own, DorkOS holds it back until you approve the
 copy that was installed. Installing or updating it yourself counts as approving it.
 
@@ -152,7 +152,7 @@ install: if the package is reinstalled or updated another way, DorkOS asks again
 Only you can decide: an agent is refused, and with sign-in on, decide in the app.
 
 Options:
-      --allow <name>    Let this package run in every session
+      --allow <name>    Let this package run in every chat
       --refuse <name>   Keep it held back
   -y, --yes             Do not ask before allowing (it still prints what runs)
 
@@ -193,7 +193,7 @@ approval id and a token, and you run it again with --approval once the person
 has said yes in DorkOS. An agent is never asked here; the approval is its yes.
 
 Options:
-      --project <path>     Link it for this project only (default: every session)
+      --project <path>     Link it for this project only (default: every chat)
       --replace-installed  Set the installed copy aside while linked; unlinking
                            brings it back
   -y, --yes                Do not ask first (it still prints what runs)
@@ -276,7 +276,7 @@ version no longer exists, never has one, so this makes them yours instead:
 updates keep them, and nothing is moved or deleted.
 
 It prints the files first, and marks the ones that still run. For a global
-package held back from sessions, it also prints everything the package runs,
+package held back from chats, it also prints everything the package runs,
 and your yes approves what it discloses now, like a Review.
 
 Only you can do this, not an agent. With sign-in on, do it in the app instead.

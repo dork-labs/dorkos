@@ -386,7 +386,7 @@ export function mapSessionError(error: OpenCodeSessionError | undefined): Stream
       {
         type: 'error',
         data: {
-          message: 'OpenCode reported a session error',
+          message: 'OpenCode reported an error in this chat',
           code: 'session_error',
           category: 'execution_error',
         },

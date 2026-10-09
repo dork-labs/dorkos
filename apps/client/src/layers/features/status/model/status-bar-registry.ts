@@ -415,7 +415,7 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
   {
     key: 'cwd',
     label: 'Directory',
-    description: 'The folder this session can touch',
+    description: 'The folder this chat can touch',
     cluster: 'left',
     group: 'session',
     icon: FolderOpen,
@@ -435,7 +435,7 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
   {
     key: 'runtime',
     label: 'Runs on',
-    description: 'What runs this session',
+    description: 'What runs this chat',
     cluster: 'right',
     group: 'session',
     icon: Cpu,
@@ -501,7 +501,7 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
   {
     key: 'context',
     label: 'Context',
-    description: 'How full the conversation window is',
+    description: 'How full the context window is',
     cluster: 'right',
     group: 'session',
     icon: BarChart3,
@@ -520,7 +520,7 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
   {
     key: 'usage',
     label: 'Usage & cost',
-    description: 'Plan limits or session cost',
+    description: 'Plan limits or chat cost',
     cluster: 'right',
     group: 'session',
     icon: Gauge,

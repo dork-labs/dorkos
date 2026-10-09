@@ -178,7 +178,7 @@ export function NewDirectMessageMenu({
               Create agent
             </Button>
           }
-          allChosenMessage="Everyone is already in this conversation."
+          allChosenMessage="Everyone is already here."
         />
 
         {/* The rule, said before the button changes its words rather than

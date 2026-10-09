@@ -92,8 +92,8 @@ export function describeHeldBack(packages: readonly HeldBackPackage[]): string[]
   if (packages.length === 0) return [];
   const lines = [
     packages.length === 1
-      ? '1 globally installed package is held back from every session:'
-      : `${packages.length} globally installed packages are held back from every session:`,
+      ? '1 globally installed package is held back from every chat:'
+      : `${packages.length} globally installed packages are held back from every chat:`,
   ];
   for (const pkg of packages) {
     const version = pkg.version ? ` ${pkg.version}` : '';
@@ -161,12 +161,12 @@ export async function runMarketplaceHeldBack(args: MarketplaceHeldBackArgs): Pro
       `Linked: it runs whatever is in ${pkg.linkedPath}. A change there runs without asking again.`
     );
   }
-  console.log('It runs, in every session:');
+  console.log('It runs, in every chat:');
   for (const line of renderDisclosureLines(pkg.effects, 'global')) console.log(line);
   console.log('');
 
   if (decision === 'allow' && !args.yes) {
-    const proceed = await confirm(`Let ${pkg.name} run these in every session?`);
+    const proceed = await confirm(`Let ${pkg.name} run these in every chat?`);
     if (!proceed) {
       console.log('Nothing was recorded. It stays held back.');
       return 0;
@@ -197,7 +197,7 @@ export async function runMarketplaceHeldBack(args: MarketplaceHeldBackArgs): Pro
   }
   console.log(
     decision === 'allow'
-      ? `Allowed. ${pkg.name} loads into sessions from the next message on.`
+      ? `Allowed. ${pkg.name} loads into chats from the next message on.`
       : `Turned down. ${pkg.name} stays held back until it is reinstalled or you allow it here.`
   );
   return 0;

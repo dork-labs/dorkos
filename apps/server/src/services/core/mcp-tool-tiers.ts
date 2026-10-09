@@ -161,7 +161,7 @@ export const MCP_TOOL_TIERS = {
     tier: 'observe',
     area: null,
     areaNote: ALWAYS_ON,
-    title: "Count an agent's sessions",
+    title: "Count an agent's chats",
   },
   get_agent: {
     tier: 'observe',
@@ -198,7 +198,7 @@ export const MCP_TOOL_TIERS = {
     // the calling chat's own level; a mode above it is refused by the handler,
     // never granted by an approval), as whom, and to do what.
     approvalDisplayFields: ['cwd', 'account', 'permissionMode', 'agentPath', 'prompt'],
-    title: 'Start a new agent session',
+    title: 'Start a spin-off chat',
   },
 
   // ── Tasks ───────────────────────────────────────────────────────────────
@@ -378,7 +378,7 @@ export const MCP_TOOL_TIERS = {
   binding_list_sessions: {
     tier: 'observe',
     area: 'connections',
-    title: 'List active chat sessions',
+    title: 'List active chats',
   },
 
   // ── Mesh ────────────────────────────────────────────────────────────────

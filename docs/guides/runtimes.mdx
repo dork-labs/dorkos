@@ -10,7 +10,7 @@ import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
 
 # Runtimes
 
-A runtime is the AI program that powers an agent: its brain. DorkOS ships with four: DorkOS, Claude Code, Codex, and OpenCode, and you can use more than one at once. Every session lands in the same list, streams through the same chat, and uses the same tool approvals and status bar.
+A runtime is the AI program that powers an agent: its brain. DorkOS ships with four: DorkOS, Claude Code, Codex, and OpenCode, and you can use more than one at once. Every chat lands in the same list, streams through the same chat, and uses the same tool approvals and status bar.
 
 | Runtime         | Ecosystem                       | Why you'd pick it                                                         |
 | --------------- | ------------------------------- | ------------------------------------------------------------------------- |
@@ -40,13 +40,13 @@ For a custom or local model, enter its context limit and maximum reply size in t
 The request format must match the service: Anthropic Messages, OpenAI Chat Completions or OpenAI Responses.
 Save, then choose **DorkOS** in an agent's **Runs on** row or when starting a new chat.
 
-A conversation keeps the inference source and request format it started with, including after a restart.
-Changing runtime settings applies to new conversations. A missing source stops the conversation with an error.
+A chat keeps the inference source and request format it started with, including after a restart.
+Changing runtime settings applies to new chats. A missing source stops the chat with an error.
 An existing API key is tied to its endpoint; changing the endpoint requires a matching key.
 
 The DorkOS runtime can read project instructions and skills, use the app's tools, and delegate coding work to a separate builder.
 Tool approval follows the selected permission mode. Its model history is stored separately from the visible chat.
-Session forks, question cards and media attachments are not offered by this runtime yet.
+Chat forks, question cards and media attachments are not offered by this runtime yet.
 
 ### Set up a coding runtime
 
@@ -101,11 +101,11 @@ An agent with shell or file access may still reach your files, credentials, or o
 
 ## Choose a Runtime
 
-Runtime selection works at three levels. An explicit per-session choice wins over the agent's runtime. The agent's runtime wins over the config default.
+Runtime selection works at three levels. An explicit per-chat choice wins over the agent's runtime. The agent's runtime wins over the config default.
 
-### For One Session
+### For One Chat
 
-Before the first message, the runtime chip in the status bar is a picker. Click it and choose. Once the session starts, the runtime is fixed for that session's lifetime, and the chip becomes a read-only mark.
+Before the first message, the runtime chip in the status bar is a picker. Click it and choose. Once the chat starts, the runtime is fixed for that chat's lifetime, and the chip becomes a read-only mark.
 
 You can also launch directly onto a runtime with the `?runtime=` URL parameter:
 
@@ -115,11 +115,11 @@ You can also launch directly onto a runtime with the `?runtime=` URL parameter:
 
 ### For an Agent
 
-Open the agent's profile and tap the **Runs on** row, which holds the runtime, the model and the effort together. This writes the `runtime` field into the agent's `.dork/agent.json`. Every new session launched from that agent inherits it. Existing sessions keep the runtime they started with.
+Open the agent's profile and tap the **Runs on** row, which holds the runtime, the model and the effort together. This writes the `runtime` field into the agent's `.dork/agent.json`. Every new chat launched from that agent inherits it. Existing chats keep the runtime they started with.
 
 ### As the Default
 
-Set the fallback runtime for sessions that don't specify one:
+Set the fallback runtime for chats that don't specify one:
 
 ```bash
 dorkos config set runtimes.default opencode
@@ -159,12 +159,12 @@ An agent runs on credits only when you pick that for it in the app. If an agent'
 
 Codex and OpenCode don't have account lists, so each one has a single choice: its own sign-in, or DorkOS credits. The choice shows as **Runs on** on its card in Settings → Runtimes, and as its switch under **Use credits for**, but only once DorkOS credits serve that runtime. Until then neither place shows it. If a runtime is set to credits and credits can't run it for now, its row stays so you can switch it back.
 
-- **Codex**: the choice applies to new conversations. A conversation already going stays on whatever it started on. Codex can't search the web on DorkOS credits. On credits, Codex doesn't use your own Codex settings in `~/.codex`: its MCP servers, its global `AGENTS.md` and its profiles stay out of credits conversations. The tools DorkOS gives an agent still work.
-- **OpenCode**: the choice moves all of OpenCode, conversations already going included. You can't switch while OpenCode is in the middle of a reply, so nothing it's doing is cut off. On credits, OpenCode offers the models your DorkOS account lists.
+- **Codex**: the choice applies to new chats. A chat already going stays on whatever it started on. Codex can't search the web on DorkOS credits. On credits, Codex doesn't use your own Codex settings in `~/.codex`: its MCP servers, its global `AGENTS.md` and its profiles stay out of credits chats. The tools DorkOS gives an agent still work.
+- **OpenCode**: the choice moves all of OpenCode, chats already going included. You can't switch while OpenCode is in the middle of a reply, so nothing it's doing is cut off. On credits, OpenCode offers the models your DorkOS account lists.
 
 On credits, neither one uses your own Codex or OpenCode sign-in or keys, and DorkOS never changes your own Codex or OpenCode settings. If DorkOS can't reach your credits, the chat stops and offers a way back to your own sign-in:
 
-- **Codex**: **Start a new conversation on your Codex sign-in**. A conversation that started on credits can't move, so this switches Codex back and opens a new one.
+- **Codex**: **Start a new chat on your Codex sign-in**. A chat that started on credits can't move, so this switches Codex back and opens a new one.
 - **OpenCode**: **Use your OpenCode sign-in**. This switches all of OpenCode back, not just that chat, then sends the message again.
 
 Anything a credits chat runs, such as an MCP server or a command the agent runs, can read the credits key while it runs, just as it could read your own key. Only use credits in projects you trust.
@@ -292,10 +292,10 @@ Two more settings apply to every account. **When an account runs out** is either
 
 ## See the Runtime
 
-Every session wears its runtime openly:
+Every chat wears its runtime openly:
 
-- **Session list**: rows carry a small runtime mark next to the title.
-- **Chat status line**: the runtime chip names the active runtime whenever it isn't your usual one, and always before the first message so you can still change it. Otherwise it's one row in the Session panel behind the `⋯`, where you can pin it to keep it in view.
+- **Chat list**: rows carry a small runtime mark next to the title.
+- **Chat status line**: the runtime chip names the active runtime whenever it isn't your usual one, and always before the first message so you can still change it. Otherwise it's one row in the **Chat details** panel behind the `⋯`, where you can pin it to keep it in view.
 - **Agent profile**: the **Runs on** row names the runtime, and agent cards badge it.
 
 ## Local Models with OpenCode
@@ -310,7 +310,7 @@ OpenCode reaches Ollama and any OpenAI-compatible endpoint through its own servi
     Configure the service in OpenCode. See [opencode.ai/docs](https://opencode.ai/docs) for setup
     details.
   </Step>
-  <Step>In DorkOS, pick the **OpenCode** runtime for your session.</Step>
+  <Step>In DorkOS, pick the **OpenCode** runtime for your chat.</Step>
   <Step>
     Open the model picker and choose your local model. OpenCode models are listed as
     `provider/model`, e.g. `ollama/qwen2.5-coder:32b`.
@@ -320,16 +320,16 @@ OpenCode reaches Ollama and any OpenAI-compatible endpoint through its own servi
 <Callout type="warn">
   Local model quality depends on the model. Small models try their best but struggle with agentic
   work: tool calling below roughly the 14B-parameter class is unreliable. A 32B-class coding model
-  (e.g. `qwen2.5-coder:32b`) is a realistic floor for useful sessions.
+  (e.g. `qwen2.5-coder:32b`) is a realistic floor for useful chats.
 </Callout>
 
 ### Models That Can't Do the Job
 
-A cloud gateway like OpenRouter offers hundreds of models, and not all of them can run a session.
+A cloud gateway like OpenRouter offers hundreds of models, and not all of them can run a chat.
 The model menu says so before you pick, rather than after:
 
 - Models that **can't use tools** sit under their own heading, **Can't do agent work**. They can
-  hold a conversation, but they can't read your files or run commands. They stay in the menu — if
+  hold a chat, but they can't read your files or run commands. They stay in the menu — if
   you went looking for one, you should be able to find it.
 - Models that **make images** carry a note on the card. They work, but DorkOS can't display a
   generated image yet, so a picture-making model looks like it answered with nothing. This note
@@ -361,14 +361,14 @@ The runtimes are not identical, and DorkOS doesn't pretend they are. Surfaces th
 
 Known limitations, stated plainly:
 
-- **Runtime is fixed per session.** A session's runtime is chosen when it starts and never changes. To switch runtimes, start a new session.
+- **Runtime is fixed per chat.** A chat's runtime is chosen when it starts and never changes. To switch runtimes, start a new chat.
 - **Codex asks before it changes things, as much as the level you pick says.** When Codex wants to do something its level does not allow, it stops and shows a card in the chat, and the step runs only if you approve it. The permission picker has three levels for Codex:
   - **Ask first** (the default): Codex reads files and runs read-only commands without asking, and so are tools their own server marks read-only. Anything else stops on a card first. A step you approve can reach beyond this project.
   - **Workspace write**: Codex changes this project and temporary folders freely. It asks before it reaches further or goes online.
   - **Full access**: Codex can change anything on this machine, network included. It never stops to ask.
 - **You can steer Codex mid-reply.** A message you send while Codex is replying joins that reply, instead of waiting for the next one.
 - **Codex keeps background commands running after it replies.** When one finishes, the chat picks up again on its own: Codex reads the result and carries on. It does this only after a reply that ended normally. If you stopped the reply, the chat shows the result and waits for you. A command that never ends, like a dev server, never wakes the chat. After three pickups in a row with no message from you, the chat waits for you. In a room, a finished command shows in the chat and the room carries on at its next turn. You can stop one from the task bar above the chat box. DorkOS stops one still running four hours after its reply, and stops them all when DorkOS shuts down.
-- **If you deleted or archived a Codex conversation in Codex itself,** the next message in DorkOS starts a fresh one and says so. The chat's history in DorkOS stays.
+- **If you deleted or archived a Codex chat in Codex itself,** the next message in DorkOS starts a fresh one and says so. The chat's history in DorkOS stays.
 - **The older way to run Codex is still there.** Set `runtimes.codex.transport` to `exec` in `~/.dork/config.json` and restart DorkOS. Codex then runs one process per reply: it cannot ask before a step, take a message mid-reply, summarize the chat when asked, or keep anything running after it replies.
 - **Only Claude Code's auto mode knows about DorkOS's own tools.** When an agent calls a DorkOS tool, DorkOS tells Claude Code which safety level that tool sits at and that the call already passed DorkOS's own check, so auto mode stops asking about things that were already decided. Codex and OpenCode have no way to be told, so they keep asking as they always have. The note never lets an agent do anything it could not do already.
 - **Only Claude Code says which background tasks are housekeeping.** Some of what an agent runs is work it started for itself, to stay oriented, rather than anything you asked for. Claude Code marks those, and DorkOS keeps them out of the task bar's count above the chat box, so that count only moves for work you are waiting on. You can still see them: open the task bar's detail panel with the arrow at its right edge, where they are listed with a count. They still appear in the chat itself, like any other background task. One that fails is always shown like any other failure. Codex and OpenCode do not mark their tasks, so every task they report is counted.
@@ -379,7 +379,7 @@ Known limitations, stated plainly:
 
 <Cards>
   <Card title="Tool Approval" href="/docs/guides/tool-approval">
-    Control what your agent does during a session, including permission modes.
+    Control what your agent does during a chat, including permission modes.
   </Card>
   <Card title="Configuration" href="/docs/getting-started/configuration">
     The full `runtimes.*` config reference: defaults, binary paths, sidecar port.

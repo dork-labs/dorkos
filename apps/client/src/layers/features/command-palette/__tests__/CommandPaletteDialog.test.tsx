@@ -275,7 +275,7 @@ vi.mock('../model/use-palette-items', () => ({
       { name: '/world', description: 'Say world' },
     ],
     quickActions: [
-      { id: 'new-session', label: 'New session', icon: 'Plus', action: 'newSession' },
+      { id: 'new-session', label: 'New chat', icon: 'Plus', action: 'newSession' },
       {
         id: 'discover',
         label: 'Bring in existing projects',
@@ -309,7 +309,7 @@ vi.mock('../model/use-palette-items', () => ({
         { name: '/world', description: 'Say world' },
       ].map((c) => ({ id: `cmd-${c.name}`, name: c.name, type: 'command', ...unranked, data: c })),
       ...[
-        { id: 'new-session', label: 'New session', icon: 'Plus', action: 'newSession' },
+        { id: 'new-session', label: 'New chat', icon: 'Plus', action: 'newSession' },
         {
           id: 'discover',
           label: 'Bring in existing projects',
@@ -325,7 +325,7 @@ vi.mock('../model/use-palette-items', () => ({
         { id: 'theme', label: 'Toggle theme', icon: 'Moon', action: 'toggleTheme' },
       ].map((q) => ({ id: q.id, name: q.label, type: 'quick-action', ...unranked, data: q })),
     ],
-    newActions: [{ id: 'new-session', label: 'New session', icon: 'Plus', action: 'newSession' }],
+    newActions: [{ id: 'new-session', label: 'New chat', icon: 'Plus', action: 'newSession' }],
     sessions: [],
     continueRows: [],
     // The zero-query Recent list. Agent rows, so the sub-menu drill-in this
@@ -397,7 +397,7 @@ describe('CommandPaletteDialog', () => {
   it('renders the New group with the cockpit’s creation actions', () => {
     render(<CommandPaletteDialog />);
     expect(screen.getByText('New')).toBeInTheDocument();
-    expect(screen.getByText('New session')).toBeInTheDocument();
+    expect(screen.getByText('New chat')).toBeInTheDocument();
   });
 
   it('does not render Commands group when search query is empty', () => {
@@ -438,7 +438,7 @@ describe('CommandPaletteDialog', () => {
     // Sub-menu should appear with the agent actions
     expect(screen.getByText('Open here')).toBeInTheDocument();
     expect(screen.getByText('Open in a new tab')).toBeInTheDocument();
-    expect(screen.getByText('New session')).toBeInTheDocument();
+    expect(screen.getByText('New chat')).toBeInTheDocument();
     expect(screen.getByText('Edit Worker settings')).toBeInTheDocument();
   });
 
@@ -601,7 +601,7 @@ describe('CommandPaletteDialog', () => {
     render(<CommandPaletteDialog />);
     const item = screen.getAllByText('Worker')[0].closest('[data-slot="command-item"]');
     if (item) fireEvent.click(item as Element);
-    const newSession = screen.getByText('New session').closest('[data-slot="command-item"]');
+    const newSession = screen.getByText('New chat').closest('[data-slot="command-item"]');
     if (newSession) fireEvent.click(newSession as Element);
 
     expect(mockSetDir).not.toHaveBeenCalled();

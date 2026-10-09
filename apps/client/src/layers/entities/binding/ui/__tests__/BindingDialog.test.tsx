@@ -206,7 +206,7 @@ describe('BindingDialog', () => {
       render(<BindingDialog {...defaultCreateProps} />, { wrapper: Wrapper });
       // Description is visible only when the Advanced section is expanded.
       fireEvent.click(screen.getByText('Advanced'));
-      expect(screen.getByText(/shares the same thread of memory/i)).toBeInTheDocument();
+      expect(screen.getByText(/shares one chat with the agent/i)).toBeInTheDocument();
     });
 
     it('calls onConfirm with correct values on submit', async () => {

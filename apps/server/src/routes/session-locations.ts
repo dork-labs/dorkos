@@ -9,11 +9,11 @@ import { readOwnerAccount, type RequestUser } from '../services/core/auth/index.
 import { refuseIfNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
 
 const PERSON_BAR: PersonBarCopy = {
-  error: 'Only a person can choose a session folder.',
+  error: 'Only a person can choose a chat folder.',
   code: 'SESSION_LOCATION_PERSON_REQUIRED',
-  subject: 'session folders',
-  crossSite: () => 'Open DorkOS to choose a session folder.',
-  agent: 'Only a person can choose a session folder.',
+  subject: 'chat folders',
+  crossSite: () => 'Open DorkOS to choose a chat folder.',
+  agent: 'Only a person can choose a chat folder.',
 };
 const bodySchema = z.object({ cwd: z.string().min(1) }).strict();
 const idSchema = z.uuid();
@@ -33,7 +33,7 @@ export function createSessionLocationsRouter(db: Db) {
   });
   router.post('/', async (req, res, next) => {
     const parsed = bodySchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: 'Choose a valid session folder.' });
+    if (!parsed.success) return res.status(400).json({ error: 'Choose a valid chat folder.' });
     const user = res.locals.user as RequestUser | undefined;
     const ownerId = user?.userId ?? readOwnerAccount()?.id ?? 'local';
     try {
@@ -53,7 +53,7 @@ export function createSessionLocationsRouter(db: Db) {
       if (size >= MAX_SESSION_LOCATIONS)
         return res
           .status(409)
-          .json({ error: 'Too many saved session folders.', code: 'SESSION_LOCATION_LIMIT' });
+          .json({ error: 'Too many saved chat folders.', code: 'SESSION_LOCATION_LIMIT' });
       const id = randomUUID();
       db.insert(sessionLocations)
         .values({ id, ownerId, cwd, createdAt: new Date().toISOString() })
@@ -67,7 +67,7 @@ export function createSessionLocationsRouter(db: Db) {
   });
   router.get('/:id', async (req, res, next) => {
     if (!idSchema.safeParse(req.params.id).success)
-      return res.status(404).json({ error: 'Session folder not found.' });
+      return res.status(404).json({ error: 'Chat folder not found.' });
     const user = res.locals.user as RequestUser | undefined;
     const ownerId = user?.userId ?? readOwnerAccount()?.id ?? 'local';
     const location = db
@@ -77,7 +77,7 @@ export function createSessionLocationsRouter(db: Db) {
         and(eq(sessionLocations.id, req.params.id as string), eq(sessionLocations.ownerId, ownerId))
       )
       .get();
-    if (!location) return res.status(404).json({ error: 'Session folder not found.' });
+    if (!location) return res.status(404).json({ error: 'Chat folder not found.' });
     try {
       // Revalidate on every read: boundary changes and symlink retargets cannot widen access.
       const cwd = await validateBoundaryOrDorkHome(location.cwd);

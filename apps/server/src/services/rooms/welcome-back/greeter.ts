@@ -269,11 +269,11 @@ export function welcomeBackLine(work: AgentAbsenceWork, now: number): string {
   if (work.sessions === 1) {
     return title
       ? `Worked on "${title}" while you were away. Last change ${ago}.`
-      : `Worked on one session while you were away. Last change ${ago}.`;
+      : `Worked on one chat while you were away. Last change ${ago}.`;
   }
   return title
-    ? `Worked on ${work.sessions} sessions while you were away. The most recent was "${title}", last changed ${ago}.`
-    : `Worked on ${work.sessions} sessions while you were away. Last change ${ago}.`;
+    ? `Worked on ${work.sessions} chats while you were away. The most recent was "${title}", last changed ${ago}.`
+    : `Worked on ${work.sessions} chats while you were away. Last change ${ago}.`;
 }
 
 /**

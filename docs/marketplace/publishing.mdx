@@ -118,7 +118,7 @@ People fill in settings, and agents write notes, inside an installed package's f
   Files that decide what your package runs can't be marked this way: `hooks/`, `.mcp.json`, `.lsp.json`, `monitors/`, `bin/`, `.dork/extensions/`, `.dork/tasks/`, `skills/`, `commands/`, `agents/`, `output-styles/`, a root `SKILL.md`, `package.json`, the folders coding agents read their settings from (`.claude/`, `.agents/`, `.codex/`, `.opencode/`, `.gemini/`, `opencode.json`, `opencode.jsonc`), and any other place your `plugin.json` points these at. When someone updates your package, they approve exactly what the new version runs, so an edited copy of one of these files must never be kept in its place.
 
 - **Don't ship these paths.** They belong to the person or to DorkOS, and validation refuses a package that includes them: `.dork/data/`, `.dork/secrets.json`, `.dork/install-metadata.json`, `.dork/installed-files.json`, `.dork/uninstalled-agent.json`, `.dork/saved/`, and any file ending in `.dork-old` or `.dork-new`.
-- **An agent package can't ship settings for its own sessions.** An agent's package folder is also the folder its sessions run in, so Claude Code, Codex and OpenCode would load any settings there without anyone seeing them. Validation refuses an agent package that includes:
+- **An agent package can't ship settings for its own chats.** An agent's package folder is also the folder its chats run in, so Claude Code, Codex and OpenCode would load any settings there without anyone seeing them. Validation refuses an agent package that includes:
   - `.claude/settings.json` or `.claude/settings.local.json`;
   - a top-level `.mcp.json`;
   - `.codex/`;
@@ -294,7 +294,7 @@ Before you open that PR, run through the install as a stranger would:
 1. Point a clean DorkOS instance (or one where you've removed the package) at your fork: `dorkos marketplace add https://github.com/you/your-fork --name test`.
 2. Install it: `dorkos install my-package@test`.
 3. Confirm the permission preview shown before install matches what your package actually does. If it asks for less (or more) than expected, that's a manifest problem, not a DorkOS bug.
-4. Open a session and confirm your skills, commands, or hooks actually run.
+4. Open a chat and confirm your skills, commands, or hooks actually run.
 5. If you shipped a plugin with extensions, check that it shows up in the slot it registered for, like the right-hand panel or the Activity tab.
 
 <Callout type="info">

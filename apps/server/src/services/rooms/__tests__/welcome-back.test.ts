@@ -184,7 +184,7 @@ describe('the line an agent posts', () => {
     );
 
     expect(line).toBe(
-      'Worked on 3 sessions while you were away. The most recent was "Fix the flaky watcher test", last changed 2 hours ago.'
+      'Worked on 3 chats while you were away. The most recent was "Fix the flaky watcher test", last changed 2 hours ago.'
     );
   });
 
@@ -194,7 +194,7 @@ describe('the line an agent posts', () => {
       NOW
     );
 
-    expect(line).toBe('Worked on one session while you were away. Last change an hour ago.');
+    expect(line).toBe('Worked on one chat while you were away. Last change an hour ago.');
   });
 
   it('cannot close a context block or forge a line through a session title', () => {

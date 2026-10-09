@@ -245,7 +245,7 @@ export function AgentListItem({
               trailingAction: {
                 content: <LiveSessionsChip count={chipCount} />,
                 onClick: openSwitcher,
-                label: `${chipCount} live sessions, open the session switcher for ${displayName}`,
+                label: `${chipCount} live chats, open the chat switcher for ${displayName}`,
               },
             })}
       />

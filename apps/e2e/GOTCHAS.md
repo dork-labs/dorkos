@@ -46,7 +46,7 @@ about it. On three untouched, long-standing `chat-mock.spec.ts` tests:
 `--repeat-each=6` → **10 of 18 failed**; the same command with `--workers=1` →
 **18 of 18 passed**. And on the compaction suite (DOR-1215): **2 of 6 red** at
 `--repeat-each=3`, **0 of 6** with `--workers=1`. The failures look like product
-bugs — an empty transcript reading "Start a conversation", a card that never
+bugs — an empty transcript reading "Start a chat", a card that never
 rendered — and none of them is one.
 
 So: **`--repeat-each=N --workers=1`**, which is also what CI runs
@@ -102,7 +102,7 @@ it can flag a comment like "three times:"; use the marker for those.
 - **Waiting for the user's own message is not enough**, which is why
   `sendAndLand` also waits for an assistant message: an optimistic user bubble
   can be wiped when the session snapshot arrives, leaving the transcript back at
-  "Start a conversation" with no turn ever started — and a barrier that stopped
+  "Start a chat" with no turn ever started — and a barrier that stopped
   at the user bubble passes in exactly that case.
 - **A consequence for fixtures: every scripted scenario must SAY something before
   it blocks.** `todo-progress` originally emitted its three task creations and
@@ -138,8 +138,8 @@ locator that was pointing at the wrong thing.
   name, and it only renders while the card is ACTIVE, so the name is not stable
   either. `{ name: 'Allow', exact: true }` never matches.
 - **Always allow is the exception, and its name states the GRANT.** It carries
-  an explicit `aria-label`: `"Always allow, this session"` / `", this project"` /
-  `", all your Claude sessions"`, or plain `"Always allow"` when the runtime
+  an explicit `aria-label`: `"Always allow, this chat"` / `", this project"` /
+  `", all your Claude chats"`, or plain `"Always allow"` when the runtime
   named no scope (DOR-1462). No keyboard hint in it, and it does not change when
   the card goes active. Its visible text differs from its name — a middot sits
   where the comma is — so match on the name, not on `textContent`.

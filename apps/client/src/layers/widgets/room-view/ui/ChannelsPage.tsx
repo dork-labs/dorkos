@@ -120,7 +120,7 @@ function ChannelsPageBody() {
     return (
       <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-2 p-10 text-center text-sm">
         <MessagesSquare className="text-muted-foreground/50 size-10" aria-hidden />
-        <p className="text-foreground font-medium">Pick a conversation</p>
+        <p className="text-foreground font-medium">Pick a channel or DM</p>
         <p className="max-w-sm">
           {isMobile
             ? 'Open one from All, at the bottom of the screen.'

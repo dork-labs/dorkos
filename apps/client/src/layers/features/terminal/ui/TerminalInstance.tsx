@@ -191,7 +191,7 @@ export function TerminalInstance({
         // session back either) and skips the PTY destroy when this tab is later
         // closed — the shell belongs to the other window now.
         if (handle.closeInfo?.code === TERMINAL_CLOSE_SUPERSEDED) {
-          term.write('\r\n\x1b[2m[opened in another window, session moved]\x1b[0m\r\n');
+          term.write('\r\n\x1b[2m[opened in another window, terminal moved]\x1b[0m\r\n');
           onSupersededRef.current();
           return;
         }

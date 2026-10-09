@@ -80,7 +80,7 @@ export function useDefaultAgentSession(): DefaultAgentSession {
         .then((target) => navigate(target))
         .catch((error) => {
           reportClientError(transport, error);
-          toast.error('Could not open the conversation. Try again.');
+          toast.error('Couldn’t open the chat. Try again.');
         });
   }, [navigate, defaultAgentDir, registeredEntry, transport]);
 

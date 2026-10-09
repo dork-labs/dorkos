@@ -87,7 +87,7 @@ interface DispatchOutcome {
 
 `starved` is the G3 contract in one boolean: the loop now surfaces "0 ready, N shapeable: run a triage pass?" instead of stopping silently.
 
-**`resolveCommsChannel`** gained an `identityMode` input and a third channel. A parked question routes by where the agent is and who it is: a live session asks interactively; an unattended two-account agent uses `comment-and-assign`; an unattended **shared-account** agent uses `comment-and-nudge`: a durable `agent/needs-input` comment plus an out-of-band nudge promoted to the primary attention channel (Relay / Telegram / chat), because in shared mode an assignment to yourself is invisible.
+**`resolveCommsChannel`** gained an `identityMode` input and a third channel. A parked question routes by where the agent is and who it is: a live chat asks interactively; an unattended two-account agent uses `comment-and-assign`; an unattended **shared-account** agent uses `comment-and-nudge`: a durable `agent/needs-input` comment plus an out-of-band nudge promoted to the primary attention channel (Relay / Telegram / chat), because in shared mode an assignment to yourself is invisible.
 
 <Callout type="info">
   These oracles existed and were tested before #262, but had **zero runtime callers**: the loop was
@@ -247,7 +247,7 @@ Because the watermark is exclusive and advances to the newest entry, a second `p
 
 ## The `FlowRun` durable record
 
-Sessions are ephemeral by design (DorkOS sessions derive from SDK JSONL files), so the bridge that makes a run resumable is the **`FlowRun`** record: the session↔issue association, written to `flow-state.json`:
+Chats are ephemeral by design (DorkOS chats derive from SDK JSONL files), so the bridge that makes a run resumable is the **`FlowRun`** record: the chat↔issue association, written to `flow-state.json`:
 
 ```ts
 interface FlowRun {
@@ -264,7 +264,7 @@ interface FlowRun {
 }
 ```
 
-The **checkpoint is the git commit plus the JSONL session**, never ephemeral memory (charter G6). So the recovery reconciler **resumes** rather than restarts: it re-attaches the worktree at HEAD and resumes the captured `sessionId`, and only restarts clean when there is nothing to resume. The store follows the same purity pattern as the transport: the parse/serialize/prune logic is pure (`parseFlowState`, `pruneClosedRuns`, `gcFlowState`), and the fs I/O is an injected `FlowStateStore` seam, so disk is truth (ADR-0043 file-first write-through) and the engine core stays free of `fs`.
+The **checkpoint is the git commit plus the chat's JSONL transcript**, never ephemeral memory (charter G6). So the recovery reconciler **resumes** rather than restarts: it re-attaches the worktree at HEAD and resumes the captured `sessionId`, and only restarts clean when there is nothing to resume. The store follows the same purity pattern as the transport: the parse/serialize/prune logic is pure (`parseFlowState`, `pruneClosedRuns`, `gcFlowState`), and the fs I/O is an injected `FlowStateStore` seam, so disk is truth (ADR-0043 file-first write-through) and the engine core stays free of `fs`.
 
 This is what the recovery reconciler reads each tick: it lists `agent/claimed` + `started` + not-`needs-input` items, pairs each with its `FlowRun` plus a liveness probe, and hands the pair to `recoverOrphan` for the verdict.
 

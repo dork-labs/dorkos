@@ -254,7 +254,7 @@ function linkedText(
   if (match === null) {
     return (
       <>
-        {text} {anchor('Open session')}
+        {text} {anchor('Open chat')}
       </>
     );
   }

@@ -264,7 +264,7 @@ describe('usePresenceStrip', () => {
     });
 
     await user.click(
-      await screen.findByRole('button', { name: 'Watch tangerines: working in a session' })
+      await screen.findByRole('button', { name: 'Watch tangerines: working in a chat' })
     );
 
     await waitFor(() => expect(router.state.location.pathname).toBe('/session'));
@@ -365,7 +365,7 @@ describe('usePresenceStrip', () => {
     });
 
     expect(
-      await screen.findByRole('button', { name: 'Watch tangerines: working in a session' })
+      await screen.findByRole('button', { name: 'Watch tangerines: working in a chat' })
     ).toBeInTheDocument();
   });
 

@@ -120,9 +120,7 @@ export function ContextItem({ percent, contextUsage, compact, reading, now }: Co
             onClick={compact.onCompact}
             disabled={compact.pending}
             aria-label={
-              compact.pending
-                ? 'Compacting conversation…'
-                : `Context ${displayPercent}% full. Compact now`
+              compact.pending ? 'Compacting chat…' : `Context ${displayPercent}% full. Compact now`
             }
             aria-busy={compact.pending}
             data-testid="compaction-chip"

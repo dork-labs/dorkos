@@ -114,7 +114,7 @@ export class DoeRuntime extends DoeSessionRuntime implements AgentRuntime {
     }
   ): AsyncGenerator<StreamEvent> {
     if (this.closing) throw new Error('The runtime is shutting down.');
-    if (this.active.has(id)) throw new Error('This conversation already has a running turn.');
+    if (this.active.has(id)) throw new Error('This chat already has a running turn.');
     const existing = this.sessions.get(id);
     const cwd = canonicalDoeCwd(
       opts?.cwd ?? existing?.session.cwd ?? this.options.defaultCwd ?? DEFAULT_CWD

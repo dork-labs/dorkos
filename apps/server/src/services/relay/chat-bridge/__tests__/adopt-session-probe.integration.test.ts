@@ -198,7 +198,7 @@ describe('session adoption against real sessions.json + TranscriptReader (§7.3)
       .listEntries(id, { limit: 100 })
       .filter((e) => e.kind === 'notice' && e.body.notice === 'bridge_history_note');
     expect(notices).toHaveLength(1);
-    expect((notices[0].body as { text: string }).text).toContain('picks up a conversation');
+    expect((notices[0].body as { text: string }).text).toContain('continues an exchange');
   });
 
   it('probe FAIL: a stale sessions.json id with no transcript starts fresh and still vacates the map', async () => {
@@ -218,7 +218,7 @@ describe('session adoption against real sessions.json + TranscriptReader (§7.3)
     const notice = harness.store
       .listEntries(id, { limit: 100 })
       .find((e) => e.kind === 'notice' && e.body.notice === 'bridge_history_note');
-    expect((notice!.body as { text: string }).text).toContain('starts a new conversation');
+    expect((notice!.body as { text: string }).text).toContain('starts fresh');
   });
 
   it('no candidate: an empty sessions.json starts fresh, adopting nothing', async () => {

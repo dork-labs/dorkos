@@ -55,7 +55,7 @@ The local Community implementation is registered at startup. After installation 
 
 [![Message acceptance, queueing, runtime execution and resumable event delivery](/diagrams/architecture/session-flow.svg)](/diagrams/architecture/session-flow.svg)
 
-A message POST returns `202` with an acceptance receipt. It does not carry the reply or prove that a turn has begun. `turn_start` on the event stream marks execution. Busy sessions queue messages durably.
+A message POST returns `202` with an acceptance receipt. It does not carry the reply or prove that a turn has begun. `turn_start` on the event stream marks execution. Busy chats queue messages durably.
 
 | Boundary                    | Protocol                                                                                                                   |
 | --------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
@@ -73,7 +73,7 @@ WebSocket reconnection sends the opaque cursor as `?resume=`; SSE uses `Last-Eve
 
 [![Local rooms, messaging bridges, and the independent space server](/diagrams/architecture/community.svg)](/diagrams/architecture/community.svg)
 
-A Community host owns host-wide sign-in and tenant-scoped membership and posts. Canonical routes name the immutable community UUID; unqualified routes are compatibility aliases for a single-community host. Host operators and scoped machine keys manage containers, limits and usage without becoming members. Separately scoped takedown and evidence operations provide exceptional moderation access; host keys remain refused on ordinary tenant content routes. It does not execute agent turns. Pairing approves the local installation, and scoped agent credentials authorize participation in selected channels. Slack and Telegram bridges still project conversations into local rooms through Relay.
+A Community host owns host-wide sign-in and tenant-scoped membership and posts. Canonical routes name the immutable community UUID; unqualified routes are compatibility aliases for a single-community host. Host operators and scoped machine keys manage containers, limits and usage without becoming members. Separately scoped takedown and evidence operations provide exceptional moderation access; host keys remain refused on ordinary tenant content routes. It does not execute agent turns. Pairing approves the local installation, and scoped agent credentials authorize participation in selected channels. Slack and Telegram bridges still project their chats and channels into local rooms through Relay.
 
 Server-owned subscriptions continue independently of browser SSE readers. Local room mirrors support dispatch; Community remains authoritative. A durable outbox confirms remote posts and checks Stop and revocation before delivery. The community switcher changes scope without changing where agents execute.
 
@@ -85,7 +85,7 @@ The host imports version 1 and 2 owner exports through a worker into an unclaime
 
 [![Internal runtime tools and explicit room publication](/diagrams/architecture/runtime-tools.svg)](/diagrams/architecture/runtime-tools.svg)
 
-Claude Code carries DorkOS tools in-process. Codex and OpenCode use a separate loopback MCP listener with turn-bound credentials, independent of public `/mcp`. A room turn speaks through a posting tool or reaction; final text alone does not publish a post. Signed-in agent browsers use their own managed MCP configuration and local saved website sessions; see [the browser guide](/docs/guides/agent-browser) for verification limits.
+Claude Code carries DorkOS tools in-process. Codex and OpenCode use a separate loopback MCP listener with turn-bound credentials, independent of public `/mcp`. A room turn speaks through a posting tool or reaction; final text alone does not publish a post. Signed-in agent browsers use their own managed MCP configuration and keep their website sign-ins saved locally; see [the browser guide](/docs/guides/agent-browser) for verification limits.
 
 ## Marketplace delivery
 
@@ -101,7 +101,7 @@ The public `packages/cloud-api` package defines schemas, routes, fixtures and a 
 
 The contract's remote command stream uses SSE and has lease/acknowledgement semantics. The existing local tunnel manager separately uses the ngrok SDK; the managed command consumer remains separate app-side work. Remote browser traffic travels through the tunnel to the local server. Credits inference is another optional path, selected through Runs on on a linked installation. The environment variable can disable credits; it cannot authorize spending. Local DorkOS and Community both run without Cloud.
 
-The account surface asks Cloud for opaque offers and short-lived hosted billing URLs; payment happens in a browser. Account export is a service job, separate from exporting a community. Claude Code selects credits per session. Codex binds a new conversation to its credits home. OpenCode selects credits for its whole sidecar and waits for running replies before switching. Its local relay holds the Cloud token outside the sidecar. Codex and OpenCode require their format in the token’s served list; there is no fallback to a different payer.
+The account surface asks Cloud for opaque offers and short-lived hosted billing URLs; payment happens in a browser. Account export is a service job, separate from exporting a community. Claude Code selects credits per chat. Codex binds a new chat to its credits home. OpenCode selects credits for its whole sidecar and waits for running replies before switching. Its local relay holds the Cloud token outside the sidecar. Codex and OpenCode require their format in the token’s served list; there is no fallback to a different payer.
 
 ### Account handover
 
@@ -179,9 +179,9 @@ DorkOS is a Turborepo monorepo. The apps and the packages that matter most for t
 
 ## The Transport Interface
 
-The core abstraction is the **Transport** interface (`packages/shared/src/transport.ts`). It defines all client-server communication: session management, messaging, tool interaction, Tasks, Relay, Mesh, and agent identity.
+The core abstraction is the **Transport** interface (`packages/shared/src/transport.ts`). It defines all client-server communication: chat management, messaging, tool interaction, Tasks, Relay, Mesh, and agent identity.
 
-A condensed view of the core methods (there is no separate `createSession`; posting a message with a fresh client-generated session id creates it on first send):
+A condensed view of the core methods (there is no separate `createSession`; posting a message with a fresh client-generated chat ID creates it on first send):
 
 ```typescript
 interface Transport {
@@ -211,8 +211,8 @@ The interface extends further to cover Tasks schedules, Relay messaging, Mesh ag
 `HttpTransport` communicates with the Express server over HTTP:
 
 - Uses `fetch()` for CRUD operations
-- Triggers turns via `postMessage()` (`POST /sessions/:id/messages`, `202` with the canonical session id)
-- Session events arrive separately on the durable streams (`GET /sessions/:id/events`, `GET /events`) owned by `StreamManager`
+- Triggers turns via `postMessage()` (`POST /sessions/:id/messages`, `202` with the canonical chat ID)
+- Chat events arrive separately on the durable streams (`GET /sessions/:id/events`, `GET /events`) owned by `StreamManager`
 
 **Location:** `apps/client/src/layers/shared/lib/transport/http-transport.ts`
 
@@ -261,7 +261,7 @@ Routes are thin HTTP handlers. They obtain the active runtime via `runtimeRegist
   type={{
     'sessions.ts': {
       type: 'route',
-      description: 'Session listing, creation, message streaming, tool approval/denial',
+      description: 'Chat listing, creation, message streaming, tool approval/denial',
     },
     'commands.ts': { type: 'route', description: 'Slash command discovery' },
     'capabilities.ts': {
@@ -310,7 +310,7 @@ The services behind those routes, grouped by domain (also not exhaustive):
     'runtime-registry.ts': {
       type: 'core',
       description:
-        'Registry of AgentRuntime instances keyed by type: default, per-session (first-write-wins), and per-agent resolution',
+        'Registry of AgentRuntime instances keyed by type: default, per-chat (first-write-wins), and per-agent resolution',
     },
     'claude-code-runtime.ts': {
       type: 'runtime',
@@ -318,7 +318,7 @@ The services behind those routes, grouped by domain (also not exhaustive):
     },
     'codex/codex-runtime.ts': {
       type: 'runtime',
-      description: 'CodexRuntime: maps DorkOS sessions to Codex SDK threads (@openai/codex-sdk)',
+      description: 'CodexRuntime: maps DorkOS chats to Codex SDK threads (@openai/codex-sdk)',
     },
     'opencode/opencode-runtime.ts': {
       type: 'runtime',
@@ -327,11 +327,11 @@ The services behind those routes, grouped by domain (also not exhaustive):
     },
     'sessions/transcript-reader.ts': {
       type: 'runtime',
-      description: 'Reads SDK JSONL transcript files: source of truth for Claude Code session data',
+      description: 'Reads SDK JSONL transcript files: source of truth for Claude Code chat data',
     },
     'session/session-list-broadcaster.ts': {
       type: 'core',
-      description: 'Fans every runtime session-list stream onto the global GET /api/events feed',
+      description: 'Fans every runtime chat-list stream onto the global GET /api/events feed',
     },
     'stream-adapter.ts': {
       type: 'core',
@@ -403,19 +403,19 @@ The services behind those routes, grouped by domain (also not exhaustive):
   }}
 />
 
-### Session Storage: Runtime-Owned
+### Chat Storage: Runtime-Owned
 
 <Callout type="info">
-  There is **no universal transcript store**: history is handled per runtime, and `GET
-  /api/sessions` aggregates across all registered runtimes, tagging every session with its `runtime`
+  There is **no universal transcript store**: history is handled per runtime. A `GET` to
+  `/api/sessions` aggregates across all registered runtimes, tagging every chat with its `runtime`
   type. A failing runtime degrades to partial results plus a warning, never a failed request.
 </Callout>
 
-- **Claude Code**: `TranscriptReader` scans SDK JSONL files at `~/.claude/projects/\{slug\}/*.jsonl`. All sessions are visible regardless of which client created them (CLI, DorkOS, or otherwise); `ClaudeCodeRuntime` calls SDK `query()` with `resume: sessionId` for continuity across clients.
-- **Codex**: one DorkOS session per SDK thread. The `codex_threads` table persists the binding and display metadata. The SDK exposes no thread-listing or history-reading API, so DorkOS reconstructs displayed history from its own persisted event log and lists the threads this server tracked.
-- **OpenCode**: sessions live in the sidecar's own store, read via `@opencode-ai/sdk`.
-- No delete endpoint: sessions persist in each runtime's storage.
-- A session's runtime is fixed when it starts (persisted first-write-wins in `session_metadata`).
+- **Claude Code**: `TranscriptReader` scans SDK JSONL files at `~/.claude/projects/\{slug\}/*.jsonl`. All chats are visible regardless of which client created them (CLI, DorkOS, or otherwise); `ClaudeCodeRuntime` calls SDK `query()` with `resume: sessionId` for continuity across clients.
+- **Codex**: one DorkOS chat per SDK thread. The `codex_threads` table persists the binding and display metadata. The SDK exposes no thread-listing or history-reading API, so DorkOS reconstructs displayed history from its own persisted event log and lists the threads this server tracked.
+- **OpenCode**: chats live in the sidecar's own store, read via `@opencode-ai/sdk`.
+- No delete endpoint: chats persist in each runtime's storage.
+- A chat's runtime is fixed when it starts (persisted first-write-wins in `session_metadata`).
 
 ## Client Architecture
 
@@ -428,13 +428,13 @@ The React client (`apps/client/`) uses Feature-Sliced Design (FSD):
 | `shared/ui/`            | Reusable UI primitives            | Badge, Dialog, Select, Tabs (shadcn)                                          |
 | `shared/model/`         | Hooks, stores, context            | TransportContext, app-store, useTheme                                         |
 | `shared/lib/`           | Domain-agnostic utilities         | cn(), font-config, celebrations                                               |
-| `entities/session/`     | Session domain hooks              | useSessionId, useSessions                                                     |
+| `entities/session/`     | Chat domain hooks                 | useSessionId, useSessions                                                     |
 | `entities/runtime/`     | Runtime capabilities              | useRuntimeCapabilities                                                        |
 | `entities/agent/`       | Agent identity hooks              | useCurrentAgent, useAgentVisual                                               |
 | `entities/tasks/`       | Task scheduler hooks              | useTasksEnabled, useSchedules, useRuns                                        |
 | `entities/relay/`       | Relay messaging hooks             | useRelayEnabled, useRelayMessages                                             |
 | `entities/mesh/`        | Mesh discovery hooks              | useMeshEnabled, useRegisteredAgents                                           |
-| `features/chat/`        | A session's own machinery         | useChatSession, SessionMessage, ToolCallCard                                  |
+| `features/chat/`        | A chat's own machinery            | useChatSession, SessionMessage, ToolCallCard                                  |
 | `features/chat-list/`   | One agent's chats                 | ChatList, buildChatList                                                       |
 | `features/settings/`    | Settings UI                       | SettingsDialog                                                                |
 | `features/tasks/`       | Task scheduler UI                 | TasksPanel, CreateScheduleDialog                                              |
@@ -454,7 +454,7 @@ The React client (`apps/client/`) uses Feature-Sliced Design (FSD):
 ### State Management
 
 - **Zustand** for UI state (sidebar, theme, etc.): `layers/shared/model/app-store.ts`
-- **TanStack Query** for server state (sessions, messages, commands, schedules)
+- **TanStack Query** for server state (chats, messages, commands, schedules)
 - **URL Parameters** (standalone mode): `?session=` and `?dir=` persist state in the URL
 
 ## Data Flow: Message from UI to Claude and Back
@@ -481,7 +481,7 @@ React state updates → UI re-renders with new message chunks
 
 ### SessionEvent Types
 
-Runtimes yield internal `StreamEvent` objects; the per-session projector normalizes them into the runtime-neutral `SessionEvent` union (`packages/shared/src/session-stream.ts`), each carrying a monotonic `seq`:
+Runtimes yield internal `StreamEvent` objects; the per-chat projector normalizes them into the runtime-neutral `SessionEvent` union (`packages/shared/src/session-stream.ts`), each carrying a monotonic `seq`:
 
 <TypeTable
   type={{
@@ -527,11 +527,11 @@ Runtimes yield internal `StreamEvent` objects; the per-session projector normali
   }}
 />
 
-## Session Event Stream
+## Chat Event Stream
 
-All session state is delivered on a durable per-session stream: `GET /api/sessions/:id/events`. The DorkOS client opens it as a WebSocket and integrations may open the same path as SSE (ADR 260805-041016). A cold connect receives a `snapshot` (history, in-progress turn, status, pending interactions, cursor), then live events. On reconnect the resume cursor (`Last-Event-ID` over SSE, `?resume=` over a socket) resumes from the last applied `seq` and the server replays the gap, or falls back to a fresh snapshot if it cannot. This one stream is also the multi-client sync mechanism: Turns triggered by other connected clients appear automatically. External CLI visibility depends on the runtime; Claude Code transcript watching supports it, while the Codex session list is limited to tracked threads.
+All chat state is delivered on a durable per-chat stream: `GET /api/sessions/:id/events`. The DorkOS client opens it as a WebSocket and integrations may open the same path as SSE (ADR 260805-041016). A cold connect receives a `snapshot` (history, in-progress turn, status, pending interactions, cursor), then live events. On reconnect the resume cursor (`Last-Event-ID` over SSE, `?resume=` over a socket) resumes from the last applied `seq` and the server replays the gap, or falls back to a fresh snapshot if it cannot. This one stream is also the multi-client sync mechanism: Turns triggered by other connected clients appear automatically. External CLI visibility depends on the runtime; Claude Code transcript watching supports it, while the Codex chat list is limited to tracked threads.
 
-The session list stays live via the global `GET /api/events` stream (`session_upserted` / `session_removed` / `session_status`), with no polling.
+The chat list stays live via the global `GET /api/events` stream (`session_upserted` / `session_removed` / `session_status`), with no polling.
 
 ## Testing
 
@@ -580,6 +580,6 @@ This pattern provides type safety and explicit test setup without global mocks.
     REST and SSE endpoints with the interactive Scalar UI
   </Card>
   <Card title="SSE Protocol" href="/docs/integrations/sse-protocol">
-    Deep dive into real-time streaming and session sync
+    Deep dive into real-time streaming and chat sync
   </Card>
 </Cards>

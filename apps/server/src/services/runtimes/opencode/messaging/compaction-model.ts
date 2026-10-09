@@ -96,9 +96,9 @@ export async function resolveCompactionModel(
   if (configured) return configured;
 
   throw new Error(
-    'OpenCode compaction needs a model and nothing names one: this session has no model set in ' +
+    'OpenCode compaction needs a model and nothing names one: this chat has no model set in ' +
       'DorkOS, has not run a turn yet, and your OpenCode config sets no default `model`. Pick a ' +
-      'model for the session, then compact again.'
+      'model for the chat, then compact again.'
   );
 }
 

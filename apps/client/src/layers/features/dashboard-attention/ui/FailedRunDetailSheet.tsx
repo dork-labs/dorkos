@@ -250,7 +250,7 @@ export function FailedRunDetailSheet({ open, itemId, onClose }: FailedRunDetailS
         <SheetFooter>
           {run?.sessionId && (
             <Button variant="default" onClick={handleViewSession}>
-              View session
+              View chat
             </Button>
           )}
           {run?.status === 'running' && (

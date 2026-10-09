@@ -15,9 +15,9 @@ import type { AlwaysAllowScope } from '@dorkos/shared/types';
 
 /** The scope sentence for each grant reach, as shown beside "Always Allow". */
 const SCOPE_LABELS: Record<AlwaysAllowScope, string> = {
-  session: 'this session',
+  session: 'this chat',
   project: 'this project',
-  user: 'all your Claude sessions',
+  user: 'all your Claude chats',
 };
 
 /**

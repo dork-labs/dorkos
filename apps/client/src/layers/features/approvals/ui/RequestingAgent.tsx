@@ -54,7 +54,7 @@ export interface RequestingAgentProps {
  * over is known exactly. These say the known thing instead.
  */
 const ORIGIN_LABEL: Record<ApprovalOrigin, string> = {
-  session: 'Asked from a session on this computer',
+  session: 'Asked from a chat on this computer',
   'external-mcp': 'Asked by an app connected to DorkOS',
 };
 

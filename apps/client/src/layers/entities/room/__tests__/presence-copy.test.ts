@@ -103,7 +103,7 @@ describe('heldSentence', () => {
     // cannot see that room is told THAT something is in the way and never which
     // conversation. Red the moment this falls back to an id, a slug or nothing.
     expect(heldSentence(['Mio Clicker PM'], null)).toBe(
-      'Mio Clicker PM will pick this up when it finishes in another conversation'
+      'Mio Clicker PM will pick this up when it finishes in another chat'
     );
   });
 
@@ -113,10 +113,10 @@ describe('heldSentence', () => {
     // The named room is only the one it has been in longest, so the sentence
     // keeps it as a place to look and stops promising it.
     expect(heldSentence(['Mio Clicker PM'], '#mio-engagement', true)).toBe(
-      'Mio Clicker PM will pick this up when it finishes in #mio-engagement or another conversation'
+      'Mio Clicker PM will pick this up when it finishes in #mio-engagement or another chat'
     );
     expect(heldSentence(['Mio Clicker PM'], null, true)).toBe(
-      'Mio Clicker PM will pick this up when it finishes one of its other conversations'
+      'Mio Clicker PM will pick this up when it finishes one of its other chats'
     );
   });
 

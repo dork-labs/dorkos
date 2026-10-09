@@ -27,7 +27,7 @@ Out of the box:
 
 - No accounts, no sign-in screen. Instant start.
 - The server binds to `localhost`, so only your own machine can reach it.
-- Your sessions, agent chats, and code stay in files on your disk. There is no cloud copy.
+- Your chats with agents and your code stay in files on your disk. There is no cloud copy.
 
 This is the right default for a tool on your own laptop, and it is also the reason the next section matters so much: **the moment you want to reach DorkOS from another device, the rules change.**
 
@@ -43,7 +43,7 @@ Reaching DorkOS from your phone or another machine means exposing it, either by 
 
 Once exposed:
 
-- Remote visitors get the sign-in screen. Static assets load so the page renders, but every API call needs a valid session.
+- Remote visitors get the sign-in screen. Static assets load so the page renders, but every API call needs a valid sign-in.
 - Registration is **owner-only**. The first account is the owner and further sign-ups are closed, because anyone who can drive agents effectively has your machine's file access and spends your AI quota. A viewer/operator role that safely admits more people is planned, not shipped.
 - You can add a second factor at the tunnel edge (ngrok basic auth) on top of login.
 
@@ -61,7 +61,7 @@ See [Securing your instance](/docs/self-hosting/securing-your-instance) for the 
 DorkOS ships a tool endpoint at `/mcp` so external agents and scripts can drive it. **It is closed by default, on localhost too.** What you send to open it depends on whether you have turned on login:
 
 - **Login off (the default).** Anything that changes something on your machine — installing a package, creating an agent, running extension code — needs your **local MCP token**, a file only someone signed in to your computer can read. Without it, those calls come back `401`. What still answers with no token is the handshake and read-only checks: listing the tools, `ping`, `get_server_info`. A tool DorkOS does not recognise is refused rather than allowed, so a tool added later starts out closed.
-- **Login on.** The login gate covers `/mcp` like the rest of the API, so every call needs a session or a per-user API key, and the local token steps aside.
+- **Login on.** The login gate covers `/mcp` like the rest of the API, so every call needs a sign-in or a per-user API key, and the local token steps aside.
 - **Exposing the server** does not loosen either rule; it adds the exposure guard on top. The server refuses to bind to a public address without a login. Two things get past that guard, and both are worth knowing: the official Docker image opts out of it on purpose (the callout above), and a reverse proxy in front of a loopback bind is a path it never sees, because it only inspects the address DorkOS itself binds to.
 
 <Callout type="warn">
@@ -83,9 +83,9 @@ Agents can talk to each other and to you through the relay. These controls keep 
 
 - **Budgets are enforced before delivery.** Every message passes an authoritative budget and hop check before it is delivered, so a runaway loop is stopped at the source, not just in a mailbox. Cascade depth, cycles, and per-agent call budgets are all bounded.
 - **An hourly ceiling caps the cost, whatever the route in.** A message, a scheduled task, and an outside system speaking A2A all end at the same counted checkpoint before a turn starts, so no route around the relay buys a bigger allowance. You set the cap per agent and for everything combined; see [Relay Messaging](/docs/guides/relay-messaging#the-hourly-ceiling).
-- **An agent cannot choose its own identity through the supported messaging path.** The server resolves the "from" address from the session instead of trusting the tool call. This stops one normal agent call from naming another agent. It is not operating-system isolation: software running as your user can read the same files and credentials that you can.
-- **A message never raises an agent's power.** A turn another agent's message starts runs no looser than the agent that sent it. A message a bridged Telegram or Slack chat posts into a room, or one from another company's agent over A2A, runs at the level a brand-new chat starts at, even in a conversation set to Full autonomy. A chat that turn starts can be no stronger than it.
-- **Reaching a human is a consent choice.** Whether an agent may start a conversation with you on a chat app like Telegram is set for each agent on each chat app.
+- **An agent cannot choose its own identity through the supported messaging path.** The server resolves the "from" address from the chat the agent is running in instead of trusting the tool call. This stops one normal agent call from naming another agent. It is not operating-system isolation: software running as your user can read the same files and credentials that you can.
+- **A message never raises an agent's power.** A turn another agent's message starts runs no looser than the agent that sent it. A message a bridged Telegram or Slack chat posts into a room, or one from another company's agent over A2A, runs at the level a brand-new chat starts at, even in a chat set to Full autonomy. A chat that turn starts can be no stronger than it.
+- **Reaching a human is a consent choice.** Whether an agent may start a chat with you on a chat app like Telegram is set for each agent on each chat app.
 
 ## What stops an agent operating DorkOS itself
 
@@ -99,9 +99,9 @@ Agents do not only write code here. They can create agents, schedule work, chang
 
 Six actions carry the last label today: removing an installed package, deleting a scheduled task, removing an agent, changing an agent's safety boundaries, changing what an agent runs on (its runtime, model or effort), and running a package from a folder. Changing what an agent runs on can be changed back, and carries the label anyway because every schedule that follows the agent runs differently from then on. Running a package from a folder lets whatever is in that folder run, edits included, without another review. Installing a package and creating one also wait, through the marketplace's own confirmation, because both bring new code onto your machine.
 
-The gate is not advice. It sits at the composition root of the two tool servers that carry these actions, and inside the capability registry, below every caller, so a session's permission mode cannot reach it: an agent in bypass-permissions mode still stops at these five. A new tool with no declared label fails the server build rather than running unlabelled.
+The gate is not advice. It sits at the composition root of the two tool servers that carry these actions, and inside the capability registry, below every caller, so a chat's permission mode cannot reach it: an agent in bypass-permissions mode still stops at these five. A new tool with no declared label fails the server build rather than running unlabelled.
 
-There is a third, much smaller tool server, for Codex sessions, and it is outside that gate. It carries exactly one tool, for changing what the app is showing you, which is in the middle group above and would not stop to ask in any case. Nothing that changes your files or your setup is reachable through it.
+There is a third, much smaller tool server, for Codex chats, and it is outside that gate. It carries exactly one tool, for changing what the app is showing you, which is in the middle group above and would not stop to ask in any case. Nothing that changes your files or your setup is reachable through it.
 
 <Callout type="warn">
   **How much that gate is worth depends on whether login is on, and the two answers are genuinely
@@ -141,11 +141,11 @@ one the app itself made — so anything with a shell on this machine can make th
 the app could: sharing an app, narrowing it, disconnecting it. Sharing an app with **Every agent** is
 just the widest version of that change, worth naming because it needs no per-agent review: a caller
 with a shell on this machine could turn it on for itself and every other agent. Turning login on
-closes the gap for all of these writes, because only the signed-in owner's session can make them from
+closes the gap for all of these writes, because only the signed-in owner can make them from
 then on.
 
 During a turn, DorkOS gives the runtime a private Connections token. The server checks its runtime,
-session, registered agent, working folder, and server start. The token has a four-hour
+chat, registered agent, working folder, and server start. The token has a four-hour
 expiry window. Finishing the turn or restarting the server invalidates it. Each account action still needs
 the right grant.
 

@@ -195,7 +195,7 @@ export function OwnerReplacementClaim() {
       else if (cause instanceof RequestError && cause.status === 401) {
         setAccount(null);
         setStage('account');
-        setError('Your session ended. Sign in again to take ownership.');
+        setError('Your sign-in expired. Sign in again to take ownership.');
       } else setError(describeError(cause));
     } finally {
       setBusy(false);

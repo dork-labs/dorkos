@@ -211,7 +211,7 @@ describe('account.limited', () => {
     expect(limited).toHaveLength(2);
     const repeat = limited.find((r) => r.body !== undefined && r.body !== null);
     expect(repeat?.body).toBe(
-      'DorkOS could not move it automatically, so the session is waiting for you.'
+      'DorkOS could not move it automatically, so the chat is waiting for you.'
     );
   });
 });

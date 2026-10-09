@@ -53,7 +53,7 @@ const STATE_DOT_CLASS: Record<CardAdapterState, string> = {
  */
 function buildRestrictionDetail(binding: AdapterBinding): string {
   const parts: string[] = [];
-  if (binding.canInitiate) parts.push('Can start conversations');
+  if (binding.canInitiate) parts.push('Can message first');
   if (!binding.canReply) parts.push('Can’t reply');
   if (!binding.canReceive) parts.push('Can’t receive');
   return parts.join(' · ');

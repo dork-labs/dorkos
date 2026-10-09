@@ -157,7 +157,7 @@ function warnIfVersionDrifted(binary: string, version: string): string | undefin
 /** Check that the OpenCode CLI binary resolves and answers `--version`. */
 async function checkCliBinary(binary: string | null): Promise<DependencyCheck> {
   const name = 'OpenCode CLI';
-  const description = 'The OpenCode CLI powers OpenCode agent sessions in DorkOS.';
+  const description = 'The OpenCode CLI powers OpenCode agent chats in DorkOS.';
 
   if (binary) {
     try {

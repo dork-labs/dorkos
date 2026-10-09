@@ -206,7 +206,7 @@ export function recordCarryOverActivity(
       eventType: 'session.continued',
       resourceType: 'session',
       resourceId: entry.newSessionId,
-      summary: `Moved a session from ${from} to ${to} because ${from} ran out of usage`,
+      summary: `Moved a chat from ${from} to ${to} because ${from} ran out of usage`,
       linkPath: sessionPath({ session: entry.newSessionId }),
       metadata: {
         by: entry.by,
@@ -324,7 +324,7 @@ export async function carryOverSession(request: CarryOverRequest): Promise<strin
     throw new CarryOverError(
       409,
       'CWD_UNKNOWN',
-      'DorkOS does not know which folder this session worked in, so it cannot continue it elsewhere.'
+      'DorkOS doesn’t know which folder this chat worked in, so it can’t continue it elsewhere.'
     );
   }
   // Defence in depth (spec `flow-multiproject` §8.4): whoever chose the
@@ -461,7 +461,7 @@ async function launchCarriedSession(
     throw new CarryOverError(
       409,
       'NOT_STARTED',
-      'The new session could not start, so the work did not move.'
+      'The new chat couldn’t start, so the work didn’t move.'
     );
   }
   const newSessionId = result.canonicalId;

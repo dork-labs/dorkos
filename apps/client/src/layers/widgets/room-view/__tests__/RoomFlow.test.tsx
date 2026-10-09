@@ -238,7 +238,7 @@ describe('RoomFlow', () => {
 
   it('says the room keeps everything when the history could not be read', () => {
     renderTimeline({ error: new Error('offline') });
-    expect(screen.getByText(/Couldn’t load this conversation/i)).toBeInTheDocument();
+    expect(screen.getByText(/Couldn’t load these messages/i)).toBeInTheDocument();
   });
 
   it('invites you to add agents when nothing has been said', () => {

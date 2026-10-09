@@ -248,8 +248,8 @@ function ModelPrices() {
         <div>
           <dt className="text-charcoal font-medium">Rereading</dt>
           <dd>
-            Text the model read a moment ago in the same conversation. It costs a tenth or less of
-            reading, and it is most of what a long agent run uses.
+            Text the model read a moment ago in the same chat. It costs a tenth or less of reading,
+            and it is most of what a long agent run uses.
           </dd>
         </div>
         <div>
@@ -263,7 +263,7 @@ function ModelPrices() {
           It depends on the model and the work, so treat this as a rough guide. When we measured our
           own agents over a month, one agent working steadily for an hour on Claude Sonnet 5 came to
           about 1,000 to 2,000 credits ($10 to $20) at these prices. A busy hour came to 3,000 or
-          more. Each agent you run at the same time adds its own. Our use is heavy: long sessions on
+          more. Each agent you run at the same time adds its own. Our use is heavy: long chats on
           large projects. Lighter work costs less. Opus and Fable cost more.
         </p>
       </div>

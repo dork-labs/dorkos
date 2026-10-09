@@ -445,7 +445,7 @@ export function planWithConsent(
   // same reason `decisions` is: `dorkos harness sync --check` must not write,
   // and `conf`'s constructor creates the file when it is missing (DOR-678). It
   // decides one sentence — the drop each globally installed package earns says
-  // who can see it, and "only the Claude Code sessions DorkOS runs" stops being
+  // who can see it, and "only the Claude Code chats DorkOS runs" stops being
   // true the moment somebody answers the sharing question.
   const sharedWithTools = readGlobalSharingFromDisk(opts.dorkHome).harnesses.length > 0;
 

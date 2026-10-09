@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * "Start every new session in ⟨stop⟩?" — the offer that meets the intent where
+ * "Start every new chat in ⟨stop⟩?" — the offer that meets the intent where
  * it happens (spec `trust-dial`, decision 6C).
  *
  * The behaviour worth pinning is not that a line appears; it is everything that
@@ -351,7 +351,7 @@ describe('the offer appears where the habit is', () => {
     fireEvent.click(screen.getByTestId('select-act'));
 
     expect(await screen.findByTestId('make-default-offer')).toHaveTextContent(
-      'Start every new session in Act?'
+      'Start every new chat in Act?'
     );
   });
 
@@ -689,7 +689,7 @@ describe('Full autonomy as the standing default asks first', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Turn on Full autonomy' }));
 
     expect(await screen.findByTestId('make-default-offer')).toHaveTextContent(
-      'Start every new session in Full autonomy?'
+      'Start every new chat in Full autonomy?'
     );
   });
 
