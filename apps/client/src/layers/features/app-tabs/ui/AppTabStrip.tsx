@@ -1,9 +1,30 @@
-import { useRef } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Plus } from 'lucide-react';
-import { cn, formatShortcutKey, SHORTCUTS } from '@/layers/shared/lib';
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  horizontalListSortingStrategy,
+  sortableKeyboardCoordinates,
+} from '@dnd-kit/sortable';
+import { cn, formatShortcutKey, SHORTCUTS, useLatest } from '@/layers/shared/lib';
 import type { AppTab } from '@/layers/shared/model';
 import { useRovingTabList, type TabActivationSource } from '@/layers/shared/ui';
-import { AppTabItem } from './AppTabItem';
+import {
+  TAB_DRAG_DISTANCE_PX,
+  TAB_DRAG_INSTRUCTIONS,
+  TAB_DRAG_KEYS,
+  buildTabAnnouncements,
+  sameSideCollision,
+} from '../lib/tab-reorder';
+import type { AppTabMenuActions } from './AppTabContextMenu';
+import { APP_TAB_ID_ATTRIBUTE, SortableAppTab } from './SortableAppTab';
 
 interface AppTabStripProps {
   /** Open tabs, in strip order. */
@@ -16,6 +37,14 @@ interface AppTabStripProps {
   onClose: (id: string, source: TabActivationSource) => void;
   /** Open another tab. */
   onCreate: () => void;
+  /** The right-click menu's actions. No menu when absent. */
+  menu?: AppTabMenuActions;
+  /**
+   * Move the tab at `from` to `to`, after a drag. Tabs cannot be dragged when
+   * absent. A drag only ever offers places on the tab's own side of the pinned
+   * line.
+   */
+  onReorder?: (from: number, to: number) => void;
   /** Extra classes for the strip container (drag region, traffic-light inset). */
   className?: string;
 }
@@ -37,6 +66,10 @@ interface AppTabStripProps {
  * The last tab keeps no close control: a window with nothing in it has nothing
  * to show, and on desktop closing the last tab is the window's job.
  *
+ * Tabs can be dragged to a new place (pointer, or Space then the arrow keys)
+ * and right-clicked for a menu (or Shift+F10). Pinned tabs sit at the left,
+ * drawn as an icon only, and a drag keeps every tab on its own side of them.
+ *
  * @module features/app-tabs/ui/AppTabStrip
  */
 export function AppTabStrip({
@@ -45,10 +78,53 @@ export function AppTabStrip({
   onActivate,
   onClose,
   onCreate,
+  menu,
+  onReorder,
   className,
 }: AppTabStripProps) {
   const createButtonRef = useRef<HTMLButtonElement>(null);
   const canClose = tabs.length > 1;
+  const [dragActive, setDragActive] = useState(false);
+  const ids = useMemo(() => tabs.map((tab) => tab.id), [tabs]);
+  // Read by the collision rule and the announcements at the moment they run,
+  // so neither has to be rebuilt (and dnd-kit re-measured) on every change.
+  const latestTabs = useLatest(tabs);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: TAB_DRAG_DISTANCE_PX } }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+      keyboardCodes: TAB_DRAG_KEYS,
+    })
+  );
+
+  const { collisionDetection, announcements } = useMemo(() => {
+    const indexOf = (id: string) => latestTabs.read().findIndex((tab) => tab.id === id);
+    return {
+      collisionDetection: sameSideCollision(
+        (id) => latestTabs.read().find((tab) => tab.id === id)?.pinned ?? false
+      ),
+      announcements: buildTabAnnouncements({
+        // The tab's accessible name, read off the strip — the one place that
+        // already knows what the tab is called. Tab ids are unique per window.
+        nameOf: (id) =>
+          Array.from(document.querySelectorAll(`[${APP_TAB_ID_ATTRIBUTE}]`))
+            .find((node) => node.getAttribute(APP_TAB_ID_ATTRIBUTE) === id)
+            ?.querySelector('[role="tab"]')
+            ?.textContent?.trim() || 'Tab',
+        indexOf,
+        count: () => latestTabs.read().length,
+      }),
+    };
+  }, [latestTabs]);
+
+  const handleDragEnd = ({ active, over }: DragEndEvent) => {
+    setDragActive(false);
+    if (!over || !onReorder) return;
+    const from = ids.indexOf(String(active.id));
+    const to = ids.indexOf(String(over.id));
+    if (from !== -1 && to !== -1 && from !== to) onReorder(from, to);
+  };
 
   const { getTabProps } = useRovingTabList({
     orderedIds: tabs.map((tab) => tab.id),
@@ -69,18 +145,33 @@ export function AppTabStrip({
     // scroll to find is one you will not find.
     <div className={cn('bg-muted/40 flex shrink-0 items-stretch border-b px-2 py-1', className)}>
       <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto">
-        <div role="tablist" aria-label="Open tabs" className="flex items-stretch gap-1">
-          {tabs.map((tab) => (
-            <AppTabItem
-              key={tab.id}
-              tab={tab}
-              isActive={tab.id === activeId}
-              canClose={canClose}
-              tabProps={getTabProps(tab.id)}
-              onClose={onClose}
-            />
-          ))}
-        </div>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={collisionDetection}
+          accessibility={{ announcements, screenReaderInstructions: TAB_DRAG_INSTRUCTIONS }}
+          onDragStart={() => setDragActive(true)}
+          onDragEnd={handleDragEnd}
+          onDragCancel={() => setDragActive(false)}
+        >
+          <SortableContext items={ids} strategy={horizontalListSortingStrategy}>
+            <div role="tablist" aria-label="Open tabs" className="flex items-stretch gap-1">
+              {tabs.map((tab) => (
+                <SortableAppTab
+                  key={tab.id}
+                  tab={tab}
+                  isActive={tab.id === activeId}
+                  canClose={canClose}
+                  tabProps={getTabProps(tab.id)}
+                  onClose={onClose}
+                  sortable={onReorder !== undefined}
+                  dragActive={dragActive}
+                  menu={menu}
+                  hasOthersToClose={tabs.some((other) => other.id !== tab.id && !other.pinned)}
+                />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
       </div>
       <button
         ref={createButtonRef}

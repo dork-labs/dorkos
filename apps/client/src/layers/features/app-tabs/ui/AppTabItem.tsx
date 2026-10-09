@@ -42,6 +42,12 @@ interface AppTabItemProps {
   tabProps: RovingTabProps;
   /** Close this tab. */
   onClose: (id: string, source: TabActivationSource) => void;
+  /**
+   * Draw the tab compact: icon and status dot only. The name stays in the
+   * accessible name and the tooltip, and there is no close control — a pinned
+   * tab is one you asked to keep. Defaults to `tab.pinned`.
+   */
+  pinned?: boolean;
 }
 
 /**
@@ -56,12 +62,20 @@ interface AppTabItemProps {
  * still lights up when its agent starts working or needs an answer, even though
  * only the active tab holds a session stream.
  */
-export function AppTabItem({ tab, isActive, canClose, tabProps, onClose }: AppTabItemProps) {
+export function AppTabItem({
+  tab,
+  isActive,
+  canClose,
+  tabProps,
+  onClose,
+  pinned = tab.pinned ?? false,
+}: AppTabItemProps) {
   const view = useTabTarget(tab.href);
   const { target, label } = view;
   const isSession = target.pathname === '/session';
   const status = useSessionBorderState(target.sessionId ?? '');
   const signal = isSession ? DOT_SIGNAL[status.kind] : undefined;
+  const showClose = canClose && !pinned;
 
   // Keep the tab you switched to on screen once the strip overflows. Arrow-key
   // traversal gets this free from the browser (it moves focus), but Cmd+9 and
@@ -85,16 +99,18 @@ export function AppTabItem({ tab, isActive, canClose, tabProps, onClose }: AppTa
         aria-selected={isActive}
         aria-controls={isActive ? APP_TAB_PANEL_ID : undefined}
         {...tabProps}
+        title={pinned ? (view.chatTitle ? `${label} · ${view.chatTitle}` : label) : undefined}
         className={cn(
           'focus-ring flex max-w-48 min-w-0 items-center gap-1.5 rounded-md py-1 pl-2 text-xs transition-colors',
-          canClose ? 'pr-7' : 'pr-2',
+          showClose ? 'pr-7' : 'pr-2',
           isActive
             ? 'bg-background text-foreground shadow-soft'
             : 'text-muted-foreground hover:bg-background/60 hover:text-foreground'
         )}
       >
         <TabTargetIcon view={view} />
-        <span className="truncate">
+        {/* Pinned: the name leaves the strip but not the accessible name. */}
+        <span className={pinned ? 'sr-only' : 'truncate'}>
           <span className="font-medium">{label}</span>
           {view.chatTitle && <span className="opacity-70"> · {view.chatTitle}</span>}
         </span>
@@ -111,7 +127,7 @@ export function AppTabItem({ tab, isActive, canClose, tabProps, onClose }: AppTa
           </>
         )}
       </button>
-      {canClose && (
+      {showClose && (
         <button
           type="button"
           tabIndex={-1}
