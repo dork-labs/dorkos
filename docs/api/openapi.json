@@ -19341,7 +19341,7 @@
           "Document channels"
         ],
         "summary": "Replay one current document channel",
-        "description": "Ordinary Host, same-origin and installation session gates apply. The server derives the current actor and document source. A standalone document bearer cannot authorize operator controls. Document sequences and retained receipts are separate from the owning session or Room stream cursor. Each retained frame carries the same current physical/channel incarnation as this response.",
+        "description": "Ordinary Host, same-origin and installation session gates apply. The server derives the current actor and document source. A standalone document bearer cannot authorize operator controls. Document sequences and retained receipts are separate from the owning chat or Room stream cursor. Each retained frame carries the same current physical/channel incarnation as this response.",
         "parameters": [
           {
             "schema": {
@@ -23034,7 +23034,7 @@
           "Document controls"
         ],
         "summary": "Declare document routes",
-        "description": "Ordinary Host, same-origin and installation session gates apply. The server derives the current actor and document source. A standalone document bearer cannot authorize operator controls. Operator access through the original capability registry; tier approval and exact route approval remain separate. X-DorkOS-Approval retries a tier ticket; routeApprovalToken retries the exact immutable route request. Replay permits only retained expired never-admitted session or original Room work, excluding acknowledged, consumed, admitted and uncertain work; no automatic retry creates a new operation.",
+        "description": "Ordinary Host, same-origin and installation session gates apply. The server derives the current actor and document source. A standalone document bearer cannot authorize operator controls. Operator access through the original capability registry; tier approval and exact route approval remain separate. X-DorkOS-Approval retries a tier ticket; routeApprovalToken retries the exact immutable route request. Replay permits only retained expired never-admitted chat or original Room work, excluding acknowledged, consumed, admitted and uncertain work; no automatic retry creates a new operation.",
         "parameters": [
           {
             "schema": {
@@ -23483,7 +23483,7 @@
           "Document controls"
         ],
         "summary": "Approve one exact document route",
-        "description": "Ordinary Host, same-origin and installation session gates apply. The server derives the current actor and document source. A standalone document bearer cannot authorize operator controls. Operator access through the original capability registry; tier approval and exact route approval remain separate. X-DorkOS-Approval retries a tier ticket; routeApprovalToken retries the exact immutable route request. Replay permits only retained expired never-admitted session or original Room work, excluding acknowledged, consumed, admitted and uncertain work; no automatic retry creates a new operation.",
+        "description": "Ordinary Host, same-origin and installation session gates apply. The server derives the current actor and document source. A standalone document bearer cannot authorize operator controls. Operator access through the original capability registry; tier approval and exact route approval remain separate. X-DorkOS-Approval retries a tier ticket; routeApprovalToken retries the exact immutable route request. Replay permits only retained expired never-admitted chat or original Room work, excluding acknowledged, consumed, admitted and uncertain work; no automatic retry creates a new operation.",
         "parameters": [
           {
             "schema": {
@@ -23934,7 +23934,7 @@
           "Document controls"
         ],
         "summary": "Revoke one document route",
-        "description": "Ordinary Host, same-origin and installation session gates apply. The server derives the current actor and document source. A standalone document bearer cannot authorize operator controls. Operator access through the original capability registry; tier approval and exact route approval remain separate. X-DorkOS-Approval retries a tier ticket; routeApprovalToken retries the exact immutable route request. Replay permits only retained expired never-admitted session or original Room work, excluding acknowledged, consumed, admitted and uncertain work; no automatic retry creates a new operation.",
+        "description": "Ordinary Host, same-origin and installation session gates apply. The server derives the current actor and document source. A standalone document bearer cannot authorize operator controls. Operator access through the original capability registry; tier approval and exact route approval remain separate. X-DorkOS-Approval retries a tier ticket; routeApprovalToken retries the exact immutable route request. Replay permits only retained expired never-admitted chat or original Room work, excluding acknowledged, consumed, admitted and uncertain work; no automatic retry creates a new operation.",
         "parameters": [
           {
             "schema": {
@@ -24245,7 +24245,7 @@
           "Document controls"
         ],
         "summary": "Explicitly replay reviewed original work",
-        "description": "Ordinary Host, same-origin and installation session gates apply. The server derives the current actor and document source. A standalone document bearer cannot authorize operator controls. Operator access through the original capability registry; tier approval and exact route approval remain separate. X-DorkOS-Approval retries a tier ticket; routeApprovalToken retries the exact immutable route request. Replay permits only retained expired never-admitted session or original Room work, excluding acknowledged, consumed, admitted and uncertain work; no automatic retry creates a new operation.",
+        "description": "Ordinary Host, same-origin and installation session gates apply. The server derives the current actor and document source. A standalone document bearer cannot authorize operator controls. Operator access through the original capability registry; tier approval and exact route approval remain separate. X-DorkOS-Approval retries a tier ticket; routeApprovalToken retries the exact immutable route request. Replay permits only retained expired never-admitted chat or original Room work, excluding acknowledged, consumed, admitted and uncertain work; no automatic retry creates a new operation.",
         "parameters": [
           {
             "schema": {
@@ -24603,7 +24603,7 @@
           "Document controls"
         ],
         "summary": "Inspect current document controls",
-        "description": "Ordinary Host, same-origin and installation session gates apply. The server derives the current actor and document source. A standalone document bearer cannot authorize operator controls. Operator access through the original capability registry; tier approval and exact route approval remain separate. X-DorkOS-Approval retries a tier ticket; routeApprovalToken retries the exact immutable route request. Replay permits only retained expired never-admitted session or original Room work, excluding acknowledged, consumed, admitted and uncertain work; no automatic retry creates a new operation.",
+        "description": "Ordinary Host, same-origin and installation session gates apply. The server derives the current actor and document source. A standalone document bearer cannot authorize operator controls. Operator access through the original capability registry; tier approval and exact route approval remain separate. X-DorkOS-Approval retries a tier ticket; routeApprovalToken retries the exact immutable route request. Replay permits only retained expired never-admitted chat or original Room work, excluding acknowledged, consumed, admitted and uncertain work; no automatic retry creates a new operation.",
         "parameters": [
           {
             "schema": {
@@ -25481,7 +25481,7 @@
           "Document controls"
         ],
         "summary": "Issue one scoped document credential",
-        "description": "Ordinary Host, same-origin and installation session gates apply. The server derives the current actor and document source. A standalone document bearer cannot authorize operator controls. Operator access through the original capability registry; tier approval and exact route approval remain separate. X-DorkOS-Approval retries a tier ticket; routeApprovalToken retries the exact immutable route request. Replay permits only retained expired never-admitted session or original Room work, excluding acknowledged, consumed, admitted and uncertain work; no automatic retry creates a new operation.",
+        "description": "Ordinary Host, same-origin and installation session gates apply. The server derives the current actor and document source. A standalone document bearer cannot authorize operator controls. Operator access through the original capability registry; tier approval and exact route approval remain separate. X-DorkOS-Approval retries a tier ticket; routeApprovalToken retries the exact immutable route request. Replay permits only retained expired never-admitted chat or original Room work, excluding acknowledged, consumed, admitted and uncertain work; no automatic retry creates a new operation.",
         "parameters": [
           {
             "schema": {
@@ -25955,7 +25955,7 @@
           "Document controls"
         ],
         "summary": "Revoke one document credential",
-        "description": "Ordinary Host, same-origin and installation session gates apply. The server derives the current actor and document source. A standalone document bearer cannot authorize operator controls. Operator access through the original capability registry; tier approval and exact route approval remain separate. X-DorkOS-Approval retries a tier ticket; routeApprovalToken retries the exact immutable route request. Replay permits only retained expired never-admitted session or original Room work, excluding acknowledged, consumed, admitted and uncertain work; no automatic retry creates a new operation.",
+        "description": "Ordinary Host, same-origin and installation session gates apply. The server derives the current actor and document source. A standalone document bearer cannot authorize operator controls. Operator access through the original capability registry; tier approval and exact route approval remain separate. X-DorkOS-Approval retries a tier ticket; routeApprovalToken retries the exact immutable route request. Replay permits only retained expired never-admitted chat or original Room work, excluding acknowledged, consumed, admitted and uncertain work; no automatic retry creates a new operation.",
         "parameters": [
           {
             "schema": {

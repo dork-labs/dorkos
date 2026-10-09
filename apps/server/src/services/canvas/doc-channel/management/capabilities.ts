@@ -50,7 +50,7 @@ export function createDocChannelManagementCapabilities() {
       area: null,
       areaNote: 'explicit expired, never-admitted session or original Room work only',
       description:
-        'After explicit review, create one new generation from retained original session or Room inputs. Admitted, acknowledged, uncertain and consumed work cannot be repeated.',
+        'After explicit review, create one new generation from retained original chat or Room inputs. Admitted, acknowledged, uncertain and consumed work cannot be repeated.',
       input: CanvasChannelBatchReplayRequestSchema,
       output: CanvasChannelBatchReplayResultSchema,
       surfaces: { mcp: { toolName: 'replay_doc_batch', servers: ['in-session'] } },

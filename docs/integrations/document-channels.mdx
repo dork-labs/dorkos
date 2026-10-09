@@ -10,7 +10,7 @@ Your app still owns its files. A notification does not save a file for you.
 
 This guide describes the document channel contract. It includes editor selection, save notifications, retained replay, bound widgets, and standalone streaming. Check your installed release before enabling it in an existing app.
 
-Cross-agent protected Relay delivery currently supports Claude Code. Session-owned MCP Apps support the Doc extension; Room-owned MCP Apps are unsupported because the required original source binding is unavailable.
+Cross-agent protected Relay delivery currently supports Claude Code. Chat-owned MCP Apps support the Doc extension; Room-owned MCP Apps are unsupported because the required original source binding is unavailable.
 
 ## Keep each result separate
 
@@ -174,7 +174,7 @@ The request carries `documentId`, a stable `eventId`, `expectedStateRev`, and `o
 Operations are `set` or `remove` with safe JSON Pointer paths; `add` is not supported.
 The result contains a storage `receipt` and `stateRev`. It does not prove that a viewer rendered the update.
 A bound widget reads this state into permitted display fields; state cannot choose a route or change an editable draft.
-Use the original scope stream to observe live state and reset snapshots. Hosted session clients currently use WebSocket frames; standalone token streams use fetch-SSE.
+Use the original scope stream to observe live state and reset snapshots. Hosted chat clients currently use WebSocket frames; standalone token streams use fetch-SSE.
 Treat revocation as disabling the affected action, while preserving the person's draft.
 Preserve the mounted widget and its editable draft through reset, reconnect, and revocation.
 
@@ -222,7 +222,7 @@ The independent runtime, webhook, and permission changes keep their own acceptan
 ## MCP App extension preview
 
 The candidate MCP host negotiates `ui/initialize` with
-`extensions: { "dorkos/app": { version: 1 } }`. An eligible original session-owned
+`extensions: { "dorkos/app": { version: 1 } }`. An eligible original chat-owned
 MCP document returns its document ID, native generation, and a host-generated
 `bridgeGeneration`. Echo all three in `dorkos/app.emit` alongside `v: 1` and a
 strict public `PageEvent`. Inline Apps and documents without an original MCP

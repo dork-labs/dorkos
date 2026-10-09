@@ -157,7 +157,7 @@ export function registerDocChannelOpenApi(registry: OpenAPIRegistry): void {
     summary: 'Replay one current document channel',
     description:
       host +
-      'Document sequences and retained receipts are separate from the owning session or Room stream cursor. Each retained frame carries the same current physical/channel incarnation as this response.',
+      'Document sequences and retained receipts are separate from the owning chat or Room stream cursor. Each retained frame carries the same current physical/channel incarnation as this response.',
     request: { params, query: CanvasChannelReplayQuerySchema },
     responses: { 200: json(CanvasChannelReplayResponseSchema), ...refusal },
   });
@@ -329,7 +329,7 @@ export function registerDocChannelOpenApi(registry: OpenAPIRegistry): void {
       summary,
       description:
         host +
-        'Operator access through the original capability registry; tier approval and exact route approval remain separate. X-DorkOS-Approval retries a tier ticket; routeApprovalToken retries the exact immutable route request. Replay permits only retained expired never-admitted session or original Room work, excluding acknowledged, consumed, admitted and uncertain work; no automatic retry creates a new operation.',
+        'Operator access through the original capability registry; tier approval and exact route approval remain separate. X-DorkOS-Approval retries a tier ticket; routeApprovalToken retries the exact immutable route request. Replay permits only retained expired never-admitted chat or original Room work, excluding acknowledged, consumed, admitted and uncertain work; no automatic retry creates a new operation.',
       request: {
         params,
         headers: approvalHeaders,
