@@ -43,7 +43,10 @@ export function ChatFromMark({ stamp }: { stamp: ChatMessageStamp }) {
   const navigate = useNavigate();
   const title = stamp.from.chatTitle ?? 'another chat';
   return (
-    <span data-testid="chat-from-mark" className="inline-flex min-w-0 items-center gap-1.5 text-xs">
+    <span
+      data-testid="chat-from-mark"
+      className="inline-flex min-w-0 flex-wrap items-center gap-1.5 text-xs"
+    >
       <span className="text-muted-foreground inline-flex min-w-0 items-center gap-1">
         <span aria-hidden>·</span>
         <span>from</span>

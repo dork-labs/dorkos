@@ -197,7 +197,14 @@ export function SessionMessage({
             id={headerId}
             author={author}
             at={at}
-            {...(fromChat ? { mark: <ChatFromMark stamp={fromChat} /> } : {})}
+            {...(fromChat
+              ? {
+                  mark: <ChatFromMark stamp={fromChat} />,
+                  // The sender's name, the chat it came from and the time
+                  // wrap on a narrow screen rather than truncating to nothing.
+                  className: 'flex-wrap gap-y-0.5',
+                }
+              : {})}
           />
           <Message.Content id={contentId}>
             {renderSessionBody(message, { rowId: message.id, isStreaming })}

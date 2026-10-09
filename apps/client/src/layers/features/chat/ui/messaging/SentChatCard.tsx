@@ -103,6 +103,8 @@ export function SentChatCard({ part, sent, at, sessionId }: SentChatCardProps) {
       : deliveryLabel(record, { ...call, pending });
   const summary = sentSummary(record?.summary ?? call.summary, record?.text ?? call.message);
   const time = at ? formatTime(at) : record ? formatTime(record.sentAt) : '';
+  // What it is about, beside who it went to — unless it only repeats the chat's title.
+  const aside = call.tool === 'chat_stop' ? call.reason : summary !== chatTitle ? summary : '';
   const Icon =
     call.tool === 'session_start' ? GitBranchPlus : call.tool === 'chat_stop' ? CircleStop : Send;
   const verb =
@@ -132,8 +134,8 @@ export function SentChatCard({ part, sent, at, sessionId }: SentChatCardProps) {
         className="focus-ring hover:bg-muted/40 flex w-full min-w-0 items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors duration-150"
       >
         <AgentAvatar size="xs" emoji={visual.emoji} color={visual.color} />
-        <Icon aria-hidden className="text-muted-foreground size-3.5 shrink-0" />
-        <span className="min-w-0 truncate">
+        <Icon aria-hidden className="text-muted-foreground hidden size-3.5 shrink-0 sm:block" />
+        <span className="min-w-0 flex-1 truncate">
           <span className="text-muted-foreground">{verb} </span>
           {call.tool === 'session_start' ? (
             <span className="font-medium">{chatTitle ?? (summary || 'a new chat')}</span>
@@ -145,18 +147,19 @@ export function SentChatCard({ part, sent, at, sessionId }: SentChatCardProps) {
               )}
             </>
           )}
-          {call.tool !== 'session_start' && (summary || call.reason) && (
-            <span className="text-muted-foreground hidden sm:inline">
-              {' '}
-              · {call.tool === 'chat_stop' ? call.reason : summary}
-            </span>
+          {call.tool !== 'session_start' && (aside || null) && (
+            <span className="text-muted-foreground hidden sm:inline"> · {aside}</span>
           )}
         </span>
-        <span className="ml-auto flex shrink-0 items-center gap-2">
+        <span className="flex shrink-0 items-center gap-2">
           <span className={cn('text-xs', TONE[state.tone])} data-testid="sent-chat-state">
             {state.label}
           </span>
-          {time && <time className="text-muted-foreground text-xs tabular-nums">{time}</time>}
+          {time && (
+            <time className="text-muted-foreground hidden text-xs tabular-nums sm:inline">
+              {time}
+            </time>
+          )}
           <ChevronDown
             aria-hidden
             className={cn(
