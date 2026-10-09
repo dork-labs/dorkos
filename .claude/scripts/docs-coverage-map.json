@@ -1126,6 +1126,17 @@
       ]
     },
     {
+      "doc": "docs/guides/background-work.mdx",
+      "description": "Work that runs after a reply, per runtime: turn end, a DorkOS restart, a settings change",
+      "patterns": [
+        "services/runtimes/claude-code/sessions/",
+        "background-work-ledger",
+        "codex/app-server/background-work",
+        "opencode/events/",
+        "opencode/server-manager"
+      ]
+    },
+    {
       "doc": "docs/guides/generative-ui.mdx",
       "description": "Agent-rendered interactive widgets, inline in chat and in the canvas",
       "patterns": [

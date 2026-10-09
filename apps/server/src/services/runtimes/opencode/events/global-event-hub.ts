@@ -44,6 +44,24 @@ export interface HubListener {
   onStreamDrop(error: unknown): void;
 }
 
+/**
+ * What a listener's `onStreamDrop` receives: the event stream ended under a
+ * live turn, almost always because the sidecar exited (DOR-2717). The stream's
+ * own error, when it had one, rides on `cause`. Typed so the turn mapper can
+ * tell a lost sidecar from any other throw and say so plainly.
+ */
+export class OpenCodeStreamLostError extends Error {
+  /**
+   * Wrap the stream's own failure, keeping its message.
+   *
+   * @param cause - The stream's own failure, kept for the error's details
+   */
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause });
+    this.name = 'OpenCodeStreamLostError';
+  }
+}
+
 /** Handle returned by {@link OpenCodeGlobalEventHub.subscribe}. */
 export interface HubSubscription {
   /** Detach the listener; the pump stops when the last listener detaches. */
@@ -173,7 +191,7 @@ export class OpenCodeGlobalEventHub {
       const dropError =
         streamError ?? new Error('OpenCode event stream closed while a turn was in flight');
       logger.warn('[OpenCode] global event stream dropped — resubscribing', logError(dropError));
-      this.notifyDrop(dropError);
+      this.notifyDrop(new OpenCodeStreamLostError(dropError));
 
       if (this.listeners.size === 0) break;
       if (!delivered) await delay(this.reconnectDelayMs);

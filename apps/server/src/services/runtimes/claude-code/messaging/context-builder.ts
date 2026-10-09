@@ -314,6 +314,16 @@ Bindings route adapter messages to agent projects:
 Session strategies: per-chat (default, one session per conversation), per-user (shared across chats), stateless (new session each message).
 </adapter_tools>`;
 
+/**
+ * The Tasks tool docs, plus the one place an agent is told durable CronCreate
+ * is not a scheduler under DorkOS (DOR-2717). The CLI writes a durable job to
+ * `.claude/scheduled_tasks.json` and fires it only while a CLI process for the
+ * session that owns it is running and idle; a different session will not run
+ * it. DorkOS holds a warm process for session-only timers, which the Stop
+ * hook's `session_crons` names, but that list is the in-memory store only, so
+ * a durable job holds nothing and dies quietly with the next idle reap. Tasks
+ * is the scheduler that runs whether or not a chat is open.
+ */
 const TASKS_TOOLS_CONTEXT = `<tasks_tools>
 DorkOS Tasks lets you create and manage scheduled agent runs.
 
@@ -326,6 +336,11 @@ Available tools:
 
 Schedules can target a specific agent (by agentId) or a directory (by cwd).
 Agent-linked schedules automatically resolve the agent's project path at run time.
+
+Claude Code's own CronCreate with durable: true is not reliable here: its job fires only
+while this chat's Claude Code process is running, and DorkOS ends idle processes. Use
+${T}tasks_create for anything that must run on a schedule. Session-only timers
+(CronCreate, ScheduleWakeup, /loop) are fine for a reminder later in this chat.
 </tasks_tools>`;
 
 const MARKETPLACE_TOOLS_CONTEXT = `<marketplace_tools>
