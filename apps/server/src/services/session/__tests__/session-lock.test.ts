@@ -12,7 +12,13 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { SseResponse } from '@dorkos/shared/agent-runtime';
-import { SessionLockManager } from '../session-lock.js';
+import {
+  SessionLockManager,
+  isNativeSessionAcquisitionMove,
+  captureNativeSessionAcquisition,
+  captureNativeSessionActivity,
+  readNativeSessionAcquisition,
+} from '../session-lock.js';
 import type { LockActivity } from '../session-lock.js';
 import { SESSIONS } from '../../../config/constants.js';
 
@@ -244,4 +250,89 @@ describe('SessionLockManager — activity-extended TTL (DOR-782)', () => {
     expect(mgr.isLocked('live-session')).toBe(true);
     expect(mgr.isLocked('dark-session')).toBe(false);
   });
+});
+
+describe('original native session acquisition custody', () => {
+  it('binds the actual original holder and refuses a copied holder or foreign manager', () => {
+    const manager = new SessionLockManager(),
+      peer = new SessionLockManager();
+    const holder = fakeRes(),
+      copied = fakeRes();
+    expect(manager.acquireLock(SESSION, CLIENT, holder)).toBe(true);
+    const acquisition = captureNativeSessionAcquisition(manager, SESSION, holder)!;
+    const time = Date.now(),
+      activity = captureNativeSessionActivity(acquisition, time)!;
+    expect(readNativeSessionAcquisition(acquisition, activity, time, SESSION)).toBe(true);
+    expect(captureNativeSessionAcquisition(manager, SESSION, copied)).toBeUndefined();
+    expect(captureNativeSessionAcquisition(peer, SESSION, holder)).toBeUndefined();
+    expect(
+      readNativeSessionAcquisition(
+        acquisition,
+        Object.freeze({ kind: 'native-session-activity' }),
+        time,
+        SESSION
+      )
+    ).toBe(false);
+  });
+  it('retires the original acquisition on release and never blesses the next same-client turn', () => {
+    const manager = new SessionLockManager(),
+      holder = fakeRes(),
+      token = Symbol();
+    expect(manager.acquireLock(SESSION, CLIENT, holder, token)).toBe(true);
+    const original = captureNativeSessionAcquisition(manager, SESSION, holder)!;
+    const time = Date.now(),
+      activity = captureNativeSessionActivity(original, time)!;
+    manager.releaseLock(SESSION, CLIENT, token);
+    expect(manager.acquireLock(SESSION, CLIENT, holder, Symbol())).toBe(true);
+    const successor = captureNativeSessionAcquisition(manager, SESSION, holder)!;
+    expect(successor).not.toBe(original);
+    expect(readNativeSessionAcquisition(original, activity, time, SESSION)).toBe(false);
+  });
+  it('refuses when the actual holder callback removes the acquisition during capture', () => {
+    const manager = new SessionLockManager(),
+      token = Symbol();
+    const holder: SseResponse & LockActivity = {
+      on: vi.fn(),
+      lastActivityAt: () => {
+        manager.releaseLock(SESSION, CLIENT, token);
+        return Date.now();
+      },
+    };
+    expect(manager.acquireLock(SESSION, CLIENT, holder, token)).toBe(true);
+    const acquisition = captureNativeSessionAcquisition(manager, SESSION, holder)!;
+    expect(captureNativeSessionActivity(acquisition, Date.now())).toBeUndefined();
+  });
+  it('retires before the actual close listener returns and refuses its prior activity', () => {
+    const manager = new SessionLockManager();
+    let close: (() => void) | undefined;
+    const holder: SseResponse = {
+      on: vi.fn((_event, listener) => {
+        close = listener;
+      }),
+    };
+    expect(manager.acquireLock(SESSION, CLIENT, holder)).toBe(true);
+    const acquisition = captureNativeSessionAcquisition(manager, SESSION, holder)!;
+    const time = Date.now(),
+      activity = captureNativeSessionActivity(acquisition, time)!;
+    close!();
+    expect(readNativeSessionAcquisition(acquisition, activity, time, SESSION)).toBe(false);
+  });
+});
+
+it('permits only the two actual same-holder/token original acquisitions in a canonical move', () => {
+  const manager = new SessionLockManager(),
+    holder = fakeRes(),
+    token = Symbol();
+  expect(manager.acquireLock('requested', CLIENT, holder, token)).toBe(true);
+  const original = captureNativeSessionAcquisition(manager, 'requested', holder)!;
+  expect(manager.acquireLock('canonical', CLIENT, holder, token)).toBe(true);
+  const canonical = captureNativeSessionAcquisition(manager, 'canonical', holder)!;
+  expect(isNativeSessionAcquisitionMove(original, canonical, holder)).toBe(true);
+  expect(isNativeSessionAcquisitionMove(original, canonical, fakeRes())).toBe(false);
+  manager.releaseLock('requested', CLIENT, token);
+  expect(isNativeSessionAcquisitionMove(original, canonical, holder)).toBe(false);
+  const time = Date.now(),
+    activity = captureNativeSessionActivity(canonical, time)!;
+  expect(readNativeSessionAcquisition(canonical, activity, time, 'requested')).toBe(false);
+  expect(readNativeSessionAcquisition(canonical, activity, time, 'canonical')).toBe(true);
 });

@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createDb,
   eq,
@@ -23,7 +23,10 @@ import { StagedContextStore } from '../../../session/staged-context-store.js';
 import { DocChannelIngest } from '../ingest.js';
 const databases: Db[] = [];
 const directories: string[] = [];
-afterEach(() => {
+// Join this page fixture's original initializer/action before deleting owned resources.
+const paginationOperations: Promise<unknown>[] = [];
+afterEach(async () => {
+  await Promise.allSettled(paginationOperations.splice(0));
   vi.restoreAllMocks();
   for (const db of databases.splice(0)) if (db.$client.open) db.$client.close();
   for (const dir of directories.splice(0)) rmSync(dir, { recursive: true, force: true });
@@ -300,57 +303,76 @@ async function addWaiting(h: Awaited<ReturnType<typeof setup>>, index: number) {
   await deferAccepted(h, receipt.id);
   return receipt;
 }
-it('pages more than 100 same-session accepted waits without adopting them and wraps new earlier keys', async () => {
-  const h = await setup();
-  h.f.canvas.pin(FROM, h.f.documentId, true);
-  // Populate actual accepted/routed busy waits; the original row still proves the
-  // one-hour final-budget hold. Warning pagination does not need 104 extra
-  // final-budget claim/deferral cycles before exercising its actual authority checks.
-  addAcceptedReceiptPage(h.f, 104);
-  const evidence = h.f.db.select().from(sessionMessageAcceptanceReceipts).all();
-  expect(evidence).toHaveLength(105);
-  expect(new Set(evidence.map((row) => row.id)).size).toBe(105);
-  expect(new Set(evidence.map((row) => row.sourceId)).size).toBe(105);
-  expect(
-    new Set(
-      h.f.db
-        .select()
-        .from(canvasDocBatches)
-        .all()
-        .map((row) => row.grantId)
-    ).size
-  ).toBe(105);
-  h.at(15 * MINUTE);
-  const prepare = vi.spyOn(h.f.admission.acceptance, 'prepare');
-  const first = await h.pump().inspectAcceptedWaitWarnings();
-  expect(first).toMatchObject({
-    selected: 100,
-    warned: 100,
-    hasMore: true,
-    retryableFailures: 0,
+describe('accepted wait warning page fixture', () => {
+  let pageFixture!: {
+    h: Awaited<ReturnType<typeof setup>>;
+    evidence: (typeof sessionMessageAcceptanceReceipts.$inferSelect)[];
+  };
+  beforeEach(async () => {
+    const initializing = (async () => {
+      const h = await setup();
+      h.f.canvas.pin(FROM, h.f.documentId, true);
+      // Populate actual accepted/routed busy waits; the original row still proves the
+      // one-hour final-budget hold. Warning pagination does not need 104 extra
+      // final-budget claim/deferral cycles before exercising its actual authority checks.
+      addAcceptedReceiptPage(h.f, 104);
+      const evidence = h.f.db.select().from(sessionMessageAcceptanceReceipts).all();
+      return { h, evidence };
+    })();
+    paginationOperations.push(initializing);
+    pageFixture = await initializing;
   });
-  expect(prepare).toHaveBeenCalledTimes(100);
-  const second = await h.pump().inspectAcceptedWaitWarnings(first.cursor);
-  expect(second).toMatchObject({
-    selected: 5,
-    warned: 5,
-    hasMore: false,
-    nextEligibleAt: null,
+
+  it('pages more than 100 same-session accepted waits without adopting them and wraps new earlier keys', async () => {
+    const running = (async () => {
+      const { h, evidence } = pageFixture;
+      expect(evidence).toHaveLength(105);
+      expect(new Set(evidence.map((row) => row.id)).size).toBe(105);
+      expect(new Set(evidence.map((row) => row.sourceId)).size).toBe(105);
+      expect(
+        new Set(
+          h.f.db
+            .select()
+            .from(canvasDocBatches)
+            .all()
+            .map((row) => row.grantId)
+        ).size
+      ).toBe(105);
+      h.at(15 * MINUTE);
+      const prepare = vi.spyOn(h.f.admission.acceptance, 'prepare');
+      const first = await h.pump().inspectAcceptedWaitWarnings();
+      expect(first).toMatchObject({
+        selected: 100,
+        warned: 100,
+        hasMore: true,
+        retryableFailures: 0,
+      });
+      expect(prepare).toHaveBeenCalledTimes(100);
+      const second = await h.pump().inspectAcceptedWaitWarnings(first.cursor);
+      expect(second).toMatchObject({
+        selected: 5,
+        warned: 5,
+        hasMore: false,
+        nextEligibleAt: null,
+      });
+      expect(prepare).toHaveBeenCalledTimes(105);
+      expect(warnings(h.f)).toHaveLength(105);
+      const inserted = await addWaiting(h, 999);
+      const wrap = await h.pump().inspectAcceptedWaitWarnings();
+      expect(wrap).toMatchObject({ selected: 1, warned: 1, hasMore: false });
+      expect(h.f.store.getBatch(inserted.sourceId)?.leaseUntil).toBe(h.deadline);
+      expect(
+        h.f.db
+          .select()
+          .from(sessionMessageAcceptanceReceipts)
+          .all()
+          .filter((row) => row.id !== inserted.id)
+      ).toEqual(evidence);
+      expect(h.nudge).not.toHaveBeenCalled();
+    })();
+    paginationOperations.push(running);
+    await running;
   });
-  expect(prepare).toHaveBeenCalledTimes(105);
-  expect(warnings(h.f)).toHaveLength(105);
-  const inserted = await addWaiting(h, 999);
-  const wrap = await h.pump().inspectAcceptedWaitWarnings();
-  expect(wrap).toMatchObject({ selected: 1, warned: 1, hasMore: false });
-  expect(h.f.store.getBatch(inserted.sourceId)?.leaseUntil).toBe(h.deadline);
-  expect(
-    h.f.db
-      .select()
-      .from(sessionMessageAcceptanceReceipts)
-      .all()
-      .filter((row) => row.id !== inserted.id)
-  ).toEqual(evidence);
-  expect(h.nudge).not.toHaveBeenCalled();
 });
 it('returns the coalescing warning deadline rather than the one-hour dispatch deadline', async () => {
   const h = await setup();

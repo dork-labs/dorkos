@@ -18,6 +18,8 @@
     "lint": "eslint ."
   },
   "devDependencies": {
+    "@dorkos/db": "workspace:*",
+    "@dorkos/shared": "workspace:*",
     "@dorkos/eslint-config": "workspace:*",
     "@dorkos/test-utils": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
@@ -32,6 +34,7 @@
     "prettier": "^3.9.9",
     "sharp": "^0.35.5",
     "tsx": "^4.23.15",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.11",
+    "zod": "^4.6.2"
   }
 }

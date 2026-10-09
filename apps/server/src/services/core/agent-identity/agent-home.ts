@@ -115,6 +115,17 @@ export function setAgentHomeRegistry(port: AgentHomeRegistry | undefined): void 
   linkedWorktreeMemo.clear();
 }
 
+/** Replace only the exact registry port owned by the closing or opening bootstrap. */
+export function replaceAgentHomeRegistry(
+  expected: AgentHomeRegistry | undefined,
+  next: AgentHomeRegistry | undefined
+): boolean {
+  if (registry !== expected) return false;
+  registry = next;
+  linkedWorktreeMemo.clear();
+  return true;
+}
+
 /**
  * Resolve the folder a turn stands in to the home its identity comes from.
  *

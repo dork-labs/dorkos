@@ -19,12 +19,12 @@
 import { eventFanOut } from '../../core/event-fan-out.js';
 import type { AuthorRecord, AuthorRegistry } from '../author-registry.js';
 import { isLiveAuthor } from '../handles/author-handles.js';
-import type { RoomAgentLookup } from '../room-errors.js';
+import type { RoomAgentLookup } from '../data/room-errors.js';
 import type { RoomStore } from '../room-store.js';
 import type { RoomTriggerDispatcher } from '../room-trigger.js';
 import type { RoomCore } from '../service/room-core.js';
 import { logger } from '../../../lib/logger.js';
-import { RoomError } from '../room-errors.js';
+import { RoomError } from '../data/room-errors.js';
 import type { ChannelSeat } from './departed-seat-store.js';
 import type { RoomMembership } from './room-membership.js';
 

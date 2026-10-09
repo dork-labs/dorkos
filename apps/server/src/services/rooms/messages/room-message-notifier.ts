@@ -14,7 +14,7 @@ import { logger } from '../../../lib/logger.js';
 import { notifyRoomMessage as emitRoomMessageNotification } from '../../notifications/emitters/room-messages.js';
 import type { AuthorRecord, AuthorRegistry } from '../author-registry.js';
 import type { RoomCore } from '../service/room-core.js';
-import type { RoomAgentLookup } from '../room-errors.js';
+import type { RoomAgentLookup } from '../data/room-errors.js';
 import type { RoomStore } from '../room-store.js';
 
 /** The one place a room entry is weighed against the operator's attention. */

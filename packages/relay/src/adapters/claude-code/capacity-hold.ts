@@ -141,14 +141,14 @@ interface Waiter {
  * message: the oldest wait is always the next to run.
  */
 export class CapacityHold {
-  private readonly maxConcurrent: number;
-  private readonly holdCeilingMs: number;
-  private readonly announceAfterMs: number;
-  private readonly maxWaiting: number;
+  readonly #maxConcurrent: number;
+  readonly #holdCeilingMs: number;
+  readonly #announceAfterMs: number;
+  readonly #maxWaiting: number;
   /** Slots currently taken. */
-  private readonly active = new Set<CapacityLease>();
+  readonly #active = new Set<CapacityLease>();
   /** Deliveries waiting for a slot, oldest first. */
-  private readonly line: Waiter[] = [];
+  readonly #line: Waiter[] = [];
 
   /**
    * Create a waiting line for a fixed number of slots.
@@ -156,20 +156,37 @@ export class CapacityHold {
    * @param options - Slot count, hold ceiling, and the test-only announce delay.
    */
   constructor(options: CapacityHoldOptions) {
-    this.maxConcurrent = options.maxConcurrent;
-    this.holdCeilingMs = options.holdCeilingMs;
-    this.announceAfterMs = options.announceAfterMs ?? HOLD_ANNOUNCE_AFTER_MS;
-    this.maxWaiting = options.maxConcurrent * WAITING_PER_SLOT;
+    this.#maxConcurrent = options.maxConcurrent;
+    this.#holdCeilingMs = options.holdCeilingMs;
+    this.#announceAfterMs = options.announceAfterMs ?? HOLD_ANNOUNCE_AFTER_MS;
+    this.#maxWaiting = options.maxConcurrent * WAITING_PER_SLOT;
   }
 
   /** Slots currently taken by a running turn. */
   get running(): number {
-    return this.active.size;
+    return this.#active.size;
   }
 
   /** Deliveries currently waiting for a slot. */
   get waiting(): number {
-    return this.line.length;
+    return this.#line.length;
+  }
+
+  /**
+   * Acquire from this exact pool synchronously without a waiter, timer or announcement.
+   * Durable document waiting must hold no lease; original native ownership, not a wrapper
+   * outcome, must eventually settle any acquired lease. This is not native-effect proof.
+   */
+  tryAcquire(): CapacityLease | null {
+    // Never pass an older ordinary waiter, including during any future retirement seam.
+    if (
+      !Number.isSafeInteger(this.#maxConcurrent) ||
+      this.#maxConcurrent < 1 ||
+      this.#line.length !== 0 ||
+      !(this.#active.size < this.#maxConcurrent)
+    )
+      return null;
+    return this.#takeSlot();
   }
 
   /**
@@ -181,8 +198,8 @@ export class CapacityHold {
    * @param request - Whether this delivery may wait, and how to announce it.
    */
   async acquire(request: SlotRequest): Promise<SlotOutcome> {
-    if (this.active.size < this.maxConcurrent) return this.takeSlot();
-    if (!request.mayWait || this.line.length >= this.maxWaiting) return 'line_full';
+    if (this.#active.size < this.#maxConcurrent) return this.#takeSlot();
+    if (!request.mayWait || this.#line.length >= this.#maxWaiting) return 'line_full';
 
     return new Promise<SlotOutcome>((resolve) => {
       let settled = false;
@@ -196,21 +213,21 @@ export class CapacityHold {
           settled = true;
           clearTimeout(announce);
           clearTimeout(ceiling);
-          const at = this.line.indexOf(waiter);
-          if (at !== -1) this.line.splice(at, 1);
+          const at = this.#line.indexOf(waiter);
+          if (at !== -1) this.#line.splice(at, 1);
           resolve(outcome);
         },
       };
-      const announce = setTimeout(() => request.onHeld?.(), this.announceAfterMs);
+      const announce = setTimeout(() => request.onHeld?.(), this.#announceAfterMs);
       const ceiling = setTimeout(
         () => waiter.settle('held_too_long'),
-        Math.min(this.holdCeilingMs, request.ceilingMs ?? this.holdCeilingMs)
+        Math.min(this.#holdCeilingMs, request.ceilingMs ?? this.#holdCeilingMs)
       );
       // A pending hold must never be the reason this process stays alive: the
       // message is unanswered either way, and an orderly stop drains the line.
       announce.unref?.();
       ceiling.unref?.();
-      this.line.push(waiter);
+      this.#line.push(waiter);
     });
   }
 
@@ -223,22 +240,22 @@ export class CapacityHold {
    * @param lease - The acquired lease from this pool.
    */
   release(lease: CapacityLease): void {
-    if (!this.active.delete(lease)) return;
-    while (this.active.size < this.maxConcurrent) {
-      const next = this.line[0];
+    if (!this.#active.delete(lease)) return;
+    while (this.#active.size < this.#maxConcurrent) {
+      const next = this.#line[0];
       if (!next) return;
       // Taken here rather than by the waiter, so the slot cannot be claimed by a
       // fresh `acquire()` in the gap before the parked delivery resumes.
-      next.settle(this.takeSlot());
+      next.settle(this.#takeSlot());
     }
   }
 
-  private takeSlot(): CapacityLease {
+  #takeSlot(): CapacityLease {
     const lease: CapacityLease = Object.freeze<CapacityLease>({
       kind: 'acquired',
       [CAPACITY_LEASE]: true,
     });
-    this.active.add(lease);
+    this.#active.add(lease);
     return lease;
   }
 
@@ -252,6 +269,6 @@ export class CapacityHold {
    * the message is dropped — which is what the guide says happens.
    */
   drain(): void {
-    for (const waiter of this.line.splice(0)) waiter.settle('stopped');
+    for (const waiter of this.#line.splice(0)) waiter.settle('stopped');
   }
 }

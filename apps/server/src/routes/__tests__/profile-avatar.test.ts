@@ -19,7 +19,7 @@ import path from 'path';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { user, eq, type Db } from '@dorkos/db';
 import { AuthorRegistry, type AuthorRecord } from '../../services/rooms/author-registry.js';
-import { RoomError } from '../../services/rooms/room-errors.js';
+import { RoomError } from '../../services/rooms/data/room-errors.js';
 import { LocalAvatarStore } from '../../services/identity/local-avatar-store.js';
 import type { AvatarStore } from '../../services/identity/avatar-store.js';
 import { createProfileRouter, type ProfileRouterDeps } from '../profile.js';

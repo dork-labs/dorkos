@@ -84,7 +84,7 @@ export type AuthorOrigin = z.infer<typeof AuthorOriginSchema>;
  * A durable log entry is either something someone said (`post`) or something
  * the room reports about itself (`notice`).
  */
-export const RoomEntryKindSchema = z.enum(['post', 'notice']).openapi('RoomEntryKind');
+export const RoomEntryKindSchema = z.enum(['post', 'notice', 'app_event']).openapi('RoomEntryKind');
 
 export type RoomEntryKind = z.infer<typeof RoomEntryKindSchema>;
 
@@ -1294,9 +1294,24 @@ export type MergeRoomRepoRequest = z.infer<typeof MergeRoomRepoRequestSchema>;
  * room's files (spec `agent-home-desk` §7.2): one entry per commit, naming the
  * person in `subjectAuthorId`, waking nobody.
  */
+/** Read-only metadata for the server's dedicated Doc claim. Parsing never authorizes creation. */
+export const RoomAppEventSchema = z
+  .object({
+    type: z.literal('doc_channel'),
+    documentId: z.string().min(1),
+    batchId: z.string().min(1),
+    admissionId: z.string().min(1),
+    inputEventIds: z.array(z.string().min(1)).min(1).max(100),
+    docSeq: z.number().int().min(1),
+  })
+  .strict()
+  .openapi('RoomAppEvent');
+export type RoomAppEvent = z.infer<typeof RoomAppEventSchema>;
+
 export const RoomEntryBodySchema = z
   .object({
     text: z.string(),
+    appEvent: RoomAppEventSchema.optional(),
     notice: RoomNoticeCodeSchema.optional(),
     subjectAuthorId: z.string().optional(),
     moment: RoomMomentSchema.optional(),
@@ -1596,6 +1611,21 @@ export const RoomEntrySchema = z
       .describe(
         'How many replies this entry\'s thread holds in the ROOM, which is not always how many the reader has. Unlike the two roll-ups above it, this is present on exactly one kind of entry: a thread root that came back in `threadRoots` because the page it belongs to does not contain it. That is the only case where the replies a client loaded are not the whole thread — a root INSIDE the page has every one of its replies in the page after it, so the loaded replies are the count, and a second number that could disagree with what is on screen would be worse than no number at all. Absent means "count what you have".'
       ),
+  })
+  .superRefine((entry, context) => {
+    const app = entry.body.appEvent;
+    if (
+      (entry.kind === 'app_event') !== (app !== undefined) ||
+      (entry.kind === 'app_event' &&
+        (Object.keys(entry.body).some((key) => key !== 'text' && key !== 'appEvent') ||
+          entry.mentions.length ||
+          (entry.mentionSpans?.length ?? 0) ||
+          entry.sessionId !== null ||
+          entry.parentEntryId !== null ||
+          entry.threadRootEntryId !== null))
+    ) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: 'Invalid app event entry' });
+    }
   })
   .openapi('RoomEntry');
 
@@ -2569,8 +2599,8 @@ export const RoomEventSchema = z
     RoomSignalEventSchema,
     RoomReactionEventSchema,
     RoomCanvasEventSchema,
-    ...CanvasChannelNotificationSchema.options,
     RoomRevisionEventSchema,
+    ...CanvasChannelNotificationSchema.options,
   ])
   .openapi('RoomEvent');
 

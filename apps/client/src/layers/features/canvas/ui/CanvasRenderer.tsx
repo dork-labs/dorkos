@@ -1,3 +1,4 @@
+import { useDocPresence } from '../model/use-doc-presence';
 /**
  * The viewer dispatch the canvas's two views are DEFINED by.
  *
@@ -11,8 +12,8 @@
  * @module features/canvas/ui/CanvasRenderer
  */
 import { lazy, Suspense } from 'react';
-import type { WidgetChannelPort } from '@/layers/features/gen-ui';
 import type { UiCanvasContent } from '@dorkos/shared/types';
+import { CanvasErrorBoundary } from './CanvasErrorBoundary';
 import { CanvasBrowserContent } from './CanvasBrowserContent';
 import { CanvasMarkdownContent } from './CanvasMarkdownContent';
 import { CanvasJsonContent } from './CanvasJsonContent';
@@ -48,14 +49,12 @@ const CanvasDiffContent = lazy(() =>
  * @param props - The document's id, its content, and where an in-place edit
  *   writes back to.
  */
-export function CanvasRenderer({
+function CanvasRenderedContent({
   documentId,
-  widgetChannel,
   content,
   onContentChange,
 }: {
   documentId: string;
-  widgetChannel?: WidgetChannelPort;
   content: UiCanvasContent;
   onContentChange: (content: UiCanvasContent) => void;
 }) {
@@ -98,13 +97,9 @@ export function CanvasRenderer({
     case 'video':
       return <CanvasVideoContent content={content} />;
     case 'widget':
-      return widgetChannel ? (
-        <CanvasWidgetContent content={content} documentId={documentId} channel={widgetChannel} />
-      ) : (
-        <HostedWidget documentId={documentId} content={content} />
-      );
+      return <HostedWidget documentId={documentId} content={content} />;
     case 'mcp_app':
-      return <CanvasMcpAppContent content={content} />;
+      return <CanvasMcpAppContent documentId={documentId} content={content} />;
     case 'file':
       return (
         <Suspense fallback={<CanvasLoading />}>
@@ -150,4 +145,29 @@ function HostedWidget({
 }) {
   const { channel } = useDocChannel(documentId);
   return <CanvasWidgetContent documentId={documentId} content={content} channel={channel} />;
+}
+
+/** Count actual mounted host views, never document stream subscriptions. */
+export function CanvasRenderer(props: {
+  documentId: string;
+  content: UiCanvasContent;
+  onContentChange: (content: UiCanvasContent) => void;
+}) {
+  const presence = useDocPresence(props.documentId);
+  return (
+    <div
+      className="contents"
+      onFocusCapture={presence.onFocusCapture}
+      onBlurCapture={presence.onBlurCapture}
+    >
+      <span
+        role="status"
+        aria-label="Document views"
+        className="text-muted-foreground block px-2 text-xs"
+      >
+        {presence.views === undefined ? 'Views unavailable' : `${presence.views} views`}
+      </span>
+      <CanvasRenderedContent {...props} />
+    </div>
+  );
 }

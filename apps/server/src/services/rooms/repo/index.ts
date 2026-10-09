@@ -44,4 +44,16 @@ export { RoomConventions, ROOM_CONVENTIONS_TAG } from './room-conventions.js';
 export { readRoomRepoConfig, type RoomRepoConfig } from './room-repo-config.js';
 export { GitUnavailableError } from './room-repo-git.js';
 export { RoomFilesService } from './room-files.js';
-export { RoomFileEditor, type RoomFileActor } from './room-file-editor.js';
+export {
+  RoomFileEditor,
+  captureRoomFileEditorHttpOperation,
+  requireRoomFileEditorHttpCurrent,
+  retireRoomFileEditorHttpOperation,
+  executeRoomFileSave,
+  executeRoomFilePrepareUpload,
+  executeRoomFileUpload,
+  executeRoomFileAttachment,
+  executeRoomFileMove,
+  executeRoomFileRemove,
+  type RoomFileActor,
+} from './room-file-editor.js';

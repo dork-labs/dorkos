@@ -15,7 +15,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { APIRequestContext } from '@playwright/test';
+import type { APIRequestContext, APIResponse } from '@playwright/test';
 
 /**
  * Where every seeded agent directory lives, and the scan root they are all
@@ -481,13 +481,15 @@ export class RoomsApi {
    *
    * @param roomId - The room to post into.
    * @param texts - One entry per string.
+   * @param postResults - Optional retained responses for failure-only diagnostics; never read here.
    */
-  async postEntries(roomId: string, texts: string[]): Promise<void> {
+  async postEntries(roomId: string, texts: string[], postResults?: APIResponse[]): Promise<void> {
     for (const text of texts) {
       const res = await this.request.post(`/api/rooms/${roomId}/entries`, { data: { text } });
       if (res.status() !== 202) {
         throw new Error(`Post to ${roomId} answered ${res.status()}: ${await res.text()}`);
       }
+      postResults?.push(res);
     }
 
     const deadline = Date.now() + SERVER_ROUND_TRIP_MS;

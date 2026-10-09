@@ -360,6 +360,35 @@ it('retires on session attachment, including a preview that loaded before any co
   capture('new');
   expect(captureCalls()[0][0]).toBe('session-1');
 });
+it('keeps a pending sibling Doc load across session attribution while retiring old DevTools requests', async () => {
+  searchSession = undefined;
+  let pendingOriginalLoad = true;
+  const onFrameRetire = vi.fn(() => {
+    pendingOriginalLoad = false;
+  });
+  const hook = mount({ onFrameRetire });
+  const old = generation();
+  searchSession = 'session-1';
+  hook.rerender({ onFrameRetire });
+  expect(onFrameRetire).not.toHaveBeenCalled();
+  expect(pendingOriginalLoad).toBe(true);
+  expect(generation()).not.toBe(old);
+  report({ __dorkosDevtools: 'batch', seq: 1, console: [entry], network: [] }, old);
+  await act(() => vi.advanceTimersByTimeAsync(300));
+  expect(captureCalls()).toHaveLength(0);
+  hook.rerender({ onFrameRetire, reloadNonce: 1 });
+  expect(onFrameRetire).toHaveBeenCalledTimes(1);
+  expect(pendingOriginalLoad).toBe(false);
+});
+it.each([{ bridgeEligibility: null }, { previewOrigin: 'http://changed-origin.local' }] as const)(
+  'retires the sibling Doc load when frame eligibility/origin changes: %j',
+  (changed) => {
+    const onFrameRetire = vi.fn();
+    const hook = mount({ onFrameRetire });
+    hook.rerender({ onFrameRetire, ...changed });
+    expect(onFrameRetire).toHaveBeenCalledTimes(1);
+  }
+);
 it('does not forward a lazy import into a replacement generation', async () => {
   let resolve!: (value: string) => void;
   loadRasterizerSource.mockImplementationOnce(

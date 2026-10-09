@@ -132,6 +132,11 @@ const OWNER_ID = 'user_owner';
 const owner = vi.hoisted(() => ({
   account: { id: 'user_owner', name: 'Owner' } as { id: string; name: string } | null,
 }));
+// Legacy-key startup migration is outside this owner-bar fixture. Keep its
+// config-write import from loading the owner predicate before the account mock.
+vi.mock('../../services/core/auth/seed-legacy-mcp-key.js', () => ({
+  seedLegacyMcpApiKey: vi.fn(async () => undefined),
+}));
 vi.mock('../../services/core/auth/index.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../services/core/auth/index.js')>()),
   readOwnerAccount: () => owner.account,

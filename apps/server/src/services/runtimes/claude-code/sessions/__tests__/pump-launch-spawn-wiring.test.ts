@@ -33,7 +33,7 @@ function planWithSharedOptions(): { plan: PumpLaunchPlan; sharedOptions: Options
   };
 }
 
-function launch(plan: PumpLaunchPlan): void {
+async function launch(plan: PumpLaunchPlan): Promise<void> {
   const session = { hasStarted: false, sdkSessionId: undefined } as unknown as AgentSession;
   // No cache callbacks, so `fireLaunchProbes` asks the query nothing.
   const opts = {} as MessageSenderOpts;
@@ -43,7 +43,11 @@ function launch(plan: PumpLaunchPlan): void {
     () => plan,
     () => {}
   );
-  launcher({ sessionId: 'sess-1', prompt: (async function* () {})() as never, resuming: false });
+  await launcher({
+    sessionId: 'sess-1',
+    prompt: (async function* () {})() as never,
+    resuming: false,
+  });
 }
 
 beforeEach(() => {
@@ -51,10 +55,10 @@ beforeEach(() => {
 });
 
 describe('the persistent pump launch records its process', () => {
-  it('hands query() a spawnClaudeCodeProcess seam', () => {
+  it('hands query() a spawnClaudeCodeProcess seam', async () => {
     const { plan } = planWithSharedOptions();
 
-    launch(plan);
+    await launch(plan);
 
     expect(queryMock).toHaveBeenCalledTimes(1);
     const passed = (queryMock.mock.calls as unknown as Array<[{ options: Options }]>)[0]?.[0];
@@ -63,7 +67,7 @@ describe('the persistent pump launch records its process', () => {
     expect(typeof passed?.options.spawnClaudeCodeProcess).toBe('function');
   });
 
-  it('leaves the resume-per-message path’s options untouched', () => {
+  it('leaves the resume-per-message path’s options untouched', async () => {
     // The deliberate asymmetry: only a PERSISTENT process can outlive the
     // server, so only it is tracked. The seam must therefore be added to a COPY
     // — mutating the shared resolver output would silently put every
@@ -71,7 +75,7 @@ describe('the persistent pump launch records its process', () => {
     // own stderr handling on a path that never needed tracking.
     const { plan, sharedOptions } = planWithSharedOptions();
 
-    launch(plan);
+    await launch(plan);
 
     expect(sharedOptions.spawnClaudeCodeProcess).toBeUndefined();
     expect(plan.sdkOptions.spawnClaudeCodeProcess).toBeUndefined();

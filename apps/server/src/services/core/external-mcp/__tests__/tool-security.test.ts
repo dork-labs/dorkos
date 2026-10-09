@@ -355,8 +355,9 @@ describe('the ui domain exposes only document mutations on external /mcp', () =>
   const external = new Map([
     ['ui.send_canvas_event', 'canvas_send'],
     ['ui.patch_canvas_state', 'canvas_patch_state'],
+    ['ui.set_canvas_checkbox', 'canvas_set_checkbox'],
   ]);
-  it('exposes exactly the two document tools and no session-window tool', async () => {
+  it('exposes exactly the three document tools and no session-window tool', async () => {
     const live = new Set((await fetchLiveTools()).map((tool) => tool.name));
     const exposed: string[] = [];
     for (const capability of uiDomain.capabilities) {

@@ -49,6 +49,8 @@
 #   packages/connector-providers/        built inside the image before shared,
 #                                        which re-exports its connector schemas
 #   packages/cli/scripts/build.ts        how the packaged `dorkos` is bundled
+#   package.json, patches/              the image's pinned dependency patches
+#                                        (PR #2673: missing patch blocked install)
 #   pnpm-lock.yaml, pnpm-workspace.yaml  the image's install and the
 #                                        `deploy --prod` of the Community
 #   scripts/sweep-ephemeral-docker.sh    run.sh calls it before anything starts
@@ -99,6 +101,8 @@ SCOPE_PATTERNS=(
   '^packages/cloud-api/'
   '^packages/connector-providers/'
   '^packages/cli/scripts/build\.ts$'
+  '^package\.json$'
+  '^patches/'
   '^pnpm-lock\.yaml$'
   '^pnpm-workspace\.yaml$'
   '^scripts/sweep-ephemeral-docker\.sh$'

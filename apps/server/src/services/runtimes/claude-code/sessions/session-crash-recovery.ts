@@ -1,3 +1,4 @@
+import { isOriginalClaudeRoomPumpDispatch } from './persistent-dispatch.js';
 /**
  * What happens after one session's process dies, and how many times the server
  * is willing to try again (spec `persistent-session-runtime` §4.2, task 3.6).
@@ -308,6 +309,10 @@ export class SessionCrashRecovery {
    *   automatic resume on a process that crashed straight back
    */
   async dispatch(batch: readonly PumpDispatch[], cwd: string): Promise<TurnWindow> {
+    if (batch.some(isOriginalClaudeRoomPumpDispatch)) {
+      // A dedicated native COMMIT is one attempt; crash loops never own readmission.
+      return this.opts.windows.dispatch(batch, cwd);
+    }
     if (this.opts.pump.state === 'crashed' && !this.willAutoResume) {
       // Spent back down to a single crash, not to zero: the person has been
       // told, so their next attempt gets a launch — and if it dies the same

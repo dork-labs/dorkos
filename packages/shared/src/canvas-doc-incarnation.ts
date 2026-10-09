@@ -8,7 +8,10 @@ export const CanvasDocIncarnationSchema = z
     documentId: z.string().min(1).max(200),
     physicalOpenedAt: z.string().max(64).datetime({ offset: true }),
     channelCreatedAt: z.string().max(64).datetime({ offset: true }),
-    generation: z.string().regex(/^[a-f0-9]{64}$/u),
+    generation: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/u)
+      .meta({ pattern: '^[a-f0-9]{64}$' }),
   })
   .strict();
 /** Server-projected birth; clients compare it and never calculate a replacement. */

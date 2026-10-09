@@ -1,3 +1,6 @@
+import { createOriginalWorktreeTestFixture } from './room-original-worktree-test-fixture.js';
+import { configManager } from '../../../core/config-manager.js';
+import { DocChannelNotFoundError } from '../../../canvas/doc-channel/authorization.js';
 /**
  * One standing working copy per (room, agent), and the reap that must never
  * take one that holds work (spec `project-rooms` §3.4).
@@ -40,106 +43,69 @@ import { existsSync, promises as nodeFsPromises } from 'node:fs';
 import { mkdtemp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
-import { createTestDb } from '@dorkos/test-utils/db';
 import { OPERATING_SKILLS_PACK, seedOperatingSkills } from '@dorkos/operating-skills';
 import { projectAgentWorkspace } from '../../../harness/project-agent-workspace.js';
-import { rooms, type Db } from '@dorkos/db';
-import type { Room } from '@dorkos/shared/room-schemas';
-import { ROOM_REPO_CAP_DEFAULTS } from '@dorkos/shared/room-repo';
-import { RoomError } from '../../room-errors.js';
+import type { Db } from '@dorkos/db';
 import { RoomRepoStore } from '../room-repo-store.js';
-import { RoomRepoService } from '../room-repo-service.js';
-import { RoomRepoMutex } from '../room-repo-mutex.js';
-import { RoomRepoReconciler } from '../room-repo-reconciler.js';
 import { RoomWorktreeManager } from '../room-worktree-manager.js';
 import { PROJECTED_ATTACHMENTS_ROOT } from '../../attachments/attachment-paths.js';
-import {
-  commitAll,
-  commonGitDir,
-  hasLocalBranch,
-  removeWorktree,
-  runGit,
-} from '../room-repo-git.js';
+import { commonGitDir, hasLocalBranch } from '../room-repo-git.js';
+import { fixtureGit as runGit } from './fixture-git.js';
 import { removeFixtureTree, silenceGitAutoMaintenance } from './fixture-git.js';
 
-const ROOM_ID = '01ROOMAAAAAAAAAAAAAAAAAAAA';
-const OPERATOR = 'author-operator';
-
-const ROOM: Room = {
-  id: ROOM_ID,
-  kind: 'channel',
-  slug: 'release-train',
-  title: 'Release train',
-  topic: 'Shipping 0.70',
-  archived: false,
-  ambientMaxEntries: 20,
-  createdAt: '2026-08-27T12:00:00.000Z',
-  lastActivityAt: '2026-08-27T12:00:00.000Z',
-};
+let ROOM_ID: string;
 
 describe('RoomWorktreeManager', () => {
   let db: Db;
   let scratch: string;
   let store: RoomRepoStore;
-  let service: RoomRepoService;
-  let manager: RoomWorktreeManager;
+  let manager: Awaited<ReturnType<typeof createOriginalWorktreeTestFixture>>['manager'];
+  let native: Awaited<ReturnType<typeof createOriginalWorktreeTestFixture>>;
+  let acquired = false;
   /** `config.rooms.repo.worktreeReapDays`, per test. */
   let reapAfterDays: number;
-  /** The agent workspace paths holding a live room claim, per test. */
-  let busyAgentPaths: string[];
-  /** The manager's injected clock (epoch ms). Advance it to age a worktree. */
+  /** The original constructor's injected clock. */
   let nowMs: number;
-  /**
-   * How the sweep reads that list — replaceable, so a test can make the answer
-   * CHANGE between reads.
-   *
-   * The claim map is live in production: the sweep snapshots it once and then
-   * spends real time removing trees, and a turn can claim anywhere in there.
-   * Defaults to simply reporting {@link busyAgentPaths}, which is what every
-   * test but the race one wants.
-   */
-  let busyAgentPathsReader: () => string[];
-  /**
-   * Something that happens DURING the sweep, hung off the stranded-list read.
-   *
-   * That read is the sweep's own mid-flight moment: it runs after every gate has
-   * been snapshotted and before the first removal, which is precisely the window
-   * a turn can claim in. A no-op for every test but the two race ones.
-   */
-  let strandedDuringSweep: () => Promise<void>;
-
   /** Run git in `dir` with the room's home as the discovery ceiling. */
   function git(args: string[], dir: string): Promise<string> {
     return runGit(args, dir, store.homeDir(ROOM_ID));
   }
 
-  /**
-   * A manager over this test's store and service.
-   *
-   * A function rather than an inline literal in `beforeEach` because a SECOND
-   * one is how a restart is expressed: everything the manager remembers between
-   * turns — the in-flight map, the set of worktrees whose skill pack it has
-   * already checked — lives in the instance, so a fresh instance over the same
-   * disk is exactly the state a restarted server wakes up in.
-   */
-  function makeManager(): RoomWorktreeManager {
-    return new RoomWorktreeManager({
-      store,
-      hasRepo: (roomId) => service.hasRepo(roomId),
-      listStrandedWorktrees: async (roomId) => {
-        const answer = await service.listStrandedWorktrees(roomId);
-        await strandedDuringSweep();
-        return answer;
-      },
-      reapAfterDays: () => reapAfterDays,
-      busyAgentPaths: () => busyAgentPathsReader(),
-      now: () => nowMs,
-    });
+  /** Same actual cold native manager; historical DATA precedes its first launch. */
+  function makeManager() {
+    // Historical artifacts are seeded before this genuine cold manager's first launch.
+    return native.manager;
+  }
+
+  async function ownedFixtureCommitAll(
+    _db: Db,
+    _store: RoomRepoStore,
+    roomId: string,
+    checkout: string,
+    message: string,
+    identity: { name: string; email: string },
+    _ceiling: string
+  ): Promise<string> {
+    expect(roomId).toBe(ROOM_ID);
+    return native.commit(checkout, message, identity);
+  }
+  async function ownedFixtureRemoveWorktree(
+    _db: Db,
+    _store: RoomRepoStore,
+    roomId: string,
+    _repo: string,
+    checkout: string,
+    _ceiling: string
+  ): Promise<void> {
+    expect(roomId).toBe(ROOM_ID);
+    await native.remove(checkout);
   }
 
   /** Where agent `name` keeps its work — the workspace path is its identity. */
   function agentPath(name: string): string {
-    return path.join(scratch, 'agents', name);
+    return name.toLowerCase() === 'ana' || name.toLowerCase() === 'bo'
+      ? native.agentPath(name)
+      : path.join(scratch, 'agents', name);
   }
 
   /** Give `name` its worktree and answer where it is. */
@@ -177,7 +143,7 @@ describe('RoomWorktreeManager', () => {
   }
 
   beforeEach(async () => {
-    db = createTestDb();
+    acquired = false;
     // Before anything makes a repo: keep git's detached maintenance child from
     // racing this suite's teardown into the directory. See `fixture-git.ts`.
     silenceGitAutoMaintenance();
@@ -200,43 +166,54 @@ describe('RoomWorktreeManager', () => {
       scratch,
       scratch
     );
-    const dorkHome = path.join(scratch, '.dork');
-    await mkdir(dorkHome, { recursive: true });
-    store = new RoomRepoStore(db, dorkHome);
     reapAfterDays = 14;
-    busyAgentPaths = [];
     nowMs = Date.now();
-    busyAgentPathsReader = () => busyAgentPaths;
-    strandedDuringSweep = () => Promise.resolve();
-    db.insert(rooms)
-      .values({
-        id: ROOM_ID,
-        kind: 'channel',
-        title: ROOM.title,
-        topic: ROOM.topic,
-        createdAt: ROOM.createdAt,
-        lastActivityAt: ROOM.lastActivityAt,
-      })
-      .run();
-    service = new RoomRepoService({
-      store,
-      mutex: new RoomRepoMutex(),
-      queueWaitMs: () => 5000,
-      enabled: () => true,
-      getRoom: () => ROOM,
-      isOwnerAuthor: (authorId) => authorId === OPERATOR,
-      operatorGitName: () => 'Dorian',
-      pinRoomMd: () => {},
-      caps: () => ({ ...ROOM_REPO_CAP_DEFAULTS }),
-      maxRoomMdBytes: () => ROOM_REPO_CAP_DEFAULTS.maxRoomMdBytes,
+    native = await createOriginalWorktreeTestFixture({
+      homeParent: scratch,
+      now: () => nowMs,
+      reapDays: () => reapAfterDays,
     });
+    acquired = true;
+    db = native.original.db;
+    store = native.original.repos;
+    ROOM_ID = native.original.roomId;
     manager = makeManager();
   });
 
   afterEach(async () => {
-    vi.restoreAllMocks();
-    vi.unstubAllEnvs();
-    await removeFixtureTree(scratch);
+    let failed = false;
+    let first: unknown;
+    const remember = (cause: unknown): void => {
+      if (!failed) {
+        failed = true;
+        first = cause;
+      }
+    };
+    for (const cleanup of [() => vi.restoreAllMocks(), () => vi.unstubAllEnvs()]) {
+      try {
+        cleanup();
+      } catch (cause) {
+        remember(cause);
+      }
+    }
+    let closed = false;
+    try {
+      if (acquired) {
+        await native.close();
+        closed = true;
+      }
+    } catch (cause) {
+      remember(cause);
+    }
+    // The enclosing Git trap survives a pre-return or unconfirmed native close.
+    if (closed) {
+      try {
+        await removeFixtureTree(scratch);
+      } catch (cause) {
+        remember(cause);
+      }
+    }
+    if (failed) throw first;
   });
 
   describe('slugFor', () => {
@@ -270,12 +247,14 @@ describe('RoomWorktreeManager', () => {
 
   describe('ensureWorktree', () => {
     it('refuses a room that has no files of its own', async () => {
-      await expect(worktreeFor('ana')).rejects.toThrow(RoomError);
-      await expect(worktreeFor('ana')).rejects.toMatchObject({ code: 'NOT_A_PROJECT_ROOM' });
+      await expect(
+        native.original.manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana')
+      ).rejects.toThrow(DocChannelNotFoundError);
+      expect(native.original.repo.hasRepo(ROOM_ID)).toBe(false);
     });
 
     it('branches room/<slug> off main and checks it out under worktrees/', async () => {
-      await service.enable(ROOM_ID, OPERATOR);
+      await native.enable();
 
       const handle = await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
 
@@ -289,7 +268,7 @@ describe('RoomWorktreeManager', () => {
     });
 
     it('is idempotent: the second call answers the same tree and creates nothing', async () => {
-      await service.enable(ROOM_ID, OPERATOR);
+      await native.enable();
       const first = await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
       await writeFile(path.join(first.path, 'wip.md'), 'half an idea', 'utf-8');
 
@@ -302,7 +281,7 @@ describe('RoomWorktreeManager', () => {
     });
 
     it('creates one tree when two turns ask at the same moment', async () => {
-      await service.enable(ROOM_ID, OPERATOR);
+      await native.enable();
 
       const [a, b] = await Promise.all([
         manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana'),
@@ -314,7 +293,7 @@ describe('RoomWorktreeManager', () => {
     });
 
     it('gives two agents in one room two trees on two branches', async () => {
-      await service.enable(ROOM_ID, OPERATOR);
+      await native.enable();
       const ana = await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
       const bo = await manager.ensureWorktree(ROOM_ID, agentPath('bo'), 'Bo');
 
@@ -327,7 +306,7 @@ describe('RoomWorktreeManager', () => {
       // `git worktree remove` takes the directory and leaves the branch, and a
       // `git branch -d` can refuse or never run. `-b` would then fail on every
       // later turn for that agent, permanently.
-      await service.enable(ROOM_ID, OPERATOR);
+      await native.enable();
       const first = await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
       await git(['worktree', 'remove', first.path], store.repoPath(ROOM_ID));
       expect(await hasLocalBranch(store.repoPath(ROOM_ID), first.branch, store.homeDir(ROOM_ID)));
@@ -344,16 +323,26 @@ describe('RoomWorktreeManager', () => {
       // where its skills and instructions already are, so a worktree is exactly
       // the room's files on the agent's branch. A room whose files carry skills
       // and an AGENTS.md is the shape that used to draw projection into it.
-      await service.enable(ROOM_ID, OPERATOR);
+      await native.enable();
       const repoDir = store.repoPath(ROOM_ID);
-      await mkdir(path.join(repoDir, '.agents', 'skills', 'house-style'), { recursive: true });
+      await mkdir(path.join(repoDir, '.agents', 'skills', 'house-style'), {
+        recursive: true,
+      });
       await writeFile(
         path.join(repoDir, '.agents', 'skills', 'house-style', 'SKILL.md'),
         '# house style\n',
         'utf-8'
       );
       await writeFile(path.join(repoDir, 'AGENTS.md'), '# Room rules\n', 'utf-8');
-      await commitAll(repoDir, 'skills and rules', { name: 'D', email: 'd@dorkos.local' }, scratch);
+      await ownedFixtureCommitAll(
+        db,
+        store,
+        ROOM_ID,
+        repoDir,
+        'skills and rules',
+        { name: 'D', email: 'd@dorkos.local' },
+        scratch
+      );
 
       const handle = await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
 
@@ -378,7 +367,7 @@ describe('RoomWorktreeManager', () => {
       // `.git` in it. Returning it as valid was permanent — the reap lists an
       // unreadable directory as stranded work and never removes it, so nothing
       // could ever repair the thing this method kept answering with.
-      await service.enable(ROOM_ID, OPERATOR);
+      await native.enable();
       const slug = RoomWorktreeManager.slugFor('Ana', agentPath('ana'));
       const corpse = path.join(store.worktreesPath(ROOM_ID), slug);
       await mkdir(corpse, { recursive: true });
@@ -407,9 +396,11 @@ describe('RoomWorktreeManager', () => {
       // in flight would see. With the existence check ahead of the in-flight
       // map, that caller took the early return and handed a turn a path with no
       // `.git` in it.
-      await service.enable(ROOM_ID, OPERATOR);
+      await native.enable();
       const slug = RoomWorktreeManager.slugFor('Ana', agentPath('ana'));
-      await mkdir(path.join(store.worktreesPath(ROOM_ID), slug), { recursive: true });
+      await mkdir(path.join(store.worktreesPath(ROOM_ID), slug), {
+        recursive: true,
+      });
 
       const [a, b] = await Promise.all([
         manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana'),
@@ -433,7 +424,7 @@ describe('RoomWorktreeManager', () => {
       // reaped when nothing hands the path out first. The only difference here
       // is the extra `ensureWorktree`, whose stamp writes `now()` onto the
       // directory and pulls it back inside the window.
-      await service.enable(ROOM_ID, OPERATOR);
+      await native.enable();
       const dir = await ancientWorktree('ana');
       reapAfterDays = 14;
 
@@ -458,10 +449,12 @@ describe('RoomWorktreeManager', () => {
      * exactly as the last such release built it.
      */
     async function legacyWorktree(name: string): Promise<string> {
-      const dir = await worktreeFor(name);
+      const dir = await native.historical(agentPath(name), name);
       await seedOperatingSkills(dir);
       projectAgentWorkspace(dir);
-      await mkdir(path.join(dir, PROJECTED_ATTACHMENTS_ROOT, 'entry-1'), { recursive: true });
+      await mkdir(path.join(dir, PROJECTED_ATTACHMENTS_ROOT, 'entry-1'), {
+        recursive: true,
+      });
       await writeFile(path.join(dir, PROJECTED_ATTACHMENTS_ROOT, 'entry-1', 'a.txt'), 'x', 'utf-8');
       await mkdir(path.dirname(excludeFile()), { recursive: true });
       await writeFile(excludeFile(), LEGACY_BLOCK, 'utf-8');
@@ -486,7 +479,7 @@ describe('RoomWorktreeManager', () => {
     ].join('\n');
 
     it('removes what DorkOS wrote, leaves the tree clean, and drops the block when it was the last', async () => {
-      await service.enable(ROOM_ID, OPERATOR);
+      await native.enable();
       const dir = await legacyWorktree('ana');
       // The fixture is real: the tree holds the pack, a link and the projection,
       // and reads clean only because the block hides them.
@@ -518,7 +511,7 @@ describe('RoomWorktreeManager', () => {
     });
 
     it('keeps a modified skill and a real file at a projection path, and keeps the block for them', async () => {
-      await service.enable(ROOM_ID, OPERATOR);
+      await native.enable();
       const dir = await legacyWorktree('ana');
       const edited = path.join(dir, '.agents', 'skills', 'working-in-room-repos', 'SKILL.md');
       await writeFile(edited, `${await readFile(edited, 'utf-8')}\nMy own note.\n`, 'utf-8');
@@ -541,7 +534,7 @@ describe('RoomWorktreeManager', () => {
     });
 
     it('keeps the block while ANOTHER worktree of the room still holds what it hides', async () => {
-      await service.enable(ROOM_ID, OPERATOR);
+      await native.enable();
       const ana = await legacyWorktree('ana');
       const bo = await legacyWorktree('bo');
 
@@ -559,10 +552,12 @@ describe('RoomWorktreeManager', () => {
     it('keeps the block while the room`s MAIN checkout still holds something it hides', async () => {
       // `repo/` reads the same `info/exclude`, and `repo/` found dirty stops
       // every write to the room — so the block is not the worktrees' alone.
-      await service.enable(ROOM_ID, OPERATOR);
+      await native.enable();
       const dir = await legacyWorktree('ana');
       const repoDir = store.repoPath(ROOM_ID);
-      await mkdir(path.join(repoDir, PROJECTED_ATTACHMENTS_ROOT), { recursive: true });
+      await mkdir(path.join(repoDir, PROJECTED_ATTACHMENTS_ROOT), {
+        recursive: true,
+      });
       await writeFile(path.join(repoDir, PROJECTED_ATTACHMENTS_ROOT, 'stray.txt'), 's', 'utf-8');
       expect(await git(['status', '--porcelain=v1'], repoDir)).toBe('');
 
@@ -576,10 +571,13 @@ describe('RoomWorktreeManager', () => {
       // An exclude cannot hide a TRACKED file, so a room that committed its own
       // copy of a pack skill is somebody's work, even when it is byte for byte
       // what the seeder writes.
-      await service.enable(ROOM_ID, OPERATOR);
+      await native.enable();
       const repoDir = store.repoPath(ROOM_ID);
       await seedOperatingSkills(repoDir);
-      await commitAll(
+      await ownedFixtureCommitAll(
+        db,
+        store,
+        ROOM_ID,
         repoDir,
         'commit a pack copy',
         { name: 'D', email: 'd@dorkos.local' },
@@ -596,13 +594,15 @@ describe('RoomWorktreeManager', () => {
     });
 
     it('runs once per worktree per process', async () => {
-      await service.enable(ROOM_ID, OPERATOR);
+      await native.enable();
       const dir = await legacyWorktree('ana');
       const restarted = makeManager();
       await restarted.retireLegacyPlumbing(ROOM_ID, dir, agentPath('ana'));
       // Something the old code would have written reappears (a person put it
       // back): this process does not look again.
-      await mkdir(path.join(dir, PROJECTED_ATTACHMENTS_ROOT), { recursive: true });
+      await mkdir(path.join(dir, PROJECTED_ATTACHMENTS_ROOT), {
+        recursive: true,
+      });
       await writeFile(path.join(dir, PROJECTED_ATTACHMENTS_ROOT, 'b.txt'), 'y', 'utf-8');
 
       expect((await restarted.retireLegacyPlumbing(ROOM_ID, dir, agentPath('ana'))).removed).toBe(
@@ -614,25 +614,32 @@ describe('RoomWorktreeManager', () => {
 
   describe('worktreeStatus', () => {
     it('is null for a worktree that was never made', async () => {
-      await service.enable(ROOM_ID, OPERATOR);
+      await native.enable();
       await expect(manager.worktreeStatus(ROOM_ID, 'nobody-00000000')).resolves.toBeNull();
     });
 
     it('reports a fresh tree as clean, merged and touched just now', async () => {
-      await service.enable(ROOM_ID, OPERATOR);
+      await native.enable();
       const handle = await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
 
       const status = await manager.worktreeStatus(ROOM_ID, handle.slug);
 
-      expect(status).toMatchObject({ slug: handle.slug, dirty: false, aheadOfMain: 0 });
+      expect(status).toMatchObject({
+        slug: handle.slug,
+        dirty: false,
+        aheadOfMain: 0,
+      });
       expect(Date.now() - new Date(status!.lastTouchedAt).getTime()).toBeLessThan(60_000);
     });
 
     it('reports uncommitted edits and unmerged commits', async () => {
-      await service.enable(ROOM_ID, OPERATOR);
+      await native.enable();
       const handle = await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
       await writeFile(path.join(handle.path, 'done.md'), 'finished', 'utf-8');
-      await commitAll(
+      await ownedFixtureCommitAll(
+        db,
+        store,
+        ROOM_ID,
         handle.path,
         'work',
         { name: 'Ana', email: 'ana@dorkos.local' },
@@ -657,7 +664,7 @@ describe('RoomWorktreeManager', () => {
     });
 
     it('names both trees and measures the branch against main', async () => {
-      await service.enable(ROOM_ID, OPERATOR);
+      await native.enable();
       const handle = await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
 
       const files = await manager.turnFilesContext(ROOM_ID, agentPath('ana'), 'Ana', handle.path);
@@ -674,10 +681,13 @@ describe('RoomWorktreeManager', () => {
     });
 
     it('counts the commits each side has that the other has not', async () => {
-      await service.enable(ROOM_ID, OPERATOR);
+      await native.enable();
       const handle = await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
       await writeFile(path.join(handle.path, 'mine.md'), 'mine', 'utf-8');
-      await commitAll(
+      await ownedFixtureCommitAll(
+        db,
+        store,
+        ROOM_ID,
         handle.path,
         'mine',
         { name: 'Ana', email: 'ana@dorkos.local' },
@@ -686,7 +696,10 @@ describe('RoomWorktreeManager', () => {
       // And the room moves on without her.
       const repoDir = store.repoPath(ROOM_ID);
       await writeFile(path.join(repoDir, 'theirs.md'), 'theirs', 'utf-8');
-      await commitAll(
+      await ownedFixtureCommitAll(
+        db,
+        store,
+        ROOM_ID,
         repoDir,
         'theirs',
         { name: 'Bo', email: 'bo@dorkos.local' },
@@ -704,7 +717,7 @@ describe('RoomWorktreeManager', () => {
       // branch name are derived, not measured, so the one-writer prohibition the
       // block builds on them survives. Nulling the whole section would drop that
       // rule exactly when the repo is in a state nobody understands.
-      await service.enable(ROOM_ID, OPERATOR);
+      await native.enable();
 
       const files = await manager.turnFilesContext(
         ROOM_ID,
@@ -729,13 +742,13 @@ describe('RoomWorktreeManager', () => {
   describe('the reap', () => {
     it('SPARES A DIRTY WORKTREE, at any setting of worktreeReapDays', async () => {
       // The claim `config.rooms.repo.worktreeReapDays`'s no-risk verdict rests
-      // on. Zero idle days is the most aggressive setting the code can be
-      // given — more aggressive than the schema's minimum of 1 — so a tree that
-      // survives THIS survives every real configuration.
-      await service.enable(ROOM_ID, OPERATOR);
+      // on. One idle day is the actual configuration schema's minimum. The
+      // genuine native maintenance does not accept an invalid zero-day policy.
+      await native.enable();
       const dir = await worktreeFor('ana');
       await writeFile(path.join(dir, 'wip.md'), 'half an idea', 'utf-8');
-      reapAfterDays = 0;
+      reapAfterDays = 1;
+      makeAncient();
 
       const swept = await manager.reapRoom(ROOM_ID);
 
@@ -748,17 +761,21 @@ describe('RoomWorktreeManager', () => {
     it('SPARES A CLEAN WORKTREE MAIN HAS NOT GOT, at any setting of worktreeReapDays', async () => {
       // The other half of the same claim: `git status` says nothing is wrong
       // here, and the tree still holds a commit that would be lost.
-      await service.enable(ROOM_ID, OPERATOR);
+      await native.enable();
       const dir = await worktreeFor('bo');
       await writeFile(path.join(dir, 'done.md'), 'finished, unmerged', 'utf-8');
-      const sha = await commitAll(
+      const sha = await ownedFixtureCommitAll(
+        db,
+        store,
+        ROOM_ID,
         dir,
         'work',
         { name: 'Bo', email: 'bo@dorkos.local' },
         store.homeDir(ROOM_ID)
       );
       expect(await git(['status', '--porcelain=v1'], dir)).toBe('');
-      reapAfterDays = 0;
+      reapAfterDays = 1;
+      makeAncient();
 
       const swept = await manager.reapRoom(ROOM_ID);
 
@@ -774,22 +791,30 @@ describe('RoomWorktreeManager', () => {
       // instead: `git worktree remove` WITHOUT `--force` refuses a tree holding
       // work, at a later moment than DorkOS's own check. That is what protects
       // an agent that started typing between the two.
-      await service.enable(ROOM_ID, OPERATOR);
+      await native.enable();
       const dir = await worktreeFor('ana');
       await writeFile(path.join(dir, 'wip.md'), 'half an idea', 'utf-8');
 
       await expect(
-        removeWorktree(store.repoPath(ROOM_ID), dir, store.homeDir(ROOM_ID))
+        ownedFixtureRemoveWorktree(
+          db,
+          store,
+          ROOM_ID,
+          store.repoPath(ROOM_ID),
+          dir,
+          store.homeDir(ROOM_ID)
+        )
       ).rejects.toThrow(/contains modified or untracked files/);
       expect(existsSync(path.join(dir, 'wip.md'))).toBe(true);
     });
 
     it('spares a directory git cannot read at all', async () => {
-      await service.enable(ROOM_ID, OPERATOR);
+      await native.enable();
       const junk = path.join(store.worktreesPath(ROOM_ID), 'mystery');
       await mkdir(junk, { recursive: true });
       await writeFile(path.join(junk, 'notes.md'), 'not a checkout', 'utf-8');
-      reapAfterDays = 0;
+      reapAfterDays = 1;
+      makeAncient();
 
       const swept = await manager.reapRoom(ROOM_ID);
 
@@ -799,7 +824,7 @@ describe('RoomWorktreeManager', () => {
     });
 
     it('removes a clean, merged, idle working copy and retires its branch', async () => {
-      await service.enable(ROOM_ID, OPERATOR);
+      await native.enable();
       const handle = await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
       makeAncient();
 
@@ -819,7 +844,7 @@ describe('RoomWorktreeManager', () => {
     });
 
     it('keeps a working copy that was touched inside the idle window', async () => {
-      await service.enable(ROOM_ID, OPERATOR);
+      await native.enable();
       const handle = await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
 
       const swept = await manager.reapRoom(ROOM_ID);
@@ -830,18 +855,13 @@ describe('RoomWorktreeManager', () => {
     });
 
     it('removes nothing while room files are switched off', async () => {
-      await service.enable(ROOM_ID, OPERATOR);
+      await native.enable();
       const handle = await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
-      reapAfterDays = 0;
-      const offManager = new RoomWorktreeManager({
-        store,
-        hasRepo: () => false,
-        listStrandedWorktrees: (roomId) => service.listStrandedWorktrees(roomId),
-        reapAfterDays: () => 0,
-        busyAgentPaths: () => [],
-      });
-
-      await expect(offManager.reapRoom(ROOM_ID)).resolves.toEqual({
+      reapAfterDays = 1;
+      makeAncient();
+      const settings = configManager.get('rooms');
+      configManager.set('rooms', { ...settings, repo: { ...settings.repo, enabled: false } });
+      await expect(manager.reapRoom(ROOM_ID)).resolves.toEqual({
         reaped: [],
         reapedTreeKeptBranch: [],
         spared: [],
@@ -856,7 +876,7 @@ describe('RoomWorktreeManager', () => {
       // tree is reaped. This is also the regression guard for the load bug —
       // the reap's idle clock no longer reads any mtime the sweep can perturb,
       // so a genuinely idle tree is removed however slow the runner.
-      await service.enable(ROOM_ID, OPERATOR);
+      await native.enable();
       const dir = await ancientWorktree('ana');
       reapAfterDays = 14;
 
@@ -882,7 +902,7 @@ describe('RoomWorktreeManager', () => {
       //   `lstat`s on the worktree directory and its direct children — never
       //   anything under `.git`. Re-add the index as a source and the reap must
       //   `lstat` that path; the spy would catch it and this assertion reddens.
-      await service.enable(ROOM_ID, OPERATOR);
+      await native.enable();
       const handle = await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
       // The hazard, made real: stamp the worktree index `now`, the way any sweep
       // git op does. Its mtime must simply never be looked at.
@@ -923,42 +943,48 @@ describe('RoomWorktreeManager', () => {
       // reads its worktree and has not written yet moves no timestamp — so the
       // claim map is the only thing standing between the sweep and a running
       // turn's working directory.
-      await service.enable(ROOM_ID, OPERATOR);
-      const dir = await ancientWorktree('ana');
+      await native.enable();
+      const dir = await worktreeFor('ana');
+      const release = await native.hold(agentPath('ana'));
+      makeAncient();
       reapAfterDays = 14;
-      busyAgentPaths = [agentPath('ana')];
 
       const swept = await manager.reapRoom(ROOM_ID);
 
       expect(swept.reaped).toEqual([]);
       expect(swept.spared).toEqual([path.basename(dir)]);
       expect(existsSync(dir)).toBe(true);
+      await release();
     });
 
     it('spares a worktree whose agent claims a turn WHILE the sweep is running', async () => {
-      // The snapshot race, reproduced. Every gate above the removal is decided
-      // from one snapshot taken before the sweep's first `await`, and the sweep
-      // then spans many of them — a `git status` per candidate, a stranded-list
-      // walk, a `git log` per tree. A turn that claims inside that window was
-      // not in `busyAgentPaths` when it was read and its `utimes` stamp was not
-      // in `dated`, so the tree it is standing in was deleted underneath it —
-      // and the attachment projector, which runs next, recreated the directory
-      // as something that is not a checkout.
-      //
-      // Driven through the claim map's own reader: the sweep takes ONE snapshot
-      // of it, and the turn arrives immediately afterwards. Every later read
-      // sees the claim, so a sweep that only ever consults its snapshot deletes
-      // a directory that is in use by the time it gets there.
-      await service.enable(ROOM_ID, OPERATOR);
+      // Pause an actual filesystem observation after dating and before native
+      // removal. A real Room trigger acquires its claim while placement waits
+      // for the same maintenance lease; repeated busy checks must spare it.
+      await native.enable();
       const dir = await ancientWorktree('ana');
       reapAfterDays = 14;
-      // Nobody is working when the sweep takes its snapshot; the turn claims
-      // the instant it has.
-      let reads = 0;
-      busyAgentPathsReader = () => {
-        reads += 1;
-        return reads === 1 ? [] : [agentPath('ana')];
-      };
+      let release: (() => Promise<void>) | undefined;
+      let dated = false;
+      const actualRead = nodeFsPromises.readdir.bind(nodeFsPromises);
+      const actualStat = nodeFsPromises.lstat.bind(nodeFsPromises);
+      vi.spyOn(nodeFsPromises, 'readdir').mockImplementation(
+        new Proxy(actualRead, {
+          async apply(target, receiver, args) {
+            const result = await Reflect.apply(target, receiver, args);
+            if (String(args[0]) === dir) dated = true;
+            return result;
+          },
+        })
+      );
+      vi.spyOn(nodeFsPromises, 'lstat').mockImplementation((async (...args) => {
+        const result = await actualStat(...args);
+        if (dated && !release && String(args[0]) === store.homeDir(ROOM_ID)) {
+          dated = false;
+          release = await native.claim(agentPath('ana'));
+        }
+        return result;
+      }) as typeof nodeFsPromises.lstat);
 
       const swept = await manager.reapRoom(ROOM_ID);
 
@@ -967,78 +993,109 @@ describe('RoomWorktreeManager', () => {
       // The whole point: the live turn's working directory is still a checkout.
       expect(existsSync(dir)).toBe(true);
       expect(existsSync(path.join(dir, '.git'))).toBe(true);
+      expect(release).toBeDefined();
+      vi.restoreAllMocks();
+      await release!();
     });
 
-    it('spares a worktree a READ-ONLY turn claimed mid-sweep, on the stamp alone', async () => {
-      // The half the claim map cannot cover on its own, and the reason the
-      // re-check re-stats the DIRECTORY rather than re-asking `lastTouchedAt`:
-      // a turn that only thinks and reads writes nothing git can see, so
-      // `ensureWorktree`'s stamp on the directory is the only trace it leaves.
-      // Here the claim is already released by the time the removals run — the
-      // turn was short — so that stamp is all there is left to save it.
-      await service.enable(ROOM_ID, OPERATOR);
+    it('serializes a READ-ONLY turn claimed mid-sweep behind the original maintenance lease', async () => {
+      // A real placement cannot finish while maintenance owns its room lease.
+      // The live native claim spares its copy; after the sweep the original
+      // read-only turn obtains and stamps that same copy and fully settles.
+      await native.enable();
       const dir = await ancientWorktree('ana');
       reapAfterDays = 14;
-      busyAgentPaths = [];
-      let ran = false;
-      strandedDuringSweep = async () => {
-        if (ran) return;
-        ran = true;
-        // A whole turn: resolve the cwd, read nothing, release the claim.
-        await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'ana');
-      };
+      let release: (() => Promise<void>) | undefined;
+      let dated = false;
+      const actualRead = nodeFsPromises.readdir.bind(nodeFsPromises);
+      const actualStat = nodeFsPromises.lstat.bind(nodeFsPromises);
+      vi.spyOn(nodeFsPromises, 'readdir').mockImplementation(
+        new Proxy(actualRead, {
+          async apply(target, receiver, args) {
+            const result = await Reflect.apply(target, receiver, args);
+            if (String(args[0]) === dir) dated = true;
+            return result;
+          },
+        })
+      );
+      vi.spyOn(nodeFsPromises, 'lstat').mockImplementation((async (...args) => {
+        const result = await actualStat(...args);
+        if (dated && !release && String(args[0]) === store.homeDir(ROOM_ID)) {
+          dated = false;
+          release = await native.claim(agentPath('ana'));
+        }
+        return result;
+      }) as typeof nodeFsPromises.lstat);
 
       const swept = await manager.reapRoom(ROOM_ID);
 
       expect(swept.spared).toEqual([path.basename(dir)]);
       expect(existsSync(path.join(dir, '.git'))).toBe(true);
+      expect(release).toBeDefined();
+      vi.restoreAllMocks();
+      await release!();
+      expect(native.original.subsystem.service.listActiveClaims()).toEqual([]);
+      const status = await manager.worktreeStatus(ROOM_ID, path.basename(dir));
+      expect(Date.parse(status!.lastTouchedAt)).toBeGreaterThan(nowMs - 14 * DAY_MS);
     });
 
     it('is not fooled by another agent being busy', async () => {
       // The busy gate matches on the digest half of the worktree name, which is
       // the only join available between a directory and an agent path. A
       // different agent's claim must not spare this one.
-      await service.enable(ROOM_ID, OPERATOR);
+      await native.enable();
       const dir = await ancientWorktree('ana');
       reapAfterDays = 14;
-      busyAgentPaths = [agentPath('somebody-else')];
+      const other = await native.hold(agentPath('bo'));
+      makeAncient();
 
       await expect(manager.reapRoom(ROOM_ID)).resolves.toMatchObject({
         reaped: [path.basename(dir)],
       });
+      await other();
     });
 
     it('reports a removal whose branch survived as its own outcome, not as reaped', async () => {
-      // The commit-between-list-and-removal window, forced open by a stranded
-      // list that lies. It cannot happen for real — the idle clock reads HEAD's
-      // committer date AFTER the stranded list, and `worktreeReapDays` is
-      // .min(1) — but if it ever did, "tidied away" would be a false summary of
-      // a branch that is still sitting there.
-      await service.enable(ROOM_ID, OPERATOR);
+      // Publish an actual unmerged branch commit after the owned working-copy
+      // removal. Git branch -d must refuse the later branch cleanup, and the
+      // native maintenance must report that partial outcome accurately.
+      await native.enable();
       const dir = await worktreeFor('ana');
       const slug = path.basename(dir);
-      // A commit main does not have — real "now", so it is genuinely ahead. The
-      // idle clock is advanced past the cap AFTER the commit, so the tree still
-      // reads ancient; this is simulating a commit the stranded list MISSED, not
-      // one the idle clock should have caught.
-      await writeFile(path.join(dir, 'late.md'), 'committed after the list', 'utf-8');
-      await commitAll(
-        dir,
-        'late',
-        { name: 'Ana', email: 'ana@dorkos.local' },
-        store.homeDir(ROOM_ID)
-      );
       makeAncient();
-      const blind = new RoomWorktreeManager({
-        store,
-        hasRepo: (roomId) => service.hasRepo(roomId),
-        listStrandedWorktrees: async () => [],
-        reapAfterDays: () => 14,
-        busyAgentPaths: () => [],
-        now: () => nowMs,
-      });
-
-      const swept = await blind.reapRoom(ROOM_ID);
+      let published = false;
+      const actualStat = nodeFsPromises.lstat.bind(nodeFsPromises);
+      vi.spyOn(nodeFsPromises, 'lstat').mockImplementation((async (...args) => {
+        const result = await actualStat(...args);
+        if (!published && !existsSync(dir) && String(args[0]) === store.homeDir(ROOM_ID)) {
+          published = true;
+          // Actual external Git DATA arrives after the owned removal, before
+          // branch cleanup. No forged stranded-list answer or native capability.
+          const branch = `room/${slug}`;
+          const parent = await git(['rev-parse', branch], store.repoPath(ROOM_ID));
+          const tree = await git(['rev-parse', `${branch}^{tree}`], store.repoPath(ROOM_ID));
+          const next = await git(
+            [
+              '-c',
+              'user.name=Ana',
+              '-c',
+              'user.email=ana@dorkos.local',
+              'commit-tree',
+              tree,
+              '-p',
+              parent,
+              '-m',
+              'late original branch commit',
+            ],
+            store.repoPath(ROOM_ID)
+          );
+          await git(['update-ref', `refs/heads/${branch}`, next, parent], store.repoPath(ROOM_ID));
+        }
+        return result;
+      }) as typeof nodeFsPromises.lstat);
+      const swept = await manager.reapRoom(ROOM_ID);
+      vi.restoreAllMocks();
+      expect(published).toBe(true);
 
       expect(swept.reaped).toEqual([]);
       expect(swept.reapedTreeKeptBranch).toEqual([slug]);
@@ -1060,14 +1117,14 @@ describe('RoomWorktreeManager', () => {
 
   describe('the sweep that runs it', () => {
     it('reaps through the reconciler, so the install has one pass and one guard', async () => {
-      await service.enable(ROOM_ID, OPERATOR);
+      await native.enable();
       const idle = await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
       const busy = await manager.ensureWorktree(ROOM_ID, agentPath('bo'), 'Bo');
       await writeFile(path.join(busy.path, 'wip.md'), 'half an idea', 'utf-8');
       reapAfterDays = 14;
       makeAncient();
 
-      const result = await new RoomRepoReconciler(store, undefined, manager).reconcile();
+      const result = await native.reconcile();
 
       expect(result.worktrees).toEqual({
         reaped: 1,
@@ -1082,12 +1139,13 @@ describe('RoomWorktreeManager', () => {
     it('leaves the worktrees of a room whose binding has gone alone', async () => {
       // An orphaned home is reported and left standing (the reconciler's own
       // rule); its working copies are not the sweep's to reclaim either.
-      await service.enable(ROOM_ID, OPERATOR);
+      await native.enable();
       const handle = await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
       await rm(store.sidecarPath(ROOM_ID), { force: true });
-      reapAfterDays = 0;
+      reapAfterDays = 1;
+      makeAncient();
 
-      const result = await new RoomRepoReconciler(store, undefined, manager).reconcile();
+      const result = await native.reconcile();
 
       expect(result.worktrees).toEqual({
         reaped: 0,

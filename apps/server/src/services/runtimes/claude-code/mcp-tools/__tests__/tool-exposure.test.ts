@@ -464,22 +464,22 @@ describe('in-session tool exposure', () => {
     // from the docs registry, which composes no extension. Extension tools are
     // guarded separately, against a contributed fixture, in
     // `extension-tools-every-list.test.ts`.
-    // 120 -> 121 for `audit_verify` (spec `audit-trail`), DEFERRED: checking
-    // the audit log is a deliberate step a turn can search for. Both counts
-    // move by the same one.
-    // 121 -> 124 for `chat_send`, `chat_read` and `chat_stop` (spec
-    // `spin-off-chats` §1), all three DEFERRED: no prompt block names them
-    // yet (PR 4 of the spec moves the relay teaching onto them), so a turn
-    // that messages another chat searches for them like the relay tools it
-    // replaces. Both counts move by the same three.
-    expect(tools).toHaveLength(124);
-    expect(deferred).toHaveLength(113);
+    // Published Doc management/native task tools and upstream chat tools all remain deferred.
+    // Published126/115 plus chat_send, chat_read and chat_stop gives129/118.
+    expect(tools).toHaveLength(129);
+    expect(deferred).toHaveLength(118);
     for (const name of [
+      'audit_verify',
       'configure_doc_channel',
       'approve_doc_route',
       'revoke_doc_route',
       'canvas_send',
       'canvas_patch_state',
+      'replay_doc_batch',
+      'inspect_doc_channel',
+      'issue_doc_token',
+      'revoke_doc_token',
+      'canvas_set_checkbox',
     ]) {
       expect(deferred.map((tool) => tool.name)).toContain(name);
     }

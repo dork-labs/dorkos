@@ -10,43 +10,25 @@
  * seen red with its guard removed from `room-worktree-refresh.ts`.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { existsSync, realpathSync } from 'node:fs';
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { tmpdir } from 'node:os';
-import { createTestDb } from '@dorkos/test-utils/db';
-import { rooms, type Db } from '@dorkos/db';
-import type { Room } from '@dorkos/shared/room-schemas';
-import type { RoomContextFiles } from '@dorkos/shared/additional-context';
-import { ROOM_REPO_CAP_DEFAULTS } from '@dorkos/shared/room-repo';
 import { RoomRepoStore } from '../room-repo-store.js';
-import { RoomRepoService } from '../room-repo-service.js';
-import { RoomRepoMutex } from '../room-repo-mutex.js';
-import { RoomWorktreeManager } from '../room-worktree-manager.js';
-import { resolveRoomTurnPlace, roomTurnLaunchStep } from '../room-turn-place.js';
+import { RoomWorktreeManager, roomWorktreeBranch } from '../room-worktree-manager.js';
+import { registerOriginalNativeLaunchCase } from './room-original-native-case.js';
 import {
-  afterFailedWrite,
+  createOriginalOwnedRoomFixture,
+  type OriginalOwnedRoomFixture,
+} from './room-original-owned-fixture.js';
+import { fixtureGit } from './fixture-git.js';
+import {
   firstCollision,
   pathsCollide,
-  refreshRoomWorktree,
   type RoomWorktreeRefreshDeps,
   type RoomWorktreeRefreshTarget,
 } from '../room-worktree-refresh.js';
-import { removeFixtureTree, silenceGitAutoMaintenance } from './fixture-git.js';
 
-const ROOM_ID = '01ROOMREFRESHAAAAAAAAAAAAA';
-const OPERATOR = 'author-operator';
-const ROOM: Room = {
-  id: ROOM_ID,
-  kind: 'channel',
-  slug: 'release-train',
-  title: 'Release train',
-  topic: null,
-  archived: false,
-  ambientMaxEntries: 20,
-  createdAt: '2026-09-26T12:00:00.000Z',
-  lastActivityAt: '2026-09-26T12:00:00.000Z',
-};
+let ROOM_ID: string;
 
 /** Plain git, as a person's or an agent's own shell runs it. */
 async function git(cwd: string, ...args: string[]): Promise<string> {
@@ -69,10 +51,9 @@ async function git(cwd: string, ...args: string[]): Promise<string> {
 }
 
 describe('the turn-start refresh', () => {
-  let db: Db;
   let scratch: string;
   let store: RoomRepoStore;
-  let service: RoomRepoService;
+  let owning: OriginalOwnedRoomFixture;
   let manager: RoomWorktreeManager;
   let ana: string;
   let repo: string;
@@ -114,56 +95,40 @@ describe('the turn-start refresh', () => {
     return git(dir, 'rev-parse', 'HEAD');
   }
 
+  // Set up real files through the original operator router. The copy is
+  // fixture-owned Git state, not a minted original native placement.
   beforeEach(async () => {
-    db = createTestDb();
-    silenceGitAutoMaintenance();
-    scratch = realpathSync(await mkdtemp(path.join(tmpdir(), 'dorkos-room-refresh-')));
-    const dorkHome = path.join(scratch, '.dork');
-    await mkdir(dorkHome, { recursive: true });
+    owning = await createOriginalOwnedRoomFixture();
+    scratch = owning.dir;
+    store = owning.repos;
+    manager = owning.manager;
+    ROOM_ID = owning.roomId;
     ana = path.join(scratch, 'agents', 'ana');
     await mkdir(ana, { recursive: true });
-    store = new RoomRepoStore(db, dorkHome);
-    db.insert(rooms)
-      .values({
-        id: ROOM_ID,
-        kind: 'channel',
-        title: ROOM.title,
-        topic: ROOM.topic,
-        createdAt: ROOM.createdAt,
-        lastActivityAt: ROOM.lastActivityAt,
-      })
-      .run();
-    service = new RoomRepoService({
-      store,
-      mutex: new RoomRepoMutex(),
-      queueWaitMs: () => 5000,
-      enabled: () => true,
-      getRoom: () => ROOM,
-      isOwnerAuthor: (authorId) => authorId === OPERATOR,
-      operatorGitName: () => 'Dorian',
-      pinRoomMd: () => {},
-      caps: () => ({ ...ROOM_REPO_CAP_DEFAULTS }),
-      maxRoomMdBytes: () => ROOM_REPO_CAP_DEFAULTS.maxRoomMdBytes,
-    });
-    manager = new RoomWorktreeManager({
-      store,
-      hasRepo: (roomId) => service.hasRepo(roomId),
-      listStrandedWorktrees: (roomId) => service.listStrandedWorktrees(roomId),
-      reapAfterDays: () => 14,
-      busyAgentPaths: () => [],
-    });
-    await service.enable(ROOM_ID, OPERATOR);
     repo = store.repoPath(ROOM_ID);
-    const place = await resolveRoomTurnPlace(manager, ROOM_ID, ana, 'Ana');
-    copy = place.worktree!;
+    const slug = RoomWorktreeManager.slugFor('Ana', ana);
+    copy = path.join(store.homeDir(ROOM_ID), 'worktrees', slug);
+    await mkdir(path.dirname(copy), { recursive: true });
+    await fixtureGit(
+      ['worktree', 'add', '-b', roomWorktreeBranch(slug), copy, 'main'],
+      repo,
+      store.homeDir(ROOM_ID)
+    );
     target = manager.refreshTarget(ROOM_ID, copy)!;
     forgotten = [];
     named = new Map();
   });
 
   afterEach(async () => {
-    await removeFixtureTree(scratch);
+    await owning.close();
   });
+
+  function refreshRoomWorktree(
+    selected: RoomWorktreeRefreshTarget,
+    reads: RoomWorktreeRefreshDeps
+  ) {
+    return owning.refresh(selected, reads);
+  }
 
   describe('when nothing in the copy could be lost', () => {
     it('answers current when the copy is already at main`s tip', async () => {
@@ -297,7 +262,9 @@ describe('the turn-start refresh', () => {
       await onMain({ '.gitignore': '*.log\n' }, 'Ignore logs');
       expect((await refreshRoomWorktree(target, deps())).outcome.kind).toBe('refreshed');
       await writeFile(path.join(copy, 'notes.log'), 'my private notes\n', 'utf-8');
-      await onMain({ 'notes.log': 'the room’s log\n' }, 'Track the log', { force: true });
+      await onMain({ 'notes.log': 'the room’s log\n' }, 'Track the log', {
+        force: true,
+      });
       const before = await headOf(copy);
 
       const { outcome } = await refreshRoomWorktree(target, deps());
@@ -377,7 +344,11 @@ describe('the turn-start refresh', () => {
 
       const { outcome } = await refreshRoomWorktree(target, deps());
 
-      expect(outcome).toEqual({ kind: 'held', reason: 'unsafe-config', moved: null });
+      expect(outcome).toEqual({
+        kind: 'held',
+        reason: 'unsafe-config',
+        moved: null,
+      });
       expect(existsSync(marker)).toBe(false);
       expect(await headOf(copy)).toBe(before);
     });
@@ -432,18 +403,94 @@ describe('the turn-start refresh', () => {
      * the lock exactly as it would if a person's shell or a git GUI had taken it
      * between the idle check and the write.
      */
-    async function withWrappedGit(mode: 'hang' | 'foreign', body: () => Promise<void>) {
+    async function withWrappedGit(
+      mode: 'hang' | 'foreign',
+      body: () => Promise<void>,
+      requireAcquired = false
+    ) {
       const realGit = await whichGit();
       const bin = path.join(scratch, 'bin');
       await mkdir(bin, { recursive: true });
+      const worker = path.join(bin, 'original-lock-owner.mjs');
+      const receipt = path.join(bin, 'original-lock-owner-closed.json');
+      await writeFile(
+        worker,
+        `import { open, lstat, unlink, writeFile } from 'node:fs/promises';
+import { constants } from 'node:fs';
+const lock = process.argv[2], receipt = process.argv[3];
+const held = setInterval(() => {}, 1000);
+let stopping = false;
+let acquired;
+let drain;
+let failed = false;
+let first;
+const retain = (cause) => { if (!failed) { failed = true; first = cause; } };
+// The original signal owner exists before any asynchronous acquisition begins.
+process.once('SIGTERM', () => {
+  stopping = true;
+  void stop();
+});
+const opening = (async () => {
+  const handle = await open(lock, constants.O_WRONLY | constants.O_CREAT |
+    constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+  acquired = { handle };
+  const identity = await handle.stat({ bigint: true });
+  if (!identity.isFile() || identity.nlink !== 1n) throw new Error('Original lock identity refused');
+  acquired.identity = identity;
+})();
+void opening.catch((cause) => { retain(cause); void stop(); });
+function stop() {
+  if (drain) return drain;
+  drain = Promise.resolve().then(async () => {
+    try { await opening; } catch (cause) { retain(cause); }
+    let removed = false;
+    if (acquired?.identity) {
+      try {
+        const current = await acquired.handle.stat({ bigint: true });
+        const named = await lstat(lock, { bigint: true });
+        const original = acquired.identity;
+        if (!named.isFile() || named.nlink !== 1n || current.nlink !== 1n ||
+            current.dev !== original.dev || current.ino !== original.ino ||
+            named.dev !== original.dev || named.ino !== original.ino)
+          throw new Error('Original lock ownership changed');
+        await unlink(lock);
+        const retired = await acquired.handle.stat({ bigint: true });
+        if (retired.nlink !== 0n) throw new Error('Original lock unlink unconfirmed');
+        removed = true;
+      } catch (cause) { retain(cause); }
+    }
+    if (acquired) {
+      try { await acquired.handle.close(); } catch (cause) { retain(cause); }
+    }
+    if (!failed && removed && stopping) {
+      try {
+        await writeFile(receipt, JSON.stringify({
+          device: String(acquired.identity.dev), inode: String(acquired.identity.ino),
+          acquired: true, removed: true, closed: true
+        }), { flag: 'wx', mode: 0o600 });
+      } catch (cause) { retain(cause); }
+    }
+    clearInterval(held);
+    if (failed) { console.error(first); process.exitCode = 1; }
+    else if (stopping) process.exitCode = 143;
+  });
+  return drain;
+}
+`,
+        { flag: 'wx', mode: 0o600 }
+      );
+      const quote = (value: string) => "'" + value.replaceAll("'", "'\"'\"'") + "'";
       await writeFile(
         path.join(bin, 'git'),
         [
           '#!/bin/sh',
           'for a in "$@"; do',
           '  if [ "$a" = "--ff-only" ]; then',
-          '    : > "$GIT_DIR/index.lock"',
-          `    ${mode === 'hang' ? 'exec sleep 30' : 'break'}`,
+          ...(mode === 'hang'
+            ? [
+                `    exec ${quote(process.execPath)} ${quote(worker)} "$GIT_DIR/index.lock" ${quote(receipt)}`,
+              ]
+            : ['    : > "$GIT_DIR/index.lock"', '    break']),
           '  fi',
           'done',
           `exec "${realGit}" "$@"`,
@@ -455,6 +502,12 @@ describe('the turn-start refresh', () => {
       vi.stubEnv('PATH', `${bin}${path.delimiter}${original}`);
       try {
         await body();
+        if (requireAcquired) {
+          const closed = JSON.parse(await readFile(receipt, 'utf8'));
+          expect(closed).toMatchObject({ acquired: true, removed: true, closed: true });
+          expect(typeof closed.device).toBe('string');
+          expect(typeof closed.inode).toBe('string');
+        }
       } finally {
         vi.stubEnv('PATH', original);
       }
@@ -474,10 +527,14 @@ describe('the turn-start refresh', () => {
       await onMain({ 'PLAN.md': '# plan\n' }, 'Plan');
       const before = await headOf(copy);
 
-      await withWrappedGit('hang', async () => {
-        const { outcome } = await refreshRoomWorktree(target, deps({ writeTimeoutMs: 500 }));
-        expect(outcome).toMatchObject({ kind: 'held', reason: 'unreadable' });
-      });
+      await withWrappedGit(
+        'hang',
+        async () => {
+          const { outcome } = await refreshRoomWorktree(target, deps({ writeTimeoutMs: 500 }));
+          expect(outcome).toMatchObject({ kind: 'held', reason: 'unreadable' });
+        },
+        true
+      );
 
       expect(existsSync(lockOf())).toBe(false);
       expect(await headOf(copy)).toBe(before);
@@ -500,7 +557,11 @@ describe('the turn-start refresh', () => {
 
     it('never removes a lock that was there before the write, even after a kill', async () => {
       await writeFile(lockOf(), '', 'utf-8');
-      afterFailedWrite(lockOf(), true, Object.assign(new Error('killed'), { killed: true }));
+      await owning.afterFailedWrite(
+        lockOf(),
+        true,
+        Object.assign(new Error('killed'), { killed: true })
+      );
       expect(existsSync(lockOf())).toBe(true);
     });
 
@@ -615,126 +676,24 @@ describe('the turn-start refresh', () => {
       });
     });
   });
-
-  describe('at launch (roomTurnLaunchStep)', () => {
-    function launchStep(opts: {
-      bound: string[];
-      busy: Set<string>;
-      files: RoomContextFiles | null;
-      calls?: string[];
-    }) {
-      return roomTurnLaunchStep(
-        {
-          boundSessionIds: () => opts.bound,
-          isTurnInFlight: (id) => Promise.resolve(opts.busy.has(id)),
-          worktrees: {
-            retireLegacyPlumbing: (...args) => {
-              opts.calls?.push('retire');
-              return manager.retireLegacyPlumbing(...args);
-            },
-            refreshTarget: (...args) => {
-              opts.calls?.push('target');
-              return manager.refreshTarget(...args);
-            },
-          },
-          describeCommits: () => new Map(),
-          forgetBaselines: (sessionIds, absPaths) =>
-            forgotten.push(...sessionIds.flatMap((id) => absPaths.map((p) => `${id}:${p}`))),
-        },
-        { roomId: ROOM_ID, worktree: copy, agentPath: ana, files: opts.files }
-      );
-    }
-
-    it('a turn placed while main was at A and launched after main moved to B lands on B', async () => {
-      const a = await onMain({ 'A.md': 'a\n' }, 'A');
-      const placed = await resolveRoomTurnPlace(manager, ROOM_ID, ana, 'Ana');
-      expect(placed.files).toMatchObject({ behind: 1 });
-      const b = await onMain({ 'B.md': 'b\n' }, 'B');
-      expect(b).not.toBe(a);
-
-      const launched = await launchStep({
-        bound: ['s-room'],
-        busy: new Set(),
-        files: placed.files,
-      })('s-room');
-
-      expect(await headOf(copy)).toBe(b);
-      expect(launched.files).toMatchObject({
-        behind: 0,
-        ahead: 0,
-        refresh: { kind: 'refreshed', to: b, paths: ['A.md', 'B.md'] },
-      });
-    });
-
-    it('answers busy with zero git calls while a second bound session runs, and refreshes once it settles', async () => {
-      await onMain({ 'PLAN.md': '# plan\n' }, 'Plan');
-      const placed = await resolveRoomTurnPlace(manager, ROOM_ID, ana, 'Ana');
-      const before = await headOf(copy);
-      const busy = new Set(['s-app-resumed']);
-      const calls: string[] = [];
-      const step = launchStep({
-        bound: ['s-room', 's-app-resumed'],
-        busy,
-        files: placed.files,
-        calls,
-      });
-
-      const held = await step('s-room');
-      expect(held.files?.refresh).toEqual({ kind: 'held', reason: 'busy', moved: null });
-      // Neither the clean-up nor the refresh target was reached: no git at all.
-      expect(calls).toEqual([]);
-      expect(await headOf(copy)).toBe(before);
-
-      busy.delete('s-app-resumed');
-      const ran = await step('s-room');
-      expect(ran.files?.refresh).toMatchObject({ kind: 'refreshed' });
-      expect(calls).toEqual(['retire', 'target']);
-      // Baselines are forgotten in every bound session, the launching one included.
-      expect(forgotten).toContain(`s-room:${path.join(copy, 'PLAN.md')}`);
-      expect(forgotten).toContain(`s-app-resumed:${path.join(copy, 'PLAN.md')}`);
-    });
-
-    it('counts a bound session whose busy read throws as running', async () => {
-      await onMain({ 'PLAN.md': '# plan\n' }, 'Plan');
-      const placed = await resolveRoomTurnPlace(manager, ROOM_ID, ana, 'Ana');
-      const before = await headOf(copy);
-      const step = roomTurnLaunchStep(
-        {
-          boundSessionIds: () => ['s-room', 's-gone'],
-          isTurnInFlight: (id) =>
-            id === 's-gone' ? Promise.reject(new Error('no runtime')) : Promise.resolve(false),
-          worktrees: manager,
-          describeCommits: () => new Map(),
-          forgetBaselines: () => {},
-        },
-        { roomId: ROOM_ID, worktree: copy, agentPath: ana, files: placed.files }
-      );
-
-      const launched = await step('s-room');
-
-      expect(launched.files?.refresh).toMatchObject({ kind: 'held', reason: 'busy' });
-      expect(await headOf(copy)).toBe(before);
-    });
-
-    it('re-measures the counts against the captured tip when the copy is held', async () => {
-      const placed = await resolveRoomTurnPlace(manager, ROOM_ID, ana, 'Ana');
-      await onMain({ 'A.md': 'a\n' }, 'A');
-      await onMain({ 'B.md': 'b\n' }, 'B');
-      await writeFile(path.join(copy, 'draft.md'), 'mine\n', 'utf-8');
-
-      const launched = await launchStep({ bound: [], busy: new Set(), files: placed.files })(
-        's-room'
-      );
-
-      expect(placed.files).toMatchObject({ behind: 0 });
-      expect(launched.files).toMatchObject({
-        behind: 2,
-        ahead: 0,
-        refresh: { kind: 'held', reason: 'changes' },
-      });
-    });
-  });
 });
+
+registerOriginalNativeLaunchCase(
+  'placed-tip-change',
+  'a turn placed while main was at A and launched after main moved to B lands on B'
+);
+registerOriginalNativeLaunchCase(
+  'retired-id-busy',
+  'answers busy without touching the copy while the original retired-id producer runs, and refreshes once it settles'
+);
+registerOriginalNativeLaunchCase(
+  'busy-read-unknown',
+  'counts a bound session whose busy read throws as running'
+);
+registerOriginalNativeLaunchCase(
+  'placed-dirty-counts',
+  're-measures the counts against the captured tip when the copy is held'
+);
 
 describe('pathsCollide / firstCollision', () => {
   it('relates equal paths, a path inside another, and a parent — and nothing else', () => {

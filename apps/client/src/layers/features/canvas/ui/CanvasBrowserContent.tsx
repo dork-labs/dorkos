@@ -7,6 +7,7 @@ import { useAppStore } from '@/layers/shared/model';
 import { Input } from '@/layers/shared/ui';
 import { cn, openExternalLink } from '@/layers/shared/lib';
 import { useDevtoolsBridge } from '../model/use-devtools-bridge';
+import { useDocFrameChannel } from '../model/use-doc-frame-channel';
 import { roomCanvasRefusal, useRoomCanvasActions } from '../model/use-room-canvas';
 import {
   useResolvedFrame,
@@ -137,7 +138,17 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
     cwd,
     reloadNonce,
   });
+  const docFrame = useDocFrameChannel({
+    iframeRef,
+    documentId,
+    logicalUrl: currentUrl,
+    reloadNonce,
+    previewOrigin: resolved?.previewOrigin ?? null,
+    bridgeEligibility: resolved?.bridgeEligibility ?? null,
+    resolvedSource: resolved?.src ?? null,
+  });
   const { resourceErrorCount, notePersonNavigated, noteFrameLoaded } = useDevtoolsBridge({
+    onFrameRetire: docFrame.noteFrameRetired,
     iframeRef,
     documentId,
     logicalUrl: currentUrl,
@@ -284,7 +295,10 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
           setReloadNonce((n) => n + 1);
         }}
         iframeRef={iframeRef}
-        onFrameLoad={noteFrameLoaded}
+        navigationSource={docFrame.navigationSource ?? undefined}
+        onFrameLoad={(frame) => {
+          if (docFrame.noteFrameLoaded(frame)) noteFrameLoaded();
+        }}
       />
     </div>
   );
@@ -399,6 +413,7 @@ function AddressDisplay({ url, onActivate }: { url: string; onActivate: () => vo
 }
 
 interface BrowserBodyProps {
+  navigationSource?: string;
   target: ReturnType<typeof classifyBrowserTarget>;
   /** What the resolve cascade settled on, or `null` while it is still deciding. */
   resolved: ResolvedFrame | null;
@@ -411,7 +426,7 @@ interface BrowserBodyProps {
   onReload: () => void;
   /** Ref attached to the rendered iframe so the DevTools bridge can identify it. */
   iframeRef: React.RefObject<HTMLIFrameElement | null>;
-  onFrameLoad: () => void;
+  onFrameLoad: (frame: HTMLIFrameElement) => void;
 }
 
 /**
@@ -456,6 +471,7 @@ function explainResolveError(
 
 /** The frame (or a message) for the current navigation state. */
 function BrowserBody({
+  navigationSource,
   target,
   resolved,
   resolveError,
@@ -495,7 +511,7 @@ function BrowserBody({
       // resets "has it loaded yet" and "is it past its deadline" — a page's
       // loading state belongs to that page and nothing else.
       key={`${resolved.src}:${reloadNonce}`}
-      src={resolved.src}
+      src={navigationSource ?? resolved.src}
       sandbox={resolved.sandbox}
       title={title}
       iframeRef={iframeRef}
@@ -516,7 +532,7 @@ interface PreviewFrameProps {
   sandbox: string;
   title: string;
   iframeRef: React.RefObject<HTMLIFrameElement | null>;
-  onFrameLoad: () => void;
+  onFrameLoad: (frame: HTMLIFrameElement) => void;
   /** Whether to warn when this frame takes too long to fire `load`. */
   watchLoadDeadline: boolean;
   resourceErrorCount: number;
@@ -572,9 +588,9 @@ function PreviewFrame({
         ref={iframeRef}
         src={src}
         sandbox={sandbox}
-        onLoad={() => {
-          setLoaded(true);
-          onFrameLoad();
+        onLoad={(event) => {
+          if (src !== 'about:blank') setLoaded(true);
+          onFrameLoad(event.currentTarget);
         }}
         className="min-h-0 w-full flex-1 border-0"
         title={title}

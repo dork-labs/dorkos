@@ -13,7 +13,7 @@ import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createRelayRouter } from '../relay.js';
 import type { RelayCore } from '@dorkos/relay';
 import type { AdapterManager } from '../../services/relay/adapter-manager.js';
-import { RoomError } from '../../services/rooms/room-errors.js';
+import { RoomError } from '../../services/rooms/data/room-errors.js';
 
 const fixtureTarget = swappableServer();
 

@@ -1,8 +1,9 @@
 /**
  * `ROOM.md` reaching a room turn (spec `project-rooms` §3.3).
  *
- * The runner is real and the dispatcher is stubbed to a recorder, which is what
- * lets this file assert the claims that cannot be read anywhere else:
+ * Original Room posts enter the real Trigger, Runner, dispatcher and Claude
+ * constructor. A pass-through dispatcher observer records DATA only; the
+ * external SDK query is scripted, with no private request or producer fabricated:
  *
  * - **A room with no files dispatches exactly what it did before** — the field
  *   is ABSENT, not empty. What the layers below the runner do with the same
@@ -26,165 +27,218 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
-import { promises as fsp } from 'node:fs';
+import { promises as fsp, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { createTestDb } from '@dorkos/test-utils/db';
-import { rooms } from '@dorkos/db';
-import { ROOM_REPO_CAP_DEFAULTS } from '@dorkos/shared/room-repo';
-import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
-import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
-import type { RoomTurnRequest } from '../room-trigger.js';
+import request from '@dorkos/test-utils/supertest';
+import { ROOM_REPO_CAP_DEFAULTS, RoomRepoSidecarSchema } from '@dorkos/shared/room-repo';
 
-vi.mock('../../core/runtime-registry.js', () => ({
-  runtimeRegistry: {
-    getNativeSessionCwd: vi.fn(() => null),
-    persistSessionRuntime: () => Promise.resolve(true),
-    getSessionSettings: () => Promise.resolve({}),
-    get: () => ({
-      getCapabilities: () => ({
-        logBackedHistory: false,
-        nativeContext: [],
-        settings: { configSection: 'claudeCode', supportsEffort: true, sections: [] },
-      }),
-      acquireLock: () => true,
-      releaseLock: () => undefined,
-      sendMessage: () => undefined,
-      interruptQuery: () => Promise.resolve(false),
-      getInternalSessionId: (sessionId: string) => sessionId,
-    }),
-    has: () => true,
-    getDefaultType: () => 'claude-code',
-  },
+// Provider-account isolation keeps the SDK double away from real Claude history.
+const account = vi.hoisted(() => ({ root: '' }));
+vi.mock('../../runtimes/claude-code/claude-config-dir.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../runtimes/claude-code/claude-config-dir.js')>()),
+  resolveActiveClaudeRoot: () => account.root,
+  resolveLaunchAccountRoot: () => ({ ok: true, root: account.root, accountId: 'default' }),
+  resolveClaudeRootSet: () => [account.root],
+  claudeConfigDirEnv: (root: string) => ({ CLAUDE_CONFIG_DIR: root }),
 }));
 
-vi.mock('@dorkos/shared/manifest', () => ({ readManifest: () => Promise.resolve(null) }));
-
-vi.mock('../../core/config-manager.js', () => ({
-  configManager: {
-    get: (key: string) =>
-      key === 'runtimes' ? USER_CONFIG_DEFAULTS.runtimes : USER_CONFIG_DEFAULTS.rooms,
-  },
+vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
+  query: vi.fn(),
+  renameSession: vi.fn(),
+  forkSession: vi.fn(),
+  getSessionInfo: vi.fn().mockResolvedValue(null),
 }));
 
-/** Everything the runner handed the dispatcher, as this file inspects it. */
-interface TriggerCall {
-  sessionId: string;
-  content: string;
-  systemPromptAppend?: string;
-  roomContext?: unknown;
-  projector: { ingest: (event: Record<string, unknown>) => { seq: number } };
-  onTurnStart?: (seq: number) => void;
+/** Actual dispatcher arguments, observed without replacing its native implementation. */
+type TriggerCall = Parameters<
+  (typeof import('../../session/message-dispatcher.js'))['dispatchOriginalRoomMessage']
+>[2];
+const triggered: TriggerCall[] = [];
+let duringDispatch: () => Promise<void> = () => Promise.resolve();
+const observed: { controller: AbortController; joined: Promise<void>; text: string }[] = [];
+vi.mock('../../session/message-dispatcher.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../session/message-dispatcher.js')>();
+  const originalDispatch = original.dispatchOriginalRoomMessage;
+  return {
+    ...original,
+    dispatchOriginalRoomMessage: async (
+      request: Parameters<typeof originalDispatch>[0],
+      runner: Parameters<typeof originalDispatch>[1],
+      opts: TriggerCall
+    ) => {
+      triggered.push(opts);
+      const controller = new AbortController();
+      const capture = { controller, joined: Promise.resolve(), text: '' };
+      capture.joined = (async () => {
+        for await (const event of opts.projector.subscribe(
+          opts.projector.getCursor(),
+          controller.signal
+        )) {
+          if (event.type === 'text_delta') capture.text += event.text;
+          if (event.type === 'turn_end') break;
+        }
+      })();
+      // The owned observer remains joined by teardown even if dispatch refuses.
+      void capture.joined.catch(() => undefined);
+      observed.push(capture);
+      await duringDispatch();
+      return originalDispatch(request, runner, opts);
+    },
+  };
+});
+
+const { query } = await import('@anthropic-ai/claude-agent-sdk');
+const { ClaudeCodeRuntime } = await import('../../runtimes/claude-code/claude-code-runtime.js');
+const { LocalSessionAttachmentStore } =
+  await import('../../session/attachments/local-session-attachment-store.js');
+const { wrapSdkQuery, sdkSimpleText } =
+  await import('../../runtimes/claude-code/__tests__/sdk-scenarios.js');
+const configuration = await import('../../core/config-manager.js');
+const { runtimeRegistry } = await import('../../core/runtime-registry.js');
+const { isTurnInFlight } = await import('../../session/message-dispatcher.js');
+const { peekProjector } = await import('../../session/index.js');
+const { uiTurnFacts } = await import('../../session/browser-seat/ui-turn-facts.js');
+const { createOriginalNativeLaunchFixture } =
+  await import('../repo/__tests__/room-original-native-launch-fixture.js');
+type OriginalFixture = Awaited<ReturnType<typeof createOriginalNativeLaunchFixture>>;
+let original: OriginalFixture | undefined;
+let target: Awaited<ReturnType<OriginalFixture['bootNativeAgent']>> | undefined;
+
+async function openNative(
+  options: Parameters<typeof createOriginalNativeLaunchFixture>[0] = {}
+): Promise<void> {
+  original = await createOriginalNativeLaunchFixture({
+    seed: false,
+    publishRepoService: false,
+    roomTitle: 'Release train',
+    ...options,
+    createNativeRuntime: ({ dir, principals, mesh, targets }) => {
+      account.root = path.join(dir, 'claude-account');
+      mkdirSync(account.root, { recursive: true });
+      vi.mocked(query).mockImplementation(
+        (input) =>
+          wrapSdkQuery(
+            (async function* () {
+              const current = targets.find(
+                (candidate) => candidate.agentPath === input.options?.cwd
+              );
+              if (
+                !current ||
+                uiTurnFacts.read(current.sessionId).roomTurn?.roomId !== original?.roomId
+              )
+                throw new Error('SDK entered without the original current Room turn');
+              yield* sdkSimpleText('ok', current.sessionId);
+            })()
+          ) as unknown as ReturnType<typeof query>
+      );
+      const runtime = new ClaudeCodeRuntime(
+        dir,
+        targets[0]!.agentPath,
+        new LocalSessionAttachmentStore(path.join(dir, 'attachments'))
+      );
+      runtime.setMeshCore(mesh);
+      runtime.setConnectorRuntimeTools({
+        principals,
+        listenerUrl: 'http://127.0.0.1:1/mcp/connections',
+        agentToolsUrl: 'http://127.0.0.1:1/mcp/agent-tools',
+        isConnectorCapabilityId: () => false,
+      });
+      return runtime;
+    },
+  });
+  // Real configuration chooses the one-shot provider boundary used in this suite.
+  configuration.configManager.set('runtimes', {
+    ...configuration.configManager.get('runtimes'),
+    claudeCode: {
+      ...configuration.configManager.get('runtimes').claudeCode,
+      persistentSession: false,
+    },
+  });
+  target = await original.bootNativeAgent();
 }
 
-/** Every dispatch, in order. */
-const triggered: TriggerCall[] = [];
+async function send(): Promise<{ text: string }> {
+  if (!original || !target) throw new Error('Original native Room is absent');
+  const sessionId = target.sessionId;
+  const prior = observed.length;
+  original.subsystem.service.post(original.roomId, {
+    authorId: original.operator.id,
+    text: 'is the build green?',
+    mentions: [target.authorId],
+  });
+  await original.subsystem.service.triggersIdle();
+  // Native stream retirement precedes final sender/projector retirement.
+  // A successor uses the same real session only after both owners are idle.
+  await vi.waitFor(() => {
+    const selected = runtimeRegistry.get('claude-code');
+    expect(isTurnInFlight(sessionId, selected)).toBe(false);
+    expect(peekProjector(sessionId)?.getStatus().lifecycle).toBe('idle');
+  });
+  expect(observed).toHaveLength(prior + 1);
+  await observed[prior]!.joined;
+  return { text: observed[prior]!.text };
+}
 
-/**
- * Runs between the runner handing the dispatcher its arguments and the turn
- * opening — the window a merge would land in.
- */
-let duringDispatch: () => Promise<void> = () => Promise.resolve();
+async function closeNative(): Promise<void> {
+  let failed = false,
+    first: unknown;
+  const remember = (cause: unknown) => {
+    if (!failed) {
+      failed = true;
+      first = cause;
+    }
+  };
+  // Abort read-only subscribers, start native/provider cancellation, then join both.
+  for (const capture of observed) capture.controller.abort();
+  const closing = original?.close().catch(remember);
+  const results = await Promise.allSettled([closing, ...observed.map((capture) => capture.joined)]);
+  for (const result of results) if (result.status === 'rejected') remember(result.reason);
+  original = undefined;
+  target = undefined;
+  observed.length = 0;
+  if (failed) throw first;
+}
 
-vi.mock('../../session/index.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../session/index.js')>()),
-  dispatchMessage: async (opts: TriggerCall) => {
-    triggered.push(opts);
-    await duringDispatch();
-    const start = opts.projector.ingest({ type: 'turn_start' });
-    opts.onTurnStart?.(start.seq);
-    opts.projector.ingest({ type: 'text_delta', text: 'ok' });
-    opts.projector.ingest({ type: 'turn_end' });
-    return { accepted: true, canonicalId: opts.sessionId };
-  },
-}));
-
-const { createSessionRoomTurnRunner } = await import('../room-turn-runner.js');
 const { RoomConventions } = await import('../repo/room-conventions.js');
-const { RoomRepoService } = await import('../repo/room-repo-service.js');
-const { RoomRepoMutex } = await import('../repo/room-repo-mutex.js');
-const { RoomRepoStore } = await import('../repo/room-repo-store.js');
-const { commitAll, initRepo } = await import('../repo/room-repo-git.js');
+const { fixtureGit } = await import('../repo/__tests__/fixture-git.js');
+/** Fixture shell state only: these calls do not test or mint a product mutation context. */
+async function initRepo(repo: string, ceiling: string): Promise<void> {
+  await fixtureGit(
+    ['-c', 'init.templateDir=', 'init', '-b', 'main', '--quiet', '.'],
+    repo,
+    ceiling
+  );
+}
+async function commitAll(
+  repo: string,
+  message: string,
+  identity: { name: string; email: string },
+  ceiling: string
+): Promise<string> {
+  await fixtureGit(['add', '--all'], repo, ceiling);
+  await fixtureGit(
+    [
+      '-c',
+      `user.name=${identity.name}`,
+      '-c',
+      `user.email=${identity.email}`,
+      'commit',
+      '--no-verify',
+      '--quiet',
+      '-m',
+      message,
+    ],
+    repo,
+    ceiling
+  );
+  return fixtureGit(['rev-parse', 'HEAD'], repo, ceiling);
+}
 const { ROOM_MD_FILENAME } = await import('../repo/room-md.js');
-const { setRoomRepoService, tryGetRoomRepoService } = await import('../index.js');
+const { tryGetRoomRepoService } = await import('../index.js');
 
 const ROOM_ID = '01ROOMAAAAAAAAAAAAAAAAAAAA';
 const OPERATOR = { name: 'Dorian', email: 'operator@dorkos.local' };
-
-/** A trigger request for the room under test. */
-function request(): RoomTurnRequest {
-  const room = {
-    id: ROOM_ID,
-    kind: 'channel',
-    slug: 'release-train',
-    title: 'Release train',
-    topic: null,
-    archived: false,
-    ambientMaxEntries: 30,
-    wellKnown: null,
-    createdAt: '2026-08-27T10:00:00.000Z',
-    lastActivityAt: '2026-08-27T10:00:00.000Z',
-    members: [],
-    viewerAuthorId: 'human',
-    reactionFrequents: ['👍'],
-  } satisfies RoomWithRoster;
-  const entry: RoomEntry = {
-    roomId: room.id,
-    seq: 1,
-    id: 'entry-1',
-    authorId: 'human',
-    kind: 'post',
-    body: { text: 'is the build green?' },
-    mentions: [],
-    sessionId: null,
-    cascadeRoot: 'entry-1',
-    cascadeDepth: 0,
-    parentEntryId: null,
-    threadRootEntryId: null,
-    signature: null,
-    createdAt: room.createdAt,
-  };
-  return {
-    room,
-    authorId: 'author-ana',
-    externalAuthor: false,
-    agentPath: '/repo/ana',
-    // A room turn stands at home (spec `agent-home-desk` §5.1).
-    cwd: '/repo/ana',
-    additionalDirectories: [],
-    worktree: null,
-    sessionId: null,
-    entry,
-    prompt: entry.body.text,
-    roomContext: {
-      room: { id: room.id, kind: 'channel', name: '#release-train', bridged: false },
-      thread: null,
-      members: [],
-      working: [],
-      pending: [],
-      pendingTruncated: false,
-      ownRecent: [],
-      acknowledgments: [],
-      triggerEntryId: entry.id,
-      triggerAttachments: [],
-      addressing: {
-        responseMode: 'always',
-        engagedUntil: null,
-        engagedPostsLeft: null,
-        addressedNow: false,
-      },
-      budget: {
-        automaticRepliesLeftInThisRoomThisHour: 9,
-        automaticRepliesLeftInTotalThisHour: 99,
-        repliesLeftInThisChain: 3,
-      },
-    },
-    attachmentProjection: [],
-    onWaiting: () => undefined,
-    onActivity: () => undefined,
-    onSessionBound: () => undefined,
-  };
-}
 
 describe('ROOM.md delivery', () => {
   let scratch: string;
@@ -201,6 +255,7 @@ describe('ROOM.md delivery', () => {
 
   beforeEach(async () => {
     triggered.length = 0;
+    observed.length = 0;
     composeCalls = 0;
     duringDispatch = () => Promise.resolve();
     scratch = await mkdtemp(path.join(await fsp.realpath(tmpdir()), 'dorkos-room-md-delivery-'));
@@ -218,15 +273,16 @@ describe('ROOM.md delivery', () => {
   });
 
   afterEach(async () => {
+    await closeNative();
     await rm(scratch, { recursive: true, force: true });
   });
 
   /** How many times the runner asked the composer, across every turn. */
   let composeCalls = 0;
 
-  /** A runner whose conventions come from the real composer over the real repo. */
-  function runner() {
-    return createSessionRoomTurnRunner({
+  /** The original constructor reads the real composer; Trigger issues every request. */
+  async function runner(): Promise<void> {
+    await openNative({
       roomConventions: (room) => {
         composeCalls += 1;
         return conventions.compose(room);
@@ -238,7 +294,8 @@ describe('ROOM.md delivery', () => {
     hasRepo = false;
     await commitRoomMd('# Never sent\n');
 
-    await runner().run(request());
+    await runner();
+    await send();
 
     // Absent, not empty — the seam's own promise, so no consumer downstream has
     // to be careful. `''` happens to be inert today (every adapter guards with a
@@ -252,7 +309,8 @@ describe('ROOM.md delivery', () => {
   it('sends the conventions on systemPromptAppend, never in the message', async () => {
     await commitRoomMd('# Release train\n\nShip on Thursdays.\n');
 
-    await runner().run(request());
+    await runner();
+    await send();
 
     const dispatch = triggered[0]!;
     expect(dispatch.systemPromptAppend).toContain('Ship on Thursdays.');
@@ -271,9 +329,10 @@ describe('ROOM.md delivery', () => {
       await commitRoomMd('# Release train\n\nShip on Mondays now.\n');
     };
 
-    await runner().run(request());
+    await runner();
+    await send();
     duringDispatch = () => Promise.resolve();
-    await runner().run(request());
+    await send();
 
     expect(triggered).toHaveLength(2);
     expect(triggered[0]!.systemPromptAppend).toContain('Ship on Thursdays.');
@@ -293,9 +352,8 @@ describe('ROOM.md delivery', () => {
     // the room's read cursor and replays the whole window — so one unreadable
     // cache row would replay somebody's conversation rather than dropping an
     // optional block (room-participation spec §8.3).
-    const result = await createSessionRoomTurnRunner({
-      roomConventions: () => Promise.reject(new Error('SQLITE_BUSY')),
-    }).run(request());
+    await openNative({ roomConventions: () => Promise.reject(new Error('SQLITE_BUSY')) });
+    const result = await send();
 
     expect(result.text).toBe('ok');
     expect('systemPromptAppend' in triggered[0]!).toBe(false);
@@ -305,7 +363,8 @@ describe('ROOM.md delivery', () => {
     await commitRoomMd('# Release train\n');
     await rm(path.join(repo, '.git'), { recursive: true, force: true });
 
-    const result = await runner().run(request());
+    await runner();
+    const result = await send();
 
     // The message is still answered. A room whose files cannot be read is a
     // room without files for this turn — never a turn nobody gets an answer to.
@@ -342,6 +401,7 @@ describe('the production wiring', () => {
   });
 
   afterEach(async () => {
+    await closeNative();
     await rm(scratch, { recursive: true, force: true });
   });
 
@@ -351,7 +411,8 @@ describe('the production wiring', () => {
       'this case must run before anything registers a service; see the block doc'
     ).toBeNull();
 
-    const result = await createSessionRoomTurnRunner().run(request());
+    await openNative({ defaultRoomConventions: true });
+    const result = await send();
 
     // The embedded read-only subsystem is the ordinary case: it bootstraps no
     // repo service at all, and every room there is simply a room without files.
@@ -360,42 +421,24 @@ describe('the production wiring', () => {
   });
 
   it('reaches ROOM.md through the registered service, with nothing injected', async () => {
-    const db = createTestDb();
-    const store = new RoomRepoStore(db, dorkHome);
-    const room = request().room;
-    // `room_repos.room_id` is a foreign key, so the room has to exist before it
-    // can be given files — the same order the enable route meets in production.
-    db.insert(rooms)
-      .values({
-        id: room.id,
-        kind: room.kind,
-        title: room.title,
-        topic: room.topic,
-        createdAt: room.createdAt,
-        lastActivityAt: room.lastActivityAt,
-      })
-      .run();
-    const service = new RoomRepoService({
-      store,
-      mutex: new RoomRepoMutex(),
-      queueWaitMs: () => 5000,
-      enabled: () => true,
-      getRoom: () => room,
-      isOwnerAuthor: (authorId) => authorId === 'author-operator',
-      operatorGitName: () => 'Dorian',
-      pinRoomMd: () => {},
-      caps: () => ({ ...ROOM_REPO_CAP_DEFAULTS }),
-      maxRoomMdBytes: () => ROOM_REPO_CAP_DEFAULTS.maxRoomMdBytes,
+    await openNative({ defaultRoomConventions: true, publishRepoService: true });
+    if (!original) throw new Error('Original native Room is absent');
+    // Real owning HTTP enable, with the original installation owner credential.
+    expect(original.repo.hasRepo(original.roomId)).toBe(false);
+    const enabled = await request(original.server)
+      .post(`/api/rooms/${original.roomId}/repo`)
+      .set('Authorization', `Bearer ${original.ownerKey.key}`);
+    expect(enabled.status).toBe(201);
+    // The public 201 body exposes the created repo sidecar; creation is the native state transition.
+    expect(RoomRepoSidecarSchema.safeParse(enabled.body.repo).success).toBe(true);
+    expect(enabled.body.repo).toMatchObject({
+      roomId: original.roomId,
+      createdBy: original.operator.id,
+      mode: 'owned',
+      defaultBranch: 'main',
     });
-    // A real enable: the sidecar, `git init -b main`, and the seeded `ROOM.md`
-    // committed as the operator. Nothing here writes the file by hand, so what
-    // the turn carries is what the enable route really produces.
-    const enabled = await service.enable(ROOM_ID, 'author-operator');
-    expect(enabled.created).toBe(true);
-    setRoomRepoService(service);
-
-    // No `roomConventions` option: this is the default reader, end to end.
-    const result = await createSessionRoomTurnRunner().run(request());
+    expect(original.repo.hasRepo(original.roomId)).toBe(true);
+    const result = await send();
 
     expect(result.text).toBe('ok');
     const append = triggered[0]!.systemPromptAppend;

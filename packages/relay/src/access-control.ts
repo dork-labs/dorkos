@@ -105,7 +105,7 @@ function parseRules(raw: string): RelayAccessRule[] | null {
  * ```
  */
 export class AccessControl {
-  private rules: RelayAccessRule[] = [];
+  #rules: RelayAccessRule[] = [];
   private watcher: FSWatcher | null = null;
   private readonly rulesPath: string;
   /** Resolves once the hot-reload watcher has settled — see {@link whenWatcherReady}. */
@@ -119,7 +119,7 @@ export class AccessControl {
    * module doc: {@link checkAccess} denies everything. Cleared on the next
    * successful load, so fixing or deleting the file recovers without a restart.
    */
-  private quarantineReason: string | null = null;
+  #quarantineReason: string | null = null;
   private readonly logger?: AccessControlLogger;
 
   /**
@@ -168,7 +168,7 @@ export class AccessControl {
    * cannot be read as a rule list. While quarantined every check is denied.
    */
   isQuarantined(): boolean {
-    return this.quarantineReason !== null;
+    return this.#quarantineReason !== null;
   }
 
   /**
@@ -186,21 +186,21 @@ export class AccessControl {
    * @returns An {@link AccessResult} indicating whether delivery is allowed
    */
   checkAccess(from: string, to: string): AccessResult {
-    if (this.quarantineReason !== null) {
+    if (this.#quarantineReason !== null) {
       return {
         allowed: false,
         reason:
           `the relay access rules at ${this.rulesPath} cannot be read ` +
-          `(${this.quarantineReason}), so nothing is being delivered until they are ` +
+          `(${this.#quarantineReason}), so nothing is being delivered until they are ` +
           `fixed or the file is removed`,
       };
     }
 
-    for (const rule of this.rules) {
+    for (const rule of this.#rules) {
       if (matchesPattern(from, rule.from) && matchesPattern(to, rule.to)) {
         return {
           allowed: rule.action === 'allow',
-          matchedRule: rule,
+          matchedRule: Object.freeze({ ...rule }),
         };
       }
     }
@@ -221,11 +221,11 @@ export class AccessControl {
   addRule(rule: RelayAccessRule): void {
     this.assertWritable('add a rule');
     // Remove any exact duplicate (same from + to + priority)
-    this.rules = this.rules.filter(
+    this.#rules = this.#rules.filter(
       (r) => !(r.from === rule.from && r.to === rule.to && r.priority === rule.priority)
     );
-    this.rules.push(rule);
-    this.rules.sort(byPriorityDesc);
+    this.#rules.push({ ...rule });
+    this.#rules.sort(byPriorityDesc);
     this.persistRules();
   }
 
@@ -238,9 +238,9 @@ export class AccessControl {
    */
   removeRule(from: string, to: string): void {
     this.assertWritable('remove a rule');
-    const index = this.rules.findIndex((r) => r.from === from && r.to === to);
+    const index = this.#rules.findIndex((r) => r.from === from && r.to === to);
     if (index !== -1) {
-      this.rules.splice(index, 1);
+      this.#rules.splice(index, 1);
       this.persistRules();
     }
   }
@@ -251,7 +251,7 @@ export class AccessControl {
    * @returns Array of access rules sorted by priority (highest first)
    */
   listRules(): RelayAccessRule[] {
-    return [...this.rules];
+    return this.#rules.map((rule) => ({ ...rule }));
   }
 
   /**
@@ -291,10 +291,10 @@ export class AccessControl {
    * @throws When the rules file is unreadable.
    */
   private assertWritable(action: string): void {
-    if (this.quarantineReason === null) return;
+    if (this.#quarantineReason === null) return;
     throw new Error(
       `Cannot ${action}: the relay access rules at ${this.rulesPath} cannot be read ` +
-        `(${this.quarantineReason}). Saving now would overwrite them with an empty list. ` +
+        `(${this.#quarantineReason}). Saving now would overwrite them with an empty list. ` +
         `Fix or delete that file first — it is left exactly as it is until you do.`
     );
   }
@@ -316,7 +316,7 @@ export class AccessControl {
       raw = fs.readFileSync(this.rulesPath, 'utf-8');
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-        this.rules = [];
+        this.#rules = [];
         this.clearQuarantine();
         return;
       }
@@ -332,28 +332,28 @@ export class AccessControl {
       return;
     }
 
-    this.rules = parsed;
-    this.rules.sort(byPriorityDesc);
+    this.#rules = parsed;
+    this.#rules.sort(byPriorityDesc);
     this.clearQuarantine();
   }
 
   /** Enter the deny-everything state and say so once, loudly. */
   private enterQuarantine(reason: string): void {
-    this.rules = [];
-    if (this.quarantineReason !== reason) {
+    this.#rules = [];
+    if (this.#quarantineReason !== reason) {
       this.logger?.error?.(
         `[Relay] Refusing to deliver messages: ${this.rulesPath} exists but ${reason}. ` +
           `Access control cannot be evaluated, so every message is denied until the file ` +
           `is repaired or deleted.`
       );
     }
-    this.quarantineReason = reason;
+    this.#quarantineReason = reason;
   }
 
   /** Leave the deny-everything state after a good load. */
   private clearQuarantine(): void {
-    if (this.quarantineReason !== null) {
-      this.quarantineReason = null;
+    if (this.#quarantineReason !== null) {
+      this.#quarantineReason = null;
       this.logger?.warn?.(
         `[Relay] ${this.rulesPath} is readable again — access control is back in effect.`
       );
@@ -374,7 +374,7 @@ export class AccessControl {
    */
   private persistRules(): void {
     const tmpPath = `${this.rulesPath}.${process.pid}.${randomUUID()}.tmp`;
-    const json = JSON.stringify(this.rules, null, 2);
+    const json = JSON.stringify(this.#rules, null, 2);
     try {
       fs.writeFileSync(tmpPath, json, 'utf-8');
       fs.renameSync(tmpPath, this.rulesPath);

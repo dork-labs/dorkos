@@ -7,7 +7,7 @@
  * fixture that handed the composer a string would prove nothing about the one
  * thing the pin rests on — that the working tree is not what is read.
  *
- * Seeded defects, each run red before the code stood:
+ * Historical predecessor seeded defects (this successor is UNRUN):
  *
  * - Reading `ROOM.md` off disk instead of out of the commit reddens both the
  *   uncommitted-edit case and the pin.
@@ -45,8 +45,8 @@ const gitCalls = vi.hoisted(() => [] as string[][]);
  * open that window on purpose, so the test opens it here — armed to fire once,
  * just before the command it names.
  *
- * `commitAll` and `initRepo` reach the real `runGit` inside their own module, so
- * a hook that commits cannot re-enter this wrapper.
+ * The hooks wrap the three finite production read APIs. Fixture commits use
+ * separate test setup commands, so a hook cannot re-enter these read wrappers.
  */
 const gitHook = vi.hoisted(() => ({
   /** The verb to fire before, or `null` when nothing is armed. */
@@ -59,24 +59,58 @@ vi.mock('../room-repo-git.js', async (importOriginal) => {
   const real = await importOriginal<typeof import('../room-repo-git.js')>();
   return {
     ...real,
-    runGit: async (args: string[], cwd: string, ceiling: string) => {
-      gitCalls.push(args);
-      if (gitHook.before !== null && args[0] === gitHook.before) {
+    revParse: async (cwd: string, ref: string, ceiling: string) => {
+      gitCalls.push(['rev-parse', ref]);
+      if (gitHook.before === 'rev-parse') {
         gitHook.before = null;
         await gitHook.run();
       }
-      return real.runGit(args, cwd, ceiling);
+      return real.revParse(cwd, ref, ceiling);
+    },
+    roomBlobSize: async (cwd: string, ceiling: string, object: string) => {
+      gitCalls.push(['cat-file', '-s', object]);
+      if (gitHook.before === 'cat-file') {
+        gitHook.before = null;
+        await gitHook.run();
+      }
+      return real.roomBlobSize(cwd, ceiling, object);
+    },
+    roomShowObject: async (cwd: string, ceiling: string, object: string) => {
+      gitCalls.push(['show', object]);
+      if (gitHook.before === 'show') {
+        gitHook.before = null;
+        await gitHook.run();
+      }
+      return real.roomShowObject(cwd, ceiling, object);
     },
   };
 });
 
 import { RoomConventions, ROOM_CONVENTIONS_TAG } from '../room-conventions.js';
-import { commitAll, initRepo, runGit } from '../room-repo-git.js';
-import { removeFixtureTree, silenceGitAutoMaintenance } from './fixture-git.js';
+import { fixtureGit, removeFixtureTree, silenceGitAutoMaintenance } from './fixture-git.js';
 import { ROOM_MD_FILENAME } from '../room-md.js';
 
 const ROOM_ID = '01ROOMAAAAAAAAAAAAAAAAAAAA';
 const OPERATOR = { name: 'Dorian', email: 'operator@dorkos.local' };
+
+/** Setup native commits are separate from the finite production read hooks. */
+async function commitFixture(cwd: string, ceiling: string, message: string): Promise<string> {
+  await fixtureGit(['add', '-A', '--', '.'], cwd, ceiling);
+  await fixtureGit(
+    [
+      '-c',
+      `user.name=${OPERATOR.name}`,
+      '-c',
+      `user.email=${OPERATOR.email}`,
+      'commit',
+      '-m',
+      message,
+    ],
+    cwd,
+    ceiling
+  );
+  return fixtureGit(['rev-parse', 'HEAD'], cwd, ceiling);
+}
 
 describe('RoomConventions', () => {
   let scratch: string;
@@ -87,15 +121,16 @@ describe('RoomConventions', () => {
   let conventions: RoomConventions;
 
   /** Run git in the room's repo, with its home as the discovery ceiling. */
-  const git = (args: string[]): Promise<string> => runGit(args, repo, home);
+  const git = (args: string[]): Promise<string> => fixtureGit(args, repo, home);
 
   /** Write `ROOM.md` and commit it, answering the new commit's sha. */
   async function commitRoomMd(body: string, message = 'update the conventions'): Promise<string> {
     await writeFile(path.join(repo, ROOM_MD_FILENAME), body, 'utf-8');
-    return commitAll(repo, message, OPERATOR, home);
+    return commitFixture(repo, home, message);
   }
 
   beforeEach(async () => {
+    scratch = '';
     gitHook.before = null;
     gitHook.run = async () => {};
     // Before `initRepo` below: a `git commit` otherwise leaves a DETACHED
@@ -106,7 +141,7 @@ describe('RoomConventions', () => {
     home = path.join(scratch, 'rooms', ROOM_ID);
     repo = path.join(home, 'repo');
     await mkdir(repo, { recursive: true });
-    await initRepo(repo, home);
+    await fixtureGit(['init', '-b', 'main'], repo, home);
     hasRepo = true;
     cap = ROOM_REPO_CAP_DEFAULTS.maxRoomMdBytes;
     conventions = new RoomConventions({
@@ -118,7 +153,9 @@ describe('RoomConventions', () => {
   });
 
   afterEach(async () => {
-    await removeFixtureTree(scratch);
+    gitHook.before = null;
+    gitHook.run = async () => {};
+    if (scratch) await removeFixtureTree(scratch);
   });
 
   describe('a room with no files', () => {
@@ -137,7 +174,7 @@ describe('RoomConventions', () => {
 
     it('composes nothing when the commit holds no ROOM.md', async () => {
       await writeFile(path.join(repo, 'notes.md'), 'not the conventions file\n', 'utf-8');
-      await commitAll(repo, 'add a note', OPERATOR, home);
+      await commitFixture(repo, home, 'add a note');
 
       expect(await conventions.compose({ id: ROOM_ID, title: 'Release train' })).toBeNull();
     });
@@ -333,6 +370,8 @@ describe('RoomConventions', () => {
       expect(block).toContain(`commit="${first.slice(0, 7)}"`);
       expect(block).toContain('# Ship on Thursdays');
       expect(block).not.toContain('# Ship on Mondays now');
+      expect(gitHook.before).toBeNull();
+      expect(await fixtureGit(['rev-parse', 'main'], repo, home)).not.toBe(first);
     });
 
     it('measures and reads the SAME blob, so a merge cannot slip past the cap', async () => {
@@ -350,6 +389,8 @@ describe('RoomConventions', () => {
 
       expect(block).toContain('# Small');
       expect(block).not.toContain('zzz');
+      expect(gitHook.before).toBeNull();
+      expect(await fixtureGit(['show', 'main:ROOM.md'], repo, home)).toContain('zzz');
     });
 
     it('picks up a room rename without waiting for a commit', async () => {
@@ -377,6 +418,21 @@ describe('RoomConventions', () => {
     });
   });
 
+  it('rechecks actual local config before answering a warm cached commit', async () => {
+    await commitRoomMd('# Safe cached conventions\n');
+    expect(await conventions.compose({ id: ROOM_ID, title: 'Release train' })).toContain(
+      '# Safe cached conventions'
+    );
+    gitCalls.length = 0;
+    // Corrupt the actual config. No fake runner/config DTO supplies the refusal.
+    await fsp.appendFile(
+      path.join(repo, '.git', 'config'),
+      '\n[core]\n\tfsmonitor = malicious-command\n'
+    );
+    expect(await conventions.compose({ id: ROOM_ID, title: 'Release train' })).toBeNull();
+    expect(gitCalls.map(([verb]) => verb)).toEqual(['rev-parse']);
+  });
+
   it('never throws when the repo is unreadable mid-turn', async () => {
     await commitRoomMd('# Conventions\n');
     await rm(path.join(repo, '.git'), { recursive: true, force: true });
@@ -396,9 +452,9 @@ describe('RoomConventions', () => {
     // tree cannot be added to its index, and what this case needs is a room
     // directory that is plainly not a repository.
     await rm(path.join(repo, '.git'), { recursive: true, force: true });
-    await initRepo(scratch, scratch);
+    await fixtureGit(['init', '-b', 'main'], scratch, scratch);
     await writeFile(path.join(scratch, ROOM_MD_FILENAME), '# The wrong conventions\n', 'utf-8');
-    await commitAll(scratch, 'seed the enclosing repo', OPERATOR, scratch);
+    await commitFixture(scratch, scratch, 'seed the enclosing repo');
 
     expect(await conventions.compose({ id: ROOM_ID, title: 'Release train' })).toBeNull();
   });

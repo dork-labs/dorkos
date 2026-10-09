@@ -1,9 +1,8 @@
-import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
  * `GET /api/rooms/:id/files` and `/files/content` — who may read a room's own
  * files, and what they get (spec `project-rooms` §3.9).
  *
- * Driven through the REAL app mount against a real git repo on a temporary
+ * Driven through the REAL router and authentication mount against a real git repo on a temporary
  * DorkOS home, so the middleware in front of the routes is covered and the
  * answers are git's rather than a stub's.
  *
@@ -22,191 +21,163 @@ import { MainRequestAdmission } from '../../services/core/lifecycle/main-request
  * - Refusing agents outright reddens "a member agent may read".
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtemp, mkdir, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, symlink, writeFile } from 'node:fs/promises';
+import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { tmpdir } from 'node:os';
-import request from '@dorkos/test-utils/supertest';
-import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { FakeAgentRuntime } from '@dorkos/test-utils';
-import { createTestDb } from '@dorkos/test-utils/db';
-import { agents, type Db } from '@dorkos/db';
-import { ROOM_REPO_CAP_DEFAULTS } from '@dorkos/shared/room-repo';
+import originalRequest from '@dorkos/test-utils/supertest';
+import type { Server } from 'node:http';
+import { user, type Db } from '@dorkos/db';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
-vi.mock('../../lib/boundary.js', () => ({
-  validateBoundary: vi.fn(async (p: string) => p),
-  validateBoundaryOrDorkHome: vi.fn(async (p: string) => p),
-  getBoundary: vi.fn(() => '/mock/home'),
-  initBoundary: vi.fn().mockResolvedValue('/mock/home'),
-  isWithinBoundary: vi.fn().mockResolvedValue(true),
-  BoundaryError: class BoundaryError extends Error {},
-}));
-
-let fakeRuntime: FakeAgentRuntime;
-
-vi.mock('../../services/core/runtime-registry.js', () => ({
-  runtimeRegistry: {
-    getNativeSessionCwd: vi.fn(() => null),
-    getDefault: vi.fn(() => fakeRuntime),
-    get: vi.fn(() => fakeRuntime),
-    getAllCapabilities: vi.fn(() => ({})),
-    getDefaultType: vi.fn(() => 'fake'),
-    has: vi.fn(() => true),
-    listRuntimes: vi.fn(() => [fakeRuntime]),
-  },
-  RuntimeNotRegisteredError: class RuntimeNotRegisteredError extends Error {},
-}));
-
-vi.mock('../../services/core/tunnel-manager.js', () => ({
-  tunnelManager: {
-    status: { enabled: false, connected: false, url: null, port: null, startedAt: null },
-  },
-}));
-
-vi.mock('../../services/core/config-manager.js', () => ({
-  configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
-}));
-
-import express from 'express';
-import { createApp, finalizeApp } from '../../app.js';
-import roomsRouter from '../rooms.js';
 import {
   createRoomSubsystem,
-  getRoomFileEditor,
   resolveOperatorAuthor,
   setRoomAttachmentStores,
-  setRoomFileEditor,
-  setRoomFilesService,
-  setRoomRepoService,
-  setRoomService,
 } from '../../services/rooms/index.js';
-import {
-  RoomFileEditor,
-  RoomFilesService,
-  RoomRepoMutex,
-  RoomRepoService,
-  RoomRepoStore,
-} from '../../services/rooms/repo/index.js';
+import type { RoomRepoStore } from '../../services/rooms/repo/room-repo-store.js';
+import { configManager } from '../../services/core/config-manager.js';
 import { setReadCursorService } from '../../services/core/read-cursor-service.js';
-import { readOwnerAccount } from '../../services/core/auth/index.js';
+import {
+  createOriginalOwnedRoomFixture,
+  type OriginalOwnedRoomFixture,
+} from '../../services/rooms/repo/__tests__/room-original-owned-fixture.js';
+import { commitAll } from '../../services/rooms/repo/room-repo-git.js';
+import {
+  withRecognizedInstallationRoomNamespace,
+  readInstallationRoomMutationContext,
+} from '../../services/canvas/doc-channel/writes/installation-room-writes.js';
 import {
   initAgentIdentityService,
   resetAgentIdentityService,
 } from '../../services/core/agent-identity/agent-identity-service.js';
-import { runGit } from '../../services/rooms/repo/room-repo-git.js';
-import { ROOM_REPO_CONFIG_UNSAFE_MEMBER_MESSAGE } from '../../services/rooms/room-errors.js';
+import { fixtureGit as runGit } from '../../services/rooms/repo/__tests__/fixture-git.js';
+import { ROOM_REPO_CONFIG_UNSAFE_MEMBER_MESSAGE } from '../../services/rooms/data/room-errors.js';
 import { LocalRoomAttachmentStore } from '../../services/rooms/attachments/local-room-attachment-store.js';
 import { AttachmentRowStore } from '../../services/rooms/attachments/attachment-row-store.js';
 
 const execFileAsync = promisify(execFile);
 
-const app = createApp({ admission: new MainRequestAdmission() });
-finalizeApp(app);
-const testServer = listeningServer(app);
-
-/**
- * The rooms router behind a stand-in for `sessionGate`: it sets
- * `res.locals.user` exactly as the gate does for a signed-in request, which is
- * the one thing the file routes read to decide whose name a commit carries.
- */
+// The original router runs behind the actual session gate and agent identity
+// resolver in the constructor-owned fixture. No stand-in user locals are used.
+let original: OriginalOwnedRoomFixture;
+let testServer: Server;
+const signedInServer = Symbol('actual-signed-in-request');
 let signedInUserId = '';
-const signedInApp = express();
-signedInApp.use(express.json());
-signedInApp.use((_req, res, next) => {
-  res.locals.user = { userId: signedInUserId };
-  next();
-});
-signedInApp.use('/api/rooms', roomsRouter);
-const signedInServer = listeningServer(signedInApp);
+const peopleKeys = new Map<string, string>();
+function request(server: Server | typeof signedInServer) {
+  if (server === signedInServer) {
+    configManager.set('auth', { ...configManager.get('auth'), enabled: true });
+  }
+  const api = originalRequest(server === signedInServer ? original.server : server);
+  const credential =
+    server === signedInServer
+      ? peopleKeys.get(signedInUserId)
+      : configManager.get('auth').enabled
+        ? original.ownerKey.key
+        : undefined;
+  if (server === signedInServer && !credential)
+    throw new Error('Actual member credential missing.');
+  // When the signed-in member and agent reads run concurrently, the actual
+  // owner key satisfies sessionGate; the fixed Room resolver still resolves
+  // the genuine agent header first and retains its member-only disclosure.
+  const authenticate = (pending: ReturnType<typeof api.get>) =>
+    credential ? pending.set('Authorization', `Bearer ${credential}`) : pending;
+  return {
+    get: (url: string) => authenticate(api.get(url)),
+    post: (url: string) => authenticate(api.post(url)),
+    put: (url: string) => authenticate(api.put(url)),
+    patch: (url: string) => authenticate(api.patch(url)),
+  };
+}
 
 const ANA_PATH = '/agents/ana';
-
-/** Register an agent so a room can resolve it by directory. */
-function registerAgent(db: Db, name: string, projectPath: string): void {
-  const now = new Date().toISOString();
-  db.insert(agents)
-    .values({
-      id: `ULID_${name.toUpperCase()}`,
-      name,
-      displayName: name[0].toUpperCase() + name.slice(1),
-      runtime: 'claude-code',
-      projectPath,
-      behaviorJson: '{"responseMode":"always"}',
-      registeredAt: now,
-      updatedAt: now,
-    })
-    .run();
-}
 
 describe('room files routes', () => {
   let db: Db;
   let dorkHome: string;
   let store: RoomRepoStore;
-  let maxFileBytes: number;
   let attachmentRows: AttachmentRowStore;
   let roomSubsystem: ReturnType<typeof createRoomSubsystem>;
   let attachmentStore: LocalRoomAttachmentStore;
 
+  let acquired = false;
   beforeEach(async () => {
-    fakeRuntime = new FakeAgentRuntime();
-    vi.clearAllMocks();
+    acquired = false;
+    peopleKeys.clear();
+    signedInUserId = '';
     resetAgentIdentityService();
-    db = createTestDb();
-    dorkHome = await mkdtemp(path.join(tmpdir(), 'dorkos-room-files-route-'));
-    maxFileBytes = ROOM_REPO_CAP_DEFAULTS.maxFileBytes;
-    registerAgent(db, 'ana', ANA_PATH);
-    const rooms = createRoomSubsystem({ db });
-    roomSubsystem = rooms;
-    setRoomService(rooms.service);
-    setReadCursorService(rooms.readCursors);
-    store = new RoomRepoStore(db, dorkHome);
-    // ONE queue, shared by the enable path and the save path exactly as
-    // production shares it: a save and a repo being created are two writes into
-    // the same checkout.
-    const mutex = new RoomRepoMutex();
-    const repos = new RoomRepoService({
-      store,
-      mutex,
-      queueWaitMs: () => 5000,
-      enabled: () => true,
-      getRoom: (roomId, viewerAuthorId) => rooms.service.getRoom(roomId, viewerAuthorId),
-      isOwnerAuthor: (authorId) => rooms.authors.isOwner(authorId, readOwnerAccount()?.id ?? null),
-      operatorGitName: () => 'Dorian',
-      pinRoomMd: () => {},
-      caps: () => ({ ...ROOM_REPO_CAP_DEFAULTS }),
-      maxRoomMdBytes: () => ROOM_REPO_CAP_DEFAULTS.maxRoomMdBytes,
-    });
-    setRoomRepoService(repos);
-    const files = new RoomFilesService({
-      store,
-      hasRepo: (roomId) => repos.hasRepo(roomId),
-      maxFileBytes: () => maxFileBytes,
-    });
-    setRoomFilesService(files);
-    setRoomFileEditor(
-      new RoomFileEditor({
-        store,
-        mutex,
-        enabled: () => true,
-        queueWaitMs: () => 5000,
-        assertCanWriteFiles: (roomId, authorId) =>
-          rooms.service.assertCanWriteFiles(roomId, authorId),
+    try {
+      original = await createOriginalOwnedRoomFixture({
+        seed: false,
+        room: { title: 'Actual router owner', agentPaths: [ANA_PATH] },
         operatorGitName: () => 'Dorian',
-        personName: () => null,
-        announce: (roomId, input) => rooms.service.postFileChangeEvent(roomId, input),
-        uploadStagingRoot: () => path.join(dorkHome, '.temp', 'room-uploads'),
-        files,
-      })
-    );
-    attachmentRows = new AttachmentRowStore(db);
-    attachmentStore = new LocalRoomAttachmentStore(dorkHome);
-    setRoomAttachmentStores({ attachments: attachmentStore, rows: attachmentRows });
+      });
+      acquired = true;
+      db = original.db;
+      dorkHome = original.dir;
+      store = original.repos;
+      roomSubsystem = original.subsystem;
+      setReadCursorService(roomSubsystem.readCursors);
+      testServer = original.server;
+      for (const id of ['user-one', 'user-two', 'user-member']) {
+        const now = new Date();
+        db.insert(user)
+          .values({
+            id,
+            name: id,
+            email: `${id}@original-room-fixture.test`,
+            role: 'user',
+            createdAt: now,
+            updatedAt: now,
+          })
+          .run();
+        const key = await original.auth.api.createApiKey({
+          body: { userId: id, name: 'room-files-member' },
+        });
+        peopleKeys.set(id, key.key);
+      }
+      configManager.set('auth', { ...configManager.get('auth'), enabled: false });
+      attachmentRows = new AttachmentRowStore(db);
+      attachmentStore = new LocalRoomAttachmentStore(dorkHome);
+      setRoomAttachmentStores({ attachments: attachmentStore, rows: attachmentRows });
+    } catch (cause) {
+      try {
+        if (acquired) await original.close();
+      } catch {
+        /* Exact setup cause wins. */
+      }
+      try {
+        resetAgentIdentityService();
+      } catch {
+        /* Exact setup cause wins. */
+      }
+      throw cause;
+    }
   });
 
   afterEach(async () => {
-    resetAgentIdentityService();
-    await rm(dorkHome, { recursive: true, force: true });
+    let failed = false;
+    let firstCause: unknown;
+    for (const cleanup of [() => vi.restoreAllMocks(), () => resetAgentIdentityService()]) {
+      try {
+        cleanup();
+      } catch (cause) {
+        if (!failed) {
+          failed = true;
+          firstCause = cause;
+        }
+      }
+    }
+    try {
+      if (acquired) await original.close();
+    } catch (cause) {
+      if (!failed) {
+        failed = true;
+        firstCause = cause;
+      }
+    }
+    if (failed) throw firstCause;
   });
 
   /** A channel with Ana on the roster. */
@@ -228,20 +199,14 @@ describe('room files routes', () => {
     await writeFile(path.join(repoDir, 'docs', 'plan.md'), '# Plan\n', 'utf-8');
     await writeFile(path.join(repoDir, 'logo.png'), Buffer.from([0x89, 0x50, 0x00, 0x01]));
     await symlink('/etc/passwd', path.join(repoDir, 'secrets'));
-    await runGit(['add', '--all'], repoDir, ceiling);
-    await runGit(
-      [
-        '-c',
-        'user.name=Ana',
-        '-c',
-        'user.email=ana@dorkos.local',
-        'commit',
-        '-q',
-        '-m',
+    await withRecognizedInstallationRoomNamespace(original.writer, roomId, (scope) =>
+      commitAll(
+        repoDir,
         'Add a plan',
-      ],
-      repoDir,
-      ceiling
+        { name: 'Ana', email: 'ana@dorkos.local' },
+        ceiling,
+        readInstallationRoomMutationContext(original.writer, roomId, scope)
+      )
     );
     return roomId;
   }
@@ -421,7 +386,8 @@ describe('room files routes', () => {
       expect(binary.status).toBe(200);
       expect(binary.body.body).toEqual({ kind: 'binary' });
 
-      maxFileBytes = 3;
+      const settings = configManager.get('rooms');
+      configManager.set('rooms', { ...settings, repo: { ...settings.repo, maxFileBytes: 3 } });
       const capped = await request(testServer)
         .get(`/api/rooms/${roomId}/files/content`)
         .query({ path: 'docs/plan.md' });
@@ -649,9 +615,31 @@ describe('room files routes', () => {
     it('uploads as one commit by the person, posts one quiet entry, and leaves no staging behind', async () => {
       const roomId = await roomWithFiles();
       const base = await headOf(roomId);
-      // Disk storage, never memory: the editor is handed files staged under
-      // the room-uploads folder, not buffers.
-      const upload = vi.spyOn(getRoomFileEditor(), 'upload');
+      // Observe the actual original storage FD acquisition, not a legacy
+      // upload method or a public pathname DTO. Sources remain privately issued.
+      const staged: { file: string; ordinary: boolean }[] = [];
+      const actualOpen = fs.open.bind(fs);
+      vi.spyOn(fs, 'open').mockImplementation(async (...args: Parameters<typeof fs.open>) => {
+        const handle = await actualOpen(...args);
+        const filename = args[0];
+        if (
+          typeof filename === 'string' &&
+          filename.startsWith(path.join(dorkHome, '.temp', 'room-uploads') + path.sep)
+        ) {
+          try {
+            const identity = await handle.stat();
+            staged.push({ file: filename, ordinary: identity.isFile() });
+          } catch (cause) {
+            try {
+              await handle.close();
+            } catch {
+              /* Original observation cause wins. */
+            }
+            throw cause;
+          }
+        }
+        return handle; // Actual acquired FD returned unchanged to original storage.
+      });
 
       const res = await request(testServer)
         .post(`/api/rooms/${roomId}/files/upload`)
@@ -661,8 +649,8 @@ describe('room files routes', () => {
         .attach('files', Buffer.from('notes\n'), { filename: 'notes.md' });
 
       expect(res.status).toBe(200);
-      const staged = upload.mock.calls[0]?.[2].files.map((file) => file.content);
       expect(staged).toHaveLength(2);
+      expect(staged.every((file) => file.ordinary)).toBe(true);
       for (const content of staged ?? []) {
         expect(Buffer.isBuffer(content)).toBe(false);
         expect((content as { file: string }).file).toContain(

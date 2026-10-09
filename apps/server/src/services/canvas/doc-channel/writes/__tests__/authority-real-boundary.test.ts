@@ -521,14 +521,13 @@ it.each(['live', 'recovery'] as const)(
       kind === 'live'
         ? await h.authority.refreshCurrent(h.input, h.actor, original)
         : await h.authority.refreshRecoveryCurrent(intent, original);
-    const services = (h.grants as unknown as { services: { now: () => Date } }).services;
     let calls = 0,
       effects = 0;
-    services.now = () => {
+    h.setGrantClock(() => {
       calls++;
       h.db.update(canvasDocGrants).set({ revokedAt: new Date().toISOString() }).run();
       return new Date();
-    };
+    });
     expect(() =>
       h.authority.transaction((tx) => {
         if (kind === 'live') h.authority.requireCurrent(h.input, h.actor, original, snapshot, tx);
@@ -560,10 +559,9 @@ it.each([
     const actor = kind === 'runtime' ? h.runtime : h.actor;
     const original = await h.authority.prepare(h.input, actor);
     const snapshot = await h.authority.refreshCurrent(h.input, actor, original);
-    const services = (h.grants as unknown as { services: { now: () => Date } }).services;
     let calls = 0,
       effects = 0;
-    services.now = () => {
+    h.setGrantClock(() => {
       calls++;
       if (kind === 'revision') h.db.update(canvasDocGrants).set({ revision: 2 }).run();
       if (kind === 'consumption') h.db.update(approvals).set({ consumedAt: null }).run();
@@ -590,7 +588,7 @@ it.each([
           .run();
       if (kind === 'runtime') h.db.update(sessionMetadata).set({ runtime: 'opencode' }).run();
       return new Date();
-    };
+    });
     expect(() =>
       h.authority.transaction((tx) => {
         h.authority.requireCurrent(h.input, actor, original, snapshot, tx);
@@ -621,12 +619,11 @@ it.each(['live', 'recovery'] as const)(
       kind === 'live'
         ? await h.authority.refreshCurrent(h.input, h.actor, approved)
         : await h.authority.refreshRecoveryCurrent(intent, approved);
-    const services = (h.grants as unknown as { services: { now: () => Date } }).services;
     let calls = 0;
-    services.now = () => {
+    h.setGrantClock(() => {
       calls++;
       return new Date();
-    };
+    });
     h.authority.transaction((tx) => {
       if (kind === 'live') h.authority.requireCurrent(h.input, h.actor, approved, snapshot, tx);
       else h.authority.requireRecoveryCurrent(intent, approved, snapshot, tx);
@@ -936,33 +933,19 @@ it('configured grant callback phase precedes final fresh rows and uses current e
   cleanups.push(h.cleanup);
   const approved = await h.authority.prepare(h.input, h.actor);
   const snapshot = await h.authority.refreshCurrent(h.input, h.actor, approved);
-  const services = (
-    h.grants as unknown as { services: { now: () => Date; authority: DocGrantAuthority } }
-  ).services;
   const trace: string[] = [];
-  services.now = () => {
+  h.setGrantClock(() => {
     trace.push('clock');
     return new Date();
-  };
-  const realScope = services.authority.resolveScope;
-  services.authority.resolveScope = (...args) => {
-    trace.push('scope');
-    return realScope(...args);
-  };
-  const realTarget = services.authority.resolveTarget;
-  services.authority.resolveTarget = (...args) => {
-    trace.push('target');
-    return realTarget(...args);
-  };
-  const realOrigin = services.authority.originCurrent;
-  services.authority.originCurrent = (...args) => {
-    trace.push('origin');
-    return realOrigin(...args);
-  };
-  const realGrant = h.http.channels.getGrant.bind(h.http.channels);
-  vi.spyOn(h.http.channels, 'getGrant').mockImplementation((...args) => {
+  });
+  h.setGrantTrace((phase) => trace.push(phase));
+  // Observe genuine fresh full-row SQL decoding, not a reflected public store method.
+  const originalDecode = canvasDocGrants.approvalEvidence.mapFromDriverValue.bind(
+    canvasDocGrants.approvalEvidence
+  );
+  vi.spyOn(canvasDocGrants.approvalEvidence, 'mapFromDriverValue').mockImplementation((value) => {
     trace.push('grant');
-    return realGrant(...args);
+    return originalDecode(value);
   });
   expect(
     h.authority.transaction((tx) =>
@@ -975,7 +958,7 @@ it('configured grant callback phase precedes final fresh rows and uses current e
   const lastCallback = Math.max(...trace.map((event, index) => (event === 'grant' ? -1 : index)));
   expect(trace.lastIndexOf('grant')).toBeGreaterThan(lastCallback);
   const next = await h.authority.refreshCurrent(h.input, h.actor, approved);
-  services.now = () => new Date(Date.parse(h.granted.grant.expiresAt!) + 1);
+  h.setGrantClock(() => new Date(Date.parse(h.granted.grant.expiresAt!) + 1));
   expect(() =>
     h.authority.transaction((tx) =>
       h.authority.requireCurrent(h.input, h.actor, approved, next, tx)

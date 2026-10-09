@@ -1,11 +1,16 @@
 /** Sole private record issuer. All subjects originate in genuine owned HTTP admission. */
 import type { Dispatch, SetStateAction } from 'react';
 import type { Transport } from '@dorkos/shared/transport';
-import type { CanvasChannelFrame } from '@dorkos/shared/canvas-channel-schemas';
+import type {
+  CanvasChannelFrame,
+  CanvasChannelMcpOrigin,
+  PageEvent,
+} from '@dorkos/shared/canvas-channel-schemas';
 import {
   sameCanvasDocIncarnation,
   type CanvasDocIncarnation,
 } from '@dorkos/shared/canvas-doc-frame-wire';
+import { createDocChannelNativePorts } from './doc-channel-native-ports';
 import { buildOwnedLifecycle } from './doc-channel-owner-custody';
 import {
   readOwnedPageForAdmission,
@@ -35,6 +40,8 @@ interface NativeRecord {
   active: boolean;
   verified: boolean;
   snapshot?: Snapshot;
+  mcpOrigin?: Readonly<CanvasChannelMcpOrigin>;
+  mcpBinding?: import('./doc-channel-view').DocMcpBinding;
   httpBaseline?: Readonly<{ birth: CanvasDocIncarnation; floor: number }>;
   submit: Transport['ingestCanvasEvent'];
   inspect: Transport['getCanvasEventReceipt'];
@@ -166,6 +173,9 @@ export function issueOwnedHttpRecord(custodyKey: object, run: object, page: obje
       submit,
       inspect,
       transport: transportOwner,
+      mcpOrigin: witness.response.mcpOrigin
+        ? Object.freeze({ ...witness.response.mcpOrigin })
+        : undefined,
     };
     issued.set(record.token, record);
     subjects.set(custodyKey, record.token);
@@ -198,6 +208,9 @@ export function issueOwnedHttpRecord(custodyKey: object, run: object, page: obje
       birth: record.birth,
       floor: witness.response.receiptRetentionFloor,
     });
+    record.mcpOrigin = witness.response.mcpOrigin
+      ? Object.freeze({ ...witness.response.mcpOrigin })
+      : undefined;
   }
   if (!ownedRunCurrent(custodyKey, run)) return false;
   if (record) record.verified = ownedBirthQualified(custodyKey) || record.verified;
@@ -219,6 +232,7 @@ export function projectOwnedView(
   if (!matches()) return;
   const binding = subject && readOwnedNativeBinding(custodyKey, subject);
   const frameAdmission = readOwnedFrameFacade(custodyKey);
+  const mcpBinding = subject && readRecordMcpBinding(custodyKey, subject);
   capture.dispatch((previous) => {
     if (!matches()) return previous;
     const base =
@@ -230,6 +244,7 @@ export function projectOwnedView(
       ...(next.snapshot ? { snapshot: Object.freeze({ ...next.snapshot }) } : {}),
       binding,
       frameAdmission,
+      mcpBinding,
     };
   });
 }
@@ -307,6 +322,42 @@ export function readRecordNativeOperations(custodyKey: object, subject: object) 
       return Object.freeze({
         current: (purpose: 'read' | 'submit') =>
           recordSubjectCurrent(custodyKey, subject, purpose === 'submit') &&
+          (purpose === 'read' || record.httpBaseline === baseline),
+        submit: (event: Parameters<Transport['ingestCanvasEvent']>[1], signal: AbortSignal) =>
+          record.submit(
+            documentId,
+            event,
+            { expectedGeneration: baseline.birth.generation },
+            signal
+          ),
+        inspect: (id: string, signal: AbortSignal) =>
+          record.inspect(documentId, id, { expectedGeneration: baseline.birth.generation }, signal),
+      });
+    },
+  };
+}
+/** Closed recording operations for the captured native frame; routing still belongs to the server. */
+export function readRecordFrameOperations(custodyKey: object, subject: object) {
+  const record = recordFor(custodyKey, subject);
+  if (!record) return undefined;
+  const documentId = readOwnedFacts(custodyKey).documentId;
+  return {
+    current: () => recordSubjectCurrent(custodyKey, subject),
+    submit: (event: Parameters<Transport['ingestCanvasEvent']>[1], signal: AbortSignal) =>
+      record.submit(documentId, event, { expectedGeneration: record.birth.generation }, signal),
+    inspect: (id: string, signal: AbortSignal) =>
+      record.inspect(documentId, id, { expectedGeneration: record.birth.generation }, signal),
+    capture: () => {
+      const baseline = record.httpBaseline;
+      if (
+        !baseline ||
+        !recordSubjectCurrent(custodyKey, subject) ||
+        !sameCanvasDocIncarnation(baseline.birth, record.birth)
+      )
+        return null;
+      return Object.freeze({
+        current: (purpose: 'read' | 'submit') =>
+          recordSubjectCurrent(custodyKey, subject) &&
           (purpose === 'read' || record.httpBaseline === baseline),
         submit: (event: Parameters<Transport['ingestCanvasEvent']>[1], signal: AbortSignal) =>
           record.submit(
@@ -448,6 +499,64 @@ export function ownedSubjectCurrent(owner: object, subject: object, submit = fal
 /** Read native binding operations only for this owner’s issued subject. */
 export function bindOwnedSubject(owner: object, subject: object) {
   return core(owner).binding(subject);
+}
+/** Capture only this owned HTTP record's actual MCP source; ordinary routing guards are unchanged. */
+function readRecordMcpBinding(custodyKey: object, subject: object) {
+  const record = recordFor(custodyKey, subject);
+  const origin = record?.mcpOrigin;
+  if (!record || !origin || !record.httpBaseline || !recordSubjectCurrent(custodyKey, subject))
+    return undefined;
+  if (record.mcpBinding?.current('read')) return record.mcpBinding;
+  const sameOrigin = () => {
+    const current = recordFor(custodyKey, subject)?.mcpOrigin;
+    return (
+      !!current &&
+      current.canonicalSessionId === origin.canonicalSessionId &&
+      current.serverName === origin.serverName &&
+      current.uri === origin.uri &&
+      current.physicalRevision === origin.physicalRevision &&
+      current.declarationHash === origin.declarationHash
+    );
+  };
+  const current = () => recordSubjectCurrent(custodyKey, subject) && sameOrigin();
+  const operations = {
+    current,
+    submit: (event: PageEvent, signal: AbortSignal) =>
+      record.submit(
+        record.birth.documentId,
+        event,
+        { expectedGeneration: record.birth.generation },
+        signal
+      ),
+    inspect: (id: string, signal: AbortSignal) =>
+      record.inspect(
+        record.birth.documentId,
+        id,
+        { expectedGeneration: record.birth.generation },
+        signal
+      ),
+    capture: () => {
+      const baseline = record.httpBaseline;
+      if (!baseline || !current() || !sameCanvasDocIncarnation(baseline.birth, record.birth))
+        return null;
+      return Object.freeze({
+        current: (purpose: 'read' | 'submit') =>
+          current() && (purpose === 'read' || record.httpBaseline === baseline),
+        submit: operations.submit,
+        inspect: operations.inspect,
+      });
+    },
+  };
+  const native = createDocChannelNativePorts(operations);
+  record.mcpBinding = Object.freeze({
+    owner: subject,
+    documentId: record.birth.documentId,
+    generation: record.birth.generation,
+    origin,
+    current: native.current,
+    captureOriginal: native.captureOriginal,
+  });
+  return record.mcpBinding;
 }
 /** Reserve this owner’s captured replay run before any observable page work. */
 export function reserveOwnedRun(owner: object, run: object): void {

@@ -487,20 +487,21 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // which it does not use), so it stays deferred and unprefixed.
     // Unchanged by extension tools (DOR-2685): the docs registry this reads
     // composes no extension. `extension-tools-every-list.test.ts` guards those.
-    // 119 -> 120 for `compact_my_session` (DOR-2732): the `<context_warning>`
-    // note names it, with each runtime's prefix, so it is always loaded.
-    // 120 -> 121 for `audit_verify` (DOR-2738): no prompt block names it, so it
-    // stays deferred and unprefixed.
-    // 121 -> 124 for `chat_send`, `chat_read` and `chat_stop` (spec
-    // `spin-off-chats` §1): capabilities on the in-session server; no block
-    // names them until the relay teaching moves onto them (spec §7).
-    expect(advertised.size).toBe(124);
+    // Advertise both the published Doc tools and upstream three chat capabilities.
+    // Published126 plus chat_send, chat_read and chat_stop gives129.
+    expect(advertised.size).toBe(129);
     for (const name of [
+      'audit_verify',
       'configure_doc_channel',
       'approve_doc_route',
       'revoke_doc_route',
       'canvas_send',
       'canvas_patch_state',
+      'replay_doc_batch',
+      'inspect_doc_channel',
+      'issue_doc_token',
+      'revoke_doc_token',
+      'canvas_set_checkbox',
     ])
       expect(advertised.has(name)).toBe(true);
     expect(advertised.has('react_to_room_entry')).toBe(true);

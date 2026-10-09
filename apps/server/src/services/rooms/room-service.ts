@@ -21,7 +21,20 @@
  *
  * @module server/services/rooms/room-service
  */
-import type { DbTransaction } from '@dorkos/db';
+import type { Db, DbTransaction } from '@dorkos/db';
+import type { RoomStore } from './room-store.js';
+import {
+  readRoomCoreRepoAgentRoster,
+  requireRoomCoreFileWriteStore,
+  readRoomCoreOriginalBusyAgents,
+  readRoomCoreOriginalFileRequest,
+  type RoomCore,
+} from './service/room-core.js';
+import {
+  requireRoomVisibilityRepoWriteCurrent,
+  requireRoomVisibilityFileWriteCurrent,
+  type RoomVisibility,
+} from './service/room-visibility.js';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type { SignalType } from '@dorkos/shared/relay-schemas';
 import type {
@@ -97,7 +110,7 @@ export type { RebridgeRequest } from './manage/room-bridge-lifecycle.js';
 export type { RoomExternalPostInput } from './messages/room-entry-writer.js';
 export type { RoomPostInput } from './messages/room-posting.js';
 export type { RoomSignalListener } from './service/room-publisher.js';
-export { HISTORY_PAGE_MAX } from './messages/room-reads.js';
+export { HISTORY_PAGE_MAX } from './data/room-history-limits.js';
 export {
   FIND_ROOMS_MAX,
   MEMBER_ROOMS_PAGE_MAX,
@@ -109,6 +122,92 @@ export {
   type RoomDetail,
   type RoomMemberSummary,
 } from './manage/room-member-directory.js';
+
+const filePolicyServices = new WeakMap<
+  RoomService,
+  { core: RoomCore; visibility: RoomVisibility }
+>();
+/** Original constructor-bound busy DATA protects live turns; it grants no cleanup permission. */
+export function readRoomServiceOriginalBusyAgents(
+  service: RoomService,
+  db: Db,
+  store: RoomStore
+): readonly string[] {
+  const binding = filePolicyServices.get(service);
+  if (!binding) throw new Error('Unknown original room busy service.');
+  const result = readRoomCoreOriginalBusyAgents(binding.core, db, store);
+  if (filePolicyServices.get(service) !== binding) throw new Error('Room busy service changed.');
+  return result;
+}
+/** Actual service/core/store/native construction; actual HTTP composition additionally pins its exact service. */
+export function requireRoomServiceFileWriteOwner(
+  service: RoomService,
+  exactDb: Db,
+  exactStore: RoomStore
+): undefined {
+  const binding = filePolicyServices.get(service);
+  if (!binding) throw new Error('Unknown original room file service.');
+  requireRoomCoreFileWriteStore(binding.core, exactDb, exactStore);
+  return undefined;
+}
+/** Require current file-write visibility through the original Room service. */
+export function requireRoomServiceFileWriteCurrent(
+  service: RoomService,
+  exactDb: Db,
+  roomId: string,
+  authorId: string
+): undefined {
+  const binding = filePolicyServices.get(service);
+  if (!binding) throw new Error('Unknown original room file service.');
+  requireRoomVisibilityFileWriteCurrent(binding.visibility, exactDb, roomId, authorId);
+  if (filePolicyServices.get(service) !== binding)
+    throw new Error('Original room file service changed.');
+  requireRoomCoreFileWriteStore(binding.core, exactDb);
+  return undefined;
+}
+
+/** No public actor, visibility callback or DTO can select this native policy. */
+export function requireRoomServiceRepoWriteCurrent(
+  service: RoomService,
+  exactDb: Db,
+  roomId: string,
+  authorId: string,
+  operation: 'enable' | 'repair' | 'merge'
+): undefined {
+  const binding = filePolicyServices.get(service);
+  if (!binding) throw new Error('Unknown original room repo service.');
+  requireRoomVisibilityRepoWriteCurrent(binding.visibility, exactDb, roomId, authorId, operation);
+  if (filePolicyServices.get(service) !== binding)
+    throw new Error('Original room repo service changed.');
+  requireRoomCoreFileWriteStore(binding.core, exactDb);
+  return undefined;
+}
+
+/** Constructor-owned ordinary Room request policy; Doc cascade eligibility remains separate. */
+export function readRoomServiceOriginalFileRequest(
+  service: RoomService,
+  db: Db,
+  store: RoomStore,
+  request: import('./room-turn-port.js').RoomTurnRequest,
+  runner: import('./room-turn-port.js').RoomTurnRunner
+) {
+  const binding = filePolicyServices.get(service);
+  if (!binding) return undefined;
+  const facts = readRoomCoreOriginalFileRequest(binding.core, db, store, request, runner);
+  if (!facts || filePolicyServices.get(service) !== binding) return undefined;
+  requireRoomCoreFileWriteStore(binding.core, db, store);
+  return facts;
+}
+/** Fixed captured roster reader; a data row does not replace original member/owner/native caller checks. */
+export function readRoomServiceRepoAgentRoster(service: RoomService, exactDb: Db, roomId: string) {
+  const binding = filePolicyServices.get(service);
+  if (!binding) throw new Error('Unknown original room repo service.');
+  const rows = readRoomCoreRepoAgentRoster(binding.core, exactDb, roomId);
+  if (filePolicyServices.get(service) !== binding)
+    throw new Error('Original room repo service changed.');
+  requireRoomCoreFileWriteStore(binding.core, exactDb);
+  return rows;
+}
 
 /** Orchestration over the store, the roster, the author registry and the streams. */
 export class RoomService {
@@ -137,6 +236,10 @@ export class RoomService {
         this.publishSignal(roomId, 'progress', authorId, presence),
     });
     this.triggers = this.parts.core.triggers;
+    filePolicyServices.set(
+      this,
+      Object.freeze({ core: this.parts.core, visibility: this.parts.visibility })
+    );
   }
 
   /** The live subscription source behind `GET /api/rooms/:id/events`. */

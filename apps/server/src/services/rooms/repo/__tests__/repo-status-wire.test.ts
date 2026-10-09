@@ -26,6 +26,11 @@
  * @module services/rooms/repo/__tests__/repo-status-wire
  */
 import { describe, expect, it } from 'vitest';
+import { mkdtemp, mkdir, realpath, writeFile, appendFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { readRoomForegroundMaintenance, readRoomWorkingDiff } from '../room-repo-git.js';
+import { fixtureGit, removeFixtureTree, silenceGitAutoMaintenance } from './fixture-git.js';
 import type {
   RoomMainRepairResult as WireRepairResult,
   RoomRepoStatus,
@@ -99,7 +104,7 @@ describe('the repo status this server computes and the one the port promises', (
     expect(MAX_REPORTED_ROOM_STRAYS).toBe(50);
   });
 
-  it('parses a status the server would really answer', () => {
+  it('parses a complete synthetic wire projection without claiming producer authority', () => {
     // The type check above is structural; this is the runtime half of the same
     // claim — a fully populated answer, through the schema a client validates
     // a conflict payload with.
@@ -136,5 +141,70 @@ describe('the repo status this server computes and the one the port promises', (
 
     expect(RoomRepoStatusSchema.safeParse(answered).success).toBe(true);
     expect(RoomMainStatusSchema.safeParse(answered.main).success).toBe(true);
+  });
+});
+
+describe('fixed native room status observations', () => {
+  it('reads foreground maintenance and a working diff through the actual finite readers', async () => {
+    silenceGitAutoMaintenance();
+    const scratch = await mkdtemp(path.join(await realpath(tmpdir()), 'room-status-wire-'));
+    let failed = false;
+    // Join this scope to its captured cleanup before returning or reporting failure.
+    const drainOriginalCleanup = async () => {
+      try {
+        await removeFixtureTree(scratch);
+      } catch (error) {
+        if (!failed) throw error;
+      }
+    };
+    try {
+      const home = path.join(scratch, 'rooms', 'fixture'),
+        repo = path.join(home, 'repo');
+      await mkdir(repo, { recursive: true });
+      await fixtureGit(['init', '-b', 'main', '--quiet', '.'], repo, home);
+      await writeFile(path.join(repo, 'ROOM.md'), 'committed\n');
+      await fixtureGit(['add', '--', 'ROOM.md'], repo, home);
+      await fixtureGit(
+        [
+          '-c',
+          'user.name=Fixture',
+          '-c',
+          'user.email=fixture@dorkos.local',
+          'commit',
+          '-q',
+          '-m',
+          'seed',
+        ],
+        repo,
+        home
+      );
+      expect(await readRoomForegroundMaintenance(repo, home)).toEqual({
+        maintenanceAutoDetach: 'false',
+        gcAutoDetach: 'false',
+      });
+      expect(await readRoomWorkingDiff(repo, home)).toBe('');
+      await writeFile(path.join(repo, 'ROOM.md'), 'changed\n');
+      const diff = await readRoomWorkingDiff(repo, home);
+      expect(diff).toContain('diff --git a/ROOM.md b/ROOM.md');
+      expect(diff).toContain('-committed');
+      expect(diff).toContain('+changed');
+      // Config is native fixture corruption; the real product config reader
+      // must refuse both observations rather than adopting a scripted answer.
+      await appendFile(
+        path.join(repo, '.git', 'config'),
+        '\n[core]\n\tfsmonitor = malicious-command\n'
+      );
+      await expect(readRoomForegroundMaintenance(repo, home)).rejects.toMatchObject({
+        code: 'ROOM_REPO_CONFIG_UNSAFE',
+      });
+      await expect(readRoomWorkingDiff(repo, home)).rejects.toMatchObject({
+        code: 'ROOM_REPO_CONFIG_UNSAFE',
+      });
+    } catch (error) {
+      failed = true;
+      throw error;
+    } finally {
+      await drainOriginalCleanup();
+    }
   });
 });

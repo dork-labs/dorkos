@@ -1,3 +1,25 @@
+import {
+  readOriginalRegisteredRuntime,
+  observeOriginalRegisteredRuntimeStream,
+} from '../core/runtime-registry.js';
+import {
+  sendTestModeOriginalLockedMessage,
+  readTestModeOriginalCanonicalSessionId,
+  moveTestModeOriginalLockedAcquisition,
+} from '../runtimes/test-mode/test-mode-runtime.js';
+import {
+  readOriginalRoomDispatchRequest,
+  readOriginalRoomRequestCurrent,
+  type OriginalRoomDispatchCustody,
+} from '../rooms/service/room-core.js';
+import type { RoomTurnRequest, RoomTurnRunner } from '../rooms/room-turn-port.js';
+import { readOriginalRoomRunnerPreparation } from '../rooms/room-turn-runner.js';
+import {
+  sendClaudeOriginalLockedMessage,
+  moveClaudeOriginalLockedAcquisition,
+} from '../runtimes/claude-code/claude-code-runtime.js';
+import { sendCodexOriginalLockedMessage } from '../runtimes/codex/codex-runtime.js';
+import { sendOpenCodeOriginalLockedMessage } from '../runtimes/opencode/opencode-runtime.js';
 /**
  * The single ingress for every turn a caller can start (spec
  * `persistent-session-runtime` §3.4, task 2.3).
@@ -905,7 +927,47 @@ function turnDeps(runtime: AgentRuntime): TriggerTurnDeps {
   return {
     acquireLock: (sid, cid, lifecycle, token) => runtime.acquireLock(sid, cid, lifecycle, token),
     releaseLock: (sid, cid, token) => runtime.releaseLock(sid, cid, token),
-    sendMessage: (sid, text, opts) => runtime.sendMessage(sid, text, opts),
+    sendMessage: (sid, text, opts, holder, lockKey) => {
+      const original =
+        sendClaudeOriginalLockedMessage(
+          readOriginalRegisteredRuntime(runtime) ?? runtime,
+          sid,
+          text,
+          opts,
+          holder,
+          lockKey
+        ) ??
+        sendCodexOriginalLockedMessage(
+          readOriginalRegisteredRuntime(runtime) ?? runtime,
+          sid,
+          text,
+          opts,
+          holder,
+          lockKey
+        ) ??
+        sendOpenCodeOriginalLockedMessage(
+          readOriginalRegisteredRuntime(runtime) ?? runtime,
+          sid,
+          text,
+          opts,
+          holder,
+          lockKey
+        ) ??
+        sendTestModeOriginalLockedMessage(
+          readOriginalRegisteredRuntime(runtime) ?? runtime,
+          sid,
+          text,
+          opts,
+          holder,
+          lockKey
+        );
+      if (original)
+        return readOriginalRegisteredRuntime(runtime)
+          ? observeOriginalRegisteredRuntimeStream(runtime, sid, original)
+          : original;
+      // Ordinary supported runtimes retain their send path; only genuine SDK constructors consume Room custody.
+      return runtime.sendMessage(sid, text, opts);
+    },
     // Omitted rather than stubbed when the runtime cannot strand a turn: the
     // absence is what `triggerTurn` reads as "nothing to settle", and a stub
     // answering `false` would only hide which runtimes have the exposure.
@@ -918,8 +980,27 @@ function turnDeps(runtime: AgentRuntime): TriggerTurnDeps {
     ...(runtime.isHelperWorking !== undefined
       ? { isHelperWorking: (sid: string) => runtime.isHelperWorking!(sid) }
       : {}),
-    getInternalSessionId: (sid) => runtime.getInternalSessionId(sid),
+    getInternalSessionId: (sid) => {
+      const native = readTestModeOriginalCanonicalSessionId(
+        readOriginalRegisteredRuntime(runtime) ?? runtime,
+        sid
+      );
+      return native ? native.canonicalId : runtime.getInternalSessionId(sid);
+    },
     rekeyProjector: (oldId, newId) => rekeyProjector(oldId, newId),
+    moveNativeLock: (oldId, newId, holder) =>
+      moveClaudeOriginalLockedAcquisition(
+        readOriginalRegisteredRuntime(runtime) ?? runtime,
+        oldId,
+        newId,
+        holder
+      ) ??
+      moveTestModeOriginalLockedAcquisition(
+        readOriginalRegisteredRuntime(runtime) ?? runtime,
+        oldId,
+        newId,
+        holder
+      ),
     getCapabilities: () => runtime.getCapabilities(),
     // Switch now is the marker that a runtime answers the hold handshake.
     answersDispatchHold: runtime.switchWhenReady !== undefined,
@@ -1159,6 +1240,55 @@ export interface MessageDispatchResult extends TriggerTurnResult {
 }
 
 /** Everything one accepted message needs to become a running turn. */
+interface OriginalRoomPlanOrigin {
+  custody: OriginalRoomDispatchCustody;
+  request: RoomTurnRequest;
+  runner: RoomTurnRunner;
+  runtime: AgentRuntime;
+}
+const originalRoomOptions = new WeakMap<DispatchMessageOpts, OriginalRoomPlanOrigin>();
+const originalRoomPlans = new WeakMap<object, OriginalRoomPlanOrigin>();
+/** Fixed lookup of an original private queued plan; a copied options bag never issues ancestry. */
+export function readOriginalRoomDispatchPlan(
+  plan: object
+): Readonly<{ custody: OriginalRoomDispatchCustody; runtime: AgentRuntime }> | undefined {
+  const own = originalRoomPlans.get(plan);
+  if (!own || readOriginalRoomDispatchRequest(own.request, own.runner) !== own.custody)
+    return undefined;
+  return Object.freeze({ custody: own.custody, runtime: own.runtime });
+}
+/** Current native file-request gate over the original private queued plan. Lookup only. */
+export function requireOriginalRoomDispatchPlanCurrent(plan: object, sessionId: string): undefined {
+  const own = originalRoomPlans.get(plan);
+  if (
+    !own ||
+    readOriginalRoomDispatchRequest(own.request, own.runner) !== own.custody ||
+    !readOriginalRoomRequestCurrent(own.request, own.runner) ||
+    originalRoomPlans.get(plan) !== own ||
+    readOriginalRoomDispatchRequest(own.request, own.runner) !== own.custody
+  )
+    throw new Error('Original Room request is no longer current at launch.');
+  // Required completion/native session-owner observation is last, after any
+  // request-lifetime lookup. It is never reconstructed from a boolean input.
+  if (!readOriginalRoomRunnerPreparation(own.request, own.runner, sessionId))
+    throw new Error('Original Room required preparation did not complete.');
+  return undefined;
+}
+/** Dedicated original runner ingress; ordinary message fields remain non-authoritative. */
+export function dispatchOriginalRoomMessage(
+  request: RoomTurnRequest,
+  runner: RoomTurnRunner,
+  opts: DispatchMessageOpts
+): Promise<MessageDispatchResult> {
+  const custody = readOriginalRoomDispatchRequest(request, runner);
+  if (!custody) throw new Error('Original Room dispatch custody is unavailable.');
+  if (opts.disposition !== undefined && opts.disposition !== 'queue')
+    throw new Error('Original Room dispatch requires a fresh queued turn.');
+  const captured = { ...opts };
+  originalRoomOptions.set(captured, { custody, request, runner, runtime: captured.runtime });
+  return dispatchMessage(captured);
+}
+
 interface DispatchPlan {
   /** The client-facing session id the turn is triggered under. */
   sessionId: string;
@@ -1635,6 +1765,7 @@ function launchDispatchInner(
       },
       projector: plan.projector,
       deps: turnDeps(plan.runtime),
+      ...(originalRoomPlans.has(plan) ? { originalRoomPlan: plan } : {}),
       queueWaitMs: remainingMs,
       messageId,
       onError: turn.onError,
@@ -2058,6 +2189,17 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
     transient,
     turn: opts,
   };
+
+  const roomOrigin = originalRoomOptions.get(opts);
+  if (roomOrigin) {
+    if (
+      roomOrigin.runtime !== runtime ||
+      readOriginalRoomDispatchRequest(roomOrigin.request, roomOrigin.runner) !== roomOrigin.custody
+    )
+      throw new Error('Original Room dispatch changed before queue acceptance.');
+    originalRoomPlans.set(plan, roomOrigin);
+    originalRoomOptions.delete(opts);
+  }
 
   /** Accepted, waiting: the answer for every message that does not start now. */
   const waiting = (): MessageDispatchResult => ({

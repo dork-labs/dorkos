@@ -23,7 +23,7 @@ import type {
 import type { AuthorRegistry } from '../author-registry.js';
 import type { RoomService } from '../room-service.js';
 import type { RoomStore } from '../room-store.js';
-import type { RoomError } from '../room-errors.js';
+import type { RoomError } from '../data/room-errors.js';
 import {
   agentLookupFor,
   createRoomHarness,

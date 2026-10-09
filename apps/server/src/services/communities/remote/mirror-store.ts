@@ -43,7 +43,7 @@ import {
 } from '../../notifications/room-entry-notifications.js';
 import type { AuthorRegistry } from '../../rooms/author-registry.js';
 import type { RoomStore } from '../../rooms/room-store.js';
-import { toEntry } from '../../rooms/room-rows.js';
+import { toEntry } from '../../rooms/data/room-rows.js';
 
 /** The current remote authorization state represented by a local cache row. */
 export type MirrorState = 'authorized' | 'stale' | 'revoked';

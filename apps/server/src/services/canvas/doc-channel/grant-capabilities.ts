@@ -13,7 +13,14 @@ import {
   DocRouteGrantRequestSchema,
   type DocGrantActor,
 } from './grant-policy.js';
-import type { DocChannelGrants } from './grants.js';
+import {
+  configureOriginalDocChannel,
+  approveOriginalDocRoute,
+  revokeOriginalDocRoute,
+  type DocChannelGrants,
+} from './grants.js';
+import { readServiceOriginalDocManagement } from './service.js';
+import { approveInstallationOriginalDocRoute } from './writes/installation-file-writes.js';
 import type { DocChannelAuthorization } from './authorization.js';
 
 declare module '../../core/capabilities/capability-definition.js' {
@@ -34,7 +41,9 @@ async function serviceFor(
 ): Promise<DocChannelGrants> {
   const service = captured ?? deps.docChannelGrantDeps?.service;
   if (!service) throw new DocRouteGrantError('DOC_CHANNEL_UNAVAILABLE');
-  if (deps.docChannelGrantDeps)
+  if (actor.principal.claims.kind === 'operator' && deps.docChannelManagementService)
+    await readServiceOriginalDocManagement(deps.docChannelManagementService, documentId, actor);
+  else if (deps.docChannelGrantDeps)
     await deps.docChannelGrantDeps.authorization.require(documentId, actor, true);
   return service;
 }
@@ -72,7 +81,13 @@ export function createDocChannelGrantCapabilities(
       invoke: async (deps, input, context) => {
         const actor = actorOf(context);
         const current = await serviceFor(deps, service, input.documentId, actor);
-        current.configure(input.documentId, input.channel, actor, input.openerAgentId);
+        configureOriginalDocChannel(
+          current,
+          input.documentId,
+          input.channel,
+          actor,
+          input.openerAgentId
+        );
         return { configured: true as const };
       },
     }),
@@ -113,7 +128,22 @@ export function createDocChannelGrantCapabilities(
         const { routeApprovalToken, ...request } = input;
         const actor = actorOf(context);
         const current = await serviceFor(deps, service, input.documentId, actor);
-        const result = current.grant(request, actor, routeApprovalToken);
+        if (
+          actor.principal.claims.kind === 'operator' &&
+          deps.docChannelManagementService &&
+          !deps.docChannelManagementFileWrites
+        )
+          throw new DocRouteGrantError('DOC_CHANNEL_UNAVAILABLE');
+        const result =
+          actor.principal.claims.kind === 'operator' && deps.docChannelManagementService
+            ? await approveInstallationOriginalDocRoute(
+                deps.docChannelManagementFileWrites!,
+                current,
+                request,
+                actor,
+                routeApprovalToken
+              )
+            : approveOriginalDocRoute(current, request, actor, routeApprovalToken);
         return result.kind === 'granted'
           ? { kind: result.kind, grantId: result.grant.grantId, revision: result.grant.revision }
           : result;
@@ -135,7 +165,7 @@ export function createDocChannelGrantCapabilities(
       invoke: async (deps, input, context) => {
         const actor = actorOf(context);
         const current = await serviceFor(deps, service, input.documentId, actor);
-        current.revoke(input.documentId, input.grantId, actor);
+        revokeOriginalDocRoute(current, input.documentId, input.grantId, actor);
         return { revoked: true as const };
       },
     }),

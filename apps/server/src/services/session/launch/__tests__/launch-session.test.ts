@@ -34,7 +34,8 @@ vi.mock('../../../workspace/room-session-place.js', () => ({
   resolveSessionCwdWithRoom: vi.fn(async () => ({ rung: 'default', cwd: '/default' })),
 }));
 vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn(async () => null) }));
-vi.mock('../../session-state-projector.js', () => ({
+vi.mock('../../session-state-projector.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../session-state-projector.js')>()),
   getOrCreateProjector: vi.fn(() => ({ cwd: undefined })),
 }));
 vi.mock('../../projector-persistence.js', () => ({ persistenceModeFor: vi.fn(() => 'none') }));

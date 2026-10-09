@@ -189,6 +189,7 @@ describe('in-session and external MCP surface parity', () => {
     expect(uiTools.filter((name) => external.has(name)).sort()).toEqual([
       'canvas_patch_state',
       'canvas_send',
+      'canvas_set_checkbox',
     ]);
   });
 });

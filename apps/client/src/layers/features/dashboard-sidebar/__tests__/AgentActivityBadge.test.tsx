@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
-import { AgentActivityBadge } from '../ui/AgentActivityBadge';
+import { AgentActivityBadge } from '../ui/activity/AgentActivityBadge';
 import type { SessionBorderKind } from '@/layers/entities/session';
 
 afterEach(cleanup);

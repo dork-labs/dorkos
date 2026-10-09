@@ -8,6 +8,7 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 const expected: Record<string, number> = {
   'claude-code/claude-code-runtime.ts': 1,
   'claude-code/messaging/message-sender.ts': 1,
+  'claude-code/messaging/relay/relay-sdk-launch.ts': 1,
   'claude-code/messaging/runtime-cache.ts': 1,
   'claude-code/sessions/pump-launch.ts': 1,
   'claude-code/sessions/tracked-spawn.ts': 1,
@@ -47,7 +48,61 @@ function census(text: string, name: string): { count: number; unprojected: strin
   const source = ts.createSourceFile(name, text, ts.ScriptTarget.Latest, true);
   const unprojected: string[] = [];
   let count = 0;
+  let projectedQueryInput = false;
+  let projectedRelayQueryInput = false;
+  let projectedPumpQueryInput = false;
   function visit(node: ts.Node): void {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === 'queryInput' &&
+      ts.isVariableDeclarationList(node.parent) &&
+      (node.parent.flags & ts.NodeFlags.Const) !== 0 &&
+      node.initializer?.getText(source) === '{ prompt: heldPrompt.prompt, options: sdkOptions }'
+    )
+      projectedQueryInput = true;
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === 'input' &&
+      ts.isVariableDeclarationList(node.parent) &&
+      (node.parent.flags & ts.NodeFlags.Const) !== 0 &&
+      node.initializer?.getText(source) ===
+        '{ prompt: held.prompt, options: own.resolved.sdkOptions }'
+    )
+      projectedRelayQueryInput = true;
+    if (
+      name === 'claude-code/sessions/pump-launch.ts' &&
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === 'queryInput' &&
+      ts.isVariableDeclarationList(node.parent) &&
+      (node.parent.flags & ts.NodeFlags.Const) !== 0 &&
+      node.initializer &&
+      ts.isObjectLiteralExpression(node.initializer)
+    ) {
+      const properties = node.initializer.properties;
+      const options = properties[1];
+      if (
+        properties.length === 2 &&
+        ts.isShorthandPropertyAssignment(properties[0]!) &&
+        properties[0]!.getText(source) === 'prompt' &&
+        options &&
+        ts.isPropertyAssignment(options) &&
+        options.name.getText(source) === 'options' &&
+        ts.isObjectLiteralExpression(options.initializer)
+      ) {
+        const fields = options.initializer.properties;
+        projectedPumpQueryInput =
+          fields.length === 2 &&
+          ts.isSpreadAssignment(fields[0]!) &&
+          fields[0]!.expression.getText(source) === 'plan.sdkOptions' &&
+          ts.isPropertyAssignment(fields[1]!) &&
+          fields[1]!.name.getText(source) === 'spawnClaudeCodeProcess' &&
+          fields[1]!.initializer.getText(source) ===
+            'createTrackedSpawn(sharedWarmProcessLedger())';
+      }
+    }
     if (ts.isNewExpression(node) && node.expression.getText(source) === 'Codex') {
       count++;
       const options = node.arguments?.[0]?.getText(source) ?? '';
@@ -67,8 +122,14 @@ function census(text: string, name: string): { count: number; unprojected: strin
       // spawn hook forwards that SDK's complete env, covered by the SDK test.
       const forwarded =
         (name === 'claude-code/messaging/message-sender.ts' &&
-          call === '{ prompt: heldPrompt.prompt, options: sdkOptions }') ||
-        (name === 'claude-code/sessions/pump-launch.ts' && call.includes('...plan.sdkOptions')) ||
+          (call === '{ prompt: heldPrompt.prompt, options: sdkOptions }' ||
+            (call === 'queryInput' && projectedQueryInput))) ||
+        (name === 'claude-code/messaging/relay/relay-sdk-launch.ts' &&
+          call === 'input' &&
+          projectedRelayQueryInput) ||
+        (name === 'claude-code/sessions/pump-launch.ts' &&
+          (call.includes('...plan.sdkOptions') ||
+            (call === 'queryInput' && projectedPumpQueryInput))) ||
         (name === 'claude-code/sessions/tracked-spawn.ts' && /\benv,/.test(call)) ||
         (name === 'codex/model-catalog.ts' && call === "{ stdio: 'pipe', env: environment }") ||
         // The app-server pool forwards the spec's complete environment, built
@@ -103,6 +164,33 @@ describe('runtime launch adoption census', () => {
       expect(result.unprojected, name).toEqual([]);
     }
     expect(found).toEqual(expected);
+  });
+  it('rejects an unprojected options object behind the Claude query input binding', () => {
+    const name = 'claude-code/messaging/message-sender.ts';
+    const source = readFileSync(path.join(root, name), 'utf8');
+    const original = 'const queryInput = { prompt: heldPrompt.prompt, options: sdkOptions };';
+    expect(source).toContain(original);
+    const mutant = source.replace(
+      original,
+      'const queryInput = { prompt: heldPrompt.prompt, options: {} };'
+    );
+    expect(census(mutant, name).unprojected).toEqual(['query']);
+  });
+  it('rejects a Relay query input that drops the privately retained launch projection', () => {
+    const name = 'claude-code/messaging/relay/relay-sdk-launch.ts';
+    const source = readFileSync(path.join(root, name), 'utf8');
+    const original = 'const input = { prompt: held.prompt, options: own.resolved.sdkOptions };';
+    expect(source).toContain(original);
+    const mutant = source.replace(original, 'const input = { prompt: held.prompt, options: {} };');
+    expect(census(mutant, name).unprojected).toEqual(['query']);
+  });
+  it('rejects a pump query binding that drops its resolved SDK options', () => {
+    const name = 'claude-code/sessions/pump-launch.ts';
+    const source = readFileSync(path.join(root, name), 'utf8');
+    const original = '...plan.sdkOptions';
+    expect(source).toContain(original);
+    const mutant = source.replace(original, '...{}');
+    expect(census(mutant, name).unprojected).toEqual(['query']);
   });
   it('detects missing env in every Ollama direct call independently', () => {
     for (const name of [

@@ -1,0 +1,538 @@
+/** Approved host focus reaches the original native Room FIRST, separately from its HTTP receipt. */
+import express from 'express';
+import { randomUUID } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
+import fs from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
+import { and, eq, sql, canvasDocBatches, canvasDocDeliveries, canvasDocEvents } from '@dorkos/db';
+import router from '../../../../../routes/canvas-doc-events.js';
+import { nativeRoomAuthorityFixture } from './authority-fixtures.js';
+import {
+  currentRoomDueServicePort,
+  readServiceOriginalRoomScenarioEvidence,
+} from '../../service.js';
+import { RuntimeRegistry } from '../../../../core/runtime-registry.js';
+import {
+  TestModeRuntime,
+  captureTestModeOriginalRoomEmitter,
+  readTestModeOriginalScenarioCounts,
+} from '../../../../runtimes/test-mode/test-mode-runtime.js';
+import { scenarioStore } from '../../../../runtimes/test-mode/scenario-store.js';
+import { interactionGate } from '../../../../runtimes/test-mode/interaction-gate.js';
+import { env as serverEnv } from '../../../../../env.js';
+
+const target = swappableServer();
+
+// Genuine arrangement has the default hook budget; remaining operational assertions retain the default body budget.
+let agentPath: string;
+let sessionId: string;
+let fixture: Awaited<ReturnType<typeof nativeRoomAuthorityFixture>> | undefined;
+let setupPending: Promise<void>;
+let bodyPending: Promise<void> | undefined;
+let scenarioPending: Promise<void> | undefined;
+let admitBody: () => void;
+let refuseBody: (cause: unknown) => void;
+let arrangementReady: Promise<void>;
+let completeArrangement: () => void;
+let failArrangement: (cause: unknown) => void;
+let closing = false;
+let stopOwnedWork: (() => Promise<void>) | undefined;
+let stopOwnedMemo: Promise<void> | undefined;
+const requireOpenScenario = () => {
+  if (closing) throw new Error('Original owned scenario is closing');
+};
+
+let phaseStartedAt = 0;
+const phase = (name: string) => {
+  try {
+    process.stderr.write(
+      `ORIGINAL_ROOM_BODY_PHASE ${JSON.stringify({
+        test: 'focus-first',
+        phase: name,
+        elapsedMs: Math.round(performance.now() - phaseStartedAt),
+      })}\n`
+    );
+  } catch {
+    // Diagnostic output cannot replace the original operation or cleanup cause.
+  }
+};
+let bodyCleanupCompleted = false;
+let fallbackCleanup: Promise<void> | undefined;
+let lifecycleFailed = false;
+let lifecycleFirst: unknown;
+const rememberLifecycle = (cause: unknown) => {
+  if (!lifecycleFailed) {
+    lifecycleFailed = true;
+    lifecycleFirst = cause;
+  }
+};
+beforeEach(async () => {
+  phaseStartedAt = performance.now();
+  phase('setup:start');
+  closing = false;
+  scenarioPending = undefined;
+  stopOwnedWork = undefined;
+  stopOwnedMemo = undefined;
+  arrangementReady = new Promise<void>((resolve, reject) => {
+    completeArrangement = resolve;
+    failArrangement = reject;
+  });
+  // Observe the hook gate immediately, including failures before it is awaited.
+  void arrangementReady.catch(rememberLifecycle);
+  fixture = undefined;
+  bodyPending = undefined;
+  bodyCleanupCompleted = false;
+  fallbackCleanup = undefined;
+  lifecycleFailed = false;
+  lifecycleFirst = undefined;
+  const bodyAdmission = new Promise<void>((resolve, reject) => {
+    admitBody = resolve;
+    refuseBody = reject;
+  });
+  void bodyAdmission.catch(rememberLifecycle);
+  setupPending = (async () => {
+    agentPath = await fs.realpath(await fs.mkdtemp(join(tmpdir(), 'focus-first-')));
+    requireOpenScenario();
+    sessionId = randomUUID();
+    fixture = await nativeRoomAuthorityFixture(agentPath, 'claude-code', sessionId, randomUUID());
+    requireOpenScenario();
+    scenarioPending = runOwnedScenario(bodyAdmission);
+    void scenarioPending.then(
+      () => failArrangement(new Error('Original scenario ended before body admission')),
+      failArrangement
+    );
+    void scenarioPending.catch(rememberLifecycle);
+    await arrangementReady;
+  })();
+  // Observe rejection immediately while retaining this exact owning setup promise.
+  void setupPending.catch(rememberLifecycle);
+  phase('setup:join:start');
+  await setupPending;
+  phase('setup:join:done');
+});
+afterEach(async () => {
+  phase('after-each:start');
+  // Retire admission before any await; a skipped body must not leave its gate held.
+  closing = true;
+  refuseBody(new Error('Original body admission closed during owned teardown'));
+  await (fallbackCleanup ??= (async () => {
+    // A Vitest timeout is not cancellation. Never close resources ahead of late setup/body work.
+    phase('after-each:join-owners:start');
+    // Genuine stop begins before joining a held scenario, including a timed-out hook/body.
+    const stopping = bodyCleanupCompleted
+      ? Promise.resolve()
+      : Promise.resolve()
+          .then(() => stopOwnedWork?.())
+          .catch(rememberLifecycle);
+    await setupPending.catch(rememberLifecycle);
+    if (scenarioPending) await scenarioPending.catch(rememberLifecycle);
+    await stopping;
+    if (bodyPending) await bodyPending.catch(rememberLifecycle);
+    phase('after-each:join-owners:done');
+    if (bodyCleanupCompleted) {
+      phase('after-each:body-cleanup-completed');
+      if (lifecycleFailed) throw lifecycleFirst;
+      return;
+    }
+    // No completed body teardown owns a returned fixture. Its genuine cleanup joins native drains.
+    let closed = false;
+    if (fixture) {
+      try {
+        phase('after-each:fixture-cleanup:start');
+        await fixture.cleanup();
+        phase('after-each:fixture-cleanup:done');
+        closed = true;
+      } catch (cause) {
+        rememberLifecycle(cause);
+      }
+    }
+    if (closed) {
+      try {
+        phase('after-each:remove-directory:start');
+        await fs.rm(agentPath, { recursive: true, force: true });
+        phase('after-each:remove-directory:done');
+      } catch (cause) {
+        rememberLifecycle(cause);
+      }
+    }
+    if (lifecycleFailed) throw lifecycleFirst;
+  })());
+});
+
+function runOwnedScenario(bodyAdmission: Promise<void>): Promise<void> {
+  return (async () => {
+    const h = fixture;
+    if (!h) throw new Error('Original per-test native fixture did not finish setup');
+    let pump: Promise<void> | undefined;
+    stopOwnedWork = () =>
+      (stopOwnedMemo ??= Promise.resolve().then(() =>
+        currentRoomDueServicePort(h.http.service).stopPump()
+      ));
+    let failed = false,
+      first: unknown,
+      closed = false;
+    const remember = (cause: unknown) => {
+      if (!failed) {
+        failed = true;
+        first = cause;
+      }
+    };
+    try {
+      const actual = h;
+      phase('configure-and-approve:start');
+      actual.http.grants.configure(
+        actual.documentId,
+        {
+          routes: [
+            {
+              id: 'approved-focus',
+              on: 'host.focus',
+              to: 'room:self',
+              turn: { mode: 'coalesce', windowMs: 1000, maxBatch: 2 },
+            },
+          ],
+        },
+        actual.operator,
+        actual.originalTarget.agentId
+      );
+      const approvalRequest = {
+        documentId: actual.documentId,
+        routeId: 'approved-focus',
+        expiresAt: new Date(Date.now() + 3600000).toISOString(),
+      };
+      const pending = actual.http.grants.grant(approvalRequest, actual.operator);
+      expect(pending.kind).toBe('approval_required');
+      if (pending.kind !== 'approval_required')
+        throw new Error('Original focus approval ticket missing');
+      actual.approvals.grant(pending.ticket.approvalId);
+      const granted = actual.http.grants.grant(
+        approvalRequest,
+        actual.operator,
+        pending.ticket.token
+      );
+      expect(granted.kind).toBe('granted');
+      if (granted.kind !== 'granted') throw new Error('Original consumed focus approval missing');
+      phase('configure-and-approve:done');
+      requireOpenScenario();
+
+      phase('runtime-and-http-arrangement:start');
+      const previousMode = serverEnv.DORKOS_TEST_RUNTIME;
+      let runtime: TestModeRuntime;
+      try {
+        serverEnv.DORKOS_TEST_RUNTIME = true;
+        runtime = new TestModeRuntime('claude-code', actual.principals);
+      } finally {
+        serverEnv.DORKOS_TEST_RUNTIME = previousMode;
+      }
+      captureTestModeOriginalRoomEmitter(
+        runtime,
+        actual.http.fileWrites,
+        actual.db,
+        actual.http.channels
+      );
+      const registry = new RuntimeRegistry();
+      registry.setDb(actual.db);
+      registry.register(runtime);
+      scenarioStore.setForSession(sessionId, 'native-room-partial-ack-reply');
+      const app = express();
+      app.use(express.json());
+      app.locals.docChannelHttp = { service: actual.http.service, actor: () => actual.operator };
+      app.use('/docs', router);
+      const server = target.mount(app),
+        path = `/docs/${actual.documentId}/presence`;
+      phase('runtime-and-http-arrangement:done');
+      requireOpenScenario();
+      phase('mount-http:start');
+      const mounted = await request(server).post(path).send({ action: 'mount' });
+      phase('mount-http:done');
+      requireOpenScenario();
+      expect(mounted.status).toBe(200);
+      const viewerId = mounted.body.viewerId;
+      phase('focus-true-http:start');
+      expect(
+        (await request(server).post(path).send({ action: 'focus', viewerId, focused: true })).status
+      ).toBe(200);
+      phase('focus-true-http:done');
+      requireOpenScenario();
+      const rows = () =>
+        actual.db
+          .select()
+          .from(canvasDocEvents)
+          .where(eq(canvasDocEvents.documentId, actual.documentId))
+          .all();
+      expect(rows().filter((row) => row.type === 'host.focus')).toHaveLength(1);
+      const admissions = () =>
+        actual.db.all<{ batch_id: string; status: string; turn_id: string | null }>(
+          sql`SELECT batch_id,status,turn_id FROM room_doc_admissions WHERE document_id=${actual.documentId}`
+        );
+      expect(admissions()).toEqual([]);
+      expect(readTestModeOriginalScenarioCounts(runtime)).toEqual({ scenarioStarts: 0 });
+      // Exercise the real burst boundary; no timer, TTL or native clock is replaced.
+      phase('original-burst-boundary:start');
+      await new Promise<void>((resolve) => setTimeout(resolve, 500));
+      phase('original-burst-boundary:done');
+      requireOpenScenario();
+      phase('focus-false-http:start');
+      expect(
+        (await request(server).post(path).send({ action: 'focus', viewerId, focused: false }))
+          .status
+      ).toBe(200);
+      phase('focus-false-http:done');
+      requireOpenScenario();
+      const focus = rows().filter((row) => row.type === 'host.focus');
+      expect(focus.map((row) => row.payload)).toEqual([{ focused: true }, { focused: false }]);
+      const batches = actual.db
+        .select()
+        .from(canvasDocBatches)
+        .where(eq(canvasDocBatches.documentId, actual.documentId))
+        .all();
+      expect(batches).toHaveLength(1);
+      const batch = batches[0]!;
+      expect(batch).toMatchObject({
+        routeId: 'approved-focus',
+        grantId: granted.grant.grantId,
+        status: 'pending',
+        inputEventIds: focus.map((row) => row.eventId),
+      });
+      expect(admissions()).toEqual([]);
+      actual.http.channels.getBatch = () => {
+        throw new Error('Reflected focus batch reader used');
+      };
+      actual.http.grants.revalidateGrant = () => {
+        throw new Error('Reflected focus grant authority used');
+      };
+      const port = currentRoomDueServicePort(actual.http.service);
+      // Reach the declaration's actual due time before invoking the fixed one-shot pump.
+      phase('original-due-time:start');
+      const dueAt = Date.parse(batch.dueAt);
+      let remaining = dueAt - Date.now();
+      while (remaining > 0) {
+        await new Promise<void>((resolve) => setTimeout(resolve, remaining));
+        remaining = dueAt - Date.now();
+      }
+      phase('original-due-time:done');
+      requireOpenScenario();
+      // Due-time passage does not mint frozen custody: invoke the original native wake first.
+      phase('original-wake:start');
+      port.wake();
+      phase('original-wake:done');
+      requireOpenScenario();
+      expect(
+        actual.db
+          .select()
+          .from(canvasDocBatches)
+          .where(eq(canvasDocBatches.batchId, batch.batchId))
+          .get()!.status
+      ).toBe('accepted');
+      expect(admissions()).toEqual([]);
+      expect(readTestModeOriginalScenarioCounts(runtime)).toEqual({ scenarioStarts: 0 });
+      phase('start-pump:start');
+      pump = port.pump(registry);
+      phase('start-pump:done');
+      requireOpenScenario();
+      void pump.catch(remember);
+      const delivery = (eventId: string) =>
+        actual.db
+          .select()
+          .from(canvasDocDeliveries)
+          .where(
+            and(
+              eq(canvasDocDeliveries.documentId, actual.documentId),
+              eq(canvasDocDeliveries.eventId, eventId)
+            )
+          )
+          .get()!;
+      phase('first-ack:start');
+      await vi.waitFor(() => expect(delivery(focus[0]!.eventId).ackOutcome).toBe('handled'));
+      phase('first-ack:done');
+      requireOpenScenario();
+      phase('arrangement:ready');
+      completeArrangement();
+      await bodyAdmission;
+      requireOpenScenario();
+      phase('operational-body:admitted');
+      expect(admissions()).toHaveLength(1);
+      expect(admissions()[0]).toMatchObject({ batch_id: batch.batchId, status: 'turn_started' });
+      expect(admissions()[0]!.turn_id).not.toBeNull();
+      expect(readTestModeOriginalScenarioCounts(runtime)).toEqual({ scenarioStarts: 1 });
+      expect(
+        actual.db
+          .select()
+          .from(canvasDocBatches)
+          .where(eq(canvasDocBatches.batchId, batch.batchId))
+          .get()!.status
+      ).toBe('turn_started');
+      // A repeated current focus is quiet while the genuine admitted turn remains held.
+      phase('repeat-focus-false-http:start');
+      expect(
+        (await request(server).post(path).send({ action: 'focus', viewerId, focused: false }))
+          .status
+      ).toBe(200);
+      phase('repeat-focus-false-http:done');
+      requireOpenScenario();
+      expect(rows().filter((row) => row.type === 'host.focus')).toEqual(focus);
+      phase('release-held-scenario:start');
+      await vi.waitFor(() => expect(interactionGate.step(sessionId)).toBe(true));
+      phase('release-held-scenario:done');
+      requireOpenScenario();
+      phase('join-pump:start');
+      await pump;
+      phase('join-pump:done');
+      requireOpenScenario();
+      expect(delivery(focus[0]!.eventId).ackOutcome).toBe('handled');
+      expect(delivery(focus[1]!.eventId).ackOutcome).toBeNull();
+      expect(
+        rows()
+          .filter((row) => row.type === 'app.ack')
+          .map((row) => row.payload)
+      ).toEqual([
+        {
+          batchId: batch.batchId,
+          routeId: 'approved-focus',
+          eventIds: [focus[0]!.eventId],
+          outcome: 'handled',
+        },
+      ]);
+      expect(
+        rows()
+          .filter((row) => row.type === 'agent.reply')
+          .map((row) => row.payload)
+      ).toEqual([{ inReplyTo: [focus[1]!.eventId], text: 'Original native second-input reply' }]);
+      expect(readTestModeOriginalScenarioCounts(runtime)).toEqual({ scenarioStarts: 1 });
+      expect(admissions()).toHaveLength(1);
+      expect(
+        actual.db
+          .select()
+          .from(canvasDocBatches)
+          .where(eq(canvasDocBatches.documentId, actual.documentId))
+          .all()
+      ).toHaveLength(1);
+    } catch (cause) {
+      remember(cause);
+      // Failure-only DATA from this same original native fixture, before its owning stop.
+      // No payloads, bearer, path or principal is disclosed; absence proves nothing.
+      if (h) {
+        try {
+          const batchRows = h.db
+            .select()
+            .from(canvasDocBatches)
+            .where(eq(canvasDocBatches.documentId, h.documentId))
+            .all();
+          const deliveryRows = h.db
+            .select()
+            .from(canvasDocDeliveries)
+            .where(eq(canvasDocDeliveries.documentId, h.documentId))
+            .all();
+          const eventRows = h.db
+            .select()
+            .from(canvasDocEvents)
+            .where(eq(canvasDocEvents.documentId, h.documentId))
+            .all();
+          const admissionRows = h.db.all<{ status: string }>(
+            sql`SELECT status FROM room_doc_admissions WHERE document_id=${h.documentId}`
+          );
+          const frontier = batchRows.slice(0, 4).map((batch) => ({
+            status: batch.status,
+            errorCode:
+              batch.errorCode === null
+                ? null
+                : /^[A-Z0-9_]{1,96}$/.test(batch.errorCode)
+                  ? batch.errorCode
+                  : 'NON_CODE_ERROR',
+            inputs: batch.inputEventIds.length,
+            scenario: (() => {
+              const own = readServiceOriginalRoomScenarioEvidence(
+                h!.http.service,
+                h!.documentId,
+                batch.batchId,
+                batch.generation
+              );
+              return own
+                ? {
+                    scenarioStarts: own.scenarioStarts,
+                    retired: own.retired,
+                    operationFailed: own.operationFailed,
+                    cleanupClosed: own.cleanupClosed,
+                  }
+                : null;
+            })(),
+            acknowledgements: batch.inputEventIds
+              .slice(0, 2)
+              .map(
+                (id) => deliveryRows.find((delivery) => delivery.eventId === id)?.ackOutcome ?? null
+              ),
+          }));
+          process.stderr.write(
+            `ORIGINAL_FOCUS_FIRST_FRONTIER ${JSON.stringify({
+              batches: batchRows.length,
+              frontier,
+              admissionStatuses: admissionRows.slice(0, 4).map((row) => row.status),
+              acknowledgements: eventRows.filter((row) => row.type === 'app.ack').length,
+              replies: eventRows.filter((row) => row.type === 'agent.reply').length,
+            })}\n`
+          );
+        } catch {
+          /* Original assertion/operation cause remains first. */
+        }
+      }
+    }
+    // Start genuine stop before joining the held stream; UNKNOWN retains its native resources.
+    if (h) {
+      let stopClosed = false;
+      phase('cleanup:stop-and-join-pump:start');
+      await Promise.allSettled([
+        Promise.resolve()
+          .then(() => currentRoomDueServicePort(h!.http.service).stopPump())
+          .then(() => {
+            stopClosed = true;
+          })
+          .catch(remember),
+        ...(pump ? [pump.catch(remember)] : []),
+      ]);
+      phase('cleanup:stop-and-join-pump:done');
+      if (stopClosed) {
+        try {
+          phase('cleanup:fixture:start');
+          await h.cleanup();
+          phase('cleanup:fixture:done');
+          closed = true;
+        } catch (cause) {
+          remember(cause);
+        }
+      }
+    }
+    // Scenario DATA cleanup is attempted independently, including failed/UNKNOWN native stop.
+    try {
+      phase('cleanup:scenario:start');
+      scenarioStore.clearSession(sessionId);
+      phase('cleanup:scenario:done');
+    } catch (cause) {
+      remember(cause);
+    }
+    if (closed) {
+      try {
+        phase('cleanup:directory:start');
+        await fs.rm(agentPath, { recursive: true, force: true });
+        phase('cleanup:directory:done');
+      } catch (cause) {
+        remember(cause);
+      }
+    }
+    bodyCleanupCompleted = true;
+    phase('body:cleanup-completed');
+    if (failed) throw first;
+  })();
+}
+
+it('admits one genuine native turn for operator-approved focus and correlates its ACK and remaining reply', () => {
+  phase('body:start');
+  requireOpenScenario();
+  if (!scenarioPending) throw new Error('Original arrangement did not finish setup');
+  bodyPending = scenarioPending;
+  admitBody();
+  return bodyPending;
+});

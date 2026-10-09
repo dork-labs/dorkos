@@ -41,7 +41,7 @@ import { promises as fs } from 'node:fs';
 import type { RoomCanvasDiffReview, RoomCanvasDiffWriteResult } from '@dorkos/shared/room-files';
 import { isContained, resolveCanonicalPath } from '../../../lib/boundary.js';
 import { sha256 } from '../../../lib/file-route-guards.js';
-import { RoomError } from '../room-errors.js';
+import { RoomError } from '../data/room-errors.js';
 
 /** What the review reads and writes through, so a test can stand in for it. */
 export interface CanvasDiffReviewDeps {

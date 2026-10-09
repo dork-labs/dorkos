@@ -8,6 +8,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TransportProvider } from '@/layers/shared/model';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { McpAppResourceResponse } from '@dorkos/shared/schemas';
+import type { McpAppDocHost } from '../model/doc-extension';
 import { McpAppFrame } from '../ui/McpAppFrame';
 
 function renderFrame(
@@ -107,5 +108,70 @@ describe('McpAppFrame display-mode requests', () => {
     });
 
     await waitFor(() => expect(onRequestPip).toHaveBeenCalledTimes(1));
+  });
+});
+
+describe('original MCP frame permission replacement', () => {
+  it('preserves the same host frame but genuinely replaces identical HTML for a new host owner', async () => {
+    const transport = createMockTransport();
+    transport.fetchMcpAppResource = vi.fn().mockResolvedValue({
+      mimeType: 'text/html',
+      text: '<html><body>same original resource</body></html>',
+      permissions: [],
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const host = (): McpAppDocHost => ({
+      documentId: 'original-doc',
+      generation: 'original-birth',
+      owner: {},
+      current: () => true,
+      captureOriginal: () => null,
+      subscribe: () => () => {},
+    });
+    const first = host();
+    const view = (docHost: McpAppDocHost, onRequestPip = () => {}) => (
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>
+          <McpAppFrame
+            sessionId="s1"
+            serverName="fixture-app"
+            uri="ui://dash/main"
+            docHost={docHost}
+            onRequestPip={onRequestPip}
+          />
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+    const rendered = render(view(first));
+    const original = await attachedFrame(rendered.container);
+    const html = original.getAttribute('srcdoc');
+    const originalWindow = original.contentWindow;
+    expect(original.isConnected).toBe(true);
+    expect(originalWindow === null).toBe(false);
+    rendered.rerender(view(first));
+    expect(await attachedFrame(rendered.container)).toBe(original);
+    const pip = vi.fn();
+    rendered.rerender(view(first, pip));
+    expect(await attachedFrame(rendered.container)).toBe(original);
+    dispatchFromApp(original.contentWindow, {
+      jsonrpc: '2.0',
+      id: 5,
+      method: 'ui/request-display-mode',
+      params: { mode: 'pip' },
+    });
+    await waitFor(() => expect(pip).toHaveBeenCalledTimes(1));
+    rendered.rerender(view(host()));
+    const replacement = await waitFor(() => {
+      expect(original.isConnected).toBe(false);
+      const current = rendered.container.querySelector('iframe');
+      expect(current === null).toBe(false);
+      expect(Object.is(current, original)).toBe(false);
+      if (!current) throw new Error('Replacement frame is absent');
+      expect(current.isConnected).toBe(true);
+      expect(current.getAttribute('srcdoc')).toBe(html);
+      return current;
+    });
+    expect(replacement.contentWindow === null).toBe(false);
+    expect(Object.is(replacement.contentWindow, originalWindow)).toBe(false);
   });
 });

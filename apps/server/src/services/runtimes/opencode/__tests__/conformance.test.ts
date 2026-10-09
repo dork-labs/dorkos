@@ -183,7 +183,6 @@ import { InferenceTokenSchema } from '@dork-labs/cloud-api';
 // The fixture whose token serves every format, chat completions included.
 import CREDITS_TOKEN_FIXTURE from '@dork-labs/cloud-api/fixtures/v1/inference/token-every-format.json' with { type: 'json' };
 import CREDITS_MODELS_FIXTURE from '@dork-labs/cloud-api/fixtures/v1/inference/models.json' with { type: 'json' };
-import { controlUi } from '../../../session/browser-seat/ui-control.js';
 import { LocalSessionAttachmentStore } from '../../../session/attachments/local-session-attachment-store.js';
 import {
   driveDurableTurn,
@@ -493,6 +492,72 @@ function makeConformanceClient(turn: OpenCodeWireEvent[], stored?: StoredMessage
   };
 }
 
+/** Two distinct sidecar sessions; output begins only after the original adapter's prompt call. */
+function makeRoomCanvasProvider(
+  providerTurn: (cwd: string, headers?: Record<string, string>) => Promise<string>
+): OpenCodeClientProvider {
+  const clients = new Map<string, OpencodeClient>();
+  // The original hub consumes one global sidecar stream across all directories.
+  let queue: TurnEventQueue<GlobalEvent> | undefined;
+  const getClient = async (cwd: string) => {
+    const existing = clients.get(cwd);
+    if (existing) return existing;
+    const id = `ses_${randomUUID().replaceAll('-', '')}`;
+    const info = sessionInfo(id, cwd);
+    let connectorHeaders: Record<string, string> | undefined;
+    const client = {
+      global: {
+        event: vi.fn(async (options?: { signal?: AbortSignal }) => {
+          const actual = new TurnEventQueue<GlobalEvent>();
+          queue = actual;
+          if (options?.signal?.aborted) actual.end();
+          else options?.signal?.addEventListener('abort', () => actual.end(), { once: true });
+          actual.push(globalEvent(cwd, serverConnected()));
+          return { stream: actual };
+        }),
+      },
+      session: {
+        create: vi.fn(async () => ({ data: info })),
+        get: vi.fn(async () => ({ data: info })),
+        list: vi.fn(async () => ({ data: [] })),
+        messages: vi.fn(async () => ({ data: [] })),
+        update: vi.fn(async () => ({ data: info })),
+        abort: vi.fn(async () => ({ data: true })),
+        todo: vi.fn(async () => ({ data: [] })),
+        promptAsync: vi.fn(async () => {
+          if (!queue) throw new Error('Original sidecar event subscription missing');
+          await providerTurn(cwd, connectorHeaders ?? {});
+          for (const event of opencodeSimpleTurn(id, 'pong from opencode'))
+            queue.push(globalEvent(cwd, event));
+          return {};
+        }),
+      },
+      mcp: {
+        status: vi.fn(async () => ({ data: {} })),
+        add: vi.fn(
+          async (input: {
+            body: { name: string; config: { headers?: Record<string, string> } };
+          }) => {
+            if (input.body.name === 'dorkos_connections')
+              connectorHeaders = input.body.config.headers;
+            return { data: { [input.body.name]: { status: 'connected' } } };
+          }
+        ),
+        disconnect: vi.fn(async () => ({ data: true })),
+      },
+      postSessionIdPermissionsPermissionId: vi.fn(async () => ({ data: true })),
+      provider: { list: vi.fn(async () => ({ data: { all: [], default: {}, connected: [] } })) },
+    } as unknown as OpencodeClient;
+    clients.set(cwd, client);
+    return client;
+  };
+  return {
+    getClient,
+    peekClient: () => clients.values().next().value ?? null,
+    prepareTurn: async () => planOpenCodeTurn(),
+  };
+}
+
 /**
  * `contextReadingTurn` (DOR-2732): one reply on a fresh session, its events.
  *
@@ -622,21 +687,15 @@ runtimeConformance(
     // The document is a `json` one on purpose: no source key, so dedupe cannot
     // hide a second write the way it would for a file.
     roomCanvasTurn: () =>
-      driveRoomCanvasTurn(
-        new OpenCodeRuntime({
-          provider: LIVE ? liveManager! : makeMockedProvider(),
-        }),
-        {
-          agentPath: '/agents/ana',
-          otherAgentPath: '/agents/ben',
-          produce: async (sessionId) => {
-            await controlUi(
-              { action: 'open_canvas', content: { type: 'json', data: {}, title: 'The plan' } },
-              { sessionId }
-            );
-          },
-        }
-      ),
+      driveRoomCanvasTurn({
+        runtime: 'opencode',
+        createRuntime: ({ mesh, tools, providerTurn }) => {
+          const runtime = new OpenCodeRuntime({ provider: makeRoomCanvasProvider(providerTurn) });
+          runtime.setMeshCore(mesh);
+          runtime.setConnectorRuntimeTools(tools);
+          return runtime;
+        },
+      }),
     // C2/C3 are server-owned invariants every runtime inherits by construction,
     // so both drivers exercise the shared machinery rather than the sidecar —
     // safe in LIVE mode too. OpenCode declares neither steer nor stage, so it

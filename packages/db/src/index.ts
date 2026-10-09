@@ -7,11 +7,11 @@
  *
  * @module db
  */
-import Database from 'better-sqlite3';
-import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
-import * as schema from './schema/index.js';
+import { constructDatabase } from './database-construction.js';
+export { DatabaseOpenError } from './database-construction.js';
 import { migrationsFolder } from './migrations-folder.js';
+import { bridgeLegacyDocMigrationHistory } from './doc-migration-history.js';
 
 /**
  * Thrown when the database at a path exists but will not open.
@@ -25,31 +25,6 @@ import { migrationsFolder } from './migrations-folder.js';
  * starting fresh over the top. So boot stops here, loudly, with the file exactly
  * as it was found, and a person decides what happens next.
  */
-export class DatabaseOpenError extends Error {
-  /** Absolute path of the database that could not be opened. */
-  readonly dbPath: string;
-
-  /**
-   * Build the operator-facing message: what failed, and what DorkOS did not do
-   * about it.
-   *
-   * @param dbPath - Path that failed to open
-   * @param cause - The underlying SQLite or filesystem error
-   */
-  constructor(dbPath: string, cause: unknown) {
-    const detail = cause instanceof Error ? cause.message : String(cause);
-    super(
-      `Could not open the DorkOS database at ${dbPath}: ${detail}\n` +
-        'Your data has not been touched — DorkOS never recreates, renames or repairs a ' +
-        'database it cannot open. Restore the newest snapshot from the "backups" folder ' +
-        'beside it, or move the file aside yourself if you accept losing what it holds, ' +
-        'then start DorkOS again.',
-      { cause }
-    );
-    this.name = 'DatabaseOpenError';
-    this.dbPath = dbPath;
-  }
-}
 
 /**
  * Opens (or creates) the DorkOS SQLite database at the given path.
@@ -65,79 +40,7 @@ export class DatabaseOpenError extends Error {
  * @throws {DatabaseOpenError} When the file cannot be opened or configured.
  */
 export function createDb(dbPath: string) {
-  let sqlite: Database.Database;
-  try {
-    sqlite = new Database(dbPath);
-  } catch (err) {
-    throw new DatabaseOpenError(dbPath, err);
-  }
-
-  try {
-    return configureAndWrap(sqlite);
-  } catch (err) {
-    // better-sqlite3 opens lazily, so a file that is not a database gets past
-    // the constructor and fails on the first pragma instead. Close the handle we
-    // opened; leave the file alone.
-    sqlite.close();
-    throw new DatabaseOpenError(dbPath, err);
-  }
-}
-
-/** Apply the house pragmas to an open connection and wrap it in Drizzle. */
-function configureAndWrap(sqlite: Database.Database) {
-  sqlite.pragma('journal_mode = WAL');
-  sqlite.pragma('synchronous = NORMAL');
-  sqlite.pragma('busy_timeout = 5000');
-  sqlite.pragma('foreign_keys = ON');
-  // WITHOUT THIS, `INSERT OR REPLACE` SILENTLY CORRUPTS THE MESSAGE-SEARCH INDEX.
-  //
-  // SQLite fires a table's DELETE triggers for rows that REPLACE conflict
-  // resolution removes ONLY when recursive_triggers is on. It defaults to OFF,
-  // and OFF was measured here (`PRAGMA recursive_triggers` returned 0 before
-  // this line existed). So a REPLACE onto `messages` dropped the old row
-  // without ever running `messages_fts_ad`, leaving the FTS5 index holding
-  // terms for text that no longer exists anywhere.
-  //
-  // What made it worth a pragma rather than a rule is that NOTHING REPORTS IT.
-  // Measured on the migrated database, after one REPLACE: `MATCH 'dog'` returns
-  // a hit for the deleted text, `bm25()` scores it without complaint, and BOTH
-  // integrity checks — `PRAGMA integrity_check` and FTS5's own
-  // `INSERT INTO messages_fts(messages_fts) VALUES('integrity-check')` — report
-  // `ok`. Only `snippet()` fails, with `database disk image is malformed`. A
-  // convention would have to be obeyed by every future writer to hold; this
-  // holds by itself.
-  //
-  // Safe to turn on for THIS database, and the reason is structural rather than
-  // a headcount. The three triggers in migration 0037 are the only ones in the
-  // migration history, and the operator's production database carries none at
-  // all — but "there are no other triggers" is not the argument, because
-  // extensions may declare their own: a manifest migration is the one place
-  // third-party `CREATE TRIGGER` is allowed
-  // (`packages/extension-api/src/manifest-schema.ts`). Those live in a separate
-  // `store.db` on a separate connection opened by `openExtensionDb`, which
-  // deliberately does NOT set this pragma and says so. So no trigger this
-  // pragma can reach is one DorkOS did not write.
-  //
-  // The rest follows: none of the three writes to a table carrying triggers, so
-  // none can recurse, and SQLite defines foreign key actions as unaffected by
-  // this pragma.
-  //
-  // It is per-connection, so it protects connections opened through here and no
-  // others. Anything writing `messages` must come through `createDb`.
-  sqlite.pragma('recursive_triggers = ON');
-  // Deleted content is overwritten with zeros, not left in the file for a later write to cover.
-  //
-  // A Community message that was deleted, removed by a moderator or a host, or erased with its
-  // author has to leave this machine's copy too (specs/community-member-erasure task 2.1), and a
-  // row update or delete alone only unlinks the old bytes. Replacing them at that moment is not
-  // enough either: SQLite also leaves old bytes behind whenever it reorganizes a page — a leaf
-  // split into an interior page keeps its former cells in the unused area — and that happens on
-  // ordinary writes long before anyone asks for a deletion. Only a connection that zeroes as it
-  // goes never leaves such remnants, so it is on for every write rather than for the sync.
-  // It costs extra writes only where pages are freed, which on this mostly-append database is
-  // rare; it is the default on several platforms' own SQLite builds.
-  sqlite.pragma('secure_delete = ON');
-  return drizzle(sqlite, { schema });
+  return constructDatabase(dbPath).db;
 }
 
 /**
@@ -151,7 +54,9 @@ function configureAndWrap(sqlite: Database.Database) {
  * @param db - Drizzle database instance from createDb()
  */
 export function runMigrations(db: ReturnType<typeof createDb>): void {
-  migrate(db, { migrationsFolder: migrationsFolder() });
+  const folder = migrationsFolder();
+  bridgeLegacyDocMigrationHistory(db, folder);
+  migrate(db, { migrationsFolder: folder });
 }
 
 /** The Drizzle DB instance type. Use as the parameter type for all stores. */
@@ -240,3 +145,7 @@ export type { SQL } from 'drizzle-orm';
 // Self-joins need a second name for the same table — the cross-room thread
 // aggregation joins `room_entries` to itself to reach each reply's root.
 export { alias } from 'drizzle-orm/sqlite-core';
+
+// Fixed native persistence only; no public native constructor/completion/registrar.
+export { createRoomSpendPersistence } from './room-spend-witness.js';
+export type { RoomSpendPersistence, NativeSpendReceipt } from './room-spend-witness.js';

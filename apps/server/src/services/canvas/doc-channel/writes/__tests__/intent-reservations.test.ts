@@ -21,11 +21,11 @@ import {
 } from '../checkbox-evidence.js';
 import { prepareCheckboxBytes, rawByteHash } from '../checkbox-bytes.js';
 import { projectVerifiedCheckbox } from '../completion.js';
-import { documentTransaction } from '../../store-transaction.js';
+import { documentTransaction } from '../../storage/store-transaction.js';
 import {
   scanCheckboxReservations,
   CheckboxReservationCensusError,
-} from '../intent-reservations.js';
+} from '../reservations/intent-reservations.js';
 import type { DocWriteIntentRow } from '../../store.js';
 
 const cleanups: (() => Promise<void>)[] = [];

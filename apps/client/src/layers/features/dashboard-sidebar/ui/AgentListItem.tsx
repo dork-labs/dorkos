@@ -7,8 +7,8 @@ import { SidebarRow, type SidebarRowMotion } from '@/layers/shared/ui';
 import { AgentAvatar, type AgentVisual } from '@/layers/entities/agent';
 import { useAgentHottestStatus } from '@/layers/entities/session';
 import { useAgentRowMenuNodes } from './AgentRowMenuItems';
-import { AgentActivityBadge } from './AgentActivityBadge';
-import { LiveSessionsChip } from './LiveSessionsChip';
+import { AgentActivityBadge } from './activity/AgentActivityBadge';
+import { LiveSessionsChip } from './activity/LiveSessionsChip';
 import { SessionSwitcher } from './SessionSwitcher';
 import type { SortableBindings } from './dnd/SidebarDndPrimitives';
 

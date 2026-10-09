@@ -17,7 +17,7 @@ import type { RoomEntry, RoomEvent, RoomWithRoster } from '@dorkos/shared/room-s
 import { REACTION_FREQUENTS_DEFAULT } from '@dorkos/shared/room-schemas';
 import type { AuthorRegistry } from '../../author-registry.js';
 import type { ReactionStore } from '../reaction-store.js';
-import { RoomError } from '../../room-errors.js';
+import { RoomError } from '../../data/room-errors.js';
 import type { RoomService } from '../../room-service.js';
 import type { RoomStore } from '../../room-store.js';
 import {

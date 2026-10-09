@@ -178,12 +178,12 @@ entries:
   # --- jobs the required fan-ins need (the census follows needs:) ---
   - workflow: test.yml
     job: test-shard
-    step: Run every package's test suite (shard ${{ matrix.shard }}/4)
+    step: Run every package's test suite (shard ${{ matrix.shard }}/8)
     kind: step-if
     reason: The full sweep runs in the merge queue and on the main canary; its pull_request twin below runs the affected packages. Exactly one of the pair runs on each event.
   - workflow: test.yml
     job: test-shard
-    step: Run the affected packages' test suites (shard ${{ matrix.shard }}/4)
+    step: Run the affected packages' test suites (shard ${{ matrix.shard }}/8)
     kind: step-if
     reason: The affected-only pull_request leg; the merge_group twin above runs the full sweep. Exactly one of the pair runs on each event.
   - workflow: test.yml

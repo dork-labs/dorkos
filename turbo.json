@@ -119,7 +119,8 @@
         "^build",
         "@dorkos/relay#build",
         "@dorkos/extension-api#build",
-        "@dorkos/keep-awake#build"
+        "@dorkos/keep-awake#build",
+        "@dorkos/harness#build"
       ],
       "cache": true
     },

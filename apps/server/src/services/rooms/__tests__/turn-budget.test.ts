@@ -5,7 +5,10 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { roomTurnSpend } from '@dorkos/db';
+import { roomTurnSpend, runMigrations } from '@dorkos/db';
+import Database from 'better-sqlite3';
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import * as schema from '../../../../../../packages/db/src/schema/index.js';
 import { RoomTurnBudget } from '../limits/turn-budget.js';
 import { logger } from '../../../lib/logger.js';
 
@@ -23,6 +26,36 @@ function budgetOf(perRoom: number, windowMs = 60_000, global = 100_000) {
   const limits = { perRoom: () => perRoom, global: () => global };
   const boot = () => new RoomTurnBudget({ limits, db, windowMs, now: () => now });
   return { db, budget: boot(), restart: boot, advance: (ms: number) => (now += ms) };
+}
+
+/** Ordinary SQLite component lane: no native Doc persistence or prepared-fence custody. */
+function withMemoryBudget(global: number, run: (budget: RoomTurnBudget) => void): void {
+  const sqlite = new Database(':memory:');
+  const db = drizzle(sqlite, { schema });
+  let failed = false;
+  let first: unknown;
+  try {
+    runMigrations(db);
+    const budget = new RoomTurnBudget({
+      db,
+      limits: { perRoom: () => 1, global: () => global },
+      windowMs: 60_000,
+      now: () => 1_000_000,
+    });
+    run(budget);
+  } catch (cause) {
+    failed = true;
+    first = cause;
+  }
+  try {
+    sqlite.close();
+  } catch (cause) {
+    if (!failed) {
+      failed = true;
+      first = cause;
+    }
+  }
+  if (failed) throw first;
 }
 
 describe('RoomTurnBudget', () => {
@@ -87,13 +120,14 @@ describe('RoomTurnBudget', () => {
   });
 
   it('stays bounded across many rooms rather than growing forever', () => {
-    const { budget } = budgetOf(1, 60_000, 100_000);
-    for (let i = 0; i < 600; i++) budget.tryReserve(`room-${i}`);
-    // The oldest rooms were evicted, so their per-room window reads as fresh.
-    // That is the deliberate trade: bounded memory, and eviction can only ever
-    // be generous — which is exactly why the GLOBAL window is never evicted.
-    expect(budget.tryReserve('room-0').allowed).toBe(true);
-    expect(budget.tryReserve('room-599').allowed).toBe(false);
+    withMemoryBudget(100_000, (budget) => {
+      for (let i = 0; i < 600; i++) budget.tryReserve(`room-${i}`);
+      // The oldest rooms were evicted, so their per-room window reads as fresh.
+      // That is the deliberate trade: bounded memory, and eviction can only ever
+      // be generous — which is exactly why the GLOBAL window is never evicted.
+      expect(budget.tryReserve('room-0').allowed).toBe(true);
+      expect(budget.tryReserve('room-599').allowed).toBe(false);
+    });
   });
 });
 
@@ -142,10 +176,11 @@ describe('RoomTurnBudget — the global cap', () => {
   it('never evicts the global window, unlike the per-room ones', () => {
     // Per-room eviction can only be generous — an evicted room reads as unspent
     // — so the global count is the one that has to stay exact across many rooms.
-    const { budget } = budgetOf(1, 60_000, 300);
-    for (let i = 0; i < 600; i++) budget.tryReserve(`room-${i}`);
-    expect(budget.tryReserve('room-fresh').allowed).toBe(false);
-    expect(budget.tryReserve('room-fresh').scope).toBe('global');
+    withMemoryBudget(300, (budget) => {
+      for (let i = 0; i < 600; i++) budget.tryReserve(`room-${i}`);
+      expect(budget.tryReserve('room-fresh').allowed).toBe(false);
+      expect(budget.tryReserve('room-fresh').scope).toBe('global');
+    });
   });
 });
 

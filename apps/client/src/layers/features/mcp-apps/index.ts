@@ -9,3 +9,5 @@ export { McpAppBlock, type McpAppBlockProps } from './ui/McpAppBlock';
 export { McpAppFrame, type McpAppFrameProps } from './ui/McpAppFrame';
 export { useMcpAppResource } from './model/use-mcp-app-resource';
 export { useRenderConsent, hasRenderConsent, grantRenderConsent } from './model/render-consent';
+
+export type { McpAppDocHost, McpAppDocProjection } from './model/doc-extension';

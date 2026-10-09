@@ -10,8 +10,8 @@ import { prepareCheckboxBytes, rawByteHash } from '../checkbox-bytes.js';
 import type { DbTransaction } from '@dorkos/db';
 import type { DocWriteIntentRow } from '../../store.js';
 import type { OriginalCheckboxCompletionAccess } from '../completion.js';
-import type { SynchronousResult } from '../../store-transaction.js';
-import { createCheckboxReservationBridge } from '../reservation-bridge.js';
+import type { SynchronousResult } from '../../storage/store-transaction.js';
+import { createCheckboxReservationBridge } from '../reservations/reservation-bridge.js';
 import { DOC_INGEST_LIMITS } from '../../current/accounting.js';
 
 /** Seed a parser-proven prepared intent against a genuine consumed log-route write approval. */

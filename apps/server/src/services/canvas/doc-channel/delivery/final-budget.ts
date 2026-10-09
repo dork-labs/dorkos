@@ -37,13 +37,18 @@ export type DocBeforeClaim = (
 const HOUR = 3600_000;
 /** Direct private routes spend the approved route ceiling, bounded by the platform ceiling. */
 export const privateDocTurnBudget: DocBeforeClaim = (context, tx, now) => {
+  if (context.scope !== `session:${context.sessionId}`)
+    return { decision: 'refuse', code: 'document_budget_invalid' };
+  return documentRouteTurnBudget(context, tx, now);
+};
+/** Approved cross-target routes retain the owning document/route budget identity. */
+export const documentRouteTurnBudget: DocBeforeClaim = (context, tx, now) => {
   const ceiling = context.turnsPerHour;
   if (
     !Number.isInteger(ceiling) ||
     ceiling < 1 ||
     ceiling > 10 ||
     !context.scope.startsWith('session:') ||
-    context.scope.slice(8) !== context.sessionId ||
     !Number.isFinite(Date.parse(now))
   )
     return { decision: 'refuse', code: 'document_budget_invalid' };

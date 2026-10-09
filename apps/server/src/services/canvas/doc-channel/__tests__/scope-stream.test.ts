@@ -5,7 +5,7 @@ import type { DurableStreamSink } from '../../../core/streams/durable-stream-sin
 import { deliverSessionStream } from '../../../core/streams/session-stream-delivery.js';
 /** Real authorized storage replays without borrowing transcript or room entry cursors. */
 import { randomUUID } from 'node:crypto';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { canvasDocChannels, canvasDocEvents, eq, type Db, type DbTransaction } from '@dorkos/db';
 import { createServerPrincipal } from '../../../connectors/principal/server-principal.js';
 import { DocChannelAuthorization } from '../authorization.js';
@@ -18,7 +18,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   for (const db of databases.splice(0)) db.$client.close();
 });
-function fixture() {
+function fixture(maxBufferedDocuments = 1000) {
   const f = harness();
   databases.push(f.db);
   let allowed = true;
@@ -47,7 +47,7 @@ function fixture() {
     },
   };
   const service = new DocChannelService(f.documents, f.store, authorization);
-  const live = new DocChannelLiveBuffer(f.store, ports);
+  const live = new DocChannelLiveBuffer(f.store, ports, maxBufferedDocuments);
   const stream = new DocScopeStream(f.documents, service, live, ports);
   const doc = f.canvas.open(FROM, 'agent', { type: 'file', sourcePath: '/fake/lifeos/tasks.md' });
   const append = (tx?: DbTransaction) =>
@@ -249,52 +249,66 @@ it('explicit return releases an idle scope generator without an external abort',
   expect(f.controller.signal.aborted).toBe(false);
 });
 
-it('replays more than 2000 retained inputs on cold connect and reconnect with bounded pages', async () => {
-  const f = fixture();
-  const rows = f.store.transaction((tx) => Array.from({ length: 2001 }, () => f.append(tx)));
-  const replay = vi.spyOn(f.service, 'replay');
-  const expected = rows.map((row) => ({ id: row.eventId, docSeq: row.docSeq }));
-  for (let connection = 0; connection < 2; connection++) {
-    const reader = f.reader();
-    const events: { id: string; docSeq: number }[] = [];
-    let snapshots = 0;
-    try {
-      while (events.length < rows.length) {
-        const frame = (await reader.next()).value!;
-        if (frame.type === 'canvas_event') {
-          expect(frame.scope).toBe(FROM);
-          events.push({ id: frame.event.id, docSeq: frame.docSeq });
-        } else snapshots++;
+describe('large retained scope replay', () => {
+  let prepared:
+    | {
+        f: ReturnType<typeof fixture>;
+        rows: ReturnType<ReturnType<typeof fixture>['append']>[];
       }
-      expect(events).toEqual(expected);
-      expect(snapshots).toBe(11);
-      expect(replay).toHaveBeenCalledTimes((connection + 1) * 11);
-      expect(
-        replay.mock.calls.slice(connection * 11, (connection + 1) * 11).map((call) => call[2])
-      ).toEqual(Array.from({ length: 11 }, (_, page) => page * 200));
-      if (connection === 1) {
-        const newest = f.append();
-        f.live.notifyCommitted(f.doc.id);
-        f.live.notifyCommitted(f.doc.id);
-        expect((await reader.next()).value).toMatchObject({
-          type: 'canvas_channel_snapshot',
-          snapshot: { highWatermark: 2002 },
-        });
-        expect((await reader.next()).value).toMatchObject({
-          type: 'canvas_event',
-          docSeq: 2002,
-          event: { id: newest.eventId },
-        });
-        const pending = reader.next();
+    | undefined;
+  beforeEach(() => {
+    prepared = undefined;
+    const f = fixture();
+    const rows = f.store.transaction((tx) => Array.from({ length: 2001 }, () => f.append(tx)));
+    prepared = { f, rows };
+  });
+  it('replays more than 2000 retained inputs on cold connect and reconnect with bounded pages', async () => {
+    if (!prepared) throw new Error('Missing retained replay fixture');
+    const { f, rows } = prepared;
+    const replay = vi.spyOn(f.service, 'replay');
+    const expected = rows.map((row) => ({ id: row.eventId, docSeq: row.docSeq }));
+    for (let connection = 0; connection < 2; connection++) {
+      const reader = f.reader();
+      const events: { id: string; docSeq: number }[] = [];
+      let snapshots = 0;
+      try {
+        while (events.length < rows.length) {
+          const frame = (await reader.next()).value!;
+          if (frame.type === 'canvas_event') {
+            expect(frame.scope).toBe(FROM);
+            events.push({ id: frame.event.id, docSeq: frame.docSeq });
+          } else snapshots++;
+        }
+        expect(events).toEqual(expected);
+        expect(snapshots).toBe(11);
+        expect(replay).toHaveBeenCalledTimes((connection + 1) * 11);
+        expect(
+          replay.mock.calls.slice(connection * 11, (connection + 1) * 11).map((call) => call[2])
+        ).toEqual(Array.from({ length: 11 }, (_, page) => page * 200));
+        if (connection === 1) {
+          const newest = f.append();
+          f.live.notifyCommitted(f.doc.id);
+          f.live.notifyCommitted(f.doc.id);
+          expect((await reader.next()).value).toMatchObject({
+            type: 'canvas_channel_snapshot',
+            snapshot: { highWatermark: 2002 },
+          });
+          expect((await reader.next()).value).toMatchObject({
+            type: 'canvas_event',
+            docSeq: 2002,
+            event: { id: newest.eventId },
+          });
+          const pending = reader.next();
+          await reader.return?.();
+          expect((await pending).done).toBe(true);
+          expect(replay).toHaveBeenCalledTimes(23);
+        }
+      } finally {
         await reader.return?.();
-        expect((await pending).done).toBe(true);
-        expect(replay).toHaveBeenCalledTimes(23);
       }
-    } finally {
-      await reader.return?.();
     }
-  }
-  for (const [, , , limit] of replay.mock.calls) expect(limit).toBe(200);
+    for (const [, , , limit] of replay.mock.calls) expect(limit).toBe(200);
+  });
 });
 
 it('ends retained replay at its first high watermark and then drains a captured live commit', async () => {
@@ -444,3 +458,84 @@ it.each(['revocation', 'navigation'] as const)(
     }
   }
 );
+
+it('reconnects an overflowed slow subscriber from both durable document histories', async () => {
+  const f = fixture(1);
+  const slow = f.reader();
+  let reconnected: ReturnType<typeof f.reader> | undefined;
+  let failed = false;
+  let firstCause: unknown;
+  const remember = (cause: unknown) => {
+    if (!failed) {
+      failed = true;
+      firstCause = cause;
+    }
+  };
+  try {
+    expect((await slow.next()).value).toMatchObject({
+      type: 'canvas_channel_snapshot',
+      documentId: f.doc.id,
+      snapshot: { highWatermark: 0 },
+    });
+    const other = f.canvas.open(FROM, 'agent', {
+      type: 'file',
+      sourcePath: '/fake/lifeos/other.md',
+    });
+    const first = f.append();
+    const second = f.store.appendEvent({
+      documentId: other.id,
+      eventId: randomUUID(),
+      direction: 'system',
+      type: 'state.changed',
+      payload: { stateRev: 1 },
+      envelopeHash: 'a'.repeat(64),
+      receivedAt: NOW,
+      provenance: {},
+    });
+    // Two distinct committed documents exceed this reader's one-document hint bound.
+    f.live.notifyCommitted(f.doc.id);
+    f.live.notifyCommitted(other.id);
+    expect((await slow.next()).done).toBe(true);
+    expect(f.controller.signal.aborted).toBe(false);
+
+    reconnected = f.reader();
+    const events: { documentId: string; id: string; docSeq: number }[] = [];
+    const snapshots: string[] = [];
+    while (events.length < 2) {
+      const frame = (await reconnected.next()).value!;
+      expect(frame.scope).toBe(FROM);
+      if (frame.type === 'canvas_event') {
+        expect(frame).not.toHaveProperty('seq');
+        expect(frame).not.toHaveProperty('entrySeq');
+        events.push({ documentId: frame.documentId, id: frame.event.id, docSeq: frame.docSeq });
+      } else snapshots.push(frame.documentId);
+    }
+    expect(snapshots.sort()).toEqual([f.doc.id, other.id].sort());
+    expect(events.sort((a, b) => a.documentId.localeCompare(b.documentId))).toEqual(
+      [
+        { documentId: f.doc.id, id: first.eventId, docSeq: 1 },
+        { documentId: other.id, id: second.eventId, docSeq: 1 },
+      ].sort((a, b) => a.documentId.localeCompare(b.documentId))
+    );
+    const parked = reconnected.next();
+    await reconnected.return?.();
+    expect((await parked).done).toBe(true);
+  } catch (cause) {
+    remember(cause);
+  } finally {
+    try {
+      f.controller.abort();
+    } catch (cause) {
+      remember(cause);
+    }
+    const returns = [slow, reconnected].map(async (reader) => {
+      try {
+        await reader?.return?.();
+      } catch (cause) {
+        remember(cause);
+      }
+    });
+    await Promise.all(returns);
+  }
+  if (failed) throw firstCause;
+});

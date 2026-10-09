@@ -261,6 +261,25 @@ describe('SessionPump — the state machine (spec §4.2)', () => {
     expect(h.crashes).toEqual([]);
   });
 
+  it('reaps an actually crashed process once without starting another query', async () => {
+    const h = harness();
+    await warmed(h);
+    const primary = new Error('actual crashed stream');
+    h.live().failStream(primary);
+    await vi.waitFor(() => expect(h.pump.state).toBe('crashed'));
+
+    await expect(h.pump.reap()).resolves.toBe(true);
+    expect(h.pump.state).toBe('reaped');
+    expect(h.pump.warmth).toBe('cold');
+    expect(h.states.at(-1)).toEqual({ from: 'crashed', to: 'reaped' });
+    expect(h.crashes).toEqual([{ sessionId: 'sess-1', stateAtCrash: 'warm', error: primary }]);
+    await expect(h.pump.reap()).resolves.toBe(false);
+    await expect(
+      h.pump.dispatch([{ content: 'no relaunch', messageId: 'retired' }])
+    ).rejects.toThrow();
+    expect(h.queries).toHaveLength(1);
+  });
+
   // Purpose: the CRASHED -> RESUMING -> WARMING -> WARM rows. Recovery is a
   // relaunch of the same pump, and the launcher is told it is a resume so it
   // can take the resume path.

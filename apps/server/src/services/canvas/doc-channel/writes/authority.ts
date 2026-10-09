@@ -16,7 +16,7 @@ export type {
 import {
   auditCheckboxReservationScope,
   retireCheckboxReservationScope,
-} from './reservation-bridge.js';
+} from './reservations/reservation-bridge.js';
 import { requireDocChannelStoreDatabase } from '../store.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { and, isNull, eq, canvasDocGrants, type DbTransaction } from '@dorkos/db';
@@ -30,9 +30,9 @@ import {
   readDocSourceDescriptor,
   sameDocOwnerAuthority,
   docInstallationOwner,
-} from '../doc-source-policy.js';
+} from '../current/doc-source-policy.js';
 import type { DocChannelStore, DocWriteIntentRow } from '../store.js';
-import type { SynchronousResult } from '../store-transaction.js';
+import type { SynchronousResult } from '../storage/store-transaction.js';
 import {
   VerifiedCheckboxAuthoritySchema,
   requireSameCheckboxAuthority,
@@ -49,6 +49,7 @@ import {
   checkboxAuthorityClock,
   withCheckboxReadOnlyGate,
   observeCheckboxSource,
+  readOriginalCheckboxManifestCloseFailure,
   type CheckboxAuthoritySnapshot,
   type CheckboxSourceObservation,
 } from './authority-snapshot.js';
@@ -67,11 +68,28 @@ interface ReservationBindingOperations {
     subject: CheckboxReservationSubject,
     snapshot: CheckboxAuthoritySnapshot,
     tx: DbTransaction
-  ) => { approved: VerifiedCheckboxAuthority; currentTime: string; documentLabel: string };
+  ) => {
+    approved: VerifiedCheckboxAuthority;
+    currentTime: string;
+    documentLabel: string;
+    writeObservation: import('../grant-policy.js').DocOriginalWriteObservation;
+  };
 }
 const authorityConstructors = new WeakMap<
   DocCheckboxAuthority,
-  { store: DocChannelStore; bind: () => ReservationBindingOperations }
+  {
+    db: import('@dorkos/db').Db;
+    store: DocChannelStore;
+    grants: import('../grants.js').DocChannelGrants;
+    observeGrant: (id: string) => Promise<CheckboxSourceObservation>;
+    manifestCloseFailure: () => Readonly<{ cause: unknown }> | undefined;
+    requireGrantSource: (
+      id: string,
+      observation: CheckboxSourceObservation,
+      tx: DbTransaction
+    ) => void;
+    bind: () => ReservationBindingOperations;
+  }
 >();
 const reservationBindings = new WeakMap<CheckboxReservationBinding, ReservationBindingOperations>();
 
@@ -113,7 +131,12 @@ export function requireCheckboxReservationSubject(
   subject: CheckboxReservationSubject,
   snapshot: CheckboxAuthoritySnapshot,
   tx: DbTransaction
-): { approved: VerifiedCheckboxAuthority; currentTime: string; documentLabel: string } {
+): {
+  approved: VerifiedCheckboxAuthority;
+  currentTime: string;
+  documentLabel: string;
+  writeObservation: import('../grant-policy.js').DocOriginalWriteObservation;
+} {
   const genuine = reservationBindings.get(binding);
   if (!genuine) throw new Error('Unknown checkbox reservation binding.');
   return genuine.current(subject, snapshot, tx);
@@ -140,7 +163,15 @@ export function requireCheckboxReservationScope(
 /** Fresh-snapshot interface for parent-owned writer migration; old writer ports remain unchanged. */
 export class DocCheckboxAuthority {
   readonly #snapshots = new CheckboxSnapshotRegistry();
+  readonly #reservationObservations = new WeakMap<
+    DbTransaction,
+    {
+      approved: VerifiedCheckboxAuthority;
+      observation: import('../grant-policy.js').DocOriginalWriteObservation;
+    }
+  >();
   readonly #entered = new AsyncLocalStorage<boolean>();
+  #manifestCloseFailure: Readonly<{ cause: unknown }> | undefined;
   readonly #transactions: CheckboxAuthorityTransactions;
   #accessEntered = false;
   readonly #deps: Readonly<CheckboxAuthorityDependencies>;
@@ -154,7 +185,27 @@ export class DocCheckboxAuthority {
     if (!deps.installationId || typeof deps.now !== 'function')
       throw new Error('Checkbox authority requires explicit installation and clock ports.');
     authorityConstructors.set(this, {
+      db: deps.db,
       store: deps.store,
+      grants: deps.grants,
+      observeGrant: (id) => this.#operation(() => this.#observe(id)),
+      manifestCloseFailure: () => this.#manifestCloseFailure,
+      requireGrantSource: (id, observation, tx) =>
+        withCheckboxReadOnlyGate(deps.db, () => {
+          if (
+            !deps.db.$client.inTransaction ||
+            JSON.stringify(readDocSourceDescriptor(deps, id, tx)) !==
+              JSON.stringify(observation.descriptor)
+          )
+            throw new CheckboxAuthorityRefusal('SOURCE_DESCRIPTOR_CHANGED');
+          const channel = deps.store.getChannel(id, tx);
+          if (
+            !channel ||
+            channel.closedAt !== null ||
+            channel.manifestHash !== observation.manifestHash
+          )
+            throw new CheckboxAuthorityRefusal('MANIFEST_CHANGED');
+        }),
       bind: (): ReservationBindingOperations => {
         if (deps.db.$client.inTransaction)
           throw new Error('Checkbox reservation binding requires an inactive database.');
@@ -183,7 +234,16 @@ export class DocCheckboxAuthority {
               const physical = readCheckboxPhysicalTitle(tx, approved.documentId);
               if (!physical || typeof physical.title !== 'string')
                 throw new CheckboxAuthorityRefusal('DOCUMENT_CLOSED');
-              return { approved, currentTime, documentLabel: physical.title };
+              const observed = this.#reservationObservations.get(tx);
+              this.#reservationObservations.delete(tx);
+              if (!observed || observed.approved !== approved)
+                throw new CheckboxAuthorityRefusal('ORIGINAL_RESERVATION_OBSERVATION_ABSENT');
+              return {
+                approved,
+                currentTime,
+                documentLabel: physical.title,
+                writeObservation: observed.observation,
+              };
             }),
         };
       },
@@ -419,6 +479,13 @@ export class DocCheckboxAuthority {
         actor
       );
       requireSameCheckboxAuthority(data.approved, result);
+      this.#reservationObservations.set(tx, {
+        approved: result,
+        observation: Object.freeze({
+          manifestHash: data.observation.manifestHash,
+          write: result.binding,
+        }),
+      });
       return result;
     });
   }
@@ -453,6 +520,13 @@ export class DocCheckboxAuthority {
         tx
       );
       requireSameCheckboxAuthority(data.approved, result);
+      this.#reservationObservations.set(tx, {
+        approved: result,
+        observation: Object.freeze({
+          manifestHash: data.observation.manifestHash,
+          write: result.binding,
+        }),
+      });
       return result;
     });
   }
@@ -501,11 +575,18 @@ export class DocCheckboxAuthority {
       throw new Error('Checkbox filesystem observation requires an outside-SQL boundary.');
     return undefined;
   }
-  #observe(documentId: string): Promise<CheckboxSourceObservation> {
-    return observeCheckboxSource(
-      () => readDocSourceDescriptor(this.#deps, documentId),
-      () => this.#outside()
-    );
+  async #observe(documentId: string): Promise<CheckboxSourceObservation> {
+    if (this.#manifestCloseFailure) throw this.#manifestCloseFailure.cause;
+    const boundary = () => this.#outside();
+    try {
+      return await observeCheckboxSource(
+        () => readDocSourceDescriptor(this.#deps, documentId),
+        boundary
+      );
+    } finally {
+      const failure = readOriginalCheckboxManifestCloseFailure(boundary);
+      if (failure && !this.#manifestCloseFailure) this.#manifestCloseFailure = failure;
+    }
   }
   #operation<T>(run: () => Promise<T>): Promise<T> {
     if (this.#entered.getStore())
@@ -514,3 +595,44 @@ export class DocCheckboxAuthority {
   }
 }
 export { checkboxDocumentGeneration } from './authority-snapshot.js';
+
+/** Fixed observation uses the original constructor's own dependency set, never a caller source reader. */
+export function observeOriginalCheckboxGrantSource(
+  authority: DocCheckboxAuthority,
+  db: import('@dorkos/db').Db,
+  store: DocChannelStore,
+  grants: import('../grants.js').DocChannelGrants,
+  id: string
+): Promise<CheckboxSourceObservation> {
+  const own = authorityConstructors.get(authority);
+  if (!own || own.db !== db || own.store !== store || own.grants !== grants)
+    throw new Error('Foreign original checkbox grant source.');
+  return own.observeGrant(id);
+}
+/** Require the original checkbox grant source retained by its owning assembly. */
+export function requireOriginalCheckboxGrantSource(
+  authority: DocCheckboxAuthority,
+  db: import('@dorkos/db').Db,
+  store: DocChannelStore,
+  grants: import('../grants.js').DocChannelGrants,
+  id: string,
+  observation: CheckboxSourceObservation,
+  tx: DbTransaction
+): void {
+  const own = authorityConstructors.get(authority);
+  if (!own || own.db !== db || own.store !== store || own.grants !== grants)
+    throw new Error('Foreign original checkbox grant source.');
+  own.requireGrantSource(id, observation, tx);
+}
+
+/** Same original owner close failure DATA; no public method or permission is trusted. */
+export function readOriginalCheckboxAuthorityCloseFailure(
+  authority: DocCheckboxAuthority,
+  db: import('@dorkos/db').Db,
+  store: DocChannelStore
+): Readonly<{ cause: unknown }> | undefined {
+  const own = authorityConstructors.get(authority);
+  if (!own || own.db !== db || own.store !== store)
+    throw new Error('Foreign original checkbox authority close owner.');
+  return own.manifestCloseFailure();
+}

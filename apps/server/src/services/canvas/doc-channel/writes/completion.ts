@@ -1,14 +1,36 @@
 /** Private checkbox completion adapter; common ingestion and reservation ports are mandatory. */
 import { and, eq, canvasDocWriteIntents, type DbTransaction } from '@dorkos/db';
-import { readChecked } from '../store-json.js';
+import { readChecked } from '../storage/store-json.js';
+import { projectVerifiedCheckbox, type VerifiedCheckboxProjection } from './checkbox-projection.js';
+export { projectVerifiedCheckbox } from './checkbox-projection.js';
+export type { VerifiedCheckboxProjection } from './checkbox-projection.js';
 import { types as utilTypes } from 'node:util';
 import { DocChannelIngest, completeOriginalCheckboxOutbox } from '../ingest.js';
+import {
+  prepareServiceOriginalCheckboxSource,
+  completeServiceOriginalCheckboxSource,
+  publishServiceOriginalCheckboxSource,
+  abandonServiceOriginalCheckboxSource,
+  type DocChannelService,
+} from '../service.js';
 import type { DocIngestLimits } from '../current/accounting.js';
+import {
+  requireOriginalCheckboxWriterCompletion,
+  type DocCheckboxWriteService,
+} from './checkbox-service.js';
+import {
+  requireOriginalCanonicalWriteLease,
+  type CanonicalFileWriteCoordinator,
+  type CanonicalWriteLease,
+} from './canonical-writer.js';
 import {
   createCheckboxReservationBridge,
   failCheckboxCompletion,
   readCheckboxConvertedIntent,
-} from './reservation-bridge.js';
+  readPreparedCheckboxConversion,
+  consumePreparedCheckboxConversion,
+  type OriginalPreparedCheckboxConversion,
+} from './reservations/reservation-bridge.js';
 import {
   createCheckboxReservationBinding,
   requireCheckboxReservationAccess,
@@ -21,14 +43,10 @@ import type { DocChannelActor } from '../authorization.js';
 import type { CheckboxAuthoritySnapshot } from './authority-snapshot.js';
 import {
   IngestReceiptSchema,
-  CanvasChannelCheckboxRequestSchema,
-  StoredPageEventSchema,
   matchesCanvasChannelEvent,
   type IngestReceipt,
-  type StoredPageEvent,
 } from '@dorkos/shared/canvas-channel-schemas';
 import { hashApprovalInput } from '../../../core/approvals/approval-input-hash.js';
-import { envelopeIdentity } from '../envelope.js';
 import type { DocIngestAccess } from '../ingest-types.js';
 import type { DocChannelStore, DocWriteIntentRow } from '../store.js';
 import {
@@ -40,14 +58,111 @@ import {
   type CheckboxReceipt,
 } from './checkbox-evidence.js';
 
-/** Fixed host input, independent of the original write-request fingerprint. */
-export interface VerifiedCheckboxProjection {
-  intent: DocWriteIntentRow;
-  event: StoredPageEvent;
-  identity: { hash: string; bytes: number };
-  provenance: { transport: 'host'; producer: 'verified_checkbox'; intentId: string };
+const originalCompletionOwners = new WeakMap<
+  object,
+  {
+    store: DocChannelStore;
+    ingest: DocChannelIngest;
+    writer?: DocCheckboxWriteService;
+    coordinator?: CanonicalFileWriteCoordinator;
+  }
+>();
+const originalCompletionStages = new WeakMap<
+  DbTransaction,
+  {
+    owner: object;
+    store: DocChannelStore;
+    phase: OriginalPreparedCheckboxConversion;
+    finish: (tx: DbTransaction) => Extract<CheckboxReceipt, { status: 'changed' }>;
+    consumed: boolean;
+    committed: boolean;
+    lease?: CanonicalWriteLease;
+    intent: DocWriteIntentRow;
+    receipt?: Extract<CheckboxReceipt, { status: 'changed' }>;
+  }
+>();
+/** Constructor recognition only. No returned data supplies document/source permission. */
+export function requireOriginalCheckboxCompletionOwner(owner: object, store: DocChannelStore) {
+  const own = originalCompletionOwners.get(owner);
+  if (!own || own.store !== store)
+    throw new CheckboxEvidenceError('Foreign checkbox completion owner.');
+  if (own.writer && own.coordinator)
+    requireOriginalCheckboxWriterCompletion(own.writer, owner, store, own.coordinator);
 }
-
+/** Reads only the active original A phase; row DTOs and another constructor cannot issue it. */
+export function readOriginalCheckboxCompletionStage(
+  owner: object,
+  store: DocChannelStore,
+  tx: DbTransaction
+) {
+  requireOriginalCheckboxCompletionOwner(owner, store);
+  const stage = originalCompletionStages.get(tx);
+  if (!stage || stage.owner !== owner || stage.store !== store || stage.consumed)
+    throw new CheckboxEvidenceError('Original checkbox source stage is unavailable.');
+  const own = originalCompletionOwners.get(owner)!;
+  const data = readPreparedCheckboxConversion(store, tx, stage.phase);
+  if (own.writer && own.coordinator) {
+    const physical = validateCheckboxEvidence(data.originalIntent).tempIdentity;
+    if (!physical || !stage.lease)
+      throw new CheckboxEvidenceError('Original checkbox lease is absent.');
+    requireOriginalCanonicalWriteLease(own.coordinator, stage.lease, {
+      canonicalPath: data.originalIntent.canonicalPath,
+      device: physical.device,
+      inode: physical.inode,
+    });
+  }
+  return { data, phase: stage.phase, ingest: originalCompletionOwners.get(owner)!.ingest };
+}
+/** Fixed original conversion/terminal sequence, with no caller work or supplied checker. */
+export function consumeOriginalCheckboxCompletionStage(
+  owner: object,
+  store: DocChannelStore,
+  tx: DbTransaction
+): Extract<CheckboxReceipt, { status: 'changed' }> {
+  readOriginalCheckboxCompletionStage(owner, store, tx);
+  const stage = originalCompletionStages.get(tx)!;
+  stage.consumed = true;
+  consumePreparedCheckboxConversion(store, tx, stage.phase);
+  const receipt = stage.finish(tx);
+  if (originalCompletionStages.get(tx) !== stage)
+    throw new CheckboxEvidenceError('Original checkbox completion stage changed.');
+  stage.receipt = receipt;
+  return receipt;
+}
+/** Exact original transaction/commit/lease lookup. Returned rows are comparison data only. */
+export function readOriginalCheckboxCommittedStage(
+  owner: object,
+  store: DocChannelStore,
+  tx: DbTransaction
+) {
+  requireOriginalCheckboxCompletionCommitted(owner, store, tx);
+  const stage = originalCompletionStages.get(tx)!;
+  if (!stage.receipt)
+    throw new CheckboxEvidenceError('Original committed checkbox receipt is absent.');
+  return freezeCheckboxData({ intent: stage.intent, receipt: stage.receipt });
+}
+/** Commit recognition is written only by the original outer A transaction return. */
+export function requireOriginalCheckboxCompletionCommitted(
+  owner: object,
+  store: DocChannelStore,
+  tx: DbTransaction
+): void {
+  requireOriginalCheckboxCompletionOwner(owner, store);
+  const own = originalCompletionStages.get(tx);
+  if (!own || own.owner !== owner || own.store !== store || !own.consumed || !own.committed)
+    throw new CheckboxEvidenceError('Original checkbox completion has no confirmed owning commit.');
+  const constructor = originalCompletionOwners.get(owner)!;
+  if (constructor.writer && constructor.coordinator) {
+    const physical = validateCheckboxEvidence(own.intent).tempIdentity;
+    if (!physical || !own.lease)
+      throw new CheckboxEvidenceError('Original committed checkbox lease is absent.');
+    requireOriginalCanonicalWriteLease(constructor.coordinator, own.lease, {
+      canonicalPath: own.intent.canonicalPath,
+      device: physical.device,
+      inode: physical.inode,
+    });
+  }
+}
 /** Parent composition must check current original approval and the caller's fresh authority proof. */
 export interface OriginalCheckboxCompletionAccess {
   requireOriginalCompletionAccess(intent: DocWriteIntentRow, tx: DbTransaction): DocIngestAccess;
@@ -74,32 +189,6 @@ export interface CheckboxTransactionalIngest {
 /** Writer invokes this in the same preparation transaction before inserting its prepared intent. */
 export interface CheckboxPreparedAdmissionPorts {
   requirePreparedAdmission(candidate: DocWriteIntentRow, tx: DbTransaction): undefined;
-}
-
-/** Derive only the fixed host envelope; physical byte verification remains a caller obligation. */
-export function projectVerifiedCheckbox(intent: DocWriteIntentRow): VerifiedCheckboxProjection {
-  const evidence = validateCheckboxEvidence(intent);
-  if (evidence.v !== 2 || evidence.receipt || evidence.preEffectRefusal)
-    throw new CheckboxEvidenceError('Checkbox completion requires current physical evidence.');
-  const request = CanvasChannelCheckboxRequestSchema.parse(intent.input);
-  const event = StoredPageEventSchema.parse({
-    v: 1,
-    id: intent.eventId,
-    type: 'md.task.toggled',
-    payload: {
-      line: request.line,
-      done: request.done,
-      textHash: request.textHash,
-      beforeFileVersion: intent.beforeHash,
-      afterFileVersion: intent.afterHash,
-    },
-  });
-  return freezeCheckboxData({
-    intent: structuredClone(intent),
-    event,
-    identity: envelopeIdentity(event),
-    provenance: { transport: 'host', producer: 'verified_checkbox', intentId: intent.intentId },
-  });
 }
 
 /** Validate durable delegated work before the existing writer can perform its terminal CAS. */
@@ -254,11 +343,24 @@ export function createOriginalCheckboxCompletion(deps: {
   store: DocChannelStore;
   policyLimits: DocIngestLimits;
   notifyCommitted: (documentId: string) => undefined;
+  service?: DocChannelService;
+  writer?: DocCheckboxWriteService;
+  coordinator?: CanonicalFileWriteCoordinator;
 }) {
   if (utilTypes.isProxy(deps) || Object.getPrototypeOf(deps) !== Object.prototype)
     throw new CheckboxEvidenceError('Checkbox completion requires own dependency data.');
   const captured = {} as typeof deps;
-  const fields = ['authority', 'store', 'policyLimits', 'notifyCommitted'] as const;
+  const fields = Reflect.has(deps, 'service')
+    ? ([
+        'authority',
+        'store',
+        'policyLimits',
+        'notifyCommitted',
+        'service',
+        'writer',
+        'coordinator',
+      ] as const)
+    : (['authority', 'store', 'policyLimits', 'notifyCommitted'] as const);
   if (Reflect.ownKeys(deps).length !== fields.length)
     throw new CheckboxEvidenceError('Checkbox completion dependency fields changed.');
   for (const key of fields) {
@@ -269,6 +371,13 @@ export function createOriginalCheckboxCompletion(deps: {
   }
   if (typeof captured.notifyCommitted !== 'function')
     throw new CheckboxEvidenceError('Checkbox completion notification is required.');
+  if (
+    Reflect.has(captured, 'service') &&
+    (!captured.service || !captured.writer || !captured.coordinator)
+  )
+    throw new CheckboxEvidenceError(
+      'Native checkbox completion requires its actual writer constructor.'
+    );
   deps = Object.freeze(captured);
   const bridge = createCheckboxReservationBridge(deps.authority, deps.store, deps.policyLimits);
   const ingest = new DocChannelIngest(deps.store, undefined, deps.policyLimits);
@@ -310,16 +419,51 @@ export function createOriginalCheckboxCompletion(deps: {
       return failCheckboxCompletion(deps.store, tx, cause);
     }
   };
+  const completionCapture: { owner?: object } = {};
+  let enteredOuter = false;
   const completeInTransaction = (
     input: {
       intentId: string;
       subject: CheckboxReservationSubject;
       freshSnapshot: CheckboxAuthoritySnapshot;
+      lease?: CanonicalWriteLease;
     },
     tx: DbTransaction
   ): Extract<CheckboxReceipt, { status: 'changed' }> => {
-    bridge.convertOwnReservationInTransaction(input, tx);
-    return finishInTransaction(tx);
+    if (originalCompletionStages.has(tx))
+      throw new CheckboxEvidenceError('Original checkbox source stage cannot be reused.');
+    if (deps.service && !enteredOuter)
+      throw new CheckboxEvidenceError(
+        'Native checkbox source requires its original outer completion.'
+      );
+    // The original coordinator lease is executable private custody, not port DATA.
+    // Preserve it only in the owning stage; conversion validates its declared DATA.
+    const phase = bridge.prepareOwnReservationConversion(
+      {
+        intentId: input.intentId,
+        subject: input.subject,
+        freshSnapshot: input.freshSnapshot,
+      },
+      tx
+    );
+    const capturedIntent = readPreparedCheckboxConversion(deps.store, tx, phase).originalIntent;
+    originalCompletionStages.set(tx, {
+      owner: completionCapture.owner!,
+      store: deps.store,
+      phase,
+      finish: finishInTransaction,
+      consumed: false,
+      committed: false,
+      lease: input.lease,
+      intent: capturedIntent,
+    });
+    if (deps.service)
+      return completeServiceOriginalCheckboxSource(deps.service, completionCapture.owner!, tx);
+    try {
+      return consumeOriginalCheckboxCompletionStage(completionCapture.owner!, deps.store, tx);
+    } finally {
+      originalCompletionStages.delete(tx);
+    }
   };
   const readDuplicate = (
     input: {
@@ -357,7 +501,7 @@ export function createOriginalCheckboxCompletion(deps: {
     requireCheckboxReservationAccess(binding, original.documentId, input.actor, tx);
     return receipt;
   };
-  return Object.freeze({
+  const original = Object.freeze({
     readDuplicate(input: Parameters<typeof readDuplicate>[0], tx?: DbTransaction): CheckboxReceipt {
       return tx
         ? readDuplicate(input, tx)
@@ -375,16 +519,55 @@ export function createOriginalCheckboxCompletion(deps: {
     complete(
       input: Parameters<typeof completeInTransaction>[0]
     ): Extract<CheckboxReceipt, { status: 'changed' }> {
-      const committed = runCheckboxReservationTransaction(binding, (tx) => ({
-        receipt: completeInTransaction(input, tx),
-        documentId: readCheckboxConvertedIntent(deps.store, tx).documentId,
-      }));
+      if (enteredOuter)
+        throw new CheckboxEvidenceError('Original checkbox completion is already active.');
+      enteredOuter = true;
+      let currentTx: DbTransaction | undefined;
       try {
-        sync(deps.notifyCommitted(committed.documentId));
-      } catch {
-        /* Committed evidence owns the outcome. */
+        // Latch before Room construction or other configured callbacks can reenter completion.
+        if (deps.service)
+          prepareServiceOriginalCheckboxSource(deps.service, completionCapture.owner!);
+        const committed = runCheckboxReservationTransaction(binding, (tx) => {
+          currentTx = tx;
+          return {
+            receipt: completeInTransaction(input, tx),
+            documentId: readCheckboxConvertedIntent(deps.store, tx).documentId,
+          };
+        });
+        if (deps.service) {
+          const original = originalCompletionStages.get(currentTx!);
+          if (!original || original.owner !== completionCapture.owner! || !original.consumed)
+            throw new CheckboxEvidenceError('Original checkbox committed scope changed.');
+          original.committed = true;
+          publishServiceOriginalCheckboxSource(deps.service, completionCapture.owner!, currentTx!);
+        }
+        try {
+          sync(deps.notifyCommitted(committed.documentId));
+        } catch {
+          /* True committed evidence owns the public outcome. */
+        }
+        return committed.receipt;
+      } catch (cause) {
+        if (deps.service && currentTx) {
+          try {
+            abandonServiceOriginalCheckboxSource(deps.service, completionCapture.owner!, currentTx);
+          } catch {
+            /* The original source/commit cause owns this refusal, including undefined. */
+          }
+        }
+        throw cause;
+      } finally {
+        if (currentTx) originalCompletionStages.delete(currentTx);
+        enteredOuter = false;
       }
-      return committed.receipt;
     },
   });
+  completionCapture.owner = original;
+  originalCompletionOwners.set(original, {
+    store: deps.store,
+    ingest,
+    writer: deps.writer,
+    coordinator: deps.coordinator,
+  });
+  return original;
 }

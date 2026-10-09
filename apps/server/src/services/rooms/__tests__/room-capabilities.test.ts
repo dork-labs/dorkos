@@ -10,6 +10,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { rooms as roomsTable, roomEntries, eq } from '@dorkos/db';
+import { DocChannelNotFoundError } from '../../canvas/doc-channel/authorization.js';
 import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import {
   composeRegistry,
@@ -29,7 +30,7 @@ import { roomsDomain } from '../room-capabilities.js';
 import {
   ROOM_REPO_CONFIG_UNSAFE_MEMBER_MESSAGE,
   RoomRepoConfigUnsafeError,
-} from '../room-errors.js';
+} from '../data/room-errors.js';
 import type { RoomMergeService } from '../repo/room-merge-service.js';
 import { FIND_ROOMS_MAX, type RoomService } from '../room-service.js';
 import { RoomStore } from '../room-store.js';
@@ -54,6 +55,12 @@ const installState: { ownerId: string | null; loginEnabled: boolean } = {
   ownerId: null,
   loginEnabled: false,
 };
+
+// Startup legacy-key migration is outside these caller-resolution controls.
+// Keep its config-write graph from capturing auth before the account mock.
+vi.mock('../../core/auth/seed-legacy-mcp-key.js', () => ({
+  seedLegacyMcpApiKey: vi.fn(async () => undefined),
+}));
 
 vi.mock('../../core/auth/index.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../core/auth/index.js')>()),
@@ -513,11 +520,11 @@ describe('the rooms capability domain', () => {
       });
     }
 
-    /** Both repo verbs' refusal payloads for one caller. */
+    /** Status diagnostics retain caller-specific disclosure; merge requires native producer custody. */
     async function refusals(context: Parameters<CapabilityRegistry['invoke']>[2]) {
       const poisoned = poisonedRegistry();
       const payloads: unknown[] = [];
-      for (const id of ['rooms.merge', 'rooms.repo_status']) {
+      for (const id of ['rooms.repo_status']) {
         const input =
           id === 'rooms.merge'
             ? { roomId: channel.id, summary: 'Ship it' }
@@ -529,6 +536,29 @@ describe('the rooms capability domain', () => {
       }
       return payloads;
     }
+
+    it('does not issue a native merge from agent, person or owner attribution', async () => {
+      const refuse = vi.fn(async () => {
+        throw new RoomRepoConfigUnsafeError(CONFIG, ['filter.x.smudge']);
+      });
+      const nonissuing = composeRegistry([roomsDomain], {
+        logger: { debug() {}, info() {}, warn() {}, error() {} },
+        roomDeps: {
+          rooms: service,
+          merges: { merge: refuse, status: refuse } as unknown as RoomMergeService,
+        },
+      });
+      for (const context of [
+        { identity: ANA_IDENTITY, retryChannel: 'mcp-argument' as const },
+        { userId: 'priya-account', retryChannel: 'http-header' as const },
+        { retryChannel: 'http-header' as const },
+      ]) {
+        await expect(
+          nonissuing.invoke('rooms.merge', { roomId: channel.id, summary: 'Ship it' }, context)
+        ).rejects.toBeInstanceOf(DocChannelNotFoundError);
+      }
+      expect(refuse).not.toHaveBeenCalled();
+    });
 
     it('tells an agent only that the files are paused — never the path, keys or command', async () => {
       for (const payload of await refusals({

@@ -40,8 +40,9 @@ import { createChatNoticeSender } from './chat-notice.js';
 import type { ChatNoticeTargetResolver } from './chat-notice.js';
 import { ReliabilityConfigSchema } from '@dorkos/shared/relay-schemas';
 import { inferEndpointType } from './types.js';
-import { RelayPublishPipeline } from './relay-publish.js';
-import { RelayTurnCeiling } from './turn-ceiling.js';
+import { RelayPublishPipeline, createOriginalDocumentPublishPipeline } from './relay-publish.js';
+import { RelayTurnCeiling, dispatchTurnAccounting } from './turn-ceiling.js';
+import type { ServerDocumentRelayOrigin, ServerDocumentRelayAccess } from './document-delivery.js';
 import { InboundTurnBudgets } from './inbound-turn-budgets.js';
 import { executeSubscribe, executeSignal, executeOnSignal } from './relay-subscriptions.js';
 import {
@@ -60,7 +61,7 @@ import {
   executeRebuildIndex,
   executeGetMetrics,
 } from './relay-endpoint-management.js';
-import type { Signal, RelayAccessRule } from '@dorkos/shared/relay-schemas';
+import { isDocumentSubject, type Signal, type RelayAccessRule } from '@dorkos/shared/relay-schemas';
 import type {
   BackpressureConfig,
   RelayOptions,
@@ -113,6 +114,24 @@ const DEFAULT_TTL_MS = 3_600_000;
 const DEFAULT_MAX_HOPS = 5;
 const DEFAULT_CALL_BUDGET = 10;
 
+// Only the actual fresh-bus constructor below can register an origin. No mint/checker
+// callback or existing-bus attachment seam is exported, even from an internal module.
+const documentOrigins = new WeakMap<object, ServerDocumentRelayAccess>();
+const originalAccessCheck = AccessControl.prototype.checkAccess;
+const originalDocumentSubscribe = SubscriptionRegistry.prototype.subscribe;
+
+/** Consume the actual new bus binding once; no second source may replace its owner. */
+export function consumeServerDocumentRelayOrigin(
+  origin: ServerDocumentRelayOrigin
+): ServerDocumentRelayAccess {
+  const access = documentOrigins.get(origin);
+  if (!access) throw new Error('DOCUMENT_RELAY_ORIGIN_REQUIRED');
+  // Retire even when closed: failure cannot enable a second assembly.
+  documentOrigins.delete(origin);
+  access.requireOpen();
+  return access;
+}
+
 // === RelayCore ===
 
 /**
@@ -142,6 +161,163 @@ const DEFAULT_CALL_BUDGET = 10;
  * ```
  */
 export class RelayCore {
+  /** Construct a fresh server bus and its single source-assembly origin together. */
+  static createServerDocumentRelay(options: RelayOptions): {
+    relay: RelayCore;
+    origin: ServerDocumentRelayOrigin;
+  } {
+    const relay = new RelayCore(options);
+    const origin = Object.freeze(Object.create(null)) as ServerDocumentRelayOrigin;
+    const accessControl = relay.#accessControl;
+    const originalRegistry = relay.subscriptionRegistry;
+    const requireOpen = () => {
+      if (relay.#closed) throw new Error('RelayCore has been closed');
+    };
+    documentOrigins.set(
+      origin,
+      Object.freeze({
+        requireOpen,
+        publishAcceptedDocumentWake: (
+          wake: import('./document-delivery.js').OriginalDocumentRelayWake
+        ) => {
+          requireOpen();
+          // Capture primitive own fields before ACL/configuration work can reenter.
+          const keys = [
+            'documentId',
+            'batchId',
+            'generation',
+            'openerAgentId',
+            'targetAgentId',
+          ] as const;
+          if (
+            !wake ||
+            Object.getPrototypeOf(wake) !== Object.prototype ||
+            Object.keys(wake).length !== keys.length
+          )
+            throw new Error('DOCUMENT_RELAY_WAKE_DATA_REQUIRED');
+          const data: Record<string, string> = {};
+          for (const key of keys) {
+            const field = Object.getOwnPropertyDescriptor(wake, key);
+            if (
+              !field ||
+              !('value' in field) ||
+              typeof field.value !== 'string' ||
+              !field.value ||
+              Buffer.byteLength(field.value) > 4096
+            )
+              throw new Error('DOCUMENT_RELAY_WAKE_FIELD_INVALID');
+            data[key] = field.value;
+          }
+          const identifier = /^[A-Za-z0-9_-]{1,200}$/u;
+          if (!identifier.test(data.openerAgentId!) || !identifier.test(data.targetAgentId!))
+            throw new Error('DOCUMENT_RELAY_AGENT_ID_INVALID');
+          const result = originalAccessCheck.call(
+            accessControl,
+            `relay.agent.${data.openerAgentId}`,
+            `relay.agent.${data.targetAgentId}`
+          );
+          if (!result.allowed || result.matchedRule?.action !== 'allow')
+            throw new Error('DOCUMENT_RELAY_EXPLICIT_OPENER_ACL_REQUIRED');
+          requireOpen();
+          return relay.#publishDocumentWake(
+            Object.freeze(
+              data
+            ) as unknown as import('./document-delivery.js').OriginalDocumentRelayWake
+          );
+        },
+        subscribeDocumentWakes: (
+          listener: (wake: import('./document-delivery.js').OriginalDocumentRelayWake) => void
+        ) => {
+          requireOpen();
+          if (typeof listener !== 'function')
+            throw new Error('DOCUMENT_RELAY_DATA_LISTENER_REQUIRED');
+          return originalDocumentSubscribe.call(originalRegistry, 'relay.doc.batch', (envelope) => {
+            requireOpen();
+            if (envelope.subject !== 'relay.doc.batch' || envelope.from !== 'relay.doc.publisher')
+              return;
+            const wake = envelope.payload,
+              keys = [
+                'documentId',
+                'batchId',
+                'generation',
+                'openerAgentId',
+                'targetAgentId',
+              ] as const;
+            if (
+              !wake ||
+              typeof wake !== 'object' ||
+              Object.getPrototypeOf(wake) !== Object.prototype ||
+              Object.keys(wake).length !== keys.length
+            )
+              throw new Error('DOCUMENT_RELAY_WAKE_DATA_REQUIRED');
+            const data: Record<string, string> = {};
+            for (const key of keys) {
+              const slot = Object.getOwnPropertyDescriptor(wake, key);
+              if (
+                !slot ||
+                !('value' in slot) ||
+                typeof slot.value !== 'string' ||
+                !slot.value ||
+                Buffer.byteLength(slot.value) > 4096
+              )
+                throw new Error('DOCUMENT_RELAY_WAKE_FIELD_INVALID');
+              data[key] = slot.value;
+            }
+            requireOpen();
+            listener(
+              Object.freeze(
+                data
+              ) as unknown as import('./document-delivery.js').OriginalDocumentRelayWake
+            );
+          });
+        },
+        reserveDocumentTurn: (targetAgentId: string) => {
+          requireOpen();
+          if (typeof targetAgentId !== 'string' || !/^[A-Za-z0-9_-]{1,200}$/u.test(targetAgentId))
+            throw new Error('DOCUMENT_RELAY_AGENT_ID_INVALID');
+          // The exact instance also counts ordinary adapter dispatch. Do not create
+          // another counter or call overridable public tryReserve/release methods.
+          const accounting = dispatchTurnAccounting(relay.#documentTurnCeiling);
+          const decision = accounting.reserve(`relay.agent.${targetAgentId}`);
+          let refunded = false;
+          return Object.freeze({
+            allowed: decision.allowed,
+            counted: decision.counted,
+            scope: decision.scope,
+            refundKnownNoStart() {
+              if (refunded) return;
+              refunded = true;
+              decision.refund?.();
+            },
+          });
+        },
+        requireExplicitOpenerAccess: (openerAgentId: string, targetAgentId: string) => {
+          requireOpen();
+          // Neither caller-controlled subject strings nor the ordinary default allow are authority.
+          const identifier = /^[A-Za-z0-9_-]{1,200}$/u;
+          if (
+            typeof openerAgentId !== 'string' ||
+            typeof targetAgentId !== 'string' ||
+            !identifier.test(openerAgentId) ||
+            !identifier.test(targetAgentId)
+          )
+            throw new Error('DOCUMENT_RELAY_AGENT_ID_INVALID');
+          const result = originalAccessCheck.call(
+            accessControl,
+            `relay.agent.${openerAgentId}`,
+            `relay.agent.${targetAgentId}`
+          );
+          if (!result.allowed || result.matchedRule?.action !== 'allow')
+            throw new Error('DOCUMENT_RELAY_EXPLICIT_OPENER_ACL_REQUIRED');
+        },
+      })
+    );
+    return Object.freeze({ relay, origin });
+  }
+
+  readonly #publishDocumentWake: (
+    wake: import('./document-delivery.js').OriginalDocumentRelayWake
+  ) => Promise<PublishResult>;
   private readonly publishPipeline: RelayPublishPipeline;
   private readonly subscriptionDeps: SubscriptionDeps;
   private readonly endpointDeps: EndpointManagementDeps;
@@ -150,7 +326,8 @@ export class RelayCore {
   private readonly signalEmitter: SignalEmitter;
   private readonly sqliteIndex: SqliteIndex;
   private readonly database: RelayDatabase;
-  private readonly accessControl: AccessControl;
+  readonly #accessControl: AccessControl;
+  readonly #documentTurnCeiling: RelayTurnCeiling;
   private readonly configPath: string;
   private configWatcher: FSWatcher | null = null;
   private readonly logger: RelayLogger;
@@ -169,7 +346,7 @@ export class RelayCore {
   private chatNoticeTargetResolver?: ChatNoticeTargetResolver;
   private readonly gcIntervalMs: number;
   private gcInterval?: ReturnType<typeof setInterval>;
-  private closed = false;
+  #closed = false;
   private readonly adapterRegistry?: AdapterRegistryLike;
   /**
    * Which inbound envelope each running agent turn is answering (DOR-791).
@@ -202,7 +379,7 @@ export class RelayCore {
       logger: options?.logger,
       onDeadLetter: options?.onDeadLetter,
     });
-    this.accessControl = new AccessControl(dataDir, options?.logger);
+    this.#accessControl = new AccessControl(dataDir, options?.logger);
     this.signalEmitter = new SignalEmitter();
 
     const rateLimitConfig = { ...DEFAULT_RATE_LIMIT_CONFIG, ...options?.reliability?.rateLimit };
@@ -227,6 +404,7 @@ export class RelayCore {
     const turnCeiling = new RelayTurnCeiling(
       options?.turnCeiling ? { limits: options.turnCeiling } : {}
     );
+    this.#documentTurnCeiling = turnCeiling;
     const adapterDelivery = new AdapterDelivery({
       adapterRegistry: options?.adapterRegistry,
       sqliteIndex: this.sqliteIndex,
@@ -244,14 +422,14 @@ export class RelayCore {
     watcherManager.setWasDispatched((id) => this.deliveryPipeline.wasDispatched(id));
 
     // Build publish pipeline
-    this.publishPipeline = new RelayPublishPipeline(
+    const originalDocumentPipeline = createOriginalDocumentPublishPipeline(
       {
         endpointRegistry,
         subscriptionRegistry: this.subscriptionRegistry,
         maildirStore,
         sqliteIndex: this.sqliteIndex,
         receiptStore: this.database.receipts,
-        accessControl: this.accessControl,
+        accessControl: this.#accessControl,
         deadLetterQueue,
         deliveryPipeline: this.deliveryPipeline,
         adapterDelivery,
@@ -272,6 +450,9 @@ export class RelayCore {
       rateLimitConfig,
       options?.adapterContextBuilder
     );
+
+    this.publishPipeline = originalDocumentPipeline.pipeline;
+    this.#publishDocumentWake = originalDocumentPipeline.publishDocumentWake;
 
     // Settle a waiting caller (relay_send_and_wait, A2A executor) when a
     // detached agent delivery dead-letters OR the publish pipeline's
@@ -315,7 +496,7 @@ export class RelayCore {
       maildirStore,
       sqliteIndex: this.sqliteIndex,
       deadLetterQueue,
-      accessControl: this.accessControl,
+      accessControl: this.#accessControl,
       watcherManager,
     };
 
@@ -448,6 +629,8 @@ export class RelayCore {
   /** Emit an ephemeral signal (never touches disk). */
   signal(subject: string, signalData: Signal): void {
     this.assertOpen();
+    if (isDocumentSubject(subject) || isDocumentSubject(signalData.endpointSubject))
+      throw new Error('DOCUMENT_RELAY_CONSTRUCTION_REQUIRED');
     executeSignal(subject, signalData, this.subscriptionDeps);
   }
 
@@ -471,6 +654,7 @@ export class RelayCore {
     options?: RegisterEndpointOptions
   ): Promise<EndpointInfo> {
     this.assertOpen();
+    if (isDocumentSubject(subject)) throw new Error('DOCUMENT_RELAY_CONSTRUCTION_REQUIRED');
     return executeRegisterEndpoint(subject, options, this.endpointDeps);
   }
 
@@ -590,7 +774,7 @@ export class RelayCore {
    */
   isAccessControlQuarantined(): boolean {
     this.assertOpen();
-    return this.accessControl.isQuarantined();
+    return this.#accessControl.isQuarantined();
   }
 
   /** Rebuild the SQLite index from Maildir files on disk. */
@@ -609,7 +793,7 @@ export class RelayCore {
 
   /** Gracefully shut down the relay. */
   async close(): Promise<void> {
-    this.closed = true;
+    this.#closed = true;
     return this.database.close([
       () => {
         if (this.ttlSweepInterval) clearInterval(this.ttlSweepInterval);
@@ -630,7 +814,7 @@ export class RelayCore {
         }
       },
       () => {
-        this.accessControl.close();
+        this.#accessControl.close();
         this.signalEmitter.removeAllSubscriptions();
       },
       () => this.adapterRegistry?.shutdown(),
@@ -680,7 +864,7 @@ export class RelayCore {
    * @returns The subjects unregistered by this sweep.
    */
   async runTtlSweep(): Promise<string[]> {
-    if (this.closed) return [];
+    if (this.#closed) return [];
     const now = Date.now();
     const registry = this.endpointDeps.endpointRegistry;
     const swept: string[] = [];
@@ -722,7 +906,7 @@ export class RelayCore {
   async runGcSweep(
     options?: RelayGcSweepOptions
   ): Promise<Awaited<ReturnType<RelayGc['sweep']>> | undefined> {
-    if (this.closed) return undefined;
+    if (this.#closed) return undefined;
     return this.gc.sweep(Date.now(), options);
   }
 
@@ -787,7 +971,7 @@ export class RelayCore {
 
   /** Assert that the relay has not been closed. */
   private assertOpen(): void {
-    if (this.closed) {
+    if (this.#closed) {
       throw new Error('RelayCore has been closed');
     }
   }

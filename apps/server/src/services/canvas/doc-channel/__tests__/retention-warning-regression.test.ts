@@ -2,8 +2,8 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, expect, it } from 'vitest';
-import { canvasDocBatches, canvasDocDeliveries, eq, type Db } from '@dorkos/db';
+import { afterEach, expect, it, vi } from 'vitest';
+import { sql, canvasDocBatches, canvasDocDeliveries, eq, type Db } from '@dorkos/db';
 import { batchFixture, NOW } from './batch-fixtures.js';
 import { retainDocHistory, DOC_RETENTION_POLICY } from '../retention.js';
 const databases: Db[] = [];
@@ -131,3 +131,132 @@ it.each(['document', 'installation'] as const)(
     if (batch) expect(batch.waitingWarningAt).toBe(NOW);
   }
 );
+
+// The paid SDK process alone is replaced. Authority comes from the real original constructor/FILE DB.
+const nativeRetentionSdk = vi.hoisted(() => ({
+  options: [] as unknown[],
+  prompts: [] as unknown[],
+  parked: true,
+  release: undefined as (() => void) | undefined,
+}));
+vi.mock('@openai/codex-sdk', () => ({
+  Codex: class {
+    constructor(options: unknown) {
+      nativeRetentionSdk.options.push(options);
+    }
+    startThread() {
+      return {
+        id: 'native-retention-source',
+        runStreamed: async (prompt: unknown) => {
+          nativeRetentionSdk.prompts.push(prompt);
+          return {
+            events: (async function* () {
+              yield { type: 'thread.started', thread_id: 'native-retention-source' };
+              if (nativeRetentionSdk.parked)
+                await new Promise<void>((resolve) => {
+                  nativeRetentionSdk.release = resolve;
+                });
+              yield {
+                type: 'turn.completed',
+                usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 },
+              };
+            })(),
+          };
+        },
+      };
+    }
+    resumeThread() {
+      return this.startThread();
+    }
+  },
+}));
+import { nativeCommittedCodexRoomFixture } from '../writes/__tests__/authority-fixtures.js';
+function originalNativeRetentionSource(disposition: 'settled' | 'unpulled' = 'settled') {
+  nativeRetentionSdk.options.length = 0;
+  nativeRetentionSdk.prompts.length = 0;
+  nativeRetentionSdk.parked = true;
+  nativeRetentionSdk.release = undefined;
+  return nativeCommittedCodexRoomFixture(
+    {
+      options: nativeRetentionSdk.options,
+      prompts: nativeRetentionSdk.prompts,
+      releaseProducer: () => nativeRetentionSdk.release?.(),
+      completeFutureTurns: () => {
+        nativeRetentionSdk.parked = false;
+      },
+    },
+    disposition
+  );
+}
+
+it('includes every real native row column in observed UTF-8 history usage without truncating retained evidence', async () => {
+  const h = await originalNativeRetentionSource();
+  const nativeTables = [
+    'canvas_doc_events',
+    'canvas_doc_deliveries',
+    'canvas_doc_batches',
+    'room_doc_admissions',
+    'room_doc_admission_inputs',
+    'room_doc_exhausted_lineages',
+  ] as const;
+  let failed = false,
+    first: unknown;
+  try {
+    let expected = 0;
+    for (const table of nativeTables) {
+      const columns = h.db.$client.prepare(`PRAGMA table_info(${table})`).all() as {
+        name: string;
+      }[];
+      const fields = columns
+        .map(({ name }) => `'${name.replaceAll("'", "''")}',"${name.replaceAll('"', '""')}"`)
+        .join(',');
+      const total = h.db.$client
+        .prepare(
+          `SELECT coalesce(sum(length(CAST(json_object(${fields}) AS BLOB))),0) AS bytes FROM ${table}`
+        )
+        .get() as { bytes: number };
+      expected += total.bytes;
+    }
+    const sample = h.db.$client.prepare('SELECT 1');
+    const prototype = Object.getPrototypeOf(sample) as typeof sample;
+    const originalAll = prototype.all;
+    let observed = 0;
+    const all = vi.spyOn(prototype, 'all').mockImplementation(function (
+      this: typeof sample,
+      ...args
+    ) {
+      const rows = originalAll.apply(this, args);
+      if (
+        this.source.includes('FROM room_doc_exhausted_lineages rx') &&
+        this.source.includes('UNION ALL')
+      ) {
+        observed = (rows as { bytes: number }[]).reduce((sum, row) => sum + row.bytes, 0);
+      }
+      return rows;
+    });
+    try {
+      retainDocHistory(h.http.channels, new Date().toISOString());
+    } finally {
+      all.mockRestore();
+    }
+    expect(expected).toBeGreaterThan(0);
+    expect(observed).toBe(expected);
+    expect(h.http.channels.getEvent(h.documentId, h.input.id)!.payload).toEqual(h.input.payload);
+    expect(h.db.get<{ n: number }>(sql`SELECT count(*) AS n FROM room_doc_admissions`)).toEqual({
+      n: 1,
+    });
+  } catch (cause) {
+    failed = true;
+    first = cause;
+  } finally {
+    try {
+      await h.cleanup();
+    } catch (cause) {
+      if (!failed) {
+        failed = true;
+        first = cause;
+      }
+    }
+  }
+  if (failed) throw first;
+});

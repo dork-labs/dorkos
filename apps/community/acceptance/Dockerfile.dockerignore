@@ -2,6 +2,8 @@
 !package.json
 !pnpm-lock.yaml
 !pnpm-workspace.yaml
+!patches
+!patches/*.patch
 !turbo.json
 !tsconfig.json
 !vitest.config.ts

@@ -1,8 +1,8 @@
 /** Exact document route binding, independent of capability permission defaults. */
 import { z } from 'zod';
 import {
+  CanvasChannelRouteGrantRequestSchema,
   CanvasChannelDeclarationSchema,
-  CanvasChannelEventPatternSchema,
   CanvasChannelGrantSchema,
   type CanvasChannelRoute,
   type CanvasChannelGrant,
@@ -55,16 +55,7 @@ export interface DocOriginalWriteObservation {
 }
 
 /** Authenticated grant request. It cannot select approval evidence or resolved session/runtime. */
-export const DocRouteGrantRequestSchema = z
-  .object({
-    documentId: z.string().min(1).max(200),
-    routeId: z.string().min(1).max(200),
-    allowedTypes: z.array(CanvasChannelEventPatternSchema).min(1).max(128).optional(),
-    limits: CanvasChannelGrantSchema.shape.limits.partial().optional(),
-    expiresAt: CanvasChannelGrantSchema.shape.expiresAt,
-    write: CanvasChannelGrantSchema.shape.write.optional(),
-  })
-  .strict();
+export const DocRouteGrantRequestSchema = CanvasChannelRouteGrantRequestSchema;
 /** One bounded proposed route grant. */
 export type DocRouteGrantRequest = z.infer<typeof DocRouteGrantRequestSchema>;
 /** A route cannot be granted or admitted under its current binding. */

@@ -1212,6 +1212,22 @@ export const RoomContextDataSchema = z.object({
   triggerEntryId: z.string().nullable(),
   triggerAttachments: z.array(z.object({ name: z.string(), path: z.string() })),
   files: RoomContextFilesSchema.optional(),
+  canvas: z
+    .object({
+      viewers: z.number().int().nonnegative(),
+      documents: z.array(
+        z.object({
+          id: z.string(),
+          type: z.string(),
+          title: z.string(),
+          url: z.string().optional(),
+          author: z.string(),
+          pinned: z.boolean(),
+          lastChangedAt: z.string(),
+        })
+      ),
+    })
+    .optional(),
   addressing: z.object({
     responseMode: ResponseModeSchema,
     engagedUntil: z.string().nullable(),

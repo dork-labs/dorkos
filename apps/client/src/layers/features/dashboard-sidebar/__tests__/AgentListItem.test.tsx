@@ -71,7 +71,7 @@ vi.mock('../ui/AgentRowMenuItems', () => ({
   },
 }));
 
-vi.mock('../ui/AgentActivityBadge', () => ({
+vi.mock('../ui/activity/AgentActivityBadge', () => ({
   // Mirrors the real component's contract: idle renders nothing, so tests
   // can assert badge suppression the same way the real DOT_COLOR map does.
   AgentActivityBadge: ({ status, label }: { status: string; label: string }) =>

@@ -21,6 +21,18 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { collectDurableEventsAt, mockInterruptReceipt } from '@dorkos/test-utils';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { ControlRequestTimeoutError } from '../../services/runtimes/claude-code/sessions/bounded-control.js';
+import {
+  wrapSdkQuery,
+  sdkSimpleText,
+} from '../../services/runtimes/claude-code/__tests__/sdk-scenarios.js';
+
+const { originalQuerySpy } = vi.hoisted(() => ({ originalQuerySpy: vi.fn() }));
+// Observe the real constructor-owned send at its external SDK boundary, not a
+// public method replacement the private locked sender deliberately bypasses.
+vi.mock('@anthropic-ai/claude-agent-sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@anthropic-ai/claude-agent-sdk')>()),
+  query: originalQuerySpy,
+}));
 
 // Mock boundary before importing app (same pattern as other route tests)
 vi.mock('../../lib/boundary.js', () => ({
@@ -75,6 +87,7 @@ import { TestModeRuntime } from '../../services/runtimes/test-mode/test-mode-run
 import { peekProjector, disposeProjector } from '../../services/session/session-state-projector.js';
 import type { SessionSnapshot } from '@dorkos/shared/session-stream';
 import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
+import { isTurnInFlight } from '../../services/session/message-dispatcher.js';
 
 const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
@@ -138,6 +151,9 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
     db = createTestDb();
     ({ claude, testMode } = registerBothRuntimes(db));
     vi.clearAllMocks();
+    originalQuerySpy.mockImplementation(() =>
+      wrapSdkQuery(sdkSimpleText('routing fixture', CLAUDE_SESSION))
+    );
   });
 
   afterEach(() => {
@@ -340,16 +356,24 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
     });
 
     it('persists runtime=<default> when no hint is provided', async () => {
-      // Spy on claude-code methods since ClaudeCodeRuntime's real sendMessage
-      // would try to talk to the Anthropic API. We only want to verify routing.
-      const sendSpy = vi.spyOn(claude, 'sendMessage').mockImplementation(async function* () {
-        yield { type: 'done', data: { sessionId: CLAUDE_SESSION } } as StreamEvent;
-      });
-
+      // The real registered Claude constructor owns the locked sender. Its
+      // captured native path must reach the external SDK query without a paid call.
       const res = await postMessage(CLAUDE_SESSION, { content: 'hi' });
 
       expect(res.status).toBe(202);
-      expect(sendSpy).toHaveBeenCalled();
+      await vi.waitFor(() => expect(originalQuerySpy).toHaveBeenCalledTimes(1));
+      // The real trigger releases its original lock only after feedProjector's
+      // drain/finally. Require that settled boundary before the next DB fixture.
+      await vi.waitFor(() => {
+        expect(peekProjector(CLAUDE_SESSION)?.getStatus().lifecycle).toBe('idle');
+        expect(isTurnInFlight(CLAUDE_SESSION, claude)).toBe(false);
+      });
+      const completed = await collectDurableEventsAt(testServerBaseUrl(), CLAUDE_SESSION, {
+        after: 0,
+        until: (frames) => frames.some((frame) => frame.event === 'turn_end'),
+      });
+      expect(completed.frames.filter((frame) => frame.event === 'turn_end')).toHaveLength(1);
+      expect(originalQuerySpy).toHaveBeenCalledTimes(1);
       const row = db
         .select()
         .from(sessionMetadata)
