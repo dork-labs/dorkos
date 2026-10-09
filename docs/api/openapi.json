@@ -3795,7 +3795,6 @@
           "queued",
           "delivered",
           "steered",
-          "interrupted",
           "working",
           "replied",
           "failed"
