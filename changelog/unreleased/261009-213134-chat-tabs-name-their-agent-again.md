@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(tabs): chat tabs name their agent and chat again (DOR-2820)'
+  - "fix(tabs): read a tab's chat once, and skip restored drafts (DOR-2820)"
 ---
 
 ### Fixed
