@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup, within } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, within, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
@@ -48,7 +48,7 @@ const readable = { read: true, post: true, enrollAgent: true, stream: true };
 const nothing = { read: false, post: false, enrollAgent: false, stream: false };
 
 import { communityAccessState } from '@/layers/entities/community';
-import { setSessionRouteContext } from '@/layers/entities/session';
+import { setSessionRouteContext, useSessionListStore } from '@/layers/entities/session';
 import { AppTabStrip } from '../ui/AppTabStrip';
 import { APP_TAB_PANEL_ID } from '../ui/AppTabItem';
 
@@ -324,6 +324,46 @@ describe('AppTabStrip', () => {
     const tab = screen.getByRole('tab', { name: /api/ });
     // Nothing is streaming or blocked in a fresh store — an idle tab stays quiet.
     expect(within(tab).queryByText(/Working|approval|Error|New activity/)).not.toBeInTheDocument();
+  });
+
+  describe('smart names (DOR-2820)', () => {
+    const scout = { id: 'scout', displayName: 'Scout', icon: '\u{1F50D}' } as AgentManifest;
+    beforeEach(() => {
+      agentByPath.mockImplementation((cwd) => (cwd === '/Users/kai/api' ? scout : null));
+      vi.mocked(transport.getSession).mockImplementation(
+        async (id) =>
+          ({
+            id,
+            cwd: '/Users/kai/api',
+            title: id === 'c1' ? 'Fix the login bug' : 'Write the docs',
+            updatedAt: '2026-10-09T09:00:00.000Z',
+          }) as Awaited<ReturnType<typeof transport.getSession>>
+      );
+    });
+
+    it('leads with the chat title when two tabs share an agent, and keeps the full name for screen readers', async () => {
+      renderStrip([tab('a', '/session?session=c1'), tab('b', '/session?session=c2')]);
+      const first = await screen.findByRole('tab', { name: 'Scout, Fix the login bug' });
+      await waitFor(() => expect(first).toHaveTextContent(/^\S*Fix the login bug$/u));
+      expect(first).not.toHaveTextContent('Scout');
+    });
+
+    it('leads with the agent when it is the only tab with it', async () => {
+      renderStrip([tab('a', '/session?session=c1'), DASHBOARD]);
+      const chat = await screen.findByRole('tab', { name: 'Scout, Fix the login bug' });
+      expect(chat).toHaveTextContent('Scout · Fix the login bug');
+    });
+  });
+
+  it('names a working chat’s status in its accessible name', () => {
+    setSessionRouteContext('busy-1', { cwd: '/Users/kai/api', draft: false });
+    vi.mocked(transport.getSession).mockReturnValue(new Promise(() => {}));
+    useSessionListStore.setState({
+      statuses: { 'busy-1': { lifecycle: 'streaming', limit: null } as never },
+    });
+    renderStrip([tab('t9', '/session?session=busy-1')]);
+    expect(screen.getByRole('tab', { name: 'api, Working' })).toBeInTheDocument();
+    useSessionListStore.setState({ statuses: {} });
   });
 
   it('groups every tab under one labelled tablist', () => {

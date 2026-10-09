@@ -312,6 +312,8 @@ vi.mock('@/layers/entities/attention', async () => ({
   // Nothing waiting on anybody, and nothing on its way out: the tray and the
   // pill both read these now.
   usePendingInteractions: () => ({ interactions: [], isLoading: false }),
+  // A chat tab observes this cache for its prompt's words (DOR-2820).
+  PENDING_INTERACTIONS_QUERY_KEY: ['pending-interactions'],
   useSettlingAsks: () => [],
   useAskAgentNames: () => ({}),
   usePendingApprovals: () => ({
@@ -390,7 +392,10 @@ vi.mock('@/layers/features/onboarding', () => ({
 
 // ── Mock entity hooks ──
 
-vi.mock('@/layers/entities/session', () => ({
+vi.mock('@/layers/entities/session', async (importOriginal) => ({
+  // The real stores: the window title and tab strip read live status off them
+  // (DOR-2820), and an empty store reads idle.
+  ...(await importOriginal<typeof import('@/layers/entities/session')>()),
   useSessionId: () => [null, vi.fn()] as const,
   useDefaultCwd: () => {},
   useDirectoryState: () => ['/test/cwd', vi.fn()] as const,
@@ -407,14 +412,6 @@ vi.mock('@/layers/entities/session', () => ({
   useSessionRow: () => ({ data: undefined }),
   useSessionRouteContext: () => undefined,
   sessionDisplayTitle: (title: string) => title,
-  // The tab strip badges a chat tab off this (DOR-540). Nothing is streaming in
-  // a shell-level isolation test, so every tab reads idle.
-  useSessionBorderState: () => ({
-    kind: 'idle',
-    color: 'transparent',
-    pulse: false,
-    label: 'Idle',
-  }),
 }));
 
 vi.mock('@/layers/entities/agent', async (importOriginal) => {

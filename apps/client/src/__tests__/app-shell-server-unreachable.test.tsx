@@ -124,6 +124,13 @@ vi.mock('@/layers/features/profile', () => ({
 
 // ── Live-data subscriptions: every one of these wants an EventStreamProvider ──
 
+// The window title counts what is waiting through the Inbox's queue (DOR-2820).
+// Nothing is waiting here, and the real queue needs an event stream.
+vi.mock('@/layers/entities/attention', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/attention')>()),
+  useWaitingQueue: () => ({ items: [] }),
+}));
+
 vi.mock('@/layers/entities/session', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/session')>()),
   useSessionId: () => [null, vi.fn()] as const,
@@ -132,12 +139,6 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
   useGlobalSessionStream: () => {},
   useSessionOrigin: () => ({ origin: undefined, originLabel: undefined }),
   useSessionDetail: () => ({ data: undefined }),
-  useSessionBorderState: () => ({
-    kind: 'idle',
-    color: 'transparent',
-    pulse: false,
-    label: 'Idle',
-  }),
 }));
 
 vi.mock('@/layers/entities/agent', async (importOriginal) => ({

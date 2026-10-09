@@ -199,6 +199,24 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
       'context menu',
     ],
   },
+  // TabIdentityShowcases
+  {
+    id: 'tab-identity',
+    title: 'Tab identity',
+    page: 'components',
+    category: 'Navigation',
+    keywords: [
+      'tab',
+      'identity',
+      'status',
+      'hover card',
+      'window title',
+      'paused',
+      'needs you',
+      'unread',
+      'smart names',
+    ],
+  },
   // SidebarShowcases
   {
     id: 'sidebarrow',
