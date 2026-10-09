@@ -881,21 +881,6 @@
       "reason": "DOR-2789. Two wire event names used together as a TypeTable key."
     },
     {
-      "path": "apps/client/src/layers/features/dashboard-sidebar/ui/SessionSwitcher.tsx",
-      "terms": ["session", "sessions", "conversation", "conversations"],
-      "reason": "TEMPORARY, DOR-2789 PR3 rewrites this file; remove this entry when this branch is rebased onto it."
-    },
-    {
-      "path": "apps/client/src/layers/features/profile/ui/pages/SessionsPage.tsx",
-      "terms": ["session", "sessions", "conversation", "conversations"],
-      "reason": "TEMPORARY, DOR-2789 PR3 rewrites this file; remove this entry when this branch is rebased onto it."
-    },
-    {
-      "path": "apps/client/src/layers/features/session-list/",
-      "terms": ["session", "sessions", "conversation", "conversations"],
-      "reason": "TEMPORARY, DOR-2789 PR3 rewrites this file; remove this entry when this branch is rebased onto it."
-    },
-    {
       "path": "docs/getting-started/configuration.mdx",
       "terms": ["session", "sessions", "conversation", "conversations"],
       "reason": "TEMPORARY, DOR-2789: open PR #2660, #2677 and #2686 also rewrites this page, so its chat wording waits for that to land. Sweep the page and remove this entry then."
