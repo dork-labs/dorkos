@@ -1,4 +1,4 @@
-/** Keep real Room replay and cold-import files behind completed ordinary task work. */
+/** Keep real Room, cold-import and checkbox recovery files behind completed ordinary task work. */
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
@@ -18,6 +18,8 @@ export const COLD_FILE =
   'src/services/canvas/doc-channel/writes/__tests__/reservation-bridge.test.ts';
 export const ROOM_FILE =
   'src/services/canvas/doc-channel/__tests__/original-reviewed-room-replay.test.ts';
+export const CHECKBOX_FILE =
+  'src/services/canvas/doc-channel/writes/__tests__/checkbox-service.test.ts';
 const SERVER_TASK = '@dorkos/server#test';
 const COUNTERS = [
   'numTotalTestSuites',
@@ -51,11 +53,12 @@ export function serverSelected(summary: Json): boolean {
   return summary.tasks.some((task: Json) => task.task === 'test' && task.taskId === SERVER_TASK);
 }
 
-/** Split the original eight-shard command into ordinary, Room and cold phases without changing its flags. */
+/** Split the original eight-shard command into ordinary, Room, cold and checkbox phases without changing its flags. */
 export function commands(original: string[]): {
   ordinary: string[];
   room: string[];
   cold: string[];
+  checkbox: string[];
   shard: number;
   reports: boolean;
 } {
@@ -105,9 +108,11 @@ export function commands(original: string[]): {
       ...flags,
       `--exclude=${ROOM_FILE}`,
       `--exclude=${COLD_FILE}`,
+      `--exclude=${CHECKBOX_FILE}`,
     ],
     room: isolated(ROOM_FILE, 'vitest-room-shard-report.json'),
     cold: isolated(COLD_FILE, 'vitest-cold-shard-report.json'),
+    checkbox: isolated(CHECKBOX_FILE, 'vitest-checkbox-shard-report.json'),
     shard,
     reports,
   };
@@ -115,19 +120,27 @@ export function commands(original: string[]): {
 
 /** Await each selected phase and retain the first failure or unknown-selection refusal. */
 export async function bothPhases(
-  run: (phase: 'ordinary' | 'room' | 'cold') => Promise<number>,
+  run: (phase: 'ordinary' | 'room' | 'cold' | 'checkbox') => Promise<number>,
   selected: () => boolean | null
-): Promise<{ ordinary: number; room: number | null; cold: number | null; exitCode: number }> {
-  // A failed ordinary task is a result, never a reason to skip either isolated phase.
+): Promise<{
+  ordinary: number;
+  room: number | null;
+  cold: number | null;
+  checkbox: number | null;
+  exitCode: number;
+}> {
+  // A failed ordinary task is a result, never a reason to skip any isolated phase.
   const ordinary = await run('ordinary');
   const selection = selected();
   const room = selection === true ? await run('room') : null;
   const cold = selection === true ? await run('cold') : null;
+  const checkbox = selection === true ? await run('checkbox') : null;
   return {
     ordinary,
     room,
     cold,
-    exitCode: selection === null ? 86 : ordinary || room || cold || 0,
+    checkbox,
+    exitCode: selection === null ? 86 : ordinary || room || cold || checkbox || 0,
   };
 }
 
@@ -231,6 +244,11 @@ export function validateRoom(report: Json, shard: number, expectedPath: string):
   validateIsolated(report, shard, expectedPath, 1, 'Room');
 }
 
+/** Require all 56 checkbox assertions on the owner shard and none on the other seven shards. */
+export function validateCheckbox(report: Json, shard: number, expectedPath: string): void {
+  validateIsolated(report, shard, expectedPath, 56, 'checkbox');
+}
+
 /** Run a child command and report its result only after the process has closed. */
 export async function native(argv: string[], root: string): Promise<number> {
   const executable = argv[0];
@@ -274,7 +292,7 @@ async function main(original: string[]): Promise<number> {
       if (
         directory.isDirectory() &&
         `${category}/${directory.name}` !== 'apps/server' &&
-        [ROOM_FILE, COLD_FILE].some((file) =>
+        [ROOM_FILE, COLD_FILE, CHECKBOX_FILE].some((file) =>
           existsSync(path.join(root, category, directory.name, file))
         )
       )
@@ -286,15 +304,19 @@ async function main(original: string[]): Promise<number> {
   const flake = path.join(server, 'vitest-flake-report.json');
   const roomReport = path.join(server, 'vitest-room-shard-report.json');
   const coldReport = path.join(server, 'vitest-cold-shard-report.json');
+  const checkboxReport = path.join(server, 'vitest-checkbox-shard-report.json');
   const evidence = path.join(root, '.turbo', `cold-phases-${plan.shard}`);
   mkdirSync(evidence, { recursive: true });
-  for (const file of [report, flake, roomReport, coldReport]) rmSync(file, { force: true });
+  for (const file of [report, flake, roomReport, coldReport, checkboxReport])
+    rmSync(file, { force: true });
   let selected: boolean | null = null; // A missing selection proof never expands affected server work.
   let protocolFailure = false;
   let ordinaryReport: Json | undefined;
   let ordinaryFlake: Json | undefined;
   let roomReportBody: Json | undefined;
   let roomFlake: Json | undefined;
+  let coldReportBody: Json | undefined;
+  let coldFlake: Json | undefined;
   let ordinarySummary = '';
   const archivedReports: { path: string; sha256: string; bytes: number }[] = [];
   function archive(source: string, name: string): void {
@@ -325,7 +347,9 @@ async function main(original: string[]): Promise<number> {
             ordinaryFlake = JSON.parse(readFileSync(flake, 'utf8'));
             if (
               parsedOrdinaryReport.testResults.some((file: Json) =>
-                [ROOM_FILE, COLD_FILE].some((isolated) => file.name === path.join(server, isolated))
+                [ROOM_FILE, COLD_FILE, CHECKBOX_FILE].some(
+                  (isolated) => file.name === path.join(server, isolated)
+                )
               )
             )
               throw new Error('ordinary phase collected the excluded isolated file');
@@ -340,31 +364,50 @@ async function main(original: string[]): Promise<number> {
             tasks[0].cache?.status !== 'MISS'
           )
             throw new Error(`${phase} task did not execute exactly once without a cache replay`);
-          const phaseReport = phase === 'room' ? roomReport : coldReport;
+          const phaseReport =
+            phase === 'room' ? roomReport : phase === 'cold' ? coldReport : checkboxReport;
           archive(phaseReport, `vitest-${phase}-phase.raw.json`);
           if (plan.reports) archive(flake, `vitest-${phase}-flake.raw.json`);
           const actual: Json = JSON.parse(readFileSync(phaseReport, 'utf8'));
           if (phase === 'room') validateRoom(actual, plan.shard, path.join(server, ROOM_FILE));
-          else validateCold(actual, plan.shard, path.join(server, COLD_FILE));
+          else if (phase === 'cold') validateCold(actual, plan.shard, path.join(server, COLD_FILE));
+          else validateCheckbox(actual, plan.shard, path.join(server, CHECKBOX_FILE));
           if (phase === 'room') {
             roomReportBody = actual;
             if (plan.reports) roomFlake = JSON.parse(readFileSync(flake, 'utf8'));
+          } else if (phase === 'cold') {
+            coldReportBody = actual;
+            if (plan.reports) coldFlake = JSON.parse(readFileSync(flake, 'utf8'));
           } else if (plan.reports) {
             const actualFlake: Json = JSON.parse(readFileSync(flake, 'utf8'));
             if (
               !ordinaryReport ||
               !roomReportBody ||
+              !coldReportBody ||
               ordinaryFlake?.cwd !== actualFlake.cwd ||
               roomFlake?.cwd !== actualFlake.cwd ||
+              coldFlake?.cwd !== actualFlake.cwd ||
               !Array.isArray(ordinaryFlake?.flaky) ||
               !Array.isArray(roomFlake?.flaky) ||
+              !Array.isArray(coldFlake?.flaky) ||
               !Array.isArray(actualFlake.flaky)
             )
-              throw new Error('invalid or missing three-phase report/flake metadata');
-            save(report, mergeReports(mergeReports(ordinaryReport, roomReportBody), actual));
+              throw new Error('invalid or missing four-phase report/flake metadata');
+            save(
+              report,
+              mergeReports(
+                mergeReports(mergeReports(ordinaryReport, roomReportBody), coldReportBody),
+                actual
+              )
+            );
             save(flake, {
               cwd: actualFlake.cwd,
-              flaky: [...ordinaryFlake.flaky, ...roomFlake.flaky, ...actualFlake.flaky],
+              flaky: [
+                ...ordinaryFlake.flaky,
+                ...roomFlake.flaky,
+                ...coldFlake.flaky,
+                ...actualFlake.flaky,
+              ],
             });
           }
         }
@@ -372,7 +415,7 @@ async function main(original: string[]): Promise<number> {
         console.error(error);
         protocolFailure = true;
       }
-      if (phase === 'room') rmSync(flake, { force: true });
+      if (phase === 'room' || phase === 'cold') rmSync(flake, { force: true });
       return code;
     },
     () => selected

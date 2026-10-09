@@ -10,8 +10,10 @@ import {
   serverSelected,
   validateCold,
   validateRoom,
+  validateCheckbox,
   ROOM_FILE,
   COLD_FILE,
+  CHECKBOX_FILE,
 } from '../run-isolated-cold-shard.ts';
 
 function report(name: string | null, failed = false, count = 33) {
@@ -44,7 +46,7 @@ function report(name: string | null, failed = false, count = 33) {
   };
 }
 
-describe('isolated Room and cold whole-file phases', () => {
+describe('isolated Room, cold and checkbox whole-file phases', () => {
   it('awaits a genuine child close before the next phase can observe its final write', async () => {
     const directory = mkdtempSync(path.join(tmpdir(), 'cold-phase-await-'));
     const child = path.join(directory, 'child.cjs');
@@ -65,11 +67,19 @@ describe('isolated Room and cold whole-file phases', () => {
             return native([process.execPath, child], directory);
           }
           expect(readFileSync(path.join(directory, 'room-closed.txt'), 'utf8')).toBe('Room closed');
-          return 9;
+          if (phase === 'cold') {
+            writeFileSync(
+              child,
+              "setTimeout(() => { require('node:fs').writeFileSync('cold-closed.txt', 'cold closed'); process.exitCode = 11; }, 20);\n"
+            );
+            return native([process.execPath, child], directory);
+          }
+          expect(readFileSync(path.join(directory, 'cold-closed.txt'), 'utf8')).toBe('cold closed');
+          return 13;
         },
         () => true
       );
-      expect(result).toEqual({ ordinary: 7, room: 9, cold: 9, exitCode: 7 });
+      expect(result).toEqual({ ordinary: 7, room: 9, cold: 11, checkbox: 13, exitCode: 7 });
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
@@ -92,7 +102,7 @@ describe('isolated Room and cold whole-file phases', () => {
     await Promise.resolve();
     expect(phases).toEqual(['ordinary:start']);
     release();
-    expect(await result).toEqual({ ordinary: 7, room: 9, cold: 9, exitCode: 7 });
+    expect(await result).toEqual({ ordinary: 7, room: 9, cold: 9, checkbox: 9, exitCode: 7 });
     expect(phases).toEqual([
       'ordinary:start',
       'ordinary:closed',
@@ -100,6 +110,8 @@ describe('isolated Room and cold whole-file phases', () => {
       'room:closed',
       'cold:start',
       'cold:closed',
+      'checkbox:start',
+      'checkbox:closed',
     ]);
   });
 
@@ -112,7 +124,7 @@ describe('isolated Room and cold whole-file phases', () => {
       },
       () => null
     );
-    expect(result).toEqual({ ordinary: 7, room: null, cold: null, exitCode: 86 });
+    expect(result).toEqual({ ordinary: 7, room: null, cold: null, checkbox: null, exitCode: 86 });
     expect(phases).toEqual(['ordinary']);
   });
 
@@ -124,7 +136,7 @@ describe('isolated Room and cold whole-file phases', () => {
           : 9,
       () => true
     );
-    expect(result).toEqual({ ordinary: 1, room: 9, cold: 9, exitCode: 1 });
+    expect(result).toEqual({ ordinary: 1, room: 9, cold: 9, checkbox: 9, exitCode: 1 });
   });
 
   it('fails on a cold-only failure and avoids expanding an unaffected server task', async () => {
@@ -133,7 +145,7 @@ describe('isolated Room and cold whole-file phases', () => {
         async (phase) => (phase === 'cold' ? 3 : 0),
         () => true
       )
-    ).toEqual({ ordinary: 0, room: 0, cold: 3, exitCode: 3 });
+    ).toEqual({ ordinary: 0, room: 0, cold: 3, checkbox: 0, exitCode: 3 });
     const seen: string[] = [];
     expect(
       await bothPhases(
@@ -143,7 +155,7 @@ describe('isolated Room and cold whole-file phases', () => {
         },
         () => false
       )
-    ).toEqual({ ordinary: 0, room: null, cold: null, exitCode: 0 });
+    ).toEqual({ ordinary: 0, room: null, cold: null, checkbox: null, exitCode: 0 });
     expect(seen).toEqual(['ordinary']);
     expect(serverSelected({ tasks: [{ task: 'test', taskId: '@dorkos/client#test' }] })).toBe(
       false
@@ -181,6 +193,12 @@ describe('isolated Room and cold whole-file phases', () => {
     expect(pr.room).not.toContain('--affected');
     expect(pr.ordinary).toContain(`--exclude=${ROOM_FILE}`);
     expect(pr.ordinary).toContain(`--exclude=${COLD_FILE}`);
+    expect(pr.ordinary).toContain(`--exclude=${CHECKBOX_FILE}`);
+    expect(pr.checkbox).toContain(CHECKBOX_FILE);
+    expect(pr.checkbox).not.toContain('--affected');
+    expect(pr.checkbox.some((arg) => /^(--retry|--maxWorkers|--testTimeout)/.test(arg))).toBe(
+      false
+    );
     expect(pr.room).toContain(ROOM_FILE);
     expect(pr.cold).toContain(COLD_FILE);
     expect(pr.room.some((arg) => /^(--retry|--maxWorkers|--testTimeout)/.test(arg))).toBe(false);
@@ -212,6 +230,9 @@ describe('isolated Room and cold whole-file phases', () => {
     expect(queue.cold).toContain('--retry=1');
     expect(queue.cold).toContain('--reporter=../../scripts/vitest-flake-reporter.ts');
     expect(queue.cold).toContain('--outputFile.json=vitest-cold-shard-report.json');
+    expect(queue.checkbox).toContain('--retry=1');
+    expect(queue.checkbox).toContain('--reporter=../../scripts/vitest-flake-reporter.ts');
+    expect(queue.checkbox).toContain('--outputFile.json=vitest-checkbox-shard-report.json');
     expect(() =>
       commands(['pnpm', 'exec', 'turbo', 'test', '--', '--run', '--shard=1/4', '--passWithNoTests'])
     ).toThrow('eight-way');
@@ -261,8 +282,8 @@ describe('isolated Room and cold whole-file phases', () => {
       },
       () => true
     );
-    expect(seen).toEqual(['ordinary', 'room', 'cold']);
-    expect(result).toEqual({ ordinary: 0, room: 5, cold: 9, exitCode: 5 });
+    expect(seen).toEqual(['ordinary', 'room', 'cold', 'checkbox']);
+    expect(result).toEqual({ ordinary: 0, room: 5, cold: 9, checkbox: 0, exitCode: 5 });
   });
 
   it('merges all three disjoint reports without discarding Room or cold failure metadata', () => {
@@ -303,5 +324,76 @@ describe('isolated Room and cold whole-file phases', () => {
     if (!assertion) throw new Error('missing Room fixture assertion');
     assertion.status = 'skipped';
     expect(() => validateRoom(skipped, 1, '/repo/room.test.ts')).toThrow('original assertions');
+  });
+
+  it('retains a checkbox-only failure after every earlier phase closes', async () => {
+    const seen: string[] = [];
+    const result = await bothPhases(
+      async (phase) => {
+        seen.push(phase);
+        return phase === 'checkbox' ? 17 : 0;
+      },
+      () => true
+    );
+    expect(seen).toEqual(['ordinary', 'room', 'cold', 'checkbox']);
+    expect(result).toEqual({ ordinary: 0, room: 0, cold: 0, checkbox: 17, exitCode: 17 });
+  });
+
+  it('retains all four disjoint report failures and rejects missing or duplicate checkbox metadata', () => {
+    const ordinary = report('/repo/ordinary.test.ts');
+    const room = report('/repo/room.test.ts', true, 1);
+    const cold = report('/repo/cold.test.ts', true);
+    const checkbox = report('/repo/checkbox.test.ts', true, 56);
+    const firstThree = mergeReports(mergeReports(ordinary, room), cold);
+    const merged = mergeReports(firstThree, checkbox);
+    expect(merged.numTotalTests).toBe(123);
+    expect(merged.numPassedTests).toBe(33);
+    expect(merged.numFailedTests).toBe(90);
+    expect(merged.success).toBe(false);
+    expect(merged.testResults).toEqual([
+      ...ordinary.testResults,
+      ...room.testResults,
+      ...cold.testResults,
+      ...checkbox.testResults,
+    ]);
+    for (const file of merged.testResults.slice(1))
+      expect(file.assertionResults[0].failureMessages).toEqual(['original failure']);
+    expect(() => mergeReports(merged, checkbox)).toThrow('duplicate');
+    expect(() => mergeReports(firstThree, { ...checkbox, testResults: undefined })).toThrow(
+      'real phase'
+    );
+    expect(() => mergeReports(firstThree, { ...checkbox, numTotalTests: -1 })).toThrow('invalid');
+    expect(() => mergeReports(firstThree, { ...checkbox, unknown: true })).toThrow('schema');
+  });
+
+  it('requires all 56 checkbox cases, including failures, and rejects skipped or empty owner reports', () => {
+    validateCheckbox(report('/repo/checkbox.test.ts', false, 56), 1, '/repo/checkbox.test.ts');
+    validateCheckbox(report('/repo/checkbox.test.ts', true, 56), 1, '/repo/checkbox.test.ts');
+    validateCheckbox(report(null), 8, '/repo/checkbox.test.ts');
+    expect(() => validateCheckbox(report(null), 1, '/repo/checkbox.test.ts')).toThrow(
+      'singleton shard'
+    );
+    expect(() =>
+      validateCheckbox(report('/repo/checkbox.test.ts', false, 56), 8, '/repo/checkbox.test.ts')
+    ).toThrow('singleton shard');
+    expect(() =>
+      validateCheckbox(report('/repo/checkbox.test.ts'), 1, '/repo/checkbox.test.ts')
+    ).toThrow('original assertions');
+    const skipped = report('/repo/checkbox.test.ts', false, 56);
+    const file = skipped.testResults[0];
+    if (!file) throw new Error('missing checkbox fixture file');
+    const assertion = file.assertionResults[0];
+    if (!assertion) throw new Error('missing checkbox fixture assertion');
+    assertion.status = 'skipped';
+    expect(() => validateCheckbox(skipped, 1, '/repo/checkbox.test.ts')).toThrow(
+      'original assertions'
+    );
+    expect(() =>
+      validateCheckbox(
+        { ...report('/repo/checkbox.test.ts', false, 56), numPassedTests: 0 },
+        1,
+        '/repo/checkbox.test.ts'
+      )
+    ).toThrow('status accounting');
   });
 });
