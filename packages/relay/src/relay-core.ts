@@ -42,7 +42,6 @@ import { ReliabilityConfigSchema } from '@dorkos/shared/relay-schemas';
 import { inferEndpointType } from './types.js';
 import { RelayPublishPipeline } from './relay-publish.js';
 import { RelayTurnCeiling } from './turn-ceiling.js';
-import { InboundTurnBudgets } from './inbound-turn-budgets.js';
 import { executeSubscribe, executeSignal, executeOnSignal } from './relay-subscriptions.js';
 import {
   executeRegisterEndpoint,
@@ -171,17 +170,6 @@ export class RelayCore {
   private gcInterval?: ReturnType<typeof setInterval>;
   private closed = false;
   private readonly adapterRegistry?: AdapterRegistryLike;
-  /**
-   * Which inbound envelope each running agent turn is answering (DOR-791).
-   *
-   * Public because the two sides that need it live in different packages: the
-   * adapter that dispatches a turn binds here, and the host's `relay_send*`
-   * tools read it back so an outbound send continues the inbound envelope's
-   * budget instead of minting a fresh one. Hanging it off the relay rather than
-   * threading a separate dependency is what keeps those two reading the SAME
-   * map — a second instance would silently thread nothing.
-   */
-  readonly inboundBudgets = new InboundTurnBudgets();
 
   constructor(options?: RelayOptions) {
     this.logger = options?.logger ?? noopLogger;

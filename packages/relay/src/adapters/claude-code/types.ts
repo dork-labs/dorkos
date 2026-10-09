@@ -507,14 +507,6 @@ export interface ClaudeCodeAdapterDeps {
    */
   approvalAuthorizer: ApprovalAuthorizer;
   /**
-   * Where a running turn records the envelope it is answering, so the agent's
-   * own `relay_send*` calls continue that budget instead of minting a fresh one
-   * (DOR-791). The host passes the SAME instance it gives its tool surface —
-   * `RelayCore.inboundBudgets` — or none, in which case nothing is threaded and
-   * the adapter behaves exactly as it did before.
-   */
-  inboundBudgets?: import('../../inbound-turn-budgets.js').InboundTurnBudgets;
-  /**
    * Where the turns an agent starts on its own, after a relay turn ended, are
    * learned about — see {@link LateTurnSource}. Absent means a caller hears
    * only the turn its message started, which is what every host did before

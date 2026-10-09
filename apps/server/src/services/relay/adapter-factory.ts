@@ -27,7 +27,6 @@ import {
 import type {
   AgentRuntimeLike,
   ApprovalAuthorizer,
-  InboundTurnBudgets,
   TraceStoreLike,
   TasksStoreLike,
   AgentSessionStoreLike,
@@ -67,13 +66,6 @@ export interface AdapterFactoryDeps {
    * same posture-as-data argument `UpgradeRoute.credential` makes.
    */
   approvalAuthorizer: ApprovalAuthorizer;
-  /**
-   * Where a running agent turn records the envelope it is answering (DOR-791).
-   * This is `RelayCore.inboundBudgets`, the one instance per process. Its
-   * in-session reader, the relay send tools, retired with spec
-   * `spin-off-chats` §7; agents now message each other through chats.
-   */
-  inboundBudgets?: InboundTurnBudgets;
 }
 
 /**
@@ -221,7 +213,6 @@ export async function createAdapter(
         // Every approval that arrives on the relay bus is checked here too,
         // before the runtime is touched (spec `ask-entitlement` §5.3).
         approvalAuthorizer: deps.approvalAuthorizer,
-        inboundBudgets: deps.inboundBudgets,
         // An agent that ends its turn while a helper still works reports back in
         // a turn of its own; this is how that report reaches the inbox of the
         // agent that asked (DOR-2717).

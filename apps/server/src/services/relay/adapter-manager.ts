@@ -1502,12 +1502,6 @@ export class AdapterManager {
         onRefusedAsk: this.deps.onRefusedAsk,
         agentSessionStore: this.bindingSubsystem?.getAgentSessionStore(),
         approvalAuthorizer: (decision) => this.authorizeBridgedApproval(decision),
-        // The inbound-budget map (DOR-791): the adapter binds a turn here.
-        // Taken off the relay rather than constructed, so there is exactly one
-        // per process.
-        ...(this.deps.relayCore?.inboundBudgets && {
-          inboundBudgets: this.deps.relayCore.inboundBudgets,
-        }),
       },
       this.configPath,
       (type, manifest) => this.registerPluginManifest(type, manifest)

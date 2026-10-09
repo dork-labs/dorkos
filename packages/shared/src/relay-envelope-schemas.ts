@@ -315,8 +315,6 @@ export const InboxStatusFilterSchema = z
   .enum(['pending', 'delivered', 'failed', 'all'])
   .openapi('InboxStatusFilter');
 
-export type InboxStatusFilter = z.infer<typeof InboxStatusFilterSchema>;
-
 export const InboxQuerySchema = z
   .object({
     status: InboxStatusFilterSchema.default('pending').openapi({
@@ -758,22 +756,7 @@ export const RelayReceiptSchema = z
 
 export type RelayReceipt = z.infer<typeof RelayReceiptSchema>;
 
-// === Dispatch Progress ===
-
-/** Published by CCA to relay.inbox.dispatch.* on each progress event. */
-export const RelayProgressPayloadSchema = z
-  .object({
-    type: z.literal('progress'),
-    step: z.number().int().min(1).describe('Monotonically increasing step counter'),
-    step_type: z
-      .enum(['message', 'tool_result'])
-      .describe('message = assistant text block completed; tool_result = tool execution completed'),
-    text: z.string().describe('Text content of this progress step'),
-    done: z.literal(false),
-  })
-  .openapi('RelayProgressPayload');
-
-export type RelayProgressPayload = z.infer<typeof RelayProgressPayloadSchema>;
+// === Dispatch Result ===
 
 /**
  * Published by CCA to relay.inbox.dispatch.* as the final event.
