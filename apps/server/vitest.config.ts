@@ -368,6 +368,27 @@ export default defineConfig({
         ),
       },
       {
+        // Use the same policy definitions as the aliased Relay root above.
+        find: /^@dorkos\/relay\/subjects$/,
+        replacement: fileURLToPath(
+          new URL('../../packages/relay/src/lib/subjects.ts', import.meta.url)
+        ),
+      },
+      {
+        // Use the same policy definitions as the aliased Relay root above.
+        find: /^@dorkos\/relay\/consent-scope$/,
+        replacement: fileURLToPath(
+          new URL('../../packages/relay/src/lib/consent-scope.ts', import.meta.url)
+        ),
+      },
+      {
+        // Use the same policy definitions as the aliased Relay root above.
+        find: /^@dorkos\/relay\/telegram-formatting$/,
+        replacement: fileURLToPath(
+          new URL('../../packages/relay/src/adapters/telegram/inbound.ts', import.meta.url)
+        ),
+      },
+      {
         // The memory cap AND the four `<agent_memory>` framing strings, which
         // back two drift guards: the envelope bound in `agent-context.test.ts`
         // computes itself from the preamble's length, and `prompt-content`

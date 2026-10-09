@@ -361,8 +361,12 @@ describe('original native persistent document token scopes', () => {
         }>(sql`SELECT status,due_at AS dueAt
           FROM canvas_doc_batches WHERE document_id=${h.documentId}`)!;
         expect(pending.status).toBe('pending');
-        const remaining = Date.parse(pending.dueAt) - Date.now();
-        if (remaining > 0) await new Promise<void>((resolve) => setTimeout(resolve, remaining));
+        const dueAt = Date.parse(pending.dueAt);
+        let remaining = dueAt - Date.now();
+        while (remaining > 0) {
+          await new Promise<void>((resolve) => setTimeout(resolve, remaining));
+          remaining = dueAt - Date.now();
+        }
         currentRoomDueServicePort(h.http.service).wake();
         const rows = h.db.$client
           .prepare(

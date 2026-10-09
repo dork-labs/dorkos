@@ -20,6 +20,18 @@
     "./testing": {
       "types": "./src/testing/index.ts",
       "default": "./dist/testing/index.js"
+    },
+    "./subjects": {
+      "types": "./src/lib/subjects.ts",
+      "default": "./dist/lib/subjects.js"
+    },
+    "./consent-scope": {
+      "types": "./src/lib/consent-scope.ts",
+      "default": "./dist/lib/consent-scope.js"
+    },
+    "./telegram-formatting": {
+      "types": "./src/adapters/telegram/inbound.ts",
+      "default": "./dist/adapters/telegram/inbound.js"
     }
   },
   "scripts": {
