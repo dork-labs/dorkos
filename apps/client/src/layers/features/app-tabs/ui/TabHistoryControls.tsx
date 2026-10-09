@@ -57,7 +57,10 @@ function HistoryRow({ href, isCurrent, onSelect }: HistoryRowProps) {
       className="data-[disabled]:opacity-100"
     >
       <TabTargetIcon view={view} />
-      <span className="min-w-0 flex-1 truncate">{view.label}</span>
+      <span className="min-w-0 flex-1 truncate">
+        {view.label}
+        {view.chatTitle && <span className="text-muted-foreground"> · {view.chatTitle}</span>}
+      </span>
       <Check className={cn('size-3.5 shrink-0', !isCurrent && 'invisible')} />
     </DropdownMenuItem>
   );
