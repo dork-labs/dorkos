@@ -48,6 +48,7 @@ const readable = { read: true, post: true, enrollAgent: true, stream: true };
 const nothing = { read: false, post: false, enrollAgent: false, stream: false };
 
 import { communityAccessState } from '@/layers/entities/community';
+import { setSessionRouteContext } from '@/layers/entities/session';
 import { AppTabStrip } from '../ui/AppTabStrip';
 import { APP_TAB_PANEL_ID } from '../ui/AppTabItem';
 
@@ -133,6 +134,49 @@ describe('AppTabStrip', () => {
     );
     renderStrip([API_SESSION]);
     expect(screen.getByRole('tab', { name: /Scout/ })).toBeInTheDocument();
+  });
+
+  // The href the app really writes: since #2682 a chat URL carries no `dir`.
+  // Every earlier test used `&dir=`, so they passed while every real chat tab
+  // read "Session" with a generic icon (DOR-2820).
+  describe('a chat tab on the real dir-less href', () => {
+    const scout = { id: 'scout', displayName: 'Scout', icon: '\u{1F50D}' } as AgentManifest;
+    beforeEach(() => {
+      agentByPath.mockImplementation((cwd) => (cwd === '/Users/kai/api' ? scout : null));
+    });
+
+    it('names the agent and the chat title from the chat row the server resolves', async () => {
+      vi.mocked(transport.getSession).mockResolvedValue({
+        id: 'dirless-1',
+        cwd: '/Users/kai/api',
+        title: 'Fix the login bug',
+      } as Awaited<ReturnType<typeof transport.getSession>>);
+      renderStrip([tab('t9', '/session?session=dirless-1')]);
+      const chat = await screen.findByRole('tab', { name: /Scout/ });
+      expect(chat).toHaveTextContent('Scout · Fix the login bug');
+      expect(chat).not.toHaveTextContent('Session');
+      expect(transport.getSession).toHaveBeenCalledWith('dirless-1', undefined);
+    });
+
+    it('names the agent from the route context the loader installed, before any fetch lands', () => {
+      vi.mocked(transport.getSession).mockReturnValue(new Promise(() => {}));
+      setSessionRouteContext('dirless-2', { cwd: '/Users/kai/api', draft: false });
+      renderStrip([tab('t9', '/session?session=dirless-2')]);
+      expect(screen.getByRole('tab', { name: /Scout/ })).toBeInTheDocument();
+    });
+
+    it('says "Chat", never "Session", while nothing about the chat is known yet', () => {
+      vi.mocked(transport.getSession).mockReturnValue(new Promise(() => {}));
+      renderStrip([tab('t9', '/session?session=dirless-3')]);
+      expect(screen.getByRole('tab', { name: /^Chat/ })).toBeInTheDocument();
+    });
+
+    it('does not ask the server for a draft that has no row yet', () => {
+      setSessionRouteContext('draft-1', { cwd: '/Users/kai/api', draft: true });
+      renderStrip([tab('t9', '/session?session=draft-1')]);
+      expect(screen.getByRole('tab', { name: /Scout/ })).toBeInTheDocument();
+      expect(transport.getSession).not.toHaveBeenCalled();
+    });
   });
 
   it('names a channel tab "#slug" once the room resolves', () => {

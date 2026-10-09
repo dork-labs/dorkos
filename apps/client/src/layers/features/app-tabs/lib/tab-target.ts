@@ -37,7 +37,11 @@ export interface TabTarget {
   pathname: string;
   /** The `?session=` id for a chat tab, else `null`. */
   sessionId: string | null;
-  /** The `?dir=` project path for a chat tab, else `null`. */
+  /**
+   * The `?dir=` project path for a chat tab, else `null`. A legacy hint only:
+   * chat URLs have carried no `dir` since #2682, so a chat's real folder comes
+   * from its route context or its session row (see `useTabTarget`).
+   */
   dir: string | null;
   /** The `?id=` room id for a channel tab, else `null`. */
   roomId: string | null;
@@ -106,7 +110,7 @@ export const ROUTE_ICONS: Record<string, LucideIcon> = {
 const EXTENSION_PAGE_FALLBACK_LABEL = 'Add-on';
 
 /** Fallback name for a chat tab whose agent and project are both unknown. */
-const SESSION_FALLBACK_LABEL = 'Session';
+const SESSION_FALLBACK_LABEL = 'Chat';
 
 /** Fallback name for a route the strip has no word for (a future route, a typo). */
 const UNKNOWN_ROUTE_LABEL = 'DorkOS';

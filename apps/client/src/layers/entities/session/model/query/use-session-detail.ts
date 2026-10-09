@@ -37,16 +37,16 @@ export interface UseSessionDetailOptions<T> {
 
 /**
  * The session's detail row from the server, cached under the one key every
- * reader and writer shares. Mount it from anywhere that needs a session's
- * settings — TanStack Query dedupes the request, so several surfaces reading
- * one session cost a single fetch and can never disagree.
+ * reader and writer shares, and nothing else: no router, no navigation. For a
+ * surface that only names a chat, like a tab, which may sit outside any route
+ * and must never steer one. {@link useSessionDetail} is this plus the active
+ * route's draft hand-off.
  *
- * @param sessionId - The active session id, or null when none is selected.
- *   When null the query is disabled and no request is made.
+ * @param sessionId - The session id, or null for none (no request is made).
  * @param options - Fetch gate, field selector and directory override; see
  *   {@link UseSessionDetailOptions}.
  */
-export function useSessionDetail<T = Session>(
+export function useSessionRow<T = Session>(
   sessionId: string | null,
   options?: UseSessionDetailOptions<T>
 ) {
@@ -58,17 +58,7 @@ export function useSessionDetail<T = Session>(
   const context = useSessionRouteContext(sessionId);
   const cwd = options?.dir ?? context?.cwd ?? null;
 
-  const navigate = useSafeNavigate();
-  const search = useSessionSearch();
-  // Settings PATCHes and optimistic list rows can make detail look successful
-  // before the runtime has created anything. Only an actual native read counts.
-  const native = useQuery<Session>({
-    queryKey: sessionKeys.nativeDetail(sessionId, cwd),
-    queryFn: () => transport.getSession(sessionId!, cwd ?? undefined),
-    enabled: false,
-    staleTime: Infinity,
-  });
-  const query = useQuery({
+  return useQuery({
     queryKey: sessionKeys.detail(sessionId, cwd),
     queryFn: async () => {
       const session = await transport.getSession(sessionId!, cwd ?? undefined);
@@ -86,6 +76,40 @@ export function useSessionDetail<T = Session>(
     // (DOR-2103).
     networkMode: 'always',
   });
+}
+
+/**
+ * The session's detail row from the server, cached under the one key every
+ * reader and writer shares. Mount it from anywhere that needs a session's
+ * settings — TanStack Query dedupes the request, so several surfaces reading
+ * one session cost a single fetch and can never disagree.
+ *
+ * Also finishes a draft: once the active route's draft session exists on the
+ * server, the URL drops its draft markers.
+ *
+ * @param sessionId - The active session id, or null when none is selected.
+ *   When null the query is disabled and no request is made.
+ * @param options - Fetch gate, field selector and directory override; see
+ *   {@link UseSessionDetailOptions}.
+ */
+export function useSessionDetail<T = Session>(
+  sessionId: string | null,
+  options?: UseSessionDetailOptions<T>
+) {
+  const transport = useTransport();
+  const context = useSessionRouteContext(sessionId);
+  const cwd = options?.dir ?? context?.cwd ?? null;
+  const navigate = useSafeNavigate();
+  const search = useSessionSearch();
+  // Settings PATCHes and optimistic list rows can make detail look successful
+  // before the runtime has created anything. Only an actual native read counts.
+  const native = useQuery<Session>({
+    queryKey: sessionKeys.nativeDetail(sessionId, cwd),
+    queryFn: () => transport.getSession(sessionId!, cwd ?? undefined),
+    enabled: false,
+    staleTime: Infinity,
+  });
+  const query = useSessionRow(sessionId, options);
   useEffect(() => {
     if (
       !navigate ||

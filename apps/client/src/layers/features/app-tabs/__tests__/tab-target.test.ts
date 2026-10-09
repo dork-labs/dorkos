@@ -131,7 +131,7 @@ describe('fallbackTabLabel', () => {
   });
 
   it('always produces something, even with no project', () => {
-    expect(fallbackTabLabel(parseTabHref('/session'))).toBe('Session');
+    expect(fallbackTabLabel(parseTabHref('/session'))).toBe('Chat');
     expect(fallbackTabLabel(parseTabHref('/somewhere-new'))).toBe('DorkOS');
   });
 });
