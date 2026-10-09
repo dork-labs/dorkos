@@ -2,6 +2,8 @@
 
 **Public source:** `116297e14f7c357d24010ba34b9ceaa1b44aef99`. **Comparison:** October 1 atlas source `996161118a84f938fe76b6e569ba077dfb7a574a`. Three independent read-only audits covered local lifecycle/runtime delivery, public Cloud/Spaces boundaries, and Projects/extensions/documents/browser foundations. Linear and open PRs were read on October 4. This is an architecture assessment, not a fresh runtime verification or production certification.
 
+**Historical context:** the [October 9 vision-reset assessment](20261009-vision-reset-architecture-assessment.md) supersedes the permanent-topology recommendation below. Separate servers still describe today's implementation, but the accepted direction is one local/hosted program. Doe and production isolated backends have also advanced; preserve the findings below as evidence at their dated source.
+
 ## Judgment
 
 Keep the existing topology: the local app owns agent execution, independent Community servers own Spaces content and membership, and optional Cloud services own hosted account/control operations. These are useful authority and failure boundaries. Cloud completion removes a reason to postpone adoption work; it does not remove the boundaries.
