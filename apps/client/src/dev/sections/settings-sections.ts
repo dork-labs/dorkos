@@ -242,7 +242,7 @@ export const SETTINGS_SECTIONS: PlaygroundSection[] = [
       'disclosure',
     ],
   },
-  // Remote access — the Control Center row and the top-bar beacon, on one model.
+  // Remote access — the Control Center row, Settings and the top-bar beacon, on one model.
   {
     id: 'remote-access',
     title: 'Remote Access',
@@ -260,6 +260,9 @@ export const SETTINGS_SECTIONS: PlaygroundSection[] = [
       'link',
       'reconnecting',
       'control center',
+      'managed',
+      'dorkos setup',
+      'approval code',
     ],
   },
   // Keep awake — the top-bar cup and the Sleep card, on one status.

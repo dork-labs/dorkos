@@ -13,6 +13,7 @@ const DESCRIPTIONS = {
   off: 'Use DorkOS from your phone or another computer.',
   starting: 'Connecting…',
   stopping: 'Turning off…',
+  draining: 'Closing…',
 } as const;
 
 /**
@@ -48,7 +49,10 @@ export function RemoteAccessRow() {
   const openAndClose = createModalHandoff(() => setControlCenterOpen(false));
   const openDialog = openAndClose(() => setRemoteAccessOpen(true));
 
-  const configured = remote.tokenConfigured;
+  // Set up for whichever mode the switch would use: the ngrok token, or an
+  // approved managed setup (DOR-2086). `tokenConfigured` alone would send a
+  // managed computer with no ngrok token to setup it does not need.
+  const configured = remote.isSetUp;
   const waiting = remote.state === 'starting' || remote.state === 'stopping';
   // Until `GET /api/config` has answered, "no token saved" is a placeholder and
   // not a fact — and the two readings send the switch to different places (a
@@ -80,8 +84,32 @@ export function RemoteAccessRow() {
         </button>
       </span>
     );
+  } else if (remote.state === 'blocked') {
+    // Managed access is selected but cannot open. The reason is the news, and
+    // it needs a person, so it gets the same Fix… as a failure.
+    description = (
+      <span className="flex min-w-0 items-baseline gap-1.5">
+        <span className="text-status-warning-fg truncate">
+          {remote.managed?.reason ?? 'Needs attention'}
+        </span>
+        <button
+          type="button"
+          onClick={openDialog}
+          className="focus-ring text-foreground shrink-0 rounded-sm underline underline-offset-2"
+        >
+          Fix…
+        </button>
+      </span>
+    );
   } else if (remote.state === 'connected') {
     description = `On · ${remote.host ?? 'connected'}`;
+  } else if (remote.state === 'asleep') {
+    // Managed access is selected and DorkOS Cloud holds the address closed
+    // for now (DOR-2086). Neutral: not off, not a fault, and no claim about
+    // the computer itself.
+    description = remote.host ? `Closed for now · ${remote.host}` : 'Closed for now';
+  } else if (remote.state === 'draining') {
+    description = DESCRIPTIONS.draining;
   } else if (remote.state === 'reconnecting') {
     // Still on: the listener is open and ngrok is re-establishing the session.
     // Saying "off" here would tell somebody their phone had lost the address
@@ -93,6 +121,12 @@ export function RemoteAccessRow() {
     description = DESCRIPTIONS.stopping;
   } else {
     description = DESCRIPTIONS.off;
+  }
+
+  // Managed access whose last DorkOS Cloud read did not come back: the state
+  // above is this computer's own, and the row says where the rest stopped.
+  if (known && remote.managed?.cloudStale && typeof description === 'string') {
+    description = `${description} · Can’t reach DorkOS Cloud`;
   }
 
   return (

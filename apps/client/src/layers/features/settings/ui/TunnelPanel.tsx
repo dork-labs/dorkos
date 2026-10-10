@@ -4,6 +4,11 @@ import { cn } from '@/layers/shared/lib';
 import { useSessionId } from '@/layers/entities/session';
 import type { TunnelMachine } from '../model/use-tunnel-machine';
 import type { TunnelActions } from '../model/use-tunnel-actions';
+import { useRemoteModeChoice } from '../model/use-remote-mode-choice';
+import type { ManagedRemoteAccess } from '@/layers/entities/tunnel';
+import { RemoteAccessModeChoice } from './RemoteAccessModeChoice';
+import { ManagedSetup } from './ManagedSetup';
+import { ManagedStatus } from './ManagedStatus';
 import { TunnelLanding } from './TunnelLanding';
 import { TunnelSetup } from './TunnelSetup';
 import { TunnelSettings } from './TunnelSettings';
@@ -54,6 +59,78 @@ export interface TunnelPanelProps {
  * however many surfaces render this.
  */
 export function TunnelPanel({ machine, actions, className }: TunnelPanelProps) {
+  // While managed access is not offered here, the panel is exactly the
+  // person's own ngrok setup it always was (DOR-2086).
+  if (!machine.managed) {
+    return <OwnTunnelPanel machine={machine} actions={actions} className={className} />;
+  }
+  return (
+    <ModeChoicePanel
+      machine={machine}
+      actions={actions}
+      managed={machine.managed}
+      className={className}
+    />
+  );
+}
+
+/**
+ * Remote access when DorkOS also offers it (DOR-2086): one choice between off,
+ * the person's own ngrok, and DorkOS, then the body for whichever is chosen.
+ * The ngrok body is {@link OwnTunnelPanel}, unchanged, token and domain included.
+ *
+ * "DorkOS" is offered only while the report says `available`. A computer
+ * already on DorkOS whose last DorkOS Cloud read failed shows its status alone,
+ * with no choice to make until Cloud answers.
+ */
+function ModeChoicePanel({
+  machine,
+  actions,
+  managed,
+  className,
+}: TunnelPanelProps & { managed: ManagedRemoteAccess }) {
+  const [activeSessionId] = useSessionId();
+  const choice = useRemoteModeChoice(managed);
+
+  const managedBody =
+    managed.enrolment.status === 'enrolled' ? (
+      <ManagedStatus
+        state={machine.state}
+        url={machine.url}
+        managed={managed}
+        activeSessionId={activeSessionId}
+        latencyMs={machine.latencyMs}
+      />
+    ) : (
+      <ManagedSetup enrolment={managed.enrolment} />
+    );
+
+  if (!choice.offerManaged) {
+    return <div className={cn('space-y-4', className)}>{managedBody}</div>;
+  }
+
+  return (
+    <div className={cn('space-y-4', className)}>
+      <RemoteAccessModeChoice
+        value={choice.shown}
+        onChange={choice.choose}
+        disabled={choice.busy || machine.isTransitioning}
+        error={choice.error}
+      />
+      {choice.shown === 'byo' && <OwnTunnelPanel machine={machine} actions={actions} />}
+      {choice.shown === 'managed' && managedBody}
+      {choice.shown === 'off' && (
+        <p className="text-muted-foreground text-xs">Other devices can’t reach this computer.</p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The person's own ngrok setup: landing, token, the switch, the address, and
+ * the token and domain settings.
+ */
+function OwnTunnelPanel({ machine, actions, className }: TunnelPanelProps) {
   const [activeSessionId] = useSessionId();
 
   return (

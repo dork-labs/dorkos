@@ -9,9 +9,12 @@ import {
 } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import { useAppStore } from '@/layers/shared/model';
-import { useRemoteAccess } from '@/layers/entities/tunnel';
+import {
+  remoteAccessDotTone,
+  remoteAccessHeading,
+  useRemoteAccess,
+} from '@/layers/entities/tunnel';
 import { useConnectRipple } from '../model/use-connect-ripple';
-import { remoteAccessHeading } from '../model/remote-access-copy';
 import { RemoteAccessPanel } from './RemoteAccessPanel';
 
 /**
@@ -25,6 +28,10 @@ function announcementFor(state: string, host: string | null): string {
   if (state === 'starting') return 'Remote access is connecting';
   if (state === 'reconnecting') return 'Remote access is reconnecting';
   if (state === 'stopping') return 'Remote access is turning off';
+  if (state === 'draining') return 'Remote access is closing';
+  if (state === 'asleep') {
+    return host ? `Remote access is closed for now at ${host}` : 'Remote access is closed for now';
+  }
   return host ? `Remote access is on at ${host}` : 'Remote access is on';
 }
 
@@ -36,7 +43,10 @@ function announcementFor(state: string, host: string | null): string {
  * or a code, so it must not claim to.
  */
 function beaconLabel(state: string, host: string | null): string {
-  const offer = state === 'starting' ? 'Open remote access' : 'Show link and QR code';
+  const offer =
+    state === 'starting' || (state === 'asleep' && !host)
+      ? 'Open remote access'
+      : 'Show link and QR code';
   return `${announcementFor(state, host)}. ${offer}`;
 }
 
@@ -122,7 +132,7 @@ export function RemoteAccessBeacon() {
                 data-testid="remote-access-beacon-dot"
                 className={cn(
                   'border-background absolute right-0.5 bottom-0.5 size-1.5 rounded-full border',
-                  remote.state === 'connected' ? 'bg-status-success' : 'bg-status-warning-dot'
+                  remoteAccessDotTone(remote.state)
                 )}
               />
               {connections > 0 && !reducedMotion && (

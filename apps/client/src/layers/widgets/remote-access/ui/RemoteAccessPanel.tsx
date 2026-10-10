@@ -7,10 +7,11 @@ import { useAppStore, useIsMobile } from '@/layers/shared/model';
 import {
   TunnelQrCode,
   friendlyErrorMessage,
+  remoteAccessDotTone,
+  remoteAccessHeading,
   useRemoteAccess,
   useRemoteAccessActions,
 } from '@/layers/entities/tunnel';
-import { remoteAccessHeading } from '../model/remote-access-copy';
 
 /** Props for {@link RemoteAccessPanel}. */
 export interface RemoteAccessPanelProps {
@@ -79,6 +80,36 @@ function LinkBlock({ url }: { url: string }) {
 }
 
 /**
+ * What managed access adds to the flyout (DOR-2086): the one promise DorkOS
+ * Cloud made, a reason when there is one, and a note when Cloud was not
+ * reached.
+ *
+ * "Always available" is said only when Cloud reports it. Nothing here says the
+ * computer is asleep or that anything can wake it: DorkOS knows neither.
+ */
+function ManagedNote() {
+  const remote = useRemoteAccess();
+  const managed = remote.managed;
+  if (!managed) return null;
+  const lines: string[] = [];
+  if (managed.alwaysAvailable) lines.push('Always available');
+  if (remote.state === 'asleep') lines.push('Your address stays the same.');
+  if (managed.reason) lines.push(managed.reason);
+  if (managed.cloudStale) lines.push('Couldn’t reach DorkOS Cloud. Showing the last known state.');
+  if (lines.length === 0) return null;
+  return (
+    <div
+      className="text-muted-foreground space-y-1 text-xs"
+      data-testid="remote-access-managed-note"
+    >
+      {lines.map((line) => (
+        <p key={line}>{line}</p>
+      ))}
+    </div>
+  );
+}
+
+/**
  * What the beacon opens: the address, the QR code, an off switch, and the way
  * to the full dialog. Nothing else.
  *
@@ -102,6 +133,7 @@ export function RemoteAccessPanel({ onClose }: RemoteAccessPanelProps) {
   const openAndClose = createModalHandoff(onClose);
 
   const url = remote.url;
+  const managed = remote.mode === 'managed';
 
   const link = url ? <LinkBlock key="link" url={url} /> : null;
   const qr = url ? <QrBlock key="qr" url={url} /> : null;
@@ -117,7 +149,7 @@ export function RemoteAccessPanel({ onClose }: RemoteAccessPanelProps) {
           <span
             className={cn(
               'inline-block size-2 shrink-0 rounded-full',
-              remote.state === 'connected' ? 'bg-status-success' : 'bg-status-warning-dot'
+              remoteAccessDotTone(remote.state)
             )}
             aria-hidden
           />
@@ -139,7 +171,9 @@ export function RemoteAccessPanel({ onClose }: RemoteAccessPanelProps) {
         </p>
       )}
 
-      {url === null && (
+      {managed && <ManagedNote />}
+
+      {url === null && remote.state !== 'asleep' && (
         <p className="text-muted-foreground text-xs">Your link appears here when it’s ready.</p>
       )}
 

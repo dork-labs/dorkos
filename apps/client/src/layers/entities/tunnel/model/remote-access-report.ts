@@ -43,15 +43,23 @@ const PENDING_REFETCH_MS = 3_000;
 /**
  * The report, when it is one the app should act on.
  *
+ * `available` always counts. `unavailable` counts only while managed access is
+ * the selected mode: that is how a report says DorkOS Cloud could not be
+ * reached just now, and the person still needs to see the last-known local
+ * truth (with `cloudStale`) rather than have their managed setup vanish. A
+ * computer that never chose managed access reads `unavailable` like `hidden`.
+ *
  * @param report - What the server answered, or `null`/`undefined` when it has
  *   not answered or has no route for it.
- * @returns The report while managed access is available here, otherwise `null`.
+ * @returns The report while it should drive the surfaces, otherwise `null`.
  */
 export function usableReport(
   report: RemoteAccessReport | null | undefined
 ): RemoteAccessReport | null {
   if (!report || typeof report !== 'object') return null;
-  return report.availability === 'available' ? report : null;
+  if (report.availability === 'available') return report;
+  if (report.availability === 'unavailable' && report.mode === 'managed') return report;
+  return null;
 }
 
 /**
@@ -90,14 +98,14 @@ export function stateFromReport(state: RemoteAccessState): TunnelState {
 /**
  * The URL a managed report lets a surface show.
  *
- * Shown while open, reconnecting or asleep: an asleep address still answers and
- * reopens the tunnel when used. Never while opening, draining or blocked.
+ * Only while `open`, or `asleep` with an address: the report carries a URL in
+ * no other state, and this repeats the rule rather than trusting it, so no
+ * surface can offer a link that cannot work.
  *
  * @param report - A managed report.
  */
 export function urlFromReport(report: RemoteAccessReport): string | null {
-  const usable =
-    report.state === 'open' || report.state === 'reconnecting' || report.state === 'asleep';
+  const usable = report.state === 'open' || report.state === 'asleep';
   return usable ? (report.url ?? null) : null;
 }
 

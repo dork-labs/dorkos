@@ -7,6 +7,7 @@ import {
 } from '@/layers/shared/ui';
 import { useIsMobile } from '@/layers/shared/model';
 import { cn } from '@/layers/shared/lib';
+import { remoteAccessDotTone } from '@/layers/entities/tunnel';
 import { useTunnelMachine, type TunnelMachine } from '../model/use-tunnel-machine';
 import { useTunnelActions } from '../model/use-tunnel-actions';
 import { TunnelPanel } from './TunnelPanel';
@@ -70,39 +71,18 @@ export function TunnelDialog({ open, onOpenChange }: TunnelDialogProps) {
 }
 
 /**
- * The dot that says what remote access is doing right now.
- *
- * The app's own dot vocabulary (`shared/ui/status-dot.ts`), not the raw palette.
- * `-dot` on the amber is load-bearing: it is the variant taken to 3:1 against a
- * light surface, which a coloured dot needs and the fill-tuned `--status-warning`
- * does not meet.
+ * The dot that says what remote access is doing right now, in the colour every
+ * other remote-access surface uses for the same state (`remoteAccessDotTone`).
  *
  * @param state - The machine's current state.
  * @param pulsing - Whether the dot should breathe (waiting on something).
  */
 function TunnelStatusDot({ state, pulsing }: { state: TunnelMachine['state']; pulsing: boolean }) {
-  const dotColor = {
-    off: 'bg-muted-foreground/40',
-    starting: 'bg-status-warning-dot',
-    connected: 'bg-status-success',
-    // Amber, like `starting`, and for the same reason: the tunnel is on its way
-    // to being reachable, not off and not broken.
-    reconnecting: 'bg-status-warning-dot',
-    stopping: 'bg-muted-foreground/40',
-    error: 'bg-status-error',
-    // Managed access only (DOR-2086). A closed tunnel whose address still
-    // answers is the design working, so it is neutral, never red.
-    asleep: 'bg-muted-foreground/60',
-    draining: 'bg-muted-foreground/40',
-    // Needs attention, not broken: the reason is on the panel below.
-    blocked: 'bg-status-warning-dot',
-  }[state];
-
   return (
     <span
       className={cn(
         'inline-block size-2 shrink-0 rounded-full',
-        dotColor,
+        remoteAccessDotTone(state),
         pulsing && 'animate-breath'
       )}
       aria-hidden

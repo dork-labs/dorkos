@@ -16,7 +16,6 @@ import type {
   CreateEntryResponse,
   FileMutationResponse,
   HealthResponse,
-  RemoteAccessReport,
   ServerConfig,
   ModelOption,
   SubagentInfo,
@@ -29,7 +28,6 @@ import type {
   WorkbenchSignRequest,
   WorkbenchSignResponse,
 } from '@dorkos/shared/types';
-import type { RemoteAccessMode } from '@dorkos/shared/config-schema';
 import type {
   UploadFile,
   McpConfigResponse,
@@ -680,36 +678,6 @@ export function createSystemMethods(baseUrl: string) {
 
     async stopTunnel(): Promise<void> {
       await fetchJSON<{ ok: boolean }>(baseUrl, '/tunnel/stop', { method: 'POST' });
-    },
-
-    // ── Remote access (DOR-2086) ──────────────────────────────────────────
-
-    getRemoteAccessReport(): Promise<RemoteAccessReport> {
-      return fetchJSON<RemoteAccessReport>(baseUrl, '/remote-access/report');
-    },
-
-    startRemoteEnrolment(): Promise<RemoteAccessReport> {
-      return fetchJSON<RemoteAccessReport>(baseUrl, '/remote-access/enrolment', {
-        method: 'POST',
-      });
-    },
-
-    setRemoteAccessMode(mode: RemoteAccessMode): Promise<RemoteAccessReport> {
-      return fetchJSON<RemoteAccessReport>(baseUrl, '/remote-access/mode', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode }),
-      });
-    },
-
-    closeRemoteAccess(): Promise<RemoteAccessReport> {
-      return fetchJSON<RemoteAccessReport>(baseUrl, '/remote-access/close', { method: 'POST' });
-    },
-
-    withdrawRemoteAccess(): Promise<RemoteAccessReport> {
-      return fetchJSON<RemoteAccessReport>(baseUrl, '/remote-access/withdraw', {
-        method: 'POST',
-      });
     },
 
     // ── Admin ─────────────────────────────────────────────────────────────

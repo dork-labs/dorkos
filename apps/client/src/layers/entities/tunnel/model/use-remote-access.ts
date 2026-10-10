@@ -35,6 +35,11 @@ import { isManagedReport, useRemoteAccessReport } from './remote-access-report';
 export interface ManagedRemoteAccess {
   /** The mode the person selected: `off`, `byo` (their own ngrok) or `managed`. */
   selected: RemoteAccessReport['mode'];
+  /**
+   * Whether managed access can be chosen right now. `unavailable` only reaches
+   * here while it is already selected and DorkOS Cloud could not be reached.
+   */
+  availability: RemoteAccessReport['availability'];
   /** Where this computer's approval stands. */
   enrolment: RemoteAccessReport['enrolment'];
   /** Whether DorkOS keeps the address open on its own. Only ever what Cloud reports. */
@@ -152,6 +157,7 @@ export function useRemoteAccessSnapshot(): RemoteAccessSnapshot {
     managed: report
       ? {
           selected: report.mode,
+          availability: report.availability,
           enrolment: report.enrolment,
           alwaysAvailable: report.alwaysAvailable,
           cloudStale: report.cloudStale,

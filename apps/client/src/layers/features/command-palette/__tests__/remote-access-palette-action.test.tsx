@@ -10,7 +10,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport, createRemoteAccessReport } from '@dorkos/test-utils';
 import { usePaletteActions } from '../model/use-palette-actions';
 import { REMOTE_ACCESS_PALETTE_ACTIONS } from '../model/palette-remote-access';
 
@@ -124,5 +124,25 @@ describe('remote-access palette actions', () => {
 
     await waitFor(() => expect(mockTransport.stopTunnel).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(useRemoteAccessStore.getState().state).toBe('off'));
+  });
+
+  // DOR-2086: with DorkOS selected, the palette acts through the same
+  // selected-mode actions as every other surface, never the ngrok routes.
+  it('turns DorkOS remote access on and off through the mode', async () => {
+    vi.mocked(mockTransport.setRemoteAccessMode).mockResolvedValue(
+      createRemoteAccessReport({ mode: 'off', state: 'off', url: undefined })
+    );
+    act(() =>
+      useRemoteAccessStore.getState().applyRemoteReport(createRemoteAccessReport(), Date.now())
+    );
+    const { result } = mountActions();
+
+    act(() => result.current.handleQuickAction(REMOTE_ACCESS_PALETTE_ACTIONS.turnOff));
+    await waitFor(() => expect(mockTransport.setRemoteAccessMode).toHaveBeenCalledWith('off'));
+
+    act(() => result.current.handleQuickAction(REMOTE_ACCESS_PALETTE_ACTIONS.turnOn));
+    await waitFor(() => expect(mockTransport.setRemoteAccessMode).toHaveBeenCalledWith('managed'));
+    expect(mockTransport.startTunnel).not.toHaveBeenCalled();
+    expect(mockTransport.stopTunnel).not.toHaveBeenCalled();
   });
 });
