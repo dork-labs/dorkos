@@ -7,7 +7,7 @@
  */
 import type { ReactNode } from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -31,7 +31,7 @@ const SELF = {
   isSelf: true,
   ownerId: null,
   origin: 'local',
-  person: { role: null, lastSeenAt: null, accountId: 'acct-1' },
+  person: { role: null, lastSeenAt: null, accountId: 'acct-1', isViewer: true },
 } as TeamMember;
 
 /** An agent roster row. */
@@ -61,7 +61,7 @@ const ATLAS_MANIFEST = {
   behavior: { responseMode: 'always' },
 } as unknown as AgentManifest;
 
-function renderPopover(over: Record<string, unknown> = {}) {
+function renderPopover(over: Record<string, unknown> = {}, self: TeamMember = SELF) {
   const config = createQueryClientConfig();
   const queryClient = new QueryClient({
     ...config,
@@ -73,7 +73,7 @@ function renderPopover(over: Record<string, unknown> = {}) {
   const transport = createMockTransport({
     getAgentByPath: vi.fn().mockResolvedValue(ATLAS_MANIFEST),
     updateAgentByPath: vi.fn().mockResolvedValue({ ...ATLAS_MANIFEST, reportsTo: 'J' }),
-    getTeamRoster: vi.fn().mockResolvedValue({ members: [SELF, ATLAS, JUNO] }),
+    getTeamRoster: vi.fn().mockResolvedValue({ members: [self, ATLAS, JUNO] }),
     ...over,
   });
   function Wrapper({ children }: { children: ReactNode }) {
@@ -134,6 +134,38 @@ describe('ReportsToPopover', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('That would make a loop');
     expect(toasts.error).not.toHaveBeenCalled();
+  });
+
+  it('names the owner instead of "You" to someone else reading', async () => {
+    renderPopover({}, { ...SELF, person: { ...SELF.person!, isViewer: false } });
+    const options = await screen.findAllByRole('radio');
+    expect(options[0]).toHaveAccessibleName('Dorian (default)');
+  });
+
+  it('labels each group and moves focus with the arrow keys, without saving', async () => {
+    const transport = renderPopover();
+    const people = await screen.findByRole('group', { name: 'People' });
+    const agents = screen.getByRole('group', { name: 'Agents' });
+    const you = within(people).getByRole('radio');
+    const juno = within(agents).getByRole('radio');
+    // One tab stop: the current choice.
+    expect(you).toHaveAttribute('tabindex', '0');
+    expect(juno).toHaveAttribute('tabindex', '-1');
+
+    you.focus();
+    await userEvent.keyboard('{ArrowDown}');
+    expect(juno).toHaveFocus();
+    expect(juno).toHaveAttribute('tabindex', '0');
+    await userEvent.keyboard('{ArrowDown}');
+    expect(you).toHaveFocus();
+    await userEvent.keyboard('{End}');
+    expect(juno).toHaveFocus();
+    expect(transport.updateAgentByPath).not.toHaveBeenCalled();
+
+    await userEvent.keyboard('{Enter}');
+    await waitFor(() =>
+      expect(transport.updateAgentByPath).toHaveBeenCalledWith('/agents/A', { reportsTo: 'J' })
+    );
   });
 
   it('offers the default back once a manager is set', async () => {

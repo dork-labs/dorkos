@@ -169,6 +169,20 @@ describe('the agent edit path (profile picker route and update_agent)', () => {
     expect(updated.reportsTo).toBe(OWNER);
   });
 
+  it('stores the owner’s canonical id when a write names an owner alias', async () => {
+    const mesh = meshOverDisk();
+    await seed(mesh, manifest('A'));
+    for (const alias of ['install:1', 'owner']) {
+      const updated = await updateAgentManifest({
+        agentPath: paths.A!,
+        body: { reportsTo: alias },
+        meshCore: mesh,
+      });
+      expect(updated.reportsTo).toBe(OWNER);
+      expect((await readManifest(paths.A!))?.reportsTo).toBe(OWNER);
+    }
+  });
+
   it('never writes createdBy', async () => {
     const mesh = meshOverDisk();
     await seed(mesh, manifest('A', { createdBy: OWNER }));

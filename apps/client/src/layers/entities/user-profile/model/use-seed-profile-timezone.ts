@@ -11,10 +11,23 @@
  *
  * @module entities/user-profile/model/use-seed-profile-timezone
  */
-import { useEffect, useRef } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CONFIG_WRITE_MUTATION_KEY, useTransport } from '@/layers/shared/model';
+import { useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTransport } from '@/layers/shared/model';
 import { configKeys, CONFIG_STALE_TIME_MS } from '@/layers/entities/config';
+
+/**
+ * Whether this page load has already tried, successfully or not. Module-level
+ * so a second window component, a remount or a failed write never tries again
+ * before the next load: a server that refuses the field (an older build) gets
+ * one request, not one per render.
+ */
+let attempted = false;
+
+/** Forget that this page load tried. For tests. */
+export function resetTimezoneSeedForTests(): void {
+  attempted = false;
+}
 
 /** The browser's IANA zone, or `null` when it cannot say. */
 export function browserTimeZone(): string | null {
@@ -26,17 +39,17 @@ export function browserTimeZone(): string | null {
 }
 
 /**
- * Seed `profile.timezone` from the browser when it is empty. Mounted once, in
- * the app shell.
+ * Seed `profile.timezone` from the browser when it is empty — missing or
+ * `null`. Mounted once, in the app shell.
  *
  * Runs at most once per page load, and only after the config has been read: an
- * unread config is not an empty one. A failed write stays quiet — no toast for
- * something the person never asked for — and the next load tries again.
+ * unread config is not an empty one. A failed write stays quiet — no toast and
+ * no console line for something the person never asked for — and the next load
+ * tries again.
  */
 export function useSeedProfileTimezone(): void {
   const transport = useTransport();
   const queryClient = useQueryClient();
-  const attempted = useRef(false);
 
   const { data: config, isSuccess } = useQuery({
     queryKey: configKeys.current(),
@@ -44,29 +57,22 @@ export function useSeedProfileTimezone(): void {
     staleTime: CONFIG_STALE_TIME_MS,
   });
 
-  const seed = useMutation({
-    mutationKey: CONFIG_WRITE_MUTATION_KEY,
-    mutationFn: (timezone: string) => transport.updateConfig({ profile: { timezone } }),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: configKeys.all });
-    },
-    meta: { suppressErrorToast: true },
-  });
-  const { mutate } = seed;
-
   const profile = config?.profile;
   useEffect(() => {
-    if (attempted.current || !isSuccess || !profile) return;
-    // Present and set: the person's choice, or an earlier seed. Never overwritten.
-    if (profile.timezone) {
-      attempted.current = true;
+    if (attempted || !isSuccess || !profile) return;
+    // Set: the person's choice, or an earlier seed. Never overwritten.
+    if (profile.timezone != null) {
+      attempted = true;
       return;
     }
-    // An older server's config has no such field; there is nothing to seed.
-    if (!('timezone' in profile)) return;
     const zone = browserTimeZone();
     if (!zone) return;
-    attempted.current = true;
-    mutate(zone);
-  }, [isSuccess, profile, mutate]);
+    attempted = true;
+    // Called directly rather than through a mutation, so a refusal reaches no
+    // app-wide failure handler: nobody asked for this write.
+    transport
+      .updateConfig({ profile: { timezone: zone } })
+      .then(() => queryClient.invalidateQueries({ queryKey: configKeys.all }))
+      .catch(() => {});
+  }, [isSuccess, profile, transport, queryClient]);
 }

@@ -109,7 +109,7 @@ export function ProfileView({
     description: manifest.data?.description ?? null,
     rooms: rooms.data ? { count: rooms.data.rooms.length, rooms: rooms.data.rooms } : null,
     facts,
-    reportsTo: manifest.data ? describeReportsTo(manifest.data, roster).label : null,
+    reportsTo: manifest.data ? describeReportsTo(manifest.data, roster, member).label : null,
   };
 
   // Three ways to have no button, and they are all the same answer: don't draw

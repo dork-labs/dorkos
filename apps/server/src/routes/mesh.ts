@@ -54,11 +54,7 @@ import { setCreditsAllowedForAgent } from '../services/core/cloud/credits-defaul
 import { creditsAgentPatchRefusal } from '../services/core/cloud/credits-model-gate.js';
 import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import { writeAgentManifest } from '../services/core/agent-observation/agent-execution-writes.js';
-import {
-  checkReportsToWrite,
-  recordReportsToChange,
-} from '../services/heartbeats/reports-to-writes.js';
-import { currentCreatorAccountId } from '../services/heartbeats/reports-to.js';
+import { prepareAgentPatch, registrationFields } from '../services/mesh/agent-patch.js';
 
 /**
  * Canonical UUID regex — used to exclude session-ID-shaped subject segments
@@ -382,9 +378,9 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
     try {
       const manifest = await meshCore.registerByPath(
         validatedPath,
-        // `createdBy` is the account making this request, never the body's say
-        // (spec `heartbeats` §4.1). Used only when a new manifest is minted.
-        { ...overrides, ...identity.identity, createdBy: currentCreatorAccountId() },
+        // `createdBy` is the account making this request and `reportsTo` is never
+        // the body's say here (spec `heartbeats` §4.1).
+        registrationFields(overrides, identity.identity),
         approver,
         validatedScanRoot
       );
@@ -617,33 +613,20 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
       });
     }
 
-    // Strip keys that were absent from the request body (defaults filled in by Zod).
-    // PATCH semantics: only update fields explicitly provided by the caller.
-    // Null values signal "clear this field" (undefined can't travel over JSON).
-    const explicitFields = Object.fromEntries(
-      Object.entries(result.data)
-        .filter(([k]) => k in req.body)
-        .map(([k, v]) => [k, v === null ? undefined : v])
-    ) as Partial<AgentManifest>;
+    // Only the keys the caller sent, `null` as "clear", and a reports-to change
+    // checked for loops (spec `heartbeats` §4.1) — see `prepareAgentPatch`.
+    const patch = prepareAgentPatch(meshCore, req.params.id, req.body, result.data);
+    if ('refusal' in patch) return res.status(400).json(patch.refusal);
     // An agent on DorkOS credits may be set only to a model credits serve on
     // its runtime's protocol, the same menu its Model row offers (DOR-2636).
     const modelRefusal = await creditsAgentPatchRefusal(
       req.params.id,
-      explicitFields,
+      patch.fields,
       Object.hasOwn(req.body as object, 'account'),
       meshCore.get(req.params.id)
     );
     if (modelRefusal)
       return res.status(400).json({ error: modelRefusal, code: 'UNSUPPORTED_MODEL' });
-    // Every reports-to chain ends at a person (spec `heartbeats` §4.1): a
-    // manager who does not exist, or one that would close a loop, is refused
-    // here as on the agent's own edit route.
-    const namesReportsTo = Object.hasOwn(req.body as object, 'reportsTo');
-    const reportsToBefore = meshCore.get(req.params.id)?.reportsTo ?? null;
-    if (namesReportsTo) {
-      const refusal = checkReportsToWrite(meshCore, req.params.id, result.data.reportsTo ?? null);
-      if (refusal) return res.status(400).json({ error: refusal.message, code: refusal.code });
-    }
     // ADR-0043: update() is async — writes to disk first, then DB.
     //
     // It REFUSES when the manifest is present but unreadable, rather than
@@ -662,8 +645,10 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
     // Through the observer of outside changes when it names the runtime, model
     // or effort, so this person's change is never reported as one (DOR-2337).
     try {
-      updated = await writeAgentManifest(req.body, meshCore.getProjectPath(req.params.id), () =>
-        meshCore.update(req.params.id, explicitFields)
+      updated = await writeAgentManifest(
+        req.body,
+        meshCore.getProjectPath(req.params.id),
+        async () => patch.recorded(await meshCore.update(req.params.id, patch.fields))
       );
     } catch (err) {
       if (!(err instanceof ManifestUnreadableError)) throw err;
@@ -671,9 +656,6 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
     }
     if (!updated) {
       return res.status(404).json({ error: 'Agent not found' });
-    }
-    if (namesReportsTo) {
-      recordReportsToChange(updated, reportsToBefore, updated.reportsTo ?? null);
     }
     // Only the owner of this DorkOS can put an agent on DorkOS credits
     // (ADR 261001-000811, DOR-2652). The file now says what was asked; the

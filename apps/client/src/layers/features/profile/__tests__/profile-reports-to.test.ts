@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
-import { describeReportsTo, reportsToOptions, selfAccountId } from '../lib/profile-reports-to';
+import { describeReportsTo, reportsToOptions } from '../lib/profile-reports-to';
 
-/** A person row; `self` carries the account id the server attaches. */
-function person(id: string, self: boolean, accountId?: string): TeamMember {
+/** The owner's row, as the server sends it: their account id, and whether they are reading. */
+function person(id: string, self: boolean, accountId?: string, isViewer = true): TeamMember {
   return {
     id,
     kind: 'human',
@@ -12,7 +12,11 @@ function person(id: string, self: boolean, accountId?: string): TeamMember {
     isSelf: self,
     ownerId: null,
     origin: 'local',
-    person: { role: null, lastSeenAt: null, ...(accountId ? { accountId } : {}) },
+    person: {
+      role: null,
+      lastSeenAt: null,
+      ...(accountId ? { accountId, isViewer } : {}),
+    },
   } as TeamMember;
 }
 
@@ -62,6 +66,22 @@ describe('describeReportsTo', () => {
     });
   });
 
+  it('reads every owner alias as the owner', () => {
+    expect(describeReportsTo({ reportsTo: 'install:abc' }, ROSTER)).toMatchObject({
+      label: 'You',
+      accountId: 'acct-1',
+    });
+    expect(describeReportsTo({ reportsTo: 'owner' }, ROSTER).label).toBe('You');
+    expect(describeReportsTo({ createdBy: 'install:abc' }, ROSTER).label).toBe('You (default)');
+  });
+
+  it('names the owner, not "You", to someone else reading', () => {
+    const roster = [person('p1', true, 'acct-1', false), agent('A', 'Atlas')];
+    expect(describeReportsTo({}, roster).label).toBe('Dorian (default)');
+    expect(describeReportsTo({ reportsTo: 'acct-1' }, roster).label).toBe('Dorian');
+    expect(reportsToOptions('A', roster).map((option) => option.label)).toEqual(['Dorian']);
+  });
+
   it('skips a manager the roster no longer has, like the server does', () => {
     expect(describeReportsTo({ reportsTo: 'GONE', createdBy: 'J' }, ROSTER).label).toBe(
       'Juno (default)'
@@ -78,9 +98,8 @@ describe('reportsToOptions', () => {
     ]);
   });
 
-  it('offers no "You" when the roster does not carry your account id', () => {
+  it('offers no person when the roster does not carry the owner’s account id', () => {
     const roster = [person('p1', true), agent('A', 'Atlas')];
-    expect(selfAccountId(roster)).toBeNull();
     expect(reportsToOptions('X', roster).map((option) => option.label)).toEqual(['Atlas']);
   });
 });

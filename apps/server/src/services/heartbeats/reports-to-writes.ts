@@ -66,6 +66,22 @@ export function checkReportsToWrite(
 }
 
 /**
+ * The value to store for a manager a write named: the owner's canonical
+ * account id for any of the owner's aliases, anything else unchanged.
+ *
+ * @param mesh - Where agents are looked up (an agent id is never rewritten).
+ * @param newManagerId - The account id the write named, or `null`.
+ */
+export function canonicalReportsTo(
+  mesh: Partial<ReportsToMesh> | undefined,
+  newManagerId: string | null
+): string | null {
+  if (newManagerId === null) return null;
+  const get = mesh?.get ? mesh.get.bind(mesh) : () => undefined;
+  return createReportsToChain({ get }).canonical(newManagerId);
+}
+
+/**
  * Record that an agent's manager changed (`agent.reports_to_changed`), as the
  * person or agent of the current audit scope. Nothing is recorded when the
  * value did not move.

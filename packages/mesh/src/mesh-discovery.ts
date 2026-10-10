@@ -476,7 +476,8 @@ export async function register(
     effort: overrides?.effort,
     // Written once, here, and only for a manifest this call mints: an adopted
     // one returned above keeps whatever its file says (spec `heartbeats` §4.1).
-    ...(overrides?.reportsTo ? { reportsTo: overrides.reportsTo } : {}),
+    // `reportsTo` is never minted: it is set through a write surface that
+    // refuses a loop.
     ...(overrides?.createdBy ? { createdBy: overrides.createdBy } : {}),
     mcpServers: [],
     workspace: overrides?.workspace ?? { mode: 'home' },
@@ -556,7 +557,6 @@ export async function registerByPath(
     model: partial.model,
     effort: partial.effort,
     // See `register()` above — written once, only on a manifest minted here.
-    ...(partial.reportsTo ? { reportsTo: partial.reportsTo } : {}),
     ...(partial.createdBy ? { createdBy: partial.createdBy } : {}),
     mcpServers: [],
     workspace: partial.workspace ?? { mode: 'home' },

@@ -96,6 +96,27 @@ function problemWith(draft: HoursDraft): string | null {
 }
 
 /**
+ * What `away` a save writes.
+ *
+ * Untouched unless the "Away until" field changed: the stored value can say
+ * more than the field shows (a note, "until further notice", a time other than
+ * midnight), and a save about your hours must not rewrite it. A new date keeps
+ * the note; clearing the field clears the whole thing.
+ *
+ * @param sent - The draft being saved.
+ * @param seed - The draft the stored profile read as.
+ * @param stored - The stored `away`.
+ */
+function awayToSave(sent: HoursDraft, seed: HoursDraft, stored: Away | null): Away | null {
+  if (sent.awayUntil === seed.awayUntil) return stored;
+  if (!sent.awayUntil) return null;
+  return {
+    ...stored,
+    until: zonedInstant(sent.awayUntil, '00:00', sent.timezone).toISOString(),
+  };
+}
+
+/**
  * Edit your time zone, working days and times, and when you are back.
  *
  * Follows the other profile fields: a local draft seeded from the server and
@@ -134,9 +155,7 @@ export function ProfileHoursField() {
         start: sent.start,
         end: sent.end,
       },
-      away: sent.awayUntil
-        ? { until: zonedInstant(sent.awayUntil, '00:00', sent.timezone).toISOString() }
-        : null,
+      away: awayToSave(sent, seed, away),
     })
       .then(() => {
         setStatus('idle');

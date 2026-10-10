@@ -110,6 +110,18 @@ export class ReportsToChain {
   }
 
   /**
+   * The id to STORE for a manager: an agent's mesh id as given, and for a
+   * person their canonical account id — so a write naming the owner by an
+   * alias (`owner`, `install:<id>`) stores the one id the owner is known by.
+   * An id that names nobody comes back unchanged.
+   *
+   * @param id - The account id a write named.
+   */
+  canonical(id: string): string {
+    return this.lookup(id, 'reportsTo')?.accountId ?? id;
+  }
+
+  /**
    * Who `agentId` reports to: its `reportsTo`, else its creator, else the owner
    * (canon §9.2). A manager that no longer exists is skipped. An agent that
    * names itself is read as unset.

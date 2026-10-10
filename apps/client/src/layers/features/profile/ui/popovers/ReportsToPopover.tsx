@@ -2,12 +2,13 @@
  * Reports to — who gets an agent's report and its escalations (spec
  * `heartbeats` §4.3, canon P4).
  *
- * People first (today, you), then every other agent. With nothing set, the
+ * People first (today, the owner: "You" to the owner), then every other agent. With nothing set, the
  * agent reports to whoever created it, else to you, and the list marks that
  * choice as the default.
  *
  * @module features/profile/ui/popovers/ReportsToPopover
  */
+import { useId, useRef, type KeyboardEvent } from 'react';
 import { Check } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import { IdentityAvatar, PRESS_ROW, Skeleton } from '@/layers/shared/ui';
@@ -31,12 +32,15 @@ const LABEL_CLASS = 'text-muted-foreground text-3xs font-medium tracking-wider u
 function OptionRow({
   option,
   selected,
+  focusable,
   isDefault,
   disabled,
   onPick,
 }: {
   option: ReportsToOption;
   selected: boolean;
+  /** The one option Tab lands on (roving tabindex). */
+  focusable: boolean;
   isDefault: boolean;
   disabled: boolean;
   onPick: () => void;
@@ -47,6 +51,7 @@ function OptionRow({
       type="button"
       role="radio"
       aria-checked={selected}
+      tabIndex={focusable ? 0 : -1}
       disabled={disabled}
       onClick={onPick}
       className={cn(
@@ -88,6 +93,9 @@ function OptionRow({
  */
 export function ReportsToPopover({ member }: ProfilePickContentProps) {
   const mounted = useMountedRef();
+  const groupRef = useRef<HTMLDivElement>(null);
+  const peopleLabel = useId();
+  const agentsLabel = useId();
   const { agent, isPending, isSaving, error, update } = useProfileAgent(member, {
     errorLabel: 'Couldn’t change who this agent reports to',
     isShownInline: (failure) =>
@@ -103,21 +111,52 @@ export function ReportsToPopover({ member }: ProfilePickContentProps) {
   }
 
   const members = roster.data?.members ?? [];
-  const current = describeReportsTo(agent, members);
-  const options = reportsToOptions(agent.id, members);
+  const current = describeReportsTo(agent, members, member);
+  const options = reportsToOptions(agent.id, members, member);
+  // Tab lands on the current choice, or the first one when none matches.
+  const focusId = options.some((option) => option.accountId === current.accountId)
+    ? current.accountId
+    : (options[0]?.accountId ?? null);
+
+  /**
+   * Arrow keys move between choices, wrapping; Home and End jump. They move
+   * focus without choosing, because a choice saves: Space or Enter picks.
+   */
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const radios = Array.from(
+      groupRef.current?.querySelectorAll<HTMLButtonElement>('[role="radio"]') ?? []
+    );
+    const at = radios.indexOf(document.activeElement as HTMLButtonElement);
+    const next = {
+      ArrowDown: at + 1,
+      ArrowRight: at + 1,
+      ArrowUp: at - 1,
+      ArrowLeft: at - 1,
+      Home: 0,
+      End: radios.length - 1,
+    }[event.key];
+    if (next === undefined || radios.length === 0) return;
+    event.preventDefault();
+    const target = radios[(next + radios.length) % radios.length];
+    radios.forEach((radio) => (radio.tabIndex = radio === target ? 0 : -1));
+    target?.focus();
+  };
   const people = options.filter((option) => option.kind === 'person');
   const agents = options.filter((option) => option.kind === 'agent');
   const cycle = error?.code === CYCLE_CODE ? error.message : null;
 
-  const group = (label: string, list: ReportsToOption[]) =>
+  const group = (label: string, labelId: string, list: ReportsToOption[]) =>
     list.length > 0 && (
-      <div className="space-y-0.5">
-        <div className={cn(LABEL_CLASS, 'px-1.5')}>{label}</div>
+      <div role="group" aria-labelledby={labelId} className="space-y-0.5">
+        <div id={labelId} className={cn(LABEL_CLASS, 'px-1.5')}>
+          {label}
+        </div>
         {list.map((option) => (
           <OptionRow
             key={option.accountId}
             option={option}
             selected={current.accountId === option.accountId}
+            focusable={focusId === option.accountId}
             isDefault={current.isDefault && current.accountId === option.accountId}
             disabled={isSaving}
             onPick={() => {
@@ -130,9 +169,15 @@ export function ReportsToPopover({ member }: ProfilePickContentProps) {
 
   return (
     <div className="space-y-3 p-1" data-slot="profile-reports-to">
-      <div role="radiogroup" aria-label="Reports to" className="max-h-72 space-y-2 overflow-y-auto">
-        {group('People', people)}
-        {group('Agents', agents)}
+      <div
+        ref={groupRef}
+        role="radiogroup"
+        aria-label="Reports to"
+        onKeyDown={onKeyDown}
+        className="max-h-72 space-y-2 overflow-y-auto"
+      >
+        {group('People', peopleLabel, people)}
+        {group('Agents', agentsLabel, agents)}
       </div>
       {cycle && (
         <p role="alert" className="text-status-error px-1.5 text-xs">

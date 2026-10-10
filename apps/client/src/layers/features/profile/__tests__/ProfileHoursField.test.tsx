@@ -88,6 +88,44 @@ describe('ProfileHoursField', () => {
     );
   });
 
+  it('leaves a stored away alone when only the days change', async () => {
+    // "Until further notice" with a note shows as an empty date field; saving
+    // the hours must not read that as "not away".
+    const away = { until: null, note: 'On holiday' };
+    const transport = renderField({ ...STORED, away });
+    await waitFor(() => expect(screen.getByLabelText('Start')).toHaveValue('08:30'));
+
+    await userEvent.click(screen.getByRole('button', { name: 'Friday' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(transport.updateConfig).toHaveBeenCalled());
+    const sent = vi.mocked(transport.updateConfig).mock.calls[0]![0] as {
+      profile: { away: unknown };
+    };
+    expect(sent.profile.away).toEqual(away);
+  });
+
+  it('keeps the note and a non-midnight time unless the date changes', async () => {
+    const away = { until: '2026-10-20T15:30:00.000Z', note: 'Offsite' };
+    const transport = renderField({ ...STORED, away });
+    await waitFor(() => expect(screen.getByLabelText('Away until')).toHaveValue('2026-10-20'));
+    await userEvent.click(screen.getByRole('button', { name: 'Friday' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(transport.updateConfig).toHaveBeenCalledTimes(1));
+    expect(
+      (vi.mocked(transport.updateConfig).mock.calls[0]![0] as { profile: { away: unknown } })
+        .profile.away
+    ).toEqual(away);
+
+    fireEvent.change(screen.getByLabelText('Away until'), { target: { value: '2026-10-22' } });
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(transport.updateConfig).toHaveBeenCalledTimes(2));
+    expect(
+      (vi.mocked(transport.updateConfig).mock.calls[1]![0] as { profile: { away: unknown } })
+        .profile.away
+    ).toEqual({ until: '2026-10-21T22:00:00.000Z', note: 'Offsite' });
+  });
+
   it('clears away-until', async () => {
     renderField({ ...STORED, away: { until: '2026-10-19T22:00:00.000Z' } });
     await waitFor(() => expect(screen.getByLabelText('Away until')).toHaveValue('2026-10-20'));

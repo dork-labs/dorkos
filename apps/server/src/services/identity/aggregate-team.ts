@@ -47,6 +47,7 @@ import type { DisplayNameSource } from '@dorkos/shared/config-schema';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { logger } from '../../lib/logger.js';
 import { currentAuditActor } from '../audit/audit-context.js';
+import { auditTrail } from '../audit/audit-trail.js';
 import {
   authorOrigin,
   isExternalNaturalKey,
@@ -368,10 +369,13 @@ interface OperatorRowFacts {
    */
   nameSuggestedBy: string | null | undefined;
   /**
-   * The viewer's own account id, when the viewer is a person — the id an
-   * agent's `reportsTo` names them by (spec `heartbeats` §4.1).
+   * The owner's canonical account id — the id an agent's `reportsTo` names
+   * them by (spec `heartbeats` §4.1) — or `undefined` before the audit trail
+   * starts.
    */
   accountId: string | undefined;
+  /** Whether the person reading the roster is the owner. */
+  isViewer: boolean;
 }
 
 /**
@@ -418,14 +422,16 @@ function nameSuggestedBy(
 }
 
 /**
- * The account id of the person reading the roster, from the request's audit
- * scope: the owner at the app, or a signed-in person. An agent reading the
- * roster gets none, because the field names the viewer and an agent is not a
- * person row.
+ * The owner's account id as the audit log keys them, and whether the person
+ * reading the roster (the request's audit scope) is that owner. An agent, or
+ * another signed-in person, is not; a request with no scope (a test, a script)
+ * is read as the owner at their own computer.
  */
-function viewerAccountId(): string | undefined {
+function ownerIdentity(): { accountId: string | undefined; isViewer: boolean } {
+  const accountId = auditTrail()?.accounts.owner().accountId;
   const actor = currentAuditActor()?.actor;
-  return actor?.kind === 'person' ? actor.accountId : undefined;
+  if (!actor) return { accountId, isViewer: true };
+  return { accountId, isViewer: actor.kind === 'person' && actor.accountId === accountId };
 }
 
 /**
@@ -481,6 +487,7 @@ function personRow(
         ? { nameSuggestedBy: operator.nameSuggestedBy }
         : {}),
       ...(isSelf && operator.accountId ? { accountId: operator.accountId } : {}),
+      ...(isSelf ? { isViewer: operator.isViewer } : {}),
       lastSeenAt: isSelf ? now : null,
       // Only for somebody on a platform outside this machine, because only such
       // a row can be claimed (DOR-1778) — a local person's row is either the
@@ -691,7 +698,7 @@ export async function aggregateTeamRoster(sources: TeamRosterSources): Promise<T
     name: operator.displayName,
     email: operator.email,
     nameSuggestedBy: nameSuggestedBy(configNameSource, operator.nameRung),
-    accountId: viewerAccountId(),
+    ...ownerIdentity(),
   };
   const personRows = people.value.map((record) =>
     personRow(record, record.id === self?.id, operatorRowFacts, now, account?.id ?? null)

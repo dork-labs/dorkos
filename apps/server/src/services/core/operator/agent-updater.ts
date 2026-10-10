@@ -37,6 +37,7 @@ import {
   NESTED_AGENT_FIELDS,
 } from './agent-write-policy.js';
 import {
+  canonicalReportsTo,
   checkReportsToWrite,
   recordReportsToChange,
   type ReportsToMesh,
@@ -320,6 +321,7 @@ export async function updateAgentManifest(opts: {
   if ('reportsTo' in rawBody) {
     const refusal = checkReportsToWrite(meshCore, existing.id, parsed.data.reportsTo ?? null);
     if (refusal) throw new AgentUpdateError(refusal.code, refusal.message);
+    parsed.data.reportsTo = canonicalReportsTo(meshCore, parsed.data.reportsTo ?? null);
   }
 
   // An agent on DorkOS credits names a model credits serve (DOR-2636), on this

@@ -281,6 +281,26 @@ describe('Mesh routes', () => {
       );
     });
 
+    it('never takes reportsTo or createdBy from the body (DOR-2788)', async () => {
+      // reportsTo is set only through a write surface that refuses a loop, and
+      // createdBy is the account making the request.
+      meshCore.registerByPath.mockResolvedValue(MOCK_MANIFEST);
+      await request(fixtureServer)
+        .post('/api/mesh/agents')
+        .send({
+          path: '/home/user/project',
+          overrides: {
+            name: 'test-agent',
+            runtime: 'claude-code',
+            reportsTo: 'agent-2',
+            createdBy: 'forged',
+          },
+        });
+      const fields = meshCore.registerByPath.mock.calls[0]?.[1] as Record<string, unknown>;
+      expect(fields).not.toHaveProperty('reportsTo');
+      expect(fields.createdBy).not.toBe('forged');
+    });
+
     // DOR-2054. This route is open to agents by its own comment, and it handed
     // `overrides` to `registerByPath` untouched: a display-style name became the
     // immutable slug, and a colour that is not a colour was written to disk.

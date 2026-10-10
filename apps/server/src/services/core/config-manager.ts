@@ -4969,7 +4969,7 @@ export const CONFIG_MIGRATIONS = {
   // Disjoint from every other key here: it rewrites two `rooms` leaves, and
   // only when each still holds the old shipped default.
   '0.103.0': raiseEngagedWindowDefaults,
-  // v0.101.0 is the newest tag and 0.104.0 is claimed by work in flight, so
+  // v0.103.0 is the newest tag and 0.104.0 is claimed by work in flight, so
   // this opens 0.105.0. Frozen from merge, for the reason `'0.60.0'` above
   // states; anything further opens `'0.106.0'`.
   //

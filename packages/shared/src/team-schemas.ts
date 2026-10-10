@@ -230,11 +230,18 @@ export const TeamPersonFactsSchema = z
      * by (spec `heartbeats` §4.1) — what an agent's `reportsTo` holds when it
      * reports to them.
      *
-     * Present ONLY on the viewer's own row, like `email`, and only when the
-     * viewer is a person: it is the id a client needs to say "reports to you",
-     * and nobody else's.
+     * Present ONLY on the owner's row (the one `isSelf` marks): the owner is
+     * the one person the chain knows today, and the default end of every
+     * chain. More people get theirs with DOR-2743.
      */
     accountId: z.string().min(1).optional(),
+    /**
+     * Whether the person reading the roster IS this person. Present only on the
+     * owner's row: `true` when the owner is the viewer (login off, or signed in
+     * as the owner), `false` for another signed-in person or an agent. A client
+     * says "You" only when this is `true`.
+     */
+    isViewer: z.boolean().optional(),
   })
   .openapi('TeamPersonFacts');
 
