@@ -1,4 +1,5 @@
 import type { PlaygroundSection } from '../playground-registry';
+import { APP_TABS_SECTIONS } from './app-tabs-sections';
 
 /**
  * Component sections from ComponentsPage.
@@ -173,50 +174,7 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
     category: 'Navigation',
     keywords: ['nav', 'sidebar', 'settings', 'panel', 'layout', 'menu', 'item'],
   },
-  {
-    id: 'apptabstrip',
-    title: 'AppTabStrip',
-    page: 'components',
-    category: 'Navigation',
-    keywords: ['tab', 'tabs', 'strip', 'window', 'titlebar', 'close', 'new tab', 'session'],
-  },
-  // TabStripInteractionsShowcases
-  {
-    id: 'tab-strip-interactions',
-    title: 'Tab strip interactions',
-    page: 'components',
-    category: 'Navigation',
-    keywords: [
-      'tab',
-      'tabs',
-      'pin',
-      'pinned',
-      'duplicate',
-      'copy link',
-      'close others',
-      'drag',
-      'reorder',
-      'context menu',
-    ],
-  },
-  // TabIdentityShowcases
-  {
-    id: 'tab-identity',
-    title: 'Tab identity',
-    page: 'components',
-    category: 'Navigation',
-    keywords: [
-      'tab',
-      'identity',
-      'status',
-      'hover card',
-      'window title',
-      'paused',
-      'needs you',
-      'unread',
-      'smart names',
-    ],
-  },
+  ...APP_TABS_SECTIONS,
   // SidebarShowcases
   {
     id: 'sidebarrow',
