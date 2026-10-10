@@ -30,8 +30,10 @@
  *
  * @module services/runtimes/claude-code/sessions/pump-launch
  */
+import nodePath from 'node:path';
 import { query, type Options, type Query } from '@anthropic-ai/claude-agent-sdk';
-import type { StreamEvent } from '@dorkos/shared/types';
+import type { QueuedWaitingOn, StreamEvent } from '@dorkos/shared/types';
+import { SESSIONS } from '../../../../config/constants.js';
 import { logger } from '../../../../lib/logger.js';
 import type { AgentSession } from '../agent-types.js';
 import { fireLaunchProbes } from '../messaging/launch-probes.js';
@@ -42,7 +44,12 @@ import {
   prepareDispatch,
   type LiveChangeOptions,
 } from './launch-live-settings.js';
-import type { PumpControlQuery, PumpLauncher, PumpQuery } from './session-pump-contract.js';
+import type {
+  PumpControlQuery,
+  PumpLauncher,
+  PumpQuery,
+  Quietness,
+} from './session-pump-contract.js';
 import { createTrackedSpawn } from './tracked-spawn.js';
 import { sharedWarmProcessLedger } from './warm-process-ledger.js';
 
@@ -171,5 +178,29 @@ export function decideProcessReuse(
   return {
     action: 'adjust',
     apply: async (control) => (await applyLiveChanges(control, decision, options)).fingerprint,
+  };
+}
+
+/**
+ * What a held message shows the person: what is running, and what the restart
+ * is for (spec `warm-process-lifecycle` D2a, DOR-2065).
+ *
+ * @param busy - What the process is doing
+ * @param changed - The pins that moved
+ * @param effectiveCwd - Where the message would run
+ */
+export function waitingOnFor(
+  busy: Extract<Quietness, { quiet: false }>,
+  changed: readonly string[],
+  effectiveCwd: string
+): QueuedWaitingOn {
+  return {
+    reason: 'background-work',
+    holding: { agents: busy.holding.agents, shells: busy.shells, other: busy.holding.other },
+    because: busy.because,
+    pins: [...changed],
+    ...(changed.includes('cwd') ? { targetFolderName: nodePath.basename(effectiveCwd) } : {}),
+    since: busy.busySince,
+    releaseAt: busy.busySince + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS,
   };
 }

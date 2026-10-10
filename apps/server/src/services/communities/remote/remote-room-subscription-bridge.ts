@@ -10,6 +10,7 @@ import type { RoomService } from '../../rooms/room-service.js';
 import type { CommunityAgentEnrollmentStore } from './agent-enrollment-store.js';
 import type { CommunityOutboxStore } from './community-outbox-store.js';
 import { RemoteMirrorStore, type MirrorRoomInput, type NativeMirrorEntry } from './mirror-store.js';
+import type { RemoteWakeGate } from './wake/wake-policy.js';
 
 /** One native entry after the adapter has retained its wire sequence and author kind. */
 export interface RemoteLiveEntry {
@@ -79,6 +80,7 @@ export interface CommunityOutboxInFlightAborter {
 /** Server-only bridge from a native remote stream into the existing room dispatcher. */
 export class RemoteRoomSubscriptionBridge {
   private readonly dispatchesSinceBoot = new Map<string, number>();
+  private wakeGate: RemoteWakeGate | undefined;
 
   constructor(
     private readonly mirrors: RemoteMirrorStore,
@@ -97,6 +99,17 @@ export class RemoteRoomSubscriptionBridge {
      */
     private readonly dispatchEnabled: () => boolean = () => true
   ) {}
+
+  /**
+   * Hold every space message to the owner's "who may wake my agents" setting (spec
+   * `official-community-space` D9). Set once at boot, beside construction; a bridge with no
+   * gate wakes on any member's mention, which was the only behaviour before the setting existed.
+   *
+   * @param gate - Answers whether one author may wake this owner's agents in one space.
+   */
+  useWakeGate(gate: RemoteWakeGate): void {
+    this.wakeGate = gate;
+  }
 
   /**
    * Consume native classified stream frames. Snapshots and gap-free replay are
@@ -183,6 +196,14 @@ export class RemoteRoomSubscriptionBridge {
       return;
     }
     if (event.author.kind !== 'human') return;
+    // Before the claim, so a message the owner's setting holds back is never recorded as
+    // dispatched and stays ordinary history (spec `official-community-space` D9).
+    if (
+      this.wakeGate &&
+      !this.wakeGate.wakes(room.communityRef, room.ownerAuthorId, event.author.memberId)
+    ) {
+      return;
+    }
     if (
       opts.reconnect &&
       !this.isFreshReconnect(event.serverCreatedAt, opts.wasActiveBeforeDisconnect)

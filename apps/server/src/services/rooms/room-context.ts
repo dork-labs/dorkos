@@ -968,7 +968,7 @@ function frameOf(room: Room, framing: BridgedRoomFraming | null): RoomContextDat
     ...(room.topic ? { topic: room.topic } : {}),
     bridged: framing !== null,
     ...(framing?.visibility ? { visibility: framing.visibility } : {}),
-    ...(framing ? { formatting: framing.formatting } : {}),
+    ...(framing?.formatting ? { formatting: framing.formatting } : {}),
   };
 }
 

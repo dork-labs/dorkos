@@ -27,8 +27,12 @@ export interface BridgedRoomFraming {
    * is nothing partial to report for one (spec §8, "a DM has no badge").
    */
   visibility: 'partial' | 'full' | null;
-  /** Guidance only — the outbound adapter remains the enforcement backstop. */
-  formatting: { instructions: string; maxLength: number };
+  /**
+   * Guidance only — the outbound adapter remains the enforcement backstop.
+   * Absent for a room with no far-end platform rules to follow: a space's
+   * channel, whose messages are DorkOS markdown on both sides.
+   */
+  formatting?: { instructions: string; maxLength: number };
 }
 
 /**

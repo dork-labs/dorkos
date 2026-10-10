@@ -144,7 +144,6 @@
  * @module services/runtimes/claude-code/sessions/persistent-dispatch
  */
 import { randomUUID } from 'node:crypto';
-import nodePath from 'node:path';
 import type { StreamEvent } from '@dorkos/shared/types';
 import type {
   DeliverIntoTurnOpts,
@@ -176,7 +175,8 @@ import {
 } from './launch-fingerprint.js';
 import { extensionSkillPluginsDir } from '@dorkos/harness';
 import { resolveDorkHome } from '../../../../lib/dork-home.js';
-import { createPumpLauncher, decideProcessReuse, type PumpLaunchPlan } from './pump-launch.js';
+import { createPumpLauncher, waitingOnFor, type PumpLaunchPlan } from './pump-launch.js';
+import { carryCeiling, ceilingMissed, decideCeilingedReuse } from '../warm-ceiling.js';
 import {
   conversationTokens,
   pluginReloadIsWorthHolding,
@@ -186,7 +186,6 @@ import { streamTurnWindow } from './pump-turn-stream.js';
 import { SessionCrashLoopError, SessionCrashRecovery } from './session-crash-recovery.js';
 import { isWaitingOnPerson } from './session-store.js';
 import { PumpRefusedError, type Quietness } from './session-pump-contract.js';
-import type { QueuedWaitingOn } from '@dorkos/shared/types';
 import type { Query, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { SessionPump } from './session-pump.js';
 import type { SessionPumpRegistry } from './session-pump-registry.js';
@@ -342,30 +341,6 @@ function resetPerTurnState(session: AgentSession): void {
   for (const spent of [session.activeQuery, session.lastQuery]) {
     if (spent !== undefined) session.stoppedQueries?.delete(spent);
   }
-}
-
-/**
- * What a held message shows the person: what is running, and what the restart
- * is for (spec `warm-process-lifecycle` D2a, DOR-2065).
- *
- * @param busy - What the process is doing
- * @param changed - The pins that moved
- * @param effectiveCwd - Where the message would run
- */
-function waitingOnFor(
-  busy: Extract<Quietness, { quiet: false }>,
-  changed: readonly string[],
-  effectiveCwd: string
-): QueuedWaitingOn {
-  return {
-    reason: 'background-work',
-    holding: { agents: busy.holding.agents, shells: busy.shells, other: busy.holding.other },
-    because: busy.because,
-    pins: [...changed],
-    ...(changed.includes('cwd') ? { targetFolderName: nodePath.basename(effectiveCwd) } : {}),
-    since: busy.busySince,
-    releaseAt: busy.busySince + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS,
-  };
 }
 
 /**
@@ -812,7 +787,7 @@ export class PersistentDispatch {
         );
       }
     }
-    const reuse = decideProcessReuse(bundle.fingerprint, compared, {
+    const reuse = decideCeilingedReuse(session, bundle.pump, bundle.fingerprint, compared, {
       holdPluginReloadWhenCacheWarm: pluginReloadIsWorthHolding(contextTokens),
       sessionId,
       ...(contextTokens !== undefined ? { contextTokens } : {}),
@@ -882,6 +857,11 @@ export class PersistentDispatch {
           // setter that went unanswered inside its bound leaves its pin where it
           // was, and the next dispatch has to see that (DOR-1301).
           bundle.fingerprint = await reuse.apply(control);
+          // A ceiling the process did not take is not run on (`warm-ceiling.ts`).
+          if (ceilingMissed(sessionId, session, bundle.fingerprint, plan.fingerprint)) {
+            await this.replaceProcess(key);
+            bundle = this.acquire(key, session, opts);
+          }
         } catch (err) {
           if (err instanceof AccountPinViolationError) {
             logger.error('[persistent-dispatch] refused a cross-account dispatch', {
@@ -901,6 +881,8 @@ export class PersistentDispatch {
     }
 
     bundle.plan = plan;
+    // What the tool gate holds background work to from here (`warm-ceiling.ts`).
+    session.backgroundPermissionCeiling = carryCeiling(session, bundle.pump);
     // A credits swap is saved only once its notice has gone out (DOR-2636).
     yield* deliverStatusEvents(plan);
 

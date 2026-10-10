@@ -35,6 +35,7 @@ const attentionMock = vi.hoisted(() => ({
 vi.mock('../../services/communities/remote/state.js', () => ({
   getRemoteCommunityAdapter: attentionMock.adapter,
   getRemotePairingService: vi.fn(),
+  getRemoteWakePolicy: vi.fn(),
 }));
 
 import { createCommunityConnectionsRouter } from '../community-connections.js';
@@ -49,6 +50,9 @@ import {
 } from '../../services/communities/remote/pairing-service.js';
 import { RemoteConnectionAuthorizationError } from '../../services/communities/remote/connection-store.js';
 import { PinnedHttpError } from '../../services/communities/remote/pinned-origin.js';
+import { RemoteWakePolicy } from '../../services/communities/remote/wake/wake-policy.js';
+import { UserConfigSchema } from '@dorkos/shared/config-schema';
+import { z } from 'zod';
 import {
   CommunityAttentionCache,
   COMMUNITY_ATTENTION_BUDGET_MS,
@@ -960,5 +964,111 @@ describe('attention within a budget, with last confirmed counts as the fallback'
       unreadCount: 4,
       mentionCount: 1,
     });
+  });
+});
+
+// Spec `official-community-space` D9. Purpose: who may wake an agent in a space is the owner's
+// call alone. Each case fails if the route lets an agent's identity, another local person, or
+// a malformed body change it, or if the setting ever becomes a config key an agent's
+// `config_patch` could reach.
+describe('who may wake agents in a space is the owner’s call', () => {
+  let wakeDirectory: string;
+  let wakeServer: Server;
+  let policy: RemoteWakePolicy;
+  const wakeRef = CommunityRefSchema.parse('remote_wake_a');
+
+  beforeAll(async () => {
+    wakeDirectory = await mkdtemp(join(tmpdir(), 'community-wake-'));
+    const store = new RemoteConnectionStore(wakeDirectory);
+    await store.addPending(
+      {
+        ref: wakeRef,
+        ownerKey: 'author-a',
+        remoteCommunityId: 'remote-community',
+        label: 'Makers',
+        pinnedOrigin: 'https://community.example',
+        pairingId: 'pairing-wake',
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      },
+      'wake-verifier'
+    );
+    await store.complete(wakeRef, 'author-a', 'remote-owner', 'token', {
+      state: 'verified',
+      effective: { read: true, post: true, enrollAgent: true, stream: true },
+      lastKnown: {
+        lifecycle: 'active',
+        capabilities: { read: true, post: true, enrollAgent: true, stream: true },
+        verifiedAt: '2026-10-06T00:00:00.000Z',
+      },
+    });
+    policy = new RemoteWakePolicy(store);
+    const wakeApp = express();
+    wakeApp.use(express.json());
+    wakeApp.use(
+      '/api/community-connections',
+      createCommunityConnectionsRouter(
+        new RemoteCommunityPairingService(store),
+        navigation as never,
+        undefined,
+        undefined,
+        undefined,
+        policy
+      )
+    );
+    wakeServer = wakeApp.listen(0, '127.0.0.1');
+    await once(wakeServer, 'listening');
+  });
+  afterAll(async () => {
+    wakeServer.closeAllConnections();
+    await new Promise<void>((resolve) => wakeServer.close(() => resolve()));
+    await rm(wakeDirectory, { recursive: true, force: true });
+  });
+
+  const path = `/api/community-connections/${wakeRef}/wake-agents-from`;
+
+  it('lets the owner read and change it', async () => {
+    const before = await request(wakeServer).get(path).set('x-test-author', 'author-a');
+    expect(before.status).toBe(200);
+    expect(before.body).toEqual({ wakeAgentsFrom: 'members' });
+
+    const changed = await request(wakeServer)
+      .put(path)
+      .set('x-test-author', 'author-a')
+      .send({ wakeAgentsFrom: 'me' });
+    expect(changed.status).toBe(200);
+    expect(await policy.get(wakeRef, 'author-a')).toBe('me');
+  });
+
+  it('refuses an agent, and the setting stays where the owner put it', async () => {
+    await policy.set(wakeRef, 'author-a', 'me');
+    const refused = await request(wakeServer)
+      .put(path)
+      .set('x-dorkos-agent', 'agent-token')
+      .send({ wakeAgentsFrom: 'members' });
+    expect(refused.status).toBe(403);
+    expect(await policy.get(wakeRef, 'author-a')).toBe('me');
+  });
+
+  it('refuses anyone on this machine who is not the owner', async () => {
+    await policy.set(wakeRef, 'author-a', 'me');
+    const refused = await request(wakeServer)
+      .put(path)
+      .set('x-test-author', 'author-b')
+      .send({ wakeAgentsFrom: 'members' });
+    expect(refused.status).toBe(403);
+    expect(await policy.get(wakeRef, 'author-a')).toBe('me');
+  });
+
+  it('refuses a value that is neither choice', async () => {
+    const refused = await request(wakeServer)
+      .put(path)
+      .set('x-test-author', 'author-a')
+      .send({ wakeAgentsFrom: 'everyone' });
+    expect(refused.status).toBe(400);
+  });
+
+  it('is no config key, so no agent’s config_patch can reach it', () => {
+    const schema = JSON.stringify(z.toJSONSchema(UserConfigSchema, { unrepresentable: 'any' }));
+    expect(schema).not.toContain('wakeAgentsFrom');
   });
 });

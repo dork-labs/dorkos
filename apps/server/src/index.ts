@@ -474,6 +474,7 @@ import {
   getRemoteCommunityAdapter,
   getRemoteConnectionStore,
   getRemotePairingService,
+  getRemoteWakePolicy,
   publishRemoteCommunityDeliveryChanges,
   setRemoteCommunityDb,
   setRemoteCommunityDeliveryProjection,
@@ -2019,9 +2020,7 @@ async function start() {
   // Both the worker and native stream lifecycle must remain inert until Mesh
   // has reconciled the on-disk manifest registry for this process boot.
   let meshStartupReconciled = false;
-  const remoteCommunityBridge: { current: RemoteRoomSubscriptionBridge | undefined } = {
-    current: undefined,
-  };
+  const remoteCommunityBridge: { current?: RemoteRoomSubscriptionBridge } = {};
   const {
     service: roomService,
     store: roomStore,
@@ -2086,6 +2085,9 @@ async function start() {
     remoteCommunityRuntime,
     spacesEnabled
   );
+  // Who in each space may wake an agent here (spec `official-community-space` D9). It starts
+  // loading now, long before the streams start below, and wakes nobody until it has.
+  remoteCommunityBridge.current.useWakeGate(getRemoteWakePolicy());
   remoteRedactionSync = new RemoteRedactionSync({
     db,
     mirrors: remoteCommunityRuntime.mirrors,
