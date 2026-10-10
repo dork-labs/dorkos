@@ -46,6 +46,12 @@ import { fileURLToPath } from 'node:url';
 
 const INDEX_PATH = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../index.ts');
 const source = readFileSync(INDEX_PATH, 'utf-8');
+/** Runtime registration, which assigns `relayAgentRuntime`, moved here from `index.ts` (DOR-2821). */
+const RUNTIMES_PATH = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '../startup/runtimes.ts'
+);
+const runtimesSource = readFileSync(RUNTIMES_PATH, 'utf-8');
 
 /**
  * The dependency object literal passed to `new AdapterManager(...)`, from the
@@ -254,7 +260,7 @@ describe('the relay adapter binds every registered runtime, not the default one'
     // A binding assigned on only one path would skip AdapterManager init on the
     // other. The guard now logs an error there rather than passing in silence,
     // but this keeps the mistake from reaching that log at all.
-    const assignments = source.match(/^\s*relayAgentRuntime = /gm) ?? [];
+    const assignments = runtimesSource.match(/^\s*relayAgentRuntime = /gm) ?? [];
     expect(assignments).toHaveLength(2);
   });
 

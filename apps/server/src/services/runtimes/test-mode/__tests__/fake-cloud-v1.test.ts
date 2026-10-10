@@ -157,8 +157,10 @@ describe('the test-mode /v1 Cloud', () => {
     }
   });
 
-  it('index.ts reaches the test-mode Cloud once, through an await import() inside the DORKOS_TEST_RUNTIME branch', () => {
-    const file = fileURLToPath(new URL('../../../../index.ts', import.meta.url));
+  // Runtime registration moved out of `index.ts` into `startup/runtimes.ts`
+  // (DOR-2821); the property is the same, in the file that now holds it.
+  it('startup reaches the test-mode Cloud once, through an await import() inside the DORKOS_TEST_RUNTIME branch', () => {
+    const file = fileURLToPath(new URL('../../../../startup/runtimes.ts', import.meta.url));
     const text = fs.readFileSync(file, 'utf8');
     expect(text.split('compose-test-cloud').length - 1).toBe(1);
 
