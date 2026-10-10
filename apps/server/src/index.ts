@@ -231,6 +231,7 @@ import {
 } from './services/runtimes/claude-code/mcp-server-config.js';
 import { AgentMcpServerService } from './services/mesh/agent-mcp-server-service.js';
 import { AgentMcpOAuthService } from './services/mesh/agent-mcp-oauth-service.js';
+import { warmMcpOAuthTokens } from './services/mesh/warm-mcp-oauth-tokens.js';
 import { resumeAfterMcpSignin } from './services/mesh/mcp-signin-resume.js';
 import { createMcpRevocationWatch } from './services/mesh/mcp-revocation.js';
 import { createMcpOAuthRouter } from './routes/mcp-oauth.js';
@@ -887,39 +888,6 @@ let terminalManager: TerminalManager | undefined;
 // shutdownServices() rather than shutdown(), because the admin restart path runs
 // the former and then spawns a successor that must find the directory free.
 let releaseInstanceLock: (() => void) | undefined;
-
-/**
- * Re-prime the managed-MCP OAuth token cache from disk on boot (DOR-942): for
- * every registered agent's enabled http/sse servers, hand the OAuth engine the
- * `(agentId, serverName, serverUrl)` targets so it can load any stored token and
- * schedule its background refresh. A server with no stored token is skipped by
- * the engine (stays needs-auth). Best-effort per agent — an unreadable manifest
- * for one agent never blocks warming the rest.
- *
- * @param oauth - The managed-MCP OAuth engine to warm.
- * @param service - The managed-server service that lists each agent's servers.
- * @param mesh - The mesh core whose registry enumerates the agents.
- */
-async function warmMcpOAuthTokens(
-  oauth: AgentMcpOAuthService,
-  service: AgentMcpServerService,
-  mesh: MeshCore
-): Promise<void> {
-  const targets: { agentId: string; serverName: string; serverUrl: string }[] = [];
-  for (const agent of mesh.agentRegistry.list()) {
-    try {
-      const servers = await service.list(agent.id);
-      for (const s of servers) {
-        if (s.enabled && s.connection.transport !== 'stdio') {
-          targets.push({ agentId: agent.id, serverName: s.name, serverUrl: s.connection.url });
-        }
-      }
-    } catch {
-      // Unreadable/absent manifest for one agent: skip it, warm the others.
-    }
-  }
-  await oauth.warm(targets);
-}
 
 async function start() {
   /**

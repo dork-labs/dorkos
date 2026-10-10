@@ -44,7 +44,7 @@
     "apps/community/src/schema.ts": 2086,
     "apps/desktop/scripts/smoke-packaged.ts": 641,
     "apps/e2e/capture/config.ts": 562,
-    "apps/server/src/index.ts": 4321,
+    "apps/server/src/index.ts": 4305,
     "apps/server/src/routes/files.ts": 502,
     "apps/server/src/routes/mesh.ts": 512,
     "apps/server/src/routes/relay-adapters.ts": 558,
