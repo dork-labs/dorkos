@@ -460,6 +460,10 @@ gh api repos/{owner}/{repo}/rules/branches/main
 
 **Cause:** YAML and the `ci/` hand files disagree (a new job with no `ci/gates.yaml` entry, a missing `timeout-minutes`, a generated block out of date, a required check that can deadlock). **Fix:** read the step log, which names the gate. `node packages/ci-steward/src/cli.ts census --fix` regenerates the blocks; gates and timeouts are hand edits.
 
+### "File-size ratchet (DOR-2822)" is red in `typecheck`
+
+**Cause:** a file over 500 lines (ESLint's `max-lines` count) grew, a new file passed 500, a file shrank and its entry in `scripts/max-lines/baseline.json` was not lowered, or the baseline was raised against the base. **Fix:** the step names each file and what to do. Move code out of a file that grew or is new; run `pnpm check:max-lines -- --update` to lower entries after a shrink, or to carry an entry to a file's new path after a `git mv`. Never raise an entry: that is the one fix the check refuses.
+
 ### "CI Steward ledger coverage" is red
 
 **Cause:** the PR touches a pipeline path and adds no `ci/ledger/` entry. **Fix:** `node packages/ci-steward/src/cli.ts ledger-new --slug <what-changed>`, fill in the hypothesis, amend it into the commit.
