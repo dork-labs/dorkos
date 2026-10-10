@@ -113,51 +113,65 @@ function refusalMessage(hostname: string | null): string {
 }
 
 /**
+ * Decide whether an `/api` request's `Host` is one this instance answers to,
+ * closing the DNS-rebinding path described in the module doc.
+ *
+ * Shared by the Express middleware below and the Hono chain
+ * (`http/api-chain.ts`), so both refuse the same hosts with the same body and
+ * leave the same log line. Inert when login is on or when
+ * `DORKOS_ALLOW_INSECURE_BIND` is set; both flags are read per request, so
+ * turning login on takes effect without a restart.
+ *
+ * @param host - The RAW `Host` header, never a framework's parsed host name.
+ * @param method - The request method, for the log line.
+ * @param url - The request URL as sent (path and query), for the log line.
+ * @returns The 403 body to answer with, or `null` when the request may pass.
+ */
+export function refuseUntrustedHost(
+  host: string | undefined,
+  method: string,
+  url: string
+): { error: string; code: typeof HOST_NOT_ALLOWED_CODE } | null {
+  // Login on: Better Auth cookies are origin-scoped, so a rebound origin never
+  // presents one and `sessionGate` already turns it away. Read per request so
+  // enabling login takes effect immediately.
+  if (configManager.get('auth')?.enabled === true) return null;
+
+  // The container escape hatch: the surrounding environment owns the boundary.
+  if (env.DORKOS_ALLOW_INSECURE_BIND) return null;
+
+  const hostname = parseHostname(host);
+  const allowed = isHostAllowed({
+    hostname,
+    trustedHosts: parseTrustedHosts(env.DORKOS_TRUSTED_HOSTS),
+    tunnelHost: getTunnelHost(),
+  });
+  if (allowed) return null;
+
+  logger.warn('[HostGuard] Rejected a request with an untrusted Host header', {
+    host: hostname ?? '(missing)',
+    method,
+    path: url,
+  });
+  return { error: refusalMessage(hostname), code: HOST_NOT_ALLOWED_CODE };
+}
+
+/**
  * Express middleware that rejects `/api` requests carrying a `Host` this
- * instance does not answer to, closing the DNS-rebinding path described in the
- * module doc.
+ * instance does not answer to ({@link refuseUntrustedHost}).
  *
  * Mounted at `/api` in `createApp()` ahead of the body parser, so a rejected
- * request is answered before its payload is ever read. Inert when login is on or
- * when `DORKOS_ALLOW_INSECURE_BIND` is set; both flags are read per request, so
- * turning login on takes effect without a restart.
+ * request is answered before its payload is ever read.
  *
  * @param req - The incoming request (its `Host` header is the subject).
  * @param res - The response; a rejection is a 403 with the repo's error shape.
  * @param next - Passes control on when the host is trusted.
  */
 export function hostGuard(req: Request, res: Response, next: NextFunction): void {
-  // Login on: Better Auth cookies are origin-scoped, so a rebound origin never
-  // presents one and `sessionGate` already turns it away. Read per request so
-  // enabling login takes effect immediately.
-  if (configManager.get('auth')?.enabled === true) {
+  const refusal = refuseUntrustedHost(req.headers.host, req.method, req.originalUrl);
+  if (!refusal) {
     next();
     return;
   }
-
-  // The container escape hatch: the surrounding environment owns the boundary.
-  if (env.DORKOS_ALLOW_INSECURE_BIND) {
-    next();
-    return;
-  }
-
-  const hostname = parseHostname(req.headers.host);
-  const allowed = isHostAllowed({
-    hostname,
-    trustedHosts: parseTrustedHosts(env.DORKOS_TRUSTED_HOSTS),
-    tunnelHost: getTunnelHost(),
-  });
-
-  if (allowed) {
-    next();
-    return;
-  }
-
-  logger.warn('[HostGuard] Rejected a request with an untrusted Host header', {
-    host: hostname ?? '(missing)',
-    method: req.method,
-    path: req.originalUrl,
-  });
-
-  res.status(403).json({ error: refusalMessage(hostname), code: HOST_NOT_ALLOWED_CODE });
+  res.status(403).json(refusal);
 }

@@ -49,10 +49,10 @@ import { resolveAgentIdentity } from './middleware/agent-identity.js';
 import { auditActor } from './middleware/audit-actor.js';
 import { auditRequestFallback } from './middleware/audit-request-fallback.js';
 import { getAuth, toNodeHandler, sessionGate } from './services/core/auth/index.js';
-import { type BrowserOriginPolicy, isTrustedBrowserOrigin } from './lib/trusted-origins.js';
-import { resolveBrowserOriginFacts } from './middleware/browser-origin.js';
 import { expressRequestFacts } from './http/request-facts.js';
-import { logger } from './lib/logger.js';
+import { corsAllowsOrigin, corsRefusal, warnOnWildcardCorsOrigin } from './http/cors-policy.js';
+import { createFirstContactMarker } from './http/first-contact.js';
+import { API_JSON_BODY_LIMIT } from './http/request-body.js';
 import { testControlRouter } from './routes/test-control.js';
 import { createMockMcpOAuthRouter } from './routes/mock-mcp-oauth-server.js';
 import { env } from './env.js';
@@ -60,134 +60,25 @@ import { env } from './env.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
- * What the CORS layer asks of the one origin policy
- * (`isTrustedBrowserOrigin` in `lib/trusted-origins.ts`).
- *
- * `allowNoOrigin` keeps server-to-server and `curl` traffic working: a request
- * with no `Origin` is not a browser, and CORS exists to answer browsers.
- *
- * `pairSameOriginWithHost` is the one place a DorkOS surface turns the pairing
- * off. Duplicating it here would refuse the shipped container reached at a NAME
- * — `DORKOS_ALLOW_INSECURE_BIND` makes `hostGuard` stand down without putting
- * that name on any allowlist — turning a working deployment into a blank window.
- *
- * On `/api` that costs nothing: `middleware/host-guard.ts` is mounted twenty
- * lines later and refuses exactly the rebound `Host` the pairing would have.
- * This handler is app-wide, though, so it also answers mounts `hostGuard` never
- * sees — `/a2a`, the static SPA assets — and there the pairing is simply absent
- * rather than relocated. That is not an exploit, and the reason is worth stating
- * rather than glossing: CORS is not a gate. A DNS-rebound page is SAME-ORIGIN to
- * the browser, so it sends no preflight and reads the response whatever this
- * layer answers; refusing it here would withhold a header nobody was waiting on.
- * What actually stops rebinding on those mounts is the mount's own guard — the
- * A2A exposure guard and its auth, and the fact that static assets are the same
- * bytes any visitor may fetch. The surfaces where this layer IS the only origin
- * check — the MCP family, the WebSocket upgrade — pair.
- */
-const CORS_ORIGIN_POLICY: BrowserOriginPolicy = {
-  allowNoOrigin: true,
-  pairSameOriginWithHost: false,
-};
-
-/**
- * Build the CORS middleware.
- *
- * Every decision is delegated to `isTrustedBrowserOrigin`, the single origin
- * policy this repo has (DOR-1711) — the same predicate `middleware/mcp-origin.ts`
- * and the WebSocket upgrade router read. What used to live here as its own
- * branch list now lives there as branches 0-4, and `DORKOS_CORS_ORIGIN` is one
- * of them rather than an early return that replaced the whole policy.
- *
- * That last part is the behaviour change worth naming: setting the variable no
- * longer switches CORS to a bare static allowlist. It adds to the policy, so
- * `localhost` and a live tunnel stay trusted alongside the operator's list. The
- * socket path has always worked that way and says why — "locking the operator
- * out of `localhost` for setting a production allowlist would be an outage, not
- * a boundary" — and while the two disagreed, an operator who set the variable
- * got an app that rendered at `localhost` and could not fetch, which is the
- * silent-outage shape this whole change is about.
- *
- * A `*` is **not** an allowlist and is ignored. The argument that once justified
- * honouring it here — a wildcard `Access-Control-Allow-Origin` is invalid for
- * credentialed requests, so browsers reject it — only covers the credentialed
- * case, and the shipped default posture is `auth.enabled: false`, where the API
- * asks for no credential at all. In that posture a wildcard turns any page the
- * operator visits into a full API client for their DorkOS: it reads sessions,
- * files and diffs cross-origin and POSTs turns back. The operator gets one
- * warning line naming the variable and what to set instead, and the request
- * falls through to the rest of the policy, so an install that reached for `*` to
- * fix a proxy keeps working for every origin that is genuinely its own.
+ * Build the CORS middleware: the `cors` package in its delegate form, every
+ * decision delegated to {@link corsAllowsOrigin} (`http/cors-policy.ts`), the
+ * one rule both chains share.
  *
  * The delegate form (`cors((req, cb) => ...)`) is required because the plain
  * `origin` callback never receives the request, and the policy needs the
  * request's own `Host` and forwarded scheme.
  */
 function buildCors(): express.RequestHandler {
-  // Trimmed, so a value that is whitespace around a wildcard (or whitespace
-  // around nothing) is read as what the operator meant rather than becoming a
-  // one-entry allowlist of `" * "` that matches no origin at all and warns
-  // about nothing. `parseConfiguredOrigins` — which is what the policy itself
-  // reads — trims the same way, so the warning and the decision cannot drift.
-  // eslint-disable-next-line no-restricted-syntax -- DORKOS_CORS_ORIGIN is not in env.ts (optional CORS override, not worth validating)
-  const envOrigin = process.env.DORKOS_CORS_ORIGIN?.trim();
-
-  // A wildcard is no list at all — say so once at boot, then let the policy
-  // decide every request.
-  if (envOrigin === '*') {
-    logger.warn(
-      '[CORS] DORKOS_CORS_ORIGIN="*" is ignored: a wildcard would let any web page ' +
-        'you visit read and write this DorkOS. Set it to the exact origins that need ' +
-        'access instead (comma-separated, e.g. https://dorkos.example.com) and restart.'
-    );
-  }
-
+  warnOnWildcardCorsOrigin();
   return cors<express.Request>((req, done) => {
     done(null, {
       credentials: true,
       origin: (origin, callback) => {
-        // `cors` normalizes an absent header to `undefined`, which is what the
-        // policy's no-Origin branch reads. Everything else — the loopback
-        // origins, a live tunnel, `DORKOS_CORS_ORIGIN`, same-origin — is the
-        // policy's to answer.
-        if (
-          isTrustedBrowserOrigin(
-            resolveBrowserOriginFacts(expressRequestFacts(req), { hostCheckInert: false }),
-            CORS_ORIGIN_POLICY
-          )
-        ) {
-          return callback(null, true);
-        }
-        callback(new Error(`Origin ${origin} not allowed by CORS`));
+        if (corsAllowsOrigin(expressRequestFacts(req))) return callback(null, true);
+        callback(corsRefusal(origin));
       },
     });
   });
-}
-
-/**
- * Build a one-shot `info` marker: the returned function logs `message` the
- * first time it is called and does nothing on every call after that.
- *
- * This closes a diagnostic blind spot that cost a day of an incident.
- * Successful requests are logged at `debug`, so a user's log at the default
- * level contains nothing at all when everything is working — which means it
- * cannot answer the first question a blank window raises: did the cockpit ever
- * reach the server, or is this a server that never came up? One `info` line
- * apiece for the first shell served and the first API call answers it outright,
- * without touching what the request logger does per request.
- *
- * The latch is a closure rather than module state so it is scoped to one
- * Express app — i.e. to one boot, which is what "first" means here — and so a
- * test can prove the once-only behaviour by building two apps.
- *
- * @param message - The line to log, tagged the way `lib/logger.ts` expects.
- */
-function createFirstContactMarker(message: string): () => void {
-  let logged = false;
-  return () => {
-    if (logged) return;
-    logged = true;
-    logger.info(message);
-  };
 }
 
 /** Create and configure the Express application with middleware and routes. */
@@ -296,7 +187,7 @@ export function createApp(options: {
   app.post('/api/relay/webhooks/:adapterId', express.raw({ type: '*/*', limit: '1mb' }));
   // Page envelopes have a smaller wire ceiling than ordinary API requests.
   app.use('/api/canvas/docs', canvasDocJsonParser);
-  app.use(express.json({ limit: '1mb' }));
+  app.use(express.json({ limit: API_JSON_BODY_LIMIT }));
   app.use(requestLogger);
 
   // Session gate — when `config.auth.enabled` is true, require a Better Auth
