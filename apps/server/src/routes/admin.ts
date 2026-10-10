@@ -1,8 +1,7 @@
 import { Router } from 'express';
 import { spawn } from 'child_process';
 import fs from 'fs/promises';
-import rateLimit from 'express-rate-limit';
-import { expressRateLimitKey } from '../middleware/rate-limit-key.js';
+import { expressRateLimit } from '../http/rate-limiter.js';
 import { env } from '../env.js';
 import { ResetTokenStore, RESET_TOKEN_TTL_DESCRIPTION } from '../services/core/auth/reset-token.js';
 
@@ -216,18 +215,17 @@ export function createAdminRouter(deps: AdminDeps): Router {
   // A reset REFUSED for want of a token costs nothing, though. Counted, three
   // blind POSTs would spend the whole budget and lock the operator out of
   // Restart for five minutes — an attack that failed and denied service anyway.
-  // `skipFailedRequests` gives back the count when `requestWasSuccessful` says
+  // `countsWhen` gives back the count when the response says
   // no, and that predicate is narrowed to this router's only 403, the
   // missing/expired/spent-token refusal. Everything else — the 200s that really
-  // do end this process, the 400 on a bad `confirm`, the 429 itself — still
-  // counts, so the ceiling on acting is unchanged.
-  const adminLimiter = rateLimit({
+  // do end this process, the 400 on a bad `confirm` — still counts, so the
+  // ceiling on acting is unchanged.
+  const adminLimiter = expressRateLimit({
     windowMs: 5 * 60 * 1000, // 5 minutes
-    max: 3,
-    keyGenerator: expressRateLimitKey,
+    limit: 3,
+    headers: 'legacy',
     message: { error: 'Too many admin requests. Try again later.' },
-    skipFailedRequests: true,
-    requestWasSuccessful: (_req, res) => res.statusCode !== 403,
+    countsWhen: (_req, res) => res.statusCode !== 403,
   });
 
   // Arming a reset changes nothing and deletes nothing, so it is not spent from
@@ -236,10 +234,10 @@ export function createAdminRouter(deps: AdminDeps): Router {
   // limited on its own so a flood of mints cannot become free work, and it keys
   // through `rateLimitKey` like every other limiter here: a bucket a header can
   // move is not a bucket (DOR-1711).
-  const prepareLimiter = rateLimit({
+  const prepareLimiter = expressRateLimit({
     windowMs: 5 * 60 * 1000, // 5 minutes
-    max: 10,
-    keyGenerator: expressRateLimitKey,
+    limit: 10,
+    headers: 'legacy',
     message: { error: 'Too many admin requests. Try again later.' },
   });
 

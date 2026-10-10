@@ -1,5 +1,5 @@
-import rateLimit, { type RateLimitRequestHandler } from 'express-rate-limit';
-import { expressRateLimitKey } from './rate-limit-key.js';
+import { expressRateLimit } from '../http/rate-limiter.js';
+import type { RequestHandler } from 'express';
 
 /** Default requests per minute per IP through one extension's data proxy. */
 export const EXTENSION_PROXY_RATE_LIMIT_DEFAULT = 120;
@@ -20,7 +20,7 @@ const WINDOW_MS = 60_000;
  * One limiter is built per proxy router, so each extension gets its own budget
  * and a chatty one cannot starve the rest.
  *
- * Keys through {@link expressRateLimitKey} — the TCP peer address unless
+ * Keys through `rateLimitKey`, through {@link expressRateLimit} — the TCP peer address unless
  * `DORKOS_TRUST_PROXY` says a proxy is in front (DOR-1711), so a caller can no
  * longer rotate a spoofed `X-Forwarded-For` across unlimited buckets. It is
  * still a throttle rather than an authorization boundary: what stops an
@@ -29,13 +29,11 @@ const WINDOW_MS = 60_000;
  * @param maxPerMinute - Requests per minute per IP; defaults to
  *   {@link EXTENSION_PROXY_RATE_LIMIT_DEFAULT}.
  */
-export function buildExtensionProxyRateLimiter(maxPerMinute?: number): RateLimitRequestHandler {
-  return rateLimit({
+export function buildExtensionProxyRateLimiter(maxPerMinute?: number): RequestHandler {
+  return expressRateLimit({
     windowMs: WINDOW_MS,
-    max: maxPerMinute ?? EXTENSION_PROXY_RATE_LIMIT_DEFAULT,
-    keyGenerator: expressRateLimitKey,
-    standardHeaders: true,
-    legacyHeaders: false,
+    limit: maxPerMinute ?? EXTENSION_PROXY_RATE_LIMIT_DEFAULT,
+    headers: 'standard',
     message: {
       error: 'Too many requests to this extension proxy. Try again shortly.',
       code: 'PROXY_RATE_LIMITED',
