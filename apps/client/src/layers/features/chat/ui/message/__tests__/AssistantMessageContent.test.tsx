@@ -110,6 +110,12 @@ vi.mock('../MessageContext', () => ({
   }),
 }));
 
+// Mock the chat's messaging read: the Sent cards' live state needs the
+// query/transport providers, none of which this file is about.
+vi.mock('../../../model/messaging/use-chat-activity', () => ({
+  useChatActivity: () => ({ sent: [], stops: [] }),
+}));
+
 // Mock useAppStore
 vi.mock('@/layers/shared/model', () => ({
   useAppStore: () => ({ expandToolCalls: false, autoHideToolCalls: false }),

@@ -3,14 +3,14 @@ flowchart TB
   accDescr: The client reaches the local execution server. Independent space servers serve one or many spaces. Cloud space management uses a separate public server API contract; rollout is independent of local implementation. Marketplace discovery and installation use the same package sources.
   client["DorkOS client · React<br/>Browser / phone web app / desktop"]
   server["Local DorkOS server · Express<br/>Projects · Sessions · Rooms · Tasks<br/>Extensions · Activity inbox · Relay · Mesh<br/>Local SQLite + files"]
-  runtime["Local AgentRuntime implementations<br/>Claude Code · Codex · OpenCode<br/>Runtime-specific history"]
+  runtime["Local AgentRuntime implementations<br/>Claude Code · Codex · OpenCode · Doe<br/>Runtime-specific history"]
   cloud["Optional DorkOS Cloud<br/>Hosted accounts + service management"]
   community["Independent space server · Hono<br/>One or many spaces<br/>Server sign-in · tenant memberships<br/>Own PostgreSQL + blob storage"]
   communityUI["Space website · React"]
   sources["Marketplace sources<br/>Registries + package repositories"]
   site["DorkOS website · Next.js<br/>Docs + marketplace discovery"]
   client <-->|"HTTP commands / WebSocket events<br/>Space SSE"| server
-  server -->|"SDK calls / local sidecar"| runtime
+  server -->|"SDK calls / local sidecar / in-process engine"| runtime
   server -->|"Optional HTTPS<br/>Link, heartbeat, managed services"| cloud
   server <-->|"Approved participation<br/>Qualified HTTP + SSE"| community
   cloud -.->|"Space-management contract · availability-dependent<br/>HTTPS server API; separate from participation"| community

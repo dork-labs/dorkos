@@ -402,6 +402,11 @@ vi.mock('@/layers/entities/session', () => ({
   // The session bar's title, read from the shared session cache. No active
   // session here, so the query is disabled and there is nothing to report.
   useSessionDetail: () => ({ data: undefined }),
+  // A chat tab finds its folder and title through these (DOR-2820). No chat is
+  // open in this isolation test.
+  useSessionRow: () => ({ data: undefined }),
+  useSessionRouteContext: () => undefined,
+  sessionDisplayTitle: (title: string) => title,
   // The tab strip badges a chat tab off this (DOR-540). Nothing is streaming in
   // a shell-level isolation test, so every tab reads idle.
   useSessionBorderState: () => ({

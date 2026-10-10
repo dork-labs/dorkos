@@ -81,6 +81,8 @@ import {
 } from '../../../session/launch/launch-session.js';
 import { getStartWorkService, type StartReservation } from '../../../extensions/start-work.js';
 import { getChatMessageService } from '../../../session/chat-messages/chat-message-service.js';
+import { spinOffBriefing } from '../../../session/chat-messages/chat-report-back.js';
+import { rememberedChatTitle } from '../../../session/origin/started-by-origin-overlay.js';
 import {
   NO_CHAT_CEILING_RUNTIME,
   resolveStartPermission,
@@ -180,6 +182,14 @@ export const SessionStartInputShape = {
       'Why you are starting it, in plain words (at most 200 characters). The new session ' +
         'shows it as its first line: "Started from <this chat>: <reason>".'
     ),
+  reportBack: z
+    .enum(['auto', 'off'])
+    .optional()
+    .describe(
+      '`auto` (default): whenever the new chat ends a turn finished, failed, needing the ' +
+        'person or paused at an account limit, its last message comes back to this chat as a ' +
+        'message. `off`: it never reports back on its own.'
+    ),
 };
 
 /** Parsed `session_start` arguments. */
@@ -194,6 +204,7 @@ export interface SessionStartArgs {
   seedContext?: string;
   agentPath?: string;
   reason?: string;
+  reportBack?: 'auto' | 'off';
 }
 
 /** The result of a started session. */
@@ -274,7 +285,8 @@ function reserveChatStart(
   sessionId: string,
   parentSessionId: string | null,
   reason: string | undefined,
-  permission: SessionStartPermission
+  permission: SessionStartPermission,
+  reportBack: boolean
 ): { ok: true; reservation: StartReservation | null } | { ok: false; message: string } {
   const service = getStartWorkService();
   if (!parentSessionId || !service) return { ok: true, reservation: null };
@@ -285,6 +297,7 @@ function reserveChatStart(
     permissionMode: permission.mode,
     starterPermissionMode: permission.callerMode,
     permissionSameAsStarter: permission.sameAsCaller,
+    reportBack,
   });
   return claimed.ok
     ? { ok: true, reservation: claimed.reservation }
@@ -461,12 +474,15 @@ export function createSessionStartHandler(
     // Who started it, and the start limits of the extension at the root of the
     // calling chat's chain: asked before the settings write, so a refused start
     // leaves nothing behind.
-    const claimed = reserveChatStart(
-      sessionId,
-      caller.chat?.sessionId ?? null,
-      args.reason,
-      permission
-    );
+    // Reports go back only to a chat that can take chat messages: a room's
+    // turn, a scheduled run or a bridged chat cannot, so its spin-offs are
+    // never promised one (spec `spin-off-chats` §5).
+    const parentChatId = caller.chat?.sessionId ?? null;
+    const reportBack =
+      args.reportBack !== 'off' &&
+      parentChatId !== null &&
+      ((await getChatMessageService()?.canReceive(parentChatId)) ?? false);
+    const claimed = reserveChatStart(sessionId, parentChatId, args.reason, permission, reportBack);
     if (!claimed.ok) return refuse(claimed.message, 'START_LIMIT');
     const reservation = claimed.reservation;
     // What the pre-launch picker saves, saved the same way: an unbound settings
@@ -516,7 +532,25 @@ export function createSessionStartHandler(
           runtime: runtimeType,
           ...(account ? { account: account.id } : {}),
           agentPath,
-          ...(args.seedContext !== undefined ? { seedContext: args.seedContext } : {}),
+          ...(() => {
+            // A spin-off is told who started it and how it reports back (spec
+            // `spin-off-chats` §5), ahead of whatever background the starter gave.
+            const briefing = caller.chat?.sessionId
+              ? spinOffBriefing({
+                  parentChatId: caller.chat.sessionId,
+                  parentTitle: rememberedChatTitle(caller.chat.sessionId),
+                  parentAgentName: caller.label,
+                  reportBack,
+                })
+              : null;
+            // The starter's own background is never cut: the briefing gives
+            // way first when the two would pass the cap together.
+            const own = args.seedContext ?? '';
+            const room = SEED_CONTEXT_MAX_LENGTH - own.length - (own ? 2 : 0);
+            const lead = briefing && room > 0 ? briefing.slice(0, room) : null;
+            const seed = [lead, own].filter((p): p is string => Boolean(p));
+            return seed.length > 0 ? { seedContext: seed.join('\n\n') } : {};
+          })(),
         },
         clientId: SESSION_START_CLIENT_ID,
         meshCore: deps.meshCore,

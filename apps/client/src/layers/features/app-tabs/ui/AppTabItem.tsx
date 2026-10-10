@@ -94,7 +94,10 @@ export function AppTabItem({ tab, isActive, canClose, tabProps, onClose }: AppTa
         )}
       >
         <TabTargetIcon view={view} />
-        <span className="truncate font-medium">{label}</span>
+        <span className="truncate">
+          <span className="font-medium">{label}</span>
+          {view.chatTitle && <span className="opacity-70"> · {view.chatTitle}</span>}
+        </span>
         {signal && (
           <>
             <span

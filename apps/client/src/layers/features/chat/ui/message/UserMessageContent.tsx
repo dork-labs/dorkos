@@ -7,6 +7,8 @@ import { parseFilePrefix } from '../../lib/parse-file-prefix';
 import { formatCompactionLabel } from '../../lib/format-compaction';
 import { FileAttachmentList } from './FileAttachmentList';
 import { OutputRenderer } from './OutputRenderer';
+import { useOptionalMessageContext } from './MessageContext';
+import { ReceivedChatMessages } from '../messaging/ReceivedChatMessage';
 
 /**
  * Renders user message content based on messageType.
@@ -15,6 +17,7 @@ import { OutputRenderer } from './OutputRenderer';
  * summary to expand — a log-backed runtime's does not).
  */
 export function UserMessageContent({ message }: { message: ChatMessage }) {
+  const sessionId = useOptionalMessageContext()?.sessionId;
   const [compactionExpanded, setCompactionExpanded] = useState(false);
   const parsed = useMemo(() => parseFilePrefix(message.content), [message.content]);
   // A widget interaction arrives as a `<ui_action>` block in a plain user turn
@@ -22,6 +25,14 @@ export function UserMessageContent({ message }: { message: ChatMessage }) {
   // interaction chip instead of the raw XML.
   const uiAction = useMemo(() => parseUiActionMessage(message.content), [message.content]);
   if (uiAction) return <UiActionChip action={uiAction} />;
+
+  // Words another chat sent, stamped by the server: drawn from the stamps,
+  // never from the fenced text the agent read.
+  if (message.chatMessages && message.chatMessages.length > 0) {
+    return (
+      <ReceivedChatMessages stamps={message.chatMessages} {...(sessionId ? { sessionId } : {})} />
+    );
+  }
 
   if (message.messageType === 'command') {
     // Wraps rather than truncates: the command sits in the full content column

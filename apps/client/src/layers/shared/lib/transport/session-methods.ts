@@ -3,6 +3,7 @@
  *
  * @module shared/lib/transport/session-methods
  */
+import type { ChatActivityResponse } from '@dorkos/shared/chat-messages';
 import type {
   Session,
   SessionListResponse,
@@ -117,6 +118,10 @@ export function createSessionMethods(
     getSession(id: string, cwd?: string): Promise<Session> {
       const qs = buildQueryString({ cwd });
       return fetchJSON<Session>(baseUrl, `/sessions/${id}${qs}`);
+    },
+
+    getChatActivity(sessionId: string): Promise<ChatActivityResponse> {
+      return fetchJSON<ChatActivityResponse>(baseUrl, `/sessions/${sessionId}/chat-messages`);
     },
 
     markSessionOpened(sessionId: string): Promise<void> {

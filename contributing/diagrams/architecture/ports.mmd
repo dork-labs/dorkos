@@ -1,10 +1,10 @@
 flowchart LR
   accTitle: DorkOS replaceable interfaces
-  accDescr: Each row names a caller, its port, and implementations. A port is a code boundary, not necessarily a network boundary. The dashed CommunityAdapter edge is the unwired Buzz implementation.
+  accDescr: Each row names a caller, its port, and implementations. A port is a code boundary, not necessarily a network boundary. Dashed edges identify the unwired Buzz implementation and planned decision-model consumers; decision bridges themselves exist.
   ui["React client"] --> transport{{"Transport"}}
   transport --> http["HttpTransport<br/>HTTP + WebSocket + Space SSE<br/>Express"]
   dispatch["Session dispatcher"] --> agent{{"AgentRuntime"}}
-  agent --> runtimes["Claude Code / Codex SDKs<br/>OpenCode HTTP + SSE sidecar"]
+  agent --> runtimes["Claude Code / Codex SDKs<br/>OpenCode HTTP + SSE sidecar<br/>Doe in-process engine"]
   accounts["Account actions"] --> connector{{"ConnectorProvider"}}
   connector --> backends["Composio · Nango · raw MCP<br/>Managed Cloud backend"]
   rooms["Local registry / remote consumers"] --> community{{"CommunityAdapter"}}
@@ -15,5 +15,7 @@ flowchart LR
   memory --> files["Built-in MEMORY.md store<br/>Optional registered backends"]
   relay["Relay message bus"] --> messaging{{"RelayAdapter"}}
   messaging --> channels["Messaging platforms / agent delivery<br/>Protocol depends on implementation"]
+  future["Planned triage / moderation consumers"] -.->|"Not wired"| decision{{"DecisionModel"}}
+  decision --> bridges["Rules · OpenAI-compatible · Jev<br/>Recommendation, not authority"]
   classDef port fill:#e7f1eb,stroke:#427a55,color:#183f26
-  class transport,agent,connector,community,memory,messaging port
+  class transport,agent,connector,community,memory,messaging,decision port

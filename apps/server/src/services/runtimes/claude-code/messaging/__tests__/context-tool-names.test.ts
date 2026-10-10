@@ -580,16 +580,20 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // twice, once among the confirmation-gated mutations and once for its
     // signature, as it does every other mutation.
     //
-    // 99 -> 84 for spin-off chats (spec `spin-off-chats` §7):
+    // 99 -> 100 for durable timers (DOR-2717): `<tasks_tools>` names
+    // `tasks_create` once more, as the scheduler to use instead of a durable
+    // CronCreate job.
+    //
+    // 100 -> 85 for spin-off chats (spec `spin-off-chats` §7):
     // `<relay_tools>`, which named the six retired relay tools over and over
     // across its four workflows, became `<chat_tools>`, which teaches three
     // chat tools and `session_start` once each where they are used.
     //
-    // 84 -> 70 for plain sessions (DOR-2790): the chat tools refuse a chat that
+    // 85 -> 71 for plain sessions (DOR-2790): the chat tools refuse a chat that
     // is not an agent's, so `<chat_tools>` and the mesh line on messaging a peer
     // render for an agent session only, and this case walks the plain prompt.
     // The agent-session case below guards the names in that half.
-    expect(prefixed.length).toBe(70);
+    expect(prefixed.length).toBe(71);
   });
 
   it('names only advertised tools in the agent-session variant of the prompt too', async () => {

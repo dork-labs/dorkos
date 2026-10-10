@@ -126,3 +126,17 @@ describe('renderChatMessage', () => {
     expect(body.split('\n').filter((line) => line.startsWith('From: '))).toHaveLength(1);
   });
 });
+
+describe('renderChatMessage — the message id the receiver answers with', () => {
+  it('names the id before the kind line, so the words after it stay the words', async () => {
+    const { chatMessageWords } = await import('@dorkos/shared/chat-messages');
+    const { text } = renderChatMessage(
+      { agentName: 'Ana', agentId: null, chatId: 'chat-a', chatTitle: null, messageId: 'cm-42' },
+      'message',
+      'Please check the build.'
+    );
+    expect(text).toContain('Message id: cm-42');
+    expect(text.indexOf('Message id: cm-42')).toBeLessThan(text.indexOf('Kind: message'));
+    expect(chatMessageWords(text)).toBe('Please check the build.');
+  });
+});
