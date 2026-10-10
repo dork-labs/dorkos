@@ -5,6 +5,7 @@ covers:
   - 'feat(community): ban and unban in the space, and its open join page (DOR-2764)'
   - 'fix(community): close the ban races and keep bans to confirmed emails (DOR-2764)'
   - 'feat(community): confirm a ban or its lifting in a dialog (DOR-2764)'
+  - 'refactor(community): split grown files back under the line ratchet; reword retired copy (DOR-2765)'
 ---
 
 ### Added
