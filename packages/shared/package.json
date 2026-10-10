@@ -49,6 +49,10 @@
       "types": "./src/transport.ts",
       "default": "./dist/transport.js"
     },
+    "./transport-activity": {
+      "types": "./src/transport-activity.ts",
+      "default": "./dist/transport-activity.js"
+    },
     "./transport-rooms": {
       "types": "./src/transport-rooms.ts",
       "default": "./dist/transport-rooms.js"

@@ -206,6 +206,7 @@ export type { MigrationState, SnapshotOptions } from './backup.js';
 // (`resetPercentileSupportCache` is deliberately not re-exported: it's a
 // test-only helper whose sole consumer imports the module directly.)
 export { hasPercentileSupport } from './sql-features.js';
+export { chunked, SQL_IN_CHUNK } from './sql-chunks.js';
 
 // Re-export commonly used Drizzle query helpers so consumers share the same
 // drizzle-orm instance as @dorkos/db (avoids duplicate-package type conflicts).

@@ -200,6 +200,7 @@ describe('the registry', () => {
       'sessions',
       'tasks',
       'rooms',
+      'activity',
       'skills',
       'tools',
       'connections',

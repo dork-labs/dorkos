@@ -26,16 +26,16 @@
  * | Caller | Rooms | Sessions |
  * | --- | --- | --- |
  * | The operator, in the cockpit | all | all |
- * | An agent | the rooms it is in, above its `joinedSeq` | **none** |
+ * | An agent | the rooms it is in, above its `joinedSeq` | agent work sessions only |
  *
- * **Sessions are owner-only in v1, and a caller that presented an agent identity
- * never reaches them** — resolved or not, since a revoked token still says a
- * machine is calling. Two independent conditions have to hold, and either one
- * failing is enough to close the door: the caller is the install owner's author,
- * and no agent header was presented. Spec §7 records why one is not enough — the
- * external MCP surface collapses every caller onto a single Relay sender, and a
- * caller that simply omits the header resolves to the owner. Absence is never
- * consent.
+ * **A caller that presented an agent identity reaches agent work sessions and
+ * never a person's own chat** — resolved or not, since a revoked token still says
+ * a machine is calling (spec `audit-trail` §3.4). Every session at all needs two
+ * independent conditions, and either one failing is enough to close the door:
+ * the caller is the install owner's author, and no agent header was presented.
+ * Spec §7 records why one is not enough — the external MCP surface collapses
+ * every caller onto a single Relay sender, and a caller that simply omits the
+ * header resolves to the owner. Absence is never consent.
  *
  * ## Why this route refuses a short query
  *
@@ -55,7 +55,9 @@ import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { readOwnerAccount } from '../services/core/auth/index.js';
 import { isOwnerRecord } from '../services/rooms/author-registry.js';
 import { getRoomService } from '../services/rooms/index.js';
-import { answerSearch } from '../services/search/index.js';
+import { answerSearch, type SearchScope } from '../services/search/index.js';
+import { readableSessionIds } from '../services/audit/session-visibility.js';
+import { readerOfRequest } from './audit-reader.js';
 import { resolveCaller } from './room-caller.js';
 import { sendRoomError } from './room-error-response.js';
 
@@ -87,12 +89,18 @@ export function createSearchRouter(deps: SearchRouterDeps): Router {
       // the WIDER question — "is a machine calling at all" — and it is a second
       // lock on one specific regression: an unverifiable agent token used to fall
       // through to the install owner, and DOR-1361 is the fix that stopped it. If
-      // that branch order is ever loosened again, this line is what keeps session
-      // history closed while the room routes are being argued about. No test here
-      // can turn its key, because nothing today can reach it with the first lock
-      // open; that is the point of it rather than an omission.
-      const sessions =
-        isOwnerRecord(caller, readOwnerAccount()?.id ?? null) && !presentsAgentIdentity(req, res);
+      // that branch order is ever loosened again, this line is what keeps a
+      // person's own chats closed while the room routes are being argued about.
+      //
+      // A machine gets agent work sessions only, through the same rule every
+      // transcript read uses (spec `audit-trail` §3.4): `readableSessionIds`,
+      // which is `canRead` with a session standing in for a row.
+      const agent = presentsAgentIdentity(req, res);
+      const sessions: SearchScope['sessions'] = agent
+        ? {
+            readable: (ids) => readableSessionIds(readerOfRequest(req, res), ids),
+          }
+        : isOwnerRecord(caller, readOwnerAccount()?.id ?? null);
 
       const answer = answerSearch(
         deps.db,

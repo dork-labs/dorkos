@@ -4,17 +4,24 @@ The audit log is one append-only, hash-chained table, `audit_events`, that recor
 
 ## Where things live
 
-| Piece                          | File                                                                    |
-| ------------------------------ | ----------------------------------------------------------------------- |
-| Table, CHECK constraints       | `packages/db/src/schema/audit/audit-events.ts`                          |
-| Migration + the three triggers | `packages/db/drizzle/20261006231015_audit_events.sql`                   |
-| Wire shapes                    | `packages/shared/src/audit-schemas.ts` (`@dorkos/shared/audit-schemas`) |
-| The one writer                 | `apps/server/src/services/audit/audit-log.ts` (`AuditLog`)              |
-| Canonical JSON for the hash    | `apps/server/src/services/audit/canonical-json.ts`                      |
-| Stable actor ids               | `apps/server/src/services/audit/account-ids.ts` (`AccountIds`)          |
-| Activity → audit copy          | `apps/server/src/services/audit/activity-tee.ts`                        |
-| `audit.verify` capability      | `apps/server/src/services/audit/audit-capabilities.ts`                  |
-| `GET /api/audit/verify`        | `apps/server/src/routes/audit.ts`                                       |
+| Piece                            | File                                                                         |
+| -------------------------------- | ---------------------------------------------------------------------------- |
+| Table, CHECK constraints         | `packages/db/src/schema/audit/audit-events.ts`                               |
+| Migration + the three triggers   | `packages/db/drizzle/20261006231015_audit_events.sql`                        |
+| Wire shapes                      | `packages/shared/src/audit-schemas.ts` (`@dorkos/shared/audit-schemas`)      |
+| The one writer                   | `apps/server/src/services/audit/audit-log.ts` (`AuditLog`)                   |
+| Canonical JSON for the hash      | `apps/server/src/services/audit/canonical-json.ts`                           |
+| Stable actor ids                 | `apps/server/src/services/audit/account-ids.ts` (`AccountIds`)               |
+| Activity → audit copy            | `apps/server/src/services/audit/activity-tee.ts`                             |
+| The `audit.*` capabilities       | `apps/server/src/services/audit/audit-capabilities.ts`                       |
+| `/api/audit` routes              | `apps/server/src/routes/audit.ts`                                            |
+| The one reader rule              | `apps/server/src/services/audit/visibility.ts` (`canRead`)                   |
+| Who may read a session           | `apps/server/src/services/audit/session-visibility.ts`                       |
+| The reader of an HTTP request    | `apps/server/src/routes/audit-reader.ts`                                     |
+| The `/api/sessions/:id` guard    | `apps/server/src/routes/session-read-guard.ts`                               |
+| Who may read a room turn         | `apps/server/src/services/rooms/session-bindings/room-session-visibility.ts` |
+| Audit rows as a reader sees them | `apps/server/src/services/audit/audit-session-scrub.ts`                      |
+| Secret sweep before hashing      | `apps/server/src/services/audit/audit-redaction.ts`                          |
 
 ## The invariants
 
@@ -89,6 +96,28 @@ Long hex is redacted as a possible secret, so record a commit or digest by its 1
 2. Resolve the actor through `AccountIds`. Prefer the identity the request or turn already resolved over guessing.
 3. Choose `visibility`: `space` for actions (the default and almost always right), `admins` for security records such as sign-in IPs, `participants` only for something scoped to a private conversation (name the participants).
 4. Write a test that the action produces exactly one row with the right actor, and run it once with your call removed to prove it fails.
+
+## Who can read what (PR4)
+
+`canRead(reader, row)` in `services/audit/visibility.ts` is the ONLY reader rule. Every read path goes through it: the four read capabilities (`audit.query`, `audit.get`, `audit.account_timeline`, `audit.transcript_read`), the `/api/audit` routes, the session routes and stream, and search. Never write a second check.
+
+- `space` rows: everyone. `participants` rows: the accounts listed. `admins` rows: the owner, never an agent.
+- The owner of this one-person install reads everything. Any caller that presented an agent token, resolved or not, reads as that agent (or as `unidentified`).
+- `readableBy(reader)` is the same rule as SQL, so a page is filled with rows the reader may see rather than filtered after the `LIMIT`. `visibility.test.ts` checks the two agree row for row; change both or neither.
+
+**Sessions** are `space`, `participants`, or (a room turn only) a room's agent members, read through the same `canRead` (`canReadSession`). What started the session decides: `sessionVisibilityForOrigin` in `services/session/origin/turn-origin.ts` maps every `TurnOrigin` (an exhaustive switch, so a new origin does not compile until someone decides). It reads `session_metadata.launch_origin`, which the binding write already stores first-write-wins; a session with none (older, or a bare-CLI one) is agent work only when a room binding, a task run or a recorded starter says so, and private otherwise. Unknown is private.
+
+The process-wide lookup is set once in `index.ts` (`initSessionVisibility`). Unset (most unit tests), every session is private: agents are refused, the owner is unaffected. A test that reads a session as an agent sets one.
+
+A **room turn** is the one origin that does not decide by itself: its room does (`resolveRoomSessionVisibility`). A bridged chat-app room or a DM with a person is private; a team channel or a DM between agents is readable by that room's agent members (and the owner), checked as membership stands at read time. The resolver names them by the same account id an agent reader carries (`AccountIds.agentAccountId` of the agent's home), so pass that, not a mesh name. A chat carried to another account (`account-handoff`) reads as the chat it continues. The spec §3.4 "As built (PR4 review)" table is the full rule.
+
+**The one exception** lives next to the rule: `canReadSession(reader, visibility, involvedBy)`. A person's private chat that started a chat may be read by that chat (`chat_read`, through `mayReadChat`). A message is not involvement: any agent can message a person's chat and draw a reply, so a reply never opens their history. Pass `involvedBy` from nowhere else. `chat_send` names the chat it landed in only when the sender may read it (`maySeeChat`).
+
+Over HTTP, `routes/audit-reader.ts` names the reader (`readerOfRequest`) and answers a private session with **404 `SESSION_NOT_FOUND`, never 403**, so an agent cannot confirm a person's chat exists. `transcript_read` answers `TRANSCRIPT_PRIVATE` for the same case and for an unknown id alike. Every `/api/sessions/:id/*` route is already behind `router.param('id', guardSessionParam)` (`routes/session-read-guard.ts`), so a new route there needs nothing; a transcript read anywhere else calls `refuseUnreadableSession` (one id) or `readableSessions` (a list) before it reads anything. A frame on `GET /api/events` about a session goes out with `sessionAudience(sessionId)`. A list that names sessions (the debug lists, `binding_list_sessions`) drops, or strips the id from, rows about a session the caller may not read. An agent that starts a chat over HTTP binds it `agent-launch` (`httpTurnOrigin`), so it can read its own chat.
+
+**Audit rows** that point into a session the reader may not read lose `sessionId`, `turnId` and `toolCallId`, and a `sessionId` filter on one answers an empty page. A `targetId` filter that hid every row on a page drops the cursor too, so the page reads as the last one. Read the log through `readAuditQuery`, `readAuditTimeline` and `readAuditEvent` (`services/audit/audit-session-scrub.ts`), never `log.query` directly, from anything a caller reaches.
+
+**The limit, stated plainly.** A caller is an agent only when it says so (`X-DorkOS-Agent`, or DorkOS's in-session tools). A bare request reads as the owner, and transcript files on disk are open to any program on the computer. Never describe this as keeping chats from agents without that qualifier.
 
 ## Checking the chain
 

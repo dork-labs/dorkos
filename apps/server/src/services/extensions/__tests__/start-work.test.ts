@@ -234,7 +234,9 @@ describe('a start', () => {
               id: sessionId,
               startedBy: expect.objectContaining({ kind: 'extension', extensionName: 'Flow' }),
             }),
-          })
+          }),
+          // Who may hear about the session (spec `audit-trail` §3.4).
+          expect.any(Function)
         )
       );
     } finally {

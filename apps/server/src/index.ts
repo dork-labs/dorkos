@@ -316,7 +316,7 @@ import {
   legacySweepDirs,
   rebuildLegacyRecords,
   removeRecordTempLeftovers,
-  type LegacySweepSummary,
+  logLegacySweep,
 } from './services/marketplace/lib/integrity/legacy-record-sweep.js';
 import { withIntegrity } from './services/marketplace/lib/integrity/verify-install.js';
 import { scanInstallationsAcrossScopes } from './services/marketplace/installed-scanner.js';
@@ -414,7 +414,11 @@ import {
 import { currentRecordOwner } from './services/marketplace/lib/records/record-owner.js';
 import { createActivityRouter } from './routes/activity.js';
 import { createAuditRouter } from './routes/audit.js';
-import { wireAuditTrail } from './services/audit/index.js';
+import {
+  auditCapabilityDeps,
+  wireAuditTrail,
+  wireSessionVisibility,
+} from './services/audit/index.js';
 import { createExtensionRoutesMiddleware } from './middleware/extension-routes.js';
 import { createExternalMcpServer } from './services/core/mcp-server.js';
 import { composeDorkOsCapabilityRegistry } from './services/core/self-description/dorkos-registry.js';
@@ -837,19 +841,6 @@ let projectInstallRecovery: Promise<unknown> = Promise.resolve();
 /** Aborted on shutdown, so the legacy record sweep stops between installs. */
 const legacyRecordSweep = new AbortController();
 let sweptProjects: string[] = [];
-
-/**
- * Log what the legacy record sweep did, when it did anything.
- *
- * @param summary - The sweep's outcome lists.
- */
-function logLegacySweep(summary: LegacySweepSummary): void {
-  const { rebuilt, mismatch, noSource, fetchFailed } = summary;
-  if (rebuilt.length + mismatch.length + noSource.length + fetchFailed.length === 0) return;
-  logger.info(
-    `[Marketplace] Records for packages an older DorkOS installed: ${rebuilt.length} rebuilt, ${mismatch.length} changed since install, ${noSource.length} installed from a local folder, ${fetchFailed.length} to retry`
-  );
-}
 
 let taskFileWatcher: TaskFileWatcher | undefined;
 let taskReconciler: TaskReconciler | undefined;
@@ -1320,7 +1311,7 @@ async function start() {
   // until an account exists. The startup check walks the recent end of the
   // chain and only warns: a broken chain is evidence to keep, not a reason to
   // refuse to start.
-  const { log: auditLog } = wireAuditTrail({
+  const { log: auditLog, accounts: auditAccounts } = wireAuditTrail({
     db,
     activity: activityService,
     installId: connectorInstallationId,
@@ -4703,6 +4694,10 @@ async function start() {
   app.locals.resolveTouches = (sessionIds: string[]) =>
     getSessionTouchStore()?.resolve(sessionIds) ?? new Map();
   sessionListBroadcaster.setOriginResolvers(sessionOriginResolvers(app.locals));
+  // Who may read each session's transcript (spec `audit-trail` §3.4): an
+  // agent sees agent work, never a person's own chat.
+  const { resolveTaskOrigins, resolveStartedBy } = app.locals;
+  wireSessionVisibility({ db, accounts: auditAccounts, resolveTaskOrigins, resolveStartedBy });
   // Live session upserts carry the flow items a chat works on, exactly as
   // `GET /api/sessions` does, so the first upsert after a list read no longer
   // wipes them from the client's cache (spec `flow-multiproject` §6.8, D10).
@@ -5158,7 +5153,7 @@ async function start() {
 
   // Activity feed — always available, not behind a feature flag.
   app.use('/api/activity', createActivityRouter(activityService));
-  app.use('/api/audit', createAuditRouter(auditLog));
+  app.use('/api/audit', createAuditRouter({ log: auditLog, accounts: auditAccounts }));
   app.locals.activityService = activityService;
   mountedRouters.push('activity');
 
@@ -5805,7 +5800,7 @@ async function start() {
       // Built here, once: its once-an-hour budget must outlive the per-session
       // tool servers that reach it.
       // `audit.verify`: anyone may check the audit log's chain (spec `audit-trail`).
-      auditDeps: { log: auditLog },
+      auditDeps: auditCapabilityDeps(auditLog, auditAccounts, runtimeRegistry),
       // Chats messaging chats (spec `spin-off-chats`).
       chatMessageDeps: chatMessaging,
       // What agents promised (spec `heartbeats` §12): an agent records its

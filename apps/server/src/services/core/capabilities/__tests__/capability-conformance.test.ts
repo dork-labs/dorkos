@@ -318,7 +318,12 @@ const registry = composeDorkOsCapabilityRegistry({
   // The audit domain serves `GET /api/audit/verify`, so the boot registry must
   // carry it for the docs/boot parity check (spec `audit-trail`).
   auditDeps: {
-    log: { verify: () => ({ ok: true, checked: 0, lastSeq: 0, lastHash: '0'.repeat(64) }) },
+    log: {
+      verify: () => ({ ok: true, checked: 0, lastSeq: 0, lastHash: '0'.repeat(64) }),
+      query: () => ({ events: [] }),
+      getWithLinks: () => undefined,
+      timeline: () => ({ events: [] }),
+    },
   },
 });
 
@@ -558,6 +563,11 @@ capabilityConformance(registry, {
       group: 'no-such-conformance-section',
       items: [{ kind: 'agent', path: SANDBOX_CWD }],
     },
+    // The audit reads need their required ids to parse; each then answers its
+    // own structured NOT_FOUND / TRANSCRIPT_PRIVATE from the stub log.
+    'audit.get': { id: 'no-such-conformance-event' },
+    'audit.account_timeline': { accountId: 'no-such-conformance-account' },
+    'audit.transcript_read': { sessionId: 'no-such-conformance-session' },
     'marketplace.get': { name: 'nonexistent-conformance-pkg' },
     'marketplace.recommend': { context: 'observability for a next.js app' },
     'marketplace.install': { name: 'nonexistent-conformance-pkg' },
