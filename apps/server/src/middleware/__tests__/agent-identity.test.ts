@@ -12,6 +12,7 @@ import {
   presentsAgentIdentity,
 } from '../agent-identity.js';
 import { logger } from '../../lib/logger.js';
+import { REQUEST_FACTS_ADAPTERS } from '../../http/__tests__/request-facts-adapters.js';
 
 vi.mock('../../lib/logger.js', () => ({
   logger: { warn: vi.fn(), debug: vi.fn(), info: vi.fn(), error: vi.fn() },
@@ -250,3 +251,30 @@ describe('presentsAgentIdentity', () => {
     expect(presentsAgentIdentity(req, res)).toBe(false);
   });
 });
+
+/**
+ * The same question asked of a request's facts, as a route moved to Hono asks
+ * it (DOR-2794): once per chain, each adapter's facts must give one answer.
+ */
+describe.each(REQUEST_FACTS_ADAPTERS)(
+  'presentsAgentIdentity, through the $name adapter',
+  (adapter) => {
+    it('is true for an identity the middleware resolved', async () => {
+      const facts = await adapter.facts({
+        headers: { 'x-dorkos-agent': 'token' },
+        agentIdentity: { agentId: 'agent_1' } as never,
+      });
+      expect(presentsAgentIdentity(facts)).toBe(true);
+    });
+
+    it('is true for a header that resolved to nothing', async () => {
+      expect(
+        presentsAgentIdentity(await adapter.facts({ headers: { 'x-dorkos-agent': 'x' } }))
+      ).toBe(true);
+    });
+
+    it('is false when no header was presented at all', async () => {
+      expect(presentsAgentIdentity(await adapter.facts({ headers: {} }))).toBe(false);
+    });
+  }
+);

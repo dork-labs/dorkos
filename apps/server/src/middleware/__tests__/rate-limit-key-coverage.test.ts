@@ -23,7 +23,7 @@ import { fileURLToPath } from 'node:url';
  * key. It is the same shape as `scripts/assert-tests-executed.sh`: a guard whose
  * whole job is to notice something that did not happen.
  *
- * Adding a limiter therefore means adding `keyGenerator: rateLimitKey`, or this
+ * Adding a limiter therefore means adding `keyGenerator: expressRateLimitKey`, or this
  * fails with the file and line that skipped it.
  */
 
@@ -79,7 +79,7 @@ function findLimiterSites(file: string, source: string): LimiterSite[] {
     sites.push({
       file,
       line: source.slice(0, match.index).split('\n').length,
-      usesSharedKey: /keyGenerator:\s*rateLimitKey\b/.test(options),
+      usesSharedKey: /keyGenerator:\s*expressRateLimitKey\b/.test(options),
     });
   }
   return sites;
@@ -109,7 +109,7 @@ describe('every rate limiter keys through the shared rateLimitKey', () => {
     expect(
       missing,
       'These rate limiters key on `req.ip`, which `trust proxy, 1` derives from the ' +
-        'caller-written `X-Forwarded-For`. Add `keyGenerator: rateLimitKey` from ' +
+        'caller-written `X-Forwarded-For`. Add `keyGenerator: expressRateLimitKey` from ' +
         '`middleware/rate-limit-key.ts`.'
     ).toEqual([]);
   });

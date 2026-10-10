@@ -1,5 +1,5 @@
 import rateLimit, { type RateLimitRequestHandler } from 'express-rate-limit';
-import { rateLimitKey } from './rate-limit-key.js';
+import { expressRateLimitKey } from './rate-limit-key.js';
 
 /** Default requests per minute per IP for the A2A JSON-RPC endpoints. */
 const RPC_DEFAULT_PER_MINUTE = 60;
@@ -21,7 +21,7 @@ export interface A2aRateLimitOptions {
 /**
  * Build one limiter with the JSON-RPC error body A2A clients expect.
  *
- * Keys through {@link rateLimitKey} — the TCP peer address unless
+ * Keys through {@link expressRateLimitKey} — the TCP peer address unless
  * `DORKOS_TRUST_PROXY` says a proxy is in front (DOR-1711). The comment that
  * used to sit here accepted spoofable `X-Forwarded-For` keying because "socket
  * keying behind a tunnel would collapse every client into localhost's one
@@ -35,7 +35,7 @@ function buildLimiter(maxPerMinute: number): RateLimitRequestHandler {
   return rateLimit({
     windowMs: WINDOW_MS,
     max: maxPerMinute,
-    keyGenerator: rateLimitKey,
+    keyGenerator: expressRateLimitKey,
     standardHeaders: true,
     legacyHeaders: false,
     message: {

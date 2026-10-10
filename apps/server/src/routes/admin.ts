@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { spawn } from 'child_process';
 import fs from 'fs/promises';
 import rateLimit from 'express-rate-limit';
-import { rateLimitKey } from '../middleware/rate-limit-key.js';
+import { expressRateLimitKey } from '../middleware/rate-limit-key.js';
 import { env } from '../env.js';
 import { ResetTokenStore, RESET_TOKEN_TTL_DESCRIPTION } from '../services/core/auth/reset-token.js';
 
@@ -224,7 +224,7 @@ export function createAdminRouter(deps: AdminDeps): Router {
   const adminLimiter = rateLimit({
     windowMs: 5 * 60 * 1000, // 5 minutes
     max: 3,
-    keyGenerator: rateLimitKey,
+    keyGenerator: expressRateLimitKey,
     message: { error: 'Too many admin requests. Try again later.' },
     skipFailedRequests: true,
     requestWasSuccessful: (_req, res) => res.statusCode !== 403,
@@ -239,7 +239,7 @@ export function createAdminRouter(deps: AdminDeps): Router {
   const prepareLimiter = rateLimit({
     windowMs: 5 * 60 * 1000, // 5 minutes
     max: 10,
-    keyGenerator: rateLimitKey,
+    keyGenerator: expressRateLimitKey,
     message: { error: 'Too many admin requests. Try again later.' },
   });
 
