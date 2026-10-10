@@ -144,10 +144,42 @@ describe('who leads a channel', () => {
     );
   });
 
-  it('is cleared when the lead leaves', () => {
+  it('passes to the agent that has been here longest when the lead leaves', () => {
     const w = open();
     w.service.removeMember(w.room.id, w.human, w.ana);
+    expect(leadOf(w)).toBe(w.bo);
+    w.service.removeMember(w.room.id, w.human, w.bo);
     expect(leadOf(w) ?? null).toBeNull();
+  });
+
+  it('is the first agent named by id when an agent opens the channel', () => {
+    const harness = createRoomHarness({ agents: AGENTS, runner: scriptedRunner() });
+    const ana = harness.authors.resolveAgent('/agents/ana', 'ana').id;
+    const bo = harness.authors.resolveAgent('/agents/bo', 'bo').id;
+    const room = harness.service.createRoom(
+      { kind: 'channel', title: 'Opened by Ana', members: [harness.human, bo], agentPaths: [] },
+      ana
+    );
+    expect(room.leadAuthorId).toBe(bo);
+  });
+
+  it('is never set on a channel connected to an outside chat', () => {
+    const harness = createRoomHarness({ agents: AGENTS, runner: scriptedRunner() });
+    const ana = harness.authors.resolveAgent('/agents/ana', 'ana').id;
+    const room = harness.service.createBridgedRoom({
+      adapterId: 'tg-main',
+      chatId: '-100',
+      bindingId: 'binding-ana',
+      chatType: 'group',
+      channelType: null,
+      title: 'Strangers',
+      agentPath: '/agents/ana',
+      operatorAuthorId: harness.human,
+    });
+    expect(room.leadAuthorId ?? null).toBeNull();
+    expect(
+      refusal(() => harness.service.updateRoom(room.id, harness.human, { leadAuthorId: ana }))
+    ).toBe('INVALID_LEAD');
   });
 });
 
@@ -160,9 +192,24 @@ describe('changing the lead', () => {
     expect(leadOf(w) ?? null).toBeNull();
   });
 
-  it('lets an agent in the channel hand it on with update_room', () => {
+  it('lets the lead hand it on with update_room', () => {
     const w = open();
     w.service.updateRoomFromTool(w.room.id, w.ana, { leadAuthorId: w.bo });
+    expect(leadOf(w)).toBe(w.bo);
+  });
+
+  it('never lets an agent take the lead from another agent', () => {
+    const w = open();
+    expect(
+      refusal(() => w.service.updateRoomFromTool(w.room.id, w.bo, { leadAuthorId: w.bo }))
+    ).toBe('INVALID_LEAD');
+    expect(leadOf(w)).toBe(w.ana);
+  });
+
+  it('lets an agent take the lead when nobody holds it', () => {
+    const w = open();
+    w.service.updateRoom(w.room.id, w.human, { leadAuthorId: null });
+    w.service.updateRoomFromTool(w.room.id, w.bo, { leadAuthorId: w.bo });
     expect(leadOf(w)).toBe(w.bo);
   });
 
@@ -204,6 +251,29 @@ describe('the lead answers what nobody else is answering', () => {
     await say(w, 'anyone around?');
     expect(turnsFor(w, w.ana)).toBe(1);
     expect(w.runner.turns.at(-1)?.authorId).toBe(w.ana);
+  });
+
+  it('answers even when set to Silent, because it leads the channel', async () => {
+    const w = open({ quiet: true });
+    w.service.updateMembership(w.room.id, w.human, w.ana, 'silent');
+    await say(w, 'anyone around?');
+    expect(turnsFor(w, w.ana)).toBe(1);
+  });
+
+  it('is told the message is its to answer, and is never offered silence', async () => {
+    const w = open({ quiet: true });
+    w.service.updateMembership(w.room.id, w.human, w.ana, 'mention-only');
+    await say(w, 'anyone around?');
+    const turn = w.runner.turns.at(-1)!;
+    expect(turn.roomContext.addressing.answerOwed).toBe('lead');
+  });
+
+  it('leaves an `always` lead answering everything, beside the agent you named', async () => {
+    const w = open({ quiet: true });
+    w.service.updateMembership(w.room.id, w.human, w.ana, 'always');
+    await say(w, '@bo can you ship the release?');
+    expect(turnsFor(w, w.bo)).toBe(1);
+    expect(turnsFor(w, w.ana)).toBe(1);
   });
 
   it('steps back when the post @mentions another agent', async () => {

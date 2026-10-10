@@ -179,7 +179,8 @@ export class RoomMembership {
       room.kind === 'channel' &&
       !room.wellKnown &&
       !room.leadAuthorId &&
-      candidate.kind === 'agent'
+      candidate.kind === 'agent' &&
+      !this.bridges.findBridgeByRoom(roomId)
     ) {
       this.store.setLead(roomId, member.authorId);
     }
@@ -419,7 +420,17 @@ export class RoomMembership {
     // defending it the wrong answer, and the reason the standing guarantee
     // "taking an AGENT out is never refused, so nothing is ever wedged" holds.
     if (room.leadAuthorId === authorId) {
-      this.store.setLead(roomId, null);
+      // Handed to the agent that has been here longest, so a channel with agents
+      // in it is not left without anybody to answer (DOR-2823). Not #team, whose
+      // lead follows the default agent, and not a bridged chat, which has none.
+      const next =
+        room.wellKnown || this.bridges.findBridgeByRoom(roomId)
+          ? undefined
+          : this.roster
+              .list(roomId)
+              .filter((m) => m.author.kind === 'agent' && m.authorId !== authorId)
+              .sort((a, b) => a.joinedAt.localeCompare(b.joinedAt))[0];
+      this.store.setLead(roomId, next?.authorId ?? null);
     }
     // Whatever this room was still waiting for from this agent is over: it is
     // not here to answer it. Dropped rather than left to age out, because the

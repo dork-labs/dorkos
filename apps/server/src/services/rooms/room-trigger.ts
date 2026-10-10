@@ -1075,8 +1075,10 @@ export class RoomTriggerDispatcher {
     // (DOR-2823), whatever the lead's mode. Only when the rules above picked
     // nobody, so a conversation with another agent is never interrupted by it,
     // and never for an agent's post: agents talking to each other stay quiet.
+    // Never in a channel connected to an outside chat: its one agent answers
+    // @mentions only there, and strangers' messages must not change that.
     const lead =
-      answered.length === 0 && followsConversation
+      answered.length === 0 && followsConversation && this.deps.bridgedFraming(room.id) === null
         ? pickLead({ entry, leadAuthorId, members: addressing })
         : null;
     const selected = lead ? [lead] : answered;
@@ -1831,6 +1833,9 @@ export class RoomTriggerDispatcher {
       // actually allowed this turn is what keeps them from drifting apart.
       depth: chosen.decision.depth,
       engaged: chosen.held.engaged,
+      ...(chosen.held.reason === 'conversation' || chosen.held.reason === 'lead'
+        ? { answerOwed: chosen.held.reason }
+        : {}),
       // ONE ID PER (turn, target), minted here rather than per entry. A message
       // addressed to three agents is three dispatches sharing one `entryId`: the
       // fan-out is recovered by the entry, and each agent's own chain — claim,
@@ -2332,6 +2337,9 @@ export class RoomTriggerDispatcher {
         // never disagree about whether anything is counting.
         ...this.headroomFor(room.id, target.depth),
         engaged: target.engaged,
+        // A person is owed this agent's answer, though the message did not name
+        // it (DOR-2823): the block then never offers silence.
+        ...(target.answerOwed ? { answerOwed: target.answerOwed } : {}),
         // Which of the messages in that window landed while this agent was
         // already working (RP8). Without it a steered turn reads as a person
         // repeating themselves, when what actually happened is that they carried

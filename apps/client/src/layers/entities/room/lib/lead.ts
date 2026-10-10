@@ -9,6 +9,7 @@ import type { RoomRosterEntry, RoomWithRoster } from '@dorkos/shared/room-schema
 /** The least a room has to carry for its lead to be resolved. */
 export type RoomLeadInput = Pick<RoomWithRoster, 'kind' | 'members'> & {
   leadAuthorId?: string | null;
+  bridge?: RoomWithRoster['bridge'];
 };
 
 /**
@@ -18,12 +19,15 @@ export type RoomLeadInput = Pick<RoomWithRoster, 'kind' | 'members'> & {
  * lead while it names an agent who is still a member here: a lead that has just
  * been taken out of the room, or a stale id in a cached read, draws nothing
  * rather than a name nobody can find in the list below it. A direct message has
- * no lead at all — its one agent answers everything said there anyway.
+ * no lead at all — its one agent answers everything said there anyway. Nor
+ * does a channel connected to an outside chat: its agent answers @mentions
+ * only, so a lead id left over from before it was connected answers nothing.
  *
  * @param room - The room, with its roster read.
  */
 export function roomLead(room: RoomLeadInput): RoomRosterEntry | null {
   if (room.kind !== 'channel') return null;
+  if (room.bridge != null) return null;
   const id = room.leadAuthorId ?? null;
   if (id === null) return null;
   return (

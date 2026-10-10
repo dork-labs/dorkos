@@ -1594,8 +1594,10 @@ export const roomsDomain: CapabilityDomain = {
         'this install can rename it. ' +
         'A name somebody chose is theirs; ask before you change it. ' +
         "A channel's lead is the agent that answers a person's message nobody else is " +
-        'answering. Hand it to the agent whose work the channel is about, by @handle, or ' +
-        "null for none. The home channel's lead is the person's default agent, set from an agent's profile.",
+        'answering. When you lead a channel you can hand the lead to the agent whose work ' +
+        'it is about, by @handle, or null for none; when nobody leads it you can take it. ' +
+        'You cannot take it from another agent. The home channel and channels connected ' +
+        'to an outside chat have no lead you can change.',
       tier: 'act',
       area: 'rooms',
       // A person may set Rooms to Ask, so this can raise a card: these are

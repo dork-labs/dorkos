@@ -147,9 +147,15 @@ export class RoomLifecycle {
         throw new RoomError('INVALID_LEAD', 'Only an agent in this channel can lead it.');
       }
     }
+    // Then the first agent among the members named by id (how an agent opens a
+    // channel with `create_room`), then the creator when it is an agent.
     const lead =
       request.kind === 'channel'
-        ? (agentByPath.get(request.leadAgentPath ?? request.agentPaths[0] ?? '') ?? null)
+        ? (agentByPath.get(request.leadAgentPath ?? request.agentPaths[0] ?? '') ??
+          [...resolved.values()].find(
+            (author) => author.kind === 'agent' && author.id !== creator.id
+          ) ??
+          (creator.kind === 'agent' ? creator : null))
         : null;
     if (lead) draft.leadAuthorId = lead.id;
     // Opening a room is not a way around the operator-only roster rule. An agent

@@ -186,4 +186,44 @@ describe('channel_leads migration', () => {
     migrate(drizzle(raw), { migrationsFolder: DRIZZLE_DIR });
     expect(leadOf(raw, 'left')).toBeNull();
   });
+
+  it('matches a steward name exactly, never as the start of a longer name', () => {
+    const raw = fixture();
+    author(raw, 'bobby', 'agent', 'bobby');
+    room(raw, 'exact', { topic: 'steward: bobby · interests: x' });
+    for (const id of ['person', 'bo', 'bobby']) member(raw, 'exact', id);
+    room(raw, 'prefix', { topic: 'steward: bobcat' });
+    for (const id of ['person', 'bo']) member(raw, 'prefix', id);
+    migrate(drizzle(raw), { migrationsFolder: DRIZZLE_DIR });
+    expect(leadOf(raw, 'exact')).toBe('bobby');
+    expect(leadOf(raw, 'prefix')).toBeNull();
+  });
+
+  it('never gives a lead to a channel connected to an outside chat', () => {
+    const raw = fixture();
+    room(raw, 'telegram-group');
+    for (const id of ['person', 'ana']) member(raw, 'telegram-group', id);
+    exchange(raw, 'telegram-group', 'ana', 3);
+    const columns = (
+      raw
+        .prepare('SELECT name, "notnull" AS required FROM pragma_table_info(\'room_bridges\')')
+        .all() as {
+        name: string;
+        required: number;
+      }[]
+    ).filter((c) => c.required === 1);
+    const values: Record<string, string> = {
+      room_id: 'telegram-group',
+      adapter_id: 'tg',
+      chat_id: '-100',
+    };
+    const names = columns.map((c) => c.name);
+    raw
+      .prepare(
+        `INSERT INTO room_bridges (${names.join(', ')}) VALUES (${names.map(() => '?').join(', ')})`
+      )
+      .run(...names.map((name) => values[name] ?? NOW));
+    migrate(drizzle(raw), { migrationsFolder: DRIZZLE_DIR });
+    expect(leadOf(raw, 'telegram-group')).toBeNull();
+  });
 });

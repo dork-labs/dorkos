@@ -256,7 +256,7 @@ export class RoomService {
   createRoom(request: CreateRoomRequest, creatorAuthorId: string): OpenedRoom {
     return this.parts.lifecycle.createRoom(request, creatorAuthorId);
   }
-  /** Record a room's fallback seat. See {@link RoomLifecycle.setLead}. */
+  /** Record #team's lead, its default agent. See {@link RoomLifecycle.setLead}. */
   setLead(roomId: string, operatorAuthorId: string, authorId: string | null): Room {
     return this.parts.lifecycle.setLead(roomId, operatorAuthorId, authorId);
   }

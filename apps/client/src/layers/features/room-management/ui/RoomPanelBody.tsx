@@ -448,7 +448,12 @@ export function RoomPanelBody({ roomId }: RoomPanelBodyProps) {
             "There is nobody here to answer you" — so drawing this during the
             read would state something false and then correct itself. */}
         {detail !== null && !detail.archived && (
-          <RoomLoudnessLine members={view.members} roomKind={detail.kind} preview={preview} />
+          <RoomLoudnessLine
+            members={view.members}
+            roomKind={detail.kind}
+            preview={preview}
+            leadAuthorId={leadAuthorId}
+          />
         )}
 
         {/* **Said only when it is known to be true** (DOR-786). The rows below

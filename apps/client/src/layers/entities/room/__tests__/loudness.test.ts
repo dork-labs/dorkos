@@ -170,6 +170,74 @@ describe('roomLoudness', () => {
   });
 });
 
+describe('a channel lead (DOR-2823)', () => {
+  it('names the lead instead of saying nobody answers', () => {
+    // Red if the all-silent headline survives a lead: the lead takes every
+    // message nobody else answers, whatever its own rung.
+    const loudness = roomLoudness(
+      [agent('Kai', 'silent'), agent('Ravi', 'silent')],
+      'channel',
+      'author-Kai'
+    );
+
+    expect(loudness).toEqual({
+      level: 2,
+      sentence: 'Kai answers anything nobody else does',
+      detail: 'Ravi never speaks here',
+    });
+  });
+
+  it('replaces "only @mentions" with the lead, when the lead is @only', () => {
+    const loudness = roomLoudness(
+      [agent('Kai', 'mention-only'), agent('Ravi', 'mention-only')],
+      'channel',
+      'author-Kai'
+    );
+
+    expect(loudness.sentence).toBe('Kai answers anything nobody else does');
+    expect(loudness.detail).toBeNull();
+  });
+
+  it('never calls a quiet lead silent when it is the one exception', () => {
+    const loudness = roomLoudness(
+      [agent('Mio', 'engaged'), agent('Kai', 'silent')],
+      'channel',
+      'author-Kai'
+    );
+
+    expect(loudness.sentence).toBe('One agent will answer you here');
+    expect(loudness.detail).toBe('Kai answers what nobody else does');
+  });
+
+  it('changes nothing without a lead, or for a lead that is not on the roster', () => {
+    const roster = [agent('Kai', 'silent'), agent('Ravi', 'silent')];
+
+    expect(roomLoudness(roster, 'channel').sentence).toBe('Nobody here will answer you');
+    expect(roomLoudness(roster, 'channel', 'author-Gone').sentence).toBe(
+      'Nobody here will answer you'
+    );
+  });
+
+  it('counts no retired lead — it answers nothing', () => {
+    const kai = agent('Kai', 'silent');
+    const loudness = roomLoudness(
+      [{ ...kai, author: { ...kai.author, retired: true } }, agent('Ravi', 'silent')],
+      'channel',
+      'author-Kai'
+    );
+
+    expect(loudness.sentence).toBe('Nobody here will answer you');
+  });
+
+  it('previews through the lead the same way', () => {
+    const roster = [agent('Kai', 'engaged'), agent('Ravi', 'silent')];
+
+    expect(previewLoudness(roster, 'channel', 'author-Kai', 'silent', 'author-Kai')).toEqual(
+      roomLoudness([agent('Kai', 'silent'), agent('Ravi', 'silent')], 'channel', 'author-Kai')
+    );
+  });
+});
+
 describe('previewLoudness', () => {
   const ROSTER = [
     person('Dorian'),

@@ -531,6 +531,7 @@ export function RoomMemberRow({
                 onPreview={dormantReasonId === null ? onRungPreview : undefined}
                 engagedWindow={engagedWindow}
                 disabledReasonId={dormantReasonId}
+                isLead={isLead}
               />
               {isMobile && dormantReasonId === null && (
                 <Button

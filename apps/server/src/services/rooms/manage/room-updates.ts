@@ -166,6 +166,18 @@ export class RoomUpdates {
     const room = this.visibility.requireVisibleRoom(roomId, callerAuthorId);
     this.authority.requireSystemRoomWritable(room, callerAuthorId, patch);
     this.authority.requireDmTitleWritable(room, callerAuthorId, patch);
+    // A hand-over, never a takeover: an agent may pass the lead on when it holds
+    // it, or take it when nobody does. Choosing among agents is the person's.
+    if (
+      patch.leadAuthorId !== undefined &&
+      room.leadAuthorId &&
+      room.leadAuthorId !== callerAuthorId
+    ) {
+      throw new RoomError(
+        'INVALID_LEAD',
+        'Another agent leads this channel. It can hand the lead on, or the person can change it.'
+      );
+    }
     return this.applyRoomPatch(room, callerAuthorId, patch);
   }
 
@@ -246,12 +258,19 @@ export class RoomUpdates {
     if (room.wellKnown) {
       throw new RoomError(
         'INVALID_LEAD',
-        `The lead of #${room.slug ?? room.title} is your default agent. Change it from an agent's profile.`
+        `The lead of #${room.slug ?? room.title} is the default agent, set from an agent's profile.`
+      );
+    }
+    if (this.bridges.findBridgeByRoom(room.id)) {
+      throw new RoomError(
+        'INVALID_LEAD',
+        'A channel connected to an outside chat has no lead. Its agent answers @mentions.'
       );
     }
     if (leadAuthorId === null) return;
     const member = this.store.listMembers(room.id).some((m) => m.authorId === leadAuthorId);
-    if (!member || this.authors.getById(leadAuthorId)?.kind !== 'agent') {
+    const author = this.authors.getById(leadAuthorId);
+    if (!member || author?.kind !== 'agent' || author.retiredAt) {
       throw new RoomError('INVALID_LEAD', 'Only an agent in this channel can lead it.');
     }
   }

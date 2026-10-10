@@ -274,10 +274,15 @@ export class RoomAuthority {
    * widens the door for AGENTS the owner armed and for nobody else.
    *
    * **`requireOperator` itself is unchanged, and four of its call sites must
-   * never gain an agent path.** `setLead` and `updateMembership` decide
-   * who answers what, which is arbitration by another name (ADR 260726-170125);
-   * `archiveBridgedRoom` and {@link RoomService.updateRoom} are spend authority
-   * and room-level state. Only `addMember` and `removeMember` move here.
+   * never gain an agent path.** `setLead` (#team's default agent) and
+   * `updateMembership` decide who answers what, which is arbitration by another
+   * name (ADR 260726-170125); `archiveBridgedRoom` and
+   * {@link RoomService.updateRoom} are spend authority and room-level state.
+   * Only `addMember` and `removeMember` move here. A channel's lead (DOR-2823)
+   * is the one narrow exception, and it is a hand-over rather than a choice: an
+   * agent may pass the lead on when it holds it, or take it when nobody does
+   * ({@link RoomUpdates.updateRoomFromTool}). It can never take it from another
+   * agent, and only the person picks among them.
    *
    * **What this deliberately does NOT decide.** Four refusals sit beside it and
    * stay exactly where they are, because each is a FIELD check rather than a

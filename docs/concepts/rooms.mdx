@@ -953,14 +953,19 @@ than to the agent.
 Every channel can have a lead: the one agent that answers when you write without `@`-naming
 anyone, and you aren't already talking to someone else there.
 
-The lead answers no matter how its own reply setting is set — even **@only**. It steps back in
+The lead answers no matter how its own reply setting is set — even **@only** or **Silent**. To stop
+that, pick another lead, or none. It steps back in
 two cases: when your message `@mentions` a different agent, and when it names only people. And if
 you're mid-exchange with another agent (see [Staying in the exchange](#staying-in-the-exchange)
 above), that agent keeps the message — the lead only picks up what nobody else would.
 
-**Choosing one.** Pick the lead when you create a channel. Skip that and the first agent you add
-becomes it. Change it later from the channel's members panel. A channel whose lead leaves has no
-lead again until you set a new one.
+**Choosing one.** The first agent you add to a channel becomes its lead. Change it from the
+channel's members panel. If the lead leaves, the agent that has been in the channel longest takes
+over. An agent can hand the lead to another agent while it holds it, or take it when nobody does,
+but it can never take it from another agent.
+
+**Channels connected to Telegram or Slack have no lead.** Their agent answers `@mentions` only, so
+messages from people outside your team never reach it on their own.
 
 **#team keeps its own.** Its lead is always your default agent, the one you pick with "Set as default" on an agent's profile, and
 the room itself can't change it.

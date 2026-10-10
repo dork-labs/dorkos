@@ -17,6 +17,9 @@
  *   message and `@only` in a channel. An aggregate computed without the kind
  *   would report the wrong number for any roster holding one — see
  *   `response-mode.ts` for the table.
+ * - **A channel's lead answers what nobody else does** (DOR-2823), whatever
+ *   its own rung. A room of `@only` or `Silent` agents with a lead is not a
+ *   room where nobody answers, so the quiet headlines name the lead instead.
  * - **{@link previewLoudness} is {@link roomLoudness} with one substitution.**
  *   Not a second implementation of the same idea: a preview that drifts from the
  *   real answer is a UI promising one consequence and delivering another, which
@@ -104,12 +107,18 @@ function countAgents(count: number): string {
 
 /** One agent's contribution to the room: what to call it, and how loud it is. */
 interface Voice {
+  authorId: string;
   name: string;
   rung: ResponseRung;
 }
 
 /** What a lone exception does, in the same voice as the headline. */
-function nameException(voice: Voice): string | null {
+function nameException(voice: Voice, lead: Voice | null): string | null {
+  // A quiet lead still takes what nobody else answers, so "never speaks" or
+  // "only when @mentioned" would be false of it.
+  if (voice === lead && (voice.rung === 'mention' || voice.rung === 'silent')) {
+    return `${voice.name} answers what nobody else does`;
+  }
   switch (voice.rung) {
     case 'mention':
       return `${voice.name} only when @mentioned`;
@@ -125,8 +134,8 @@ function nameException(voice: Voice): string | null {
 }
 
 /** The exception, when there is exactly one and it has something to say. */
-function detailFor(outside: readonly Voice[]): string | null {
-  return outside.length === 1 ? nameException(outside[0]!) : null;
+function detailFor(outside: readonly Voice[], lead: Voice | null): string | null {
+  return outside.length === 1 ? nameException(outside[0]!, lead) : null;
 }
 
 /**
@@ -135,7 +144,7 @@ function detailFor(outside: readonly Voice[]): string | null {
  * Both public functions land here with a list they built the same way, which is
  * what makes the preview and the real answer the same answer.
  */
-function loudnessOf(voices: readonly Voice[]): RoomLoudness {
+function loudnessOf(voices: readonly Voice[], leadAuthorId: string | null): RoomLoudness {
   if (voices.length === 0) {
     return { level: 0, sentence: 'There is nobody here to answer you', detail: null };
   }
@@ -144,6 +153,26 @@ function loudnessOf(voices: readonly Voice[]): RoomLoudness {
     (loudest, voice) => (LEVEL_OF_RUNG[voice.rung] > loudest ? LEVEL_OF_RUNG[voice.rung] : loudest),
     1
   );
+  // Only a lead still answering counts: a retired one was filtered out of the
+  // voices already, and an id naming nobody here leads nothing.
+  const lead =
+    leadAuthorId === null
+      ? null
+      : (voices.find((voice) => voice.authorId === leadAuthorId) ?? null);
+
+  if (lead !== null && level <= 2) {
+    // The quiet headlines below both say an unaddressed message goes
+    // unanswered, which a lead makes false. The meter lights at least the
+    // @only bar: something here does answer, so one bar would read as nobody.
+    return {
+      level: 2,
+      sentence: `${lead.name} answers anything nobody else does`,
+      detail: detailFor(
+        voices.filter((voice) => voice !== lead && voice.rung === 'silent'),
+        lead
+      ),
+    };
+  }
 
   if (level === 1) {
     // Every agent is Silent, so there is no exception to name — they are all
@@ -155,7 +184,10 @@ function loudnessOf(voices: readonly Voice[]): RoomLoudness {
     return {
       level,
       sentence: 'Only @mentions get an answer here',
-      detail: detailFor(voices.filter((voice) => voice.rung === 'silent')),
+      detail: detailFor(
+        voices.filter((voice) => voice.rung === 'silent'),
+        lead
+      ),
     };
   }
 
@@ -174,7 +206,10 @@ function loudnessOf(voices: readonly Voice[]): RoomLoudness {
     sentence: everyAnswerIsEverything
       ? `${countAgents(answering.length)} ${verb} every message here`
       : `${countAgents(answering.length)} will answer you here`,
-    detail: detailFor(voices.filter((voice) => !answering.includes(voice))),
+    detail: detailFor(
+      voices.filter((voice) => !answering.includes(voice)),
+      lead
+    ),
   };
 }
 
@@ -212,6 +247,7 @@ function voicesOf(
       // is in it (DOR-2095), so counting it would promise an answer nobody gives.
       .filter((member) => member.author.kind === 'agent' && member.author.retired !== true)
       .map((member) => ({
+        authorId: member.authorId,
         name: member.author.displayName,
         rung:
           override && member.authorId === override.authorId
@@ -229,12 +265,16 @@ function voicesOf(
  *   question gets the same answer.
  * @param roomKind - The room the roster lives in; two of the five stored values
  *   mean different things in each kind.
+ * @param leadAuthorId - The channel's lead as `roomLead` resolves it, or
+ *   `null`. Pass the resolved lead, never the stored id: a direct message or a
+ *   channel connected to an outside chat has none, whatever is stored.
  */
 export function roomLoudness(
   members: readonly RoomRosterEntry[],
-  roomKind: RoomKind
+  roomKind: RoomKind,
+  leadAuthorId: string | null = null
 ): RoomLoudness {
-  return loudnessOf(voicesOf(members, roomKind));
+  return loudnessOf(voicesOf(members, roomKind), leadAuthorId);
 }
 
 /**
@@ -251,17 +291,20 @@ export function roomLoudness(
  *   is not on the roster, or belongs to a person, changes nothing — which is
  *   the honest answer, since neither has a rung to move.
  * @param rung - The rung to imagine them on.
+ * @param leadAuthorId - The channel's resolved lead, or `null` — see
+ *   {@link roomLoudness}.
  */
 export function previewLoudness(
   members: readonly RoomRosterEntry[],
   roomKind: RoomKind,
   authorId: string,
-  rung: ResponseRung
+  rung: ResponseRung,
+  leadAuthorId: string | null = null
 ): RoomLoudness {
   // The rung is used as it was given. It used to be put through the round trip
   // a real write takes — `modeForRung` then `rungOf` — because a direct message
   // wrote `mention-only` for the engaged rung and the preview had to show the
   // room that write would really produce. Every rung now stores a value that
   // reads back as itself in both kinds, so that trip is the identity.
-  return loudnessOf(voicesOf(members, roomKind, { authorId, rung }));
+  return loudnessOf(voicesOf(members, roomKind, { authorId, rung }), leadAuthorId);
 }

@@ -551,14 +551,23 @@ refuses any attempt to set one (`INVALID_LEAD`): everything in a DM already addr
 in it, so there is nothing for a lead to pick up.
 
 **Changing it.** `PATCH /api/rooms/:id` `{ leadAuthorId }` is person-only, gated the same way the
-rest of that route is; the `update_room` tool exposes the same field as `lead`, resolved by
-`@handle`, open to any agent that is itself a member of the channel. `requireValidLead`
-(`room-updates.ts`) refuses all three ways a write can be wrong: a non-channel room
-(`INVALID_LEAD`, "A direct message has no lead"), a `wellKnown` room (`INVALID_LEAD`: #team's lead
-tracks Settings' default agent, and a direct write would be undone the next time `ensureTeamRoom`
-runs, so it is refused rather than silently reverted), and an id that is not an agent member of
-this channel. Removing a member who is the lead clears `leadAuthorId` to `null` — never a dangling
-id — and the channel has no lead again until someone sets one.
+rest of that route is. The `update_room` tool exposes the same field as `lead`, resolved by
+`@handle`, and it is a hand-over rather than a choice: an agent may pass the lead on while it holds
+it, or take it when nobody does, never take it from another agent (`updateRoomFromTool`).
+`requireValidLead` (`room-updates.ts`) refuses with `INVALID_LEAD` a non-channel room, a
+`wellKnown` room (#team's lead tracks the default agent and `ensureTeamRoom` would undo a direct
+write), a channel bridged to an outside chat, and an id that is not a live agent member of the
+channel. Removing the lead hands it to the agent member that joined earliest (none in #team or a
+bridged room).
+
+**Bridged channels never have a lead.** A Telegram or Slack group seats its one agent as
+`mention-only` so strangers' messages never reach it unasked. Creation never sets a lead there,
+`addMember` never promotes one, the backfill skips every room with a `room_bridges` row, and the
+dispatcher does not run `pickLead` when `bridgedFraming(room.id)` is non-null.
+
+**The lead's turn owes an answer.** A `'lead'` or `'conversation'` selection travels to the room
+context as `addressing.answerOwed`, and the block then says the message is the agent's to answer
+and never offers "post nothing" (the addressed branch of §11's directive).
 
 **Migration** (`packages/db/drizzle/20261010002626_channel_leads.sql`, carries no DDL). Every
 existing channel with `fallback_seat_author_id IS NULL` gets a value, in order:
