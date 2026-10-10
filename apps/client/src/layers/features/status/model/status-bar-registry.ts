@@ -571,7 +571,9 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
     // purpose").
     //
     // An open picker holds the item, and its rank, until it closes: the person
-    // is pointing at it (see `permissionPickerOpen`).
+    // is pointing at it (see `permissionPickerOpen`). On a narrow, full line
+    // that rank can push a lower item off while the picker is open; keeping
+    // the popover under the cursor is worth it.
     promote: (ctx) => isElevatedPermissionMode(ctx) || ctx.permissionPickerOpen === true,
     severity: (ctx) => {
       const bypassed = ctx.permissionDescriptor

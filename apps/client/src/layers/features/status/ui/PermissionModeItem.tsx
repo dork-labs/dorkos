@@ -164,7 +164,9 @@ export function PermissionModeItem({
   // with the picker still open. Close it on the way out: otherwise the caller's
   // `pickerOpen` and the store's `open` stay true, and the "make it the default"
   // offer that follows has nowhere to appear. A ref, so a caller passing a new
-  // callback each render cannot turn this into a close on every render.
+  // callback each render cannot turn this into a close on every render. In dev,
+  // StrictMode's test unmount runs this once on mount too; `open` starts false,
+  // so that closes nothing.
   const onOpenChangeRef = useRef(onOpenChange);
   useEffect(() => {
     onOpenChangeRef.current = onOpenChange;
