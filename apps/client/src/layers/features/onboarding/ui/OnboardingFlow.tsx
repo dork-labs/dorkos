@@ -70,6 +70,15 @@ function FirstRunStages({
     startOnboarding();
   }, [startOnboarding]);
 
+  // A window still waiting when Connecting goes never gets an address. Keyed on
+  // the stage rather than an unmount cleanup: React's development double mount
+  // would close the window the click had only just opened.
+  useEffect(() => {
+    if (stage === 'connecting') return;
+    waitingWindowRef.current?.close();
+    waitingWindowRef.current = null;
+  }, [stage]);
+
   const continueWithDorkos = useCallback(() => {
     setWelcomeError(null);
     // Opened now, in the click, or a browser blocks it once a request is in

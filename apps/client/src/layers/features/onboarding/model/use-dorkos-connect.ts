@@ -122,9 +122,6 @@ export function useDorkosConnect({
     waitingWindowRef.current = null;
   }, [pending, waitingWindowRef]);
 
-  // A window still waiting when the screen goes never gets an address.
-  useEffect(() => closeWindow, [closeWindow]);
-
   const advanced = useRef(false);
   useEffect(() => {
     if (readiness !== 'ready' || advanced.current) return;

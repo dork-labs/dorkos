@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { useState, type ReactNode } from 'react';
+import { StrictMode, useState, type ReactNode } from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -96,12 +96,16 @@ function buildHarness(initialUrl: string, transport: Transport) {
   });
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   function Wrapper() {
+    // StrictMode, as the app mounts it: its development double mount once
+    // closed the tab Continue had just opened, before the code could reach it.
     return (
-      <QueryClientProvider client={queryClient}>
-        <TransportProvider transport={transport}>
-          <RouterProvider router={router} />
-        </TransportProvider>
-      </QueryClientProvider>
+      <StrictMode>
+        <QueryClientProvider client={queryClient}>
+          <TransportProvider transport={transport}>
+            <RouterProvider router={router} />
+          </TransportProvider>
+        </QueryClientProvider>
+      </StrictMode>
     );
   }
   const readStage = () => (router.state.location.search as { onboarding?: string }).onboarding;
@@ -165,6 +169,7 @@ describe('OnboardingFlow', () => {
     expect(window.open).toHaveBeenCalledWith('about:blank', '_blank');
     await waitFor(() => expect(readStage()).toBe('connecting'));
     await waitFor(() => expect(fakeWindow.location.replace).toHaveBeenCalledWith(COMPLETE));
+    expect(fakeWindow.close).not.toHaveBeenCalled();
     expect(chooseFirstRunPath).toHaveBeenCalledWith({ path: 'dorkos' });
     expect(order).toEqual(['first-run', 'start']);
     expect(await screen.findByText('Finish in your browser.')).toBeTruthy();

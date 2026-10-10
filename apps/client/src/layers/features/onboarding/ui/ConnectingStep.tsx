@@ -158,7 +158,7 @@ function PendingCode({ pending }: { pending: FirstRunPendingCode }) {
   return (
     <div className="mt-8 w-full space-y-4" data-testid="onboarding-link-code">
       <div className="flex items-center gap-2">
-        <code className="bg-muted flex-1 rounded-md px-4 py-3 text-center font-mono text-xl font-semibold tracking-[0.2em] tabular-nums">
+        <code className="bg-muted min-w-0 flex-1 rounded-md px-3 py-3 text-center font-mono text-lg font-semibold tracking-[0.15em] whitespace-nowrap tabular-nums sm:text-xl">
           {pending.userCode}
         </code>
         <Button
