@@ -40,6 +40,7 @@ import type express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createApp } from '../app.js';
+import { composedListener } from '../http/__tests__/composed-listener.js';
 import { env } from '../env.js';
 import { logger } from '../lib/logger.js';
 import { isTrustedBrowserOrigin } from '../lib/trusted-origins.js';
@@ -81,9 +82,10 @@ describe('CORS: DORKOS_CORS_ORIGIN wildcard', () => {
 
   beforeAll(() => {
     process.env.DORKOS_CORS_ORIGIN = '*';
-    app = createApp({ admission: new MainRequestAdmission() });
+    const admission = new MainRequestAdmission();
+    app = createApp({ admission });
 
-    fixtureTarget.mount(app);
+    fixtureTarget.mount(composedListener(app, admission));
   });
 
   afterAll(() => {
@@ -155,9 +157,10 @@ describe('CORS: DORKOS_CORS_ORIGIN with surrounding whitespace', () => {
 
   beforeAll(() => {
     process.env.DORKOS_CORS_ORIGIN = ' * ';
-    app = createApp({ admission: new MainRequestAdmission() });
+    const admission = new MainRequestAdmission();
+    app = createApp({ admission });
 
-    fixtureTarget.mount(app);
+    fixtureTarget.mount(composedListener(app, admission));
   });
 
   afterAll(() => {
@@ -208,9 +211,10 @@ describe('X-Content-Type-Options', () => {
 
   beforeAll(() => {
     delete process.env.DORKOS_CORS_ORIGIN;
-    app = createApp({ admission: new MainRequestAdmission() });
+    const admission = new MainRequestAdmission();
+    app = createApp({ admission });
 
-    fixtureTarget.mount(app);
+    fixtureTarget.mount(composedListener(app, admission));
   });
 
   it('rides every API response, not only the routes that set it themselves', async () => {
@@ -231,9 +235,10 @@ describe('CORS: an explicit DORKOS_CORS_ORIGIN allowlist is untouched', () => {
 
   beforeAll(() => {
     process.env.DORKOS_CORS_ORIGIN = 'http://localhost:5173,https://dorkos.example.com';
-    app = createApp({ admission: new MainRequestAdmission() });
+    const admission = new MainRequestAdmission();
+    app = createApp({ admission });
 
-    fixtureTarget.mount(app);
+    fixtureTarget.mount(composedListener(app, admission));
   });
 
   afterAll(() => {

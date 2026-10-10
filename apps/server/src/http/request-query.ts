@@ -21,7 +21,8 @@ import type { Context } from 'hono';
  * @returns The query object.
  */
 export function readQuery(c: Context): Record<string, string | string[]> {
-  const query: Record<string, string | string[]> = {};
+  // No prototype: a key named `__proto__` is a key like any other.
+  const query: Record<string, string | string[]> = Object.create(null);
   for (const [key, values] of Object.entries(c.req.queries())) {
     query[key] = values.length === 1 ? values[0]! : values;
   }
