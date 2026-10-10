@@ -6,6 +6,7 @@ import {
   UserConfigSchema,
   USER_CONFIG_DEFAULTS,
   readClaudeAccountSettings,
+  defaultRemoteAccessSettings,
 } from '@dorkos/shared/config-schema';
 import {
   ConfigManager,
@@ -578,6 +579,18 @@ describe('ConfigManager', () => {
       linkedAccountLabel: null,
       previousLinkProof: null,
       credits: { defaults: {}, offer: 'none', agents: [], linkedTo: null },
+      remote: {
+        mode: 'off',
+        enrolmentId: null,
+        consentVersion: null,
+        instanceId: null,
+        credentialRef: null,
+        credentialId: null,
+        fingerprint: null,
+        hosts: [],
+        edgeProofRef: null,
+        edgeProofHeader: null,
+      },
     });
   });
 
