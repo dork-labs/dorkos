@@ -124,9 +124,7 @@ import type {
   InterruptReceipt,
   KeepAwakeStatus,
   UiCanvasContent,
-  RemoteAccessReport,
 } from './schemas.js';
-import type { RemoteAccessMode } from './config-schema.js';
 import type { TemplateEntry } from './template-catalog.js';
 import type { ClientContext } from './additional-context.js';
 import type {
@@ -1909,31 +1907,6 @@ export interface Transport extends TransportSlices {
   startTunnel(): Promise<{ url: string }>;
   /** Stop the ngrok tunnel. */
   stopTunnel(): Promise<void>;
-  /**
-   * Read where remote access stands: the selected mode, its state, and whether
-   * managed access can be offered here (DOR-2086). Every remote-access surface
-   * reads this one report.
-   */
-  getRemoteAccessReport(): Promise<RemoteAccessReport>;
-  /**
-   * Start managed setup on this computer: ask DorkOS Cloud for a code the person
-   * approves on their account. Resolves with the report, its enrolment `pending`.
-   */
-  startRemoteEnrolment(): Promise<RemoteAccessReport>;
-  /**
-   * Select how this computer is reachable. Choosing `managed` needs an approved
-   * enrolment. Resolves with the report after the change.
-   *
-   * @param mode - `off`, `byo` (the person's own ngrok) or `managed`.
-   */
-  setRemoteAccessMode(mode: RemoteAccessMode): Promise<RemoteAccessReport>;
-  /** Close the managed tunnel now. The mode stays selected. Resolves with the report. */
-  closeRemoteAccess(): Promise<RemoteAccessReport>;
-  /**
-   * Withdraw managed access on this computer: close it, forget the enrolment and
-   * its credential, and cancel a pending setup. Resolves with the report.
-   */
-  withdrawRemoteAccess(): Promise<RemoteAccessReport>;
 
   // --- Tasks ---
 

@@ -35,6 +35,24 @@ function startTarget(report: RemoteAccessReport | null): 'byo' | 'managed' {
   return 'byo';
 }
 
+/** Whether a refusal is the exposure guard's: remote access needs a login first. */
+function isExposureRefusal(err: unknown): boolean {
+  return (err as { code?: string } | null)?.code === 'AUTH_REQUIRED_FOR_EXPOSURE';
+}
+
+/**
+ * Route the person into creating an owner account, then run `retry` once it
+ * is done. A retry that is refused again has nobody waiting on it, so its
+ * rejection is dropped rather than left unhandled; the report still updates.
+ */
+function askForLogin(retry: () => Promise<void> | undefined): void {
+  requestOwnerSetup({
+    reason: 'exposure',
+    message: 'Remote access needs a login.',
+    onComplete: () => void retry()?.catch(() => undefined),
+  });
+}
+
 /** The sentence a refusal carries, or a fallback when it carries none. */
 function messageOf(err: unknown, fallback: string): string {
   return err instanceof Error && err.message ? err.message : fallback;
@@ -57,7 +75,7 @@ export interface RemoteAccessActionHandlers {
   chooseMode: (mode: RemoteAccessMode) => Promise<void>;
   /** Start managed setup: get a code to approve on the person's DorkOS account. Rejects on refusal. */
   enrol: () => Promise<void>;
-  /** Close the managed tunnel now; the address reopens it when used. Rejects on refusal. */
+  /** Close managed access now. The mode stays selected. Rejects on refusal. */
   closeNow: () => Promise<void>;
   /** Remove managed access from this computer, or cancel a pending setup. Rejects on refusal. */
   withdraw: () => Promise<void>;
@@ -196,11 +214,25 @@ export function useRemoteAccessActions(): RemoteAccessActionHandlers {
   // The managed-only writes. Each rejects with the server's sentence so the
   // Settings control that asked can say it in place; none of them touches the
   // shared `error`, which belongs to the switch.
+  //
+  // Starting setup and choosing managed access both open this computer to the
+  // internet, so the server refuses them without a login exactly as it refuses
+  // the person's own tunnel. That refusal is not an error to show: it routes
+  // the person into creating an owner account, then retries what they asked.
+  const managedRef = useRef<{
+    chooseMode: (mode: RemoteAccessMode) => Promise<void>;
+    enrol: () => Promise<void>;
+  }>(undefined);
+
   const chooseMode = useCallback(
     async (mode: RemoteAccessMode) => {
       try {
         settleReport(await transport.setRemoteAccessMode(mode));
       } catch (err) {
+        if (isExposureRefusal(err)) {
+          askForLogin(() => managedRef.current?.chooseMode(mode));
+          return;
+        }
         throw new Error(messageOf(err, 'Couldn’t change remote access. Try again.'), {
           cause: err,
         });
@@ -213,15 +245,23 @@ export function useRemoteAccessActions(): RemoteAccessActionHandlers {
     try {
       settleReport(await transport.startRemoteEnrolment());
     } catch (err) {
+      if (isExposureRefusal(err)) {
+        askForLogin(() => managedRef.current?.enrol());
+        return;
+      }
       throw new Error(messageOf(err, 'Couldn’t start setup. Try again.'), { cause: err });
     }
   }, [transport, settleReport]);
+
+  useEffect(() => {
+    managedRef.current = { chooseMode, enrol };
+  }, [chooseMode, enrol]);
 
   const closeNow = useCallback(async () => {
     try {
       settleReport(await transport.closeRemoteAccess());
     } catch (err) {
-      throw new Error(messageOf(err, 'Couldn’t close the tunnel. Try again.'), { cause: err });
+      throw new Error(messageOf(err, 'Couldn’t close remote access. Try again.'), { cause: err });
     }
   }, [transport, settleReport]);
 

@@ -34,18 +34,20 @@ const PRIORITY = { copyLink: 11, showQr: 12, turnOff: 13, turnOn: 11 } as const;
  *
  * @param state - What remote access is doing.
  * @param url - Its public address, if it has one.
- * @param tokenConfigured - Whether the one-time ngrok setup is done.
+ * @param isSetUp - Whether the one-time setup is done for the mode a switch
+ *   would use: the ngrok token, or an approved managed setup (DOR-2086).
  * @returns Zero, one, or three rows.
  */
 export function remoteAccessPaletteItems(
   state: string,
   url: string | null,
-  tokenConfigured: boolean
+  isSetUp: boolean
 ): CommandPaletteContribution[] {
   // Reachable, and with an address to hand over. `starting` deliberately offers
   // nothing: there is no link to copy yet, and a row that copies `null` is
-  // worse than no row.
-  if ((state === 'connected' || state === 'reconnecting') && url) {
+  // worse than no row. A managed address that is `asleep` still answers, so it
+  // is offered exactly like an open one.
+  if ((state === 'connected' || state === 'reconnecting' || state === 'asleep') && url) {
     return [
       {
         id: 'remote-access-copy',
@@ -77,9 +79,25 @@ export function remoteAccessPaletteItems(
     ];
   }
 
+  // On, but with no address to hand over: a managed address that is asleep
+  // without one, or managed access that is blocked. Turning it off still works.
+  if (state === 'asleep' || state === 'blocked') {
+    return [
+      {
+        id: 'remote-access-off',
+        label: 'Turn remote access off',
+        icon: 'Globe',
+        action: REMOTE_ACCESS_PALETTE_ACTIONS.turnOff,
+        category: 'quick-action',
+        priority: PRIORITY.turnOff,
+        keywords: ['remote', 'tunnel', 'ngrok', 'stop', 'disconnect'],
+      },
+    ];
+  }
+
   // Set up but not running — including after a failed start, where turning it
   // on again IS the retry.
-  if (tokenConfigured && (state === 'off' || state === 'error')) {
+  if (isSetUp && (state === 'off' || state === 'error')) {
     return [
       {
         id: 'remote-access-on',
@@ -109,9 +127,6 @@ export function remoteAccessPaletteItems(
  * @returns A stable array while remote access holds still.
  */
 export function useRemoteAccessPaletteItems(): CommandPaletteContribution[] {
-  const { state, url, tokenConfigured } = useRemoteAccessSnapshot();
-  return useMemo(
-    () => remoteAccessPaletteItems(state, url, tokenConfigured),
-    [state, url, tokenConfigured]
-  );
+  const { state, url, isSetUp } = useRemoteAccessSnapshot();
+  return useMemo(() => remoteAccessPaletteItems(state, url, isSetUp), [state, url, isSetUp]);
 }

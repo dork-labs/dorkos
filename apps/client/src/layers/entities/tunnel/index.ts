@@ -17,6 +17,7 @@
  */
 export { tunnelHost } from './lib/tunnel-host';
 export { friendlyErrorMessage } from './lib/tunnel-failure';
+export { remoteAccessDotTone, remoteAccessHeading } from './lib/remote-access-copy';
 export type { TunnelReport } from './model/tunnel-report';
 export type { TunnelState } from './model/remote-access-store';
 export { useRemoteAccess, useRemoteAccessSnapshot } from './model/use-remote-access';
