@@ -25,6 +25,7 @@ export const V2_COLLECTIONS = {
   entries: 'entries',
   attachments: 'attachments',
   bans: 'bans',
+  reports: 'reports',
 } as const;
 /** One collection of a version 2 export. */
 export type V2Collection = keyof typeof V2_COLLECTIONS;

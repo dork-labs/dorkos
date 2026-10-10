@@ -24,6 +24,7 @@ import { ApiError, json, readJson } from '../../http.js';
 import { agentLimitReached, effectiveAgentLimit } from '../../host/limits.js';
 import { hashSecret, randomToken } from '../../security.js';
 import { notifyLive } from '../../live/notices.js';
+import { refuseAgentName } from '../../moderation/display-names.js';
 
 const uuid = z.uuid();
 interface AgentRow {
@@ -147,6 +148,10 @@ export function registerAgentRoutes(
         config.limits.agentsPerOwner
       );
       if (Number(count.rows[0].n) >= limit) throw agentLimitReached();
+      await refuseAgentName(client, member, [
+        body.displayName,
+        ...(body.handle ? [body.handle] : []),
+      ]);
       if (reusable) await adoptAgent(client, reusable, member.grant_id, member.community_id);
       const agent = reusable
         ? await client.query<AgentRow>(

@@ -11,7 +11,7 @@ import type { CommunityConfig } from '../../config.js';
 import { z } from 'zod';
 import { requireLiveRole, requireMember, transaction, type Member } from '../../data.js';
 import { ApiError, json, readJson } from '../../http.js';
-import { banEmailKey } from '../../moderation/bans.js';
+import { banEmailKey, outranks } from '../../moderation/bans.js';
 import { remove } from './members.js';
 
 interface BanRow {
@@ -53,7 +53,7 @@ interface TargetRow {
  * commits, so a ban and an admission never interleave: the admission commits first and the ban
  * then removes the person, or the ban commits first and the admission reads it.
  */
-async function lockCommunityForBan(client: PoolClient, communityId: string): Promise<void> {
+export async function lockCommunityForBan(client: PoolClient, communityId: string): Promise<void> {
   await client.query('SELECT 1 FROM communities WHERE id=$1 FOR UPDATE', [communityId]);
 }
 
@@ -88,53 +88,12 @@ export function registerBanRoutes(
     const { ban, created } = await transaction(pool, async (client) => {
       await lockCommunityForBan(client, actor.community_id);
       const role = await requireLiveRole(client, actor, ['owner', 'admin']);
-      const target = await lockTarget(client, targetId, actor.community_id);
-      if (!target) throw new ApiError(404, 'NOT_FOUND', 'Member not found.');
-      if (target.id === actor.id)
-        throw new ApiError(409, 'STATE_CONFLICT', "You can't ban yourself.");
-      // A former member's role is history: only a current owner or admin is out of reach.
-      if (
-        target.active &&
-        (target.role === 'owner' || (target.role === 'admin' && role !== 'owner'))
-      )
-        throw new ApiError(403, 'FORBIDDEN', 'This member cannot be banned by your role.');
-      const standing = await client.query<BanRow>(
-        `${BAN_SELECT} WHERE b.community_id=$1 AND b.member_id=$2 AND b.lifted_at IS NULL`,
-        [actor.community_id, target.id]
-      );
-      if (standing.rows[0]) return { ban: standing.rows[0], created: false };
-      if (!target.user_id)
-        throw new ApiError(409, 'STATE_CONFLICT', 'This member’s account is gone.');
-      const inserted = await client.query<{ id: string }>(
-        `INSERT INTO bans(community_id,member_id,user_id,email_hash,reason,actor_member_id)
-         VALUES($1,$2,$3,$4,$5,$6) RETURNING id`,
-        [
-          actor.community_id,
-          target.id,
-          target.user_id,
-          // Only an email the account has confirmed is the person's; an unconfirmed one could be
-          // anyone's address, and keying it would ban whoever really owns it.
-          target.email && target.email_verified
-            ? banEmailKey(target.email, config.authSecret)
-            : null,
-          body.reason ?? null,
-          actor.id,
-        ]
-      );
-      // A join attempt this account already started ends here too.
-      await client.query('DELETE FROM pending_admissions WHERE community_id=$1 AND account_id=$2', [
-        actor.community_id,
-        target.user_id,
-      ]);
-      if (target.active) await remove(client, target, actor.id, 'member.ban');
-      else
-        await client.query(
-          `INSERT INTO audit_events(community_id,actor_member_id,action,subject_id)
-           VALUES($1,$2,'member.ban',$3)`,
-          [actor.community_id, actor.id, target.id]
-        );
-      const row = await client.query<BanRow>(`${BAN_SELECT} WHERE b.id=$1`, [inserted.rows[0].id]);
-      return { ban: row.rows[0], created: true };
+      return banMember(client, {
+        actor: { id: actor.id, communityId: actor.community_id, role },
+        targetId,
+        reason: body.reason,
+        authSecret: config.authSecret,
+      });
     });
     return json(c, CommunityWireBanResponseSchema, { ban: project(ban) }, created ? 201 : 200);
   });
@@ -172,6 +131,64 @@ export function registerBanRoutes(
     });
     return c.body(null, 204);
   });
+}
+
+/**
+ * Ban one member, current or former, as `actor`: the shared step of the ban route and of
+ * resolving a report with a ban. The caller has taken the community row for update
+ * ({@link lockCommunityForBan}) and checked the actor's live role. A standing ban is returned
+ * as it is (`created: false`).
+ */
+export async function banMember(
+  client: PoolClient,
+  input: {
+    actor: { id: string; communityId: string; role: Member['role'] };
+    targetId: string;
+    reason?: string;
+    authSecret: string;
+  }
+): Promise<{ ban: BanRow; created: boolean }> {
+  const { actor } = input;
+  const target = await lockTarget(client, input.targetId, actor.communityId);
+  if (!target) throw new ApiError(404, 'NOT_FOUND', 'Member not found.');
+  if (target.id === actor.id) throw new ApiError(409, 'STATE_CONFLICT', "You can't ban yourself.");
+  // A former member's role is history: only a current owner or admin is out of reach.
+  if (target.active && !outranks(actor.role, target.role))
+    throw new ApiError(403, 'FORBIDDEN', 'This member cannot be banned by your role.');
+  const standing = await client.query<BanRow>(
+    `${BAN_SELECT} WHERE b.community_id=$1 AND b.member_id=$2 AND b.lifted_at IS NULL`,
+    [actor.communityId, target.id]
+  );
+  if (standing.rows[0]) return { ban: standing.rows[0], created: false };
+  if (!target.user_id) throw new ApiError(409, 'STATE_CONFLICT', 'This member’s account is gone.');
+  const inserted = await client.query<{ id: string }>(
+    `INSERT INTO bans(community_id,member_id,user_id,email_hash,reason,actor_member_id)
+     VALUES($1,$2,$3,$4,$5,$6) RETURNING id`,
+    [
+      actor.communityId,
+      target.id,
+      target.user_id,
+      // Only an email the account has confirmed is the person's; an unconfirmed one could be
+      // anyone's address, and keying it would ban whoever really owns it.
+      target.email && target.email_verified ? banEmailKey(target.email, input.authSecret) : null,
+      input.reason ?? null,
+      actor.id,
+    ]
+  );
+  // A join attempt this account already started ends here too.
+  await client.query('DELETE FROM pending_admissions WHERE community_id=$1 AND account_id=$2', [
+    actor.communityId,
+    target.user_id,
+  ]);
+  if (target.active) await remove(client, target, actor.id, 'member.ban');
+  else
+    await client.query(
+      `INSERT INTO audit_events(community_id,actor_member_id,action,subject_id)
+       VALUES($1,$2,'member.ban',$3)`,
+      [actor.communityId, actor.id, target.id]
+    );
+  const row = await client.query<BanRow>(`${BAN_SELECT} WHERE b.id=$1`, [inserted.rows[0].id]);
+  return { ban: row.rows[0], created: true };
 }
 
 /** Lock the member to ban, current or former, with the email of the account behind it. */

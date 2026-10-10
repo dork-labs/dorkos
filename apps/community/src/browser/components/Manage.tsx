@@ -12,8 +12,12 @@ import { RemovedByHost } from '../takedowns/TakedownNotices.js';
 import { EraseMembershipPanel } from './Erasure.js';
 import { ExportPanel } from './ExportPanel.js';
 import { SpaceMembers } from './members/SpaceMembers.js';
+import { ReportQueue } from '../moderation/ReportQueue.js';
+import { ConductSettings } from '../moderation/ConductSettings.js';
+import { SlowModeControl } from '../moderation/SlowModeControl.js';
+import { DisplayNamePanel } from '../moderation/DisplayNamePanel.js';
 import type { Agent, Channel, Member } from '../types.js';
-import type { CommunitySettingsSection, CommunityWireBan } from '@dorkos/shared/community-wire';
+import type { CommunitySettingsSection } from '@dorkos/shared/community-wire';
 
 type Invite = {
   id: string;
@@ -105,7 +109,6 @@ export function Manage({
   const [admissionClosed, setAdmissionClosed] = useState(false);
   const [directory, setDirectory] = useState<Member[]>([]);
   const [directoryCursor, setDirectoryCursor] = useState<string | null>(null);
-  const [bans, setBans] = useState<CommunityWireBan[]>([]);
   const [roster, setRoster] = useState<Member[]>([]);
   const [selectedMember, setSelectedMember] = useState('');
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -142,9 +145,6 @@ export function Manage({
               setDirectory(body.members);
               setDirectoryCursor(body.nextCursor);
             })
-          );
-          requests.push(
-            request<{ bans: CommunityWireBan[] }>('/api/v1/bans').then((body) => setBans(body.bans))
           );
         }
         if (selectedChannel?.joined && !readOnly)
@@ -345,6 +345,7 @@ export function Manage({
             onOpenPeople={() => setTab('members')}
           />
         )}
+        {tab === 'settings' && moderator && !readOnly && <ConductSettings role={me.role} />}
         {tab === 'settings' && moderator && (
           <RemovedByHost communityId={communityId} channels={channels} />
         )}
@@ -481,38 +482,43 @@ export function Manage({
                   {selectedChannel.visibility} · {selectedChannel.archived ? 'Archived' : 'Active'}
                 </p>
                 {moderator && (
-                  <div className="row">
-                    <Button
-                      variant="outline"
-                      disabled={busy}
-                      onClick={() => {
-                        const name = window.prompt('Channel name', selectedChannel.name);
-                        if (name)
+                  <>
+                    <div className="row">
+                      <Button
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => {
+                          const name = window.prompt('Channel name', selectedChannel.name);
+                          if (name)
+                            void perform(
+                              () =>
+                                request(`/api/v1/channels/${selectedChannel!.id}`, 'PATCH', {
+                                  name,
+                                }),
+                              'Channel renamed.'
+                            );
+                        }}
+                      >
+                        Rename
+                      </Button>
+                      <Button
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() =>
                           void perform(
                             () =>
-                              request(`/api/v1/channels/${selectedChannel!.id}`, 'PATCH', { name }),
-                            'Channel renamed.'
-                          );
-                      }}
-                    >
-                      Rename
-                    </Button>
-                    <Button
-                      variant="outline"
-                      disabled={busy}
-                      onClick={() =>
-                        void perform(
-                          () =>
-                            request(`/api/v1/channels/${selectedChannel!.id}`, 'PATCH', {
-                              archived: !selectedChannel.archived,
-                            }),
-                          selectedChannel.archived ? 'Channel reopened.' : 'Channel archived.'
-                        )
-                      }
-                    >
-                      {selectedChannel.archived ? 'Reopen' : 'Archive'}
-                    </Button>
-                  </div>
+                              request(`/api/v1/channels/${selectedChannel!.id}`, 'PATCH', {
+                                archived: !selectedChannel.archived,
+                              }),
+                            selectedChannel.archived ? 'Channel reopened.' : 'Channel archived.'
+                          )
+                        }
+                      >
+                        {selectedChannel.archived ? 'Reopen' : 'Archive'}
+                      </Button>
+                    </div>
+                    <SlowModeControl channelId={selectedChannel.id} busy={busy} perform={perform} />
+                  </>
                 )}
                 {selectedChannel.joined && me.role !== 'owner' && (
                   <Button
@@ -624,13 +630,13 @@ export function Manage({
               <SpaceMembers
                 me={me}
                 directory={directory}
-                hasMore={directoryCursor !== null}
-                bans={bans}
+                hasMore={Boolean(directoryCursor)}
                 busy={busy}
                 perform={perform}
                 onMore={() => void moreMembers()}
               />
             )}
+            {moderator && <ReportQueue busy={busy} perform={perform} />}
           </div>
         )}
         {!readOnly && tab === 'agents' && (
@@ -755,6 +761,9 @@ export function Manage({
         )}
         {tab === 'account' && (
           <div className="settings-grid">
+            {!readOnly && (
+              <DisplayNamePanel me={me} onChanged={() => void onCurrentMemberChanged()} />
+            )}
             <section className="panel" aria-labelledby="this-browser-title">
               <h3 id="this-browser-title">This browser</h3>
               <p className="small muted">

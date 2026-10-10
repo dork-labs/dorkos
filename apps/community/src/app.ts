@@ -26,7 +26,7 @@ import { createLiveHub, stopLiveWithPool } from './live/app-hub.js';
 import { registerMonitoringRoutes } from './live/monitoring.js';
 import { registerInviteRoutes } from './routes/community/invites.js';
 import { registerMemberRoutes } from './routes/community/members.js';
-import { registerBanRoutes } from './routes/community/bans.js';
+import { registerModerationRoutes } from './routes/community/moderation.js';
 import { registerOpenAdmissionRoutes } from './routes/community/open-admission.js';
 import { registerPairingRoutes } from './routes/community/pairings.js';
 import { registerRedactionRoutes } from './routes/community/redactions.js';
@@ -533,7 +533,7 @@ export function createCommunityApp({
     },
   });
   registerMemberRoutes(communityApi, { pool, auth, confirmPassword, now });
-  registerBanRoutes(communityApi, { pool, auth, config });
+  registerModerationRoutes(communityApi, { pool, auth, config });
   registerOpenAdmissionRoutes(communityApi, {
     pool,
     auth,

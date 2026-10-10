@@ -30,7 +30,7 @@ import { ApiError, json, readJson } from '../../http.js';
 import { assertMemberRoom } from '../../host/limits.js';
 import { inspectInvite, issueInvite } from '../../invites.js';
 import { hashSecret, randomToken, readCookie, signValue, verifyValue } from '../../security.js';
-import { mintHandle } from '../../handles.js';
+import { admittedIdentity } from '../../moderation/display-names.js';
 import { readmissionBlocked } from '../../erasure/guards.js';
 import { clearFormerMembership } from './members.js';
 import { refuseBannedAccount } from '../../moderation/bans.js';
@@ -467,10 +467,10 @@ export function registerInviteRoutes(
       // Someone already in the space keeps the channels they chose; only an arrival is placed.
       const arriving = !member.rows[0]?.active;
       if (!member.rows[0]) {
-        const handle = await mintHandle(client, invite.community_id, user.name);
+        const { handle, name } = await admittedIdentity(client, invite.community_id, user.name);
         member = await client.query(
           'INSERT INTO members(community_id,user_id,display_name,handle,role) VALUES($1,$2,$3,$4,$5) RETURNING id,active',
-          [invite.community_id, user.id, user.name, handle, 'member']
+          [invite.community_id, user.id, name, handle, 'member']
         );
         await client.query(
           'INSERT INTO community_handles(community_id,handle,member_id) VALUES($1,$2,$3)',

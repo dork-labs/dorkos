@@ -1,36 +1,74 @@
 import { Button } from '@dork-labs/ui';
-import { useState } from 'react';
-import { Ban, Trash2 } from 'lucide-react';
-import type { CommunityWireBan } from '@dorkos/shared/community-wire';
+import { useCallback, useEffect, useState } from 'react';
+import { Ban, MicOff, Trash2 } from 'lucide-react';
+import type { CommunityWireBan, CommunityWireMute } from '@dorkos/shared/community-wire';
 import { request } from '../../api.js';
 import type { Member } from '../../types.js';
 import { BanDialog, LiftBanDialog } from './BanDialogs.js';
+import { MuteDialog } from '../../moderation/MuteDialog.js';
+
+/** Run one change with the settings page's busy state and notices; resolves when it settles. */
+export type Perform = (operation: () => Promise<unknown>, success: string) => Promise<void>;
+
+/** Whether `me` outranks `member` for removal, mutes and bans: admins act on plain members. */
+function outranks(me: Member, member: Member): boolean {
+  if (member.memberId === me.memberId || member.role === 'owner') return false;
+  return member.role === 'member' || me.role === 'owner';
+}
+
+/** Whole minutes as a short time of day or date, for when a mute ends. */
+export function formatUntil(iso: string): string {
+  const until = new Date(iso);
+  const sameDay = until.toDateString() === new Date().toDateString();
+  return sameDay
+    ? until.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    : until.toLocaleString([], {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      });
+}
 
 /**
- * The space's member directory and its standing bans, for owners and admins: change a role,
- * remove, ban, and lift a ban. Every action runs through `perform`, which reports and refreshes.
+ * The space's people, for owners and admins: roles, removal, mutes and bans, and the lists of
+ * who is muted and who is banned now. It reads its own mutes and bans, and reads them again after
+ * each change it makes.
  */
 export function SpaceMembers({
   me,
   directory,
   hasMore,
-  bans,
   busy,
   perform,
   onMore,
 }: {
   me: Member;
   directory: Member[];
-  /** More members wait behind the directory cursor. */
   hasMore: boolean;
-  bans: CommunityWireBan[];
   busy: boolean;
-  perform: (operation: () => Promise<unknown>, success: string) => Promise<void>;
+  perform: Perform;
   onMore: () => void;
 }) {
-  // The member a ban is being confirmed for, and the ban being lifted, while their dialog shows.
+  const [bans, setBans] = useState<CommunityWireBan[]>([]);
+  const [mutes, setMutes] = useState<CommunityWireMute[]>([]);
+  // The member a ban or mute is being confirmed for, and the ban being lifted, while shown.
   const [banning, setBanning] = useState<Member | null>(null);
+  const [muting, setMuting] = useState<Member | null>(null);
   const [lifting, setLifting] = useState<CommunityWireBan | null>(null);
+  const reload = useCallback(async () => {
+    const [banned, muted] = await Promise.all([
+      request<{ bans: CommunityWireBan[] }>('/api/v1/bans'),
+      request<{ mutes: CommunityWireMute[] }>('/api/v1/mutes'),
+    ]).catch(() => [null, null] as const);
+    if (banned) setBans(banned.bans);
+    if (muted) setMutes(muted.mutes);
+  }, []);
+  useEffect(() => {
+    void reload();
+  }, [reload, directory]);
+  const act = (operation: () => Promise<unknown>, success: string) =>
+    void perform(operation, success).then(reload);
   return (
     <>
       <section className="panel">
@@ -53,7 +91,7 @@ export function SpaceMembers({
                   aria-label={`${member.role === 'admin' ? 'Remove admin from' : 'Make'} ${member.displayName}${member.role === 'admin' ? '' : ' admin'}`}
                   disabled={busy}
                   onClick={() =>
-                    void perform(
+                    act(
                       () =>
                         request(`/api/v1/members/${member.memberId}/role`, 'PATCH', {
                           role: member.role === 'admin' ? 'member' : 'admin',
@@ -72,7 +110,7 @@ export function SpaceMembers({
                   aria-label={`Remove ${member.displayName} from space`}
                   onClick={() => {
                     if (window.confirm(`Remove ${member.displayName} from this space?`))
-                      void perform(
+                      act(
                         () => request(`/api/v1/members/${member.memberId}`, 'DELETE'),
                         'Member removed.'
                       );
@@ -81,8 +119,16 @@ export function SpaceMembers({
                   <Trash2 size={16} />
                 </Button>
               )}
-              {member.memberId !== me.memberId &&
-                (member.role === 'member' || (member.role === 'admin' && me.role === 'owner')) && (
+              {outranks(me, member) && (
+                <>
+                  <Button
+                    variant="ghost"
+                    disabled={busy}
+                    aria-label={`Mute ${member.displayName}`}
+                    onClick={() => setMuting(member)}
+                  >
+                    <MicOff size={16} />
+                  </Button>
                   <Button
                     variant="ghost"
                     disabled={busy}
@@ -91,7 +137,8 @@ export function SpaceMembers({
                   >
                     <Ban size={16} />
                   </Button>
-                )}
+                </>
+              )}
             </div>
           </div>
         ))}
@@ -101,6 +148,21 @@ export function SpaceMembers({
           </Button>
         )}
       </section>
+      {muting && (
+        <MuteDialog
+          name={muting.displayName}
+          busy={busy}
+          onClose={() => setMuting(null)}
+          onMute={(minutes) => {
+            const target = muting;
+            setMuting(null);
+            act(
+              () => request(`/api/v1/members/${target.memberId}/mute`, 'POST', { minutes }),
+              'Member muted.'
+            );
+          }}
+        />
+      )}
       {banning && (
         <BanDialog
           name={banning.displayName}
@@ -109,7 +171,7 @@ export function SpaceMembers({
           onBan={(reason) => {
             const target = banning;
             setBanning(null);
-            void perform(
+            act(
               () =>
                 request(`/api/v1/members/${target.memberId}/ban`, 'POST', {
                   ...(reason ? { reason } : {}),
@@ -127,9 +189,40 @@ export function SpaceMembers({
           onLift={() => {
             const target = lifting;
             setLifting(null);
-            void perform(() => request(`/api/v1/bans/${target.id}`, 'DELETE'), 'Ban lifted.');
+            act(() => request(`/api/v1/bans/${target.id}`, 'DELETE'), 'Ban lifted.');
           }}
         />
+      )}
+      {mutes.length > 0 && (
+        <section className="panel">
+          <h3>Muted</h3>
+          {mutes.map((mute) => (
+            <div
+              className="row justify-between border-b border-[var(--line)] py-2"
+              key={mute.memberId}
+            >
+              <div>
+                <strong>{mute.displayName}</strong>
+                <div className="small muted">
+                  @{mute.handle} · Until {formatUntil(mute.mutedUntil)}
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                disabled={busy}
+                aria-label={`Unmute ${mute.displayName}`}
+                onClick={() =>
+                  act(
+                    () => request(`/api/v1/members/${mute.memberId}/mute`, 'DELETE'),
+                    'Mute ended.'
+                  )
+                }
+              >
+                Unmute
+              </Button>
+            </div>
+          ))}
+        </section>
       )}
       {bans.length > 0 && (
         <section className="panel">

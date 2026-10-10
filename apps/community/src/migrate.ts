@@ -37,6 +37,7 @@ export const COMMUNITY_MIGRATIONS = [
   [31, '0031_sign_in_links.sql'],
   [32, '0032_email_links.sql'],
   [33, '0033_open_admission_and_bans.sql'],
+  [34, '0034_moderation.sql'],
 ] as const;
 
 /**

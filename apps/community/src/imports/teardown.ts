@@ -38,6 +38,7 @@ async function legallyHeld(
 
 /** Every table an import writes into, in an order that deletes children before parents. */
 const IMPORTED_TABLES = [
+  'reports',
   'entry_mentions',
   'attachments',
   'entries',

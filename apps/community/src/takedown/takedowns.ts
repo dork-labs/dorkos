@@ -262,6 +262,11 @@ export async function createItemTakedown(
       removedBy: 'host',
       holdBlobs: hold,
     });
+    // A report's note can quote what was taken down, so the notes go with it (0034).
+    await client.query(
+      'UPDATE reports SET note=NULL WHERE community_id=$1 AND entry_id=$2 AND note IS NOT NULL',
+      [community.id, input.target.entryId]
+    );
   } else if (input.target.kind === 'attachment') {
     await removeAttachment(client, {
       communityId: community.id,

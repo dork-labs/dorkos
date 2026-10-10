@@ -4,6 +4,7 @@ import {
   CommunityExportAttachmentRowSchema,
   CommunityExportAuditEventRowSchema,
   CommunityExportBanRowSchema,
+  CommunityExportReportRowSchema,
   CommunityExportChannelMemberRowSchema,
   CommunityExportChannelRowSchema,
   CommunityExportEntryRowSchema,
@@ -37,6 +38,7 @@ export type V2Row = {
   entries: z.infer<typeof CommunityExportEntryRowSchema>;
   attachments: z.infer<typeof CommunityExportAttachmentRowSchema>;
   bans: z.infer<typeof CommunityExportBanRowSchema>;
+  reports: z.infer<typeof CommunityExportReportRowSchema>;
 };
 
 const ROW_SCHEMAS: { [K in V2Collection]: ZodType<V2Row[K]> } = {
@@ -49,6 +51,7 @@ const ROW_SCHEMAS: { [K in V2Collection]: ZodType<V2Row[K]> } = {
   entries: CommunityExportEntryRowSchema,
   attachments: CommunityExportAttachmentRowSchema,
   bans: CommunityExportBanRowSchema,
+  reports: CommunityExportReportRowSchema,
 };
 
 /**
@@ -153,6 +156,15 @@ export class V2RowRules {
         invalid(ban.lifted_at !== null && Date.parse(ban.lifted_at) < Date.parse(ban.created_at));
         return;
       }
+      case 'reports': {
+        const report = value as V2Row['reports'];
+        this.notFuture(report.created_at, report.resolved_at);
+        invalid((report.source === 'check') !== (report.check_name !== null));
+        invalid(report.source === 'check' && report.reporter_member_id !== null);
+        invalid((report.status === 'open') !== (report.resolved_at === null));
+        invalid((report.status === 'actioned') !== (report.action !== null));
+        return;
+      }
       case 'auditEvents': {
         const event = value as V2Row['auditEvents'];
         invalid(event.community_id !== this.manifest.community.id);
@@ -221,6 +233,7 @@ export class V2Tally {
     entries: 0,
     attachments: 0,
     bans: 0,
+    reports: 0,
   };
   shortened = 0;
   attachmentBytes = 0;

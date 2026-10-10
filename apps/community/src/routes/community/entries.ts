@@ -26,6 +26,7 @@ import { ApiError, json, readJson } from '../../http.js';
 import { resolveCommunityMentions } from '../../content/mentions.js';
 import { channelRoster } from '../../content/roster.js';
 import { attachmentsForEntries } from './attachments.js';
+import { enforcePostingRules } from '../../moderation/posting.js';
 import type { DeliveryReceiptGate } from '../../delivery-receipt-gate.js';
 import { notifyLive } from '../../live/notices.js';
 
@@ -211,6 +212,13 @@ export function registerEntryRoutes(
           'STATE_CONFLICT',
           "A message can't say only what a deleted message says. Change the text and send it again."
         );
+      // Mute, rules and slow mode, by the human the post counts as. A retry of a post that
+      // already landed was answered above, so a mute never hides a message that was sent.
+      await enforcePostingRules(client, {
+        communityId: principal.community_id,
+        ownerMemberId: principal.ownerMemberId,
+        channelId: channel.id,
+      });
       let rootId: string | null = null;
       if (body.parentEntryId) {
         const parent = await loadEntry(client, body.parentEntryId);

@@ -5,6 +5,7 @@ import { download } from '../api.js';
 import { isRemovedEntry, REMOVAL_COPY, type RemovalAction } from '../entry-removal.js';
 import { threadRepliesLabel, type ThreadReplies } from '../threads/thread-replies.js';
 import type { Entry } from '../types.js';
+import { FlagEntry } from '../moderation/FlagEntry.js';
 import { ReportEntryLink, ReportFileLink } from './HostLinks.js';
 import {
   RemovalConfirmation,
@@ -157,6 +158,9 @@ export function EntryCard({
               <MessageCircle size={14} /> {threadReadOnly ? 'View thread' : 'Reply in thread'}
             </Button>
           </div>
+        )}
+        {!tombstone && action !== 'delete' && !threadReadOnly && (
+          <FlagEntry entryId={entry.id} author={entry.authorDisplayName} />
         )}
         {!tombstone && <ReportEntryLink communityId={communityId} entryId={entry.id} />}
       </div>

@@ -1,6 +1,7 @@
 /**
- * Moderation tables: a space's bans, and the host's takedowns with their held evidence. They
- * reference the core tables in `../schema.ts`.
+ * Moderation tables: a space's bans, reports and slow-mode clocks, and the host's takedowns
+ * with their held evidence. They reference the core tables in `../schema.ts`. Mute, rules and
+ * slow-mode columns live on their parent tables there (0034).
  *
  * @module moderation/schema
  */
@@ -12,13 +13,14 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
-import { communities, hostApiKeys, members, users } from '../schema.js';
+import { channels, communities, entries, hostApiKeys, members, users } from '../schema.js';
 
 const time = (name: string) => timestamp(name, { withTimezone: true }).notNull().defaultNow();
 
@@ -247,3 +249,117 @@ export const takedownEvidenceStaging = pgTable('takedown_evidence_staging', {
   record: jsonb('record').notNull(),
   blobKeys: text('blob_keys').array().notNull(),
 });
+
+/** When each person last posted in a slow-mode channel (0034); rate state, never exported. */
+export const channelPostClocks = pgTable(
+  'channel_post_clocks',
+  {
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
+    channelId: uuid('channel_id').notNull(),
+    memberId: uuid('member_id').notNull(),
+    postedAt: timestamp('posted_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.channelId, table.memberId] }),
+    index('channel_post_clocks_community_idx').on(table.communityId),
+    index('channel_post_clocks_member_idx').on(table.memberId),
+    foreignKey({
+      name: 'channel_post_clocks_channel_tenant_fk',
+      columns: [table.communityId, table.channelId],
+      foreignColumns: [channels.communityId, channels.id],
+    }),
+    foreignKey({
+      name: 'channel_post_clocks_member_tenant_fk',
+      columns: [table.communityId, table.memberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
+  ]
+);
+
+/**
+ * Reports of messages (0034): from a member (`source='member'`, once per message) or from an
+ * automated watch-only check (`source='check'`, named in `check_name`). One queue for both.
+ */
+export const reports = pgTable(
+  'reports',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
+    entryId: uuid('entry_id').notNull(),
+    source: text('source').notNull().default('member'),
+    reporterMemberId: uuid('reporter_member_id'),
+    checkName: text('check_name'),
+    reason: text('reason').notNull(),
+    note: text('note'),
+    status: text('status').notNull().default('open'),
+    action: text('action'),
+    resolverMemberId: uuid('resolver_member_id'),
+    /** `imported` for a report an import restored from an owner export. */
+    origin: text('origin').notNull().default('native'),
+    createdAt: time('created_at'),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+  },
+  (table) => [
+    check('reports_source_check', sql`${table.source} IN ('member','check')`),
+    check(
+      'reports_check_name_check',
+      sql`${table.checkName} IS NULL OR ${table.checkName} ~ '^[a-z][a-z0-9_.-]{0,63}$'`
+    ),
+    check(
+      'reports_reason_check',
+      sql`${table.reason} IN ('spam','harassment','off_topic','illegal','other')`
+    ),
+    check(
+      'reports_note_check',
+      sql`${table.note} IS NULL OR char_length(${table.note}) BETWEEN 1 AND 1000`
+    ),
+    check('reports_status_check', sql`${table.status} IN ('open','actioned','dismissed')`),
+    check(
+      'reports_action_check',
+      sql`${table.action} IS NULL OR ${table.action} IN ('remove','mute','ban')`
+    ),
+    check('reports_origin_check', sql`${table.origin} IN ('native','imported')`),
+    check(
+      'reports_source_shape',
+      sql`(${table.source} = 'member' AND ${table.checkName} IS NULL) OR (${table.source} = 'check' AND ${table.reporterMemberId} IS NULL AND ${table.checkName} IS NOT NULL)`
+    ),
+    check(
+      'reports_status_shape',
+      sql`(${table.status} = 'open' AND ${table.resolvedAt} IS NULL AND ${table.action} IS NULL AND ${table.resolverMemberId} IS NULL) OR (${table.status} = 'actioned' AND ${table.resolvedAt} IS NOT NULL AND ${table.action} IS NOT NULL) OR (${table.status} = 'dismissed' AND ${table.resolvedAt} IS NOT NULL AND ${table.action} IS NULL)`
+    ),
+    uniqueIndex('reports_community_id_unique').on(table.communityId, table.id),
+    uniqueIndex('reports_member_once')
+      .on(table.entryId, table.reporterMemberId)
+      .where(sql`${table.source} = 'member' AND ${table.reporterMemberId} IS NOT NULL`),
+    uniqueIndex('reports_check_once')
+      .on(table.entryId, table.checkName)
+      .where(sql`${table.source} = 'check'`),
+    index('reports_queue_idx').on(table.communityId, table.status, table.createdAt),
+    index('reports_entry_idx').on(table.entryId),
+    index('reports_reporter_idx')
+      .on(table.reporterMemberId)
+      .where(sql`${table.reporterMemberId} IS NOT NULL`),
+    index('reports_resolver_idx')
+      .on(table.resolverMemberId)
+      .where(sql`${table.resolverMemberId} IS NOT NULL`),
+    foreignKey({
+      name: 'reports_entry_tenant_fk',
+      columns: [table.communityId, table.entryId],
+      foreignColumns: [entries.communityId, entries.id],
+    }),
+    foreignKey({
+      name: 'reports_reporter_tenant_fk',
+      columns: [table.communityId, table.reporterMemberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
+    foreignKey({
+      name: 'reports_resolver_tenant_fk',
+      columns: [table.communityId, table.resolverMemberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
+  ]
+);

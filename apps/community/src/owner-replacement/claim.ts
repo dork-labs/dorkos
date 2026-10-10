@@ -210,13 +210,14 @@ export async function claimOwnerReplacement(
   await client.query("UPDATE members SET role='member' WHERE id=$1", [owner.id]);
   let memberId: string;
   if (own?.active) {
-    await client.query("UPDATE members SET role='owner' WHERE id=$1", [own.id]);
+    await client.query("UPDATE members SET role='owner',muted_until=NULL WHERE id=$1", [own.id]);
     memberId = own.id;
   } else if (own) {
-    await clearFormerMembership(client, own.id, found.community_id);
-    await client.query("UPDATE members SET active=true,removed_at=NULL,role='owner' WHERE id=$1", [
-      own.id,
-    ]);
+    await clearFormerMembership(client, own.id, found.community_id, { staff: true });
+    await client.query(
+      "UPDATE members SET active=true,removed_at=NULL,role='owner',muted_until=NULL WHERE id=$1",
+      [own.id]
+    );
     memberId = own.id;
     await joinAutoJoinChannels(client, found.community_id, memberId, autoJoin);
   } else {
