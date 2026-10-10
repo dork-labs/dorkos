@@ -67,8 +67,6 @@ import type {
 import { logConfigWrite } from '../operator/config-write.js';
 import { withdrawnRemoteState } from '../remote/remote-state.js';
 import { logger, logError } from '../../../lib/logger.js';
-import { env } from '../../../env.js';
-import { resolveDorkHome } from '../../../lib/dork-home.js';
 import {
   buildInstanceDescriptor,
   linkProofForKey,
@@ -97,7 +95,7 @@ import {
   type FetchLike,
   type InstanceDescriptor,
 } from './cloud-link-client.js';
-import { resolveLinkTelemetryInstanceId } from './link-telemetry.js';
+import { resolveConfiguredLinkTelemetryInstanceId } from './link-telemetry.js';
 
 /** How often a linked instance heartbeats the cloud. */
 const HEARTBEAT_INTERVAL_MS = 15 * 60 * 1000;
@@ -242,23 +240,6 @@ function defaultConfigPort(): CloudConfigPort {
   };
 }
 
-/**
- * Default telemetry-instance-id resolver backed by the live config + server env.
- * Returns the anonymous per-install id only when the operator opted into linking
- * analytics (`telemetry.linkAnalyticsToAccount`) and no env kill switch is set;
- * otherwise `undefined`, so the descriptor omits it.
- */
-function defaultResolveTelemetryInstanceId(): Promise<string | undefined> {
-  return resolveLinkTelemetryInstanceId({
-    linkAnalyticsToAccount: configManager.get('telemetry')?.linkAnalyticsToAccount ?? false,
-    dorkHome: resolveDorkHome(),
-    env: {
-      DO_NOT_TRACK: env.DO_NOT_TRACK,
-      DORKOS_TELEMETRY_DISABLED: env.DORKOS_TELEMETRY_DISABLED,
-    },
-  });
-}
-
 /** Injectable clock/transport hooks (real implementations by default). */
 export interface CloudLinkManagerOptions {
   fetchImpl?: FetchLike;
@@ -269,7 +250,7 @@ export interface CloudLinkManagerOptions {
   /**
    * Resolve the anonymous telemetry instance id to carry in the link descriptor
    * (the analytics-merge opt-in). Injectable so tests drive the opt-in without
-   * touching config or the env; defaults to {@link defaultResolveTelemetryInstanceId}.
+   * touching config or the env; defaults to {@link resolveConfiguredLinkTelemetryInstanceId}.
    */
   resolveTelemetryInstanceId?: () => Promise<string | undefined>;
   /** Persist a hosted authoritative receipt in the separate local mirror. */
@@ -325,7 +306,7 @@ export class CloudLinkManager {
     this.now = options.now ?? Date.now;
     this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? HEARTBEAT_INTERVAL_MS;
     this.resolveTelemetryInstanceId =
-      options.resolveTelemetryInstanceId ?? defaultResolveTelemetryInstanceId;
+      options.resolveTelemetryInstanceId ?? resolveConfiguredLinkTelemetryInstanceId;
     this.observeManagedReceipt = options.observeManagedReceipt;
     this.configPort = options.config;
   }

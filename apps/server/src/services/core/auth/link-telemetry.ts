@@ -21,6 +21,9 @@
  */
 import { resolveTelemetryConsent, type TelemetryEnv } from '@dorkos/shared/telemetry-consent';
 import { getOrCreateInstanceId } from '../../../lib/instance-id.js';
+import { resolveDorkHome } from '../../../lib/dork-home.js';
+import { env } from '../../../env.js';
+import { configManager } from '../config-manager.js';
 
 /**
  * Resolve the telemetry instance id to include in the link descriptor, or
@@ -42,4 +45,21 @@ export async function resolveLinkTelemetryInstanceId(args: {
   // resolveTelemetryConsent returns false no matter the flag.
   if (!resolveTelemetryConsent(args.linkAnalyticsToAccount, args.env)) return undefined;
   return getOrCreateInstanceId(args.dorkHome);
+}
+
+/**
+ * Default telemetry-instance-id resolver backed by the live config + server env.
+ * Returns the anonymous per-install id only when the operator opted into linking
+ * analytics (`telemetry.linkAnalyticsToAccount`) and no env kill switch is set;
+ * otherwise `undefined`, so the descriptor omits it.
+ */
+export function resolveConfiguredLinkTelemetryInstanceId(): Promise<string | undefined> {
+  return resolveLinkTelemetryInstanceId({
+    linkAnalyticsToAccount: configManager.get('telemetry')?.linkAnalyticsToAccount ?? false,
+    dorkHome: resolveDorkHome(),
+    env: {
+      DO_NOT_TRACK: env.DO_NOT_TRACK,
+      DORKOS_TELEMETRY_DISABLED: env.DORKOS_TELEMETRY_DISABLED,
+    },
+  });
 }

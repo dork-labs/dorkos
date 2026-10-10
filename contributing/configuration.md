@@ -1740,7 +1740,7 @@ Two kinds of writer, and the difference decides what each one owes you.
 | `services/runtimes/connect/doe-credentials.ts` (only through that owner-gated setup route) | `providers`, `runtimes` | the DorkOS API key setup                                                                       |
 | `services/core/agent-creator.ts`                                                           | `agents`                | the agent creator                                                                              |
 | `services/core/auth/cloud-link.ts`                                                         | `cloud`                 | the account link / unlinking this instance                                                     |
-| `services/core/remote/remote-state.ts` | `cloud` | the caller-named subsystem (managed remote setup, withdrawal, a Cloud command) |
+| `services/core/remote/remote-state.ts`                                                     | `cloud`                 | the caller-named subsystem (managed remote setup, withdrawal, a Cloud command)                 |
 | `services/core/auth/seed-legacy-mcp-key.ts`                                                | `mcp`                   | the MCP key migration                                                                          |
 | `services/shapes/shape-services.ts`                                                        | `ui`                    | applying a Shape / clearing the active Shape                                                   |
 | `services/extensions/extension-manager.ts`                                                 | `extensions`            | the extensions manager / approving an extension to run / withdrawing an extension run approval |
