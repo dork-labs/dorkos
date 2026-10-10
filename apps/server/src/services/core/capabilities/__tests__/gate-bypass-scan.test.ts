@@ -151,6 +151,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
         'PUT /agents/defaultAgent — a name, not a posture, and the operator-only paths on this router go through the guarded step instead (logConfigWrite: "the default-agent route")',
       'routes/tunnel.ts':
         'start/stop — `tunnel.*` IS operator-only, so start runs the cookie bar then the agent bar before reaching here; stop runs neither on purpose, because stopping only narrows exposure (DOR-1738)',
+      'routes/remote-access.ts':
+        '`POST /api/remote-access/mode` with `off` writes `tunnel.enabled: false`, exactly as `POST /api/tunnel/stop` does, and only after the cookie, trusted-caller and local-caller bars; it only ever narrows (logConfigWrite: "turning remote access off")',
       'services/runtimes/connect/doe-setup-router.ts':
         'PUT /doe/inference writes only the fixed DorkOS inference metadata leaf after the loopback and refuseUnlessAccountOwner bars: identified agents and approval-token requesters are refused in every posture; under login an install-owner cookie is required. logConfigWrite records the before/after runtimes section as the DorkOS model setup',
       'services/core/agent-creator.ts':
@@ -542,10 +544,11 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     // DOR-2086. Storing a managed credential's two one-time secrets.
     what: 'stores a managed tunnel credential and its edge proof secret',
     call: 'remoteCredentials.put(',
-    allowed: {},
-    planned: {
+    allowed: {
       'services/core/remote/managed-remote-coordinator.ts':
-        'the enrolment ceremony a person started on this computer (S3): stores what Cloud issued after a person approved, behind the cookie, trusted-caller and local-caller bars on the setup route',
+        'the enrolment ceremony a person started on this computer: stores what Cloud issued only after a person approved on Cloud and only while the captured link and setup are still current, reached through `startEnrolment(` (pinned below to the setup route and its cookie, trusted-caller, local-caller and login bars). The references reach config only after Cloud confirmed the store',
+    },
+    planned: {
       'services/core/remote/command-dispatcher.ts':
         'a Cloud `rotate` command, holding a `CloudAuthority` for `rotate`',
     },
@@ -554,10 +557,11 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     // DOR-2086. Forgetting one. Only ever narrows reach.
     what: 'forgets a managed tunnel credential and its edge proof secret',
     call: 'remoteCredentials.delete(',
-    allowed: {},
-    planned: {
+    allowed: {
       'services/core/remote/managed-remote-coordinator.ts':
-        'local withdrawal and unlink (S3): forgetting narrows only, so like `POST /api/tunnel/stop` it is reachable without the setup bars',
+        'local withdrawal and unlink, and a setup that went stale or was not confirmed forgetting what it stored: forgetting narrows only, so like `POST /api/tunnel/stop` withdrawal is reachable without the setup bars',
+    },
+    planned: {
       'services/core/remote/command-dispatcher.ts':
         'a Cloud `revoke` command, or the old credential after a confirmed `rotate`, holding a `CloudAuthority`',
     },
@@ -591,12 +595,35 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     call: 'updateRemoteState(',
     allowed: {
       'services/core/remote/remote-state.ts': 'the definition itself',
+      'services/core/remote/managed-remote-coordinator.ts':
+        'a person selecting a mode (`selectMode(`) or finishing enrolment (`startEnrolment(`) on this computer, both pinned below to the setup route and its cookie, trusted-caller and local-caller bars, with a real login for anything managed; and withdrawal (`POST /api/remote-access/withdraw` and the unlink step), unguarded because it only narrows: mode off, enrolment and references cleared',
     },
     planned: {
-      'services/core/remote/managed-remote-coordinator.ts':
-        'a person selecting a mode, finishing enrolment, or withdrawing on this computer (S3): selection and enrolment behind the cookie, trusted-caller and local-caller bars; withdrawal unguarded because it only narrows',
       'services/core/remote/command-dispatcher.ts':
         'a Cloud `rotate` or `revoke` command recording the credential it switched to or forgot, holding a `CloudAuthority`; never the mode or the enrolment',
+    },
+  },
+  {
+    // DOR-2086. Starting managed setup: it asks Cloud for an enrolment request
+    // and, once a person approves it there, stores a credential and selects
+    // managed mode. A person's, at this computer, so its one caller is pinned.
+    what: 'starts DorkOS remote access setup, which ends in a stored credential and managed mode once a person approves on Cloud',
+    call: 'startEnrolment(',
+    allowed: {
+      'services/core/remote/managed-remote-coordinator.ts': 'the definition itself',
+      'routes/remote-access.ts':
+        '`POST /api/remote-access/enrolment`, behind the cookie bar under login, the trusted-caller bar, the local-caller bar and `canExpose`, in that order',
+    },
+  },
+  {
+    // DOR-2086. Choosing managed mode is a person's choice of who can reach
+    // this computer; choosing off or byo closes managed access.
+    what: "records the remote access mode a person chose, closing the other kind's listeners",
+    call: 'selectMode(',
+    allowed: {
+      'services/core/remote/managed-remote-coordinator.ts': 'the definition itself',
+      'routes/remote-access.ts':
+        '`POST /api/remote-access/mode`, behind the cookie bar under login, the trusted-caller bar and the local-caller bar, and `canExpose` for `managed`',
     },
   },
   {
@@ -636,6 +663,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
         "two person bars on this router, each for a person in their own app. (1) `POST /claude-code/accounts/:id/probe`: checking an idle Claude account's usage (DOR-2381). Gated: the cookie bar under login, then this one, because the route starts the Claude binary in a registered account's folder; agents check usage with the `accounts_probe` MCP tool, which runs through the tool gate at the act tier. (2) `POST /claude-code/accounts/found/dismiss`: hiding a found Claude account folder, which writes the operator-only `runtimes.claudeCode.dismissedFolders`, so it runs both bars from `PATCH /api/config` for such a leaf, in the same order: the cookie bar under login, then this one. It writes only that fixed leaf (see its `configManager.setDot(` entry) and takes a JSON body, so a plain cross-site form POST cannot reach the write (it is refused at parsing)",
       'routes/tunnel.ts':
         'a person turning Remote Access on in their own cockpit, which publishes this machine and writes `tunnel.enabled` (DOR-1738). Gated: both bars from `PATCH /api/config` for an operator-only setting, in the same order — the cookie bar under login, then this one — because `tunnel.*` IS operator-only in config-write-policy and this route writes the flag straight through `configManager`, around the door that enforces that. `POST /api/tunnel/stop` deliberately runs neither bar and reaches no effect on this list: stopping only ever narrows exposure, and gating it stranded a running tunnel once already (DOR-574)',
+      'routes/remote-access.ts':
+        'a person starting DorkOS remote access setup or choosing a remote access mode on this computer (DOR-2086). Gated: the cookie bar under login, then this one, then `isLocalCaller` (a phone over a tunnel or managed access is not at this computer), then `canExpose` for anything managed. `POST /close` and `/withdraw` run no bar on purpose: they only narrow',
       'services/core/capabilities/trusted-caller.ts': 'the definition itself',
     },
   },
