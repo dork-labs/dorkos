@@ -183,7 +183,7 @@ Open PRs from a worktree branch based on `origin/main`. **Direct pushes to `main
 
 ## Hard Rules
 
-Non-negotiable, enforced by ESLint/CI/convention. Rules 1-4 are ESLint `error`s, so they fail the lefthook pre-commit hook, `pnpm verify`, and the required `lint` check in the merge queue. Rule 5 also rides `lint`; 6-7 are hooks:
+Non-negotiable, enforced by ESLint/CI/convention. Rules 1-4 are ESLint `error`s, so they fail the lefthook pre-commit hook, `pnpm verify`, and the required `lint` check in the merge queue. Rule 5 also rides `lint`; 6-7 are hooks; 9 rides the required `typecheck` check:
 
 1. **FSD layer violations are errors** — `no-restricted-imports` enforces the hierarchy
 2. **SDK imports confined** — each runtime SDK is banned outside its adapter dir: `@anthropic-ai/claude-agent-sdk` → `services/runtimes/claude-code/`, `@openai/codex-sdk` → `services/runtimes/codex/`, `@opencode-ai/sdk` → `services/runtimes/opencode/`
@@ -193,6 +193,7 @@ Non-negotiable, enforced by ESLint/CI/convention. Rules 1-4 are ESLint `error`s,
 6. **`git stash` and `git checkout -- <path>` are refused** — the stash is shared by every worktree and holds your auto-checkpoints; the pathspec checkout silently reverts uncommitted work. Both have eaten work here. Park files in the session scratchpad and restore with `cp`. Enforced by `.claude/hooks/git-guard.mjs` via `run-node-hook.sh`, which fails closed when node is missing; `git stash list`/`show` and branch switching still work
 7. **`pkill`, `killall`, and group/all-process `kill` are refused** — several agents plus the operator's own `pnpm dev` (:6242) and dogfood app (:4242) run the same source on one machine, so a kill by name is a kill of everyone's process (a broad `pkill -f` took the operator's dev server down on 2026-08-18). Stop only the process you started, by the PID you already hold or `lsof -ti :<your port>`. Enforced by `.claude/hooks/process-guard.mjs` via `run-node-hook.sh`, which fails closed when node is missing. Both guards run as `.claude/hooks/run-node-hook.sh <guard>.mjs`: a bare `node` exits 127 wherever node is off the launching PATH, and 127 is a non-blocking error, so the rule was enforced by nothing there (DOR-2121). They read command TEXT, so a line that merely names a refused command is refused too — a deliberately coarse trade
 8. Path-specific rules in `.claude/rules/` load when editing matching files (see `.claude/README.md`)
+9. **No file over 500 lines may grow** — `max-lines` (500, blank lines and comments skipped) is only a `warn`, so `scripts/check-max-lines.ts` enforces it as a ratchet in `typecheck` (DOR-2822). Every file over the limit is in `scripts/max-lines/baseline.json`: it may shrink, never grow, and a new file may not pass 500 (tests are exempt). After shrinking or moving one, run `pnpm check:max-lines -- --update`, which only lowers or removes entries; never raise a number by hand (CI compares against the base and refuses it). Split the file instead
 
 ## Testing
 
