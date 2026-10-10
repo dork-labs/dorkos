@@ -6,6 +6,7 @@ import { swappableServer } from '@dorkos/test-utils/listening-server';
 const mockEnv = vi.hoisted(() => ({
   DORKOS_TEST_RUNTIME: true,
   DORKOS_TEST_RUNTIME_DOE: false,
+  DORKOS_TEST_CLOUD_AUTO_APPROVE: false,
   DORKOS_HOST: 'localhost',
   DORKOS_PORT: 7242,
 }));
@@ -54,6 +55,7 @@ describe('composeTestModeCloud', () => {
   beforeEach(() => {
     mockEnv.DORKOS_TEST_RUNTIME = true;
     mockEnv.DORKOS_TEST_RUNTIME_DOE = false;
+    mockEnv.DORKOS_TEST_CLOUD_AUTO_APPROVE = false;
     doe.constructed = 0;
     v1.fetch = undefined;
     link.fetchImpl = undefined;
@@ -101,5 +103,23 @@ describe('composeTestModeCloud', () => {
     const runtime = composeTestModeCloud(port);
     expect(runtime).not.toBeNull();
     expect(registered).toEqual([runtime]);
+  });
+
+  it('approves codes by itself only when DORKOS_TEST_CLOUD_AUTO_APPROVE is on', async () => {
+    const pollThrice = async () => {
+      composeTestModeCloud(registry().port);
+      let last = 0;
+      for (let i = 0; i < 3; i += 1) {
+        const res = await link.fetchImpl!('https://cloud.example.invalid/api/auth/device/token', {
+          method: 'POST',
+          body: JSON.stringify({ device_code: 'fake-device-code' }),
+        });
+        last = res.status;
+      }
+      return last;
+    };
+    expect(await pollThrice()).toBe(400);
+    mockEnv.DORKOS_TEST_CLOUD_AUTO_APPROVE = true;
+    expect(await pollThrice()).toBe(200);
   });
 });

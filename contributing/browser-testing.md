@@ -420,10 +420,10 @@ Every test-mode server talks to an in-process fake of DorkOS Cloud instead of th
 
 | Piece                          | What it answers                                                                                                                                                                                                                                                                                                                                    |
 | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `fake-cloud-link.ts`           | The device link. Its code (`DORK-2F7Q`) points at `GET /api/test/fake-cloud/approve?code=` on this server; opening that page approves the code on the next poll. A flow that never opens it (the capture pipeline) is approved after two polls anyway.                                                                                             |
+| `fake-cloud-link.ts`           | The device link. Its code (`DORK-2F7Q`) points at `GET /api/test/fake-cloud/approve?code=` on this server; opening that page approves the code on the next poll, and nothing else does. A flow that never opens it (the capture pipeline) sets `DORKOS_TEST_CLOUD_AUTO_APPROVE=true`, and the fake then approves after two polls.                  |
 | `fake-cloud-v1.ts`             | Every `/v1` call, through `setCloudV1Fetch` in `core/cloud/v1-client.ts`: session, free entitlements, a balance with `paymentMethodOnFile: true`, the inference token (serves `openaiChat` only) and its revoke, and a one-model catalog (`dorkos-test-model`). Each answer is parsed against `@dork-labs/cloud-api` first. Any other path throws. |
 | `fake-inference.ts`            | `GET /api/test/fake-inference/v1/models` and a streamed `POST …/v1/chat/completions` that always replies "Hi! I can build that for you." The fake token's endpoints point here.                                                                                                                                                                    |
-| `DORKOS_TEST_RUNTIME_DOE=true` | Also registers the DorkOS runtime (`doe`) beside `TestModeRuntime`. Off by default, so existing suites see the same runtime set.                                                                                                                                                                                                                   |
+| `DORKOS_TEST_RUNTIME_DOE=true` | Also registers the DorkOS runtime (`doe`) beside `TestModeRuntime`. It runs only on DorkOS credits (the fake token): a turn on an own key or a local model is refused before anything is sent. Off by default, so existing suites see the same runtime set.                                                                                        |
 
 To drive it by hand, start a throwaway server on a free port and link from the app or with `curl`:
 
@@ -436,7 +436,7 @@ open 'http://127.0.0.1:7342/api/test/fake-cloud/approve?code=DORK-2F7Q'
 curl localhost:7342/api/cloud/credits   # "ready": true, doe "wired"
 ```
 
-The reads a linked computer makes on its own are scripted too, as empty, schema-valid answers: usage, offers, organizations, a nudge (a 404, so nothing renders), managed connections and their events. A fresh server linked from Settings › DorkOS account logs no Cloud errors. Any other path throws; add a route to the fake when a test needs one rather than letting it reach the network.
+The reads a linked computer makes on its own are scripted too, as empty, schema-valid answers: usage, offers, organizations, a nudge and hosted communities (both a 404, so nothing renders), managed connections and their events. A fresh server linked from Settings › DorkOS account logs no Cloud errors. Any other path throws; add a route to the fake when a test needs one rather than letting it reach the network.
 
 ### Writing Mock Browser Tests
 

@@ -4,9 +4,14 @@
  * composition root) gets its own.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { CloudApiClientOptions } from '@dork-labs/cloud-api/client';
 
 const seen = vi.hoisted(() => ({ options: [] as CloudApiClientOptions[] }));
+const mockEnv = vi.hoisted(() => ({ DORKOS_TEST_RUNTIME: true }));
+vi.mock('../../../../env.js', () => ({ env: mockEnv }));
 
 vi.mock('@dork-labs/cloud-api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@dork-labs/cloud-api/client')>();
@@ -34,6 +39,7 @@ import { captureCloudV1Context, createCloudV1Client, setCloudV1Fetch } from '../
 describe('the /v1 fetch seam', () => {
   beforeEach(() => {
     seen.options.length = 0;
+    mockEnv.DORKOS_TEST_RUNTIME = true;
   });
   afterEach(() => {
     setCloudV1Fetch(undefined);
@@ -69,5 +75,37 @@ describe('the /v1 fetch seam', () => {
     setCloudV1Fetch(undefined);
     createCloudV1Client();
     expect(seen.options[0]).not.toHaveProperty('fetch');
+  });
+
+  it('refuses a replacement outside test mode, and still allows clearing one', () => {
+    mockEnv.DORKOS_TEST_RUNTIME = false;
+    expect(() => setCloudV1Fetch(vi.fn())).toThrow(
+      'setCloudV1Fetch is test-mode only (DORKOS_TEST_RUNTIME)'
+    );
+    expect(() => setCloudV1Fetch(undefined)).not.toThrow();
+    createCloudV1Client();
+    expect(seen.options[0]).not.toHaveProperty('fetch');
+  });
+
+  it('only the test-mode composition root names the seam outside its own module and tests', () => {
+    const src = fileURLToPath(new URL('../../../../', import.meta.url));
+    const files: string[] = [];
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        const path = join(dir, name);
+        if (statSync(path).isDirectory()) {
+          if (name !== '__tests__' && name !== 'node_modules') walk(path);
+        } else if (/\.tsx?$/.test(name)) files.push(path);
+      }
+    };
+    walk(src);
+    const naming = files
+      .filter((file) => readFileSync(file, 'utf8').includes('setCloudV1Fetch'))
+      .map((file) => relative(src, file))
+      .sort();
+    expect(naming).toEqual([
+      'services/core/cloud/v1-client.ts',
+      'services/runtimes/test-mode/compose-test-cloud.ts',
+    ]);
   });
 });

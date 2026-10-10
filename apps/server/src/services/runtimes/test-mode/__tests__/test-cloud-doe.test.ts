@@ -38,6 +38,11 @@ import { __setCreditsStateForTests } from '../../../core/cloud/credits-inference
 import { DoeRuntime } from '../../doe/doe-runtime.js';
 import { createFakeCloudV1Fetch, FAKE_CLOUD_MODEL } from '../fake-cloud-v1.js';
 import { createFakeInferenceRouter, FAKE_INFERENCE_REPLY } from '../fake-inference.js';
+import { TEST_MODE_DOE_REFUSAL, testModeDoeOptions } from '../compose-test-cloud.js';
+import type { DoeInferenceConfig } from '@dorkos/shared/config-schema';
+
+/** Never listened on: a turn that reached it would fail, so success proves the token's endpoint was used. */
+const NEVER_SERVED = 'http://127.0.0.1:9/never-served/v1';
 
 let server: Server;
 let base: string;
@@ -80,22 +85,27 @@ afterAll(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
+function runtimeFor(cwd: string, inference: DoeInferenceConfig): DoeRuntime {
+  return new DoeRuntime({
+    ...testModeDoeOptions(),
+    directory: join(cwd, '..', `runtime-${randomUUID()}`),
+    defaultCwd: cwd,
+    inference: () => inference,
+  });
+}
+
 describe('the DorkOS runtime on the test-mode Cloud', () => {
   it('completes a credits turn with the canned reply, paid by the fake token', async () => {
     const cwd = join(root, 'project');
     await mkdir(cwd);
-    const runtime = new DoeRuntime({
-      directory: join(root, 'runtime'),
-      defaultCwd: cwd,
-      inference: () => ({
-        source: 'dorkos-credits',
-        provider: 'dorkos',
-        protocol: 'openai-chat-completions',
-        endpoint: base,
-        model: FAKE_CLOUD_MODEL.id,
-        contextWindow: FAKE_CLOUD_MODEL.contextWindow,
-        maxOutputTokens: FAKE_CLOUD_MODEL.maxOutputTokens,
-      }),
+    const runtime = runtimeFor(cwd, {
+      source: 'dorkos-credits',
+      provider: 'dorkos',
+      protocol: 'openai-chat-completions',
+      endpoint: NEVER_SERVED,
+      model: FAKE_CLOUD_MODEL.id,
+      contextWindow: FAKE_CLOUD_MODEL.contextWindow,
+      maxOutputTokens: FAKE_CLOUD_MODEL.maxOutputTokens,
     });
     try {
       const id = randomUUID();
@@ -117,6 +127,38 @@ describe('the DorkOS runtime on the test-mode Cloud', () => {
       expect(completions[0]!.authorization).toBe('Bearer fake-inference-token');
     } finally {
       await runtime.shutdown();
+    }
+  }, 30_000);
+
+  it('refuses a turn on an own key or a local model before anything is sent', async () => {
+    const cwd = join(root, 'refused');
+    await mkdir(cwd);
+    for (const source of ['local', 'api-key'] as const) {
+      const before = seen.length;
+      const runtime = runtimeFor(cwd, {
+        source,
+        provider: 'fixture',
+        protocol: 'openai-chat-completions',
+        endpoint: `${base}`,
+        model: FAKE_CLOUD_MODEL.id,
+        contextWindow: FAKE_CLOUD_MODEL.contextWindow,
+        maxOutputTokens: FAKE_CLOUD_MODEL.maxOutputTokens,
+      });
+      try {
+        const id = randomUUID();
+        runtime.ensureSession(id, { cwd, permissionMode: 'default' });
+        const events: StreamEvent[] = [];
+        for await (const event of runtime.sendMessage(id, 'Hello')) events.push(event);
+        const errors = events.filter((event) => event.type === 'error');
+        expect(JSON.stringify(errors), source).toContain(TEST_MODE_DOE_REFUSAL);
+        expect(
+          events.some((event) => event.type === 'text_delta'),
+          source
+        ).toBe(false);
+        expect(seen.length, `${source} reached an endpoint`).toBe(before);
+      } finally {
+        await runtime.shutdown();
+      }
     }
   }, 30_000);
 });

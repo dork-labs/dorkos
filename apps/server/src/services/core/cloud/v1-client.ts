@@ -27,6 +27,7 @@ import type { Problem } from '@dork-labs/cloud-api';
 import { configManager } from '../config-manager.js';
 import { resolveCloudBaseUrl } from '../auth/cloud-link-client.js';
 import { getCloudLinkGeneration } from '../auth/cloud-link.js';
+import { env } from '../../../env.js';
 
 let v1Fetch: FetchLike | undefined;
 
@@ -36,9 +37,14 @@ let v1Fetch: FetchLike | undefined;
  * to answer `/v1` from an in-process fake; production never sets it.
  *
  * @param fetch - The replacement, or `undefined` for the global `fetch`.
+ * @throws If a replacement is set outside `DORKOS_TEST_RUNTIME`: a real
+ *   server always talks to the real service.
  * @internal
  */
 export function setCloudV1Fetch(fetch: FetchLike | undefined): void {
+  if (fetch !== undefined && !env.DORKOS_TEST_RUNTIME) {
+    throw new Error('setCloudV1Fetch is test-mode only (DORKOS_TEST_RUNTIME)');
+  }
   v1Fetch = fetch;
 }
 

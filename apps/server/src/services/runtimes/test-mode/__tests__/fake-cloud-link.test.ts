@@ -16,6 +16,8 @@ import { createFakeCloudApprovalRouter, createFakeCloudLink } from '../fake-clou
 
 const APPROVAL_URL = 'http://localhost:7242/api/test/fake-cloud/approve';
 const createFakeCloudLinkFetch = () => createFakeCloudLink({ approvalUrl: APPROVAL_URL }).fetch;
+const createAutoApprovingFetch = () =>
+  createFakeCloudLink({ approvalUrl: APPROVAL_URL, autoApprove: true }).fetch;
 
 const CLOUD_LINK_TS = fileURLToPath(new URL('../../../core/auth/cloud-link.ts', import.meta.url));
 const CLOUD_LINK_CLIENT_TS = fileURLToPath(
@@ -100,8 +102,19 @@ describe('createFakeCloudLink', () => {
       expect(res.status).toBe(400);
     });
 
-    it('device/token answers authorization_pending for the first PENDING_POLLS_BEFORE_APPROVAL calls, then approves by itself — the offline auto-flip for flows that never open the page', async () => {
+    it('by default never approves by itself: only opening the page approves the code', async () => {
       const fetchImpl = createFakeCloudLinkFetch();
+      for (let i = 0; i < 6; i += 1) {
+        const res = await fetchImpl('https://dorkos.ai/api/auth/device/token', {
+          method: 'POST',
+          body: JSON.stringify({ device_code: 'fake-device-code' }),
+        });
+        expect(res.status).toBe(400);
+      }
+    });
+
+    it('with autoApprove, answers authorization_pending for two polls, then approves by itself — the capture auto-flip', async () => {
+      const fetchImpl = createAutoApprovingFetch();
       const poll = () =>
         fetchImpl('https://dorkos.ai/api/auth/device/token', {
           method: 'POST',
@@ -121,8 +134,8 @@ describe('createFakeCloudLink', () => {
       expect(await third.json()).toEqual({ access_token: 'fake-instance-key' });
     });
 
-    it('device/token counting is per device_code — a second, distinct code starts its own count', async () => {
-      const fetchImpl = createFakeCloudLinkFetch();
+    it('with autoApprove, counting is per device_code — a second, distinct code starts its own count', async () => {
+      const fetchImpl = createAutoApprovingFetch();
       const pollFor = (deviceCode: string) =>
         fetchImpl('https://dorkos.ai/api/auth/device/token', {
           method: 'POST',

@@ -49,6 +49,12 @@ export interface FakeCloudLinkOptions {
    * on this server, never the real site.
    */
   approvalUrl: string;
+  /**
+   * Approve a code by itself after a couple of polls, for flows that never
+   * open the page (the capture pipeline). Off unless asked for, so a test can
+   * prove that opening the page is what approves the code.
+   */
+  autoApprove?: boolean;
 }
 
 /** The fake device-flow transport and the approval it waits for. */
@@ -112,7 +118,8 @@ export function createFakeCloudLink(options: FakeCloudLinkOptions): FakeCloudLin
       const key = device_code ?? FAKE_DEVICE_CODE;
       const seen = pollCounts.get(key) ?? 0;
       pollCounts.set(key, seen + 1);
-      if (!approved.has(key) && seen < PENDING_POLLS_BEFORE_APPROVAL) {
+      const selfApproved = options.autoApprove === true && seen >= PENDING_POLLS_BEFORE_APPROVAL;
+      if (!approved.has(key) && !selfApproved) {
         return json(400, { error: 'authorization_pending' });
       }
       return json(200, { access_token: FAKE_ACCESS_TOKEN });

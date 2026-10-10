@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
+import ts from 'typescript';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import {
@@ -55,12 +56,7 @@ describe('the test-mode /v1 Cloud', () => {
     const entitlements = await api.get(V1_ROUTES.entitlements, EntitlementsSchema);
     expect(entitlements.planId).toBe('free');
 
-    // Read raw, since the contract may not carry the field yet and would strip it.
-    const raw = await createFakeCloudV1Fetch({ inferenceBaseUrl: INFERENCE_BASE })(
-      `https://cloud.example.invalid${V1_ROUTES.balance}`
-    );
-    const balance = (await raw.json()) as Record<string, unknown>;
-    expect(BalanceSchema.safeParse(balance).success).toBe(true);
+    const balance = await api.get(V1_ROUTES.balance, BalanceSchema);
     expect(balance.paymentMethodOnFile).toBe(true);
   });
 
@@ -138,13 +134,16 @@ describe('the test-mode /v1 Cloud', () => {
     expect(reply.text.trimEnd().endsWith('data: [DONE]')).toBe(true);
   });
 
-  it('no production module names the fakes — the structural half of unreachability', () => {
+  it('no production module names the fakes or the fetch seam — the structural half of unreachability', () => {
     const production = [
       '../../../core/cloud/v1-client.ts',
       '../../../core/cloud/credits-inference.ts',
       '../../../core/cloud/credits-models.ts',
+      '../../../core/cloud/plan.ts',
+      '../../../core/auth/cloud-link.ts',
       '../../../../app.ts',
       '../../../../routes/test-control.ts',
+      '../../../../routes/cloud.ts',
       '../../doe/doe-runtime.ts',
     ];
     for (const relative of production) {
@@ -152,13 +151,45 @@ describe('the test-mode /v1 Cloud', () => {
       for (const name of ['fake-cloud-v1', 'fake-inference', 'compose-test-cloud']) {
         expect(source, `${relative} names ${name}`).not.toContain(name);
       }
+      if (!relative.endsWith('v1-client.ts')) {
+        expect(source, `${relative} names setCloudV1Fetch`).not.toContain('setCloudV1Fetch');
+      }
     }
-    const index = fs.readFileSync(
-      fileURLToPath(new URL('../../../../index.ts', import.meta.url)),
-      'utf8'
-    );
-    // index.ts reaches the test-mode Cloud only through one gated dynamic import.
-    expect(index).not.toMatch(/^import .*compose-test-cloud/m);
-    expect(index).toContain("await import('./services/runtimes/test-mode/compose-test-cloud.js')");
+  });
+
+  it('index.ts reaches the test-mode Cloud once, through an await import() inside the DORKOS_TEST_RUNTIME branch', () => {
+    const file = fileURLToPath(new URL('../../../../index.ts', import.meta.url));
+    const text = fs.readFileSync(file, 'utf8');
+    expect(text.split('compose-test-cloud').length - 1).toBe(1);
+
+    const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
+    const calls: ts.CallExpression[] = [];
+    const visit = (node: ts.Node) => {
+      if (
+        ts.isCallExpression(node) &&
+        node.expression.kind === ts.SyntaxKind.ImportKeyword &&
+        node.arguments[0]?.getText(source).includes('compose-test-cloud')
+      ) {
+        calls.push(node);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+    expect(calls).toHaveLength(1);
+    const call = calls[0]!;
+    expect(ts.isAwaitExpression(call.parent)).toBe(true);
+
+    // Walk up to the nearest `if`; the call must sit in its then-branch, and
+    // its condition must be exactly the test-mode flag.
+    let child: ts.Node = call;
+    let parent: ts.Node | undefined = call.parent;
+    while (parent && !ts.isIfStatement(parent)) {
+      child = parent;
+      parent = parent.parent;
+    }
+    expect(parent).toBeDefined();
+    const branch = parent as ts.IfStatement;
+    expect(branch.expression.getText(source)).toBe('env.DORKOS_TEST_RUNTIME');
+    expect(branch.thenStatement).toBe(child);
   });
 });

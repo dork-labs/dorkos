@@ -24,6 +24,7 @@ import {
   OrgListResponseSchema,
   ProblemSchema,
   SessionSchema,
+  UsageGroupBySchema,
   UsageResponseSchema,
   V1_ROUTES,
 } from '@dork-labs/cloud-api';
@@ -77,6 +78,11 @@ export function createFakeCloudV1Fetch(options: FakeCloudV1Options): FetchLike {
         headers: { 'content-type': 'application/json' },
       });
     const at = (offsetMs: number) => new Date(Date.now() + offsetMs).toISOString();
+    const problem = (status: number, code: 'not_found' | 'malformed_request', title: string) =>
+      new Response(JSON.stringify(ProblemSchema.parse({ code, status, title })), {
+        status,
+        headers: { 'content-type': 'application/problem+json' },
+      });
 
     if (method === 'GET' && pathname === V1_ROUTES.session) {
       return json(
@@ -124,20 +130,17 @@ export function createFakeCloudV1Fetch(options: FakeCloudV1Options): FetchLike {
     }
 
     if (method === 'GET' && pathname === V1_ROUTES.balance) {
-      // `paymentMethodOnFile` is the field the one-minute first run reads
-      // (spec §5.3). It is sent beside the parsed body rather than through
-      // it, so it reaches the app whether or not this contract release has
-      // the field yet (an object schema strips a key it does not know).
-      return json({
-        ...BalanceSchema.parse({
+      // A card on file, which the one-minute first run reads (spec §5.3).
+      return json(
+        BalanceSchema.parse({
           allowance: { grantedMicro: '0', remainingMicro: '0', resetsAt: at(PERIOD_MS) },
           purchased: { remainingMicro: '0' },
           heldMicro: '0',
           owedMicro: '0',
           autoReload: { enabled: false, ceilingMicro: null },
-        }),
-        paymentMethodOnFile: true,
-      });
+          paymentMethodOnFile: true,
+        })
+      );
     }
 
     if (method === 'POST' && pathname === V1_ROUTES.inferenceTokens) {
@@ -185,12 +188,15 @@ export function createFakeCloudV1Fetch(options: FakeCloudV1Options): FetchLike {
     }
 
     if (method === 'GET' && pathname === V1_ROUTES.usage) {
-      // Nothing spent yet: an empty window, echoing the window asked for.
+      // Nothing spent yet: an empty window, echoing the window asked for. A
+      // grouping the contract does not know is refused as the service would.
+      const groupBy = UsageGroupBySchema.safeParse(searchParams.get('groupBy') ?? 'model');
+      if (!groupBy.success) return problem(400, 'malformed_request', 'Unknown usage grouping.');
       return json(
         UsageResponseSchema.parse({
           from: searchParams.get('from') ?? at(-PERIOD_MS),
           to: searchParams.get('to') ?? at(0),
-          groupBy: searchParams.get('groupBy') ?? 'model',
+          groupBy: groupBy.data,
           state: 'active',
           rows: [],
           totals: { listPriceMicro: '0', dorkosPriceMicro: '0' },
@@ -210,12 +216,16 @@ export function createFakeCloudV1Fetch(options: FakeCloudV1Options): FetchLike {
     if (method === 'GET' && pathname === V1_ROUTES.nudge) {
       // Nothing to nudge: the route answers 404 until there is, which the app
       // reads as "render nothing".
-      return new Response(
-        JSON.stringify(
-          ProblemSchema.parse({ code: 'not_found', status: 404, title: 'Nothing to suggest.' })
-        ),
-        { status: 404, headers: { 'content-type': 'application/problem+json' } }
-      );
+      return problem(404, 'not_found', 'Nothing to suggest.');
+    }
+
+    if (
+      method === 'GET' &&
+      (pathname === V1_ROUTES.communities || pathname === V1_ROUTES.communitiesMoves)
+    ) {
+      // Hosted communities are not served here: the same 404, read as "no
+      // such family", so the app shows none.
+      return problem(404, 'not_found', 'Hosted communities are not available.');
     }
 
     // Fail loud: an unknown path is a wiring bug, never a silent escape.
