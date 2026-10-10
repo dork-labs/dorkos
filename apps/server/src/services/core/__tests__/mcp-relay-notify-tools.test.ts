@@ -906,7 +906,7 @@ describe('relay_notify_user', () => {
 
   // Reply routing (an agent responding to an inbound <relay_context> turn) never
   // calls relay_notify_user — the runtime adapter forwards replies automatically
-  // (see context-builder.ts <relay_tools> outbound rules) straight through
+  // (see context-builder.ts <chat_tools> rules on reaching the person) straight through
   // BindingRouter's inbound subscription, a code path this handler never
   // touches. That "replies still flow when canInitiate=false" regression is
   // covered directly in binding-router.test.ts, see:

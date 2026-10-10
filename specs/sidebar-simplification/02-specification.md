@@ -161,6 +161,8 @@ The panel's `px-2` (8px) stays; `SIDEBAR_ROW_INSET` becomes the token-derived in
 
 **One fetch per fact.** `useOnboarding` / `SidebarHeaderBlock` / `useTours` / `useProfile` move from `['config']` to `configKeys.current()` (one query; `useConfig` is the reader); `useJumpBackIn` and `useSidebarState` share `['recent-sessions', 24]` with `select` for the sidebar's first 10. `useDigestFacts`'s once-a-day latch reads prefs only once they are settled (`boot === 'settled'`).
 
+_Amended by `your-activity-first` (DOR-2789, 2026-10-08): the sidebar no longer narrows the shared answer to its first 10. Slicing before deciding whose each chat was dropped a chat you typed in once ten agent chats were newer. The sidebar reads the whole `['recent-sessions', 24]` entry, and `useRecentSessions` asks the server with `touchedSince` = the last 04:00 local, so the entry also carries every chat you touched today beyond 24. The boundary is read when the request goes out and is not part of the key, so it stays one entry for every consumer and the persisted boot cache still recognises it._
+
 **Identity.** Agent rows and DM faces never paint before manifests on a cold boot (the gate); the path-hash fallback stays for directories without a manifest and is final for them. The `sidebar-item.ts:110-138` comment is deleted; `resolveAgentVisual` is unchanged. DOR-1143 closes with a unit test: given manifests, the face equals the manifest face on the first painted model.
 
 **Scroll-to-active.** `use-scroll-to-active.ts` latches the anchor at the first `settled` model; the initial positioning runs in `useLayoutEffect` with `behavior: 'auto'`; smooth scroll only on anchor changes after settle.

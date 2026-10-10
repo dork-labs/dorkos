@@ -48,6 +48,7 @@ const DECLARED_CAPABILITIES = {
 
 vi.mock('../../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    getNativeSessionCwd: vi.fn(() => null),
     persistSessionRuntime: () => Promise.resolve(true),
     getSessionSettings: () => Promise.resolve(null),
     resolveSessionRuntime: () => Promise.resolve({ type: 'claude-code', bound: false }),

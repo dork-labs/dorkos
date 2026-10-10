@@ -1,485 +1,228 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
-import type { Transport } from '@dorkos/shared/transport';
+import { createMockTransport, createMockSession } from '@dorkos/test-utils';
 import { sessionRouteLoader, sessionLoaderDeps } from '../router';
-import { sessionSearchSchema } from '@/layers/shared/lib';
-import type { Session } from '@dorkos/shared/types';
-import { sessionKeys } from '@/layers/entities/session';
+import { sessionSearchSchema, newSessionTarget } from '@/layers/shared/lib';
+import { getSessionRouteContext, sessionKeys } from '@/layers/entities/session';
 
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-describe('sessionSearchSchema', () => {
-  it('accepts a runtime launch param', async () => {
-    const parsed = sessionSearchSchema.parse({ runtime: 'opencode' });
-    expect(parsed.runtime).toBe('opencode');
-  });
-
-  it('leaves runtime undefined when absent', async () => {
-    const parsed = sessionSearchSchema.parse({});
-    expect(parsed.runtime).toBeUndefined();
-  });
+let transport: ReturnType<typeof createMockTransport>;
+let queryClient: QueryClient;
+beforeEach(() => {
+  transport = createMockTransport();
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.mocked(transport.createSessionLocation).mockResolvedValue({ id: 'opaque-location' });
+  vi.mocked(transport.getSessionLocation).mockResolvedValue({ cwd: '/chosen/project' });
+  vi.mocked(transport.getDefaultCwd).mockResolvedValue({ path: '/default' });
+  vi.mocked(transport.listSessions).mockResolvedValue({ sessions: [] });
+  vi.mocked(transport.getSession).mockResolvedValue(
+    createMockSession({ id: 'existing', cwd: '/actual/project' })
+  );
 });
-
-describe('sessionLoaderDeps', () => {
-  it('declares exactly the params the loader acts on', async () => {
-    const search = sessionSearchSchema.parse({
-      session: 'abc',
-      dir: '/api',
-      runtime: 'opencode',
-      prompt: 'hello',
-    });
-    expect(sessionLoaderDeps({ search })).toEqual({
-      session: 'abc',
-      dir: '/api',
-      runtime: 'opencode',
-      prompt: 'hello',
-    });
+function run(search: Parameters<typeof sessionSearchSchema.parse>[0]) {
+  return sessionRouteLoader({
+    context: { queryClient, transport },
+    deps: sessionLoaderDeps({ search: sessionSearchSchema.parse(search) }),
   });
-
-  it('ignores dialog params, so opening a dialog cannot re-run session selection', async () => {
-    // `?settings=open` is a modifier on wherever you are. Including it here
-    // would re-run the loader on every dialog toggle.
-    const search = sessionSearchSchema.parse({ dir: '/api', settings: 'open' });
-    expect(Object.keys(sessionLoaderDeps({ search })).sort()).toEqual([
-      'dir',
-      'prompt',
-      'runtime',
-      'seed',
-      'send',
-      'session',
-    ]);
-  });
-});
-
-describe('sessionRouteLoader', () => {
-  let queryClient: QueryClient;
-  let transport: Transport;
-
-  beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
-    // The server knows of no sessions unless a case says otherwise. Every
-    // "no cached sessions" case below now goes through here: a cold cache is
-    // no longer read as proof that a directory has no conversations (DOR-928).
-    transport = createMockTransport({
-      listSessions: vi.fn().mockResolvedValue({ sessions: [] }),
-    }) as Transport;
-  });
-
-  /**
-   * Invoke the loader the way the router does — through `loaderDeps`, so the
-   * test exercises the same param extraction production uses — and catch the
-   * redirect throw.
-   *
-   * The redirect's `search` is a function of the search that arrived (the
-   * router applies it against the live location), so it is resolved here the
-   * same way, against the parsed URL. Cases below then read a plain object.
-   */
-  async function callLoader(searchStr: string) {
-    const search = sessionSearchSchema.parse(
-      Object.fromEntries(new URLSearchParams(searchStr).entries())
-    );
-    try {
-      await sessionRouteLoader({
-        context: { queryClient, transport },
-        deps: sessionLoaderDeps({ search }),
-      });
-      return { redirected: false } as const;
-    } catch (thrown: unknown) {
-      // TanStack Router redirect() throws a Response-like object with an `options` property
-      const opts = { ...(thrown as { options: Record<string, unknown> }).options };
-      const next = opts.search;
-      opts.search =
-        typeof next === 'function'
-          ? (next as (prev: Record<string, unknown>) => Record<string, unknown>)(search)
-          : next;
-      return { redirected: true, redirect: opts };
-    }
+}
+async function destination(search: Parameters<typeof sessionSearchSchema.parse>[0]) {
+  try {
+    await run(search);
+  } catch (error) {
+    return (
+      error as { options: { search: (prev: Record<string, unknown>) => Record<string, unknown> } }
+    ).options.search(search as Record<string, unknown>);
   }
+  throw new Error('Expected redirect');
+}
 
-  it('does not redirect when session param is already present', async () => {
-    const result = await callLoader('?session=abc-123');
-    expect(result.redirected).toBe(false);
-  });
-
-  it('redirects to cached session when sessions exist', async () => {
-    const sessions: Session[] = [
-      {
-        id: 'cached-s1',
-        title: 'First session',
-        createdAt: '2026-01-01T00:00:00Z',
-        updatedAt: '2026-01-01T12:00:00Z',
-        permissionMode: 'default',
-        runtime: 'claude-code',
-      },
-      {
-        id: 'cached-s2',
-        title: 'Second session',
-        createdAt: '2026-01-01T00:00:00Z',
-        updatedAt: '2026-01-01T10:00:00Z',
-        permissionMode: 'default',
-        runtime: 'claude-code',
-      },
-    ];
-    queryClient.setQueryData(sessionKeys.list(null), sessions);
-
-    const result = await callLoader('');
-    expect(result.redirected).toBe(true);
-    expect(result.redirect).toMatchObject({
-      to: '/session',
-      search: { session: 'cached-s1' },
-      replace: true,
+describe('session route identity and launch lifecycle', () => {
+  it('resolves ID-only links, caches detail and resolves the actual cwd without redirecting', async () => {
+    await run({ session: 'existing' });
+    expect(transport.getSession).toHaveBeenCalledWith('existing', undefined);
+    expect(
+      queryClient.getQueryData(sessionKeys.detail('existing', '/actual/project'))
+    ).toMatchObject({ id: 'existing' });
+    expect(getSessionRouteContext('existing')).toEqual({
+      cwd: '/actual/project',
+      draft: false,
+      runtime: 'claude-code',
     });
   });
-
-  it('redirects to new UUID when no cached sessions', async () => {
-    const result = await callLoader('');
-    expect(result.redirected).toBe(true);
-    const search = (result.redirect as Record<string, unknown>).search as Record<string, string>;
-    expect(search.session).toMatch(UUID_REGEX);
-    expect(result.redirect).toMatchObject({
-      to: '/session',
-      replace: true,
-    });
+  it('does not turn an unknown existing session into a new one', async () => {
+    const missing = Object.assign(new Error('Missing'), { status: 404 });
+    vi.mocked(transport.getSession).mockRejectedValue(missing);
+    await expect(run({ session: 'missing' })).rejects.toBe(missing);
+    expect(transport.createSessionLocation).not.toHaveBeenCalled();
   });
-
-  it('preserves dir param when redirecting to cached session', async () => {
-    const sessions: Session[] = [
-      {
-        id: 's1',
-        title: 'Session',
-        createdAt: '2026-01-01T00:00:00Z',
-        updatedAt: '2026-01-01T12:00:00Z',
-        permissionMode: 'default',
-        runtime: 'claude-code',
-      },
-    ];
-    queryClient.setQueryData(sessionKeys.list('/my/project'), sessions);
-
-    const result = await callLoader('?dir=/my/project');
-    expect(result.redirected).toBe(true);
-    expect(result.redirect).toMatchObject({
-      search: { session: 's1', dir: '/my/project' },
-    });
+  it('preserves outages as errors', async () => {
+    const unavailable = Object.assign(new Error('Unavailable'), { status: 503 });
+    vi.mocked(transport.getSession).mockRejectedValue(unavailable);
+    await expect(run({ session: 'existing' })).rejects.toBe(unavailable);
   });
-
-  it('keeps the rest of the link — the half that says what to open', async () => {
-    // The loader's job is choosing a session, and it spelled its whole redirect
-    // out of `loaderDeps` — which deliberately names only the params that
-    // decide that. Everything else was deleted on the way. So
-    // `/session?dir=…&panel=profile&profilePage=rooms` resolved a session and
-    // threw the profile link away before any component could read it (spec
-    // `profile-unification` §1.6). `?settings=` and `?profile=` had the same
-    // hole.
-    const result = await callLoader(
-      '?dir=/my/project&panel=profile&profilePage=rooms&profile=member-1&settings=tools'
-    );
-
-    expect(result.redirected).toBe(true);
-    expect(result.redirect).toMatchObject({
-      search: {
-        dir: '/my/project',
+  it('normalizes legacy directory links while keeping message and dialog context', async () => {
+    expect(
+      await destination({
+        session: 'existing',
+        dir: '/legacy',
+        message: 'message-1',
         panel: 'profile',
-        profilePage: 'rooms',
-        profile: 'member-1',
-        settings: 'tools',
-      },
-    });
-  });
-
-  it('preserves dir param when redirecting to new UUID', async () => {
-    const result = await callLoader('?dir=/my/project');
-    expect(result.redirected).toBe(true);
-    const search = (result.redirect as Record<string, unknown>).search as Record<string, string>;
-    expect(search.session).toMatch(UUID_REGEX);
-    expect(search.dir).toBe('/my/project');
-  });
-
-  it('preserves runtime param when redirecting to cached session', async () => {
-    const sessions: Session[] = [
-      {
-        id: 's1',
-        title: 'Session',
-        createdAt: '2026-01-01T00:00:00Z',
-        updatedAt: '2026-01-01T12:00:00Z',
-        permissionMode: 'default',
-        runtime: 'claude-code',
-      },
-    ];
-    queryClient.setQueryData(sessionKeys.list(null), sessions);
-
-    const result = await callLoader('?runtime=opencode');
-    expect(result.redirected).toBe(true);
-    expect(result.redirect).toMatchObject({
-      search: { session: 's1', runtime: 'opencode' },
-    });
-  });
-
-  it('preserves runtime param when redirecting to new UUID', async () => {
-    const result = await callLoader('?dir=/my/project&runtime=codex');
-    expect(result.redirected).toBe(true);
-    const search = (result.redirect as Record<string, unknown>).search as Record<string, string>;
-    expect(search.session).toMatch(UUID_REGEX);
-    expect(search.dir).toBe('/my/project');
-    expect(search.runtime).toBe('codex');
-  });
-
-  it('uses correct cache key with dir param', async () => {
-    // Sessions are cached per directory — dir=null when absent
-    const sessionsForProject: Session[] = [
-      {
-        id: 'proj-s1',
-        title: 'Project session',
-        createdAt: '2026-01-01T00:00:00Z',
-        updatedAt: '2026-01-01T12:00:00Z',
-        permissionMode: 'default',
-        runtime: 'claude-code',
-      },
-    ];
-    // Put sessions under the wrong key (null instead of dir)
-    queryClient.setQueryData(sessionKeys.list(null), sessionsForProject);
-
-    // Loader should look under the '/my/project' list — will find nothing, and
-    // the server (stubbed empty) has nothing to add
-    const result = await callLoader('?dir=/my/project');
-    expect(result.redirected).toBe(true);
-    const search = (result.redirect as Record<string, unknown>).search as Record<string, string>;
-    // Should get a new UUID, not 'proj-s1', because the cache key didn't match
-    expect(search.session).toMatch(UUID_REGEX);
-    expect(search.session).not.toBe('proj-s1');
-  });
-
-  // --- The directory the redirect has to name (DOR-1836) ---
-
-  it('names the resolved conversation’s directory when the URL named none', async () => {
-    // **Bare `/session` used to land on a session it could not then read.** The
-    // redirect carried the id and nothing else, so the history read asked for
-    // the transcript with no directory at all and was refused
-    // (`SESSION_CWD_REQUIRED`), and the detail read asked under whatever
-    // directory this window had selected and was told the session did not exist
-    // — two 404s and two `[dorkos:query-error]` breadcrumbs before the page
-    // settled on an empty state. Both were measured against a live server on
-    // 2026-09-07, and both come from the same omission.
-    queryClient.setQueryData(sessionKeys.list(null), [
-      {
-        id: 'lives-somewhere',
-        title: 'Yesterday',
-        createdAt: '2026-01-01T00:00:00Z',
-        updatedAt: '2026-01-01T12:00:00Z',
-        permissionMode: 'default',
-        runtime: 'claude-code',
-        cwd: '/Users/me/project',
-      },
-    ] satisfies Session[]);
-
-    const result = await callLoader('');
-
-    expect(result.redirect).toMatchObject({
-      search: { session: 'lives-somewhere', dir: '/Users/me/project' },
-    });
-  });
-
-  it('never overrules a directory the person named', async () => {
-    // The other half of the rule, and the one that keeps agent-switching honest.
-    // A project's session list covers its whole SUBTREE (DOR-1550), so the
-    // newest conversation in it may have been held one level down — and that is
-    // not a reason to move somebody who asked for the project. This fills a
-    // blank; it never overwrites.
-    queryClient.setQueryData(sessionKeys.list('/Users/me/project'), [
-      {
-        id: 'one-level-down',
-        title: 'In a subfolder',
-        createdAt: '2026-01-01T00:00:00Z',
-        updatedAt: '2026-01-01T12:00:00Z',
-        permissionMode: 'default',
-        runtime: 'claude-code',
-        cwd: '/Users/me/project/apps/desktop',
-      },
-    ] satisfies Session[]);
-
-    const result = await callLoader('?dir=/Users/me/project');
-
-    expect(result.redirect).toMatchObject({
-      search: { session: 'one-level-down', dir: '/Users/me/project' },
-    });
-  });
-
-  it('asks the server about a directory this window has never displayed', async () => {
-    // The bug this loader used to have (DOR-928): an empty cache entry is the
-    // NORMAL state for every agent but the one on screen, so treating it as
-    // "no conversations" sent people to an empty chat. Red when the loader
-    // decides from the cache alone — the redirect carries a minted UUID.
-    transport.listSessions = vi.fn().mockResolvedValue({
-      sessions: [
-        {
-          id: 'server-s1',
-          title: 'Still running',
-          createdAt: '2026-01-01T00:00:00Z',
-          updatedAt: '2026-01-01T12:00:00Z',
-          permissionMode: 'default',
-          runtime: 'claude-code',
-        } satisfies Session,
-      ],
-    });
-
-    const result = await callLoader('?dir=/never/opened');
-
-    expect(result.redirect).toMatchObject({
-      search: { session: 'server-s1', dir: '/never/opened' },
-    });
-    expect(transport.listSessions).toHaveBeenCalledWith('/never/opened');
-  });
-
-  it('raises rather than redirecting to a blank chat when it cannot ask', async () => {
-    // There is no "stay put" for a loader: this URL IS where the person asked
-    // to be. Redirecting to a minted id would show a blank chat for an agent
-    // that may have work, which is the defect this path exists to remove — so
-    // the route's error boundary is the honest answer (DOR-928).
-    transport.listSessions = vi.fn().mockRejectedValue(new Error('offline'));
-
-    await expect(
-      sessionRouteLoader({
-        context: { queryClient, transport },
-        deps: {
-          dir: '/my/project',
-          session: undefined,
-          runtime: undefined,
-          prompt: undefined,
-          send: undefined,
-          seed: undefined,
-        },
       })
-    ).rejects.toThrow(/could ?n[o’]t reach the server/i);
+    ).toMatchObject({
+      session: 'existing',
+      dir: undefined,
+      message: 'message-1',
+      panel: 'profile',
+    });
+    expect(transport.getSession).toHaveBeenCalledWith('existing', '/legacy');
   });
-
-  it('carries the prompt seed onto a genuinely fresh session', async () => {
-    // The other half of the seed rule below: a seed is FOR a new conversation,
-    // so the branch that starts one must keep it.
-    const result = await callLoader('?dir=/my/project&prompt=hello');
-    const search = (result.redirect as Record<string, unknown>).search as Record<string, string>;
-    expect(search.session).toMatch(UUID_REGEX);
-    expect(search.prompt).toBe('hello');
+  it('keeps a separately addressed profile while hiding the conversation directory', async () => {
+    const search = await destination({
+      session: 'existing',
+      dir: '/host',
+      panel: 'profile',
+      agentPath: '/linked',
+      profilePage: 'tools',
+    });
+    expect(transport.createSessionLocation).toHaveBeenCalledWith('/linked');
+    expect(search).toMatchObject({
+      session: 'existing',
+      panel: 'profile',
+      profilePage: 'tools',
+      profileRef: 'opaque-location',
+      dir: undefined,
+      agentPath: undefined,
+    });
+    expect(getSessionRouteContext('existing')?.cwd).toBe('/actual/project');
   });
-
-  it('never auto-selects over an explicit fresh session id (Run this with… / ADR-0255)', async () => {
-    // A fresh session id (from "Run this with…") must survive even when sessions
-    // ARE cached — the loader must NOT swap it for an existing one. This locks
-    // the ADR-0255 invariant that a runtime switch is always a NEW session.
-    const sessions: Session[] = [
-      {
-        id: 'cached-existing',
-        title: 'Existing',
-        createdAt: '2026-01-01T00:00:00Z',
-        updatedAt: '2026-01-01T12:00:00Z',
-        permissionMode: 'default',
-        runtime: 'claude-code',
-      },
-    ];
-    queryClient.setQueryData(sessionKeys.list(null), sessions);
-
-    const result = await callLoader(
-      '?session=11111111-1111-4111-8111-111111111111&runtime=codex&prompt=hello'
-    );
-    // No redirect: the fresh id is preserved, never auto-selected onto 'cached-existing'.
-    expect(result.redirected).toBe(false);
-  });
-
-  // This is what makes the model/effort picker usable BEFORE a session's first
-  // message (spec `execution-defaults` §3.3). The status bar disables the picker
-  // when it has no session id; in the cockpit it always has one, because every
-  // path through this loader ends at a `/session` URL that carries one — the
-  // most recent cached session, or a freshly minted UUID. Browser-verified on a
-  // cold `/session?dir=…`: the picker opens, and the old "Send a message first"
-  // tooltip never renders. Pinned here because it is the loader, not the status
-  // bar, that holds the guarantee up — a change here would disable the picker
-  // again with nothing in the picker's own tests to notice.
-  it('never leaves /session without a session id — on either branch', async () => {
-    const fresh = await callLoader('?dir=/api');
-    expect(fresh.redirected).toBe(true);
-    expect(
-      ((fresh.redirect as Record<string, unknown>).search as Record<string, string>).session
-    ).toMatch(UUID_REGEX);
-
-    queryClient.setQueryData(sessionKeys.list(null), [
-      {
-        id: 'cached-s1',
-        title: 'Existing',
-        createdAt: '2026-01-01T00:00:00Z',
-        updatedAt: '2026-01-01T12:00:00Z',
-        permissionMode: 'default',
-        runtime: 'claude-code',
-      },
-    ] satisfies Session[]);
-    const existing = await callLoader('');
-    expect(existing.redirected).toBe(true);
-    expect(
-      ((existing.redirect as Record<string, unknown>).search as Record<string, string>).session
-    ).toBe('cached-s1');
-  });
-
-  it('drops the prompt seed when auto-selecting an existing session', async () => {
-    // A prompt seed must only ride a FRESH session; auto-selecting an existing
-    // one must drop it, so a seed can never land in an unintended session.
-    const sessions: Session[] = [
-      {
-        id: 'cached-s1',
-        title: 'Existing',
-        createdAt: '2026-01-01T00:00:00Z',
-        updatedAt: '2026-01-01T12:00:00Z',
-        permissionMode: 'default',
-        runtime: 'claude-code',
-      },
-    ];
-    queryClient.setQueryData(sessionKeys.list(null), sessions);
-
-    const result = await callLoader('?prompt=hello&runtime=codex');
-    expect(result.redirected).toBe(true);
-    const search = (result.redirect as Record<string, unknown>).search as Record<string, string>;
-    expect(search.session).toBe('cached-s1');
-    expect(search.runtime).toBe('codex');
-    expect(search.prompt).toBeUndefined(); // dropped on auto-select
-  });
-
-  it('carries the send opt-in onto a genuinely fresh session', async () => {
-    const result = await callLoader('?dir=/my/project&prompt=hello&send=1');
-    const search = (result.redirect as Record<string, unknown>).search as Record<string, string>;
-    expect(search.prompt).toBe('hello');
-    expect(search.send).toBe('1');
-  });
-
-  it('drops the send opt-in when auto-selecting an existing session', async () => {
-    // The strictest version of the seed rule. A seed that must not RIDE an
-    // existing conversation must certainly not start a turn on one, so the
-    // opt-in is dropped by the same branch and for the same reason.
-    queryClient.setQueryData(sessionKeys.list(null), [
-      {
-        id: 'cached-s1',
-        title: 'Existing',
-        createdAt: '2026-01-01T00:00:00Z',
-        updatedAt: '2026-01-01T12:00:00Z',
-        permissionMode: 'default',
-        runtime: 'claude-code',
-      } satisfies Session,
-    ]);
-
-    const result = await callLoader('?prompt=hello&send=1');
-    const search = (result.redirect as Record<string, unknown>).search as Record<string, string>;
-    expect(search.session).toBe('cached-s1');
-    expect(search.prompt).toBeUndefined();
-    expect(search.send).toBeUndefined();
-  });
-
-  it('ignores a send value that is not the exact opt-in', async () => {
-    // `.catch(undefined)` on the literal: `?send=0` reads as "no", not as a
-    // parse error that would blank the route — and nothing but `1` can ever
-    // start a turn on somebody's behalf.
-    for (const raw of ['0', 'true', 'yes', '']) {
-      const result = await callLoader(`?dir=/my/project&prompt=hello&send=${raw}`);
-      const search = (result.redirect as Record<string, unknown>).search as Record<string, string>;
-      expect(search.prompt).toBe('hello');
-      expect(search.send).toBeUndefined();
+  it.each(['claude-code', 'codex', 'opencode'])(
+    'resolves a portable %s draft before creation',
+    async (runtime) => {
+      vi.mocked(transport.getSession).mockRejectedValue(
+        Object.assign(new Error('Draft'), { status: 404 })
+      );
+      await run({ session: `draft-${runtime}`, draft: '1', launchRef: 'opaque-location', runtime });
+      expect(transport.getSessionLocation).toHaveBeenCalledWith('opaque-location');
+      expect(transport.getSession).toHaveBeenCalledWith(`draft-${runtime}`, '/chosen/project');
+      expect(getSessionRouteContext(`draft-${runtime}`)).toEqual({
+        cwd: '/chosen/project',
+        draft: true,
+        runtime,
+      });
     }
+  );
+  it('does not open a copied draft in an unrelated default directory', async () => {
+    vi.mocked(transport.getSession).mockRejectedValue(
+      Object.assign(new Error('Missing draft'), { status: 404 })
+    );
+    await expect(run({ session: 'missing-location', draft: '1' })).rejects.toThrow(
+      'This chat’s folder isn’t available'
+    );
+    expect(transport.getDefaultCwd).not.toHaveBeenCalled();
+  });
+  it('promotes a draft only after its native transcript exists', async () => {
+    const target = await destination({
+      session: 'existing',
+      draft: '1',
+      launchRef: 'opaque-location',
+      runtime: 'claude-code',
+    });
+    expect(target.draft).toBeUndefined();
+    expect(target.launchRef).toBeUndefined();
+    expect(target.session).toBe('existing');
+    expect(getSessionRouteContext('existing')?.draft).toBe(false);
+  });
+  it('refuses an invalid launch reference instead of using the default directory', async () => {
+    vi.mocked(transport.getSessionLocation).mockRejectedValue(new Error('Missing location'));
+    await expect(run({ session: 'draft', draft: '1', launchRef: 'missing' })).rejects.toThrow(
+      'Missing location'
+    );
+    expect(transport.getDefaultCwd).not.toHaveBeenCalled();
+  });
+  it('resolves known agents through their opaque ID', async () => {
+    vi.mocked(transport.listMeshAgentPaths).mockResolvedValue({
+      agents: [{ id: 'agent-1', name: 'Agent', projectPath: '/agent/project' }],
+    });
+    vi.mocked(transport.getSession).mockRejectedValue(
+      Object.assign(new Error('Draft'), { status: 404 })
+    );
+    await run({ session: 'agent-draft', agentId: 'agent-1', draft: '1', runtime: 'codex' });
+    expect(getSessionRouteContext('agent-draft')?.cwd).toBe('/agent/project');
+  });
+  it('creates a portable draft for an empty directory preserving launch intent', async () => {
+    const target = await destination({
+      dir: '/empty',
+      runtime: 'opencode',
+      prompt: 'hello',
+      send: '1',
+      seed: 'dorkbot-help',
+      panel: 'profile',
+    });
+    expect(target).toMatchObject({
+      draft: '1',
+      launchRef: 'opaque-location',
+      dir: undefined,
+      runtime: 'opencode',
+      prompt: 'hello',
+      send: '1',
+      seed: 'dorkbot-help',
+      panel: 'profile',
+    });
+    expect(target.session).toMatch(/^[0-9a-f-]{36}$/);
+    expect(transport.createSessionLocation).toHaveBeenCalledWith('/empty');
+  });
+  it('resumes a real conversation and drops instructions aimed at a fresh one', async () => {
+    vi.mocked(transport.listSessions).mockResolvedValue({
+      sessions: [createMockSession({ id: 'existing', cwd: '/actual/project' })],
+    });
+    const target = await destination({
+      dir: '/actual/project',
+      prompt: 'do this',
+      send: '1',
+      seed: 'dorkbot-help',
+      panel: 'profile',
+    });
+    expect(target).toMatchObject({
+      session: 'existing',
+      dir: undefined,
+      draft: undefined,
+      prompt: undefined,
+      send: undefined,
+      seed: undefined,
+      panel: 'profile',
+    });
+    expect(transport.createSessionLocation).not.toHaveBeenCalled();
+  });
+  it('fails lookup rather than minting a session on an unreachable server', async () => {
+    vi.mocked(transport.listSessions).mockRejectedValue(new Error('Offline'));
+    await expect(run({ dir: '/unreachable' })).rejects.toThrow();
+    expect(transport.createSessionLocation).not.toHaveBeenCalled();
+  });
+  it('keeps each resolved session location separate when tabs switch', async () => {
+    await run({ session: 'a' });
+    vi.mocked(transport.getSession).mockResolvedValue(
+      createMockSession({ id: 'b', cwd: '/other' })
+    );
+    await run({ session: 'b' });
+    expect(getSessionRouteContext('a')?.cwd).toBe('/actual/project');
+    expect(getSessionRouteContext('b')?.cwd).toBe('/other');
+  });
+  it('builds a new session without exposing its directory and retains runtime choices', async () => {
+    const target = await newSessionTarget(transport, {
+      dir: '/private/project',
+      runtime: 'codex',
+      continuedFrom: 'prior',
+    });
+    expect(target.search.dir).toBeUndefined();
+    expect(target.search).toMatchObject({
+      launchRef: 'opaque-location',
+      draft: '1',
+      runtime: 'codex',
+      continuedFrom: 'prior',
+    });
+  });
+  it('ignores dialogs as loader dependencies', () => {
+    expect(
+      sessionLoaderDeps({ search: sessionSearchSchema.parse({ session: 'a', panel: 'profile' }) })
+    ).not.toHaveProperty('panel');
   });
 });

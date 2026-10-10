@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 /**
  * Every skill in one project, and what each agent tool does with it.
  *
@@ -116,7 +117,9 @@ export function SkillsWithHarnessesList({
             variant="ghost"
             size="sm"
             className="text-muted-foreground hover:text-foreground h-6 px-1 text-xs"
-            onClick={() => void navigate({ to: '/marketplace', search: { type: 'skill-pack' } })}
+            onClick={() =>
+              void navigate({ ...appRoutes.marketplace(), search: { type: 'skill-pack' } })
+            }
           >
             <Package aria-hidden className="mr-1.5 size-3.5" />
             Browse skill-packs

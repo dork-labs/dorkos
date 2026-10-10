@@ -15,6 +15,7 @@ import type {
   InteractionAnswerOptions,
   ToolDecisionOptions,
   SessionUpdateResult,
+  SessionSettingsPort,
 } from '@dorkos/shared/agent-runtime';
 import type { McpServerEntry } from '@dorkos/shared/transport';
 import type {
@@ -86,6 +87,7 @@ export class TestModeRuntime implements AgentRuntime {
 
   private readonly registry: TestModeSessionRegistry;
   private readonly capabilities: RuntimeCapabilities;
+  private settingsPort: SessionSettingsPort | undefined;
   /** The managed-MCP server resolver, injected at boot; drives {@link getMcpStatus}. */
   private managedMcp: ManagedMcpServerResolver | undefined;
   /** Turns running right now, per session; drives {@link isTurnOpen}. */
@@ -181,7 +183,12 @@ export class TestModeRuntime implements AgentRuntime {
     return null;
   }
 
-  updateSession(sessionId: string, opts: SessionSettings): SessionUpdateResult {
+  setSessionSettings(port: SessionSettingsPort): void {
+    this.settingsPort = port;
+  }
+
+  async updateSession(sessionId: string, opts: SessionSettings): Promise<SessionUpdateResult> {
+    await this.settingsPort?.saveSessionSettings(sessionId, opts);
     return {
       updated: this.registry.applySettings(sessionId, {
         ...(opts.permissionMode !== undefined ? { permissionMode: opts.permissionMode } : {}),
@@ -195,9 +202,14 @@ export class TestModeRuntime implements AgentRuntime {
     content: string,
     opts?: MessageOpts
   ): AsyncGenerator<StreamEvent> {
+    // Settings may have been saved through another inferred test instance
+    // before the first turn establishes this instance's ownership.
+    const stored = await this.settingsPort?.getSessionSettings(sessionId);
     // Track the session the moment DorkOS observes it — the discovery source
     // for subscribeSessionList (no filesystem watch, no native store).
     this.registry.recordMessage(sessionId, content, {
+      ...(stored?.permissionMode !== undefined ? { permissionMode: stored.permissionMode } : {}),
+      ...(stored?.model !== undefined ? { model: stored.model } : {}),
       ...(opts?.cwd !== undefined ? { cwd: opts.cwd } : {}),
     });
     // A declared first-turn rename becomes visible exactly here — after the
@@ -377,6 +389,11 @@ export class TestModeRuntime implements AgentRuntime {
   }
 
   async getSession(_projectDir: string, id: string): Promise<Session | null> {
+    return this.registry.get(id);
+  }
+
+  /** Discover tracked identities without falling back to another scripted runtime. */
+  async findSession(id: string): Promise<Session | null> {
     return this.registry.get(id);
   }
 

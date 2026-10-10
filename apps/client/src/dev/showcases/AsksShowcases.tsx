@@ -161,7 +161,7 @@ function AskKinds() {
         />
       </ShowcaseDemo>
 
-      <ShowcaseLabel>With somewhere to go — the surface supplies “Open session”</ShowcaseLabel>
+      <ShowcaseLabel>With somewhere to go — the surface supplies “Open chat”</ShowcaseLabel>
       <ShowcaseDemo>
         <InteractionAsk
           ask={ask('demo-5', approval(420))}

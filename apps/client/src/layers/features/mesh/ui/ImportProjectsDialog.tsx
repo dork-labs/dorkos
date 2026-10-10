@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { CheckCircle2 } from 'lucide-react';
@@ -56,7 +57,7 @@ export function ImportProjectsDialog() {
       return;
     }
     close();
-    if (joinedCount > 0) navigate({ to: '/team' });
+    if (joinedCount > 0) navigate({ ...appRoutes.team() });
   }
 
   const joinedLabel = `${joinedCount} project${joinedCount === 1 ? '' : 's'} joined`;

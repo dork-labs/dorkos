@@ -132,9 +132,11 @@ describe('an agent you manage', () => {
       'About nav',
       'Runs on pick',
       'Personality pick',
+      'Reports to pick',
       'Folder copy',
-      'Sessions nav',
+      'Chats nav',
       'Schedules nav',
+      'Commitments nav',
       'Rooms nav',
       'Notifications nav',
       'Skills nav',
@@ -148,6 +150,20 @@ describe('an agent you manage', () => {
       // learned are the same kind of thing to a person looking for them.
       'Memory nav',
     ]);
+  });
+
+  it('says who the agent reports to, and nothing while it is unknown', () => {
+    const rowOf = (ctx: Partial<ProfileRowsContext>) =>
+      build(MANAGED, ctx)
+        .flatMap((group) => group.rows)
+        .find((row) => row.id === 'reports-to');
+    expect(rowOf({ reportsTo: 'You (default)' })).toMatchObject({
+      kind: 'pick',
+      label: 'Reports to',
+      value: 'You (default)',
+      pick: 'reports-to',
+    });
+    expect(rowOf({})?.value).toBeNull();
   });
 
   it('names the three convention files by their files, in the toolkit', () => {
@@ -182,11 +198,32 @@ describe('an agent you manage', () => {
 
 describe('someone else’s agent', () => {
   it('shows only what a teammate should see, and none of it as a control', () => {
-    expect(shape(build(OTHERS_AGENT))).toEqual(['About text', 'Runs on text', 'Rooms nav']);
+    expect(shape(build(OTHERS_AGENT))).toEqual([
+      'About text',
+      'Runs on text',
+      'Commitments nav',
+      'Rooms nav',
+    ]);
   });
 
   it('shows no lock icons — private is not the same as locked', () => {
     expect(flat(build(OTHERS_AGENT)).some((row) => row.kind === 'locked')).toBe(false);
+  });
+});
+
+describe('the Commitments row', () => {
+  const row = (over: Partial<ProfileRowsContext>) =>
+    flat(build(OTHERS_AGENT, over)).find((r) => r.id === 'commitments')!;
+
+  it('says how many are open and how many are overdue', () => {
+    const drawn = row({ commitments: { open: 2, overdue: 1 } });
+    expect(drawn.value).toBe('2 open');
+    expect(drawn.meta).toBe('1 overdue');
+  });
+
+  it('says nothing about overdue when none are, and nothing at all while unknown', () => {
+    expect(row({ commitments: { open: 1, overdue: 0 } }).meta).toBeUndefined();
+    expect(row({ commitments: null }).value).toBeNull();
   });
 });
 
@@ -196,8 +233,9 @@ describe('DorkBot', () => {
       'About locked',
       'Runs on pick',
       'Personality pick',
-      'Sessions nav',
+      'Chats nav',
       'Schedules nav',
+      'Commitments nav',
       'Rooms nav',
       'Notifications nav',
       'Skills nav',

@@ -202,9 +202,9 @@ function describeHookTrigger(hook: ProjectedHook): string {
     case 'UserPromptSubmit':
       return 'every time you send a message';
     case 'SessionStart':
-      return 'when a session starts';
+      return 'when a chat starts';
     case 'SessionEnd':
-      return 'when a session ends';
+      return 'when a chat ends';
     case 'Stop':
       return 'when a turn finishes';
     case 'SubagentStop':
@@ -212,7 +212,7 @@ function describeHookTrigger(hook: ProjectedHook): string {
     case 'Notification':
       return 'on every notification';
     case 'PreCompact':
-      return 'before the conversation is compacted';
+      return 'before the chat is compacted';
     default:
       return `on ${hook.event}${scope}`;
   }

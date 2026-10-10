@@ -1,5 +1,5 @@
 /**
- * "Where new conversations stop for you" — the one shared trust setting,
+ * "Where new chats stop for you" — the one shared trust setting,
  * beneath the cards (design decision 3, option A).
  *
  * The heading is deliberately NOT the design session's original "Where agents
@@ -15,12 +15,8 @@
  * nothing else unless something is running without asking.
  *
  * Presentational on purpose (design decision 7): stops in, a change out, no
- * query and no config write anywhere in it. The consent choreography around Full
- * autonomy is genuinely about the server — the config route refuses that write
- * without an acknowledgement — so it stays with the container, which holds the
- * single `useTrustStopWrites` call and the single `AutonomyConfirmDialog` for
- * the whole tab. A row that confirmed as well would be a second consent
- * contract.
+ * query and no config write anywhere in it. The write stays with the container,
+ * which holds the single `useTrustStopWrites` call for the whole tab.
  *
  * @module features/settings/ui/runtimes/GlobalTrustRow
  */
@@ -134,7 +130,7 @@ export function GlobalTrustRow({
           fullscreened dialog or any wider host. */}
       <div className="flex flex-col gap-3 @2xl/trust-row:flex-row @2xl/trust-row:items-center @2xl/trust-row:justify-between @2xl/trust-row:gap-6">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <p className="text-sm font-medium">Where new conversations stop for you</p>
+          <p className="text-sm font-medium">Where new chats stop for you</p>
           <p className="text-muted-foreground text-xs">
             Cards above use this unless set otherwise.
           </p>
@@ -143,7 +139,7 @@ export function GlobalTrustRow({
         {/* Full width while stacked; its own width, and no squeezing, beside the
             label (design §6). */}
         <SegmentedControl
-          aria-label="Where new conversations stop for you"
+          aria-label="Where new chats stop for you"
           className="w-full @2xl/trust-row:w-auto @2xl/trust-row:shrink-0"
           value={selected}
           onValueChange={(next) => onChange(next as PermissionStop)}
@@ -173,8 +169,8 @@ export function GlobalTrustRow({
           <Zap className="mt-px size-3 shrink-0" aria-hidden />
           <span>
             {sharedAtAutonomy
-              ? 'New sessions run at full power'
-              : `New sessions on ${listRuntimes(overriddenToAutonomy)} run at full power`}
+              ? 'New chats run at full power'
+              : `New chats on ${listRuntimes(overriddenToAutonomy)} run at full power`}
             .{' '}
             <button
               type="button"

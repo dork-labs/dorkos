@@ -12,13 +12,10 @@
  * @module services/runtimes/claude-code/mcp-tools/session-start-permission
  */
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
-import { isNoLooserThan, needsConsentRitual } from '@dorkos/shared/permission-semantics';
+import { actsWithoutAsking, isNoLooserThan } from '@dorkos/shared/permission-semantics';
 import { logError, logger } from '../../../../lib/logger.js';
-import {
-  AUTONOMY_ACK_REQUIRED_CODE,
-  hasStandingAutonomyAck,
-} from '../../../core/approvals/autonomy-consent.js';
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
+import { turnPermissionMode } from '../turn-permission.js';
 import type { McpToolSession } from './types.js';
 
 /**
@@ -67,9 +64,24 @@ const AUTO_FALLBACK_MODE_ID = 'default';
  * @param session - The live session, or undefined when there is none.
  */
 export function runningPermissionMode(
-  session: Pick<McpToolSession, 'permissionMode' | 'model' | 'autoModeConfirmedFor'> | undefined
+  session:
+    | Pick<
+        McpToolSession,
+        'permissionMode' | 'model' | 'autoModeConfirmedFor' | 'turnPermissionCeiling'
+      >
+    | undefined
 ): string | undefined {
-  const mode = session?.permissionMode;
+  // The turn's ceiling first: a chat a stranger's message woke runs below its
+  // own level for that turn, and must start nothing above it (spec
+  // `trusted-by-default-flip` §4).
+  const mode = session
+    ? turnPermissionMode({
+        permissionMode: session.permissionMode,
+        ...(session.turnPermissionCeiling !== undefined
+          ? { turnPermissionCeiling: session.turnPermissionCeiling }
+          : {}),
+      })
+    : undefined;
   if (mode !== AUTO_MODE_ID) return mode;
   const confirmed =
     session?.autoModeConfirmedFor !== undefined &&
@@ -254,9 +266,8 @@ function grantMode(requested: string | undefined, ceiling: Ceiling, runtimeType:
 
 /**
  * Everything `session_start` decides about the level, in one call: the ceiling,
- * the grant against the target runtime's declared modes, the rule that Full
- * autonomy is only ever granted when asked for by name, and the standing
- * acknowledgement it needs. Nothing is written here; a refusal
+ * the grant against the target runtime's declared modes, and the rule that Full
+ * autonomy is only ever granted when asked for by name. Nothing is written here; a refusal
  * leaves nothing behind.
  *
  * @param requested - The mode the tool was asked for, if any.
@@ -276,22 +287,13 @@ export async function resolveStartPermission(
   // Full autonomy is never granted silently. An approval card shows only the
   // arguments a call sent, so an inherited Full autonomy would be invisible to
   // the person approving it: that level has to be asked for by name.
-  if (requested === undefined && needsConsentRitual(grant.mode)) {
+  if (requested === undefined && actsWithoutAsking(grant.mode)) {
     return {
       ok: false,
       error:
         `A new chat at ${grant.mode.label} has to be asked for by name, so the person ` +
         `approving can see it. Pass permissionMode "${grant.mode.id}", or a lower mode.`,
       code: 'NAME_FULL_AUTONOMY',
-    };
-  }
-  if (needsConsentRitual(grant.mode) && !hasStandingAutonomyAck()) {
-    return {
-      ok: false,
-      error:
-        `Starting a chat at ${grant.mode.label} needs the person's standing okay for Full ` +
-        'autonomy, and there is none on file. Ask for a lower mode, or ask the person.',
-      code: AUTONOMY_ACK_REQUIRED_CODE,
     };
   }
   return {

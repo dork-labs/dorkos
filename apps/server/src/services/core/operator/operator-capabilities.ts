@@ -421,7 +421,10 @@ export const operatorDomain: CapabilityDomain = {
       title: 'Update agent',
       description:
         "Edit an agent's manifest and personality: displayName, description, persona, personaEnabled, " +
-        'traits, conventions, color, icon, and SOUL.md (soulContent) content. ' +
+        'traits, conventions, color, icon, reportsTo, and SOUL.md (soulContent) content. ' +
+        'reportsTo is who the agent reports to: an agent id, or a person’s account id; null returns ' +
+        'it to the default (whoever created it, then the owner). A change that would make a loop is ' +
+        'refused with REPORTS_TO_CYCLE. ' +
         'What an agent is allowed to do is not changed here: ask with the tool whose name ends ' +
         'in `change_permission`. ' +
         // The other tool is named as a searchable ENDING, never bare: this same
@@ -485,6 +488,15 @@ export const operatorDomain: CapabilityDomain = {
           .describe('Which convention files are injected'),
         color: z.string().nullable().optional().describe('Accent color (null clears it)'),
         icon: z.string().nullable().optional().describe('Icon name (null clears it)'),
+        reportsTo: z
+          .string()
+          .min(1)
+          .nullable()
+          .optional()
+          .describe(
+            'Who this agent reports to: an agent id, or a person’s account id. null clears it, ' +
+              'back to whoever created it, then the owner. A loop is refused.'
+          ),
         // Says what DorkOS does with it, because the honest answer is not "we
         // store this". The personality block at the top of SOUL.md is rendered
         // from `traits` and fenced by markers the turn regenerates in place; a

@@ -58,6 +58,18 @@ vi.mock('../../services/runtimes/opencode/providers/ollama.js', () => ({
   pullOllamaModel: vi.fn(),
 }));
 
+vi.mock('../../services/core/cloud/credits-models.js', () => ({
+  creditsModelsFor: vi.fn().mockResolvedValue([]),
+}));
+vi.mock('../../services/core/cloud/credits-inference.js', () => ({
+  heldCreditsToken: vi.fn().mockReturnValue(null),
+}));
+vi.mock('../../services/runtimes/connect/doe-credentials.js', () => ({
+  storeDoeCredential: vi.fn(),
+}));
+import { storeDoeCredential } from '../../services/runtimes/connect/doe-credentials.js';
+import { configManager } from '../../services/core/config-manager.js';
+import { UserConfigSchema } from '@dorkos/shared/config-schema';
 import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import type { Server } from 'node:http';
@@ -940,5 +952,104 @@ describe('runtime connect endpoints', () => {
       // proves the request got past it.
       expect(res.status).not.toBe(403);
     });
+  });
+});
+
+describe('DorkOS inference setup', () => {
+  const inference = {
+    source: 'api-key',
+    provider: 'openai',
+    protocol: 'openai-chat-completions',
+    endpoint: 'https://api.openai.com/v1',
+    model: 'test-model',
+    contextWindow: 8192,
+    maxOutputTokens: 1024,
+  };
+  beforeEach(() => vi.clearAllMocks());
+  it('reads only the requested credits catalog format and refuses invalid protocols', async () => {
+    const response = await request(server).get(
+      '/api/runtimes/doe/credits-models?protocol=openai-responses'
+    );
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ endpoint: null, models: [] });
+    expect(
+      (await request(server).get('/api/runtimes/doe/credits-models?protocol=other')).status
+    ).toBe(400);
+  });
+  it('saves a key through encrypted setup without echoing any secret or reference', async () => {
+    vi.mocked(storeDoeCredential).mockResolvedValue({
+      ...inference,
+      source: 'api-key',
+      protocol: 'openai-chat-completions',
+      credentialRef: 'file:test-only',
+    });
+    const response = await request(server)
+      .post('/api/runtimes/doe/credential')
+      .send({ inference, secret: SECRET });
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ ok: true, hasKey: true });
+    expect(response.text).not.toContain(SECRET);
+    expect(response.text).not.toContain('file:');
+  });
+  it('returns metadata and key presence, with no reference or resolved credential', async () => {
+    const config = UserConfigSchema.parse({ version: 1 });
+    config.runtimes.doe.inference = {
+      ...inference,
+      source: 'api-key',
+      protocol: 'openai-chat-completions',
+      credentialRef: 'env:PRIVATE_TEST_KEY',
+      credentialEndpoint: inference.endpoint,
+    };
+    vi.mocked(configManager.get).mockImplementation((key) => config[key] as never);
+    const response = await request(server).get('/api/runtimes/doe/inference');
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ inference, hasKey: true });
+    expect(response.text).not.toContain('PRIVATE_TEST_KEY');
+  });
+  it('preserves a same-endpoint key on metadata changes and drops it on an endpoint change', async () => {
+    const config = UserConfigSchema.parse({ version: 1 });
+    config.runtimes.doe.inference = {
+      ...inference,
+      source: 'api-key',
+      protocol: 'openai-chat-completions',
+      credentialRef: 'env:PRIVATE_TEST_KEY',
+      credentialEndpoint: inference.endpoint,
+    };
+    vi.mocked(configManager.get).mockImplementation((key) => config[key] as never);
+    expect(
+      (
+        await request(server)
+          .put('/api/runtimes/doe/inference')
+          .send({ ...inference, model: 'next-model' })
+      ).status
+    ).toBe(200);
+    expect(vi.mocked(configManager.set).mock.lastCall?.[1]).toMatchObject({
+      doe: { inference: { credentialRef: 'env:PRIVATE_TEST_KEY' } },
+    });
+    expect(
+      (
+        await request(server)
+          .put('/api/runtimes/doe/inference')
+          .send({ ...inference, endpoint: 'https://example.com/v1' })
+      ).status
+    ).toBe(200);
+    expect(
+      (vi.mocked(configManager.set).mock.lastCall?.[1] as typeof config.runtimes).doe.inference
+    ).not.toHaveProperty('credentialRef');
+  });
+  it('refuses a remote peer before encrypted setup runs', async () => {
+    currentPeer = '203.0.113.10';
+    try {
+      expect(
+        (
+          await request(peerServer)
+            .post('/api/runtimes/doe/credential')
+            .send({ inference, secret: SECRET })
+        ).status
+      ).toBe(403);
+      expect(storeDoeCredential).not.toHaveBeenCalled();
+    } finally {
+      currentPeer = '127.0.0.1';
+    }
   });
 });

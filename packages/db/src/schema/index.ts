@@ -9,6 +9,7 @@
  */
 export * from './a2a.js';
 export * from './activity.js';
+export * from './audit/audit-events.js';
 export * from './approvals.js';
 export * from './agent-identity.js';
 export * from './tasks.js';
@@ -45,3 +46,10 @@ export * from './extensions/extension-decisions.js';
 export * from './extensions/extension-agent-sends.js';
 export * from './canvas/channel.js';
 export * from './browser/registry.js';
+
+export * from './session/session-locations.js';
+
+export * from './session/session-native-bindings.js';
+export * from './session/session-touches.js';
+export * from './session/chat-messages.js';
+export * from './commitments/commitments.js';

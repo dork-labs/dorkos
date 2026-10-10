@@ -31,7 +31,7 @@ import {
   resetMessageDispatcher,
   sweepOrphanedMessageQueues,
 } from '../../message-dispatcher.js';
-import { linkSessionId } from '../../session-key-registry.js';
+import { linkSessionId } from '../../resolution/session-key-registry.js';
 import { SESSIONS } from '../../../../config/constants.js';
 import { disposeProjector, getOrCreateProjector } from '../../session-state-projector.js';
 import { AgentCompactionService } from '../agent-compaction-service.js';

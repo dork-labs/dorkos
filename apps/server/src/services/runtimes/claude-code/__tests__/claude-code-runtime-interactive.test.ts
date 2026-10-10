@@ -711,6 +711,81 @@ describe('ClaudeCodeRuntime interactive tools', () => {
       expect(callArgs.options.allowDangerouslySkipPermissions).toBe(true);
     });
 
+    // Power flows downstream, never up (spec `trusted-by-default-flip` §4): a
+    // conversation already at Full autonomy that a stranger's message (or a
+    // lower agent's post) wakes runs THAT turn at no more than the ceiling,
+    // and the next turn without one runs at the session's own level again.
+    describe('a turn held to a permission ceiling', () => {
+      function initOnly() {
+        const mockIterator = {
+          next: vi
+            .fn()
+            .mockResolvedValueOnce({
+              done: false,
+              value: { type: 'system', subtype: 'init', session_id: 'sess-1' },
+            })
+            .mockResolvedValueOnce({ done: true }),
+        };
+        mockedQuery.mockReturnValueOnce(
+          withQueryMethods({
+            [Symbol.asyncIterator]: () => mockIterator,
+          }) as unknown as ReturnType<typeof query>
+        );
+      }
+      const modeOfCall = (n: number) =>
+        (mockedQuery.mock.calls[n]![0] as { options: { permissionMode: string } }).options
+          .permissionMode;
+
+      it('launches a Full autonomy conversation at the runtime default for a stranger’s turn', async () => {
+        manager.ensureSession('sess-1', { permissionMode: 'bypassPermissions' });
+        initOnly();
+        for await (const _event of manager.sendMessage('sess-1', 'hi', {
+          permissionCeiling: 'runtime-default',
+        })) {
+          // drain
+        }
+        expect(modeOfCall(0)).toBe('default');
+      });
+
+      it('holds an Accept edits ceiling from another agent below Full autonomy', async () => {
+        manager.ensureSession('sess-1', { permissionMode: 'bypassPermissions' });
+        initOnly();
+        for await (const _event of manager.sendMessage('sess-1', 'hi', {
+          permissionCeiling: { asks: 'when-risky', reach: 'edit' },
+        })) {
+          // drain
+        }
+        expect(modeOfCall(0)).toBe('acceptEdits');
+      });
+
+      it('never rewrites the session’s own level, so the next turn runs at it again', async () => {
+        manager.ensureSession('sess-1', { permissionMode: 'bypassPermissions' });
+        initOnly();
+        for await (const _event of manager.sendMessage('sess-1', 'hi', {
+          permissionCeiling: 'runtime-default',
+        })) {
+          // drain
+        }
+        initOnly();
+        for await (const _event of manager.sendMessage('sess-1', 'again')) {
+          // drain
+        }
+        expect(modeOfCall(0)).toBe('default');
+        expect(modeOfCall(1)).toBe('bypassPermissions');
+      });
+
+      it('leaves a session already below the ceiling where it is', async () => {
+        manager.ensureSession('sess-1', { permissionMode: 'plan' });
+        initOnly();
+        for await (const _event of manager.sendMessage('sess-1', 'hi', {
+          permissionCeiling: { asks: 'never', reach: 'everything' },
+        })) {
+          // drain
+        }
+        expect(modeOfCall(0)).toBe('plan');
+      });
+    });
+
     it('passes default permissionMode through without transformation', async () => {
       manager.ensureSession('sess-1', { permissionMode: 'default' });
 

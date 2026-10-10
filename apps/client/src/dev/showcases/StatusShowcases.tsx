@@ -92,6 +92,7 @@ const SIGNALS: readonly { signal: StatusSignal; means: string }[] = [
   { signal: 'needs-you', means: 'needs you — approval or a question' },
   { signal: 'error', means: 'error — the last turn failed' },
   { signal: 'unseen', means: 'unseen — output you have not read' },
+  { signal: 'paused', means: 'paused — out of usage until it resets' },
 ];
 
 /**
@@ -165,7 +166,7 @@ export function StatusShowcases() {
     <>
       <PlaygroundSection
         title="Live status dots"
-        description="One dot vocabulary, four surfaces. Green means a turn is streaming as you look at it and is the only signal that ever moves; amber means something is waiting on you; red means something broke; blue means output you have not read. Idle draws nothing at all — a surface where every row wears a dot has no signal left in it. Every colour here is a theme token from one map, which is what stopped the same green being bg-green-500 in the sidebar, bg-emerald-500 in an agent panel and bg-primary in a group header."
+        description="One dot vocabulary, four surfaces. Green means a turn is streaming as you look at it and is the only signal that ever moves; amber means something is waiting on you; red means something broke; blue means output you have not read; grey means out of usage until it resets. Idle draws nothing at all — a surface where every row wears a dot has no signal left in it. Every colour here is a theme token from one map, which is what stopped the same green being bg-green-500 in the sidebar, bg-emerald-500 in an agent panel and bg-primary in a group header."
       >
         <ShowcaseLabel>The vocabulary — colour, and which one moves</ShowcaseLabel>
         <ShowcaseDemo>
@@ -374,7 +375,7 @@ export function StatusShowcases() {
 
       <PlaygroundSection
         title="ContextItem"
-        description="How full the conversation window is. It shows whenever there is a reading, from the moment a session opens: a reopened session shows its last known context at once, and the tooltip says how fresh it is. It turns amber, then red, near the limit."
+        description="How full the context window is. It shows whenever there is a reading, from the moment a session opens: a reopened session shows its last known context at once, and the tooltip says how fresh it is. It turns amber, then red, near the limit."
       >
         <TooltipProvider>
           <ShowcaseLabel>Cached on open — hover for “as of 12 min ago”</ShowcaseLabel>

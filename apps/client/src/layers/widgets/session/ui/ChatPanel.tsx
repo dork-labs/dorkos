@@ -231,7 +231,7 @@ export function ChatPanel({
    */
   const startFreshSession = useCallback(
     (fromSessionId: string | null) => {
-      setSessionId(crypto.randomUUID(), { continuedFrom: fromSessionId ?? undefined });
+      setSessionId(crypto.randomUUID(), { continuedFrom: fromSessionId ?? undefined, draft: true });
     },
     [setSessionId]
   );
@@ -363,7 +363,7 @@ export function ChatPanel({
 
   const { handleToolRef, focusedOptionIndex } = useToolShortcuts(activeInteraction);
 
-  useChatStatusSync(status, isWaitingForUser, taskState.activeForm, isTextStreaming);
+  useChatStatusSync(status, isWaitingForUser, isTextStreaming);
 
   // Focus the prompt textarea whenever the session changes (new session, switch, page mount).
   // Every navigation scenario — sidebar click, new session, agent switch, page load —

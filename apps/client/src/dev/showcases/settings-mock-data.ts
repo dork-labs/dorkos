@@ -61,8 +61,8 @@ export const MOCK_SERVER_CONFIG: ServerConfig = {
   // The shipped defaults again, so the Rooms tab renders its out-of-the-box
   // state rather than the skeleton it shows before the numbers have been read.
   rooms: {
-    engagedWindowMinutes: 10,
-    engagedWindowPosts: 5,
+    engagedWindowMinutes: 60,
+    engagedWindowPosts: 15,
     ...ROOM_TURN_LIMIT_DEFAULTS,
   },
   port: 4242,

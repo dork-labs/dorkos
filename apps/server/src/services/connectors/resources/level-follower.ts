@@ -23,6 +23,7 @@
  *
  * @module services/connectors/resources/level-follower
  */
+import { outsideAuditScope } from '../../audit/audit-context.js';
 import { logger } from '../../../lib/logger.js';
 import type { ConnectorReconciliationService } from '../reconciliation-service.js';
 
@@ -90,7 +91,10 @@ export class LevelFollower {
   start(): void {
     if (this._timer) return;
     void this.follow();
-    this._timer = setInterval(() => void this.follow(), this._tickMs);
+    this._timer = setInterval(
+      outsideAuditScope(() => void this.follow()),
+      this._tickMs
+    );
     this._timer.unref();
   }
 

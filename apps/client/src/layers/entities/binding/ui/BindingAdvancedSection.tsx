@@ -15,7 +15,7 @@ import {
   UnattendedAutonomyDialog,
   InfoTip,
 } from '@/layers/shared/ui';
-import { needsConsentRitual, permissionModeLabel } from '@/layers/shared/lib';
+import { actsWithoutAsking, permissionModeLabel } from '@/layers/shared/lib';
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
 import type { SessionStrategy } from '@dorkos/shared/relay-schemas';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
@@ -25,13 +25,13 @@ import type { PermissionMode } from '@dorkos/shared/schemas';
 const SESSION_STRATEGIES: { value: SessionStrategy; label: string; description: string }[] = [
   {
     value: 'per-chat',
-    label: 'One conversation per chat',
-    description: 'Everyone in a chat shares the same thread of memory.',
+    label: 'One shared chat per group or channel',
+    description: 'Everyone there shares one chat with the agent.',
   },
   {
     value: 'per-user',
-    label: 'One conversation per person',
-    description: 'Each person gets their own thread, even in a shared chat.',
+    label: 'One chat per person',
+    description: 'Each person gets their own chat, even in a group.',
   },
   {
     value: 'stateless',
@@ -140,19 +140,17 @@ export function BindingAdvancedSection({
   /**
    * Apply a stop, asking first at any stop that stops the asking.
    *
-   * The rule is `needsConsentRitual` — the same one the server's door applies —
-   * rather than a stop comparison, so a runtime that files a mode that never
+   * The rule is `actsWithoutAsking` rather than a stop comparison, so a runtime that files a mode that never
    * asks at the MIDDLE stop is caught here too (DOR-816). That matters more on
    * this screen than on a session's: an integration nobody is watching sets the
    * agent off, and there is no one to notice it did not ask.
    *
-   * Unlike a session's dial, this is not remembered: there is no session to
-   * remember it for, and a binding is configured rarely enough that a second
-   * question costs nothing.
+   * A session somebody is watching no longer asks (ADR 261006-225605); a
+   * binding still does, because nobody is there to notice.
    */
   function handleChangeMode(next: string) {
     const descriptor = descriptors.find((d) => d.id === next);
-    if (descriptor && needsConsentRitual(descriptor)) {
+    if (descriptor && actsWithoutAsking(descriptor)) {
       setPendingAutonomy(descriptor);
       return;
     }
@@ -240,13 +238,13 @@ export function BindingAdvancedSection({
               className="flex cursor-pointer items-center gap-1.5 text-xs font-normal"
             >
               <Shield className="text-muted-foreground size-3" />
-              Agent can start conversations
+              Agent can message first
             </Label>
             <Switch
               id="perm-initiate"
               checked={canInitiate}
               onCheckedChange={onCanInitiateChange}
-              aria-label="Agent can start conversations"
+              aria-label="Agent can message first"
             />
           </div>
           <div className="flex cursor-pointer items-center justify-between gap-3">
@@ -290,7 +288,7 @@ export function BindingAdvancedSection({
           <p className="text-muted-foreground text-xs">
             When off, you still hear about runs that didn’t finish.
           </p>
-          <p className="text-muted-foreground text-xs">Needs “Agent can start conversations”.</p>
+          <p className="text-muted-foreground text-xs">Needs “Agent can message first”.</p>
           {notifyBootstrapHint && (
             <p className="text-muted-foreground text-xs">
               Message your bot once to start. Bots can’t write first.

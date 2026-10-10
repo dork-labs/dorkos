@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 import { useNavigate } from '@tanstack/react-router';
 import { AnimatePresence, motion } from 'motion/react';
 
@@ -145,7 +146,7 @@ export function PulseAttentionSection() {
           variant="ghost"
           size="sm"
           className="h-6 text-xs"
-          onClick={() => navigate({ to: '/' })}
+          onClick={() => navigate({ ...appRoutes.home() })}
         >
           View all →
         </Button>

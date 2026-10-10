@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 /**
  * The strip, packaged as a slot its host can ask a question of.
  *
@@ -79,13 +80,13 @@ export function usePresenceStrip(excludeRoomIds: readonly string[] = []): Presen
       // Following IS opening, so it records one — the same write the sidebar's
       // own rows make (`SidebarChrome.openTarget`). Without it the strip was a
       // door into a conversation that Today then claimed the operator had never
-      // been in (DOR-1156).
+      // been in (DOR-1156). A chat is recorded by the chat page when it shows
+      // it (`useRecordChatOpened`); a room and the agent are recorded here.
       if (target.kind === 'room') {
         useInteractionStore.getState().recordOpened('room', target.roomId);
-        void navigate({ to: '/channels', search: { id: target.roomId } });
+        void navigate({ ...appRoutes.channels(), search: { id: target.roomId } });
         return;
       }
-      useInteractionStore.getState().recordOpened('session', target.sessionId);
       if (target.cwd) useInteractionStore.getState().recordOpened('agent', target.cwd);
       void navigate(toSession({ session: target.sessionId, dir: target.cwd }));
     },

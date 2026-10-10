@@ -83,7 +83,7 @@ test.describe('DorkOS credits in Runs on @smoke', () => {
 
     // Before launch the chip IS the picker (see account-eligibility.spec.ts).
     const chip = page
-      .getByRole('toolbar', { name: 'Session status' })
+      .getByRole('toolbar', { name: 'Chat status' })
       .locator('button[data-state-tone]');
     await expect(chip).toBeVisible({ timeout: 30_000 });
     await expect(chip).toHaveAttribute('aria-haspopup', 'menu');

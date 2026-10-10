@@ -1752,7 +1752,7 @@ describe('Marketplace Routes', () => {
         rmSync(staged, { recursive: true, force: true });
       });
 
-      it('asks a person before a package that runs things lands in every session (the C1 exploit)', async () => {
+      it('asks a person before a package that runs things lands in every chat (the C1 exploit)', async () => {
         previewing(shownDisclosure.hooks);
 
         const first = await request(fixtureServer)
@@ -3617,7 +3617,7 @@ describe('Marketplace Routes', () => {
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({ outcome: 'kept', approved: true });
       expect(res.body.message).toBe(
-        'The file flow kept is yours now. Nothing was moved or deleted. flow loads into sessions from the next message on.'
+        'The file flow kept is yours now. Nothing was moved or deleted. flow loads into chats from the next message on.'
       );
       expect(await unprovenOnDisk(root)).toBeUndefined();
       expect(readFileSync(join(root, 'skills', 'old', 'SKILL.md'), 'utf8')).toBe(KEPT_SKILL);
@@ -3635,7 +3635,7 @@ describe('Marketplace Routes', () => {
       expect(unshown.status).toBe(200);
       expect(unshown.body).toMatchObject({ outcome: 'kept', approved: false });
       expect(unshown.body.message).toBe(
-        'The file flow kept is yours now. Nothing was moved or deleted. flow still waits for your Review before it runs in sessions.'
+        'The file flow kept is yours now. Nothing was moved or deleted. flow still waits for your Review before it runs in chats.'
       );
       expect(await unprovenOnDisk(root)).toBeUndefined();
 

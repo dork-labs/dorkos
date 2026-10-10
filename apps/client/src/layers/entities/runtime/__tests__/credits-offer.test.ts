@@ -13,7 +13,12 @@ function report(over: Partial<CloudCreditsStatus> = {}): CloudCreditsStatus {
     killed: false,
     linked: false,
     ready: false,
-    runtimes: { 'claude-code': 'wired', codex: 'follow-up', opencode: 'follow-up' },
+    runtimes: {
+      'claude-code': 'wired',
+      codex: 'follow-up',
+      opencode: 'follow-up',
+      doe: 'follow-up',
+    },
     ...over,
   };
 }
@@ -46,7 +51,14 @@ describe('creditsOfferFor', () => {
     expect(
       creditsOfferFor(
         'none',
-        report({ runtimes: { 'claude-code': 'wired', codex: 'wired', opencode: 'follow-up' } }),
+        report({
+          runtimes: {
+            'claude-code': 'wired',
+            codex: 'wired',
+            opencode: 'follow-up',
+            doe: 'follow-up',
+          },
+        }),
         'codex'
       )
     ).toBe('lead');

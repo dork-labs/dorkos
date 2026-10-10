@@ -51,7 +51,7 @@ const TEMPLATE_CARD_DETAIL = [
   'Asked by "DorkBot".',
   'From "github:someone/tpl", into "/Users/dev/.dork/agents/minion".',
   '',
-  'Settings it carries, which the new agent’s sessions load (hooks, permission rules, servers):',
+  'Settings it carries, which the new agent’s chats load (hooks, permission rules, servers):',
   '- ".claude/settings.json"',
   '',
   '".claude/settings.json" (191 bytes):',
@@ -71,11 +71,11 @@ const WORKSPACE_CARD_DETAIL = [
   'Asked by "DorkBot".',
   'A clone of "https://github.com/someone/app", in "/Users/dev/.dork/workspaces/scout/fix-login".',
   '',
-  'Commands DorkOS runs as soon as it is made (after_create), without a session:',
+  'Commands DorkOS runs as soon as it is made (after_create), without a chat:',
   '│ pnpm install',
   '│ ./scripts/setup.sh',
   '',
-  'Settings it carries, which every session there loads (hooks, permission rules, servers):',
+  'Settings it carries, which every chat there loads (hooks, permission rules, servers):',
   '- ".claude/settings.json"',
   '',
   '".claude/settings.json" (158 bytes):',
@@ -90,7 +90,7 @@ const WORKSPACE_CARD_DETAIL = [
     .split('\n')
     .map((line) => `│ ${line}`),
   '',
-  'Links, which sessions there follow:',
+  'Links, which chats there follow:',
   '- "docs/shared" → "../../shared-docs"',
   '',
   '  runs nothing on its own',
@@ -337,7 +337,7 @@ export function ApprovalCardShowcase() {
               tier: 'act',
               requestedBy: 'DorkBot',
               summary:
-                'Create the agent "minion" from the template "github:someone/tpl". Its sessions will run what the template brings, listed below.',
+                'Create the agent "minion" from the template "github:someone/tpl". Its chats will run what the template brings, listed below.',
               detail: TEMPLATE_CARD_DETAIL,
             }),
           ]}
@@ -440,7 +440,7 @@ export function ApprovalCardShowcase() {
               tier: 'destructive',
               requestedBy: 'DorkBot',
               summary:
-                'Make the workspace "scout/fix-login" by cloning "https://github.com/someone/app". Sessions there will run what the repository brings, listed below.',
+                'Make the workspace "scout/fix-login" by cloning "https://github.com/someone/app". Chats there will run what the repository brings, listed below.',
               detail: WORKSPACE_CARD_DETAIL,
             }),
           ]}

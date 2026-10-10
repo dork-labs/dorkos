@@ -1,3 +1,4 @@
+import { appRoutes } from '../lib/route-factory';
 import { useRouter } from '@tanstack/react-router';
 import type { ErrorComponentProps } from '@tanstack/react-router';
 import { AlertTriangle, Check, Copy, X } from 'lucide-react';
@@ -112,7 +113,11 @@ export function RouteErrorFallback({ error }: ErrorComponentProps) {
             <Button variant="outline" size="sm" onClick={() => router.invalidate()}>
               Try again
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => router.navigate({ to: '/' })}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => router.navigate({ ...appRoutes.home() })}
+            >
               Back to home
             </Button>
           </>

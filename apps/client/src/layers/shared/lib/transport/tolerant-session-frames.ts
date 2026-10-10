@@ -52,7 +52,7 @@ import {
 } from '@dorkos/shared/session-stream';
 
 /** What an unreadable part or message shows in its place in the transcript. */
-export const UNREADABLE_MESSAGE_TEXT = 'This part of the conversation couldn’t be shown.';
+export const UNREADABLE_MESSAGE_TEXT = 'This part of the chat couldn’t be shown.';
 
 /** What an unreadable question, approval or elicitation shows while the agent waits. */
 export const UNREADABLE_PROMPT_TEXT =

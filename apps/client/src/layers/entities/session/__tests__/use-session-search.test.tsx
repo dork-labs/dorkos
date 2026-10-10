@@ -47,6 +47,7 @@ const DELIBERATELY_NOT_FORWARDED = new Set([
   'settingsSection',
   'agent',
   'agentPath',
+  'profileRef',
   'panel',
   'hubTab',
   'profile',
@@ -66,7 +67,7 @@ describe('useSessionSearch', () => {
     const shouldForward = schemaKeys().filter((key) => !DELIBERATELY_NOT_FORWARDED.has(key));
     // A string value for every key, so "did it come out" is answerable without
     // knowing each key's shape. The enumerated ones need their legal literal.
-    const literals: Record<string, string> = { send: '1', seed: 'dorkbot-help' };
+    const literals: Record<string, string> = { send: '1', seed: 'dorkbot-help', draft: '1' };
     mockSearch = Object.fromEntries(
       shouldForward.map((key) => [key, literals[key] ?? `value-for-${key}`])
     );

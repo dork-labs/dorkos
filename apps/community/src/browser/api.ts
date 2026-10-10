@@ -108,7 +108,7 @@ async function requestAt<T>(path: string, method: string, body?: unknown): Promi
 export function recovery(status: number) {
   switch (status) {
     case 401:
-      return 'Your session ended. Sign in again.';
+      return 'Your sign-in expired. Sign in again.';
     case 403:
       return 'You do not have access to this action.';
     case 404:

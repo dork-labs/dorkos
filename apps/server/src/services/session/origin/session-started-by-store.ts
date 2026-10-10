@@ -45,17 +45,22 @@ export interface StartedByRecord {
    * level rather than id; null where the levels are.
    */
   permissionSameAsStarter: boolean | null;
+  /**
+   * Whether a chat's start reports back to the chat that started it (spec
+   * `spin-off-chats` §5). True unless `session_start` was told not to.
+   */
+  reportBack: boolean;
   /** When it was started (ISO 8601). */
   createdAt: string;
 }
 
 /** The fields a writer may leave out of a start. */
 type DefaultedField =
-  'carried' | 'permissionMode' | 'starterPermissionMode' | 'permissionSameAsStarter';
+  'carried' | 'permissionMode' | 'starterPermissionMode' | 'permissionSameAsStarter' | 'reportBack';
 
 /**
- * A start as a writer hands it in: `carried` defaults to false, and the
- * permission levels to null.
+ * A start as a writer hands it in: `carried` defaults to false, the
+ * permission levels to null, and `reportBack` to true.
  */
 export type StartedByInsert = Omit<StartedByRecord, DefaultedField> &
   Partial<Pick<StartedByRecord, DefaultedField>>;
@@ -154,6 +159,45 @@ export class SessionStartedByStore {
       for (const row of rows) found.set(row.sessionId, row);
     }
     return found;
+  }
+
+  /**
+   * The chat a chat was carried to on another account, when it was (a
+   * `carried` start whose starter is this chat), or null.
+   *
+   * @param sessionId - The chat that was carried away.
+   */
+  carriedSuccessorOf(sessionId: string): string | null {
+    return (
+      this.db
+        .select({ sessionId: sessionStartedBy.sessionId })
+        .from(sessionStartedBy)
+        .where(
+          and(
+            eq(sessionStartedBy.startedBySessionId, sessionId),
+            eq(sessionStartedBy.carried, true)
+          )
+        )
+        .orderBy(sessionStartedBy.createdAt)
+        .get()?.sessionId ?? null
+    );
+  }
+
+  /**
+   * The chats a chat started (`kind = 'chat'`), oldest first: its spin-offs.
+   *
+   * @param sessionId - The starting chat.
+   */
+  childrenOf(sessionId: string): string[] {
+    return this.db
+      .select({ sessionId: sessionStartedBy.sessionId })
+      .from(sessionStartedBy)
+      .where(
+        and(eq(sessionStartedBy.kind, 'chat'), eq(sessionStartedBy.startedBySessionId, sessionId))
+      )
+      .orderBy(sessionStartedBy.createdAt)
+      .all()
+      .map((row) => row.sessionId);
   }
 
   /**

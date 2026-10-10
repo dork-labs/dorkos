@@ -79,7 +79,7 @@
 import { sessionStagedContext, eq, inArray, max, type Db } from '@dorkos/db';
 import type { StagedContextData } from '@dorkos/shared/additional-context';
 import type { SessionStagedContextRow } from '@dorkos/db';
-import { queueKeyOf } from './session-key-registry.js';
+import { queueKeyOf } from './resolution/session-key-registry.js';
 import { logger } from '../../lib/logger.js';
 
 /** A held note as the fold appends it to a dispatch's neutral context bag. */

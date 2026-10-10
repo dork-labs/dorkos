@@ -107,7 +107,7 @@ export const PROMO_REGISTRY: PromoDefinition[] = [
     shouldShow: (ctx) => ctx.isMeshEnabled && ctx.agentCount >= 2,
     content: {
       icon: MessagesSquare,
-      title: 'Agent-to-agent conversations',
+      title: 'Agents working together',
       shortDescription: 'Let your agents collaborate',
       ctaLabel: 'Learn more',
       // Opens differently from the Schedules line on purpose: two suggestions

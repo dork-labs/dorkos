@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 /**
  * Rooms — where this identity can be found, and a way into each (spec
  * `profile-unification` §1.5).
@@ -84,7 +85,7 @@ export function RoomsPage({ member }: ProfilePageContentProps) {
             key={room.id}
             type="button"
             data-slot="profile-room-row"
-            onClick={() => void navigate({ to: '/channels', search: { id: room.id } })}
+            onClick={() => void navigate({ ...appRoutes.channels(), search: { id: room.id } })}
             className="focus-ring hover:bg-muted/50 flex h-9 items-center gap-2 rounded-md px-2 text-left transition-colors"
           >
             {body}

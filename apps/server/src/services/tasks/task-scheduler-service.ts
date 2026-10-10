@@ -1,4 +1,5 @@
 import { Cron } from 'croner';
+import { outsideAuditScope } from '../audit/audit-context.js';
 import type { RelayCore } from '@dorkos/relay';
 import type { MeshCore } from '@dorkos/mesh';
 import type {
@@ -61,7 +62,7 @@ import {
   type RunExecutionRuntimes,
 } from './execution/resolve-run-execution.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
-import type { AgentExecutionDefaults } from '../session/resolve-session-defaults.js';
+import type { AgentExecutionDefaults } from '../session/resolution/resolve-session-defaults.js';
 import type { AccountNotAllowedError } from '../core/usage/account-eligibility.js';
 import type { TaskAwakeHold, TaskAwakeHolds } from '../core/keep-awake/index.js';
 import { scheduleAccountRefusal } from './lifecycle/schedule-account-eligibility.js';
@@ -553,7 +554,10 @@ export class TaskSchedulerService {
       this.wasLeader = acquired;
       // Guard against a re-entrant start() leaking a prior interval.
       if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
-      this.heartbeatTimer = setInterval(() => this.onHeartbeat(), SCHEDULER_HEARTBEAT_MS);
+      this.heartbeatTimer = setInterval(
+        outsideAuditScope(() => this.onHeartbeat()),
+        SCHEDULER_HEARTBEAT_MS
+      );
       this.heartbeatTimer.unref?.();
     }
 
@@ -584,7 +588,7 @@ export class TaskSchedulerService {
     const prune = () => pruneRunHistory(this.store, this.config.retentionCount);
     prune();
     if (this.pruneTimer) clearInterval(this.pruneTimer);
-    this.pruneTimer = setInterval(prune, PRUNE_INTERVAL_MS);
+    this.pruneTimer = setInterval(outsideAuditScope(prune), PRUNE_INTERVAL_MS);
     this.pruneTimer.unref?.();
 
     this.started = true;
@@ -744,21 +748,28 @@ export class TaskSchedulerService {
     const tz = task.timezone ?? undefined;
     let job: Cron;
     try {
-      job = new Cron(task.cron, { protect: true, timezone: tz }, (self) => {
-        // The wall-clock instant the timer ran out, honestly named: it is NOT
-        // the occurrence (croner's `currentRun()` is this same instant). After a
-        // sleep it is late, and `dispatch` resolves which occurrence it stands
-        // for. What croner was waiting for is read, then moved on to the next
-        // occurrence, synchronously here, before anything awaits.
-        const fire: ScheduledFire = {
-          firedAt: new Date(),
-          expected: this.expectedTicks.get(task.id) ?? null,
-        };
-        this.expectedTicks.set(task.id, self.nextRun());
-        this.dispatch(task, fire).catch((err) => {
-          logger.error(`dispatch error for ${task.name}:`, err);
-        });
-      });
+      // Each firing is DorkOS's own, never the scope of whoever created or
+      // edited the task: this runs inside their request, and a timer keeps the
+      // scope it was created in for every later firing (spec `audit-trail`).
+      job = new Cron(
+        task.cron,
+        { protect: true, timezone: tz },
+        outsideAuditScope((self: Cron) => {
+          // The wall-clock instant the timer ran out, honestly named: it is NOT
+          // the occurrence (croner's `currentRun()` is this same instant). After a
+          // sleep it is late, and `dispatch` resolves which occurrence it stands
+          // for. What croner was waiting for is read, then moved on to the next
+          // occurrence, synchronously here, before anything awaits.
+          const fire: ScheduledFire = {
+            firedAt: new Date(),
+            expected: this.expectedTicks.get(task.id) ?? null,
+          };
+          this.expectedTicks.set(task.id, self.nextRun());
+          this.dispatch(task, fire).catch((err) => {
+            logger.error(`dispatch error for ${task.name}:`, err);
+          });
+        })
+      );
     } catch (err) {
       this.refusedSchedules.report(task, tz, err);
       return false;
@@ -1142,8 +1153,8 @@ export class TaskSchedulerService {
    */
   private stickyBusyReason(): string {
     return (
-      'This task resumes one session every run, and its previous run was still going when this ' +
-      'one came round — so it was skipped rather than starting a second turn on the same session'
+      'This task resumes one chat every run, and its previous run was still going when this ' +
+      'one came round — so it was skipped rather than starting a second turn on the same chat'
     );
   }
 

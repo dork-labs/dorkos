@@ -99,6 +99,7 @@ const ROWLESS_SESSION = '33333333-3333-4333-8333-333333333333';
 
 vi.mock('../../services/core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    getNativeSessionCwd: vi.fn(() => null),
     getDefault: vi.fn(() => mockRuntime),
     has: vi.fn((type: string) => type in RUNTIMES),
     get: vi.fn((type: string) => RUNTIMES[type] ?? mockRuntime),

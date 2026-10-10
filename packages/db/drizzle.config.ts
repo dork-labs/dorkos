@@ -5,6 +5,7 @@ export default defineConfig({
     './src/schema/a2a.ts',
     './src/schema/browser/registry.ts',
     './src/schema/activity.ts',
+    './src/schema/audit/audit-events.ts',
     './src/schema/approvals.ts',
     './src/schema/agent-identity.ts',
     './src/schema/tasks.ts',
@@ -20,6 +21,10 @@ export default defineConfig({
     './src/schema/session/session-limit-history.ts',
     './src/schema/session/session-context.ts',
     './src/schema/session/session-started-by.ts',
+    './src/schema/session/session-locations.ts',
+    './src/schema/session/session-native-bindings.ts',
+    './src/schema/session/session-touches.ts',
+    './src/schema/session/chat-messages.ts',
     './src/schema/workspace.ts',
     './src/schema/auth.ts',
     // Historical inputs keep generated SQL from dropping rows before application backfill.
@@ -44,6 +49,7 @@ export default defineConfig({
     './src/schema/projects.ts',
     './src/schema/extensions/extension-decisions.ts',
     './src/schema/extensions/extension-agent-sends.ts',
+    './src/schema/commitments/commitments.ts',
   ],
   out: './drizzle',
   // Snapshot baselines are sorted by filename; keep future names after the timestamp migration.

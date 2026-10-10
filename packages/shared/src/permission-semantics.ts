@@ -39,6 +39,9 @@ import type {
   PermissionModeDescriptor,
   PermissionReach,
   PermissionStop,
+  TurnPermissionBound,
+  TurnPermissionCeiling,
+  TurnPermissionLevel,
 } from './agent-runtime.js';
 
 /**
@@ -136,7 +139,7 @@ export function isTightening(
  *
  * Both halves must hold, the same two ranks {@link isTightening} reads. One
  * deliberate exception, the one {@link isDivergent} and
- * {@link needsConsentRitual} already make: a mode that can only READ is judged
+ * {@link actsWithoutAsking} already make: a mode that can only READ is judged
  * on reach alone. It never asks because it has nothing to ask about — Codex's
  * read-only sandbox declares `asks: 'never'` for exactly that reason — and
  * ranking that as "asks less than Accept edits" would put the safest mode on
@@ -250,53 +253,34 @@ export function isAutonomyStop(descriptor: PermissionModeDescriptor): boolean {
 }
 
 /**
- * Whether choosing this mode should ask the person first — the rule the consent
- * door is built on (spec `trust-dial`, decision 5, widened 2026-08-01).
+ * Whether this mode acts without ever stopping to ask: the autonomy stop,
+ * whatever it can reach, or any mode that never asks and can do more than read.
  *
  * True for two shapes, and they are one question asked twice:
  *
- * 1. **The autonomy stop**, whatever it can reach. It is the position a person
- *    deliberately takes, and consent is about the position.
+ * 1. **The autonomy stop**, whatever it can reach.
  * 2. **Any mode that never asks and can do more than read**, wherever its
  *    runtime filed it. Codex's middle stop is the live case: `workspace-write`
- *    sits at "act, ask when risky" and runs shell commands with no way to pause
- *    and ask. Nothing about the dial's position makes that walk-back-able, so
- *    gating the position alone let it in through a door held open.
+ *    sits at "act, ask when risky" and runs shell commands with no way to pause.
  *
  * `reach: 'read'` is excluded for the reason {@link isDivergent} excludes it: a
- * mode that can only read never asks because it has nothing to ask about, and a
- * consent dialog in front of the safest setting on offer is how a consent dialog
- * stops being read.
+ * mode that can only read never asks because it has nothing to ask about.
  *
- * ## Why this is not composed from the predicates beside it
+ * It once decided which mode changes needed a consent ritual first; that
+ * ritual is retired (ADR 261006-225605: full power is the default, and the
+ * audit trail is the record). What still reads it: the rule that no runtime is
+ * BORN at such a mode (`runtimeConformance`), the "Always allow" card that may
+ * not adopt one for a whole session, `session_start`'s rule that such a level
+ * is named rather than inherited, and the scope notes that say what such a mode
+ * covers.
  *
- * {@link isBypassSemantics} is this same never-asking shape narrowed to
- * `reach: 'everything'` — a strict subset of clause 2, so OR-ing it in would add
- * a term that can never change the answer. Widening THAT predicate instead is
- * the tempting shortcut and the wrong one: it drives the standing banner and the
- * mark on a session's row, and a mode confined to the workspace earns neither.
- * {@link isUnattendedAutonomy} is
- * built on that one and was left where it stood for the same reason: widening a
- * door decides what a person is asked before choosing, and widening an always-on
- * banner decides what a standing alarm is for. Three questions, three answers,
- * allowed to disagree.
- *
- * ## Who consumes it
- *
- * The server's door (`PATCH /api/sessions/:id`, which answers `428
- * AUTONOMY_ACK_REQUIRED` without an acknowledgement) and every client surface
- * that opens a mode-change dialog before sending one: the session's Trust Dial,
- * the relay binding dialog, and the scheduled-task form. All four must apply the
- * same rule, or a mode is gated on one surface and slips through on another.
- *
- * Not consumed by the `defaultTrustStop` config door: that axis stores one of
- * the dial's three STOPS, not a runtime mode, so `'autonomy'` is the only value
- * there that can mean "never asks" and its own gate stays stop-shaped
- * (`services/core/approvals/autonomy-consent.ts`).
+ * {@link isBypassSemantics} is this same shape narrowed to `reach:
+ * 'everything'`, a strict subset of clause 2; it drives a different question
+ * and is not composed from this one.
  *
  * @param descriptor - A mode as its runtime declared it.
  */
-export function needsConsentRitual(descriptor: PermissionModeDescriptor): boolean {
+export function actsWithoutAsking(descriptor: PermissionModeDescriptor): boolean {
   if (isAutonomyStop(descriptor)) return true;
   return descriptor.asks === 'never' && descriptor.reach !== 'read';
 }
@@ -317,7 +301,7 @@ export function needsConsentRitual(descriptor: PermissionModeDescriptor): boolea
  * gains an approval channel stops matching on the day it declares `asks` as
  * anything but `never`, with no edit here.
  *
- * The mirror of {@link needsConsentRitual}'s `reach: 'read'` exclusion: that one
+ * The mirror of {@link actsWithoutAsking}'s `reach: 'read'` exclusion: that one
  * leaves this shape alone because it is the safest thing on offer, and this one
  * exists because being safe is not the same as being understood.
  *
@@ -539,4 +523,138 @@ export interface UnattendedAutonomyDriver {
 export interface UnattendedAutonomyState {
   /** The live drivers, bindings first, each in its store's own order. */
   drivers: UnattendedAutonomyDriver[];
+}
+
+/** Claude Code's Auto mode id: see `TurnPermissionLevel.auto`. */
+const AUTO_MODE_ID = 'auto';
+
+/**
+ * The level that can only read and always asks: what a ceiling resolves to
+ * when nothing better is known, so a broken lookup can only make a turn
+ * stricter.
+ */
+export const READ_ONLY_LEVEL: TurnPermissionLevel = { asks: 'always', reach: 'read' };
+
+/** The modes a runtime declares, as `RuntimeCapabilities.permissionModes` carries them. */
+export interface DeclaredModes {
+  /** Every mode the runtime declares. */
+  readonly values: readonly PermissionModeDescriptor[];
+  /** The id the runtime starts in when nobody chose one. */
+  readonly default?: string;
+}
+
+/**
+ * A declared mode as a {@link TurnPermissionLevel}, or `undefined` for an id the
+ * runtime does not declare.
+ *
+ * @param declared - The runtime's declared modes.
+ * @param modeId - A mode id on that runtime.
+ */
+export function levelOfMode(
+  declared: DeclaredModes,
+  modeId: string | null | undefined
+): TurnPermissionLevel | undefined {
+  if (!modeId) return undefined;
+  const mode = declared.values.find((m) => m.id === modeId);
+  if (!mode) return undefined;
+  return mode.id === AUTO_MODE_ID
+    ? { asks: mode.asks, reach: mode.reach, auto: true }
+    : { asks: mode.asks, reach: mode.reach };
+}
+
+/**
+ * A ceiling as a concrete level on one runtime: `'runtime-default'` becomes the
+ * level of the runtime's own default mode, and {@link READ_ONLY_LEVEL} when the
+ * runtime declares none.
+ *
+ * @param declared - The receiving runtime's declared modes.
+ * @param ceiling - The ceiling a caller sent.
+ */
+export function resolveCeilingLevel(
+  declared: DeclaredModes,
+  ceiling: TurnPermissionCeiling
+): TurnPermissionLevel {
+  if (Array.isArray(ceiling)) {
+    const bounds = ceiling as readonly TurnPermissionBound[];
+    if (bounds.length === 0) return READ_ONLY_LEVEL;
+    return bounds.map((bound) => resolveCeilingLevel(declared, bound)).reduce(stricterLevel);
+  }
+  if (ceiling !== 'runtime-default') return ceiling as TurnPermissionLevel;
+  return levelOfMode(declared, declared.default) ?? READ_ONLY_LEVEL;
+}
+
+/**
+ * Whether a level admits a mode: {@link isNoLooserThan}, plus the Auto rule:
+ * Auto fits only under a level that is itself Auto or never asks.
+ */
+function admits(level: TurnPermissionLevel, mode: PermissionModeDescriptor): boolean {
+  if (!isNoLooserThan(level, mode)) return false;
+  return mode.id !== AUTO_MODE_ID || level.auto === true || level.asks === 'never';
+}
+
+/**
+ * The stricter of two levels: one that is no looser than either. When one
+ * bounds the other it is returned as is; when neither does (one asks less, the
+ * other reaches further — Codex's read-only default against Claude's Default),
+ * the two are combined: the more frequent asking and the shorter reach, and
+ * Auto only when both are Auto.
+ *
+ * @param a - One level.
+ * @param b - The other.
+ */
+export function stricterLevel(a: TurnPermissionLevel, b: TurnPermissionLevel): TurnPermissionLevel {
+  const fits = (inner: TurnPermissionLevel, outer: TurnPermissionLevel) =>
+    isNoLooserThan(outer, inner) && (!inner.auto || outer.auto === true || outer.asks === 'never');
+  if (fits(a, b)) return a;
+  if (fits(b, a)) return b;
+  const asks = ASKS_RANK[a.asks] >= ASKS_RANK[b.asks] ? a.asks : b.asks;
+  const reach = REACH_RANK[a.reach] <= REACH_RANK[b.reach] ? a.reach : b.reach;
+  return a.auto && b.auto ? { asks, reach, auto: true } : { asks, reach };
+}
+
+/**
+ * The mode a turn runs at under a ceiling (spec `trusted-by-default-flip` §4):
+ * the session's own mode when the ceiling admits it; otherwise the loosest
+ * trust-axis mode the ceiling admits (reaching furthest, then asking least), so
+ * a turn another agent's post started runs at that agent's level rather than
+ * below it; otherwise a working-axis mode it admits; otherwise the strictest
+ * mode the runtime declares.
+ *
+ * Never writes anything: the caller runs one turn at the answer and leaves the
+ * session's stored mode alone. An id the runtime does not declare never fits,
+ * because nothing can say how far it reaches. A working-axis mode (Claude's
+ * Plan) is kept when the session is in it and never chosen in its place.
+ *
+ * @param declared - The receiving runtime's declared modes.
+ * @param modeId - The mode the session is set to.
+ * @param ceiling - The loosest level this turn may run at.
+ * @returns The mode id the turn runs at.
+ */
+export function clampModeToCeiling(
+  declared: DeclaredModes,
+  modeId: string,
+  ceiling: TurnPermissionCeiling
+): string {
+  const level = resolveCeilingLevel(declared, ceiling);
+  const own = declared.values.find((m) => m.id === modeId);
+  if (own && admits(level, own)) return modeId;
+  const loosest = declared.values
+    .filter((m) => m.axis !== 'working' && admits(level, m))
+    .sort(
+      (a, b) =>
+        REACH_RANK[b.reach] - REACH_RANK[a.reach] ||
+        ASKS_RANK[a.asks] - ASKS_RANK[b.asks] ||
+        // Auto and Accept edits declare the same level; the plainer one wins.
+        Number(a.id === AUTO_MODE_ID) - Number(b.id === AUTO_MODE_ID)
+    )[0];
+  if (loosest) return loosest.id;
+  // A ceiling below every trust-axis mode (a sender in Plan, say): a
+  // working-axis mode it admits, and failing that the strictest mode the
+  // runtime declares, never the default, which would be looser than asked.
+  const working = declared.values.find((m) => admits(level, m));
+  if (working) return working.id;
+  const strictest = [...declared.values].sort(
+    (a, b) => REACH_RANK[a.reach] - REACH_RANK[b.reach] || ASKS_RANK[b.asks] - ASKS_RANK[a.asks]
+  )[0];
+  return strictest?.id ?? modeId;
 }

@@ -19,7 +19,8 @@ import { buildNewMenuNodes, NewMenu, type NewMenuModel } from '../ui/NewMenu';
 // ---------------------------------------------------------------------------
 
 const mockNavigate = vi.fn();
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useNavigate: () => mockNavigate,
 }));
 
@@ -150,7 +151,7 @@ async function openMenu() {
   fireEvent.pointerDown(screen.getByTestId('sidebar-new-button'));
   // A regex, not the exact string: on desktop the item's accessible name
   // carries its ⌘N hint too.
-  await screen.findByRole('menuitem', { name: /Session/ });
+  await screen.findByRole('menuitem', { name: /Chat/ });
 }
 
 /** Every item id the open menu is showing, in order. */
@@ -289,7 +290,7 @@ describe('NewMenu', () => {
     await openMenu();
 
     expect(screen.getByText('Starts with Beta (last used)')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Session' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Chat' }));
     expect(mockStartNewSession).toHaveBeenCalledWith('/projects/beta');
   });
 
@@ -397,12 +398,12 @@ describe('NewMenu', () => {
     enterDesktopShell();
     renderMenu();
     await openMenu();
-    expect(screen.getByRole('menuitem', { name: /Session/ }).textContent).toMatch(/N$/);
+    expect(screen.getByRole('menuitem', { name: /Chat/ }).textContent).toMatch(/N$/);
   });
 
   it('withholds the ⌘N hint in a browser, which takes that key for itself', async () => {
     renderMenu();
     await openMenu();
-    expect(screen.getByRole('menuitem', { name: /Session/ }).textContent).not.toMatch(/N$/);
+    expect(screen.getByRole('menuitem', { name: /Chat/ }).textContent).not.toMatch(/N$/);
   });
 });

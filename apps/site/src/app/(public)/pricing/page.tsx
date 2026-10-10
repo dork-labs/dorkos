@@ -5,12 +5,14 @@ import { ChevronDown } from 'lucide-react';
 import { company } from '@dorkos/shared/company';
 import { siteConfig } from '@/config/site';
 import { rssFeedAlternateTypes, twitterFromOpenGraph } from '@/lib/metadata';
-import { PlanCards } from './PlanCards';
+import { ComingSoonBadge, PlanCards } from './PlanCards';
 import {
   COMPARE,
   COMPARE_PLANS,
   ELIGIBILITY_NOTE,
   EXTRAS,
+  isComingSoon,
+  itemText,
   LAST_UPDATED,
   MODEL_PRICES,
   NOTICE_DAYS,
@@ -79,7 +81,10 @@ export default function PricingPage() {
                 <span className="font-medium">{extra.name}</span>{' '}
                 <span className="text-warm-gray">{extra.price}</span>
               </p>
-              <p className="text-warm-gray mt-1 text-pretty">{extra.detail}</p>
+              <p className="text-warm-gray mt-1 text-pretty">
+                <span>{itemText(extra.detail)}</span>{' '}
+                {isComingSoon(extra.detail) ? <ComingSoonBadge /> : null}
+              </p>
             </li>
           ))}
         </ul>
@@ -243,8 +248,8 @@ function ModelPrices() {
         <div>
           <dt className="text-charcoal font-medium">Rereading</dt>
           <dd>
-            Text the model read a moment ago in the same conversation. It costs a tenth or less of
-            reading, and it is most of what a long agent run uses.
+            Text the model read a moment ago in the same chat. It costs a tenth or less of reading,
+            and it is most of what a long agent run uses.
           </dd>
         </div>
         <div>
@@ -258,7 +263,7 @@ function ModelPrices() {
           It depends on the model and the work, so treat this as a rough guide. When we measured our
           own agents over a month, one agent working steadily for an hour on Claude Sonnet 5 came to
           about 1,000 to 2,000 credits ($10 to $20) at these prices. A busy hour came to 3,000 or
-          more. Each agent you run at the same time adds its own. Our use is heavy: long sessions on
+          more. Each agent you run at the same time adds its own. Our use is heavy: long chats on
           large projects. Lighter work costs less. Opus and Fable cost more.
         </p>
       </div>
@@ -300,23 +305,36 @@ function CompareTable() {
             {group.rows.map((row) => (
               <tr key={row.label} className="border-charcoal/10 border-t">
                 <th scope="row" className="w-[26%] p-3 align-top font-normal">
-                  <span className="text-charcoal block">{row.label}</span>
+                  <span className="text-charcoal block">
+                    {row.label} {row.comingSoon ? <ComingSoonBadge /> : null}
+                  </span>
                   {row.hint ? (
                     <span className="text-warm-gray block text-xs">{row.hint}</span>
                   ) : null}
                 </th>
-                {row.cells.map((cell, i) => (
-                  <td key={COMPARE_PLANS[i]} className="text-warm-gray p-3 align-top">
-                    {cell === '—' ? (
-                      <>
-                        <span aria-hidden="true">—</span>
-                        <span className="sr-only">Not included</span>
-                      </>
-                    ) : (
-                      cell
-                    )}
-                  </td>
-                ))}
+                {row.cells.map((cell, i) => {
+                  const text = itemText(cell);
+                  return (
+                    <td key={COMPARE_PLANS[i]} className="text-warm-gray p-3 align-top">
+                      {text === '—' ? (
+                        <>
+                          <span aria-hidden="true">—</span>
+                          <span className="sr-only">Not included</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>{text}</span>
+                          {isComingSoon(cell) ? (
+                            <>
+                              {' '}
+                              <ComingSoonBadge />
+                            </>
+                          ) : null}
+                        </>
+                      )}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>

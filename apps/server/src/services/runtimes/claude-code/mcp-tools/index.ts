@@ -76,15 +76,7 @@ export {
   createDeleteScheduleHandler,
   createGetRunHistoryHandler,
 } from './task-tools.js';
-export {
-  createRelaySendHandler,
-  createRelayInboxHandler,
-  createRelayListEndpointsHandler,
-  createRelayRegisterEndpointHandler,
-  createRelayQueryHandler,
-  createRelayDispatchHandler,
-  createRelayUnregisterEndpointHandler,
-} from './relay-tools.js';
+export { createRelayListEndpointsHandler } from './relay-tools.js';
 export { createRelayNotifyUserHandler } from './relay-notify-tools.js';
 export {
   createRelayListAdaptersHandler,
@@ -176,12 +168,13 @@ export interface HandRegisteredInSessionOptions {
  *
  * @param deps - Shared tool dependencies (relay, tasks, mesh, etc.).
  * @param options - Per-query session context.
- * @returns The gated tools, and the reach over their ungated definitions.
+ * @returns The gated tools, the reach over their ungated definitions, and the
+ *   session's eager-loading set, which the capability half reads too.
  */
 export function handRegisteredInSessionToolSet(
   deps: McpToolDeps,
   options: HandRegisteredInSessionOptions = {}
-): { tools: SdkMcpTool[]; reach: HandToolReach } {
+): { tools: SdkMcpTool[]; reach: HandToolReach; alwaysLoaded: ReadonlySet<string> } {
   const { session, sessionId, resolveContext, hold } = options;
   const identity = options.identity ?? resolveAgentHome(session?.cwd);
   // Resolve the caller's trusted Relay identity from the session's identity
@@ -189,16 +182,6 @@ export function handRegisteredInSessionToolSet(
   // `from`/namespace access rules key on.
   const relayIdentity = resolveSenderIdentity(deps, session?.cwd, identity);
   const identityPath = homeOf(identity);
-  // Which relay envelope THIS turn is answering, if the bus started it (DOR-791).
-  // The adapter that dispatched the turn bound it under the session key the turn
-  // runs under, which is the id handed to this factory; the SDK's canonical id is
-  // tried too, for the same first-turn rekey reason the DevTools resolution has.
-  // Read at CALL time, and read from the relay rather than from tool arguments —
-  // a budget the model may omit is one an accidental loop always omits.
-  const inboundBudgets = deps.relayCore?.inboundBudgets;
-  const resolveInboundBudget = inboundBudgets
-    ? () => inboundBudgets.get(sessionId, session?.sdkSessionId)
-    : undefined;
   // Who is proposing a schedule, for `tasks_create` (DOR-1394). Resolved at CALL
   // time for the same first-turn rekey reason as the DevTools id above, and it
   // reads the SAME two sources — an approval card that named a session the
@@ -238,7 +221,7 @@ export function handRegisteredInSessionToolSet(
   // must not drift. `relayIdentity.agentId` comes from the registry lookup
   // above, keyed on `session.cwd`, so the model cannot assert its way in here.
   const alwaysLoaded = alwaysLoadedToolsFor(
-    loadsAgentToAgentTools(relayIdentity.agentId !== undefined, deps.relayCore !== undefined)
+    loadsAgentToAgentTools(relayIdentity.agentId !== undefined)
   );
 
   const raw: SdkMcpTool[] = [
@@ -266,7 +249,7 @@ export function handRegisteredInSessionToolSet(
       };
     }),
     ...getTasksTools(deps, resolveTaskProvenance),
-    ...getRelayTools(deps, relayIdentity, resolveInboundBudget),
+    ...getRelayTools(deps, relayIdentity),
     ...getAdapterTools(deps),
     ...getBindingTools(deps),
     ...getTraceTools(deps),
@@ -289,6 +272,7 @@ export function handRegisteredInSessionToolSet(
       origin: 'session',
       ...(resolveRequestingSession ? { resolveRequestingSession } : {}),
     }),
+    alwaysLoaded,
   };
 }
 
@@ -304,7 +288,7 @@ export function handRegisteredInSessionToolSet(
  *
  * @param tools - Gated tool definitions.
  * @param alwaysLoaded - The eager-loading set for this session (see
- *   `tool-exposure.ts`: the standing five, plus the agent-to-agent six when the
+ *   `tool-exposure.ts`: the standing set, plus the agent-to-agent four when the
  *   session is itself a registered agent).
  * @returns The same tools, carrying their exposure metadata.
  */
@@ -448,7 +432,15 @@ export function createDorkOsToolServer(
   });
   const listed = [
     ...hand.tools,
-    ...capabilityMcpTools(capabilityRegistry, 'in-session', resolveCapabilityContext, hold),
+    // The same eager-loading set as the hand-registered half, so `chat_send`
+    // and `chat_read` load from turn 1 on an agent session like `mesh_list`.
+    ...capabilityMcpTools(
+      capabilityRegistry,
+      'in-session',
+      resolveCapabilityContext,
+      hold,
+      hand.alwaysLoaded
+    ),
   ].filter((tool) => !hiddenToolNames.has(tool.name));
   const server = createSdkMcpServer({
     // Not a label: Claude Code qualifies every tool on this server as

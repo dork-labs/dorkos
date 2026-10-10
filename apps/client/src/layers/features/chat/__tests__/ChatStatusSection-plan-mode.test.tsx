@@ -10,21 +10,6 @@ import { useSessionChatStore } from '@/layers/entities/session';
 // Mocks (hoisted before component import)
 // ──────────────────────────────────────────────────────────────────────────────
 
-// The Trust Dial reads the standing Full-autonomy acknowledgement from user
-// config before it sends one. Defaults to "nobody has acknowledged anything",
-// which is the shipped state and the one most cases below assume; the
-// leaving-Plan case sets it, because that is the state it is about.
-const standingAck = { current: null as string | null };
-vi.mock('@/layers/entities/config/model/use-autonomy-acknowledgement', () => ({
-  useAutonomyAcknowledgement: () => ({
-    acknowledgedAt: standingAck.current,
-    acknowledge: vi.fn(),
-    clear: vi.fn(),
-    canRemember: true,
-    isPending: false,
-  }),
-}));
-
 // The status line now also asks where NEW sessions start, so it reads config and
 // can write it (spec `trust-dial`, decision 6C). Stubbed to "nothing configured,
 // writes go nowhere" — the offer is its own suite's subject
@@ -278,91 +263,42 @@ function planChip() {
 }
 
 /**
- * Assert the settings PATCH the component sent, ignoring the handlers bag beside
- * it. Mode changes carry an `onError` so a refused Full-autonomy write can
- * reopen the door rather than surface a raw error — which is behavior of its own
- * and not something every assertion about a permission mode should restate.
+ * Assert the settings PATCH the component sent: the whole argument list, so an
+ * acknowledgement or a handlers bag riding along fails it.
  */
 function expectPatched(payload: Record<string, unknown>): void {
-  expect(updateSession.mock.calls[0]?.[0]).toEqual(payload);
+  expect(updateSession.mock.calls[0]).toEqual([payload]);
 }
 
 beforeEach(() => {
   updateSession.mockClear();
   caps.current = CLAUDE_CAPS;
   permissionMode.current = 'default';
-  standingAck.current = null;
-  useSessionChatStore.setState({ modeBeforePlan: {}, autonomyConfirmedSessions: {} });
+  useSessionChatStore.setState({ modeBeforePlan: {} });
 });
 
 afterEach(cleanup);
 
-describe('ChatStatusSection — the door into Full autonomy', () => {
-  it('asks before it writes — selecting the autonomy stop patches nothing', () => {
+describe('ChatStatusSection — Full autonomy is a normal choice', () => {
+  it('writes the autonomy stop straight through, with no dialog and no acknowledgement', () => {
+    // ADR 261006-225605 retired the consent ritual. Before it, this click opened
+    // a confirm dialog and patched nothing until it was answered.
     renderSection();
 
     fireEvent.click(screen.getByTestId('select-autonomy'));
 
-    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
-    expect(updateSession).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(updateSession).toHaveBeenCalledTimes(1);
+    expectPatched({ permissionMode: 'bypassPermissions' });
   });
 
-  it('says what THIS agent means by it, in the runtime’s own sentence', () => {
-    renderSection();
-
-    fireEvent.click(screen.getByTestId('select-autonomy'));
-
-    expect(screen.getByRole('alertdialog')).toHaveTextContent(
-      'Runs everything without asking, including outside this project.'
-    );
-    // …and what it does not cover.
-    expect(screen.getByText(/covers editing files, running commands/i)).toBeInTheDocument();
-  });
-
-  it('applies the mode once confirmed, and remembers the session said yes', () => {
-    renderSection();
-
-    fireEvent.click(screen.getByTestId('select-autonomy'));
-    fireEvent.click(screen.getByRole('button', { name: 'Turn on Full autonomy' }));
-
-    // The acknowledgement rides the request that needs it: the server refuses
-    // this mode without one, so confirming and patching are one act.
-    expectPatched({ permissionMode: 'bypassPermissions', acknowledgedAutonomy: true });
-    expect(useSessionChatStore.getState().autonomyConfirmedSessions[SESSION_ID]).toBe(true);
-  });
-
-  it('leaves the session alone when cancelled', () => {
-    renderSection();
-
-    fireEvent.click(screen.getByTestId('select-autonomy'));
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-
-    expect(updateSession).not.toHaveBeenCalled();
-    expect(useSessionChatStore.getState().autonomyConfirmedSessions[SESSION_ID]).toBeUndefined();
-  });
-
-  it('asks once per session, not once per switch', () => {
-    renderSection();
-
-    fireEvent.click(screen.getByTestId('select-autonomy'));
-    fireEvent.click(screen.getByRole('button', { name: 'Turn on Full autonomy' }));
-    updateSession.mockClear();
-
-    fireEvent.click(screen.getByTestId('select-autonomy'));
-    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
-    // Still acknowledged — the session remembers saying yes, so the second
-    // switch asserts that consent instead of asking for it again.
-    expectPatched({ permissionMode: 'bypassPermissions', acknowledgedAutonomy: true });
-  });
-
-  it('never stands between a person and a stop that still asks', () => {
+  it('writes a stop that still asks the same way', () => {
     renderSection();
 
     fireEvent.click(screen.getByTestId('select-act'));
 
-    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
-    // No acknowledgement on a stop that still asks — the flag is only ever sent
-    // where the server would refuse without it.
+    expect(screen.queryByRole('alertdialog')).toBeNull();
     expectPatched({ permissionMode: 'acceptEdits' });
   });
 });
@@ -414,20 +350,16 @@ describe('ChatStatusSection — the composer’s Plan switch', () => {
     expectPatched({ permissionMode: 'acceptEdits' });
   });
 
-  it('carries the acknowledgement when the mode it restores is Full autonomy', () => {
+  it('restores Full autonomy on leaving Plan, with no acknowledgement', () => {
     // The one click OUT of planning, for a session that was running without
-    // asking before it went in. The server refuses that mode without an
-    // acknowledgement, so leaving Plan has to assert the standing one like any
-    // other autonomy write — otherwise this exact click is the one that 428s,
-    // and it is not a click a person can route around.
-    standingAck.current = '2026-08-01T09:30:00.000Z';
+    // asking before it went in.
     useSessionChatStore.setState({ modeBeforePlan: { [SESSION_ID]: 'bypassPermissions' } });
     permissionMode.current = 'plan';
     renderSection();
 
     fireEvent.click(planChip());
 
-    expectPatched({ permissionMode: 'bypassPermissions', acknowledgedAutonomy: true });
+    expectPatched({ permissionMode: 'bypassPermissions' });
   });
 
   it('does not restore a remembered mode the runtime no longer offers', () => {

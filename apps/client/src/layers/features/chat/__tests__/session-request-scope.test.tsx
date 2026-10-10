@@ -18,9 +18,8 @@
  * available on the first render, so the answer never changes underneath a
  * query. The tests below therefore pin ONE request rather than a delayed one.
  *
- * `useSessionDetail` is the exception and still waits for the store, because it
- * is keyed into a shared cache other writers patch by directory — see its own
- * note. Its test is unchanged.
+ * Detail, task and history reads use identity-scoped context when available.
+ * An ambient directory changing must never re-key an existing conversation.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
@@ -81,21 +80,19 @@ beforeEach(() => {
 });
 
 describe('session-scoped queries and the working directory', () => {
-  it('the session detail row is not requested until the directory resolves', async () => {
-    // Red when: the `enabled` gate drops the directory — `getSession` is called
-    // once with `undefined`, which the server rejects, and then again correctly.
+  it('requests session details by identity without adopting an ambient directory', async () => {
     const { transport, wrapper } = createHarness();
     const { result } = renderHook(() => useSessionDetail(SESSION_ID), { wrapper });
 
-    expect(transport.getSession).not.toHaveBeenCalled();
-
-    act(() => {
-      useAppStore.setState({ selectedCwd: CWD });
-    });
-
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(transport.getSession).toHaveBeenCalledTimes(1);
-    expect(transport.getSession).toHaveBeenCalledWith(SESSION_ID, CWD);
+    expect(transport.getSession).toHaveBeenCalledWith(SESSION_ID, undefined);
+
+    act(() => {
+      useAppStore.setState({ selectedCwd: '/unrelated/project' });
+    });
+    expect(transport.getSession).toHaveBeenCalledTimes(1);
+    expect(transport.getSession).not.toHaveBeenCalledWith(SESSION_ID, '/unrelated/project');
   });
 
   it('the session’s tasks are requested once, without a directory nothing named', async () => {

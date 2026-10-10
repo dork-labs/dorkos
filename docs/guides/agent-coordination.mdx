@@ -10,7 +10,9 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 If you run one agent per project, DorkOS lets those agents talk to each other directly. Your backend agent finishes an endpoint and tells your frontend agent to build the UI for it, without you copying the details over by hand.
 
-Three pieces make this work: **Mesh** finds your agents and gives each one an address, **Relay** carries messages between them, and **Tasks** can trigger a message on a schedule instead of waiting for you to ask.
+Three pieces make this work: **Mesh** finds your agents and gives each one an id, **chats** carry the messages between them, and **Tasks** can start work on a schedule instead of waiting for you to ask.
+
+Every message one agent sends another lands in a chat you can open. It is marked with the agent and the chat that sent it, so you can always see who asked for what.
 
 <Callout type="info">
   This is a shipped capability we are still hardening end to end. Multi-agent messaging works in the
@@ -20,35 +22,36 @@ Three pieces make this work: **Mesh** finds your agents and gives each one an ad
 
 ## Quick win: send one message between two agents
 
-1. Turn on Relay and start DorkOS pointed at the folder that holds your projects:
+1. Start DorkOS pointed at the folder that holds your projects:
 
    ```bash
-   export DORKOS_RELAY_ENABLED=true
    dorkos --dir /path/to/projects
    ```
 
 2. Open the Mesh panel and run a discovery scan. Mesh walks your project folders looking for agent markers (things like a `.claude/` folder or a `.dork/agent.json` file) and lists each project it finds as a candidate. Approve the ones you want; deny the rest. If the scan comes back empty, check that `--dir` points at the parent folder that actually contains your projects, not a project itself.
-3. Pick two approved agents in the same project family (they land in the same **namespace**, a label Mesh derives from where the project sits on disk) and ask one to message the other:
+3. Open a chat with one approved agent and ask it to message another:
 
-   > Use relay_send to tell the frontend agent about the new `/users` endpoint.
+   > Tell the frontend agent about the new `/users` endpoint.
 
-4. Watch the message arrive: DorkOS starts (or resumes) a session for the receiving agent and hands it your message as a prompt, the same way a person would type it in.
+4. Watch the message arrive. The agent sends it with its `chat_send` tool. It lands in a chat between the two agents, and the receiving agent starts working on it. Open that chat to read the message, marked with who sent it.
 
-That is the whole loop: discover, approve, send, watch it land. Everything past this point is reference material for when you want to control access rules, chain agents into pipelines, or see exactly what's on the wire.
+That is the whole loop: discover, approve, send, watch it land. Everything past this point is reference material for when you want spin-off chats, schedules, or the exact tools.
 
 ## What this looks like in practice
 
 ### A monorepo with one agent per app
 
-Say you have `apps/api`, `apps/web`, and `packages/shared`. Register each folder as an agent through Mesh discovery. Because they share a monorepo root, they land in the same namespace automatically, so they can message each other with no extra setup.
+Say you have `apps/api`, `apps/web`, and `packages/shared`. Register each folder as an agent through Mesh discovery, and they can message each other with no extra setup.
 
 Ask the API agent to add an endpoint, and in a working setup it implements the route, then messages the web agent to build the matching frontend hook. If a shared type needs to change, either agent can flag it to the other instead of reaching into a codebase it doesn't own.
 
 ### Agents across separate repositories
 
-When your backend and frontend live in different repositories, each gets its own namespace, so cross-namespace messaging needs an explicit access rule (see [Access rules](#access-rules) below).
+When your backend and frontend live in different repositories, the agents can still message each other's chats. The backend agent sends the frontend agent an updated API spec, the frontend agent regenerates its client code, and once both report green, either one can tell a deployment agent to ship. That's the intended workflow: verify it against your own agents before you let it run unattended.
 
-In this setup, the backend agent can publish an updated API spec to Relay, the frontend agent picks it up and regenerates its client code, and once both report green, either one can notify a deployment agent to ship. That's the intended workflow: verify it against your own agents before you let it run unattended.
+### Handing off long work to a spin-off chat
+
+When an agent has work that will take a while, like waiting on a CI run or a deploy, it can start a **spin-off chat** to do it. The spin-off is a full chat you can open, read and type in, and it reports back to the chat that started it on its own. See [Spin-off chats](/docs/guides/spin-off-chats).
 
 ### Approving decisions from your phone
 
@@ -64,8 +67,8 @@ The rest of this page is for the curious: exact API calls, priority numbers, and
 
 Once a discovery scan approves a project, each agent gets:
 
-- A unique ID in the Mesh registry
-- A Relay address (a **subject**, the string a message is sent to) shaped like `relay.agent.{namespace}.{agentId}`
+- A unique ID in the Mesh registry, which is what another agent sends to
+- A Relay address (a **subject**) shaped like `relay.agent.{namespace}.{agentId}`, used by programs and outside agents that reach it over Relay
 - A namespace derived from where it sits on disk
 
 For example, scanning `/home/user/projects` might produce:
@@ -78,7 +81,9 @@ For example, scanning `/home/user/projects` might produce:
 
 ### Access rules
 
-Mesh checks every cross-agent message against a priority-ordered list of rules:
+Access rules decide which messages can travel over Relay between namespaces: messages from programs, from outside agents over A2A, and from scheduled tasks. They do not limit your own agents messaging each other's chats: any of your agents can message any of your chats, and every message shows who sent it.
+
+Mesh checks every Relay message between agents against a priority-ordered list of rules:
 
 | Priority | Rule                  | Effect                                                    |
 | -------- | --------------------- | --------------------------------------------------------- |
@@ -100,7 +105,7 @@ Rules are one-directional. For two-way communication, add a second rule with the
 
 ### Let all my agents talk to each other
 
-Pairs add up fast: five namespaces need twenty rules for everyone to reach everyone. If you'd rather not think about walls at all, Team → Access has a single switch, **Let all my agents talk to each other**. Turn it on and every agent on this machine can message every other one, whatever project it lives in. Turn it off and you are back to the defaults, with any pairs you added still exactly where you left them.
+Pairs add up fast: five namespaces need twenty rules for everyone to reach everyone over Relay. If you'd rather not think about walls at all, Team → Access has a single switch, **Let all my agents talk to each other**. Turn it on and every Relay message between agents on this machine is allowed, whatever project it lives in. Turn it off and you are back to the defaults, with any pairs you added still exactly where you left them.
 
 It is off when you install DorkOS — agents stay in their own project until you say otherwise. Behind the scenes it is one more rule, at the same priority 50, using `*` on both sides:
 
@@ -113,49 +118,41 @@ curl -X PUT http://localhost:4242/api/mesh/topology/access \
 
 `GET /api/mesh/topology` reports it as `openMesh`, and so does an agent's own `mesh_query_topology` tool. `*` has to be on both sides or neither — a half-wildcard is rejected.
 
-### Direct messaging
+### Messaging another agent
 
-Every Claude session an agent runs has an MCP tool server injected into it (MCP is the standard that lets AI tools call functions like this one). That's what exposes `relay_send`:
+Every agent DorkOS runs has its DorkOS tools, and three of them are for talking to other chats:
 
-```
-Agent "api" notifies "web" about an API change:
-
-> Use relay_send to tell the frontend agent about the new /users endpoint.
-> Subject: relay.agent.frontend.web
-> Content: "I added a GET /users endpoint that returns { id, name, email }.
->           Please update the UserList component to fetch from this endpoint."
-```
-
-DorkOS starts (or resumes) a session in the `web` agent's working directory and passes the content as a prompt, so the web agent replies with the same working-directory context it always has.
-
-### Request-reply
-
-To get a response back, set `replyTo` to your own subject:
+| Tool        | What it does                                                                                  |
+| ----------- | --------------------------------------------------------------------------------------------- |
+| `chat_send` | Send a message to a chat, or to another agent (it goes into the two agents' own direct chat). |
+| `chat_read` | Check on a chat: whether it is working, done or needs you, and what is new since last time.   |
+| `chat_stop` | Stop a chat's running turn, like pressing its Stop button.                                    |
 
 ```
-Agent "api" asks "web" a question:
+Agent "api" tells "web" about an API change:
 
-> Use relay_send with replyTo set to relay.agent.backend.api
-> Subject: relay.agent.frontend.web
-> Content: "What TypeScript interface do you use for the User type?
->           I want to make sure the API response matches your expectations."
+> chat_send to: web
+> message: "I added a GET /users endpoint that returns { id, name, email }.
+>           Please update the UserList component to fetch from it."
 ```
 
-The web agent's reply routes back to `relay.agent.backend.api` on its own; you don't have to wire that up.
+The `web` agent works on it in its own folder, with the same context it always has. Its answer comes back as a new message in the `api` agent's chat, so nobody has to wait or keep checking.
 
-<Callout type="info">
-  Every message carries a budget: a default limit of 5 hops, a 1-hour TTL (time to live, how long a
-  message stays valid before it expires), and 10 calls. A reply inherits its budget from the message
-  that started the turn, so a chain of agents can't hand itself a fresh allowance. On top of that,
-  DorkOS caps how many agent turns can start in an hour — by agent and across the whole install —
-  because every route into an agent (a message, a scheduled task, an outside system) ends at the
-  same counted choke point. See [Relay Messaging](/docs/guides/relay-messaging#the-hourly-ceiling)
-  for both sets of numbers and how to change them.
+A few things hold for every message:
+
+- **You can see it.** It lands in a chat you can open, marked with the agent and the chat that sent it, never as you.
+- **It waits its turn.** A message waits until the other chat finishes what it is doing. An agent can choose to steer a running turn instead, or stop it and start on the new message. Anything you typed there yourself runs ahead of waiting agent messages.
+- **Nobody can fake the sender.** DorkOS stamps who sent each message. An agent cannot claim to be another agent, or you.
+
+<Callout type="warn">
+  Nothing limits how long two agents can keep messaging each other. You can see it in both chats and
+  stop either one. Each round uses your plan's usage, so keep an eye on agents you set talking to
+  each other for long stretches.
 </Callout>
 
 ### Scheduling messages with Tasks
 
-Tasks can trigger a message instead of waiting for a person to ask. When Relay is on, a scheduled task dispatches through Relay, so it follows the same access rules and budget limits as a message you send by hand.
+Tasks can start work instead of waiting for a person to ask. When Relay is on, a scheduled task dispatches through Relay, so it follows Relay's access rules and budget limits.
 
 A task is a SKILL.md file (a small text file with a YAML header) with a name, a cron schedule, a timezone, and a prompt written below the header:
 
@@ -179,15 +176,18 @@ Creating a task from the Tasks panel (or via `POST /api/tasks` with `name`, `des
 Combine a scheduled trigger with agent-to-agent messages for a multi-step pipeline. A deployment pipeline might look like:
 
 1. **Tasks** triggers a test run on the backend agent at 6 AM.
-2. **Backend agent** runs the suite. If it's green, it uses `relay_send` to notify the infrastructure agent.
+2. **Backend agent** runs the suite. If it's green, it uses `chat_send` to tell the infrastructure agent.
 3. **Infrastructure agent** builds the image and deploys to staging.
-4. **Infrastructure agent** notifies every other agent that staging is updated.
+4. **Infrastructure agent** tells the agents that need to know that staging is updated.
 
 Each step runs in the right working directory because Mesh already told DorkOS where each agent lives.
 
 ## Next steps
 
 <Cards>
+  <Card title="Spin-off Chats" href="/docs/guides/spin-off-chats">
+    Hand long work to a chat of its own that reports back when it is done.
+  </Card>
   <Card title="Relay Messaging" href="/docs/guides/relay-messaging">
     Message envelopes, budgets, chat app bridges, and the delivery pipeline in depth.
   </Card>

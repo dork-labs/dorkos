@@ -20,6 +20,7 @@
  *
  * @module services/connectors/resources/sign-in-refresh
  */
+import { outsideAuditScope } from '../../audit/audit-context.js';
 import { logger } from '../../../lib/logger.js';
 import type { ConnectorProviderBootstrapper } from '../bootstrap.js';
 import type { ConnectorRegistry } from '../registry.js';
@@ -77,7 +78,10 @@ export class SignInRefresher {
   /** Refresh every {@link SIGN_IN_REFRESH_INTERVAL_MS} until {@link stop}. Idempotent. */
   start(): void {
     if (this._timer) return;
-    this._timer = setInterval(() => void this.refresh(), this._intervalMs);
+    this._timer = setInterval(
+      outsideAuditScope(() => void this.refresh()),
+      this._intervalMs
+    );
     this._timer.unref();
   }
 

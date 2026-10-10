@@ -69,7 +69,8 @@ function commitNavigation(href: string = mockHref) {
     for (const listener of [...beforeLoadListeners]) listener();
   });
 }
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useNavigate: () => mockNavigate,
   useRouter: () => ({
     state: {
@@ -832,7 +833,7 @@ describe('MobileTabsLayout', () => {
       await user.click(screen.getByTestId('mobile-tab-home'));
       await screen.findByText('meeting-notes has a question');
 
-      await user.click(screen.getByRole('button', { name: 'Open session' }));
+      await user.click(screen.getByRole('button', { name: 'Open chat' }));
 
       expect(mockNavigate).toHaveBeenCalledWith({
         to: '/session',

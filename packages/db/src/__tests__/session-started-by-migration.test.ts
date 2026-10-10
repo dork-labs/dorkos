@@ -21,6 +21,7 @@ function row(overrides: Partial<typeof sessionStartedBy.$inferInsert> = {}) {
     permissionMode: null,
     starterPermissionMode: null,
     permissionSameAsStarter: null,
+    reportBack: true,
     createdAt: NOW,
     ...overrides,
   };
@@ -37,6 +38,22 @@ describe('session_started_by', () => {
   it('stores who started a chat and reads it back', () => {
     db.insert(sessionStartedBy).values(row()).run();
     expect(db.select().from(sessionStartedBy).all()).toEqual([row()]);
+  });
+
+  it('reports back unless told not to (spec spin-off-chats §5)', () => {
+    const { reportBack: _reportBack, ...withoutReportBack } = row();
+    db.insert(sessionStartedBy).values(withoutReportBack).run();
+    expect(db.select().from(sessionStartedBy).get()?.reportBack).toBe(true);
+    db.insert(sessionStartedBy)
+      .values(row({ sessionId: 'chat-quiet', kind: 'chat', reportBack: false }))
+      .run();
+    expect(
+      db
+        .select()
+        .from(sessionStartedBy)
+        .all()
+        .find((r) => r.sessionId === 'chat-quiet')?.reportBack
+    ).toBe(false);
   });
 
   it('marks a row as a move only when told, so a start is never mistaken for one', () => {

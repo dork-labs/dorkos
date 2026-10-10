@@ -139,7 +139,7 @@ describe('a room says why an agent did not answer', () => {
       // Ana's session, most often the person typing into her directly — so it
       // says what it knows and does not invent what she is doing instead.
       expect(notices()[0].body.text).toBe(
-        "Ana was busy in its own session, so it didn't answer here. It will read your message the next time it picks up work in this room."
+        "Ana was busy in its own chat, so it didn't answer here. It will read your message the next time it picks up work in this room."
       );
       // **Past tense, and no resend.** The message is a committed room entry
       // sitting behind Ana's read cursor, so the next turn she takes here reads
@@ -464,9 +464,9 @@ describe('a room says why an agent did not answer', () => {
       expect(notice.body.text).toContain('Codex');
       expect(notice.body.text).not.toContain('codex');
       // Both recoveries, because they are not the same recovery: one keeps this
-      // conversation, the other starts a fresh one on what the agent runs now.
+      // chat, the other starts a fresh one on what the agent runs now.
       expect(notice.body.text).toContain('Turn Codex back on');
-      expect(notice.body.text).toContain('remove Ana from this conversation and add it back');
+      expect(notice.body.text).toContain('remove Ana from this room and add it back');
       // And never the pointer that made the old line misleading: no turn ever
       // started, so there is nothing on that session to go and read.
       expect(notice.body.text).not.toContain('session');

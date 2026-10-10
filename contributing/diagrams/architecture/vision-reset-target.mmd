@@ -1,0 +1,33 @@
+flowchart TB
+  accTitle: Planned DorkOS architecture after the vision reset
+  accDescr: This entire view is planned architecture, not deployed topology. One app and a proposed shared workspace command core run locally or hosted, preserving optional Cloud and accountless local use. Persistence and execution placement remain explicit. Audit, current authority and work admission govern effects. Runtimes select engines, not authority or placement. Only one executor may own an agent; transfer fencing is not implemented. Relay will deliver conversation messages after migration.
+  direction["PLANNED TARGET · not deployment evidence<br/>Express → Hono → one program / one app"]
+  app["One DorkOS app<br/>Local or hosted workspace"]
+  entry["HTTP · CLI · MCP · future APIs<br/>Authenticated actor + workspace + origin"]
+  core["Proposed shared workspace command core<br/>Membership / access · conversations · projects<br/>Documents · tools · installed contributions"]
+  guard["Current authority + work admission<br/>Audit / privacy / pause · explicit payer<br/>Outsider and executable-code gates"]
+  stores["Explicit persistence implementations<br/>Local SQLite / files<br/>Hosted PostgreSQL / blobs"]
+  delivery["Planned conversation delivery<br/>Relay retries / receipts / rate / loop controls<br/>Migrate or archive Maildir history"]
+  wakes["Planned beat runner<br/>Code gather → decision triage → admitted work<br/>One record · deduplication · recipient batching"]
+  placement["Proposed execution ownership binding<br/>Agent identity ≠ engine ≠ computer<br/>One active executor · fenced transfer"]
+  engines["AgentRuntime engines<br/>Doe · Claude Code · Codex · OpenCode"]
+  effects["Files / mini apps / Connections / messages<br/>Recheck authority at effect boundary"]
+  cloud["Optional closed Cloud control plane<br/>Public cloud-api contracts<br/>Local app builds and runs without it"]
+  direction --> app
+  app --> entry
+  entry --> core
+  core --> stores
+  core --> delivery
+  core --> guard
+  wakes --> guard
+  guard --> placement
+  placement --> engines
+  engines --> effects
+  effects -->|"Outcome / readable action evidence"| core
+  core -->|"Optional public contract calls"| cloud
+  classDef planned fill:#edf3fa,stroke:#46709b,color:#183047
+  classDef gate fill:#e7f1eb,stroke:#427a55,color:#183f26
+  classDef optional fill:#fff5e4,stroke:#a87720,color:#49320c
+  class direction,app,entry,core,stores,delivery,wakes,placement,engines,effects planned
+  class guard gate
+  class cloud optional

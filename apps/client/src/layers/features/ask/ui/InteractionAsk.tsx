@@ -182,7 +182,7 @@ export function InteractionAsk({
                 data-slot="ask-open-session"
                 onClick={() => onOpenSession(ask.sessionId)}
               >
-                Open session
+                Open chat
               </Button>
             )}
           </AskCard.Actions>

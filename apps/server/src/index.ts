@@ -17,7 +17,10 @@ import { HARNESS_MANIFEST_PATH } from '@dorkos/harness';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import { randomUUID } from 'node:crypto';
 import { createApp, finalizeApp } from './app.js';
+import { createFrontDoor, createFrontDoorServer } from './http/front-door.js';
+import { createSessionLocationsRouter } from './routes/session-locations.js';
 import { ManagedConnectorCloudError } from './services/core/auth/cloud-link-client.js';
+import { DoeRuntime } from './services/runtimes/doe/index.js';
 import { ClaudeCodeRuntime } from './services/runtimes/claude-code/claude-code-runtime.js';
 import { shutdownSessionPumps } from './services/runtimes/claude-code/sessions/session-pump-registry.js';
 import { reapOrphanedWarmProcesses } from './services/runtimes/claude-code/sessions/warm-process-ledger.js';
@@ -213,8 +216,8 @@ import {
   type ConnectorRuntimeMcpListener,
 } from './services/runtimes/connector-mcp/index.js';
 import {
+  connectorRuntimeConsumer,
   connectorRuntimeHeaders,
-  type ConnectorRuntimeToolConsumer,
 } from './services/runtimes/connector-tools.js';
 import type {
   ConnectorRuntimeExecutionProbe,
@@ -363,6 +366,7 @@ import { MarketplaceInstaller } from './services/marketplace/installer/marketpla
 import { createMarketplaceRouter } from './routes/marketplace.js';
 import { runAutoProjection } from './services/harness/auto-project.js';
 import { backfillAgentWorkspaceSkills } from './services/harness/project-agent-workspace.js';
+import { refreshUntouchedTemplates } from './services/mesh/refresh-untouched-templates.js';
 import { runAgentCreatedProjection } from './services/harness/project-on-agent-created.js';
 import {
   createEveryAgentArrivalReaction,
@@ -409,6 +413,8 @@ import {
 } from './services/marketplace/recovery/backup-janitor.js';
 import { currentRecordOwner } from './services/marketplace/lib/records/record-owner.js';
 import { createActivityRouter } from './routes/activity.js';
+import { createAuditRouter } from './routes/audit.js';
+import { wireAuditTrail } from './services/audit/index.js';
 import { createExtensionRoutesMiddleware } from './middleware/extension-routes.js';
 import { createExternalMcpServer } from './services/core/mcp-server.js';
 import { composeDorkOsCapabilityRegistry } from './services/core/self-description/dorkos-registry.js';
@@ -609,7 +615,7 @@ import {
   isOtlpExporting,
   traceRelay,
 } from './services/observability/index.js';
-import { sessionListBroadcaster } from './services/session/session-list-broadcaster.js';
+import { sessionListBroadcaster } from './services/session/catalog/session-list-broadcaster.js';
 import { applyTrackerItemsLive } from './services/session/fleet/flow-run-link.js';
 import { KnownProjectsStore } from './services/projects/known-projects-store.js';
 import { startProjectRegistry } from './services/projects/project-feeds.js';
@@ -631,11 +637,22 @@ import {
   setAgentSendService,
 } from './services/extensions/agent-send/agent-send.js';
 import { AgentSendStore } from './services/extensions/agent-send/agent-send-store.js';
+import { ChatMessageStore } from './services/session/chat-messages/chat-message-store.js';
+import { wireChatMessaging } from './services/session/chat-messages/chat-message-wiring.js';
+import {
+  wireCommitments,
+  type CommitmentWiring,
+} from './services/commitments/commitment-wiring.js';
 import {
   SessionStartedByStore,
   getSessionStartedByStore,
   setSessionStartedByStore,
 } from './services/session/origin/session-started-by-store.js';
+import {
+  SessionTouchStore,
+  getSessionTouchStore,
+  setSessionTouchStore,
+} from './services/session/origin/session-touch-store.js';
 import {
   MessageQueueStore,
   SessionEventStore,
@@ -662,7 +679,7 @@ import {
   suspendPrivateDispatches,
   getOrCreateProjector,
 } from './services/session/index.js';
-import { aggregateSessionList } from './services/session/aggregate-session-list.js';
+import { aggregateSessionList } from './services/session/catalog/aggregate-session-list.js';
 import { peekCanvasService } from './services/canvas/index.js';
 import { env } from './env.js';
 
@@ -682,6 +699,7 @@ const PORT = env.DORKOS_PORT;
 
 // Global references for graceful shutdown
 let claudeRuntime: ClaudeCodeRuntime | null = null;
+let doeRuntime: DoeRuntime | null = null;
 /** The loopback credits relay, while OpenCode is enabled. */
 let creditsRelay: CreditsRelay | null = null;
 let accountUsageStore: AccountUsageStore | undefined;
@@ -739,18 +757,6 @@ let testComposioFixture:
     >
   | undefined;
 
-function connectorRuntimeConsumer(runtime: unknown): ConnectorRuntimeToolConsumer | undefined {
-  if (
-    typeof runtime === 'object' &&
-    runtime !== null &&
-    'setConnectorRuntimeTools' in runtime &&
-    typeof (runtime as { setConnectorRuntimeTools?: unknown }).setConnectorRuntimeTools ===
-      'function'
-  ) {
-    return runtime as ConnectorRuntimeToolConsumer;
-  }
-  return undefined;
-}
 /**
  * Every registered agent that has a project on disk, as the legacy migration
  * wants them.
@@ -867,6 +873,7 @@ let attachAgentTaskRoots: ((projectPath: string, agentId: string) => Promise<voi
 const mainRequestAdmission = new MainRequestAdmission();
 const workspaceReconcilerLifecycle = new WorkspaceReconcilerLifecycle();
 let searchIndexer: SearchIndexer | undefined;
+let commitmentWiring: CommitmentWiring | undefined;
 let healthCheckInterval: ReturnType<typeof setInterval> | undefined;
 let dailySnapshotInterval: ReturnType<typeof setInterval> | undefined;
 let sessionAttachmentSweepInterval: ReturnType<typeof setInterval> | undefined;
@@ -1307,12 +1314,29 @@ async function start() {
   // Initialize Activity Service and prune stale events
   const activityService = new ActivityService(db);
 
+  // The audit log (spec `audit-trail`): one append-only, hash-chained record of
+  // every action. Every Activity event is copied in, so the log is the
+  // superset; actors are keyed on stable ids, the owner on this install's id
+  // until an account exists. The startup check walks the recent end of the
+  // chain and only warns: a broken chain is evidence to keep, not a reason to
+  // refuse to start.
+  const { log: auditLog } = wireAuditTrail({
+    db,
+    activity: activityService,
+    installId: connectorInstallationId,
+    readOwnerAccount,
+  });
+
   // Who started a chat that no person typed into, and the seam that starts
   // one for an extension (`api.startWork`, `ctx.sessions.start`, spec
   // `flow-multiproject` §7.7). Before extensions start, so a `register()` that
   // starts work finds it; the name lookup reads the manager at call time.
   const sessionStartedByStore = new SessionStartedByStore(db);
   setSessionStartedByStore(sessionStartedByStore);
+  // When you opened or wrote in each chat (spec `your-activity-first` D1),
+  // written by the session routes for a person at the app and read by the
+  // fourth origin overlay below.
+  setSessionTouchStore(new SessionTouchStore(db));
   setStartWorkService(
     new StartWorkService({
       store: sessionStartedByStore,
@@ -1334,6 +1358,19 @@ async function start() {
       roomSessionPlace: () => roomSessionPlacePort,
     })
   );
+  // Chats messaging chats (spec `spin-off-chats`): `chat_send`, `chat_read`
+  // and `chat_stop`, the sender stamp, and the ceiling a chat-sent queue row
+  // launches under. Wired before any runtime turn can run, so a row adopted
+  // after a restart already finds its ceiling.
+  const chatMessaging = wireChatMessaging({
+    db,
+    store: new ChatMessageStore(db),
+    meshCore: () => meshCore,
+    roomSessionPlace: () => roomSessionPlacePort,
+  });
+  // What agents promised (spec `heartbeats` §12). The due timers are rebuilt
+  // from the table here, so a restart loses no wake and no missed mark.
+  const commitments = (commitmentWiring = wireCommitments({ db, meshCore: () => meshCore }));
   // Sharing with every agent that ends as a side effect (a disconnect, a move
   // to a DorkOS account) is recorded too, so every change to it leaves a
   // trace. Set here, before any provider registers, so boot-time changes count.
@@ -1401,7 +1438,9 @@ async function start() {
     // read this catalog, per build, off the composed registry.
     listActions: () => permissionActions(capabilityRegistry),
   });
-  const retentionDays = env.DORKOS_ACTIVITY_RETENTION_DAYS ?? 30;
+  // The environment variable wins when set; otherwise the setting (default 365).
+  const retentionDays =
+    env.DORKOS_ACTIVITY_RETENTION_DAYS ?? configManager.get('activity').retentionDays;
   try {
     const pruned = await activityService.prune(retentionDays);
     if (pruned > 0) {
@@ -1720,6 +1759,7 @@ async function start() {
   if (env.DORKOS_TEST_RUNTIME) {
     const { TestModeRuntime } = await import('./services/runtimes/test-mode/test-mode-runtime.js');
     const testRuntime = new TestModeRuntime();
+    testRuntime.setSessionSettings(runtimeRegistry);
     runtimeRegistry.register(testRuntime);
     relayAgentRuntime = testRuntime;
     // Optional SECOND instance under a distinct type — gives e2e a server with
@@ -1727,7 +1767,9 @@ async function start() {
     // binding, session-list runtime marks) with zero real agent binaries.
     // Test branch only; the production path never registers test runtimes.
     if (env.DORKOS_TEST_RUNTIME_SECONDARY) {
-      runtimeRegistry.register(new TestModeRuntime('test-mode-b'));
+      const secondaryRuntime = new TestModeRuntime('test-mode-b');
+      secondaryRuntime.setSessionSettings(runtimeRegistry);
+      runtimeRegistry.register(secondaryRuntime);
       logger.info('[TestMode] Secondary TestModeRuntime registered as test-mode-b');
     }
     // Optional claude-code-typed alias (DOR-952): a seeded agent's manifest can
@@ -1737,7 +1779,9 @@ async function start() {
     // of 400ing. Same TestModeRuntime class; the resolver injection below reaches
     // it too. Test branch only.
     if (env.DORKOS_TEST_RUNTIME_CLAUDE_ALIAS) {
-      runtimeRegistry.register(new TestModeRuntime('claude-code'));
+      const aliasRuntime = new TestModeRuntime('claude-code');
+      aliasRuntime.setSessionSettings(runtimeRegistry);
+      runtimeRegistry.register(aliasRuntime);
       logger.info('[TestMode] TestModeRuntime alias registered as claude-code (DOR-952)');
     }
     runtimeRegistry.setDefault('test-mode');
@@ -1880,6 +1924,16 @@ async function start() {
           return openCodeRuntime;
         }
       );
+    }
+
+    // Register before the broadcaster subscribes; construction performs no inference.
+    if (configManager.get('runtimes').doe.enabled) {
+      registerOptionalRuntime('DorkOS', 'check the DorkOS data directory permissions', () => {
+        doeRuntime = new DoeRuntime();
+        doeRuntime.setSessionSettings(runtimeRegistry);
+        runtimeRegistry.register(doeRuntime);
+        return doeRuntime;
+      });
     }
 
     // Apply the user's configured default runtime (runtimes.default) once all
@@ -2737,6 +2791,11 @@ async function start() {
       backfillAgentWorkspaceSkills(workspaces, dorkHome).catch((err: unknown) => {
         logger.warn('[Mesh] Agent workspace skill backfill failed', logError(err));
       });
+      // Same agent homes, same fire-and-forget shape: starter text nobody
+      // edited catches up with today's template (DOR-2779, ADR-0302 amendment).
+      refreshUntouchedTemplates(workspaces, dorkHome).catch((err: unknown) => {
+        logger.warn('[Mesh] Starter text refresh failed', logError(err));
+      });
     } catch (err) {
       logger.warn('[Mesh] Failed to start agent workspace skill backfill', logError(err));
     }
@@ -3055,8 +3114,8 @@ async function start() {
 
       // Enforce the DOR-239 "agent may start conversations" consent at the relay
       // delivery layer (DOR-277). This is the authoritative gate: every
-      // agent-initiated send to a bound human channel — relay_send*, A2A, or any
-      // other publish path — is denied unless the binding is enabled, consents,
+      // agent-initiated send to a bound human channel — A2A, an external MCP
+      // publish, or any other publish path — is denied unless the binding is enabled, consents,
       // and belongs to the sending agent.
       //
       // `initialize()` has already SCHEDULED the adapter starts by the time it
@@ -3073,8 +3132,8 @@ async function start() {
           })
         );
         // Same reasoning, same moment: the relay's chat-failure notice speaks on
-        // a subject that came off a failed envelope's `replyTo`, which the model
-        // writes on `relay_send`. Without this lookup it resolves nothing and
+        // a subject that came off a failed envelope's `replyTo`, which the
+        // sender chose. Without this lookup it resolves nothing and
         // stays silent, so a missing wire closes the channel rather than opening
         // one into a chat nobody bound (DOR-789).
         relayCore.setChatNoticeTargetResolver(makeChatNoticeTargetResolver(bindingStore));
@@ -3239,6 +3298,8 @@ async function start() {
       },
     },
   });
+
+  app.use('/api/session-locations', createSessionLocationsRouter(db));
 
   // Build mcpToolDeps and register factory only when ClaudeCodeRuntime is available.
   let mcpToolDeps: Parameters<typeof createExternalMcpServer>[0] | undefined;
@@ -4636,6 +4697,11 @@ async function start() {
     getSessionStartedByStore()?.getMany(sessionIds) ?? new Map();
   app.locals.extensionNameOf = (extensionId: string) =>
     extensionManager?.get(extensionId)?.manifest.name ?? extensionId;
+  // What you did in each chat (spec `your-activity-first` D5): the fourth
+  // overlay, a batched read of `session_touches`. Set before the broadcaster
+  // takes its resolvers, so the live stream carries it exactly as the routes do.
+  app.locals.resolveTouches = (sessionIds: string[]) =>
+    getSessionTouchStore()?.resolve(sessionIds) ?? new Map();
   sessionListBroadcaster.setOriginResolvers(sessionOriginResolvers(app.locals));
   // Live session upserts carry the flow items a chat works on, exactly as
   // `GET /api/sessions` does, so the first upsert after a list read no longer
@@ -4967,6 +5033,11 @@ async function start() {
   );
   mountedRouters.push('permissions');
 
+  // What agents promised (spec `heartbeats` §12). Always mounted; the
+  // per-agent POST is mounted before the agents router so it answers its path.
+  app.use('/api/commitments', commitments.routers.list);
+  app.use('/api/agents/:id/commitments', commitments.routers.agent);
+
   // Always mounted — not behind any feature flag.
   // ADR-0043: pass meshCore (when available) so writes sync to Mesh DB cache.
   // The confirmation provider is composed further down this boot, inside the
@@ -5087,6 +5158,7 @@ async function start() {
 
   // Activity feed — always available, not behind a feature flag.
   app.use('/api/activity', createActivityRouter(activityService));
+  app.use('/api/audit', createAuditRouter(auditLog));
   app.locals.activityService = activityService;
   mountedRouters.push('activity');
 
@@ -5732,6 +5804,13 @@ async function start() {
       // An agent asking for its own conversation to be summarized (DOR-2732).
       // Built here, once: its once-an-hour budget must outlive the per-session
       // tool servers that reach it.
+      // `audit.verify`: anyone may check the audit log's chain (spec `audit-trail`).
+      auditDeps: { log: auditLog },
+      // Chats messaging chats (spec `spin-off-chats`).
+      chatMessageDeps: chatMessaging,
+      // What agents promised (spec `heartbeats` §12): an agent records its
+      // own, and anyone reads every agent's list.
+      commitmentDeps: commitments.capabilityDeps,
       sessionCompactionDeps: {
         compaction: new AgentCompactionService({
           resolveRuntime: (sessionId: string) => runtimeRegistry.resolveForSession(sessionId),
@@ -6014,7 +6093,13 @@ async function start() {
 
   const server = startMainListener({
     admission: mainRequestAdmission,
-    listen: () => app.listen(PORT, host),
+    // Hono is the front door; every route still answers from the Express app
+    // behind it (`http/front-door.ts`, ADR 261009-192542).
+    listen: () =>
+      createFrontDoorServer(createFrontDoor(app, { census: env.DORKOS_TEST_RUNTIME })).listen(
+        PORT,
+        host
+      ),
     onListening: (server) => {
       logger.info(`[DorkOS] server running on http://${host}:${PORT}`);
 
@@ -6319,6 +6404,7 @@ async function start() {
     await revokeHeldCreditsToken();
     await claudeRuntime?.stopCreditsSessions();
     stopCodexCreditsTurns();
+    doeRuntime?.stopCreditsTurns();
     creditsRelay?.abortAll();
     await openCodeServerManager.recycleIfOnCredits();
   });
@@ -6365,6 +6451,9 @@ async function shutdownServices() {
   docNotificationCleanup?.();
   docNotificationCleanup = undefined;
   logger.info('[DorkOS] shutting down services');
+  // Drain owned turns while their tool, account and room dependencies remain live.
+  await doeRuntime?.shutdown();
+  doeRuntime = null;
   stopSessionContinuation?.();
   stopSessionContinuation = undefined;
   if (accountUsageStore) {
@@ -6457,6 +6546,7 @@ async function shutdownServices() {
   if (searchIndexer) {
     searchIndexer.stop();
   }
+  commitmentWiring?.stop();
   if (meshCore) {
     meshCore.stopPeriodicReconciliation();
     meshCore.close();

@@ -15,7 +15,7 @@ research, and human-agent studies from 2023 to 2026) and
 products actually do).
 
 **Updated 2026-10-06 (trusted by default).** DorkOS now treats agents as trusted
-colleagues (`positioning-202610/00-overview.md`). The manners in this document
+colleagues (`VISION.md`). The manners in this document
 all stay: they are how a good colleague behaves. What changed is what holds them
 up. Earlier versions leaned on hard caps (reactions per hour, notes per hour,
 turn counts) as the real enforcement. Under trust by default, the posting,
@@ -440,6 +440,15 @@ covers humans in groups and one agent among humans. Two agents talking in a room
 a person is reading is our case and it is genuinely novel. We are extrapolating,
 and we should expect to be wrong about some of it.
 
+**A person is followed by conversation, not by the clock; agents talking to
+each other stay on the short leash (DOR-2823).** In a channel, a person's
+unaddressed message goes to whoever they were just talking to there — the
+agent that spoke last, or the one they last named — for up to an hour and
+fifteen messages by default. An agent's own reply to another agent is still
+weighed against the old ten-minute, five-message window regardless of that
+setting: agent-to-agent traffic is the one case this document asks to stay
+quiet, so it does not get to borrow the longer patience a person is owed.
+
 **Three live disputes, recorded so we do not relitigate them from scratch:**
 
 - _One message or several._ Professional etiquette says consolidate; one CHI
@@ -469,9 +478,10 @@ finding.
   today's loop guard, which counts turns. Under trust by default it is planned
   to give way to a watcher that looks only for agents spinning with no progress,
   nudges them first, and pauses that one conversation if the spinning goes on
-  (planned, not built; see `positioning-202610/00-overview.md`). Etiquette keeps
+  (planned, not built; see `VISION.md`). Etiquette keeps
   a healthy room pleasant; the loop guard keeps a broken one cheap. Neither
   substitutes for the other.
+- [`PROACTIVE-AGENTS.md`](PROACTIVE-AGENTS.md): what an agent does when nobody is talking to it. It decides _whether_ there is something worth saying; this document decides _how_ it is said. "Proactive in work, quiet in speech" is how the two fit: initiative shows up as finished work and the record, not as more messages.
 - `AGENTS.md` quality standard and the `writing-for-humans` skill: the prose bar
   that section 4 assumes.
   </content>

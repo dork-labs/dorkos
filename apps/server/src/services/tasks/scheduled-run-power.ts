@@ -40,7 +40,7 @@ import type { PermissionMode } from '@dorkos/shared/types';
 import type { PermissionStop, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import type { UserConfig } from '@dorkos/shared/config-schema';
 import { runtimeRegistry } from '../core/runtime-registry.js';
-import { resolveUnattendedPermissionMode } from '../session/resolve-session-defaults.js';
+import { resolveUnattendedPermissionMode } from '../session/resolution/resolve-session-defaults.js';
 
 /**
  * What every scheduled run started at before the operator's stop was consulted,

@@ -39,6 +39,7 @@ export const AgentRuntimeSchema = z
     'cursor',
     'codex',
     'opencode',
+    'doe',
     'windsurf',
     'gemini',
     'cline',
@@ -518,6 +519,38 @@ export const AgentManifestSchema = z
     workspace: AgentWorkspaceBindingSchema.default({ mode: 'home' })
       .catch(UNREADABLE_BINDING_FALLBACK)
       .openapi(WORKSPACE_BINDING_OPENAPI),
+    // Who this agent reports to (spec `heartbeats` §4.1, canon P4): an account
+    // id, which is a mesh ULID for an agent and an account id for a person.
+    // Absent or `null` means "not set", and the default chain decides
+    // (`services/heartbeats/reports-to.ts`: whoever created it, then the owner).
+    //
+    // Optional rather than defaulted to `null` so every manifest literal and
+    // every file written before this field existed keeps its exact shape; the
+    // readers treat absent and `null` as the same answer. `.catch(null)` on the
+    // `model`/`effort` precedent above: a hand-edited value of the wrong type
+    // costs the agent its manager, never its place in the fleet. The
+    // `.openapi(...)` outside the `.catch()` is load-bearing for the generator.
+    reportsTo: z.string().min(1).nullable().optional().catch(null).openapi({
+      type: 'string',
+      description:
+        'Account id this agent reports to: a mesh agent id, or a person’s account id. Absent or null = whoever created it, then the owner.',
+      example: '01HZY8Q0V6S3W1A2B3C4D5E6F7',
+    }),
+    // The ACCOUNT that created this agent, written once at creation and never
+    // changed after (spec `heartbeats` §4.1). Not to be confused with
+    // `registeredBy`, which names the SURFACE that registered it
+    // (`'dorkos-ui'`, `'mcp-tool'`): this is who, that is how. An agent made by
+    // another agent carries that agent's mesh id, which is what lets the
+    // reports-to chain default to its creator (canon §9.2, rule 5).
+    //
+    // Machine-written: `UpdateAgentRequestSchema` does not pick it, so no PATCH
+    // can move it. Absent on every agent created before the field existed.
+    createdBy: z.string().min(1).nullable().optional().catch(null).openapi({
+      type: 'string',
+      description:
+        'Account that created this agent (a person’s account id, or the creating agent’s mesh id). Written once at creation; null when unknown.',
+      example: 'install:9f1c2d3e',
+    }),
   })
   .openapi('AgentManifest');
 
@@ -641,9 +674,12 @@ export const AgentManifestFileSchema = z.preprocess(
 // `UpdateAgentRequestSchema`'s `.pick()` allowlist, which omits it; the type
 // must say the same so a future caller cannot trust it as a legal write path
 // (ADR 260803-233420, guarantee 2).
+//
+// `createdBy` is excluded for the same reason: the server writes it once, at
+// creation, and nothing may move it after (spec `heartbeats` §4.1).
 export type AgentManifestUpdate = Omit<
   Partial<AgentManifest>,
-  'model' | 'effort' | 'account' | 'mcpServers'
+  'model' | 'effort' | 'account' | 'mcpServers' | 'createdBy'
 > & {
   model?: string | null;
   effort?: (typeof EFFORT_LEVELS)[number] | null;
@@ -847,6 +883,9 @@ export const UpdateAgentRequestSchema = AgentManifestSchema.pick({
   model: true,
   effort: true,
   account: true,
+  reportsTo: true,
+  // `createdBy` is deliberately NOT picked: it is written once, at creation,
+  // by the server (spec `heartbeats` §4.1). A PATCH naming it is stripped.
   // `permissions` is deliberately NOT picked: the generic agent PATCH can never
   // write a permission. The permission routes are the one way in, and the
   // retired `enabledToolGroups` and `tierCeiling` are refused by name.
@@ -866,6 +905,10 @@ export const UpdateAgentRequestSchema = AgentManifestSchema.pick({
     // billing is operator-only, so the agent-reachable self-edit path refuses
     // this key outright — see `services/core/operator/agent-updater.ts`.
     account: z.string().min(1).nullable().optional(),
+    // Strict on the write surface, unlike the manifest's `.catch(null)`: a
+    // caller sending a bad value is told so. `null` clears it, back to the
+    // default chain. Cycles are refused server-side (`REPORTS_TO_CYCLE`).
+    reportsTo: z.string().min(1).nullable().optional(),
   })
   .openapi('UpdateAgentRequest');
 

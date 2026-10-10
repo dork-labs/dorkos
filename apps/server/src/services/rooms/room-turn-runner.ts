@@ -34,6 +34,7 @@
  *
  * @module server/services/rooms/room-turn-runner
  */
+import { aliasTurnLevel } from '../core/turn-power/turn-levels.js';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
@@ -999,6 +1000,12 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         // for the one condition it may ride under is what keeps a future caller
         // from sending it for a session that already has a row (DOR-1917).
         ...(unattendedMode !== undefined ? { newSessionPermissionMode: unattendedMode } : {}),
+        // And the bound on THIS turn, from who wrote the message: applied by the
+        // runtime on top of whatever the conversation is set to, and never
+        // stored (spec `trusted-by-default-flip` §4).
+        ...(request.permissionCeiling !== undefined
+          ? { permissionCeiling: request.permissionCeiling }
+          : {}),
         projector,
         runtime,
         // **Refuse a stranger AT ACCEPTANCE**, unlike a person's own message: a
@@ -1092,6 +1099,10 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       if (canonicalId !== sessionId) {
         turnIds.add(canonicalId);
         runtimeRunningTheTurn.set(canonicalId, inFlight);
+        // The level this turn runs at was recorded under the placeholder; the
+        // posts it makes are vouched for under the canonical id, so carry it
+        // across or a first turn's every post would fall to the default.
+        aliasTurnLevel(sessionId, canonicalId);
       }
       // **As early as it is knowable, and before the answer is collected.** The
       // room bound a `(room, agent)` session before the claim, but on a first

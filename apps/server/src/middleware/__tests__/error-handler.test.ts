@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { AmbiguousSessionError } from '../../services/session/resolution/session-lookup-error.js';
 import { errorHandler } from '../error-handler.js';
 import type { Request, Response, NextFunction } from 'express';
 
@@ -37,6 +38,21 @@ describe('errorHandler', () => {
     } as unknown as Response;
     return res;
   }
+
+  it('returns a clear conflict for ambiguous native session identities', () => {
+    const res = createMockRes();
+    errorHandler(
+      new AmbiguousSessionError(),
+      { method: 'GET', path: '/api/sessions/id' } as Request,
+      res,
+      mockNext
+    );
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith({
+      error: 'This chat ID matches multiple chats.',
+      code: 'SESSION_ID_AMBIGUOUS',
+    });
+  });
 
   it('logs the method, path, code, and status beside the message', async () => {
     const { logger } = await import('../../lib/logger.js');

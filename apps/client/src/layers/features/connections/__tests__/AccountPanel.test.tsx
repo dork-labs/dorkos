@@ -202,7 +202,9 @@ describe('AccountPanel', () => {
       expect.objectContaining({
         to: '/session',
         search: expect.objectContaining({
-          dir: '/agents/mailroom',
+          agentId: 'mailroom',
+          draft: '1',
+          dir: undefined,
           prompt: 'Summarise today’s Gmail inbox',
         }),
       })

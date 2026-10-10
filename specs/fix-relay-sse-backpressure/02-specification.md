@@ -23,7 +23,7 @@ A `/chat:self-test` run on 2026-03-06 confirmed the SSE freeze persists: 3 of 5 
 
 The broadcaster's writes bypass `sendSSEEvent()` entirely — they format SSE strings inline and call `res.write()` directly. This is why the `stream-adapter.ts` fix didn't help.
 
-**Evidence:** `plans/2026-03-06-chat-self-test-findings.md`
+**Evidence:** `plans/archive/2026-03-06-chat-self-test-findings.md`
 **Prior spec:** `specs/chat-streaming-session-reliability/02-specification.md` (Fix 1 noted "Any other call sites... must also be updated" but the commit didn't cover session-broadcaster)
 
 ---
@@ -252,7 +252,7 @@ describe('relay subscription backpressure', () => {
 
 - Prior spec: `specs/chat-streaming-session-reliability/02-specification.md`
 - Prior fix commit: `1352e31` (fixed `stream-adapter.ts` but not `session-broadcaster.ts`)
-- Findings: `plans/2026-03-06-chat-self-test-findings.md`
+- Findings: `plans/archive/2026-03-06-chat-self-test-findings.md`
 - Node.js backpressure: https://nodejs.org/en/docs/guides/backpressuring-in-streams/
 - `apps/server/src/services/session/session-broadcaster.ts:186,324` — unfixed write sites
 - `apps/server/src/services/core/stream-adapter.ts:19-26` — reference drain pattern

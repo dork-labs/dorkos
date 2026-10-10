@@ -494,6 +494,14 @@ Each contract is stated so a test can fail. Fixture names refer to the four jour
   interacted with, minus muted targets (§18), minus automated sessions (BC-19), minus
   overnight-archived rows (BC-18). Threads appear as conversation rows carrying a thread origin
   mark (§2).
+  _Amended by `your-activity-first` (DOR-2789, 2026-10-08): a session is a member only when it is **yours**
+  (`chatOwnership` in `entities/session`: you opened it on the chat page or wrote in it, on any
+  device, or nothing but a person started it) and you touched it since the last 04:00. Whose a
+  chat is is decided on the whole recent window **before** any cut: the sidebar no longer slices
+  the shared window to ten (`SIDEBAR_RECENT_LIMIT` is gone), and `GET /api/sessions/recent` is
+  asked with `touchedSince` = the last 04:00, so every chat you touched today comes back however
+  many agent chats are newer. A chat started by a room, a task or an agent becomes yours the moment
+  you open or type in it._
 - **BC-16 — Ordering is user-interaction recency, never agent activity.** The order key is
   `lastInteractionAt = max(userLastMessageAt, userLastOpenedAt)`. `userLastOpenedAt` is the
   client-side interaction store (A4/§15's unified frecency store, key `type:id`) and is always
@@ -501,6 +509,11 @@ Each contract is stated so a test can fail. Fixture names refer to the four jour
   DOR-1030; session summaries). A `session_status` event, a tool call, or an agent post changes
   no row's position — asserted by a test that fires 100 activity events at the `busy` fixture
   and diffs the row key order (must be identical).
+  _Amended by `your-activity-first` (DOR-2789, 2026-10-08): the key is now `max(local opened, lastTouchedByYouAt,
+userLastMessageAt)`. `lastTouchedByYouAt` is the server's record of you opening or writing in a
+  chat, so the order agrees between the desktop, the phone and a second browser; the local open
+  record still lands first so a click is right before the server answers. The chat page records an
+  open (`useRecordChatOpened`), not each click handler. Agent activity is still no input._
 - **BC-17 — Reorder deferral.** Even a legitimate reorder is withheld while the pointer is
   inside the Today zone or a Today row holds focus; the pending order applies on pointer-leave
   or blur. Rows must never move under a cursor that is about to click. (Interpretation of §2's
@@ -509,21 +522,41 @@ Each contract is stated so a test can fail. Fixture names refer to the four jour
   most recent 04:00 local boundary that has passed, **unless** it is the anchor or carries a
   tier-2 (directed) unread. Archived rows remain findable in ⌘K by title and recency (§15) —
   archival is a Today-visibility rule and deletes nothing.
+  _Amended by `your-activity-first` (DOR-2789, 2026-10-08): `lastInteractionAt` is BC-16's amended key, so a chat
+  you used on another device after 04:00 stays. The same boundary is what the sidebar passes to
+  `/recent` as `touchedSince`._
 - **BC-19 — Automated sessions never claim a top-level row.** They sit behind a
   `{ rollup: 'automated' }` reveal row ("+ N automated"), origin-marked, using the existing
   `partitionSessionsByOrigin` split. If an automated session needs the user, it enters Heads up like
   anything else. (§4)
+  _Amended by `your-activity-first` (DOR-2789, 2026-10-08): the split is now `partitionSessionsByOwnership`
+  (`{ yours, spinOffs, automated }`). Behind the reveal sit the **spin-off** chats (started by
+  another chat) and the automated ones that you never touched. Opening or typing in one makes it
+  yours and gives it a row. How a chat started still shows as its origin mark; it no longer decides
+  where the row goes. The liveness count (§18) excludes only automated chats; a spin-off still
+  counts as running._
 - **BC-20 — Soft cap ~8** visible rows before the automated reveal, matching
   `MAX_JUMP_BACK_IN = 8`. The anchor and any tier-2 unread row are exempt from the cap.
+  _Amended by `your-activity-first` (DOR-2789, 2026-10-08): unchanged, and the cap is now applied only after
+  ownership is decided, so it can never cut a chat of yours in favour of agent chats._
 - **BC-21 — The active-conversation anchor.** The open conversation is always Today's first
   row (`reason: 'anchor:active-session'`), pinned while open, carrying live status. It is
   never placed in Heads up. (§4)
+  _Amended by `your-activity-first` (DOR-2789, 2026-10-08): unchanged. Showing a chat on the chat page now also
+  records it as opened, locally and on the server, so a deep link or a reload counts as touching
+  it._
 - **BC-22 — Morning digest.** One row ("While you were away…") at the top of Today _below_ the
   anchor, at most once per local day: shown when `prefs.digest.lastShownDate !== todayLocal`
   **and** there is real content (work that finished during the absence, per team-room-home
   D5.2 data — never invented). It dissolves when the user opens any conversation, and
   `lastShownDate` is written the moment it renders, so it is once per day per account, not per
   device.
+  _Amended by `your-activity-first` (DOR-2789, 2026-10-08): the chat page now records every chat
+  it shows as opened (`useRecordChatOpened`). The chat the app **lands** on (a reload, a deep link,
+  a notification that opened the app) is sent to the server but is not written to this browser's
+  open record, because that record is what the digest measures the absence from and what dissolves
+  it. Landing on a chat therefore still shows the digest; opening any other chat afterwards
+  dissolves it as before. Pinned by `digest-survives-landing.test.tsx`._
 
 #### Row grammar
 
@@ -655,11 +688,27 @@ Each contract is stated so a test can fail. Fixture names refer to the four jour
   it opens the conversation; the agent-row dot beside it is a secondary signal, and clicking the
   agent still opens the session. Both go quiet when the conversation is read. A bridged private chat keeps its row: its other end is a person
   somewhere else, and no session is that conversation._
+  _Amended by `your-activity-first` (DOR-2789, 2026-10-08): replaced. Clicking an agent opens **the chat you
+  were last in** there: the greatest of `lastTouchedByYouAt` and this browser's own open record
+  among the folder's chats; else the newest chat that is yours by `updatedAt`; else a new chat.
+  A spin-off or automated chat you never touched is never the target, however busy. A chat that
+  needs you does not redirect the click: it already lights the agent row's attention badge
+  (`useAgentHottestStatus`). `resolveSessionForCwd` and `cachedSessionForCwd` share the rule._
 - **BC-35 — The session switcher** is a `ResponsiveDialog` (dialog on desktop, bottom sheet on
   mobile) reachable from the agent row's "N live" chip, a long-press on mobile, and ⌘K. Groups:
   **Live now** (with verbs; concurrent sessions are simply multiple rows), **Recent** (one-line
   outcomes), **Automated** (collapsed, origin-marked). The current session is tagged. Footer
   hints: `↵` continue, `⌘↵` new, `⇧↵` fork. Rows use `SidebarRow`.
+  _Amended by `your-activity-first` (DOR-2789, 2026-10-08): the switcher's groups are replaced by the one shared
+  chat list (`features/chat-list`, spec `your-activity-first` D11) that the agent's profile renders
+  too: needs you, then running, then the rest by when you last used them; spin-offs nest under the
+  chat that started them; automated chats fold into one group. The concrete shape, as built: sorts
+  **For you** (sections Needs you, Running, Other chats), **Recent activity** and **Started**
+  (Needs you, then the rest); a New chat button beside the sort; rows have no glyph column and
+  line up with the controls above; a second line carries a status dot with the live verb, "Needs
+  you" or "Out of usage", then "Started from <parent>"; the trailing slot has a room or schedule
+  mark, the runtime only when the list mixes them, and "You · 2h"; footer hints `↵` open, `⌘↵` new chat, `⇧↵` fork, desktop
+  only. Arrange-only logic is `buildChatList` (`features/chat-list/model`)._
 - **BC-36 — Scroll-to-active.** On conversation switch only, the anchor scrolls into view.
   Guardrails: never auto-expand a collapsed section (the Library copy just takes the active tint
   if visible — BC-33); instant jump under `prefers-reduced-motion`; never scroll while the user

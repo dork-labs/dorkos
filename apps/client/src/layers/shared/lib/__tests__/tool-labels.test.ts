@@ -214,7 +214,7 @@ describe('parseMcpToolName', () => {
   });
 
   it('uses known label overrides for all predefined servers', () => {
-    expect(parseMcpToolName('mcp__dorkos__relay_send')?.serverLabel).toBe('DorkOS');
+    expect(parseMcpToolName('mcp__dorkos__chat_send')?.serverLabel).toBe('DorkOS');
     expect(parseMcpToolName('mcp__telegram__send_message')?.serverLabel).toBe('Telegram');
     expect(parseMcpToolName('mcp__github__create_issue')?.serverLabel).toBe('GitHub');
     expect(parseMcpToolName('mcp__filesystem__read_file')?.serverLabel).toBe('Files');
@@ -263,7 +263,7 @@ describe('getMcpServerBadge', () => {
   });
 
   it('returns null for DorkOS MCP tools', () => {
-    expect(getMcpServerBadge('mcp__dorkos__relay_send')).toBeNull();
+    expect(getMcpServerBadge('mcp__dorkos__chat_send')).toBeNull();
   });
 
   it('returns the server label for non-DorkOS MCP tools', () => {
@@ -325,7 +325,7 @@ describe('formatActivityLabel — the honesty ladder', () => {
   it('names the MCP server it is talking to', () => {
     expect(formatActivityLabel({ toolName: 'mcp__slack__send_message' })).toBe('Using Slack…');
     expect(formatActivityLabel({ toolName: 'mcp__my_custom__do_thing' })).toBe('Using My Custom…');
-    expect(formatActivityLabel({ toolName: 'mcp__dorkos__relay_send' })).toBe('Using DorkOS…');
+    expect(formatActivityLabel({ toolName: 'mcp__dorkos__chat_send' })).toBe('Using DorkOS…');
   });
 
   // Rung 4: a name nothing here has ever seen. Say the name.

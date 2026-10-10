@@ -145,7 +145,7 @@ vi.mock('@/layers/entities/command', () => ({
 }));
 
 vi.mock('@/layers/entities/session', async (importOriginal) => ({
-  // Keep the real selectAgentSessions/sessionDisplayTitle/partitionSessionsByOrigin
+  // Keep the real selectAgentSessions/sessionDisplayTitle/partitionSessionsByOwnership
   // — only the data hooks are stubbed.
   ...(await importOriginal<typeof import('@/layers/entities/session')>()),
   useSessions: () => mockUseSessions(),

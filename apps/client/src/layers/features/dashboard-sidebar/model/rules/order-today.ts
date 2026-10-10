@@ -23,13 +23,16 @@ import { anchorKey, epochMs, interactionKeyOf } from './targets';
 export const TODAY_SOFT_CAP = 8;
 
 /**
- * When the OPERATOR last touched this row's subject — `max(userLastMessageAt,
- * userLastOpenedAt)` — or `null` when they never have.
+ * When the OPERATOR last touched this row's subject — `max(local opened,
+ * lastTouchedByYouAt, userLastMessageAt)` — or `null` when they never have
+ * (BC-16, amended by spec `your-activity-first` D10).
  *
- * Both halves are optional and the maximum of what is present wins. A runtime
- * that cannot say when the user last wrote simply contributes nothing, and the
- * interaction timestamp alone governs: omission, never a guess, the same
- * honesty rule the verb ladder runs on.
+ * Every input is optional and the maximum of what is present wins. The local
+ * open record lands the instant a chat is opened in this window; the server's
+ * `lastTouchedByYouAt` carries opens and writes from every device; and
+ * `userLastMessageAt` covers a message a person wrote that the server saw in
+ * the transcript. A source that cannot say simply contributes nothing:
+ * omission, never a guess, the same honesty rule the verb ladder runs on.
  *
  * @param row - The row.
  * @param state - The snapshot.
@@ -37,11 +40,15 @@ export const TODAY_SOFT_CAP = 8;
 export function lastInteractionAt(row: SidebarRowModel, state: SidebarState): number | null {
   const key = interactionKeyOf(row.target);
   if (key === null) return null;
-  const opened = epochMs(state.interactions[key]);
-  const messaged = epochMs(state.userLastMessageAt[key]);
-  if (opened === null) return messaged;
-  if (messaged === null) return opened;
-  return Math.max(opened, messaged);
+  let latest: number | null = null;
+  for (const at of [
+    epochMs(state.interactions[key]),
+    epochMs(state.lastTouchedByYouAt[key]),
+    epochMs(state.userLastMessageAt[key]),
+  ]) {
+    if (at !== null && (latest === null || at > latest)) latest = at;
+  }
+  return latest;
 }
 
 /**

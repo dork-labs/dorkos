@@ -49,7 +49,7 @@ The four methods handle the adapter lifecycle:
 - **stop()**: Disconnect gracefully and clean up resources.
 - **deliver()**: Handle outbound messages. When any agent or user publishes to a subject matching your prefix, Relay calls this method with the envelope. Streaming to platforms that support progressive updates happens _inside_ `deliver()`: the adapter posts an initial message and edits it in place as more content arrives (see the Telegram reference adapter, which does this through its `PlatformClient.editMessage`).
 - **getStatus()**: Return a snapshot of your adapter's runtime state for the UI.
-- **testConnection()**: Optional. A lightweight credential check that validates configuration without running the full `start()`/`stop()` lifecycle (long-polling loops, webhook servers). When present, `AdapterManager.testConnection()` prefers it, which avoids side effects like Telegram's 409 Conflict when a polling session lingers.
+- **testConnection()**: Optional. A lightweight credential check that validates configuration without running the full `start()`/`stop()` lifecycle (long-polling loops, webhook servers). When present, `AdapterManager.testConnection()` prefers it, which avoids side effects like Telegram's 409 Conflict when an earlier polling connection lingers.
 
 ## Adapter Lifecycle
 

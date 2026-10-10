@@ -37,9 +37,9 @@ import { RoomPanelNotice } from './RoomPanelNotice';
 function dmAddNote(members: readonly RoomRosterEntry[]): string {
   const agent = members.find((member) => member.author.kind === 'agent');
   if (agent?.author.retired === true) {
-    return `${agent.author.displayName} is no longer on your team. Adding an agent makes this a group conversation.`;
+    return `${agent.author.displayName} is no longer on your team. Adding an agent makes this a group message.`;
   }
-  return 'Adding a second agent turns this into a group conversation.';
+  return 'Adding a second agent turns this into a group message.';
 }
 // Lazy, so the file explorer stays the async chunk the Files tab loads rather
 // than being absorbed into this panel's. A room panel that never scrolls to

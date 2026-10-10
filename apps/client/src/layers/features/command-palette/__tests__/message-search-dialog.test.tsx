@@ -22,7 +22,10 @@ import { TransportProvider, useAppStore } from '@/layers/shared/model';
 import { MessageSearchDialog } from '../ui/MessageSearchDialog';
 
 const mockNavigate = vi.fn();
-vi.mock('@tanstack/react-router', () => ({ useNavigate: () => mockNavigate }));
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
+  useNavigate: () => mockNavigate,
+}));
 
 const toastInfo = vi.hoisted(() => vi.fn());
 vi.mock('sonner', () => ({ toast: { info: toastInfo } }));
@@ -311,7 +314,7 @@ describe('what the box does when a hit is chosen', () => {
 
     expect(mockNavigate).toHaveBeenCalledWith({
       to: '/session',
-      search: { session: 'sess-9', dir: '/work/api' },
+      search: { session: 'sess-9', dir: undefined },
     });
   });
 
@@ -337,7 +340,7 @@ describe('what the box does when a hit is chosen', () => {
 
     expect(mockNavigate).toHaveBeenCalledWith({
       to: '/session',
-      search: { session: 'd2000000-0000-4000-8000-000000000002', dir: '/work/api' },
+      search: { session: 'd2000000-0000-4000-8000-000000000002', dir: undefined },
     });
   });
 
@@ -412,7 +415,7 @@ describe('what the box does when a hit is chosen', () => {
 
     expect(mockNavigate).toHaveBeenCalledWith({
       to: '/session',
-      search: { session: 'sess-9', dir: '/work/api', message: 'uuid-9' },
+      search: { session: 'sess-9', dir: undefined, message: 'uuid-9' },
     });
   });
 
@@ -437,7 +440,7 @@ describe('what the box does when a hit is chosen', () => {
 
     expect(mockNavigate).toHaveBeenCalledWith({
       to: '/session',
-      search: { session: 'sess-9', dir: '/removed/worktree' },
+      search: { session: 'sess-9', dir: undefined },
     });
     await waitFor(() =>
       expect(toastInfo).toHaveBeenCalledWith(

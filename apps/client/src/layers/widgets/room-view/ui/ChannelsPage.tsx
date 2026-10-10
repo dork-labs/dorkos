@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 import { Navigate, useNavigate, useSearch } from '@tanstack/react-router';
 import { MessagesSquare } from 'lucide-react';
 import { useIsMobile } from '@/layers/shared/model';
@@ -44,7 +45,7 @@ export function ChannelsPage() {
   const { id, community } = useSearch({ from: '/_shell/channels' });
   const spaces = useSpacesState();
   if (community && !spaces.enabled)
-    return spaces.isLoading ? null : <Navigate to="/channels" search={{}} replace />;
+    return spaces.isLoading ? null : <Navigate {...appRoutes.channels()} search={{}} replace />;
   return (
     <>
       {community ? (
@@ -76,7 +77,7 @@ function ChannelsPageBody() {
           roomId={id}
           threadId={thread}
           onThread={(rootId) => {
-            void navigate({ to: '/channels', search: { community, id, thread: rootId } });
+            void navigate({ ...appRoutes.channels(), search: { community, id, thread: rootId } });
           }}
         />
       </CommunityGoneGuard>
@@ -119,7 +120,7 @@ function ChannelsPageBody() {
     return (
       <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-2 p-10 text-center text-sm">
         <MessagesSquare className="text-muted-foreground/50 size-10" aria-hidden />
-        <p className="text-foreground font-medium">Pick a conversation</p>
+        <p className="text-foreground font-medium">Pick a channel or DM</p>
         <p className="max-w-sm">
           {isMobile
             ? 'Open one from All, at the bottom of the screen.'
@@ -153,7 +154,7 @@ function CommunityGoneGuard({
     return (
       <CommunityGonePanel
         connection={connection}
-        onRemoved={() => void navigate({ to: '/channels', search: {} })}
+        onRemoved={() => void navigate({ ...appRoutes.channels(), search: {} })}
       />
     );
   return (

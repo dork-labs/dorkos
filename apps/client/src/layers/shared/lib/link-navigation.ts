@@ -256,6 +256,52 @@ export function internalRoutePath(href: string): string | null {
   return link.kind === 'internal' ? link.path : null;
 }
 
+/**
+ * The search params a link an agent wrote may carry and still open without
+ * asking: the ones that only say WHICH chat, channel, thread or message to
+ * show. An allowlist, never a denylist, because several params make a page do
+ * something for the person on load: `prompt` and `send=1` send words as them,
+ * `dir`, `agentId` and `launchRef` set up a new chat in a folder, `runtime`
+ * picks what it runs on, and dialog params open settings. A link with any
+ * param not listed here confirms first, so a param added tomorrow is safe until
+ * someone decides otherwise. `link-navigation.test.ts` checks every key here is
+ * one a route really reads.
+ */
+export const ADDRESS_SEARCH_PARAMS: ReadonlySet<string> = new Set([
+  'session',
+  'message',
+  'id',
+  'thread',
+  'entry',
+  'community',
+]);
+
+/**
+ * The router path for a link an agent wrote that may open without asking
+ * first, or `null` when it must confirm (DOR-2824).
+ *
+ * Narrower than {@link internalRoutePath} on purpose. It answers "is this only
+ * an address in this app?": a core route (never an extension page, whose use
+ * of its own search params core cannot vouch for) carrying only
+ * {@link ADDRESS_SEARCH_PARAMS}. One click on
+ * `/session?agentId=…&prompt=…&send=1` would otherwise send words the person
+ * never read, as them.
+ *
+ * @param href - The link exactly as written.
+ * @param from - Absolute URL to resolve against. Defaults to the current page.
+ * @returns Path + search + hash for the router, or `null`.
+ */
+export function plainAppAddress(href: string, from: string = currentHref()): string | null {
+  const link = classifyLink(href, from);
+  if (link.kind !== 'internal') return null;
+  const url = new URL(link.url);
+  if (!APP_ROUTE_SET.has(normalizePathname(url.pathname))) return null;
+  for (const key of url.searchParams.keys()) {
+    if (!ADDRESS_SEARCH_PARAMS.has(key)) return null;
+  }
+  return link.path;
+}
+
 /** An internal navigation request handed to the router. */
 export interface LinkNavigation {
   /** Router-relative path + search + hash, e.g. `/session?dir=%2Ftmp`. */

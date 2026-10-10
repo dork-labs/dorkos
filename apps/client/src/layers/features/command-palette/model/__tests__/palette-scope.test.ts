@@ -60,13 +60,13 @@ describe('what a scope is called', () => {
   });
 
   it('heads a scoped list with the relation, which is different for each kind', () => {
-    expect(scopeHeading(agentScope)).toBe('Conversations with Orbit');
-    expect(scopeHeading(roomScope)).toBe('Conversations in #shipping');
+    expect(scopeHeading(agentScope)).toBe('Chats with Orbit');
+    expect(scopeHeading(roomScope)).toBe('Chats in #shipping');
   });
 
   it('says why an empty scope is empty, in the subject’s own terms', () => {
-    expect(scopeEmptyMessage(agentScope)).toBe('No conversations with Orbit yet.');
-    expect(scopeEmptyMessage(roomScope)).toBe('No conversations came from #shipping.');
+    expect(scopeEmptyMessage(agentScope)).toBe('No chats with Orbit yet.');
+    expect(scopeEmptyMessage(roomScope)).toBe('No chats came from #shipping.');
   });
 });
 

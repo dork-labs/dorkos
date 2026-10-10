@@ -19,6 +19,7 @@
  */
 import { createServer, type RequestListener, type Server } from 'node:http';
 import { once } from 'node:events';
+import { getRequestListener } from '@hono/node-server';
 import { beforeAll, afterAll } from 'vitest';
 
 /**
@@ -112,4 +113,30 @@ export function swappableServer(): SwappableServer {
       return server;
     },
   };
+}
+
+/** Anything with a Hono-style `fetch`: a `Hono` app, or the server's front door. */
+export interface FetchApp {
+  /** The app's fetch handler, as `@hono/node-server` calls it. */
+  fetch: Parameters<typeof getRequestListener>[0];
+}
+
+/**
+ * Turn a Hono app into a Node request listener, so {@link listeningServer},
+ * {@link swappableServer} and `collectDurableEvents` serve it exactly as they
+ * serve an Express app:
+ *
+ * ```ts
+ * const server = listeningServer(honoListener(app));
+ * ```
+ *
+ * It keeps the platform's own `Request` and `Response` globals, as the server's
+ * front door does (`apps/server/src/http/front-door.ts`), so a test sees the
+ * same objects production code does.
+ *
+ * @param app - The Hono app to serve.
+ * @returns A Node request listener for that app.
+ */
+export function honoListener(app: FetchApp): RequestListener {
+  return getRequestListener(app.fetch, { overrideGlobalObjects: false });
 }

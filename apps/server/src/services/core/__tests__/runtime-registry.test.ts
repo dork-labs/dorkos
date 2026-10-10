@@ -10,12 +10,23 @@ import type { AgentRuntime, RuntimeCapabilities } from '@dorkos/shared/agent-run
 import type { SessionSettings } from '@dorkos/shared/types';
 import { SessionSettingsSchema } from '@dorkos/shared/schemas';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { sessionContext, sessionMetadata, eq, sql, type Db } from '@dorkos/db';
+import {
+  sessionContext,
+  sessionMetadata,
+  sessionNativeBindings,
+  eq,
+  sql,
+  type Db,
+} from '@dorkos/db';
 import { logger } from '../../../lib/logger.js';
 import {
   SessionLimitStore,
   setSessionLimitStore,
 } from '../../session/fleet/session-limit-store.js';
+import {
+  SessionTouchStore,
+  setSessionTouchStore,
+} from '../../session/origin/session-touch-store.js';
 import type { TurnOrigin } from '../../session/index.js';
 
 // Minimal mock runtime for testing
@@ -101,7 +112,7 @@ let configuredStopDefaults: SessionSettings = {};
 /** The options the registry last handed the resolver, for the same question. */
 let lastResolveOpts: { runtimeType?: string; permissionModes?: readonly unknown[] } | null = null;
 
-vi.mock('../../session/resolve-session-defaults.js', () => ({
+vi.mock('../../session/resolution/resolve-session-defaults.js', () => ({
   resolveSessionDefaults: (opts: {
     runtimeType?: string;
     agent?: SessionSettings;
@@ -161,6 +172,52 @@ describe('RuntimeRegistry', () => {
       const found = registry.get('claude-code');
       expect(found.type).toBe('claude-code');
       expect(found.getCapabilities().supportsResume).toBe(true);
+    });
+
+    // Spec `audit-trail` PR3: the one seam every turn passes through records
+    // every tool call, so a runtime registered here cannot run a tool unseen.
+    it('wraps a registered runtime so its tool calls reach the audit log', async () => {
+      const { initAuditTrail, resetAuditTrail } = await import('../../audit/audit-trail.js');
+      const { AuditLog } = await import('../../audit/audit-log.js');
+      const { AccountIds } = await import('../../audit/account-ids.js');
+      const { auditEvents } = await import('@dorkos/db');
+      const db = createTestDb();
+      initAuditTrail({
+        log: new AuditLog(db),
+        accounts: new AccountIds({ db, installId: 'inst-1', readOwnerAccount: () => null }),
+      });
+      try {
+        registry.register({
+          ...createMockRuntime('claude-code'),
+          sendMessage: async function* () {
+            yield {
+              type: 'tool_call_start',
+              data: {
+                toolCallId: 't1',
+                toolName: 'Bash',
+                input: '{"command":"ls"}',
+                status: 'running',
+              },
+            };
+            yield {
+              type: 'tool_result',
+              data: { toolCallId: 't1', toolName: 'Bash', status: 'complete' },
+            };
+          },
+        } as AgentRuntime);
+        for await (const _event of registry.get('claude-code').sendMessage('s1', 'go', {})) {
+          // drain
+        }
+        expect(
+          db
+            .select()
+            .from(auditEvents)
+            .all()
+            .map((row) => [row.action, row.targetId])
+        ).toEqual([['runtime.tool_used', 'ls']]);
+      } finally {
+        resetAuditTrail();
+      }
     });
 
     it('throws when getting an unregistered type', () => {
@@ -1217,6 +1274,75 @@ describe('RuntimeRegistry', () => {
     const read = (id: string) =>
       db.select().from(sessionMetadata).where(eq(sessionMetadata.sessionId, id)).get();
 
+    it('resolves native evidence before the authorized detail read persists ownership', async () => {
+      const runtime = createMockRuntime('codex');
+      runtime.findSession = vi
+        .fn()
+        .mockResolvedValue({ id: 'external-thread', cwd: '/project', runtime: 'codex' });
+      registry.register(runtime);
+      expect(await registry.resolveSessionRuntime('external-thread')).toEqual({
+        type: 'codex',
+        bound: true,
+      });
+      expect(read('external-thread')).toBeUndefined();
+      await registry.persistSessionRuntime('external-thread', 'test-mode', A_PERSON);
+      expect(await registry.getSessionRuntimeType('external-thread')).toBe('test-mode');
+    });
+
+    it('persists verified actual cwd independently of agent provenance, only for the owner', async () => {
+      await (await import('../../../lib/boundary.js')).initBoundary(process.cwd());
+      const session = {
+        id: 'verified-native',
+        cwd: process.cwd(),
+        runtime: 'opencode',
+        account: 'native-home',
+      } as import('@dorkos/shared/types').Session;
+      await registry.rememberNativeSession(session, { kind: 'agent' });
+      expect(read(session.id)).toBeUndefined();
+      await registry.rememberNativeSession(session, { kind: 'operator' });
+      expect(read(session.id)?.runtime).toBe('opencode');
+      expect(read(session.id)?.agentPath).toBeNull();
+      expect(registry.getNativeSessionCwd(session.id)).toBe(process.cwd());
+      expect(registry.getNativeSessionAccount(session.id)).toBe('native-home');
+      // Runtime registry projections may omit account after resuming a native
+      // session. A read must not erase its already verified private source.
+      const { account: _account, ...displaySession } = session;
+      await registry.rememberNativeSession(displaySession, { kind: 'operator' });
+      expect(registry.getNativeSessionAccount(session.id)).toBe('native-home');
+      expect(await registry.resolveSessionRuntime(session.id)).toEqual({
+        type: 'opencode',
+        bound: true,
+      });
+    });
+
+    it('distinguishes unavailable native storage from absent sessions and permits draft probes', async () => {
+      const runtime = createMockRuntime('codex');
+      runtime.findSession = vi.fn().mockRejectedValue(new Error('unreadable'));
+      registry.register(runtime);
+      await expect(registry.resolveSessionRuntime('existing')).rejects.toMatchObject({
+        code: 'SESSION_DISCOVERY_UNAVAILABLE',
+      });
+      expect(await registry.resolveSessionRuntime('new-draft', { allowUnbound: true })).toEqual({
+        type: 'claude-code',
+        bound: false,
+      });
+      expect(read('existing')).toBeUndefined();
+    });
+
+    it('refuses ambiguous native ids instead of choosing the first runtime', async () => {
+      for (const type of ['codex', 'opencode']) {
+        const runtime = createMockRuntime(type);
+        runtime.findSession = vi
+          .fn()
+          .mockResolvedValue({ id: 'collision', cwd: '/project', runtime: type });
+        registry.register(runtime);
+      }
+      await expect(registry.resolveSessionRuntime('collision')).rejects.toMatchObject({
+        code: 'SESSION_ID_AMBIGUOUS',
+      });
+      expect(read('collision')).toBeUndefined();
+    });
+
     it('does not choose the runtime — the first turn still does', async () => {
       // The bug: a pre-launch settings change created the row with the INFERRED
       // runtime, and the binding write is first-write-wins, so a session the
@@ -1506,6 +1632,52 @@ describe('RuntimeRegistry', () => {
       return db.select().from(sessionMetadata).all();
     }
 
+    it('moves verified native cwd and account source with the canonical identity', async () => {
+      await registry.persistSessionRuntime('old-native', 'claude-code', A_PERSON);
+      db.insert(sessionNativeBindings)
+        .values({
+          sessionId: 'old-native',
+          runtime: 'claude-code',
+          cwd: '/actual/worktree',
+          account: '/private/native-home',
+          createdAt: '2026-10-07',
+        })
+        .run();
+      await registry.rekeySessionSettings('old-native', 'canonical-native');
+      expect(registry.getNativeSessionCwd('canonical-native')).toBe('/actual/worktree');
+      expect(registry.getNativeSessionAccount('canonical-native')).toBe('/private/native-home');
+      expect(registry.getNativeSessionCwd('old-native')).toBeNull();
+      expect(await registry.getSessionRuntimeType('canonical-native')).toBe('claude-code');
+    });
+
+    it('keeps a canonical destination’s existing verified native source', async () => {
+      await registry.persistSessionRuntime('old-native', 'claude-code', A_PERSON);
+      await registry.persistSessionRuntime('canonical-native', 'claude-code', A_PERSON);
+      db.insert(sessionNativeBindings)
+        .values([
+          {
+            sessionId: 'old-native',
+            runtime: 'claude-code',
+            cwd: '/old/work',
+            account: 'old-home',
+            createdAt: '2026-10-07',
+          },
+          {
+            sessionId: 'canonical-native',
+            runtime: 'claude-code',
+            cwd: '/kept/work',
+            account: 'kept-home',
+            createdAt: '2026-10-07',
+          },
+        ])
+        .run();
+      await registry.rekeySessionSettings('old-native', 'canonical-native');
+      await registry.rekeySessionSettings('old-native', 'canonical-native');
+      expect(registry.getNativeSessionCwd('canonical-native')).toBe('/kept/work');
+      expect(registry.getNativeSessionAccount('canonical-native')).toBe('kept-home');
+      expect(registry.getNativeSessionCwd('old-native')).toBeNull();
+    });
+
     it('moves the launch origin with the row, and keeps a destination’s own', async () => {
       await registry.persistSessionRuntime('old', 'claude-code', { kind: 'agent-launch' });
       await registry.rekeySessionSettings('old', 'new');
@@ -1581,6 +1753,25 @@ describe('RuntimeRegistry', () => {
         },
       ]);
       expect(allRows()).toEqual([]);
+    });
+
+    it('moves when you touched the chat, even with no settings row (spec your-activity-first D1)', async () => {
+      const touches = new SessionTouchStore(db);
+      setSessionTouchStore(touches);
+      try {
+        touches.recordWrote('old', '2026-10-08T09:00:00.000Z');
+
+        await registry.rekeySessionSettings('old', 'new');
+
+        const found = touches.resolve(['old', 'new']);
+        expect(found.has('old')).toBe(false);
+        expect(found.get('new')).toEqual({
+          openedAt: '2026-10-08T09:00:00.000Z',
+          wroteAt: '2026-10-08T09:00:00.000Z',
+        });
+      } finally {
+        setSessionTouchStore(undefined);
+      }
     });
 
     it('a context-table failure never stops the settings row (the runtime binding) from moving', async () => {

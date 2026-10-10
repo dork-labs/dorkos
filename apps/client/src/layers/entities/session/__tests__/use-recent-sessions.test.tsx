@@ -8,6 +8,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { RecentSessionsResponse } from '@dorkos/shared/types';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
+import { overnightBoundary } from '@/layers/shared/lib/overnight-boundary';
 import { RECENT_SESSIONS_WINDOW, useRecentSessions } from '../model/query/use-recent-sessions';
 import { sessionKeys } from '../api/query-keys';
 
@@ -47,7 +48,7 @@ describe('useRecentSessions', () => {
     const { result } = renderHook(() => useRecentSessions(5), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(transport.listRecentSessions).toHaveBeenCalledWith(5);
+    expect(transport.listRecentSessions).toHaveBeenCalledWith(5, expect.any(String));
     expect(result.current.data).toEqual(envelope);
   });
 
@@ -61,7 +62,27 @@ describe('useRecentSessions', () => {
     const { result } = renderHook(() => useRecentSessions(), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(transport.listRecentSessions).toHaveBeenCalledWith(RECENT_SESSIONS_WINDOW);
+    expect(transport.listRecentSessions).toHaveBeenCalledWith(
+      RECENT_SESSIONS_WINDOW,
+      expect.any(String)
+    );
+  });
+
+  it('asks for every chat you touched since the last 04:00, beyond the limit (your-activity-first D6)', async () => {
+    // Without it a window of 24 drops a chat you used this morning as soon as
+    // 24 agent chats are newer. The boundary rides the request, not the key, so
+    // every consumer still shares one entry.
+    const { transport, queryClient, wrapper } = createHarness();
+    const before = Date.now();
+
+    const { result } = renderHook(() => useRecentSessions(), { wrapper });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    const touchedSince = vi.mocked(transport.listRecentSessions).mock.calls[0]?.[1];
+    expect(touchedSince).toBe(new Date(overnightBoundary(before)).toISOString());
+    expect(
+      queryClient.getQueryCache().find({ queryKey: sessionKeys.recent(RECENT_SESSIONS_WINDOW) })
+    ).toBeDefined();
   });
 
   it('narrows for one caller with select, without minting a second entry', async () => {

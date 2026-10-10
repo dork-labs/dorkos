@@ -172,15 +172,10 @@ test.describe('Agent permissions @permissions', () => {
     });
   });
 
-  test('each preset sets every row, and Full power asks what Full autonomy means first', async ({
+  test('each preset sets every row, and Full power is chosen without a dialog', async ({
     request,
     page,
   }) => {
-    // No acknowledgement on file, so Full power has to ask.
-    const cleared = await request.patch('/api/config', {
-      data: { ui: { autonomyAcknowledgedAt: null } },
-    });
-    expect(cleared.ok()).toBe(true);
     await request.put('/api/permissions/preset', {
       data: { preset: 'careful', surface: 'api' },
     });
@@ -213,19 +208,14 @@ test.describe('Agent permissions @permissions', () => {
     await expect(row('tasks').getByRole('radio', { name: 'Ask' })).toBeChecked();
     await expect(row('reach').getByRole('radio', { name: 'Ask' })).toBeChecked();
 
-    // Full power goes through the consent step, and the yes is recorded with it.
+    // Full power is a normal choice (ADR 261006-225605): no consent step.
     await picker.getByRole('radio', { name: 'Full power' }).click();
     await keepTheirs();
-    const consent = page.getByRole('alertdialog');
-    await expect(consent).toBeVisible();
-    await consent.getByRole('button', { name: /Turn on|Full autonomy/ }).click();
-    await expect(consent).toBeHidden();
     await expect(row('tasks').getByRole('radio', { name: 'Allowed' })).toBeChecked();
     await expect(row('packages').getByRole('radio', { name: 'Ask' })).toBeChecked();
 
     const power = await readPower(request);
     expect(power.trustStop).toBe('autonomy');
-    expect(power.autonomyAcknowledgedAt).not.toBeNull();
     expect((await (await request.get('/api/permissions')).json()).preset).toBe('full');
   });
 });

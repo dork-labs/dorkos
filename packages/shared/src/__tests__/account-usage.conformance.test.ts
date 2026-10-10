@@ -65,6 +65,7 @@ const CONFIG_KEYS: Record<LedgerRuntime, string> = {
   'claude-code': 'claudeCode',
   codex: 'codex',
   opencode: 'opencode',
+  doe: 'doe',
 };
 
 /**

@@ -98,12 +98,12 @@ export function AgentSubMenu({
         )}
         <CommandItem value="new-session" onSelect={onNewSession}>
           <Plus className="size-4" />
-          <span>New session</span>
+          <span>New chat</span>
         </CommandItem>
         {onBrowseSessions && (
           <CommandItem value="browse-sessions" onSelect={onBrowseSessions}>
             <Layers className="size-4" />
-            <span>Browse sessions…</span>
+            <span>Browse chats…</span>
           </CommandItem>
         )}
         <CommandItem value="edit-settings" onSelect={onEditSettings}>
@@ -112,7 +112,7 @@ export function AgentSubMenu({
         </CommandItem>
       </CommandGroup>
       {recentSessions.length > 0 && (
-        <CommandGroup heading="Recent sessions">
+        <CommandGroup heading="Recent chats">
           {recentSessions.map((session) => (
             <CommandItem
               key={session.id}

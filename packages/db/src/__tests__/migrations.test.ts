@@ -146,6 +146,8 @@ describe('Database Migrations', () => {
       // consent; the token lives here only as a hash (agent-trust spec §3.3,
       // migration 0031).
       'approvals',
+      // The append-only, hash-chained audit log (spec audit-trail §3.1).
+      'audit_events',
       // Opaque author identities keyed on (kind, natural_key) — an agent's
       // agentPath, never its manifest ULID (ADR 260726-170126, migration 0034).
       'authors',
@@ -167,7 +169,15 @@ describe('Database Migrations', () => {
       // 0096). Cascades with its room; archiving one keeps the rows and freezes
       // them.
       'canvas_documents',
+      // The DM chat one agent keeps with another, the messages chats send each
+      // other (the server's record of who sent what), and how far one chat has
+      // read another (spec spin-off-chats §1-§2).
+      'chat_agent_dms',
+      'chat_messages',
+      'chat_read_cursors',
       'codex_threads',
+      // What each agent promised, to whom and by when (spec heartbeats §12).
+      'commitments',
       // Remote community enrollment, mirrored history, and durable delivery.
       'community_agent_enrollments',
       'community_entry_origins',
@@ -316,6 +326,8 @@ describe('Database Migrations', () => {
       // A session's hard usage limit, kept across a restart until its next
       // turn starts (spec claude-account-fleet D4, migration 0117).
       'session_limits',
+      // Owner-scoped opaque locations keep private directories out of links.
+      'session_locations',
       // Stable proof that a protected source was accepted for one session.
       'session_message_acceptance_receipts',
       // Messages typed while a session was busy, waiting their turn — the
@@ -323,6 +335,8 @@ describe('Database Migrations', () => {
       // restart (spec persistent-session-runtime §3.1, migration 0064).
       'session_message_queue',
       'session_metadata',
+      // Verified native cwd/account source survives an app restart.
+      'session_native_bindings',
       // Words staged for a session that the runtime could not append to its own
       // transcript, waiting to ride the next dispatch. Durable because the
       // "Added context for the next reply" receipt already is (DOR-1324,
@@ -331,6 +345,9 @@ describe('Database Migrations', () => {
       // Who started a chat that no person typed into, and the counter for an
       // extension's start limits (spec flow-multiproject §7.7, migration 0135).
       'session_started_by',
+      // When the person last opened or wrote in each chat, so Today and the
+      // agent click agree on every device (spec your-activity-first D1).
+      'session_touches',
       // The durable claim feed for inbound chats with no binding — metadata
       // only, never a message body (connection-scoping spec §Part 3,
       // migration 0048).

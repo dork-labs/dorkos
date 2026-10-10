@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Authors:** Claude (spec:create), 2026-03-06
-**Origin:** Chat self-test run 2 findings (`plans/2026-03-06-chat-self-test-findings.md`)
+**Origin:** Chat self-test run 2 findings (`plans/archive/2026-03-06-chat-self-test-findings.md`)
 
 ---
 
@@ -347,7 +347,7 @@ export const SDK_TOOL_NAMES = {
 
 ## References
 
-- Self-test findings: `plans/2026-03-06-chat-self-test-findings.md`
+- Self-test findings: `plans/archive/2026-03-06-chat-self-test-findings.md`
 - Previous SSE fix spec: `specs/fix-relay-sse-delivery-pipeline/02-specification.md`
 - SSE backpressure fix: `specs/fix-relay-sse-backpressure/02-specification.md`
 - ADR-0003: SDK JSONL as single source of truth

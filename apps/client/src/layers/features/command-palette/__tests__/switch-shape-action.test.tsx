@@ -13,7 +13,10 @@ import { usePaletteActions } from '../model/use-palette-actions';
 
 const mockTransport = createMockTransport();
 
-vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn() }));
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
+  useNavigate: () => vi.fn(),
+}));
 vi.mock('@/layers/entities/session', async (importOriginal) => ({
   // The session resolver and the chat store come along for the slash-command
   // path; only the directory hooks are stubbed.

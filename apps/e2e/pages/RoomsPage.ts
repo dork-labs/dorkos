@@ -471,7 +471,7 @@ export class RoomsPage {
    * (`sidebar-simplification` D2).
    */
   get startConversationButton(): Locator {
-    return this.page.getByRole('button', { name: /^(Start group message|Open session with .+)$/ });
+    return this.page.getByRole('button', { name: /^(Start group message|Open chat with .+)$/ });
   }
 
   /**

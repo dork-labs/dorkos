@@ -203,7 +203,7 @@ describe('SRC-04 — the global-install drop says what the package holds', () =>
     const [drop, ...extra] = dropsFor(plan, 'globex');
     expect(extra).toEqual([]);
     expect(drop?.reason).toBe(
-      'installed for all your projects. Only the Claude Code sessions DorkOS runs can see it. ' +
+      'installed for all your projects. Only the Claude Code chats DorkOS runs can see it. ' +
         'Its 2 skills are not shared with this project: greet, nightly. ' +
         'Run dorkos harness global --enable <tool> to share it with your other agent tools.'
     );
@@ -230,7 +230,7 @@ describe('SRC-04 — the global-install drop says what the package holds', () =>
 
     const [drop] = dropsFor(plan, 'soloskill');
     expect(drop?.reason).toBe(
-      'installed for all your projects. Only the Claude Code sessions DorkOS runs can see it. ' +
+      'installed for all your projects. Only the Claude Code chats DorkOS runs can see it. ' +
         'Its 1 skill is not shared with this project: nightly. ' +
         'Run dorkos harness global --enable <tool> to share it with your other agent tools.'
     );
@@ -256,7 +256,7 @@ describe('SRC-04 — the global-install drop says what the package holds', () =>
       'installed for all your projects, and shared with the agent tools you chose. ' +
         'Its 2 skills are not shared with this project: greet, nightly'
     );
-    expect(drop?.reason).not.toContain('Only the Claude Code sessions DorkOS runs can see it');
+    expect(drop?.reason).not.toContain('Only the Claude Code chats DorkOS runs can see it');
     expect(drop?.reason).not.toContain('dorkos harness global --enable');
 
     // A package with nothing portable in it takes the same new lead.
@@ -291,7 +291,7 @@ describe('SRC-04 — the global-install drop says what the package holds', () =>
 
     const [drop] = dropsFor(plan, 'timerpack');
     expect(drop?.reason).toBe(
-      'installed for all your projects. Only the Claude Code sessions DorkOS runs can see it. ' +
+      'installed for all your projects. Only the Claude Code chats DorkOS runs can see it. ' +
         'Its 2 skills are not shared with this project: daily-sweep, helper. ' +
         'Run dorkos harness sync --fix --global so its skills that run on a timer work. ' +
         'Run dorkos harness global --enable <tool> to share it with your other agent tools.'
@@ -307,7 +307,7 @@ describe('SRC-04 — the global-install drop says what the package holds', () =>
       const plan = planFor(repoWith());
       const [drop] = dropsFor(plan, 'timerpack');
       expect(drop?.reason).toBe(
-        'installed for all your projects. Only the Claude Code sessions DorkOS runs can see it. ' +
+        'installed for all your projects. Only the Claude Code chats DorkOS runs can see it. ' +
           'Its 2 skills are not shared with this project: daily-sweep, helper. ' +
           'Its skills that run on a timer now work. ' +
           'Run dorkos harness global --enable <tool> to share it with your other agent tools.'
@@ -353,7 +353,7 @@ describe('SRC-04 — the global-install drop says what the package holds', () =>
 
     const [drop] = dropsFor(plan, 'barepkg');
     expect(drop?.reason).toBe(
-      'installed for all your projects. Only the Claude Code sessions DorkOS runs can see it. ' +
+      'installed for all your projects. Only the Claude Code chats DorkOS runs can see it. ' +
         'It has no skills to share.'
     );
     expect(drop?.reason).not.toMatch(/skills are not shared/);
@@ -390,7 +390,7 @@ describe('SRC-12 — the same package installed at both scopes', () => {
   function notice(pkg: string, repoRoot: string): string {
     return (
       `is installed twice: once for all your projects, and once in this project. ` +
-      `In a session DorkOS runs, Claude Code sees both copies, under different names. ` +
+      `In a chat DorkOS runs, Claude Code sees both copies, under different names. ` +
       `On its own, Claude Code sees only this project's copy. So does Codex, until you share it. ` +
       `Uninstall one if you only meant to have one. ` +
       `Run dorkos uninstall ${pkg} --project ${repoRoot}  to remove this project's copy. ` +

@@ -330,7 +330,7 @@ describe('ChannelComposer — serialized-DOM delta against the pre-migration bas
     const { container } = renderComposer(roomWith({ archived: true }));
 
     expect(
-      screen.getByText('This conversation is archived. You can read it, but not add to it.')
+      screen.getByText('This room is archived. You can read it, but not add to it.')
     ).toBeInTheDocument();
 
     expectIntendedChromeDelta(

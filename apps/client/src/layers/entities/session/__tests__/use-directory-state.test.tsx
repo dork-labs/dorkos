@@ -45,7 +45,9 @@ const mockNavigate = vi.fn((opts: { to?: string; search?: unknown }) => {
       : ((opts.search as Record<string, unknown>) ?? {});
   mockLocation = { pathname: opts.to ?? mockLocation.pathname, search: next };
 });
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
+  linkOptions: (options: unknown) => options,
   useNavigate: () => mockNavigate,
   useRouter: () => ({
     state: {
@@ -62,7 +64,10 @@ const mockListSessions = vi.fn((): Promise<{ sessions: { id: string }[] }> =>
   Promise.resolve({ sessions: [] })
 );
 vi.mock('@/layers/shared/model/TransportContext', () => ({
-  useTransport: () => ({ listSessions: mockListSessions }),
+  useTransport: () => ({
+    listSessions: mockListSessions,
+    createSessionLocation: vi.fn(async () => ({ id: 'location' })),
+  }),
 }));
 
 // A REAL QueryClient behind `useQueryClient`, not a two-method stub: resolving
@@ -103,7 +108,7 @@ describe('useDirectoryState', () => {
       expect(mockNavigate).toHaveBeenCalledWith(
         expect.objectContaining({
           to: '/session',
-          search: expect.objectContaining({ dir: '/new/path' }),
+          search: expect.objectContaining({ launchRef: 'location', draft: '1' }),
         })
       )
     );
@@ -120,7 +125,11 @@ describe('useDirectoryState', () => {
     await waitFor(() =>
       expect(mockNavigate).toHaveBeenCalledWith(
         expect.objectContaining({
-          search: expect.objectContaining({ dir: '/any/path', session: expect.any(String) }),
+          search: expect.objectContaining({
+            launchRef: 'location',
+            draft: '1',
+            session: expect.any(String),
+          }),
         })
       )
     );
@@ -178,7 +187,7 @@ describe('useDirectoryState', () => {
     act(() => {
       result.current[1]('/new/path', { preserveSession: true });
     });
-    await waitFor(() => expect(mockNavigate).toHaveBeenCalled());
+    expect(mockNavigate).not.toHaveBeenCalled();
     expect(mockSetStoreDir).toHaveBeenCalledWith('/new/path');
     expect(mockSetSessionId).not.toHaveBeenCalled();
   });
@@ -195,7 +204,7 @@ describe('useDirectoryState', () => {
     await waitFor(() =>
       expect(mockNavigate).toHaveBeenCalledWith({
         to: '/session',
-        search: { dir: '/never/opened', session: 'sess-on-server' },
+        search: { dir: undefined, session: 'sess-on-server' },
       })
     );
   });

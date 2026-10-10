@@ -22,7 +22,8 @@ const routerState = vi.hoisted(() => ({
 }));
 // The thank-you toast's "Your reports" action navigates; this is where it goes.
 const navigate = vi.hoisted(() => vi.fn());
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useNavigate: () => navigate,
   useRouterState: (opts?: { select?: (s: unknown) => unknown }) => {
     // `searchStr` is DERIVED from `search` here, exactly as the real router
@@ -501,7 +502,7 @@ describe('FeedbackDialog', () => {
         const { setOpen } = renderDialog(transport);
         fireEvent.click(screen.getByRole('radio', { name: 'Bug' }));
         type('about session a');
-        expect(screen.getByRole('button', { name: 'This conversation' })).toHaveAttribute(
+        expect(screen.getByRole('button', { name: 'This chat' })).toHaveAttribute(
           'aria-pressed',
           'true'
         );
@@ -510,7 +511,7 @@ describe('FeedbackDialog', () => {
         routerState.location = { pathname: '/session', search: { session: 'sess_b' } };
         setOpen(true);
 
-        expect(screen.getByRole('button', { name: 'This conversation' })).toHaveAttribute(
+        expect(screen.getByRole('button', { name: 'This chat' })).toHaveAttribute(
           'aria-pressed',
           'false'
         );
@@ -1013,7 +1014,7 @@ describe('FeedbackDialog', () => {
         target: { value: 'It crashed' },
       });
       // The Conversation toggle exists on a session route.
-      expect(screen.getByRole('button', { name: 'This conversation' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'This chat' })).toBeInTheDocument();
       fireEvent.click(screen.getByRole('button', { name: 'Send' }));
 
       await waitFor(() => expect(sendFeedback).toHaveBeenCalledTimes(1));
@@ -1025,7 +1026,7 @@ describe('FeedbackDialog', () => {
 
     it('has no Conversation toggle off a session route', () => {
       renderDialog();
-      expect(screen.queryByRole('button', { name: 'This conversation' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'This chat' })).not.toBeInTheDocument();
     });
   });
 
@@ -1684,7 +1685,7 @@ describe('FeedbackDialog', () => {
         // to be IN before switching one off can mean anything.
         fireEvent.click(screen.getByRole('radio', { name: 'Bug' }));
         const diagnostics = screen.getByRole('button', { name: 'Diagnostics' });
-        const conversation = screen.getByRole('button', { name: 'This conversation' });
+        const conversation = screen.getByRole('button', { name: 'This chat' });
         expect(diagnostics).toHaveAttribute('aria-pressed', 'true');
         expect(conversation).toHaveAttribute('aria-pressed', 'true');
         fireEvent.click(diagnostics);
@@ -1701,7 +1702,7 @@ describe('FeedbackDialog', () => {
           'aria-pressed',
           'false'
         );
-        expect(screen.getByRole('button', { name: 'This conversation' })).toHaveAttribute(
+        expect(screen.getByRole('button', { name: 'This chat' })).toHaveAttribute(
           'aria-pressed',
           'false'
         );

@@ -273,7 +273,7 @@ export const serverEnvSchema = z.object({
   // `apps/e2e/playwright.config.ts` sets this on both Express legs; nothing
   // else in the repo does. See services/search/registry.ts `selectSearchSources`.
   DORKOS_SEARCH_NO_EXTERNAL_HISTORY: boolFlag,
-  // Activity feed — retention period for pruning (defaults to 30 days in service)
+  // Activity feed retention in days. Overrides `activity.retentionDays` (default 365) when set.
   DORKOS_ACTIVITY_RETENTION_DAYS: z.coerce.number().int().min(1).optional(),
   // Test mode — TestModeRuntime is registered instead of ClaudeCodeRuntime
   DORKOS_TEST_RUNTIME: z

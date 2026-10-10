@@ -37,6 +37,8 @@ import type { PermissionStop } from './agent-runtime.js';
 // A leaf module (zod only), so this value import forms no load-time cycle.
 import { AccountUsageSchema } from './account-usage.js';
 import { ProjectRefSchema } from './project-schemas.js';
+// A leaf module (zod only), so this value import forms no load-time cycle.
+import { ChatMessageStampSchema } from './chat-messages.js';
 
 extendZodWithOpenApiOnce();
 
@@ -786,8 +788,26 @@ export const SessionSchema = z
      *
      * Best-effort and never a security boundary — the markers it reads are the
      * same advisory ones {@link Session.origin} is derived from.
+     *
+     * One exception to 4 (spec `your-activity-first` D5): a message you wrote
+     * from the app into such a chat is recorded on the server when it is sent,
+     * so the field comes back as that time. The transcript's value for those
+     * origins is still dropped first; only your own recorded write returns.
      */
     userLastMessageAt: z.string().datetime().optional(),
+    /**
+     * ISO-8601 timestamp of the last time YOU touched this chat — opened it on
+     * the chat page or wrote in it from the app, whichever is later (spec
+     * `your-activity-first` D1, D5). Held on the server, so every device and
+     * browser agrees on it, and recorded only for a person at the app: an
+     * agent, a room turn, a task or a script never moves it.
+     *
+     * It is what Today, the agent click and the chat lists order your chats by,
+     * and what makes a chat yours whatever started it. Absent when you have not
+     * touched the chat since this was recorded — there is no backfill from old
+     * transcripts.
+     */
+    lastTouchedByYouAt: z.string().datetime().optional(),
     cwd: z.string().optional(),
   })
   .openapi('Session');
@@ -896,20 +916,6 @@ export type StoredSessionSettingsResponse = z.infer<typeof StoredSessionSettings
 
 export const UpdateSessionRequestSchema = SessionSettingsSchema.extend({
   title: z.string().min(1).max(200).optional(),
-  /**
-   * "The person asked for this, and they were told what it means." Required —
-   * as this flag or as the standing record in `ui.autonomyAcknowledgedAt` — on
-   * any request that moves an interactive session to a Full-autonomy mode, and
-   * ignored on every other request (spec `trust-dial`, decision 5).
-   *
-   * Deliberately NOT part of {@link SessionSettingsSchema}: it is a statement
-   * about this one request, not a setting. Nothing persists it, and the next
-   * PATCH has to say it again.
-   *
-   * It proves a ritual happened, not an identity. Any caller can send `true`;
-   * see `ui.autonomyAcknowledgedAt` for what this does and does not defend.
-   */
-  acknowledgedAutonomy: z.boolean().optional(),
   /**
    * The runtime the caller believes this session will run on — a HINT, never a
    * binding.
@@ -1694,6 +1700,13 @@ export type SessionListResponse = z.infer<typeof SessionListResponseSchema>;
 export const RecentSessionsQuerySchema = z
   .object({
     limit: z.coerce.number().int().min(1).max(50).default(10),
+    /**
+     * Also return every chat you touched at or after this ISO-8601 time
+     * ({@link SessionSchema}'s `lastTouchedByYouAt`), beyond `limit` (spec
+     * `your-activity-first` D6). The sidebar passes the start of its day, so
+     * no window can drop a chat you used today however busy the agents are.
+     */
+    touchedSince: z.string().datetime({ offset: true }).optional(),
   })
   .openapi('RecentSessionsQuery');
 
@@ -3654,6 +3667,13 @@ export const HistoryMessageSchema = z
     compactMetadata: CompactMetadataSchema.optional(),
     commandName: z.string().optional(),
     commandArgs: z.string().optional(),
+    /**
+     * Messages another chat sent, when this user message carried them (spec
+     * `spin-off-chats` §2). Stamped by the server only where a fence's nonce
+     * matches its own record of the send; the app draws the sender from here
+     * and never from the text.
+     */
+    chatMessages: z.array(ChatMessageStampSchema).optional(),
   })
   .openapi('HistoryMessage');
 
@@ -4664,6 +4684,26 @@ export const ServerConfigSchema = z
           description:
             'ISO timestamp when the one-time name-and-handle question was closed (saved or skipped), or null',
         }),
+        timezone: z.string().nullable().optional().openapi({
+          description: "The person's IANA time zone, or null until the app has told the server one",
+        }),
+        workingHours: z
+          .object({
+            days: z.array(z.number().int()).openapi({ description: 'Working days, 0 = Sunday' }),
+            start: z.string().openapi({ description: 'Start of the working day, HH:MM' }),
+            end: z.string().openapi({ description: 'End of the working day, HH:MM' }),
+          })
+          .nullable()
+          .optional()
+          .openapi({ description: 'Working hours, or null for Monday to Friday, 09:00 to 17:00' }),
+        away: z
+          .object({
+            until: z.string().nullable().openapi({ description: 'ISO timestamp they are back' }),
+            note: z.string().optional().openapi({ description: 'A short note' }),
+          })
+          .nullable()
+          .optional()
+          .openapi({ description: 'That the person is away, or null' }),
       })
       .optional()
       .openapi({
@@ -4839,10 +4879,6 @@ export const ServerConfigSchema = z
         // defined in config-schema.ts; on the wire because `SessionComposer`
         // picks its field from it and Settings shows it back as a switch.
         composer: ComposerPrefsSchema,
-        autonomyAcknowledgedAt: z.string().nullable().openapi({
-          description:
-            'When this person last acknowledged what Full autonomy means and asked not to be shown the dialog again (ISO 8601), or null. The cockpit sends the standing acknowledgement on every autonomy PATCH from here',
-        }),
         // The two halves of the power-door answer (spec `full-power-defaults`,
         // D1). On the wire because the cockpit decides from them whether to put
         // the door up at all — a curated DTO that omitted them would leave the

@@ -72,7 +72,7 @@ You answer with one card, wherever you meet the request. In the chat or room whe
 
 An agent keeps one open request per app. Asking again, even with a different reason, doesn't add a second card, and an agent can't open requests faster than you could answer them.
 
-If the request is still attached to a live turn, the agent receives the result there, right on the card. Whatever you answer, the agent is told plainly what happens next, including what you left out, such as "you can read Gmail, but not change anything in it". After a restart, DorkOS can continue the exact recorded session once. A denied, expired, failed, or deleted request grants no access.
+If the request is still attached to a live turn, the agent receives the result there, right on the card. Whatever you answer, the agent is told plainly what happens next, including what you left out, such as "you can read Gmail, but not change anything in it". After a restart, DorkOS can continue the exact recorded chat once. A denied, expired, failed, or deleted request grants no access.
 
 ## Actions and notifications are separate
 
@@ -85,7 +85,7 @@ A notification grant names all of these:
 - the exact connection;
 - the activity type and any supported filter;
 - the receiving agent;
-- the destination, such as an agent session, room, or supported messaging destination.
+- the destination, such as an agent chat, room, or supported messaging destination.
 
 To change a notification's scope, remove it and create a reviewed replacement. Standalone notification editing and pause controls are not part of this release. Pausing the whole connection remains available.
 
@@ -126,7 +126,7 @@ A local DorkOS installation without login has one local owner. Keep it on a trus
 
 Program commands still name an agent and can use only that agent's approved connections. Omitting `--agent` never widens access. Through the supported agent and program paths, a request can ask for access but cannot approve itself.
 
-One kind of write does not have that protection: changing who can use an app — sharing it, narrowing it, disconnecting it. With login off, DorkOS cannot tell that write apart from one the app itself made, so anything with a shell on this machine can make it, the same as the app could. **Every agent** is just the widest version of that change, not a special case. Turning login on closes the gap for all of them, because only your signed-in session can make those writes from then on. Until then, changing an app's access is a choice for a machine you trust.
+One kind of write does not have that protection: changing who can use an app — sharing it, narrowing it, disconnecting it. With login off, DorkOS cannot tell that write apart from one the app itself made, so anything with a shell on this machine can make it, the same as the app could. **Every agent** is just the widest version of that change, not a special case. Turning login on closes the gap for all of them, because from then on only you, signed in, can make those writes. Until then, changing an app's access is a choice for a machine you trust.
 
 These controls are boundaries inside DorkOS. They do not isolate other software running as your operating-system user. That software can reach the same local files and credentials that you can. The [threat model](/docs/self-hosting/threat-model#connections-and-account-access) explains token lifetime, runtime settings, and this same-user limit.
 

@@ -31,8 +31,8 @@ status: ideation
 ## 2) Pre-reading Log
 
 - `specs/fix-relay-sse-backpressure/04-implementation.md`: Documents the backpressure fix (commit ebea3a7) — added write queue + drain handling to `subscribeToRelay()` inner flush loop. Fix is correct but incomplete: the `void flush()` call site was not addressed.
-- `plans/2026-03-06-chat-self-test-findings.md`: Run 1 — 4 of 5 messages froze. JSONL had complete responses. History reload rendered full content.
-- `plans/2026-03-06-chat-self-test-findings-2.md`: Run 2 — 2 of 5 messages froze + 1 retry. 50+ GET /messages requests returned 503. SSE /stream initially returned 503 before connecting. Agent-ID vs SDK-Session-ID mismatch identified.
+- `plans/archive/2026-03-06-chat-self-test-findings.md`: Run 1 — 4 of 5 messages froze. JSONL had complete responses. History reload rendered full content.
+- `plans/archive/2026-03-06-chat-self-test-findings-2.md`: Run 2 — 2 of 5 messages froze + 1 retry. 50+ GET /messages requests returned 503. SSE /stream initially returned 503 before connecting. Agent-ID vs SDK-Session-ID mismatch identified.
 - `apps/server/src/services/session/session-broadcaster.ts`: Core of Issue #1 — `subscribeToRelay()` at line 176-210 has `void flush()` fire-and-forget at line 206. Compare with `broadcastUpdate()` at line 343 which correctly awaits drain.
 - `apps/server/src/services/core/stream-adapter.ts`: Reference implementation — `sendSSEEvent()` is properly awaited by callers, serializing writes naturally.
 - `apps/server/src/services/relay/claude-code-adapter.ts`: `handleAgentMessage()` at line 437-465 properly awaits `publishResponse()`. `publishResponse()` at line 847-860 properly awaits `relay.publish()`. Not the source of the bug.

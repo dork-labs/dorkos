@@ -30,7 +30,7 @@ The easiest way to see Relay in action is Telegram:
 2. Open [Connections](/docs/connections), select **Connect** on Telegram, and paste the token.
 3. Message the bot. Your message shows up on the `relay.human.telegram.{chatId}` address, and any agent listening there can reply.
 
-You don't need Telegram to see Relay working, either: your own console session is already wired up. Send a session a message and watch the reply stream back through Relay under the hood, no setup required.
+You don't need Telegram to see Relay working, either: your own chats are already wired up. Send a chat a message and watch the reply stream back through Relay under the hood, no setup required.
 
 <Callout type="info">
   No screenshot yet: this is a good place for one showing a message arriving in a Telegram chat.
@@ -110,12 +110,12 @@ Access rules live in `access-rules.json` inside the Relay data directory and are
 
 Relay connects to external platforms through **adapters**: plugins that bridge external channels into the Relay subject hierarchy. DorkOS ships with four built-in adapters:
 
-- **Claude Code adapter**: routes messages to Claude sessions. When a message arrives on `relay.agent.*`, this adapter creates or resumes a Claude session and passes the message as a prompt. Response chunks flow back to the sender's reply-to subject.
+- **Claude Code adapter**: routes messages to Claude Code chats. When a message arrives on `relay.agent.*`, this adapter creates or resumes a Claude Code chat and passes the message as a prompt. Response chunks flow back to the sender's reply-to subject.
 - **Telegram adapter**: connects a Telegram bot to the bus via the grammy library. Inbound messages publish to `relay.human.telegram.{chatId}`. Outbound messages on matching subjects are delivered to the chat. Supports real-time streaming via `sendMessageDraft`.
 - **Slack adapter**: bridges Slack workspaces into Relay using Socket Mode (Slack's WebSocket-based connection, which avoids exposing a public webhook URL). Supports streaming responses, threading, and a working indicator driven by the turn itself.
 - **Webhook adapter**: a generic HTTP webhook bridge with HMAC-SHA256 signature verification (a cryptographic check that confirms a webhook payload wasn't tampered with) for both directions.
 
-You can add custom adapters from npm packages or local file paths. Plugin adapters implement the same `RelayAdapter` interface as built-in adapters. Multi-agent coordination through Relay carries end-to-end test coverage and Rooms — DorkOS's multi-agent conversations — are generally available; test your specific setup before relying on it for anything time-sensitive.
+You can add custom adapters from npm packages or local file paths. Plugin adapters implement the same `RelayAdapter` interface as built-in adapters. Multi-agent coordination through Relay carries end-to-end test coverage and Rooms (where several agents talk in one place) are generally available; test your specific setup before relying on it for anything time-sensitive.
 
 ### Storage
 
@@ -146,11 +146,11 @@ Three mechanisms protect endpoints under load:
   All reliability settings can be tuned in `~/.dork/relay/config.json`. Changes are hot-reloaded.
 </Callout>
 
-### How sessions use Relay
+### How chats use Relay
 
-When Relay is enabled, session messaging routes through Relay instead of calling the agent SDK directly. A `POST` to `/api/sessions/:id/messages` publishes to `relay.agent.{sessionId}`. DorkOS's Claude Code side picks it up and routes it to the SDK. Response chunks flow back through `relay.human.console.{clientId}` and into the client's SSE (server-sent events) stream as `relay_message` events.
+When Relay is enabled, chat messaging routes through Relay instead of calling the agent SDK directly. A `POST` to `/api/sessions/:id/messages` publishes to `relay.agent.{sessionId}`. DorkOS's Claude Code side picks it up and routes it to the SDK. Response chunks flow back through `relay.human.console.{clientId}` and into the client's SSE (server-sent events) stream as `relay_message` events.
 
-Every session message is tracked in the Relay index with full delivery tracing. The same access control and budget rules apply here as everywhere else in Relay.
+Every chat message is tracked in the Relay index with full delivery tracing. The same access control and budget rules apply here as everywhere else in Relay.
 
 ## Next steps
 
@@ -158,8 +158,8 @@ Every session message is tracked in the Relay index with full delivery tracing. 
   <Card title="Mesh" href="/docs/concepts/mesh">
     Learn how Mesh discovers and registers agents that communicate through Relay.
   </Card>
-  <Card title="Sessions" href="/docs/concepts/sessions">
-    Understand how sessions work and how Relay integrates with the session lifecycle.
+  <Card title="Chats" href="/docs/concepts/sessions">
+    Understand how chats work and how Relay fits into a chat's lifecycle.
   </Card>
   <Card title="Architecture" href="/docs/concepts/architecture">
     See how Relay fits into the overall DorkOS architecture.

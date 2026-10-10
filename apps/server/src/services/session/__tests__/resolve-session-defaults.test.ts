@@ -1,3 +1,4 @@
+import { DOE_CAPABILITIES } from '../../runtimes/doe/runtime-constants.js';
 /**
  * The inheritance ladder for a new session's model, effort and trust stop.
  *
@@ -26,7 +27,7 @@ import {
   describeExecutionDefaults,
   resolveUnattendedDefaultStop,
   resolveUnattendedPermissionMode,
-} from '../resolve-session-defaults.js';
+} from '../resolution/resolve-session-defaults.js';
 import {
   initPermissionGate,
   readAgentPermissionsFromManifest,
@@ -703,6 +704,46 @@ describe('describeExecutionDefaults', () => {
     expect(view.trustStop).toBe('act');
     expect(view.perRuntime.find((e) => e.runtime === 'codex')?.trustStop).toBe('ask');
     expect(view.perRuntime.find((e) => e.runtime === 'claude-code')?.trustStop).toBeNull();
+  });
+});
+
+describe('DorkOS declared standing defaults', () => {
+  it('uses its configured model and trust override while preserving the global fallback', () => {
+    const config = runtimes({
+      defaultTrustStop: 'act',
+      doe: {
+        ...USER_CONFIG_DEFAULTS.runtimes.doe,
+        defaultTrustStop: 'ask',
+        inference: {
+          source: 'local',
+          provider: 'local',
+          protocol: 'openai-responses',
+          endpoint: 'http://127.0.0.1:11434/v1',
+          model: 'local-model',
+          contextWindow: 8192,
+          maxOutputTokens: 1024,
+        },
+      },
+    });
+    const options = {
+      runtimeType: 'doe',
+      configSection: 'doe',
+      runtimes: config,
+      supportsEffort: false,
+      permissionModes: DOE_CAPABILITIES.permissionModes.values,
+    };
+    expect(resolveSessionDefaults(options)).toEqual({
+      model: 'local-model',
+      permissionMode: 'default',
+    });
+    config.doe.defaultTrustStop = null;
+    expect(resolveSessionDefaults(options)).toEqual({
+      model: 'local-model',
+      permissionMode: 'acceptEdits',
+    });
+    expect(
+      describeExecutionDefaults({ doe: DOE_CAPABILITIES }, config).perRuntime[0]
+    ).toMatchObject({ runtime: 'doe', model: 'local-model', trustStop: null });
   });
 });
 

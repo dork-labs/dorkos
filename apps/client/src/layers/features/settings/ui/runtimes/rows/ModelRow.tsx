@@ -89,7 +89,7 @@ export function ModelRow({
   return (
     <SettingRow
       label="Model"
-      description={`Which ${runtimeLabel} model new conversations start on. Automatic lets ${runtimeLabel} pick.`}
+      description={`Which ${runtimeLabel} model new chats start on. Automatic lets ${runtimeLabel} pick.`}
     >
       <div className="w-52 space-y-1.5">
         <Select

@@ -473,7 +473,7 @@ describe('naming what would be destroyed (DOR-1929)', () => {
   it('says which surface an unattributed request came over', () => {
     renderCard(buildApproval({ requestedBy: undefined, hasAgentPath: false, origin: 'session' }));
 
-    expect(screen.getByText('Asked from a session on this computer')).toBeInTheDocument();
+    expect(screen.getByText('Asked from a chat on this computer')).toBeInTheDocument();
     expect(screen.queryByText(/doesn’t know who asked/)).toBeNull();
   });
 });

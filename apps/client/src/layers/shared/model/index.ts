@@ -3,13 +3,20 @@
  *
  * @module shared/model
  */
-export { TransportProvider, useTransport } from './TransportContext';
+export { TransportProvider, useOptionalTransport, useTransport } from './TransportContext';
 export { useAppStore, type RecentCwd } from './app-store';
 export {
   useAppTabsStore,
   useAppTabs,
   useActiveTabHistory,
+  openTabIn,
+  closeTabIn,
+  pinTabIn,
+  duplicateTabIn,
+  closeOtherTabsIn,
+  moveTabIn,
   type AppTab,
+  type AppTabsLayout,
 } from './app-tabs/app-tabs-store';
 export type { SettingsTab } from './app-store/app-store-panels';
 export type { CanvasDocument, BrowserHistoryState } from './app-store/app-store-canvas';
@@ -32,7 +39,7 @@ export { useIsBelowDesktop } from './media/use-is-below-desktop';
 export { useIsTouchOnly } from './media/use-is-touch-only';
 export { useVisualViewportBottomInset } from './viewport/use-visual-viewport-inset';
 export { useFavicon } from './use-favicon';
-export { useDocumentTitle } from './use-document-title';
+export { useDocumentTitle, type DocumentTitleState } from './use-document-title';
 export { useElapsedTime } from './use-elapsed-time';
 export {
   useIdleDetector,

@@ -189,13 +189,8 @@ export const CONFIG_DISCLOSURE = {
   'ui.communityNavigation.owners[].destinations[].scrollAnchorEntryId': 'withhold',
   'ui.communityNavigation.owners[].installationDestination.path': 'withhold',
   'ui.communityNavigation.owners[].installationDestination.search': 'withhold',
-  // A timestamp saying the person read what Full autonomy means. Names nothing
-  // and unlocks nothing on being read — an agent that learns the date is no
-  // closer to anything than one that does not.
-  'ui.autonomyAcknowledgedAt': 'expose',
-  // The power-door answer, for the same reason as the acknowledgement above: a
-  // date and the word `'full'` or `'supervised'` name nothing and unlock
-  // nothing on being read. An agent that knows the operator chose supervised
+  // The power-door answer: a date and the word `'full'` or `'supervised'` name
+  // nothing and unlock nothing on being read. An agent that knows the operator chose supervised
   // learns something genuinely useful — that it should expect to be asked.
   'ui.fullPowerDecidedAt': 'expose',
   'ui.fullPowerChoice': 'expose',
@@ -237,6 +232,9 @@ export const CONFIG_DISCLOSURE = {
   // stays awake (spec `keep-awake`).
   'keepAwake.whileAgentsWork': 'expose',
   'keepAwake.wakeForScheduledTasks': 'expose',
+
+  // How long the Activity feed keeps its rows (spec `audit-trail` §3.5).
+  'activity.retentionDays': 'expose',
 
   'mesh.scanRoots': 'expose',
 
@@ -318,6 +316,15 @@ export const CONFIG_DISCLOSURE = {
   'profile.displayNameSource.agentName': 'expose',
   'profile.rolePromptDismissedAt': 'expose',
   'profile.identityPromptDismissedAt': 'expose',
+  // A person's zone, hours and away note (spec `heartbeats` §3.5). Exposed so
+  // an agent can say "she's off till Monday" and time what it sends; the same
+  // local-only profile, no secret in any of it.
+  'profile.timezone': 'expose',
+  'profile.workingHours.days': 'expose',
+  'profile.workingHours.start': 'expose',
+  'profile.workingHours.end': 'expose',
+  'profile.away.until': 'expose',
+  'profile.away.note': 'expose',
 
   'uploads.maxFileSize': 'expose',
   'uploads.maxFiles': 'expose',
@@ -400,6 +407,7 @@ export const CONFIG_DISCLOSURE = {
   'runtimes.environment.inherit.claudeCode': 'withhold',
   'runtimes.environment.inherit.codex': 'withhold',
   'runtimes.environment.inherit.opencode': 'withhold',
+  'runtimes.environment.inherit.doe': 'withhold',
   'runtimes.default': 'expose',
   // How much a new session may do without asking, globally and per runtime (spec
   // `trust-dial`, decision 6). Exposed although it is operator-only to WRITE, and
@@ -457,6 +465,17 @@ export const CONFIG_DISCLOSURE = {
   'runtimes.opencode.port': 'expose',
   'runtimes.opencode.provider': 'expose',
   'runtimes.opencode.baseURL': 'expose',
+  'runtimes.doe.enabled': 'expose',
+  'runtimes.doe.defaultTrustStop': 'expose',
+  'runtimes.doe.inference.source': 'expose',
+  'runtimes.doe.inference.provider': 'expose',
+  'runtimes.doe.inference.protocol': 'expose',
+  'runtimes.doe.inference.endpoint': 'expose',
+  'runtimes.doe.inference.model': 'expose',
+  'runtimes.doe.inference.contextWindow': 'expose',
+  'runtimes.doe.inference.maxOutputTokens': 'expose',
+  'runtimes.doe.inference.credentialRef': 'withhold',
+  'runtimes.doe.inference.credentialEndpoint': 'withhold',
   'runtimes.codex.enabled': 'expose',
   'runtimes.codex.binaryPath': 'expose',
   // Which way DorkOS runs Codex. Names no credential; an agent that can see it
@@ -523,6 +542,7 @@ export const PRESENCE_FLAG_PATHS: readonly string[] = [
   'cloud.instanceToken',
   'cloud.previousLinkProof',
   'runtimes.codex.credentialRef',
+  'runtimes.doe.inference.credentialRef',
 ];
 
 /**

@@ -172,6 +172,6 @@ export function useStartDirectMessage(): UseMutationResult<
     mutationFn: ({ agentPaths, title }: StartDirectMessageInput) =>
       transport.createRoom({ kind: 'dm', title, members: [], agentPaths }),
     onSettled: () => invalidateRoomReads(queryClient),
-    meta: { errorLabel: 'Couldn’t start that conversation' },
+    meta: { errorLabel: 'Couldn’t start that DM' },
   });
 }

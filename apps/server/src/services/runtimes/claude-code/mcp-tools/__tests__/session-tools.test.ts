@@ -9,6 +9,7 @@
  * The launch service is real here, down to the dispatcher, so what reaches the
  * turn (the account hint, the origin, the cap) is what production sends.
  */
+import { setChatMessageService } from '../../../../session/chat-messages/chat-message-service.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -35,16 +36,11 @@ vi.mock('../../../../core/cloud/credits-model-gate.js', () => ({
     model === 'opus' ? 'DorkOS credits don’t cover that model. Pick one from the model menu.' : null
   ),
 }));
-// Whether the person has a standing Full autonomy acknowledgement on file.
-const consent = vi.hoisted(() => ({ acknowledged: true }));
-vi.mock('../../../../core/approvals/autonomy-consent.js', async (importOriginal) => ({
-  ...(await importOriginal<object>()),
-  hasStandingAutonomyAck: vi.fn(() => consent.acknowledged),
-}));
 /** The stored settings rows `getSessionSettings` answers from, by session id. */
 const storedSettings = vi.hoisted(() => new Map<string, { permissionMode?: string }>());
 vi.mock('../../../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    getNativeSessionCwd: vi.fn(() => null),
     getSessionSettings: vi.fn(async (id: string) => storedSettings.get(id) ?? null),
     has: vi.fn((type: string) => runtimes.has(type)),
     get: vi.fn((type: string) => runtimes.get(type)),
@@ -275,7 +271,6 @@ beforeEach(() => {
     ...codex.getCapabilities(),
     permissionModes: CODEX_CAPABILITIES.permissionModes,
   });
-  consent.acknowledged = true;
   storedSettings.clear();
   runtimes.set('claude-code', claude);
   runtimes.set('codex', codex);
@@ -676,6 +671,81 @@ describe('session_start', () => {
     expect((await handler(BASE)).isError).toBeUndefined();
   });
 
+  describe('the chat title and link (DOR-2824)', () => {
+    it('names the chat with the title the agent gave and hands back a ready link', async () => {
+      const deps = makeDeps();
+      const result = await asScout(deps)({
+        ...BASE,
+        title: 'Rooms: always answer people',
+        reason: 'Make every room reply to a person, then report back.',
+      });
+
+      const body = payloadOf(result);
+      expect(body.title).toBe('Rooms: always answer people');
+      expect(body.link).toBe(`[Rooms: always answer people](/session?session=${body.sessionId})`);
+      expect(claude.renameSession).toHaveBeenCalledWith(
+        body.sessionId,
+        'Rooms: always answer people',
+        '/work/project'
+      );
+      expect(deps.activityService.emit.mock.calls[0]![0]).toMatchObject({
+        resourceLabel: 'Rooms: always answer people',
+        summary: 'Started "Rooms: always answer people" in /work/project',
+      });
+    });
+
+    it('takes the title from the reason, never the brief, when none is given', async () => {
+      const result = await asScout()({
+        ...BASE,
+        prompt: 'DOR-2823 end to end rooms conversation routing. Read the ticket first.',
+        reason: 'make rooms answer people. Then check the tabs.',
+      });
+
+      const body = payloadOf(result);
+      expect(body.title).toBe('Make rooms answer people');
+      expect(claude.renameSession).toHaveBeenCalledWith(
+        body.sessionId,
+        'Make rooms answer people',
+        '/work/project'
+      );
+    });
+
+    it('names a chat with no title and no reason after the agent that started it', async () => {
+      const deps = makeDeps();
+      const result = await asScout(deps)(BASE);
+
+      const body = payloadOf(result);
+      expect(body.title).toBe('Started by Scout');
+      expect(body.link).toBe(`[Started by Scout](/session?session=${body.sessionId})`);
+      expect(claude.renameSession).toHaveBeenCalledWith(
+        body.sessionId,
+        'Started by Scout',
+        '/work/project'
+      );
+    });
+
+    it('falls back from a blank title instead of refusing the start', async () => {
+      const result = await asScout()({ ...BASE, title: '   ', reason: 'tidy the docs' });
+
+      expect(result.isError).toBeUndefined();
+      expect(payloadOf(result).title).toBe('Tidy the docs');
+    });
+
+    it('tries the rename again once the first turn settles when the transcript was not there yet', async () => {
+      claude.renameSession.mockRejectedValue(new Error('Session not found'));
+      const result = await asScout()({ ...BASE, title: 'Fix the flaky test' });
+      expect(result.isError).toBeUndefined();
+      // Let the first refusal land before the turn settles.
+      await new Promise((resolve) => setImmediate(resolve));
+      claude.renameSession.mockResolvedValue(undefined);
+
+      vi.mocked(dispatchMessage).mock.calls.at(-1)![0].onSettled?.('ok');
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(claude.renameSession).toHaveBeenCalledTimes(2);
+    });
+  });
+
   describe('the Activity entry', () => {
     it('names the calling agent, the account and the folder', async () => {
       allowOnly('work');
@@ -688,7 +758,7 @@ describe('session_start', () => {
         actorId: AGENT_HOME,
         category: 'agent',
         eventType: 'agent.session_started',
-        summary: 'Started a session in /work/project on the account WORK',
+        summary: 'Started "Started by Scout" in /work/project on the account WORK',
         metadata: {
           cwd: '/work/project',
           runtime: 'claude-code',
@@ -709,7 +779,7 @@ describe('session_start', () => {
     expect(MCP_TOOL_TIERS.session_start).toMatchObject({
       tier: 'act',
       area: 'agents',
-      title: 'Start a new agent session',
+      title: 'Start a spin-off chat',
       approvalDisplayFields: ['cwd', 'account', 'permissionMode', 'agentPath', 'prompt'],
     });
     expect(getSessionTools(makeDeps()).map((t) => t.name)).toEqual(['session_start']);
@@ -753,6 +823,46 @@ describe('session_start records who started the new session (spec flow-multiproj
       reason: 'Split off the tests',
     });
     expect(store.get(sessionId.replace(/^canon-/, ''))).toBeNull();
+  });
+
+  /** A chat service whose parent chats can, or cannot, take chat messages. */
+  function wireChats(canReceive: boolean): void {
+    setChatMessageService({
+      canReceive: async () => canReceive,
+      beginStart: async (_c: unknown, _s: string, prompt: string) => ({
+        id: 'cm',
+        content: prompt,
+      }),
+      settleStart: () => {},
+    } as never);
+  }
+  afterEach(() => setChatMessageService(undefined));
+
+  it('promises no reports to a parent that cannot take chat messages (a room, a run)', async () => {
+    wireChats(false);
+    const result = payloadOf(await fromChat('parent-chat')(BASE)) as { sessionId: string };
+    expect(store.get(result.sessionId)?.reportBack).toBe(false);
+    const seed = vi.mocked(dispatchMessage).mock.calls.at(-1)![0].seedContext as string;
+    expect(seed).toContain('does not hear from you on its own');
+  });
+
+  it('reports back by default, and not when told reportBack off (spec spin-off-chats §5)', async () => {
+    wireChats(true);
+    const on = payloadOf(await fromChat('parent-chat')(BASE)) as { sessionId: string };
+    expect(store.get(on.sessionId)?.reportBack).toBe(true);
+    const off = payloadOf(await fromChat('parent-chat')({ ...BASE, reportBack: 'off' })) as {
+      sessionId: string;
+    };
+    expect(store.get(off.sessionId)?.reportBack).toBe(false);
+  });
+
+  it('tells the new chat who started it and how it reports, ahead of the starter’s background', async () => {
+    wireChats(true);
+    await fromChat('parent-chat')({ ...BASE, seedContext: 'The repo is in /work.' });
+    const seed = vi.mocked(dispatchMessage).mock.calls.at(-1)![0].seedContext as string;
+    expect(seed).toContain('parent-chat');
+    expect(seed).toContain('goes back to that chat on its own');
+    expect(seed.indexOf('parent-chat')).toBeLessThan(seed.indexOf('The repo is in /work.'));
   });
 
   it('takes an optional reason of at most 200 characters', () => {
@@ -1158,28 +1268,21 @@ describe("session_start runs at the calling chat's level or lower (spec inherite
     });
   });
 
-  describe('Full autonomy still needs the standing acknowledgement', () => {
-    it('refuses Bypass permissions, asked for by name, with none on file', async () => {
-      consent.acknowledged = false;
-      expect(
-        await expectRefused(fromChatAt('bypassPermissions'), {
-          ...BASE,
-          permissionMode: 'bypassPermissions',
-        })
-      ).toMatchObject({ code: 'AUTONOMY_ACK_REQUIRED' });
-    });
-
-    it('refuses a never-asking Codex mode too, and grants a lower one', async () => {
-      consent.acknowledged = false;
-      expect(
-        await expectRefused(fromChatAt('bypassPermissions'), {
-          ...BASE,
-          runtime: 'codex',
-          permissionMode: 'acceptEdits',
-        })
-      ).toMatchObject({ code: 'AUTONOMY_ACK_REQUIRED' });
+  // The Full-autonomy acknowledgement is retired (ADR 261006-225605,
+  // DOR-2739): a level named by the caller and within its ceiling is granted.
+  describe('Full autonomy, named and within the ceiling', () => {
+    it('grants Bypass permissions asked for by name from a chat at that level', async () => {
       const result = await fromChatAt('bypassPermissions')({
         ...BASE,
+        permissionMode: 'bypassPermissions',
+      });
+      expect(result.isError).toBeUndefined();
+    });
+
+    it('grants a never-asking Codex mode asked for by name', async () => {
+      const result = await fromChatAt('bypassPermissions')({
+        ...BASE,
+        runtime: 'codex',
         permissionMode: 'acceptEdits',
       });
       expect(result.isError).toBeUndefined();

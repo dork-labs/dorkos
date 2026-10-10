@@ -10,7 +10,7 @@ import {
 } from './runtime-environment-catalog.js';
 
 /** Runtime whose auth profile and custom inheritance are selected. */
-export type EnvironmentRuntime = 'claude-code' | 'codex' | 'opencode';
+export type EnvironmentRuntime = 'claude-code' | 'codex' | 'opencode' | 'doe';
 /** Helper processes do not need automatic model credentials. */
 export type EnvironmentPurpose =
   | 'turn'
@@ -48,7 +48,7 @@ function parentValue(input: RuntimeEnvironmentInput, name: string): string | und
 }
 
 function profileNames(input: RuntimeEnvironmentInput): readonly string[] {
-  if (!authPurpose(input.purpose)) return [];
+  if (!authPurpose(input.purpose) || input.runtime === 'doe') return [];
   if (input.runtime === 'codex') return RUNTIME_ENV_PROFILES.Codex;
   if (input.runtime === 'opencode') return RUNTIME_ENV_PROFILES.OpenCode;
   const names: string[] = [...RUNTIME_ENV_PROFILES['Claude common']];
@@ -81,6 +81,7 @@ function overrideNames(input: RuntimeEnvironmentInput): Set<string> {
     'claude-code': ['CLAUDE_CONFIG_DIR'],
     codex: ['CODEX_HOME'],
     opencode: ['OPENCODE_DB', 'OPENCODE_CONFIG_DIR'],
+    doe: [],
   };
   for (const name of paths[input.runtime]) names.add(name);
   if (authPurpose(input.purpose)) for (const name of profileNames(input)) names.add(name);

@@ -16,7 +16,7 @@
  * the hypothesis that those two agree.
  *
  * The subject under test is `relay.agent.<namespace>.<agentId>`: a mesh
- * endpoint, the shape `relay_send` uses to reach another agent. It names no
+ * endpoint, the shape a publish uses to reach another agent. It names no
  * runtime, so before this the default one answered — a Codex agent replying in
  * Claude Code, under its own name.
  */

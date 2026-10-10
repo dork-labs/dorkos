@@ -1,7 +1,7 @@
 {
   "name": "@dorkos/monorepo",
   "private": true,
-  "version": "0.98.0",
+  "version": "0.103.0",
   "type": "module",
   "packageManager": "pnpm@10.28.2",
   "scripts": {
@@ -34,6 +34,7 @@
     "docs:runtime-capabilities": "tsx scripts/generate-runtime-capabilities.ts",
     "check:banned-words": "bash scripts/check-banned-words.sh",
     "check:boundary": "tsx scripts/check-boundary.ts",
+    "check:max-lines": "node scripts/check-max-lines.ts",
     "check:dead-doc-paths": "bash scripts/check-dead-doc-paths.sh",
     "check:vocab-gate": "tsx scripts/check-vocab-gate.ts",
     "check:copy-length": "tsx scripts/check-copy-length.ts",
@@ -95,7 +96,7 @@
       "@anthropic-ai/claude-agent-sdk": "0.3.280",
       "@types/node": "^24",
       "@anthropic-ai/sdk": "0.123.0",
-      "@modelcontextprotocol/sdk": "1.30.1",
+      "@modelcontextprotocol/sdk": "1.31.0",
       "lucide-react": "1.48.0",
       "@vitejs/plugin-react": "5.2.0",
       "drizzle-orm": "0.45.3",

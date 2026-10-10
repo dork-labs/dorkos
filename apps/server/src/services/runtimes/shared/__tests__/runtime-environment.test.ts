@@ -23,7 +23,7 @@ const parent = {
 };
 
 describe('runtime environment authority', () => {
-  it.each(['claude-code', 'codex', 'opencode'] as const)(
+  it.each(['claude-code', 'codex', 'opencode', 'doe'] as const)(
     'preserves OS/privacy without inheriting ambient server authority: %s',
     (runtime) => {
       const before = { ...parent };
@@ -45,7 +45,7 @@ describe('runtime environment authority', () => {
   it.each(['version-probe', 'locator', 'provision', 'process-inspection'] as const)(
     'withholds automatic model credentials from %s',
     (purpose) => {
-      for (const runtime of ['claude-code', 'codex', 'opencode'] as const) {
+      for (const runtime of ['claude-code', 'codex', 'opencode', 'doe'] as const) {
         expect(projectRuntimeEnvironment({ parent, runtime, purpose })).toEqual({
           PATH: parent.PATH,
           HOME: parent.HOME,
@@ -199,4 +199,10 @@ it('applies selected credentials last without changing the parent or permitting 
       overrides: { OPENAI_API_KEY: 'synthetic-other' },
     })
   ).toThrow('Unsupported');
+});
+
+it('DorkOS builder inherits no ambient model credential unless deliberately named', () => {
+  const projected = projectRuntimeEnvironment({ parent, runtime: 'doe', purpose: 'turn' });
+  for (const name of ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'OPENROUTER_API_KEY'])
+    expect(projected).not.toHaveProperty(name);
 });

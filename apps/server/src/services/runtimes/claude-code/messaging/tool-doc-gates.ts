@@ -26,7 +26,9 @@ import { isTasksEnabled } from '../../../tasks/task-state.js';
 export interface ToolDocGates {
   /** `<tasks_tools>`: Tasks is on, and the Tasks & schedules area is not Blocked. */
   tasks: boolean;
-  /** `<relay_tools>`: Relay is on, and Messages is not Blocked. */
+  /** `<chat_tools>`: Messages is not Blocked. */
+  messages: boolean;
+  /** The `<chat_tools>` paragraph on `relay_notify_user`: Relay is on, and Messages is not Blocked. */
   relay: boolean;
   /** `<mesh_tools>`: Other agents is not Blocked (Mesh is always on). */
   mesh: boolean;
@@ -46,6 +48,7 @@ export function toolDocGates(blockedAreas: readonly PermissionAreaId[]): ToolDoc
   const blocked = new Set(blockedAreas);
   return {
     tasks: isTasksEnabled() && !blocked.has('tasks'),
+    messages: !blocked.has('messages'),
     relay: isRelayEnabled() && !blocked.has('messages'),
     mesh: !blocked.has('agents'),
     adapter: isRelayEnabled() && !blocked.has('connections'),

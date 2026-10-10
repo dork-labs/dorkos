@@ -90,6 +90,7 @@ afterEach(() => {
 
 // Import after mocks are set up
 import { PermissionModeItem } from '../ui/PermissionModeItem';
+import { useSessionPermissionPicker } from '../model/permission-picker-store';
 
 // ---------------------------------------------------------------------------
 // Capability fixtures — Claude, Codex, OpenCode, and test-mode mirror the REAL
@@ -366,6 +367,26 @@ function stopLabels(): string[] {
 // ---------------------------------------------------------------------------
 
 describe('PermissionModeItem', () => {
+  // Choosing Ask first drops this item from the status line while its picker
+  // is open. Unless it closes the picker as it goes, the caller still thinks the
+  // picker is open and the "make it the default" offer has nowhere to appear.
+  it('closes its picker when the status line drops it mid-choice', () => {
+    mockCapabilitiesForRuntime.mockReturnValue(CLAUDE_CAPABILITIES);
+    const onOpenChange = vi.fn();
+    const { unmount } = render(
+      <PermissionModeItem
+        mode="default"
+        onChangeMode={vi.fn()}
+        runtime={CLAUDE_CAPABILITIES.type}
+        onOpenChange={onOpenChange}
+      />
+    );
+    React.act(() => useSessionPermissionPicker.getState().setOpen(true));
+    unmount();
+    expect(onOpenChange).toHaveBeenLastCalledWith(false);
+    expect(useSessionPermissionPicker.getState().open).toBe(false);
+  });
+
   describe('the dial the runtime can offer', () => {
     it('gives every runtime the same three words', () => {
       for (const caps of [CLAUDE_CAPABILITIES, CODEX_CAPABILITIES, OPENCODE_CAPABILITIES]) {

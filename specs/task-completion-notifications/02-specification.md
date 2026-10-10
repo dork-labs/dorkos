@@ -35,7 +35,7 @@ DOR-236's smoke test confirmed the code cannot do this:
 4. Auto-delivery only happens for turns that _originated_ from that same chat; web/CLI-dispatched
    background work never reaches Telegram.
 
-Per the AGENTS.md demo-claim gate (`meta/positioning-202607/09-gtm-plan.md` §2.0), a pillar we
+Per the AGENTS.md demo-claim gate (`meta/archive/positioning-202607/09-gtm-plan.md` §2.0), a pillar we
 cannot demonstrate cannot ship as copy. This spec closes the gap so the claim is honest.
 
 **Measurable outcome:** on a fresh instance, bind a Telegram channel to an agent with
@@ -323,7 +323,7 @@ bounded relay publish. Fire-and-forget dispatch keeps run-status writes off the 
 ## References
 
 - Linear: DOR-240 (this), DOR-236 (smoke findings), DOR-239 (PR #219), DOR-248 (PR #199), DOR-260 (PR #210).
-- `meta/positioning-202607/08-demo-video-scripts.md` (Script 1 "2:47 AM").
+- `meta/archive/positioning-202607/08-demo-video-scripts.md` (Script 1 "2:47 AM").
 - `meta/value-architecture-applied.md` (notification-routing claims).
 - `research/20260324_relay_outbound_awareness.md` (contact-context / `relay_notify_user` design).
 - Code: `task-store.ts`, `task-scheduler-service.ts`, `packages/relay/adapters/claude-code/task-handler.ts`,

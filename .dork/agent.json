@@ -7,13 +7,13 @@
   "behavior": {
     "responseMode": "always"
   },
-  "budget": {
-    "maxHopsPerMessage": 5,
-    "maxCallsPerHour": 100
-  },
   "namespace": "keep",
   "registeredAt": "2026-03-05T02:53:07.420Z",
   "registeredBy": "mesh",
   "personaEnabled": true,
-  "enabledToolGroups": {}
+  "isSystem": false,
+  "mcpServers": [],
+  "workspace": {
+    "mode": "home"
+  }
 }

@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 /**
  * The sidebar's only create surface.
  *
@@ -170,7 +171,7 @@ export function buildNewMenuNodes(model: NewMenuModel): SidebarMenuNode[] {
     {
       kind: 'action',
       id: 'new-session' satisfies NewMenuItemId,
-      label: 'Session',
+      label: 'Chat',
       icon: MessageSquarePlus,
       opensInput: false,
       ...(model.showSessionShortcut ? { hint: formatShortcutKey(SHORTCUTS.NEW_SESSION) } : {}),
@@ -305,7 +306,7 @@ export function NewMenu() {
   const openRoom = useCallback(
     (room: RoomWithRoster) => {
       useInteractionStore.getState().recordOpened('room', room.id);
-      void navigate({ to: '/channels', search: { id: room.id } });
+      void navigate({ ...appRoutes.channels(), search: { id: room.id } });
     },
     [navigate]
   );

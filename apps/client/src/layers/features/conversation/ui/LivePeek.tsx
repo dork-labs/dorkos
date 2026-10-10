@@ -251,7 +251,7 @@ export function LivePeek({
                     onClick={() => onOpenSession(row.sessionId!)}
                     className="h-7 gap-1 px-2 text-xs"
                   >
-                    Open its session
+                    Open its chat
                     <ArrowRight aria-hidden="true" className="size-3" />
                   </Button>
                 )}

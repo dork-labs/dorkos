@@ -19,7 +19,7 @@ Validate the app boots and core layout renders after pnpm migration and App.tsx 
 - [x] App loads at `http://localhost:6241` without console errors
 - [x] Sidebar is visible with session list
 - [x] Chat panel is visible with message input (combobox "Message Claude...")
-- [x] Status bar renders at bottom of screen (toolbar "Session status")
+- [x] Status bar renders at bottom of screen (toolbar "Chat status")
 - [x] No broken imports or white-screen crashes
 - [x] Logo/branding renders correctly ("DorkOS by Dorkian" link)
 

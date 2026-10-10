@@ -109,7 +109,7 @@ export function EffortRow({
   return (
     <SettingRow
       label="Effort"
-      description="How much effort new conversations put into answers."
+      description="How much effort new chats put into answers."
       orientation="vertical"
     >
       {!supportsEffort ? (

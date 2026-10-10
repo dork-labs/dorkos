@@ -19,6 +19,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { codexThreads, messages, opencodeSessions, searchSources, type Db } from '@dorkos/db';
 import { searchForCaller, type SearchScope } from '../search-service.js';
+import { deriveDorkosSessionId } from '../../runtimes/opencode/sessions/session-mapper.js';
 import { resolveSessionIds } from '../session-links.js';
 
 let db: Db;
@@ -87,7 +88,7 @@ const RUNTIMES = [
     source: 'codex',
     native: '019fe200-e5e8-7d23-9e68-3a32dd78cf8a',
     dorkos: 'd1000000-0000-4000-8000-000000000001',
-    opensWithoutBinding: false,
+    opensWithoutBinding: true,
     bind: () => {
       db.insert(codexThreads)
         .values({
@@ -103,7 +104,7 @@ const RUNTIMES = [
     source: 'opencode',
     native: 'ses_7f3c1d2e9',
     dorkos: 'd2000000-0000-4000-8000-000000000002',
-    opensWithoutBinding: false,
+    opensWithoutBinding: true,
     bind: () => {
       db.insert(opencodeSessions)
         .values({
@@ -147,11 +148,13 @@ describe('a hit opens the DorkOS session it came from', () => {
 
       expect(hit).toBeDefined();
       expect(hit?.container).toBe(runtime.native);
-      expect(hit?.sessionId).toBe(runtime.opensWithoutBinding ? runtime.dorkos : undefined);
+      expect(hit?.sessionId).toBe(
+        runtime.source === 'opencode' ? deriveDorkosSessionId(runtime.native) : runtime.native
+      );
     });
   }
 
-  it('sends no session for a hit whose binding names a different conversation', () => {
+  it('uses the native identity when another conversation has a binding', () => {
     // The positive control for the two lookups: a resolver that answered with
     // whatever single row the table held would pass every case above.
     transcribe('opencode', 'ses_7f3c1d2e9', 'the kestrel we saw on the walk');
@@ -163,7 +166,7 @@ describe('a hit opens the DorkOS session it came from', () => {
       })
       .run();
 
-    expect(search('kestrel')[0]?.sessionId).toBeUndefined();
+    expect(search('kestrel')[0]?.sessionId).toBe(deriveDorkosSessionId('ses_7f3c1d2e9'));
   });
 
   it('resolves each hit to its own session when several runtimes match at once', () => {

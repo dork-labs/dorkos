@@ -1,9 +1,9 @@
 /**
- * Session list feature — sidebar for session management and directory selection.
+ * Session list feature — the agent profile's Tasks list and the sidebar
+ * footer's contributions. An agent's chats are `features/chat-list`.
  *
  * @module features/session-list
  */
-export { SessionsView } from './ui/SessionsView';
 export { TasksView } from './ui/TasksView';
 // The desktop app's native updater, read by the sidebar footer strip's update
 // pill (BC-44). It stays in this slice because the Electron bridge it wraps is

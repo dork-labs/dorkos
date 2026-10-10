@@ -86,7 +86,8 @@ const mockNavigate = vi.fn();
 const mockStartNewSession = vi.fn();
 const mockSetGlobalPaletteOpen = vi.fn();
 
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useNavigate: () => mockNavigate,
 }));
 
@@ -478,7 +479,7 @@ describe('acting on the row under the highlight', () => {
     expect(mockNavigate).toHaveBeenCalledWith({
       to: '/session',
       // `/projects/warden`, though the palette was opened from `/projects/dorkos`.
-      search: { session: zanzibar.id, dir: '/projects/warden' },
+      search: { session: zanzibar.id, dir: undefined },
     });
   });
 

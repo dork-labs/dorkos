@@ -20,13 +20,13 @@ tags:
 
 # Shapes, Shape-Shifting, and BYOA — Positioning Evaluation and Product Direction
 
-**Scope**: founder-initiated evaluation (2026-07-17) of rebranding DorkOS around "shape-shifting" generative UI + extensions, which evolved into a broader strategic synthesis: the BYOA/copilot-flip thesis, the "Shape" product primitive, marketplace taxonomy, and a naming system. Sources: full read of `meta/positioning-202607/`, codebase capability inventory, and three web-research passes (landscape, BYOA/pricing, connector gateways). Web claims sourced by agents on 2026-07-17.
+**Scope**: founder-initiated evaluation (2026-07-17) of rebranding DorkOS around "shape-shifting" generative UI + extensions, which evolved into a broader strategic synthesis: the BYOA/copilot-flip thesis, the "Shape" product primitive, marketplace taxonomy, and a naming system. Sources: full read of `meta/archive/positioning-202607/`, codebase capability inventory, and three web-research passes (landscape, BYOA/pricing, connector gateways). Web claims sourced by agents on 2026-07-17.
 
 ---
 
 ## 1. Verdicts (decisions and leanings from the founder conversation)
 
-- **Keep the name "DorkOS" and the "You, Multiplied." roof.** Confirmed by founder; consistent with `meta/positioning-202607/02-positioning.md` §7 (rename considered and rejected).
+- **Keep the name "DorkOS" and the "You, Multiplied." roof.** Confirmed by founder; consistent with `meta/archive/positioning-202607/02-positioning.md` §7 (rename considered and rejected).
 - **"Shape-shifting" is viable as the capability brand**, not the company identity. Conditions: it modifies a concrete noun ("the shape-shifting \_\_\_"), the sidekick narrative keeps the customer as hero (StoryBrand-compliant), and the demo-claim gate applies — no marketing the claim until a reference Shape ships end-to-end. Collision scan: no product brands itself "shape-shifting"; existing usage is academic HCI + an icon tool (shapeshifter.design). ShapeShift (crypto) owns only the one-word noun.
 - **"World's first shape-shifting X" is defensible as a term claim** (nobody claims it) — but NOT "world's first meta-harness" (Databricks **Omnigent** self-describes as "a meta-harness," June 2026, with mainstream press).
 - **"Meta-harness": embrace as category descriptor, never as identity.** Use in SEO/docs/comparison surfaces ("What is a meta-harness?" concept page — the term is in its explainer phase, an SEO land-grab moment). Keep the differentiation line: "a meta-harness is a dashboard; DorkOS is the coordination layer under one." Note the confusable second academic meaning (meta-agent that rewrites another agent's harness).
@@ -123,5 +123,5 @@ Cursor 3.1 (2026-04-16) shipped **Canvas**: agents generate persistent, interact
 
 ## 9. Source pointers
 
-- Prior session research: `research/20260708_generative_ui_standards_dorkos.md` (two-tier gen-UI decision base), `meta/positioning-202607/00-overview.md`–`09-gtm-plan.md`, `meta/brand-foundation.md`, `meta/personas/`.
+- Prior session research: `research/20260708_generative_ui_standards_dorkos.md` (two-tier gen-UI decision base), `meta/archive/positioning-202607/00-overview.md`–`09-gtm-plan.md`, `meta/brand-foundation.md`, `meta/personas/`.
 - Key external: Databricks Omnigent (meta-harness claim, June 2026); Val Town BYOA post (blog.val.town/byoa, Feb 2026); Ink & Switch "Malleable Software" (June 2025); a16z "Is Software Losing Its Head?" (May 2026); Stratechery "Microsoft and Software Survival" (Feb 2026); Zylo 2026 SaaS Management Index; MCP Apps SEP-1865 (final 2026-07-28); shapes.inc (TechCrunch Apr 2026); Morph Labs (morphllm.com); shift.com; chameleon.io.

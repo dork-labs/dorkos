@@ -30,7 +30,7 @@
 import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 
 /** The runtimes the matrix has a column for, in column order. */
-export const MATRIX_RUNTIMES = ['claude-code', 'codex', 'opencode', 'test-mode'] as const;
+export const MATRIX_RUNTIMES = ['claude-code', 'codex', 'opencode', 'doe', 'test-mode'] as const;
 
 /** One runtime column of the matrix. */
 export type MatrixRuntime = (typeof MATRIX_RUNTIMES)[number];
@@ -135,7 +135,13 @@ const yes: MatrixCell = { status: 'supported', evidence: U };
 
 /** The same answer for every runtime. */
 function all(cell: MatrixCell): Record<MatrixRuntime, MatrixCell> {
-  return { 'claude-code': cell, codex: cell, opencode: cell, 'test-mode': cell };
+  return {
+    'claude-code': cell,
+    codex: cell,
+    opencode: cell,
+    doe: cell,
+    'test-mode': cell,
+  };
 }
 
 /** Builds a flag from a boolean field of `RuntimeCapabilities`. */
@@ -187,6 +193,7 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
         status: 'unverified',
         reason: 'Resumes its session by id; no test pins a resumed turn seeing earlier history.',
       },
+      doe: yes,
       'test-mode': { status: 'unverified', reason: TEST_FIXTURE },
     },
   },
@@ -207,6 +214,7 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
         reason:
           'DorkOS keeps its own id and maps the sidecar session; no test pins the round trip.',
       },
+      doe: yes,
       'test-mode': { status: 'unverified', reason: TEST_FIXTURE },
     },
   },
@@ -229,6 +237,7 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
       'claude-code': yes,
       codex: { status: 'n/a', reason: 'Its sessions are not stored by folder.' },
       opencode: { status: 'n/a', reason: 'Its sessions are not stored by folder.' },
+      doe: yes,
       'test-mode': { status: 'n/a', reason: 'Its sessions are not stored by folder.' },
     },
   },
@@ -244,6 +253,7 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
         reason: 'The Codex SDK has no fork; forkSession resolves null.',
       },
       opencode: yes,
+      doe: { status: 'not-supported', reason: 'DorkOS does not expose this feature.' },
       'test-mode': { status: 'unverified', reason: TEST_FIXTURE },
     },
   },
@@ -294,6 +304,7 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
       },
       codex: yes,
       opencode: yes,
+      doe: yes,
       'test-mode': yes,
     },
   },
@@ -334,6 +345,7 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
       'claude-code': yes,
       codex: yes,
       opencode: yes,
+      doe: yes,
       'test-mode': { status: 'unverified', reason: TEST_FIXTURE },
     },
   },
@@ -353,6 +365,7 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
         status: 'not-supported',
         reason: 'The OpenCode sidecar has no question tool DorkOS can answer.',
       },
+      doe: { status: 'not-supported', reason: 'DorkOS does not expose this feature.' },
       'test-mode': yes,
     },
   },
@@ -402,6 +415,7 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
         reason: 'Codex’s read-only sandbox is its closest mode; it has no plan approval step.',
       },
       opencode: { status: 'not-supported', reason: 'The sidecar has no plan mode.' },
+      doe: { status: 'not-supported', reason: 'DorkOS does not expose this feature.' },
       'test-mode': { status: 'n/a', reason: TEST_FIXTURE },
     },
   },
@@ -420,6 +434,7 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
         status: 'not-supported',
         reason: 'OpenCode has nowhere to spend an effort setting.',
       },
+      doe: { status: 'not-supported', reason: 'DorkOS does not expose this feature.' },
       'test-mode': { status: 'n/a', reason: TEST_FIXTURE },
     },
   },
@@ -440,6 +455,7 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
         status: 'not-supported',
         reason: 'OpenCode uses one provider setup per machine.',
       },
+      doe: { status: 'not-supported', reason: 'DorkOS does not expose this feature.' },
       'test-mode': { status: 'n/a', reason: TEST_FIXTURE },
     },
   },
@@ -454,6 +470,7 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
       'claude-code': yes,
       codex: yes,
       opencode: yes,
+      doe: yes,
       'test-mode': { status: 'n/a', reason: TEST_FIXTURE },
     },
   },
@@ -467,6 +484,7 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
       'claude-code': yes,
       codex: yes,
       opencode: yes,
+      doe: yes,
       'test-mode': { status: 'n/a', reason: 'It has no sign-in.' },
     },
   },
@@ -489,6 +507,7 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
         status: 'not-supported',
         reason: 'Declared off; agent tools are injected into the sidecar instead.',
       },
+      doe: yes,
       'test-mode': { status: 'n/a', reason: TEST_FIXTURE },
     },
   },
@@ -505,6 +524,7 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
       },
       codex: { status: 'unverified', reason: 'Declared; no test is titled for it yet.' },
       opencode: { status: 'unverified', reason: 'Declared; no test is titled for it yet.' },
+      doe: yes,
       'test-mode': { status: 'n/a', reason: TEST_FIXTURE },
     },
   },
@@ -526,6 +546,7 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
         status: 'not-supported',
         reason: 'DorkOS does not load OpenCode plugins; Harness Sync projects skills instead.',
       },
+      doe: yes,
       'test-mode': { status: 'n/a', reason: TEST_FIXTURE },
     },
   },
@@ -539,6 +560,7 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
       'claude-code': yes,
       codex: yes,
       opencode: yes,
+      doe: yes,
       'test-mode': { status: 'unverified', reason: TEST_FIXTURE },
     },
   },
@@ -551,6 +573,7 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
       'claude-code': yes,
       codex: yes,
       opencode: yes,
+      doe: yes,
       'test-mode': { status: 'unverified', reason: TEST_FIXTURE },
     },
   },
@@ -571,6 +594,7 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
         status: 'not-supported',
         reason: 'The sidecar takes no input mid-turn; the message waits in the queue.',
       },
+      doe: yes,
       'test-mode': yes,
     },
   },
@@ -591,6 +615,7 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
         status: 'not-supported',
         reason: 'Added context is folded into the next message instead.',
       },
+      doe: { status: 'not-supported', reason: 'DorkOS does not expose this feature.' },
       'test-mode': yes,
     },
   },
@@ -649,6 +674,7 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
         status: 'not-supported',
         reason: 'The sidecar is shared; DorkOS holds no per-session process.',
       },
+      doe: { status: 'not-supported', reason: 'DorkOS does not expose this feature.' },
       'test-mode': yes,
     },
   },
@@ -664,6 +690,7 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
       'claude-code': yes,
       codex: yes,
       opencode: { status: 'n/a', reason: 'It keeps no warm process to settle.' },
+      doe: { status: 'not-supported', reason: 'DorkOS does not expose this feature.' },
       'test-mode': yes,
     },
   },
@@ -677,7 +704,7 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
       'claude-code': {
         status: 'partial',
         reason:
-          'Helpers report back on a warm session; background shells, timers and hooks do not yet.',
+          'Helpers, shells and session timers report back on a warm session; async hooks and durable timers do not.',
         ticket: 'DOR-2717',
       },
       codex: {
@@ -691,6 +718,10 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
         status: 'planned',
         reason: 'Nothing delivers work that finishes after an OpenCode turn.',
         ticket: 'DOR-2717',
+      },
+      doe: {
+        status: 'not-supported',
+        reason: 'Builder work stays owned by its turn; detached completion is not offered.',
       },
       'test-mode': { status: 'n/a', reason: TEST_FIXTURE },
     },
@@ -709,6 +740,7 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
         status: 'unverified',
         reason: 'Not proven by a test titled for it.',
       },
+      doe: { status: 'not-supported', reason: 'Images cannot be attached to Doe messages yet.' },
       'test-mode': { status: 'n/a', reason: TEST_FIXTURE },
     },
   },
@@ -726,6 +758,7 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
       },
       codex: { status: 'not-supported', reason: 'Declared none.' },
       opencode: { status: 'not-supported', reason: 'Declared none.' },
+      doe: { status: 'not-supported', reason: 'DorkOS does not expose this feature.' },
       'test-mode': { status: 'n/a', reason: TEST_FIXTURE },
     },
   },
@@ -745,6 +778,7 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
         reason: 'Declared off; Codex reports context use but not cost.',
       },
       opencode: yes,
+      doe: yes,
       'test-mode': { status: 'n/a', reason: TEST_FIXTURE },
     },
   },
@@ -767,6 +801,7 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
       // flag is false there.
       codex: yes,
       opencode: yes,
+      doe: yes,
       'test-mode': yes,
     },
   },
@@ -786,6 +821,7 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
       // marking the same summary partial on one runtime and whole on another.
       codex: yes,
       opencode: yes,
+      doe: yes,
       'test-mode': yes,
     },
   },

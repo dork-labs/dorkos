@@ -208,7 +208,7 @@ describe('MCP Integration', () => {
     expect(toolNames).toContain('get_server_info');
     expect(toolNames).toContain('get_session_count');
     expect(toolNames).toContain('tasks_list');
-    expect(toolNames).toContain('relay_send');
+    expect(toolNames).toContain('relay_list_endpoints');
     expect(toolNames).toContain('mesh_discover');
     expect(toolNames).toContain('binding_list');
     expect(toolNames).toContain('relay_get_trace');

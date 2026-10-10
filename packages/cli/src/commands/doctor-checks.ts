@@ -113,7 +113,7 @@ export function checkClaudeCli(): CheckResult {
   return {
     label: 'Claude Code CLI not found',
     status: 'warn',
-    detail: 'Agent sessions need the Claude Code CLI. DorkOS still opens without it.',
+    detail: 'Agent chats need the Claude Code CLI. DorkOS still opens without it.',
     fix: `Install it, then sign in:\n  ${installCmd}`,
   };
 }
@@ -156,7 +156,7 @@ export function checkClaudeAuth(homeDir: string): CheckResult {
   return {
     label: 'Claude sign-in not detected',
     status: 'info',
-    detail: 'Run `claude` once and sign in before starting agent sessions.',
+    detail: 'Run `claude` once and sign in before starting agent chats.',
   };
 }
 
@@ -234,7 +234,7 @@ export function checkAuthConfig(ctx: AuthConfigContext): CheckResult {
   return {
     label: 'Login is on but no signing secret was found',
     status: 'warn',
-    detail: 'The first sign-in would fail without a secret to sign sessions.',
+    detail: 'The first sign-in would fail without a secret to keep people signed in.',
     fix: 'Create the owner account (writes the secret):\n  dorkos auth enable',
   };
 }

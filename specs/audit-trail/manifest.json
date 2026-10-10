@@ -1,0 +1,13 @@
+{
+  "id": "261006-225901",
+  "slug": "audit-trail",
+  "title": "Audit trail v1: every action recorded, readable by space members and agents",
+  "created": "2026-10-06",
+  "status": "specified",
+  "linearIssue": "DOR-2738",
+  "project": "Trusted by default",
+  "artifacts": {
+    "ideation": "01-ideation.md",
+    "specification": "02-specification.md"
+  }
+}

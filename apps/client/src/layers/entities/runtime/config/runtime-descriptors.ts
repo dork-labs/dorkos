@@ -65,6 +65,13 @@ export interface RuntimeDescriptor {
  * `undefined`. Read this map directly only to enumerate known runtimes.
  */
 export const RUNTIME_DESCRIPTORS: Record<string, RuntimeDescriptor> = {
+  doe: {
+    type: 'doe',
+    label: 'DorkOS',
+    icon: DefaultAdapterIcon,
+    accent: 'var(--color-primary)',
+    subtitle: 'Your own models or DorkOS credits',
+  },
   'claude-code': {
     type: 'claude-code',
     label: 'Claude Code',
@@ -110,6 +117,8 @@ export const RUNTIME_DESCRIPTORS: Record<string, RuntimeDescriptor> = {
  * `test-mode` runtime (an e2e artifact, never a user-facing choice).
  */
 export const PRIMARY_RUNTIME_TYPES = ['claude-code', 'codex', 'opencode'] as const;
+/** Ordinary runtime choices append DorkOS without changing first-run preference. */
+export const SELECTABLE_RUNTIME_TYPES = [...PRIMARY_RUNTIME_TYPES, 'doe'] as const;
 
 /**
  * Resolve the visual identity for a runtime type.

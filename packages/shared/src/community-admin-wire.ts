@@ -14,8 +14,13 @@ export const CommunityAdminLifecycleSchema = z.enum([
   'held',
   'deletion_pending',
 ]);
-/** Community admission policy. */
-export const CommunityAdminAdmissionPolicySchema = z.enum(['invite_only', 'closed']);
+/**
+ * Community admission policy. `open` admits anyone who signs in through the host's single
+ * sign-on service, with no invitation; `invite_only` needs an invitation; `closed` admits no one
+ * new. `open` was added after the other two, so a reader built before it must treat an unknown
+ * policy as "not invite-only".
+ */
+export const CommunityAdminAdmissionPolicySchema = z.enum(['invite_only', 'closed', 'open']);
 
 /** The grammar of a community short name: 3-32 lowercase ASCII letters, digits, and hyphens. */
 export const COMMUNITY_SHORT_NAME_PATTERN = /^[a-z](?:[a-z0-9]|-(?=[a-z0-9])){2,31}$/;

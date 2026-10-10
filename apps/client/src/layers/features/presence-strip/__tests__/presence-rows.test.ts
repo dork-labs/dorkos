@@ -265,7 +265,7 @@ describe('buildPresenceRows — room claims', () => {
 });
 
 describe('buildPresenceRows — running sessions', () => {
-  it('names an agent working in a session it can attribute', () => {
+  it('names an agent working in a chat it can attribute', () => {
     const rows = buildPresenceRows(
       input({
         sessions: [{ sessionId: 'sess-1', cwd: DORKBOT_PATH }],
@@ -274,7 +274,7 @@ describe('buildPresenceRows — running sessions', () => {
     );
 
     expect(rows).toHaveLength(1);
-    expect(rows[0]!.line).toBe('DorkBot · working in a session');
+    expect(rows[0]!.line).toBe('DorkBot · working in a chat');
     expect(rows[0]!.follow).toEqual({ kind: 'session', sessionId: 'sess-1', cwd: DORKBOT_PATH });
   });
 
@@ -390,7 +390,7 @@ describe('buildPresenceRows — the two halves overlapping', () => {
 
     expect(rows.map((row) => row.line)).toEqual([
       'tangerines · replying in #release-train',
-      'DorkBot · working in a session',
+      'DorkBot · working in a chat',
     ]);
   });
 });
@@ -420,7 +420,7 @@ describe('buildPresenceRows — a room that narrates its own presence', () => {
     // The trap this seam exists to avoid. Filtering the claims on the way IN
     // would drop the room row and leave the agent's streaming session
     // unaccounted for — so the strip would redraw the same agent through its
-    // coarser half, saying "working in a session" about the very work the room
+    // coarser half, saying "working in a chat" about the very work the room
     // below is already narrating. Excluding INSIDE the builder spends the
     // agent's directory first and only then declines to draw it.
     //
@@ -443,7 +443,7 @@ describe('buildPresenceRows — a room that narrates its own presence', () => {
       })
     );
 
-    expect(rows.map((row) => row.line)).toEqual(['DorkBot · working in a session']);
+    expect(rows.map((row) => row.line)).toEqual(['DorkBot · working in a chat']);
   });
 
   it('is a no-op when the excluded room has nothing to do with the claims', () => {

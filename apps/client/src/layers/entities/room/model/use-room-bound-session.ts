@@ -138,12 +138,12 @@ export async function resolveRoomSessionForAuthor(
  * screen has no binding for it. The callback is stable, so a memoized surface can
  * hold it without rebuilding.
  *
- * **Why any of this exists.** `/session?dir=<path>` resolves the directory's most
- * recent human CONVERSATION (`resolveSessionForCwd`), and a room turn is filed
- * under origin `room`, which `partitionSessionsByOrigin` puts in the automated
- * bucket on purpose. So the directory route can never land on a room-bound
- * session — for an agent that has only ever worked in rooms it mints a brand-new
- * one instead. A link followed from inside a room has to name the session
+ * **Why any of this exists.** `/session?dir=<path>` resolves the chat you were
+ * last in there (`resolveSessionForCwd`), and a room turn you never touched is
+ * filed under origin `room`, which `partitionSessionsByOwnership` puts in the
+ * automated bucket on purpose. So the directory route cannot land on a
+ * room-bound session you have not opened — for an agent that has only ever
+ * worked in rooms it mints a brand-new one instead. A link followed from inside a room has to name the session
  * outright, and this is where that name comes from.
  *
  * @returns A resolver taking the agent's project directory.

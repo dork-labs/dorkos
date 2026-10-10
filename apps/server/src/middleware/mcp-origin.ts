@@ -36,6 +36,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { type BrowserOriginPolicy, isTrustedBrowserOrigin } from '../lib/trusted-origins.js';
 import { resolveBrowserOriginFacts } from './browser-origin.js';
+import { expressRequestFacts } from '../http/request-facts.js';
 
 /**
  * What the MCP mounts ask of the origin policy.
@@ -76,7 +77,7 @@ const MCP_ORIGIN_POLICY: BrowserOriginPolicy = {
  * @param next - Passes control on when the origin is trusted.
  */
 export function validateMcpOrigin(req: Request, res: Response, next: NextFunction): void {
-  const facts = resolveBrowserOriginFacts(req, { hostCheckInert: false });
+  const facts = resolveBrowserOriginFacts(expressRequestFacts(req), { hostCheckInert: false });
 
   if (isTrustedBrowserOrigin(facts, MCP_ORIGIN_POLICY)) {
     next();

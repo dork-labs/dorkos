@@ -1930,6 +1930,7 @@ describe('the context switcher’s lifecycle actions', () => {
     mockSearch = { community: 'a' };
     mockConnections = [alpha({ hostOperator: true })];
     renderBlock();
+    await configAnswered();
     fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
     const selected = await screen.findByRole('menuitemradio', { name: /Alpha/ });
     await waitFor(() => expect(selected).toHaveFocus());

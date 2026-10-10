@@ -79,7 +79,7 @@ export function scopeLabel(scope: PaletteScope): string {
  */
 export function scopeHeading(scope: PaletteScope): string {
   const preposition = scope.kind === 'agent' ? 'with' : 'in';
-  return `Conversations ${preposition} ${scopeLabel(scope)}`;
+  return `Chats ${preposition} ${scopeLabel(scope)}`;
 }
 
 /**
@@ -93,8 +93,8 @@ export function scopeHeading(scope: PaletteScope): string {
  */
 export function scopeEmptyMessage(scope: PaletteScope): string {
   return scope.kind === 'agent'
-    ? `No conversations with ${scopeLabel(scope)} yet.`
-    : `No conversations came from ${scopeLabel(scope)}.`;
+    ? `No chats with ${scopeLabel(scope)} yet.`
+    : `No chats came from ${scopeLabel(scope)}.`;
 }
 
 /**

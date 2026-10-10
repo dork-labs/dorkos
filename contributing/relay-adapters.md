@@ -1,6 +1,6 @@
 # Relay Adapters
 
-External channel adapters bridge communication platforms (Telegram, webhooks, etc.) into the Relay subject hierarchy. This guide covers the adapter architecture, lifecycle, and patterns for building and testing custom adapters.
+External channel adapters bridge communication platforms (Telegram, webhooks, etc.) into the Relay subject hierarchy. This guide covers the adapter architecture, lifecycle, the adapter catalog and manifests, adapter-agent bindings, delivery observability, and patterns for building and testing custom adapters.
 
 ## Overview
 
@@ -837,56 +837,113 @@ console.error(`Authentication failed (token length: ${this.config.token.length})
 
 ## Adapter Catalog
 
-Every adapter type exposes an `AdapterManifest` that describes its metadata and configuration schema. The catalog is the authoritative source for the adapter setup UI and for API consumers that need to discover available adapter types.
+Every adapter type exposes an `AdapterManifest` that describes its identity, configuration shape and setup guidance. The catalog is the authoritative source for the adapter setup UI (dynamic config forms, the setup wizard, adapter browsing) and for API consumers that need to discover available adapter types. The schemas are `AdapterManifestSchema`, `ConfigFieldSchema` and `CatalogEntrySchema` in `packages/shared/src/relay-adapter-schemas.ts` (re-exported from `@dorkos/shared/relay-schemas`).
 
-### AdapterManifest Schema
+### AdapterManifest reference
+
+| Field               | Type                 | Required | Description                                                                           |
+| ------------------- | -------------------- | -------- | ------------------------------------------------------------------------------------- |
+| `type`              | `string`             | Yes      | Adapter type identifier (e.g., `'telegram'`, `'webhook'`, `'claude-code'`)            |
+| `displayName`       | `string`             | Yes      | Human-readable name shown in the UI                                                   |
+| `description`       | `string`             | Yes      | Short description of what this adapter does                                           |
+| `iconId`            | `string`             | No       | Brand icon id from `@dorkos/icons` (e.g., `'telegram'`)                               |
+| `category`          | `AdapterCategory`    | Yes      | One of `'messaging'`, `'automation'`, `'internal'`, `'custom'`                        |
+| `docsUrl`           | `string` (URL)       | No       | Link to external documentation                                                        |
+| `builtin`           | `boolean`            | Yes      | Whether this adapter ships with DorkOS                                                |
+| `configFields`      | `ConfigField[]`      | Yes      | Ordered configuration field definitions (see below)                                   |
+| `setupSteps`        | `AdapterSetupStep[]` | No       | Ordered steps for a multi-step setup wizard                                           |
+| `setupInstructions` | `string`             | No       | Markdown instructions rendered above the config form                                  |
+| `setupGuide`        | `string`             | No       | Full setup guide markdown, rendered in a side-panel Sheet                             |
+| `multiInstance`     | `boolean`            | No       | Whether multiple instances of this type can coexist (default `false`)                 |
+| `deprecated`        | `boolean`            | No       | Hides the type from the "Add" catalog; existing instances keep working                |
+| `apiVersion`        | `string`             | No       | Relay adapter API version the adapter targets (see [API Versioning](#api-versioning)) |
+| `actionButton`      | `{ label, url }`     | No       | Deep-link button shown in the Configure step banner (e.g., open @BotFather)           |
+
+- `multiInstance: true` lets the user create several instances (e.g., several webhook endpoints). When false, one instance per type. Every piece of state in a multi-instance adapter must be instance-scoped (see [Instance-Scoped State](#instance-scoped-state)).
+- `setupSteps` groups config fields into an ordered wizard flow; each `AdapterSetupStep` is `{ stepId, title, description?, fields }`, where `fields` lists `configField.key` values.
+- `setupGuide` is loaded from the adapter's `docs/setup.md` for built-in adapters, or supplied inline by plugin adapters (see [Adapter Documentation](#adapter-documentation)).
+
+Example (abridged from `packages/relay/src/adapters/telegram/telegram-adapter.ts`):
 
 ```typescript
-interface AdapterManifest {
-  type: string; // Unique type key (e.g., 'telegram', 'webhook')
-  displayName: string; // Human-readable name shown in UI
-  description: string; // Short description of the adapter
-  iconEmoji?: string; // Optional emoji for visual identification
-  category: 'messaging' | 'automation' | 'internal' | 'custom';
-  docsUrl?: string; // Link to external documentation
-  builtin: boolean; // True for adapters shipped with @dorkos/relay
-  configFields: ConfigField[]; // Ordered list of configuration fields
-  setupSteps?: AdapterSetupStep[]; // Optional multi-step setup wizard definition
-  setupInstructions?: string; // Optional markdown instructions rendered before fields
-  multiInstance: boolean; // Whether multiple instances of this type can coexist
-}
+export const TELEGRAM_MANIFEST: AdapterManifest = {
+  type: 'telegram',
+  displayName: 'Telegram',
+  description: 'Send and receive messages via a Telegram bot.',
+  iconId: 'telegram',
+  category: 'messaging',
+  docsUrl: 'https://core.telegram.org/bots',
+  builtin: true,
+  multiInstance: false,
+  configFields: [
+    { key: 'token', label: 'Bot Token', type: 'password', required: true },
+    {
+      key: 'mode',
+      label: 'Receiving Mode',
+      type: 'select',
+      required: true,
+      default: 'polling',
+      options: [
+        { label: 'Long Polling', value: 'polling' },
+        { label: 'Webhook', value: 'webhook' },
+      ],
+    },
+    {
+      key: 'webhookUrl',
+      label: 'Webhook URL',
+      type: 'url',
+      required: true,
+      showWhen: { field: 'mode', equals: 'webhook' },
+    },
+  ],
+};
 ```
 
-### ConfigField Schema
+### ConfigField reference
 
-Each entry in `configFields` defines one configurable parameter for the adapter:
+Each `ConfigField` defines one configuration input; the UI renders the form control from `type`.
 
-```typescript
-interface ConfigField {
-  key: string; // Config object key (e.g., 'token', 'mode')
-  label: string; // Human-readable label shown in the UI
-  type: ConfigFieldType; // Input type (see below)
-  required: boolean; // Whether the field must have a value
-  default?: string | number | boolean; // Default value
-  placeholder?: string; // Input placeholder text
-  description?: string; // Helper text shown below the field
-  options?: ConfigFieldOption[]; // Required when type is 'select'
-  section?: string; // Optional grouping label
-  showWhen?: {
-    // Conditional display rule
-    field: string; // Key of another field
-    equals: string | boolean | number; // Value that triggers visibility
-  };
-}
+| Field              | Type                          | Required | Description                                                              |
+| ------------------ | ----------------------------- | -------- | ------------------------------------------------------------------------ |
+| `key`              | `string`                      | Yes      | Dot-notation config path (e.g., `'token'`, `'inbound.subject'`)          |
+| `label`            | `string`                      | Yes      | Human-readable label                                                     |
+| `type`             | `ConfigFieldType`             | Yes      | Input control type (see below)                                           |
+| `required`         | `boolean`                     | Yes      | Whether the field must have a value                                      |
+| `default`          | `string \| number \| boolean` | No       | Default value                                                            |
+| `placeholder`      | `string`                      | No       | Placeholder text for text-like inputs                                    |
+| `description`      | `string`                      | No       | Help text shown below the input                                          |
+| `options`          | `ConfigFieldOption[]`         | No       | `{ label, value }` pairs, required for `select`                          |
+| `section`          | `string`                      | No       | Group label; the UI renders section headers and groups fields under them |
+| `showWhen`         | `{ field, equals }`           | No       | Conditional visibility based on another field's value                    |
+| `pattern`          | `string`                      | No       | Regex for client-side blur validation; pair with `patternMessage`        |
+| `patternMessage`   | `string`                      | No       | Message shown when `pattern` fails                                       |
+| `visibleByDefault` | `boolean`                     | No       | For `password` fields: show the value in plaintext by default            |
+| `displayAs`        | `'radio-cards'`               | No       | Render `select` options as selectable cards instead of a dropdown        |
+| `helpMarkdown`     | `string`                      | No       | Markdown shown in a collapsible disclosure below the field               |
+| `valueShape`       | `'id-list' \| 'json-object'`  | No       | How a `textarea`'s text maps to the stored value; omit for plain text    |
 
-type ConfigFieldType = 'text' | 'password' | 'number' | 'boolean' | 'select' | 'textarea' | 'url';
-```
+Field types: `text`, `password`, `number`, `boolean` (toggle), `select` (needs `options`), `textarea` (longer text or JSON, see `valueShape`), `url`.
 
-`password` fields are treated as secrets: their values are masked in API responses (replaced with `'***'`) and are preserved when a partial config update is submitted with the field omitted or still masked.
+**Conditional visibility.** A field with `showWhen: { field: 'mode', equals: 'webhook' }` is hidden entirely unless `mode` equals `'webhook'`, and its `required` check is enforced only while it is visible.
+
+**Password fields are secrets.** `maskSensitiveFields()` (`apps/server/src/services/relay/adapter-config.ts`) replaces their values with the `'***'` sentinel (`SECRET_MASK`) in every API response. On a partial update, a password field that arrives omitted or still masked is discarded, so the real secret on disk is preserved (`mergeWithPasswordPreservation`).
+
+### Built-in adapter manifests
+
+Manifests are static constants beside each adapter and are registered automatically on server startup.
+
+| Manifest               | File                                                             | Category     | Multi-instance | Notes                                                                                                            |
+| ---------------------- | ---------------------------------------------------------------- | ------------ | -------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `TELEGRAM_MANIFEST`    | `packages/relay/src/adapters/telegram/telegram-adapter.ts`       | `messaging`  | No             | `token`, `mode` (polling/webhook), conditional `webhookUrl` and `webhookPort`                                    |
+| `SLACK_MANIFEST`       | `packages/relay/src/adapters/slack/slack-manifest.ts`            | `messaging`  | Yes            | Bot, app and signing secrets, streaming, `typingIndicator`, reply and DM policies, allowlists; multi-step wizard |
+| `WEBHOOK_MANIFEST`     | `packages/relay/src/adapters/webhook/webhook-adapter.ts`         | `automation` | Yes            | Fields grouped into "Inbound" and "Outbound" sections                                                            |
+| `CLAUDE_CODE_MANIFEST` | `packages/relay/src/adapters/claude-code/claude-code-adapter.ts` | `internal`   | No             | Auto-configured: `maxConcurrent` (default 3), `defaultTimeoutMs` (default 300000)                                |
+
+**Claude Code capacity is a waiting line, not a wall** (`capacity-hold.ts`, ADR `260819-034718`). A delivery that finds every `maxConcurrent` slot busy parks and starts when one frees. Bounds: `WAITING_PER_SLOT = 10` waiters per slot (30 by default), a hold ceiling of `min(defaultTimeoutMs, envelope TTL remaining)`, and a `HOLD_ANNOUNCE_AFTER_MS = 10_000` floor before the chat is told anything. The ceiling is **not** the ceiling on the blocking turn, which runs to its own envelope TTL (1 h default), so a hold can expire while the agent is still busy, and the held notice therefore promises no arrival. Only a delivery whose `replyTo` is a bridged human chat (`requiresInitiateConsent`) may be held: the publish pipeline marks these by setting `AdapterContext.onHeld`, and nothing else does. Awaited deliveries (Tasks dispatch, control messages) and detached-but-watched callers (the A2A executor at 120 s) keep the immediate `at_capacity` refusal, because holding one destroys its reply rather than delaying it.
 
 ### CatalogEntry
 
-The catalog API returns one entry per known adapter type:
+`GET /api/relay/adapters/catalog` returns `CatalogEntry[]`, one per known adapter type, pairing the manifest with its configured instances so the UI can show "available types" and "running instances" in one view:
 
 ```typescript
 interface CatalogEntry {
@@ -897,26 +954,20 @@ interface CatalogEntry {
 interface CatalogInstance {
   id: string;
   enabled: boolean;
+  label?: string;
   status: AdapterStatus;
-  config?: Record<string, unknown>; // Masked config (secrets replaced with '***')
+  config?: Record<string, unknown>; // Masked config (password fields replaced with '***')
 }
 ```
 
-Built-in manifests are registered automatically on server startup. Plugin manifests are registered when the plugin is first loaded via dynamic import (see [Dynamic Plugin Loading](#dynamic-plugin-loading) below).
+Plugin manifests are registered when the plugin is first loaded (see [Dynamic Plugin Loading](#dynamic-plugin-loading)). The client reads it through `useAdapterCatalog` (`entities/relay`) and renders setup in `AdapterSetupWizard` (`features/relay`).
 
-### Runtime Config Updates
+### Config updates and hot-reload
 
-The `AdapterManager.updateConfig(id, newConfig)` method merges a partial config patch into an existing adapter's stored configuration. Password fields (`type: 'password'`) that arrive with the value `'***'` are silently discarded, preserving the real secret on disk. After merging, the adapter is stopped and restarted in-place.
+Two paths change a running adapter, and both converge on the same `register()`/`unregister()` lifecycle:
 
-The `Transport` interface exposes `updateConfig(patch)` to allow client code to persist user config changes without needing direct filesystem access:
-
-```typescript
-interface Transport {
-  /** Partially update the persisted user config. */
-  updateConfig(patch: Record<string, unknown>): Promise<void>;
-  // ... other methods
-}
-```
+- **API:** `PATCH /api/relay/adapters/:id/config` calls `AdapterManager.updateConfig(id, patch)`, which merges the patch with password preservation (above) and restarts the adapter in place.
+- **File:** `AdapterManager.initialize()` watches `~/.dork/relay/adapters.json` with chokidar. On an external edit, `reload()` stops adapters that were removed or disabled, starts newly enabled ones, and restarts any whose config changed.
 
 ## Dynamic Plugin Loading
 
@@ -964,7 +1015,7 @@ export function getManifest(): AdapterManifest {
 
 The `id` parameter is the adapter instance ID from the user's `adapters.json` configuration. The plugin loader passes `entry.id` and `entry.config` to the factory function.
 
-If `getManifest()` is absent or fails validation, a minimal fallback manifest is generated automatically and the adapter still loads.
+If `getManifest()` is absent or fails validation, a minimal fallback manifest is generated automatically and the adapter still loads. Concretely: a returned manifest is validated with `AdapterManifestSchema.safeParse()`; a failure logs a warning and falls back, and a missing `getManifest()` gets a manifest with `category: 'custom'`, empty `configFields`, and the adapter ID as `displayName`.
 
 ### Plugin Config Entry
 
@@ -1077,9 +1128,28 @@ Session mappings for `per-chat` and `per-user` strategies are persisted to `~/.d
 3. Call `BindingStore.resolve()` to find the best binding
 4. **If the binding is bridged (`bridge === 'room'`), hand off to `ChatBridgeIngest.ingest()` and stop** — this is the terminal chats-as-channels branch; steps 5-6 below never run for it.
 5. Otherwise, resolve or create a session ID based on the binding's `sessionStrategy`
-6. Republish the payload to `relay.agent.{runtimeType}.{sessionId}` for `ClaudeCodeAdapter` to handle. The runtime segment comes from the session's own ownership row (`runtimeRegistry.getSessionRuntimeType`), which the binding subsystem writes when it creates the session — that segment is what routes the turn to the program the agent actually runs on (DOR-1614). A three-token `relay.agent.{sessionId}` subject is the legacy shape and runs on the adapter's default runtime. A mesh `relay.agent.{namespace}.{agentId}` subject — the shape one agent's `relay_send` to another arrives on — names an agent rather than a session, so the adapter asks the host through the `resolveTurnRuntimeType` seam the composition root wires: the conversation's recorded owner where it has one, and otherwise that agent's own manifest (DOR-1627); it falls back to the default runtime only when nothing resolved an agent directory. Nothing else records an owner for this shape, because a mesh endpoint creates no session — so a turn that produced something writes one itself, through the `bindSessionRuntime` seam, and editing the agent's manifest mid-conversation no longer moves the remaining turns to a program holding none of its transcript (DOR-1774). The write waits for a CONTENT event — words, thinking, a tool call, a result, a picture — not merely any event, because a turn that only failed still emits a terminal `done` and an `error`; a first turn that only reported "not signed in" therefore leaves no binding behind, and the operator's correction still takes effect. The predicate mirrors `isContentEvent` in the claude-code empty-stream guard (the relay package cannot import across into `apps/server`) and is pinned against it by `services/relay/__tests__/relay-content-event-parity.test.ts`.
+6. Republish the payload to `relay.agent.{runtimeType}.{sessionId}` for `ClaudeCodeAdapter` to handle. The runtime segment comes from the session's own ownership row (`runtimeRegistry.getSessionRuntimeType`), which the binding subsystem writes when it creates the session — that segment is what routes the turn to the program the agent actually runs on (DOR-1614). A three-token `relay.agent.{sessionId}` subject is the legacy shape and runs on the adapter's default runtime. A mesh `relay.agent.{namespace}.{agentId}` subject — the shape an A2A or external MCP message to an agent arrives on — names an agent rather than a session, so the adapter asks the host through the `resolveTurnRuntimeType` seam the composition root wires: the conversation's recorded owner where it has one, and otherwise that agent's own manifest (DOR-1627); it falls back to the default runtime only when nothing resolved an agent directory. Nothing else records an owner for this shape, because a mesh endpoint creates no session — so a turn that produced something writes one itself, through the `bindSessionRuntime` seam, and editing the agent's manifest mid-conversation no longer moves the remaining turns to a program holding none of its transcript (DOR-1774). The write waits for a CONTENT event — words, thinking, a tool call, a result, a picture — not merely any event, because a turn that only failed still emits a terminal `done` and an `error`; a first turn that only reported "not signed in" therefore leaves no binding behind, and the operator's correction still takes effect. The predicate mirrors `isContentEvent` in the claude-code empty-stream guard (the relay package cannot import across into `apps/server`) and is pinned against it by `services/relay/__tests__/relay-content-event-parity.test.ts`.
 
 Agent responses published back to `relay.human.*` subjects are detected by checking `envelope.from.startsWith('agent:')` and are skipped to prevent routing loops.
+
+### Binding HTTP API
+
+Binding endpoints are mounted under `/api/relay` (`apps/server/src/routes/relay-adapters.ts`). Relay is on by default; `DORKOS_RELAY_ENABLED=false` turns it off. When the binding subsystem is not initialized, these endpoints answer 503.
+
+| Method   | Path                           | Description                                                     |
+| -------- | ------------------------------ | --------------------------------------------------------------- |
+| `GET`    | `/api/relay/bindings`          | List all bindings                                               |
+| `POST`   | `/api/relay/bindings`          | Create a binding (`CreateBindingRequest`)                       |
+| `GET`    | `/api/relay/bindings/:id`      | Get one binding                                                 |
+| `PATCH`  | `/api/relay/bindings/:id`      | Update a binding's options                                      |
+| `POST`   | `/api/relay/bindings/:id/move` | Re-point a binding to a different agent, clearing stale session |
+| `DELETE` | `/api/relay/bindings/:id`      | Delete a binding (cleans up its orphaned session entries)       |
+
+`chatId`, `channelType` and `label` are optional on create; `sessionStrategy` defaults to `'per-chat'`. Deleting a binding calls `BindingRouter.cleanupOrphanedSessions()`.
+
+### Bindings in the UI
+
+Bindings appear in the Mesh topology graph as `BindingEdge` components (`features/mesh/`) connecting adapter nodes to agent nodes. `BindingDialog` (`entities/binding/`) creates and edits them; the client hooks live in `entities/binding/` too.
 
 ## AdapterManager Dependency Injection
 
@@ -1101,6 +1171,31 @@ interface AdapterManagerDeps {
 **Pass `agentRuntimes`, never `agentManager`.** The composition root puts every registered runtime in that map, so an agent that runs on Codex or OpenCode answers a Telegram or Slack message on the program its manifest names (DOR-1614). The deprecated single-runtime field keys whatever it is given under `'claude-code'`, which is a lie in test mode and is why binding routing was once silently dead there.
 
 When `relayCore` is omitted, `initialize()` skips binding subsystem setup and the binding API endpoints return 503. When `meshCore` is omitted, `AdapterContext` passed to `deliver()` contains no agent info.
+
+## Adapter Delivery Observability
+
+### Publish pipeline fan-out
+
+`RelayCore.publish()` uses a unified fan-out: Maildir endpoints **and** adapter delivery are both attempted before any dead-letter decision, so adapter-only subjects (like `relay.agent.*`, handled by `ClaudeCodeAdapter`) receive messages even when no Maildir endpoint is registered. In order:
+
+1. Envelope assembly (ID, timestamps, budget), subject validation and access control
+2. Per-sender rate-limit check, before fan-out
+3. Maildir delivery to every matching registered endpoint, in parallel
+4. Adapter delivery, in parallel with Maildir delivery
+5. Subscription handler dispatch for subjects with no registered Maildir endpoint, which is how `BindingRouter` intercepts `relay.human.*`
+6. Dead-letter only when nothing matched
+7. Trace span insertion (best-effort)
+
+### Delivery timeout
+
+`AdapterDelivery` (`packages/relay/src/adapter-delivery.ts`) treats two kinds of subject differently:
+
+- **`relay.agent.*` subjects are detached.** The delivery is accepted immediately and the agent turn runs in the background, because a turn can run far longer than any publish should block. Genuine failures are dead-lettered, and a failed detached delivery can notify the reply inbox or the person's chat.
+- **Every other subject is awaited** under `AdapterDelivery.TIMEOUT_MS` (120 s). On timeout the promise rejects and a `DeliveryResult` with `success: false` is returned.
+
+### DeliveryResult
+
+Adapters return a `DeliveryResult` from `deliver()`: `success`, plus optional `error`, `deadLettered`, `responseMessageId` and `durationMs` (`packages/relay/src/types.ts`). `RelayCore.publish()` surfaces it as `adapterResult` on its `PublishResult` when adapter delivery was attempted, beside the Maildir delivery counts. Adapter deliveries are also indexed in SQLite (`~/.dork/relay/index.db`) under the subject hash prefixed with `adapter:`, separate from Maildir endpoint entries.
 
 ## Using BaseRelayAdapter (Optional)
 
@@ -1894,7 +1989,9 @@ Individual config fields can include a `helpMarkdown` property containing Markdo
 - `apps/server/src/services/relay/adapter-factory.ts` — Adapter instantiation per config type
 - `apps/server/src/services/relay/binding-store.ts` — Binding persistence and resolution scoring
 - `apps/server/src/services/relay/binding-router.ts` — Runtime routing from relay.human.> to relay.agent.\*
-- `packages/shared/src/relay-schemas.ts` — AdapterManifest, ConfigField, AdapterBinding, and all Relay Zod schemas
+- `packages/shared/src/relay-adapter-schemas.ts` — AdapterManifest, ConfigField, CatalogEntry, AdapterBinding and the other adapter Zod schemas (re-exported from `relay-schemas.ts`)
+- `packages/relay/src/adapter-delivery.ts` — Adapter delivery: detached agent subjects, awaited timeout for the rest, SQLite indexing
+- `apps/server/src/services/relay/adapter-config.ts` — Secret masking and password preservation
 - `packages/shared/src/transport.ts` — Transport interface including updateConfig()
 - `templates/relay-adapter/` — Starter template for new adapters
 - `decisions/0030-dynamic-import-for-adapter-plugins.md` — ADR for plugin loading and factory export pattern

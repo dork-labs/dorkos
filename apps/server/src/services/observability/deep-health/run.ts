@@ -104,7 +104,7 @@ export interface DeepHealthDeps {
  */
 export async function runDeepHealthChecks(deps: DeepHealthDeps): Promise<CheckResult[]> {
   return [
-    await contain('Rooms remember their conversations', () => roomTranscriptCheck(deps)),
+    await contain('Room members keep their chats', () => roomTranscriptCheck(deps)),
     await contain('Agent messaging rules loaded', () => relayAccessCheck(deps)),
     await contain('Chat connections are readable', () => adapterEntriesCheck(deps)),
     await contain('Chat connections point at real agents', () => bindingGhostCheck(deps)),
@@ -164,7 +164,7 @@ async function contain(
  */
 async function roomTranscriptCheck(deps: DeepHealthDeps): Promise<CheckResult> {
   if (!deps.roomSessions || !deps.roomBindingTranscripts) {
-    return skipped('Rooms remember their conversations', 'the room store is not available');
+    return skipped('Room members keep their chats', 'the room store is not available');
   }
   const survey = await surveyRoomBindingTranscripts(
     deps.roomSessions.listRoomSessions(),

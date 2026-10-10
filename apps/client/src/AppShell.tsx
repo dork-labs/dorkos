@@ -3,7 +3,6 @@ import { Outlet, useRouterState } from '@tanstack/react-router';
 import {
   useAppStore,
   useFavicon,
-  useDocumentTitle,
   useIsMobile,
   useSlotContributions,
   useAccountUsageSync,
@@ -12,7 +11,8 @@ import { useElectronNavigate } from './app/use-electron-navigate';
 import { useElectronCloseTab } from './app/use-electron-close-tab';
 import { useElectronFullscreen } from './app/use-electron-fullscreen';
 import { useWindowFocusDimming } from './app/use-window-focus-dimming';
-import { useRoomDocumentTitle } from './app/use-room-document-title';
+import { useOpenRoom } from './app/use-open-room';
+import { WindowTitle } from './app/WindowTitle';
 import { useCommunityWatchers } from './app/use-community-watchers';
 import { TitlebarDragStrip } from './app/TitlebarDragStrip';
 import { SidebarBodyErrorBoundary } from './app/SidebarBodyErrorBoundary';
@@ -38,6 +38,7 @@ import {
 } from '@/layers/entities/session';
 import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
 import { useConfig, useConfigSync } from '@/layers/entities/config';
+import { useSeedProfileTimezone } from '@/layers/entities/user-profile';
 import { useAgentsSync } from '@/layers/entities/mesh';
 import { useConnectorAgentRequestsSync } from '@/layers/entities/connectors';
 import { useCommandsSync } from '@/layers/entities/command';
@@ -261,14 +262,11 @@ export function AppShell() {
 
   const [selectedCwd] = useDirectoryState();
   const isStreaming = useAppStore((s) => s.isStreaming);
-  const activeForm = useAppStore((s) => s.activeForm);
-  const isWaitingForUser = useAppStore((s) => s.isWaitingForUser);
-  const tasksBadgeCount = useAppStore((s) => s.tasksBadgeCount);
   const { data: currentAgent } = useCurrentAgent(selectedCwd);
   const agentVisual = useAgentVisual(currentAgent ?? null, selectedCwd ?? '');
-  // The tab names the room you are reading when there is one, and counts the
-  // rooms waiting on you whichever route you are on (spec `rooms` §13.1/§13.3).
-  const { room: openRoom, roomTitle, unreadRoomCount } = useRoomDocumentTitle();
+  // The open room for the channel bar, and the rooms waiting on you whichever
+  // route you are on (spec `rooms` §13.1/§13.3).
+  const { room: openRoom, unreadRoomCount } = useOpenRoom();
   // One set of Community watchers for the whole app (revocation cleanup, list
   // sync, and the approval checks that finish a pairing).
   useCommunityWatchers();
@@ -277,18 +275,6 @@ export function AppShell() {
     isStreaming,
     color: currentAgent ? agentVisual.color : undefined,
   });
-  useDocumentTitle({
-    cwd: selectedCwd,
-    activeForm,
-    isStreaming,
-    isWaitingForUser,
-    agentName: currentAgent ? getAgentDisplayName(currentAgent) : undefined,
-    agentEmoji: currentAgent ? agentVisual.emoji : undefined,
-    tasksBadgeCount,
-    roomTitle,
-    unreadRoomCount,
-  });
-
   useShortcutsPanel();
   useRightPanelShortcut();
   useProfileShortcut();
@@ -349,6 +335,9 @@ export function AppShell() {
   // staying in one window meant the list quietly lied.
   useAgentsSync();
   useConfigSync();
+  // The person's time zone comes from the browser, once, never from the server's
+  // own clock (spec `heartbeats` §3.5). A zone already set is left alone.
+  useSeedProfileTimezone();
   useAccountUsageSync();
   // Live agent requests for apps (DOR-2415): a request answered in one window,
   // on the Connections page or in a room retires its chat card everywhere.
@@ -619,6 +608,7 @@ export function AppShell() {
 
   return (
     <TooltipProvider>
+      <WindowTitle unreadRoomCount={unreadRoomCount} />
       <MotionConfig reducedMotion="user">
         <AnimatePresence mode="wait">
           {showOnboarding ? (

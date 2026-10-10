@@ -363,7 +363,7 @@ describe('ChannelComposer', () => {
     const field = renderComposer(transport, roomWith({ archived: true }));
 
     expect(
-      screen.getByText('This conversation is archived. You can read it, but not add to it.')
+      screen.getByText('This room is archived. You can read it, but not add to it.')
     ).toBeInTheDocument();
 
     type(field, 'anyone still here?');

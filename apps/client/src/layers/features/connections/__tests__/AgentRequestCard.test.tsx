@@ -28,7 +28,8 @@ vi.mock('@/layers/shared/model', async (importOriginal) => ({
   useSettingsDeepLink: () => ({ open: openSettings }),
 }));
 
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   Link: ({ children, to, search }: { children: React.ReactNode; to: string; search: object }) => (
     <a href={`${to}?${new URLSearchParams(search as Record<string, string>)}`}>{children}</a>
   ),

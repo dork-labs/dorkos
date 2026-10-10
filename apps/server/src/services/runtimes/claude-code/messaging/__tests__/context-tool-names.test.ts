@@ -310,7 +310,7 @@ async function claudeCodeProse(): Promise<{ prose: string; shared: string[] }> {
   for (const block of shared) prose = prose.split(block).join('');
 
   const { mesh, relay } = dynamicBlockFixtures();
-  prose += `\n${await _buildPeerAgentsBlock(mesh)}`;
+  prose += `\n${await _buildPeerAgentsBlock(mesh, true)}`;
   prose += `\n${_buildRelayConnectionsBlock(relay)}`;
   return { prose, shared };
 }
@@ -320,8 +320,8 @@ async function claudeCodeProse(): Promise<{ prose: string; shared: string[] }> {
  * `mcp__dorkos__` prefix attached where it is present.
  *
  * Whole-token matching is what makes the check exact: a substring search for
- * `relay_send` would be satisfied by `mcp__dorkos__relay_send_and_wait` and miss a
- * bare `relay_send_and_wait` entirely.
+ * `mesh_list` would be satisfied by `mcp__dorkos__mesh_list_extra` and miss a
+ * bare `mesh_list_extra` entirely.
  */
 function identifierTokens(text: string): string[] {
   return text.match(/[a-z][a-z0-9_]*/g) ?? [];
@@ -489,7 +489,14 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // composes no extension. `extension-tools-every-list.test.ts` guards those.
     // 119 -> 120 for `compact_my_session` (DOR-2732): the `<context_warning>`
     // note names it, with each runtime's prefix, so it is always loaded.
-    expect(advertised.size).toBe(120);
+    // 120 -> 121 for `audit_verify` (DOR-2738): no prompt block names it, so it
+    // stays deferred and unprefixed.
+    // 121 -> 124 for `chat_send`, `chat_read` and `chat_stop` (spec
+    // `spin-off-chats` §1); 124 -> 118 (§7): the six relay send, inbox and
+    // endpoint tools retire. `<chat_tools>` names the three chat tools prefixed.
+    // 118 -> 121 for the three commitment tools (spec `heartbeats` §12): no
+    // prompt block names them, so they stay deferred and unprefixed.
+    expect(advertised.size).toBe(121);
     for (const name of [
       'configure_doc_channel',
       'approve_doc_route',
@@ -574,7 +581,21 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // 97 -> 99 for `marketplace_update` (DOR-2195): `<marketplace_tools>` names it
     // twice, once among the confirmation-gated mutations and once for its
     // signature, as it does every other mutation.
-    expect(prefixed.length).toBe(99);
+    //
+    // 99 -> 100 for durable timers (DOR-2717): `<tasks_tools>` names
+    // `tasks_create` once more, as the scheduler to use instead of a durable
+    // CronCreate job.
+    //
+    // 100 -> 85 for spin-off chats (spec `spin-off-chats` §7):
+    // `<relay_tools>`, which named the six retired relay tools over and over
+    // across its four workflows, became `<chat_tools>`, which teaches three
+    // chat tools and `session_start` once each where they are used.
+    //
+    // 85 -> 71 for plain sessions (DOR-2790): the chat tools refuse a chat that
+    // is not an agent's, so `<chat_tools>` and the mesh line on messaging a peer
+    // render for an agent session only, and this case walks the plain prompt.
+    // The agent-session case below guards the names in that half.
+    expect(prefixed.length).toBe(71);
   });
 
   it('names only advertised tools in the agent-session variant of the prompt too', async () => {
@@ -599,15 +620,8 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     ].sort();
     expect(unknown).toEqual([]);
 
-    // And it says the six are loaded, in full, so nothing spends a ToolSearch.
-    for (const name of [
-      'mesh_list',
-      'mesh_inspect',
-      'relay_send',
-      'relay_send_async',
-      'relay_send_and_wait',
-      'relay_inbox',
-    ]) {
+    // And it says the four are loaded, in full, so nothing spends a ToolSearch.
+    for (const name of ['mesh_list', 'mesh_inspect', 'chat_send', 'chat_read']) {
       expect(prompt).toContain(`${IN_SESSION_TOOL_PREFIX}${name}`);
     }
   });
@@ -990,6 +1004,7 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
       'using-the-agent-browser',
       'using-the-marketplace',
       'working-in-room-repos',
+      'working-with-spin-off-chats',
     ]);
 
     const offenders: string[] = [];

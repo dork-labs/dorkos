@@ -24,7 +24,7 @@ The July plan ran positioning in two acts. Act 1 sold DorkOS to developers as "o
 
 ## Decision
 
-We will describe and build DorkOS as **a workspace for people and agents**: Slack-like DMs, group DMs, channels, threads and shared docs, with agents as co-workers rather than assistants. The primary persona is **the founder** (semi-technical, strong vision, builds a big business mostly with agents; the rewrite of Ikechi), the secondary is **Kai**, and Priya and Lil retire. The tagline stays "You, Multiplied.", and "Claude Code, Codex and OpenCode side by side" moves from the story into the docs. There is no second act and no evidence gate. The demo-claim gate (`meta/positioning-202607/09-gtm-plan.md` §2.0) still applies: copy describes only what ships, and unbuilt parts stay behind experimental switches.
+We will describe and build DorkOS as **a workspace for people and agents**: Slack-like DMs, group DMs, channels, threads and shared docs, with agents as co-workers rather than assistants. The primary persona is **the founder** (semi-technical, strong vision, builds a big business mostly with agents; the rewrite of Ikechi), the secondary is **Kai**, and Priya and Lil retire. The tagline stays "You, Multiplied.", and "Claude Code, Codex and OpenCode side by side" moves from the story into the docs. There is no second act and no evidence gate. The demo-claim gate (`meta/archive/positioning-202607/09-gtm-plan.md` §2.0) still applies: copy describes only what ships, and unbuilt parts stay behind experimental switches.
 
 ## Consequences
 

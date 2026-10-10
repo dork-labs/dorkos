@@ -38,8 +38,9 @@ const EXPECTED: Readonly<Record<string, readonly string[]>> = {
   'services/rooms/room-turn-runner.ts': ['room'],
   // A task's run — the timer's, or a person's "Run now".
   'services/tasks/task-scheduler-service.ts': ['schedule'],
-  // One agent addressed another over the relay.
-  'services/relay/adapter-factory.ts': ['agent-dm'],
+  // A message addressed to an agent over the relay: one of our agents, or a
+  // sender from outside (the A2A gateway), decided by `relayTurnOrigin`.
+  'services/relay/adapter-factory.ts': ['agent-dm', 'outside-sender'],
   // A chat binding created a session for an inbound message.
   'services/relay/binding-subsystem.ts': ['relay-binding'],
   // A connector event woke an agent up.
@@ -81,6 +82,14 @@ const DECLARATIONS = new Set([
  */
 const PASS_THROUGH = 'services/session/launch/launch-session.ts';
 
+/**
+ * Helpers that choose between named origins on one fact, and the origins each
+ * can return. A call site that passes one is read as passing all of them.
+ */
+const ORIGIN_HELPERS: Readonly<Record<string, readonly string[]>> = {
+  'relayTurnOrigin(': ['agent-dm', 'outside-sender'],
+};
+
 /** The calls that bind a session and name an origin at the call. */
 const BINDING_CALL = /(?:persistSessionRuntime|dispatchSessionMessage)\(/g;
 
@@ -104,6 +113,11 @@ function originsPassedIn(source: string, isDeclaration: boolean): string[] {
   const kinds: string[] = [];
   for (const match of source.matchAll(BINDING_CALL)) {
     const window = source.slice(match.index, match.index + 400);
+    const helper = Object.keys(ORIGIN_HELPERS).find((name) => window.includes(name));
+    if (helper) {
+      kinds.push(...ORIGIN_HELPERS[helper]!);
+      continue;
+    }
     const kind = /\bkind: '([a-z-]+)'/.exec(window);
     // A declaration file's own signature has no `kind:` after it, which is
     // exactly how it is told apart from a call.

@@ -1,6 +1,6 @@
 /**
  * The connectors suite — the two W4 connector evals (connector-gateway spec
- * §Testing Strategy G5, `plans/shapes-program.md` W4) expressed against the
+ * §Testing Strategy G5, `plans/archive/shapes-program.md` W4) expressed against the
  * `ConnectorProvider` interface with FAKES, never live credentials:
  *
  * - **`connector-gmail`** ("Connect to my Gmail") drives the gateway path:

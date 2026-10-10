@@ -1,3 +1,4 @@
+import { draftSessionUrl } from './session-draft';
 import { expect } from '@playwright/test';
 import type { Page, Locator } from '@playwright/test';
 import { BasePage } from './BasePage';
@@ -46,9 +47,15 @@ export class ChatPage {
   }
 
   /** Navigate to the app and ensure a chat session is active. */
-  async goto(sessionId?: string, options?: { dir?: string; runtime?: string }) {
-    let url = sessionId ? `/session?session=${sessionId}` : '/session';
-    if (options?.dir) {
+  async goto(sessionId?: string, options?: { dir?: string; runtime?: string; draft?: boolean }) {
+    // A supplied ID is existing unless the caller explicitly creates a draft.
+    // Unknown IDs must retain the app's strict missing-session behavior.
+    let url = sessionId
+      ? options?.draft
+        ? await draftSessionUrl(this.page, sessionId, options.dir)
+        : `/session?session=${sessionId}`
+      : '/session';
+    if (options?.dir && !sessionId) {
       const sep = url.includes('?') ? '&' : '?';
       url += `${sep}dir=${encodeURIComponent(options.dir)}`;
     }

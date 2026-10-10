@@ -78,6 +78,12 @@
  * lifecycle events for every session whether this client is attached or not.
  * Opening ten tabs therefore opens no extra connections.
  *
+ * **Pinned tabs sit left of every other tab, always** (DOR-2820). Pinning moves a
+ * tab to the end of the pinned run; unpinning moves it to the start of the
+ * rest; a reorder, a new tab and a duplicate are each kept on their own side.
+ * The order is the invariant, so the strip never has to sort, and a stored list
+ * that breaks it (hand-edited, or from a bug) is put back in order on load.
+ *
  * Persisted to `sessionStorage`, which is scoped per browser tab / per Electron
  * renderer: a reload restores your tabs, and a second DorkOS window gets its own
  * set instead of fighting over one.
@@ -98,6 +104,12 @@ export interface AppTab {
   history: string[];
   /** Index into `history` of the page the tab shows now. */
   cursor: number;
+  /**
+   * Kept at the left of the strip, drawn as an icon only, and spared by "Close
+   * others". Absent means unpinned, which is how every tab saved before pinning
+   * existed reads back.
+   */
+  pinned?: boolean;
 }
 
 /**
@@ -128,6 +140,17 @@ function newTabId(): string {
 /** A brand-new tab at `href`, with that one page as its whole history. */
 function mintTab(href: string): AppTab {
   return { id: newTabId(), href, history: [href], cursor: 0 };
+}
+
+/** How many tabs lead the list pinned. The order invariant makes that a prefix. */
+function pinnedCount(tabs: readonly AppTab[]): number {
+  const firstUnpinned = tabs.findIndex((tab) => !tab.pinned);
+  return firstUnpinned === -1 ? tabs.length : firstUnpinned;
+}
+
+/** Pinned tabs first, each side in its existing order — the order invariant. */
+function pinnedFirst(tabs: AppTab[]): AppTab[] {
+  return [...tabs.filter((tab) => tab.pinned), ...tabs.filter((tab) => !tab.pinned)];
 }
 
 /**
@@ -220,8 +243,10 @@ function adoptLocation(tab: AppTab, href: string, replace: boolean): AppTab {
  */
 function repairTab(raw: unknown): AppTab | null {
   if (typeof raw !== 'object' || raw === null) return null;
-  const { id, href, history, cursor } = raw as Partial<Record<keyof AppTab, unknown>>;
+  const { id, href, history, cursor, pinned } = raw as Partial<Record<keyof AppTab, unknown>>;
   if (typeof id !== 'string' || typeof href !== 'string' || href.length === 0) return null;
+  // Only a literal `true` pins: anything else, absence included, is unpinned.
+  const pin = pinned === true ? { pinned: true } : {};
   const historyIsSound =
     Array.isArray(history) &&
     history.length > 0 &&
@@ -231,15 +256,16 @@ function repairTab(raw: unknown): AppTab | null {
     (cursor as number) >= 0 &&
     (cursor as number) < history.length &&
     history[cursor as number] === href;
-  if (!historyIsSound) return { id, href, history: [href], cursor: 0 };
-  return { id, href, history: [...(history as string[])], cursor: cursor as number };
+  if (!historyIsSound) return { id, href, history: [href], cursor: 0, ...pin };
+  return { id, href, history: [...(history as string[])], cursor: cursor as number, ...pin };
 }
 
 /**
  * Read the persisted tabs, or `null` when there is nothing usable — absent or
  * blocked storage (private mode), corrupt JSON, a shape with no usable tab. An
  * `activeTabId` that no longer names a tab falls back to the first. A tab whose
- * history is missing or broken is repaired, never dropped.
+ * history is missing or broken is repaired, never dropped, and pinned tabs are
+ * put back in front of the rest.
  *
  * @internal Exported for testing only.
  */
@@ -251,7 +277,7 @@ export function readPersistedTabs(): PersistedTabs | null {
     if (typeof parsed !== 'object' || parsed === null) return null;
     const { tabs, activeTabId } = parsed as { tabs?: unknown; activeTabId?: unknown };
     const clean = Array.isArray(tabs)
-      ? tabs.map(repairTab).filter((tab): tab is AppTab => tab !== null)
+      ? pinnedFirst(tabs.map(repairTab).filter((tab): tab is AppTab => tab !== null))
       : [];
     if (clean.length === 0) return null;
     const active =
@@ -293,6 +319,93 @@ function writePersistedTabs(state: PersistedTabs): void {
   } catch {
     // Storage blocked or full — tabs still work for this window's lifetime.
   }
+}
+
+/**
+ * A window's tabs and which one is active — what the arranging transitions
+ * below take and return.
+ */
+export type AppTabsLayout = PersistedTabs;
+
+/**
+ * The arranging transitions as pure functions, so the store and the Dev
+ * Playground's demo strip run the same rules. Each returns its input unchanged
+ * when there is nothing to do, which is what lets a Zustand `set` skip a
+ * render. Their contracts are the matching store actions' docs below.
+ */
+
+/** {@link AppTabsState.openTab}, as a pure function. */
+export function openTabIn(layout: AppTabsLayout, href: string): AppTabsLayout {
+  const tab = mintTab(href);
+  const activeIndex = layout.tabs.findIndex((t) => t.id === layout.activeTabId);
+  const tabs = [...layout.tabs];
+  // Right of the active tab, but never inside the pinned run: a new tab is
+  // unpinned, so from a pinned tab it opens first among the unpinned ones.
+  const after = activeIndex >= 0 ? activeIndex + 1 : tabs.length;
+  tabs.splice(Math.max(after, pinnedCount(tabs)), 0, tab);
+  return { tabs, activeTabId: tab.id };
+}
+
+/** {@link AppTabsState.closeTab}, as a pure function. */
+export function closeTabIn(layout: AppTabsLayout, id: string): AppTabsLayout {
+  if (layout.tabs.length <= 1) return layout;
+  const index = layout.tabs.findIndex((t) => t.id === id);
+  if (index === -1) return layout;
+  const tabs = layout.tabs.filter((t) => t.id !== id);
+  if (layout.activeTabId !== id) return { tabs, activeTabId: layout.activeTabId };
+  // The neighbour that slid into this index, else the one before it.
+  const next = tabs[index] ?? tabs[index - 1];
+  return { tabs, activeTabId: next.id };
+}
+
+/** {@link AppTabsState.setTabPinned}, as a pure function. */
+export function pinTabIn(layout: AppTabsLayout, id: string, pinned: boolean): AppTabsLayout {
+  const tab = layout.tabs.find((t) => t.id === id);
+  if (!tab || Boolean(tab.pinned) === pinned) return layout;
+  const rest = layout.tabs.filter((t) => t.id !== id);
+  const { pinned: _was, ...bare } = tab;
+  const next: AppTab = pinned ? { ...bare, pinned: true } : bare;
+  // Either way the tab lands on the line between the two runs: the last
+  // pinned tab, or the first unpinned one.
+  const tabs = [...rest];
+  tabs.splice(pinnedCount(rest), 0, next);
+  return { ...layout, tabs };
+}
+
+/** {@link AppTabsState.duplicateTab}, as a pure function. */
+export function duplicateTabIn(layout: AppTabsLayout, id: string): AppTabsLayout {
+  const index = layout.tabs.findIndex((t) => t.id === id);
+  if (index === -1) return layout;
+  const source = layout.tabs[index];
+  const copy: AppTab = source.pinned
+    ? { ...mintTab(source.href), pinned: true }
+    : mintTab(source.href);
+  const tabs = [...layout.tabs];
+  tabs.splice(index + 1, 0, copy);
+  return { tabs, activeTabId: copy.id };
+}
+
+/** {@link AppTabsState.closeOtherTabs}, as a pure function. */
+export function closeOtherTabsIn(layout: AppTabsLayout, id: string): AppTabsLayout {
+  if (!layout.tabs.some((t) => t.id === id)) return layout;
+  const tabs = layout.tabs.filter((t) => t.id === id || t.pinned);
+  if (tabs.length === layout.tabs.length && layout.activeTabId === id) return layout;
+  return { tabs, activeTabId: id };
+}
+
+/** {@link AppTabsState.moveTab}, as a pure function. */
+export function moveTabIn(layout: AppTabsLayout, from: number, to: number): AppTabsLayout {
+  const tab = layout.tabs[from];
+  if (!tab || !Number.isInteger(to)) return layout;
+  const pinned = pinnedCount(layout.tabs);
+  // The tab's own side of the pinned line, in final positions.
+  const [low, high] = tab.pinned ? [0, pinned - 1] : [pinned, layout.tabs.length - 1];
+  const target = Math.min(Math.max(to, low), high);
+  if (target === from) return layout;
+  const tabs = [...layout.tabs];
+  tabs.splice(from, 1);
+  tabs.splice(target, 0, tab);
+  return { ...layout, tabs };
 }
 
 /** Tab list state and the transitions that can change it. */
@@ -352,6 +465,42 @@ interface AppTabsState extends PersistedTabs {
    * @param index - Position in the active tab's `history`, oldest first.
    */
   goToHistoryIndex: (index: number) => void;
+  /**
+   * Pin or unpin a tab. Pinning moves it to the end of the pinned run, and
+   * unpinning to the start of the unpinned tabs, so it lands next to the tabs
+   * it now belongs with (Chrome's placement). Asking for the state a tab
+   * already has, or naming no tab, changes nothing.
+   *
+   * @param id - Id of the tab to pin or unpin.
+   * @param pinned - `true` to pin, `false` to unpin.
+   */
+  setTabPinned: (id: string, pinned: boolean) => void;
+  /**
+   * Open a copy of a tab right after it and make the copy active. The copy
+   * holds the same page with a history of just that page — it is a new tab,
+   * not a clone of where the old one has been — and it is pinned when the
+   * original is, which is also what keeps "right after it" on the right side.
+   *
+   * @param id - Id of the tab to copy.
+   */
+  duplicateTab: (id: string) => void;
+  /**
+   * Close every unpinned tab except `id`, and make `id` active. Pinned tabs
+   * stay: pinning a tab is asking to keep it. Ignores an id that names no tab.
+   *
+   * @param id - Id of the tab to keep.
+   */
+  closeOtherTabs: (id: string) => void;
+  /**
+   * Move the tab at `from` to position `to`, shifting the tabs between. A tab
+   * never crosses to the other side of the pinned line: a target past it is
+   * held at the nearest place on the tab's own side. Out-of-range `from`
+   * changes nothing.
+   *
+   * @param from - Current index of the tab to move.
+   * @param to - Index it should end up at.
+   */
+  moveTab: (from: number, to: number) => void;
 }
 
 /**
@@ -361,26 +510,9 @@ interface AppTabsState extends PersistedTabs {
 export const useAppTabsStore = create<AppTabsState>((set) => ({
   ...(readPersistedTabs() ?? seedTabsFromLocation()),
 
-  openTab: (href) =>
-    set((state) => {
-      const tab = mintTab(href);
-      const activeIndex = state.tabs.findIndex((t) => t.id === state.activeTabId);
-      const tabs = [...state.tabs];
-      tabs.splice(activeIndex >= 0 ? activeIndex + 1 : tabs.length, 0, tab);
-      return { tabs, activeTabId: tab.id };
-    }),
+  openTab: (href) => set((state) => openTabIn(state, href)),
 
-  closeTab: (id) =>
-    set((state) => {
-      if (state.tabs.length <= 1) return state;
-      const index = state.tabs.findIndex((t) => t.id === id);
-      if (index === -1) return state;
-      const tabs = state.tabs.filter((t) => t.id !== id);
-      if (state.activeTabId !== id) return { tabs, activeTabId: state.activeTabId };
-      // The neighbour that slid into this index, else the one before it.
-      const next = tabs[index] ?? tabs[index - 1];
-      return { tabs, activeTabId: next.id };
-    }),
+  closeTab: (id) => set((state) => closeTabIn(state, id)),
 
   selectTab: (id) =>
     set((state) => (state.tabs.some((t) => t.id === id) ? { activeTabId: id } : state)),
@@ -419,6 +551,14 @@ export const useAppTabsStore = create<AppTabsState>((set) => ({
       const moved: AppTab = { ...active, href: active.history[index], cursor: index };
       return { tabs: state.tabs.map((t) => (t.id === active.id ? moved : t)) };
     }),
+
+  setTabPinned: (id, pinned) => set((state) => pinTabIn(state, id, pinned)),
+
+  duplicateTab: (id) => set((state) => duplicateTabIn(state, id)),
+
+  closeOtherTabs: (id) => set((state) => closeOtherTabsIn(state, id)),
+
+  moveTab: (from, to) => set((state) => moveTabIn(state, from, to)),
 }));
 
 // Write-through persistence. Subscribing here (rather than inside each action)

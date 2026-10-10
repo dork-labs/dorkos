@@ -86,6 +86,10 @@ export interface InSessionCapabilityHold {
  *   which keep the token/poll flow and draw no cards. A per-call
  *   {@link InSessionSurface} is assembled from it plus the SDK abort signal on
  *   each invocation.
+ * @param alwaysLoaded - The session's eager-loading set (see `tool-exposure.ts`).
+ *   An agent session passes the wider set, so the capability-projected
+ *   agent-to-agent tools (`chat_send`, `chat_read`) load from turn 1 there just
+ *   as the hand-registered ones do. Defaults to the standing set.
  * @returns SDK tool definitions to spread into `createSdkMcpServer({ tools })`.
  */
 export function capabilityMcpTools(
@@ -95,7 +99,8 @@ export function capabilityMcpTools(
     capabilityId: string,
     signal?: AbortSignal
   ) => Promise<CapabilityInvocationContext | undefined>,
-  hold?: InSessionCapabilityHold
+  hold?: InSessionCapabilityHold,
+  alwaysLoaded?: ReadonlySet<string>
 ) {
   return capabilitiesForMcpServer(registry, transport).map((capability) =>
     tool(
@@ -127,7 +132,7 @@ export function capabilityMcpTools(
       // wants, where a description opens with whatever detail it needs to lead
       // with. Hand-registered tools have no title and fall back to their
       // description's first sentence — see `tool-exposure.ts`.
-      toolExposure(capability.surfaces.mcp!.toolName, capability.title)
+      toolExposure(capability.surfaces.mcp!.toolName, capability.title, alwaysLoaded)
     )
   );
 }

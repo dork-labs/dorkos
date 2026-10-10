@@ -7,11 +7,11 @@
  * A **general-purpose door** takes a path the caller chose and writes whatever
  * it names: `PATCH /api/config`, the `config_patch` operator tool, and
  * `dorkos config set`. Any setting can come through one, including the ones
- * that decide whether a person is ever asked again, so a door has to ask three
+ * that decide whether a person is ever asked again, so a door has to ask two
  * questions before it writes — may this caller change settings that need login
- * on, may it change operator-only settings, and has this person been told what
- * Full autonomy means. {@link applyGuardedConfigWrite} is that sequence, in one
- * place, so the three doors cannot answer it differently.
+ * on, and may it change operator-only settings. {@link applyGuardedConfigWrite}
+ * is that sequence, in one place, so the three doors cannot answer it
+ * differently.
  *
  * A **purpose-built writer** writes one known setting as part of doing
  * something else: the tunnel route recording that a tunnel is now running,
@@ -46,19 +46,19 @@ import {
   stampDisplayNameSource,
   type DisplayNameWriter,
 } from '../../identity/display-name-provenance.js';
-import { applyConfigPatch, deepMerge, describeConfigWrite } from './config-patch.js';
+import {
+  applyConfigPatch,
+  changedConfigLeaves,
+  deepMerge,
+  describeConfigWrite,
+} from './config-patch.js';
+import { recordAudit } from '../../audit/audit-trail.js';
 import {
   describeOperatorOnlyRefusal,
   findOperatorOnlyPaths,
   OPERATOR_ONLY_CONFIG_CODE,
   OPERATOR_ONLY_CONFIG_ERROR,
 } from './config-write-policy.js';
-import {
-  AUTONOMY_ACK_REQUIRED_CODE,
-  AUTONOMY_DEFAULT_ACK_MESSAGE,
-  demoteAutonomyDefaultsOnAckClear,
-  findUnacknowledgedAutonomyDefaults,
-} from '../approvals/autonomy-consent.js';
 
 /**
  * A write this caller may not make, in the one shape all three doors answer
@@ -112,45 +112,13 @@ export interface ConfigWriteAuthority {
  * default login-off posture, where the server admits it cannot tell the cockpit
  * from any other local process (`caller-authority.ts`). Refusing the terminal
  * what the browser is allowed would not add a guarantee; it would only move the
- * person to `dorkos config edit`, which hands them the raw file with no policy,
- * no consent door and no log at all. A bar that is trivially walked around is
+ * person to `dorkos config edit`, which hands them the raw file with no policy
+ * and no log at all. A bar that is trivially walked around is
  * worse than none, because it reads like protection.
  *
- * ## What it does NOT clear
- *
- * The autonomy consent door, which is not an authority question at all. It asks
- * whether the person has been shown what Full autonomy means, and the answer is
- * the same whoever is typing — so `dorkos config set
- * runtimes.claudeCode.defaultTrustStop autonomy` is refused with the cockpit's
- * own sentence until the acknowledgement exists. That refusal is the one this
- * whole module was written for: it was reproduced against the built CLI on an
- * install whose `ui.autonomyAcknowledgedAt` was `null` (DOR-1247). The terminal
- * has its own way to satisfy it honestly — `dorkos config acknowledge-autonomy`
- * prints what the person is agreeing to and asks once — and the refusal names
- * that command, because a sentence with no next step is a dead end in a shell.
- *
- * ## THE RESIDUAL: a person with a shell can sign their own consent form
- *
- * State it plainly, next to the `curl` one below, because it is the same shape
- * and the same answer. `ui.autonomyAcknowledgedAt` is `operator-only`, and this
- * authority clears the operator bar — so `dorkos config set
- * ui.autonomyAcknowledgedAt <date>` followed by `dorkos config set …
- * defaultTrustStop autonomy` goes through, with the consent text never on
- * screen. Reproduced end to end.
- *
- * That is the trust model, not a hole in it. The CLI *is* the operator, and an
- * operator may record their own decision — the cockpit's own "Don't show this
- * again" checkbox is the same act through a different surface. What a ritual can
- * buy is that the DEFAULT path shows a person what they are agreeing to; what it
- * cannot buy is stopping somebody who already knows the field name from writing
- * it, any more than `dorkos config edit` could be stopped. An agent is a
- * different matter and is stopped by a different mechanism: `operator-only`
- * refuses it on the capability surface and over HTTP, and neither of those is
- * this authority.
- *
- * The mitigation is the same one the `curl` residual gets: both writes leave an
- * audit line naming the door, so the sequence is visible afterwards even though
- * nothing refuses it at the time. Turning on Require login narrows the HTTP half;
+ * The mitigation is the same one the `curl` residual gets: every write leaves
+ * an audit line naming the door, so it is visible afterwards even though nothing
+ * refuses it at the time. Turning on Require login narrows the HTTP half;
  * nothing narrows the terminal half, because the terminal is the person.
  */
 export const LOCAL_OPERATOR_AUTHORITY: ConfigWriteAuthority = {
@@ -186,8 +154,7 @@ export const CLOUD_SETTINGS_OWNER_ONLY_MESSAGE =
  * patch, and the card asked in the floor area the patch touches, where Always
  * allow is never offered, so every such write is its own yes. The two bars that
  * are not about "may you" still apply: `permissions` is never written through
- * this door at all (`USE_PERMISSIONS_API`), and moving a trust stop to Full
- * autonomy still needs the acknowledgement.
+ * this door at all (`USE_PERMISSIONS_API`).
  *
  * Only ever chosen from `context.approval` with `via: 'approval'`, which the
  * registry sets after the gate spent a person's approval, never from anything a
@@ -247,6 +214,7 @@ const TRUST_STOP_LEAVES: readonly { path: readonly string[]; runtime?: string }[
   { path: ['runtimes', 'claudeCode', 'defaultTrustStop'], runtime: 'claude-code' },
   { path: ['runtimes', 'codex', 'defaultTrustStop'], runtime: 'codex' },
   { path: ['runtimes', 'opencode', 'defaultTrustStop'], runtime: 'opencode' },
+  { path: ['runtimes', 'doe', 'defaultTrustStop'], runtime: 'doe' },
 ];
 
 /** Read one leaf out of a stored config, tolerating any shape. */
@@ -430,21 +398,16 @@ function namesPermissions(patch: unknown): boolean {
 }
 
 /**
- * Apply a general-purpose config write: the policy bar, the autonomy consent
- * door, the write itself, and the audit line — in that order, once.
+ * Apply a general-purpose config write: the policy bar, the write itself, and
+ * the audit line — in that order, once.
  *
  * ## The order, and what each step of it decides
  *
  * 1. **The permissions refusal.** What agents may do is never written here.
  * 2. **The operator bar.** Which settings are the person's alone
  *    (`CONFIG_WRITE_POLICY`), and whether this caller counts as one.
- * 3. **The autonomy door.** Not an authority question: "may you" has already
- *    been answered, and this asks "were you told what this means". A Reset —
- *    clearing the acknowledgement — folds its demotion into the SAME patch, so
- *    the record and the defaults it licensed can never disagree, not even for
- *    one write.
- * 4. **The write**, through the one merge-and-validate implementation.
- * 5. **The line**, derived from what the store actually held before and after,
+ * 3. **The write**, through the one merge-and-validate implementation.
+ * 4. **The line**, derived from what the store actually held before and after,
  *    so it says what HAPPENED rather than what was asked for.
  *
  * A refusal at any step writes nothing at all — the check runs before the merge
@@ -482,47 +445,16 @@ export function applyGuardedConfigWrite(write: GuardedConfigWrite): GuardedConfi
     if (refusal) return { ok: false, kind: 'refused', refusal };
   }
 
-  // The Reset demotion is merged ON TOP of the patch rather than written after
-  // it: two writes would leave a window in which a session could be born
-  // bypassed with no acknowledgement on file.
-  const demotion = demoteAutonomyDefaultsOnAckClear(requested);
-  const afterDemotion = demotion
-    ? deepMerge(requested as Record<string, unknown>, demotion)
-    : (requested as Record<string, unknown>);
-
-  // …and so is the display-name provenance stamp, for a milder version of the
-  // same reason (DOR-1022): folded in, the name and the record of who wrote it
+  // The display-name provenance stamp is merged ON TOP of the patch rather
+  // than written after it (DOR-1022): folded in, the name and the record of who wrote it
   // land in one write, so no reader can catch a new name still carrying the
-  // previous writer's stamp. It rides ABOVE the caller's patch for a second
-  // reason too — `profile.displayNameSource` is `operator-only`, so a patch that
+  // previous writer's stamp. It rides ABOVE the caller's patch because `profile.displayNameSource` is `operator-only`, so a patch that
   // named it was already refused above, and nothing a caller sent can be
   // overwritten here.
-  const provenance = displayNameSourcePatch(afterDemotion, writer);
-  const patch = provenance ? deepMerge(afterDemotion, provenance) : afterDemotion;
-
-  // Asked of the MERGED patch: a Reset that demotes a stop in the same breath
-  // is not a request for autonomy.
-  const unacknowledged = findUnacknowledgedAutonomyDefaults(patch);
-  if (unacknowledged.length > 0) {
-    return {
-      ok: false,
-      kind: 'refused',
-      refusal: {
-        // Nothing about the request is malformed; a precondition the caller can
-        // go and satisfy is exactly what 428 says.
-        status: 428,
-        code: AUTONOMY_ACK_REQUIRED_CODE,
-        error: AUTONOMY_DEFAULT_ACK_MESSAGE,
-        message: AUTONOMY_DEFAULT_ACK_MESSAGE,
-        paths: unacknowledged,
-      },
-    };
-  }
-  if (demotion) {
-    logger.info(
-      `[Config] Full-autonomy acknowledgement cleared by ${source}; standing defaults demoted`
-    );
-  }
+  const provenance = displayNameSourcePatch(requested as Record<string, unknown>, writer);
+  const patch = provenance
+    ? deepMerge(requested as Record<string, unknown>, provenance)
+    : (requested as Record<string, unknown>);
 
   const result = applyConfigPatch(patch);
   if (!result.ok) {
@@ -540,10 +472,36 @@ export function applyGuardedConfigWrite(write: GuardedConfigWrite): GuardedConfi
   const touched = describeConfigWrite(result.before, result.config);
   if (touched) {
     logger.info(`[Config] Patched by ${source}: ${touched}`);
+    recordConfigChange(changedConfigLeaves(result.before, result.config), touched);
   }
   reportTrustStopMoves(result.before, result.config, { source, writer });
 
   return { ok: true, config: result.config, warnings: result.warnings };
+}
+
+/**
+ * Record a config change in the audit log, field by field (spec `audit-trail`
+ * PR2). Who changed it comes from the current audit scope: the request, or the
+ * agent whose tool call made the write. Secret fields keep their name and lose
+ * both values; the audit writer does that, so this passes them through.
+ *
+ * @param change - Each changed leaf, before and after.
+ * @param touched - The same change as the log line names it.
+ * @param via - The purpose-built writer that made it, when not a settings door.
+ */
+function recordConfigChange(
+  change: { field: string; before: unknown; after: unknown }[],
+  touched: string,
+  via?: string
+): void {
+  recordAudit({
+    action: 'config.changed',
+    operation: 'modify',
+    target: { type: 'config', id: 'config.json', name: 'Settings' },
+    outcome: 'ok',
+    change,
+    summary: via ? `Changed settings through ${via}: ${touched}` : `Changed settings: ${touched}`,
+  });
 }
 
 /**
@@ -580,5 +538,10 @@ export function logConfigWrite(
   const touched = describeConfigWrite({ [section]: before }, { [section]: after });
   if (touched) {
     logger.info(`[Config] Set by ${subsystem}: ${touched}`);
+    recordConfigChange(
+      changedConfigLeaves({ [section]: before }, { [section]: after }),
+      touched,
+      subsystem
+    );
   }
 }

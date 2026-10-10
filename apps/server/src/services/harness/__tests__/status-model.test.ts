@@ -626,7 +626,7 @@ describe('VC-01 — the status model derives eight states from five reads', () =
         name: 'globex',
         reason:
           'is installed twice: once for all your projects, and once in this project. ' +
-          'In a session DorkOS runs, Claude Code sees both copies, under different names. ' +
+          'In a chat DorkOS runs, Claude Code sees both copies, under different names. ' +
           "On its own, Claude Code sees only this project's copy. So does Codex, until you share it. " +
           'Uninstall one if you only meant to have one. ' +
           `Run dorkos uninstall globex --project ${repo}  to remove this project's copy. ` +

@@ -60,6 +60,7 @@
  *
  * @module server/services/rooms/repo/room-merge-service
  */
+import { recordAudit } from '../../audit/audit-trail.js';
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
@@ -669,6 +670,27 @@ export class RoomMergeService {
     });
 
     await this.recordLastMergeSeq(roomId, entry.seq);
+    // The commit is authored as the agent whose work it is; the audit log names
+    // who MERGED it, from the caller's own scope (spec `audit-trail` PR2), so
+    // an owner merging an agent's copy is not recorded as the agent.
+    recordAudit({
+      action: 'room.merged',
+      operation: 'modify',
+      target: {
+        type: 'room-branch',
+        id: target.branch,
+        name: `${target.agentName}'s work`,
+        containerId: roomId,
+      },
+      outcome: 'ok',
+      // The short form: a full commit id is long hex, which the audit log's
+      // redaction treats as a possible secret. Twelve characters is what git
+      // itself shows, and is enough to find the commit.
+      change: [{ field: 'main', after: commit.slice(0, 12) }],
+      summary: `Merged ${target.agentName}'s work into the room (${stat.files} file${
+        stat.files === 1 ? '' : 's'
+      })`,
+    });
     logger.info('[rooms] work merged into a room’s main', {
       roomId,
       branch: target.branch,

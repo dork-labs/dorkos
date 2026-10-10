@@ -44,7 +44,12 @@ function credits(over: Partial<CloudCreditsStatus> = {}): CloudCreditsStatus {
     killed: false,
     linked: false,
     ready: false,
-    runtimes: { 'claude-code': 'wired', codex: 'follow-up', opencode: 'follow-up' },
+    runtimes: {
+      'claude-code': 'wired',
+      codex: 'follow-up',
+      opencode: 'follow-up',
+      doe: 'follow-up',
+    },
     defaults: {},
     notices: [],
     ...over,

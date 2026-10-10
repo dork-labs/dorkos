@@ -485,7 +485,7 @@ describe('a held-back package that kept files it could not sort (DOR-2322)', () 
 describe('describeGlobalActivationCapability', () => {
   it('names the card and marks it as needing a decision, and nothing else', () => {
     expect(describeGlobalActivationCapability(GLOBAL_ACTIVATION_CAPABILITY_ID)).toEqual({
-      title: 'Let a globally installed package run programs in every session',
+      title: 'Let a globally installed package run programs in every chat',
       tier: 'destructive',
     });
     expect(describeGlobalActivationCapability('marketplace.install')).toBeUndefined();
@@ -522,6 +522,6 @@ describe('summariseGlobalActivation', () => {
           },
         ],
       })
-    ).toContain('run 2 programs and commands in every session');
+    ).toContain('run 2 programs and commands in every chat');
   });
 });

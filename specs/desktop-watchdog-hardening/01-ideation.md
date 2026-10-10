@@ -45,7 +45,7 @@ status: ideation
 - `apps/desktop/src/main/diagnostics/index.ts`: `collectElectronLog`, `collectServerLog`, `collectUpdateState`, `collectRedactedConfig`. `renderer-health.json` is collected nowhere.
 - `.github/workflows/desktop-smoke.yml`: one job, `macos-latest`, no tests by design (the native rebuild flips better-sqlite3 and node-pty to Electron's ABI and kills every plain-Node vitest worker in the monorepo). The header is explicit that macOS runners are the scarcest resource in the repo.
 - GitHub #1840, #1860, PR #1853, PR #1862: the two incidents and the two fixes. PR #1862's own "Gaps" section names both follow-ups this spec picks up.
-- ADR `260829-085851` and `plans/desktop-resilience-program.md` sections 1 and 4: the design history. The ADR already carries a dated amendment saying "at every load and every navigation" was wider than the design meant.
+- ADR `260829-085851` and `plans/archive/desktop-resilience-program.md` sections 1 and 4: the design history. The ADR already carries a dated amendment saying "at every load and every navigation" was wider than the design meant.
 
 ## 3) Codebase Map
 

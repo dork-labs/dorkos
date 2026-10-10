@@ -69,7 +69,8 @@ export const RuntimeEnvironmentSchema = z
         claudeCode: RuntimeInheritedEnvNamesSchema,
         codex: RuntimeInheritedEnvNamesSchema,
         opencode: RuntimeInheritedEnvNamesSchema,
+        doe: RuntimeInheritedEnvNamesSchema,
       })
-      .default(() => ({ claudeCode: [], codex: [], opencode: [] })),
+      .default(() => ({ claudeCode: [], codex: [], opencode: [], doe: [] })),
   })
-  .default(() => ({ inherit: { claudeCode: [], codex: [], opencode: [] } }));
+  .default(() => ({ inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } }));

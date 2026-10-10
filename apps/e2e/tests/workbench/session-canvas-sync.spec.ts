@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { Page } from '@playwright/test';
 import { test, expect } from '../../fixtures';
 import { openInCanvasBrowser, startDevServer } from '../../pages/canvas-dev-server';
+import { draftSessionUrl } from '../../pages/session-draft';
 import { ChatPage } from '../../pages/ChatPage';
 import { RightPanelPage } from '../../pages/RightPanelPage';
 
@@ -47,7 +48,8 @@ test.describe('The session canvas is the same in every window @smoke', () => {
     const sessionId = randomUUID();
 
     // --- Window one: put a page on this session's canvas. ------------------
-    await rightPanel.goto(`/session?session=${sessionId}`);
+    const draftUrl = await draftSessionUrl(page, sessionId);
+    await rightPanel.goto(draftUrl);
     await rightPanel.ensureTabStripOpen();
     await rightPanel.canvasTab.click();
     await page.getByRole('button', { name: /^Markdown/ }).click();
@@ -66,7 +68,7 @@ test.describe('The session canvas is the same in every window @smoke', () => {
       // nothing until it is open, and the per-agent layout restore can shut it
       // again mid-wait.
       const secondPanel = new RightPanelPage(secondPage);
-      await secondPanel.goto(`/session?session=${sessionId}`);
+      await secondPanel.goto(draftUrl);
       await secondPanel.ensureTabStripOpen();
       await secondPanel.canvasTab.click();
       // Straight off the cold snapshot — no reload, no second click.
@@ -261,7 +263,7 @@ test.describe('A canvas survives the first-turn rename @smoke', () => {
     // Keyed by the id the window opens under, so the one-time import runs first
     // and the rekey then has to carry what it wrote.
     await seedRetiredCanvas(page, sessionId);
-    await rightPanel.goto(`/session?session=${sessionId}&dir=${encodeURIComponent(agentDir)}`);
+    await rightPanel.goto(await draftSessionUrl(page, sessionId, agentDir));
     await rightPanel.ensureTabStripOpen();
     await rightPanel.canvasTab.click();
     await expect(page.getByRole('tab', { name: IMPORTED_TAB })).toBeVisible({ timeout: 20_000 });
@@ -308,7 +310,7 @@ test.describe('A canvas survives the first-turn rename @smoke', () => {
       void held.then(() => socket.connectToServer());
     });
 
-    await rightPanel.goto(`/session?session=${sessionId}&dir=${encodeURIComponent(agentDir)}`);
+    await rightPanel.goto(await draftSessionUrl(page, sessionId, agentDir));
     await rightPanel.ensureTabStripOpen();
     await rightPanel.canvasTab.click();
     await page.getByRole('button', { name: /^Markdown/ }).click();
@@ -346,7 +348,7 @@ test.describe('A canvas survives the first-turn rename @smoke', () => {
     // so nothing is imported while the window is on the minted id and the import
     // runs only once the rename has moved the route.
     await seedRetiredCanvas(page, canonicalId);
-    await rightPanel.goto(`/session?session=${sessionId}&dir=${encodeURIComponent(agentDir)}`);
+    await rightPanel.goto(await draftSessionUrl(page, sessionId, agentDir));
     await rightPanel.ensureTabStripOpen();
     await rightPanel.canvasTab.click();
     await expect(page.getByRole('tab', { name: IMPORTED_TAB })).toHaveCount(0);
@@ -411,7 +413,7 @@ test.describe('A file opened before the session stream attaches @smoke', () => {
       void held.then(() => socket.connectToServer());
     });
 
-    await rightPanel.goto(`/session?session=${sessionId}&dir=${encodeURIComponent(agentDir)}`);
+    await rightPanel.goto(await draftSessionUrl(page, sessionId, agentDir));
     await rightPanel.ensureTabStripOpen();
     await rightPanel.canvasTab.click();
     await page.getByRole('button', { name: /^Markdown/ }).click();

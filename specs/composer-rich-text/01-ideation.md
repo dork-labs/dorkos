@@ -34,7 +34,7 @@ design-session: .dork/visual-companion/81863-1786054606
 - Memory `project_composer_rooms_unification_design`: fork rationale + ~54kb core cost; one typeahead plugin for both sigils.
 - `apps/client/src/layers/features/chat/ui/input/ChatInput.tsx` + `use-input-keyboard.ts`, `use-textarea-resize.ts`: the behaviors the editor must reproduce (Enter-to-send ladder, Shift+Enter newline, clear-armed, resize caps).
 - `apps/client/src/layers/widgets/room-view/ui/RoomComposer.tsx`: room mention autocomplete (`useMentionAutocomplete` over the roster) — becomes the `@` typeahead's data source in rooms.
-- `plans/composer-identity-components/design-handoff.md`: `MentionPill` exists in `shared/ui` — the in-composer mention highlight should visually rhyme with the in-message pill, but the in-composer one is editor decoration, not the shipped renderer.
+- `plans/archive/composer-identity-components/design-handoff.md`: `MentionPill` exists in `shared/ui` — the in-composer mention highlight should visually rhyme with the in-message pill, but the in-composer one is editor decoration, not the shipped renderer.
 
 ## 3) Codebase Map
 

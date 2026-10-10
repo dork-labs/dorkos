@@ -27,7 +27,6 @@ import {
 import type {
   AgentRuntimeLike,
   ApprovalAuthorizer,
-  InboundTurnBudgets,
   TraceStoreLike,
   TasksStoreLike,
   AgentSessionStoreLike,
@@ -37,6 +36,7 @@ import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
 import { logger, createTaggedLogger } from '../../lib/logger.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 import { createLateTurnSource } from '../session/runtime-turns/late-turns.js';
+import { relayTurnOrigin } from '../session/origin/turn-origin.js';
 import { resolveTurnRuntimeType } from '../runtimes/shared/resolve-agent-runtime-type.js';
 import { AdapterError } from './adapter-error.js';
 import { createTurnExecutionSettingsResolver } from './turn-execution-settings.js';
@@ -66,13 +66,6 @@ export interface AdapterFactoryDeps {
    * same posture-as-data argument `UpgradeRoute.credential` makes.
    */
   approvalAuthorizer: ApprovalAuthorizer;
-  /**
-   * Where a running agent turn records the envelope it is answering, so that
-   * turn's own `relay_send*` calls continue that budget (DOR-791). This is
-   * `RelayCore.inboundBudgets` — the SAME instance the in-session tool surface
-   * reads back from; a second one would thread nothing and fail silently.
-   */
-  inboundBudgets?: InboundTurnBudgets;
 }
 
 /**
@@ -188,7 +181,7 @@ export async function createAdapter(
           placementOf: (agentPath) => resolveSessionCwd({ agentPath }),
         }),
         // Who answers a message addressed to an AGENT rather than a session —
-        // the shape an agent-to-agent `relay_send` arrives on. The same single
+        // the shape an A2A or external MCP message arrives on. The same single
         // copy of the binding-then-manifest ladder rooms and the chat bindings
         // ask, so one agent DM'ing another cannot get a different program than
         // the same agent reached from Telegram would (DOR-1627), and a
@@ -204,18 +197,22 @@ export async function createAdapter(
         // The origin seeds no permission mode: an agent-to-agent DM carries
         // the grant it arrived under, and an absent grant is not consent
         // (DOR-604, DOR-2105).
-        bindSessionRuntime: async ({ sessionId, runtimeType, agentDirectory }) => {
+        //
+        // Only a sender stamped as one of our agents is an agent DM. The A2A
+        // gateway publishes to the same agent subjects, so everything else is
+        // an `outside-sender` origin, which seeds nothing whatever a later
+        // change does to agent DMs (spec `trusted-by-default-flip` §4).
+        bindSessionRuntime: async ({ sessionId, runtimeType, agentDirectory, from }) => {
           await runtimeRegistry.persistSessionRuntime(
             sessionId,
             runtimeType,
-            { kind: 'agent-dm' },
+            relayTurnOrigin(from),
             agentDirectory
           );
         },
         // Every approval that arrives on the relay bus is checked here too,
         // before the runtime is touched (spec `ask-entitlement` §5.3).
         approvalAuthorizer: deps.approvalAuthorizer,
-        inboundBudgets: deps.inboundBudgets,
         // An agent that ends its turn while a helper still works reports back in
         // a turn of its own; this is how that report reaches the inbox of the
         // agent that asked (DOR-2717).

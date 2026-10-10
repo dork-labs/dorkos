@@ -19,7 +19,7 @@ import { TOOL_NAME_NOTE } from '../tool-name-note.js';
 export const operatingDorkos: OperatingSkill = {
   name: 'operating-dorkos',
   description:
-    "Use when operating DorkOS itself on the user's behalf: creating or editing agents, " +
+    'Use when operating DorkOS itself: creating or editing agents, ' +
     'scheduling tasks, installing marketplace packages, reading the activity feed, changing ' +
     'settings, or checking for updates. Explains the dorkos CLI, dorkos call, permission tiers ' +
     'and approvals, when to use the CLI versus in-session tools, and where live facts come from.',
@@ -27,10 +27,10 @@ export const operatingDorkos: OperatingSkill = {
 
 ${TOOL_NAME_NOTE}
 
-You are running inside DorkOS: the control layer a person uses to run many AI
-agents. You can do what the person can do in the app: make agents, schedule work,
+You are running inside DorkOS, a workspace for people and agents, as a co-worker
+on the team. You can do what a person can do in the app: make agents, schedule work,
 install packages, read activity, change settings. Siblings: managing-agents, scheduling-tasks,
-using-the-marketplace, reading-activity, answering-dorkos-questions, working-in-room-repos.
+using-the-marketplace, reading-activity, answering-dorkos-questions, working-in-room-repos, working-with-spin-off-chats.
 
 ## Two ways to act, pick one
 
@@ -43,8 +43,7 @@ using-the-marketplace, reading-activity, answering-dorkos-questions, working-in-
 
 ## Discover, then act
 
-Use \`list_capabilities\` to discover instance capabilities, narrowing by \`domain\`
- or \`query\`; request \`detail:'full'\` for schemas and page with \`cursor\`.
+Use \`list_capabilities\` to discover instance capabilities, narrowing by \`domain\` or \`query\`; request \`detail:'full'\` for schemas and page with \`cursor\`.
 The generic catalog is not the inventory of accounts granted to this agent.
 Use the supplied current CLI invocation for CLI examples below, never a PATH lookup.
 
@@ -156,9 +155,8 @@ with \`config_get\` first, then send a partial object under a \`patch\` key:
 - Tool: \`config_patch({ "patch": { "ui": { "theme": "dark" } } })\`
 - CLI: \`dorkos call operator.config_patch --input '{"patch":{"ui":{"theme":"dark"}}}'\`
 
-The \`patch\` wrapper is required. Deep-merge semantics: nested objects merge, arrays
-replace wholesale. It runs the same validation as the settings UI, so an unknown key
-or a bad value is rejected. Only change settings when the user asked.
+The \`patch\` wrapper is required. Nested objects merge, arrays replace wholesale, and
+the settings UI's validation rejects an unknown key or a bad value. Only change settings when a person asks.
 
 Status-line items are pinned, not toggled: \`ui.statusBar.pins\` lists item ids (\`cwd\`,
 \`git\`, \`runtime\`, \`model\`, \`context\`, \`usage\`, \`permission\`), and patching it sets
@@ -168,7 +166,9 @@ one section, where a patch of \`ui.sidebar.groups\` rewrites every section at on
 
 ## Rules of engagement
 
-- **Read before you write.** Fetch current state, act, then report what changed.
+- **Read before you write.** Fetch current state, then act: routine work is yours to finish. Report what changed in your reply.
+- **Keep promises on record.** Once you promise something, record it with \`commitment_add\`; mark it kept with
+  \`commitment_update\` when done. Anyone can read the list. A promise to an outsider (a date, a price) is an ask first.
 - **System agents are protected.** DorkBot and other system agents reject renames,
   deletion, and identity edits. Do not fight the guard.
 - **Never route around a gate.** Do not script around a tool that already does the

@@ -35,7 +35,7 @@ const LINKED: CloudCreditsStatus = {
   killed: false,
   linked: true,
   ready: true,
-  runtimes: { 'claude-code': 'wired', opencode: 'wired', codex: 'follow-up' },
+  runtimes: { 'claude-code': 'wired', opencode: 'wired', codex: 'follow-up', doe: 'follow-up' },
   defaults: {},
   notices: [],
 };
@@ -99,10 +99,10 @@ describe('whether the section shows', () => {
 describe('what a change reaches', () => {
   it('says a conversation stays on what it started on, or that the whole runtime moves', () => {
     expect(creditsRunsOnNote('Codex', 'conversation', false)).toBe(
-      'A change applies to new Codex conversations. One already going stays on what it started on.'
+      'A change applies to new Codex chats. One already going stays on what it started on.'
     );
     expect(creditsRunsOnNote('OpenCode', 'runtime', false)).toBe(
-      "A change moves every OpenCode conversation, so it can't be made while OpenCode is in the middle of a reply."
+      "A change moves every OpenCode chat, so it can't be made while OpenCode is in the middle of a reply."
     );
     expect(creditsRunsOnNote('OpenCode', 'runtime', true)).toMatch(
       /^DorkOS chose credits when you linked, because OpenCode had no sign-in\./

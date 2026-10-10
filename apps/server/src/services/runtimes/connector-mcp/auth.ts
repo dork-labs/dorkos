@@ -13,7 +13,7 @@ export interface ConnectorRuntimeAuthLocals {
   connectorPrincipal?: ServerPrincipalProof;
 }
 
-const RUNTIMES = new Set<ConnectorRuntime>(['claude-code', 'codex', 'opencode']);
+const RUNTIMES = new Set<ConnectorRuntime>(['claude-code', 'codex', 'opencode', 'doe']);
 
 /** Return a uniform unauthorized response without disclosing refusal state. */
 function refuse(res: Response): void {

@@ -42,7 +42,7 @@ export function CanvasImageDiffContent({ content }: CanvasImageDiffContentProps)
   useAgentEditRefresh(cwd, content.sourcePath, review.bumpVersion);
 
   if (cwd === null || sessionId === null) {
-    return <DiffMessage>Open a session to review changes.</DiffMessage>;
+    return <DiffMessage>Open a chat to review changes.</DiffMessage>;
   }
 
   const baselineBase = transport.diffBaselineMediaUrl(cwd, content.sourcePath, sessionId);
@@ -50,7 +50,7 @@ export function CanvasImageDiffContent({ content }: CanvasImageDiffContentProps)
   if (baselineBase === null || currentBase === null) {
     return (
       <DiffMessage>
-        Image comparison isn’t available here. Open this session in the DorkOS web app.
+        Image comparison isn’t available here. Open this chat in the DorkOS web app.
       </DiffMessage>
     );
   }
@@ -129,7 +129,7 @@ export function CanvasImageDiffContent({ content }: CanvasImageDiffContentProps)
         {noBaseline && (
           <div className="text-muted-foreground flex items-start gap-1.5 px-3 pb-2 text-xs">
             <Info className="mt-0.5 size-3.5 shrink-0" />
-            <span>No earlier version from this session, so there’s nothing to restore.</span>
+            <span>No earlier version from this chat, so there’s nothing to restore.</span>
           </div>
         )}
       </div>

@@ -43,7 +43,7 @@ const nextLaunch = vi.hoisted(() => ({
 }));
 
 vi.mock('../../session/launch/launch-session.js', () => ({
-  AGENT_LAUNCH_CAP_MESSAGE: 'Too many agent-started sessions are running (8).',
+  AGENT_LAUNCH_CAP_MESSAGE: 'Too many spin-off chats are running (8).',
   isSessionLaunchRefusal: (result: object) => 'refused' in result,
   dispatchSessionMessage: vi.fn(async (opts: (typeof launches)[number]) => {
     launches.push(opts);
@@ -59,7 +59,7 @@ vi.mock('../../session/launch/launch-session.js', () => ({
 }));
 
 import { eventFanOut } from '../../core/event-fan-out.js';
-import { SessionListBroadcaster } from '../../session/session-list-broadcaster.js';
+import { SessionListBroadcaster } from '../../session/catalog/session-list-broadcaster.js';
 import { applySessionOriginOverlays } from '../../session/origin/session-origin-overlays.js';
 import { _forgetTitles } from '../../session/origin/started-by-origin-overlay.js';
 import { SessionStartedByStore } from '../../session/origin/session-started-by-store.js';

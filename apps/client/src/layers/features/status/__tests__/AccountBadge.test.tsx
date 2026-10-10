@@ -27,7 +27,6 @@ import {
   useAppStore,
 } from '@/layers/shared/model';
 import { STATUS_TONE_SURFACE, TooltipProvider } from '@/layers/shared/ui';
-import { SessionRow } from '@/layers/entities/session';
 
 // The session list: stubbed, because the real one needs a router.
 let mockSessions: Session[] = [];
@@ -82,11 +81,7 @@ function transportWith(count: number): Transport {
   return createMockTransport({ getConfig: vi.fn().mockResolvedValue(config) });
 }
 
-function renderBadge(
-  transport: Transport,
-  usage: AccountUsage[] = [],
-  { withRow = false } = {}
-): QueryClient {
+function renderBadge(transport: Transport, usage: AccountUsage[] = []): QueryClient {
   const queryClient = createTestQueryClient();
   seedAccountUsage(queryClient, usage);
   render(
@@ -96,14 +91,6 @@ function renderBadge(
           <div data-testid="header">
             <AccountBadge sessionId={SID} />
           </div>
-          {withRow && mockSessions[0] && (
-            <SessionRow
-              variant="compact"
-              session={mockSessions[0]}
-              isActive={false}
-              onClick={() => {}}
-            />
-          )}
         </TooltipProvider>
       </TransportProvider>
     </QueryClientProvider>
@@ -193,28 +180,6 @@ describe('AccountBadge', () => {
     const badge = await screen.findByRole('group', { name: 'Acct 4' });
     expect(badge).toHaveTextContent(/^Acct 4$/);
     expect(badge).not.toHaveClass(...RED);
-  });
-
-  it.each([
-    ['needs you', createMockSessionLimit('ask'), 'out · needs you'],
-    ['handing off', createMockSessionLimit('auto'), 'out · handing off'],
-    ['waiting', createMockSessionLimit('waiting'), 'out · waiting for reset'],
-    ['moved', createMockSessionLimit('continued'), null],
-    ['model only', createMockSessionLimit('ask', { scope: 'model', state: 'model-limited' }), null],
-  ])('agrees with the sidebar row (%s)', async (_case, limit, text) => {
-    mockSessions = [onAccount(4, { status: { lifecycle: 'idle', limit } })];
-    renderBadge(transportWith(4), [], { withRow: true });
-    const badge = await screen.findByRole('group', { name: text ? `Acct 4, ${text}` : 'Acct 4' });
-    const row = screen.getByTestId('session-row');
-    if (text) {
-      expect(row).toHaveTextContent(text);
-      expect(badge).toHaveTextContent(`Acct 4 · ${text}`);
-      expect(badge.classList.contains(RED[0]!)).toBe(row.classList.contains(RED[0]!));
-    } else {
-      expect(row).not.toHaveTextContent(/out ·/);
-      expect(badge).not.toHaveClass(...RED);
-      expect(row).not.toHaveClass(...RED);
-    }
   });
 
   it('keeps the normal badge when only one model ran out (chip state `model-out`)', async () => {

@@ -1,0 +1,46 @@
+{
+  "name": "@dorkos/doe",
+  "version": "0.0.0",
+  "description": "Standalone business agent engine and durable model history",
+  "private": false,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "test:pack": "pnpm run build && node --experimental-strip-types scripts/verify-packed.mjs"
+  },
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "1.0.4",
+    "@earendil-works/pi-ai": "1.0.4",
+    "@earendil-works/pi-mcp": "1.0.4",
+    "better-sqlite3": "^12.11.1",
+    "js-yaml": "^4.3.2",
+    "typebox": "1.3.27"
+  },
+  "devDependencies": {
+    "@dorkos/eslint-config": "workspace:*",
+    "@dorkos/typescript-config": "workspace:*",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^24",
+    "vitest": "^4.1.10"
+  },
+  "license": "MIT",
+  "files": [
+    "dist",
+    "examples",
+    "README.md",
+    "BUILDER.md",
+    "NOTES.md",
+    "LICENSE",
+    "THIRD-PARTY-NOTICES.md"
+  ]
+}

@@ -1,5 +1,5 @@
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
-import { needsConsentRitual } from '@dorkos/shared/permission-semantics';
+import { actsWithoutAsking } from '@dorkos/shared/permission-semantics';
 import { isBypassPermissionMode } from '@/layers/shared/lib/permission-mode';
 import { cn } from '@/layers/shared/lib/utils';
 
@@ -69,7 +69,7 @@ export interface PermissionModeScopeNoteProps {
  *
  * The sentence appears at the moment of the choice, in every place a permission
  * mode or a trust stop is actually picked. One component and one condition, so
- * they cannot drift into saying different things — {@link needsConsentRitual}
+ * they cannot drift into saying different things — {@link actsWithoutAsking}
  * where the runtime's profile is at hand, {@link isBypassPermissionMode} on the
  * name where it is not. The picker list is frozen as a test beside this file,
  * which is what notices when a new picker appears without the note.
@@ -89,7 +89,7 @@ export interface PermissionModeScopeNoteProps {
  * The sentence is true of ANY session mode — a session's permission mode never
  * governs DorkOS-level approvals, whatever its reach — so the narrower condition
  * was not protecting accuracy, it was rationing a correction. What made that
- * untenable is that the consent dialog now carries an unqualified promise for
+ * untenable is that the unattended consent dialog carries an unqualified promise for
  * the middle stop too ("This stop never pauses to ask. It acts without checking
  * with you."), and the strongest sentence on screen is exactly the one that
  * must arrive with its own correction. Matching the door means every dialog the
@@ -114,7 +114,7 @@ export function PermissionModeScopeNote({
   descriptor,
   className,
 }: PermissionModeScopeNoteProps) {
-  const covers = descriptor ? needsConsentRitual(descriptor) : isBypassPermissionMode(mode);
+  const covers = descriptor ? actsWithoutAsking(descriptor) : isBypassPermissionMode(mode);
   if (!covers) return null;
   // Three short paragraphs, not one: each fact is one block under the copy
   // cap, and all three stay visible because the middle one is what keeps a

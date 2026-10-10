@@ -11,9 +11,8 @@
  *
  * @module services/session/launch/session-exists
  */
-import { logger } from '../../../lib/logger.js';
 import { runtimeRegistry, RuntimeNotRegisteredError } from '../../core/runtime-registry.js';
-import { resolveSessionCwdOrNull } from '../resolve-read-cwd.js';
+import { resolveSessionCwdOrNull } from '../resolution/resolve-read-cwd.js';
 
 /**
  * Whether `sessionId` names a session this server knows: one bound to a
@@ -25,8 +24,8 @@ import { resolveSessionCwdOrNull } from '../resolve-read-cwd.js';
  * nobody started, so it proves nothing about whether a conversation exists.
  *
  * Never writes. A session bound to a runtime this server no longer has still
- * exists (the send then says which runtime is missing); any other lookup that
- * throws reads as "not found".
+ * exists (the send then says which runtime is missing). Other lookup errors
+ * propagate so unavailable native discovery cannot silently create a session.
  *
  * @param sessionId - The id the caller named.
  * @param cwd - The folder the caller named, if any; checked for a transcript
@@ -42,10 +41,6 @@ export async function sessionExists(sessionId: string, cwd?: string): Promise<bo
     return (await runtime.getSession(dir, internalId)) !== null;
   } catch (err) {
     if (err instanceof RuntimeNotRegisteredError) return true;
-    logger.warn('[sessionExists] lookup failed; treating the id as unknown', {
-      sessionId,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return false;
+    throw err;
   }
 }

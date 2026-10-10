@@ -28,7 +28,8 @@ import { createMockTransport } from '@dorkos/test-utils';
 
 // The attention rows navigate, and the session list reads `?session=`. Neither
 // is what this file is about, so the router is stubbed rather than stood up.
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useNavigate: () => vi.fn(),
   useSearch: () => ({}),
   useRouter: () => ({ state: { location: { pathname: '/', search: {} } } }),

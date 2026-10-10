@@ -6,22 +6,10 @@ import { useExtensionRegistry, createInitialSlots } from '@/layers/shared/model'
 
 // Mock useIsMobile — default to mobile
 const mockUseIsMobile = vi.fn(() => true);
-// The Trust Dial reads the standing Full-autonomy acknowledgement from user
-// config before it sends one. Stubbed to "nobody has acknowledged anything",
-// which is the shipped state and the one every case below assumes.
 // Nothing is waiting on anybody. The lane reads the fleet-wide list now, and a
 // bare render has no global stream behind it.
 vi.mock('@/layers/entities/attention', () => ({
   usePendingInteractions: () => ({ interactions: [], isLoading: false }),
-}));
-
-vi.mock('@/layers/entities/config/model/use-autonomy-acknowledgement', () => ({
-  useAutonomyAcknowledgement: () => ({
-    acknowledgedAt: null,
-    acknowledge: vi.fn(),
-    clear: vi.fn(),
-    isPending: false,
-  }),
 }));
 
 // The status line now also asks where NEW sessions start, so it reads config and
@@ -173,7 +161,6 @@ vi.mock('@/layers/shared/model/app-store', () => ({
       setIsStreaming: vi.fn(),
       setIsTextStreaming: vi.fn(),
       setIsWaitingForUser: vi.fn(),
-      setActiveForm: vi.fn(),
       enableMessagePolling: false,
       setEnableMessagePolling: vi.fn(),
     };

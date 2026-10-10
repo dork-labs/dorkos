@@ -2,6 +2,45 @@
   "version": 1,
   "specs": [
     {
+      "id": "261009-220922",
+      "slug": "tab-identity-everywhere",
+      "title": "Tabs that say who or where and whether it needs you, on every page",
+      "created": "2026-10-09",
+      "status": "specified",
+      "linearIssue": "DOR-2820"
+    },
+    {
+      "id": "261009-171114",
+      "slug": "spin-off-chats",
+      "title": "Spin-off chats: chats message each other, show who sent it, report back",
+      "created": "2026-10-09",
+      "status": "specified",
+      "linearIssue": "DOR-2790"
+    },
+    {
+      "id": "261008-052829",
+      "slug": "doe-runtime",
+      "title": "DorkOS runtime backed by Doe",
+      "created": "2026-10-08",
+      "status": "implemented",
+      "linearIssue": "DOR-2787"
+    },
+    {
+      "id": "261007-225912",
+      "slug": "doe-engine",
+      "title": "Doe standalone business agent engine",
+      "created": "2026-10-07",
+      "status": "implemented",
+      "linearIssue": "DOR-2786"
+    },
+    {
+      "id": "261006-180000",
+      "slug": "session-routing-identity",
+      "title": "Private routes and reliable session identity",
+      "created": "2026-10-06",
+      "status": "implemented"
+    },
+    {
       "id": "261003-204731",
       "slug": "isolated-extension-backends",
       "title": "Isolated extension backends: a subprocess runtime with declared network and run allowlists",
@@ -3597,12 +3636,52 @@
       "linearIssue": "DOR-2718"
     },
     {
+      "id": "261006-225901",
+      "slug": "audit-trail",
+      "title": "Audit trail v1: every action recorded, readable by space members and agents",
+      "created": "2026-10-06",
+      "status": "specified",
+      "linearIssue": "DOR-2738"
+    },
+    {
       "id": "261007-001135",
       "slug": "official-community-space",
       "title": "The DorkOS Community Space",
       "created": "2026-10-07",
       "status": "specified",
       "linearIssue": "DOR-2764"
+    },
+    {
+      "id": "261006-232018",
+      "slug": "trusted-by-default-flip",
+      "title": "Full-power defaults, with outsider protections pinned by tests",
+      "created": "2026-10-06",
+      "status": "specified",
+      "linearIssue": "DOR-2739"
+    },
+    {
+      "id": "261008-165653",
+      "slug": "your-activity-first",
+      "title": "Your activity first: Today, agent clicks and chat lists follow what you touched",
+      "created": "2026-10-08",
+      "status": "specified",
+      "linearIssue": "DOR-2789"
+    },
+    {
+      "id": "261010-092116",
+      "slug": "heartbeats",
+      "title": "Heartbeats: proactive, persistent agents with reports-to, commitments and measures",
+      "created": "2026-10-10",
+      "status": "specified",
+      "linearIssue": "DOR-2788"
+    },
+    {
+      "id": "261010-143210",
+      "slug": "one-minute-onboarding",
+      "title": "One-minute onboarding and automatic model choice",
+      "created": "2026-10-10",
+      "status": "specified",
+      "linearIssue": "DOR-2783"
     }
   ]
 }

@@ -52,7 +52,7 @@ export function SessionInspector() {
   if (!sessionId) {
     return (
       <div className="text-muted-foreground flex h-full items-center justify-center p-6 text-center text-xs">
-        Open a session to inspect it.
+        Open a chat to inspect it.
       </div>
     );
   }
@@ -173,7 +173,7 @@ function ResolvedGroup({ diagnostics: d }: { diagnostics: SessionDiagnostics }) 
       <DetailRow label="Effort">{d.effort ?? '—'}</DetailRow>
       <DetailRow label="Fast mode">{d.fastMode ? 'on' : 'off'}</DetailRow>
       <DetailRow label="Permissions">{d.permissionMode}</DetailRow>
-      <DetailRow label="Session ID" wrap>
+      <DetailRow label="Chat ID" wrap>
         {d.sessionId}
       </DetailRow>
       <DetailRow label="DorkOS version">{d.clientVersion ?? '—'}</DetailRow>

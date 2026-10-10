@@ -23,6 +23,11 @@ beforeEach(() => registerEveryFolderAsHome());
 afterEach(() => clearTestHomes());
 
 vi.mock('../../relay/relay-state.js', () => ({ isRelayEnabled: vi.fn(() => true) }));
+// Which chats' running turn another chat's message started (spec spin-off-chats §6).
+const chatStarted = vi.hoisted(() => new Set<string>());
+vi.mock('../../session/chat-messages/chat-started-turns.js', () => ({
+  isChatStartedTurn: (sessionId: string) => chatStarted.has(sessionId),
+}));
 
 /** One captured SSE broadcast. */
 type Broadcast = [string, unknown];
@@ -344,6 +349,21 @@ describe('a turn that finishes', () => {
     expect(row).toMatchObject({ kind: 'turn.completed', agentId: ACME_AGENT_ID });
   });
 
+  it('stays quiet for a turn another chat started: agents talking to each other never notify you', async () => {
+    unsubscribes.push(watchSessionLifecycle());
+    chatStarted.add('sess-chat');
+    try {
+      const projector = new SessionStateProjector('sess-chat');
+      projector.cwd = '/Users/dev/acme';
+      projector.ingest({ type: 'turn_start' } as never);
+      projector.ingest({ type: 'turn_end' } as never);
+      await flush();
+      expect(announced().filter((n) => n.kind === 'turn.completed')).toHaveLength(0);
+    } finally {
+      chatStarted.delete('sess-chat');
+    }
+  });
+
   it('escalates session.error, not turn.completed, when a fatal frame closes under an SDK-named reason', async () => {
     // DOR-1676: this shape used to settle idle, so the turn announced itself as
     // COMPLETED. It now settles error, arming the standing session.error
@@ -396,7 +416,7 @@ describe('a turn that finishes', () => {
     await flush();
 
     const [row] = service.list({ limit: 25, unread: false }).notifications;
-    expect(row).toMatchObject({ kind: 'turn.completed', title: 'A session finished' });
+    expect(row).toMatchObject({ kind: 'turn.completed', title: 'A chat finished' });
     expect(row.agentId).toBeUndefined();
   });
 });

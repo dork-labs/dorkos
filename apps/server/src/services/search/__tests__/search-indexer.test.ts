@@ -149,6 +149,7 @@ describe('the registry the indexer sweeps by default', () => {
       'claude-code',
       'codex',
       'opencode',
+      'doe',
     ]);
   });
 
@@ -161,6 +162,7 @@ describe('the registry the indexer sweeps by default', () => {
       'rows',
       'jsonl',
       'jsonl',
+      'sqlite-snapshot',
       'sqlite-snapshot',
     ]);
   });

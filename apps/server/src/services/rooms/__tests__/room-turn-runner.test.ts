@@ -14,6 +14,9 @@
  * - Dropping the desk guard reddens "refuses a turn that would stand anywhere
  *   but the agent's home": the runtime is called in a room's folder.
  */
+import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
+import { lastTurnLevelOf, recordTurnLevels } from '../../core/turn-power/turn-levels.js';
+import { CLAUDE_CODE_CAPABILITIES } from '../../runtimes/claude-code/runtime-constants.js';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { InterruptReceipt } from '@dorkos/shared/types';
 import { mockInterruptReceipt } from '@dorkos/test-utils';
@@ -156,6 +159,7 @@ const interruptsDeliveredTo: string[] = [];
 
 vi.mock('../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    getNativeSessionCwd: vi.fn(() => null),
     persistSessionRuntime: (...args: unknown[]) => persistSessionRuntime(...args),
     forgetUnstartedSession: (...args: unknown[]) => forgetUnstartedSession(...args),
     getSessionSettings: () => Promise.resolve(storedSettings),
@@ -283,6 +287,8 @@ interface TriggerCall {
    * that already has a row (DOR-1917).
    */
   newSessionPermissionMode?: string;
+  /** The bound on THIS turn, from who wrote the message (spec `trusted-by-default-flip` §4). */
+  permissionCeiling?: unknown;
   /** The runtime the real dispatcher resolves the canonical id through. */
   runtime: { getInternalSessionId: (sessionId: string) => string | undefined };
   /**
@@ -880,6 +886,37 @@ describe('createSessionRoomTurnRunner', () => {
       await runner.interrupt({ sessionId: 'canonical-sess', agentPath: '/repo/ana' });
 
       expect(interruptsDeliveredTo).toEqual(['claude-code']);
+
+      opened?.projector.ingest({ type: 'turn_end' });
+      await answered;
+    });
+
+    // Power flows downstream (spec `trusted-by-default-flip` §4): the level a
+    // first turn ran at was recorded under the placeholder; the posts it makes
+    // are vouched for under the canonical id, so the level must follow.
+    it('carries the turn’s recorded level to the id the runtime renamed it to', async () => {
+      const placeholder = `placeholder-level-${Date.now()}`;
+      const canonical = `canonical-level-${Date.now()}`;
+      const recorder = recordTurnLevels(
+        {
+          type: 'claude-code',
+          getCapabilities: () => CLAUDE_CODE_CAPABILITIES,
+          async *sendMessage() {},
+        } as unknown as AgentRuntime,
+        () => 'acceptEdits'
+      );
+      recorder.sendMessage(placeholder, 'hi');
+      const runner = createSessionRoomTurnRunner({ waitMs: () => 200, ceilingMs: () => 200 });
+      let opened: TriggerCall | undefined;
+      turnBehaviour = (opts) => {
+        opened = opts;
+        openTurn(opts);
+        return { accepted: true, canonicalId: canonical };
+      };
+      const answered = runner.run(request({ sessionId: placeholder }));
+      await settle();
+
+      expect(lastTurnLevelOf(canonical)).toEqual({ asks: 'when-risky', reach: 'edit' });
 
       opened?.projector.ingest({ type: 'turn_end' });
       await answered;
@@ -2689,6 +2726,44 @@ describe('what power a room turn runs at (DOR-1917)', () => {
       roomOrigin(true),
       '/repo/ana'
     );
+  });
+
+  // Power flows downstream, never up (spec `trusted-by-default-flip` §4). The
+  // seed above only reaches a NEW conversation; a room conversation is one per
+  // (room, agent) and usually already exists, so on its own a stranger's
+  // message into a conversation already at Full autonomy ran at Full autonomy.
+  // The ceiling bounds the turn itself, on an existing row too.
+  it('holds a stranger’s turn in an existing Full autonomy conversation to its bound', async () => {
+    runtimesConfig = atStop('autonomy');
+    storedSettings = { permissionMode: 'bypassPermissions' };
+
+    await createSessionRoomTurnRunner().run(
+      request({
+        sessionId: 'room-session-with-a-row',
+        externalAuthor: true,
+        permissionCeiling: 'runtime-default',
+      })
+    );
+
+    expect(triggered[0].newSessionPermissionMode).toBeUndefined();
+    expect(triggered[0].permissionCeiling).toBe('runtime-default');
+  });
+
+  it('holds a turn another agent’s post started to that agent’s level', async () => {
+    storedSettings = { permissionMode: 'bypassPermissions' };
+    const posterLevel = { asks: 'when-risky', reach: 'edit' } as const;
+
+    await createSessionRoomTurnRunner().run(
+      request({ sessionId: 'room-session-with-a-row', permissionCeiling: posterLevel })
+    );
+
+    expect(triggered[0].permissionCeiling).toEqual(posterLevel);
+  });
+
+  it('sends no bound for a person’s own message', async () => {
+    await createSessionRoomTurnRunner().run(request());
+
+    expect(triggered[0].permissionCeiling).toBeUndefined();
   });
 
   it('still carries the model and effort for that stranger’s turn', async () => {

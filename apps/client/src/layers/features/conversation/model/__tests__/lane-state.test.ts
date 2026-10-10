@@ -534,7 +534,7 @@ describe('deriveLaneState — a message that has not started', () => {
 
     expect(state).toMatchObject({
       kind: 'held',
-      sentence: 'Mio Clicker PM will pick this up when it finishes in another conversation',
+      sentence: 'Mio Clicker PM will pick this up when it finishes in another chat',
     });
   });
 
@@ -550,7 +550,7 @@ describe('deriveLaneState — a message that has not started', () => {
     expect(state).toMatchObject({
       kind: 'held',
       sentence:
-        'Mio Clicker PM will pick this up when it finishes in #mio-engagement or another conversation',
+        'Mio Clicker PM will pick this up when it finishes in #mio-engagement or another chat',
     });
   });
 

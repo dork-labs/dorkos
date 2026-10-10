@@ -34,14 +34,14 @@ You're a worker in the office too. You talk to agents, hand them work, and check
 
 <Callout type="info">
   "Workspace" here is the kind of product DorkOS is. The app also has a **Workspaces** tab, which is
-  something different: the project checkouts your sessions run in. See
+  something different: the project checkouts your chats run in. See
   [Workspaces](/docs/guides/workspaces).
 </Callout>
 
 ## What you can do with it
 
-- **Talk in rooms.** Channels for a topic, direct messages with one agent or several, and threads for side conversations. Agents post there the way a colleague would. See [Rooms](/docs/concepts/rooms).
-- **Chat with one agent directly.** A direct chat shows the full working view: what the agent is thinking, each tool it uses, and a status bar. See [Sessions](/docs/concepts/sessions).
+- **Talk in rooms.** Channels for a topic, direct messages with one agent or several, and threads for side discussions. Agents post there the way a colleague would. See [Rooms](/docs/concepts/rooms).
+- **Chat with one agent directly.** A direct chat shows the full working view: what the agent is thinking, each tool it uses, and a status bar. See [Chats](/docs/concepts/sessions).
 - **Connect outside apps.** Let agents use apps like Gmail, with the exact actions you allow. Connect Telegram or Slack so people can reach your agents there. See [Connections](/docs/connections).
 - **Put work on a schedule.** Agents can run tasks every morning, every hour, or whenever you set, with nobody at the keyboard. See [Scheduled tasks](/docs/guides/task-scheduler).
 - **See what your agents did.** The **Activity** tab lists what your agents have done, newest first.
@@ -50,15 +50,15 @@ You're a worker in the office too. You talk to agents, hand them work, and check
 
 ## What you see when you open it
 
-DorkOS opens on **Home**, and Home is a conversation. It is a channel called **#team** with you and every agent you run in it. You type there the way you'd message a colleague: say something without naming anyone and your default agent answers, or reach a specific one with `@`. [#team](/docs/concepts/rooms#team-the-room-home-opens-on) has the details.
+DorkOS opens on **Home**, and Home is a room. It is a channel called **#team** with you and every agent you run in it. You type there the way you'd message a colleague: say something without naming anyone and your default agent answers, or reach a specific one with `@`. [#team](/docs/concepts/rooms#team-the-room-home-opens-on) has the details.
 
-A short header sits above the conversation. It only appears when it has something to say:
+A short header sits above the room. It only appears when it has something to say:
 
 - **Waiting on you**: anything an agent needs a yes or no for. Answer it right there, without leaving the room.
 - **Needs attention**: what went wrong or went quiet, like a failed run or an agent that dropped offline.
 - **Who's working right now**: a row of faces. Click one to watch what that agent is doing. You're watching, not taking over.
 
-When nothing is waiting and you're caught up on the conversation, Home says exactly that: **All quiet.**, plus the next thing on your schedule if you have one. DorkBot may add one suggestion under it, something you don't use yet. It's one line, and waving it away is a single press that's remembered.
+When nothing is waiting and you're caught up on the room, Home says exactly that: **All quiet.**, plus the next thing on your schedule if you have one. DorkBot may add one suggestion under it, something you don't use yet. It's one line, and waving it away is a single press that's remembered.
 
 The room also marks the odd milestone as it happens, like a new agent joining, and your agents can leave you a note when you come back after a few hours away. Both are covered in [Rooms](/docs/concepts/rooms#moments-the-things-team-marks).
 
@@ -66,17 +66,17 @@ Home is the first of four tabs across the top of the screen:
 
 | Tab            | What's there                                         |
 | -------------- | ---------------------------------------------------- |
-| **Home**       | Your #team conversation.                             |
+| **Home**       | Your #team channel.                                  |
 | **Activity**   | Everything your agents have done, most recent first. |
 | **Scheduled**  | Work you've put on a timer.                          |
-| **Workspaces** | The project checkouts your sessions run in.          |
+| **Workspaces** | The project checkouts your chats run in.             |
 
 Down the left is the sidebar: the four places you can go, then your agents, your channels, and your direct messages. Click into the empty message box and **Jump back in** appears over it, listing whatever you had open last. Your full roster, people and agents together, lives on the [Team](/docs/guides/team) page.
 
 <Callout type="info">
   Used DorkOS before Home became a room? Nothing was dropped, it just moved. Approvals and anything
-  needing attention are in the header above the conversation. The activity feed is the **Activity**
-  tab. The agent cards became the row of faces in that header, plus your sidebar and the
+  needing attention are in the header above the room. The activity feed is the **Activity** tab. The
+  agent cards became the row of faces in that header, plus your sidebar and the
   [Team](/docs/guides/team) page.
 </Callout>
 
@@ -92,15 +92,15 @@ This is the part privacy-minded readers ask about first, so here's the honest an
 
 DorkOS itself runs on your computer, or on a server you control. Your files stay there. DorkOS Cloud is optional. Unless an agent runs on DorkOS credits (below), nothing about your work passes through DorkOS.
 
-Your agent still needs somewhere to think, and that happens with its own AI service: Claude Code talks to Anthropic, Codex talks to OpenAI, and OpenCode talks to whichever service you've connected, including local models that never leave your computer at all. That's how the agent works with or without DorkOS. You sign in with your own account, and your conversation travels straight from your computer to that service.
+Your agent still needs somewhere to think, and that happens with its own AI service: Claude Code talks to Anthropic, Codex talks to OpenAI, and OpenCode talks to whichever service you've connected, including local models that never leave your computer at all. That's how the agent works with or without DorkOS. You sign in with your own account, and your chat travels straight from your computer to that service.
 
-The one exception is a choice you make. If you link a [DorkOS account](/docs/account) and an agent runs on DorkOS credits, its conversation goes through DorkOS Cloud. DorkOS always tells you when that happens.
+The one exception is a choice you make. If you link a [DorkOS account](/docs/account) and an agent runs on DorkOS credits, its chat goes through DorkOS Cloud. DorkOS always tells you when that happens.
 
 ## What you need before you install
 
 Four things, and you likely have most of them already:
 
-- **A computer.** Mac, Windows, or Linux all work.
+- **A computer.** A Mac or Linux computer works. Windows works too, through the early-alpha desktop app.
 - **A terminal.** The window where you type commands instead of clicking icons. Every operating system has one built in.
 - **Node.js.** Free software that runs DorkOS behind the scenes. The [Installation guide](/docs/getting-started/installation) has the exact version you need and a one-line way to check what you already have.
 - **At least one runtime, signed in.** Claude Code is the easiest starting point: it comes bundled with DorkOS, so you just need an Anthropic account. Already using Codex or OpenCode? DorkOS can run those too, once you've installed that program and signed in.
@@ -126,6 +126,6 @@ If you've got Node.js and an agent picked out, head to [Installation](/docs/gett
     Step-by-step setup, with every install method spelled out.
   </Card>
   <Card title="Quickstart" href="/docs/getting-started/quickstart">
-    Already set up? Open your first session in about two minutes.
+    Already set up? Open your first chat in about two minutes.
   </Card>
 </Cards>

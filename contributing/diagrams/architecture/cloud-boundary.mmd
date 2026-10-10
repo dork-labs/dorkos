@@ -1,11 +1,11 @@
 flowchart TB
   accTitle: The public boundary of DorkOS Cloud
-  accDescr: Optional local Cloud clients use HTTPS. Legacy app-side paths coexist with the versioned public contract. The versioned client resolves authenticated instance identity before minting scoped inference credentials under the same current link. A Runs on choice selects credits. Claude Code uses session launch configuration, Codex a separate conversation home, and OpenCode a sidecar-wide local relay. The token served list gates request formats; the environment variable only disables credits. The existing tunnel is a separate route to the local server.
+  accDescr: Optional local Cloud clients use HTTPS. Legacy app-side paths coexist with the versioned public contract. The versioned client resolves authenticated instance identity before minting scoped inference credentials under the same current link. A Runs on choice selects credits. Claude Code uses session launch configuration, Codex a separate conversation home, OpenCode a sidecar-wide local relay, and Doe a first-turn inference binding. The token served list gates request formats; the environment variable only disables credits. Managed enrollment and ingress contracts are settled but the consumer remains unwired. The existing tunnel is a separate route to the local server.
   subgraph app["Open-source app · local machine"]
     local["Local DorkOS server<br/>Runs without a Cloud link"]
     legacy["Cloud link + managed services client<br/>Existing /api/auth and /api/instances calls"]
-    versioned["Versioned client<br/>@dork-labs/cloud-api/client"]
-    runtime["Runs on: credits + current link<br/>Claude Code: session · Codex: conversation<br/>OpenCode: sidecar via local credits relay<br/>Format gated by token served list"]
+    versioned["Versioned client<br/>@dork-labs/cloud-api/client<br/>Current credential / origin / generation"]
+    runtime["Runs on: credits + current link<br/>Claude Code: session · Codex: conversation<br/>OpenCode: sidecar via local credits relay<br/>Doe: first-turn source binding<br/>Format gated by token served list"]
     tunnel["Existing tunnel manager<br/>ngrok SDK · optional"]
     local --> legacy
     local --> versioned
@@ -13,15 +13,15 @@ flowchart TB
     local --> tunnel
   end
   control["Configured service origin<br/>DORKOS_CLOUD_URL; defaults to website<br/>Account handover is route-specific"]
-  remote["Managed remote command consumer<br/>Draft only · enrollment + ingress gates"]
+  remote["Managed remote command consumer<br/>Draft · enrollment / ingress contracts settled<br/>Implementation + deployed acceptance pending"]
   remote -.->|"Unwired command SSE + lease/ack"| control
   inference["Inference endpoint<br/>URL + scoped token returned at runtime"]
   contract["Public contract: packages/cloud-api<br/>Schemas + route table + fixtures<br/>Accounts · instances · managed services<br/>entitlements · seats · remote access · inference<br/>Spaces on DorkOS: start / claim / moves"]
   edge["Tunnel service"]
   browser["Remote browser"]
-  legacy -->|"HTTPS: device link, heartbeat,<br/>managed actions + event pull/ack"| control
-  versioned -->|"HTTPS /v1 · bearer auth<br/>Session identity → inference mint<br/>Same credential / origin / generation"| control
-  contract -.->|"Contract describes wire;<br/>not a deployment guarantee"| control
+  legacy -->|"HTTPS: link / heartbeat<br/>Managed actions / event pull + ack"| control
+  versioned -->|"HTTPS /v1 bearer auth<br/>Session identity → mint"| control
+  contract -.->|"Wire schema, not deployment proof"| control
   runtime -->|"Inference protocol over HTTPS<br/>when chosen and available"| inference
   tunnel -->|"Outbound tunnel connection"| edge
   browser -->|"HTTPS / WSS"| edge

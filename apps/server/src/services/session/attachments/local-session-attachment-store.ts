@@ -89,7 +89,7 @@ export class LocalSessionAttachmentStore implements SessionAttachmentStore {
       throw new UnsupportedSessionMediaError(
         `That image is ${formatMib(bytes.byteLength)} — larger than the ${formatMib(
           MAX_SESSION_ATTACHMENT_BYTES
-        )} a session will store.`
+        )} a chat will store.`
       );
     }
     const file = this.fileFor(sessionId, attachmentId, extension);
@@ -226,7 +226,7 @@ export class LocalSessionAttachmentStore implements SessionAttachmentStore {
     if (!extension) {
       const shown = mediaType.trim() ? displayableMime(mediaType) : 'an untyped file';
       throw new UnsupportedSessionMediaError(
-        `A session cannot store ${shown} — only PNG, JPEG, GIF and WebP images.`
+        `A chat cannot store ${shown} — only PNG, JPEG, GIF and WebP images.`
       );
     }
     return { extension, normalized: imageMediaTypeForExtension(extension) ?? mediaType };

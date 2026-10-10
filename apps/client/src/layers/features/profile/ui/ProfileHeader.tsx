@@ -213,7 +213,7 @@ export function ProfileHeader({
           promised the other surface (spec `sidebar-simplification` §D2). */}
       {onOpenSession && (
         <Button size="sm" className="mt-3 w-full max-w-64" onClick={onOpenSession}>
-          Open session
+          Open chat
         </Button>
       )}
     </div>

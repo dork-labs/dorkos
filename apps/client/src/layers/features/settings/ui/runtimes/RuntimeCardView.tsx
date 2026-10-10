@@ -43,7 +43,7 @@ export type { RuntimeCardReconnect } from './RuntimeCardHeader';
 const LOCKED_LINE = 'One sign-in away from its settings.';
 
 /** What a card says when the runtime new conversations start on cannot start one. */
-const BROKEN_DEFAULT_LINE = 'Your default isn’t connected, so new conversations can’t start.';
+const BROKEN_DEFAULT_LINE = 'Your default isn’t connected, so new chats can’t start.';
 
 /**
  * What a card says while a working sign-in is running out of time.

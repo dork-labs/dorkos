@@ -88,7 +88,7 @@ Pass environment variables with `-e` or an env file. DorkOS reads the same varia
     DORKOS_DEFAULT_CWD: {
       type: 'string',
       description:
-        'Default working directory for new agent sessions. The image bakes no value, so sessions start in the container home.',
+        'Default working directory for new chats. The image bakes no value, so chats start in the container home.',
       default: "'/home/node'",
     },
     DORKOS_BOUNDARY: {
@@ -199,7 +199,7 @@ docker run -d --name dorkos \
 
 ## Persistent Data
 
-DorkOS stores configuration, session transcripts, agent registrations, and the SQLite database in `/home/node/.dork` inside the container. Without a volume mount, all of this is lost when the container is removed. Mount a named volume or host directory to persist data across container restarts and upgrades.
+DorkOS stores configuration, chat transcripts, agent registrations, and the SQLite database in `/home/node/.dork` inside the container. Without a volume mount, all of this is lost when the container is removed. Mount a named volume or host directory to persist data across container restarts and upgrades.
 
 <Callout type="warn">
   **Upgrading from 0.48 or earlier?** The container now runs as a non-root user, and its data
@@ -337,7 +337,7 @@ volumes:
 <Callout type="error">
   **Turn on login before you point a domain at DorkOS.** The Docker image ships with login off, and it
   binds to every network address so port forwarding works. With login off, anyone who reaches the port
-  gets full control: your sessions, your files, and your agents, spending your Claude quota. Create the
+  gets full control: your chats, your files, and your agents, spending your Claude quota. Create the
   owner account and require login first:
 
 ```bash
@@ -557,7 +557,7 @@ Common causes: missing `ANTHROPIC_API_KEY`, port already in use on the host, or 
 
 **Cause**: No volume mounted for `/home/node/.dork`.
 
-**Fix**: Add `-v dorkos-data:/home/node/.dork` to persist configuration and session data.
+**Fix**: Add `-v dorkos-data:/home/node/.dork` to persist configuration and chat data.
 
 </Step>
 

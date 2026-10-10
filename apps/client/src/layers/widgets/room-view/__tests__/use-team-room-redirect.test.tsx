@@ -19,7 +19,10 @@ const { team } = vi.hoisted(() => ({
 }));
 const navigate = vi.hoisted(() => vi.fn());
 
-vi.mock('@tanstack/react-router', () => ({ useNavigate: () => navigate }));
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
+  useNavigate: () => navigate,
+}));
 vi.mock('@/layers/entities/room', () => ({
   useTeamRoom: () => ({ status: team.status, room: team.room }),
 }));

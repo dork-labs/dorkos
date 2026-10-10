@@ -207,6 +207,12 @@ export const BalanceSchema = z
       enabled: z.boolean(),
       ceilingMicro: MoneyMicroSchema.nullable(),
     }),
+    paymentMethodOnFile: z
+      .boolean()
+      .optional()
+      .describe(
+        'Whether the account has a saved payment method that later charges can use. Absent means the server did not say; never read absence as "no card".'
+      ),
     denomination: denominationField,
   })
   .describe(

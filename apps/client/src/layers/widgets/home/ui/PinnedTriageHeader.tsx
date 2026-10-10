@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 import { useCallback } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useIsMobile } from '@/layers/shared/model';
@@ -115,7 +116,7 @@ export function PinnedTriageHeader({
   const shownApprovals = useApprovalCards(approvals);
 
   const closeDetail = useCallback(() => {
-    void navigate({ to: '/', search: {} });
+    void navigate({ ...appRoutes.home(), search: {} });
   }, [navigate]);
 
   return (

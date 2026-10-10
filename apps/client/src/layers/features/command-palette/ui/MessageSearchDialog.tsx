@@ -171,7 +171,7 @@ export function MessageSearchDialog() {
             return;
           }
           toast.info('Couldn’t open that folder', {
-            description: `DorkOS couldn’t read ${path}. The conversation may not open.`,
+            description: `DorkOS couldn’t read ${path}. The chat may not open.`,
           });
         });
       }

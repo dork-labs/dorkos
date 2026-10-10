@@ -64,6 +64,12 @@ const ALLOWED = new Map<string, string>([
     'The command-intent half of the same launcher, on the same terms.',
   ],
   [
+    'apps/server/src/services/core/turn-power/turn-levels.ts',
+    'A decorator at the registration seam, on the terms `trace-runtime.ts` is ' +
+      'one: it records the level the turn runs at and hands back the generator ' +
+      'the caller asked for, starting nothing of its own.',
+  ],
+  [
     'apps/server/src/services/observability/trace-runtime.ts',
     'A decorator around an already-resolved runtime. It starts nothing; it wraps ' +
       'the generator the dispatcher asked for so the span covers the real turn.',
@@ -82,6 +88,13 @@ const ALLOWED = new Map<string, string>([
       'registered at the same seam (`RuntimeRegistry.register`), OUTSIDE the ' +
       'sign-in watch, wraps the generator a caller already asked for so the ' +
       'computer stays awake while it is consumed, and starts nothing of its own.',
+  ],
+  [
+    'apps/server/src/services/audit/record-tool-use.ts',
+    'The audit wrap (spec `audit-trail` PR3), a decorator on the same terms as the ' +
+      'keep-awake one: registered at the same seam (`RuntimeRegistry.register`), it ' +
+      'wraps the generator a caller already asked for, only reads the tool events ' +
+      'that pass through it, and starts nothing of its own.',
   ],
   [
     'apps/server/src/services/tasks/task-scheduler-service.ts',

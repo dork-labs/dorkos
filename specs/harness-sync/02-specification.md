@@ -13,7 +13,7 @@ linearIssue: DOR-137
 **Date:** 2026-06-29
 
 > SPECIFY output for the **Harness Sync** project (`bc4e663f`, workstream B of
-> `plans/agent-harness-portability-roadmap.md`). Inputs: `01-ideation.md` (#267) +
+> `plans/archive/agent-harness-portability-roadmap.md`). Inputs: `01-ideation.md` (#267) +
 > `spike-findings.md` (DOR-136, which resolved the four open decisions). This is the
 > implementation-ready feature spec: it gives DOR-138 (B4 engine) its build contract
 > and fully designs the Harnesses UI/UX surface (DOR-137's focus). Governing ADRs:
@@ -385,7 +385,7 @@ maps). Generation output is a handful of small files per harness.
 ## References
 
 - `specs/harness-sync/01-ideation.md` (#267) · `specs/harness-sync/spike-findings.md` (DOR-136).
-- `plans/agent-harness-portability-roadmap.md` §B (B4–B11), §8 (ADR drafts A/B).
+- `plans/archive/agent-harness-portability-roadmap.md` §B (B4–B11), §8 (ADR drafts A/B).
 - `.agents/harness.manifest.json` · `.agents/skills/syncing-agent-skills/references/sync-harnesses-spec.md`.
 - rulesync `9.0.2` (`dyoshikawa/rulesync`, MIT, pinned `b4bf09d5`); Codex hooks/skills docs (2026);
   `openai/codex#17532`.

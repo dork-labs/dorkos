@@ -168,7 +168,7 @@ const OPENCODE_SESSION_NAMESPACE = 'c1a7f3d2-6e48-4b0a-9f21-5d8c3e7b4a90';
  * session id. OpenCode ids (`ses_…`) are not UUIDs, but the DorkOS `Session.id`
  * contract requires one; hashing keeps the mapping stable without persistence.
  */
-function deriveDorkosSessionId(openCodeSessionId: string): string {
+export function deriveDorkosSessionId(openCodeSessionId: string): string {
   const namespaceBytes = Buffer.from(OPENCODE_SESSION_NAMESPACE.replaceAll('-', ''), 'hex');
   const digest = createHash('sha1').update(namespaceBytes).update(openCodeSessionId).digest();
   const bytes = digest.subarray(0, 16);
@@ -176,6 +176,11 @@ function deriveDorkosSessionId(openCodeSessionId: string): string {
   bytes[8] = (bytes[8]! & 0x3f) | 0x80; // RFC 4122 variant
   const hex = bytes.toString('hex');
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+/** External OpenCode identities are v5 UUIDs; new optimistic drafts are v4. */
+export function isDerivedOpenCodeSessionId(sessionId: string): boolean {
+  return /^[a-f0-9]{8}-[a-f0-9]{4}-5[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(sessionId);
 }
 
 /**
@@ -539,6 +544,32 @@ export class OpenCodeSessionMapper {
    * @param projectDir - Working directory of the requesting session
    * @param dorkosSessionId - DorkOS session identifier
    */
+  /** Target a known binding, or rebuild a native derived UUID from the store-wide list. */
+  async findSession(defaultDirectory: string, sessionId: string): Promise<Session | null> {
+    if (this.dorkosToOpenCode.has(sessionId)) {
+      const client = await this.provider.getClient(defaultDirectory);
+      const result = await client.session.get({
+        path: { id: this.dorkosToOpenCode.get(sessionId)! },
+      });
+      if (result.error) throw new Error('OpenCode session discovery unavailable');
+      return result.data ? mapSession(result.data, sessionId) : null;
+    }
+    // External ids are deterministic v5 UUIDs; optimistic new ids are v4.
+    // Do not boot an idle sidecar just to ask whether a draft exists.
+    if (!isDerivedOpenCodeSessionId(sessionId)) return null;
+    const client = await this.provider.getClient(defaultDirectory);
+    const query = { directory: undefined, limit: SESSION_REBUILD_LIMIT + 1 };
+    const result = await client.session.list({ query });
+    if (result.error || !result.data) throw new Error('OpenCode session discovery unavailable');
+    const rows = result.data;
+    if (rows.length > SESSION_REBUILD_LIMIT)
+      throw new Error('OpenCode native session discovery exceeded its limit');
+    const found = rows.find((row) => deriveDorkosSessionId(row.id) === sessionId);
+    if (!found) return null;
+    this.adoptOpenCodeSession(found.id);
+    return mapSession(found, sessionId);
+  }
+
   async getSession(projectDir: string, dorkosSessionId: string): Promise<Session | null> {
     const openCodeId = this.dorkosToOpenCode.get(dorkosSessionId);
     if (!openCodeId) return null;
@@ -628,7 +659,7 @@ export class OpenCodeSessionMapper {
     });
     if (saturated) {
       throw new Error(
-        `OpenCode has more than ${SESSION_LIST_LIMIT} sessions on this machine, so DorkOS could not read far enough to be sure this list is complete. Showing none is safer than showing a list that looks complete.`
+        `OpenCode has more than ${SESSION_LIST_LIMIT} chats on this machine, so DorkOS could not read far enough to be sure this list is complete. Showing none is safer than showing a list that looks complete.`
       );
     }
     return rows
@@ -723,7 +754,7 @@ export class OpenCodeSessionMapper {
     const probe = unwrap(await client.session.list({ query }), 'session.list');
     if (probe.length > 1) {
       throw new Error(
-        'This version of OpenCode ignored the session limit DorkOS asked for, so DorkOS cannot tell whether this list is complete.'
+        'This version of OpenCode ignored the chat limit DorkOS asked for, so DorkOS cannot tell whether this list is complete.'
       );
     }
   }
@@ -824,7 +855,7 @@ export class OpenCodeSessionMapper {
       // for the adapter having stopped reading.
       if (!openCodeId && saturated) {
         throw new Error(
-          `OpenCode has more than ${SESSION_REBUILD_LIMIT} sessions on this machine, so DorkOS could not search far enough to open this one. The session is not missing — the search was cut short.`
+          `OpenCode has more than ${SESSION_REBUILD_LIMIT} chats on this machine, so DorkOS could not search far enough to open this one. The chat is not missing — the search was cut short.`
         );
       }
     }
@@ -895,7 +926,7 @@ export class OpenCodeSessionMapper {
       }
       if (storableImageExtension(file.mime) === null) {
         return unshowableImagePart(
-          `A session cannot store ${displayableMime(file.mime)} — only PNG, JPEG, GIF and WebP images.`
+          `A chat cannot store ${displayableMime(file.mime)} — only PNG, JPEG, GIF and WebP images.`
         );
       }
       const attachmentId = deriveSessionAttachmentId(identity);

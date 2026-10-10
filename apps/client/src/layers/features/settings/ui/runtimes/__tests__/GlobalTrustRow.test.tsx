@@ -86,7 +86,7 @@ describe('GlobalTrustRow', () => {
     renderRow();
     // Not "Where agents stop for you": DOR-853 reserves the bare word "agent"
     // for a named fleet teammate, and this row governs new conversations.
-    expect(screen.getByText('Where new conversations stop for you')).toBeInTheDocument();
+    expect(screen.getByText('Where new chats stop for you')).toBeInTheDocument();
     expect(screen.getByText('Cards above use this unless set otherwise.')).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'Asks before acting' })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'Pauses at big steps' })).toBeInTheDocument();
@@ -130,7 +130,7 @@ describe('GlobalTrustRow', () => {
   it('says out loud that new sessions run at full power, and offers the way back', async () => {
     const { onChange, onChangeRuntime } = renderRow({ stop: 'autonomy' });
     const note = screen.getByTestId('default-trust-stop-standing-note');
-    expect(note).toHaveTextContent('New sessions run at full power');
+    expect(note).toHaveTextContent('New chats run at full power');
 
     await userEvent.click(screen.getByRole('button', { name: 'Change' }));
     expect(onChange).toHaveBeenCalledWith('ask');
@@ -149,7 +149,7 @@ describe('GlobalTrustRow', () => {
       ],
     });
     const note = screen.getByTestId('default-trust-stop-standing-note');
-    expect(note).toHaveTextContent('New sessions on Codex run at full power');
+    expect(note).toHaveTextContent('New chats on Codex run at full power');
 
     // Undo exactly what is set: the override, never the shared choice.
     await userEvent.click(screen.getByRole('button', { name: 'Change' }));
@@ -167,7 +167,7 @@ describe('GlobalTrustRow', () => {
       ],
     });
     expect(screen.getByTestId('default-trust-stop-standing-note')).toHaveTextContent(
-      'New sessions on Claude Code, Codex and OpenCode run at full power'
+      'New chats on Claude Code, Codex and OpenCode run at full power'
     );
   });
 
@@ -187,7 +187,7 @@ describe('GlobalTrustRow', () => {
   it('reads from the effective stop, so an unset preference that lands on autonomy still says so', () => {
     renderRow({ stop: null, effectiveStop: 'autonomy' });
     expect(screen.getByTestId('default-trust-stop-standing-note')).toHaveTextContent(
-      'New sessions run at full power'
+      'New chats run at full power'
     );
   });
 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-DorkOS uses Feature-Sliced Design (FSD) to organize frontend code by business domains with clear layer boundaries. The server uses a layered architecture (routes + services) with size-aware guidance for when to adopt domain grouping. The monorepo structure (Turborepo + npm workspaces) is orthogonal to FSD — FSD applies _within_ each app.
+DorkOS uses Feature-Sliced Design (FSD) to organize frontend code by business domains with clear layer boundaries. The server uses a layered architecture (routes + services) with size-aware guidance for when to adopt domain grouping. The monorepo structure (Turborepo + pnpm workspaces) is orthogonal to FSD — FSD applies _within_ each app.
 
 ## Monorepo Layout
 
@@ -97,7 +97,7 @@ src/
 │   │   │   │   ├── tasks/    # TaskListPanel, TaskDetail, AgentRunner, BackgroundTaskBar
 │   │   │   │   └── tools/    # ToolCallCard (the prompts live in features/ask)
 │   │   │   ├── model/
-│   │   │   │   └── stream/   # StreamManager, stream-event-handler, classify-transport-error
+│   │   │   │   └── stream/   # turn projection (project-session-turn), approval and sign-in folds, announcers
 │   │   │   ├── api/
 │   │   │   └── index.ts
 │   │   ├── composer/    # The one message box — Composer.Root/.Input/.OverlayLane/.Attachments/.ClearArmedHint, composed by chat, rooms, and the dashboard
@@ -107,7 +107,8 @@ src/
 │   │   ├── room-management/ # Room panel: roster, limits, create/rename/leave, agent picker
 │   │   ├── connections/ # Connections page — connect flows, access review, agent requests, notifications
 │   │   ├── permissions/ # Permission-mode UI (consent doors, decision surfaces)
-│   │   ├── session-list/ # SessionsView and session lists
+│   │   ├── chat-list/    # One agent's chats: Profile → Sessions and Switch session
+│   │   ├── session-list/ # The profile's Tasks list and sidebar footer contributions
 │   │   ├── dashboard-sidebar/ # DashboardSidebar — navigation + recent agents list at /
 │   │   ├── dashboard-attention/ # Attention rows + detail sheets — what the triage header composes
 │   │   ├── dashboard-activity/ # useDashboardActivity — time-grouped recent activity, read by Pulse

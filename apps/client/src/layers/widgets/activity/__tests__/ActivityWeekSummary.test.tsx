@@ -32,7 +32,7 @@ describe('ActivityWeekSummary', () => {
 
     render(<ActivityWeekSummary />);
 
-    expect(screen.getByText('Your agents started no sessions this week')).toBeInTheDocument();
+    expect(screen.getByText('Your agents started no chats this week')).toBeInTheDocument();
   });
 
   it('says how busy the week has been across every agent', () => {

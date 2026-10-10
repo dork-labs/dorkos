@@ -15,8 +15,6 @@ import {
   createUpdateScheduleHandler,
   createDeleteScheduleHandler,
   createGetRunHistoryHandler,
-  createRelayDispatchHandler,
-  createRelayUnregisterEndpointHandler,
 } from '../../runtimes/claude-code/mcp-tools/index.js';
 import {
   clearTestHomes,
@@ -728,7 +726,7 @@ describe('MCP Tool Handlers', () => {
       expect(server.version).toBe('1.0.0');
     });
 
-    it('registers 57 tools including the five document-channel verbs', () => {
+    it('registers 51 tools including the five document-channel verbs', () => {
       // Purpose: regression guard against accidental tool omissions or additions.
       // This count changes intentionally when new MCP tools are added. 32 legacy
       // (4 core + 5 tasks + 8 relay + 1 agent + 2 ui + 3 devtools + 6 browser
@@ -771,8 +769,10 @@ describe('MCP Tool Handlers', () => {
       // 49 -> 50 for `accounts_usage` (spec `claude-account-fleet` D2).
       // 50 -> 51 for `accounts_probe` (spec `claude-account-fleet` D3).
       // 51 -> 52 for `session_start` (spec `claude-account-fleet` D5).
+      // 57 -> 51: the six relay send, inbox and endpoint tools retired for the
+      // chat tools, which these deps do not compose (spec `spin-off-chats` §7).
       const server = createDorkOsToolServer(makeMockDeps()) as unknown as MockServer;
-      expect(server.tools).toHaveLength(57);
+      expect(server.tools).toHaveLength(51);
       for (const name of [
         'configure_doc_channel',
         'approve_doc_route',
@@ -796,146 +796,24 @@ describe('MCP Tool Handlers', () => {
       expect(toolNames).toContain('tasks_update');
       expect(toolNames).toContain('tasks_delete');
       expect(toolNames).toContain('tasks_get_run_history');
-      expect(toolNames).toContain('relay_send');
-      expect(toolNames).toContain('relay_inbox');
       expect(toolNames).toContain('relay_list_endpoints');
-      expect(toolNames).toContain('relay_register_endpoint');
-      expect(toolNames).toContain('relay_send_and_wait');
-      expect(toolNames).toContain('relay_send_async');
-      expect(toolNames).toContain('relay_unregister_endpoint');
       expect(toolNames).toContain('relay_notify_user');
+      // Retired for the chat tools (spec `spin-off-chats` §7).
+      for (const retired of [
+        'relay_send',
+        'relay_inbox',
+        'relay_register_endpoint',
+        'relay_send_and_wait',
+        'relay_send_async',
+        'relay_unregister_endpoint',
+      ]) {
+        expect(toolNames).not.toContain(retired);
+      }
       expect(toolNames).toContain('control_ui');
       expect(toolNames).toContain('get_ui_state');
       expect(toolNames).toContain('browser_read_console');
       expect(toolNames).toContain('browser_read_network');
       expect(toolNames).toContain('browser_screenshot');
     });
-  });
-
-  describe('relay_inbox status filter (DOR-406)', () => {
-    /** The `status` field's Zod schema, as captured off the real (unmocked) tool() call. */
-    function statusSchema(): { safeParse: (value: unknown) => { success: boolean } } {
-      const server = createDorkOsToolServer(makeMockDeps()) as unknown as MockServer & {
-        tools: { name: string; inputSchema: Record<string, unknown> }[];
-      };
-      const tool = server.tools.find((t) => t.name === 'relay_inbox');
-      if (!tool) throw new Error("Tool 'relay_inbox' was not registered");
-      return tool.inputSchema.status as { safeParse: (value: unknown) => { success: boolean } };
-    }
-
-    it('accepts the HTTP inbox route vocabulary: pending, delivered, failed, all', () => {
-      for (const value of ['pending', 'delivered', 'failed', 'all']) {
-        expect(statusSchema().safeParse(value).success, value).toBe(true);
-      }
-    });
-
-    it('rejects the retired freeform aliases (unread, new, cur, read) to keep vocabulary aligned with InboxStatusFilterSchema', () => {
-      for (const value of ['unread', 'new', 'cur', 'read', 'bogus']) {
-        expect(statusSchema().safeParse(value).success, value).toBe(false);
-      }
-    });
-
-    it('is optional — omitting it is valid at the schema level (the pending default applies in the handler)', () => {
-      expect(statusSchema().safeParse(undefined).success).toBe(true);
-    });
-  });
-});
-
-/** Create a mock RelayCore with configurable return values */
-function makeRelayCoreMock(
-  overrides: {
-    deliveredTo?: number;
-    messageId?: string;
-    rejected?: Array<{ subject: string; reason: string }>;
-    unregisterResult?: boolean;
-    /** Owner recorded on every endpoint the mock reports as registered. */
-    endpointOwner?: string;
-  } = {}
-) {
-  return {
-    registerEndpoint: vi.fn().mockResolvedValue({ subject: 'relay.inbox.dispatch.test' }),
-    getEndpoint: vi.fn((subject: string) => ({ subject, owner: overrides.endpointOwner })),
-    unregisterEndpoint: vi.fn().mockResolvedValue(overrides.unregisterResult ?? true),
-    publish: vi.fn().mockResolvedValue({
-      messageId: overrides.messageId ?? 'msg-1',
-      deliveredTo: overrides.deliveredTo ?? 1,
-      rejected: overrides.rejected ?? [],
-    }),
-  };
-}
-
-describe('createRelayDispatchHandler', () => {
-  it('returns error when relay disabled', async () => {
-    // Purpose: verifies requireRelay guard applies to relay_send_async.
-    const handler = createRelayDispatchHandler(makeMockDeps(), { subject: 'relay.agent.me' });
-    const result = await handler({ to_subject: 'relay.agent.x', payload: {} });
-    expect(result.isError).toBe(true);
-    expect(JSON.parse(result.content[0].text).code).toBe('RELAY_DISABLED');
-  });
-
-  it('returns messageId and inboxSubject on success', async () => {
-    // Purpose: verifies the non-blocking return contract.
-    const relayCore = makeRelayCoreMock({ deliveredTo: 1, messageId: 'msg-1' });
-    const handler = createRelayDispatchHandler({ ...makeMockDeps(), relayCore } as McpToolDeps, {
-      subject: 'relay.agent.me',
-    });
-    const result = await handler({ to_subject: 'relay.agent.x', payload: {} });
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.messageId).toBe('msg-1');
-    expect(parsed.inboxSubject).toMatch(/^relay\.inbox\.dispatch\./);
-    expect(result.isError).toBeUndefined();
-  });
-
-  it('auto-unregisters inbox on early rejection', async () => {
-    // Purpose: prevents inbox leaks when message is immediately rejected.
-    const relayCore = makeRelayCoreMock({
-      deliveredTo: 0,
-      rejected: [{ subject: 'relay.agent.x', reason: 'rate limit' }],
-    });
-    const handler = createRelayDispatchHandler({ ...makeMockDeps(), relayCore } as McpToolDeps, {
-      subject: 'relay.agent.me',
-    });
-    const result = await handler({ to_subject: 'relay.agent.x', payload: {} });
-    expect(result.isError).toBe(true);
-    expect(relayCore.unregisterEndpoint).toHaveBeenCalledOnce();
-    expect(JSON.parse(result.content[0].text).code).toBe('REJECTED');
-  });
-});
-
-describe('createRelayUnregisterEndpointHandler', () => {
-  /** The caller in these cases; `endpointOwner` makes it the endpoint's owner. */
-  const ME = { subject: 'relay.agent.me' };
-
-  it('returns success when endpoint exists', async () => {
-    // Purpose: basic happy path for cleanup tool.
-    const relayCore = makeRelayCoreMock({ unregisterResult: true, endpointOwner: ME.subject });
-    const handler = createRelayUnregisterEndpointHandler(
-      { ...makeMockDeps(), relayCore } as McpToolDeps,
-      ME
-    );
-    const result = await handler({ subject: 'relay.inbox.dispatch.abc' });
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.success).toBe(true);
-    expect(result.isError).toBeUndefined();
-  });
-
-  it('returns ENDPOINT_NOT_FOUND when endpoint does not exist', async () => {
-    // Purpose: caller can detect cleanup of non-existent inbox (idempotent cleanup).
-    const relayCore = makeRelayCoreMock({ unregisterResult: false, endpointOwner: ME.subject });
-    const handler = createRelayUnregisterEndpointHandler(
-      { ...makeMockDeps(), relayCore } as McpToolDeps,
-      ME
-    );
-    const result = await handler({ subject: 'relay.inbox.dispatch.gone' });
-    expect(result.isError).toBe(true);
-    expect(JSON.parse(result.content[0].text).code).toBe('ENDPOINT_NOT_FOUND');
-  });
-
-  it('returns error when relay disabled', async () => {
-    // Purpose: verifies requireRelay guard applies to relay_unregister_endpoint.
-    const handler = createRelayUnregisterEndpointHandler(makeMockDeps(), ME);
-    const result = await handler({ subject: 'relay.inbox.dispatch.abc' });
-    expect(result.isError).toBe(true);
-    expect(JSON.parse(result.content[0].text).code).toBe('RELAY_DISABLED');
   });
 });

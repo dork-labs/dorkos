@@ -87,6 +87,7 @@ import type {
   MessageOpts,
   SseResponse,
   RuntimeCapabilities,
+  TurnPermissionCeiling,
 } from '@dorkos/shared/agent-runtime';
 import type {
   InterruptReceipt,
@@ -571,6 +572,13 @@ export interface TriggerTurnOpts {
    */
   newSessionPermissionMode?: PermissionModeId;
   /**
+   * The loosest level THIS turn may run at, handed to the runtime as
+   * `MessageOpts.permissionCeiling` (spec `trusted-by-default-flip` §4). Unlike
+   * {@link TriggerTurnOpts.newSessionPermissionMode} it may ride on any
+   * session, because it can only make a turn stricter, and it is never stored.
+   */
+  permissionCeiling?: TurnPermissionCeiling;
+  /**
    * The dispatcher's id for this message, handed to the runtime so a `result`
    * can be correlated back to the message that caused it.
    *
@@ -961,6 +969,9 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
         // permission key. See the field's docblock for why it is not in there.
         ...(opts.newSessionPermissionMode !== undefined
           ? { permissionMode: opts.newSessionPermissionMode }
+          : {}),
+        ...(opts.permissionCeiling !== undefined
+          ? { permissionCeiling: opts.permissionCeiling }
           : {}),
         ...(dispatchHold !== undefined ? { dispatchHold } : {}),
       });

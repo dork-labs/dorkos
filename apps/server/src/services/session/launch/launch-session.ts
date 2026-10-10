@@ -1,3 +1,4 @@
+import { validateBoundaryOrDorkHome } from '../../../lib/boundary.js';
 /**
  * Start (or feed) a session from one message: the path every "send this
  * message to that session" surface walks, lifted out of
@@ -106,7 +107,7 @@ export interface DispatchSessionMessageOpts {
 export const AGENT_LAUNCH_MAX_LIVE = 8;
 
 /** The sentence a launch refused by the cap answers with. */
-export const AGENT_LAUNCH_CAP_MESSAGE = `Too many agent-started sessions are running (${AGENT_LAUNCH_MAX_LIVE}). Try again when one finishes.`;
+export const AGENT_LAUNCH_CAP_MESSAGE = `Too many spin-off chats are running (${AGENT_LAUNCH_MAX_LIVE}). Try again when one finishes.`;
 
 /** One entry per capped launch whose turn has not settled yet. */
 const liveCappedLaunches = new Set<symbol>();
@@ -177,7 +178,7 @@ export function isSessionLaunchRefusal(
  *
  * The runtime is chosen FIRST because the other two execution defaults hang off
  * it: which model and effort a new session starts with is a per-runtime question
- * (`services/session/resolve-session-defaults.ts`), answered against the runtime
+ * (`services/session/resolution/resolve-session-defaults.ts`), answered against the runtime
  * this returns, and seeded onto the same first write.
  *
  * Exported for `session_start`, which has to know the runtime BEFORE it
@@ -320,7 +321,8 @@ async function refusedLaunchAccount(opts: {
   try {
     const runtime = runtimeRegistry.get(opts.runtimeType);
     if (!isLaunchAccountAware(runtime)) return null;
-    if ((await runtimeRegistry.resolveSessionRuntime(opts.sessionId)).bound) return null;
+    if ((await runtimeRegistry.resolveSessionRuntime(opts.sessionId, { allowUnbound: true })).bound)
+      return null;
     const launch = await runtime.checkLaunchAccount(opts.sessionId, opts.cwd, opts.hintId);
     return launch.ok ? null : launch.error;
   } catch (err) {
@@ -359,7 +361,7 @@ async function launchSessionMessage(
     if (!isRegistered) {
       return {
         refused: 'INVALID_AGENT_PATH',
-        message: 'Choose a registered agent before starting this session',
+        message: 'Choose a registered agent before starting this chat',
       };
     }
     verifiedAgentPath = agentPath;
@@ -371,13 +373,23 @@ async function launchSessionMessage(
   // Additive + resilient: with no key (or a disabled/failing manager) the turn
   // proceeds with the original cwd, byte-for-byte unchanged.
   let effectiveCwd = cwd;
+  const existing = await runtimeRegistry.resolveForSessionWithOwnership?.(sessionId, {
+    allowUnbound: true,
+  });
+  if (existing?.bound) {
+    const actual =
+      existing.runtime.getSessionCwd?.(sessionId) ??
+      runtimeRegistry.getNativeSessionCwd?.(sessionId) ??
+      (await existing.runtime.findSession?.(sessionId))?.cwd;
+    if (actual) effectiveCwd = actual;
+  }
   // A room-bound session's agent and grants, when the room answered for it
   // (spec `agent-home-desk` §5.7): the turn carries the room's agent as
   // `forAgent` and the same folder grants a room turn carries.
   let roomPlace: { forAgent?: string; additionalDirectories?: DirectoryGrant[] } = {};
-  if (workspaceKey) {
+  if (workspaceKey && !existing?.bound) {
     try {
-      const source = cwd ?? DEFAULT_CWD;
+      const source = effectiveCwd ?? DEFAULT_CWD;
       const projectKey = sanitizeWorkspaceKey(path.basename(source));
       // A new workspace is shown before anything runs there (DOR-2335). A turn
       // cannot wait on a review, so one that needs it is skipped below and the
@@ -429,7 +441,11 @@ async function launchSessionMessage(
     // grants or the agent loses the files it was working on. The port answers
     // `null` for every other session, which leaves the chain exactly as it was.
     const resolved = await resolveSessionCwdWithRoom(
-      { ...(cwd !== undefined ? { cwd } : {}), agentPath: verifiedAgentPath, sessionId },
+      {
+        ...(effectiveCwd !== undefined ? { cwd: effectiveCwd } : {}),
+        agentPath: verifiedAgentPath,
+        sessionId,
+      },
       roomSessionPlace
     );
     if (resolved.refusal) {
@@ -448,21 +464,25 @@ async function launchSessionMessage(
     return {
       refused: 'DESK_NOT_OWN',
       message:
-        `This conversation would run inside a room's files ("${path.resolve(effectiveCwd)}"), ` +
+        `This chat would run inside a room's files ("${path.resolve(effectiveCwd)}"), ` +
         `which is never where an agent works. Start it in the agent's own folder instead.`,
     };
   }
+
+  if (origin.kind === 'interactive') await validateBoundaryOrDorkHome(effectiveCwd ?? DEFAULT_CWD);
 
   // First-message binding: choose + persist the runtime BEFORE resolving.
   // `persistSessionRuntime` binds a session that has none — including one whose
   // row a pre-launch settings change already created — and leaves an
   // already-bound session completely alone, so a later call passing a different
   // (or no) hint changes nothing. The first message wins.
-  const runtimeType = await resolveRuntimeTypeForNewSession({
-    runtimeHint,
-    agentPath: verifiedAgentPath,
-    cwd,
-  });
+  const runtimeType = existing?.bound
+    ? existing.runtime.type
+    : await resolveRuntimeTypeForNewSession({
+        runtimeHint,
+        agentPath: verifiedAgentPath,
+        cwd,
+      });
   if (!runtimeRegistry.has(runtimeType)) {
     return { refused: 'UNKNOWN_RUNTIME', message: `Unknown runtime: ${runtimeType}` };
   }
@@ -540,7 +560,7 @@ async function launchSessionMessage(
     }
   }
 
-  const runtime = await runtimeRegistry.resolveForSession(sessionId);
+  const runtime = await runtimeRegistry.resolveForSession(sessionId, { allowUnbound: true });
 
   // One id for this whole dispatch, minted BEFORE the trigger so the line that
   // announces it already carries it and a reader can start there.

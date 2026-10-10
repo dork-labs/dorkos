@@ -17,12 +17,12 @@ DorkOS can show you how your own instance is running: how long agent turns take,
 
 When you turn tracing on, DorkOS records a span (a timed record of one operation) for the paths that matter:
 
-- **Session turns.** One span per turn you take with an agent.
+- **Chat turns.** One span per turn you take with an agent.
 - **Runtime calls.** One span per call into a runtime like Claude Code, Codex, or OpenCode, with a count of the events it streamed back.
 - **Relay dispatch.** One span each time a message goes onto the agent message bus, with how many agents it reached.
 - **Task runs.** One span per scheduled or manual task, with whether it ran on a schedule or by hand.
 
-Each span carries only durations, counts, and coarse labels (like which runtime, or "scheduled" versus "manual"). It never carries your prompts, your code, file paths, your hostname, or anything from your sessions. There is a fixed allowlist of the fields a span may hold, enforced in code and tests, so content cannot leak in even by mistake. When something fails, the span is marked as an error, but the error message itself is dropped, because a message can contain anything.
+Each span carries only durations, counts, and coarse labels (like which runtime, or "scheduled" versus "manual"). It never carries your prompts, your code, file paths, your hostname, or anything from your chats. There is a fixed allowlist of the fields a span may hold, enforced in code and tests, so content cannot leak in even by mistake. When something fails, the span is marked as an error, but the error message itself is dropped, because a message can contain anything.
 
 ### AI run details on your runtime spans
 
@@ -67,7 +67,7 @@ Then start DorkOS pointed at it:
 OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 dorkos
 ```
 
-Open the Jaeger UI at `http://localhost:16686`, use DorkOS for a bit, and your session, runtime, task, and relay spans show up there. The same two-step pattern works for Grafana Tempo, Honeycomb, Datadog, or any other OTLP tool: run the collector, set the endpoint.
+Open the Jaeger UI at `http://localhost:16686`, use DorkOS for a bit, and your chat, runtime, task, and relay spans show up there. The same two-step pattern works for Grafana Tempo, Honeycomb, Datadog, or any other OTLP tool: run the collector, set the endpoint.
 
 The two modes are independent. Set the endpoint for OTLP, add `--debug-trace` for the local file, do both, or neither. The default (no flag, no endpoint) traces nothing, exactly as before.
 
@@ -89,8 +89,8 @@ DorkOS also reads the other standard `OTEL_EXPORTER_OTLP_*` variables (for timeo
 
 DorkOS also publishes live event streams over Server-Sent Events (SSE), a simple way for a web page or script to receive a running feed of updates. These are a supported way to build your own dashboards or automations on top of your instance.
 
-- `GET /api/events` is the instance-wide feed: sessions starting and finishing, and other lifecycle events.
-- `GET /api/sessions/:id/events` is the feed for one session: every event in that session's turns.
+- `GET /api/events` is the instance-wide feed: chats starting and finishing, and other lifecycle events.
+- `GET /api/sessions/:id/events` is the feed for one chat: every event in that chat's turns.
 
 Both streams are durable. Each event has a growing sequence number, and if your connection drops, you reconnect with a `Last-Event-ID` header to replay exactly what you missed with no gaps. That means a dashboard can go offline and come back without losing events.
 

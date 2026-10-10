@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 /**
- * A room notice that says "Open Ana's session" links to that session
+ * A room notice that says "Open Ana's chat" links to that session
  * (DOR-2077, reported as FB-27).
  *
  * The line used to be a sentence with no way to do what it said. The link's
- * target comes from the room's session bindings, keyed by the notice's
+ * target comes from the room's chat bindings, keyed by the notice's
  * `subjectAuthorId`, and a click re-reads them before it goes anywhere, because
- * a room rebinds an agent's session after every turn (DOR-1974).
+ * a room rebinds an agent's chat after every turn (DOR-1974).
  */
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
@@ -51,7 +51,7 @@ function agentAuthor(id: string, displayName: string) {
 const AUTHORS = new Map([
   // Names that start the way the phrase does, or contain it (review of DOR-2077).
   agentAuthor('oi', 'Open Interpreter'),
-  agentAuthor('ksb', "Kai's session bot"),
+  agentAuthor('ksb', "Kai's chat bot"),
   [
     'kai',
     {
@@ -105,7 +105,7 @@ function notice(body: RoomEntryBody): RoomEntry {
 }
 
 const TURN_FAILED: RoomEntryBody = {
-  text: "Kai ran into a problem and could not answer here. Open Kai's session to see what went wrong.",
+  text: "Kai ran into a problem and could not answer here. Open Kai's chat to see what went wrong.",
   notice: 'turn_failed',
   subjectAuthorId: 'kai',
 };
@@ -159,7 +159,7 @@ describe('RoomMessage — a notice that sends you to a session links to it', () 
     // other half of what DOR-2077 was filed about.
     expect(link).toHaveAttribute('href', '/session?session=sess-kai');
     // The notice's own words are the link, so the line says it once.
-    expect(link).toHaveTextContent("Open Kai's session");
+    expect(link).toHaveTextContent("Open Kai's chat");
     expect(screen.getByTestId('room-notice').textContent).toBe(TURN_FAILED.text);
     expect(transport.listRoomSessions).toHaveBeenCalledWith('room-1');
   });
@@ -168,7 +168,7 @@ describe('RoomMessage — a notice that sends you to a session links to it', () 
     const transport = transportWith([{ authorId: 'kai', sessionId: 'sess-kai' }]);
     renderNotice(
       notice({
-        text: "Kai has a question for you before it can carry on. Open Kai's session to answer. It will wait, but not forever.",
+        text: "Kai has a question for you before it can carry on. Open Kai's chat to answer. It will wait, but not forever.",
         notice: 'awaiting_approval',
         subjectAuthorId: 'kai',
         waitingKind: 'question',
@@ -234,21 +234,21 @@ describe('RoomMessage — a notice that sends you to a session links to it', () 
       transport
     );
 
-    expect(await screen.findByTestId('room-notice-session-link')).toHaveTextContent('Open session');
+    expect(await screen.findByTestId('room-notice-session-link')).toHaveTextContent('Open chat');
   });
 
   it.each([
     ['oi', 'Open Interpreter'],
-    ['ksb', "Kai's session bot"],
+    ['ksb', "Kai's chat bot"],
   ])('links only the instruction for an agent named %s → %s', async (authorId, name) => {
     // The notice starts with the name, so a pattern that looks for "Open …'s
     // session" from the front underlines most of the sentence for these two.
-    const text = `${name} ran into a problem and could not answer here. Open ${name}'s session to see what went wrong.`;
+    const text = `${name} ran into a problem and could not answer here. Open ${name}'s chat to see what went wrong.`;
     const transport = transportWith([{ authorId, sessionId: 'sess-x' }]);
     renderNotice(notice({ text, notice: 'turn_failed', subjectAuthorId: authorId }), transport);
 
     expect(await screen.findByTestId('room-notice-session-link')).toHaveTextContent(
-      new RegExp(`^Open ${name}'s session$`)
+      new RegExp(`^Open ${name}'s chat$`)
     );
     expect(screen.getByTestId('room-notice').textContent).toBe(text);
   });

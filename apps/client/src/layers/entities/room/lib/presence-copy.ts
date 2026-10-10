@@ -145,11 +145,11 @@ export function heldSentence(
   if (names.length <= 1) {
     const name = names[0] ?? 'An agent';
     if (!severalInTheWay) {
-      return `${name} will pick this up when it finishes in ${behind ?? 'another conversation'}`;
+      return `${name} will pick this up when it finishes in ${behind ?? 'another chat'}`;
     }
     return behind === null
-      ? `${name} will pick this up when it finishes one of its other conversations`
-      : `${name} will pick this up when it finishes in ${behind} or another conversation`;
+      ? `${name} will pick this up when it finishes one of its other chats`
+      : `${name} will pick this up when it finishes in ${behind} or another chat`;
   }
   return `${readAsList(names)} will pick this up when they’re free`;
 }

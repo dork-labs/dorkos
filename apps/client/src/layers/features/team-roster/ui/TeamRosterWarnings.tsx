@@ -25,7 +25,7 @@ const SOURCE_COPY: Record<string, string> = {
   // they are up to.
   claims: 'Couldn’t tell which of your agents are working right now.',
   rooms: 'Couldn’t read your rooms, so where agents work may be missing.',
-  sessions: 'Couldn’t read recent sessions, so “last active” may be missing.',
+  sessions: 'Couldn’t read recent chats, so “last active” may be missing.',
 };
 
 /**

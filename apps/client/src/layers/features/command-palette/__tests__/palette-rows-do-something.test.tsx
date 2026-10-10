@@ -79,7 +79,8 @@ Element.prototype.scrollIntoView = vi.fn();
 // --- Mocks ---
 
 const mockNavigate = vi.fn();
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useNavigate: () => mockNavigate,
 }));
 
@@ -316,7 +317,7 @@ describe('a slash command row', () => {
     await waitFor(() =>
       expect(mockNavigate).toHaveBeenCalledWith({
         to: '/session',
-        search: { session: 'session-current', dir: ACTIVE_CWD },
+        search: { session: 'session-current', dir: undefined },
       })
     );
     // Typed in, not sent: a global palette must not fire `/clear` at an agent
@@ -326,7 +327,9 @@ describe('a slash command row', () => {
     // person IN a conversation, so ranking has to know it happened. Recorded
     // AFTER the resolve, never before: a lookup that failed is not an open.
     const { opened } = useInteractionStore.getState();
-    expect(opened['session:session-current']).toBeDefined();
+    // The chat page records the chat itself when it shows it (spec
+    // `your-activity-first` D3); the row records the agent it reached.
+    expect(opened['session:session-current']).toBeUndefined();
     expect(opened[`agent:${ACTIVE_CWD}`]).toBeDefined();
   });
 
@@ -382,7 +385,7 @@ describe('a Continue row', () => {
 
     expect(mockNavigate).toHaveBeenCalledWith({
       to: '/session',
-      search: { session: 'session-current', dir: ACTIVE_CWD },
+      search: { session: 'session-current', dir: undefined },
     });
   });
 
@@ -404,7 +407,7 @@ describe('an agent’s recent sessions', () => {
       to: '/session',
       // The AGENT's directory, not the one you were in — the transcript is
       // resolved from `?dir=`, so the wrong one reads another project's history.
-      search: { session: 'session-older', dir: '/projects/auth' },
+      search: { session: 'session-older', dir: undefined },
     });
   });
 });

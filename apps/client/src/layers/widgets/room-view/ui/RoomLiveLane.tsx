@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 /**
  * The room's live lane: `Conversation.LiveLane` wired to a room's own facts.
  *
@@ -411,7 +412,7 @@ export function RoomLiveLane({
             void navigate(toSession({ session: sessionId }));
           }}
           onOpenRoom={(roomId) => {
-            void navigate({ to: '/channels', search: { id: roomId } });
+            void navigate({ ...appRoutes.channels(), search: { id: roomId } });
           }}
           onAnswerFirst={(authorId) => {
             // Marked optimistically: the server's answer is a boolean about a

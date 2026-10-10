@@ -212,14 +212,15 @@ describe('gatherFeedbackReport', () => {
         ...Object.keys(FEEDBACK_FLAG_ALLOWLIST),
         'runtimes.codex.enabled',
         'runtimes.opencode.enabled',
+        'runtimes.doe.enabled',
       ])
     );
   });
 
-  it('includes codex and opencode unless they are explicitly off', () => {
+  it('includes optional runtimes unless they are explicitly off', () => {
     expect(
       gatherFeedbackReport({ kind: 'bug', ...host, readConfigValue: reader({}) }).runtimes
-    ).toEqual(['claude-code', 'codex', 'opencode']);
+    ).toEqual(['claude-code', 'codex', 'opencode', 'doe']);
 
     expect(
       gatherFeedbackReport({
@@ -227,7 +228,16 @@ describe('gatherFeedbackReport', () => {
         ...host,
         readConfigValue: reader({ 'runtimes.opencode.enabled': false }),
       }).runtimes
-    ).toEqual(['claude-code', 'codex']);
+    ).toEqual(['claude-code', 'codex', 'doe']);
+    expect(
+      gatherFeedbackReport({
+        kind: 'bug',
+        ...host,
+        readConfigValue: reader({
+          'runtimes.doe.enabled': false,
+        }),
+      }).runtimes
+    ).toEqual(['claude-code', 'codex', 'opencode']);
   });
 
   it('sanitizes what it read, so an unsafe config value cannot reach the report', () => {

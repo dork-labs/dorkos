@@ -118,7 +118,7 @@ function removeChatOnlyAccess(db: Database.Database, chat: ChatWithAgentAccess):
  */
 async function openChatAccess(page: Page, chat: ChatWithAgentAccess) {
   const chatPage = new ChatPage(page);
-  await chatPage.goto(chat.sessionId, { dir: chat.agentDir });
+  await chatPage.goto(chat.sessionId, { dir: chat.agentDir, draft: true });
   await chatPage.sendAndLand('Hello connectors');
   await chatPage.waitForTurnToEnd();
   await expect(page).toHaveURL(new RegExp(`session=${chat.sessionId}`));
@@ -126,7 +126,7 @@ async function openChatAccess(page: Page, chat: ChatWithAgentAccess) {
   const rightPanel = new RightPanelPage(page);
   const showSessionTab = async () => {
     await rightPanel.open();
-    await page.getByRole('tab', { name: 'Session', exact: true }).click();
+    await page.getByRole('tab', { name: 'Chat', exact: true }).click();
   };
   await showSessionTab();
   const group = page.locator('[data-testid="session-connectors"]');

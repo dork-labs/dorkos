@@ -196,8 +196,6 @@ export interface CoreSlice {
   setIsTextStreaming: (v: boolean) => void;
   isWaitingForUser: boolean;
   setIsWaitingForUser: (v: boolean) => void;
-  activeForm: string | null;
-  setActiveForm: (v: string | null) => void;
   tasksBadgeCount: number;
   setTasksBadgeCount: (v: number) => void;
 

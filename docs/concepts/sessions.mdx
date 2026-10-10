@@ -1,42 +1,42 @@
 ---
-title: Sessions
-description: What a DorkOS session is, how it stays in sync across tools, and how it works under the hood
+title: Chats
+description: What a DorkOS chat is, how it stays in sync across tools, and how it works under the hood
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
 import { Cards, Card } from 'fumadocs-ui/components/card';
 
-# Sessions
+# Chats
 
-## What a session is
+## What a chat is
 
-A session is one conversation with one agent. Every message you send, every file the agent
-touches, and every reply you get belongs to that session.
+A chat is one back-and-forth with one agent. Every message you send, every file the agent
+touches, and every reply you get belongs to that chat.
 
-A session can run on Claude Code, Codex or OpenCode. Every session lands in the same list,
+A chat can run on Claude Code, Codex or OpenCode. Every chat lands in the same list,
 whichever one it uses.
 
-Here's the quick win: start a chat in the DorkOS web app, and if it's a Claude Code session, you
-can also open that exact conversation from the `claude` CLI in the same folder. Same
-conversation, either window. DorkOS just gives every session an ID so it can find it again later.
+Here's the quick win: start a chat in the DorkOS web app, and if it's a Claude Code chat, you
+can also open that exact chat from the `claude` CLI in the same folder. Same
+chat, either window. DorkOS just gives every chat an ID so it can find it again later.
 
-## How to work with sessions day to day
+## How to work with chats day to day
 
 **One turn runs at a time, but every window can queue work.** Send a message while an agent is
-working and DorkOS keeps it in the session's queue. All connected windows can see the same queue
-and conversation. The next turn starts when the current one has finished and no approval is waiting.
+working and DorkOS keeps it in the chat's queue. All connected windows can see the same queue
+and chat. The next turn starts when the current one has finished and no approval is waiting.
 
 **Approvals survive a refresh.** If an agent asks to approve running a command or editing a file,
-that prompt sticks around even if you reload the page, switch sessions, or open a second window.
+that prompt sticks around even if you reload the page, switch chats, or open a second window.
 It picks up right where it left off.
 
-**Sessions from other tools show up automatically.** Claude Code sessions are just files on your
-disk, so any tool that can read those files sees the same sessions. Start a task from the `claude`
+**Chats from other tools show up automatically.** Claude Code chats are just files on your
+disk, so any tool that can read those files sees the same chats. Start a task from the `claude`
 CLI and it appears in the DorkOS sidebar too, no import step, no sync button.
 
-OpenCode supplies sessions from its own store. For Codex, DorkOS lists the threads it has tracked
-and saves the conversation events it observed. This is not a promise that every conversation
-started in the Codex CLI appears in the session list. If one runtime is unavailable, DorkOS still
+OpenCode supplies chats from its own store. For Codex, DorkOS lists the threads it has tracked
+and saves the chat events it observed. This is not a promise that every chat
+started in the Codex CLI appears in the chat list. If one runtime is unavailable, DorkOS still
 shows the others and reports which one it missed.
 
 **A "New messages" line remembers where you stopped.** Come back to a chat that ran on without
@@ -48,15 +48,15 @@ neither can your agents. DorkOS has no "seen by" list and no read receipts. Chat
 mark in a single browser, and that old copy is thrown away the next time you open a chat there, so
 the line may sit further back than you expect once. Reading the chat sets it straight.
 
-**See how full each session's context is.** Every row in the list shows a small gauge of how much
+**See how full each chat's context is.** Every row in the list shows a small gauge of how much
 of its context window is used, so you can spot which agents are running low before they slow down.
 A line at the top of the list sums it up, "2 near full · 1 auto-compacted", so you know which one
-to jump into first. Claude Code sessions show this reading even when they're closed; Codex and
-OpenCode show it once you open the session, and read "unknown" until then, because those tools only
-report context usage while a session is live.
+to jump into first. Claude Code chats show this reading even when they're closed; Codex and
+OpenCode show it once you open the chat, and read "unknown" until then, because those tools only
+report context usage while a chat is live.
 
 <Callout type="info">
-  Want a picture of this? A short clip of a session appearing in the DorkOS sidebar the instant you
+  Want a picture of this? A short clip of a chat appearing in the DorkOS sidebar the instant you
   start it from the CLI says more than the paragraph above ever could.
 </Callout>
 
@@ -65,30 +65,30 @@ report context usage while a session is live.
 If you're calling the API directly or debugging DorkOS itself, here's the exact mechanics behind
 everything above.
 
-### Creating and messaging a session
+### Creating and messaging a chat
 
-A session is created by its first message, sent to a new unique ID with `"create": true`, along
+A chat is created by its first message, sent to a new unique ID with `"create": true`, along
 with a working directory and a permission mode (whether tool calls need your approval). Without
 `create`, a message to an ID the server doesn't know answers `404` and starts nothing. Sending a
 message triggers a turn: `POST /api/sessions/:id/messages`
-returns `202 Accepted` immediately, and the actual response streams over the session's durable
+returns `202 Accepted` immediately, and the actual response streams over the chat's durable
 event stream, `GET /api/sessions/:id/events`. That stream carries text deltas, tool calls,
 approval requests, and task-progress updates in real time.
 
-The `202` means the server has your message. If the session was already working, the message waits
-on the session's queue and runs when the current turn ends. `queuePosition: 1` cannot distinguish
+The `202` means the server has your message. If the chat was already working, the message waits
+on the chat's queue and runs when the current turn ends. `queuePosition: 1` cannot distinguish
 an immediate start from the first waiting message. Use the stream's `turn_start` event to know
 when execution begins.
 
 ### One turn at a time
 
-A session runs one turn at a time, and the server keeps a queue of what is waiting. Anything sent
-to a session that is already working joins that queue instead of being refused, whichever window or
+A chat runs one turn at a time, and the server keeps a queue of what is waiting. Anything sent
+to a chat that is already working joins that queue instead of being refused, whichever window or
 client sent it. The queue lives on the server, so every client sees the same one, any of them can
 reword or withdraw a message before it runs, and nothing is lost to a page refresh or a restart.
 
 The `X-Client-Id` header identifies a client across reconnects and labels the messages it queued.
-A write lock still guards a session so two turns cannot run on it at once, but it is internal now:
+A write lock still guards a chat so two turns cannot run on it at once, but it is internal now:
 it is bound to the turn, released when the turn finishes or errors, and expires after 5 minutes of
 inactivity as a backstop.
 
@@ -96,22 +96,22 @@ inactivity as a backstop.
 
 History storage differs by runtime:
 
-- **Claude Code** writes each session as a transcript file at
+- **Claude Code** writes each chat as a transcript file at
   `~/.claude/projects/{project-slug}/{session-id}.jsonl`, in JSONL (one JSON record per line).
-  That file is the single source of truth for the session.
+  That file is the single source of truth for the chat.
 - **Codex** owns its SDK threads, but its SDK cannot list them or read their history. DorkOS
   persists tracked thread bindings and display metadata in `codex_threads`, and reconstructs
   displayed messages from its own persisted event log.
-- **OpenCode** keeps sessions in its sidecar store, accessed through its SDK.
+- **OpenCode** keeps chats in its sidecar store, accessed through its SDK.
 
-DorkOS reads the Claude Code transcript to build the session list, plus per-session metadata and
+DorkOS reads the Claude Code transcript to build the chat list, plus per-chat metadata and
 full message history. Metadata is computed fresh on every request, so it always reflects the
 current file on disk.
 
-### Session sync
+### Chat sync
 
 Each connected client subscribes to `GET /api/sessions/:id/events`. On connect, the server sends a
-snapshot: completed history, the in-progress turn, session status, and any pending approvals. From
+snapshot: completed history, the in-progress turn, chat status, and any pending approvals. From
 there, every client receives the same live events with monotonic (always-increasing) sequence
 numbers, including turns triggered by another client or the CLI.
 
@@ -121,12 +121,12 @@ The server replays the missing events when it can. If that gap can't be served, 
 sending a fresh snapshot instead.
 
 The sidebar list stays live the same way: a single global stream, `GET /api/events`, announces
-`session_upserted`, `session_removed`, and `session_status` events as sessions are created,
+`session_upserted`, `session_removed`, and `session_status` events as chats are created,
 deleted, or change state, across every client and the CLI.
 
 ### Read state
 
-How far you have read in a session is stored server-side, in the same table rooms use, keyed by
+How far you have read in a chat is stored server-side, in the same table rooms use, keyed by
 `(user, thread kind, thread id)`. Two endpoints cover it:
 
 | Method | Path                            | Purpose                       |
@@ -140,9 +140,9 @@ as an agent gets `403 PEOPLE_ONLY`, and no request can name a user other than th
 that actually moves is broadcast as a `read_cursor` event on the global `GET /api/events` stream,
 which is what updates a second window without polling.
 
-### Session metadata
+### Chat metadata
 
-Most people never need this. Here's where each field on a Claude Code session comes from, if you
+Most people never need this. Here's where each field on a Claude Code chat comes from, if you
 do:
 
 | Field               | Source                                  |
@@ -156,15 +156,15 @@ do:
 
 ### Working directories
 
-Each session runs inside a working directory that determines where the agent can read and write
-files. It's set when the session is created, persisted in the URL as the `?dir=` query parameter
+Each chat runs inside a working directory that determines where the agent can read and write
+files. It's set when the chat is created, persisted in the URL as the `?dir=` query parameter
 in standalone mode, and validated against a configurable boundary so the agent can't wander outside
 allowed paths. The directory picker in the DorkOS sidebar lets you browse and choose one before you
-start a session.
+start a chat.
 
 ### Opening a chat with the question already written
 
-A link can carry the first message for you. Add `?prompt=` to a session URL and DorkOS opens a new
+A link can carry the first message for you. Add `?prompt=` to a chat URL and DorkOS opens a new
 chat with those words already in the box, ready for you to read, edit, or send:
 
 ```
@@ -177,7 +177,7 @@ Add `&send=1` and DorkOS sends it for you as soon as the chat opens, so the agen
 when you look at the screen. It sends once. Refreshing the page, or going back to it, will not send
 it again — the link drops both settings from the address the moment they're used.
 
-This is for **starting** a conversation, never for joining one. If the link points at a chat that
+This is for **starting** a chat, never for joining one. If the link points at a chat that
 already has messages in it, the prompt is ignored: nothing is typed and nothing is sent. It is also
 ignored if you've already started typing, so a link can never overwrite your own words.
 
@@ -188,13 +188,13 @@ ignored if you've already started typing, so a link can never overwrite your own
     Talk to one agent or several without picking a project folder first.
   </Card>
   <Card title="Architecture" href="/docs/concepts/architecture">
-    Understand how sessions fit into the overall DorkOS architecture.
+    Understand how chats fit into the overall DorkOS architecture.
   </Card>
   <Card title="Building Integrations" href="/docs/integrations/building-integrations">
-    See how session operations are delivered through the Transport interface, for extension authors
-    and anyone building a custom client.
+    See how chat operations are delivered through the Transport interface, for extension authors and
+    anyone building a custom client.
   </Card>
   <Card title="Tool Approval" href="/docs/guides/tool-approval">
-    Learn how to review and approve tool calls during a session.
+    Learn how to review and approve tool calls during a chat.
   </Card>
 </Cards>

@@ -14,8 +14,9 @@ import {
   TooltipTrigger,
 } from '@/layers/shared/ui';
 import { goBack, goForward, goToHistoryEntry } from '../model/tab-history';
-import { useTabTarget } from '../model/use-tab-target';
-import { TabTargetIcon } from './TabTargetIcon';
+import { useTabIdentity } from '../model/use-tab-identity';
+import { TabIdentityIcon } from './TabIdentityIcon';
+import { TabStatusMark } from './TabStatusMark';
 
 /**
  * The tooltip's key hint. Off a Mac, Alt+Arrow works too and is the one many
@@ -43,10 +44,10 @@ interface HistoryRowProps {
 
 /**
  * One page in the History menu, named exactly as a tab on that page would be.
- * Its own component so each row can call {@link useTabTarget}.
+ * Its own component so each row can call {@link useTabIdentity}.
  */
 function HistoryRow({ href, isCurrent, onSelect }: HistoryRowProps) {
-  const view = useTabTarget(href);
+  const identity = useTabIdentity(href);
   return (
     <DropdownMenuItem
       // The page you are on is shown, checked, and not a destination. Disabled
@@ -54,10 +55,17 @@ function HistoryRow({ href, isCurrent, onSelect }: HistoryRowProps) {
       disabled={isCurrent}
       aria-current={isCurrent ? 'page' : undefined}
       onSelect={onSelect}
+      aria-label={identity.accessibleName}
       className="data-[disabled]:opacity-100"
     >
-      <TabTargetIcon view={view} />
-      <span className="min-w-0 flex-1 truncate">{view.label}</span>
+      <TabIdentityIcon icon={identity.icon} />
+      <span className="min-w-0 flex-1 truncate">
+        {identity.primary}
+        {identity.secondary && (
+          <span className="text-muted-foreground"> · {identity.secondary}</span>
+        )}
+      </span>
+      <TabStatusMark identity={identity} />
       <Check className={cn('size-3.5 shrink-0', !isCurrent && 'invisible')} />
     </DropdownMenuItem>
   );

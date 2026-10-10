@@ -150,6 +150,7 @@
  *
  * @module services/harness/skills-watcher
  */
+import { outsideAuditScope } from '../audit/audit-context.js';
 import chokidar, { type FSWatcher } from 'chokidar';
 import { existsSync, lstatSync, readdirSync, realpathSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -555,8 +556,8 @@ function claudeCodeRestartNote(createdTheDirectory: boolean): {
 } {
   const facts = skillsFactsFor('claude-code');
   const hint = createdTheDirectory
-    ? 'DorkOS had to create .claude/skills/ for this project. Claude Code only watches that folder if it was already there when the session started, so restart any Claude Code session you have open before looking for the new skill.'
-    : 'Claude Code picks up a new skill in .claude/skills/ without a restart, as long as that folder was already there when the session started. If it was not, restart the session.';
+    ? 'DorkOS had to create .claude/skills/ for this project. Claude Code only watches that folder if it was already there when the chat started, so restart any Claude Code chat you have open before looking for the new skill.'
+    : 'Claude Code picks up a new skill in .claude/skills/ without a restart, as long as that folder was already there when the chat started. If it was not, restart the chat.';
   return { hint, source: `${facts.source.url}, read ${facts.source.fetchedAt}` };
 }
 
@@ -990,13 +991,16 @@ export function startSkillsWatcher(opts: SkillsWatcherOptions): SkillsWatcherHan
   }
 
   const firstSync = syncRoots();
-  const rescan = setInterval(() => void syncRoots(), opts.rootRescanMs ?? SKILLS_ROOT_RESCAN_MS);
+  const rescan = setInterval(
+    outsideAuditScope(() => void syncRoots()),
+    opts.rootRescanMs ?? SKILLS_ROOT_RESCAN_MS
+  );
   rescan.unref?.();
   const sweepMs = opts.sweepMs ?? SKILLS_SWEEP_MS;
-  const sweeper = sweepMs > 0 ? setInterval(sweep, sweepMs) : undefined;
+  const sweeper = sweepMs > 0 ? setInterval(outsideAuditScope(sweep), sweepMs) : undefined;
   sweeper?.unref?.();
   const rearmMs = opts.rearmMs ?? SKILLS_REARM_MS;
-  const rearmer = rearmMs > 0 ? setInterval(rearm, rearmMs) : undefined;
+  const rearmer = rearmMs > 0 ? setInterval(outsideAuditScope(rearm), rearmMs) : undefined;
   rearmer?.unref?.();
 
   /** Every open watch's first scan, plus the settle that makes it trustworthy. */

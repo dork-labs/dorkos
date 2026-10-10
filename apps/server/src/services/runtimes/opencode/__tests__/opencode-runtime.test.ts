@@ -20,6 +20,7 @@ import {
 } from '../../../session/session-state-projector.js';
 import { RuntimeRegistry } from '../../../core/runtime-registry.js';
 import { OpenCodeRuntime } from '../opencode-runtime.js';
+import { deriveDorkosSessionId } from '../sessions/session-mapper.js';
 import { OPENCODE_CAPABILITIES } from '../runtime-constants.js';
 import {
   checkOpenCodeDependencies,
@@ -27,6 +28,7 @@ import {
 } from '../providers/check-dependencies.js';
 import { detectOllama } from '../providers/ollama.js';
 import { TurnEventQueue } from '../events/global-event-hub.js';
+import { OPENCODE_STREAM_LOST_MESSAGE } from '../events/event-mapper.js';
 import type { ConnectorRuntimePrincipalPort } from '../../../connectors/runtime-principal-port.js';
 import { createRuntimeTurnRenewalConformanceFixture } from '../../connectors/__tests__/turn-renewal-conformance-fixture.js';
 import {
@@ -94,7 +96,7 @@ vi.mock('../../shared/dorkos-mcp-injection.js', async (importOriginal) => {
 const SATISFIED_CHECKS: DependencyCheck[] = [
   {
     name: 'OpenCode CLI',
-    description: 'The OpenCode CLI powers OpenCode agent sessions in DorkOS.',
+    description: 'The OpenCode CLI powers OpenCode agent chats in DorkOS.',
     status: 'satisfied',
     version: '1.17.13',
   },
@@ -549,7 +551,7 @@ describe('OpenCodeRuntime', () => {
     });
 
     // DOR-477: the per-turn context bag is NOT system-shaped and stays on the
-    // conversation, where a later turn can still read what was said.
+    // chat, where a later turn can still read what was said.
     it('keeps the per-turn additional-context bag on a synthetic part', async () => {
       const harness = makeRuntime();
       const { runtime, client } = harness;
@@ -753,7 +755,7 @@ describe('OpenCodeRuntime', () => {
       expect(rejected.yieldedBeforeFailure, 'a failed trigger must yield nothing').toBe(0);
       expect(rejected.turnRecordCleared, 'the turn record must be torn down').toBe(true);
       expect(rejected.message).toContain('OpenCode session.summarize failed');
-      expect(unnamed.message).toContain('Pick a model for the session');
+      expect(unnamed.message).toContain('Pick a model for the chat');
 
       // Path B must fail BEFORE the sidecar is asked to compact — sending a
       // half-filled body would be the bug this whole ladder exists to avoid.
@@ -1389,7 +1391,15 @@ describe('OpenCodeRuntime', () => {
       const firstEvents = await first.finished;
       const errorEvent = firstEvents.find((e) => e.type === 'error');
       expect(errorEvent).toBeDefined();
-      expect(errorEvent!.data).toMatchObject({ code: 'stream_error' });
+      // A plain notice, not the stream's own words (DOR-2717): a crashed
+      // sidecar takes the reply with it, and nothing wakes the chat later.
+      expect(errorEvent!.data).toMatchObject({
+        code: 'stream_error',
+        category: 'execution_error',
+        message: OPENCODE_STREAM_LOST_MESSAGE,
+        details: 'sidecar died',
+      });
+      expect(OPENCODE_STREAM_LOST_MESSAGE.split(/\s+/).length).toBeLessThanOrEqual(15);
       expect(firstEvents[firstEvents.length - 1]!.type).toBe('done');
 
       // Turn 2: catch → getClient() again → resubscribe → healthy stream.
@@ -1467,7 +1477,7 @@ describe('OpenCodeRuntime', () => {
       expect(runtime.hasSession(sessionId)).toBe(true);
     });
 
-    it('getMessageHistory delegates to the mapper and never throws', async () => {
+    it('getMessageHistory delegates to native storage and reports unavailability', async () => {
       const harness = makeRuntime();
       const { runtime, client } = harness;
       const sessionId = nextSessionId();
@@ -1501,9 +1511,33 @@ describe('OpenCodeRuntime', () => {
       expect(history).toHaveLength(1);
       expect(history[0]).toMatchObject({ role: 'user', content: 'hello' });
 
-      // Sidecar unreachable → EventLog fallback ([] for a never-streamed id).
+      // A known native conversation cannot turn into empty history when its
+      // store is unavailable, including the snapshot served by SSE.
       client.session.messages.mockRejectedValue(new Error('down'));
-      await expect(runtime.getMessageHistory(DIRECTORY, sessionId)).resolves.toEqual([]);
+      await expect(runtime.getMessageHistory(DIRECTORY, sessionId)).rejects.toMatchObject({
+        code: 'SESSION_DISCOVERY_UNAVAILABLE',
+      });
+      await expect(
+        runtime.getSessionSnapshot({ cwd: DIRECTORY, permissionMode: 'default' }, sessionId)
+      ).rejects.toMatchObject({
+        code: 'SESSION_DISCOVERY_UNAVAILABLE',
+      });
+    });
+
+    it('reports unavailable for an external native ID after restart, even without a local EventLog', async () => {
+      const { runtime, client } = makeRuntime();
+      client.session.list.mockRejectedValue(new Error('sidecar down'));
+      const importedId = deriveDorkosSessionId(OC_SESSION_A);
+      await expect(runtime.getMessageHistory(DIRECTORY, importedId)).rejects.toMatchObject({
+        code: 'SESSION_DISCOVERY_UNAVAILABLE',
+      });
+      await expect(
+        runtime.getSessionSnapshot({ cwd: DIRECTORY, permissionMode: 'default' }, importedId)
+      ).rejects.toMatchObject({
+        code: 'SESSION_DISCOVERY_UNAVAILABLE',
+      });
+      // An optimistic draft has no native transcript to lose.
+      await expect(runtime.getMessageHistory(DIRECTORY, nextSessionId())).resolves.toEqual([]);
     });
 
     // Cross-runtime kickoff-suppression evidence (agent-creation-redesign M4).

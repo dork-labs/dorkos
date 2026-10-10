@@ -37,7 +37,7 @@
 import type { SessionContextUsage } from '@dorkos/shared/session-stream';
 import { SESSIONS } from '../../../config/constants.js';
 import { peekProjector } from '../session-state-projector.js';
-import { primaryOf } from '../session-key-registry.js';
+import { primaryOf } from '../resolution/session-key-registry.js';
 
 /** One session's place relative to the line. */
 interface WarningState {

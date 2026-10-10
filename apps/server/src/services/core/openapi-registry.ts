@@ -24,15 +24,18 @@
  *
  * @module services/openapi-registry
  */
+import { ChatActivityResponseSchema } from '@dorkos/shared/chat-messages';
 import { CreateAgentOptionsSchema } from '@dorkos/shared/mesh-schemas';
 import { RUNTIME_CREDITS_PROTOCOLS } from '@dorkos/shared/agent-runtime';
 import { OpenAPIRegistry, OpenApiGeneratorV31 } from '@asteasolutions/zod-to-openapi';
 import { env } from '../../env.js';
 import { registerConnectorEventOpenApi } from '../connectors/events/openapi.js';
 import { registerSessionContinueOpenApi } from '../session/fleet/continue-openapi.js';
+import { registerSessionLocationsOpenApi } from '../session/resolution/session-locations-openapi.js';
 import { registerProjectsOpenApi } from '../projects/projects-openapi.js';
 import { registerAccountEligibilityOpenApi } from './usage/account-eligibility-openapi.js';
 import { registerKeepAwakeOpenApi } from './keep-awake/keep-awake-openapi.js';
+import { registerCommitmentsOpenApi } from '../commitments/commitments-openapi.js';
 import { registerExtensionDecisionsOpenApi } from '../extensions/inbox/extension-decisions-openapi.js';
 import {
   PermissionModeSchema,
@@ -642,9 +645,11 @@ const LocalUninstallResultSchema = z.object({
 const registry = new OpenAPIRegistry();
 registerConnectorEventOpenApi(registry);
 registerSessionContinueOpenApi(registry);
+registerSessionLocationsOpenApi(registry);
 registerProjectsOpenApi(registry);
 registerAccountEligibilityOpenApi(registry);
 registerKeepAwakeOpenApi(registry);
+registerCommitmentsOpenApi(registry);
 
 // `relay_flow` is broadcast on the unified `/api/events` WebSocket stream, which
 // (like its `relay_bindings_changed`/`relay_adapters_changed` siblings) has
@@ -736,7 +741,7 @@ registry.registerPath({
   tags: ['Sessions'],
   summary: 'List recent sessions across all agents',
   description:
-    'Fans out session listing across every registered agent (DOR-329), merges by `updatedAt` descending, trims to `limit`, and returns a per-agent latest-activity map plus per-runtime `warnings[]` (ADR-0310).',
+    'Fans out session listing across every registered agent (DOR-329), merges by `updatedAt` descending, trims to `limit`, and returns a per-agent latest-activity map plus per-runtime `warnings[]` (ADR-0310). With `touchedSince`, every session whose `lastTouchedByYouAt` is at or after that time is returned too, beyond `limit`, in its `updatedAt` place.',
   request: {
     query: RecentSessionsQuerySchema,
   },
@@ -986,15 +991,6 @@ registry.registerPath({
   tags: ['Sessions'],
   summary: 'Update session settings',
   description:
-    'Moving an interactive session to a permission mode that never stops to ask ' +
-    'requires an acknowledgement. That means any mode the runtime declares at the ' +
-    '`autonomy` stop, and any mode it declares with `asks: "never"` and a `reach` ' +
-    'other than `"read"` — Codex files such a mode at the middle stop. Satisfy it ' +
-    'with `acknowledgedAutonomy: true` on this request, or with the standing ' +
-    'record in `ui.autonomyAcknowledgedAt`. Without one the response is `428 ' +
-    'AUTONOMY_ACK_REQUIRED` and nothing is persisted — obtain consent and retry ' +
-    'the identical request (spec `trust-dial`, decision 5). This is a consent ' +
-    'ritual for a person, not a boundary against a caller.\n\n' +
     'The chosen mode is always saved. When it could not also be delivered to a ' +
     'reply already in flight AND it was a tightening (the agent must now ask ' +
     'more, or may reach less far), the answer is `202` with ' +
@@ -1032,12 +1028,6 @@ registry.registerPath({
     },
     404: {
       description: 'Session not found',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    428: {
-      description:
-        'A mode that never stops to ask was requested without an acknowledgement ' +
-        '(`AUTONOMY_ACK_REQUIRED`)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
@@ -1108,6 +1098,53 @@ registry.registerPath({
         '(`DESK_NOT_OWN`, `ROOM_SESSION_MOVED`), or because the account may not work in ' +
         'this project (`account_not_allowed_here`, whose body also names `project` and ' +
         '`accountId`); the body says what to do instead',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/sessions/{id}/opened',
+  tags: ['Sessions'],
+  summary: 'Mark a session opened by you',
+  description:
+    'Called by the app each time its chat page shows a session, so the session carries ' +
+    '`lastTouchedByYouAt` on every device (spec `your-activity-first` D3). Recorded only ' +
+    'for a person at the app: no `X-DorkOS-Agent` header, an `X-Client-Id` header, and ' +
+    'with login on, a browser session rather than an API key. Any other caller gets the ' +
+    'same `204` and nothing is recorded, so an agent or a script can never make a session ' +
+    'read as yours. Takes no body.',
+  request: {
+    params: z.object({ id: z.string().uuid() }),
+  },
+  responses: {
+    204: { description: 'Accepted; recorded when the caller is a person at the app' },
+    400: {
+      description: 'The id is not a session id (`INVALID_SESSION_ID`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/sessions/{id}/chat-messages',
+  tags: ['Sessions'],
+  summary: 'What a chat sent other chats, and who stopped it',
+  description:
+    'The messages this chat sent other chats with `chat_send` or `session_start`, with ' +
+    'where each one is now (queued, working, delivered, replied, failed), and the times ' +
+    'another chat stopped this one with `chat_stop`. The app re-reads it whenever the ' +
+    "session's event stream carries a `chat_activity` event.",
+  request: { params: z.object({ id: z.string().uuid() }) },
+  responses: {
+    200: {
+      description: "The chat's messaging",
+      content: { 'application/json': { schema: ChatActivityResponseSchema } },
+    },
+    400: {
+      description: 'Invalid session id',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
@@ -5903,8 +5940,7 @@ registry.registerPath({
     'since is a conflict: a change to one target is refused (409 `UNDO_CONFLICT`, listing each ' +
     'conflict) and writes nothing, while a change that reached several targets sets back the ' +
     'ones that still match and reports the rest in `skipped`. `force` sets every key back. A ' +
-    'preset switch goes back as one unit. An Undo never writes Allowed in a locked area, and ' +
-    'moving Files & commands to Full autonomy needs the acknowledgement (428). Undoing a ' +
+    'preset switch goes back as one unit. An Undo never writes Allowed in a locked area. Undoing a ' +
     '"Not now" on the Always allow suggestion lets the suggestion come back ' +
     '(`suggestionRestored`). A key already back where the change found it is nothing to do.',
   request: {
@@ -5926,10 +5962,6 @@ registry.registerPath({
         'A key changed since (`UNDO_CONFLICT`, with `conflicts`), or the history line is not a ' +
         'change, such as an answer on a request card (`NOT_UNDOABLE`)',
       content: { 'application/json': { schema: UndoConflictResponseSchema } },
-    },
-    428: {
-      description: 'The Undo moves Files & commands to Full autonomy (`AUTONOMY_ACK_REQUIRED`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
 });

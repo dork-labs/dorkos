@@ -106,4 +106,4 @@ version answers "below", which reads as failure — a permanent, unclearable fai
 - `260829-085855` — the staged-update purge, which clears this record when it removes an install
   nobody attempted.
 - `260713-133412` — the Windows alpha, which rides the same release train and the same card.
-- `plans/desktop-resilience-program.md` §2 — the user's ten-day log, evidence for every claim here.
+- `plans/archive/desktop-resilience-program.md` §2 — the user's ten-day log, evidence for every claim here.

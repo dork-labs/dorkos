@@ -292,7 +292,8 @@ describe('buildAgentBlock conventions', () => {
 
     const result = (await buildAgentBlock('/test')).text;
     expect(result).toContain('<dorkos_context>');
-    expect(result).toContain('DorkOS is the operating system');
+    expect(result).toContain('DorkOS is a workspace for people and agents.');
+    expect(result).toContain('not an assistant');
     expect(result).toContain('</dorkos_context>');
   });
 
@@ -334,6 +335,14 @@ describe('buildAgentBlock conventions', () => {
     expect(result).toContain('Mesh (discovery)');
     expect(result).toContain('https://dorkos.ai/llms.txt');
     expect(result).toContain('https://dorkos.ai/docs');
+  });
+
+  it('<dorkos_context> tells agents to name chats by title and link them, never by id (DOR-2824)', async () => {
+    const result = (await buildAgentBlock('/test')).text;
+    const block = result.slice(result.indexOf('<dorkos_context>'));
+    expect(block).toContain('name it by its title and link it');
+    expect(block).toContain('Never show a raw id');
+    expect(block).toContain('[Chat title](/session?session=<full id>)');
   });
 });
 

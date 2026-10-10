@@ -50,6 +50,7 @@ vi.mock('../../../core/runtime-registry.js', async () => {
   };
   return {
     runtimeRegistry: {
+      getNativeSessionCwd: vi.fn(() => null),
       getAllCapabilities: () => registered,
       getDefaultType: () => 'claude-code',
       has: (type: string) => Object.hasOwn(registered, type),

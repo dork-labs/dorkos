@@ -51,6 +51,7 @@ const RUNTIME_CONFIG_KEYS: Readonly<Record<LedgerRuntime, string>> = {
   'claude-code': 'claudeCode',
   codex: 'codex',
   opencode: 'opencode',
+  doe: 'doe',
 };
 
 /** What a registry warning calls one row of each runtime. */
@@ -58,6 +59,7 @@ const ACCOUNT_NOUNS: Readonly<Record<LedgerRuntime, string>> = {
   'claude-code': 'Claude account',
   codex: 'Codex account',
   opencode: 'OpenCode account',
+  doe: 'DorkOS account',
 };
 
 /** A warning the account rules raise, named as the contract's fixtures name them. */
@@ -210,7 +212,7 @@ export function defaultAccountFolder(
   home: string
 ): { path: string | null; warnings: AccountWarning[] } {
   const warnings: AccountWarning[] = [];
-  if (runtime === 'opencode') return { path: null, warnings };
+  if (runtime === 'opencode' || runtime === 'doe') return { path: null, warnings };
   if (runtime === 'claude-code') {
     const runtimes = isObject(config) ? config.runtimes : undefined;
     const section = isObject(runtimes) ? runtimes.claudeCode : undefined;
@@ -300,6 +302,9 @@ export function resolveRuntimeAccounts(
   runtime: LedgerRuntime,
   inputs: AccountResolutionInputs
 ): { accounts: RuntimeAccount[]; warnings: AccountWarning[] } {
+  // Doe owns inference credentials per conversation, not a native account fleet.
+  // Ignore hand-edited registries too: a typed usage source creates no account.
+  if (runtime === 'doe') return { accounts: [], warnings: [] };
   const realpath = inputs.realpath ?? systemRealpath;
   const read = readRegistered(runtime, inputs.config, inputs.home, realpath);
   const warnings = [...read.warnings];
@@ -455,6 +460,12 @@ export function pruneTargets(
 ): Record<LedgerRuntime, string[]> {
   const out = {} as Record<LedgerRuntime, string[]>;
   for (const runtime of LEDGER_RUNTIMES) {
+    // With no account registry, Doe has no removed-account ledger to prune.
+    // Its attribution format remains valid, but account reconciliation owns none.
+    if (runtime === 'doe') {
+      out[runtime] = [];
+      continue;
+    }
     const known = new Set(registered[runtime] ?? []);
     out[runtime] = (onDisk[runtime] ?? []).filter((id) => !known.has(id));
   }

@@ -119,7 +119,7 @@ describe('SessionPopover — the trigger', () => {
   it('renders one labelled `⋯` that asks to open the panel', () => {
     const onOpenChange = vi.fn();
     renderPanel({ open: false, onOpenChange });
-    const trigger = screen.getByRole('button', { name: 'Session details' });
+    const trigger = screen.getByRole('button', { name: 'Chat details' });
     fireEvent.click(trigger);
     expect(onOpenChange).toHaveBeenCalledWith(true);
   });
@@ -128,13 +128,13 @@ describe('SessionPopover — the trigger', () => {
     // `aria-label` replaces a button's text, so a visible `+2` with no count in the
     // label would be honest to the eye and silent to a screen reader.
     renderPanel({ open: false, overflowCount: 2 });
-    expect(screen.getByRole('button', { name: 'Session details, 2 more' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Chat details, 2 more' })).toBeInTheDocument();
     expect(screen.getByText('+2')).toBeInTheDocument();
   });
 
   it('says nothing extra when the line fitted everything', () => {
     renderPanel({ open: false, overflowCount: 0 });
-    expect(screen.getByRole('button', { name: 'Session details' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Chat details' })).toBeInTheDocument();
     expect(screen.queryByText(/^\+/)).not.toBeInTheDocument();
   });
 });
@@ -174,7 +174,7 @@ describe('SessionPopover — rows', () => {
     renderPanel();
     expect(screen.getByText('Queued messages')).toBeInTheDocument();
     expect(screen.getByText('2')).toBeInTheDocument();
-    expect(screen.getByText('Session ID')).toBeInTheDocument();
+    expect(screen.getByText('Chat ID')).toBeInTheDocument();
     expect(screen.getByText('session-42')).toBeInTheDocument();
   });
 

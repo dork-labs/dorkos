@@ -21,7 +21,7 @@
  */
 import { useState } from 'react';
 import { useRuntimeCapabilities } from '@/layers/entities/runtime';
-import { needsConsentRitual } from '@/layers/shared/lib';
+import { actsWithoutAsking } from '@/layers/shared/lib';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import type { PermissionMode } from '@dorkos/shared/types';
 
@@ -125,8 +125,7 @@ export function usePostureConsent(input: PostureConsentInput): PostureConsent {
    * shipped meanings of `acceptEdits` are the live case: on Claude Code it asks
    * before a command, on Codex it cannot ask at all. Carrying the id across the
    * change is right — the alternative is silently rewriting somebody's setting —
-   * so the CHANGE is what gets gated, by the same `needsConsentRitual` the dial
-   * and the server's own door apply.
+   * so the CHANGE is what gets gated, by `actsWithoutAsking`.
    *
    * Only a NEW never-asking posture opens the door. Somebody already sitting at
    * one has walked through it, and asking again on every runtime change would
@@ -135,9 +134,9 @@ export function usePostureConsent(input: PostureConsentInput): PostureConsent {
    */
   const widensToNeverAsking = (nextRuntime: string | null): PermissionModeDescriptor | null => {
     const next = modesFor(nextRuntime).find((d) => d.id === permissionMode);
-    if (!next || !needsConsentRitual(next)) return null;
+    if (!next || !actsWithoutAsking(next)) return null;
     const before = descriptors.find((d) => d.id === permissionMode);
-    return before && needsConsentRitual(before) ? null : next;
+    return before && actsWithoutAsking(before) ? null : next;
   };
 
   return {
@@ -156,11 +155,10 @@ export function usePostureConsent(input: PostureConsentInput): PostureConsent {
       setPending(null);
       apply();
     },
-    // The rule is `needsConsentRitual` — the server's own — not a stop
-    // comparison, so a runtime that files a never-asking mode at the MIDDLE stop
+    // The rule is `actsWithoutAsking`, not a stop comparison, so a runtime that files a never-asking mode at the MIDDLE stop
     // is caught here too (DOR-816).
     guardMode: (descriptor, apply) => {
-      if (descriptor && needsConsentRitual(descriptor)) {
+      if (descriptor && actsWithoutAsking(descriptor)) {
         setPending({ descriptor, apply });
         return;
       }

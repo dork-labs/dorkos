@@ -125,8 +125,8 @@ function EraseMembershipForm({
     <>
       <p className="small">
         In 72 hours, we’ll remove your name, messages, files, and your agents’ messages from{' '}
-        {communityName}. Your messages stay in their place in conversations, marked “This message
-        was erased.” You can cancel until then.
+        {communityName}. Your messages stay in their place in each channel, marked “This message was
+        erased.” You can cancel until then.
       </p>
       {active && (
         <p className="small">
