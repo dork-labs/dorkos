@@ -41,10 +41,7 @@ import { BUILTIN_MEMORY_PROVIDER_ID } from './memory-provider.js';
 import { ROOM_REPO_CAP_DEFAULTS } from './room-repo.js';
 import { RuntimeEnvironmentSchema } from './runtime-environment-schema.js';
 import { CredentialReferenceSchema } from './credential-reference.js';
-import {
-  defaultRemoteAccessSettings,
-  RemoteAccessSettingsSchema,
-} from './remote-access-settings.js';
+import * as remote from './remote-access-settings.js';
 // Plain id lists, never the named schemas in `permissions/permission-schemas.ts`:
 // the same SRC-alias reason as `HARNESS_IDS` above.
 import {
@@ -3703,7 +3700,7 @@ export const UserConfigSchema = z.object({
        * approved, and references to the stored credential (DOR-2086). See
        * {@link RemoteAccessSettingsSchema}.
        */
-      remote: RemoteAccessSettingsSchema.default(defaultRemoteAccessSettings),
+      remote: remote.RemoteAccessSettingsSchema.default(remote.defaultRemoteAccessSettings),
     })
     .default(() => ({
       instanceToken: null,
@@ -3711,7 +3708,7 @@ export const UserConfigSchema = z.object({
       linkedAccountLabel: null,
       previousLinkProof: null,
       credits: { defaults: {}, offer: 'none' as const, agents: [], linkedTo: null },
-      remote: defaultRemoteAccessSettings(),
+      remote: remote.defaultRemoteAccessSettings(),
     })),
   /**
    * Connector gateway settings (connector-completion spec). `rawMcpServers`

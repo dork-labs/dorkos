@@ -95,7 +95,7 @@ import {
   type FetchLike,
   type InstanceDescriptor,
 } from './cloud-link-client.js';
-import { resolveConfiguredLinkTelemetryInstanceId } from './link-telemetry.js';
+import { resolveConfiguredLinkTelemetryInstanceId } from './link-telemetry-config.js';
 
 /** How often a linked instance heartbeats the cloud. */
 const HEARTBEAT_INTERVAL_MS = 15 * 60 * 1000;
