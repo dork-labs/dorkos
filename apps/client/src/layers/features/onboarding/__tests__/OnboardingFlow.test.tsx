@@ -1,8 +1,10 @@
 /**
  * @vitest-environment jsdom
  */
+import { useState, type ReactNode } from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   createMemoryHistory,
   createRootRoute,
@@ -11,330 +13,268 @@ import {
   RouterProvider,
 } from '@tanstack/react-router';
 import { zodValidator } from '@tanstack/zod-adapter';
-import { mergeDialogSearch } from '@/layers/shared/model';
+import { createMockTransport } from '@dorkos/test-utils';
+import type { CloudCreditsStatus } from '@dorkos/shared/cloud-schemas';
+import type { Transport } from '@dorkos/shared/transport';
+import { TransportProvider } from '@/layers/shared/model';
 import { onboardingStageSearchSchema } from '../model/onboarding-stage';
+import type { FirstRunAccountLink, FirstRunSlots } from '../model/first-run-slots';
 
-const mockDismiss = vi.fn().mockResolvedValue(undefined);
 const mockStartOnboarding = vi.fn();
-
 vi.mock('../model/use-onboarding', () => ({
-  useOnboarding: vi.fn(() => ({
-    dismiss: mockDismiss,
-    startOnboarding: mockStartOnboarding,
-  })),
+  useOnboarding: () => ({ startOnboarding: mockStartOnboarding, completeOnboarding: vi.fn() }),
 }));
 
-// `dismiss()` hides the flow AND the getting-started card for good, so this
-// toast is the only visible route back into setup. Mocked (not asserted through
-// a real Toaster) so the assertion reads the exact description text.
-const { mockToast } = vi.hoisted(() => ({ mockToast: vi.fn() }));
-vi.mock('sonner', () => ({ toast: mockToast }));
-
-// Mock the surfaces to isolate OnboardingFlow's stage navigation.
-vi.mock('../ui/SystemRequirementsStep', () => ({
-  SystemRequirementsStep: ({ onContinue }: { onContinue: () => void }) => (
-    <div data-testid="requirements-step">
-      <button onClick={onContinue}>Continue</button>
-    </div>
-  ),
-}));
-
-vi.mock('../ui/WelcomeStep', () => ({
-  WelcomeStep: ({
-    onGetStarted,
-    onSkipAll,
-  }: {
-    onGetStarted: () => void;
-    onSkipAll: () => void;
-  }) => (
-    <div data-testid="welcome-step">
-      <button onClick={onGetStarted}>Get Started</button>
-      <button onClick={onSkipAll}>Skip all setup welcome</button>
-    </div>
-  ),
-}));
-
-vi.mock('../ui/OnboardingConversation', () => ({
-  OnboardingConversation: ({ onComplete }: { onComplete: () => void }) => (
-    <div data-testid="conversation">
-      <button onClick={onComplete}>Dissolve</button>
-    </div>
-  ),
-}));
-
-// The power stage hosts the real full-power door (its own writes are pinned in
-// OnboardingPowerStep.test); here it is stubbed so OnboardingFlow's stage
-// navigation is what is under test. "Answer power" stands in for any door answer
-// or "Decide later" — both advance via `onAdvance`.
-vi.mock('../ui/OnboardingPowerStep', () => ({
-  OnboardingPowerStep: ({ onAdvance }: { onAdvance: () => void }) => (
-    <div data-testid="power-step">
-      <button onClick={onAdvance}>Answer power</button>
-    </div>
-  ),
+// Landing posts the welcome and navigates to Home; its own behaviour is not what
+// this file is about, only that the flow reaches it.
+vi.mock('../ui/LandingStep', () => ({
+  LandingStep: () => <div data-testid="landing-step" />,
 }));
 
 import { OnboardingFlow } from '../ui/OnboardingFlow';
 
-// ── Router harness ───────────────────────────────────────────
-//
-// OnboardingFlow now syncs its stage to the `?onboarding=` search param, so it
-// must render inside a router. A single index route validates the same schema
-// the real root route uses, so `useSearch`/`useNavigate` behave as in the app.
-// The dialog params are merged in the way every real leaf route merges them
-// (`mergeDialogSearch`), so the skip-all toast's Settings deep link survives
-// validation here exactly as it does in the app.
-type HistoryActionType = 'PUSH' | 'REPLACE' | 'GO' | 'FORWARD' | 'BACK';
+const CODE = 'DORK-2F7Q';
+const COMPLETE = `https://dorkos.ai/activate?code=${CODE}&from=complete`;
 
-function buildHarness(initialUrl: string, onComplete: () => void) {
+/** A link that behaves like the real one: start puts a code in flight. */
+function useFakeLink(): FirstRunAccountLink {
+  const [state, setState] = useState<FirstRunAccountLink['state']>('idle');
+  return {
+    state,
+    pending:
+      state === 'pending'
+        ? {
+            userCode: CODE,
+            verificationUri: 'https://dorkos.ai/activate',
+            verificationUriComplete: COMPLETE,
+          }
+        : null,
+    starting: false,
+    startError: null,
+    start: async () => {
+      fakeStart();
+      setState('pending');
+      return CODE;
+    },
+    cancel: async () => {
+      fakeCancel();
+      setState('idle');
+    },
+    openBilling: fakeOpenBilling,
+    billingPending: false,
+    billingNotice: null,
+  };
+}
+const fakeStart = vi.fn();
+const fakeCancel = vi.fn();
+const fakeOpenBilling = vi.fn();
+
+function FakeLinkBridge({ render }: { render: (link: FirstRunAccountLink) => ReactNode }) {
+  return <>{render(useFakeLink())}</>;
+}
+
+const SLOTS: FirstRunSlots = {
+  renderAccountLink: (render) => <FakeLinkBridge render={render} />,
+};
+
+function credits(readiness: CloudCreditsStatus['readiness']): CloudCreditsStatus {
+  return { linked: readiness !== 'unlinked', runtimes: {}, readiness } as CloudCreditsStatus;
+}
+
+function buildHarness(initialUrl: string, transport: Transport) {
   const rootRoute = createRootRoute({ staticData: { header: null } });
   const indexRoute = createRoute({
     staticData: { header: null },
     getParentRoute: () => rootRoute,
     path: '/',
-    validateSearch: zodValidator(mergeDialogSearch(onboardingStageSearchSchema)),
-    component: () => <OnboardingFlow onComplete={onComplete} />,
+    validateSearch: zodValidator(onboardingStageSearchSchema),
+    component: () => <OnboardingFlow onComplete={vi.fn()} slots={SLOTS} />,
   });
-  const routeTree = rootRoute.addChildren([indexRoute]);
-  const history = createMemoryHistory({ initialEntries: [initialUrl] });
-  const router = createRouter({ routeTree, history });
-
-  const actions: HistoryActionType[] = [];
-  history.subscribe(({ action }) => actions.push(action.type));
-
+  const router = createRouter({
+    routeTree: rootRoute.addChildren([indexRoute]),
+    history: createMemoryHistory({ initialEntries: [initialUrl] }),
+  });
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   function Wrapper() {
-    return <RouterProvider router={router} />;
+    return (
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>
+          <RouterProvider router={router} />
+        </TransportProvider>
+      </QueryClientProvider>
+    );
   }
   const readStage = () => (router.state.location.search as { onboarding?: string }).onboarding;
-  const readSettingsTab = () => (router.state.location.search as { settings?: string }).settings;
-
-  return { router, history, actions, Wrapper, readStage, readSettingsTab };
+  return { router, Wrapper, readStage };
 }
 
-async function renderFlow(initialUrl = '/', onComplete = vi.fn()) {
-  const harness = buildHarness(initialUrl, onComplete);
+async function renderFlow(initialUrl = '/', overrides: Partial<Transport> = {}) {
+  const transport = createMockTransport({
+    getCloudCredits: vi.fn().mockResolvedValue(credits('unlinked')),
+    ...overrides,
+  });
+  const harness = buildHarness(initialUrl, transport);
   render(<harness.Wrapper />);
   await waitFor(() => expect(harness.router.state.status).toBe('idle'));
-  return { ...harness, onComplete };
-}
-
-/**
- * Assert the skip-all toast fired and still names the route back into setup.
- * Deleting the `toast(...)` call must turn both callers red — it is the only
- * signpost a dismissed user gets.
- */
-async function expectWayBackToast() {
-  await waitFor(() =>
-    expect(mockToast).toHaveBeenCalledWith(
-      'Setup skipped',
-      expect.objectContaining({
-        description: expect.stringContaining('Settings → Preferences'),
-      })
-    )
-  );
+  return { ...harness, transport };
 }
 
 describe('OnboardingFlow', () => {
+  const fakeWindow = { opener: null, close: vi.fn(), location: { replace: vi.fn() } };
+
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.spyOn(window, 'open').mockReturnValue(fakeWindow as unknown as Window);
   });
 
   afterEach(() => {
     cleanup();
+    vi.restoreAllMocks();
   });
 
-  it('renders the welcome step and anchors the stage param to welcome', async () => {
-    const harness = await renderFlow('/');
-    expect(screen.getByTestId('welcome-step')).toBeTruthy();
-    await waitFor(() => expect(harness.readStage()).toBe('welcome'));
-    // Initialization replaces rather than pushes — it is not a navigable step.
-    expect(harness.actions).toContain('REPLACE');
-    expect(harness.actions).not.toContain('PUSH');
-  });
-
-  it('calls startOnboarding once on mount', async () => {
-    await renderFlow('/');
+  it('opens on Welcome with the account first, and anchors the stage param', async () => {
+    const { readStage } = await renderFlow();
+    expect(screen.getByRole('heading', { name: 'You, Multiplied.' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Continue with DorkOS' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Use my own AI' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Continue without an account' })).toBeTruthy();
+    await waitFor(() => expect(readStage()).toBe('welcome'));
     expect(mockStartOnboarding).toHaveBeenCalledTimes(1);
   });
 
-  it('Get Started advances to requirements and updates the param', async () => {
-    const harness = await renderFlow('/');
-    fireEvent.click(screen.getByText('Get Started'));
-    expect(await screen.findByTestId('requirements-step')).toBeTruthy();
-    await waitFor(() => expect(harness.readStage()).toBe('requirements'));
+  it('names no runtime, model or vendor on Welcome', async () => {
+    await renderFlow();
+    const text = document.body.textContent ?? '';
+    for (const name of ['Claude', 'Anthropic', 'OpenAI', 'GPT', 'Codex', 'OpenCode', 'runtime']) {
+      expect(text).not.toContain(name);
+    }
   });
 
-  it('Continue advances from requirements into the power stage', async () => {
-    const harness = await renderFlow('/');
-    fireEvent.click(screen.getByText('Get Started'));
-    fireEvent.click(await screen.findByText('Continue'));
-    expect(await screen.findByTestId('power-step')).toBeTruthy();
-    await waitFor(() => expect(harness.readStage()).toBe('power'));
+  it('Continue with DorkOS records the path, then asks for a code, and sends the waiting tab to the filled-in page', async () => {
+    const order: string[] = [];
+    const chooseFirstRunPath = vi.fn(async () => {
+      order.push('first-run');
+      return { path: 'dorkos' as const, runtime: 'doe' };
+    });
+    fakeStart.mockImplementation(() => order.push('start'));
+    const { readStage } = await renderFlow('/', { chooseFirstRunPath });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Continue with DorkOS' }));
+
+    // The tab is opened in the click itself, before any request.
+    expect(window.open).toHaveBeenCalledWith('about:blank', '_blank');
+    await waitFor(() => expect(readStage()).toBe('connecting'));
+    await waitFor(() => expect(fakeWindow.location.replace).toHaveBeenCalledWith(COMPLETE));
+    expect(chooseFirstRunPath).toHaveBeenCalledWith({ path: 'dorkos' });
+    expect(order).toEqual(['first-run', 'start']);
+    expect(await screen.findByText('Finish in your browser.')).toBeTruthy();
+    expect(screen.getByText(CODE)).toBeTruthy();
   });
 
-  it('answering the power stage advances into the conversation', async () => {
-    const harness = await renderFlow('/');
-    fireEvent.click(screen.getByText('Get Started'));
-    fireEvent.click(await screen.findByText('Continue'));
-    fireEvent.click(await screen.findByText('Answer power'));
-    expect(await screen.findByTestId('conversation')).toBeTruthy();
-    await waitFor(() => expect(harness.readStage()).toBe('conversation'));
+  it('moves on to Landing by itself once credits are ready', async () => {
+    const getCloudCredits = vi
+      .fn()
+      .mockResolvedValueOnce(credits('linked'))
+      .mockResolvedValue(credits('ready'));
+    const { readStage } = await renderFlow('/', { getCloudCredits });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue with DorkOS' }));
+    await waitFor(() => expect(readStage()).toBe('landing'), { timeout: 6000 });
+    expect(screen.getByTestId('landing-step')).toBeTruthy();
+  }, 10_000);
+
+  it('asks for a card when the account has none, and opens the billing page', async () => {
+    await renderFlow('/', { getCloudCredits: vi.fn().mockResolvedValue(credits('needs-card')) });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue with DorkOS' }));
+    expect(await screen.findByText('Add a card to finish.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Add a card' }));
+    expect(fakeOpenBilling).toHaveBeenCalledTimes(1);
   });
 
-  it('Back on the power stage returns to requirements', async () => {
-    const harness = await renderFlow('/');
-    fireEvent.click(screen.getByText('Get Started'));
-    fireEvent.click(await screen.findByText('Continue'));
-    await screen.findByTestId('power-step');
+  it('points a refused account at Own AI', async () => {
+    const { readStage } = await renderFlow('/', {
+      getCloudCredits: vi.fn().mockResolvedValue(credits('refused')),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue with DorkOS' }));
+    expect(await screen.findByText('Paid plans are US only.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Use my own AI' }));
+    await waitFor(() => expect(readStage()).toBe('own-ai'));
+  });
 
+  it('Cancel drops the code and returns to Welcome', async () => {
+    const { readStage } = await renderFlow();
+    fireEvent.click(screen.getByRole('button', { name: 'Continue with DorkOS' }));
+    await screen.findByText(CODE);
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(readStage()).toBe('welcome'));
+    expect(fakeCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('says why when recording the path fails, and closes the waiting tab', async () => {
+    const chooseFirstRunPath = vi
+      .fn()
+      .mockRejectedValue(new Error('Setup is only available on this computer.'));
+    await renderFlow('/', { chooseFirstRunPath });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue with DorkOS' }));
+    expect(await screen.findByText('Setup is only available on this computer.')).toBeTruthy();
+    expect(fakeWindow.close).toHaveBeenCalled();
+    expect(fakeStart).not.toHaveBeenCalled();
+  });
+
+  it('Continue without an account records the path and lands', async () => {
+    const chooseFirstRunPath = vi.fn().mockResolvedValue({ path: 'none', runtime: 'claude-code' });
+    const { readStage } = await renderFlow('/', { chooseFirstRunPath });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue without an account' }));
+    await waitFor(() => expect(readStage()).toBe('landing'));
+    expect(chooseFirstRunPath).toHaveBeenCalledWith({ path: 'none' });
+  });
+
+  it('Use my own AI opens the list, and Back returns to Welcome', async () => {
+    const { readStage } = await renderFlow();
+    fireEvent.click(screen.getByRole('button', { name: 'Use my own AI' }));
+    await waitFor(() => expect(readStage()).toBe('own-ai'));
+    expect(screen.getByText('An OpenAI API key')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Back' }));
-    expect(await screen.findByTestId('requirements-step')).toBeTruthy();
-    await waitFor(() => expect(harness.readStage()).toBe('requirements'));
+    await waitFor(() => expect(readStage()).toBe('welcome'));
   });
 
-  it('refresh restores the stage from the param (deep-link is refresh-safe)', async () => {
-    await renderFlow('/?onboarding=requirements');
-    expect(screen.getByTestId('requirements-step')).toBeTruthy();
+  it('a key saved in Own AI records the pick and lands', async () => {
+    const chooseFirstRunPath = vi.fn().mockResolvedValue({ path: 'own', runtime: 'doe' });
+    const { readStage } = await renderFlow('/?onboarding=own-ai', { chooseFirstRunPath });
+    fireEvent.click(screen.getByRole('button', { name: /An OpenRouter key/ }));
+    fireEvent.change(screen.getByLabelText('OpenRouter key'), { target: { value: 'sk-or-1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(readStage()).toBe('landing'));
+    expect(chooseFirstRunPath).toHaveBeenCalledWith({
+      path: 'own',
+      choice: { kind: 'openrouter', apiKey: 'sk-or-1' },
+    });
   });
 
-  it('refresh restores the power stage from the param (deep-link is refresh-safe)', async () => {
-    await renderFlow('/?onboarding=power');
-    expect(screen.getByTestId('power-step')).toBeTruthy();
+  it('shows the server’s sentence when a key is refused, and stays put', async () => {
+    const refusal = Object.assign(new Error('That key was refused.'), { code: 'invalid_key' });
+    const chooseFirstRunPath = vi.fn().mockRejectedValue(refusal);
+    const { readStage } = await renderFlow('/?onboarding=own-ai', { chooseFirstRunPath });
+    fireEvent.click(screen.getByRole('button', { name: /An OpenAI API key/ }));
+    fireEvent.change(screen.getByLabelText('OpenAI API key'), { target: { value: 'sk-bad' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByText('That key was refused.')).toBeTruthy();
+    expect(readStage()).toBe('own-ai');
   });
 
-  it('browser back walks the stages backward', async () => {
-    const harness = await renderFlow('/');
-    fireEvent.click(screen.getByText('Get Started'));
-    await screen.findByTestId('requirements-step');
-    fireEvent.click(await screen.findByText('Continue'));
-    await screen.findByTestId('power-step');
-    fireEvent.click(await screen.findByText('Answer power'));
-    await screen.findByTestId('conversation');
-
-    act(() => harness.history.back());
-    expect(await screen.findByTestId('power-step')).toBeTruthy();
-
-    act(() => harness.history.back());
-    expect(await screen.findByTestId('requirements-step')).toBeTruthy();
-
-    act(() => harness.history.back());
-    expect(await screen.findByTestId('welcome-step')).toBeTruthy();
+  it('refuses an Anthropic subscription token before anything is sent', async () => {
+    const chooseFirstRunPath = vi.fn();
+    await renderFlow('/?onboarding=own-ai', { chooseFirstRunPath });
+    fireEvent.click(screen.getByRole('button', { name: /An Anthropic API key/ }));
+    fireEvent.change(screen.getByLabelText('Anthropic API key'), {
+      target: { value: 'sk-ant-oat01-x' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByText(/Subscription tokens can’t run agents/)).toBeTruthy();
+    expect(chooseFirstRunPath).not.toHaveBeenCalled();
   });
 
-  // ── The requirements stage is not a dead end (DOR-481) ─────
-  //
-  // The nav bar is a sibling of the step, not something the step renders when
-  // the scan succeeds — so these hold whatever the runtime probe returns. The
-  // zero-runtime rendering itself is browser-verified: jsdom loads no CSS, so
-  // it cannot speak to whether the controls are actually reachable on screen.
-
-  it('the requirements step offers Back and Skip all setup', async () => {
-    await renderFlow('/?onboarding=requirements');
-    expect(screen.getByTestId('requirements-step')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Back' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Skip all setup' })).toBeTruthy();
-  });
-
-  it('Skip all setup on requirements dismisses, names the way back, and completes', async () => {
-    const onComplete = vi.fn();
-    await renderFlow('/?onboarding=requirements', onComplete);
-    fireEvent.click(screen.getByRole('button', { name: 'Skip all setup' }));
-    expect(mockDismiss).toHaveBeenCalled();
-    await waitFor(() => expect(onComplete).toHaveBeenCalled());
-    await expectWayBackToast();
-  });
-
-  it('Back on requirements returns to the welcome screen', async () => {
-    const harness = await renderFlow('/');
-    fireEvent.click(screen.getByText('Get Started'));
-    await screen.findByTestId('requirements-step');
-
-    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
-    expect(await screen.findByTestId('welcome-step')).toBeTruthy();
-    await waitFor(() => expect(harness.readStage()).toBe('welcome'));
-  });
-
-  it('the conversation nav bar names its whole-flow exit honestly, and has no step dots', async () => {
-    await renderFlow('/');
-    fireEvent.click(screen.getByText('Get Started'));
-    fireEvent.click(await screen.findByText('Continue'));
-    fireEvent.click(await screen.findByText('Answer power'));
-    await screen.findByTestId('conversation');
-    expect(screen.getByRole('button', { name: 'Back' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Skip all setup' })).toBeTruthy();
-    // The ambiguous wordings that read as "skip this step" (DOR-472) are gone.
-    expect(screen.queryByText('Skip', { exact: true })).toBeNull();
-    expect(screen.queryByText('Skip setup', { exact: true })).toBeNull();
-  });
-
-  it('the in-UI Back pops the forward push (no phantom history entry)', async () => {
-    const harness = await renderFlow('/');
-    fireEvent.click(screen.getByText('Get Started'));
-    fireEvent.click(await screen.findByText('Continue'));
-    await screen.findByTestId('power-step');
-    fireEvent.click(await screen.findByText('Answer power'));
-    await screen.findByTestId('conversation');
-
-    // Drain the mount/forward actions, then Back should POP, not PUSH — so a
-    // later browser Back can't land on a phantom conversation entry.
-    harness.actions.length = 0;
-    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
-    expect(await screen.findByTestId('power-step')).toBeTruthy();
-    await waitFor(() => expect(harness.readStage()).toBe('power'));
-    expect(harness.actions).toContain('BACK');
-    expect(harness.actions).not.toContain('PUSH');
-  });
-
-  it('the in-UI Back pushes to the power stage when the stage was restored by refresh', async () => {
-    // Landed directly on conversation (refresh/deep-link) — nothing to pop, so
-    // Back pushes to the power stage instead of ejecting out of the app.
-    const harness = await renderFlow('/?onboarding=conversation');
-    expect(screen.getByTestId('conversation')).toBeTruthy();
-
-    harness.actions.length = 0;
-    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
-    expect(await screen.findByTestId('power-step')).toBeTruthy();
-    await waitFor(() => expect(harness.readStage()).toBe('power'));
-    expect(harness.actions).toContain('PUSH');
-    expect(harness.actions).not.toContain('BACK');
-  });
-
-  it('Skip all setup in the conversation dismisses, names the way back, and completes', async () => {
-    const onComplete = vi.fn();
-    await renderFlow('/', onComplete);
-    fireEvent.click(screen.getByText('Get Started'));
-    fireEvent.click(await screen.findByText('Continue'));
-    fireEvent.click(await screen.findByText('Answer power'));
-    await screen.findByTestId('conversation');
-    fireEvent.click(screen.getByRole('button', { name: 'Skip all setup' }));
-    expect(mockDismiss).toHaveBeenCalled();
-    await waitFor(() => expect(onComplete).toHaveBeenCalled());
-    await expectWayBackToast();
-  });
-
-  it('Skip all setup on welcome dismisses, names the way back, and completes', async () => {
-    const onComplete = vi.fn();
-    await renderFlow('/', onComplete);
-    fireEvent.click(screen.getByText('Skip all setup welcome'));
-    expect(mockDismiss).toHaveBeenCalled();
-    await waitFor(() => expect(onComplete).toHaveBeenCalled());
-    await expectWayBackToast();
-  });
-
-  it('the skip-all toast’s action deep-links Settings to the Replay setup control', async () => {
-    const harness = await renderFlow('/');
-    fireEvent.click(screen.getByText('Skip all setup welcome'));
-    await expectWayBackToast();
-
-    const [, options] = mockToast.mock.calls[0] as [
-      string,
-      { action: { label: string; onClick: () => void } },
-    ];
-    // Labelled for the control it lands on, not for the dialog it opens.
-    expect(options.action.label).toBe('Replay setup');
-    act(() => options.action.onClick());
-    // `?settings=preferences` is what actually selects the tab holding "Replay
-    // setup" — landing on Appearance would be worse than the text alone.
-    await waitFor(() => expect(harness.readSettingsTab()).toBe('preferences'));
+  it('a stale stage value lands on Welcome', async () => {
+    const { readStage } = await renderFlow('/?onboarding=power');
+    await waitFor(() => expect(readStage()).toBe('welcome'));
   });
 });

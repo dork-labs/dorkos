@@ -1,50 +1,68 @@
-import { useCallback, useEffect, useRef } from 'react';
-import { toast } from 'sonner';
-import { useSettingsDeepLink } from '@/layers/shared/model';
-import type { RuntimeConnectSlot } from '@/layers/entities/runtime';
+import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { openExternalWindowLater, type PendingExternalWindow } from '@/layers/shared/lib';
+import type { FirstRunAccountLink, FirstRunSlots } from '../model/first-run-slots';
+import { useDorkosConnect } from '../model/use-dorkos-connect';
+import { firstRunErrorMessage, useChooseFirstRunPath } from '../model/use-first-run';
 import { useOnboarding } from '../model/use-onboarding';
 import { useOnboardingStage } from '../model/use-onboarding-stage';
-import { OnboardingNavBar } from './OnboardingNavBar';
-import { SystemRequirementsStep } from './SystemRequirementsStep';
-import { OnboardingPowerStep } from './OnboardingPowerStep';
+import { ConnectingStep } from './ConnectingStep';
+import { LandingStep } from './LandingStep';
+import { OwnAiStep } from './OwnAiStep';
 import { WelcomeStep } from './WelcomeStep';
-import { OnboardingConversation } from './OnboardingConversation';
 
 interface OnboardingFlowProps {
+  /** Called when the first run ends and #team is on screen underneath. */
   onComplete: () => void;
   /**
-   * Terminal-free connect-flow renderer, injected by the app shell and threaded
-   * into the requirements step's connect cards. The onboarding feature may not
-   * import the runtime-connect feature (sibling features), so the app root
-   * (which may import any layer) supplies it as a slot.
+   * What the first run borrows from other features, lent by the app shell
+   * (the onboarding feature may not use a sibling feature's hooks). Without a
+   * slot a screen shows what it can on its own.
    */
-  renderRuntimeConnect?: RuntimeConnectSlot;
+  slots?: FirstRunSlots;
 }
 
 /**
- * Full-screen onboarding container: a short ready gate, then DorkBot itself.
+ * The first run (spec `one-minute-onboarding`, ADR 261010-143210): Welcome,
+ * then one of three ways into #team — the DorkOS account, the person's own
+ * AI, or no account yet. Each screen is one `?onboarding=` stage, so the
+ * browser's Back walks them and a refresh keeps the place.
  *
- * Flow: Welcome -> Requirements (Claude Code connected) -> Conversation. The
- * conversation is the onboarding (ADR 260722-111314): DorkBot arrives, sets its
- * personality and looks around with the user, then dissolves into a real session
- * on the user's first message. There is no finish screen.
- *
- * @param onComplete - Called when onboarding ends: the conversation dissolves
- *   into a real session, or the user leaves setup entirely. Skipping a single
- *   step stays inside the flow and never calls this.
- * @param renderRuntimeConnect - App-shell slot for the terminal-free connect flow.
+ * @param onComplete - Called once #team has opened.
+ * @param slots - The account link, the AI apps' connect flows and the model form.
  */
-export function OnboardingFlow({ onComplete, renderRuntimeConnect }: OnboardingFlowProps) {
-  const { stage, goToStage, goBack } = useOnboardingStage();
-  const { dismiss, startOnboarding } = useOnboarding();
-  // The skip-all toast's shortcut back in. `?settings=preferences` is what
-  // selects the tab holding "Replay setup" — the Settings dialog reads its
-  // active tab from the URL.
-  const { open: openSettingsTab } = useSettingsDeepLink();
+export function OnboardingFlow({ onComplete, slots }: OnboardingFlowProps) {
+  const renderAccountLink = slots?.renderAccountLink;
+  const body = (link: FirstRunAccountLink | null) => (
+    <FirstRunStages link={link} slots={slots} onComplete={onComplete} />
+  );
+  return (
+    <div className="bg-background h-full w-full overflow-y-auto">
+      <div className="flex min-h-full w-full items-center justify-center p-4 py-10">
+        {renderAccountLink ? renderAccountLink(body) : body(null)}
+      </div>
+    </div>
+  );
+}
 
-  // Record onboarding start timestamp once on mount. `startOnboarding` is itself
-  // idempotent (no-op once `startedAt` is set); the ref bounds it to one call
-  // even though its identity changes across renders.
+/** The stage on screen, with the account link in hand when there is one. */
+function FirstRunStages({
+  link,
+  slots,
+  onComplete,
+}: {
+  link: FirstRunAccountLink | null;
+  slots: FirstRunSlots | undefined;
+  onComplete: () => void;
+}) {
+  const { stage, goToStage, goBack } = useOnboardingStage();
+  const { startOnboarding } = useOnboarding();
+  const choose = useChooseFirstRunPath();
+  const [welcomeError, setWelcomeError] = useState<string | null>(null);
+  // The browser window Continue opened in its click, waiting for the code.
+  const waitingWindowRef = useRef<PendingExternalWindow | null>(null);
+
+  // `startOnboarding` is idempotent (no-op once `startedAt` is set); the ref
+  // bounds it to one call even though its identity changes across renders.
   const startedRef = useRef(false);
   useEffect(() => {
     if (startedRef.current) return;
@@ -52,84 +70,94 @@ export function OnboardingFlow({ onComplete, renderRuntimeConnect }: OnboardingF
     startOnboarding();
   }, [startOnboarding]);
 
-  // Leaving setup entirely. Skipping a single step never lands here — each beat
-  // skips itself (DOR-472). The toast is the way back: `dismiss()` hides the
-  // flow and the getting-started card for good, so without it a person who
-  // leaves has no visible route back in. It names the control ("Replay setup")
-  // for after the toast fades, and carries an action so the way back is one
-  // click while it is still on screen.
-  const handleSkipAll = useCallback(async () => {
-    await dismiss();
-    toast('Setup skipped', {
-      description: 'Replay it anytime in Settings → Preferences.',
-      action: { label: 'Replay setup', onClick: () => openSettingsTab('preferences') },
-    });
-    onComplete();
-  }, [dismiss, onComplete, openSettingsTab]);
+  const continueWithDorkos = useCallback(() => {
+    setWelcomeError(null);
+    // Opened now, in the click, or a browser blocks it once a request is in
+    // between. A blocked window is fine: the code and the page are on screen.
+    waitingWindowRef.current = link ? openExternalWindowLater() : null;
+    goToStage('connecting');
+  }, [goToStage, link]);
 
-  // All stage moves go through the history-integrated navigator so browser
-  // back/forward and the in-UI Back button walk the same path. The in-UI Back
-  // pops the forward push (mirroring browser-Back) rather than pushing again,
-  // and falls back to requirements when the user landed here via refresh.
-  const goToRequirements = useCallback(() => goToStage('requirements'), [goToStage]);
-  const goToPower = useCallback(() => goToStage('power'), [goToStage]);
-  const goToConversation = useCallback(() => goToStage('conversation'), [goToStage]);
+  const continueWithout = useCallback(async () => {
+    setWelcomeError(null);
+    try {
+      await choose.mutateAsync({ path: 'none' });
+      goToStage('landing');
+    } catch (error) {
+      setWelcomeError(firstRunErrorMessage(error));
+    }
+  }, [choose, goToStage]);
+
+  const toLanding = useCallback(() => goToStage('landing'), [goToStage]);
+  const toOwnAi = useCallback(() => goToStage('own-ai'), [goToStage]);
   const backToWelcome = useCallback(() => goBack('welcome'), [goBack]);
-  const backToRequirements = useCallback(() => goBack('requirements'), [goBack]);
-  const backToPower = useCallback(() => goBack('power'), [goBack]);
 
-  if (stage === 'welcome') {
-    return (
-      <div className="bg-background h-full w-full overflow-y-auto">
-        <div className="flex min-h-full w-full items-center justify-center p-4">
-          <WelcomeStep onGetStarted={goToRequirements} onSkipAll={handleSkipAll} />
-        </div>
-      </div>
+  let screen: ReactNode;
+  if (stage === 'connecting') {
+    screen = link ? (
+      <DorkosConnecting
+        link={link}
+        waitingWindowRef={waitingWindowRef}
+        onReady={toLanding}
+        onCancel={() => {
+          // Only a code still waiting is dropped; a link already made stays.
+          if (link.state === 'pending') void link.cancel();
+          backToWelcome();
+        }}
+        onUseOwnAi={() => {
+          if (link.state === 'pending') void link.cancel();
+          toOwnAi();
+        }}
+      />
+    ) : (
+      <ConnectingStep
+        phase={{ kind: 'failed', message: 'Signing in isn’t available here.' }}
+        link={null}
+        onRetry={backToWelcome}
+        onCancel={backToWelcome}
+        onUseOwnAi={toOwnAi}
+      />
+    );
+  } else if (stage === 'own-ai') {
+    screen = <OwnAiStep onBack={backToWelcome} onSaved={toLanding} slots={slots} />;
+  } else if (stage === 'landing') {
+    screen = <LandingStep onComplete={onComplete} />;
+  } else {
+    screen = (
+      <WelcomeStep
+        onContinueWithDorkos={continueWithDorkos}
+        onUseOwnAi={toOwnAi}
+        onContinueWithout={() => void continueWithout()}
+        busy={choose.isPending && choose.variables?.path === 'none' ? 'none' : null}
+        error={welcomeError}
+      />
     );
   }
+  return screen;
+}
 
-  // The requirements stage carries the same nav bar as the conversation, and it
-  // is not conditional on the scan finding anything. Someone with no coding
-  // agent installed cannot continue from here, so without a nav bar this screen
-  // is a dead end with no in-app way out (DOR-481). They are free to leave: the
-  // marketplace, the docs and the rest of the cockpit still work, and the
-  // getting-started card offers the setup again later.
-  if (stage === 'requirements') {
-    return (
-      <div className="bg-background flex h-full w-full flex-col">
-        <OnboardingNavBar onBack={backToWelcome} onSkipAll={handleSkipAll} />
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="flex min-h-full w-full items-center justify-center p-4 pb-10">
-            <SystemRequirementsStep onContinue={goToPower} renderConnect={renderRuntimeConnect} />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // The power stage carries the same nav bar and frame as the requirements
-  // stage, so Back and the whole-flow exit stay in the same place. It hosts the
-  // shared full-power door (spec `full-power-defaults` D3); answering it or
-  // deciding later advances into the conversation.
-  if (stage === 'power') {
-    return (
-      <div className="bg-background flex h-full w-full flex-col">
-        <OnboardingNavBar onBack={backToRequirements} onSkipAll={handleSkipAll} />
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="flex min-h-full w-full items-center justify-center p-4 pb-10">
-            <OnboardingPowerStep onAdvance={goToConversation} />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
+/** Connecting, driven: the hook runs the path and the screen shows it. */
+function DorkosConnecting({
+  link,
+  waitingWindowRef,
+  onReady,
+  onCancel,
+  onUseOwnAi,
+}: {
+  link: FirstRunAccountLink;
+  waitingWindowRef: RefObject<PendingExternalWindow | null>;
+  onReady: () => void;
+  onCancel: () => void;
+  onUseOwnAi: () => void;
+}) {
+  const { phase, retry } = useDorkosConnect({ link, waitingWindowRef, onReady });
   return (
-    <div className="bg-background flex h-full w-full flex-col">
-      <OnboardingNavBar onBack={backToPower} onSkipAll={handleSkipAll} />
-      <div className="min-h-0 flex-1">
-        <OnboardingConversation onComplete={onComplete} />
-      </div>
-    </div>
+    <ConnectingStep
+      phase={phase}
+      link={link}
+      onRetry={retry}
+      onCancel={onCancel}
+      onUseOwnAi={onUseOwnAi}
+    />
   );
 }

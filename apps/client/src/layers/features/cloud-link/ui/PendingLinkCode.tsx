@@ -47,9 +47,7 @@ export function PendingLinkCode({
   const announced = now > entry.at;
 
   const handleOpen = () => {
-    setOpenError(
-      openVerification(view.verificationUri, view.userCode) ? null : OPEN_FAILED_MESSAGE
-    );
+    setOpenError(openVerification(view) ? null : OPEN_FAILED_MESSAGE);
   };
 
   return (
@@ -130,21 +128,22 @@ export function PendingLinkCode({
 }
 
 /**
- * Open the approval page in a new tab, code pre-filled, and say whether it
- * opened. Guarded: only `http`/`https` URLs from the server response are
- * opened, never a `javascript:`, `mailto:` or other scheme. A refused scheme or
- * a URL that will not parse returns `false`, so the caller can tell the person
+ * Open the approval page in a new tab, code pre-filled: the service's own
+ * filled-in address when it sent one, else the page with `?code=` added.
+ * Guarded: only `http`/`https` URLs from the server response are opened,
+ * never a `javascript:`, `mailto:` or other scheme. A refused scheme or a URL
+ * that will not parse returns `false`, so the caller can tell the person
  * instead of leaving a button that does nothing. `openLink`'s own answer is
  * passed through as well; for an http(s) URL it does not refuse today.
  */
-function openVerification(verificationUri: string, userCode: string): boolean {
+function openVerification(view: Extract<CloudLinkView, { kind: 'pending' }>): boolean {
   let url: URL;
   try {
-    url = new URL(verificationUri);
+    url = new URL(view.verificationUriComplete ?? view.verificationUri);
   } catch {
     return false;
   }
   if (url.protocol !== 'https:' && url.protocol !== 'http:') return false;
-  url.searchParams.set('code', userCode);
+  if (!view.verificationUriComplete) url.searchParams.set('code', view.userCode);
   return openLink(url.href);
 }

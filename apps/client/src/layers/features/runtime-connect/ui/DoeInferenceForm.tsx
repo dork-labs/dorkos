@@ -9,7 +9,15 @@ import { REQUIREMENTS_KEY, type RuntimeConnectSuccess } from '@/layers/entities/
 import { configKeys } from '@/layers/entities/config';
 import { MODELS_KEY } from '@/layers/shared/lib';
 
-type Props = { onConnected?: (success: RuntimeConnectSuccess) => void };
+type Props = {
+  onConnected?: (success: RuntimeConnectSuccess) => void;
+  /**
+   * Save through the caller instead of this form's own writes — the first
+   * run's "Other service" row, which records the pick as the first-run path.
+   * DorkOS credits are not offered then: the first run has its own way to them.
+   */
+  onSave?: (inference: DoeInferenceConfig, apiKey: string | null) => Promise<void>;
+};
 
 /** Load only saved metadata; unmounting clears the password field. */
 export function DoeInferenceForm(props: Props) {
@@ -23,7 +31,7 @@ export function DoeInferenceForm(props: Props) {
   return <InferenceFields key={JSON.stringify(saved.data)} saved={saved.data} {...props} />;
 }
 
-function InferenceFields({ saved, onConnected }: Props & { saved: DoeInferenceStatus }) {
+function InferenceFields({ saved, onConnected, onSave }: Props & { saved: DoeInferenceStatus }) {
   const transport = useTransport();
   const queryClient = useQueryClient();
   const prefix = useId();
@@ -57,6 +65,7 @@ function InferenceFields({ saved, onConnected }: Props & { saved: DoeInferenceSt
     saved.hasKey && saved.inference?.endpoint === endpoint && saved.inference.source === 'api-key';
   const mutation = useMutation({
     mutationFn: async (inference: DoeInferenceConfig) => {
+      if (onSave) return onSave(inference, secret.trim() || null);
       if (source === 'api-key' && secret.trim())
         await transport.storeDoeCredential(inference, secret.trim());
       else await transport.setDoeInference(inference);
@@ -128,7 +137,7 @@ function InferenceFields({ saved, onConnected }: Props & { saved: DoeInferenceSt
         >
           <option value="api-key">My API key</option>
           <option value="local">Local model</option>
-          <option value="dorkos-credits">DorkOS credits</option>
+          {!onSave && <option value="dorkos-credits">DorkOS credits</option>}
         </select>
       </div>
       <div className="space-y-1.5">
@@ -253,7 +262,7 @@ function InferenceFields({ saved, onConnected }: Props & { saved: DoeInferenceSt
         </p>
       )}
       <Button type="submit" disabled={mutation.isPending}>
-        {mutation.isPending ? 'Saving…' : 'Save model settings'}
+        {mutation.isPending ? 'Saving…' : onSave ? 'Save' : 'Save model settings'}
       </Button>
     </form>
   );
