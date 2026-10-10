@@ -82,6 +82,7 @@ Write like one person writing to another. Plain words. Short sentences. Say "I" 
 - Anything that blames their setup, skills, or reading of the docs.
 - Em dashes, bullet lists, headers, or bold in a reply. A reply is a note, not a document.
 - Filler that reads like a template: "I hope this helps," "Please don't hesitate," "Feel free to."
+- A raw id, like a chat id `48f74bb4`. Name the thing by the title they see, and link it when they can open it (`writing-for-humans`, "Name things people can find").
 
 ## Before it posts
 

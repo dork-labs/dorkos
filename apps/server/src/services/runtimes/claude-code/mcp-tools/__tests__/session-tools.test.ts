@@ -671,6 +671,81 @@ describe('session_start', () => {
     expect((await handler(BASE)).isError).toBeUndefined();
   });
 
+  describe('the chat title and link (DOR-2824)', () => {
+    it('names the chat with the title the agent gave and hands back a ready link', async () => {
+      const deps = makeDeps();
+      const result = await asScout(deps)({
+        ...BASE,
+        title: 'Rooms: always answer people',
+        reason: 'Make every room reply to a person, then report back.',
+      });
+
+      const body = payloadOf(result);
+      expect(body.title).toBe('Rooms: always answer people');
+      expect(body.link).toBe(`[Rooms: always answer people](/session?session=${body.sessionId})`);
+      expect(claude.renameSession).toHaveBeenCalledWith(
+        body.sessionId,
+        'Rooms: always answer people',
+        '/work/project'
+      );
+      expect(deps.activityService.emit.mock.calls[0]![0]).toMatchObject({
+        resourceLabel: 'Rooms: always answer people',
+        summary: 'Started "Rooms: always answer people" in /work/project',
+      });
+    });
+
+    it('takes the title from the reason, never the brief, when none is given', async () => {
+      const result = await asScout()({
+        ...BASE,
+        prompt: 'DOR-2823 end to end rooms conversation routing. Read the ticket first.',
+        reason: 'make rooms answer people. Then check the tabs.',
+      });
+
+      const body = payloadOf(result);
+      expect(body.title).toBe('Make rooms answer people');
+      expect(claude.renameSession).toHaveBeenCalledWith(
+        body.sessionId,
+        'Make rooms answer people',
+        '/work/project'
+      );
+    });
+
+    it('names a chat with no title and no reason after the agent that started it', async () => {
+      const deps = makeDeps();
+      const result = await asScout(deps)(BASE);
+
+      const body = payloadOf(result);
+      expect(body.title).toBe('Started by Scout');
+      expect(body.link).toBe(`[Started by Scout](/session?session=${body.sessionId})`);
+      expect(claude.renameSession).toHaveBeenCalledWith(
+        body.sessionId,
+        'Started by Scout',
+        '/work/project'
+      );
+    });
+
+    it('falls back from a blank title instead of refusing the start', async () => {
+      const result = await asScout()({ ...BASE, title: '   ', reason: 'tidy the docs' });
+
+      expect(result.isError).toBeUndefined();
+      expect(payloadOf(result).title).toBe('Tidy the docs');
+    });
+
+    it('tries the rename again once the first turn settles when the transcript was not there yet', async () => {
+      claude.renameSession.mockRejectedValue(new Error('Session not found'));
+      const result = await asScout()({ ...BASE, title: 'Fix the flaky test' });
+      expect(result.isError).toBeUndefined();
+      // Let the first refusal land before the turn settles.
+      await new Promise((resolve) => setImmediate(resolve));
+      claude.renameSession.mockResolvedValue(undefined);
+
+      vi.mocked(dispatchMessage).mock.calls.at(-1)![0].onSettled?.('ok');
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(claude.renameSession).toHaveBeenCalledTimes(2);
+    });
+  });
+
   describe('the Activity entry', () => {
     it('names the calling agent, the account and the folder', async () => {
       allowOnly('work');
@@ -683,7 +758,7 @@ describe('session_start', () => {
         actorId: AGENT_HOME,
         category: 'agent',
         eventType: 'agent.session_started',
-        summary: 'Started a session in /work/project on the account WORK',
+        summary: 'Started "Started by Scout" in /work/project on the account WORK',
         metadata: {
           cwd: '/work/project',
           runtime: 'claude-code',

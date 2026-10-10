@@ -41,6 +41,10 @@ const ALLOWED: Readonly<Record<string, string>> = {
   // `@dorkos/extension-api`, so it cannot import either builder; it hands the
   // documented address to `api.navigate`, as a third-party extension must.
   'apps/server/src/core-extensions/hello-world/index.ts': 'an extension, outside the app',
+  // The `<dorkos_context>` block teaches agents the shape of a chat link in
+  // prose, with a `<full id>` placeholder no builder can produce (DOR-2824).
+  // The links agents actually paste come from `chatMarkdownLink`.
+  'apps/server/src/services/runtimes/shared/agent-context.ts': 'prose teaching agents the shape',
 };
 
 /** Source roots that ship. */

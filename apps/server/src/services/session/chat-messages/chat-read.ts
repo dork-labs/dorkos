@@ -12,6 +12,7 @@
 import type { ChatMessageKind, ChatMessageSender } from '@dorkos/shared/chat-messages';
 import type { HistoryMessage } from '@dorkos/shared/types';
 import type { SessionStatus } from '@dorkos/shared/session-stream';
+import { chatMarkdownLink } from '@dorkos/shared/session-link';
 import type { ChatCaller } from './chat-message-service.js';
 import { ChatMessageError } from './chat-message-service.js';
 import type { ChatMessageStore } from './chat-message-store.js';
@@ -75,6 +76,8 @@ export interface ChatReadResult {
   chat: {
     id: string;
     title: string | null;
+    /** A markdown link that opens the chat, to use instead of its id. */
+    link: string;
     agent: string | null;
     state: ChatState;
   };
@@ -203,6 +206,7 @@ export async function readChat(
   const chat = {
     id: input.chat,
     title: described.title,
+    link: chatMarkdownLink(input.chat, described.title),
     agent: described.agent,
     state: chatStateOf(deps.status(input.chat)),
   };

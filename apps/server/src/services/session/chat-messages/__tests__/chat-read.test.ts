@@ -66,7 +66,13 @@ describe('readChat — include status', () => {
     const result = await readChat(deps, CALLER, { chat: TARGET, include: 'status' });
 
     expect(result).toEqual({
-      chat: { id: TARGET, title: 'Build', agent: 'Bo', state: 'running' },
+      chat: {
+        id: TARGET,
+        title: 'Build',
+        link: `[Build](/session?session=${TARGET})`,
+        agent: 'Bo',
+        state: 'running',
+      },
       messages: [],
       more: false,
     });
