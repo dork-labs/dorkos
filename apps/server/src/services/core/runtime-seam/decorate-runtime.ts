@@ -10,6 +10,7 @@ import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import { traceRuntime, watchRuntimeSignin } from '../../observability/index.js';
 import { holdAwakeDuringTurns } from '../keep-awake/hold-during-turn.js';
 import { recordTurnLevels } from '../turn-power/turn-levels.js';
+import { recordToolUse } from '../../audit/record-tool-use.js';
 
 /**
  * Wrap one runtime in every registration-seam decorator, innermost first:
@@ -23,7 +24,10 @@ import { recordTurnLevels } from '../turn-power/turn-levels.js';
  * 3. **The sign-in watch** sits outside tracing so it is always present: a
  *    credential failure has to reach the operator whether or not anybody
  *    turned tracing on.
- * 4. **Keep-awake** wraps outermost so its hold spans everything inside it: the
+ * 4. **The audit record** of every tool call (spec `audit-trail` PR3) sits
+ *    just inside keep-awake: it only reads the tool events passing through,
+ *    and must see every turn, whoever started it.
+ * 5. **Keep-awake** wraps outermost so its hold spans everything inside it: the
  *    computer stays awake for as long as the caller is consuming the turn,
  *    whoever the caller is (spec `keep-awake`).
  *
@@ -35,6 +39,6 @@ export function decorateRuntime(
   storedModeOf: (sessionId: string) => string | null | undefined
 ): AgentRuntime {
   return holdAwakeDuringTurns(
-    watchRuntimeSignin(traceRuntime(recordTurnLevels(runtime, storedModeOf)))
+    recordToolUse(watchRuntimeSignin(traceRuntime(recordTurnLevels(runtime, storedModeOf))))
   );
 }

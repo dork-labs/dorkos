@@ -5,6 +5,7 @@
  */
 import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 import type { ChatMessage, MessageAuthor } from '@/layers/shared/model';
+import { resolveAgentVisual } from '@/layers/shared/lib';
 
 /** Name for the human participant when the caller supplies none. */
 const DEFAULT_HUMAN_NAME = 'You';
@@ -23,6 +24,12 @@ const SYSTEM_AUTHOR_NAME = 'System';
  */
 const UNKNOWN_AGENT_ID = 'agent';
 const UNKNOWN_AGENT_NAME = 'Agent';
+
+/**
+ * Prefix for another chat's agent, keeping a message it sent in a group of its
+ * own even when it is the same agent this chat runs.
+ */
+const CHAT_SENDER_ID_PREFIX = 'chat-sender:';
 
 /** Prefix for runtime-brand identity keys, keeping them distinct from agent ids. */
 const RUNTIME_AUTHOR_ID_PREFIX = 'runtime:';
@@ -60,6 +67,15 @@ export interface MessageAuthorContext {
   runtime?: string | null;
   /** What to call the human. Defaults to "You". */
   humanName?: string | null;
+  /**
+   * The face of an agent that sent a message from another chat, when the caller
+   * knows it; else its seeded face. Optional: a seeded face is right for every
+   * agent that never chose one.
+   */
+  senderAgent?: (sender: {
+    agentId?: string;
+    chatId: string;
+  }) => { emoji: string; color: string } | null;
 }
 
 /**
@@ -87,8 +103,23 @@ export function resolveMessageAuthor(
   message: ChatMessage,
   ctx: MessageAuthorContext
 ): MessageAuthor {
-  if (isSystemMessage(message)) {
+  if (isSystemMessage(message) || message._chatStop) {
     return { kind: 'system', id: SYSTEM_AUTHOR_ID, displayName: SYSTEM_AUTHOR_NAME };
+  }
+
+  // Words another chat sent (spec `spin-off-chats` §2): the sending agent, as
+  // the server stamped it — never "You", and never the agent this chat runs.
+  const sender = message.role === 'user' ? message.chatMessages?.[0]?.from : undefined;
+  if (sender) {
+    const key = sender.agentId ?? sender.chatId;
+    const visual = ctx.senderAgent?.(sender) ?? resolveAgentVisual({ id: key });
+    return {
+      kind: 'agent',
+      id: `${CHAT_SENDER_ID_PREFIX}${key}`,
+      displayName: sender.agentName,
+      emoji: visual.emoji,
+      color: visual.color,
+    };
   }
 
   if (message.role === 'user') {

@@ -1,8 +1,7 @@
 /**
  * Tests for `dorkos permissions` and `dorkos agent permissions`
  * (`commands/permissions.ts`): each subcommand sends the right request with
- * `surface: 'cli'`, and a refusal prints the server's own sentence plus, for the
- * Full autonomy acknowledgement, the terminal's next step.
+ * `surface: 'cli'`, and a refusal prints the server's own sentence.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -66,12 +65,6 @@ const ROSTER = {
     { id: 'a2', name: 'dorkbot' },
   ],
 };
-
-const ACK_REFUSAL = new ApiError(428, {
-  error:
-    'Full autonomy lets agents edit files and run commands without asking. Confirm that in the app first, then try again.',
-  code: 'AUTONOMY_ACK_REQUIRED',
-});
 
 /** Everything written to stdout/stderr, joined. */
 const out = () => logSpy.mock.calls.map((c) => String(c[0])).join('\n');
@@ -152,11 +145,14 @@ describe('dorkos permissions', () => {
     expect(out()).toContain('Preset is now Balanced.');
   });
 
-  it('prints the server sentence and the acknowledge command when Full power needs it', async () => {
-    apiCallMock.mockRejectedValue(ACK_REFUSAL);
-    expect(await runPermissionsDispatcher(['set', '--preset', 'full'])).toBe(1);
-    expect(err()).toContain('Confirm that in the app first');
-    expect(err()).toContain('dorkos config acknowledge-autonomy');
+  it('sets the Full power preset with nothing to acknowledge first (DOR-2739)', async () => {
+    apiCallMock.mockResolvedValue({ changes: [], permissions: OVERVIEW });
+    expect(await runPermissionsDispatcher(['set', '--preset', 'full'])).toBe(0);
+    expect(apiCallMock).toHaveBeenCalledWith('PUT', '/api/permissions/preset', {
+      preset: 'full',
+      surface: 'cli',
+    });
+    expect(err()).toBe('');
   });
 
   it("prints the server's floor refusal as it is", async () => {
@@ -168,7 +164,6 @@ describe('dorkos permissions', () => {
     );
     expect(await runPermissionsDispatcher(['set', 'reach', 'allowed'])).toBe(1);
     expect(err()).toContain('Reach & secrets is never Allowed.');
-    expect(err()).not.toContain('acknowledge-autonomy');
   });
 
   it('reads the history for one agent, found by name', async () => {
@@ -338,15 +333,6 @@ describe('dorkos agent permissions', () => {
       filesAndCommands: null,
       surface: 'cli',
     });
-  });
-
-  it('prints the acknowledge command when Full autonomy needs it', async () => {
-    apiCallMock.mockImplementation(async (method: string) => {
-      if (method === 'GET') return ROSTER;
-      throw ACK_REFUSAL;
-    });
-    expect(await runAgentPermissions(['dorkbot', 'set', 'files', 'autonomy'])).toBe(1);
-    expect(err()).toContain('dorkos config acknowledge-autonomy');
   });
 
   it('says so when no agent matches', async () => {

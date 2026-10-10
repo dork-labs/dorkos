@@ -10,7 +10,7 @@ import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
 
 # Runtimes
 
-A runtime is the AI program that powers an agent: its brain. DorkOS ships with four: DorkOS, Claude Code, Codex, and OpenCode, and you can use more than one at once. Every chat lands in the same list, streams through the same chat, and uses the same tool approvals and status bar.
+A runtime is the AI program that powers an agent: its brain. DorkOS ships with four: DorkOS, Claude Code, Codex, and OpenCode, and you can use more than one at once. Every chat lands in the same list, streams through the same chat, and uses the same tool approvals and status bar. The tools an agent uses are written to [the record](/docs/guides/audit-trail
 
 | Runtime         | Ecosystem                       | Why you'd pick it                                                         |
 | --------------- | ------------------------------- | ------------------------------------------------------------------------- |
@@ -348,7 +348,7 @@ The runtimes are not identical, and DorkOS doesn't pretend they are. Surfaces th
 | ----------------------------------------- | ----------- | ----------- | -------- |
 | Interactive tool approvals                | Yes         | Yes         | Yes      |
 | Steer a reply while it runs               | Yes         | Yes         | No       |
-| Picks up when background work finishes    | Helpers     | Commands    | No       |
+| Picks up when background work finishes    | Most        | Commands    | No       |
 | Cost tracking                             | Yes         | Tokens only | Yes      |
 | Summarize the chat with `/compact`        | Yes         | Yes         | Yes      |
 | Tells the agent when its chat is 80% full | Yes         | Yes         | Yes      |
@@ -358,6 +358,8 @@ The runtimes are not identical, and DorkOS doesn't pretend they are. Surfaces th
 | Local / open-source models                | No          | No          | Yes      |
 | Auto mode is told about DorkOS's tools    | Yes         | No          | No       |
 | Marks its own housekeeping tasks          | Yes         | No          | No       |
+
+What each runtime keeps running after a reply, and what happens to it, is on [Work That Runs After a Reply](/docs/guides/background-work).
 
 Known limitations, stated plainly:
 

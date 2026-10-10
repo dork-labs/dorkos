@@ -8,6 +8,10 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { auditEvents, eq, type Db } from '@dorkos/db';
 import { AuditLog, GENESIS_HASH, computeAuditHash, type AuditInput } from '../audit-log.js';
 
+/** Token prefixes built from parts, so no fixture reads as a real key to a secret scanner. */
+const STRIPE_LIVE = ['sk', 'live', ''].join('_');
+const GITHUB_PAT = ['ghp', ''].join('_');
+
 const OWNER = { accountId: 'install:test', kind: 'person', name: 'Owner' } as const;
 
 function input(over: Partial<AuditInput> = {}): AuditInput {
@@ -143,7 +147,7 @@ describe('AuditLog', () => {
   });
 
   it('sweeps credential shapes out of every free-text field', () => {
-    const token = 'ghp_abcdefghijklmnopqrstuvwxyz0123';
+    const token = `${GITHUB_PAT}abcdefghijklmnopqrstuvwxyz0123`;
     const hex = 'f'.repeat(40);
     const event = log.record(
       input({
@@ -239,6 +243,79 @@ describe('AuditLog', () => {
     // Three fields, each swept. Linear work is a few milliseconds; the old
     // pattern took seconds on the first of these (DOR-2738 review).
     expect(performance.now() - started).toBeLessThan(150);
+  });
+
+  it.each([
+    [
+      'a bearer header',
+      'curl -H "Authorization: Bearer sk-proj-AbCdEf0123456789abcdef0123" https://api.x.com',
+      'sk-proj-AbCdEf',
+    ],
+    [
+      'a bearer header with an opaque token',
+      'curl -H "Authorization: Bearer q8Zr2LmN4vB7xT1wPa9K" x.com',
+      'q8Zr2LmN4vB7xT1wPa9K',
+    ],
+    [
+      'an exported key',
+      'export OPENAI_API_KEY=sk-proj-AbCdEf0123456789abcdef0123',
+      'AbCdEf0123456789',
+    ],
+    ['a mysql short password flag', 'mysql -uroot -pHunter2Secret db', 'Hunter2Secret'],
+    ['a long password flag', 'psql --password Hunter2Secret', 'Hunter2Secret'],
+    ['a token flag with equals', 'gh api --token=Q8zR2lmN4vb7xt1w', 'Q8zR2lmN4vb7xt1w'],
+    [
+      'a URL password',
+      `git clone https://bob:${GITHUB_PAT}AbCdEf0123456789abcdef0123456789abcd@github.com/x/y`,
+      `${GITHUB_PAT}AbCdEf`,
+    ],
+    [
+      'a heredoc settings file',
+      `cat > app.cfg <<EOF\nSTRIPE_KEY=${STRIPE_LIVE}AbCdEf0123456789abcdef\nEOF`,
+      `${STRIPE_LIVE}AbCdEf`,
+    ],
+    [
+      'a basic auth header',
+      'curl -H "Authorization: Basic YWRtaW46c2VjcmV0cGFzcw==" x.com',
+      'YWRtaW46c2VjcmV0cGFzcw',
+    ],
+    [
+      'a Telegram bot token',
+      'curl https://api.telegram.org/bot123456789:AAEhBOweik6ad9r_QXMENQjcrGbqCr4K-xY/getMe',
+      'AAEhBOweik6ad9r',
+    ],
+    ['a curl user password', 'curl -u admin:Hunter2Secret https://x.com', 'Hunter2Secret'],
+    ['a long user flag password', 'curl --user admin:Hunter2Secret https://x.com', 'Hunter2Secret'],
+    ['a docker login password', 'docker login -u me -p Hunter2Secret registry.io', 'Hunter2Secret'],
+    ['a cookie header', "curl -H 'Cookie: session=Q8zR2lmN4vb7xt1w' x.com", 'Q8zR2lmN4vb7xt1w'],
+    [
+      'an aws configure set',
+      'aws configure set aws_secret_access_key Q8zR2lmN4vb7xt1wQ8zR',
+      'Q8zR2lmN4vb7xt1w',
+    ],
+    [
+      'a raw GitHub token',
+      `grep -r ${GITHUB_PAT}AbCdEf0123456789abcdef0123456789abcd .`,
+      `${GITHUB_PAT}AbCdEf`,
+    ],
+  ])('redacts a secret in a tool target, id and name alike: %s', (_shape, text, secret) => {
+    const event = log.record(input({ target: { type: 'command', id: text, name: text } }))!;
+    expect(event.target?.id).not.toContain(secret);
+    expect(event.target?.name).not.toContain(secret);
+    const [row] = db.select().from(auditEvents).all();
+    expect(JSON.stringify(row)).not.toContain(secret);
+  });
+
+  it('leaves ordinary flags and set commands alone', () => {
+    const text = 'git config set user.name Dorian && tar -p -cf a.tar . && curl -u admin https://x';
+    expect(log.record(input({ summary: text }))!.summary).toBe(text);
+  });
+
+  it('keeps an ordinary target id as it is', () => {
+    const event = log.record(
+      input({ target: { type: 'agent', id: '01KJXYKJYW4N8QGQ5W4GB6YM9J' } })
+    )!;
+    expect(event.target?.id).toBe('01KJXYKJYW4N8QGQ5W4GB6YM9J');
   });
 
   it('leaves ordinary words that only look close alone', () => {

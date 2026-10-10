@@ -7,13 +7,12 @@ import { test, expect } from '../fixtures';
  *
  * Covers the two answers that matter:
  *   1. ACCEPT ("Unlock full power") lands full power atomically — the server
- *      config gains `runtimes.defaultTrustStop: 'autonomy'` WITH a recorded
- *      `ui.autonomyAcknowledgedAt` (the ack the 428 gate demands, in the same
- *      write) and `ui.fullPowerChoice: 'full'`, and the mesh opens
+ *      config gains `runtimes.defaultTrustStop: 'autonomy'` and
+ *      `ui.fullPowerChoice: 'full'` in the same write, and the mesh opens
  *      (`openMesh: true`). The door does not return on reload.
  *   2. DECLINE ("Keep asking me first") records `ui.fullPowerChoice: 'supervised'`
  *      and the Careful preset, whose Files & commands stop is Ask first, and
- *      touches NOTHING consent-gated: no autonomy stop, no ack, no open mesh.
+ *      opens nothing: no autonomy stop, no open mesh.
  *      It does not return on reload.
  *
  * ## It RUNS in CI (no skip gate), and why it is `serial` + warm-boot
@@ -56,7 +55,6 @@ const DOOR_TIMEOUT_MS = 20_000;
 /** The consent-relevant slice of `GET /api/config` this spec asserts on. */
 interface PowerConfigView {
   defaultTrustStop: string | null;
-  autonomyAcknowledgedAt: string | null;
   fullPowerDecidedAt: string | null;
   fullPowerChoice: string | null;
 }
@@ -76,7 +74,6 @@ async function readPowerConfig(request: APIRequestContext): Promise<PowerConfigV
   expect(response.ok()).toBe(true);
   const config = (await response.json()) as {
     ui?: {
-      autonomyAcknowledgedAt?: string | null;
       fullPowerDecidedAt?: string | null;
       fullPowerChoice?: string | null;
     };
@@ -84,7 +81,6 @@ async function readPowerConfig(request: APIRequestContext): Promise<PowerConfigV
   };
   return {
     defaultTrustStop: config.executionDefaults?.trustStop ?? null,
-    autonomyAcknowledgedAt: config.ui?.autonomyAcknowledgedAt ?? null,
     fullPowerDecidedAt: config.ui?.fullPowerDecidedAt ?? null,
     fullPowerChoice: config.ui?.fullPowerChoice ?? null,
   };
@@ -98,11 +94,11 @@ async function readMeshOpen(request: APIRequestContext): Promise<boolean> {
   return topology.openMesh === true;
 }
 
-/** Clear the decision and everything consent-gated, and close the mesh. */
+/** Clear the decision and the stop, and close the mesh. */
 async function resetToUnanswered(request: APIRequestContext): Promise<void> {
   const config = await request.patch('/api/config', {
     data: {
-      ui: { fullPowerDecidedAt: null, fullPowerChoice: null, autonomyAcknowledgedAt: null },
+      ui: { fullPowerDecidedAt: null, fullPowerChoice: null },
       runtimes: { defaultTrustStop: null },
     },
   });
@@ -146,7 +142,6 @@ test.describe('Full-power consent door @full-power', () => {
         ui: {
           fullPowerDecidedAt: new Date().toISOString(),
           fullPowerChoice: 'supervised',
-          autonomyAcknowledgedAt: null,
         },
         runtimes: { defaultTrustStop: null },
       },
@@ -169,7 +164,6 @@ test.describe('Full-power consent door @full-power', () => {
 
     const config = await readPowerConfig(request);
     expect(config.defaultTrustStop).toBe('autonomy');
-    expect(config.autonomyAcknowledgedAt).not.toBeNull();
     expect(config.fullPowerChoice).toBe('full');
     expect(await readMeshOpen(request)).toBe(true);
     // The door also chooses the permission preset, so what agents may do
@@ -185,7 +179,7 @@ test.describe('Full-power consent door @full-power', () => {
     expect((await readPowerConfig(request)).fullPowerDecidedAt).not.toBeNull();
   });
 
-  test('DECLINE records supervised, touches nothing consent-gated, and does not return', async ({
+  test('DECLINE records supervised, opens nothing, and does not return', async ({
     request,
     basePage,
   }) => {
@@ -201,7 +195,6 @@ test.describe('Full-power consent door @full-power', () => {
     // `agent-permissions` D5): the answer is written down, never left to a
     // runtime's own default.
     expect(config.defaultTrustStop).toBe('ask');
-    expect(config.autonomyAcknowledgedAt).toBeNull();
     expect(await readMeshOpen(request)).toBe(false);
     expect((await (await request.get('/api/permissions')).json()).preset).toBe('careful');
 

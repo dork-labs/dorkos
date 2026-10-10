@@ -3213,8 +3213,8 @@ async function start() {
 
       // Enforce the DOR-239 "agent may start conversations" consent at the relay
       // delivery layer (DOR-277). This is the authoritative gate: every
-      // agent-initiated send to a bound human channel — relay_send*, A2A, or any
-      // other publish path — is denied unless the binding is enabled, consents,
+      // agent-initiated send to a bound human channel — A2A, an external MCP
+      // publish, or any other publish path — is denied unless the binding is enabled, consents,
       // and belongs to the sending agent.
       //
       // `initialize()` has already SCHEDULED the adapter starts by the time it
@@ -3231,8 +3231,8 @@ async function start() {
           })
         );
         // Same reasoning, same moment: the relay's chat-failure notice speaks on
-        // a subject that came off a failed envelope's `replyTo`, which the model
-        // writes on `relay_send`. Without this lookup it resolves nothing and
+        // a subject that came off a failed envelope's `replyTo`, which the
+        // sender chose. Without this lookup it resolves nothing and
         // stays silent, so a missing wire closes the channel rather than opening
         // one into a chat nobody bound (DOR-789).
         relayCore.setChatNoticeTargetResolver(makeChatNoticeTargetResolver(bindingStore));

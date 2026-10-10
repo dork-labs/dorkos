@@ -8,7 +8,6 @@ import {
   useSessionChatStore,
   useModels,
   useHasConfirmedAuto,
-  useHasConfirmedAutonomy,
   useModeBeforePlan,
 } from '@/layers/entities/session';
 import { useWorkspaceForSession } from '@/layers/entities/workspace';
@@ -22,7 +21,6 @@ import {
   StatusLine,
   SessionPopover,
   AutoModeConfirmDialog,
-  AutonomyConfirmDialog,
   UsageRevealPopover,
   useGitStatus,
   isGitStatusOk,
@@ -44,8 +42,7 @@ import {
   showsStaleMark,
   useExtensionStatusItems,
 } from '@/layers/features/status';
-import { findWorkingMode, needsConsentRitual } from '@/layers/shared/lib';
-import { useAutonomyAcknowledgement } from '@/layers/entities/config';
+import { findWorkingMode } from '@/layers/shared/lib';
 import { useMediaQuery, useNow } from '@/layers/shared/model';
 import { compactComposerGate } from '../../model/build-palette-commands';
 import { useCompactionChip } from '../../model/status/use-compaction-chip';
@@ -187,26 +184,18 @@ export function ChatStatusSection({
   // and every permission decision below reads what the runtime declared rather
   // than a mode id.
   const activeCaps = useCapabilitiesForRuntime(runtimeChip.runtime);
-  // `NO_DECLARED_MODES`, not a fresh `[]`: three of the callbacks below depend on
-  // this list, and a new array identity every render would rebuild all three on
+  // `NO_DECLARED_MODES`, not a fresh `[]`: hooks and callbacks below depend on
+  // this list, and a new array identity every render would rebuild them on
   // every render of the status bar — which is also exactly what the compiler
   // warns about when a logical expression feeds a dependency array.
   const declaredModes = activeCaps?.permissionModes.values ?? NO_DECLARED_MODES;
   const runtimeDefaultMode = activeCaps?.permissionModes.default;
 
-  // Once-per-session confirmation gates: the `auto` research preview, and the
-  // one stop a person cannot walk back.
+  // Once-per-session confirmation gate for the `auto` research preview. Full
+  // autonomy has none: it is a normal choice (ADR 261006-225605).
   const hasConfirmedAuto = useHasConfirmedAuto(sessionId);
   const recordAutoConfirmed = useSessionChatStore((s) => s.recordAutoConfirmed);
   const [autoConfirmOpen, setAutoConfirmOpen] = useState(false);
-  const hasConfirmedAutonomy = useHasConfirmedAutonomy(sessionId);
-  const recordAutonomyConfirmed = useSessionChatStore((s) => s.recordAutonomyConfirmed);
-  const [pendingAutonomy, setPendingAutonomy] = useState<PermissionModeDescriptor | null>(null);
-
-  // The standing acknowledgement, off the config query the cockpit already
-  // subscribes to — no extra request. Present means this person has read what
-  // Full autonomy means and asked not to be told again.
-  const autonomyAck = useAutonomyAcknowledgement();
 
   // "Start every new session here?" — offered under the dial after a stop
   // change, and only where it would tell the person something they have not
@@ -221,70 +210,27 @@ export function ChatStatusSection({
    * Whether the permissions picker is open, which decides WHICH of the offer's
    * two homes speaks.
    *
-   * Not bookkeeping: entering Full autonomy opens a modal dialog, and the
-   * dialog's focus grab closes the popover underneath it — verified in a browser
-   * on 2026-08-01, where the offer set on confirming was drawn into an unmounted
-   * tree and then reappeared, stale, the next time the popover was opened. So
-   * the inline instance is offered only while the popover is up, and the overlay
-   * takes over the moment it is not.
+   * Not bookkeeping: the popover can close while an offer stands (a confirm
+   * dialog's focus grab closes it — verified in a browser on 2026-08-01, where
+   * the offer was drawn into an unmounted tree and then reappeared, stale, the
+   * next time the popover was opened). So the inline instance is offered only
+   * while the popover is up, and the overlay takes over the moment it is not.
    */
   const [pickerOpen, setPickerOpen] = useState(false);
 
   /**
-   * Whether this cockpit has an acknowledgement it can honestly assert for the
-   * server's autonomy door — the person's standing record, or the confirmation
-   * they gave in this session.
-   */
-  const canAssertAutonomyAck = autonomyAck.acknowledgedAt !== null || hasConfirmedAutonomy;
-
-  /**
-   * Write one mode, attaching the autonomy acknowledgement when the mode needs
-   * one and this cockpit has one to assert.
+   * Write one mode. The single mode writer for every path on this surface, so
+   * the set of writers stays one.
    *
-   * The single mode writer for every path on this surface EXCEPT
-   * `handleConfirmAutonomy`, which is the one place consent is given rather than
-   * recalled — see the note there. Routing the rest through here is not
-   * ceremony: the Plan toggle restores whatever the session was on before
-   * planning, and that can be Full autonomy, so a path that wrote the mode
-   * directly would 428 on the one click a person takes to get OUT of planning.
-   *
-   * **The flag rides only when there is something to assert** — a standing
-   * record, or this page's own memory of confirming. Neither survives a reload,
-   * so a person who confirmed once, reloaded, and did not tick "don't show this
-   * again" reaches the server without one. That is intended: the 428 comes back,
-   * and the bounce below turns it into the question again rather than an error.
-   * The bounce is the recovery path, not a corner case.
+   * The promise is RETURNED, not swallowed, so a caller can tell a landed write
+   * from a refused one: `updateSession` answers with the updated session on
+   * success and `undefined` after a failed write (rolled back and logged). Only
+   * one caller needs that today — nothing should offer to make a stop the
+   * default when the stop itself did not take.
    */
   const applyMode = useCallback(
-    (nextMode: string) => {
-      const descriptor = declaredModes.find((d) => d.id === nextMode);
-      const needsAck = descriptor !== undefined && needsConsentRitual(descriptor);
-      // The promise is RETURNED, not swallowed, so a caller can tell a landed
-      // write from a refused one: `updateSession` answers with the updated
-      // session on success and `undefined` after it has handed the failure to
-      // `onError`. Only one caller needs that today — nothing should offer to
-      // make a stop the default when the stop itself did not take.
-      return status.updateSession(
-        {
-          permissionMode: nextMode,
-          ...(needsAck && canAssertAutonomyAck ? { acknowledgedAutonomy: true } : {}),
-        },
-        {
-          onError: (err) => {
-            if ((err as { code?: string })?.code !== 'AUTONOMY_ACK_REQUIRED') return;
-            if (descriptor) setPendingAutonomy(descriptor);
-          },
-        }
-      );
-    },
-    // The `useState` setters ARE listed, here and in every callback below. They
-    // can never change — React guarantees a setter's identity for the life of the
-    // component — so this is not about correctness. It is that React Compiler's
-    // `preserve-manual-memoization` check does not make that exception: omit them
-    // and it reports it cannot preserve the memoization on this callback, which
-    // is a real warning about real generated code rather than a style note. All
-    // or none, and "all" is the one the toolchain can verify.
-    [declaredModes, canAssertAutonomyAck, status, setPendingAutonomy]
+    (nextMode: string) => status.updateSession({ permissionMode: nextMode }),
+    [status]
   );
 
   const handleChangeMode = useCallback(
@@ -293,22 +239,9 @@ export function ChatStatusSection({
         setAutoConfirmOpen(true);
         return;
       }
-      // A stop that never asks asks twice. Every stop that still asks is one
-      // click and instantly reversible; these stop the asking, so by the time a
-      // person notices they did not mean it, it has already happened. The dial
-      // selects on arrow keys as well as clicks, which is the other half of why
-      // this cannot be a straight write (`loop={false}` is the first half).
+      // Every stop, Full autonomy included, is written straight through: our
+      // agents are trusted by default (ADR 261006-225605).
       //
-      // WHICH stops is `needsConsentRitual`, not the autonomy position: on a
-      // runtime that cannot pause mid-turn, the MIDDLE stop never asks either
-      // (DOR-816). Asking here is a courtesy, not the gate — the server refuses
-      // the write outright without an acknowledgement, so skipping this branch
-      // would land on the same dialog by a worse route.
-      const descriptor = declaredModes.find((d) => d.id === nextMode);
-      if (descriptor && needsConsentRitual(descriptor) && !canAssertAutonomyAck) {
-        setPendingAutonomy(descriptor);
-        return;
-      }
       // The person just told DorkOS how much they want this agent to do. Noticing
       // that here is the whole of decision 6C — the alternative is a trip to
       // Settings to repeat a choice they have already made ten times.
@@ -320,70 +253,18 @@ export function ChatStatusSection({
         if (updated) makeDefault.offerFor(nextMode);
       });
     },
-    [
-      hasConfirmedAuto,
-      canAssertAutonomyAck,
-      declaredModes,
-      applyMode,
-      makeDefault,
-      setPendingAutonomy,
-      setAutoConfirmOpen,
-    ]
+    // The `useState` setter IS listed. It can never change — React guarantees a
+    // setter's identity for the life of the component — but React Compiler's
+    // `preserve-manual-memoization` check does not make that exception: omit it
+    // and it reports it cannot preserve the memoization on this callback.
+    [hasConfirmedAuto, applyMode, makeDefault, setAutoConfirmOpen]
   );
 
   const handleConfirmAuto = useCallback(() => {
     recordAutoConfirmed(sessionId);
-    // Through `applyMode` like every other recalled write. `auto` is not an
-    // autonomy stop on any runtime today, so this adds no flag — it is routed
-    // here so the set of writers stays one, and a runtime that later declares
-    // its auto-equivalent at the autonomy stop is handled without an edit.
     applyMode('auto');
     setAutoConfirmOpen(false);
   }, [recordAutoConfirmed, sessionId, applyMode, setAutoConfirmOpen]);
-
-  const handleConfirmAutonomy = useCallback(
-    (rememberChoice: boolean) => {
-      if (!pendingAutonomy) return;
-      recordAutonomyConfirmed(sessionId);
-      if (rememberChoice) {
-        // Recorded first, and not awaited. The mode change carries its own
-        // acknowledgement on the request, so it does not wait on this write —
-        // and a config write that fails leaves the person exactly where they
-        // were, being asked again next time, which is the safe direction.
-        autonomyAck.acknowledge();
-      }
-      // THE ONE WRITER THAT IS NOT `applyMode`, and the reason is the whole
-      // difference between the two: `applyMode` RECALLS an acknowledgement from
-      // state, and consent was GIVEN here, in this click. The state it would
-      // read — the session memory recorded a line above — has not re-rendered
-      // yet, so routing through it would send the request without the flag and
-      // bounce the person off the dialog they just answered.
-      const applied = pendingAutonomy.id;
-      void status
-        .updateSession({
-          permissionMode: applied,
-          acknowledgedAutonomy: true,
-        })
-        .then((updated) => {
-          // Offered here too, and this is the person decision 6C was written
-          // for: the operator who chooses Full autonomy every morning. They have
-          // just been told exactly what it means, so the offer lands at the one
-          // moment it cannot be a surprise. The dialog has closed the dial's
-          // popover by now, so this offer is drawn by the overlay instance.
-          if (updated) makeDefault.offerFor(applied);
-        });
-      setPendingAutonomy(null);
-    },
-    [
-      pendingAutonomy,
-      recordAutonomyConfirmed,
-      sessionId,
-      status,
-      autonomyAck,
-      makeDefault,
-      setPendingAutonomy,
-    ]
-  );
 
   // Plan, where the runtime offers a way of working at all. Which mode that is
   // comes from the profile, never from the id `plan` (spec `trust-dial`).
@@ -399,9 +280,6 @@ export function ChatStatusSection({
         // Remember where the dial stood, so switching Plan off is a return
         // rather than a guess.
         recordModeBeforePlan(sessionId, status.permissionMode);
-        // Through `applyMode` for the same reason as the restore below: a way of
-        // working is never an autonomy stop today, so no flag is added, but the
-        // writer stays one rather than two that must be kept in step.
         applyMode(workingMode.id);
         return;
       }
@@ -416,14 +294,6 @@ export function ChatStatusSection({
         remembered !== undefined && declaredModes.some((d) => d.id === remembered);
       const viable = stillDeclared && (remembered !== 'auto' || modelSupportsAutoMode);
       const restored = viable ? remembered : runtimeDefaultMode;
-      // Through `applyMode`, because the mode being restored can be Full
-      // autonomy: a session that was running without asking, went into planning,
-      // and is now coming back out. Where this page still holds an
-      // acknowledgement — standing, or confirmed here — it rides the request and
-      // the click just works. Where it does not (a reload, and no standing
-      // record), the server answers 428 and `applyMode`'s bounce turns that into
-      // the dialog. Both outcomes are fine; writing the mode directly is what is
-      // not, because then the refusal has nothing to open.
       if (restored) applyMode(restored);
     },
     [
@@ -602,24 +472,6 @@ export function ChatStatusSection({
         open={autoConfirmOpen}
         onOpenChange={setAutoConfirmOpen}
         onConfirm={handleConfirmAuto}
-      />
-      <AutonomyConfirmDialog
-        descriptor={pendingAutonomy}
-        onCancel={() => setPendingAutonomy(null)}
-        onConfirm={handleConfirmAutonomy}
-        canRemember={autonomyAck.canRemember}
-      />
-      {/* The same door, asked about a wider scope: making Full autonomy the
-          stop EVERY new session starts at. A separate instance rather than a
-          mode on the one above, because the two answer different questions and
-          only one of them is about this session — and here the confirmation IS
-          the standing record, which is why no checkbox is offered. */}
-      <AutonomyConfirmDialog
-        descriptor={makeDefault.pendingDescriptor}
-        canRemember={false}
-        consentNote="Every new session will start here, and DorkOS will remember that you have read this."
-        onCancel={makeDefault.cancel}
-        onConfirm={makeDefault.confirm}
       />
     </div>
   );

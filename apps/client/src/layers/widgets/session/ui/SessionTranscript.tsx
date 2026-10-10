@@ -46,6 +46,9 @@ import {
   type InteractiveToolHandle,
   type ListRow,
   type MessageAuthorContext,
+  ChatStopLine,
+  interleaveStopNotices,
+  useChatActivity,
 } from '@/layers/features/chat';
 import { SessionMessage } from './SessionMessage';
 import { useRenderSlot } from '@/layers/shared/lib';
@@ -158,7 +161,7 @@ interface SessionTranscriptProps {
  * @param props - The transcript and everything a row needs to be interactive.
  */
 export function SessionTranscript({
-  messages,
+  messages: transcript,
   sessionId,
   isLoadingHistory = false,
   hydrated = false,
@@ -177,12 +180,25 @@ export function SessionTranscript({
   landOnRow,
   foldFirstPrompt = false,
 }: SessionTranscriptProps) {
+  // A "Stopped by" line wherever another chat's agent stopped this one (spec
+  // `spin-off-chats` §6), placed by when it happened. The rows are drawn from
+  // this list; every rule about MESSAGES — what is new, what is final, where
+  // a message sits in the feed, what has been read — counts the transcript
+  // itself, because a stop line is not a message and one arriving late must
+  // not shift any of them.
+  const { stops } = useChatActivity(sessionId);
+  const messages = useMemo(() => interleaveStopNotices(transcript, stops), [transcript, stops]);
+  // Each row's position among the messages, or -1 for a stop line.
+  const transcriptIndex = useMemo(() => {
+    let next = 0;
+    return messages.map((m) => (m._chatStop ? -1 : next++));
+  }, [messages]);
   // How long the transcript was when this mount first had one — the line between
   // history and what arrived since, which decides which rows animate. Latched in
   // a slot rather than state: it is read in the same render that captures it, and
   // capturing it must not cause a render of its own.
   const historyCount = useRenderSlot<number | null>(null);
-  if (historyCount.read() === null && messages.length > 0) historyCount.write(messages.length);
+  if (historyCount.read() === null && transcript.length > 0) historyCount.write(transcript.length);
   const lastWidgetFenceIndex = useMemo(() => findLastWidgetFenceIndex(messages), [messages]);
   // The first message a person would have typed, when it is folded: the first
   // plain user turn. -1 when nothing is folded.
@@ -190,7 +206,8 @@ export function SessionTranscript({
     () =>
       foldFirstPrompt
         ? messages.findIndex(
-            (m) => m.role === 'user' && m.messageType === undefined && !m._stagedContext
+            (m) =>
+              m.role === 'user' && m.messageType === undefined && !m._stagedContext && !m._chatStop
           )
         : -1,
     [foldFirstPrompt, messages]
@@ -229,7 +246,7 @@ export function SessionTranscript({
   // The turn happening NOW, mirrored into a live region below. The feed itself
   // announces nothing — that is what a feed is — so this is the only thing that
   // says an answer is arriving without the reader having to go and look.
-  const newest = messages[messages.length - 1];
+  const newest = transcript[transcript.length - 1];
   const streamingTail = newest?.role === 'assistant' ? newest : undefined;
   const announcement = useStreamingAnnouncer({
     messageId: streamingTail?.id,
@@ -243,7 +260,7 @@ export function SessionTranscript({
 
   const { lastSeenMessageId, unreadFromStart, markSeen, isHydrated } = useUnreadCursor(
     sessionId,
-    messages
+    transcript
   );
 
   // Rows, not messages, are what the list virtualizes: dividers are real rows so
@@ -322,8 +339,24 @@ export function SessionTranscript({
       // SessionMessage so none of that chrome applies to it.
       if (message._stagedContext) return <StagedContextNote content={message.content} />;
 
-      // A started chat's prompt: readable, never the headline.
-      if (messageIndex === foldedPromptIndex) return <StartedPrompt content={message.content} />;
+      // Another chat's agent stopped this one here: a quiet system line, with
+      // none of a message's chrome (spec `spin-off-chats` §6).
+      if (message._chatStop) {
+        return (
+          <div className="px-4 py-1">
+            <ChatStopLine notice={message._chatStop} />
+          </div>
+        );
+      }
+
+      // A started chat's prompt: readable, never the headline. A spin-off's
+      // first message reads as the words another chat sent, never their fence.
+      if (messageIndex === foldedPromptIndex) {
+        return <StartedPrompt content={message.chatMessages?.[0]?.text ?? message.content} />;
+      }
+
+      // Where this message sits among the messages, stop lines not counted.
+      const position = transcriptIndex[messageIndex] ?? messageIndex;
 
       // The session's last message, whoever wrote it. An inline error card
       // offers Retry from here and nowhere else (DOR-1677): Retry re-sends the
@@ -331,7 +364,7 @@ export function SessionTranscript({
       // nothing has come after it. Anything following takes the offer away —
       // the next prompt, a steer, or the staged note two branches up, which is
       // a user-role message even though it draws no bubble.
-      const isFinalMessage = messageIndex === messages.length - 1;
+      const isFinalMessage = position === transcript.length - 1;
       const isLastAssistant = isFinalMessage && message.role === 'assistant';
       // Fence-based supersede (DOR-302): a widget in this message is stale only
       // when a NEWER fence-bearing message exists. Fence-less messages get
@@ -348,7 +381,7 @@ export function SessionTranscript({
           grouping={row.grouping}
           author={row.author}
           sessionId={sessionId}
-          isNew={history !== null && messageIndex >= history}
+          isNew={history !== null && position >= history}
           isStreaming={isLastAssistant && isTextStreaming}
           isLatestWidgetMessage={isLatestWidgetMessage}
           isFinalMessage={isFinalMessage}
@@ -367,13 +400,14 @@ export function SessionTranscript({
           // articles this feed holds: the day and unread rules are separators
           // between articles, so numbering them would promise stops Page Down
           // never makes.
-          feedPosition={{ index: messageIndex + 1, total: messages.length }}
+          feedPosition={{ index: position + 1, total: transcript.length }}
         />
       );
     },
     [
       listRows,
-      messages.length,
+      transcript.length,
+      transcriptIndex,
       lastWidgetFenceIndex,
       foldedPromptIndex,
       sessionId,

@@ -40,6 +40,7 @@ import {
 } from '../providers/check-dependencies.js';
 import { detectOllama } from '../providers/ollama.js';
 import { TurnEventQueue } from '../events/global-event-hub.js';
+import { OPENCODE_STREAM_LOST_MESSAGE } from '../events/event-mapper.js';
 import type { ConnectorRuntimePrincipalPort } from '../../../connectors/runtime-principal-port.js';
 import { createRuntimeTurnRenewalConformanceFixture } from '../../connectors/__tests__/turn-renewal-conformance-fixture.js';
 import {
@@ -1403,7 +1404,15 @@ describe('OpenCodeRuntime', () => {
       const firstEvents = await first.finished;
       const errorEvent = firstEvents.find((e) => e.type === 'error');
       expect(errorEvent).toBeDefined();
-      expect(errorEvent!.data).toMatchObject({ code: 'stream_error' });
+      // A plain notice, not the stream's own words (DOR-2717): a crashed
+      // sidecar takes the reply with it, and nothing wakes the chat later.
+      expect(errorEvent!.data).toMatchObject({
+        code: 'stream_error',
+        category: 'execution_error',
+        message: OPENCODE_STREAM_LOST_MESSAGE,
+        details: 'sidecar died',
+      });
+      expect(OPENCODE_STREAM_LOST_MESSAGE.split(/\s+/).length).toBeLessThanOrEqual(15);
       expect(firstEvents[firstEvents.length - 1]!.type).toBe('done');
 
       // Turn 2: catch → getClient() again → resubscribe → healthy stream.

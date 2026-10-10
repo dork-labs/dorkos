@@ -196,8 +196,8 @@ describe('ToolCallCard MCP server badge', () => {
     expect(screen.getByText('Slack')).toBeInTheDocument();
   });
 
-  it('does not show "DorkOS" badge for mcp__dorkos__relay_send', () => {
-    render(<ToolCallCard toolCall={makeToolCall({ toolName: 'mcp__dorkos__relay_send' })} />);
+  it('does not show "DorkOS" badge for mcp__dorkos__mesh_list', () => {
+    render(<ToolCallCard toolCall={makeToolCall({ toolName: 'mcp__dorkos__mesh_list' })} />);
 
     expect(screen.queryByText('DorkOS')).not.toBeInTheDocument();
   });

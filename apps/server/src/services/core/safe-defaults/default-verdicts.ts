@@ -129,12 +129,9 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'ui.composer.richText',
   // The power-door answer, both halves (spec `full-power-defaults`, D1). Records
   // of an ANSWER and nothing more: they send nothing off the machine, grant no
-  // capability, and no gate reads them. That is what separates them from
-  // `ui.autonomyAcknowledgedAt` next door, which is classified `safe` because the
-  // server's autonomy gate really does read it — a value there decides whether a
-  // 428 is raised, and a value here decides whether a modal is shown. A wipe that
-  // lands both back on `null` simply puts the question again, which is the right
-  // outcome and costs one dialog.
+  // capability, and no gate reads them. A wipe that lands both back on `null`
+  // simply puts the question again, which is the right outcome and costs one
+  // dialog.
   'ui.fullPowerDecidedAt',
   'ui.fullPowerChoice',
   // Bookkeeping for the one-shot permission upgrade sweep: which server version
@@ -358,9 +355,12 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'rooms.lateReplyCeilingMinutes': 60,
   // The engaged window's two ceilings. Both ARE bounds: they are what stops
   // `engaged` becoming `always` with extra steps, and a person can set either
-  // lower.
-  'rooms.engagedWindowMinutes': 10,
-  'rooms.engagedWindowPosts': 5,
+  // lower. Raised to 60 and 15 by DOR-2823: people expect an answer to a reply
+  // an hour later, and agents talking to each other stay at the old 10 and 5
+  // whatever these say (`AGENT_POST_WINDOW`), so the longer values only reach a
+  // person's own conversation.
+  'rooms.engagedWindowMinutes': 60,
+  'rooms.engagedWindowPosts': 15,
   // The collect window's two ceilings (room-participation spec §10.4). Both are
   // bounds on how many turns a burst of messages costs — a pause of zero and a
   // cap of one would be one turn per message — so the shipped values are the
@@ -472,11 +472,6 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'runtimes.codex.defaultTrustStop': null,
   'runtimes.opencode.defaultTrustStop': null,
   'runtimes.doe.defaultTrustStop': null,
-  // Nobody has been told what Full autonomy means, so DorkOS still tells them:
-  // `null` is the value that keeps the door asking. A wipe landing here is the
-  // right outcome — losing a consent record only costs one dialog, while keeping
-  // one through a reset would silence a question nobody re-answered.
-  'ui.autonomyAcknowledgedAt': null,
   // No account link, so no identity leaves the machine.
   'cloud.instanceToken': null,
   'cloud.instanceName': null,

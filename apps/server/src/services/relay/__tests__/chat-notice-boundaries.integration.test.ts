@@ -2,8 +2,8 @@
  * Integration: the two ways a chat notice could go wrong, driven end to end.
  *
  * 1. **It must not be a side door into an unbound chat.** The notice for a turn
- *    that died speaks on the failed envelope's `replyTo`, and on `relay_send`
- *    that field is written by the model. Under a `relay.system.*` principal the
+ *    that died speaks on the failed envelope's `replyTo`, and on an agent's
+ *    publish that field is written by the agent. Under a `relay.system.*` principal the
  *    consent gate exempts, an unchecked notice would post this machine's text
  *    into any chat an agent cared to name.
  * 2. **It must not become a new prompt.** The notice lands on the same subject
@@ -195,7 +195,7 @@ describe('the notice for a turn that died', () => {
   });
 
   it('does not post into a chat nobody bound, however the agent addresses it', async () => {
-    // An agent doing exactly what `relay_send` allows: naming its own reply
+    // An agent doing exactly what a publish allows: naming its own reply
     // subject. The delivery then fails, which is what triggers the notice.
     await relay.publish(
       'relay.agent.claude-code.session-x',

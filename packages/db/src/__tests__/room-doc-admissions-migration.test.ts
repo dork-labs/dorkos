@@ -770,8 +770,8 @@ it('migrates an existing Room queue without giving private acceptance or claimed
     .prepare('SELECT * FROM __drizzle_migrations ORDER BY id')
     .all();
   expect(upgradedHistory.slice(0, historyBefore.length)).toEqual(historyBefore);
-  // Complete the archived queue fix, then apply shipped Chats and record the
-  // schema-equivalent regenerated Doc migration without replaying its CREATEs.
+  // Complete the archived queue fix, then apply shipped Chats and report_back.
+  // Record schema-equivalent Room151 without replaying the existing Room CREATEs.
   expect(
     upgradedHistory.slice(historyBefore.length).map((row) => {
       const entry = row as { hash: string; created_at: number };
@@ -787,8 +787,12 @@ it('migrates an existing Room queue without giving private acceptance or claimed
       created_at: 1791565991417,
     },
     {
+      hash: 'fff2ecc577b7f440a07aace5577ba21aa0e47817616155d41b6b4f15cee99361',
+      created_at: 1791567432144,
+    },
+    {
       hash: '44321f0c067d6ce35619f22ac071fcd08bdddd8dec4a7b099f8ce31998b1324f',
-      created_at: 1791577212201,
+      created_at: 1791626823308,
     },
   ]);
   insert(db, 'canvas_doc_batches', room('room-second'));

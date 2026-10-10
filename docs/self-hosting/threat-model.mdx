@@ -79,11 +79,12 @@ The A2A agent endpoints work the same way, with one difference: while login is o
 
 ## Agent-to-agent messaging and budgets
 
-Agents can talk to each other and to you through the relay. These controls keep that from running away:
+Agents message each other in chats you can open, and reach you and outside systems through the relay. These controls apply:
 
-- **Budgets are enforced before delivery.** Every message passes an authoritative budget and hop check before it is delivered, so a runaway loop is stopped at the source, not just in a mailbox. Cascade depth, cycles, and per-agent call budgets are all bounded.
-- **An hourly ceiling caps the cost, whatever the route in.** A message, a scheduled task, and an outside system speaking A2A all end at the same counted checkpoint before a turn starts, so no route around the relay buys a bigger allowance. You set the cap per agent and for everything combined; see [Relay Messaging](/docs/guides/relay-messaging#the-hourly-ceiling).
-- **An agent cannot choose its own identity through the supported messaging path.** The server resolves the "from" address from the chat the agent is running in instead of trusting the tool call. This stops one normal agent call from naming another agent. It is not operating-system isolation: software running as your user can read the same files and credentials that you can.
+- **Relay budgets are enforced before delivery.** Every relay message passes an authoritative budget and hop check before it is delivered, so a runaway loop is stopped at the source, not just in a mailbox. Cascade depth, cycles, and per-agent call budgets are all bounded.
+- **An hourly ceiling caps the relay's cost, whatever the route in.** A relay message, a scheduled task, and an outside system speaking A2A all end at the same counted checkpoint before a turn starts, so no route around the relay buys a bigger allowance. You set the cap per agent and for everything combined; see [Relay Messaging](/docs/guides/relay-messaging#the-hourly-ceiling).
+- **Messages between your agents' chats have no loop limit.** Two agents can keep messaging each other's chats for as long as they keep going, and each round uses your plan. Every message is in a chat you can open, and you can stop either chat. DorkOS still limits how many chats agents can start running at once, to protect the machine.
+- **An agent cannot choose its own identity through the supported messaging path.** The server takes the sender from the calling chat, or from the chat for relay messages, instead of trusting the tool call. This stops one normal agent call from naming another agent. It is not operating-system isolation: software running as your user can read the same files and credentials that you can.
 - **A message never raises an agent's power.** A turn another agent's message starts runs no looser than the agent that sent it. A message a bridged Telegram or Slack chat posts into a room, or one from another company's agent over A2A, runs at the level a brand-new chat starts at, even in a chat set to Full autonomy. A chat that turn starts can be no stronger than it.
 - **Reaching a human is a consent choice.** Whether an agent may start a chat with you on a chat app like Telegram is set for each agent on each chat app.
 

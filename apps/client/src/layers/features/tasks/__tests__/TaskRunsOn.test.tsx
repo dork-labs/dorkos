@@ -453,7 +453,7 @@ describe('the task form Runs-on controls', () => {
     it('does not ask when the mode is no more permissive on the new runtime', async () => {
       // Codex's own `default` never asks either — because it can only READ, and
       // a door in front of the safest setting on offer is how a door stops being
-      // read. `needsConsentRitual` excludes `reach: 'read'`, and this is the case
+      // read. `actsWithoutAsking` excludes `reach: 'read'`, and this is the case
       // a plain "does it ask?" check would get wrong.
       renderTaskAt('default');
 

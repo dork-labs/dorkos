@@ -5,7 +5,7 @@
  *
  * ## The gap this closes
  *
- * `relay_send` and `post_to_room` run without a card even in a prompting mode,
+ * `chat_send` and `post_to_room` run without a card even in a prompting mode,
  * so a turn a Telegram stranger started can post into a room. Before this, the
  * turn that post started on another agent ran at THAT agent's own level, and
  * nothing tied it to the poster's. Under a Full autonomy default that is a path

@@ -25,7 +25,7 @@ type Table = {
 };
 const snapshot = JSON.parse(
   readFileSync(
-    fileURLToPath(new URL('../../drizzle/meta/20261009202012_snapshot.json', import.meta.url)),
+    fileURLToPath(new URL('../../drizzle/meta/20261010100703_snapshot.json', import.meta.url)),
     'utf8'
   )
 ) as { id: string; prevId: string; tables: Record<string, Table> };
@@ -93,7 +93,7 @@ function storedChecks(sql: string): string[] {
 }
 
 it('migrates all nine Doc/Room structures and three shipped Chat structures to the official snapshot', () => {
-  expect(snapshot.prevId).toBe('d1c8ca14-370d-4423-8600-0cb11a6aca51');
+  expect(snapshot.prevId).toBe('137a0ef5-e661-49d0-8474-189ce98028f8');
   expect(snapshot.id).not.toBe(snapshot.prevId);
   const db = createDb(':memory:');
   try {

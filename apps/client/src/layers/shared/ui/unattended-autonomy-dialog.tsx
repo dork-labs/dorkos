@@ -18,10 +18,9 @@ import { trustToneText } from './trust-tone';
 export interface UnattendedAutonomyDialogProps {
   /**
    * The mode being turned on, as its runtime declared it. `null` closes the
-   * dialog — the same open/closed convention the session's own consent dialog
-   * uses, so the two read alike at their call sites.
+   * dialog.
    *
-   * Any mode the consent door gates (`needsConsentRitual`): the autonomy stop,
+   * Any mode that acts without asking (`actsWithoutAsking`): the autonomy stop,
    * or one that never asks and can do more than read.
    */
   descriptor: PermissionModeDescriptor | null;
@@ -38,32 +37,28 @@ export interface UnattendedAutonomyDialogProps {
  * watching** — a relay binding, a scheduled task (spec `trust-dial`, decision 5,
  * widened 2026-08-01 by DOR-816).
  *
- * Which modes is `needsConsentRitual`'s answer, the same one the server's door
- * applies, and it is wider than the dial's Full-autonomy stop: a runtime may
+ * Which modes is `actsWithoutAsking`'s answer, and it is wider than the dial's Full-autonomy stop: a runtime may
  * file a mode that never asks at the middle stop. An unattended surface is where
  * that matters most — there is nobody to notice — so both callers gate it here
  * rather than only at the top of the dial.
  *
- * ## Why this is not the session's dialog
+ * ## Why a surface nobody is watching still asks
  *
- * `features/status`' `AutonomyConfirmDialog` asks about a session somebody is
- * sitting in front of: the worst case is that they see something happen and
+ * A session somebody is sitting in front of no longer asks before Full autonomy
+ * (ADR 261006-225605): the worst case is that they see something happen and
  * switch back. On a binding or a schedule there is no one in front of it. What a
  * person needs told is not "it stops asking" but *what stops happening* — the
  * approval message that would have arrived in their chat, the card a run would
  * have waited on. That sentence is different per surface, so the caller writes
- * it and this component holds the shape. The copy that is about the MODE is
- * shared with the session's dialog (`consent-ritual-copy`), so one promise never
- * ends up with two spellings.
+ * it and this component holds the shape. The copy that is about the MODE lives
+ * in `consent-ritual-copy`.
  *
- * Layer-wise it could not be shared even if the copy were identical: a binding
- * dialog lives in `entities/`, which cannot import a feature. Both halves point
- * the same way — the shape belongs down here.
+ * It lives in `shared` because a binding dialog lives in `entities/`, which
+ * cannot import a feature.
  *
  * The consequence sentence about the **mode** is still the runtime's own
- * `promise`, never copy written here, for the reason the session dialog
- * documents: Codex says "network included" and a stand-in sentence would be
- * wrong for somebody.
+ * `promise`, never copy written here: Codex says "network included" and a
+ * stand-in sentence would be wrong for somebody.
  *
  * @param props - The mode being confirmed, this surface's consequence, and the
  *   two answers.

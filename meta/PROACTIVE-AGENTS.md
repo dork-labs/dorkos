@@ -2,7 +2,7 @@
 
 > **Canon, and a design guide.** How a DorkOS agent takes initiative: what it does when nobody is talking to it, when it acts, when it asks, when it stays quiet, and how it reports up. It sits beside the north-star set ([`VISION.md`](VISION.md), [`PRINCIPLES.md`](PRINCIPLES.md), [`VOICE.md`](VOICE.md), [`ROADMAP.md`](ROADMAP.md)) and follows them. Written 2026-10-07 at Dorian's request. The evidence behind it is [`research/20261007_proactive-persistent-agents.md`](../research/20261007_proactive-persistent-agents.md).
 >
-> **Status: decided direction, mostly not built.** Schedules (Tasks), agent memory (`MEMORY.md`), rooms, notes to a person (`relay_notify_user`) and the decision-model ladder (`packages/decisions`) exist today. The heartbeat and `HEARTBEAT.md` ship before launch and are not built yet (DOR-2788); reporting lines, agent templates, the commitments list and the measures below are roadmap. Section 9 and the decisions in section 10 were added on 2026-10-07 after Dorian answered the open questions and four role-plays tested the design ([`research/20261007_agent-teams-role-play.md`](../research/20261007_agent-teams-role-play.md)). Public copy follows the demo-claim gate in [`ROADMAP.md`](ROADMAP.md#the-demo-claim-gate): never say an agent checks in on its own until heartbeats ship.
+> **Status: decided direction, mostly not built.** Schedules (Tasks), agent memory (`MEMORY.md`), rooms, notes to a person (`relay_notify_user`) and the decision-model ladder (`packages/decisions`) exist today. Agents messaging each other in chats people can open (`chat_send`, `chat_read`, `chat_stop`) and spin-off chats that report back on their own (section 9.5) arrive with DOR-2790 (spec `spin-off-chats`), and are built once its four pull requests merge. The heartbeat and `HEARTBEAT.md` ship before launch and are not built yet (DOR-2788); reporting lines, agent templates, the commitments list and the measures below are roadmap. Section 9 and the decisions in section 10 were added on 2026-10-07 after Dorian answered the open questions and four role-plays tested the design ([`research/20261007_agent-teams-role-play.md`](../research/20261007_agent-teams-role-play.md)). Public copy follows the demo-claim gate in [`ROADMAP.md`](ROADMAP.md#the-demo-claim-gate): never say an agent checks in on its own until heartbeats ship.
 
 ---
 
@@ -361,6 +361,19 @@ Under trust by default, creating an agent is part of a lead's job:
 - **Retiring keeps the record.** A retired agent's history stays under its name, and its cards are closed.
 
 In a role-play, an operations agent created a wholesale agent from scratch, unasked, with a discount ceiling and a card. A buyer said a friend always gets 25%, and the new agent gave 22%. Every rule above comes from that week or one like it.
+
+### 9.5 Working together in chats people can open
+
+Agents work with each other where a person can see it. There is no hidden channel between them.
+
+- **A message between agents is a chat message.** An agent messages another chat, or another agent, with `chat_send`. It lands in a chat a person can open, marked with the agent and the chat that sent it, never as "You". The server stamps the sender; an agent cannot claim to be someone else.
+- **It waits its turn, and the person goes first.** A message waits for the other chat's current turn to end. An agent can steer a running turn, or interrupt it, when the work must change course now. A person's own queued words always run ahead of agent messages.
+- **Spin-off chats report up on their own.** An agent that hands off long work starts a spin-off chat (`session_start`). It shows "Started from…" the chat that made it, a person can open it and type in it, and it lasts hours or days. When one of its turns ends finished, failed, needing the person, or paused at a limit, its last message comes back to the chat that started it as a report. A turn that ends only to wait sends nothing. This is P4 between agents: the report comes without being asked for.
+- **The one woken by a report acts, then speaks little.** It checks the report, starts the next step, and tells the person only what matters (P5). The messages between chats are already open to read; narrating them is noise.
+- **A helper is not a spin-off.** A helper is a worker inside one chat, for minutes of look-and-report work. Nobody can open it or message it, and it reports once to the chat that made it.
+- **Stops are in the open.** An agent may stop another chat's turn, as a person can with the Stop button. The stop is recorded and shown in that chat with who did it and why.
+
+How an agent does each of these is the `working-with-spin-off-chats` operating skill.
 
 ## 10. Decisions
 

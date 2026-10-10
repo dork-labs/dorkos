@@ -11,7 +11,7 @@ const folder = fileURLToPath(new URL('../../drizzle/', import.meta.url));
 const timestamp = '2026-10-09T19:00:00.000Z';
 
 describe('Doc Room upgrade from populated shipped main', () => {
-  it.each([148, 149])(
+  it.each([148, 149, 150])(
     'preserves Main%d rows with foreign keys enforced and no invented custody',
     (idx) => {
       const temporary = mkdtempSync(path.join(os.tmpdir(), 'dorkos-room-upgrade-'));
@@ -89,7 +89,7 @@ describe('Doc Room upgrade from populated shipped main', () => {
           status: 'turn_started',
           updated_at: timestamp,
         });
-        if (idx === 149)
+        if (idx >= 149)
           insert('chat_messages', {
             id: 'chat-message',
             to_session_id: 'to',
@@ -110,7 +110,7 @@ describe('Doc Room upgrade from populated shipped main', () => {
           'canvas_doc_events',
           'canvas_doc_batches',
           'canvas_doc_deliveries',
-          ...(idx === 149 ? ['chat_messages'] : []),
+          ...(idx >= 149 ? ['chat_messages'] : []),
         ];
         const before = tables.map((table) => ({
           table,
@@ -155,7 +155,7 @@ describe('Doc Room upgrade from populated shipped main', () => {
           .prepare('SELECT * FROM __drizzle_migrations ORDER BY rowid')
           .all();
         expect(afterHistory.slice(0, idx + 1)).toEqual(history);
-        expect(afterHistory).toHaveLength(151);
+        expect(afterHistory).toHaveLength(152);
         runMigrations(db);
         expect(
           db.$client.prepare('SELECT * FROM __drizzle_migrations ORDER BY rowid').all()

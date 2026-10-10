@@ -487,12 +487,23 @@ The four rules and the mode that answers each:
 
 ### 9.2 The predicate, which is derived rather than stored
 
-An agent member `M` in room `R` at thread scope `T` is **engaged** when both hold, evaluated over `room_entries` where `room_id = R` and `thread_root_entry_id = T`:
+**DOR-2823 split this predicate by who wrote the post being addressed, "follow the conversation, not the clock."** A PERSON's unaddressed post in a channel is answered by whoever they are talking to in that scope; an AGENT's post keeps the original, mention-anchored rule, because agent-to-agent traffic is the one that must stay quiet.
+
+**A PERSON's post** (channel only; `engagement.ts` `conversationFor`). Walk the scope newest first, starting at the post itself: the first post by an agent member anchors on that agent (the agent that spoke last is the one being answered — an agent's own reply now starts and extends the window, not just a mention of it); failing that, the first person's post that `@mentioned` agent members anchors on the agent they last named. An unmentioned person's post says nothing about who and is passed over, though it still counts toward the post ceiling below. The anchor must hold both:
+
+1. it is less than `rooms.engagedWindowMinutes` old, and
+2. fewer than `rooms.engagedWindowPosts` posts have landed on top of it in that scope.
+
+A thread's scope includes its root — the first message — so a reply anchored on the thread root still counts.
+
+**An AGENT's post** keeps the original rule: an agent member `M` in room `R` at thread scope `T` is **engaged** when both hold, evaluated over `room_entries` where `room_id = R` and `thread_root_entry_id = T`:
 
 1. The most recent entry whose `mentions` contains `M` is less than `rooms.engagedWindowMinutes` old, and
 2. Fewer than `rooms.engagedWindowPosts` entries of `kind: 'post'` by authors other than `M` have landed since it.
 
-`engaged` triggers when `M` is mentioned, or when `M` is engaged. Being mentioned resets both clocks by construction, because it becomes the new most-recent mention.
+— but at a bound that is never longer than the configured values: 10 minutes / 5 posts (`AGENT_POST_WINDOW` in `engagement.ts`), capped by whatever is configured so turning the window off (`0`) still turns it off for agents too.
+
+`engaged` triggers when `M` is mentioned, or when `M` is engaged by either rule above. Being mentioned resets both clocks by construction, because it becomes the new most-recent mention. A trigger picked by the conversation rule carries `TriggerReason: 'conversation'` rather than `'window'`, and is never put through the engaged response gate — the gate only weighs bursts where every message in the burst says `'window'`; a person is owed an answer. When a person's channel post reaches no agent this way, the server logs `[rooms] nobody was picked to answer a person` with one of `no_agents`, `named_unreachable`, `named_not_answering`, `stood_down`, `partner_not_answering`, `no_conversation` (`addressing.ts` `whyNobody`).
 
 **Nothing is stored.** The window is a pure predicate over the room log, which is durable and never trimmed. No column, no table, no in-memory window to reset on restart, and no state that can disagree with the log. Contrast `turn-budget.ts`, whose windows are counted in memory and written to `room_turn_spend` so they survive a restart (ADR `260726-170127`, DOR-1205): that one has to count things the log does not record, and this one does not.
 
@@ -509,13 +520,15 @@ Two new fields in the `rooms` block of `packages/shared/src/config-schema.ts:621
  * How long an agent stays addressable after you talk to it, before it goes back
  * to needing an @mention. Talking to it again starts the clock over.
  */
-engagedWindowMinutes: z.number().int().min(0).max(1440).default(10),
+engagedWindowMinutes: z.number().int().min(0).max(1440).default(60),
 /**
  * How many messages from other people can go by before an agent stops treating
  * itself as part of the conversation. Talking to it again starts the count over.
  */
-engagedWindowPosts: z.number().int().min(0).max(100).default(5),
+engagedWindowPosts: z.number().int().min(0).max(100).default(15),
 ```
+
+**DOR-2823 raised both defaults**, 10 → 60 minutes and 5 → 15 posts, because the window now also covers a person's unaddressed follow-ups in a conversation, and an hour reads as patient where ten minutes read as a hang-up. A `conf` migration keyed `0.103.0` moves a stored value to the new default only when it still equals the old one (`10` / `5`); a value anyone has chosen, including `0`, is left alone. Agent-to-agent traffic is unaffected: it is weighed at the old 10-minute / 5-post bound regardless of what `rooms.engagedWindow*` says, only ever capped down by it.
 
 Both numbers are ours and unsourced (§2.2). The TSDoc must not imply otherwise, and §17 carries the caveat where a tuner will read it.
 
@@ -807,13 +820,13 @@ DOR-621 is RP1's first half and DOR-622 is RP2. The rest need tickets.
 
 Everything this spec adds to the `rooms` block of `packages/shared/src/config-schema.ts:621-659`. Each needs the `adding-config-fields` lifecycle: Zod field, defaults object, semver-keyed `conf` migration, docs, tests.
 
-| Field                  | Default | Phase | Sourced?                                                        |
-| ---------------------- | ------- | ----- | --------------------------------------------------------------- |
-| `engagedWindowMinutes` | 10      | RP4   | **No. Ours, to be tuned by dogfooding.**                        |
-| `engagedWindowPosts`   | 5       | RP4   | **No. Ours, to be tuned by dogfooding.**                        |
-| `ambientMaxEntries`    | 30      | RP3   | **No.** Chosen to bound a first-turn replay, not from evidence. |
-| `collectDebounceMs`    | 500     | RP8   | **No.** OpenClaw's shape, not a measured value.                 |
-| `collectMaxEntries`    | 20      | RP8   | **No.**                                                         |
+| Field                  | Default               | Phase | Sourced?                                                        |
+| ---------------------- | --------------------- | ----- | --------------------------------------------------------------- |
+| `engagedWindowMinutes` | 60 (was 10, DOR-2823) | RP4   | **No. Ours, to be tuned by dogfooding.**                        |
+| `engagedWindowPosts`   | 15 (was 5, DOR-2823)  | RP4   | **No. Ours, to be tuned by dogfooding.**                        |
+| `ambientMaxEntries`    | 30                    | RP3   | **No.** Chosen to bound a first-turn replay, not from evidence. |
+| `collectDebounceMs`    | 500                   | RP8   | **No.** OpenClaw's shape, not a measured value.                 |
+| `collectMaxEntries`    | 20                    | RP8   | **No.**                                                         |
 
 Shipped and unchanged, for reference: `maxAgentDepth` (3), `maxAutomaticTurnsPerRoomPerHour` (60), `maxAutomaticTurnsTotalPerHour` (240).
 

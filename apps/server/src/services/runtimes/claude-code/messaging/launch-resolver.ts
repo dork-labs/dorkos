@@ -58,7 +58,6 @@ import {
 import { resolveCreditsLaunchEnv } from '../../../core/cloud/credits-inference.js';
 import { decideCreditsLaunchModel } from '../../../core/cloud/credits-models.js';
 import { creditsRefusalEvent as creditsRefusalEventFor } from '../../../core/cloud/credits-protocols.js';
-import { isRelayEnabled } from '../../../relay/relay-state.js';
 import type { AgentSession } from '../agent-types.js';
 import { claudeConfigDirEnv, resolveLaunchAccountRoot } from '../claude-config-dir.js';
 import { ensureCreditsClaudeRoot, isCreditsClaudeRoot } from '../credits-root.js';
@@ -94,6 +93,7 @@ import { resolveThinkingOptions } from './thinking-config.js';
 import { createEditBaselineCapture, detectSlashCommandName } from './message-sender-shared.js';
 import type { MessageSenderOpts } from './message-sender-shared.js';
 import { turnPermissionMode } from '../turn-permission.js';
+import { auditToolHookMatchers } from '../audit-tool-hooks.js';
 
 /**
  * Whether DorkOS attaches host context to auto mode's permission classifier,
@@ -240,7 +240,7 @@ export async function resolveLaunch(args: {
     isCommandDispatch = knownCommands === null || knownCommands.includes(`/${commandName}`);
   }
 
-  // Whether this turn's prompt already carries the six agent-to-agent tools
+  // Whether this turn's prompt already carries the four agent-to-agent tools
   // (DOR-1337 / F8). Decided by the SAME rule the tool server applies —
   // `loadsAgentToAgentTools` — over the SAME input: `session.cwd`, which is the
   // cwd `mcpServerFactory` hands `createDorkOsToolServer` a few lines below,
@@ -277,8 +277,7 @@ export async function resolveLaunch(args: {
   const toolConfig = toolDocGates(toolVisibility.blockedAreas);
   const baseAppend = await buildSystemPromptAppend(turnAgentPath, effectiveCwd, toolConfig, {
     agentSession: loadsAgentToAgentTools(
-      !!(toolAgentPath && opts.meshCore?.getByPath(toolAgentPath)),
-      isRelayEnabled()
+      !!(toolAgentPath && opts.meshCore?.getByPath(toolAgentPath))
     ),
     blockedAreaLines: renderBlockedAreaLines(toolVisibility.blockedAreas),
   });
@@ -764,6 +763,10 @@ export async function resolveLaunch(args: {
   // backstop holds: `interactive-handlers.ts` auto-denies on abort and on
   // timeout, so a prompt that arrives outside a foreground turn degrades
   // gracefully rather than hanging one.
+  const auditHooks = auditToolHookMatchers({
+    sessionId,
+    turn: { cwd: effectiveCwd, forAgent, roomTurn: messageOpts?.roomTurn },
+  });
   sdkOptions.hooks = {
     PreToolUse: [
       {
@@ -801,7 +804,11 @@ export async function resolveLaunch(args: {
         matcher: CLASSIFIER_CONTEXT_MATCHER,
         hooks: [createClassifierContextHook({ sessionId, enabled: CLASSIFIER_CONTEXT_ON })],
       },
+      ...auditHooks.PostToolUse,
     ],
+    // A helper agent's tool calls never reach the stream the audit record
+    // reads, so these record them (spec `audit-trail` PR3). Observe-only.
+    PostToolUseFailure: auditHooks.PostToolUseFailure,
     // Which session timers are still pending (DOR-2717). CronCreate,
     // ScheduleWakeup and /loop live inside the CLI and are no background task,
     // so the stream never names them; the Stop hook's input does, at every turn

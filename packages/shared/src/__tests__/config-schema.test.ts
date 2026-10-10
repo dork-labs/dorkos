@@ -89,7 +89,6 @@ describe('UserConfigSchema', () => {
         statusBar: { pins: [] },
         composer: { richText: true },
         communityNavigation: { version: 1, owners: [] },
-        autonomyAcknowledgedAt: null,
         fullPowerDecidedAt: null,
         fullPowerChoice: null,
       },
@@ -123,8 +122,8 @@ describe('UserConfigSchema', () => {
         maxAutomaticTurnsTotalPerHour: 5000,
         replyWaitMinutes: 10,
         lateReplyCeilingMinutes: 60,
-        engagedWindowMinutes: 10,
-        engagedWindowPosts: 5,
+        engagedWindowMinutes: 60,
+        engagedWindowPosts: 15,
         collectDebounceMs: 500,
         collectMaxEntries: 20,
         responseGate: 'routing',
@@ -485,7 +484,6 @@ describe('USER_CONFIG_DEFAULTS', () => {
         statusBar: { pins: [] },
         composer: { richText: true },
         communityNavigation: { version: 1, owners: [] },
-        autonomyAcknowledgedAt: null,
         fullPowerDecidedAt: null,
         fullPowerChoice: null,
       },
@@ -519,8 +517,8 @@ describe('USER_CONFIG_DEFAULTS', () => {
         maxAutomaticTurnsTotalPerHour: 5000,
         replyWaitMinutes: 10,
         lateReplyCeilingMinutes: 60,
-        engagedWindowMinutes: 10,
-        engagedWindowPosts: 5,
+        engagedWindowMinutes: 60,
+        engagedWindowPosts: 15,
         collectDebounceMs: 500,
         collectMaxEntries: 20,
         responseGate: 'routing',
@@ -911,7 +909,8 @@ describe('per-field and section-literal defaults agree', () => {
     expect(fromFactory.runtimes.claudeCode.defaultTrustStop).toBeNull();
     expect(fromFactory.runtimes.codex.defaultTrustStop).toBeNull();
     expect(fromFactory.runtimes.opencode.defaultTrustStop).toBeNull();
-    expect(fromFactory.ui.autonomyAcknowledgedAt).toBeNull();
+    // The Full-autonomy acknowledgement is retired with its ritual (DOR-2739).
+    expect(fromFactory.ui).not.toHaveProperty('autonomyAcknowledgedAt');
     expect(fromFactory.mesh.scanRoots).toEqual([]);
   });
 });

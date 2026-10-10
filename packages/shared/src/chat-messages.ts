@@ -41,9 +41,10 @@ export const MESSAGING_TOOL_NAMES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Whether a tool call is one of {@link MESSAGING_TOOL_NAMES}, under any MCP
- * server prefix a runtime puts on it (`mcp__dorkos__chat_send`,
- * `dorkos_chat_send`, `dorkos.chat_send`).
+ * Whether a tool call is one of {@link MESSAGING_TOOL_NAMES}, bare or under
+ * the DorkOS server prefix a runtime puts on it (`mcp__dorkos__chat_send`,
+ * `dorkos_chat_send`, `dorkos.chat_send`). Another server's tool of the same
+ * name never matches.
  *
  * @param toolName - The tool name as the runtime reported it.
  */
@@ -57,10 +58,17 @@ export function isMessagingToolName(toolName: string): boolean {
  * @param toolName - The tool name as the runtime reported it.
  */
 export function messagingToolOf(toolName: string): string | null {
+  // Anchored to the DorkOS server's own prefixes: another MCP server's
+  // `mcp__other__chat_send` is its tool, not a message to a chat.
   for (const name of MESSAGING_TOOL_NAMES) {
-    if (toolName === name) return name;
-    if (toolName.endsWith(`__${name}`) || toolName.endsWith(`.${name}`)) return name;
-    if (toolName.endsWith(`dorkos_${name}`)) return name;
+    if (
+      toolName === name ||
+      toolName === `mcp__dorkos__${name}` ||
+      toolName === `dorkos_${name}` ||
+      toolName === `dorkos.${name}`
+    ) {
+      return name;
+    }
   }
   return null;
 }

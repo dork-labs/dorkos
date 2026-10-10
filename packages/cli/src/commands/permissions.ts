@@ -13,10 +13,7 @@
  * - `agent permissions <agent> …`      → `GET|PATCH /api/agents/:id/permissions`
  *
  * Nothing here writes config or an agent's manifest itself: every write carries
- * `surface: 'cli'`, and a refusal prints the server's own sentence. The one line
- * the CLI adds is the terminal's next step when the server asks for the Full
- * autonomy acknowledgement, because the app's next step is a dialog a terminal
- * does not have.
+ * `surface: 'cli'`, and a refusal prints the server's own sentence.
  *
  * Handlers return an exit code rather than calling `process.exit`, so `cli.ts`
  * stays the single source of truth for termination.
@@ -45,7 +42,6 @@ import {
 import type { PermissionStop } from '@dorkos/shared/agent-runtime';
 import { ApiError, apiCall } from '../lib/api-client.js';
 import { printError, printJson, renderTable } from '../lib/operator-output.js';
-import { ACKNOWLEDGE_AUTONOMY_COMMAND, AUTONOMY_ACK_REQUIRED_CODE } from '../config-write.js';
 
 /** Help text for `dorkos permissions`. */
 const PERMISSIONS_HELP = `Usage: dorkos permissions <subcommand> [options]
@@ -221,21 +217,6 @@ async function checkActionExists(target: Target): Promise<void> {
   );
 }
 
-/**
- * Print a refusal, adding the terminal's next step when the server wants the
- * Full autonomy acknowledgement first.
- *
- * @param err - What the call threw.
- */
-function explain(err: unknown): void {
-  printError(err);
-  if (err instanceof ApiError && err.body.code === AUTONOMY_ACK_REQUIRED_CODE) {
-    console.error(
-      `Run \`${ACKNOWLEDGE_AUTONOMY_COMMAND}\` to read what it means and confirm, then try again.`
-    );
-  }
-}
-
 /** Parse `--json` plus positionals for a subcommand, strictly. */
 function parseSimple(args: string[]): { json: boolean; positionals: string[] } {
   const { values, positionals } = parseArgs({
@@ -335,7 +316,7 @@ async function runPermissionsList(json: boolean): Promise<number> {
     }
     return 0;
   } catch (err) {
-    explain(err);
+    printError(err);
     return 1;
   }
 }
@@ -401,7 +382,7 @@ async function runPermissionsWrite(rawArgs: string[], reset: boolean): Promise<n
         );
       return 0;
     } catch (err) {
-      explain(err);
+      printError(err);
       return 1;
     }
   }
@@ -432,7 +413,7 @@ async function runPermissionsWrite(rawArgs: string[], reset: boolean): Promise<n
       );
     return 0;
   } catch (err) {
-    explain(err);
+    printError(err);
     return 1;
   }
 }
@@ -490,7 +471,7 @@ async function runPermissionsHistory(rawArgs: string[]): Promise<number> {
     console.log('Undo a change with `dorkos permissions undo <id>`.');
     return 0;
   } catch (err) {
-    explain(err);
+    printError(err);
     return 1;
   }
 }
@@ -583,7 +564,7 @@ async function runPermissionsUndo(rawArgs: string[]): Promise<number> {
     }
     return 0;
   } catch (err) {
-    explain(err);
+    printError(err);
     if (err instanceof ApiError && err.body.code === 'UNDO_CONFLICT') {
       const conflicts = (err.body as { conflicts?: PermissionUndoSkip[] }).conflicts ?? [];
       if (conflicts.length > 0) {
@@ -700,7 +681,7 @@ export async function runAgentPermissions(rawArgs: string[]): Promise<number> {
     else console.log(done);
     return 0;
   } catch (err) {
-    explain(err);
+    printError(err);
     return 1;
   }
 }

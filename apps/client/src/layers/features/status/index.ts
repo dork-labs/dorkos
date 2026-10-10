@@ -33,7 +33,6 @@ export type { SessionAccount, SessionTrackerItem } from './model/use-session-acc
 // when moving to another account is on offer (the banner).
 export { canOfferContinue, chipToneFor, type AccountChipTone } from './lib/account-chip';
 export { AutoModeConfirmDialog } from './ui/AutoModeConfirmDialog';
-export { AutonomyConfirmDialog } from './ui/AutonomyConfirmDialog';
 export { ModelConfigPopover } from './ui/ModelConfigPopover';
 export { ContextItem } from './ui/ContextItem';
 export type { ContextCompactAction } from './ui/ContextItem';

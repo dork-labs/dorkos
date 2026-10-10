@@ -247,13 +247,10 @@ describe('addressing somebody in #team', () => {
     expect(turnsFor(w, w.nova)).toBeGreaterThanOrEqual(1);
   });
 
-  it('keeps a default agent you are mid-conversation with in the room', async () => {
-    // Addressing it by name opens its engaged window, which is this codebase's
-    // definition of "we are talking" (`engagement.ts` anchors on a mention). It
-    // then answers the next post as ITSELF rather than as the fallback, so
-    // handing one task to Nova does not dismiss it from a conversation you
-    // started. A default agent that had only ever been catching unaddressed
-    // posts has no window and does stand down — the case above.
+  it('steps the default agent back once you name somebody else, even mid-conversation', async () => {
+    // DOR-2823: a person's conversation follows the agent they last named. You
+    // were talking to the default agent; naming Nova moves the conversation to
+    // Nova, so the default agent has nothing of its own to answer here.
     const w = boot({ reply: null });
     await say(w, '@dorkbot how did last night go?');
     expect(turnsFor(w, w.dorkbot)).toBe(1);
@@ -261,7 +258,7 @@ describe('addressing somebody in #team', () => {
     await say(w, '@nova can you take the deploy?');
 
     expect(turnsFor(w, w.nova)).toBe(1);
-    expect(turnsFor(w, w.dorkbot)).toBe(2);
+    expect(turnsFor(w, w.dorkbot)).toBe(1);
   });
 
   it('stands the default agent down again once that window has closed', async () => {
@@ -367,7 +364,11 @@ describe('the stand-down is scoped to the room that has a fallback seat', () => 
 
 describe('changing the default agent', () => {
   it('moves who answers, and the old default goes quiet', async () => {
-    const w = boot();
+    // A default agent that says nothing, so the second post is a fresh
+    // question rather than a reply to DorkBot. Had DorkBot answered, the person
+    // would be mid-conversation with it, and the next post is DorkBot's alone
+    // (DOR-2823) — the case below pins that half.
+    const w = boot({ reply: null });
     await say(w, 'what is on for today?');
     expect(turnsFor(w, w.dorkbot)).toBe(1);
 
@@ -380,6 +381,32 @@ describe('changing the default agent', () => {
     // default.
     expect(turnsFor(w, w.nova)).toBe(1);
     expect(turnsFor(w, w.dorkbot)).toBe(1);
+  });
+
+  it('lets the agent you are talking to answer alone, never beside the default', async () => {
+    // DOR-2823: a person's post belongs to their conversation, and the default
+    // agent stands down for a conversation with somebody else.
+    const w = boot();
+    await say(w, '@nova can you take the deploy?');
+    expect(turnsFor(w, w.nova)).toBe(1);
+    const dorkbotBefore = turnsFor(w, w.dorkbot);
+
+    await say(w, 'thanks, when will it be out?');
+    expect(turnsFor(w, w.nova)).toBe(2);
+    expect(turnsFor(w, w.dorkbot)).toBe(dorkbotBefore);
+  });
+
+  it('keeps answering when the agent you are talking to only answers @mentions', async () => {
+    // The default agent steps back only for a partner that will actually
+    // answer; otherwise the post would reach nobody (DOR-2823).
+    const w = boot();
+    w.service.updateMembership(w.roomId, w.human, w.nova, 'mention-only');
+    await say(w, '@nova can you take the deploy?');
+    const dorkbotBefore = turnsFor(w, w.dorkbot);
+
+    await say(w, 'thanks, when will it be out?');
+    expect(turnsFor(w, w.nova)).toBe(1);
+    expect(turnsFor(w, w.dorkbot)).toBe(dorkbotBefore + 1);
   });
 
   it('is the setting, not the room key, that decides — #team is otherwise ordinary', async () => {

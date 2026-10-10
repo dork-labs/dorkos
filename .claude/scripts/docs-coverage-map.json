@@ -959,6 +959,14 @@
       ]
     },
     {
+      "doc": "docs/guides/spin-off-chats.mdx",
+      "description": "Spin-off chats: starting one, who sent a message, report-back, stopping one, helpers vs spin-offs",
+      "patterns": [
+        "services/session/chat-messages/",
+        "packages/operating-skills/"
+      ]
+    },
+    {
       "doc": "docs/guides/workspaces.mdx",
       "description": "Workspaces user guide",
       "patterns": [
@@ -1132,6 +1140,17 @@
         "services/runtimes/",
         "packages/shared/src/agent-runtime.ts",
         "runtime-registry"
+      ]
+    },
+    {
+      "doc": "docs/guides/background-work.mdx",
+      "description": "Work that runs after a reply, per runtime: turn end, a DorkOS restart, a settings change",
+      "patterns": [
+        "services/runtimes/claude-code/sessions/",
+        "background-work-ledger",
+        "codex/app-server/background-work",
+        "opencode/events/",
+        "opencode/server-manager"
       ]
     },
     {

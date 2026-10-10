@@ -1,6 +1,7 @@
 /**
- * Puts the `relay_*` tools (send/inbox/endpoints, adapters, trace and metrics)
- * on the external `/mcp` server.
+ * Puts the `relay_*` tools (endpoint listing, adapters, trace and metrics) on
+ * the external `/mcp` server. Agents message each other with the chat tools,
+ * which are in-session only (spec `spin-off-chats` §7).
  *
  * The names, descriptions, and input schemas are NOT written here: they come from
  * `getRelayTools`, `adapterToolDefinitions`, and `traceToolDefinitions` — the same
@@ -25,17 +26,9 @@ import { registerFromDefinitions, type ExternalToolConfigs } from './register-fr
 
 const A = ToolAnnotationPresets;
 
-/** The external-only additions for each `relay_*` tool (13 total). */
+/** The external-only additions for each `relay_*` tool (7 total). */
 const RELAY_EXTERNAL_CONFIGS: ExternalToolConfigs = {
-  relay_send: { annotations: A.mutateCreateLocal },
-  // Not read-only: ack:true destroys the returned messages' payloads.
-  relay_inbox: { annotations: A.mutateUpdateLocal },
   relay_list_endpoints: { annotations: A.readOnlyLocal },
-  // Throws "already registered" on a duplicate subject rather than upserting — not idempotent.
-  relay_register_endpoint: { annotations: A.mutateCreateLocal },
-  relay_send_and_wait: { annotations: A.mutateCreateLocal },
-  relay_send_async: { annotations: A.mutateCreateLocal },
-  relay_unregister_endpoint: { annotations: A.mutateDeleteLocal },
   relay_list_adapters: { annotations: A.readOnlyLocal },
   // Opens a live connection to an external chat platform (Telegram, Slack, ...).
   relay_enable_adapter: { annotations: A.mutateUpdateOpenWorld },
@@ -47,15 +40,14 @@ const RELAY_EXTERNAL_CONFIGS: ExternalToolConfigs = {
 };
 
 /**
- * Register every `relay_*` tool (send/inbox/endpoints, adapters, trace and
- * metrics — 13 tools total) against `registrar`.
+ * Register every external `relay_*` tool (endpoint listing, adapters, trace
+ * and metrics — 7 tools total) against `registrar`.
  *
  * @param registrar - The gated tool registrar from `mcp-server.ts`, which runs each
  *   tool's permission tier before its handler.
  * @param deps - Shared MCP tool dependencies.
- * @param identity - Server-resolved sender identity injected as the publish
- *   `from` for every send tool, so the LLM cannot assert (spoof) its own
- *   identity to bypass namespace access rules.
+ * @param identity - Server-resolved sender identity. `getRelayTools` takes it for
+ *   `relay_notify_user`, which this server skips.
  */
 export function registerRelayTools(
   registrar: ToolRegistrar,

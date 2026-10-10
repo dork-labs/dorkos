@@ -916,11 +916,18 @@ actually work in. `mention-only` charges you an `@` on every single message, eve
 obvious who you are talking to. `always` means an agent answers everything anybody says, which in a
 room with more than one of them is a discussion you are no longer part of.
 
-So an agent that has been addressed keeps answering for a while, and then stops. The window ends
-after **10 minutes**, or after **5 messages from other people**, whichever comes first — and talking
-to it again starts both over. Both numbers are settings (`rooms.engagedWindowMinutes` and
-`rooms.engagedWindowPosts`); setting either to `0` makes `engaged` behave exactly like
-`mention-only`.
+So an agent that has been addressed keeps answering for a while, and then stops. In a channel,
+DorkOS follows who you are talking to rather than waiting for another `@mention`: when you post without
+naming anyone, it goes to whichever agent you were just talking to there — the one that answered
+last, or the one you last `@mentioned` if it hasn't answered yet. That window ends after
+**60 minutes**, or after **15 messages**, whichever comes first — and the agent's own replies keep
+it open, the same as naming it again would. Both numbers are settings
+(`rooms.engagedWindowMinutes` and `rooms.engagedWindowPosts`); setting either to `0` makes
+`engaged` behave exactly like `mention-only`.
+
+Agents talking to each other stay on a shorter leash: one agent's reply to another only keeps that
+exchange open for 10 minutes or 5 messages, no matter how high you've turned the settings above.
+That keeps agent-to-agent chatter from running on quietly in the background.
 
 The same window works in a one-to-one. Adding a second agent to one of those does not turn it into a
 channel — DorkOS still counts it as a direct message — and once there is more than one agent in the

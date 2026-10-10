@@ -31,6 +31,7 @@ import {
   ChatMessageSenderSchema,
   ChatMessageStatusSchema,
 } from '@dorkos/shared/chat-messages';
+import { chatMarkdownLink } from '@dorkos/shared/session-link';
 import {
   defineCapability,
   type CapabilityDeps,
@@ -129,7 +130,9 @@ export const chatDomain: CapabilityDomain = {
         '`steer` joins its running turn now, `interrupt` stops its turn and runs this next. ' +
         'Waking an idle chat starts its turn at once. Give a short `summary` (a few words) for ' +
         'the card the person sees. Use `replyTo` with a message id to answer a message another ' +
-        'chat sent you. Their reply comes back as a new message in this chat.',
+        'chat sent you. Their reply comes back as a new message in this chat. The result names ' +
+        'the chat (`chatTitle`) and gives `link`, a ready markdown link to it: when you tell a ' +
+        'person, use that link, never the id.',
       tier: 'act',
       area: 'messages',
       approvalDisplayFields: ['to', 'summary', 'message'],
@@ -160,6 +163,8 @@ export const chatDomain: CapabilityDomain = {
           ok: z.literal(true),
           messageId: z.string(),
           chatId: z.string(),
+          chatTitle: z.string().nullable(),
+          link: z.string(),
           status: ChatMessageStatusSchema,
           position: z.number().int().positive().optional(),
           note: z.string().optional(),
@@ -176,10 +181,23 @@ export const chatDomain: CapabilityDomain = {
       invoke: async (deps, input, context) => {
         const caller = chatCallerOf(context);
         if (!caller) return NO_CHAT;
-        return answer(async () => ({
-          ok: true as const,
-          ...(await requireChatDeps(deps).service.send(caller, input)),
-        }));
+        return answer(async () => {
+          const chatDeps = requireChatDeps(deps);
+          const sent = await chatDeps.service.send(caller, input);
+          // The chat it landed in, by name, so the agent can tell a person
+          // where it went without its id (DOR-2824). A title that cannot be
+          // read never fails a message that was already sent.
+          const chatTitle = await chatDeps.read
+            .describe(sent.chatId)
+            .then((described) => described.title)
+            .catch(() => null);
+          return {
+            ok: true as const,
+            ...sent,
+            chatTitle,
+            link: chatMarkdownLink(sent.chatId, chatTitle),
+          };
+        });
       },
     }),
     defineCapability({
@@ -193,7 +211,8 @@ export const chatDomain: CapabilityDomain = {
         'is the cheapest check (no messages); `"tools"` adds one line per tool call. A long read ' +
         'is cut at `maxChars` (default 8000) and `cursor` continues it. `query` finds messages ' +
         'matching words. You can read your own chat, the chat that started you, chats you ' +
-        'started, and chats you have messaged or that messaged you.',
+        'started, and chats you have messaged or that messaged you. `chat.link` is a ready ' +
+        'markdown link to the chat: when you tell a person about it, use that, never the id.',
       tier: 'observe',
       area: 'messages',
       input: z.object({
@@ -239,6 +258,7 @@ export const chatDomain: CapabilityDomain = {
           chat: z.object({
             id: z.string(),
             title: z.string().nullable(),
+            link: z.string(),
             agent: z.string().nullable(),
             state: z.enum([
               'running',

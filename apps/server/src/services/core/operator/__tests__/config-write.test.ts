@@ -127,14 +127,10 @@ describe('applyGuardedConfigWrite', () => {
       expect(lines).toContain(`[Config] Patched by dorkos config set: ${AUTONOMY_STOP_PATH}`);
     });
 
-    it('refuses Full autonomy without the acknowledgement, in the cockpit’s own words, and writes nothing', async () => {
-      // Reproduced against the built CLI before this existed: `dorkos config set
-      // runtimes.claudeCode.defaultTrustStop autonomy` on an install whose
-      // `ui.autonomyAcknowledgedAt` was null left every new session starting
-      // bypassed, with no dialog anywhere and nothing in the log.
-      const { AUTONOMY_DEFAULT_ACK_MESSAGE, AUTONOMY_ACK_REQUIRED_CODE } =
-        await import('../../approvals/autonomy-consent.js');
-
+    // The Full-autonomy acknowledgement is retired (ADR 261006-225605,
+    // DOR-2739): a Full autonomy default is written like any other setting,
+    // and the audit line is the record.
+    it('writes a Full autonomy default straight through, and logs it', async () => {
       const lines = await infoLines(() => {
         const result = applyGuardedConfigWrite({
           patch: { runtimes: { claudeCode: { defaultTrustStop: 'autonomy' } } },
@@ -142,42 +138,11 @@ describe('applyGuardedConfigWrite', () => {
           source: 'dorkos config set',
           writer: { kind: 'unattributed' },
         });
-
-        expect(result.ok).toBe(false);
-        if (result.ok) throw new Error('unreachable');
-        expect(result.kind).toBe('refused');
-        if (result.kind !== 'refused') throw new Error('unreachable');
-        // The same sentence and the same code the cockpit's 428 carries.
-        expect(result.refusal.message).toBe(AUTONOMY_DEFAULT_ACK_MESSAGE);
-        expect(result.refusal.code).toBe(AUTONOMY_ACK_REQUIRED_CODE);
-        expect(result.refusal.status).toBe(428);
-        expect(result.refusal.paths).toEqual([AUTONOMY_STOP_PATH]);
+        expect(result.ok).toBe(true);
       });
 
-      // Nothing written, and nothing claimed in the log.
-      expect(storedStop()).toBeNull();
-      expect(lines.filter((line) => line.startsWith('[Config] Patched by'))).toEqual([]);
-    });
-
-    it('lets Full autonomy through once the acknowledgement is on file', async () => {
-      // The other half of the door: it asks once. Without this the refusal above
-      // would pass just as well if the door were simply "never allow autonomy".
-      applyGuardedConfigWrite({
-        patch: { ui: { autonomyAcknowledgedAt: '2026-08-16T09:00:00.000Z' } },
-        authority: LOCAL_OPERATOR_AUTHORITY,
-        source: 'dorkos config set',
-        writer: { kind: 'unattributed' },
-      });
-
-      const result = applyGuardedConfigWrite({
-        patch: { runtimes: { claudeCode: { defaultTrustStop: 'autonomy' } } },
-        authority: LOCAL_OPERATOR_AUTHORITY,
-        source: 'dorkos config set',
-        writer: { kind: 'unattributed' },
-      });
-
-      expect(result.ok).toBe(true);
       expect(storedStop()).toBe('autonomy');
+      expect(lines).toContain(`[Config] Patched by dorkos config set: ${AUTONOMY_STOP_PATH}`);
     });
 
     it('refuses a value the schema will not take, instead of storing it', async () => {
@@ -435,12 +400,12 @@ describe('applyGuardedConfigWrite', () => {
           source: 'dorkos config set',
           writer: { kind: 'unattributed' },
         });
-        // Full autonomy with no acknowledgement is refused, so nothing moved.
+        // An agent may not move a stop, so the refused write moved nothing.
         applyGuardedConfigWrite({
           patch: { runtimes: { claudeCode: { defaultTrustStop: 'autonomy' } } },
-          authority: LOCAL_OPERATOR_AUTHORITY,
-          source: 'dorkos config set',
-          writer: { kind: 'unattributed' },
+          authority: OPERATOR_TOOL_AUTHORITY,
+          source: 'the config_patch tool',
+          writer: { kind: 'agent', agentName: 'DorkBot' },
         });
         expect(heard).toEqual([]);
       } finally {

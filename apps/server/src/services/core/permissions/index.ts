@@ -18,7 +18,6 @@ import { readAgentPermissionsFromManifest } from '../capabilities/permission-enf
 import { narrowArrivedPermissions, type NarrowingContext } from './arrival-narrowing.js';
 import type { PermissionStop } from '@dorkos/shared/agent-runtime';
 
-import { hasStandingAutonomyAck } from '../approvals/autonomy-consent.js';
 import {
   PermissionService,
   type PermissionActionInfo,
@@ -229,15 +228,7 @@ export function createPermissionService(wiring: PermissionServiceWiring): Permis
       get: () => wiring.config.get('permissions'),
       set: (next) => wiring.config.set('permissions', next),
       trustStops: () => readTrustStops(wiring.config),
-      setGlobalTrustStop: (stop, acknowledge) => {
-        // The acknowledgement lands before the stop, so no reader can catch
-        // Full autonomy without the consent that licenses it.
-        if (acknowledge) {
-          wiring.config.set('ui', {
-            ...wiring.config.get('ui'),
-            autonomyAcknowledgedAt: new Date().toISOString(),
-          });
-        }
+      setGlobalTrustStop: (stop) => {
         wiring.config.setDot('runtimes.defaultTrustStop', stop);
       },
       setRuntimeTrustStop: (runtime, stop) => {
@@ -246,12 +237,6 @@ export function createPermissionService(wiring: PermissionServiceWiring): Permis
         wiring.config.setDot(path, stop);
         return true;
       },
-      hasAutonomyAck: hasStandingAutonomyAck,
-      recordAutonomyAck: () =>
-        wiring.config.set('ui', {
-          ...wiring.config.get('ui'),
-          autonomyAcknowledgedAt: new Date().toISOString(),
-        }),
     },
     agents: {
       list: (): PermissionAgentRef[] => {

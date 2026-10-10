@@ -11,9 +11,9 @@
  * each is the difference between a product that noticed and a product that
  * pesters.
  *
- * The autonomy path is checked too, and it is the one with teeth: making Full
- * autonomy the standing default needs the durable acknowledgement, in the same
- * write, or the server refuses it.
+ * The autonomy path is checked too: since ADR 261006-225605 retired the consent
+ * ritual, making Full autonomy the standing default is a plain write with no
+ * dialog and no acknowledgement.
  */
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
@@ -27,18 +27,8 @@ import { useSessionChatStore } from '@/layers/entities/session';
 // Mocks (hoisted before component import)
 // ──────────────────────────────────────────────────────────────────────────────
 
-const standingAck = { current: null as string | null };
-const canRemember = { current: true };
-vi.mock('@/layers/entities/config/model/use-autonomy-acknowledgement', () => ({
-  useAutonomyAcknowledgement: () => ({
-    acknowledgedAt: standingAck.current,
-    acknowledge: vi.fn(),
-    clear: vi.fn(),
-    canRemember: canRemember.current,
-    isPending: false,
-  }),
-}));
-
+/** Whether `GET /api/config` has answered — nothing can store the offer before. */
+const configLoaded = { current: true };
 /** What `GET /api/config` reports about where new sessions start. */
 const executionDefaults = {
   current: {
@@ -56,7 +46,9 @@ const executionDefaults = {
   } as ExecutionDefaults,
 };
 vi.mock('@/layers/entities/config/model/use-config', () => ({
-  useConfig: () => ({ data: { executionDefaults: executionDefaults.current } }),
+  useConfig: () => ({
+    data: configLoaded.current ? { executionDefaults: executionDefaults.current } : undefined,
+  }),
 }));
 
 const updateConfig = vi.fn();
@@ -152,8 +144,7 @@ vi.mock('@/layers/entities/session/model/query/use-sessions', async (importOrigi
 
 /**
  * What the server answers next: an updated session (success) or `undefined`,
- * which is what `useSessionStatus.updateSession` returns once it has handed a
- * failure to `onError`.
+ * which is what `useSessionStatus.updateSession` returns after a failed write.
  */
 const nextUpdateResult = { current: { id: 'ok' } as unknown };
 const updateSession = vi.fn(() => Promise.resolve(nextUpdateResult.current));
@@ -330,8 +321,7 @@ beforeEach(() => {
   updateSession.mockClear();
   nextUpdateResult.current = { id: 'ok' };
   updateConfig.mockClear();
-  standingAck.current = null;
-  canRemember.current = true;
+  configLoaded.current = true;
   capabilityMap.current = { capabilities: { 'claude-code': CAPS }, defaultRuntime: 'claude-code' };
   executionDefaults.current = {
     runtime: 'claude-code',
@@ -340,7 +330,7 @@ beforeEach(() => {
       { runtime: 'claude-code', model: null, effort: null, supportsEffort: true, trustStop: null },
     ],
   };
-  useSessionChatStore.setState({ autonomyConfirmedSessions: {}, defaultStopOfferDismissed: {} });
+  useSessionChatStore.setState({ defaultStopOfferDismissed: {} });
 });
 
 afterEach(cleanup);
@@ -491,7 +481,7 @@ describe('the offer stays quiet when it would say nothing', () => {
   });
 
   it('offers nothing where the answer could not be stored', async () => {
-    canRemember.current = false;
+    configLoaded.current = false;
     renderSection();
     fireEvent.click(screen.getByTestId('select-act'));
     await waitFor(() => expect(updateSession).toHaveBeenCalled());
@@ -619,22 +609,6 @@ describe('the offer belongs to the conversation it was made about (DOR-1237)', (
     expect(updateConfig).not.toHaveBeenCalled();
   });
 
-  it('takes the Full-autonomy consent dialog with it', async () => {
-    // The dialog whose answer IS the standing record. Surviving a switch, it
-    // would ask about one conversation and be answered from another — and its
-    // confirmation writes the default outright.
-    const { rerender } = renderSection();
-    fireEvent.click(screen.getByTestId('select-autonomy'));
-    fireEvent.click(screen.getByRole('button', { name: 'Turn on Full autonomy' }));
-    fireEvent.click(await screen.findByTestId('make-default-confirm'));
-    expect(screen.getByTestId('autonomy-consent-note')).toBeInTheDocument();
-
-    rerender(section('some-other-session'));
-
-    expect(screen.queryByTestId('autonomy-consent-note')).not.toBeInTheDocument();
-    expect(updateConfig).not.toHaveBeenCalled();
-  });
-
   it('still offers in the conversation it was made about', async () => {
     // The guard is the SESSION changing, never a re-render — an offer that
     // withdrew on every parent render would never survive long enough to be
@@ -656,11 +630,10 @@ describe('the offer belongs to the conversation it was made about (DOR-1237)', (
 
 describe('a failed write is said, not swallowed', () => {
   it('keeps the offer standing and names the refusal', async () => {
-    // A 428 (another tab pressed Reset between the read and the write) or a 403
-    // (login came on) has to be sayable and retryable.
+    // A 403 (login came on) has to be sayable and retryable.
     updateConfig.mockImplementation(
       (_patch: unknown, handlers?: { onError?: (err: unknown) => void }) => {
-        handlers?.onError?.(new Error('Turning on Full autonomy needs you to confirm it first.'));
+        handlers?.onError?.(new Error('Only a person can change this.'));
       }
     );
     renderSection();
@@ -668,67 +641,34 @@ describe('a failed write is said, not swallowed', () => {
     fireEvent.click(await screen.findByTestId('make-default-confirm'));
 
     expect(await screen.findByTestId('make-default-offer')).toHaveTextContent(
-      'Turning on Full autonomy needs you to confirm it first.'
+      'Only a person can change this.'
     );
     expect(screen.getByTestId('make-default-retry')).toBeInTheDocument();
   });
 });
 
-describe('Full autonomy as the standing default asks first', () => {
-  /** The dialog that belongs to the DEFAULT, told apart by its consent note. */
-  function defaultConsentDialog() {
-    return screen.queryByTestId('autonomy-consent-note');
-  }
-
-  it('offers the default right after the person confirms it for this session', async () => {
+describe('Full autonomy as the standing default is a plain write', () => {
+  it('offers the default right after the session switches to it, with no dialog', async () => {
     // The person decision 6C was written for: they choose Full autonomy every
-    // morning, and they have just been told exactly what it means. The dialog
-    // has closed the picker by now, so this offer is the overlay's.
+    // morning. Before ADR 261006-225605 a confirm dialog stood in front of this.
     renderSection();
     fireEvent.click(screen.getByTestId('select-autonomy'));
-    fireEvent.click(screen.getByRole('button', { name: 'Turn on Full autonomy' }));
 
     expect(await screen.findByTestId('make-default-offer')).toHaveTextContent(
       'Start every new chat in Full autonomy?'
     );
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(updateSession.mock.calls[0]).toEqual([{ permissionMode: 'bypassPermissions' }]);
   });
 
-  it('asks again before making it standing, and writes nothing until answered', async () => {
-    // A session-scoped confirmation is an answer about one conversation. Making
-    // it the default is the wider claim, and the server requires a durable
-    // record for it.
+  it('writes the default on accept, with no dialog and no acknowledgement', async () => {
     renderSection();
     fireEvent.click(screen.getByTestId('select-autonomy'));
-    fireEvent.click(screen.getByRole('button', { name: 'Turn on Full autonomy' }));
     fireEvent.click(await screen.findByTestId('make-default-confirm'));
 
-    expect(defaultConsentDialog()).toBeInTheDocument();
-    expect(updateConfig).not.toHaveBeenCalled();
-  });
-
-  it('records the acknowledgement and the default in one write', async () => {
-    renderSection();
-    fireEvent.click(screen.getByTestId('select-autonomy'));
-    fireEvent.click(screen.getByRole('button', { name: 'Turn on Full autonomy' }));
-    fireEvent.click(await screen.findByTestId('make-default-confirm'));
-    fireEvent.click(screen.getByRole('button', { name: 'Turn on Full autonomy' }));
-
+    expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(updateConfig).toHaveBeenCalledTimes(1);
-    const patch = updateConfig.mock.calls[0]![0] as {
-      ui: { autonomyAcknowledgedAt: string };
-      runtimes: { defaultTrustStop: string };
-    };
-    expect(patch.runtimes).toEqual({ defaultTrustStop: 'autonomy' });
-    expect(typeof patch.ui.autonomyAcknowledgedAt).toBe('string');
-  });
-
-  it('asks nothing of somebody who already has a standing acknowledgement', async () => {
-    standingAck.current = '2026-08-01T09:30:00.000Z';
-    renderSection();
-    fireEvent.click(screen.getByTestId('select-autonomy'));
-    fireEvent.click(await screen.findByTestId('make-default-confirm'));
-
-    expect(defaultConsentDialog()).not.toBeInTheDocument();
+    // The whole patch: an acknowledgement under `ui` riding along would fail it.
     expect(updateConfig.mock.calls[0]![0]).toEqual({ runtimes: { defaultTrustStop: 'autonomy' } });
   });
 });

@@ -72,6 +72,9 @@ vi.mock('@/layers/entities/session', () => ({
   useSessionId: () => ['session-abc', vi.fn()],
   useSessionSearch: () => mockUseSessionSearch(),
   useSessionRekeyTarget: () => mockRekeyTarget(),
+  // The landing asks the history whether `?message=` names a chat message
+  // (spin-off-chats §6); a transcript with none answers with the id as given.
+  useSessionStreamStore: { getState: () => ({ getSession: () => ({ messages: [] }) }) },
 }));
 
 const mockInPlaceNavigate = vi.fn();

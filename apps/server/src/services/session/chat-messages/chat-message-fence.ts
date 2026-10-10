@@ -31,6 +31,8 @@ export interface ChatMessageFenceSender {
   chatId: string;
   /** The sending chat's title, when it has one. */
   chatTitle: string | null;
+  /** This message's id, so the receiver can answer it with `replyTo`. */
+  messageId?: string;
 }
 
 /** The line before the fence, the same for every chat message. */
@@ -82,6 +84,10 @@ export function renderChatMessage(
   const header = [
     `From: ${agent}${sender.agentId ? ` (agent ${sender.agentId})` : ''}`,
     `Chat: ${title ? `"${title}" ` : ''}(chat ${sender.chatId})`,
+    // Before the kind line: everything after it is the message's words.
+    ...(sender.messageId
+      ? [`Message id: ${sender.messageId} (pass it as replyTo when you answer)`]
+      : []),
     KIND_LINE[kind],
     '',
   ];

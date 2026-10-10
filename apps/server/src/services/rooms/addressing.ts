@@ -64,6 +64,15 @@ export type TriggerReason =
    * The only reason the response gate may act on.
    */
   | 'window'
+  /**
+   * `engaged`, unnamed, picked because a PERSON in a channel is talking with
+   * them in this scope: they spoke last here, or were the last agent this person
+   * named (DOR-2823, `engagement.ts` `conversationFor`).
+   *
+   * Never gated: a person is owed an answer, and the gate only weighs bursts
+   * where every message says `'window'`.
+   */
+  | 'conversation'
   /** `always`, which fires on everything. */
   | 'always'
   /** The room's fallback seat, standing up for a post nobody addressed. */
@@ -175,7 +184,7 @@ export function selectTriggerTargets(opts: {
     )
     .map((member) => ({
       authorId: member.authorId,
-      reason: reasonFor(opts.roomKind, member, mentioned.has(member.authorId)),
+      reason: reasonFor(opts.roomKind, opts.authorKind, member, mentioned.has(member.authorId)),
     }));
 }
 
@@ -193,24 +202,30 @@ export function selectTriggerTargets(opts: {
  *    than `=== 'dm'` for the same reason {@link selectTriggerTargets} tests it
  *    that way: a stored kind that is neither takes the restrained side, and here
  *    "restrained" means "treated as addressed and never gated".
- * 3. **`engaged`**, which is the one reason that means nobody addressed this
- *    agent at all — it is here because it was talking a moment ago.
+ * 3. **`engaged`**, which means nobody addressed this agent by name — it is
+ *    here because it was talking a moment ago. A PERSON's post in a channel
+ *    says `'conversation'` (the person is talking with it); anything else says
+ *    `'window'`.
  * 4. Everything left is `always`, on its own or as the room's fallback seat.
  *    {@link standDownFallbackSeat} tells those two apart, because the seat is
  *    named by the room and nothing here knows the room.
  *
  * @param roomKind - The room's kind.
+ * @param authorKind - What wrote the entry.
  * @param member - The selected member.
  * @param mentioned - Whether this entry named them.
  */
 function reasonFor(
   roomKind: RoomKind,
+  authorKind: AuthorKind,
   member: AddressingMember,
   mentioned: boolean
 ): TriggerReason {
   if (mentioned) return 'mention';
   if (roomKind !== 'channel') return 'dm';
-  if (member.responseMode === 'engaged') return 'window';
+  if (member.responseMode === 'engaged') {
+    return authorKind === 'human' ? 'conversation' : 'window';
+  }
   return 'always';
 }
 
@@ -246,8 +261,9 @@ function reasonFor(
  * **Two escapes, and both are the seat answering as itself rather than as the
  * fallback.** It survives when the post named it too (`@nova @dorkbot ...`
  * addressed both), and when it is inside its own engaged window — which in this
- * codebase means somebody addressed it BY NAME recently (`engagement.ts`
- * anchors on a mention). So a default agent you are actually talking to stays in
+ * codebase means, for an agent's post, somebody addressed it BY NAME recently
+ * (`engagement.ts` anchors on a mention), and for a person's post that the
+ * person is talking with it (`conversationFor`, DOR-2823). So a default agent you are actually talking to stays in
  * the conversation, follows a colleague's reply, and is not dismissed by your
  * handing one task to somebody else; a default agent that has only ever been
  * catching unaddressed posts has no window and steps back. That is the
@@ -275,6 +291,9 @@ function reasonFor(
  *   including for the seat, which the caller must compute rather than assume, or
  *   the second escape silently never fires.
  * @param opts.selected - What {@link selectTriggerTargets} chose.
+ * @param opts.conversationPartners - Who a person's post is for by
+ *   conversation (`engagement.ts` `conversationFor`); the seat stands down when
+ *   that is somebody else.
  * @returns `selected`, without the seat when it has stood down and with the
  *   seat's reason relabelled `'seat'` when it has not. May be empty: a post that
  *   named only a silenced agent reaches nobody, which is what silencing that
@@ -286,6 +305,7 @@ export function standDownFallbackSeat(opts: {
   seatAuthorId: string | null;
   members: readonly AddressingMember[];
   selected: readonly TriggerSelection[];
+  conversationPartners?: readonly string[];
 }): TriggerSelection[] {
   const { seatAuthorId } = opts;
   if (seatAuthorId === null) return [...opts.selected];
@@ -309,6 +329,19 @@ export function standDownFallbackSeat(opts: {
   const seat = opts.members.find((member) => member.authorId === seatAuthorId);
   if (mentioned.has(seatAuthorId) || seat?.isEngaged) return labelled;
 
+  // A third shape, the same idea (DOR-2823): a person's post that belongs to
+  // their conversation with ANOTHER agent is that agent's to answer. Without
+  // this, the person talking to Nova got Nova and the default agent both.
+  // Only when that partner is actually answering: a partner set to answer
+  // @mentions only would leave the post with nobody at all.
+  const partners = opts.conversationPartners ?? [];
+  const partnerAnswers = labelled.some(
+    (selection) => selection.authorId !== seatAuthorId && partners.includes(selection.authorId)
+  );
+  if (partnerAnswers) {
+    return labelled.filter((selection) => selection.authorId !== seatAuthorId);
+  }
+
   // A mention of a PERSON is not delegating the question to an agent, so it
   // leaves the seat exactly where it was — and neither does naming the seat's
   // own occupant, which the escape above already answered.
@@ -322,4 +355,42 @@ export function standDownFallbackSeat(opts: {
   if (!addressedAnotherAgent && opts.authorKind !== 'agent') return labelled;
 
   return labelled.filter((selection) => selection.authorId !== seatAuthorId);
+}
+
+/** Why nobody was picked. A closed set, so a log query can group by it. */
+export type NobodyReason =
+  /** The room has no agent members besides whoever wrote the post. */
+  | 'no_agents'
+  /** The post named somebody who cannot answer here (left, or never joined). */
+  | 'named_unreachable'
+  /** The post named agents, and every one of them is set not to answer. */
+  | 'named_not_answering'
+  /** The person is talking with an agent here, but it only answers @mentions. */
+  | 'partner_not_answering'
+  /** Nobody named, and no conversation with any agent in this place. */
+  | 'no_conversation';
+
+/**
+ * The reason, checked in the order a person would ask about it.
+ *
+ * @param opts.entry - The post.
+ * @param opts.members - The roster, as addressing saw it.
+ * @param opts.namedUnreachable - Names the post typed that reached nobody.
+ * @param opts.partners - Who the conversation rule said the person is talking to.
+ */
+export function whyNobody(opts: {
+  entry: AddressingEntry;
+  members: readonly AddressingMember[];
+  namedUnreachable: readonly string[];
+  partners: readonly string[];
+}): NobodyReason {
+  const agents = opts.members.filter(
+    (member) => member.kind === 'agent' && member.authorId !== opts.entry.authorId
+  );
+  if (agents.length === 0) return 'no_agents';
+  if (opts.namedUnreachable.length > 0) return 'named_unreachable';
+  const mentioned = new Set(opts.entry.mentions);
+  if (agents.some((member) => mentioned.has(member.authorId))) return 'named_not_answering';
+  if (opts.partners.length > 0) return 'partner_not_answering';
+  return 'no_conversation';
 }

@@ -3,13 +3,13 @@
  *
  * The DOR-239 consent toggle ("agent may start conversations") is a per-binding
  * permission. Before this gate it was only checked inside the two proactive
- * tool handlers (`relay_notify_user`, the task-completion notifier), so an agent
- * could bypass it by calling `relay_send` / `relay_send_and_wait` /
- * `relay_send_async` with a raw `relay.human.{type}.{adapterId}.{chatId}`
- * subject and deliver straight through to the channel. This module moves the
+ * tool handlers (`relay_notify_user`, the task-completion notifier), so any
+ * publish with a raw `relay.human.{type}.{adapterId}.{chatId}` subject (then
+ * including the agent send tools, since retired) delivered straight through to
+ * the channel. This module moves the
  * decision down to the relay publish/delivery layer (wired via
  * {@link RelayCore.setInitiateConsentGate}) so the gate covers every publish
- * path — `relay_send*`, A2A, binding-router re-dispatch — not just those two
+ * path — A2A, an external MCP publish, binding-router re-dispatch — not just those two
  * handlers.
  *
  * ## Principal trust model

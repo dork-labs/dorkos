@@ -58,7 +58,7 @@ const longPage = page(
   'Every DorkOS tool, exposed over MCP',
   Array.from({ length: 12 }, (_, i) => `Tool group ${i}`),
   [
-    'relay_send relay_inbox relay_get_metrics relay_list_adapters relay_send_and_wait',
+    'relay_notify_user relay_list_endpoints relay_get_metrics relay_list_adapters relay_get_trace',
     ...Array.from(
       { length: 40 },
       (_, i) => `The relay tool ${i} sends a relay message through the relay bus.`

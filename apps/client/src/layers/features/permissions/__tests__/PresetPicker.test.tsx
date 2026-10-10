@@ -3,11 +3,11 @@
  */
 /**
  * The preset picker (spec `agent-permissions` D5, tasks 3.7 and 3.8): what it
- * reads, the Full autonomy consent step, the "agents set differently" question,
+ * reads, Full power written straight through, the "agents set differently" question,
  * and the one sentence that travels with Full power (DOR-2102).
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor, within } from '@testing-library/react';
+import { render, screen, cleanup, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -37,12 +37,10 @@ const OVERVIEW: PermissionsResponse = {
   agentCount: 4,
 };
 
-function renderPicker(overview: PermissionsResponse, acknowledgedAt: string | null = null) {
+function renderPicker(overview: PermissionsResponse) {
   const transport = createMockTransport({
     getPermissions: vi.fn().mockResolvedValue(overview),
-    getConfig: vi.fn().mockResolvedValue({
-      ui: { autonomyAcknowledgedAt: acknowledgedAt },
-    } as unknown as ServerConfig),
+    getConfig: vi.fn().mockResolvedValue({ ui: {} } as unknown as ServerConfig),
   });
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -88,34 +86,20 @@ describe('PresetPicker', () => {
     );
   });
 
-  it('asks before Full power, and sends the yes with the preset', async () => {
+  it('chooses Full power straight away, with no dialog and no acknowledgement', async () => {
+    // ADR 261006-225605 retired the Full autonomy consent ritual: Full power is
+    // a normal choice. The exact body pins that nothing rides along with it.
     const transport = renderPicker(OVERVIEW);
     await userEvent.click(await screen.findByRole('radio', { name: 'Full power' }));
-    const dialog = await screen.findByRole('alertdialog');
-    expect(transport.setPermissionPreset).not.toHaveBeenCalled();
-
-    await userEvent.click(within(dialog).getByRole('button', { name: /Turn on|Full autonomy/ }));
-    await waitFor(() =>
-      expect(transport.setPermissionPreset).toHaveBeenCalledWith({
-        preset: 'full',
-        surface: 'control-center',
-        acknowledgeAutonomy: true,
-      })
-    );
-  });
-
-  it('does not ask again once the acknowledgement is on file', async () => {
-    const transport = renderPicker(OVERVIEW, '2026-08-01T00:00:00.000Z');
-    // The acknowledgement is read from config; wait for it to land.
-    await waitFor(() => expect(transport.getConfig).toHaveBeenCalled());
-    await userEvent.click(await screen.findByRole('radio', { name: 'Full power' }));
     await waitFor(() =>
       expect(transport.setPermissionPreset).toHaveBeenCalledWith({
         preset: 'full',
         surface: 'control-center',
       })
     );
-    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(transport.setPermissionPreset).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('asks which agents set differently should follow, with nothing checked', async () => {

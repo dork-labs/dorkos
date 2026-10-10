@@ -1922,10 +1922,6 @@ const DefaultEffortSchema = z.enum(EFFORT_LEVELS).nullable().default(null);
  * module is deliberately dependency-light (it is bridged to JSON Schema and read
  * by the CLI); the two are pinned together by
  * `packages/shared/src/__tests__/config-schema.test.ts`.
- *
- * Writing `'autonomy'` into one of these leaves is consent-gated at the config
- * route — see `AUTONOMY_ACK_REQUIRED` — because it decides how every future
- * session starts, not just this one.
  */
 const DefaultTrustStopSchema = z.enum(['ask', 'act', 'autonomy']).nullable().default(null);
 
@@ -2337,35 +2333,6 @@ export const UserConfigSchema = z.object({
         owners: [],
       })),
       /**
-       * When this person last read what Full autonomy means and said "don't ask
-       * me again", as an ISO 8601 UTC string. `null` until they do, which is the
-       * shipped state (spec `trust-dial`, decision 5).
-       *
-       * A timestamp rather than a boolean because the record is only worth
-       * keeping if it says WHEN: Settings shows the date back, and a person who
-       * cannot remember agreeing to anything can see the moment they did and
-       * clear it.
-       *
-       * ## This is a consent ritual, not a security boundary
-       *
-       * Read that sentence before building anything on this field. The server
-       * refuses to put an interactive session into Full autonomy unless the
-       * request carries an acknowledgement — either `acknowledgedAutonomy: true`
-       * on the PATCH, or this standing record. That closes the gap where a
-       * *client* could skip the dialog. It does NOT stop an API caller: anything
-       * that can reach the route can send `acknowledgedAutonomy: true` itself,
-       * and nothing here would know the difference. The boundary against agent
-       * callers is a separate piece of work (`agent-approval-settings`, DOR-501)
-       * and this field is not it. Do not describe it as one.
-       *
-       * Lives under `ui` because it decides what a dialog does, not what any
-       * gate enforces: requiring login to dismiss a dialog would make the
-       * feature unreachable on the default login-off install. It is still
-       * `operator-only` to write, so an agent cannot forge a person's consent
-       * record.
-       */
-      autonomyAcknowledgedAt: z.string().datetime().nullable().default(null),
-      /**
        * When this person answered the full-power door — **either way** (spec
        * `full-power-defaults`, D1).
        *
@@ -2375,15 +2342,9 @@ export const UserConfigSchema = z.object({
        * they answered, because re-asking a question somebody already answered is
        * the nagging this program exists to avoid.
        *
-       * Distinct from {@link UserConfig.ui}`.autonomyAcknowledgedAt`, which is a
-       * standing acknowledgement the server's autonomy gate reads. This one is
-       * only about the door: an answer of "keep asking me first" sets this and
-       * leaves that one null. Nothing here grants a capability — it records that
-       * a question was put and answered.
-       *
-       * `operator-only` to write, for exactly the reason the acknowledgement
-       * above is: a consent record an agent can write is a consent record an
-       * agent can forge.
+       * Nothing here grants a capability: it records that a question was put
+       * and answered. `operator-only` to write, because a consent record an
+       * agent can write is a consent record an agent can forge.
        */
       fullPowerDecidedAt: z.string().datetime().nullable().default(null),
       /**
@@ -2420,7 +2381,6 @@ export const UserConfigSchema = z.object({
       statusBar: { pins: [] },
       composer: { richText: true },
       communityNavigation: { version: 1 as const, owners: [] },
-      autonomyAcknowledgedAt: null,
       // Both halves of the power-door answer. Declared here as well as per-field
       // because `conf` merges top-level defaults SHALLOWLY: the per-field default
       // is what a fresh install lands on, this literal is what an upgrade whose
@@ -2458,7 +2418,7 @@ export const UserConfigSchema = z.object({
        * hour, counted whoever asked for them.
        *
        * Every way of making an agent answer over the message bus — another
-       * agent's `relay_send`, an outside system speaking A2A, a webhook posting
+       * agent's publish, an outside system speaking A2A, a webhook posting
        * back — ends at the same dispatch, and this counts them all there. It
        * does not read who is calling, because in the shipped posture DorkOS
        * cannot reliably tell a program on your machine from you.
@@ -2707,7 +2667,9 @@ export const UserConfigSchema = z.object({
       lateReplyCeilingMinutes: z.number().int().min(1).max(1440).default(60),
       /**
        * How long an agent stays addressable after you talk to it, before it goes
-       * back to needing an @mention. Talking to it again starts the clock over.
+       * back to needing an @mention. The clock starts at whichever came last in
+       * that place: the agent's own message, or your @mention of it (DOR-2823).
+       * Talking to it again starts the clock over.
        *
        * This is the ceiling, not the setting: a room can hold an agent to a
        * shorter window, never a longer one. `0` means an agent is only ever
@@ -2717,20 +2679,25 @@ export const UserConfigSchema = z.object({
        * measurement — see `meta/agent-etiquette.md` §9. Nobody publishes a
        * defensible figure for how long a person expects to keep talking to
        * something without naming it again, so this one is ours, to be tuned by
-       * using the product.
+       * using the product. Raised from 10 to 60 by DOR-2823, after a person's
+       * replies kept arriving just after a long agent turn used the window up.
+       *
+       * Agents talking to each other are held to the old 10 minutes and 5
+       * messages whatever this says (`engagement.ts` `AGENT_POST_WINDOW`).
        */
-      engagedWindowMinutes: z.number().int().min(0).max(1440).default(10),
+      engagedWindowMinutes: z.number().int().min(0).max(1440).default(60),
       /**
        * How many messages from other people can go by before an agent stops
-       * treating itself as part of the conversation. Talking to it again starts
-       * the count over.
+       * treating itself as part of the conversation. Counted, like the minutes,
+       * from whichever came last in that place: the agent's own message, or
+       * your @mention of it (DOR-2823). Raised from 5 to 15 by DOR-2823.
        *
        * The second half of the same window, and it ends on whichever runs out
        * first — a quiet ten minutes and a busy ten messages are both reasons to
        * stop assuming a question was meant for you. Also a ceiling, and also a
        * judgement rather than a measurement.
        */
-      engagedWindowPosts: z.number().int().min(0).max(100).default(5),
+      engagedWindowPosts: z.number().int().min(0).max(100).default(15),
       /**
        * How long an agent waits for the room to stop talking before it answers,
        * in milliseconds.
@@ -2919,8 +2886,8 @@ export const UserConfigSchema = z.object({
       maxAutomaticTurnsTotalPerHour: 5000,
       replyWaitMinutes: 10,
       lateReplyCeilingMinutes: 60,
-      engagedWindowMinutes: 10,
-      engagedWindowPosts: 5,
+      engagedWindowMinutes: 60,
+      engagedWindowPosts: 15,
       collectDebounceMs: 500,
       collectMaxEntries: 20,
       responseGate: 'routing' as const,

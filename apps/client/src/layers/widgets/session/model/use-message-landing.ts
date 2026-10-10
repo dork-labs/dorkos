@@ -4,7 +4,8 @@
  * @module widgets/session/model/use-message-landing
  */
 import { useCallback, useRef } from 'react';
-import { messageRowKey } from '@/layers/features/chat';
+import { messageRowKey, transcriptIdForChatMessage } from '@/layers/features/chat';
+import { useSessionStreamStore } from '@/layers/entities/session';
 
 /**
  * Take a conversation to the message `?message=` names, once.
@@ -60,8 +61,13 @@ export function useMessageLanding(
   const landOnRow = useCallback(() => {
     if (request === null || consumedRef.current === request) return undefined;
     consumedRef.current = request;
-    return messageId === undefined ? undefined : messageRowKey(messageId);
-  }, [request, messageId]);
+    if (messageId === undefined || sessionId === null) return undefined;
+    // A link from another chat names a chat MESSAGE (spec `spin-off-chats` §6):
+    // the Sent card or the received message it is drawn in. Asked at landing
+    // time, when the history is in, and falling back to the id as given.
+    const history = useSessionStreamStore.getState().getSession(sessionId).messages;
+    return messageRowKey(transcriptIdForChatMessage(history, messageId) ?? messageId);
+  }, [request, messageId, sessionId]);
 
   return request === null ? undefined : landOnRow;
 }

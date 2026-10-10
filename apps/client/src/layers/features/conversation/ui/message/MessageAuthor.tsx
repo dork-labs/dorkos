@@ -13,6 +13,7 @@
  *
  * @module features/conversation/ui/message/MessageAuthor
  */
+import type { ReactNode } from 'react';
 import { Slot } from 'radix-ui';
 import { cn } from '@/layers/shared/lib';
 import type { IdentityOrigin } from '@/layers/shared/lib';
@@ -35,6 +36,13 @@ export interface MessageAuthorProps {
    * never a tooltip a reader would have to go looking for.
    */
   origin?: IdentityOrigin;
+  /**
+   * More the host says about where the words came from, drawn right after the
+   * name — "· from <chat>" on a message another chat sent (spec
+   * `spin-off-chats` §6). Legible beside the name for the same reason
+   * `origin` is.
+   */
+  mark?: ReactNode;
   /** Render as the child element instead of a `div`. */
   asChild?: boolean;
   className?: string;
@@ -49,6 +57,7 @@ export function MessageAuthor({
   author,
   at,
   origin,
+  mark,
   asChild = false,
   className,
 }: MessageAuthorProps) {
@@ -63,6 +72,7 @@ export function MessageAuthor({
     <Comp id={id} data-slot="message-author" className={cn(slots.header(), className)}>
       <span className={slots.authorName()}>{author.displayName}</span>
       {origin !== undefined && <OriginMark origin={origin} />}
+      {mark}
       <RetiredMark retired={author.retired} />
       {time.length > 0 && (
         <time

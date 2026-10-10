@@ -10,11 +10,7 @@ import {
   countAgentsFollowing,
   describeAffectedAgents,
 } from '@dorkos/shared/permissions';
-import {
-  isAutonomyAckRefusal,
-  usePermissions,
-  useSetPermission,
-} from '@/layers/entities/permissions';
+import { usePermissions, useSetPermission } from '@/layers/entities/permissions';
 import {
   Button,
   CANONICAL_TRUST_STOPS,
@@ -23,9 +19,7 @@ import {
   SegmentedControlItem,
   Skeleton,
 } from '@/layers/shared/ui';
-import { AutonomyConfirmDialog } from '@/layers/features/status';
 import { PRESET_LABEL, PRESET_SUMMARY } from '../lib/permission-copy';
-import { useAutonomyConsent } from '../model/use-autonomy-consent';
 import { ApplyToOverridesDialog, type DifferingAgent } from './ApplyToOverridesDialog';
 import { PermissionWhy } from './PermissionWhy';
 
@@ -65,10 +59,9 @@ function differingAgents(overview: PermissionsResponse): DifferingAgent[] {
  * Careful · Balanced · Full power: the one choice that sets every area and the
  * Files & commands stop at once (spec `agent-permissions` D5).
  *
- * Choosing Full power asks the person to confirm what Full autonomy means when
- * no acknowledgement is on file, and sends the yes with the preset. When some
- * agents have settings of their own, it asks which of them should follow the
- * new preset; nothing is pre-checked. With changes on top of the chosen preset,
+ * Every preset, Full power included, is written straight through (ADR
+ * 261006-225605). When some agents have settings of their own, it asks which of
+ * them should follow the new preset; nothing is pre-checked. With changes on top of the chosen preset,
  * "Reset to <preset>" takes them away.
  *
  * @param props - See {@link PresetPickerProps}.
@@ -76,7 +69,6 @@ function differingAgents(overview: PermissionsResponse): DifferingAgent[] {
 export function PresetPicker({ surface }: PresetPickerProps) {
   const overview = usePermissions();
   const write = useSetPermission({ kind: 'default' });
-  const consent = useAutonomyConsent();
   const [pending, setPending] = useState<PermissionPreset | null>(null);
   const differing = useMemo(
     () => (overview.data ? differingAgents(overview.data) : []),
@@ -108,28 +100,19 @@ export function PresetPicker({ surface }: PresetPickerProps) {
   const affected = countAgentsFollowing(data, { kind: 'preset' });
   const preview = `${data.preset === null ? 'Choosing one' : 'Changing it'} ${describeAffectedAgents(affected)}`;
 
-  const send = (preset: PermissionPreset, applyToAgents?: string[]) => {
-    const once = (acknowledgeAutonomy?: true) =>
-      write.mutate(
-        {
-          kind: 'preset',
-          preset,
-          surface,
-          ...(applyToAgents && applyToAgents.length > 0 ? { applyToAgents } : {}),
-          ...(acknowledgeAutonomy ? { acknowledgeAutonomy } : {}),
-        },
-        {
-          onError: (err) => {
-            if (isAutonomyAckRefusal(err)) consent.ask(once);
-            else
-              toast.error(
-                err instanceof Error ? err.message : 'Couldn’t save that change. Try again.'
-              );
-          },
-        }
-      );
-    consent.run(preset === 'full', once);
-  };
+  const send = (preset: PermissionPreset, applyToAgents?: string[]) =>
+    write.mutate(
+      {
+        kind: 'preset',
+        preset,
+        surface,
+        ...(applyToAgents && applyToAgents.length > 0 ? { applyToAgents } : {}),
+      },
+      {
+        onError: (err) =>
+          toast.error(err instanceof Error ? err.message : 'Couldn’t save that change. Try again.'),
+      }
+    );
 
   const choose = (preset: PermissionPreset) => {
     if (preset === data.preset && data.changeCount === 0) return;
@@ -188,8 +171,8 @@ export function PresetPicker({ surface }: PresetPickerProps) {
       )}
 
       {/* What Full power's Files & commands stop does NOT cover (DOR-2102):
-          someone with a standing acknowledgement meets no dialog here, so
-          without this line the correction never reaches them. */}
+          no dialog stands in front of it, so this line is where the correction
+          reaches the person. */}
       <PermissionModeScopeNote
         descriptor={CANONICAL_TRUST_STOPS.find((mode) => mode.stop === data.filesAndCommands.stop)}
       />
@@ -211,14 +194,6 @@ export function PresetPicker({ surface }: PresetPickerProps) {
           setPending(null);
         }}
         pending={write.isPending}
-      />
-
-      <AutonomyConfirmDialog
-        descriptor={consent.descriptor}
-        canRemember={false}
-        consentNote="Every new session starts on Full power. DorkOS remembers you’ve read this."
-        onCancel={consent.cancel}
-        onConfirm={consent.confirm}
       />
     </div>
   );
