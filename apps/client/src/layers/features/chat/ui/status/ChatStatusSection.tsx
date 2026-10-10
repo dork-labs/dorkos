@@ -335,6 +335,9 @@ export function ChatStatusSection({
     // picker's tint can never disagree about one mode.
     permissionDescriptor:
       activeCaps?.permissionModes.values.find((d) => d.id === status.permissionMode) ?? null,
+    // Holds the item on the line while its picker is open, so choosing the
+    // safest stop does not pull the popover out from under the person.
+    permissionPickerOpen: pickerOpen,
     // `null` on a runtime with no way of working to offer, which is most of them.
     plan: workingMode ? { active: planActive } : null,
     // `runtimeCaps === undefined` is "the capability map has not arrived", not
