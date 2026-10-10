@@ -2418,7 +2418,7 @@ export const UserConfigSchema = z.object({
        * hour, counted whoever asked for them.
        *
        * Every way of making an agent answer over the message bus — another
-       * agent's `relay_send`, an outside system speaking A2A, a webhook posting
+       * agent's publish, an outside system speaking A2A, a webhook posting
        * back — ends at the same dispatch, and this counts them all there. It
        * does not read who is calling, because in the shipped posture DorkOS
        * cannot reliably tell a program on your machine from you.

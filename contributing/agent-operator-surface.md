@@ -277,7 +277,7 @@ Actuation is only half of it: an agent also has to know what it is and what it c
 | codex       | Prompt prefix (`buildCodexPrompt`)                     | Per-turn `DORKOS_AGENT_TOKEN` via a turn-scoped `Codex` client |
 | opencode    | `synthetic` text part (`buildOpenCodeParts`)           | **None**, see below                                            |
 
-Runtime-SPECIFIC tool documentation (`<relay_tools>`, `<mesh_tools>`, `<ui_tools>`, ...) deliberately stays in the Claude adapter's `context-builder.ts`: those blocks teach in-session MCP tools only that runtime is given.
+Runtime-SPECIFIC tool documentation (`<chat_tools>`, `<mesh_tools>`, `<ui_tools>`, ...) deliberately stays in the Claude adapter's `context-builder.ts`: those blocks teach in-session MCP tools only that runtime is given.
 
 **OpenCode has no identity, and that is a backend limit rather than an omission.** The sidecar is one process shared by every session (ADR-0308) with its environment fixed at spawn, and neither `session.promptAsync` nor session creation carries per-session environment. The only channel that exists is the prompt, and putting a bearer token there would publish it into the model's context and the transcript, which is exactly what `agent-token-env.ts` exists to avoid. So an OpenCode agent's `dorkos call` runs unattributed and outside the permission gate's per-agent settings — it resolves at the install-wide defaults, like any other unidentified caller. Closing it needs a per-session sidecar or an upstream per-request env seam.
 

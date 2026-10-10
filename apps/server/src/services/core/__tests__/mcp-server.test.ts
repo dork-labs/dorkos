@@ -171,13 +171,16 @@ describe('createExternalMcpServer', () => {
     // 59 → 61 for canvas_send and canvas_patch_state, the two declared
     // document-channel operations; browser driving remains session-only.
     //
+    // 61 → 55: the six relay send, inbox and endpoint tools retired; the chat
+    // tools that replace them are in-session only (spec `spin-off-chats` §7).
+    //
     // These deps carry no `marketplaceDeps`, so the 10 marketplace capabilities are
     // absent here (`marketplace_link` made it 10, DOR-2696).
     // `docs/integrations/mcp-server.mdx` states the total for a fully
-    // wired server (these 61 + 10 marketplace), and that number is pinned by no
+    // wired server (these 55 + 10 marketplace), and that number is pinned by no
     // test, so update both together when this one moves.
     createExternalMcpServer(createMinimalDeps());
-    expect(registeredTools).toHaveLength(61);
+    expect(registeredTools).toHaveLength(55);
   });
 
   it('registers all expected tool names', () => {
@@ -204,14 +207,19 @@ describe('createExternalMcpServer', () => {
     expect(toolNames).toContain('tasks_delete');
     expect(toolNames).toContain('tasks_get_run_history');
 
-    // Relay tools (7)
-    expect(toolNames).toContain('relay_send');
-    expect(toolNames).toContain('relay_inbox');
+    // Relay tools (1). The send, inbox and endpoint tools retired for the
+    // in-session chat tools (spec `spin-off-chats` §7).
     expect(toolNames).toContain('relay_list_endpoints');
-    expect(toolNames).toContain('relay_register_endpoint');
-    expect(toolNames).toContain('relay_send_and_wait');
-    expect(toolNames).toContain('relay_send_async');
-    expect(toolNames).toContain('relay_unregister_endpoint');
+    for (const retired of [
+      'relay_send',
+      'relay_inbox',
+      'relay_register_endpoint',
+      'relay_send_and_wait',
+      'relay_send_async',
+      'relay_unregister_endpoint',
+    ]) {
+      expect(toolNames).not.toContain(retired);
+    }
 
     // Adapter tools (4)
     expect(toolNames).toContain('relay_list_adapters');
@@ -310,7 +318,7 @@ describe('createExternalMcpServer', () => {
 
     expect(coreTools).toHaveLength(32); // 2 document + 4 core + 2 account (accounts_usage, accounts_probe) + 1 session (session_start) + 1 agent (create_agent) + 6 extension + 11 operator (activity_list, config_get, check_update, agents_recent_activity, feedback_draft, update_agent, update_agent_boundaries, update_agent_execution, config_patch, sidebar_add_to_group, sidebar_remove_from_group) + list_capabilities + memory_write + request_permission + list_my_permissions + change_permission
     expect(taskTools).toHaveLength(5);
-    expect(relayTools).toHaveLength(13); // 7 relay + 4 adapter + 2 trace
+    expect(relayTools).toHaveLength(7); // 1 relay + 4 adapter + 2 trace
     expect(bindingTools).toHaveLength(3);
     expect(meshTools).toHaveLength(8);
 
@@ -354,7 +362,7 @@ describe('createExternalMcpServer', () => {
     });
 
     it('marks resource-creating tools readOnlyHint: false, idempotentHint: false', () => {
-      for (const name of ['tasks_create', 'relay_send', 'create_agent', 'session_start']) {
+      for (const name of ['tasks_create', 'create_agent', 'session_start']) {
         const annotations = findTool(name).annotations;
         expect(annotations?.readOnlyHint, name).toBe(false);
         expect(annotations?.idempotentHint, name).toBe(false);
@@ -371,18 +379,9 @@ describe('createExternalMcpServer', () => {
     });
 
     it('marks delete/unregister tools destructiveHint: true', () => {
-      for (const name of [
-        'tasks_delete',
-        'mesh_unregister',
-        'binding_delete',
-        'relay_unregister_endpoint',
-      ]) {
+      for (const name of ['tasks_delete', 'mesh_unregister', 'binding_delete']) {
         expect(findTool(name).annotations?.destructiveHint, name).toBe(true);
       }
-    });
-
-    it('marks relay_inbox not read-only because ack:true mutates message state', () => {
-      expect(findTool('relay_inbox').annotations?.readOnlyHint).toBe(false);
     });
 
     it('marks mesh_discover not read-only because auto-import upserts the registry', () => {
@@ -415,38 +414,9 @@ describe('createExternalMcpServer', () => {
     });
 
     it('does not declare outputSchema on tools without a matching return-shape schema', () => {
-      for (const name of ['ping', 'relay_send', 'tasks_create', 'mesh_discover']) {
+      for (const name of ['ping', 'tasks_create', 'mesh_discover']) {
         expect(findTool(name).outputSchema, name).toBeUndefined();
       }
-    });
-  });
-
-  describe('relay_inbox status filter (DOR-406)', () => {
-    beforeEach(() => {
-      createExternalMcpServer(createMinimalDeps());
-    });
-
-    /** The `status` field's Zod schema, as captured off the real (unmocked) tool registration. */
-    function statusSchema(): { safeParse: (value: unknown) => { success: boolean } } {
-      return findTool('relay_inbox').schema.status as {
-        safeParse: (value: unknown) => { success: boolean };
-      };
-    }
-
-    it('accepts the HTTP inbox route vocabulary: pending, delivered, failed, all', () => {
-      for (const value of ['pending', 'delivered', 'failed', 'all']) {
-        expect(statusSchema().safeParse(value).success, value).toBe(true);
-      }
-    });
-
-    it('rejects the retired freeform aliases (unread, new, cur, read) to keep vocabulary aligned with InboxStatusFilterSchema', () => {
-      for (const value of ['unread', 'new', 'cur', 'read', 'bogus']) {
-        expect(statusSchema().safeParse(value).success, value).toBe(false);
-      }
-    });
-
-    it('is optional — omitting it is valid at the schema level (the pending default applies in the handler)', () => {
-      expect(statusSchema().safeParse(undefined).success).toBe(true);
     });
   });
 });

@@ -10,7 +10,7 @@ import { createInitiateConsentGate } from '../initiate-consent.js';
 /**
  * DOR-277 end-to-end: a REAL RelayCore, a REAL BindingStore, and the REAL
  * consent gate wired exactly as `index.ts` wires them. Proves the side door is
- * closed — an agent-principal `relay_send` to a `relay.human.*` subject no
+ * closed — an agent-principal publish to a `relay.human.*` subject no
  * longer reaches the channel when the binding forbids initiation — while the
  * reply and system paths DOR-239/DOR-240 depend on keep flowing.
  */
@@ -57,7 +57,7 @@ function watchOutbound(): RelayEnvelope[] {
 }
 
 describe('DOR-277 — canInitiate enforced at the delivery layer', () => {
-  it('BLOCKS an agent relay_send to a human subject when canInitiate is off', async () => {
+  it('BLOCKS an agent publish to a human subject when canInitiate is off', async () => {
     await bindingStore.create({ adapterId: 'tg1', agentId: 'agent-1', canInitiate: false });
     const delivered = watchOutbound();
 

@@ -45,7 +45,7 @@ import { _buildAgentBlock } from '../../runtimes/shared/agent-context.js';
 import {
   buildSystemPromptAppend,
   renderContextEntry,
-  _buildRelayToolsBlock,
+  _buildChatToolsBlock,
   _buildMeshToolsBlock,
   _buildAdapterToolsBlock,
   _buildTasksToolsBlock,
@@ -61,6 +61,7 @@ import { isRelayEnabled } from '../../relay/relay-state.js';
 import { isTasksEnabled } from '../../tasks/task-state.js';
 import { configManager } from '../config-manager.js';
 import { toolDocGates } from '../../runtimes/claude-code/messaging/tool-doc-gates.js';
+import { IN_SESSION_TOOL_PREFIX } from '../../runtimes/claude-code/mcp-tools/tool-exposure.js';
 import type { GitStatusResponse } from '@dorkos/shared/types';
 // The real Zod input shapes the marketplace tools are registered with — imported
 // (not re-typed) so the signature-pin test below diffs against the schema itself,
@@ -206,12 +207,12 @@ describe('buildSystemPromptAppend', () => {
   it('places static tool blocks before semi-static agent/env blocks', async () => {
     mockedReadManifest.mockResolvedValue(makeManifest({ name: 'test-agent' }));
     const result = (await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir')).text;
-    const relayIdx = result.indexOf('<relay_tools>');
+    const chatIdx = result.indexOf('<chat_tools>');
     const envIdx = result.indexOf('<env>');
     const agentIdx = result.indexOf('<agent_identity>');
     // Tool docs (static) should precede agent identity and env (semi-static)
-    expect(relayIdx).toBeLessThan(agentIdx);
-    expect(relayIdx).toBeLessThan(envIdx);
+    expect(chatIdx).toBeLessThan(agentIdx);
+    expect(chatIdx).toBeLessThan(envIdx);
   });
 
   it('includes tool context blocks in output when features are enabled', async () => {
@@ -223,9 +224,13 @@ describe('buildSystemPromptAppend', () => {
       adapterTools: true,
       tasksTools: true,
     });
-    const result = (await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir')).text;
+    const result = (
+      await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir', undefined, {
+        agentSession: true,
+      })
+    ).text;
     expect(result).toContain('<env>');
-    expect(result).toContain('<relay_tools>');
+    expect(result).toContain('<chat_tools>');
     expect(result).toContain('<mesh_tools>');
     expect(result).toContain('<adapter_tools>');
     expect(result).toContain('<tasks_tools>');
@@ -253,21 +258,32 @@ describe('buildSystemPromptAppend', () => {
     vi.mocked(isRelayEnabled).mockReturnValue(false);
     vi.mocked(isTasksEnabled).mockReturnValue(false);
     const result = (
-      await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir', toolDocGates(['agents']))
+      await buildSystemPromptAppend(
+        testHome('/test/dir'),
+        '/test/dir',
+        toolDocGates(['agents', 'messages'])
+      )
     ).text;
-    expect(result).not.toContain('<relay_tools>');
+    expect(result).not.toContain('<chat_tools>');
     expect(result).not.toContain('<mesh_tools>');
     expect(result).not.toContain('<adapter_tools>');
     expect(result).not.toContain('<tasks_tools>');
     expect(result).toContain('<marketplace_tools>');
   });
 
-  it('excludes relay and adapter blocks when relay is disabled', async () => {
+  it('keeps the chat block but drops its Relay half and the adapter block when relay is disabled', async () => {
+    // The chat tools ride no bus (spec `spin-off-chats` §7); only reaching the
+    // person through `relay_notify_user` needs Relay.
     vi.mocked(isRelayEnabled).mockReturnValue(false);
-    const result = (await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir')).text;
+    const result = (
+      await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir', undefined, {
+        agentSession: true,
+      })
+    ).text;
     expect(result).toContain('<env>');
     expect(result).toContain('<mesh_tools>');
-    expect(result).not.toContain('<relay_tools>');
+    expect(result).toContain('<chat_tools>');
+    expect(result).not.toContain('Reaching the person:');
     expect(result).not.toContain('<adapter_tools>');
   });
 
@@ -304,7 +320,7 @@ describe('buildSystemPromptAppend', () => {
     expect(result).not.toContain('dorkos.ai');
     // It survives BESIDE the Claude-specific tool docs and the <env> block, in
     // the same append, rather than replacing either of them.
-    expect(result).toContain('<relay_tools>');
+    expect(result).toContain('<mesh_tools>');
     expect(result).toContain('<env>');
   });
 
@@ -312,7 +328,7 @@ describe('buildSystemPromptAppend', () => {
     const gates = toolDocGates(['messages', 'agents', 'connections', 'tasks', 'packages']);
     const result = (await buildSystemPromptAppend(testHome('/test/dir'), '/test/dir', gates)).text;
     expect(result).toContain('<env>');
-    expect(result).not.toContain('<relay_tools>');
+    expect(result).not.toContain('<chat_tools>');
     expect(result).not.toContain('<mesh_tools>');
     expect(result).not.toContain('<adapter_tools>');
     expect(result).not.toContain('<tasks_tools>');
@@ -330,22 +346,54 @@ describe('agent-aware block gating', () => {
     vi.mocked(isTasksEnabled).mockReturnValue(true);
   });
 
-  it('omits relay block when toolConfig.relay=false', async () => {
+  it('omits chat block when toolConfig.messages=false', async () => {
     const result = (
       await buildSystemPromptAppend(testHome('/tmp/test'), '/tmp/test', {
         tasks: true,
+        messages: false,
         relay: false,
         mesh: true,
         adapter: true,
       })
     ).text;
-    expect(result).not.toContain('<relay_tools>');
+    expect(result).not.toContain('<chat_tools>');
+  });
+
+  // DOR-2790: a plain session's chat answers NO_CHAT, so it is not taught the
+  // chat tools, and no session is told they are loaded when Messages is Blocked.
+  it('teaches the chat tools to an agent session only', async () => {
+    const plain = (await buildSystemPromptAppend(testHome('/tmp/test'), '/tmp/test')).text;
+    expect(plain).not.toContain('<chat_tools>');
+    expect(plain).not.toContain('chat_send');
+    const agent = (
+      await buildSystemPromptAppend(testHome('/tmp/test'), '/tmp/test', undefined, {
+        agentSession: true,
+      })
+    ).text;
+    expect(agent).toContain('<chat_tools>');
+  });
+
+  it('never claims the chat tools are loaded when Messages is Blocked', async () => {
+    const result = (
+      await buildSystemPromptAppend(
+        testHome('/tmp/test'),
+        '/tmp/test',
+        toolDocGates(['messages']),
+        {
+          agentSession: true,
+        }
+      )
+    ).text;
+    expect(result).not.toContain('<chat_tools>');
+    expect(result).not.toContain('chat_send');
+    expect(result).not.toContain('chat_read');
   });
 
   it('omits mesh block when toolConfig.mesh=false', async () => {
     const result = (
       await buildSystemPromptAppend(testHome('/tmp/test'), '/tmp/test', {
         tasks: true,
+        messages: true,
         relay: true,
         mesh: false,
         adapter: true,
@@ -358,6 +406,7 @@ describe('agent-aware block gating', () => {
     const result = (
       await buildSystemPromptAppend(testHome('/tmp/test'), '/tmp/test', {
         tasks: false,
+        messages: true,
         relay: true,
         mesh: true,
         adapter: true,
@@ -370,6 +419,7 @@ describe('agent-aware block gating', () => {
     const result = (
       await buildSystemPromptAppend(testHome('/tmp/test'), '/tmp/test', {
         tasks: true,
+        messages: true,
         relay: true,
         mesh: true,
         adapter: false,
@@ -382,6 +432,7 @@ describe('agent-aware block gating', () => {
     const result = (
       await buildSystemPromptAppend(testHome('/tmp/test'), '/tmp/test', {
         tasks: true,
+        messages: true,
         relay: true,
         mesh: true,
         adapter: true,
@@ -404,14 +455,14 @@ describe('agent-aware block gating', () => {
       tasksTools: false,
     });
     const result = (
-      await buildSystemPromptAppend(testHome('/tmp/test'), '/tmp/test', {
-        tasks: true,
-        relay: true,
-        mesh: true,
-        adapter: true,
-      })
+      await buildSystemPromptAppend(
+        testHome('/tmp/test'),
+        '/tmp/test',
+        { tasks: true, messages: true, relay: true, mesh: true, adapter: true },
+        { agentSession: true }
+      )
     ).text;
-    expect(result).toContain('<relay_tools>');
+    expect(result).toContain('<chat_tools>');
     expect(result).toContain('<mesh_tools>');
     expect(result).toContain('<adapter_tools>');
     expect(result).toContain('<tasks_tools>');
@@ -614,104 +665,112 @@ describe('buildAgentBlock', () => {
   });
 });
 
-describe('buildRelayToolsBlock', () => {
+describe('buildChatToolsBlock', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(isRelayEnabled).mockReturnValue(true);
-    vi.mocked(configManager.get).mockReturnValue({
-      relayTools: true,
-      meshTools: true,
-      adapterTools: true,
-      tasksTools: true,
-    });
   });
 
-  it('returns relay context when relay enabled and config on', () => {
-    const result = _buildRelayToolsBlock();
-    expect(result).toContain('<relay_tools>');
-    expect(result).toContain('relay_register_endpoint');
-    expect(result).toContain('relay_send');
-    expect(result).toContain('relay_inbox');
-    expect(result).toContain('</relay_tools>');
+  it('teaches the three chat tools and session_start', () => {
+    const result = _buildChatToolsBlock(undefined, true);
+    expect(result).toContain('<chat_tools>');
+    for (const name of ['chat_send', 'chat_read', 'chat_stop', 'session_start']) {
+      expect(result).toContain(`${IN_SESSION_TOOL_PREFIX}${name}`);
+    }
+    expect(result).toContain('</chat_tools>');
   });
 
-  // DOR-1337 (F5). The block used to teach `relay.agent.{agentId}` — two
-  // segments — while every allow rule matches the four-segment
-  // `relay.agent.{namespace}.{agentId}`. An agent following its own
-  // documentation addressed a subject no rule could match and was refused,
-  // with the operator's grant sitting there correct and unmatched.
-  it('teaches the four-segment agent subject', () => {
-    const result = _buildRelayToolsBlock();
-    expect(result).toContain('relay.agent.{namespace}.{agentId}');
-    // The old placeholder is gone entirely; the two-segment form now appears
-    // only in the sentence explaining that it gets rewritten, never as a
-    // template to fill in.
-    expect(result).not.toContain('{theirAgentId}');
-  });
-
-  it('never hands the agent a two-segment subject to fill in and send', () => {
-    const result = _buildRelayToolsBlock();
-    // Every place the block shows what to PUT in a subject argument. The bare
-    // form is described once, in prose, as the thing the server canonicalizes —
-    // so the check is about the example lines, not about the string appearing.
-    const subjectArguments = result
-      .split('\n')
-      .filter((line) => /(to_subject|subject)=/.test(line));
-    expect(subjectArguments.length).toBeGreaterThan(0);
-    for (const line of subjectArguments) {
-      expect(line, `this line tells the agent to build a subject: ${line}`).not.toMatch(
-        /relay\.agent\.\{[a-zA-Z]+\}(?!\.)/
-      );
+  it('no longer teaches the retired relay tools', () => {
+    const result = _buildChatToolsBlock(undefined, true);
+    for (const retired of [
+      'relay_send',
+      'relay_inbox',
+      'relay_register_endpoint',
+      'relay_unregister_endpoint',
+    ]) {
+      expect(result).not.toContain(retired);
     }
   });
 
-  it('sends the agent to relaySubject rather than to a subject it assembles', () => {
-    // Whitespace-normalized: the block is hand-wrapped, so the sentence spans
-    // lines and a raw substring check would pin the wrapping instead of the words.
-    const result = _buildRelayToolsBlock().replace(/\s+/g, ' ');
-    expect(result).toContain('relaySubject');
-    expect(result).toContain('rather than building it by hand');
+  it('says the server stamps the sender, so there is no "from"', () => {
+    const result = _buildChatToolsBlock(undefined, true).replace(/\s+/g, ' ');
+    expect(result).toContain('There is no "from" parameter');
   });
 
-  // DOR-1337 (F6). A failed target used to arrive as an empty success.
-  it('warns that a done:true payload may carry an error', () => {
-    const result = _buildRelayToolsBlock();
-    expect(result).toContain('error');
-    expect(result).toContain('AGENT_ERROR');
+  it('teaches the three delivery modes, queue first', () => {
+    const result = _buildChatToolsBlock(undefined, true);
+    expect(result).toContain('delivery="queue" (the default)');
+    expect(result).toContain('delivery="steer"');
+    expect(result).toContain('delivery="interrupt"');
   });
 
-  // DOR-1337 (F8). The claim must match the exposure decision, both ways.
-  it('claims the six agent-to-agent tools are loaded only for an agent session', () => {
-    expect(_buildRelayToolsBlock(undefined, true)).toContain('already in your tool list');
-    const plain = _buildRelayToolsBlock(undefined, false);
-    expect(plain).not.toContain('already in your tool list');
-    expect(plain).toContain('ToolSearch');
+  it('tells a helper from a spin-off chat, and says spin-offs report back by themselves', () => {
+    const result = _buildChatToolsBlock(undefined, true).replace(/\s+/g, ' ');
+    expect(result).toContain('A HELPER is a worker inside this chat');
+    expect(result).toContain('A SPIN-OFF CHAT is a full chat');
+    expect(result).toContain('A spin-off reports back on its own');
+    expect(result).toContain('finished, failed, needing the person, or paused at a limit');
+    expect(result).not.toContain('helper chat');
   });
 
-  it('returns empty string when relay disabled', () => {
+  // DOR-1337 (F8) and DOR-2790: the chat tools answer NO_CHAT to a chat that is
+  // not an agent's, so only an agent session is taught them, and that session
+  // has them loaded.
+  it('is written for an agent session only, which has the tools loaded', () => {
+    expect(_buildChatToolsBlock(undefined, true)).toContain('already in your');
+    expect(_buildChatToolsBlock(undefined, false)).toBe('');
+    expect(_buildChatToolsBlock(undefined)).toBe('');
+  });
+
+  it('does not promise an answer: only a spin-off reports back by itself', () => {
+    const result = _buildChatToolsBlock(undefined, true).replace(/\s+/g, ' ');
+    expect(result).not.toContain('Do not wait or poll');
+    expect(result).not.toContain('The answer comes back');
+    expect(result).toContain('A spin-off you started reports back here on its own');
+    expect(result).toContain('answers only if it chooses to');
+    expect(result).toContain(`${IN_SESSION_TOOL_PREFIX}chat_read if you need to know`);
+  });
+
+  it('keeps the block with Relay off, without the relay_notify_user half', () => {
     vi.mocked(isRelayEnabled).mockReturnValue(false);
-    expect(_buildRelayToolsBlock()).toBe('');
+    const result = _buildChatToolsBlock(undefined, true);
+    expect(result).toContain('<chat_tools>');
+    expect(result).not.toContain('relay_notify_user');
   });
 
   it('returns empty string when its permission area is Blocked for the agent', () => {
-    expect(_buildRelayToolsBlock(toolDocGates(['messages']))).toBe('');
+    expect(_buildChatToolsBlock(toolDocGates(['messages']), true)).toBe('');
   });
 
-  it('returns relay context when config is undefined (default behavior)', () => {
-    vi.mocked(configManager.get).mockReturnValue(undefined);
-    const result = _buildRelayToolsBlock();
-    expect(result).toContain('<relay_tools>');
-  });
-
-  it('uses toolConfig when provided (relay=true)', () => {
-    vi.mocked(isRelayEnabled).mockReturnValue(false); // global says off
-    const result = _buildRelayToolsBlock({ tasks: true, relay: true, mesh: true, adapter: true });
-    expect(result).toContain('<relay_tools>');
-  });
-
-  it('uses toolConfig when provided (relay=false)', () => {
+  it('uses toolConfig when provided (messages=true, relay=false)', () => {
     vi.mocked(isRelayEnabled).mockReturnValue(true); // global says on
-    const result = _buildRelayToolsBlock({ tasks: true, relay: false, mesh: true, adapter: true });
+    const result = _buildChatToolsBlock(
+      {
+        tasks: true,
+        messages: true,
+        relay: false,
+        mesh: true,
+        adapter: true,
+        packages: true,
+      },
+      true
+    );
+    expect(result).toContain('<chat_tools>');
+    expect(result).not.toContain('relay_notify_user');
+  });
+
+  it('uses toolConfig when provided (messages=false)', () => {
+    const result = _buildChatToolsBlock(
+      {
+        tasks: true,
+        messages: false,
+        relay: false,
+        mesh: true,
+        adapter: true,
+        packages: true,
+      },
+      true
+    );
     expect(result).toBe('');
   });
 });
@@ -741,6 +800,18 @@ describe('buildMeshToolsBlock', () => {
     expect(_buildMeshToolsBlock(toolDocGates(['agents']))).toBe('');
   });
 
+  // DOR-2790: chat_send refuses a chat that is not an agent's, so only an agent
+  // session is told to message a peer with it.
+  it('tells only an agent session how to message another agent', () => {
+    const agent = _buildMeshToolsBlock(undefined, true);
+    expect(agent).toContain('Message another agent:');
+    expect(agent).toContain(`which ${IN_SESSION_TOOL_PREFIX}chat_send takes as its "to"`);
+    const plain = _buildMeshToolsBlock(undefined, false);
+    expect(plain).toContain('<mesh_tools>');
+    expect(plain).not.toContain('chat_send');
+    expect(_buildMeshToolsBlock(toolDocGates(['messages']), true)).not.toContain('chat_send');
+  });
+
   it('returns mesh context when config is undefined (default behavior)', () => {
     vi.mocked(configManager.get).mockReturnValue(undefined);
     const result = _buildMeshToolsBlock();
@@ -754,7 +825,13 @@ describe('buildMeshToolsBlock', () => {
   });
 
   it('uses toolConfig when provided (mesh=false)', () => {
-    const result = _buildMeshToolsBlock({ tasks: true, relay: true, mesh: false, adapter: true });
+    const result = _buildMeshToolsBlock({
+      tasks: true,
+      messages: true,
+      relay: true,
+      mesh: false,
+      adapter: true,
+    });
     expect(result).toBe('');
   });
 });
@@ -798,6 +875,7 @@ describe('buildAdapterToolsBlock', () => {
   it('uses toolConfig when provided (adapter=false)', () => {
     const result = _buildAdapterToolsBlock({
       tasks: true,
+      messages: true,
       relay: true,
       mesh: true,
       adapter: false,
@@ -846,13 +924,25 @@ describe('buildTasksToolsBlock', () => {
 
   it('uses toolConfig when provided (tasks=true)', () => {
     vi.mocked(isTasksEnabled).mockReturnValue(false); // global says off
-    const result = _buildTasksToolsBlock({ tasks: true, relay: true, mesh: true, adapter: true });
+    const result = _buildTasksToolsBlock({
+      tasks: true,
+      messages: true,
+      relay: true,
+      mesh: true,
+      adapter: true,
+    });
     expect(result).toContain('<tasks_tools>');
   });
 
   it('uses toolConfig when provided (tasks=false)', () => {
     vi.mocked(isTasksEnabled).mockReturnValue(true); // global says on
-    const result = _buildTasksToolsBlock({ tasks: false, relay: true, mesh: true, adapter: true });
+    const result = _buildTasksToolsBlock({
+      tasks: false,
+      messages: true,
+      relay: true,
+      mesh: true,
+      adapter: true,
+    });
     expect(result).toBe('');
   });
 });
@@ -964,17 +1054,24 @@ describe('buildPeerAgentsBlock', () => {
       { id: 'a1', name: 'api-bot', projectPath: '/projects/api', icon: '🤖', color: '#f00' },
       { id: 'a2', name: 'test-bot', projectPath: '/projects/test' },
     ]);
-    const result = await _buildPeerAgentsBlock(mockMesh);
+    const result = await _buildPeerAgentsBlock(mockMesh, true);
     expect(result).toContain('<peer_agents>');
     expect(result).toContain('api-bot (/projects/api)');
     expect(result).toContain('test-bot (/projects/test)');
-    expect(result).toContain('mesh_inspect(agentId)');
-    expect(result).toContain('relay_send()');
+    expect(result).toContain('chat_send(to=<their agent id>');
     expect(result).toContain('</peer_agents>');
   });
 
+  // DOR-2790: chat_send refuses a chat that is not an agent's.
+  it('tells only an agent session how to message a peer', async () => {
+    const mockMesh = makeMockMesh(() => [{ id: 'a1', name: 'api-bot', projectPath: '/p' }]);
+    const plain = await _buildPeerAgentsBlock(mockMesh, false);
+    expect(plain).toContain('api-bot (/p)');
+    expect(plain).not.toContain('chat_send');
+  });
+
   it('introduces a colleague by the name a person reads, not its slug', async () => {
-    // This block is an introduction, and `mesh_inspect(agentId)` below it is how
+    // This block is an introduction, and `chat_send` to an id from `mesh_list` is how
     // a peer is actually reached — so the addressing slug buys nothing here and
     // misnames every agent that has a real name (DOR-1264).
     const mockMesh = makeMockMesh(() => [
@@ -1068,7 +1165,7 @@ describe('buildRelayConnectionsBlock', () => {
     };
   }
 
-  const allOnToolConfig = { tasks: true, relay: true, mesh: true, adapter: true };
+  const allOnToolConfig = { tasks: true, messages: true, relay: true, mesh: true, adapter: true };
 
   beforeEach(() => {
     vi.clearAllMocks();

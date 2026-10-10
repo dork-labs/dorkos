@@ -14,7 +14,7 @@
  * That bites because the two halves live in different files. The registration side
  * (`mcp-tools/*.ts`, `services/**\/*-capabilities.ts`) names tools bare, correctly,
  * because the MCP protocol carries bare names. The TEACHING side — the
- * `<relay_tools>`, `<room_tools>`, … blocks in `messaging/context-builder.ts` —
+ * `<chat_tools>`, `<room_tools>`, … blocks in `messaging/context-builder.ts` —
  * used to name them bare too, and a model that copies what it reads copied a
  * string it could not call.
  *
@@ -30,7 +30,7 @@
  *   search step before it can react is a turn spent on plumbing. `list_capabilities`
  *   joins them as the discovery entry point — the one name that leads to the other
  *   eighty. Sessions that ARE a registered mesh agent additionally get the
- *   {@link AGENT_TO_AGENT_TOOLS} six, for the same reason applied to a different
+ *   {@link AGENT_TO_AGENT_TOOLS} four, for the same reason applied to a different
  *   turn; see {@link alwaysLoadedToolsFor}.
  * - **`searchHint`** is a short phrase the tool can be FOUND by, so the deferred
  *   remainder is discoverable by intent rather than by guessing a name. Every tool

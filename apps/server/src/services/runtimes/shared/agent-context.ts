@@ -17,7 +17,7 @@
  * channel at all — Codex's prompt prefix, sent once per thread and re-anchored
  * on change (`codex/context-gate.ts`, DOR-477).
  *
- * Runtime-SPECIFIC tool documentation (`<relay_tools>`, `<mesh_tools>`,
+ * Runtime-SPECIFIC tool documentation (`<chat_tools>`, `<mesh_tools>`,
  * `<ui_tools>`, …) deliberately stays in the Claude adapter: those blocks teach
  * runtime-specific tool syntax. The shared `<dorkos_context>` prefers injected
  * MCP tools across runtimes; only a verified current-distribution invocation

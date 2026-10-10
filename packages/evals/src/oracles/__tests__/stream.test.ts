@@ -116,7 +116,7 @@ describe('toolInvokedInStream', () => {
   });
 
   it('fails when a DIFFERENT tool ran (the model chose wrong)', async () => {
-    const result = await toolInvokedInStream('marketplace_install')(ctx([toolCall('relay_send')]));
+    const result = await toolInvokedInStream('marketplace_install')(ctx([toolCall('chat_send')]));
     expect(result.passed).toBe(false);
   });
 

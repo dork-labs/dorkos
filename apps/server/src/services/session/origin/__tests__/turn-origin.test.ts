@@ -59,6 +59,10 @@ const TABLE: ReadonlyArray<readonly [TurnOrigin, OriginPermissionSeed]> = [
   // the operator's stop was set for, so power comes only from the tool's own
   // clamped mode.
   [{ kind: 'agent-launch' }, 'none'],
+  // Another chat sent this one a message (spec `spin-off-chats`): the sender's
+  // own level is the ceiling, applied at launch, and the operator's stop is a
+  // promise to a person, not to the sending chat.
+  [{ kind: 'chat-message' }, 'none'],
   // An extension started work in a brand-new chat in the person's project:
   // the new-session default a person's own chat gets, on the row it inserts.
   [{ kind: 'extension-start' }, 'configured-stop-on-insert'],
@@ -107,8 +111,8 @@ describe('relayTurnOrigin', () => {
     expect(relayTurnOrigin('relay.agent.default.agent-01')).toEqual({ kind: 'agent-dm' });
   });
 
-  // The A2A gateway publishes to the same agent subjects an agent's
-  // `relay_send` does; the stamped sender is the only fact that tells them
+  // The A2A gateway publishes to the same agent subjects one of our agents'
+  // own publish does; the stamped sender is the only fact that tells them
   // apart, and it must not read as one of ours.
   it.each([
     'a2a-gateway',

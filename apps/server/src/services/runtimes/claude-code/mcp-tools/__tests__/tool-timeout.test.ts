@@ -22,7 +22,7 @@ vi.mock('../../../../../lib/logger.js', () => ({
 vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn().mockResolvedValue(null) }));
 
 import { createDorkOsToolServer } from '../index.js';
-import { DORKOS_MCP_TOOL_TIMEOUT_MS, RELAY_SEND_AND_WAIT_MAX_MS } from '../tool-timeout.js';
+import { DORKOS_MCP_TOOL_TIMEOUT_MS } from '../tool-timeout.js';
 import { CAPABILITY_APPROVAL_HOLD_CAP_MS } from '../../../../core/capabilities/capability-approval-hold.js';
 import { CAPABILITY_HOLD_PAUSE_GRACE_MS } from '../../../../session/session-state-projector.js';
 import { CONNECTOR_REQUEST_LIVE_HOLD_MS } from '../../../../connectors/runtime-capability-scope.js';
@@ -57,13 +57,10 @@ describe('DORKOS_MCP_TOOL_TIMEOUT_MS', () => {
     // The whole point of the ceiling is that the two long calls fit inside one
     // tool call. Written as the derivation so raising either budget raises this
     // with it; a literal would drift the first time one moved and nothing would
-    // say so until a person's approval, or an agent's reply, came back an error.
+    // say so until a person's approval, or an access request, came back an error.
     expect(DORKOS_MCP_TOOL_TIMEOUT_MS).toBe(
-      Math.max(
-        CAPABILITY_APPROVAL_HOLD_CAP_MS,
-        RELAY_SEND_AND_WAIT_MAX_MS,
-        CONNECTOR_REQUEST_LIVE_HOLD_MS
-      ) + CAPABILITY_HOLD_PAUSE_GRACE_MS
+      Math.max(CAPABILITY_APPROVAL_HOLD_CAP_MS, CONNECTOR_REQUEST_LIVE_HOLD_MS) +
+        CAPABILITY_HOLD_PAUSE_GRACE_MS
     );
   });
 
@@ -75,13 +72,6 @@ describe('DORKOS_MCP_TOOL_TIMEOUT_MS', () => {
 
   it('clears a held approval running its full cap', () => {
     expect(DORKOS_MCP_TOOL_TIMEOUT_MS).toBeGreaterThan(CAPABILITY_APPROVAL_HOLD_CAP_MS);
-  });
-
-  it('clears a relay wait asked for at its advertised maximum', () => {
-    // Before the server had a timeout of its own, this call inherited the CLI's
-    // ~27.8h default and was effectively unbounded. A ceiling derived from the
-    // approval hold alone would have been the first thing ever to cut it short.
-    expect(DORKOS_MCP_TOOL_TIMEOUT_MS).toBeGreaterThan(RELAY_SEND_AND_WAIT_MAX_MS);
   });
 
   it('clears the SDK floor below which a per-server timeout is silently ignored', () => {

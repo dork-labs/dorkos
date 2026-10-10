@@ -47,6 +47,7 @@ import {
 } from '../sessions/tool-result-outcome.js';
 import { randomUUID } from 'node:crypto';
 import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
+import { CHAT_SEND_TOOL, CHAT_STOP_TOOL } from '@dorkos/shared/chat-messages';
 import { turnPermissionMode } from '../turn-permission.js';
 
 // ---------------------------------------------------------------------------
@@ -71,16 +72,16 @@ export const READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
 /**
  * DorkOS agent communication tools, auto-approved because they carry their own
  * authorization, NOT because they are read-only. Some of these mutate:
- * `relay_inbox` with `ack: true` permanently deletes the messages it returns
- * (see the `act` tier note in `mcp-tool-tiers.ts`) and `relay_register_endpoint`
- * creates a mailbox.
+ * `chat_send` starts a turn in another chat and `chat_stop` ends one.
  *
- * The exemption is deliberate. An agent polls its inbox continuously, so a card
- * per poll would train the user to dismiss cards without reading them, which
- * weakens every other approval card. What bounds the damage instead is that the
- * server injects the caller's identity and the endpoint tools refuse any inbox
- * the caller does not own, so an `ack` can only ever destroy the caller's own
- * mail. Cross-agent messaging authorization lives in relay/access-rules.json.
+ * The exemption is deliberate. Agents message each other's chats as a matter of
+ * course, so a card per message would train the user to dismiss cards without
+ * reading them, which weakens every other approval card. What bounds the damage
+ * instead is that the server stamps the calling chat as the sender, so a message
+ * or a stop can never claim to come from anyone else, and every one lands in a
+ * chat a person can open (with each stop also in the audit trail). The Messages
+ * permission area is resolved on every call, so a person who wants these asked
+ * about or Blocked says so there (spec `spin-off-chats`, ADR 261009-171114).
  *
  * ## Why this is a hand-written list and not derived (DOR-499)
  *
@@ -97,7 +98,7 @@ export const READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
  * general". This list
  * answers the narrower question above: does this tool carry its own authorization,
  * so that a card would add friction without adding safety? That is a hand-picked
- * judgment, not a property of the tier. `relay_register_endpoint` and
+ * judgment, not a property of the tier. `chat_send` and
  * `mesh_register` are `act` and are here; plenty of other `act` tools are
  * deliberately not. Deriving the list from `act` + `observe` would auto-admit every
  * future `act` tool to a no-prompt path as a side effect of picking a tier, and
@@ -174,10 +175,14 @@ export const DORKOS_AGENT_TOOLS = new Set(
     // an agent the tool refuses itself.
     'request_permission',
     'relay_notify_user',
-    'relay_send',
-    'relay_inbox',
     'relay_list_endpoints',
-    'relay_register_endpoint',
+    // Chats messaging chats (spec `spin-off-chats`). The sender is the verified
+    // calling chat, never an argument, and each tool refuses without one. In a
+    // turn held to a ceiling, `chat_stop` and a steering or interrupting
+    // `chat_send` still ask — see isAutoAllowedCall.
+    'chat_send',
+    'chat_read',
+    'chat_stop',
     'mesh_list',
     'mesh_inspect',
     'mesh_discover',
@@ -304,7 +309,7 @@ export const DORKOS_AGENT_TOOLS = new Set(
  *   can start conversations" switch has to be on (`canInitiate`, per binding,
  *   default FALSE). What the scope then COVERS is the operator's choice too, and
  *   it is often wider than one chat: a binding may name a group, a chat with
- *   somebody else, or — with the chat filter left empty, which is the cockpit's
+ *   somebody else, or — with the chat filter left empty, which is the app's
  *   default for a new binding ("Any chat (wildcard)") — **every chat that has
  *   messaged that adapter, including ones nobody claimed**. That is stated
  *   exactly this way in `relay/initiate-consent.ts`: sender scoping does not
@@ -389,7 +394,7 @@ export const DORKOS_AGENT_TOOLS = new Set(
  * with files — its worktree, which anchors back to that agent (DOR-2091). An
  * agent a room dispatched to is in the mesh by construction, so the two agree
  * wherever this was meant to work: the verbs are
- * frictionless there. An ordinary cockpit session in a plain project directory
+ * frictionless there. An ordinary app session in a plain project directory
  * resolves neither, and keeps today's card.
  *
  * ## Why they are auto-allowed at all, once identity holds
@@ -434,6 +439,10 @@ export const IDENTITY_SCOPED_TOOLS = new Set(
 /** The multiplexer on {@link DORKOS_AGENT_TOOLS}: one name, 22 different effects. */
 const CONTROL_UI_TOOL = inSessionToolName('control_ui');
 
+/** The qualified chat-send and chat-stop names, for {@link isAutoAllowedCall}. */
+const CHAT_SEND_QUALIFIED = inSessionToolName(CHAT_SEND_TOOL);
+const CHAT_STOP_QUALIFIED = inSessionToolName(CHAT_STOP_TOOL);
+
 /** The SDK's own ask-the-person tool, which is routed rather than approved. */
 const ASK_USER_QUESTION_TOOL = 'AskUserQuestion';
 
@@ -453,11 +462,29 @@ const ASK_USER_QUESTION_TOOL = 'AskUserQuestion';
  * to {@link resolveModeDecision}, which raises a card in every mode but
  * `bypassPermissions`.
  *
+ * **A turn held to a ceiling cannot cut into another chat unasked.** A turn
+ * another agent's message or an outside sender started carries a permission
+ * ceiling, and trust never extends to strangers. So in such a turn `chat_stop`,
+ * and `chat_send` with `delivery` `steer` or `interrupt` (or any value that is
+ * not the default `queue`), ask. A queued `chat_send` and `chat_read` still skip
+ * the card: they only add a message to a chat a person can read.
+ *
  * @param toolName - The tool the model called.
  * @param input - The raw arguments it called with.
+ * @param turnHasCeiling - Whether the current turn carries a permission ceiling.
  * @returns `true` to skip the card, `false` to hand the call to the mode table.
  */
-function isAutoAllowedCall(toolName: string, input: Record<string, unknown>): boolean {
+function isAutoAllowedCall(
+  toolName: string,
+  input: Record<string, unknown>,
+  turnHasCeiling: boolean
+): boolean {
+  if (turnHasCeiling) {
+    if (toolName === CHAT_STOP_QUALIFIED) return false;
+    if (toolName === CHAT_SEND_QUALIFIED) {
+      return input.delivery === undefined || input.delivery === 'queue';
+    }
+  }
   if (toolName !== CONTROL_UI_TOOL) return true;
   const parsed = UiCommandSchema.safeParse(input);
   if (!parsed.success) return false;
@@ -1073,7 +1100,7 @@ export function createCanUseTool(
       // itself `dorkos` presents the same `mcp__dorkos__…` names, and its call
       // falls through to the mode table like any other foreign tool.
       isHostServedOrUnattributed(context.mcpServer) &&
-      isAutoAllowedCall(toolName, input) &&
+      isAutoAllowedCall(toolName, input, session.turnPermissionCeiling !== undefined) &&
       // The owner-facing verbs skip the card only for a session that resolves an
       // agent identity: without one the rooms verbs run as the OWNER — who sees
       // every room on the install and posts as a person — and a proactive note

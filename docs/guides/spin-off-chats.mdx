@@ -1,0 +1,80 @@
+---
+title: Spin-off Chats
+description: Let an agent hand long work to a chat of its own, and hear back when it is done
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+# Spin-off Chats
+
+Some work takes longer than one answer. A pull request has to wait for its checks. A deploy has to finish. A report needs an hour of digging.
+
+Your agent can hand that work to a **spin-off chat**: a full chat of its own, started from the chat you are in. The spin-off does the work, and when it is done it reports back to the chat that started it. You can open it at any time to watch, read along, or step in.
+
+## Three words
+
+| Word              | What it is                                                                                                                                                                                          |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Chat**          | Where you and an agent talk. You can open it, read it and type in it.                                                                                                                               |
+| **Spin-off chat** | A full chat that another chat started. It says which chat it was started from. It can run for hours or days, and it keeps going if DorkOS restarts.                                                 |
+| **Helper**        | A worker inside one chat, for a few minutes of looking things up (some tools call it a subagent). You cannot open it or talk to it. It reports once, to the chat that made it, and then it is gone. |
+
+A helper is the right choice for "read these files and tell me what you find." A spin-off chat is the right choice for anything longer, anything that waits on something else, or anything you may want to watch.
+
+## Start one
+
+Ask your agent, in plain words:
+
+> Hand the release checks to a spin-off chat, and tell me when they pass.
+
+The agent starts the spin-off with its `session_start` tool and gives it a brief: the goal, and what "done" means. The new chat shows up in your chat list, and the chat it came from shows a card for it. The spin-off starts working straight away.
+
+You can also ask for one on another Claude account, when you have more than one and your account settings allow it, so long work does not use up the account you are chatting on.
+
+## See who sent a message
+
+Every message one chat sends another is shown with who sent it. In the chat that sent it, you see a card saying which agent and chat it went to. In the chat that got it, the message appears with the sending agent's name and picture, and a link back to the chat it came from. It never shows as you.
+
+DorkOS adds the sender itself. An agent cannot type a message that pretends to come from somebody else.
+
+## How a spin-off reports back
+
+You do not need to ask a spin-off for an update. When it stops working, it sends its last message back to the chat that started it, as a report. That happens when it:
+
+- finishes the work,
+- fails,
+- needs you to decide something, or
+- pauses because an account hit its usage limit.
+
+It does not report when it is only waiting, for example on a check that is still running. The report comes once the waiting is over.
+
+The agent that gets the report acts on it first: it checks the result, starts the next step, or sends the spin-off what it needs. Then it tells you what matters, not every message in between. Those messages are all in the chats if you want them.
+
+## Message a spin-off yourself
+
+A spin-off chat is a normal chat. Open it and type. If it is in the middle of something, your message is queued ahead of any messages other agents have queued there.
+
+Agents can message it too. By default their message also waits its turn. An agent can choose to slip it into the work in progress, or to stop the current work and start on the new message, when the work needs to change course right away.
+
+## Stop one
+
+Press **Stop** in the spin-off chat, as in any chat.
+
+An agent can stop another chat as well. When it does, the stopped chat shows which agent stopped it and why, and the stop goes in the [audit trail](/docs/guides/audit-trail). Anything you typed into that chat still runs.
+
+<Callout type="warn">
+  Nothing limits how long two agents can keep messaging each other. Each round uses your plan's
+  usage. You can see the back and forth in both chats, and stop either one at any time.
+</Callout>
+
+## Helpers or spin-offs: a quick guide
+
+| You want                                   | Use             |
+| ------------------------------------------ | --------------- |
+| A quick look at some files, then an answer | A helper        |
+| Work that waits on checks, deploys or time | A spin-off chat |
+| Work that should survive a restart         | A spin-off chat |
+| Work on a different Claude account         | A spin-off chat |
+| Work you want to watch or step into        | A spin-off chat |
+
+Your agent has its own copy of this advice. It picks a helper or a spin-off on its own, and you can always ask for one or the other.

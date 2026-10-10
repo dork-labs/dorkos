@@ -348,9 +348,13 @@ describe('hand-registered MCP tools carry a permission tier', () => {
       // `claude-account-fleet` D3), registered on both servers.
       // 44 -> 45 (and 42 -> 43 external) for `session_start` (spec
       // `claude-account-fleet` D5), registered on both servers.
-      expect(registeredByServer['in-session']).toHaveLength(45);
-      expect(registeredByServer.external).toHaveLength(43);
-      expect(declaredNames).toHaveLength(45);
+      // 45 -> 39 (and 43 -> 37 external) for spin-off chats (spec
+      // `spin-off-chats` §7): the six relay send, inbox and endpoint tools
+      // retire from both servers. The chat tools replacing them are
+      // capabilities, so they move none of these hand-registered counts.
+      expect(registeredByServer['in-session']).toHaveLength(39);
+      expect(registeredByServer.external).toHaveLength(37);
+      expect(declaredNames).toHaveLength(39);
     });
 
     it('names exactly two tools destructive', () => {
@@ -529,10 +533,10 @@ describe('hand-registered MCP tools carry a permission tier', () => {
      * "not destructive" is a very long way from "safe to auto-allow".
      *
      * The obvious repair — require every auto-allowed tool to be `observe` — is
-     * the wrong one, and worth writing down so it is not proposed again. Four
-     * members are deliberately `act`: `relay_inbox` deletes the mail it acks,
-     * `relay_register_endpoint` and `mesh_register` create things, and `control_ui`
-     * drives the cockpit. That is the whole point of the list (see its TSDoc), so
+     * the wrong one, and worth writing down so it is not proposed again. Several
+     * members are deliberately `act`: `chat_send` starts turns in other chats,
+     * `chat_stop` ends one, `mesh_register` creates things, and `control_ui`
+     * drives the app. That is the whole point of the list (see its TSDoc), so
      * the rule would have to be suppressed on its first run, and a suppressed rule
      * is not a rule.
      *
@@ -591,15 +595,13 @@ describe('hand-registered MCP tools carry a permission tier', () => {
         request_permission:
           'ONLY under a resolved agent identity (spec `agent-permissions` D8). It does nothing on its own authority: it re-invokes the action the agent named through the SAME registry gate a direct call meets, so an action that is not Blocked is gated exactly as it would be anyway, and a Blocked one mints a DorkOS approval bound to that action and those exact arguments. Its only new effect is putting a card in front of a person, and that is rate-limited per agent from the approvals store before anything is minted: one waiting request per area, none for a day after a no, five an hour. A runtime card asking "may this agent ask?" first would be a second card for one question, and in a room turn a card nobody is positioned to answer. Without an identity the handler refuses itself (there is no agent to scope the request to); the gate still asks rather than inferring harmlessness from that refusal.',
         relay_notify_user:
-          'ONLY under a resolved agent identity (DOR-1265). A note lands only inside a scope the OPERATOR configured: their own DorkOS DM, or a binding they switched "Agent can start conversations" on for — `canInitiate` is per binding and defaults FALSE. Do not read that as "only the operator": the binding may name a group or somebody else\'s chat, and one with an empty chat filter (the cockpit default) covers every chat that has messaged that adapter, claimed or not — which `initiate-consent.ts` states as the scope the person chose by leaving the filter empty. The `channel` argument only selects among those bindings; it cannot create one, widen one, or get past `canInitiate`. So the card this used to raise asked "may it use a channel you already switched on, this once" — answerable in a session somebody is watching, unanswerable in a room turn: measured 2026-08-16, the turn parked on `awaiting_approval` and delivered nothing. What the auto-allow gives up is that per-call card, never the setup consent; what bounds frequency instead is `NotifyBudget`, ten notes per agent per rolling hour, charged only for a delivery that was attempted and (on the DM path) only for one that landed. Without an identity the handler answers NOT_AN_AGENT anyway; the gate still asks rather than inferring harmlessness from another layer\'s refusal.',
-        relay_send:
-          'agent-to-agent messaging, which is the feature. The server injects the sender identity rather than trusting the model, so a message cannot be forged as another agent. Who may message whom is authorized in relay/access-rules.json — but note that `AccessControl.checkAccess` DEFAULT-ALLOWS when no rule matches and the shipped default ships no rules, so out of the box that control authorizes everything. It bounds who a message claims to be from, not who may be reached.',
+          'ONLY under a resolved agent identity (DOR-1265). A note lands only inside a scope the OPERATOR configured: their own DorkOS DM, or a binding they switched "Agent can start conversations" on for — `canInitiate` is per binding and defaults FALSE. Do not read that as "only the operator": the binding may name a group or somebody else\'s chat, and one with an empty chat filter (the app default) covers every chat that has messaged that adapter, claimed or not — which `initiate-consent.ts` states as the scope the person chose by leaving the filter empty. The `channel` argument only selects among those bindings; it cannot create one, widen one, or get past `canInitiate`. So the card this used to raise asked "may it use a channel you already switched on, this once" — answerable in a session somebody is watching, unanswerable in a room turn: measured 2026-08-16, the turn parked on `awaiting_approval` and delivered nothing. What the auto-allow gives up is that per-call card, never the setup consent; what bounds frequency instead is `NotifyBudget`, ten notes per agent per rolling hour, charged only for a delivery that was attempted and (on the DM path) only for one that landed. Without an identity the handler answers NOT_AN_AGENT anyway; the gate still asks rather than inferring harmlessness from another layer\'s refusal.',
+        chat_send:
+          'chats messaging chats, which is the feature (spec `spin-off-chats`). The sender is the verified calling chat read off the turn, never an argument, so a message cannot be forged as another agent or as the person, and the tool refuses outright with no calling chat. Every message lands in a chat a person can open, marked with who sent it, and the Messages permission is resolved on every call, so a person who wants these asked about or Blocked says so there. A card per message would teach people to dismiss cards in exactly the multi-agent work this exists for.',
+        chat_stop:
+          "stops another chat's running turn, the same act as its Stop button: agents can do what people can (ADR 261009-171114). It never erases what a person typed: their queued words still run, and only messages OTHER chats queued there are dropped. Every stop is recorded in the audit trail and shown in the stopped chat with who did it and why, the stopper is the verified calling chat, and it refuses its own chat. The Messages permission is resolved on every call.",
         mesh_discover:
           'scans for agent directories under the roots it is given. It does NOT merely report: `discover()` emits `auto-import` events and upserts what it finds into the local registry, and `includeRegistered` only controls whether those are reported back. Bounded to registry rows describing directories already on this machine, and it arms no execution.',
-        relay_inbox:
-          'polled continuously; a card per poll trains people to dismiss cards. The server injects the caller identity and an ack can only ever destroy the caller OWN mail.',
-        relay_register_endpoint:
-          'creates the caller own mailbox and nothing else; the endpoint tools refuse any inbox the caller does not own.',
         mesh_register:
           'registers the calling agent in the local mesh; discovery data, no effect off this machine.',
         memory_write:
@@ -607,7 +609,7 @@ describe('hand-registered MCP tools carry a permission tier', () => {
         compact_my_session:
           "DOR-2732, and NOT identity-scoped, because nothing in it depends on who is calling: its only target is the session the call arrived from, read off the verified turn — there is no session parameter, so it cannot reach another conversation even by trying. It never runs mid-turn (the dispatcher starts it after the asking turn ends, behind any open approval), at most once an hour per session, and the chat shows a line saying the agent asked, so nothing happens out of sight. The owner's say is the DorkOS permission the gate resolves on every call (`session.compact`, the Own chat area, Blocked per agent on its Permissions page); a session card on top would be a second ask for one question, raised on the turn with the least room left to spend on one.",
         control_ui:
-          'drives the cockpit the person is already looking at — but ONLY for the actions classified `client-only`. The one that leaves the browser is gated per call; see the next test.',
+          'drives the app the person is already looking at — but ONLY for the actions classified `client-only`. The one that leaves the browser is gated per call; see the next test.',
       };
 
       const bare = [...DORKOS_AGENT_TOOLS].map((name) => name.slice(IN_SESSION_TOOL_PREFIX.length));

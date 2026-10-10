@@ -82,21 +82,16 @@ const EXPECTED_MEMBERS: Record<string, readonly string[]> = {
   ],
   // One action, an agent summarizing its own conversation (DOR-2732).
   own_chat: ['session.compact'],
+  // Chats messaging chats (spec `spin-off-chats`); the relay send, inbox and
+  // endpoint tools retired for them.
   messages: [
-    // Chats messaging chats (spec `spin-off-chats` §1).
     'chat.read',
     'chat.send',
     'chat.stop',
     'relay_get_metrics',
     'relay_get_trace',
-    'relay_inbox',
     'relay_list_endpoints',
     'relay_notify_user',
-    'relay_register_endpoint',
-    'relay_send',
-    'relay_send_and_wait',
-    'relay_send_async',
-    'relay_unregister_endpoint',
   ],
   connections: [
     'binding_create',

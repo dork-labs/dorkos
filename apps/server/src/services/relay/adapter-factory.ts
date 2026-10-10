@@ -27,7 +27,6 @@ import {
 import type {
   AgentRuntimeLike,
   ApprovalAuthorizer,
-  InboundTurnBudgets,
   TraceStoreLike,
   TasksStoreLike,
   AgentSessionStoreLike,
@@ -67,13 +66,6 @@ export interface AdapterFactoryDeps {
    * same posture-as-data argument `UpgradeRoute.credential` makes.
    */
   approvalAuthorizer: ApprovalAuthorizer;
-  /**
-   * Where a running agent turn records the envelope it is answering, so that
-   * turn's own `relay_send*` calls continue that budget (DOR-791). This is
-   * `RelayCore.inboundBudgets` — the SAME instance the in-session tool surface
-   * reads back from; a second one would thread nothing and fail silently.
-   */
-  inboundBudgets?: InboundTurnBudgets;
 }
 
 /**
@@ -189,7 +181,7 @@ export async function createAdapter(
           placementOf: (agentPath) => resolveSessionCwd({ agentPath }),
         }),
         // Who answers a message addressed to an AGENT rather than a session —
-        // the shape an agent-to-agent `relay_send` arrives on. The same single
+        // the shape an A2A or external MCP message arrives on. The same single
         // copy of the binding-then-manifest ladder rooms and the chat bindings
         // ask, so one agent DM'ing another cannot get a different program than
         // the same agent reached from Telegram would (DOR-1627), and a
@@ -221,7 +213,6 @@ export async function createAdapter(
         // Every approval that arrives on the relay bus is checked here too,
         // before the runtime is touched (spec `ask-entitlement` §5.3).
         approvalAuthorizer: deps.approvalAuthorizer,
-        inboundBudgets: deps.inboundBudgets,
         // An agent that ends its turn while a helper still works reports back in
         // a turn of its own; this is how that report reaches the inbox of the
         // agent that asked (DOR-2717).
