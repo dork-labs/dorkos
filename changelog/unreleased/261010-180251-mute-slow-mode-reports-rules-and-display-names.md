@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(community): mute, slow mode, reports, rules and display names (DOR-2768)'
+  - "refactor(community): move a channel's settings out of the settings page (DOR-2768)"
 ---
 
 ### Added

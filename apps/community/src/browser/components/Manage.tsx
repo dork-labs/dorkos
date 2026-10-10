@@ -14,7 +14,7 @@ import { ExportPanel } from './ExportPanel.js';
 import { SpaceMembers } from './members/SpaceMembers.js';
 import { ReportQueue } from '../moderation/ReportQueue.js';
 import { ConductSettings } from '../moderation/ConductSettings.js';
-import { SlowModeControl } from '../moderation/SlowModeControl.js';
+import { ChannelPanel } from '../moderation/ChannelPanel.js';
 import { DisplayNamePanel } from '../moderation/DisplayNamePanel.js';
 import type { Agent, Channel, Member } from '../types.js';
 import type { CommunitySettingsSection } from '@dorkos/shared/community-wire';
@@ -476,66 +476,13 @@ export function Manage({
               </>
             )}
             {selectedChannel && (
-              <section className="panel">
-                <h3>#{selectedChannel.name}</h3>
-                <p className="small muted">
-                  {selectedChannel.visibility} · {selectedChannel.archived ? 'Archived' : 'Active'}
-                </p>
-                {moderator && (
-                  <>
-                    <div className="row">
-                      <Button
-                        variant="outline"
-                        disabled={busy}
-                        onClick={() => {
-                          const name = window.prompt('Channel name', selectedChannel.name);
-                          if (name)
-                            void perform(
-                              () =>
-                                request(`/api/v1/channels/${selectedChannel!.id}`, 'PATCH', {
-                                  name,
-                                }),
-                              'Channel renamed.'
-                            );
-                        }}
-                      >
-                        Rename
-                      </Button>
-                      <Button
-                        variant="outline"
-                        disabled={busy}
-                        onClick={() =>
-                          void perform(
-                            () =>
-                              request(`/api/v1/channels/${selectedChannel!.id}`, 'PATCH', {
-                                archived: !selectedChannel.archived,
-                              }),
-                            selectedChannel.archived ? 'Channel reopened.' : 'Channel archived.'
-                          )
-                        }
-                      >
-                        {selectedChannel.archived ? 'Reopen' : 'Archive'}
-                      </Button>
-                    </div>
-                    <SlowModeControl channelId={selectedChannel.id} busy={busy} perform={perform} />
-                  </>
-                )}
-                {selectedChannel.joined && me.role !== 'owner' && (
-                  <Button
-                    variant="outline"
-                    className="mt-3"
-                    disabled={busy}
-                    onClick={() =>
-                      void perform(
-                        () => request(`/api/v1/channels/${selectedChannel!.id}/leave`, 'POST', {}),
-                        `You left #${selectedChannel.name}. You are still a member of ${communityName}.`
-                      )
-                    }
-                  >
-                    Leave channel
-                  </Button>
-                )}
-              </section>
+              <ChannelPanel
+                channel={selectedChannel}
+                communityName={communityName}
+                me={me}
+                busy={busy}
+                perform={perform}
+              />
             )}
           </div>
         )}
