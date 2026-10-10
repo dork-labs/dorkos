@@ -23,6 +23,7 @@
     "start": "NODE_ENV=production node dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
+    "census:update": "UPDATE_ROUTE_CENSUS=1 vitest run src/http/__tests__/route-census.test.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint ."
   },

@@ -46,6 +46,7 @@ import {
 import { getRequestListener, RequestError, type HttpBindings } from '@hono/node-server';
 import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
 import { Hono } from 'hono';
+import { expressCensus, honoCensus } from './route-census/census.js';
 
 /** The Hono environment of the front door: the raw Node request and response. */
 export type FrontDoorEnv = { Bindings: HttpBindings };
@@ -58,15 +59,37 @@ export interface FrontDoor {
   readonly legacy: RequestListener;
 }
 
+/** Options for {@link createFrontDoor}. */
+export interface FrontDoorOptions {
+  /**
+   * Serve the route census at `GET /api/test/route-census`
+   * (`route-census/census.ts`). Only a test server turns this on.
+   */
+  census?: boolean;
+}
+
 /**
  * Build the front door, with every request handed to `legacy`.
  *
  * @param legacy - The Express app, or any Node request listener, that answers
  *   every request no Hono route has claimed.
+ * @param options - See {@link FrontDoorOptions}.
  * @returns The front door. Serve it with {@link createFrontDoorServer}.
  */
-export function createFrontDoor(legacy: RequestListener): FrontDoor {
+export function createFrontDoor(
+  legacy: RequestListener,
+  options: FrontDoorOptions = {}
+): FrontDoor {
   const app = new Hono<FrontDoorEnv>();
+  if (options.census) {
+    app.get('/api/test/route-census', (c) => {
+      const express = 'router' in legacy ? expressCensus(legacy as never) : undefined;
+      if (!express) {
+        return c.json({ error: 'Start the server with route-census/record-mount-paths.ts' }, 409);
+      }
+      return c.json({ hono: honoCensus(app), express });
+    });
+  }
   app.all('*', (c) => handOff(legacy, c.env.incoming, c.env.outgoing));
   return { app, legacy };
 }
