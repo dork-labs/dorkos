@@ -6,17 +6,21 @@
  * its own. Its single catch-all hands the raw Node request and response to the
  * existing Express app, so Express runs exactly as it did when it was the
  * listener itself: same middleware chain, same body parsing, same bytes on the
- * wire. Later steps move one route group at a time in front of the catch-all,
- * and the last one deletes it.
+ * wire. Route groups move one at a time onto the Hono `/api` app
+ * (`http/api-chain.ts`); the front door sends a request there only when one of
+ * that app's routes matches its method and path, and the last step deletes the
+ * catch-all. A request therefore runs exactly one middleware chain.
  *
  * Four choices keep "exactly as before" true. `__tests__/front-door.test.ts`
  * pins each one that a request can observe:
  *
  * - **A request Hono cannot read still reaches Express.** The Node adapter
  *   builds a URL from `Host` and answers a bare 400 when it cannot: no `Host`
- *   (HTTP/1.0), a `Host` in capitals, a port out of range, `OPTIONS *`. Express
- *   decides those today, through `hostGuard` with its logged 403 or by serving
- *   them, so {@link createFrontDoorServer} gives them to Express untouched.
+ *   (HTTP/1.0), a port out of range, `OPTIONS *`. Express decides those today,
+ *   through `hostGuard` with its logged 403 or by serving them, so
+ *   {@link createFrontDoorServer} gives them to Express untouched. A `Host` in
+ *   capitals it would also refuse is lower-cased first, so a moved route
+ *   answers it as Express did.
  * - **`overrideGlobalObjects: false`.** By default the adapter swaps the
  *   process-wide `Request` and `Response` for its own lightweight classes.
  *   Better Auth, the MCP SDK and every `fetch` caller in the server build those
@@ -47,6 +51,7 @@ import { getRequestListener, RequestError, type HttpBindings } from '@hono/node-
 import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
 import { Hono } from 'hono';
 import { expressCensus, honoCensus } from './route-census/census.js';
+import type { ApiEnv } from './api-chain.js';
 
 /** The Hono environment of the front door: the raw Node request and response. */
 export type FrontDoorEnv = { Bindings: HttpBindings };
@@ -61,6 +66,12 @@ export interface FrontDoor {
 
 /** Options for {@link createFrontDoor}. */
 export interface FrontDoorOptions {
+  /**
+   * The Hono `/api` app the moved route groups are mounted on
+   * (`http/hono-api.ts`). Each of its routes is claimed here, ahead of the
+   * catch-all; its chain middleware is not a route and claims nothing.
+   */
+  api?: Hono<ApiEnv>;
   /**
    * Serve the route census at `GET /api/test/route-census`
    * (`route-census/census.ts`). Only a test server turns this on.
@@ -80,7 +91,8 @@ export function createFrontDoor(
   legacy: RequestListener,
   options: FrontDoorOptions = {}
 ): FrontDoor {
-  const app = new Hono<FrontDoorEnv>();
+  // Not strict, like the `/api` app and Express: `/api/x/` is `/api/x`.
+  const app = new Hono<FrontDoorEnv>({ strict: false });
   if (options.census) {
     app.get('/api/test/route-census', (c) => {
       const express = 'router' in legacy ? expressCensus(legacy as never) : undefined;
@@ -90,8 +102,31 @@ export function createFrontDoor(
       return c.json({ hono: honoCensus(app), express });
     });
   }
+  if (options.api) claimApiRoutes(app, options.api);
   app.all('*', (c) => handOff(legacy, c.env.incoming, c.env.outgoing));
   return { app, legacy };
+}
+
+/**
+ * Claim every route of the `/api` app on the front door, each handing its
+ * request to that app whole, so it runs the Hono chain and nothing else.
+ *
+ * Chain-wide middleware is registered on `*` and serves no request by itself,
+ * so it is skipped: a path no moved route matches still reaches Express.
+ * ANYTHING registered on a path claims it, middleware included, because Hono
+ * records `use(path)` and `all(path)` alike. That is the rule a move follows:
+ * a group moves whole, so its middleware's path is its routes' path. A stray
+ * claim on a path Express still serves fails the route census
+ * (`route-census.test.ts`) and its shadowing check.
+ */
+function claimApiRoutes(door: Hono<FrontDoorEnv>, api: Hono<ApiEnv>): void {
+  const claimed = new Set<string>();
+  for (const { method, path } of api.routes) {
+    const key = `${method} ${path}`;
+    if (path === '/*' || claimed.has(key)) continue;
+    claimed.add(key);
+    door.on(method, path, (c) => api.fetch(c.req.raw, c.env));
+  }
 }
 
 /**
@@ -118,7 +153,13 @@ export function frontDoorListener(door: FrontDoor): RequestListener {
       return new Response(null, { status: 500 });
     },
   });
-  return (incoming, outgoing) => raw.run([incoming, outgoing], () => viaHono(incoming, outgoing));
+  return (incoming, outgoing) => {
+    // Host names ignore case, but the adapter refuses a `Host` in capitals, and
+    // such a request could then reach only Express, never a moved route.
+    const host = incoming.headers.host;
+    if (host) incoming.headers.host = host.toLowerCase();
+    return raw.run([incoming, outgoing], () => viaHono(incoming, outgoing));
+  };
 }
 
 /**
