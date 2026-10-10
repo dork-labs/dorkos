@@ -6,7 +6,7 @@ import type { PlaygroundSection } from '../playground-registry';
  * where the strip's showcases render, so the TOC order matches the page.
  *
  * Sources: NavigationShowcases (AppTabStrip), TabStripInteractionsShowcases,
- * TabIdentityShowcases.
+ * TabIdentityShowcases, LinkChipShowcases.
  */
 export const APP_TABS_SECTIONS: PlaygroundSection[] = [
   {
@@ -55,5 +55,13 @@ export const APP_TABS_SECTIONS: PlaygroundSection[] = [
       'schedules',
       'extension page',
     ],
+  },
+  // LinkChipShowcases
+  {
+    id: 'link-chips',
+    title: 'Link chips',
+    page: 'components',
+    category: 'Navigation',
+    keywords: ['link', 'chip', 'chat link', 'markdown', 'status', 'not found', 'channel', 'dm'],
   },
 ];

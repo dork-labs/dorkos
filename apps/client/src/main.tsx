@@ -25,6 +25,7 @@ import { createBootCache } from '@/layers/shared/lib/query-persister';
 import {
   TransportProvider,
   CreditsOfferProvider,
+  LinkChipProvider,
   useAppStore,
   useExtensionRegistry,
   useThemeStore,
@@ -33,7 +34,7 @@ import {
   isDualSignalDialog,
   type DialogSearch,
 } from '@/layers/shared/model';
-import { openTabAt } from '@/layers/features/app-tabs';
+import { linkChipSlot, openTabAt } from '@/layers/features/app-tabs';
 import { AuthGuard, OwnerSetupHost } from '@/layers/features/auth';
 import { renderCreditsOffer } from '@/layers/widgets/credits-offer';
 import { initSessionStreamBinding, switchAgentCwd } from '@/layers/entities/session';
@@ -254,7 +255,11 @@ function Root() {
                   `dorkos-account-by-default` §3): composed in a widget and
                   handed to every feature that draws it, onboarding included. */}
               <CreditsOfferProvider slot={renderCreditsOffer}>
-                <RouterProvider router={router} />
+                {/* A markdown link to a chat, channel or DM draws as a chip
+                    naming it, from the tabs' own identity (DOR-2824). */}
+                <LinkChipProvider slot={linkChipSlot}>
+                  <RouterProvider router={router} />
+                </LinkChipProvider>
               </CreditsOfferProvider>
             </AuthGuard>
             {/* Auto-open a diff review when the attached agent edits a file
