@@ -1786,13 +1786,13 @@ async function start() {
     }
     runtimeRegistry.setDefault('test-mode');
     logger.info('[TestMode] TestModeRuntime registered — no real Claude API calls will be made');
-    // Cloud-link transport: fake the network dependency to dorkos.ai only, so
-    // the capture pipeline can photograph a real pending→linked flip offline.
-    // Dynamic import keeps fake-cloud-link.ts out of the production module
-    // graph — same pattern as TestModeRuntime above.
-    const { createFakeCloudLinkFetch } =
-      await import('./services/runtimes/test-mode/fake-cloud-link.js');
-    initCloudLinkManager({ fetchImpl: createFakeCloudLinkFetch() });
+    // The test-mode Cloud: the device link, every /v1 call, a local approval
+    // page and a fake inference stream, all in-process, plus the DorkOS runtime
+    // under DORKOS_TEST_RUNTIME_DOE (DOR-2783). Dynamic import keeps all of it
+    // out of the production module graph — same pattern as TestModeRuntime above.
+    const { composeTestModeCloud } =
+      await import('./services/runtimes/test-mode/compose-test-cloud.js');
+    doeRuntime = composeTestModeCloud(runtimeRegistry);
   } else {
     // Where images a turn produces live is chosen HERE and nowhere else: the
     // adapters and the serving route depend on the `SessionAttachmentStore`

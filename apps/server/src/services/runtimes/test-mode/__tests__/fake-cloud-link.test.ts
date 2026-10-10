@@ -9,7 +9,13 @@ import { fileURLToPath } from 'node:url';
 const mockEnv = vi.hoisted(() => ({ DORKOS_TEST_RUNTIME: true }));
 vi.mock('../../../../env.js', () => ({ env: mockEnv }));
 
-import { createFakeCloudLinkFetch } from '../fake-cloud-link.js';
+import express from 'express';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
+import { createFakeCloudApprovalRouter, createFakeCloudLink } from '../fake-cloud-link.js';
+
+const APPROVAL_URL = 'http://localhost:7242/api/test/fake-cloud/approve';
+const createFakeCloudLinkFetch = () => createFakeCloudLink({ approvalUrl: APPROVAL_URL }).fetch;
 
 const CLOUD_LINK_TS = fileURLToPath(new URL('../../../core/auth/cloud-link.ts', import.meta.url));
 const CLOUD_LINK_CLIENT_TS = fileURLToPath(
@@ -17,7 +23,8 @@ const CLOUD_LINK_CLIENT_TS = fileURLToPath(
 );
 const ROUTES_CLOUD_TS = fileURLToPath(new URL('../../../../routes/cloud.ts', import.meta.url));
 
-describe('createFakeCloudLinkFetch', () => {
+describe('createFakeCloudLink', () => {
+  const listener = swappableServer();
   beforeEach(() => {
     mockEnv.DORKOS_TEST_RUNTIME = true;
   });
@@ -26,7 +33,7 @@ describe('createFakeCloudLinkFetch', () => {
     it('throws when DORKOS_TEST_RUNTIME is false — the runtime half of unreachability', () => {
       mockEnv.DORKOS_TEST_RUNTIME = false;
       expect(() => createFakeCloudLinkFetch()).toThrow(
-        'createFakeCloudLinkFetch is test-mode only (DORKOS_TEST_RUNTIME)'
+        'createFakeCloudLink is test-mode only (DORKOS_TEST_RUNTIME)'
       );
     });
 
@@ -37,19 +44,63 @@ describe('createFakeCloudLinkFetch', () => {
   });
 
   describe('device flow behavior', () => {
-    it('device/code returns pinned, deterministic pending content', async () => {
+    it('device/code returns pinned pending content whose approval page is local, never the real site', async () => {
       const fetchImpl = createFakeCloudLinkFetch();
       const res = await fetchImpl('https://dorkos.ai/api/auth/device/code', { method: 'POST' });
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body).toMatchObject({
         user_code: 'DORK-2F7Q',
-        verification_uri: 'https://dorkos.ai/activate',
+        verification_uri: APPROVAL_URL,
+        verification_uri_complete: `${APPROVAL_URL}?code=DORK-2F7Q`,
         interval: 1,
       });
+      expect(JSON.stringify(body)).not.toContain('dorkos.ai');
     });
 
-    it('device/token answers authorization_pending for the first PENDING_POLLS_BEFORE_APPROVAL calls, then approves — the offline auto-flip', async () => {
+    it('opening the approval page approves the code: the next poll answers with the credential', async () => {
+      const link = createFakeCloudLink({ approvalUrl: APPROVAL_URL });
+      const app = express().use('/api/test/fake-cloud', createFakeCloudApprovalRouter(link));
+      await link.fetch('https://dorkos.ai/api/auth/device/code', { method: 'POST' });
+      const poll = () =>
+        link.fetch('https://dorkos.ai/api/auth/device/token', {
+          method: 'POST',
+          body: JSON.stringify({ device_code: 'fake-device-code' }),
+        });
+
+      expect((await poll()).status).toBe(400);
+      const page = await request(listener.mount(app)).get(
+        '/api/test/fake-cloud/approve?code=DORK-2F7Q'
+      );
+      expect(page.status).toBe(200);
+      expect(page.headers['content-type']).toContain('text/html');
+      expect(page.text).toContain("You're in. Go back to DorkOS.");
+
+      const next = await poll();
+      expect(next.status).toBe(200);
+      expect(await next.json()).toEqual({ access_token: 'fake-instance-key' });
+    });
+
+    it('the approval page refuses a code that is not waiting, and a fresh code needs approving again', async () => {
+      const link = createFakeCloudLink({ approvalUrl: APPROVAL_URL });
+      const app = express().use('/api/test/fake-cloud', createFakeCloudApprovalRouter(link));
+      expect(
+        (await request(listener.mount(app)).get('/api/test/fake-cloud/approve?code=NOPE')).status
+      ).toBe(404);
+      expect((await request(listener.mount(app)).get('/api/test/fake-cloud/approve')).status).toBe(
+        404
+      );
+
+      link.approve('DORK-2F7Q');
+      await link.fetch('https://dorkos.ai/api/auth/device/code', { method: 'POST' });
+      const res = await link.fetch('https://dorkos.ai/api/auth/device/token', {
+        method: 'POST',
+        body: JSON.stringify({ device_code: 'fake-device-code' }),
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it('device/token answers authorization_pending for the first PENDING_POLLS_BEFORE_APPROVAL calls, then approves by itself — the offline auto-flip for flows that never open the page', async () => {
       const fetchImpl = createFakeCloudLinkFetch();
       const poll = () =>
         fetchImpl('https://dorkos.ai/api/auth/device/token', {

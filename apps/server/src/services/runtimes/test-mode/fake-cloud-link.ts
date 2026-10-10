@@ -7,12 +7,15 @@
  * {@link CloudLinkManager} state machine, token persistence, and
  * `/api/cloud/*` routes a production link uses — only the `FetchLike` network
  * dependency to `dorkos.ai` is faked, exactly like `demo-scenarios.ts` fakes
- * the agent backend. Nothing here is wired into production — it is reachable
+ * the agent backend. The code's approval address is a page this test server
+ * serves itself ({@link createFakeCloudApprovalRouter}), so opening it never
+ * reaches the real site, and opening it approves the code. Nothing here is wired into production — it is reachable
  * only when `DORKOS_TEST_RUNTIME=true`, and only via the gated dynamic
  * `import()` in `index.ts`'s composition root.
  *
  * @module services/runtimes/test-mode/fake-cloud-link
  */
+import { Router } from 'express';
 import type { FetchLike, DeviceCodeResponse } from '../../core/auth/cloud-link-client.js';
 import { env } from '../../../env.js';
 
@@ -30,8 +33,35 @@ const FAKE_INSTANCE_ID = 'capture-instance';
 const DEVICE_CODE_INTERVAL_SECONDS = 1;
 /** Long enough that the code never visibly expires mid-capture (seconds). */
 const DEVICE_CODE_EXPIRES_IN_SECONDS = 900;
-/** Token polls answered `authorization_pending` before the fake approves. */
+/**
+ * Token polls answered `authorization_pending` before the fake approves by
+ * itself, for flows (the capture pipeline) that never open the approval page.
+ */
 const PENDING_POLLS_BEFORE_APPROVAL = 2;
+
+/** Options for {@link createFakeCloudLink}. */
+export interface FakeCloudLinkOptions {
+  /**
+   * The approval page the device code names, e.g.
+   * `http://localhost:7242/api/test/fake-cloud/approve`. A test-mode-only page
+   * on this server, never the real site.
+   */
+  approvalUrl: string;
+}
+
+/** The fake device-flow transport and the approval it waits for. */
+export interface FakeCloudLink {
+  /** The device-flow `FetchLike` handed to the cloud-link manager. */
+  fetch: FetchLike;
+  /**
+   * Approve the pending code, as a person opening the approval page does: the
+   * next token poll answers with the credential.
+   *
+   * @param userCode - The code from the page's `?code=`.
+   * @returns Whether it was the fake's code.
+   */
+  approve(userCode: string): boolean;
+}
 
 /**
  * A `DORKOS_TEST_RUNTIME`-only fake of the DorkOS cloud device-flow transport.
@@ -40,18 +70,21 @@ const PENDING_POLLS_BEFORE_APPROVAL = 2;
  * ZERO packets to dorkos.ai. Mirrors how `demo-scenarios.ts` fakes the agent
  * backend: it fakes the network dependency and nothing else.
  *
+ * @param options - Where the approval page lives.
  * @throws If constructed outside `DORKOS_TEST_RUNTIME` — the fake must be
  *   unreachable in production (structural gate + this runtime guard + tests).
  */
-export function createFakeCloudLinkFetch(): FetchLike {
+export function createFakeCloudLink(options: FakeCloudLinkOptions): FakeCloudLink {
   if (!env.DORKOS_TEST_RUNTIME) {
-    throw new Error('createFakeCloudLinkFetch is test-mode only (DORKOS_TEST_RUNTIME)');
+    throw new Error('createFakeCloudLink is test-mode only (DORKOS_TEST_RUNTIME)');
   }
   // Poll count per device_code, so each link cycle flips independently and a
   // future unlink→relink drive is deterministic (a fresh code resets the count).
   const pollCounts = new Map<string, number>();
+  // Device codes a person approved by opening the page; a fresh code clears it.
+  const approved = new Set<string>();
 
-  return async (input, init) => {
+  const fetch: FetchLike = async (input, init) => {
     const { pathname } = new URL(input);
     const json = (status: number, body: unknown) =>
       new Response(JSON.stringify(body), {
@@ -60,11 +93,13 @@ export function createFakeCloudLinkFetch(): FetchLike {
       });
 
     if (pathname.endsWith('/api/auth/device/code')) {
+      pollCounts.delete(FAKE_DEVICE_CODE);
+      approved.delete(FAKE_DEVICE_CODE);
       return json(200, {
         device_code: FAKE_DEVICE_CODE,
         user_code: FAKE_USER_CODE,
-        verification_uri: 'https://dorkos.ai/activate',
-        verification_uri_complete: `https://dorkos.ai/activate?code=${FAKE_USER_CODE}`,
+        verification_uri: options.approvalUrl,
+        verification_uri_complete: `${options.approvalUrl}?code=${FAKE_USER_CODE}`,
         expires_in: DEVICE_CODE_EXPIRES_IN_SECONDS,
         interval: DEVICE_CODE_INTERVAL_SECONDS,
       } satisfies DeviceCodeResponse);
@@ -75,7 +110,7 @@ export function createFakeCloudLinkFetch(): FetchLike {
       const key = device_code ?? FAKE_DEVICE_CODE;
       const seen = pollCounts.get(key) ?? 0;
       pollCounts.set(key, seen + 1);
-      if (seen < PENDING_POLLS_BEFORE_APPROVAL) {
+      if (!approved.has(key) && seen < PENDING_POLLS_BEFORE_APPROVAL) {
         return json(400, { error: 'authorization_pending' });
       }
       return json(200, { access_token: FAKE_ACCESS_TOKEN });
@@ -96,4 +131,37 @@ export function createFakeCloudLinkFetch(): FetchLike {
     // Fail loud: an unknown path is a wiring bug, never a silent escape.
     throw new Error(`fake cloud-link: unexpected request ${pathname}`);
   };
+
+  return {
+    fetch,
+    approve: (userCode) => {
+      if (userCode.trim().toUpperCase() !== FAKE_USER_CODE) return false;
+      approved.add(FAKE_DEVICE_CODE);
+      return true;
+    },
+  };
+}
+
+/** The page a person sees after opening the approval address. */
+const APPROVED_PAGE =
+  '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>DorkOS</title></head>' +
+  "<body><p>You're in. Go back to DorkOS.</p></body></html>";
+
+/**
+ * The test-mode approval page, mounted at `/api/test/fake-cloud`: opening
+ * `GET /approve?code=…` approves that code on the fake link.
+ *
+ * @param link - The fake link whose code the page approves.
+ */
+export function createFakeCloudApprovalRouter(link: Pick<FakeCloudLink, 'approve'>): Router {
+  const router = Router();
+  router.get('/approve', (req, res) => {
+    const code = typeof req.query.code === 'string' ? req.query.code : '';
+    if (!link.approve(code)) {
+      res.status(404).type('text/plain').send('That code is not waiting for approval.');
+      return;
+    }
+    res.type('html').send(APPROVED_PAGE);
+  });
+  return router;
 }

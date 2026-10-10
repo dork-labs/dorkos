@@ -414,6 +414,30 @@ Both halves matter, and the second one used to be missing (DOR-1142). `GET /api/
 
 The fixture's id is derived from its directory, so re-seeding in a per-test `beforeEach` is a true upsert rather than a new identity each time. Nothing needs unregistering between tests, and `POST /api/test/reset` deliberately leaves the mesh alone.
 
+### Test-Mode DorkOS Cloud
+
+Every test-mode server talks to an in-process fake of DorkOS Cloud instead of the real service (DOR-2783), so linking an account, minting a credits token and running a chat on DorkOS credits all work offline and charge nothing. `services/runtimes/test-mode/compose-test-cloud.ts` wires it, reached only through the gated dynamic import in `index.ts`; each fake also throws if built outside `DORKOS_TEST_RUNTIME`.
+
+| Piece                          | What it answers                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fake-cloud-link.ts`           | The device link. Its code (`DORK-2F7Q`) points at `GET /api/test/fake-cloud/approve?code=` on this server; opening that page approves the code on the next poll. A flow that never opens it (the capture pipeline) is approved after two polls anyway.                                                                                             |
+| `fake-cloud-v1.ts`             | Every `/v1` call, through `setCloudV1Fetch` in `core/cloud/v1-client.ts`: session, free entitlements, a balance with `paymentMethodOnFile: true`, the inference token (serves `openaiChat` only) and its revoke, and a one-model catalog (`dorkos-test-model`). Each answer is parsed against `@dork-labs/cloud-api` first. Any other path throws. |
+| `fake-inference.ts`            | `GET /api/test/fake-inference/v1/models` and a streamed `POST …/v1/chat/completions` that always replies "Hi! I can build that for you." The fake token's endpoints point here.                                                                                                                                                                    |
+| `DORKOS_TEST_RUNTIME_DOE=true` | Also registers the DorkOS runtime (`doe`) beside `TestModeRuntime`. Off by default, so existing suites see the same runtime set.                                                                                                                                                                                                                   |
+
+To drive it by hand, start a throwaway server on a free port and link from the app or with `curl`:
+
+```bash
+DORK_HOME=$(mktemp -d) NODE_ENV=development DORKOS_PORT=7342 DORKOS_HOST=127.0.0.1 \
+  DORKOS_BOUNDARY=$PWD DORKOS_TEST_RUNTIME=true DORKOS_TEST_RUNTIME_DOE=true \
+  node apps/server/node_modules/tsx/dist/cli.mjs apps/server/src/index.ts
+curl -X POST localhost:7342/api/cloud/link/start -H 'content-type: application/json' -d '{}'
+open 'http://127.0.0.1:7342/api/test/fake-cloud/approve?code=DORK-2F7Q'
+curl localhost:7342/api/cloud/credits   # "ready": true, doe "wired"
+```
+
+Some reads a linked computer makes are not scripted (managed connections, usage, nudges); they fail as unreachable, which is the honest answer from a fake that only knows the first run. Add a route to the fake when a test needs one rather than letting it reach the network.
+
 ### Writing Mock Browser Tests
 
 Mock tests live in `tests/chat-mock.spec.ts` and are matched by the `chromium-mock` project via `testMatch: ['**/chat-mock.spec.ts']`. They import from `@playwright/test` directly (not fixtures) and use `ChatPage` from `pages/ChatPage.ts`.

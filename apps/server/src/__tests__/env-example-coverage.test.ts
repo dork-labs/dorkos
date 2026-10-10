@@ -53,6 +53,7 @@ const UNDOCUMENTED_ON_PURPOSE: Record<string, string> = {
   DORKOS_TEST_RUNTIME: 'e2e only — swaps the real runtime for the fake one',
   DORKOS_TEST_RUNTIME_SECONDARY: 'e2e only — a second fake runtime, for the multi-runtime UI',
   DORKOS_TEST_RUNTIME_CLAUDE_ALIAS: 'e2e only — a third fake runtime under the claude-code name',
+  DORKOS_TEST_RUNTIME_DOE: 'e2e only — the DorkOS runtime beside the fake one, on the fake Cloud',
   DORKOS_Q3_DURATION_MS: 'read only by the q3 contention harness (scripts/q3-contention/run.ts)',
   DORKOS_Q3_TICK_MS: 'read only by the q3 contention harness',
   DORKOS_Q3_CANARY_MAP: 'read only by the q3 contention harness',
