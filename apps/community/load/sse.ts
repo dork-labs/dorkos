@@ -1,4 +1,3 @@
-import { performance } from 'node:perf_hooks';
 import type { LatencyHistogram } from './histogram.js';
 
 /** How one reader's stream ended, once it has. */
@@ -25,16 +24,15 @@ export interface ReaderOutcome {
 }
 
 /**
- * The clock every timestamp in a run is read from, in milliseconds since the epoch.
+ * The clock every timestamp in a run is read from, in milliseconds.
  *
- * `performance.now()` is monotonic, so the system clock stepping mid-run cannot bend a sample.
- * Adding `performance.timeOrigin` puts the reader threads and the writer thread, each with its
- * own `performance.now()`, on one shared scale: they run on the same machine, and each thread's
- * origin is read from the same system clock as it starts, so there is no skew between machines
- * to correct for.
+ * `process.hrtime` is monotonic and is one clock for every thread in the process, so the reader
+ * threads and the writer thread read the same scale, and the system clock stepping mid-run
+ * cannot bend a sample. Readers and writers run on one machine, so there is no skew between
+ * machines to correct for. Its zero point is arbitrary: only differences mean anything.
  */
 export function loadClock(): number {
-  return performance.timeOrigin + performance.now();
+  return Number(process.hrtime.bigint()) / 1e6;
 }
 
 /**

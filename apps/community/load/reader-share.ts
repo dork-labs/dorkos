@@ -81,9 +81,11 @@ export function startReaderShare(
       return;
     }
     if (abortController.signal.aborted) return;
+    // Read before closing every stream, so the teardown is not mistaken for saturation.
+    const loopDelayP99Ms = loopDelay.percentile(99) / 1e6;
+    loopDelay.disable();
     abortController.abort();
     void Promise.all(results).then((outcomes) => {
-      loopDelay.disable();
       // Stopped before this share asked for every stream: the rest never opened.
       while (outcomes.length < input.tokens.length)
         outcomes.push({
@@ -96,7 +98,7 @@ export function startReaderShare(
         type: 'done',
         outcomes,
         deliveries: deliveries.toData(),
-        loopDelayP99Ms: loopDelay.percentile(99) / 1e6,
+        loopDelayP99Ms,
       });
     });
   };

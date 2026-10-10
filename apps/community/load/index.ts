@@ -52,6 +52,11 @@ async function main(): Promise<void> {
   const durationMs = args.durationSeconds * 1_000;
   const postCapacity = scheduledPostCount(args.ratePerSecond, durationMs);
   const threads = readerThreadCount(args.readerThreads, fixture.readers.length);
+  if (fixture.readers.length / Math.max(1, threads) > 2 * READERS_PER_THREAD)
+    console.warn(
+      `Warning: ${fixture.readers.length} streams on ${threads || 1} thread(s) is more than ` +
+        `${2 * READERS_PER_THREAD} per thread; the load machine may saturate. Use one with more cores.`
+    );
 
   console.log(
     `Opening ${fixture.readers.length} reader streams on ${threads ? `${threads} thread(s)` : 'the main thread'}...`
@@ -83,6 +88,7 @@ async function main(): Promise<void> {
   let writerStats!: WriterStats;
   let metricsAfter!: MetricsSnapshot;
   let readerResults!: ReaderResults;
+  let mainLoopDelayP99Ms!: number;
   try {
     // Every stream must be open before the first post, or the run never holds the number of
     // streams it claims while posting, and late streams fake lost messages.
@@ -125,10 +131,12 @@ async function main(): Promise<void> {
     metricsAfter = await fetchMetrics(args.url, fixture.metricsKey);
   } finally {
     clearInterval(sampler);
+    // Read before closing the streams, so the teardown is not mistaken for saturation.
+    mainLoopDelayP99Ms = loopDelay.percentile(99) / 1e6;
+    loopDelay.disable();
     // Every path out of here closes every stream, or a failed run would hold them open forever.
     readerResults = await readers.stop();
   }
-  loopDelay.disable();
 
   const report = finishReport({
     startedAt,
@@ -149,7 +157,7 @@ async function main(): Promise<void> {
     metricsBefore,
     metricsAfter,
     peak,
-    generatorLoopDelayP99Ms: Math.max(loopDelay.percentile(99) / 1e6, readerResults.loopDelayP99Ms),
+    generatorLoopDelayP99Ms: Math.max(mainLoopDelayP99Ms, readerResults.loopDelayP99Ms),
     out: args.out,
   });
   // 0 met, 2 not met, 3 inconclusive (the load machine could not keep up); 1 is a setup error.

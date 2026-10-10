@@ -95,15 +95,33 @@ export function startReaders(input: {
   );
   const next = <T extends FromReaderShare['type']>(share: Share, type: T) =>
     new Promise<Extract<FromReaderShare, { type: T }>>((resolve, reject) => {
+      const cleanup = () => {
+        share.events.off('message', onMessage);
+        share.events.off('error', onError);
+        share.events.off('exit', onExit);
+      };
       const onMessage = (message: FromReaderShare) => {
         if (message.type !== type) return;
-        share.events.off('message', onMessage);
-        share.events.off('error', reject);
+        cleanup();
         resolve(message as Extract<FromReaderShare, { type: T }>);
       };
+      const onError = (error: unknown) => {
+        cleanup();
+        reject(error);
+      };
+      // A thread that exits without an error and without this message would leave the run
+      // waiting forever.
+      const onExit = (code: number) => {
+        cleanup();
+        reject(new Error(`A reader thread exited (code ${code}) before sending "${type}".`));
+      };
       share.events.on('message', onMessage);
-      share.events.once('error', reject);
+      share.events.on('error', onError);
+      share.events.on('exit', onExit);
     });
+  // An 'error' with no listener throws on the main thread; one after a thread has reported is
+  // nothing to act on, so keep a listener for the thread's whole life.
+  for (const share of shares) share.events.on('error', () => undefined);
   // Listen for both messages from the start, so neither can arrive before anyone listens.
   const opened = shares.map((share) => next(share, 'opened'));
   const done = shares.map((share) => next(share, 'done'));
