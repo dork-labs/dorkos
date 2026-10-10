@@ -2019,9 +2019,7 @@ async function start() {
   // Both the worker and native stream lifecycle must remain inert until Mesh
   // has reconciled the on-disk manifest registry for this process boot.
   let meshStartupReconciled = false;
-  const remoteCommunityBridge: { current: RemoteRoomSubscriptionBridge | undefined } = {
-    current: undefined,
-  };
+  const remoteCommunityBridge: { current?: RemoteRoomSubscriptionBridge } = {};
   const {
     service: roomService,
     store: roomStore,
@@ -2086,8 +2084,8 @@ async function start() {
     remoteCommunityRuntime,
     spacesEnabled
   );
-  // Who in each space may wake an agent here (spec `official-community-space` D9). Loaded
-  // before the streams start below; until then the gate wakes nobody.
+  // Who in each space may wake an agent here (spec `official-community-space` D9). It starts
+  // loading now, long before the streams start below, and wakes nobody until it has.
   remoteCommunityBridge.current.useWakeGate(getRemoteWakePolicy());
   remoteRedactionSync = new RemoteRedactionSync({
     db,
@@ -2705,9 +2703,6 @@ async function start() {
       logger.warn('[Permissions] Could not record the ended standing permissions', logError(err));
     }
     if (meshStartupReconciled) {
-      // Before anything remote starts: no space message may be judged by a gate
-      // that has not read who may wake an agent yet (it wakes nobody until then).
-      await getRemoteWakePolicy().reload();
       remoteCommunityRuntime?.start();
       remoteCommunitySubscriptions?.start();
       // Copies left behind by a connection that no longer exists (DOR-2334).

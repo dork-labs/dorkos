@@ -1247,7 +1247,6 @@ describe('RemoteRoomSubscriptionRuntime', () => {
         hasMirrors: () => state.mirrors?.hasMirrors() ?? false,
         isRevokedMirrorOf: (roomId, ownerAuthorId) =>
           state.mirrors?.isRevokedMirrorOf(roomId, ownerAuthorId) ?? false,
-        isMirror: (roomId) => state.mirrors?.isMirror(roomId) ?? false,
       },
     });
     const agent = harness.authors.resolveAgent('/agents/ana', 'Ana');

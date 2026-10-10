@@ -53,7 +53,7 @@ import {
   getRemotePairingService,
   getRemoteWakePolicy,
 } from '../services/communities/remote/state.js';
-import type { RemoteWakePolicy } from '../services/communities/remote/wake-policy.js';
+import type { RemoteWakePolicy } from '../services/communities/remote/wake/wake-policy.js';
 import { CommunityNavigationPreferenceService } from '../services/communities/community-navigation-preferences.js';
 import { CommunityAttentionCache } from '../services/communities/remote/community-attention-cache.js';
 import { CommunityOwnerNoticeCache } from '../services/communities/remote/community-owner-notice-cache.js';

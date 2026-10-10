@@ -1140,17 +1140,6 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
     return grant !== undefined;
   }
 
-  /** Whether a room is a copy of a space's channel, in any state. */
-  isMirror(roomId: string): boolean {
-    return (
-      this.db
-        .select({ localRoomId: communityRoomMirrors.localRoomId })
-        .from(communityRoomMirrors)
-        .where(eq(communityRoomMirrors.localRoomId, roomId))
-        .get() !== undefined
-    );
-  }
-
   /**
    * Whether a room is a mirror of this owner's connection that has been revoked.
    * `canRead` answers `false` for every caller once a mirror is revoked, so it

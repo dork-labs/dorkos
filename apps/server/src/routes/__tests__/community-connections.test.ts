@@ -50,7 +50,7 @@ import {
 } from '../../services/communities/remote/pairing-service.js';
 import { RemoteConnectionAuthorizationError } from '../../services/communities/remote/connection-store.js';
 import { PinnedHttpError } from '../../services/communities/remote/pinned-origin.js';
-import { RemoteWakePolicy } from '../../services/communities/remote/wake-policy.js';
+import { RemoteWakePolicy } from '../../services/communities/remote/wake/wake-policy.js';
 import { UserConfigSchema } from '@dorkos/shared/config-schema';
 import { z } from 'zod';
 import {

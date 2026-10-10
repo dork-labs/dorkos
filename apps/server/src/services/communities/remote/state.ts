@@ -12,7 +12,7 @@ import {
 } from '@dorkos/shared/community-deliveries';
 import { resolveDorkHome } from '../../../lib/dork-home.js';
 import { RemoteConnectionStore } from './connection-store.js';
-import { RemoteWakePolicy } from './wake-policy.js';
+import { RemoteWakePolicy } from './wake/wake-policy.js';
 import { RemoteCommunityPairingService, type RemoteInstallationAgent } from './pairing-service.js';
 import { RemoteCommunityAdapter } from './remote-community-adapter.js';
 import { CommunityAgentEnrollmentStore } from './agent-enrollment-store.js';
@@ -91,10 +91,14 @@ export function getRemoteConnectionStore(): RemoteConnectionStore {
 
 /**
  * Who in each space may wake this install's agents, over the same connection store (spec
- * `official-community-space` D9). Load it with `reload()` before streams start.
+ * `official-community-space` D9). The first call starts reading the setting; until that read
+ * lands the gate wakes nobody, so boot asks for it before any stream can start.
  */
 export function getRemoteWakePolicy(): RemoteWakePolicy {
-  return (wakePolicy ??= new RemoteWakePolicy(getRemoteConnectionStore()));
+  if (wakePolicy) return wakePolicy;
+  wakePolicy = new RemoteWakePolicy(getRemoteConnectionStore());
+  void wakePolicy.reload();
+  return wakePolicy;
 }
 
 /** The production pairing service over the same protected connection store. */

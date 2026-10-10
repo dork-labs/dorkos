@@ -31,7 +31,7 @@ import {
   RemoteRoomSubscriptionBridge,
   type RemoteLiveEntry,
 } from '../remote-room-subscription-bridge.js';
-import type { RemoteWakeGate } from '../wake-policy.js';
+import type { RemoteWakeGate } from '../wake/wake-policy.js';
 
 const REF = 'remote_space' as CommunityRef;
 const OWNER_MEMBER = 'remote-owner-member';
@@ -73,7 +73,6 @@ function space(gate?: RemoteWakeGate, runner?: ScriptedTurnRunner) {
       hasMirrors: () => state.mirrors?.hasMirrors() ?? false,
       isRevokedMirrorOf: (roomId, ownerAuthorId) =>
         state.mirrors?.isRevokedMirrorOf(roomId, ownerAuthorId) ?? false,
-      isMirror: (roomId) => state.mirrors?.isMirror(roomId) ?? false,
     },
   });
   const mirrors = new RemoteMirrorStore(harness.db, harness.store, harness.authors);

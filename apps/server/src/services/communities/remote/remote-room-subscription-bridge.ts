@@ -10,7 +10,7 @@ import type { RoomService } from '../../rooms/room-service.js';
 import type { CommunityAgentEnrollmentStore } from './agent-enrollment-store.js';
 import type { CommunityOutboxStore } from './community-outbox-store.js';
 import { RemoteMirrorStore, type MirrorRoomInput, type NativeMirrorEntry } from './mirror-store.js';
-import type { RemoteWakeGate } from './wake-policy.js';
+import type { RemoteWakeGate } from './wake/wake-policy.js';
 
 /** One native entry after the adapter has retained its wire sequence and author kind. */
 export interface RemoteLiveEntry {

@@ -8,11 +8,12 @@
  * of the setting itself. Until it has loaded, and for a connection it does not know, it wakes
  * nobody — a missed wake costs a mention, a wrong one hands a stranger a turn.
  *
- * @module services/communities/remote/wake-policy
+ * @module services/communities/remote/wake/wake-policy
  */
 import type { CommunityRef } from '@dorkos/shared/community-adapter';
-import { logger } from '../../../lib/logger.js';
-import type { RemoteConnectionStore, WakeAgentsFrom } from './connection-store.js';
+import { logger } from '../../../../lib/logger.js';
+import type { RemoteConnectionStore } from '../connection-store.js';
+import { readWakeAgentsFrom, type WakeAgentsFrom } from './wake-setting.js';
 
 /** The question the live stream bridge asks before a space message may start a turn. */
 export interface RemoteWakeGate {
@@ -97,7 +98,7 @@ export class RemoteWakePolicy implements RemoteWakeGate {
    * @param ownerKey - The local owner the connection belongs to.
    */
   get(ref: CommunityRef, ownerKey: string): Promise<WakeAgentsFrom> {
-    return this.store.wakeAgentsFrom(ref, ownerKey);
+    return readWakeAgentsFrom(this.store, ref, ownerKey);
   }
 
   /**

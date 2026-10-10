@@ -104,12 +104,6 @@ export interface RoomMirrorAccess {
    * running there, and nothing else: see `RoomService.haltAgentInRevokedMirror`.
    */
   isRevokedMirrorOf(roomId: string, ownerAuthorId: string): boolean;
-  /**
-   * Whether this room is a copy of a space's channel at all, in any state.
-   * People outside this machine post there, so its turns are framed the way a
-   * bridged chat's are (spec `official-community-space` D10).
-   */
-  isMirror(roomId: string): boolean;
 }
 
 /** A trusted mirror agent write prepared before one local room entry is inserted. */

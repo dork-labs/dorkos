@@ -12,7 +12,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CommunityRef } from '@dorkos/shared/community-adapter';
 import type { CredentialStore } from '../../../core/credential-provider.js';
 import { RemoteConnectionNotFoundError, RemoteConnectionStore } from '../connection-store.js';
-import { RemoteWakePolicy } from '../wake-policy.js';
+import { RemoteWakePolicy } from '../wake/wake-policy.js';
+import { readWakeAgentsFrom } from '../wake/wake-setting.js';
 
 function memoryCredentials(): CredentialStore {
   const secrets = new Map<string, string>();
@@ -68,15 +69,14 @@ afterEach(async () => {
 
 describe('the stored setting', () => {
   it('is "members" until the owner chooses, and remembers the choice', async () => {
-    expect(await store.wakeAgentsFrom(REF, OWNER)).toBe('members');
+    expect(await readWakeAgentsFrom(store, REF, OWNER)).toBe('members');
     await store.setWakeAgentsFrom(REF, OWNER, 'me');
-    expect(
-      await new RemoteConnectionStore(directory, memoryCredentials()).wakeAgentsFrom(REF, OWNER)
-    ).toBe('me');
+    const reopened = new RemoteConnectionStore(directory, memoryCredentials());
+    expect(await readWakeAgentsFrom(reopened, REF, OWNER)).toBe('me');
   });
 
   it('belongs to its owner: another owner can neither read nor change it', async () => {
-    await expect(store.wakeAgentsFrom(REF, 'someone-else')).rejects.toBeInstanceOf(
+    await expect(readWakeAgentsFrom(store, REF, 'someone-else')).rejects.toBeInstanceOf(
       RemoteConnectionNotFoundError
     );
     await expect(store.setWakeAgentsFrom(REF, 'someone-else', 'members')).rejects.toBeInstanceOf(

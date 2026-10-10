@@ -98,7 +98,6 @@ async function install(s: Scene, origin = h.baseUrl): Promise<Install> {
     mirrorAccess: {
       canRead: (roomId, authorId) => state.mirrors?.canRead(roomId, authorId) ?? null,
       hasMirrors: () => state.mirrors?.hasMirrors() ?? false,
-      isMirror: (roomId) => state.mirrors?.isMirror(roomId) ?? false,
       isRevokedMirrorOf: (roomId, ownerAuthorId) =>
         state.mirrors?.isRevokedMirrorOf(roomId, ownerAuthorId) ?? false,
     },

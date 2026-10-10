@@ -229,7 +229,9 @@ export function createRoomCore(deps: RoomServiceDeps, writeBack: RoomWriteBack):
     bridgedFraming: (roomId) => {
       const bridge = deps.bridges.findBridgeByRoom(roomId);
       if (bridge) return bridgedRoomFraming(bridge);
-      return deps.mirrorAccess?.isMirror(roomId) ? SPACE_ROOM_FRAMING : null;
+      // `canRead` answers `null` for an ordinary local room whoever asks, and a boolean for any
+      // space copy, so the author asked about here is irrelevant.
+      return (deps.mirrorAccess?.canRead(roomId, '') ?? null) !== null ? SPACE_ROOM_FRAMING : null;
     },
     topicNamesFor: (entryIds) => topicNamesForEntries(deps.bridges, entryIds),
     attachmentsFor: (roomId, entryIds) => deps.attachments.listFor(roomId, entryIds),
