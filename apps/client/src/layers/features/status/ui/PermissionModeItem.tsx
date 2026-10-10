@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Sparkles } from 'lucide-react';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
@@ -159,6 +159,25 @@ export function PermissionModeItem({
     setAvailable(interactive);
     return () => setAvailable(false);
   }, [interactive, setAvailable]);
+
+  // The line drops this item when the chat reaches the safe stop, sometimes
+  // with the picker still open. Close it on the way out: otherwise the caller's
+  // `pickerOpen` and the store's `open` stay true, and the "make it the default"
+  // offer that follows has nowhere to appear. A ref, so a caller passing a new
+  // callback each render cannot turn this into a close on every render. In dev,
+  // StrictMode's test unmount runs this once on mount too; `open` starts false,
+  // so that closes nothing.
+  const onOpenChangeRef = useRef(onOpenChange);
+  useEffect(() => {
+    onOpenChangeRef.current = onOpenChange;
+  }, [onOpenChange]);
+  useEffect(
+    () => () => {
+      setOpen(false);
+      onOpenChangeRef.current?.(false);
+    },
+    [setOpen]
+  );
 
   // Hide the item entirely when the runtime does not support permission modes at
   // all (some runtimes have no notion of one).
