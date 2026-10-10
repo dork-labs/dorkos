@@ -11,8 +11,11 @@ import { configManager } from '../../config-manager.js';
 import { ActivityOutbox } from '../activity-outbox.js';
 import { CommandDispatcher } from '../command-dispatcher.js';
 import type { AvailabilitySnapshot } from '../managed-availability.js';
-import { ManagedCommandService } from '../managed-command-service.js';
-import { MANAGED_DRAIN_DEADLINE_MS } from '../managed-ingress.js';
+import {
+  ManagedCommandService,
+  SHUTDOWN_BUDGET_MS,
+  SHUTDOWN_DRAIN_SHARE,
+} from '../managed-command-service.js';
 import {
   autostartOwnTunnel,
   currentRemoteBootPlan,
@@ -61,13 +64,40 @@ describe('the boot rule over the saved config', () => {
 
   it('a managed choice outranks the saved own-tunnel flag, which stays saved', () => {
     configManager.set('tunnel', { ...configManager.get('tunnel'), enabled: true });
-    expect(currentRemoteBootPlan({ TUNNEL_ENABLED: undefined })).toEqual({
+    expect(
+      currentRemoteBootPlan({ TUNNEL_ENABLED: undefined, DORKOS_MANAGED_REMOTE: true })
+    ).toEqual({
       ownTunnel: false,
       reconnectManaged: true,
     });
     expect(configManager.get('tunnel')?.enabled).toBe(true);
     // Switching back is a person's choice; then the saved flag works again.
     updateRemoteState('test', { mode: 'byo' });
+    expect(
+      currentRemoteBootPlan({ TUNNEL_ENABLED: undefined, DORKOS_MANAGED_REMOTE: true })
+    ).toEqual({
+      ownTunnel: true,
+      reconnectManaged: false,
+    });
+  });
+});
+
+describe('the boot rule with the managed switch off', () => {
+  let w: CommandWorld;
+  beforeEach(async () => {
+    w = await commandWorld();
+  });
+  afterEach(() => w.cleanup());
+
+  it('a saved managed choice is inert, so the saved own tunnel still comes back', () => {
+    configManager.set('tunnel', { ...configManager.get('tunnel'), enabled: true });
+    expect(readRemoteState().mode).toBe('managed');
+    expect(
+      currentRemoteBootPlan({ TUNNEL_ENABLED: undefined, DORKOS_MANAGED_REMOTE: false })
+    ).toEqual({
+      ownTunnel: true,
+      reconnectManaged: false,
+    });
     expect(currentRemoteBootPlan({ TUNNEL_ENABLED: undefined })).toEqual({
       ownTunnel: true,
       reconnectManaged: false,
@@ -267,14 +297,15 @@ describe('the managed command stream after boot', () => {
       closeReports: [],
     });
     s.tunnel.phase = 'open';
-    s.activity.drainDeadlineMs = 12_000;
+    s.activity.drainDeadlineMs = 1_000;
 
     await s.svc.shutdown();
     expect(s.opened[0]!.aborted).toBe(true);
     expect(s.svc.running).toBe(false);
     expect(s.tunnel.closeManaged).toHaveBeenCalledWith({
       immediate: false,
-      drainDeadlineMs: 12_000,
+      drainDeadlineMs: 1_000,
+      deadlineFrom: 'cloud',
       reason: 'shutdown',
     });
     expect(s.activity.stop).toHaveBeenCalled();
@@ -282,17 +313,48 @@ describe('the managed command stream after boot', () => {
     expect(new ActivityOutbox(w.db).size()).toBe(1);
   });
 
-  it('shutdown never drains longer than the local default', async () => {
+  it.each([
+    ['a longer one from Cloud', 10 * 60_000],
+    ['none from Cloud', undefined],
+  ])(
+    'shutdown drains within its budget, and calls the deadline local (%s)',
+    async (_label, cloud) => {
+      const s = service();
+      s.svc.boot(w.db, { reconnectManaged: false });
+      s.tunnel.phase = 'open';
+      s.activity.drainDeadlineMs = cloud;
+      await s.svc.shutdown();
+      const [options] = s.tunnel.closeManaged.mock.calls[0] as unknown as [
+        { drainDeadlineMs: number; deadlineFrom: string },
+      ];
+      expect(options.drainDeadlineMs).toBeLessThanOrEqual(
+        SHUTDOWN_BUDGET_MS * SHUTDOWN_DRAIN_SHARE
+      );
+      expect(options.drainDeadlineMs).toBeGreaterThan(
+        SHUTDOWN_BUDGET_MS * SHUTDOWN_DRAIN_SHARE - 500
+      );
+      expect(options.deadlineFrom).toBe('local');
+    }
+  );
+
+  it('the whole shutdown keeps to its budget, even when the close and the send hang', async () => {
+    w.cloud.on('POST', '/v1/remote/events', { hang: true });
     const s = service();
-    s.svc.boot(w.db, { reconnectManaged: false });
-    s.tunnel.phase = 'open';
-    s.activity.drainDeadlineMs = 10 * 60_000;
-    await s.svc.shutdown();
-    expect(s.tunnel.closeManaged).toHaveBeenCalledWith({
-      immediate: false,
-      drainDeadlineMs: MANAGED_DRAIN_DEADLINE_MS,
-      reason: 'shutdown',
+    s.svc.boot(w.db, { reconnectManaged: true });
+    await until(() => s.opened.length === 1);
+    s.svc.reportActivity({
+      instanceId: INSTANCE_ID,
+      activity: [{ at: '2026-10-10T12:00:00.000Z', requests: 3 }],
+      closeReports: [],
     });
+    s.tunnel.phase = 'open';
+    s.tunnel.closeManaged.mockImplementation(() => new Promise(() => undefined));
+    const started = Date.now();
+    await s.svc.shutdown(200);
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(s.svc.running).toBe(false);
+    // What was owed is still stored for the next start.
+    expect(new ActivityOutbox(w.db).size()).toBe(1);
   });
 
   it('an activity batch written before a crash is sent under its key on the next start', async () => {

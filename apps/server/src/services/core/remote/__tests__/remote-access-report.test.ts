@@ -114,6 +114,21 @@ describe('buildRemoteAccessReport', () => {
     });
   });
 
+  it('flags activity reports that cannot get out, in managed mode only, with no detail', () => {
+    const tunnel = { ...idleTunnel, isRunning: true, connected: true };
+    const managed = {
+      liveMode: 'managed' as const,
+      tunnel,
+      remote: enrolled,
+      managedPhase: 'open' as const,
+    };
+    expect(report({ ...managed, activityReportsStuck: true }).activityReportsDelayed).toBe(true);
+    expect(report({ ...managed, activityReportsStuck: false })).not.toHaveProperty(
+      'activityReportsDelayed'
+    );
+    expect(report({ activityReportsStuck: true })).not.toHaveProperty('activityReportsDelayed');
+  });
+
   it('names the drain deadline and who set it while draining, and only then', () => {
     const tunnel = { ...idleTunnel, isRunning: true, connected: true };
     const base = { liveMode: 'managed' as const, tunnel, remote: enrolled };

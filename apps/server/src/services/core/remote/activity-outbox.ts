@@ -44,6 +44,8 @@ export interface OutboxBatch {
   batch: RemoteEventBatch;
   /** How many times it was sent. */
   attempts: number;
+  /** How many of those sends Cloud refused outright (never an outage or a timeout). */
+  refusals: number;
 }
 
 /** The outbox. One per process, over the server's database. */
@@ -81,7 +83,13 @@ export class ActivityOutbox {
     };
     this.db.insert(remoteEventOutbox).values(row).run();
     this.prune();
-    return { id: row.id, idempotencyKey: row.idempotencyKey, batch: parsed, attempts: 0 };
+    return {
+      id: row.id,
+      idempotencyKey: row.idempotencyKey,
+      batch: parsed,
+      attempts: 0,
+      refusals: 0,
+    };
   }
 
   /**
@@ -112,6 +120,7 @@ export class ActivityOutbox {
         idempotencyKey: row.idempotencyKey,
         batch: parsed.data,
         attempts: row.attempts,
+        refusals: row.refusals,
       });
     }
     return batches;
@@ -138,6 +147,19 @@ export class ActivityOutbox {
         attempts: sql`${remoteEventOutbox.attempts} + 1`,
         lastAttemptAt: new Date(this.now()).toISOString(),
       })
+      .where(eq(remoteEventOutbox.id, id))
+      .run();
+  }
+
+  /**
+   * Record that Cloud refused a batch outright. Its body and key are unchanged.
+   *
+   * @param id - The row.
+   */
+  noteRefusal(id: string): void {
+    this.db
+      .update(remoteEventOutbox)
+      .set({ refusals: sql`${remoteEventOutbox.refusals} + 1` })
       .where(eq(remoteEventOutbox.id, id))
       .run();
   }

@@ -4391,6 +4391,12 @@ export const RemoteAccessReportSchema = z
         deadline: z.enum(['cloud', 'local']),
       })
       .optional(),
+    /**
+     * Present, and `true`, only in managed mode when this computer's activity
+     * reports have kept failing to reach DorkOS Cloud. They are kept here and
+     * retried; nothing is lost. Carries no detail of why.
+     */
+    activityReportsDelayed: z.literal(true).optional(),
   })
   .openapi('RemoteAccessReport');
 

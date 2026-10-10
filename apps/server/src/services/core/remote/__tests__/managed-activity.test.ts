@@ -20,7 +20,7 @@ import { noteGateAdmitted, setManagedAdmissionListener } from '../ingress-mark.j
 import {
   ACTIVITY_REPORT_INTERVAL_MS,
   ManagedActivity,
-  isPassiveRead,
+  isLongLivedStream,
 } from '../managed-activity.js';
 import type {
   ManagedClosedEvent,
@@ -114,13 +114,14 @@ function response(): ServerResponse & { finish: () => void } {
   return emitter;
 }
 
-describe('isPassiveRead', () => {
-  it('is a background read, never a change or a page load', () => {
-    expect(isPassiveRead(request('GET'))).toBe(true);
-    expect(isPassiveRead(request('HEAD'))).toBe(true);
-    expect(isPassiveRead(request('GET', { 'sec-fetch-mode': 'navigate' }))).toBe(false);
-    expect(isPassiveRead(request('POST'))).toBe(false);
-    expect(isPassiveRead(request('DELETE'))).toBe(false);
+describe('isLongLivedStream', () => {
+  it('is an event stream, never a plain fetch, a page load or a change', () => {
+    expect(isLongLivedStream(request('GET', { accept: 'text/event-stream' }))).toBe(true);
+    expect(isLongLivedStream(request('GET', { accept: 'Text/Event-Stream' }))).toBe(true);
+    expect(isLongLivedStream(request('GET'))).toBe(false);
+    expect(isLongLivedStream(request('GET', { accept: 'application/json' }))).toBe(false);
+    expect(isLongLivedStream(request('GET', { 'sec-fetch-mode': 'navigate' }))).toBe(false);
+    expect(isLongLivedStream(request('POST'))).toBe(false);
   });
 });
 
@@ -155,6 +156,8 @@ describe('counting through the real ingress and gate', () => {
       if (req.headers['x-test-signed-out']) return void res.status(401).end();
       next();
     });
+    // A page or asset is served before the gate, as the front door does.
+    app.get('/', (_req, res) => void res.status(200).send('<html></html>'));
     app.use(sessionGate);
     // A second pass through the hook (the Hono chain, say) never counts twice.
     app.use((req, res, next) => {
@@ -194,6 +197,12 @@ describe('counting through the real ingress and gate', () => {
     expect(await send(['GET /api/d HTTP/1.1', 'Host: other.example', good[1]!])).toBe(421);
     expect(await send(['POST /api/e HTTP/1.1', ...good, 'X-Test-Signed-Out: 1'])).toBe(401);
     expect(counted).toEqual(['GET /api/sessions']);
+  });
+
+  it('counts a page load the session gate never sees, once', async () => {
+    expect(await send(['GET / HTTP/1.1', ...good, 'Sec-Fetch-Mode: navigate'])).toBe(200);
+    expect(await send(['GET /api/x HTTP/1.1', ...good])).toBe(200);
+    expect(counted).toEqual(['GET /', 'GET /api/x']);
   });
 
   it('counts nothing that did not arrive through the managed ingress', () => {
@@ -257,7 +266,7 @@ describe('the activity window', () => {
     expect(w.tunnel.closeManaged).not.toHaveBeenCalled();
     w.tunnel.end('closed_here');
     expect(w.reported[0]!.closeReports[0]).toMatchObject({
-      wakeId: 'wk_1',
+      wakeId: 'wk_2',
       openedAt: '2026-10-10T12:00:00.000Z',
       requests: 1,
     });
@@ -302,7 +311,7 @@ describe('idle close', () => {
     });
   });
 
-  it('activity holds it off; background reads do not', () => {
+  it('activity holds it off; an open event stream does not', () => {
     const w = world();
     w.activity.opened({ instanceId: INSTANCE, wakeId: 'wk_1', idleWindowSeconds: 60 });
     w.time.advance(50_000);
@@ -312,11 +321,39 @@ describe('idle close', () => {
     res.finish(); // the request's end is activity too
     w.time.advance(59_000);
     expect(w.tunnel.closeManaged).not.toHaveBeenCalled();
-    // An open tab polling on its own keeps nothing open.
-    for (let i = 0; i < 6; i += 1) {
+    // An event stream held open keeps nothing open, and neither does its end.
+    const stream = response();
+    w.activity.admitted(request('GET', { accept: 'text/event-stream' }), stream);
+    w.time.advance(500);
+    stream.finish();
+    w.time.advance(1_000);
+    expect(w.tunnel.closeManaged).toHaveBeenCalledTimes(1);
+  });
+
+  it('plain reads are activity: a person reading the app keeps it open', () => {
+    const w = world();
+    w.activity.opened({ instanceId: INSTANCE, wakeId: 'wk_1', idleWindowSeconds: 60 });
+    for (let i = 0; i < 5; i += 1) {
+      w.time.advance(50_000);
       w.activity.admitted(request('GET'), response());
-      w.time.advance(500);
     }
+    expect(w.tunnel.closeManaged).not.toHaveBeenCalled();
+    expect(w.activity.requests).toBe(5);
+  });
+
+  it('a WebSocket counts when accepted and its client input is activity', () => {
+    const w = world();
+    w.activity.opened({ instanceId: INSTANCE, wakeId: 'wk_1', idleWindowSeconds: 60 });
+    const socket = new EventEmitter();
+    w.time.advance(50_000);
+    w.activity.upgraded(request('GET'), socket);
+    expect(w.activity.requests).toBe(1);
+    w.time.advance(50_000);
+    socket.emit('message'); // a keystroke in the terminal
+    w.time.advance(50_000);
+    expect(w.tunnel.closeManaged).not.toHaveBeenCalled();
+    // Staying open with nothing typed is not activity.
+    w.time.advance(10_000);
     expect(w.tunnel.closeManaged).toHaveBeenCalledTimes(1);
   });
 
@@ -342,11 +379,15 @@ describe('idle close', () => {
     }
   );
 
-  it('does nothing when the session is no longer open when it comes due', () => {
+  it('waits while the session is not open when it comes due, then still closes it', () => {
     const w = world();
     w.activity.opened({ instanceId: INSTANCE, wakeId: 'wk_1', idleWindowSeconds: 60 });
-    w.tunnel.phase = 'draining';
+    w.tunnel.phase = 'opening';
     w.time.advance(60_000);
     expect(w.tunnel.closeManaged).not.toHaveBeenCalled();
+    expect(w.time.pending).toBeGreaterThan(1); // the idle check is armed again
+    w.tunnel.phase = 'open';
+    w.time.advance(1_000);
+    expect(w.tunnel.closeManaged).toHaveBeenCalledTimes(1);
   });
 });

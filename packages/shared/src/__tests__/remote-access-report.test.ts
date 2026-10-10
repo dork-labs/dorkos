@@ -33,6 +33,20 @@ describe('RemoteAccessReportSchema', () => {
     expect(RemoteAccessStateSchema.options).toHaveLength(7);
   });
 
+  it('takes the delayed-reports flag only as true, and leaves it optional', () => {
+    expect(RemoteAccessReportSchema.safeParse(base).success).toBe(true);
+    expect(
+      RemoteAccessReportSchema.safeParse({ ...base, activityReportsDelayed: true }).success
+    ).toBe(true);
+    expect(
+      RemoteAccessReportSchema.safeParse({ ...base, activityReportsDelayed: false }).success
+    ).toBe(false);
+    expect(
+      RemoteAccessReportSchema.safeParse({ ...base, activityReportsDelayed: 'cloud said 500' })
+        .success
+    ).toBe(false);
+  });
+
   it('refuses a state it does not know, including one that claims the computer is asleep', () => {
     expect(RemoteAccessReportSchema.safeParse({ ...base, state: 'sleeping' }).success).toBe(false);
     expect(RemoteAccessReportSchema.safeParse({ ...base, state: 'awake' }).success).toBe(false);

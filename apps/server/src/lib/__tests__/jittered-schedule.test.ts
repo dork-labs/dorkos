@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   JITTER_FLOOR_FRACTION,
+  MAX_SKIPPED_BEATS,
   jitteredDelay,
   scheduleJittered,
   type ScheduleTimers,
@@ -82,8 +83,8 @@ describe('scheduleJittered', () => {
     t.fire();
     t.fire();
     expect(task).toHaveBeenCalledTimes(3);
-    expect(t.waits.slice(0, 3)).toEqual([1_000, 19_000, 10_000]);
-    expect(t.waits.every((ms) => ms >= 1_000)).toBe(true);
+    expect(t.waits.slice(0, 3)).toEqual([5_000, 15_000, 10_000]);
+    expect(t.waits.every((ms) => ms >= 5_000)).toBe(true);
   });
 
   it('keeps its beat when a run throws', () => {
@@ -94,6 +95,48 @@ describe('scheduleJittered', () => {
     scheduleJittered(task, 1_000, { random: () => 0.5, timers: t.timers });
     expect(() => t.fire()).not.toThrow();
     expect(t.pending).toHaveLength(1);
+    t.fire();
+    expect(task).toHaveBeenCalledTimes(2);
+  });
+
+  it('never overlaps a run still in flight: that beat is skipped, the next one runs', async () => {
+    const t = manualTimers();
+    let release!: () => void;
+    const task = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        })
+    );
+    scheduleJittered(task, 1_000, { random: () => 0, timers: t.timers });
+    t.fire();
+    t.fire(); // due again at the shortest wait, while the first is still running
+    expect(task).toHaveBeenCalledTimes(1);
+    expect(t.pending).toHaveLength(1);
+    release();
+    await Promise.resolve();
+    await Promise.resolve();
+    t.fire();
+    expect(task).toHaveBeenCalledTimes(2);
+  });
+
+  it('a run that never settles holds off only a few beats', () => {
+    const t = manualTimers();
+    const task = vi.fn(() => new Promise<void>(() => undefined));
+    scheduleJittered(task, 1_000, { random: () => 0.5, timers: t.timers });
+    t.fire();
+    for (let i = 0; i < MAX_SKIPPED_BEATS; i += 1) t.fire();
+    expect(task).toHaveBeenCalledTimes(1);
+    t.fire();
+    expect(task).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps its beat when a run rejects, and runs again after it settles', async () => {
+    const t = manualTimers();
+    const task = vi.fn(() => Promise.reject(new Error('one bad run')));
+    scheduleJittered(task, 1_000, { random: () => 0.5, timers: t.timers });
+    t.fire();
+    await new Promise((resolve) => setTimeout(resolve, 0));
     t.fire();
     expect(task).toHaveBeenCalledTimes(2);
   });

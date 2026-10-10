@@ -1222,8 +1222,9 @@ export class CloudLinkManager {
   private startHeartbeatSchedule(): void {
     this.stopHeartbeatSchedule();
     if (this.stopped) return;
-    // Jittered, and never keeps the process alive on its own.
-    const beat = () => void this.heartbeatTick();
+    // Jittered, never overlapping a tick still in flight, and never keeps the
+    // process alive on its own.
+    const beat = () => this.heartbeatTick();
     this.heartbeatTimer = scheduleJittered(beat, this.heartbeatIntervalMs, this.options);
   }
 

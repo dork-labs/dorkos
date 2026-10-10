@@ -7,7 +7,8 @@
  * A Cloud `open` that this computer applied starts a window
  * ({@link ManagedActivity.opened}): when it opened, the wake it answered, and
  * the idle and drain windows Cloud gave with it. An `open` repeated while the
- * session is still up keeps the same window and takes the newer windows. The
+ * session is still up keeps the same span and takes the newer windows and the
+ * newer wake. The
  * window ends when the managed session does, for any reason (`managed_closed`
  * from `TunnelManager`), and its close report is written to the durable outbox
  * then: the span from `openedAt` to `at`, the reason, the wake, and the
@@ -18,17 +19,20 @@
  * ## What counts
  *
  * A request counts once the managed ingress admitted it (the edge proof and
- * host checks passed) AND the local session gate let it through
- * (`ingress-mark.ts` → {@link ManagedActivity.admitted}). A refused attempt
- * never reaches either and never counts.
+ * host checks passed) AND, for the API and MCP, the local session gate let it
+ * through; a page or asset, which the gate never sees, counts at the ingress
+ * (`ingress-mark.ts` → {@link ManagedActivity.admitted}). A WebSocket counts
+ * once the upgrade router accepted it, after its origin and credential checks
+ * ({@link ManagedActivity.upgraded}). A refused attempt never counts.
  *
  * ## Idle close
  *
  * Only with a window Cloud supplied (`idleWindowSeconds`; absent or zero means
- * no idle close). Idleness is judged by what a person does, not by an open
- * tab: a request that changes something, or a page load, is activity; the
- * background reads an open app makes on its own (safe-method requests that are
- * not page loads, event streams included) are not. Once the window passes with
+ * no idle close). Every counted request is activity, at its start and at its
+ * end, except a long-lived event stream (`Accept: text/event-stream`), which an
+ * open tab holds on its own. An accepted WebSocket is activity when it opens
+ * and each time its client sends something (a keystroke in the terminal), but
+ * not merely for staying open. Once the window passes with
  * no activity, managed access closes gently, under the drain deadline Cloud
  * gave with the open (or the bounded local default), reason `idle`. The timer
  * belongs to the window: it is cancelled when the session ends for any reason
@@ -41,6 +45,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { logger } from '../../../lib/logger.js';
 import { scheduleJittered, type JitteredSchedule } from '../../../lib/jittered-schedule.js';
 import type { RemoteEventBatch } from './activity-outbox.js';
+import type { AdmittedSocket } from './ingress-mark.js';
 import { MAX_DRAIN_DEADLINE_MS } from './command-dispatcher.js';
 import type {
   ManagedClosedEvent,
@@ -99,16 +104,16 @@ interface Window {
 }
 
 /**
- * Whether a request is one an open app makes on its own: a safe-method read
- * that is not a page load. Counted as usage, but never as activity that keeps
- * managed access open.
+ * Whether a request asks for a long-lived event stream, which an open tab
+ * holds on its own. Counted as usage, but never as activity that keeps managed
+ * access open.
  *
  * @param req - The admitted request.
  */
-export function isPassiveRead(req: IncomingMessage): boolean {
-  const method = (req.method ?? 'GET').toUpperCase();
-  if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') return false;
-  return req.headers['sec-fetch-mode'] !== 'navigate';
+export function isLongLivedStream(req: IncomingMessage): boolean {
+  const accept = req.headers.accept;
+  const values = Array.isArray(accept) ? accept : [accept ?? ''];
+  return values.some((value) => value.toLowerCase().includes('text/event-stream'));
 }
 
 /** The activity window and idle close. One per process: `managedActivity`. */
@@ -162,6 +167,7 @@ export class ManagedActivity {
         : Math.min(MAX_DRAIN_DEADLINE_MS, info.drainDeadlineSeconds * 1000);
     const current = this.window;
     if (current && current.instanceId === info.instanceId) {
+      current.wakeId = info.wakeId;
       current.idleMs = idleMs;
       current.drainDeadlineMs = drainDeadlineMs;
       current.lastActivity = this.now();
@@ -190,8 +196,8 @@ export class ManagedActivity {
   }
 
   /**
-   * A managed request the session gate let through. Counted; and unless it is
-   * a passive read, activity, at its start and again when it ends.
+   * A managed request that was admitted. Counted; and unless it is a
+   * long-lived event stream, activity, at its start and again when it ends.
    *
    * @param req - The request.
    * @param res - Its response.
@@ -200,9 +206,26 @@ export class ManagedActivity {
     const window = this.window;
     if (!window) return;
     window.requests += 1;
-    if (isPassiveRead(req)) return;
+    if (isLongLivedStream(req)) return;
     window.lastActivity = this.now();
     res.once('close', () => {
+      if (this.window === window) window.lastActivity = this.now();
+    });
+  }
+
+  /**
+   * A managed WebSocket the upgrade router accepted. Counted, activity now, and
+   * activity again each time its client sends something.
+   *
+   * @param _req - The upgrade request.
+   * @param socket - The accepted socket.
+   */
+  upgraded(_req: IncomingMessage, socket: AdmittedSocket): void {
+    const window = this.window;
+    if (!window) return;
+    window.requests += 1;
+    window.lastActivity = this.now();
+    socket.on('message', () => {
       if (this.window === window) window.lastActivity = this.now();
     });
   }
@@ -227,7 +250,9 @@ export class ManagedActivity {
 
   private idleCheck(window: Window): void {
     if (this.window !== window || window.idleMs === null) return;
-    if (this.deps.tunnel.getManagedPhase() !== 'open') return;
+    // Not open right now (still opening, or a close is under way): look again
+    // later; a close that finishes ends the window and cancels this.
+    if (this.deps.tunnel.getManagedPhase() !== 'open') return this.armIdle(window);
     if (this.now() - window.lastActivity < window.idleMs) return this.armIdle(window);
     logger.info('[RemoteAccess] Closing managed access after the idle window', {
       idleWindowMs: window.idleMs,

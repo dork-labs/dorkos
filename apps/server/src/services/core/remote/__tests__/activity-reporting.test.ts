@@ -71,7 +71,7 @@ describe('the outbox', () => {
     const stored = box.enqueue(batch(3))!;
     expect(stored.idempotencyKey).toBe('key-1');
     expect(box.pending(INSTANCE)).toEqual([
-      { id: stored.id, idempotencyKey: 'key-1', batch: batch(3), attempts: 0 },
+      { id: stored.id, idempotencyKey: 'key-1', batch: batch(3), attempts: 0, refusals: 0 },
     ]);
     expect(box.enqueue({ instanceId: INSTANCE, activity: [], closeReports: [] })).toBeNull();
     expect(box.size()).toBe(1);
@@ -188,6 +188,30 @@ describe('sending', () => {
     await s.flush();
     expect(box.size()).toBe(0);
     expect(sent()).toHaveLength(EVENTS_MAX_REFUSALS);
+  });
+
+  it('counts only refusals toward giving up, never the outages before them, across restarts', async () => {
+    const outages = Array.from({ length: EVENTS_MAX_REFUSALS }, () => ({
+      networkError: true as const,
+    }));
+    cloud.on('POST', EVENTS, ...outages, problem(400, 'malformed_request'));
+    const box = outbox();
+    box.enqueue(batch(1));
+    const s = sender(box);
+    for (let i = 0; i < EVENTS_MAX_REFUSALS + 1; i += 1) await s.flush();
+    // Many sends, one refusal: still kept.
+    expect(box.size()).toBe(1);
+    expect(box.pending(INSTANCE)[0]).toMatchObject({
+      attempts: EVENTS_MAX_REFUSALS + 1,
+      refusals: 1,
+    });
+    s.stop();
+    // A restart keeps the refusal count: the rest of the allowance, then gone.
+    const after = sender(outbox());
+    for (let i = 0; i < EVENTS_MAX_REFUSALS - 2; i += 1) await after.flush();
+    expect(box.size()).toBe(1);
+    await after.flush();
+    expect(box.size()).toBe(0);
   });
 
   it('retries an outage or a rate limit without giving up, and says when it is stuck', async () => {

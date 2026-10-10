@@ -9,6 +9,7 @@
  * | `true`           | anything                     | yes              | no                                |
  * | `false`          | anything                     | no               | no                                |
  * | unset            | managed (`cloud.remote.mode`) | no              | yes                               |
+ * | unset            | managed, switch off, own on  | yes              | no                                |
  * | unset            | own tunnel on (`tunnel.enabled`) | yes          | no                                |
  * | unset            | nothing                      | no               | no                                |
  *
@@ -16,6 +17,9 @@
  * for this process. An explicit `false` keeps both kinds from coming back on
  * their own. With it unset, a saved managed choice wins over an older saved
  * `tunnel.enabled=true`, which stays saved for when the person switches back.
+ * A saved managed choice counts only while the `DORKOS_MANAGED_REMOTE` switch
+ * is on: with it off, managed access does not exist, and the saved own tunnel
+ * comes back as it did before.
  *
  * Managed access never OPENS at boot: the most boot does is reconnect the
  * command stream (when the computer is enrolled under the current link and
@@ -42,7 +46,11 @@ export interface RemoteBootInputs {
   tunnelEnabledEnv: boolean | undefined;
   /** The saved `tunnel.enabled`. */
   storedTunnelEnabled: boolean;
-  /** Whether the saved `cloud.remote.mode` is `managed`. */
+  /**
+   * Whether the saved `cloud.remote.mode` is `managed` AND the
+   * `DORKOS_MANAGED_REMOTE` switch is on. With the switch off, a saved managed
+   * choice is inert and must not hold back the saved own tunnel.
+   */
   managedSelected: boolean;
 }
 
@@ -69,15 +77,16 @@ export function planRemoteBoot(inputs: RemoteBootInputs): RemoteBootPlan {
 /**
  * The boot rule over this process's environment and the saved config.
  *
- * @param env - The environment this process was started with.
+ * @param env - The environment this process was started with: `TUNNEL_ENABLED`
+ *   and the `DORKOS_MANAGED_REMOTE` switch.
  */
 export function currentRemoteBootPlan(
-  env: Pick<TunnelEnvInputs, 'TUNNEL_ENABLED'>
+  env: Pick<TunnelEnvInputs, 'TUNNEL_ENABLED'> & { DORKOS_MANAGED_REMOTE?: boolean }
 ): RemoteBootPlan {
   return planRemoteBoot({
     tunnelEnabledEnv: env.TUNNEL_ENABLED,
     storedTunnelEnabled: configManager.get('tunnel')?.enabled === true,
-    managedSelected: readRemoteState().mode === 'managed',
+    managedSelected: env.DORKOS_MANAGED_REMOTE === true && readRemoteState().mode === 'managed',
   });
 }
 
