@@ -73,6 +73,7 @@ vi.mock('../../../../session/message-dispatcher.js', () => ({
     queued: false,
     queuePosition: 0,
   })),
+  onDispatchLifecycle: vi.fn(() => () => undefined),
 }));
 
 import { runtimeRegistry } from '../../../../core/runtime-registry.js';

@@ -520,6 +520,11 @@ export const PERMISSIVE_DEFAULTS: Readonly<Record<string, PermissiveDefault>> = 
     reason:
       'No project limits which accounts it may use by default, which is how every project behaved before account rules existed (spec `flow-multiproject` §8). A list a person sets for a project narrows which credentials work there, so it is closed to agent writes (operator-only) and carried across a wipe (PROTECTIVE_CARRYOVERS).',
   },
+  'heartbeats.enabled': {
+    value: true,
+    reason:
+      'Agents wake on their own by default (spec `heartbeats` §3.6, PRINCIPLES "proactive co-workers"), but only an agent whose HEARTBEAT.md asks for timed beats runs a turn on a timer; the rest wake on events, and a beat that finds nothing runs no model. Every beat is in the record, and one switch turns them all off.',
+  },
   'auth.enabled': {
     value: false,
     reason:

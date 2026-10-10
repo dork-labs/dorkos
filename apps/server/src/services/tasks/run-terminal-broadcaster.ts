@@ -10,6 +10,7 @@
  *
  * @module services/tasks/run-terminal-broadcaster
  */
+import { wakeAgent } from '../heartbeats/event-wakes.js';
 import type { TaskRun } from '@dorkos/shared/types';
 import { eventFanOut } from '../core/event-fan-out.js';
 import type { RunTerminalListener } from './task-store.js';
@@ -58,6 +59,7 @@ export function broadcastRunTerminal(run: TaskRun): void {
  *   4. {@link followLateRunOutput} — when the run's agent still holds
  *      background work, what it says in the turns it starts later is added to
  *      the run (DOR-2717). Only when `lateOutput` is given.
+ *   5. The owning agent's heartbeat, woken for a failed or parked run.
  *
  * @param activityService - The activity feed to emit terminal-run events to, or
  *   null when the feed is unavailable (the emit is then a no-op).
@@ -74,5 +76,10 @@ export function createRunTerminalListener(
     void notifyRunCompleted(run, task);
     emitTerminalRunActivity(activityService, task, run);
     if (lateOutput) followLateRunOutput(lateOutput, run);
+    // A run of a schedule the agent owns that failed or stopped for a person
+    // wakes its beat, once a day per schedule (spec `heartbeats` §3.3).
+    if (task?.agentId && (run.status === 'failed' || run.status === 'blocked')) {
+      wakeAgent(task.agentId, { type: 'run-failed', eventId: run.id, source: task.id });
+    }
   };
 }

@@ -480,8 +480,10 @@ describe('in-session tool exposure', () => {
     // 125 -> 128 for `pause_agent`, `resume_agent` and `list_paused_agents`
     // (spec `audit-trail` PR5), DEFERRED: no prompt block names them, and an
     // emergency stop is a deliberate step a turn can search for.
-    expect(tools).toHaveLength(128);
-    expect(deferred).toHaveLength(117);
+    // 128 -> 129 for `end_beat` (spec `heartbeats` §8), DEFERRED: only a beat
+    // turn calls it, and the beat prompt names it so that turn can search.
+    expect(tools).toHaveLength(129);
+    expect(deferred).toHaveLength(118);
     for (const name of [
       'configure_doc_channel',
       'approve_doc_route',

@@ -17,6 +17,8 @@ import { validateBoundaryOrDorkHome } from '../../../lib/boundary.js';
  *
  * @module services/session/launch/launch-session
  */
+import { noteNonBeatMessage } from '../../heartbeats/beat-turns.js';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type { MeshCore } from '@dorkos/mesh';
 import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
@@ -40,7 +42,17 @@ import {
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { logError, logger } from '../../../lib/logger.js';
 import { runInDispatch } from '../../../lib/dispatch-context.js';
-import { dispatchMessage, type MessageDispatchResult } from '../message-dispatcher.js';
+import {
+  dispatchMessage,
+  onDispatchLifecycle,
+  type MessageDispatchResult,
+} from '../message-dispatcher.js';
+import {
+  forgetMessageOrigin,
+  holdTurnOriginFor,
+  messageDispatched,
+  messageTurnStarted,
+} from '../origin/outsider-turns.js';
 import { getOrCreateProjector } from '../session-state-projector.js';
 import { persistenceModeFor } from '../projector-persistence.js';
 import type { TurnOrigin } from '../origin/turn-origin.js';
@@ -248,6 +260,9 @@ export async function resolveRuntimeTypeForNewSession(opts: {
 export async function dispatchSessionMessage(
   opts: DispatchSessionMessageOpts
 ): Promise<DispatchSessionMessageResult> {
+  // A message that is not a beat's, into a chat a beat is running in, makes
+  // that turn somebody's own (spec `heartbeats` §7.2).
+  if (opts.origin.kind !== 'heartbeat') noteNonBeatMessage(opts.sessionId);
   if (!opts.countsTowardLaunchCap) return launchSessionMessage(opts);
   // Taken before any await, so two launches racing for the last slot cannot
   // both get it.
@@ -341,10 +356,31 @@ async function refusedLaunchAccount(opts: {
   }
 }
 
+/** Whether {@link followTurnStarts} subscribed yet. */
+let followingTurnStarts = false;
+
+/**
+ * Apply a message's held turn origin when its turn starts, and forget it when
+ * it leaves the queue without running (`session/origin/outsider-turns.ts`).
+ * Subscribed on the first launch rather than at import, so this module never
+ * reaches the dispatcher while the import graph is still loading.
+ */
+function followTurnStarts(): void {
+  if (followingTurnStarts) return;
+  followingTurnStarts = true;
+  onDispatchLifecycle((event) => {
+    if (event.phase === 'started') messageTurnStarted(event.sessionId, event.messageId);
+    else forgetMessageOrigin(event.messageId);
+  });
+}
+
 async function launchSessionMessage(
   opts: DispatchSessionMessageOpts
 ): Promise<DispatchSessionMessageResult> {
   const { sessionId, clientId, meshCore, roomSessionPlace, origin, onSettled, unattended } = opts;
+  followTurnStarts();
+  // Minted here when the caller did not, so who sent it can wait for its turn.
+  const messageId = opts.messageId ?? randomUUID();
   const {
     content,
     cwd,
@@ -539,11 +575,10 @@ async function launchSessionMessage(
   //
   // The caller's `origin` is passed through untouched: which power it unlocks is
   // `permissionSeedForOrigin`'s decision, never this module's (DOR-2105).
-  const isNewSession = await runtimeRegistry.persistSessionRuntime(
-    sessionId,
-    runtimeType,
-    origin,
-    verifiedAgentPath
+  // Who sent it counts from when its turn starts, not now: it may queue behind
+  // a turn somebody else started (`session/origin/outsider-turns.ts`).
+  const isNewSession = await holdTurnOriginFor(messageId, () =>
+    runtimeRegistry.persistSessionRuntime(sessionId, runtimeType, origin, verifiedAgentPath)
   );
   // Fire the anonymous `session_created` usage event exactly once, on the write
   // that binds the session (no-op unless usage telemetry is on).
@@ -625,7 +660,7 @@ async function launchSessionMessage(
       sessionId,
       clientId,
       content,
-      ...(opts.messageId !== undefined ? { messageId: opts.messageId } : {}),
+      messageId,
       cwd: effectiveCwd,
       context,
       // Background this turn's opener attached to it. It rides the neutral
@@ -663,6 +698,10 @@ async function launchSessionMessage(
     })
   );
 
+  messageDispatched(sessionId, messageId, {
+    accepted: result.accepted,
+    applied: result.outcome.applied,
+  });
   if (result.queued) {
     logger.info('[POST /messages] queued behind the running turn', {
       sessionId,

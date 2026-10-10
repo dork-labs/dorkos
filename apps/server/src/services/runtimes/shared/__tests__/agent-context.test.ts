@@ -494,6 +494,27 @@ describe('buildAgentContextAppend <user_profile> integration', () => {
   });
 });
 
+describe('HEARTBEAT.md is never injected into an ordinary turn', () => {
+  it('reads every convention file but HEARTBEAT.md, and carries none of its text', async () => {
+    // Spec `heartbeats` §2: only a beat's prompt carries HEARTBEAT.md, so a
+    // person's chat with the agent costs no more than it did. Red when the
+    // append starts reading or rendering the file.
+    vi.mocked(readManifest).mockResolvedValue(createTestManifest());
+    vi.mocked(configManager.getAll).mockReturnValue({} as ReturnType<typeof configManager.getAll>);
+    vi.mocked(readConventionFile).mockImplementation(async (_path, filename) =>
+      filename === 'HEARTBEAT.md' ? '---\nwake: timed\n---\nHEARTBEAT-SENTINEL-7731' : null
+    );
+
+    const append = await buildAgentContextAppend(testHome('/test'), '/test');
+
+    expect(append.text).not.toContain('HEARTBEAT-SENTINEL-7731');
+    expect(append.text).not.toContain('HEARTBEAT.md');
+    const files = vi.mocked(readConventionFile).mock.calls.map(([, filename]) => filename);
+    expect(files.length).toBeGreaterThan(0);
+    expect(files).not.toContain('HEARTBEAT.md');
+  });
+});
+
 /**
  * The two doc pointers are the only environment-derived part of
  * `<dorkos_context>`, and `env.ts` snapshots `process.env` once at module load,

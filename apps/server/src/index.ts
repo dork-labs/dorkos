@@ -642,6 +642,9 @@ import {
   wireCommitments,
   type CommitmentWiring,
 } from './services/commitments/commitment-wiring.js';
+import * as heartbeats from './services/heartbeats/index.js';
+import { registeredAgentRoots } from './services/mesh/roots/registered-agent-roots.js';
+import { stopCodexCreditsTurns } from './services/runtimes/codex-credits-stop.js';
 import {
   SessionStartedByStore,
   getSessionStartedByStore,
@@ -755,27 +758,6 @@ let testComposioFixture:
       >
     >
   | undefined;
-
-/**
- * Every registered agent that has a project on disk, as the legacy migration
- * wants them.
- *
- * Lives here rather than inline because the filter is the interesting part: an
- * agent with no resolvable project path has no `.dork/tasks/` to migrate and no
- * `.agents/skills/` to migrate into, and asking about it would only produce a
- * pair of ENOENTs.
- *
- * @param meshCore - The registry, absent when Mesh is switched off.
- */
-function registeredAgentRoots(
-  meshCore: MeshCore | undefined
-): { agentId: string; projectPath: string }[] {
-  if (!meshCore) return [];
-  return meshCore.list().flatMap((agent) => {
-    const projectPath = meshCore.getProjectPath(agent.id);
-    return projectPath ? [{ agentId: agent.id, projectPath }] : [];
-  });
-}
 
 /**
  * Log what an install-recovery sweep did, when it did anything.
@@ -4458,6 +4440,18 @@ async function start() {
   // takes its resolvers, so the live stream carries it exactly as the routes do.
   app.locals.resolveTouches = (sessionIds: string[]) =>
     getSessionTouchStore()?.resolve(sessionIds) ?? new Map();
+  // Agents wake on a beat or an event (spec `heartbeats`); sets the beat-chat
+  // label resolver, so it runs before the broadcaster takes its resolvers.
+  heartbeats.startHeartbeats({
+    app,
+    db,
+    meshCore: () => meshCore,
+    rooms: roomService,
+    roomAuthors,
+    notifyDm,
+    relay: () => relayChannelDeps,
+    commitments: commitments.service,
+  });
   sessionListBroadcaster.setOriginResolvers(sessionOriginResolvers(app.locals));
   // Who may read each session's transcript (spec `audit-trail` §3.4): an
   // agent sees agent work, never a person's own chat.
@@ -5584,7 +5578,8 @@ async function start() {
         }),
       },
     },
-    createCapabilityAttributionObserver(activityService)
+    // A beat's direct room posts and chat sends are counted (spec `heartbeats` §8).
+    heartbeats.withBeatBypassCount(createCapabilityAttributionObserver(activityService))
   );
   // A running extension's tools join and leave the registry (DOR-2685); every
   // open window re-fetches the catalog and the permissions page when they do.
@@ -6311,6 +6306,7 @@ async function shutdownServices() {
     searchIndexer.stop();
   }
   commitmentWiring?.stop();
+  heartbeats.stopHeartbeats();
   if (meshCore) {
     meshCore.stopPeriodicReconciliation();
     meshCore.close();

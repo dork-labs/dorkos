@@ -37,6 +37,7 @@ import {
   CONVENTION_FILES,
 } from '@dorkos/shared/convention-files';
 import { readConventionFile, writeConventionFile } from '@dorkos/shared/convention-files-io';
+import { seedHeartbeatFile } from '../services/heartbeats/heartbeat-file.js';
 import { defaultMemoryTemplate } from '@dorkos/memory';
 import { renderTraits, DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import { validateBoundaryOrDorkHome, BoundaryError } from '../lib/boundary.js';
@@ -213,8 +214,10 @@ export function createAgentsRouter(meshCore?: MeshCoreLike, deps: AgentCreationD
       // the direction a person notices last: the save appears to work and the
       // field comes back empty on the next load.
       const memoryContent = await readConventionFile(agentPath, CONVENTION_FILES.memory);
+      // Read for the Heartbeat page's editor, for the same round-trip reason.
+      const heartbeatContent = await readConventionFile(agentPath, CONVENTION_FILES.heartbeat);
 
-      return res.json({ ...manifest, soulContent, nopeContent, memoryContent });
+      return res.json({ ...manifest, soulContent, nopeContent, memoryContent, heartbeatContent });
     } catch (err) {
       if (err instanceof BoundaryError) {
         return res.status(403).json({ error: err.message, code: err.code });
@@ -328,6 +331,9 @@ export function createAgentsRouter(meshCore?: MeshCoreLike, deps: AgentCreationD
       if ((await readConventionFile(agentPath, CONVENTION_FILES.memory)) === null) {
         await writeConventionFile(agentPath, CONVENTION_FILES.memory, defaultMemoryTemplate());
       }
+      // HEARTBEAT.md by runtime (spec `heartbeats` §2), write-if-absent for the
+      // reason MEMORY.md is: a re-registered agent's own file is its own.
+      await seedHeartbeatFile(agentPath, { runtime: manifest.runtime });
 
       // ADR-0043: sync to Mesh DB cache (best-effort)
       try {

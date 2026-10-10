@@ -186,6 +186,7 @@ export type {
   TurnDeskCheck,
   TurnRuntimeTypeResolver,
   SessionRuntimeBinder,
+  TurnStartNote,
   TurnExecutionSettings,
 } from './adapters/claude-code/index.js';
 

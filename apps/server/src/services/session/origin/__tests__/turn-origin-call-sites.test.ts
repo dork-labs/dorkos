@@ -59,6 +59,9 @@ const EXPECTED: Readonly<Record<string, readonly string[]>> = {
   'services/session/fleet/continue-service.ts': ['interactive'],
   // A limited session's account reset and core resumed the same session.
   'services/session/fleet/resume-service.ts': ['account-resume'],
+  // An agent's beat found work and starts a turn in its beat chat (spec
+  // `heartbeats` §7.2).
+  'services/heartbeats/beat-launch.ts': ['heartbeat'],
   // The in-process end-to-end harness, behind `DORKOS_TEST_RUNTIME`.
   'index.ts': ['test-harness'],
 };

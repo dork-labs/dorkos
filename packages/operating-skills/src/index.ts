@@ -17,3 +17,9 @@ export {
   type SeedOutcome,
   type SeedResult,
 } from './seed.js';
+export {
+  HEARTBEAT_TEMPLATE_NAMES,
+  renderHeartbeatTemplate,
+  type HeartbeatTemplateName,
+  type HeartbeatTemplateOptions,
+} from './heartbeat-templates.js';

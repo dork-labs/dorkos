@@ -39,6 +39,7 @@ import { memoryDomain } from '../../memory/memory-capabilities.js';
 import { sessionDomain } from '../../session/agent-compaction/compaction-capabilities.js';
 import { chatDomain } from '../../session/chat-messages/chat-capabilities.js';
 import { commitmentsDomain } from '../../commitments/commitment-capabilities.js';
+import { heartbeatDomain } from '../../heartbeats/heartbeat-capabilities.js';
 import { uiDomain } from '../../session/browser-seat/ui-capabilities.js';
 import { capabilitiesDomain } from './capabilities-domain.js';
 import { permissionsDomain } from '../permissions/permission-capabilities.js';
@@ -89,6 +90,9 @@ export function composeDorkOsCapabilityRegistry(
   // Blocked one (spec `agent-permissions` D8, D9). The request tool reaches the
   // action it asks for through `deps.registry`, back-written below.
   domains.push(permissionsDomain);
+  // Unconditional too: `end_beat` needs no service handle, and outside a beat
+  // it refuses on its own (`NOT_A_BEAT`), so there is nothing to switch off.
+  domains.push(heartbeatDomain);
 
   const registry = composeRegistry(domains, deps, onInvocation);
   // Back-write the composed registry so `capabilities.list` can serialize it.
@@ -145,6 +149,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     uiDomain,
     capabilitiesDomain,
     permissionsDomain,
+    heartbeatDomain,
   ];
   const deps: CapabilityDeps = {
     logger: noopLogger,

@@ -502,7 +502,9 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // 125 -> 128 for `pause_agent`, `resume_agent` and `list_paused_agents`
     // (spec `audit-trail` PR5): no prompt block names them, so they stay
     // deferred and unprefixed.
-    expect(advertised.size).toBe(128);
+    // 128 -> 129 for `end_beat` (spec `heartbeats` §8): only the beat prompt
+    // names it, as a searchable ending, so it stays deferred and unprefixed.
+    expect(advertised.size).toBe(129);
     for (const name of [
       'configure_doc_channel',
       'approve_doc_route',

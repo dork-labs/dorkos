@@ -65,6 +65,7 @@ const KNOWN_KINDS: Record<TurnOrigin['kind'], true> = {
   interactive: true,
   room: true,
   schedule: true,
+  heartbeat: true,
   'relay-binding': true,
   'agent-dm': true,
   'outside-sender': true,

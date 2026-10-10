@@ -83,6 +83,7 @@ describe('sessionVisibilityForOrigin', () => {
       'relay-binding': 'participants',
       room: 'space',
       schedule: 'space',
+      heartbeat: 'space',
       'agent-dm': 'space',
       'outside-sender': 'space',
       'connector-event': 'space',
