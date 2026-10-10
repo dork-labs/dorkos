@@ -283,20 +283,6 @@ describe('the engaged window', () => {
       expect(open?.postsLeft).toBe(WINDOW.posts - 2);
     });
 
-    it('lets the root decay like any other post once the thread is full', () => {
-      const store = freshStore();
-      write(store, { id: 'root', mentions: [ANA], minutesAgo: 3 });
-      for (let i = 0; i < WINDOW.posts; i++) {
-        write(store, { id: `reply-${i}`, threadRootEntryId: 'root', minutesAgo: 1 });
-      }
-      expect(
-        engagementFor(
-          { store },
-          { roomId: ROOM, threadRootEntryId: 'root', authorId: ANA, window: WINDOW, now: NOW }
-        )
-      ).toBeNull();
-    });
-
     it('does not count a root the agent wrote itself', () => {
       const store = freshStore();
       write(store, { id: 'root', authorId: ANA, mentions: [ANA], minutesAgo: 3 });

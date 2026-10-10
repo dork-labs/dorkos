@@ -18,7 +18,7 @@ import { authors } from '@dorkos/db';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { engagementFor, type EngagedWindow } from '../engagement.js';
 import { RoomStore } from '../room-store.js';
-import { MARFA, MIO, type FixtureEntry } from './real-room-misses.fixture.js';
+import { ROOM_A, ROOM_B, type FixtureEntry } from './real-room-misses.fixture.js';
 
 const ROOM = 'room-real';
 const IDS = {
@@ -110,11 +110,11 @@ function engagedAt(log: readonly FixtureEntry[], seq: number, window: EngagedWin
 describe('the real posts nobody answered (DOR-2823)', () => {
   describe('a thread whose root @mentioned the agent', () => {
     it.each([
-      ['#marfa-poster', MARFA, 48],
-      ['#proj-mio-lab-testing', MIO, 289],
-      ['#proj-mio-lab-testing', MIO, 297],
-      ['#proj-mio-lab-testing', MIO, 303],
-      ['#proj-mio-lab-testing', MIO, 308],
+      ['room A', ROOM_A, 48],
+      ['room B', ROOM_B, 289],
+      ['room B', ROOM_B, 297],
+      ['room B', ROOM_B, 303],
+      ['room B', ROOM_B, 308],
     ])('%s seq %i reaches the agent at the shipped window', (_room, log, seq) => {
       expect(engagedAt(log, seq, SHIPPED)).toBe(true);
     });
@@ -122,17 +122,17 @@ describe('the real posts nobody answered (DOR-2823)', () => {
     // 27 minutes after the root: inside the operator's stopgap window, outside
     // the shipped one. Following the conversation rather than the clock is what
     // answers it at the shipped settings.
-    it('#proj-mio-lab-testing seq 279 reaches the agent at a 60-minute window', () => {
-      expect(engagedAt(MIO, 279, STOPGAP)).toBe(true);
+    it('room B seq 279 reaches the agent at a 60-minute window', () => {
+      expect(engagedAt(ROOM_B, 279, STOPGAP)).toBe(true);
     });
   });
 
   describe('the posts that were answered still are', () => {
     it.each([
-      ['#marfa-poster', MARFA, 38],
-      ['#proj-mio-lab-testing', MIO, 282],
-      ['#proj-mio-lab-testing', MIO, 293],
-      ['#proj-mio-lab-testing', MIO, 314],
+      ['room A', ROOM_A, 38],
+      ['room B', ROOM_B, 282],
+      ['room B', ROOM_B, 293],
+      ['room B', ROOM_B, 314],
     ])('%s seq %i', (_room, log, seq) => {
       expect(engagedAt(log, seq, SHIPPED)).toBe(true);
     });

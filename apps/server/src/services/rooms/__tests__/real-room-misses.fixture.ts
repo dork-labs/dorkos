@@ -1,7 +1,7 @@
 /**
  * Two real channels where a person posted and nobody answered (DOR-2823).
  *
- * Read from the operator's own room log on 2026-10-09 and reduced to what the
+ * Read from a real room log on 2026-10-09 and reduced to what the
  * routing rules read: who wrote each post (by role, not by name), when, which
  * thread it sat in, and whom it @mentioned. Every message body is left out.
  * `seq` is the real sequence number, so a case here can be checked against the
@@ -33,8 +33,8 @@ export interface FixtureEntry {
   root?: number;
 }
 
-/** The project channel for a poster (`#marfa-poster`), seq 29 to 53. */
-export const MARFA: readonly FixtureEntry[] = [
+/** The first channel, seq 29 to 53. */
+export const ROOM_A: readonly FixtureEntry[] = [
   {
     seq: 29,
     author: 'OTHER_AGENT',
@@ -110,8 +110,8 @@ export const MARFA: readonly FixtureEntry[] = [
   },
 ];
 
-/** A lab-testing project channel (`#proj-mio-lab-testing`), seq 266 to 320. */
-export const MIO: readonly FixtureEntry[] = [
+/** The second channel, seq 266 to 320. */
+export const ROOM_B: readonly FixtureEntry[] = [
   { seq: 266, author: 'HUMAN', kind: 'post', at: '2026-09-18T20:32:22.128Z' },
   { seq: 267, author: 'AGENT', kind: 'post', at: '2026-09-18T20:33:00.626Z' },
   { seq: 268, author: 'HUMAN', kind: 'post', at: '2026-09-18T20:34:01.671Z', mentions: ['AGENT'] },
