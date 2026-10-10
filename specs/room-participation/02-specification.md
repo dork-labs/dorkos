@@ -569,7 +569,7 @@ dispatcher does not run `pickLead` when `bridgedFraming(room.id)` is non-null.
 context as `addressing.answerOwed`, and the block then says the message is the agent's to answer
 and never offers "post nothing" (the addressed branch of §11's directive).
 
-**Migration** (`packages/db/drizzle/20261010022008_channel_leads.sql`, carries no DDL). Every
+**Migration** (`packages/db/drizzle/20261010130750_channel_leads.sql`, carries no DDL). Every
 existing channel with `fallback_seat_author_id IS NULL` gets a value, in order:
 
 1. The agent member that answered a person's post most in the last 14 days — counting replies at
