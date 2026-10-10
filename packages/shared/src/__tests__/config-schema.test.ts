@@ -152,6 +152,9 @@ describe('UserConfigSchema', () => {
         dismissedAt: null,
         completedAt: null,
         runtimeDefaultSetAt: null,
+        firstRunPath: null,
+        welcomeEntryId: null,
+        priorRuntime: null,
       },
       tours: { seen: [], declined: [] },
       profile: {
@@ -564,6 +567,9 @@ describe('USER_CONFIG_DEFAULTS', () => {
         dismissedAt: null,
         completedAt: null,
         runtimeDefaultSetAt: null,
+        firstRunPath: null,
+        welcomeEntryId: null,
+        priorRuntime: null,
       },
       tours: { seen: [], declined: [] },
       profile: {

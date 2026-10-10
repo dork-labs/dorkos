@@ -24,6 +24,7 @@ import { requireSpacesEnabled } from './middleware/spaces-enabled.js';
 import readCursorRoutes from './routes/read-cursors.js';
 import tunnelRoutes from './routes/tunnel.js';
 import cloudRoutes from './routes/cloud.js';
+import onboardingRoutes from './routes/onboarding.js';
 import feedbackRoutes, { feedbackJsonParser } from './routes/feedback.js';
 import modelRoutes from './routes/models.js';
 import subagentRoutes from './routes/subagents.js';
@@ -219,6 +220,7 @@ export function createApp(options: {
   app.use('/api/read-cursors', readCursorRoutes);
   app.use('/api/tunnel', tunnelRoutes);
   app.use('/api/cloud', cloudRoutes);
+  app.use('/api/onboarding', onboardingRoutes);
   app.use('/api/feedback', feedbackRoutes);
   app.use('/api/models', modelRoutes);
   app.use('/api/subagents', subagentRoutes);

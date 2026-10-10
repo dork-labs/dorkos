@@ -89,6 +89,8 @@ let attemptGeneration = 0;
 /** The one mint in flight, shared by every launch waiting on it. */
 let inflight: Promise<boolean> | null = null;
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+/** The problem code the last mint under the current link was refused with, else `null`. */
+let mintRefusal: string | null = null;
 
 /** Injectable clock so the expiry check is testable without waiting. */
 let now: () => number = () => Date.now();
@@ -111,6 +113,7 @@ export function __setCreditsStateForTests(state: {
       : { token: state.token, isCurrent: state.isCurrent ?? (() => true) };
   attemptGeneration += 1;
   inflight = null;
+  mintRefusal = null;
   now = state.now ?? (() => Date.now());
 }
 
@@ -143,6 +146,15 @@ function handoutable(): InferenceToken | null {
  */
 export function heldCreditsToken(): InferenceToken | null {
   return live();
+}
+
+/**
+ * The problem code the service refused the last mint under this link with
+ * (`entitlement_required` when the account cannot use credits), else `null`.
+ * Never waits and never mints; a later mint that succeeds clears it.
+ */
+export function creditsMintRefusal(): string | null {
+  return mintRefusal;
 }
 
 /**
@@ -203,11 +215,15 @@ export async function primeCreditsInferenceWithContext(
     });
     if (!context.isCurrent() || attempt !== attemptGeneration) return false;
     minted = { token, isCurrent: context.isCurrent };
+    mintRefusal = null;
     scheduleRefresh(token);
     return true;
   } catch (error) {
     const status =
       problemOf(error)?.status ?? (error instanceof CloudApiResponseError ? error.status : null);
+    if (context.isCurrent() && attempt === attemptGeneration) {
+      mintRefusal = problemOf(error)?.code ?? null;
+    }
     if (
       context.isCurrent() &&
       attempt === attemptGeneration &&
@@ -292,6 +308,7 @@ export function startCreditsLifecycle(): () => void {
       void mintOnce();
     } else {
       minted = null;
+      mintRefusal = null;
       attemptGeneration += 1;
     }
   });

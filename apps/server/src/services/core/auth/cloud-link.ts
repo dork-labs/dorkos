@@ -96,6 +96,8 @@ import {
   type InstanceDescriptor,
 } from './cloud-link-client.js';
 import { resolveConfiguredLinkTelemetryInstanceId } from './link-telemetry-config.js';
+import { startLinkResultFrom } from './link-codes.js';
+import type { StartLinkResult } from '@dorkos/shared/cloud-schemas';
 
 /** How often a linked instance heartbeats the cloud. */
 const HEARTBEAT_INTERVAL_MS = 15 * 60 * 1000;
@@ -162,11 +164,7 @@ export interface CloudLinkSummary {
 }
 
 /** The `POST /api/cloud/link/start` shape (codes for the human to enter). */
-export interface StartLinkResult {
-  userCode: string;
-  verificationUri: string;
-  expiresAt: string;
-}
+export type { StartLinkResult };
 
 /** Config read/write seam over the `cloud.*` section, injectable for tests. */
 export interface CloudConfigPort {
@@ -370,11 +368,7 @@ export class CloudLinkManager {
       throw new Error('Cloud link request was superseded');
     }
 
-    const result: StartLinkResult = {
-      userCode: codes.user_code,
-      verificationUri: codes.verification_uri,
-      expiresAt: new Date(this.now() + codes.expires_in * 1000).toISOString(),
-    };
+    const result = startLinkResultFrom(codes, this.now());
     this.pendingCodes = result;
     this.setState('pending');
     const controller = new AbortController();

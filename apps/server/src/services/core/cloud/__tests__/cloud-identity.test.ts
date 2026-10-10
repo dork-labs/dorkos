@@ -30,6 +30,7 @@ import {
   primeCreditsInferenceGated,
   revokeHeldCreditsToken,
   primeCreditsInferenceWithContext,
+  creditsMintRefusal,
 } from '../credits-inference.js';
 
 const session = { authenticated: true, instanceId: 'service-issued-id', scopes: [] };
@@ -127,6 +128,21 @@ describe('authoritative Cloud identity for credits', () => {
     );
     expect(await primeCreditsInferenceWithContext(captureCloudV1Context())).toBe(false);
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('remembers that minting was refused for eligibility, until a mint succeeds', async () => {
+    let refuse = true;
+    fakeCloud((url) => {
+      if (url.pathname === '/v1/session') return answer(session);
+      return refuse
+        ? answer({ code: 'entitlement_required', status: 403, title: 'Not available' }, 403)
+        : answer(tokenFixture);
+    });
+    expect(await primeCreditsInferenceWithContext(captureCloudV1Context())).toBe(false);
+    expect(creditsMintRefusal()).toBe('entitlement_required');
+    refuse = false;
+    expect(await primeCreditsInferenceWithContext(captureCloudV1Context())).toBe(true);
+    expect(creditsMintRefusal()).toBeNull();
   });
 
   it('refuses a network failure without minting', async () => {

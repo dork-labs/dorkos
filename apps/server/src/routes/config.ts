@@ -237,6 +237,9 @@ router.get('/', async (req, res) => {
       dismissedAt: null,
       completedAt: null,
       runtimeDefaultSetAt: null,
+      firstRunPath: null,
+      welcomeEntryId: null,
+      priorRuntime: null,
     },
     tours: configManager.get('tours') ?? { seen: [], declined: [] },
     // Who the user is, in their own words (spec user-profile-onboarding).

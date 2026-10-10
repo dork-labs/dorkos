@@ -243,8 +243,10 @@ describe('main HTTP admission through the real app', () => {
     // `heartbeats` §12).
     expect(mounts).toContain('/api/commitments');
     // 72 -> 71: the `/assets` trap is no longer an Express mount; it lives in
-    // `http/client-files.ts`, and is asked for by hand below.
-    expect(mounts).toHaveLength(71);
+    // `http/client-files.ts`, and is asked for by hand below. 71 -> 72:
+    // `/api/onboarding`, the first-run routes (spec `one-minute-onboarding` §4).
+    expect(mounts).toContain('/api/onboarding');
+    expect(mounts).toHaveLength(72);
     for (const mount of [...mounts, '/', '/x/fixture', '/assets/fixture.js', '/unknown']) {
       expectTerminal(
         await request(target.server).get(mount).set('Origin', 'https://untrusted.example')

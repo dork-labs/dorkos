@@ -530,6 +530,15 @@ export const CONFIG_WRITE_POLICY = {
   // grants nothing and guards nothing; an agent rewriting it can at most let
   // first-run setup ask the question again on a machine that is past it.
   'onboarding.runtimeDefaultSetAt': 'agent-writable',
+  // `'dorkos'` here is what lets a new link record DorkOS credits as the
+  // person's own pick for the DorkOS runtime, so it decides who pays. It is a
+  // person's pick on the Welcome screen, and an agent may not make it for them.
+  'onboarding.firstRunPath': 'operator-only',
+  // The runtime a later first-run pick puts `runtimes.default` back to. Grants
+  // nothing `runtimes.default` itself, agent-writable above, does not.
+  'onboarding.priorRuntime': 'agent-writable',
+  // Which #team entry the chips sit under. Grants nothing.
+  'onboarding.welcomeEntryId': 'agent-writable',
 
   'tours.seen': 'agent-writable',
   'tours.declined': 'agent-writable',
@@ -1018,6 +1027,9 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'cloud.credits.agents',
       'cloud.credits.linkedTo',
       ...CLOUD_REMOTE_CREDENTIAL_PATHS,
+      // The first run's DorkOS path, which a new link reads to record credits
+      // as the person's pick (spec `one-minute-onboarding` §4.1).
+      'onboarding.firstRunPath',
       'runtimes.codex.credentialRef',
       'runtimes.environment.inherit.claudeCode',
       'runtimes.environment.inherit.codex',

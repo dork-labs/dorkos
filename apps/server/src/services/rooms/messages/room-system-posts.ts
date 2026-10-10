@@ -159,6 +159,56 @@ export class RoomSystemPosts {
   }
 
   /**
+   * Post an agent's scripted greeting — words DorkOS wrote for it, not a reply
+   * it composed — such as DorkBot's first-run welcome in #team (spec
+   * `one-minute-onboarding` §4.2).
+   *
+   * **The system-post shape, with the agent as the author.** It goes straight
+   * to the store and the stream, addresses nobody (`mentions: []`), and its
+   * cascade is spent at the ceiling, so it starts no turn: #team seats every
+   * agent, and {@link RoomPosting.post} would dispatch the greeting to all of
+   * them. It raises no notification either, because the notifier runs on that
+   * path and not on this one.
+   *
+   * The author must be an agent seated in the room, so this cannot put words
+   * in a person's mouth or speak for an agent somewhere it is not.
+   *
+   * @param roomId - The room to greet in.
+   * @param input.authorId - The seated agent the greeting is from.
+   * @param input.text - The greeting.
+   * @returns The committed entry.
+   * @throws {RoomError} `ROOM_ARCHIVED` for an archived room, `MEMBER_NOT_FOUND`
+   *   when the author is not an agent seated in it.
+   */
+  postAgentGreeting(roomId: string, input: { authorId: string; text: string }): RoomEntry {
+    const room = this.visibility.requireRoom(roomId);
+    if (room.archived) throw new RoomError('ROOM_ARCHIVED', 'This room is archived');
+    const author = this.authors.getById(input.authorId);
+    if (author?.kind !== 'agent' || !this.store.getMember(roomId, input.authorId)) {
+      throw new RoomError('MEMBER_NOT_FOUND', 'A greeting comes from an agent seated in the room');
+    }
+    const id = ulid();
+    const entry = this.store.appendEntry({
+      roomId,
+      id,
+      authorId: input.authorId,
+      kind: 'post',
+      body: { text: input.text },
+      mentions: [],
+      mentionSpans: [],
+      sessionId: null,
+      ...threadPointers(this.store, roomId, undefined),
+      ...deriveCascade(id, {
+        authorKind: 'system',
+        maxAgentDepth: this.limitsFor(roomId).maxAgentDepth,
+      }),
+      createdAt: new Date().toISOString(),
+    });
+    this.publisher.publishEntry(entry);
+    return entry;
+  }
+
+  /**
    * Announce work an agent merged into the room's repo (spec `project-rooms`
    * §3.6).
    *

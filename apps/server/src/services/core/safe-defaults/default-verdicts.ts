@@ -184,6 +184,13 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'onboarding.dismissedAt',
   'onboarding.completedAt',
   'onboarding.runtimeDefaultSetAt',
+  // The first-run path, the welcome entry and the runtime to undo to (spec
+  // `one-minute-onboarding` §7). Each defaults to `null`, which picks nothing,
+  // posts nothing and arms nothing: credits are recorded only after a person
+  // picked the DorkOS path AND a new link was approved.
+  'onboarding.firstRunPath',
+  'onboarding.welcomeEntryId',
+  'onboarding.priorRuntime',
   'tours.seen',
   'tours.declined',
   // The user profile (spec user-profile-onboarding): empty/null defaults send

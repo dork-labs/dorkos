@@ -133,6 +133,9 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'notifications.sounds.allClear',
       'notifications.sounds.knock',
       'notifications.sounds.turnEnd',
+      // The first run's DorkOS path: a new link reads it to record credits as
+      // the person's own pick, so it decides who pays (one-minute-onboarding §4.1).
+      'onboarding.firstRunPath',
       // What agents may do. The generic writers refuse these outright; this is
       // the second line (spec `agent-permissions` D10).
       'permissions.defaults.actions',

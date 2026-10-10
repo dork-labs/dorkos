@@ -15,7 +15,12 @@ import {
 } from '../refresh-untouched-templates.js';
 
 /** sha256 prefixes of each old template, computed from git history, not from the lists. */
-const DORKBOT_FINGERPRINTS = ['8bbbe607e61c6a24', '37db35aff4b2fb6f', '88bc13eeede41a76'];
+const DORKBOT_FINGERPRINTS = [
+  '8bbbe607e61c6a24',
+  '37db35aff4b2fb6f',
+  '88bc13eeede41a76',
+  '221bafa4a0476540',
+];
 const SOUL_FINGERPRINTS = ['0ae265f490efe529'];
 
 /** A SOUL.md exactly as a pre-2026-10 DorkOS wrote it, traits as given. */

@@ -44,6 +44,9 @@ export function useOnboarding() {
     dismissedAt: null,
     completedAt: null,
     runtimeDefaultSetAt: null,
+    firstRunPath: null,
+    welcomeEntryId: null,
+    priorRuntime: null,
   };
 
   const state: OnboardingState = config?.onboarding
@@ -62,6 +65,11 @@ export function useOnboarding() {
         // No such guard needed here: absent and null both read as "not decided",
         // which is the honest answer for a server that cannot tell us.
         runtimeDefaultSetAt: config.onboarding.runtimeDefaultSetAt,
+        // The first-run record (spec `one-minute-onboarding` §7). Absent from an
+        // older server, which reads as nothing picked yet.
+        firstRunPath: config.onboarding.firstRunPath ?? null,
+        welcomeEntryId: config.onboarding.welcomeEntryId ?? null,
+        priorRuntime: config.onboarding.priorRuntime ?? null,
       }
     : DEFAULT_STATE;
 

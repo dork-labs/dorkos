@@ -17,6 +17,7 @@ import type {
 } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
 import { transportSliceMocks } from './mock-transport-slices.js';
+import { mockOnboardingMethods, mockProfileMethods } from './mock-person-methods.js';
 import type { AccountUsage } from '@dorkos/shared/account-usage';
 import {
   CONNECTION_GONE_AGENT_COPY,
@@ -1370,16 +1371,8 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       .fn()
       .mockResolvedValue({ project: null, allow: null, accounts: [] }),
     setAccountOnlyProjects: vi.fn().mockResolvedValue({ onlyProjects: null }),
-    // The operator's own profile (spec `identity-consistency` §W3.3, §W3.5).
-    // Each resolves with what the real route answers, so a component under test
-    // takes its success path unless a test deliberately makes one reject.
-    updateProfile: vi
-      .fn()
-      .mockImplementation((displayName: string) => Promise.resolve({ displayName })),
-    uploadProfileAvatar: vi
-      .fn()
-      .mockResolvedValue({ imageUrl: '/api/profile/avatar/person-1?v=abc' }),
-    deleteProfileAvatar: vi.fn().mockResolvedValue(undefined),
+    ...mockProfileMethods(),
+    ...mockOnboardingMethods(),
     setIdentityLinkedToMe: vi.fn().mockResolvedValue(undefined),
     // Answers with the `AuthorRef` the real route returns, echoing the handle
     // it was asked for. A bare `vi.fn()` resolves `undefined`, which is not a

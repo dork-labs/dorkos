@@ -20,6 +20,7 @@ import {
   fillCreditsGaps,
   noteCreditsAccount,
   readCreditsSettings,
+  recordFirstRunCreditsChoice,
   setCreditsAllowedForAgent,
   setCreditsDefault,
   undoFilledDefaults,
@@ -145,6 +146,49 @@ describe('filling the gaps on a new link', () => {
     const config = memoryConfig({ credits: { offer: 'pending', linkedTo: 'acct-1' } });
     await fillCreditsGaps([runtime('claude-code', 'working')], ACCOUNT, config);
     expect(readCreditsSettings(config).offer).toBe('none');
+  });
+});
+
+describe('a new link made from the first run’s DorkOS path', () => {
+  /** A config whose onboarding block says which path the first run picked. */
+  function firstRunConfig(onboarding: { firstRunPath: string | null; completedAt: string | null }) {
+    const config = memoryConfig();
+    const get = config.get;
+    config.get = ((key: string) =>
+      key === 'onboarding' ? onboarding : get(key as 'cloud')) as CreditsConfigPort['get'];
+    return config;
+  }
+
+  it('records credits for the DorkOS runtime as the person’s pick, after the gap fill', async () => {
+    const config = firstRunConfig({ firstRunPath: 'dorkos', completedAt: null });
+    // The gap fill starts the choices over on a new account and records `doe`
+    // as DorkOS's own fill; the person's pick then replaces it.
+    await fillCreditsGaps([runtime('doe', 'none')], ACCOUNT, config);
+    expect(recordFirstRunCreditsChoice(config)).toBe(true);
+    expect(readCreditsSettings(config).defaults.doe).toEqual({
+      runsOn: 'credits',
+      chosenBy: 'user',
+      announced: true,
+      signInReoffered: false,
+    });
+    // So no "DorkOS chose for you" notice follows.
+    const notices = await creditsNotices(readCreditsSettings(config), {
+      linked: true,
+      runtimes: [runtime('doe', 'none')],
+    });
+    expect(notices).toEqual([]);
+  });
+
+  it('records nothing for any other path, or once the first run is finished', () => {
+    for (const onboarding of [
+      { firstRunPath: 'own', completedAt: null },
+      { firstRunPath: null, completedAt: null },
+      { firstRunPath: 'dorkos', completedAt: '2026-10-01T00:00:00.000Z' },
+    ]) {
+      const config = firstRunConfig(onboarding);
+      expect(recordFirstRunCreditsChoice(config)).toBe(false);
+      expect(readCreditsSettings(config).defaults).toEqual({});
+    }
   });
 });
 

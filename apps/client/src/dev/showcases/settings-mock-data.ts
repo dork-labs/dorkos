@@ -139,6 +139,9 @@ export const MOCK_SERVER_CONFIG: ServerConfig = {
     dismissedAt: null,
     completedAt: null,
     runtimeDefaultSetAt: null,
+    firstRunPath: null,
+    welcomeEntryId: null,
+    priorRuntime: null,
   },
   agents: {
     defaultDirectory: '/Users/dev/dorkos/agents',

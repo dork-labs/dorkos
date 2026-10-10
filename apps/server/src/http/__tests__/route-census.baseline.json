@@ -400,6 +400,8 @@
     "POST /api/mesh/deny",
     "POST /api/mesh/discover",
     "POST /api/notifications/read-all",
+    "POST /api/onboarding/first-run",
+    "POST /api/onboarding/welcome",
     "POST /api/permissions/history/:eventId/undo",
     "POST /api/profile/avatar",
     "POST /api/profile/identities/:authorId",

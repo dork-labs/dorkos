@@ -5,6 +5,7 @@ import {
   dorkbotClaudeMdTemplate,
   dorkbotDiscoveryFoundLine,
   dorkbotProfileSuggestionLine,
+  dorkbotWelcomeText,
   generateVoiceSample,
 } from '../dorkbot-templates.js';
 import { recommendForRoles } from '../profile-recommendations.js';
@@ -28,6 +29,47 @@ describe('dorkbot-templates', () => {
       const result = dorkbotClaudeMdTemplate();
       expect(result).toContain('# DorkBot');
       expect(result).toContain('DorkOS');
+    });
+
+    it('describes running a business and building mini apps, never a retired line', () => {
+      const result = dorkbotClaudeMdTemplate();
+      expect(result).toContain('run their business');
+      expect(result).toContain('mini apps');
+      for (const retired of [
+        'operating system for autonomous AI agents',
+        'mission control',
+        'cockpit',
+        'open source',
+        'own computer',
+      ]) {
+        expect(result.toLowerCase()).not.toContain(retired);
+      }
+    });
+  });
+
+  describe('dorkbotWelcomeText', () => {
+    it('says each path’s welcome, with the name', () => {
+      expect(dorkbotWelcomeText('dorkos', 'Dorian')).toBe(
+        'Hi Dorian. Your agents run on DorkOS. Usage is in Settings.\n\n' +
+          'Want a first tool? Pick one below, or tell me what you need.'
+      );
+      expect(dorkbotWelcomeText('own', 'Dorian')).toBe(
+        'Hi Dorian. Your agents are ready.\n\n' +
+          'Want a first tool? Pick one below, or tell me what you need.'
+      );
+      expect(dorkbotWelcomeText('none', 'Dorian')).toBe(
+        'Hi Dorian. Agents need AI to reply. Connect DorkOS or your own.'
+      );
+    });
+
+    it('falls back to "there", and reads no path as no AI', () => {
+      expect(dorkbotWelcomeText(null, null)).toBe(
+        'Hi there. Agents need AI to reply. Connect DorkOS or your own.'
+      );
+      expect(dorkbotWelcomeText('own', '   ')).toBe(
+        'Hi there. Your agents are ready.\n\n' +
+          'Want a first tool? Pick one below, or tell me what you need.'
+      );
     });
   });
 
