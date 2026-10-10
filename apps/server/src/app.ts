@@ -23,6 +23,7 @@ import { createRemoteCommunitiesRouter } from './routes/remote-communities.js';
 import { requireSpacesEnabled } from './middleware/spaces-enabled.js';
 import readCursorRoutes from './routes/read-cursors.js';
 import tunnelRoutes from './routes/tunnel.js';
+import { createRemoteAccessRouter } from './routes/remote-access.js';
 import cloudRoutes from './routes/cloud.js';
 import feedbackRoutes, { feedbackJsonParser } from './routes/feedback.js';
 import modelRoutes from './routes/models.js';
@@ -218,6 +219,7 @@ export function createApp(options: {
   app.use('/api/communities', requireSpacesEnabled, createRemoteCommunitiesRouter());
   app.use('/api/read-cursors', readCursorRoutes);
   app.use('/api/tunnel', tunnelRoutes);
+  app.use('/api/remote-access', createRemoteAccessRouter());
   app.use('/api/cloud', cloudRoutes);
   app.use('/api/feedback', feedbackRoutes);
   app.use('/api/models', modelRoutes);

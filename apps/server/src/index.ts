@@ -64,7 +64,10 @@ import {
   stopCreditsLifecycle,
 } from './services/core/cloud/credits-inference.js';
 import { readCloudAccountKey } from './services/core/cloud/v1-client.js';
-import { fillCreditsGapsOnNewLink } from './services/core/cloud/credits-runtimes.js';
+import {
+  fillCreditsGapsOnNewLink,
+  stopCodexCreditsTurns,
+} from './services/core/cloud/credits-runtimes.js';
 import { startCreditsRelay, type CreditsRelay } from './services/core/cloud/credits-relay.js';
 import { initMoveStaging } from './services/core/cloud/community-move-upload.js';
 import {
@@ -73,7 +76,7 @@ import {
   ConfigBootError,
 } from './services/core/config-manager.js';
 import { readOperatorDisplayName } from './services/core/config/operator-display-name.js';
-import { logConfigWrite } from './services/core/operator/config-write.js';
+import { logConfigWrite, onTrustStopChange } from './services/core/operator/config-write.js';
 import { initClaudeAccountApplier } from './services/core/operator/config-patch.js';
 import { applyClaudeAccountChange } from './services/runtimes/claude-code/account-switch.js';
 import {
@@ -282,7 +285,7 @@ import {
   personWriter,
   createAlwaysSuggestion,
 } from './services/core/permissions/index.js';
-import { onTrustStopChange } from './services/core/operator/config-write.js';
+import { managedRemoteCoordinator } from './services/core/remote/managed-remote-coordinator.js';
 import { titleForMcpTool } from './services/core/mcp-tool-tiers.js';
 import { createTeamRouter } from './routes/team.js';
 import { createProfileRouter } from './routes/profile.js';
@@ -6369,6 +6372,9 @@ async function start() {
   ensureCreditsClaudeRoot();
   startCreditsLifecycle();
   getCloudLinkManager().setOnUnlink(async () => {
+    // First, while the link still stands: managed remote access withdraws
+    // locally at once and sends its Cloud calls under the old key (DOR-2086).
+    void managedRemoteCoordinator.withdrawOnUnlink();
     await revokeHeldCreditsToken();
     await claudeRuntime?.stopCreditsSessions();
     stopCodexCreditsTurns();
@@ -6394,17 +6400,6 @@ async function start() {
       });
     }
   });
-}
-
-/**
- * Stop every Codex turn running on DorkOS credits, when Codex is registered.
- * Structural, because the Codex runtime is constructed inside an optional
- * registration and is not held here.
- */
-function stopCodexCreditsTurns(): void {
-  const codex = runtimeRegistry.listRuntimes().find((runtime) => runtime.type === 'codex') as
-    { stopCreditsTurns?: () => void } | undefined;
-  codex?.stopCreditsTurns?.();
 }
 
 // Ordered teardown of all running services WITHOUT calling process.exit().

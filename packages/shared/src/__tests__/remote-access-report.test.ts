@@ -38,7 +38,7 @@ describe('RemoteAccessReportSchema', () => {
     expect(RemoteAccessReportSchema.safeParse({ ...base, state: 'awake' }).success).toBe(false);
   });
 
-  it('parses the three enrolment shapes and requires the pending details', () => {
+  it('parses the enrolment shapes and requires the pending details', () => {
     expect(
       RemoteAccessReportSchema.safeParse({ ...base, enrolment: { status: 'none' } }).success
     ).toBe(true);
@@ -62,6 +62,31 @@ describe('RemoteAccessReportSchema', () => {
         enrolment: { ...pending, expiresAt: 'in ten minutes' },
       }).success
     ).toBe(false);
+  });
+
+  it('parses a declined and a lapsed setup, as their own states, with nothing else', () => {
+    for (const status of ['denied', 'expired']) {
+      expect(RemoteAccessReportSchema.safeParse({ ...base, enrolment: { status } }).success).toBe(
+        true
+      );
+    }
+    // A denied setup is not a pending one: it carries no code a person could
+    // still type.
+    const parsed = RemoteAccessReportSchema.parse({
+      ...base,
+      enrolment: { status: 'denied', userCode: 'BCDF-GHJK' },
+    });
+    expect(parsed.enrolment).toEqual({ status: 'denied' });
+  });
+
+  it('carries the address while asleep, so a surface can show where it will answer', () => {
+    expect(
+      RemoteAccessReportSchema.safeParse({
+        ...base,
+        state: 'asleep',
+        url: 'https://box.remote.example.com',
+      }).success
+    ).toBe(true);
   });
 
   it('allows no url and no reason, and refuses an unknown availability or mode', () => {
