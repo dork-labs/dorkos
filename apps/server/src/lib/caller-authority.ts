@@ -277,7 +277,8 @@ export function requireOperatorCookieUnderLogin(
 export function isLocalCaller(
   request: Pick<RequestFacts, 'peerAddress' | 'headers'> | Request
 ): boolean {
-  const peer = 'peerAddress' in request ? request.peerAddress : request.socket.remoteAddress;
+  // An Express request carries its socket; facts never do.
+  const peer = 'socket' in request ? request.socket?.remoteAddress : request.peerAddress;
   return isLocalRequest({
     peer,
     hostHeader: request.headers.host,

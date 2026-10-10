@@ -50,7 +50,9 @@ export interface RequestFacts {
 
 /**
  * The Hono variables the identity middleware sets, under the same names the
- * Express chain uses on `res.locals`.
+ * Express chain uses on `res.locals`. Nothing sets them yet: when the session
+ * gate and the agent-identity middleware move to Hono, they must `c.set`
+ * exactly these keys, or every policy reads an anonymous caller.
  */
 export interface RequestFactsVariables {
   /** Set by the session gate. */
@@ -67,6 +69,10 @@ export type RequestFactsEnv = {
 
 /**
  * The client address Express reports as `req.ip` under `trust proxy, 1`.
+ *
+ * One trusted hop, because `app.ts` sets `trust proxy` to `1`. Change one and
+ * the other must follow, or the two chains key their limiters differently;
+ * `__tests__/request-facts.test.ts` holds this to Express's answer.
  *
  * Express (through `proxy-addr` and `forwarded`) treats the socket peer as the
  * one trusted hop, so the client is the last `X-Forwarded-For` entry. Entries
@@ -100,7 +106,7 @@ export function forwardedClientAddress(
 export function expressRequestFacts(req: Request, res?: Pick<Response, 'locals'>): RequestFacts {
   return {
     headers: req.headers,
-    peerAddress: req.socket.remoteAddress,
+    peerAddress: req.socket?.remoteAddress,
     forwardedAddress: req.ip,
     connectionEncrypted: isEncrypted(req),
     user: res?.locals.user as RequestUser | undefined,
@@ -119,8 +125,8 @@ export function expressRequestFacts(req: Request, res?: Pick<Response, 'locals'>
  */
 export function honoRequestFacts(c: Context<RequestFactsEnv>): RequestFacts {
   const incoming = c.env.incoming;
-  // Node joins a repeated `X-Forwarded-For` into one string; the array case is
-  // only the header type's, kept honest the way `forwarded` would read it.
+  // Node joins a repeated `X-Forwarded-For` into one string, so this is never
+  // an array at runtime; joining keeps the type honest without a cast.
   const raw = incoming.headers['x-forwarded-for'];
   const forwardedFor = Array.isArray(raw) ? raw.join(', ') : raw;
   return {

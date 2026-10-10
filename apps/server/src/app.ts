@@ -216,6 +216,8 @@ export function createApp(options: {
   //     proxy is in front. Until DOR-1711 they all inherited this line, so a
   //     rotating `X-Forwarded-For` bought unlimited buckets and the sign-in
   //     brute-force limiter counted nothing.
+  // One trusted hop. `forwardedClientAddress` in `http/request-facts.ts` gives
+  // the Hono chain the same `req.ip`; change both together.
   app.set('trust proxy', 1);
 
   // After terminal admission, but ahead of the other `/api` handlers: a

@@ -87,24 +87,55 @@ describe.each(REQUEST_FACTS_ADAPTERS)('through the $name adapter', (adapter) => 
 });
 
 describe('the Express forms the unmoved routes call', () => {
-  /** A response carrying whatever `sessionGate` resolved, or nothing. */
-  function responseWith(user?: RequestUser): Response {
-    return { locals: user ? { user } : {} } as unknown as Response;
+  /** A response carrying whatever `sessionGate` and the agent middleware resolved. */
+  function responseWith(user?: RequestUser, agentIdentity?: unknown): Response {
+    return {
+      locals: { ...(user ? { user } : {}), ...(agentIdentity ? { agentIdentity } : {}) },
+    } as unknown as Response;
   }
 
-  it('read the user off res.locals for the cookie bar', () => {
-    expect(requireOperatorCookieUnderLogin(responseWith(KEY), 'this', () => true)?.code).toBe(
-      OPERATOR_COOKIE_REQUIRED_CODE
-    );
-    expect(
-      requireOperatorCookieUnderLogin(responseWith(COOKIE), 'this', () => true)
-    ).toBeUndefined();
+  describe('requireOperatorCookieUnderLogin', () => {
+    it('allows every caller while login is off', () => {
+      expect(requireOperatorCookieUnderLogin(responseWith(), 'this', () => false)).toBeUndefined();
+    });
+
+    it('refuses a per-user API key, and a caller with no identity', () => {
+      expect(requireOperatorCookieUnderLogin(responseWith(KEY), 'this', () => true)?.code).toBe(
+        OPERATOR_COOKIE_REQUIRED_CODE
+      );
+      expect(requireOperatorCookieUnderLogin(responseWith(), 'this', () => true)?.status).toBe(403);
+    });
+
+    it('allows a person signed in to the cockpit', () => {
+      expect(
+        requireOperatorCookieUnderLogin(responseWith(COOKIE), 'this', () => true)
+      ).toBeUndefined();
+    });
   });
 
-  it('read headers and res.locals for isPersonAtTheApp', () => {
+  describe('isPersonAtTheApp', () => {
     const app = { headers: { 'x-client-id': 'window-1' } };
-    expect(isPersonAtTheApp(app, responseWith(), () => false)).toBe(true);
-    expect(isPersonAtTheApp(app, responseWith(KEY), () => true)).toBe(false);
-    expect(isPersonAtTheApp(app, responseWith(COOKIE), () => true)).toBe(true);
+    const off = () => false;
+    const on = () => true;
+
+    it('counts a window of the app with login off', () => {
+      expect(isPersonAtTheApp(app, responseWith(), off)).toBe(true);
+    });
+
+    it('refuses a caller that names itself an agent, by header or as resolved', () => {
+      const agent = { headers: { 'x-client-id': 'window-1', 'x-dorkos-agent': 'token' } };
+      expect(isPersonAtTheApp(agent, responseWith(), off)).toBe(false);
+      expect(isPersonAtTheApp(app, responseWith(undefined, { agentId: 'a' }), off)).toBe(false);
+    });
+
+    it('refuses a script that sends no client id', () => {
+      expect(isPersonAtTheApp({ headers: {} }, responseWith(), off)).toBe(false);
+      expect(isPersonAtTheApp({ headers: { 'x-client-id': '' } }, responseWith(), off)).toBe(false);
+    });
+
+    it('refuses an API key under login-on, and counts a browser session', () => {
+      expect(isPersonAtTheApp(app, responseWith(KEY), on)).toBe(false);
+      expect(isPersonAtTheApp(app, responseWith(COOKIE), on)).toBe(true);
+    });
   });
 });
