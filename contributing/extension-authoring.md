@@ -168,7 +168,12 @@ api.navigate(path: string): void
 
 // Put a dot on one of your right-panel tabs, or clear it
 api.setTabMarker(tabId: string, marker: 'attention' | null): void
+
+// Put a status, count or sentence on your page's tab, or clear it
+api.setPageBadge(path: string, badge: ExtensionPageBadge | null): void
 ```
+
+**`setPageBadge`** is described under [Your page's tab badge](#your-pages-tab-badge).
 
 **`navigate`** takes a core route (`/team`, `/session?dir=…`) or one of **your own** pages (`/x/<your-id>/p/dorkos?view=list`). Anything else is refused with a console warning: another extension's page, another origin (`https://…`, `//host`), or a scheme like `javascript:`.
 
@@ -436,6 +441,31 @@ export function activate(api: ExtensionAPI): void {
   api.registerPage('', FlowHome, { title: 'Flow' });
   api.registerPage('p/:name', ProjectLens, { title: 'Project' });
   // Elsewhere: api.navigate('/x/flow/p/dorkos');
+}
+```
+
+#### Your page's tab badge
+
+`api.setPageBadge(path, badge)` puts a status, a count or a sentence on every tab showing one of your pages; `null` clears it. `path` is the path you passed to `registerPage`, so a badge on `'p/:name'` shows on every project tab.
+
+- **`status`** is one of `'needs-you'`, `'failed'`, `'paused'`, `'working'`, `'new'` (`PAGE_BADGE_STATUSES`). Core draws it as the same dot its own pages wear; you cannot style it.
+- **`count`** is a whole number, 0 or more. A tab shows one mark at most: the count when there is one, else the dot. A count on `needs-you` or `failed` reads as urgent.
+- **`sentence`** is one plain line for the tab's hover card and its accessible name, at most 80 characters: "2 ideas wait for you".
+
+A badge that fails the check, or names a page you have not registered, is ignored with a console warning; the badge you had stays. A page's badge clears when you unregister the page, and all your badges clear when your extension deactivates. Use it for "something here wants the person", and clear it once they have looked.
+
+Older DorkOS versions do not have `setPageBadge`. Check for it before calling, as with any newer method (see [Feature detection](#feature-detection)):
+
+```typescript
+api.registerPage('', FlowHome, { title: 'Flow' });
+const waiting = decisionsWaiting();
+if (typeof api.setPageBadge === 'function') {
+  api.setPageBadge(
+    '',
+    waiting > 0
+      ? { status: 'needs-you', count: waiting, sentence: `${waiting} ideas wait for you` }
+      : null
+  );
 }
 ```
 

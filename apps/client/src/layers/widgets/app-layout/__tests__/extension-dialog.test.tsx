@@ -36,6 +36,8 @@ function makeDeps(): ExtensionAPIDeps {
       getContributions: (slotId) => registry.getContributions(slotId as 'dialog'),
       setTabMarker: vi.fn(),
       clearTabMarkers: vi.fn(),
+      setPageBadge: vi.fn(),
+      clearPageBadges: vi.fn(),
     },
     eventBridge: { subscribe: vi.fn().mockReturnValue(() => {}) },
     dispatcherContext: {

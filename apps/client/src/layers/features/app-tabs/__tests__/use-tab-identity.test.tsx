@@ -10,7 +10,7 @@ import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { SessionStatus } from '@dorkos/shared/session-stream';
 import type { Session } from '@dorkos/shared/types';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
-import { TransportProvider } from '@/layers/shared/model';
+import { createInitialSlots, TransportProvider, useExtensionRegistry } from '@/layers/shared/model';
 import { setSessionRouteContext, useSessionListStore } from '@/layers/entities/session';
 import { pendingInteractionsQueryOptions } from '@/layers/entities/attention';
 
@@ -238,6 +238,33 @@ describe('useTabIdentity', () => {
     expect(result.current).toMatchObject({ primary: 'Schedules', status: 'failed', count: 1 });
     act(() => useTabSignalsStore.getState().setRouteBadge('/tasks', null));
     expect(result.current.status).toBeUndefined();
+  });
+
+  it('wears the badge an extension page sets for itself', () => {
+    useExtensionRegistry.setState({ slots: createInitialSlots(), pageBadges: {} });
+    const unregister = useExtensionRegistry.getState().register('pages', {
+      id: 'flow:',
+      extensionId: 'flow',
+      path: '',
+      component: () => null,
+      title: 'Flow',
+      menu: true,
+    });
+    act(() =>
+      useExtensionRegistry
+        .getState()
+        .setPageBadge('flow:', { status: 'needs-you', count: 2, sentence: '2 ideas wait for you' })
+    );
+    const { result } = renderHook(() => useTabIdentity('/x/flow'), { wrapper });
+    expect(result.current).toMatchObject({
+      primary: 'Flow',
+      status: 'needs-you',
+      count: 2,
+      accessibleName: 'Flow, Needs you: 2 ideas wait for you',
+    });
+    // Gone with its page: a badge never outlives what it was set on.
+    act(() => unregister());
+    expect(result.current).toMatchObject({ primary: 'Add-on', status: undefined });
   });
 
   it('names the Marketplace after what is open in it', () => {

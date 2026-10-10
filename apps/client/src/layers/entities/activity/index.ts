@@ -17,6 +17,9 @@ export type {
   ActorConfig,
 } from './model/activity-types';
 export { CATEGORY_CONFIG, ACTOR_CONFIG } from './model/activity-types';
+// When you last looked at Activity, read by the page's digest line and the
+// Activity tab's "new" count alike (DOR-2820).
+export { useActivitySeenStore, useNewActivityCount } from './model/activity-seen';
 
 // Time grouping — Today, Yesterday, This week, Earlier
 export {

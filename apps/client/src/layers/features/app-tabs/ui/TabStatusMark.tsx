@@ -45,9 +45,10 @@ export function TabStatusMark({ identity, className }: TabStatusMarkProps) {
         className={cn(
           'shrink-0 rounded-full px-1.5 text-[10px] leading-4 font-medium tabular-nums',
           // Aimed at you: a solid fill, so it reads as urgent at a glance in
-          // both themes. The quiet tint is for counts that are only activity.
+          // both themes, red for a failure as its dot would be. The quiet tint
+          // is for counts that are only activity.
           identity.countEmphasis
-            ? `${STATUS_TONE_DOT.warning} text-background`
+            ? `${status === 'failed' ? STATUS_TONE_DOT.error : STATUS_TONE_DOT.warning} text-background`
             : STATUS_TONE_SURFACE.neutral,
           className
         )}

@@ -38,6 +38,8 @@ function makeDeps(unsubscribe: () => void): ExtensionAPIDeps {
       getContributions: vi.fn().mockReturnValue([]),
       setTabMarker: vi.fn(),
       clearTabMarkers: vi.fn(),
+      setPageBadge: vi.fn(),
+      clearPageBadges: vi.fn(),
     },
     dispatcherContext: {
       getStore: () => ({}) as ReturnType<ExtensionAPIDeps['dispatcherContext']['getStore']>,

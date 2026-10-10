@@ -184,8 +184,6 @@ export const useAppStore = create<AppState>()(
         setIsTextStreaming: (v) => set({ isTextStreaming: v }),
         isWaitingForUser: false,
         setIsWaitingForUser: (v) => set({ isWaitingForUser: v }),
-        tasksBadgeCount: 0,
-        setTasksBadgeCount: (v) => set({ tasksBadgeCount: v }),
 
         // ── Context files ──────────────────────────────────────────────────
 

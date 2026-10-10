@@ -555,7 +555,6 @@ vi.mock('@/layers/shared/model/app-store', () => ({
       setSidebarOpen: vi.fn(),
       isStreaming: false,
       isWaitingForUser: false,
-      tasksBadgeCount: 0,
       onboardingHiddenForSession: false,
       setOnboardingHiddenForSession: vi.fn(),
       // The moments rail's launch latch. Stable references, because the real

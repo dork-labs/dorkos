@@ -12,6 +12,7 @@ Types and schemas only — no host logic. The runtime that loads, compiles, and 
 | ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
 | `.` → `ExtensionManifestSchema`, `SettingDeclarationSchema`, `SettingOptionSchema`                    | Zod schemas for `extension.json` manifests and settings     |
 | `.` → `ExtensionManifest`, `ExtensionAPI`, `ExtensionRecord`, `ExtensionStatus`, `ExtensionModule`, … | The types an extension author writes against                |
+| `.` → `pageBadgeProblem`, `copyPageBadge`, `PAGE_BADGE_STATUSES`, `ExtensionPageBadge`                | The check and shape behind `api.setPageBadge`               |
 | `./server` → `SecretStore`, `SettingsStore`, `DataProviderContext`, `ServerExtensionRegister`         | Server-side extension contracts (the host implements these) |
 
 ## Usage
@@ -25,6 +26,16 @@ const extension: ExtensionModule = {
   },
 };
 export default extension;
+```
+
+### A tab badge for your page
+
+`api.setPageBadge(path, badge)` puts a status, a count or one short sentence on every tab showing a page you registered with `registerPage`; pass `null` to clear it. The host checks it with `pageBadgeProblem` (status in `PAGE_BADGE_STATUSES`, count a whole number 0 or more, sentence at most 80 characters), ignores a badge that fails with a console warning, clears a page's badge when the page is unregistered, and clears all your badges when the extension deactivates. Older hosts lack the method, so guard the call with `typeof api.setPageBadge === 'function'`.
+
+```ts
+api.registerPage('', FlowHome, { title: 'Flow' });
+api.setPageBadge('', { status: 'needs-you', count: 2, sentence: '2 ideas wait for you' });
+api.setPageBadge('', null); // clear
 ```
 
 Import server-side contracts from the `./server` subpath when building host-facing capabilities (secrets, settings, data providers).
