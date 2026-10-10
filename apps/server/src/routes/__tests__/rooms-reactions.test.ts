@@ -54,6 +54,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
 }));
 
 import { createApp, finalizeApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { scriptedRunner } from '../../services/rooms/__tests__/room-test-harness.js';
 import { STREAM_EPOCH } from '../../lib/stream-cursor.js';
 import { createRoomSubsystem, getRoomService, setRoomService } from '../../services/rooms/index.js';
@@ -62,7 +63,8 @@ import {
   resetAgentIdentityService,
 } from '../../services/core/agent-identity/agent-identity-service.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
+const admission = new MainRequestAdmission();
+const app = createApp({ admission });
 finalizeApp(app);
 
 const ANA_PATH = '/agents/ana';
@@ -84,7 +86,7 @@ function registerAgent(db: Db, name: string, projectPath: string): void {
     .run();
 }
 
-const testServer = listeningServer(app);
+const testServer = listeningServer(composedListener(app, admission));
 
 /** Port of the file-scoped listener shared by Supertest and the raw SSE client. */
 function testServerPort(): number {

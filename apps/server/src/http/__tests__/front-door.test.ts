@@ -38,6 +38,7 @@ import {
   type FrontDoorOptions,
 } from '../front-door.js';
 import { createApiApp } from '../api-chain.js';
+import { createHonoApi } from '../hono-api.js';
 
 const TWO_MB = 2 * 1024 * 1024;
 
@@ -357,11 +358,12 @@ describe('front door', () => {
   });
 
   describe('with the real app behind it', () => {
-    const app = createApp({ admission: new MainRequestAdmission() });
+    const admission = new MainRequestAdmission();
+    const app = createApp({ admission });
     finalizeApp(app);
 
     it('answers a real route in its documented shape', async () => {
-      const base = await serveThroughFrontDoor(app);
+      const base = await serveThroughFrontDoor(app, { api: createHonoApi({ admission }) });
       const res = await fetch(`${base}/api/keep-awake`);
       expect(res.status).toBe(200);
       const body = await res.json();

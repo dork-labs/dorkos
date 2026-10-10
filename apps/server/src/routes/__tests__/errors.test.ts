@@ -12,7 +12,7 @@ import os from 'os';
 import path from 'path';
 
 vi.mock('../../lib/logger.js', () => ({
-  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+  logger: { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 // The route is served through the `/api` chain, whose host guard and session
 // gate read the login setting: off, as on a fresh install.

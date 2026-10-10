@@ -211,7 +211,7 @@ export function createApp(options: {
   app.use('/api/mcp-config', mcpConfigRoutes);
   // Diagnostic reads (`GET /api/debug/*`). Mounted here rather than in
   // `index.ts` — it needs no singleton the composition root has to hand it, only
-  // `app.locals.debugDeps`, which `index.ts` sets alongside the deep-health bag.
+  // `app.locals.debugDeps`, which `index.ts` sets beside the moved routes' `deps`.
   // ALWAYS mounted and read-only: an env gate would make it unavailable in the
   // one situation it exists for, because enabling it needs a restart and a
   // restart destroys the in-memory state you wanted to read. It carries only
