@@ -73,6 +73,7 @@ import {
   seedCommunityNavigationPrefs,
   seedCloudCreditsChoices,
   seedCodexTransport,
+  raiseEngagedWindowDefaults,
 } from '../config-manager.js';
 import { applyConfigPatch } from '../operator/config-patch.js';
 import { checkMigrationSafety, extractMigrationBodies } from './migration-safety.js';
@@ -3975,7 +3976,7 @@ describe('CONFIG_MIGRATIONS append-only pins (DOR-1222 regression guard)', () =>
     // pass this having scanned nothing. The count is the knowable bound; the
     // table is append-only, so raising it is the deliberate act of adding a
     // migration, which is exactly when this check should be re-read.
-    expect(Object.keys(bodies)).toHaveLength(45);
+    expect(Object.keys(bodies)).toHaveLength(46);
 
     const reaching = Object.keys(bodies).filter((key) =>
       reachedDeclarations(bodies[key]!, pool).includes('describeLoadError')
@@ -6416,5 +6417,68 @@ describe('seedCodexTransport migration (ADR 261005-113107)', () => {
     const store = createMockStore({ runtimes: { default: 'claude-code' } });
     seedCodexTransport(store);
     expect((store.data.runtimes as { codex?: unknown }).codex).toBeUndefined();
+  });
+});
+
+describe('raiseEngagedWindowDefaults migration (DOR-2823)', () => {
+  /** Run the real upgrade to `'0.103.0'` over a stored `rooms` block. */
+  function upgrade(rooms: Record<string, unknown>): { rooms: Record<string, unknown> } {
+    const dir = path.join(os.tmpdir(), 'test-dork-engaged-window-' + Date.now() + Math.random());
+    const cfgPath = path.join(dir, 'config.json');
+    fs.mkdirSync(dir, { recursive: true });
+    try {
+      fs.writeFileSync(
+        cfgPath,
+        JSON.stringify({ version: 1, rooms, __internal__: { migrations: { version: '0.102.0' } } }),
+        'utf-8'
+      );
+      new Conf({
+        configName: 'config',
+        cwd: dir,
+        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
+        defaults: USER_CONFIG_DEFAULTS,
+        clearInvalidConfig: false,
+        projectVersion: '0.103.0',
+        migrations: CONFIG_MIGRATIONS,
+      });
+      return JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as { rooms: Record<string, unknown> };
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it('raises a window still at the old shipped defaults', () => {
+    // READ THE FILE: `rooms` is a section a stored config already has, so the
+    // shallow default merge never reaches these leaves. Suppress the body and
+    // this goes red.
+    const onDisk = upgrade({ engagedWindowMinutes: 10, engagedWindowPosts: 5 });
+    expect(onDisk.rooms.engagedWindowMinutes).toBe(60);
+    expect(onDisk.rooms.engagedWindowPosts).toBe(15);
+  });
+
+  it('keeps numbers a person chose, including turning the window off', () => {
+    expect(upgrade({ engagedWindowMinutes: 60, engagedWindowPosts: 15 }).rooms).toMatchObject({
+      engagedWindowMinutes: 60,
+      engagedWindowPosts: 15,
+    });
+    expect(upgrade({ engagedWindowMinutes: 0, engagedWindowPosts: 3 }).rooms).toMatchObject({
+      engagedWindowMinutes: 0,
+      engagedWindowPosts: 3,
+    });
+  });
+
+  it('is idempotent', () => {
+    // The mock store is flat, so the dotted keys the body reads are the keys.
+    const store = createMockStore({
+      'rooms.engagedWindowMinutes': 10,
+      'rooms.engagedWindowPosts': 5,
+    });
+    raiseEngagedWindowDefaults(store);
+    raiseEngagedWindowDefaults(store);
+    expect(store.data).toMatchObject({
+      'rooms.engagedWindowMinutes': 60,
+      'rooms.engagedWindowPosts': 15,
+    });
+    expect(store.writes).toHaveLength(2);
   });
 });

@@ -152,6 +152,7 @@ import { ACTIVITY_FANOUT_THROTTLE_MS, isTurnInFlight } from '../session/index.js
 import {
   selectTriggerTargets,
   standDownFallbackSeat,
+  whyNobody,
   type AddressingMember,
   type TriggerReason,
 } from './addressing.js';
@@ -189,7 +190,13 @@ import {
   type CascadeDecision,
   type CascadeRefusalReason,
 } from './cascade-guard.js';
-import { engagementFor, type EngagedWindow, type EngagementWindow } from './engagement.js';
+import {
+  agentPostWindow,
+  conversationFor,
+  engagementFor,
+  type EngagedWindow,
+  type EngagementWindow,
+} from './engagement.js';
 import {
   RoomCollector,
   type CollectedTrigger,
@@ -972,6 +979,30 @@ export class RoomTriggerDispatcher {
     // may set that mode themselves and mean it (`rooms.fallback_seat_author_id`);
     // and read from the room this dispatch already holds, so it costs no query.
     const seatAuthorId = room.fallbackSeatAuthorId ?? null;
+    // Resolved once and read three times, because every rule below asks the
+    // same question about the same post: only a PERSON's message implicitly
+    // addresses anybody. An author row that has vanished reads as `system`,
+    // which is the conservative side of all of them.
+    const authorKind = records.get(entry.authorId)?.kind ?? 'system';
+    // **A person's post follows the conversation, not the clock** (DOR-2823).
+    // One walk of the scope for the whole roster, because the answer — who
+    // this person is talking to — is the same for every member. An agent's post
+    // keeps the mention-anchored window below, at the old bound.
+    const followsConversation = authorKind === 'human' && room.kind === 'channel';
+    const conversation = followsConversation
+      ? conversationFor(this.deps, {
+          roomId: room.id,
+          threadRootEntryId,
+          isAgentMember: (id) => records.get(id)?.kind === 'agent',
+          isPerson: (id) => records.get(id)?.kind === 'human',
+          window,
+          now,
+        })
+      : null;
+    // The mention-anchored window, for every post the conversation rule does
+    // not cover. An agent's post is weighed at the old bound; a person's post
+    // outside a channel keeps the configured one.
+    const mentionWindow = authorKind === 'human' ? window : agentPostWindow(window);
     for (const member of members) {
       const record = records.get(member.authorId);
       if (!record) continue;
@@ -983,16 +1014,20 @@ export class RoomTriggerDispatcher {
       // addressed somebody else, so it costs one bounded query (six rows at the
       // shipped defaults) for that one member, in that one room.
       const weighable = member.responseMode === 'engaged' || member.authorId === seatAuthorId;
-      const open =
-        record.kind === 'agent' && weighable && member.authorId !== entry.authorId
-          ? engagementFor(this.deps, {
+      const candidate = record.kind === 'agent' && weighable && member.authorId !== entry.authorId;
+      const open = !candidate
+        ? null
+        : followsConversation
+          ? conversation?.partners.includes(member.authorId)
+            ? conversation.window
+            : null
+          : engagementFor(this.deps, {
               roomId: room.id,
               threadRootEntryId,
               authorId: member.authorId,
-              window,
+              window: mentionWindow,
               now,
-            })
-          : null;
+            });
       // The CONTEXT map takes `engaged` members only, and deliberately: an
       // agent's `roomContext.addressing` promises a window is `null` for every
       // other mode (`room-context.ts`), because reporting one would describe a
@@ -1007,29 +1042,40 @@ export class RoomTriggerDispatcher {
       });
     }
 
-    // Resolved once and read twice, because both rules below ask the same
-    // question about the same post: only a PERSON's message implicitly addresses
-    // anybody. An author row that has vanished reads as `system`, which is the
-    // conservative side of both.
-    const authorKind = records.get(entry.authorId)?.kind ?? 'system';
-
     // The second rule, a no-op in a room with no seat: a post that named another
     // agent is that agent's to answer, and a post an AGENT wrote is a
     // conversation already underway — the seat catches neither. See
     // `standDownFallbackSeat` for the two escapes.
+    const matrix = selectTriggerTargets({
+      roomKind: room.kind,
+      authorKind,
+      entry,
+      members: addressing,
+    });
     const selected = standDownFallbackSeat({
       entry,
       authorKind,
       seatAuthorId,
       members: addressing,
-      selected: selectTriggerTargets({
-        roomKind: room.kind,
-        authorKind,
-        entry,
-        members: addressing,
-      }),
+      selected: matrix,
     });
     if (selected.length === 0) {
+      // A person's post in a channel that reaches nobody is the failure
+      // DOR-2823 is about, so every one is logged with why. Never a member's
+      // name or a message body, only ids and the reason.
+      if (followsConversation) {
+        logger.info('[rooms] nobody was picked to answer a person', {
+          roomId: room.id,
+          entryId: entry.id,
+          reason: whyNobody({
+            entry,
+            members: addressing,
+            namedUnreachable,
+            stoodDown: matrix.length > 0,
+            partners: conversation?.partners ?? [],
+          }),
+        });
+      }
       // **The commonest shape of the ghost case comes through here**, and it is
       // why this is not a bare `return`. A channel seeds agents at `engaged`, and
       // a ghost claims no names — so `@ana are you there?` addresses nobody,

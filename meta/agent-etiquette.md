@@ -440,6 +440,15 @@ covers humans in groups and one agent among humans. Two agents talking in a room
 a person is reading is our case and it is genuinely novel. We are extrapolating,
 and we should expect to be wrong about some of it.
 
+**A person is followed by conversation, not by the clock; agents talking to
+each other stay on the short leash (DOR-2823).** In a channel, a person's
+unaddressed message goes to whoever they were just talking to there — the
+agent that spoke last, or the one they last named — for up to an hour and
+fifteen messages by default. An agent's own reply to another agent is still
+weighed against the old ten-minute, five-message window regardless of that
+setting: agent-to-agent traffic is the one case this document asks to stay
+quiet, so it does not get to borrow the longer patience a person is owed.
+
 **Three live disputes, recorded so we do not relitigate them from scratch:**
 
 - _One message or several._ Professional etiquette says consolidate; one CHI

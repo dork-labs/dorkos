@@ -45,9 +45,15 @@ interface Wired {
  * @param opts.engagedWindow - The ceilings, when a case is about them.
  * @param opts.withBo - Put a second agent in, always-on, to generate other
  *   people's turns.
+ * @param opts.quiet - Ana takes turns but never posts.
  */
-function open(opts: { engagedWindow?: EngagedWindow; withBo?: boolean } = {}): Wired {
-  const runner = scriptedRunner(() => 'on it');
+function open(
+  opts: { engagedWindow?: EngagedWindow; withBo?: boolean; quiet?: boolean } = {}
+): Wired {
+  // A quiet Ana never posts, so the only anchor a window can have is a
+  // mention: what the cases about the posts ceiling need, now that an agent's
+  // own reply anchors a person's conversation with it (DOR-2823).
+  const runner = scriptedRunner(() => (opts.quiet ? null : 'on it'));
   const agentPaths = opts.withBo ? ['/agents/ana', '/agents/bo'] : ['/agents/ana'];
   const harness = createRoomHarness({
     agents: AGENTS,
@@ -97,7 +103,7 @@ describe('engaged, end to end', () => {
   });
 
   it('stops once enough messages have gone by without it being addressed', async () => {
-    const w = open({ engagedWindow: { minutes: 10, posts: 2 } });
+    const w = open({ engagedWindow: { minutes: 10, posts: 2 }, quiet: true });
     await say(w, '@ana is the build green?');
     await say(w, 'follow-up one');
     expect(turnsFor(w, w.ana)).toBe(2);
@@ -207,6 +213,84 @@ describe('engaged, end to end', () => {
     await say(w, 'and the deploy?');
     // Two messages since the mention now, so the same follow-up reaches nobody.
     expect(turnsFor(w, w.ana)).toBe(before);
+  });
+});
+
+describe('following the conversation (DOR-2823)', () => {
+  /**
+   * Two engaged agents, each answering in a thread on the message that asked
+   * it — the shape of the real rooms, where an agent's answer to a top-level
+   * question opens a thread on it.
+   */
+  function twoAgents(): Wired {
+    const runner = scriptedRunner(() => null);
+    const answer: ScriptedTurnRunner = {
+      ...runner,
+      run: async (request) => {
+        const result = await runner.run(request);
+        runner.sayInRoom(request, 'on it', {
+          replyTo: request.entry.threadRootEntryId ?? request.entry.id,
+        });
+        return result;
+      },
+    };
+    const harness = createRoomHarness({ agents: AGENTS, runner: answer });
+    const room = harness.service.createRoom(
+      { kind: 'channel', title: 'Poster', members: [], agentPaths: ['/agents/ana', '/agents/bo'] },
+      harness.human
+    );
+    return {
+      service: harness.service,
+      authors: harness.authors,
+      runner,
+      human: harness.human,
+      room,
+      ana: harness.authors.resolveAgent('/agents/ana', 'ana').id,
+      bo: harness.authors.resolveAgent('/agents/bo', 'bo').id,
+    };
+  }
+
+  it('answers a follow-up in the thread the agent answered in, and only that agent', async () => {
+    const w = twoAgents();
+    const ask = await say(w, '@ana what should we work on next?');
+    expect(turnsFor(w, w.ana)).toBe(1);
+
+    // No @: the real miss, seq 48 in the poster room.
+    await say(w, 'we will want to remove the signatures param', ask.id);
+    expect(turnsFor(w, w.ana)).toBe(2);
+    expect(turnsFor(w, w.bo)).toBe(0);
+  });
+
+  it('follows the person to the agent they named last', async () => {
+    const w = twoAgents();
+    await say(w, '@ana is the build green?');
+    await say(w, '@bo and the deploy?');
+    const before = { ana: turnsFor(w, w.ana), bo: turnsFor(w, w.bo) };
+
+    await say(w, 'thanks, go ahead');
+    expect(turnsFor(w, w.bo)).toBe(before.bo + 1);
+    expect(turnsFor(w, w.ana)).toBe(before.ana);
+  });
+
+  it('does not hand an agent’s post to whoever spoke last', async () => {
+    const w = twoAgents();
+    // Ana spoke last, unprompted; nobody named anybody.
+    w.service.post(w.room.id, { authorId: w.ana, text: 'build is green' });
+    await w.service.triggersIdle();
+    w.service.post(w.room.id, { authorId: w.bo, text: 'deploy is out' });
+    await w.service.triggersIdle();
+    // Agents talking to each other keep the mention rule, so nobody answers.
+    expect(w.runner.turns).toHaveLength(0);
+  });
+
+  it('tells the agent its turn came from the conversation', async () => {
+    const w = twoAgents();
+    const ask = await say(w, '@ana what should we work on next?');
+    await say(w, 'and after that?', ask.id);
+    const last = w.runner.turns.at(-1)!;
+    expect(last.authorId).toBe(w.ana);
+    expect(last.roomContext.addressing.addressedNow).toBe(false);
+    expect(last.roomContext.addressing.engagedUntil).not.toBeNull();
   });
 });
 

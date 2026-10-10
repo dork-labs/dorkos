@@ -3935,6 +3935,25 @@ export function seedDoeRuntime(store: {
     store.set('runtimes.environment.inherit.doe', []);
 }
 
+/**
+ * Raise the engaged window from the old shipped defaults to the new ones
+ * (DOR-2823): 10 minutes to 60, and 5 messages to 15.
+ *
+ * Only a value still AT the old default moves. A person who chose a number,
+ * including the operator's own stopgap of 60 and 15, keeps it. A stored `10`
+ * cannot say whether somebody chose it, and the old default is the far likelier
+ * reading: the setting has no UI.
+ *
+ * @param store - The conf store.
+ */
+export function raiseEngagedWindowDefaults(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  if (store.get('rooms.engagedWindowMinutes') === 10) store.set('rooms.engagedWindowMinutes', 60);
+  if (store.get('rooms.engagedWindowPosts') === 5) store.set('rooms.engagedWindowPosts', 15);
+}
+
 export const CONFIG_MIGRATIONS = {
   '1.0.0': (store: {
     has: (key: string) => boolean;
@@ -4901,6 +4920,12 @@ export const CONFIG_MIGRATIONS = {
     // `dropAutonomyAcknowledgement`.
     dropAutonomyAcknowledgement(store);
   },
+  // 0.102.0 has merged (the acknowledgement above), so 0.103.0 is the next
+  // key. Frozen from merge; anything further opens `'0.104.0'`.
+  //
+  // Disjoint from every other key here: it rewrites two `rooms` leaves, and
+  // only when each still holds the old shipped default.
+  '0.103.0': raiseEngagedWindowDefaults,
 } as const;
 
 /**

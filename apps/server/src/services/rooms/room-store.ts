@@ -1516,6 +1516,36 @@ export class RoomStore {
     roomId: string,
     opts: { threadRootEntryId: string | null; excludeAuthorId: string; limit: number }
   ): RoomEntry[] {
+    return this.recentPostsInScope(roomId, opts);
+  }
+
+  /**
+   * The newest posts in one thread scope, by anybody but the room's own voice,
+   * NEWEST FIRST — the read the conversation rule walks (`engagement.ts`
+   * `conversationFor`, DOR-2823).
+   *
+   * {@link RoomStore.listRecentPostsByOthers} without the author exclusion,
+   * because following a conversation means seeing the agent's OWN posts: the
+   * agent that spoke last is who a person is answering. Same scopes, same
+   * indexes, same thread-root rule.
+   *
+   * @param roomId - The room.
+   * @param opts.threadRootEntryId - The thread to scope to, or `null` for the
+   *   channel's top level.
+   * @param opts.limit - How many of the newest to read.
+   */
+  listRecentPostsInScope(
+    roomId: string,
+    opts: { threadRootEntryId: string | null; limit: number }
+  ): RoomEntry[] {
+    return this.recentPostsInScope(roomId, { ...opts, excludeAuthorId: null });
+  }
+
+  /** The shared body of the two scoped reads above; `null` excludes nobody. */
+  private recentPostsInScope(
+    roomId: string,
+    opts: { threadRootEntryId: string | null; excludeAuthorId: string | null; limit: number }
+  ): RoomEntry[] {
     if (opts.limit <= 0) return [];
     const rows = this.db
       .select()
@@ -1527,7 +1557,9 @@ export class RoomStore {
             ? isNull(roomEntries.threadRootEntryId)
             : eq(roomEntries.threadRootEntryId, opts.threadRootEntryId),
           eq(roomEntries.kind, 'post'),
-          ne(roomEntries.authorId, opts.excludeAuthorId),
+          opts.excludeAuthorId === null
+            ? undefined
+            : ne(roomEntries.authorId, opts.excludeAuthorId),
           // The room's own voice, excluded by the author's kind. A residual
           // filter on a primary-key lookup per candidate row, so the `(room_id,
           // seq)` walk the plan test pins is unchanged.
@@ -1560,7 +1592,9 @@ export class RoomStore {
           eq(roomEntries.roomId, roomId),
           eq(roomEntries.id, opts.threadRootEntryId),
           eq(roomEntries.kind, 'post'),
-          ne(roomEntries.authorId, opts.excludeAuthorId),
+          opts.excludeAuthorId === null
+            ? undefined
+            : ne(roomEntries.authorId, opts.excludeAuthorId),
           notInArray(
             roomEntries.authorId,
             this.db.select({ id: authors.id }).from(authors).where(eq(authors.kind, 'system'))

@@ -2667,7 +2667,9 @@ export const UserConfigSchema = z.object({
       lateReplyCeilingMinutes: z.number().int().min(1).max(1440).default(60),
       /**
        * How long an agent stays addressable after you talk to it, before it goes
-       * back to needing an @mention. Talking to it again starts the clock over.
+       * back to needing an @mention. The clock starts at whichever came last in
+       * that place: the agent's own message, or your @mention of it (DOR-2823).
+       * Talking to it again starts the clock over.
        *
        * This is the ceiling, not the setting: a room can hold an agent to a
        * shorter window, never a longer one. `0` means an agent is only ever
@@ -2677,9 +2679,13 @@ export const UserConfigSchema = z.object({
        * measurement — see `meta/agent-etiquette.md` §9. Nobody publishes a
        * defensible figure for how long a person expects to keep talking to
        * something without naming it again, so this one is ours, to be tuned by
-       * using the product.
+       * using the product. Raised from 10 to 60 by DOR-2823, after a person's
+       * replies kept arriving just after a long agent turn used the window up.
+       *
+       * Agents talking to each other are held to the old 10 minutes and 5
+       * messages whatever this says (`engagement.ts` `AGENT_POST_WINDOW`).
        */
-      engagedWindowMinutes: z.number().int().min(0).max(1440).default(10),
+      engagedWindowMinutes: z.number().int().min(0).max(1440).default(60),
       /**
        * How many messages from other people can go by before an agent stops
        * treating itself as part of the conversation. Talking to it again starts
@@ -2690,7 +2696,7 @@ export const UserConfigSchema = z.object({
        * stop assuming a question was meant for you. Also a ceiling, and also a
        * judgement rather than a measurement.
        */
-      engagedWindowPosts: z.number().int().min(0).max(100).default(5),
+      engagedWindowPosts: z.number().int().min(0).max(100).default(15),
       /**
        * How long an agent waits for the room to stop talking before it answers,
        * in milliseconds.
@@ -2879,8 +2885,8 @@ export const UserConfigSchema = z.object({
       maxAutomaticTurnsTotalPerHour: 5000,
       replyWaitMinutes: 10,
       lateReplyCeilingMinutes: 60,
-      engagedWindowMinutes: 10,
-      engagedWindowPosts: 5,
+      engagedWindowMinutes: 60,
+      engagedWindowPosts: 15,
       collectDebounceMs: 500,
       collectMaxEntries: 20,
       responseGate: 'routing' as const,

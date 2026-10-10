@@ -36,6 +36,7 @@ import {
   type ScriptedTurnRunner,
 } from './room-test-harness.js';
 import { routeAmbient } from '../response-gate/routing-rules.js';
+import type { RoomTurnRequest } from '../room-turn-port.js';
 
 /**
  * The rules module, wrapped so one case can make a rule throw.
@@ -296,16 +297,17 @@ describe('T12 — the audit trail', () => {
     const w = open();
     await engageAna(w);
     const info = vi.spyOn(logger, 'info');
-    const skipped = await say(w, '@nova can you ship the release?');
+    const asked = await say(w, '@nova can you ship the release?');
 
-    // TWO skips, and the second is the point of R2. Nova ANSWERS, and her reply
-    // reaches Ana as another overheard message — the shape that used to double
-    // the bill for every bystander in a channel, and that DOR-1434's ten-deep
-    // cascades multiply.
+    // ONE skip. The person's post named Nova, so it is Nova's conversation and
+    // Ana is never picked for it (DOR-2823); the gate never has to excuse her.
+    // Nova's ANSWER is the overheard message: it reaches Ana inside her window
+    // as another agent's post — the shape that used to double the bill for
+    // every bystander in a channel, and that DOR-1434's ten-deep cascades
+    // multiply.
     const skips = recentRefusals().filter((entry) => entry.reason === 'not_addressed_to_me');
-    expect(skips).toHaveLength(2);
-    // Newest first, which is how the ring answers every question put to it.
-    expect(skips.at(-1)).toMatchObject({
+    expect(skips).toHaveLength(1);
+    expect(skips[0]).toMatchObject({
       reason: 'not_addressed_to_me',
       // `chosen`, not `silent`: the agent decided this and nobody was waiting to
       // be told, so it logs at `info` and does not drown the refusals that are
@@ -313,11 +315,11 @@ describe('T12 — the audit trail', () => {
       visibility: 'chosen',
       roomId: w.room.id,
       authorId: w.ana,
-      entryId: skipped.id,
     });
+    expect(skips[0]!.entryId).not.toBe(asked.id);
     // Explicitly no dispatch, and never the ambient one: nothing was claimed for
     // Ana, and this sweep may be running inside Nova's scope.
-    expect(skips.at(-1)!.dispatchId).toBeUndefined();
+    expect(skips[0]!.dispatchId).toBeUndefined();
 
     // WHICH rule lives on the log line rather than in the ring, because the ring
     // is served without a credential while login is off and therefore carries
@@ -327,7 +329,6 @@ describe('T12 — the audit trail', () => {
       ([, fields]) => (fields as { reason?: string } | undefined)?.reason === 'not_addressed_to_me'
     );
     expect(logged.map(([, fields]) => (fields as { rule?: string }).rule)).toEqual([
-      'named_other_agent',
       'colleagues_answer',
     ]);
     expect(logged[0]![1]).toMatchObject({ tier: 1, entries: 1, visibility: 'chosen' });
@@ -462,7 +463,6 @@ describe('T9 — busy is a park, never a skip', () => {
     );
     const ana = harness.authors.resolveAgent('/agents/ana', 'ana').id;
     const nova = harness.authors.resolveAgent('/agents/nova', 'nova').id;
-    harness.service.updateMembership(room.id, harness.human, nova, 'silent');
 
     // Ana is mid-turn and holding.
     harness.service.post(room.id, { authorId: harness.human, text: '@ana is the build green?' });
@@ -475,7 +475,19 @@ describe('T9 — busy is a park, never a skip', () => {
     // collection `refused` and the message would never be re-weighed. (The park
     // happens at `collectOne`, before `gateBatch` is reached at all; S3 is the
     // belt to that pair of braces, not what this case measures.)
-    harness.service.post(room.id, { authorId: harness.human, text: '@nova ship the release' });
+    // A person's post naming Nova is Nova's conversation and never reaches Ana
+    // at all (DOR-2823). What Ana overhears is Nova's ANSWER, written inside
+    // Nova's own turn while Ana is still working.
+    const ask = harness.service.post(room.id, {
+      authorId: harness.human,
+      text: '@nova ship the release',
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(runner.holdsFor(nova)).toBe(1);
+    runner.sayInRoom(
+      { room: { id: room.id }, authorId: nova, entry: ask } as unknown as RoomTurnRequest,
+      'shipped'
+    );
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(recentRefusals().some((entry) => entry.reason === 'not_addressed_to_me')).toBe(false);
 
@@ -483,9 +495,13 @@ describe('T9 — busy is a park, never a skip', () => {
     await harness.service.triggersIdle();
     // Re-judged on release, and NOW excused — the verdict happens once, at the
     // moment the agent could actually have answered.
-    expect(recentRefusals().filter((entry) => entry.reason === 'not_addressed_to_me')).toHaveLength(
-      1
-    );
+    // Ana's, for Nova's answer. (Nova is excused from Ana's own answer the same
+    // way, which is a different agent's verdict and not what this case is about.)
+    expect(
+      recentRefusals().filter(
+        (entry) => entry.reason === 'not_addressed_to_me' && entry.authorId === ana
+      )
+    ).toHaveLength(1);
     expect(runner.turns.filter((turn) => turn.authorId === ana)).toHaveLength(1);
   });
 });
@@ -536,16 +552,13 @@ describe('R2 — being named in a question survives one hop', () => {
 });
 
 describe('what the 202 promised when the gate later chose silence (DOR-786)', () => {
-  it('reports the overhearing agent as triggered, then quietly does not run it', async () => {
+  it('does not name a bystander on the 202 for a person’s post that named somebody else', async () => {
     // **The interaction between this gate and `PostToRoomResponse.triggered`.**
-    // The field is the ACCEPT-TIME answer: dispatch selects Ana because she is
-    // inside her engaged window, and says so on the 202. The gate then judges the
-    // collected burst — after the response has been sent — and routes her to
-    // silence.
-    //
-    // Both halves are pinned together because the schema now says exactly this,
-    // and a doc claim nothing executes is how the last review found this field
-    // over-promising. `triggered` is what the room ASKED; it is not a receipt.
+    // The field is the ACCEPT-TIME answer. Before DOR-2823 it named Ana here —
+    // she was inside her engaged window — and the gate then silenced her after
+    // the response was sent, so `triggered` over-promised. A person's post now
+    // follows the conversation: naming Nova makes it Nova's, Ana is never
+    // selected, and the 202 and what runs agree.
     const w = open();
     await engageAna(w);
 
@@ -553,15 +566,10 @@ describe('what the 202 promised when the gate later chose silence (DOR-786)', ()
       authorId: w.human,
       text: '@nova can you ship the release?',
     });
-    // Ana is named on the 202 — she was selected, and nothing had refused her yet.
-    expect(posted.dispatch?.triggered.map((author) => author.id)).toContain(w.ana);
+    expect(posted.dispatch?.triggered.map((author) => author.id)).not.toContain(w.ana);
     expect(posted.dispatch?.skipped).toEqual([]);
 
     await w.service.triggersIdle();
-
-    // And she never ran. The gate's verdict lands after the 202, and it is
-    // DELIBERATELY silent: no notice, because a line every time an agent
-    // tactfully says nothing is the over-participation this gate exists to stop.
     expect(turnsFor(w, w.ana)).toBe(0);
     expect(
       w.service.listEntries(w.room.id, w.human, { limit: 200 }).some((e) => e.kind === 'notice')
