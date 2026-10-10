@@ -268,6 +268,21 @@ describe('the lead answers what nobody else is answering', () => {
     expect(turn.roomContext.addressing.answerOwed).toBe('lead');
   });
 
+  it('tells a turn picked by @mention, not by the lead, nothing about owing it', async () => {
+    const w = open({ quiet: true });
+    await say(w, '@ana what is next?');
+    expect(w.runner.turns.at(-1)?.roomContext.addressing.answerOwed).toBeUndefined();
+  });
+
+  it('tells the agent a person is talking with that the follow-up is its to answer', async () => {
+    const w = open();
+    await say(w, '@bo what is next?');
+    await say(w, 'and after that?');
+    const turn = w.runner.turns.at(-1)!;
+    expect(turn.authorId).toBe(w.bo);
+    expect(turn.roomContext.addressing.answerOwed).toBe('conversation');
+  });
+
   it('leaves an `always` lead answering everything, beside the agent you named', async () => {
     const w = open({ quiet: true });
     w.service.updateMembership(w.room.id, w.human, w.ana, 'always');

@@ -182,7 +182,7 @@ describe('a channel lead (DOR-2823)', () => {
 
     expect(loudness).toEqual({
       level: 2,
-      sentence: 'Kai answers anything nobody else does',
+      sentence: 'Kai answers what nobody else does',
       detail: 'Ravi never speaks here',
     });
   });
@@ -194,7 +194,7 @@ describe('a channel lead (DOR-2823)', () => {
       'author-Kai'
     );
 
-    expect(loudness.sentence).toBe('Kai answers anything nobody else does');
+    expect(loudness.sentence).toBe('Kai answers what nobody else does');
     expect(loudness.detail).toBeNull();
   });
 

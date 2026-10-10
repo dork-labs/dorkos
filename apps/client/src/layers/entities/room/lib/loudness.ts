@@ -166,7 +166,7 @@ function loudnessOf(voices: readonly Voice[], leadAuthorId: string | null): Room
     // @only bar: something here does answer, so one bar would read as nobody.
     return {
       level: 2,
-      sentence: `${lead.name} answers anything nobody else does`,
+      sentence: `${lead.name} answers what nobody else does`,
       detail: detailFor(
         voices.filter((voice) => voice !== lead && voice.rung === 'silent'),
         lead

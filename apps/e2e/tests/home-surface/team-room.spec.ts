@@ -410,9 +410,7 @@ test.describe('Home is the #team room @smoke', () => {
     // Scoped to this post's cascade — a neighbour's reply, still arriving from
     // the test before this one, is not an answer to this message.
     expect(
-      after.filter(
-        (entry) => entry.cascadeRoot === root && entry.authorId === team.leadAuthorId
-      ),
+      after.filter((entry) => entry.cascadeRoot === root && entry.authorId === team.leadAuthorId),
       'the default agent answered a post that named somebody else'
     ).toHaveLength(0);
   });

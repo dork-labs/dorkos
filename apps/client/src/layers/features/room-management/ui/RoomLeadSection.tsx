@@ -57,7 +57,9 @@ export function RoomLeadSection({ room }: RoomLeadSectionProps) {
   const helpId = useId();
   const setLead = useSetRoomLead();
 
-  if (room.kind !== 'channel') return null;
+  // A channel connected to an outside chat has no lead: its agent answers
+  // @mentions only there, and the server refuses one (DOR-2823).
+  if (room.kind !== 'channel' || room.bridge != null) return null;
   const viewer = room.members.find((member) => member.authorId === room.viewerAuthorId);
   if (viewer !== undefined && viewer.author.kind !== 'human') return null;
 

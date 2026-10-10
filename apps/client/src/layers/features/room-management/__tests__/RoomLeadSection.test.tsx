@@ -139,6 +139,14 @@ describe('RoomLeadSection', () => {
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
   });
 
+  it('draws nothing in a channel connected to an outside chat', () => {
+    renderSection(
+      room({ bridge: { adapterId: 'tg', chatId: '-1' } } as unknown as Partial<RoomWithRoster>)
+    );
+    expect(screen.queryByText('Lead')).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+  });
+
   it('names #team’s lead read-only and says where it is changed', () => {
     renderSection(
       room({ wellKnown: 'team', leadAuthorId: 'author-scout' } as Partial<RoomWithRoster>)

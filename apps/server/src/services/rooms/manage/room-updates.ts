@@ -170,6 +170,8 @@ export class RoomUpdates {
     // it, or take it when nobody does. Choosing among agents is the person's.
     if (
       patch.leadAuthorId !== undefined &&
+      patch.leadAuthorId !== room.leadAuthorId &&
+      !room.wellKnown &&
       room.leadAuthorId &&
       room.leadAuthorId !== callerAuthorId
     ) {
@@ -269,8 +271,9 @@ export class RoomUpdates {
     }
     if (leadAuthorId === null) return;
     const member = this.store.listMembers(room.id).some((m) => m.authorId === leadAuthorId);
-    const author = this.authors.getById(leadAuthorId);
-    if (!member || author?.kind !== 'agent' || author.retiredAt) {
+    // On the roster, which a retired agent never is: its channel seats are
+    // dropped when it leaves the team (DOR-2095).
+    if (!member || this.authors.getById(leadAuthorId)?.kind !== 'agent') {
       throw new RoomError('INVALID_LEAD', 'Only an agent in this channel can lead it.');
     }
   }
