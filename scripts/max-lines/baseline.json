@@ -2,8 +2,8 @@
   "$comment": "The 500-line ratchet (scripts/check-max-lines.ts, DOR-2822). Each file here was over the limit when measured. A file may shrink, never grow. Run `pnpm check:max-lines -- --update` after shrinking one; never raise a number by hand.",
   "files": {
     ".claude/scripts/spec-manifest-ops.ts": 616,
-    "apps/client/src/AppShell.tsx": 523,
-    "apps/client/src/dev/sections/components-sections.ts": 539,
+    "apps/client/src/AppShell.tsx": 510,
+    "apps/client/src/dev/sections/components-sections.ts": 516,
     "apps/client/src/dev/sections/content/conversation-sections.ts": 840,
     "apps/client/src/dev/showcases/CommandPaletteShowcases.tsx": 511,
     "apps/client/src/dev/showcases/ConnectionsShowcases.tsx": 608,

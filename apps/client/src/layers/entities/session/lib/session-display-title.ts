@@ -21,8 +21,12 @@ export const UNTITLED_SESSION_LABEL = 'New chat';
  * used to survive an `=== ''` check — so the emptiness test lives here, once,
  * rather than at each call site deciding for itself.
  *
- * @param title - The session's raw title (may be empty or whitespace)
+ * Missing counts as empty too. A row written from a settings reply, before the
+ * chat exists on the server, carries no `title` at all, and a surface reading
+ * the shared cache must not crash on it (DOR-2820: the window title did).
+ *
+ * @param title - The session's raw title (may be empty, whitespace or missing)
  */
-export function sessionDisplayTitle(title: string): string {
-  return title.trim() === '' ? UNTITLED_SESSION_LABEL : title;
+export function sessionDisplayTitle(title: string | null | undefined): string {
+  return !title || title.trim() === '' ? UNTITLED_SESSION_LABEL : title;
 }

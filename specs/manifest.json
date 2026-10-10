@@ -2,6 +2,14 @@
   "version": 1,
   "specs": [
     {
+      "id": "261009-220922",
+      "slug": "tab-identity-everywhere",
+      "title": "Tabs that say who or where and whether it needs you, on every page",
+      "created": "2026-10-09",
+      "status": "specified",
+      "linearIssue": "DOR-2820"
+    },
+    {
       "id": "261009-171114",
       "slug": "spin-off-chats",
       "title": "Spin-off chats: chats message each other, show who sent it, report back",

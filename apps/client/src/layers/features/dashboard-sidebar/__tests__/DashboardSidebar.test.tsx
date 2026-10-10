@@ -474,7 +474,6 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
   useStartNewSession: (await importOriginal<typeof import('@/layers/entities/session')>())
     .useStartNewSession,
   useAgentSessions: () => ({ sessions: [], activeSessionId: null, isLoading: false }),
-  useSessionBorderState: () => ({ kind: 'idle', color: 'x', pulse: false, label: 'Idle' }),
   useAgentHottestStatus: () => ({ kind: 'idle', color: 'x', pulse: false, label: 'Idle' }),
   useAgentsAggregateStatus: () => false,
   useAgentAttentionMap: (paths: string[], broken?: string[]) => mockAttentionMap(paths, broken),

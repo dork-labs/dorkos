@@ -8,7 +8,7 @@ import type { Transport } from '@dorkos/shared/transport';
 import { REACTION_FREQUENTS_DEFAULT } from '@dorkos/shared/room-schemas';
 import type { RoomSummary, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { TransportProvider } from '@/layers/shared/model';
-import { useRoomDocumentTitle } from '../use-room-document-title';
+import { useOpenRoom } from '../use-open-room';
 
 // ---------------------------------------------------------------------------
 // Mocks — the route, which is the only thing here that needs a live router
@@ -88,8 +88,8 @@ beforeEach(() => {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('useRoomDocumentTitle', () => {
-  it('names the open channel the way it is spoken', async () => {
+describe('useOpenRoom', () => {
+  it('resolves the open channel', async () => {
     pathname = '/channels';
     search = { id: 'room-1' };
     const transport = createMockTransport({
@@ -97,11 +97,22 @@ describe('useRoomDocumentTitle', () => {
       listRooms: vi.fn().mockResolvedValue([summary()]),
     });
 
-    const { result } = renderHook(() => useRoomDocumentTitle(), { wrapper: wrapperFor(transport) });
+    const { result } = renderHook(() => useOpenRoom(), { wrapper: wrapperFor(transport) });
 
-    // `#general`, not `general` — this string goes in a browser tab, where no
-    // mark is drawn beside it.
-    await waitFor(() => expect(result.current.roomTitle).toBe('#general'));
+    await waitFor(() => expect(result.current.room?.id).toBe('room-1'));
+  });
+
+  it('leaves a connected community room to that community', async () => {
+    pathname = '/channels';
+    search = { id: 'general', community: 'alpha' };
+    const getRoom = vi.fn().mockResolvedValue(withRoster());
+    const transport = createMockTransport({ getRoom, listRooms: vi.fn().mockResolvedValue([]) });
+
+    const { result } = renderHook(() => useOpenRoom(), { wrapper: wrapperFor(transport) });
+
+    await waitFor(() => expect(transport.listRooms).toHaveBeenCalled());
+    expect(result.current.room).toBeNull();
+    expect(getRoom).not.toHaveBeenCalled();
   });
 
   it('ignores a stale ?thread= and names the room in the URL, as ChannelsPage does', async () => {
@@ -114,9 +125,9 @@ describe('useRoomDocumentTitle', () => {
     const getRoom = vi.fn().mockResolvedValue(withRoster());
     const transport = createMockTransport({ getRoom, listRooms: vi.fn().mockResolvedValue([]) });
 
-    const { result } = renderHook(() => useRoomDocumentTitle(), { wrapper: wrapperFor(transport) });
+    const { result } = renderHook(() => useOpenRoom(), { wrapper: wrapperFor(transport) });
 
-    await waitFor(() => expect(result.current.roomTitle).toBe('#general'));
+    await waitFor(() => expect(result.current.room?.id).toBe('room-1'));
     expect(getRoom).toHaveBeenCalledWith('room-1');
     expect(getRoom).not.toHaveBeenCalledWith('thread-1');
   });
@@ -129,10 +140,10 @@ describe('useRoomDocumentTitle', () => {
       listRooms: vi.fn().mockResolvedValue([summary()]),
     });
 
-    const { result } = renderHook(() => useRoomDocumentTitle(), { wrapper: wrapperFor(transport) });
+    const { result } = renderHook(() => useOpenRoom(), { wrapper: wrapperFor(transport) });
 
     await waitFor(() => expect(result.current.unreadRoomCount).toBe(0));
-    expect(result.current.roomTitle).toBeNull();
+    expect(result.current.room).toBeNull();
     expect(transport.getRoom).not.toHaveBeenCalled();
   });
 
@@ -147,7 +158,7 @@ describe('useRoomDocumentTitle', () => {
       ]),
     });
 
-    const { result } = renderHook(() => useRoomDocumentTitle(), { wrapper: wrapperFor(transport) });
+    const { result } = renderHook(() => useOpenRoom(), { wrapper: wrapperFor(transport) });
 
     // Two conversations want you — not the 41 messages they are holding.
     await waitFor(() => expect(result.current.unreadRoomCount).toBe(2));
@@ -157,9 +168,9 @@ describe('useRoomDocumentTitle', () => {
     const pending = new Promise<RoomSummary[]>(() => {});
     const transport = createMockTransport({ listRooms: vi.fn().mockReturnValue(pending) });
 
-    const { result } = renderHook(() => useRoomDocumentTitle(), { wrapper: wrapperFor(transport) });
+    const { result } = renderHook(() => useOpenRoom(), { wrapper: wrapperFor(transport) });
 
-    expect(result.current).toEqual({ room: null, roomTitle: null, unreadRoomCount: 0 });
+    expect(result.current).toEqual({ room: null, unreadRoomCount: 0 });
   });
 
   it('keeps the badge live with no sidebar mounted anywhere', async () => {
@@ -177,7 +188,7 @@ describe('useRoomDocumentTitle', () => {
     );
     const transport = createMockTransport({ listRooms });
 
-    const { result } = renderHook(() => useRoomDocumentTitle(), { wrapper: wrapperFor(transport) });
+    const { result } = renderHook(() => useOpenRoom(), { wrapper: wrapperFor(transport) });
     await waitFor(() => expect(listRooms).toHaveBeenCalledTimes(1));
     expect(result.current.unreadRoomCount).toBe(0);
 
@@ -192,7 +203,7 @@ describe('useRoomDocumentTitle', () => {
 
   it('subscribes to every event that changes what the badge should say', () => {
     const transport = createMockTransport({ listRooms: vi.fn().mockResolvedValue([]) });
-    renderHook(() => useRoomDocumentTitle(), { wrapper: wrapperFor(transport) });
+    renderHook(() => useOpenRoom(), { wrapper: wrapperFor(transport) });
 
     // A room created, renamed, joined, left or spoken in all move the count.
     // `room_presence` rides along because the same hook owns the room-list

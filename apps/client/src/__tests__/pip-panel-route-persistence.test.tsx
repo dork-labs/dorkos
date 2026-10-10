@@ -167,7 +167,17 @@ vi.mock('@/layers/features/onboarding', () => ({
 
 // ── Mock entity hooks ──
 
-vi.mock('@/layers/entities/session', () => ({
+// The window title counts what is waiting through the Inbox's queue (DOR-2820).
+// Nothing is waiting here, and the real queue needs an event stream.
+vi.mock('@/layers/entities/attention', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/attention')>()),
+  useWaitingQueue: () => ({ items: [] }),
+}));
+
+vi.mock('@/layers/entities/session', async (importOriginal) => ({
+  // The real stores: the window title and tab strip read live status off them
+  // (DOR-2820), and an empty store reads idle.
+  ...(await importOriginal<typeof import('@/layers/entities/session')>()),
   useSessionId: () => [null, vi.fn()] as const,
   useDefaultCwd: () => {},
   useDirectoryState: () => ['/test/cwd', vi.fn()] as const,
@@ -177,14 +187,6 @@ vi.mock('@/layers/entities/session', () => ({
   // isolation test, so it always resolves to "no origin".
   useSessionOrigin: () => ({ origin: undefined, originLabel: undefined }),
   useSessionDetail: () => ({ data: undefined }),
-  // The tab strip badges a chat tab off this (DOR-540). Nothing is streaming in
-  // a shell-level isolation test, so every tab reads idle.
-  useSessionBorderState: () => ({
-    kind: 'idle',
-    color: 'transparent',
-    pulse: false,
-    label: 'Idle',
-  }),
 }));
 
 vi.mock('@/layers/entities/agent', async (importOriginal) => {

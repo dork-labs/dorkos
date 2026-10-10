@@ -10,7 +10,7 @@
 import { useCallback, useMemo } from 'react';
 import type { SessionStatus } from '@dorkos/shared/session-stream';
 import { useSessionListStore } from '../stream/session-list-store';
-import { borderKindFromLifecycle } from './use-session-border-state';
+import { borderKindFromLifecycle } from './use-session-status-signals';
 import { useRecentSessions } from '../query/use-recent-sessions';
 
 /**

@@ -1,8 +1,9 @@
 /**
- * Derives a session's sidebar border indicator state from the live session
- * projections.
+ * A session's live status facts, read from its projections, and the shared
+ * border vocabulary (colours, kinds, labels) an agent row's hottest status is
+ * drawn in.
  *
- * Three sources are merged, hottest signal wins (spec chat-stream-reconnection):
+ * Three sources are merged (spec chat-stream-reconnection):
  *
  * 1. **Per-session stream store** — the seq-gated projection for sessions this
  *    client has hydrated (foreground + recently attached).
@@ -12,16 +13,15 @@
  * 3. **Legacy chat store** — the send-path/recovery state, kept as a source
  *    until the dual-pipeline retirement.
  *
- * @module entities/session/model/status/use-session-border-state
+ * @module entities/session/model/status/use-session-status-signals
  */
 import { useCallback } from 'react';
-import { useReducedMotion } from 'motion/react';
 import {
   sessionDisplayState,
   type SessionLifecycle,
   type SessionStatus,
 } from '@dorkos/shared/session-stream';
-import { sessionLimitDisplay } from '../../lib/session-limit-text';
+import { sessionLimitDisplay, type SessionLimitDisplay } from '../../lib/session-limit-text';
 import { useSessionChatStore } from '../stream/session-chat-store';
 import { useSessionStreamStore } from '../stream/session-stream-store';
 import { useSessionListStore } from '../stream/session-list-store';
@@ -89,27 +89,6 @@ export const BORDER_LABELS: Record<SessionBorderKind, string> = {
 };
 
 /**
- * The border a session wears for its usage limit, or `null` when the limit
- * draws none: shown while `sessionDisplayState` reads `limited`, except for a
- * `moved` session and a limit on one model only (the same rule as the row's
- * text, `sessionLimitDisplay`). Red while the session needs action; the
- * neutral grey once the person chose to wait (decision Q13).
- */
-function limitedBorder(
-  status: Pick<SessionStatus, 'lifecycle' | 'limit'> | null | undefined
-): SessionBorderState | null {
-  if (!status || sessionDisplayState(status) !== 'limited') return null;
-  const display = sessionLimitDisplay(status.limit);
-  if (!display) return null;
-  return {
-    kind: 'limited',
-    color: display.needsAction ? BORDER_COLORS.destructive : BORDER_COLORS.neutral,
-    pulse: false,
-    label: BORDER_LABELS.limited,
-  };
-}
-
-/**
  * Map a projector {@link SessionLifecycle} to a border kind, or `null` when it
  * carries no actionable signal (`idle`, `interrupted`, or absent).
  */
@@ -129,32 +108,53 @@ export function borderKindFromLifecycle(
 }
 
 /**
- * Derive a session's border indicator from its live projections (stream store,
- * global list store, legacy chat store — hottest signal wins).
+ * Every live fact about one session's status, before any of them is chosen.
  *
- * The border communicates **operational status** only. Selection state ("active")
- * is handled independently by the row component via background highlight.
- *
- * Priority (highest first):
- * 1. **Pending approval** — most actionable signal; must never be hidden.
- * 2. **Streaming** — agent is generating output.
- * 3. **Limited** — the session's account ran out of usage (only when the caller
- *    passes the session's status, which it does only while the account
- *    identity gate is open).
- * 4. **Error** — last turn failed.
- * 5. **Unseen** — background activity the user has not yet acknowledged.
- * 6. **Idle** — default.
- *
- * Pulse animations are suppressed when the user has requested reduced motion.
+ * The border picks one of these in its own order (below); the desktop tab
+ * strip picks in another (`pickTabStatus`, DOR-2820), because a tab says
+ * "failed" and "paused" ahead of "working". Both read these same facts, so
+ * neither can see a state the other misses.
+ */
+export interface SessionStatusSignals {
+  /** A pending approval or question is waiting on a person. */
+  needsYou: boolean;
+  /** A turn is streaming right now. */
+  working: boolean;
+  /**
+   * The session's usage limit, as the row's text reads it, or `null` when the
+   * limit draws nothing (see {@link limitDisplayFor}).
+   */
+  limited: SessionLimitDisplay | null;
+  /** The last turn failed. */
+  failed: boolean;
+  /** Background work settled while nobody was looking. */
+  unseen: boolean;
+}
+
+/**
+ * How a session's usage limit reads while `sessionDisplayState` says
+ * `limited`, or `null` when it draws nothing: a `moved` session and a limit on
+ * one model only (the same rule as the row's text, `sessionLimitDisplay`).
+ */
+function limitDisplayFor(
+  status: Pick<SessionStatus, 'lifecycle' | 'limit'> | null | undefined
+): SessionLimitDisplay | null {
+  if (!status || sessionDisplayState(status) !== 'limited') return null;
+  return sessionLimitDisplay(status.limit);
+}
+
+/**
+ * Read a session's live status facts from its projections (stream store,
+ * global list store, legacy chat store), unranked.
  *
  * @param sessionId - Session to observe
- * @param limitStatus - The session's live lifecycle and usage limit, for the
- *   `limited` border. Omit it (as the agent and tab dots do) to never draw one.
+ * @param limitStatus - The session's live lifecycle and usage limit. Omit it
+ *   and `limited` is always `null`.
  */
-export function useSessionBorderState(
+export function useSessionStatusSignals(
   sessionId: string,
   limitStatus?: Pick<SessionStatus, 'lifecycle' | 'limit'> | null
-): SessionBorderState {
+): SessionStatusSignals {
   const status = useSessionChatStore(
     useCallback((s) => s.sessions[sessionId]?.status ?? 'idle', [sessionId])
   );
@@ -163,9 +163,7 @@ export function useSessionBorderState(
   );
   // Unseen background settles live in the LIST store (fed by the global stream),
   // so sessions this client never visited still light up.
-  const hasUnseenActivity = useSessionListStore(
-    useCallback((s) => sessionId in s.unseen, [sessionId])
-  );
+  const unseen = useSessionListStore(useCallback((s) => sessionId in s.unseen, [sessionId]));
   const legacyPendingApproval = useSessionChatStore(
     useCallback(
       (s) =>
@@ -193,51 +191,13 @@ export function useSessionBorderState(
   const listKind = useSessionListStore(
     useCallback((s) => borderKindFromLifecycle(s.statuses[sessionId]?.lifecycle), [sessionId])
   );
-  const shouldReduceMotion = useReducedMotion();
 
   const liveKind = streamKind ?? listKind;
-  const hasPendingApproval = legacyPendingApproval || liveKind === 'pendingApproval';
-
-  if (hasPendingApproval) {
-    return {
-      kind: 'pendingApproval',
-      color: BORDER_COLORS.amber,
-      pulse: !shouldReduceMotion,
-      dimColor: BORDER_COLORS.amberDim,
-      label: BORDER_LABELS.pendingApproval,
-    };
-  }
-  if (sdkRunning || status === 'streaming' || liveKind === 'streaming') {
-    return {
-      kind: 'streaming',
-      color: BORDER_COLORS.green,
-      pulse: !shouldReduceMotion,
-      dimColor: BORDER_COLORS.greenDim,
-      label: BORDER_LABELS.streaming,
-    };
-  }
-  const limited = limitedBorder(limitStatus);
-  if (limited) return limited;
-  if (status === 'error' || liveKind === 'error') {
-    return {
-      kind: 'error',
-      color: BORDER_COLORS.destructive,
-      pulse: false,
-      label: BORDER_LABELS.error,
-    };
-  }
-  if (hasUnseenActivity) {
-    return {
-      kind: 'unseen',
-      color: BORDER_COLORS.blue,
-      pulse: false,
-      label: BORDER_LABELS.unseen,
-    };
-  }
   return {
-    kind: 'idle',
-    color: BORDER_COLORS.idle,
-    pulse: false,
-    label: BORDER_LABELS.idle,
+    needsYou: legacyPendingApproval || liveKind === 'pendingApproval',
+    working: sdkRunning || status === 'streaming' || liveKind === 'streaming',
+    limited: limitDisplayFor(limitStatus),
+    failed: status === 'error' || liveKind === 'error',
+    unseen,
   };
 }
