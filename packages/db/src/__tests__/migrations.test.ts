@@ -176,6 +176,8 @@ describe('Database Migrations', () => {
       'chat_messages',
       'chat_read_cursors',
       'codex_threads',
+      // What each agent promised, to whom and by when (spec heartbeats §12).
+      'commitments',
       // Remote community enrollment, mirrored history, and durable delivery.
       'community_agent_enrollments',
       'community_entry_origins',

@@ -21,6 +21,7 @@ import { useCurrentAgent } from '@/layers/entities/agent';
 import { useInteractionStore } from '@/layers/entities/interactions';
 import { useRoomBoundSession } from '@/layers/entities/room';
 import { findTeamOwner, teamMemberFace, useMemberRooms } from '@/layers/entities/team';
+import { useCommitments } from '@/layers/entities/commitment';
 import { deriveRelationship } from '../lib/profile-relationship';
 import { messageTarget } from '../lib/profile-message';
 import { rowsFor, type ProfileRowsContext } from '../lib/profile-rows';
@@ -98,6 +99,14 @@ export function ProfileView({
   // and must not be asked about it.
   const ownsWork = relationship === 'managed' || relationship === 'system';
   const facts = useManagedAgentFacts(member, ownsWork);
+  // The Commitments row's counts. Asked for on every agent's profile: anyone
+  // may read any agent's promises (spec `heartbeats` §12). The page it pushes
+  // reads the same key, so opening it is a cache hit.
+  const commitmentAgentId = member.agent?.manifestId;
+  const commitments = useCommitments(
+    { agentId: commitmentAgentId ?? '' },
+    { enabled: Boolean(commitmentAgentId) }
+  );
   // Where this agent works in the room the page is showing, when one is. Answers
   // `null` everywhere else, which is what leaves the docked home — and every
   // route that is not a room — resolving exactly as it always did.
@@ -110,6 +119,12 @@ export function ProfileView({
     rooms: rooms.data ? { count: rooms.data.rooms.length, rooms: rooms.data.rooms } : null,
     facts,
     reportsTo: manifest.data ? describeReportsTo(manifest.data, roster, member).label : null,
+    commitments: commitments.data
+      ? {
+          open: commitments.data.filter((c) => c.state === 'open').length,
+          overdue: commitments.data.filter((c) => c.overdue).length,
+        }
+      : null,
   };
 
   // Three ways to have no button, and they are all the same answer: don't draw

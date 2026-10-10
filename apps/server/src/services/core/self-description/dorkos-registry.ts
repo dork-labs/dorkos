@@ -38,6 +38,7 @@ import { roomsDomain } from '../../rooms/room-capabilities.js';
 import { memoryDomain } from '../../memory/memory-capabilities.js';
 import { sessionDomain } from '../../session/agent-compaction/compaction-capabilities.js';
 import { chatDomain } from '../../session/chat-messages/chat-capabilities.js';
+import { commitmentsDomain } from '../../commitments/commitment-capabilities.js';
 import { uiDomain } from '../../session/browser-seat/ui-capabilities.js';
 import { capabilitiesDomain } from './capabilities-domain.js';
 import { permissionsDomain } from '../permissions/permission-capabilities.js';
@@ -70,6 +71,7 @@ export function composeDorkOsCapabilityRegistry(
   if (deps.roomDeps) domains.push(roomsDomain);
   if (deps.sessionCompactionDeps) domains.push(sessionDomain);
   if (deps.chatMessageDeps) domains.push(chatDomain);
+  if (deps.commitmentDeps) domains.push(commitmentsDomain);
   if (deps.auditDeps) domains.push(auditDomain);
   // Unconditional, unlike every domain above it: memory has no service handle to
   // switch off. Every install has a filesystem, the builtin provider needs
@@ -134,6 +136,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     roomsDomain,
     sessionDomain,
     chatDomain,
+    commitmentsDomain,
     auditDomain,
     memoryDomain,
     uiDomain,
@@ -150,6 +153,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     roomDeps: {} as CapabilityDeps['roomDeps'],
     sessionCompactionDeps: {} as CapabilityDeps['sessionCompactionDeps'],
     chatMessageDeps: {} as CapabilityDeps['chatMessageDeps'],
+    commitmentDeps: {} as CapabilityDeps['commitmentDeps'],
     auditDeps: {} as CapabilityDeps['auditDeps'],
   };
   return composeRegistry(domains, deps);

@@ -1664,6 +1664,164 @@
         ],
         "description": "Why not, when `supported` is false; null otherwise."
       },
+      "ListCommitmentsResponse": {
+        "type": "object",
+        "properties": {
+          "commitments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Commitment"
+            }
+          }
+        },
+        "required": [
+          "commitments"
+        ]
+      },
+      "Commitment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "to": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "what": {
+            "type": "string"
+          },
+          "dueAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "$ref": "#/components/schemas/CommitmentState"
+          },
+          "overdue": {
+            "type": "boolean"
+          },
+          "sourceSessionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sourceRoomEntryId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "closedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "to",
+          "what",
+          "dueAt",
+          "state",
+          "overdue",
+          "sourceSessionId",
+          "sourceRoomEntryId",
+          "createdAt",
+          "closedAt",
+          "note"
+        ]
+      },
+      "CommitmentState": {
+        "type": "string",
+        "enum": [
+          "open",
+          "kept",
+          "missed",
+          "dropped"
+        ]
+      },
+      "CommitmentError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "code"
+        ]
+      },
+      "CreateCommitmentRequest": {
+        "type": "object",
+        "properties": {
+          "what": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "to": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "dueAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "what"
+        ]
+      },
+      "UpdateCommitmentRequest": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "$ref": "#/components/schemas/CommitmentState"
+          },
+          "dueAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "from": {
+            "$ref": "#/components/schemas/CommitmentState"
+          }
+        },
+        "required": [
+          "state"
+        ]
+      },
       "HealthResponse": {
         "type": "object",
         "properties": {
@@ -19496,6 +19654,215 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/KeepAwakeStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/commitments": {
+      "get": {
+        "tags": [
+          "Commitments"
+        ],
+        "summary": "What agents promised",
+        "description": "Every agent's promises, readable by anyone in the space: open first (soonest due first), then kept, missed and dropped, newest first. `overdue` is computed on read.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "agentId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "$ref": "#/components/schemas/CommitmentState"
+            },
+            "required": false,
+            "name": "state",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "to",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The promises",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListCommitmentsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{id}/commitments": {
+      "post": {
+        "tags": [
+          "Commitments"
+        ],
+        "summary": "Add a promise for an agent",
+        "description": "A person records something an agent promised. Agents record their own with `commitment_add`, so a caller presenting an agent identity is refused.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCommitmentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The new promise",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Commitment"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body, or a past date (`PAST_DUE`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitmentError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is an agent (`NOT_A_PERSON`), or not the owner (`NOT_YOURS`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitmentError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No agent has that id (`UNKNOWN_AGENT`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitmentError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/commitments/{id}": {
+      "patch": {
+        "tags": [
+          "Commitments"
+        ],
+        "summary": "Close a promise or move its date",
+        "description": "Mark a promise kept, missed or dropped. `state: \"open\"` moves an open promise to a new `dueAt`, or reopens a closed one. Only the agent that promised, or a person, may change it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCommitmentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The promise, changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Commitment"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body, nothing to change (`NOTHING_TO_CHANGE`), or a past date (`PAST_DUE`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitmentError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Another agent made it, or the person is not the owner (`NOT_YOURS`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitmentError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No promise has that id (`NOT_FOUND`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitmentError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "It is no longer in the `from` state the caller named (`CONFLICT`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitmentError"
                 }
               }
             }

@@ -471,8 +471,10 @@ describe('in-session tool exposure', () => {
     // `spin-off-chats` §1), all three DEFERRED on a plain session.
     // 124 -> 118 (spec `spin-off-chats` §7): the six relay send, inbox and
     // endpoint tools retire. Both counts move by the same amounts.
-    expect(tools).toHaveLength(118);
-    expect(deferred).toHaveLength(107);
+    // 118 -> 121 for `commitment_add`, `commitment_update` and
+    // `commitments_list` (spec `heartbeats` §12), all three DEFERRED.
+    expect(tools).toHaveLength(121);
+    expect(deferred).toHaveLength(110);
     for (const name of [
       'configure_doc_channel',
       'approve_doc_route',

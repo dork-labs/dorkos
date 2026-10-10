@@ -216,8 +216,8 @@ import {
   type ConnectorRuntimeMcpListener,
 } from './services/runtimes/connector-mcp/index.js';
 import {
+  connectorRuntimeConsumer,
   connectorRuntimeHeaders,
-  type ConnectorRuntimeToolConsumer,
 } from './services/runtimes/connector-tools.js';
 import type {
   ConnectorRuntimeExecutionProbe,
@@ -640,6 +640,10 @@ import { AgentSendStore } from './services/extensions/agent-send/agent-send-stor
 import { ChatMessageStore } from './services/session/chat-messages/chat-message-store.js';
 import { wireChatMessaging } from './services/session/chat-messages/chat-message-wiring.js';
 import {
+  wireCommitments,
+  type CommitmentWiring,
+} from './services/commitments/commitment-wiring.js';
+import {
   SessionStartedByStore,
   getSessionStartedByStore,
   setSessionStartedByStore,
@@ -753,18 +757,6 @@ let testComposioFixture:
     >
   | undefined;
 
-function connectorRuntimeConsumer(runtime: unknown): ConnectorRuntimeToolConsumer | undefined {
-  if (
-    typeof runtime === 'object' &&
-    runtime !== null &&
-    'setConnectorRuntimeTools' in runtime &&
-    typeof (runtime as { setConnectorRuntimeTools?: unknown }).setConnectorRuntimeTools ===
-      'function'
-  ) {
-    return runtime as ConnectorRuntimeToolConsumer;
-  }
-  return undefined;
-}
 /**
  * Every registered agent that has a project on disk, as the legacy migration
  * wants them.
@@ -881,6 +873,7 @@ let attachAgentTaskRoots: ((projectPath: string, agentId: string) => Promise<voi
 const mainRequestAdmission = new MainRequestAdmission();
 const workspaceReconcilerLifecycle = new WorkspaceReconcilerLifecycle();
 let searchIndexer: SearchIndexer | undefined;
+let commitmentWiring: CommitmentWiring | undefined;
 let healthCheckInterval: ReturnType<typeof setInterval> | undefined;
 let dailySnapshotInterval: ReturnType<typeof setInterval> | undefined;
 let sessionAttachmentSweepInterval: ReturnType<typeof setInterval> | undefined;
@@ -1375,6 +1368,9 @@ async function start() {
     meshCore: () => meshCore,
     roomSessionPlace: () => roomSessionPlacePort,
   });
+  // What agents promised (spec `heartbeats` §12). The due timers are rebuilt
+  // from the table here, so a restart loses no wake and no missed mark.
+  const commitments = (commitmentWiring = wireCommitments({ db, meshCore: () => meshCore }));
   // Sharing with every agent that ends as a side effect (a disconnect, a move
   // to a DorkOS account) is recorded too, so every change to it leaves a
   // trace. Set here, before any provider registers, so boot-time changes count.
@@ -5037,6 +5033,11 @@ async function start() {
   );
   mountedRouters.push('permissions');
 
+  // What agents promised (spec `heartbeats` §12). Always mounted; the
+  // per-agent POST is mounted before the agents router so it answers its path.
+  app.use('/api/commitments', commitments.routers.list);
+  app.use('/api/agents/:id/commitments', commitments.routers.agent);
+
   // Always mounted — not behind any feature flag.
   // ADR-0043: pass meshCore (when available) so writes sync to Mesh DB cache.
   // The confirmation provider is composed further down this boot, inside the
@@ -5807,6 +5808,9 @@ async function start() {
       auditDeps: { log: auditLog },
       // Chats messaging chats (spec `spin-off-chats`).
       chatMessageDeps: chatMessaging,
+      // What agents promised (spec `heartbeats` §12): an agent records its
+      // own, and anyone reads every agent's list.
+      commitmentDeps: commitments.capabilityDeps,
       sessionCompactionDeps: {
         compaction: new AgentCompactionService({
           resolveRuntime: (sessionId: string) => runtimeRegistry.resolveForSession(sessionId),
@@ -6542,6 +6546,7 @@ async function shutdownServices() {
   if (searchIndexer) {
     searchIndexer.stop();
   }
+  commitmentWiring?.stop();
   if (meshCore) {
     meshCore.stopPeriodicReconciliation();
     meshCore.close();
