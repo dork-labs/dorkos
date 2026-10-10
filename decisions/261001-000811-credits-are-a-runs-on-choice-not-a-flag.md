@@ -14,6 +14,8 @@ amends: null
 
 Accepted (DOR-2623, spec `dorkos-account-by-default` §1, decisions D2, D3 and D7).
 
+**Amended by** [261010-092116](261010-092116-heartbeats-skill-content-platform-beat-runner.md): a heartbeat's cheap check may also run on credits, only after a person says yes to it.
+
 It replaces the rule that put DorkOS credits on the repo's money-path table as "a flag beside its own key" (`DORKOS_CLOUD_CREDITS=1` beside the cloud-link credential, DOR-2027). The other six money paths keep that rule unchanged.
 
 ## Context

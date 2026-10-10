@@ -7588,6 +7588,16 @@
       "extractedFrom": null,
       "specSlug": "spin-off-chats",
       "amends": ["261006-235240", "0077", "0081"]
+    },
+    {
+      "id": "261010-092116",
+      "slug": "heartbeats-skill-content-platform-beat-runner",
+      "title": "Heartbeats are a skill-shaped HEARTBEAT.md plus a platform beat runner; beats end with end_beat",
+      "status": "accepted",
+      "created": "2026-10-10",
+      "extractedFrom": null,
+      "specSlug": "heartbeats",
+      "amends": ["261001-000811"]
     }
   ]
 }
