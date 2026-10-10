@@ -212,9 +212,9 @@ export const useSessionListStore = create<SessionListStoreState & SessionListAct
                 }
                 // Retain the reading on EVERY status carrying contextUsage,
                 // including a settling one — a settled session keeps showing its
-                // last known usage instead of blanking (Decision 3). This is the
-                // ONLY map that survives settle; the liveness maps below still
-                // prune, so the border signal stays memory-bounded.
+                // last known usage instead of blanking (Decision 3). This and
+                // `limits` are the only maps that survive settle; the liveness
+                // maps below still prune, so the border signal stays bounded.
                 if (event.status.contextUsage) {
                   state.contextReadings[event.sessionId] = {
                     contextUsage: event.status.contextUsage,
