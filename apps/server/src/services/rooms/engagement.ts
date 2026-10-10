@@ -180,13 +180,20 @@ export function engagementFor(
  * starting at the post itself, and stop at the first post that says who the
  * conversation is with:
  *
- * - a post by an agent member — the agent that spoke last is the one being
- *   answered, so an agent's OWN posts anchor and extend the window;
+ * - a post by an agent member that takes part in conversations (`engaged` or
+ *   `always`) — the agent that spoke last is the one being answered, so an
+ *   agent's OWN posts anchor and extend the window;
  * - a person's post that @mentioned agent members — the one they last named,
  *   which is also how a person moves the conversation to somebody else.
  *
  * A person's post that names nobody says nothing about who, so the walk passes
- * over it, and it counts toward the post ceiling. The anchor must be inside the
+ * over it, and it counts toward the post ceiling. So does a post by an agent
+ * that only answers @mentions: it would not answer the person, so it must not
+ * capture their conversation from the agent that would.
+ *
+ * **A post that @mentions only people is addressed to them**, so it is nobody's
+ * conversation with an agent: `@kai lunch?` is not a question for whichever
+ * agent spoke last. The anchor must be inside the
  * window on both halves: younger than `window.minutes`, and fewer than
  * `window.posts` posts landed on top of it.
  *
@@ -198,16 +205,18 @@ export function engagementFor(
  * anchor — which is why the mentioned turn carries a window too, exactly as it
  * did under the engaged window.
  *
- * Reads at most `window.posts + 1` rows on the same indexes as the engaged
- * window, so it costs one bounded query per post, not one per member.
+ * Reads at most `window.posts` rows (plus a thread's root, when the page has
+ * room for it) on the same indexes as the engaged window, so it costs one
+ * bounded query per post, not one per member.
  *
  * @param deps - The room store.
  * @param opts.roomId - The room.
  * @param opts.threadRootEntryId - The post's thread, or `null` for the top level.
  *   A thread's root is part of its scope.
  * @param opts.isAgentMember - Whether an author id is an agent member of this
- *   room. Anything else (a person, a departed agent) is not an anchor by
- *   authorship; only a person's mentions anchor, and only of agent members.
+ *   room. Only a person's mentions OF agent members anchor.
+ * @param opts.joinsConversations - Whether an agent member answers a person's
+ *   conversation (`engaged` or `always`). Only such an agent's posts anchor.
  * @param opts.isPerson - Whether an author id is a person.
  * @param opts.window - The configured ceilings.
  * @param opts.now - The clock.
@@ -220,6 +229,7 @@ export function conversationFor(
     roomId: string;
     threadRootEntryId: string | null;
     isAgentMember: (authorId: string) => boolean;
+    joinsConversations: (authorId: string) => boolean;
     isPerson: (authorId: string) => boolean;
     window: EngagedWindow;
     now: Date;
@@ -233,11 +243,17 @@ export function conversationFor(
     limit: posts,
   });
 
+  const post = recent[0];
+  if (post && post.mentions.length > 0 && !post.mentions.some((id) => opts.isAgentMember(id))) {
+    return null;
+  }
+
   for (let since = 0; since < recent.length; since++) {
     const entry = recent[since]!;
     let partners: string[] = [];
-    if (opts.isAgentMember(entry.authorId)) partners = [entry.authorId];
-    else if (opts.isPerson(entry.authorId)) {
+    if (opts.isAgentMember(entry.authorId)) {
+      if (opts.joinsConversations(entry.authorId)) partners = [entry.authorId];
+    } else if (opts.isPerson(entry.authorId)) {
       partners = [...new Set(entry.mentions.filter((id) => opts.isAgentMember(id)))];
     }
     if (partners.length === 0) continue;

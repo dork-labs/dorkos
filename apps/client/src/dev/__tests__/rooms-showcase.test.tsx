@@ -164,7 +164,7 @@ describe('the room panel fixture reaches every state', () => {
     // stopped answering `getConfig` would leave the sentence looking finished
     // and quietly wrong about somebody's install.
     expect(
-      await screen.findByText(/keeps answering for 10 minutes or 5 messages/)
+      await screen.findByText(/keeps answering for 60 minutes or 15 messages/)
     ).toBeInTheDocument();
   });
 

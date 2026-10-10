@@ -24,7 +24,6 @@ function reason(over: Partial<Parameters<typeof whyNobody>[0]> = {}): string {
     entry: { authorId: 'dorian', mentions: [] },
     members: [PERSON, ANA],
     namedUnreachable: [],
-    stoodDown: false,
     partners: [],
     ...over,
   });
@@ -41,9 +40,6 @@ describe('why nobody was picked', () => {
     expect(reason({ entry: { authorId: 'dorian', mentions: ['ana'] } })).toBe(
       'named_not_answering'
     );
-  });
-  it('says the default answerer stepped back', () => {
-    expect(reason({ stoodDown: true })).toBe('stood_down');
   });
   it('says the agent in the conversation only answers @mentions', () => {
     expect(reason({ partners: ['ana'] })).toBe('partner_not_answering');

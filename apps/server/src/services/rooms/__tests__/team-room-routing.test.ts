@@ -364,9 +364,10 @@ describe('the stand-down is scoped to the room that has a fallback seat', () => 
 
 describe('changing the default agent', () => {
   it('moves who answers, and the old default goes quiet', async () => {
-    // A default agent that says nothing, so the second post is not a reply to
-    // anybody: an answer would make the old default the person's conversation
-    // (DOR-2823), and this case is about the setting.
+    // A default agent that says nothing, so the second post is a fresh
+    // question rather than a reply to DorkBot. Had DorkBot answered, the person
+    // would be mid-conversation with it, and the next post is DorkBot's alone
+    // (DOR-2823) — the case below pins that half.
     const w = boot({ reply: null });
     await say(w, 'what is on for today?');
     expect(turnsFor(w, w.dorkbot)).toBe(1);
@@ -380,6 +381,19 @@ describe('changing the default agent', () => {
     // default.
     expect(turnsFor(w, w.nova)).toBe(1);
     expect(turnsFor(w, w.dorkbot)).toBe(1);
+  });
+
+  it('lets the agent you are talking to answer alone, never beside the default', async () => {
+    // DOR-2823: a person's post belongs to their conversation, and the default
+    // agent stands down for a conversation with somebody else.
+    const w = boot();
+    await say(w, '@nova can you take the deploy?');
+    expect(turnsFor(w, w.nova)).toBe(1);
+    const dorkbotBefore = turnsFor(w, w.dorkbot);
+
+    await say(w, 'thanks, when will it be out?');
+    expect(turnsFor(w, w.nova)).toBe(2);
+    expect(turnsFor(w, w.dorkbot)).toBe(dorkbotBefore);
   });
 
   it('is the setting, not the room key, that decides — #team is otherwise ordinary', async () => {

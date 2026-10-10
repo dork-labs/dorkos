@@ -20,6 +20,8 @@ const BO = 'bo';
 const HUMAN = 'dorian';
 const SYSTEM = 'system-author';
 const AGENTS = new Set([ANA, BO]);
+/** Agents that answer @mentions only, so they take part in no conversation. */
+const MENTION_ONLY = new Set(['cy']);
 
 const WINDOW: EngagedWindow = { minutes: 60, posts: 15 };
 const T0 = Date.parse('2026-10-09T12:00:00.000Z');
@@ -92,8 +94,9 @@ function partners(
       {
         roomId: ROOM,
         threadRootEntryId: opts.thread ?? null,
-        isAgentMember: (id) => AGENTS.has(id),
-        isPerson: (id) => id === HUMAN,
+        isAgentMember: (id) => AGENTS.has(id) || MENTION_ONLY.has(id),
+        joinsConversations: (id) => AGENTS.has(id),
+        isPerson: (id) => id === HUMAN || id === 'kai',
         window: opts.window ?? WINDOW,
         now: NOW,
       }
@@ -133,10 +136,25 @@ describe('following the conversation', () => {
     expect(partners(store)).toEqual([ANA, BO]);
   });
 
-  it('ignores a mention of a person, which moves the conversation to nobody', () => {
+  it('passes over an earlier post that named only a person', () => {
     const store = freshStore();
     write(store, { id: 'answer', authorId: ANA, minutesAgo: 5 });
-    write(store, { id: 'to-a-person', mentions: ['someone-else'], minutesAgo: 1 });
+    write(store, { id: 'to-a-person', mentions: ['kai'], minutesAgo: 1 });
+    write(store, { id: 'follow-up' });
+    expect(partners(store)).toEqual([ANA]);
+  });
+
+  it('gives a post that names only a person to nobody, because it is for them', () => {
+    const store = freshStore();
+    write(store, { id: 'answer', authorId: ANA, minutesAgo: 5 });
+    write(store, { id: 'lunch', mentions: ['kai'] });
+    expect(partners(store)).toBeNull();
+  });
+
+  it('does not let an agent that only answers @mentions capture the conversation', () => {
+    const store = freshStore();
+    write(store, { id: 'answer', authorId: ANA, minutesAgo: 5 });
+    write(store, { id: 'update', authorId: 'cy', minutesAgo: 2 });
     write(store, { id: 'follow-up' });
     expect(partners(store)).toEqual([ANA]);
   });

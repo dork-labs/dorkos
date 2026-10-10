@@ -261,8 +261,9 @@ function reasonFor(
  * **Two escapes, and both are the seat answering as itself rather than as the
  * fallback.** It survives when the post named it too (`@nova @dorkbot ...`
  * addressed both), and when it is inside its own engaged window — which in this
- * codebase means somebody addressed it BY NAME recently (`engagement.ts`
- * anchors on a mention). So a default agent you are actually talking to stays in
+ * codebase means, for an agent's post, somebody addressed it BY NAME recently
+ * (`engagement.ts` anchors on a mention), and for a person's post that the
+ * person is talking with it (`conversationFor`, DOR-2823). So a default agent you are actually talking to stays in
  * the conversation, follows a colleague's reply, and is not dismissed by your
  * handing one task to somebody else; a default agent that has only ever been
  * catching unaddressed posts has no window and steps back. That is the
@@ -290,6 +291,9 @@ function reasonFor(
  *   including for the seat, which the caller must compute rather than assume, or
  *   the second escape silently never fires.
  * @param opts.selected - What {@link selectTriggerTargets} chose.
+ * @param opts.conversationPartners - Who a person's post is for by
+ *   conversation (`engagement.ts` `conversationFor`); the seat stands down when
+ *   that is somebody else.
  * @returns `selected`, without the seat when it has stood down and with the
  *   seat's reason relabelled `'seat'` when it has not. May be empty: a post that
  *   named only a silenced agent reaches nobody, which is what silencing that
@@ -301,6 +305,7 @@ export function standDownFallbackSeat(opts: {
   seatAuthorId: string | null;
   members: readonly AddressingMember[];
   selected: readonly TriggerSelection[];
+  conversationPartners?: readonly string[];
 }): TriggerSelection[] {
   const { seatAuthorId } = opts;
   if (seatAuthorId === null) return [...opts.selected];
@@ -323,6 +328,13 @@ export function standDownFallbackSeat(opts: {
   const mentioned = new Set(opts.entry.mentions);
   const seat = opts.members.find((member) => member.authorId === seatAuthorId);
   if (mentioned.has(seatAuthorId) || seat?.isEngaged) return labelled;
+
+  // A third shape, the same idea (DOR-2823): a person's post that belongs to
+  // their conversation with ANOTHER agent is that agent's to answer. Without
+  // this, the person talking to Nova got Nova and the default agent both.
+  if ((opts.conversationPartners?.length ?? 0) > 0) {
+    return labelled.filter((selection) => selection.authorId !== seatAuthorId);
+  }
 
   // A mention of a PERSON is not delegating the question to an agent, so it
   // leaves the seat exactly where it was — and neither does naming the seat's
@@ -347,8 +359,6 @@ export type NobodyReason =
   | 'named_unreachable'
   /** The post named agents, and every one of them is set not to answer. */
   | 'named_not_answering'
-  /** The room's default answerer stepped back for a post it was not owed. */
-  | 'stood_down'
   /** The person is talking with an agent here, but it only answers @mentions. */
   | 'partner_not_answering'
   /** Nobody named, and no conversation with any agent in this place. */
@@ -360,15 +370,12 @@ export type NobodyReason =
  * @param opts.entry - The post.
  * @param opts.members - The roster, as addressing saw it.
  * @param opts.namedUnreachable - Names the post typed that reached nobody.
- * @param opts.stoodDown - Whether the matrix picked somebody and the default
- *   answerer's stand-down removed them.
  * @param opts.partners - Who the conversation rule said the person is talking to.
  */
 export function whyNobody(opts: {
   entry: AddressingEntry;
   members: readonly AddressingMember[];
   namedUnreachable: readonly string[];
-  stoodDown: boolean;
   partners: readonly string[];
 }): NobodyReason {
   const agents = opts.members.filter(
@@ -378,7 +385,6 @@ export function whyNobody(opts: {
   if (opts.namedUnreachable.length > 0) return 'named_unreachable';
   const mentioned = new Set(opts.entry.mentions);
   if (agents.some((member) => mentioned.has(member.authorId))) return 'named_not_answering';
-  if (opts.stoodDown) return 'stood_down';
   if (opts.partners.length > 0) return 'partner_not_answering';
   return 'no_conversation';
 }

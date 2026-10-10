@@ -169,7 +169,9 @@ function count(value: number, unit: string): string {
  * has numbers in it.
  */
 function explainEngaged(window: EngagedWindow | null): RungExplanation {
-  const quietAgain = 'Then it goes quiet until you say its name.';
+  // Its own answers restart the window (DOR-2823), so "goes quiet" only comes
+  // once the person stops talking to it or names somebody else.
+  const quietAgain = 'Each answer restarts that. Name someone else to move on.';
   if (window === null) {
     // The numbers are settings, so inventing them would state something false
     // about somebody's own install. The shape of the rule is still true.
@@ -190,7 +192,7 @@ function explainEngaged(window: EngagedWindow | null): RungExplanation {
     sentence:
       `Answers when @mentioned, then keeps answering for ` +
       `${count(window.engagedWindowMinutes, 'minute')} or ` +
-      `${count(window.engagedWindowPosts, 'message')}, whichever ends first.`,
+      `${count(window.engagedWindowPosts, 'message')}.`,
     note: quietAgain,
   };
 }

@@ -316,7 +316,11 @@ describe('T12 — the audit trail', () => {
       roomId: w.room.id,
       authorId: w.ana,
     });
-    expect(skips[0]!.entryId).not.toBe(asked.id);
+    const novaAnswer = w.service
+      .listEntries(w.room.id, w.human, { limit: 50 })
+      .find((entry) => entry.authorId === w.nova);
+    expect(asked.id).not.toBe(novaAnswer?.id);
+    expect(skips[0]!.entryId).toBe(novaAnswer!.id);
     // Explicitly no dispatch, and never the ambient one: nothing was claimed for
     // Ana, and this sweep may be running inside Nova's scope.
     expect(skips[0]!.dispatchId).toBeUndefined();

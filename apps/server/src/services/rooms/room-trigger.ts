@@ -994,14 +994,20 @@ export class RoomTriggerDispatcher {
           roomId: room.id,
           threadRootEntryId,
           isAgentMember: (id) => records.get(id)?.kind === 'agent',
+          joinsConversations: (id) => {
+            const mode = members.find((member) => member.authorId === id)?.responseMode;
+            return mode === 'engaged' || mode === 'always';
+          },
           isPerson: (id) => records.get(id)?.kind === 'human',
           window,
           now,
         })
       : null;
     // The mention-anchored window, for every post the conversation rule does
-    // not cover. An agent's post is weighed at the old bound; a person's post
-    // outside a channel keeps the configured one.
+    // not cover. An agent's post is weighed at the old bound. A person's post
+    // outside a channel keeps the configured one deliberately: there it only
+    // shapes what an engaged agent is told about its window, because a person's
+    // message in a direct message is addressed to everyone in it anyway.
     const mentionWindow = authorKind === 'human' ? window : agentPostWindow(window);
     for (const member of members) {
       const record = records.get(member.authorId);
@@ -1058,6 +1064,7 @@ export class RoomTriggerDispatcher {
       seatAuthorId,
       members: addressing,
       selected: matrix,
+      conversationPartners: conversation?.partners ?? [],
     });
     if (selected.length === 0) {
       // A person's post in a channel that reaches nobody is the failure
@@ -1071,7 +1078,6 @@ export class RoomTriggerDispatcher {
             entry,
             members: addressing,
             namedUnreachable,
-            stoodDown: matrix.length > 0,
             partners: conversation?.partners ?? [],
           }),
         });
