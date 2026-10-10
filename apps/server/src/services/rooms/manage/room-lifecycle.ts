@@ -16,7 +16,8 @@ import type { RoomRoster } from '../room-roster.js';
 import type { NewRoom } from '../room-rows.js';
 import { slugify, uniqueChannelSlug } from '../service/room-slugs.js';
 import type { OpenedRoom } from '../service/room-service-deps.js';
-import { isDmMemberSetTaken, type RoomStore } from '../room-store.js';
+import { isDmMemberSetTaken } from './room-dm-key.js';
+import type { RoomStore } from '../room-store.js';
 import type { RoomUpdates } from './room-updates.js';
 import type { RoomVisibility } from '../service/room-visibility.js';
 
