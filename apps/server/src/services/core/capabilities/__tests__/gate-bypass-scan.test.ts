@@ -478,14 +478,64 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
   },
   {
     // DOR-2086. Opening managed forwarding publishes this computer at a Cloud
-    // address. `TunnelManager` defines it (S1); `startManaged` runs
-    // `canExpose()` itself, so this pins who may ASK.
+    // address. `TunnelManager.startManaged` is the door: it queues the open
+    // behind the person's own tunnel and hands it to `ManagedForwarding`, which
+    // runs `canExpose()` and the edge-proof check itself, so this pins who may
+    // ASK. The two entries after the next pin the layer beneath it.
     what: 'opens managed forwarding, publishing this computer at the address Cloud issued',
     call: 'tunnelManager.startManaged(',
     allowed: {},
     planned: {
       'services/core/remote/command-dispatcher.ts':
         'a Cloud `open` (or `rotate` switch) command, holding a `CloudAuthority` it re-checks with `isStillValid()` immediately before the call; never from a request',
+    },
+  },
+  {
+    // DOR-2086. Changing which hostnames an open managed session serves. It can
+    // only ever serve hostnames the open credential allows, but adding one
+    // publishes this computer at another address, so who may ask is pinned.
+    what: 'changes which Cloud-issued hostnames managed forwarding serves',
+    call: 'tunnelManager.applyHosts(',
+    allowed: {},
+    planned: {
+      'services/core/remote/command-dispatcher.ts':
+        'a Cloud host-set command for the open credential, holding a `CloudAuthority`; never from a request',
+    },
+  },
+  {
+    // DOR-2086. The layer beneath `tunnelManager.startManaged(`. Reached around
+    // `TunnelManager`, an open skips the queue that keeps it from overlapping
+    // the person's own tunnel, so only `TunnelManager` may call it.
+    what: "opens managed forwarding beneath the queue that keeps it apart from the person's own tunnel",
+    call: 'managedForwarding.open(',
+    allowed: {
+      'services/core/tunnel-manager.ts':
+        '`startManaged`, inside the queue every open of either kind runs through, with the close count read when the open was asked for',
+    },
+  },
+  {
+    what: "changes managed forwarding's hostnames beneath the queue",
+    call: 'managedForwarding.applyHosts(',
+    allowed: {
+      'services/core/tunnel-manager.ts': '`applyHosts`, inside the same queue as every open',
+    },
+  },
+  {
+    // A second `ManagedForwarding` would be a managed session `TunnelManager`
+    // cannot see, so nothing would keep it apart from the person's own tunnel.
+    what: 'builds another managed forwarding session holder',
+    call: 'new ManagedForwarding(',
+    allowed: {
+      'services/core/tunnel-manager.ts': 'the one holder, owned by the `tunnelManager` singleton',
+    },
+  },
+  {
+    // Likewise a second `TunnelManager`: its own managed session and its own
+    // queue, invisible to the one every route and shutdown path reads.
+    what: 'builds another tunnel manager, with its own remote access the app cannot see',
+    call: 'new TunnelManager(',
+    allowed: {
+      'services/core/tunnel-manager.ts': 'the module singleton, `tunnelManager`',
     },
   },
   {

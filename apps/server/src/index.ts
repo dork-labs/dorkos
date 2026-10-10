@@ -17,7 +17,7 @@ import { HARNESS_MANIFEST_PATH } from '@dorkos/harness';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import { randomUUID } from 'node:crypto';
 import { createApp, finalizeApp } from './app.js';
-import { createFrontDoorServer } from './http/front-door.js';
+import { createFrontDoorServer, frontDoorListener } from './http/front-door.js';
 import { composeFrontDoor } from './http/hono-api.js';
 import { createSessionLocationsRouter } from './routes/session-locations.js';
 import { ManagedConnectorCloudError } from './services/core/auth/cloud-link-client.js';
@@ -566,7 +566,7 @@ import { spacesEnabled } from './middleware/spaces-enabled.js';
 import { SearchIndexer, selectSearchSources } from './services/search/index.js';
 import { TerminalManager, terminalUpgradeRoute } from './services/terminal/index.js';
 import { attachUpgradeRouter } from './services/core/streams/upgrade-router.js';
-import { createManagedIngress } from './services/core/remote/managed-ingress.js';
+import { managedIngressFor } from './services/core/remote/managed-ingress.js';
 import { durableStreamRoutes } from './routes/stream-sockets.js';
 import { createTerminalRouter } from './routes/terminal.js';
 import { registerDorkosCommunityTelemetry } from './services/marketplace/telemetry/telemetry-reporter.js';
@@ -6086,13 +6086,14 @@ async function start() {
     logger.warn(`[Auth] ${bindCheck.warning}`);
   }
 
+  const frontDoor = composeFrontDoor(app, mainRequestAdmission);
   const server = startMainListener({
     admission: mainRequestAdmission,
     // Hono is the front door: moved route groups answer from the Hono `/api`
     // app (`http/hono-api.ts`), everything else from the Express app behind it
-    // (`http/front-door.ts`, ADR 261009-192542).
-    listen: () =>
-      createFrontDoorServer(composeFrontDoor(app, mainRequestAdmission)).listen(PORT, host),
+    // (`http/front-door.ts`, ADR 261009-192542). Managed remote access serves
+    // the same door, so its requests meet the same routes and gates.
+    listen: () => createFrontDoorServer(frontDoor).listen(PORT, host),
     onListening: (server) => {
       logger.info(`[DorkOS] server running on http://${host}:${PORT}`);
 
@@ -6109,15 +6110,10 @@ async function start() {
       logger.info('[DorkOS] WebSocket upgrade router attached');
 
       // The managed remote-access ingress: a loopback listener of its own that
-      // managed forwarding targets, running the edge-proof and host checks
-      // before handing requests to this app and upgrades to the router above.
+      // managed forwarding targets. It runs the edge-proof and host checks, then
+      // hands requests to the same front door and upgrades to the router above.
       // Nothing listens until managed access opens.
-      tunnelManager.attachManagedIngress(
-        createManagedIngress({
-          handler: app,
-          forwardUpgrade: (req, socket, head) => server.emit('upgrade', req, socket, head),
-        })
-      );
+      tunnelManager.attachManagedIngress(managedIngressFor(frontDoorListener(frontDoor), server));
 
       // Fire-and-forget: record startup in the activity feed so the dashboard
       // shows when the server was last (re)started.

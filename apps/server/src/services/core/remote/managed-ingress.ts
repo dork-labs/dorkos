@@ -45,7 +45,7 @@ import { markManagedIngress } from './ingress-mark.js';
 
 /** What the ingress hands admitted traffic to. */
 export interface ManagedIngressOptions {
-  /** The main Express app (any Node request listener). */
+  /** The main server's request listener: its front door, which hands on to the Express app. */
   handler: (req: IncomingMessage, res: ServerResponse) => void;
   /**
    * Hand an admitted upgrade to the main server's upgrade router — in
@@ -131,6 +131,23 @@ function countHeader(rawHeaders: readonly string[], name: string): number {
 }
 
 type Refusal = { status: number; message: string; reason: string };
+
+/**
+ * The production managed ingress: requests go to `handler`, the same listener
+ * the main server serves, and admitted upgrades go to `server`'s upgrade router.
+ *
+ * @param handler - The main server's request listener.
+ * @param server - The main server, whose `upgrade` listener is the upgrade router.
+ */
+export function managedIngressFor(
+  handler: http.RequestListener,
+  server: http.Server
+): ManagedIngress {
+  return createManagedIngress({
+    handler,
+    forwardUpgrade: (req, socket, head) => server.emit('upgrade', req, socket, head),
+  });
+}
 
 /**
  * Create the managed ingress. Nothing listens until {@link ManagedIngress.open}.
