@@ -24,7 +24,6 @@ import {
   countedBlobBytes,
 } from '../../host/limits.js';
 import {
-  BlobStoreError,
   completeManagedBlobCommit,
   discardManagedBlob,
   managedBlobWriteSignal,
@@ -37,6 +36,8 @@ import { prepareCommunityDeletionInventory } from '../../deletion-worker.js';
 import { resolveCommunityContext } from '../../tenant-context.js';
 import { revokeTenantAccess } from '../../host/communities.js';
 import { endOwnerReplacement } from '../../owner-replacement/end.js';
+import { notifyLive } from '../../live/notices.js';
+import { mapIconBlobError, requestBytes } from './community-icon.js';
 import {
   DELETABLE,
   deletionOrigin,
@@ -117,31 +118,6 @@ function assertReadableLifecycle(row: SettingsRow): void {
   if (row.lifecycle === 'pending_owner') {
     throw new ApiError(403, 'FORBIDDEN', 'This space has no owner.');
   }
-}
-
-async function* requestBytes(body: ReadableStream<Uint8Array>): AsyncGenerator<Uint8Array> {
-  const reader = body.getReader();
-  try {
-    while (true) {
-      const item = await reader.read();
-      if (item.done) return;
-      yield item.value;
-    }
-  } finally {
-    reader.releaseLock();
-  }
-}
-
-function mapIconBlobError(error: unknown): never {
-  if (error instanceof BlobStoreError) {
-    if (error.code === 'BLOB_TOO_LARGE')
-      throw new ApiError(413, 'ATTACHMENT_TOO_LARGE', 'The icon is larger than 2 MiB.');
-    if (error.code === 'BLOB_TYPE_REJECTED' || error.code === 'BLOB_EMPTY')
-      throw new ApiError(415, 'UNSUPPORTED_ATTACHMENT_TYPE', 'Use a PNG, JPEG, GIF, or WebP icon.');
-    if (error.code === 'BLOB_NOT_FOUND')
-      throw new ApiError(404, 'NOT_FOUND', 'Space icon not found.');
-  }
-  throw error;
 }
 
 /** Register settings and owner lifecycle operations for one tenant-qualified Community. */
@@ -434,6 +410,7 @@ export function registerAdministrationRoutes(
              lifecycle_version=lifecycle_version+1 WHERE id=$1`,
           [current.id]
         );
+        await notifyLive(client, { k: 'community', c: current.id });
       } else {
         if (current.lifecycle !== 'archived') {
           throw new ApiError(409, 'STATE_CONFLICT', 'Only an archived space can be restored.');
@@ -443,6 +420,7 @@ export function registerAdministrationRoutes(
              lifecycle_version=lifecycle_version+1 WHERE id=$1`,
           [current.id]
         );
+        await notifyLive(client, { k: 'community', c: current.id });
       }
       await client.query(
         `INSERT INTO audit_events(
@@ -574,6 +552,7 @@ export function registerAdministrationRoutes(
          WHERE id=$1 RETURNING lifecycle_version`,
         [current.id, requestedAt, deleteAfter, currentActor.id]
       );
+      await notifyLive(client, { k: 'community', c: current.id });
       await client.query(
         `INSERT INTO community_deletion_jobs(
            community_id,requested_by_member_id,lifecycle_version,delete_after,next_attempt_at
@@ -676,6 +655,7 @@ export function registerAdministrationRoutes(
            lifecycle_version=lifecycle_version+1 WHERE id=$1 RETURNING lifecycle_version`,
         [row.id, restored.lifecycle, restored.suspendedFrom]
       );
+      await notifyLive(client, { k: 'community', c: row.id });
       await client.query('DELETE FROM community_deletion_jobs WHERE community_id=$1', [row.id]);
       await client.query(
         `INSERT INTO audit_events(

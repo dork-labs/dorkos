@@ -29,13 +29,14 @@ import {
   requireLiveRole,
   refuseIfClearedSinceStart,
   requireMember,
-  revokeCallingConnectionGrant,
   transaction,
 } from '../../data.js';
+import { lockRevocationMember, revokeCallingConnectionGrant } from './grant-revocation.js';
 import type { ConfirmPassword } from '../../password-confirmation.js';
 import { ApiError, json, readJson } from '../../http.js';
 import { equalSecret, hashSecret, randomToken } from '../../security.js';
 import { isReadOnlyLifecycle, resolveCommunityContext } from '../../tenant-context.js';
+import { notifyLive } from '../../live/notices.js';
 
 const uuid = z.uuid();
 
@@ -115,25 +116,6 @@ async function requirePairingMember(
     return;
   }
   await refuseIfClearedSinceStart(client, actor.user_id);
-  const member = await client.query(
-    'SELECT 1 FROM members WHERE id=$1 AND community_id=$2 AND active FOR SHARE',
-    [actor.id, actor.community_id]
-  );
-  if (!member.rowCount) throw new ApiError(403, 'FORBIDDEN', 'Your membership has ended.');
-}
-
-async function lockRevocationMember(
-  client: PoolClient,
-  actor: Awaited<ReturnType<typeof requireMember>>
-): Promise<void> {
-  const community = await client.query<{ lifecycle: string }>(
-    `SELECT lifecycle FROM communities
-     WHERE id=$1 AND lifecycle IN ('active','archived','suspended','held','deletion_pending')
-     FOR SHARE`,
-    [actor.community_id]
-  );
-  if (!community.rowCount)
-    throw new ApiError(409, 'COMMUNITY_UNAVAILABLE', 'This space is unavailable.');
   const member = await client.query(
     'SELECT 1 FROM members WHERE id=$1 AND community_id=$2 AND active FOR SHARE',
     [actor.id, actor.community_id]
@@ -601,11 +583,13 @@ export function registerPairingRoutes(
     const result = await transaction(pool, async (client) => {
       const lifecycle = await lockPairingCommunity(client, actor.community_id, true);
       await requirePairingMember(client, actor, lifecycle);
-      return client.query(
+      const revoked = await client.query(
         `UPDATE connection_grants SET revoked_at=COALESCE(revoked_at,now())
          WHERE id=$1 AND member_id=$2 AND community_id=$3 RETURNING id`,
         [id, actor.id, actor.community_id]
       );
+      await notifyLive(client, { k: 'member', c: actor.community_id, m: actor.id });
+      return revoked;
     });
     if (!result.rowCount) throw new ApiError(404, 'NOT_FOUND', 'Grant not found.');
     return c.body(null, 204);
@@ -625,6 +609,7 @@ export function registerPairingRoutes(
          WHERE member_id=$1 AND community_id=$2 AND revoked_at IS NULL`,
         [actor.id, actor.community_id]
       );
+      await notifyLive(client, { k: 'member', c: actor.community_id, m: actor.id });
       await client.query(
         'INSERT INTO audit_events(community_id,actor_member_id,action,subject_id) VALUES($1,$2,$3,$4)',
         [actor.community_id, actor.id, 'grant.revoke_all', actor.id]

@@ -124,6 +124,8 @@ export async function recordRedactions(
      FROM unnest($2::uuid[],$3::uuid[]) AS changed(id,channel_id)`,
     [communityId, changed.map((row) => row.entryId), changed.map((row) => row.channelId)]
   );
+  // No live notice: a stream sends new entries by sequence, and a removal or redaction adds
+  // none. Readers learn of it from the redaction feed, which this row is.
 }
 
 /**

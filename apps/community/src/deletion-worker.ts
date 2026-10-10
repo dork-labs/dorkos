@@ -4,6 +4,7 @@ import { releaseCommunityShortNames, type ShortNameHolds } from './host/short-na
 import { BlobStoreError, reconcileTenantNamespace, type BlobStore } from './storage/index.js';
 import { BLOB_DELETE_TIMEOUT_MS, BLOB_LOCK_TIMEOUT_MS } from './storage/pending-deletions.js';
 import { UNSETTLED_EVIDENCE_SQL } from './takedown/takedowns.js';
+import { notifyLive } from './live/notices.js';
 
 const DELETE_BATCH = 25;
 // An expired export whose sweep already deleted its object and its managed-blob row keeps its
@@ -345,6 +346,7 @@ export async function sweepCommunityDeletions(
          lifecycle_version=lifecycle_version+1 WHERE id=$1`,
       [job.community_id]
     );
+    await notifyLive(client, { k: 'community', c: job.community_id });
     await client.query('DELETE FROM community_deletion_jobs WHERE community_id=$1', [
       job.community_id,
     ]);

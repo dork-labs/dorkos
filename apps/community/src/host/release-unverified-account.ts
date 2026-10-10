@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { Pool } from 'pg';
 import { recordHostAudit } from './authority.js';
+import { notifyAccountAccess } from '../live/notices.js';
 
 /**
  * Delete one host account that nobody has shown they own, so the email is free again.
@@ -69,6 +70,7 @@ export async function releaseUnverifiedAccount(pool: Pool, email: string): Promi
       [user.id]
     );
     await client.query('DELETE FROM session WHERE "userId"=$1', [user.id]);
+    await notifyAccountAccess(client, user.id);
     await client.query('DELETE FROM account WHERE "userId"=$1', [user.id]);
     // Any other row still naming the account fails this delete, and the whole release with it.
     await client.query('DELETE FROM "user" WHERE id=$1', [user.id]);

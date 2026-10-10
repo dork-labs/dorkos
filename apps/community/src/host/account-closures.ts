@@ -17,6 +17,7 @@ import {
   recordHostAudit,
   type HostActor,
 } from './authority.js';
+import { notifyAccountAccess } from '../live/notices.js';
 
 type Queryable = Pick<Pool | PoolClient, 'query'>;
 
@@ -165,6 +166,7 @@ async function readClosureById(client: PoolClient, id: string): Promise<AccountC
  */
 async function endAccess(client: PoolClient, userId: string): Promise<void> {
   await client.query('DELETE FROM session WHERE "userId"=$1', [userId]);
+  await notifyAccountAccess(client, userId);
   const mine = 'SELECT id FROM members WHERE user_id=$1';
   await client.query(
     `UPDATE connection_grants SET revoked_at=now()

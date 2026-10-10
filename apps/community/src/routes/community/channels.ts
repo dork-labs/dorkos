@@ -26,6 +26,7 @@ import {
 } from '../../data.js';
 import { channelRoster } from '../../content/roster.js';
 import { ApiError, json, readJson } from '../../http.js';
+import { notifyLive } from '../../live/notices.js';
 
 interface ChannelRow {
   id: string;
@@ -168,6 +169,8 @@ export function registerChannelRoutes(
           body.autoJoin ?? null,
         ]
       );
+      // Archiving and the epoch change both end the channel's open streams.
+      await notifyLive(client, { k: 'channel', c: member.community_id, ch: c.req.param('id') });
     });
     return json(c, CommunityWireChannelResponseSchema, {
       channel: await channelProjection(pool, c.req.param('id'), member),
@@ -207,6 +210,7 @@ export function registerChannelRoutes(
         channel.id,
         member.id,
       ]);
+      await notifyLive(client, { k: 'member', c: member.community_id, m: member.id });
     });
     return json(c, CommunityWireChannelResponseSchema, {
       channel: await channelProjection(pool, c.req.param('id'), member),
@@ -275,6 +279,11 @@ export function registerChannelRoutes(
         channel.id,
         c.req.param('memberId'),
       ]);
+      await notifyLive(client, {
+        k: 'member',
+        c: actor.community_id,
+        m: c.req.param('memberId'),
+      });
     });
     return json(c, CommunityWireChannelResponseSchema, {
       channel: await channelProjection(pool, c.req.param('id'), actor),

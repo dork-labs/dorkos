@@ -3,16 +3,18 @@ import {
   COMMUNITY_RESERVED_SHORT_NAMES,
   COMMUNITY_SHORT_NAME_PATTERN,
 } from '@dorkos/shared/community-admin-wire';
-import { realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseMail } from './mail/config.js';
+import { checkS3Endpoint, directoriesOverlap } from './storage/config-checks.js';
 import {
   COMMUNITY_MINIMUM_AGE_CEILING,
   COMMUNITY_MINIMUM_AGE_FLOOR,
   parseCommunityReportMailto,
 } from '@dorkos/shared/community-wire';
-import { parseMail } from './mail/config.js';
+
+export type { CommunityMailConfig } from './mail/config.js';
 
 const integer = (name: string, fallback: number, ceiling: number) =>
   z.coerce.number().int().min(1, `${name} must be positive`).max(ceiling).default(fallback);
@@ -149,59 +151,26 @@ function parseOidc(value: {
 /** The directory the server serves its web app from (`main.ts`), from `src/` or `dist-server/`. */
 const SERVED_WEB_APP_DIRECTORY = fileURLToPath(new URL('../dist/', import.meta.url));
 
-/**
- * A path with every symbolic link resolved, for as much of it as exists, so `/tmp/x` and
- * `/private/tmp/x` compare equal on a host where one links to the other.
- */
-function realPath(path: string): string {
-  const absolute = resolve(path);
-  let existing = absolute;
-  const rest: string[] = [];
-  for (;;) {
-    try {
-      return join(realpathSync.native(existing), ...rest.reverse());
-    } catch {
-      const parent = dirname(existing);
-      if (parent === existing) return absolute;
-      rest.push(basename(existing));
-      existing = parent;
-    }
-  }
-}
-
-/** Whether `child` is `parent` or sits anywhere inside it. */
-function within(child: string, parent: string): boolean {
-  const path = relative(parent, child);
-  return path === '' || (path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path));
-}
-
-/** Whether two directories are the same, or one contains the other. */
-function directoriesOverlap(a: string, b: string): boolean {
-  for (const left of new Set([resolve(a), realPath(a)])) {
-    for (const right of new Set([resolve(b), realPath(b)])) {
-      if (within(left, right) || within(right, left)) return true;
-    }
-  }
-  return false;
-}
-
-/** Refuse an S3 endpoint that is not HTTPS (or HTTP on localhost) or that carries credentials. */
-function checkS3Endpoint(name: string, value: string | undefined): void {
-  if (!value) return;
-  const endpoint = new URL(value);
-  if (
-    endpoint.protocol !== 'https:' &&
-    !(endpoint.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(endpoint.hostname))
-  ) {
-    throw new Error(`${name} must use HTTPS, or HTTP on localhost`);
-  }
-  if (endpoint.username || endpoint.password) {
-    throw new Error(`${name} must not contain credentials`);
-  }
-}
-
 const schema = z.object({
   COMMUNITY_DATABASE_URL: z.url().startsWith('postgres'),
+  // The one connection that waits for live notices. It must reach Postgres directly: a
+  // transaction-mode pooler accepts LISTEN and then delivers nothing. Defaults to the main URL.
+  COMMUNITY_LISTEN_DATABASE_URL: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z.url().startsWith('postgres').optional()
+  ),
+  // Connections requests share. Each running export adds two more on top.
+  COMMUNITY_DATABASE_POOL_SIZE: between(2, 10, 500),
+  // Live streams one server holds at once, and the most one community may hold of them. Past
+  // either a new stream is refused with 503 and Retry-After.
+  COMMUNITY_STREAMS_MAX: between(1, 25_000, 1_000_000),
+  COMMUNITY_STREAMS_PER_COMMUNITY: between(1, 20_000, 1_000_000),
+  // Live streams one person, or one agent, may hold at once: a stuck client that keeps
+  // reconnecting cannot take a community's whole quota. Generous by default, because a DorkOS
+  // app holds one stream per room it shows, and one per room for each agent it runs here.
+  COMMUNITY_STREAMS_PER_MEMBER: between(1, 256, 10_000),
+  // How long a quiet live stream waits before it re-reads anyway, in case a notice was lost.
+  COMMUNITY_STREAM_FALLBACK_MS: between(250, 15_000, 300_000),
   COMMUNITY_AUTH_SECRET: z.string().min(32),
   COMMUNITY_INVITE_SECRET: z.string().min(32),
   COMMUNITY_INVITE_KEY_ID: z
@@ -573,6 +542,18 @@ export function parseConfig(env: Record<string, unknown>) {
   };
   return {
     databaseUrl: value.COMMUNITY_DATABASE_URL,
+    /** Request pool size and the direct address live notices are received on. */
+    database: {
+      poolSize: value.COMMUNITY_DATABASE_POOL_SIZE,
+      listenUrl: value.COMMUNITY_LISTEN_DATABASE_URL ?? value.COMMUNITY_DATABASE_URL,
+    },
+    /** Live channel streams: the per-server cap, the per-community quota, the fallback re-read. */
+    streams: {
+      max: value.COMMUNITY_STREAMS_MAX,
+      perCommunity: value.COMMUNITY_STREAMS_PER_COMMUNITY,
+      perMember: value.COMMUNITY_STREAMS_PER_MEMBER,
+      fallbackMs: value.COMMUNITY_STREAM_FALLBACK_MS,
+    },
     authSecret: value.COMMUNITY_AUTH_SECRET,
     inviteSecret: value.COMMUNITY_INVITE_SECRET,
     inviteKeyId: value.COMMUNITY_INVITE_KEY_ID,

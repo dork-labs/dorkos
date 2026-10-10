@@ -13,7 +13,12 @@ import { deleteReadyExports, restartExportJobs } from '../exports/store.js';
 import { remove } from '../routes/community/members.js';
 import { erasureHeldByLegalHold } from './guards.js';
 import { appendJournalRow, type ErasureJournalRecord } from './journal.js';
+import { notifyAccountAccess, notifyLive } from '../live/notices.js';
 import { randomHuskHandle, rewriteHandleTokens } from './husk-handles.js';
+import { ErasureError, type ErasureOptions, type ErasureStep } from './options.js';
+
+export { ErasureError } from './options.js';
+export type { ErasureHooks, ErasureOptions, ErasureStep } from './options.js';
 
 /** Hours between a request and the erasure it schedules. A constant, not configuration. */
 export const ERASURE_WINDOW_HOURS = 72;
@@ -26,14 +31,6 @@ const DEFAULT_BATCH_SIZE = 500;
 const SEAL_ROUNDS = 3;
 const ACCOUNT_ROUNDS = 5;
 
-/** A named, content-free reason an erasure could not finish yet; the worker retries it. */
-export class ErasureError extends Error {
-  constructor(readonly code: string) {
-    super(code);
-    this.name = 'ErasureError';
-  }
-}
-
 /**
  * The verification rows Better Auth keeps for one account, matched by exact shape, never by
  * substring (a substring match on `al@x.io` would also delete `sal@x.io`'s rows): a random
@@ -42,31 +39,6 @@ export class ErasureError extends Error {
  */
 export const VERIFICATION_OF_ACCOUNT = `value=$1 OR lower(value)=$2 OR lower(identifier)=$2
   OR right(lower(identifier), char_length($2)+1) IN (':' || $2, '-' || $2)`;
-
-/** One step of the membership procedure, named for crash and lock tests. */
-export type ErasureStep =
-  'end-access' | 'files' | 'exports' | 'tombstones' | 'mentions' | 'seal' | 'account';
-
-/** Test seams: pause inside a batch transaction, or fail after a step commits. */
-export interface ErasureHooks {
-  /** Runs after a step's transactions commit. Throwing simulates a worker that died there. */
-  afterStep?: (step: ErasureStep) => Promise<void>;
-  /** Runs inside each batch transaction, after its changes and before it commits. */
-  inBatch?: (step: ErasureStep) => Promise<void>;
-}
-
-/** How one erasure run reports and journals itself. */
-export interface ErasureOptions {
-  /** Append each completion line here too (`COMMUNITY_ERASURE_JOURNAL`). */
-  journalPath?: string;
-  hooks?: ErasureHooks;
-  /** Rows per locked batch; at most 500. */
-  batchSize?: number;
-  /** Receives each completion line; defaults to standard output. */
-  log?: (line: string) => void;
-  /** The running account request this erasure belongs to; its lease is renewed too. */
-  requestId?: string;
-}
 
 /** How long a claimed request stays the worker's before another replica may resume it. */
 const LEASE = "interval '5 minutes'";
@@ -163,6 +135,7 @@ async function endAccess(target: Target): Promise<void> {
     );
     await client.query('DELETE FROM channel_members WHERE member_id=$1 AND community_id=$2', ids);
     await client.query('DELETE FROM read_cursors WHERE member_id=$1 AND community_id=$2', ids);
+    await notifyLive(client, { k: 'member', c: member.community_id, m: member.id });
     await client.query(
       'DELETE FROM owner_quota_windows WHERE owner_member_id=$1 AND community_id=$2',
       ids
@@ -489,6 +462,7 @@ async function applyHusk(
        WHERE id=$2 AND community_id=$1`,
       [target.communityId, target.memberId, ERASED_MEMBER_NAME, handle]
     );
+    await notifyLive(client, { k: 'member', c: target.communityId, m: target.memberId });
     // A ban on this membership loses the account and the moderator's words about the person,
     // and keeps its keyed email, so erasing an account is not a way back in (0033).
     await client.query(
@@ -686,6 +660,8 @@ export async function eraseAccount(
          WHERE user_id=$1 AND state='closed'`,
         [userId]
       );
+      // Before the delete: its sessions go with the account row.
+      await notifyAccountAccess(client, userId);
       await client.query('DELETE FROM "user" WHERE id=$1', [userId]);
       await writeLine(client, options, line, { kind: 'account', userId });
       return 'erased' as const;

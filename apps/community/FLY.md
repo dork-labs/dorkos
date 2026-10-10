@@ -80,7 +80,7 @@ Keep the copied file in `.temp`; its Dockerfile path is relative to that directo
 
 The template uses one shared CPU and 1 GiB of memory as a starting point, not a measured capacity promise. Watch resource use and adjust it for your community.
 
-Keep one Machine. This is the verified application topology; multiple app processes have not been validated. Admission-attempt limits also use process-local memory. Shared PostgreSQL and object storage alone do not establish safe horizontal scaling. Use `--ha=false` on deployment to avoid Fly's default spare Machine. Use rolling updates; expect a brief reconnect during replacement. Do not use a strategy that runs old and new app processes side by side. See [Fly deployment behavior](https://fly.io/docs/launch/deploy/).
+Keep one Machine. This is the verified application topology; multiple app processes have not been validated. Admission-attempt limits also use process-local memory. Live updates are passed to open streams inside the one process, and the stream limits count that process's streams only. Shared PostgreSQL and object storage alone do not establish safe horizontal scaling. Use `--ha=false` on deployment to avoid Fly's default spare Machine. Use rolling updates; expect a brief reconnect during replacement. Do not use a strategy that runs old and new app processes side by side. See [Fly deployment behavior](https://fly.io/docs/launch/deploy/).
 
 Automatic stopping is disabled so live streams and cleanup work keep running. The proxy idle timeout allows long-lived connections. The app's heartbeat still needs to reach browsers through the public URL. See [Fly app configuration](https://fly.io/docs/reference/configuration/).
 
@@ -95,7 +95,9 @@ Create a database and role used only by this Community. Keep its credentials sep
 
 Community applies migrations before startup. A direct URL is recommended for migrations. The current server uses the same URL at runtime. Save it as `COMMUNITY_DATABASE_URL` in the next section.
 
-Live channel streams query PostgreSQL often, and background cleanup also uses the database. Do not assume a database that can suspend when idle will stay suspended. Check its compute use and billing during the acceptance tests.
+Live channel streams wait for updates on one long-lived database connection. That connection must be direct: through a pooler it opens but no update ever arrives, and the server refuses to start. It uses `COMMUNITY_DATABASE_URL` unless you set `COMMUNITY_LISTEN_DATABASE_URL` to another direct URL for the same database.
+
+Live streams query PostgreSQL when something changes, and every 15 seconds while quiet. Background cleanup also uses the database. Do not assume a database that can suspend when idle will stay suspended. Check its compute use and billing during the acceptance tests.
 
 Create a private file bucket:
 

@@ -4,6 +4,7 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import { Pool } from 'pg';
 import { COMMUNITY_EMAIL_LINK_PAGES } from '@dorkos/shared/community-wire';
 import { createCommunityApp } from './app.js';
+import { createLiveHub } from './live/app-hub.js';
 import { parseConfig } from './config.js';
 import { oidcCallbackUrl } from './oidc.js';
 import { migrate } from './migrate.js';
@@ -45,10 +46,10 @@ if (config.testRuntime)
 await migrate(config.databaseUrl);
 // Each running export holds one connection for its collection read (one REPEATABLE READ
 // snapshot) and briefly a second to commit a segment, so the pool grows with export concurrency
-// and requests keep the ten connections they had before.
+// and requests keep COMMUNITY_DATABASE_POOL_SIZE connections of their own.
 const pool = new Pool({
   connectionString: config.databaseUrl,
-  max: 10 + 2 * config.exports.concurrency,
+  max: config.database.poolSize + 2 * config.exports.concurrency,
 });
 // A database restart or failover drops idle connections. The pool has already discarded the
 // broken one and opens a fresh one for the next query, so log it rather than crash the server.
@@ -69,11 +70,24 @@ const noticeComposers: NoticeComposers = {
   // Mailed reset, sign-in and confirmation links: on exactly when mail is.
   ...emailLinkComposers(config),
 };
+// Live streams wake on Postgres notices received on one direct connection. Prove at boot that a
+// notice really arrives: behind a transaction-mode pooler LISTEN succeeds and nothing comes.
+const live = createLiveHub(config);
+try {
+  await live.start(pool);
+} catch (error) {
+  console.error(
+    'Community live updates could not start. COMMUNITY_LISTEN_DATABASE_URL (or COMMUNITY_DATABASE_URL) must be a direct Postgres connection, not a transaction pooler.',
+    error instanceof Error ? error.message : 'unknown'
+  );
+  process.exit(1);
+}
 const app = createCommunityApp({
   config,
   pool,
   blobStore,
   noticeComposers,
+  live,
 });
 const staticRoot = fileURLToPath(new URL('../dist/', import.meta.url));
 app.use('/assets/*', serveStatic({ root: staticRoot }));
@@ -326,6 +340,7 @@ const onSignal = createSignalHandler(
   createStop({
     server,
     pool,
+    live,
     timers: [
       cleanup,
       erasures,

@@ -18,10 +18,12 @@ import { bootstrapGrant, transaction } from './data.js';
 import { ApiError, JSON_BODY_MS, UPLOAD_IDLE_MS, handleError, json, readJson } from './http.js';
 import { equalSecret, hashSecret, isHostApiKeyBearer, randomToken, signValue } from './security.js';
 import { mintHandle } from './handles.js';
-import { bufferBoundedBody } from './limits/bounded-body.js';
 import { registerChannelRoutes } from './routes/community/channels.js';
 import { registerEntryRoutes } from './routes/community/entries.js';
 import { registerEventRoutes } from './routes/community/events.js';
+import type { LiveHub } from './live/hub.js';
+import { createLiveHub, stopLiveWithPool } from './live/app-hub.js';
+import { registerMonitoringRoutes } from './live/monitoring.js';
 import { registerInviteRoutes } from './routes/community/invites.js';
 import { registerMemberRoutes } from './routes/community/members.js';
 import { registerBanRoutes } from './routes/community/bans.js';
@@ -57,8 +59,7 @@ import {
   registerMinimumAgeRoutes,
   requireAgeConfirmation,
 } from './sign-up/minimum-age.js';
-import { IMPORT_ARCHIVE_UPLOAD_PATH, registerImportRoutes } from './routes/host/imports.js';
-import { IMPORT_PART_UPLOAD_PATH } from './imports/part-routes.js';
+import { registerImportRoutes } from './routes/host/imports.js';
 import { UploadSlots } from './imports/upload.js';
 import { registerHistoryOriginRoute } from './routes/community/history-origin.js';
 import { createHostAuthority } from './host/authority.js';
@@ -82,6 +83,7 @@ import { callerLimitKey, EmailLinkLimiter } from './email-links/limiter.js';
 import { EMAIL_LINK_CAPS, emailLinksOn } from './email-links/model.js';
 import { queueEmailConfirmation, registerEmailLinkRequestRoutes } from './email-links/requests.js';
 import { registerEmailLinkUseRoutes } from './email-links/confirm.js';
+import { createApiRequestGuard } from './limits/api-request-guard.js';
 
 /** Assemble the injectable HTTP app without reading environment variables. */
 export function createCommunityApp({
@@ -90,9 +92,16 @@ export function createCommunityApp({
   hooks,
   blobStore = createBlobStore(config),
   noticeComposers = {},
+  live,
 }: {
   config: CommunityConfig;
   pool: Pool;
+  /**
+   * Live-stream fan-out. `main.ts` passes one it started (pinned open, self-tested) and stops it
+   * on shutdown. Without one the app makes its own, which listens only while a stream is open
+   * and stops when `pool` ends (see {@link stopLiveWithPool}).
+   */
+  live?: LiveHub;
   /**
    * The mail composers the running mail worker has, by notice kind. A feature that must reach a
    * person by mail refuses to start while its notice cannot be composed, so a queued notice is
@@ -129,6 +138,10 @@ export function createCommunityApp({
   };
   blobStore?: BlobStore;
 }) {
+  if (!live) {
+    live = createLiveHub(config);
+    stopLiveWithPool(live, pool);
+  }
   const app = new Hono();
   // A notice is queued only where mail is set up and the worker can compose its kind.
   const canSendNotice = (kind: NoticeKind) =>
@@ -160,31 +173,7 @@ export function createCommunityApp({
     hasPassword: (userId) => accountHasPassword(pool, userId),
   });
   const jsonBodyMs = hooks?.jsonBodyMs ?? JSON_BODY_MS;
-  app.use('/api/*', async (c, next) => {
-    if (!['GET', 'HEAD', 'OPTIONS'].includes(c.req.method)) {
-      const origin = c.req.header('origin');
-      if (origin && origin !== config.publicUrl) {
-        throw new ApiError(403, 'FORBIDDEN', 'This request came from an untrusted site.');
-      }
-      if (!origin && c.req.header('sec-fetch-site') === 'cross-site') {
-        throw new ApiError(403, 'FORBIDDEN', 'This request came from an untrusted site.');
-      }
-      // Bound JSON and auth requests before parsing, even for chunked or false-length bodies.
-      if (
-        (c.req.path.match(/^\/api\/v1\/(?:communities\/[^/]+\/)?channels\/[^/]+\/attachments$/) &&
-          c.req.method === 'POST') ||
-        ((IMPORT_ARCHIVE_UPLOAD_PATH.test(c.req.path) ||
-          IMPORT_PART_UPLOAD_PATH.test(c.req.path)) &&
-          c.req.method === 'PUT')
-      ) {
-        await next();
-        return;
-      }
-      const maxBodyBytes = Math.max(config.limits.textBytes + 32 * 1024, 96 * 1024);
-      await bufferBoundedBody(c, maxBodyBytes, jsonBodyMs);
-    }
-    await next();
-  });
+  app.use('/api/*', createApiRequestGuard(config, jsonBodyMs));
   app.use('/api/auth/sign-up/*', async (c, next) => {
     limitAttempts(`signup:${peer(c)}`, config.limits.signupAttemptsPerMinute);
     await next();
@@ -367,6 +356,7 @@ export function createCommunityApp({
     limitKeyMiss: (c) =>
       limitAttempts(`host-key:${peer(c)}`, config.limits.hostKeyAttemptsPerMinute),
   });
+  registerMonitoringRoutes(app, { pool, hub: live, authority, databaseUrl: config.databaseUrl });
   registerHostLinkRoutes(app, { config });
   registerMinimumAgeRoutes(app, { config, now });
   const hostApi = new Hono();
@@ -524,7 +514,7 @@ export function createCommunityApp({
   registerChannelRoutes(communityApi, { pool, auth });
   registerEntryRoutes(communityApi, { pool, auth, config, receiptGate });
   if (receiptGate) registerCommunityTestControlRoutes(app, receiptGate);
-  registerEventRoutes(communityApi, { pool, auth, config, hooks });
+  registerEventRoutes(communityApi, { pool, auth, config, hub: live, hooks });
   registerInviteRoutes(communityApi, {
     pool,
     auth,

@@ -22,6 +22,7 @@ import type { ConfirmPassword } from '../../password-confirmation.js';
 import { ApiError, json, readJson } from '../../http.js';
 import { memberIsLeaving } from '../../erasure/guards.js';
 import { endOwnerReplacement } from '../../owner-replacement/end.js';
+import { notifyLive } from '../../live/notices.js';
 
 async function live(
   client: PoolClient,
@@ -87,6 +88,8 @@ export async function remove(
     'INSERT INTO audit_events(community_id,actor_member_id,action,subject_id) VALUES($1,$2,$3,$4)',
     [target.community_id, actorId, action, target.id]
   );
+  // Ends this member's live streams and their agents' (a ban is a removal).
+  await notifyLive(client, { k: 'member', c: target.community_id, m: target.id });
 }
 
 /**
@@ -132,6 +135,7 @@ export async function clearFormerMembership(
        (SELECT id FROM agents WHERE owner_member_id=$1 AND community_id=$2)`,
     [memberId, communityId]
   );
+  await notifyLive(client, { k: 'member', c: communityId, m: memberId });
 }
 
 /** Register member removal, leave and password-confirmed ownership transfer. */

@@ -1,0 +1,66 @@
+/** The short names no community may take, kept apart from the admin wire schemas. */
+/**
+ * Top-level paths the Community server or its browser already owns or may soon own. No
+ * community can take one as its short name; a host can add more by configuration.
+ */
+export const COMMUNITY_RESERVED_SHORT_NAMES: readonly string[] = [
+  'api',
+  'assets',
+  'c',
+  'claim',
+  'host',
+  'join',
+  'pairing',
+  'health',
+  // The host's monitoring scrape.
+  'metrics',
+  'auth',
+  'login',
+  'logout',
+  'signin',
+  'signup',
+  'settings',
+  'admin',
+  'static',
+  'public',
+  'www',
+  'help',
+  'docs',
+  'status',
+  'well-known',
+  'favicon',
+  'robots',
+  'sitemap',
+  'new',
+  'import',
+  'invite',
+  'deletion',
+  // The owner's link to keep ownership, and the new owner's claim, when a host replaces an owner.
+  'keep-ownership',
+  'owner-replacement',
+  // The pages a mailed reset, sign-in or confirmation link opens.
+  'reset-password',
+  'email-sign-in',
+  'confirm-email',
+  // First-host setup is reached through the browser app, and a host would expect the word kept.
+  'setup',
+  // Pages a host is likely to publish, and words that would let a community pose as the host.
+  'terms',
+  'privacy',
+  'abuse',
+  'report',
+  'legal',
+  'security',
+  'account',
+  'recovery',
+  'oauth',
+  'callback',
+  'verify',
+  'reset',
+  'communities',
+  'community',
+  'support',
+  'billing',
+  'official',
+  'dorkos',
+];

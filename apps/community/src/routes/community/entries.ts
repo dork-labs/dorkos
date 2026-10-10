@@ -27,6 +27,7 @@ import { resolveCommunityMentions } from '../../content/mentions.js';
 import { channelRoster } from '../../content/roster.js';
 import { attachmentsForEntries } from './attachments.js';
 import type { DeliveryReceiptGate } from '../../delivery-receipt-gate.js';
+import { notifyLive } from '../../live/notices.js';
 
 /** Entry ids here are UUIDs; any other string names no entry and must not reach a `uuid` cast. */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -267,6 +268,7 @@ export function registerEntryRoutes(
           payloadHash,
         ]
       );
+      await notifyLive(client, { k: 'entry', c: principal.community_id, ch: channel.id });
       const kindsById = new Map(roster.map((target) => [target.id, target.kind]));
       await client.query(
         // content-change: post-binds-new-entry
