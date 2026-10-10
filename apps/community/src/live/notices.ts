@@ -11,7 +11,10 @@ const id = z.string().min(1).max(64);
  * payload at 8 kB, and a notice is a wake-up, not data. Each stream that the notice touches reads
  * what it needs itself.
  *
- * - `entry`: a new message in a channel. Wakes that channel's streams and counts as a post.
+ * - `entry`: a new message in a channel, with its sequence number `s`. The channel's feed reads
+ *   it once for every stream there (see `feed.ts`), and it counts as a post.
+ * - `content`: messages' text or files changed (a removal, redaction or erasure), in channel `ch`,
+ *   or anywhere in the space when `ch` is absent. Feeds forget the copies they kept.
  * - `channel`: a channel was archived, reopened, deleted or had its history reset. Rechecks
  *   every stream on the channel.
  * - `community`: the space's lifecycle changed (held, suspended, archived, taken down, deleted).
@@ -24,7 +27,8 @@ const id = z.string().min(1).max(64);
  * - `probe`: the listener's own startup self-test.
  */
 export const LiveNoticeSchema = z.discriminatedUnion('k', [
-  z.object({ k: z.literal('entry'), c: id, ch: id }),
+  z.object({ k: z.literal('entry'), c: id, ch: id, s: z.number().int().nonnegative() }),
+  z.object({ k: z.literal('content'), c: id, ch: id.optional() }),
   z.object({ k: z.literal('channel'), c: id, ch: id }),
   z.object({ k: z.literal('community'), c: id }),
   z.object({ k: z.literal('member'), c: id, m: id }),

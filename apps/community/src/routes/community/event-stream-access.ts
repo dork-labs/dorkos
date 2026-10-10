@@ -8,6 +8,8 @@ import type { CommunityAuth } from '../../auth.js';
 import type { Principal } from '../../data.js';
 import { ApiError } from '../../http.js';
 import { isReadOnlyLifecycle } from '../../tenant-context.js';
+import { nextTick } from '../../live/feed.js';
+import type { LiveStream } from '../../live/hub.js';
 
 /** A channel as a live stream or read cursor sees it, with the caller's membership and position. */
 export interface LiveChannel {
@@ -166,4 +168,65 @@ export async function readStreamAccess(
     values
   );
   return active.rows[0];
+}
+
+/**
+ * One stream's access, checked fresh and then trusted until something calls it into question.
+ *
+ * A check is trusted while no notice has asked the stream to recheck since the check began (the
+ * hub marks a stream the moment a notice names it) and for at most `maxAgeMs`, after which a
+ * session that simply expired is caught. Two loops share it, the stream's quiet-time watch and
+ * its sender, and a check one of them started serves the other.
+ */
+export class CachedStreamAccess {
+  private trustedRaises = -1;
+  private trustedTick = 0;
+  private trustedAt = 0;
+  private pending: {
+    raises: number;
+    tick: number;
+    result: Promise<StreamCloseReason | null>;
+  } | null = null;
+
+  constructor(
+    private readonly live: Pick<LiveStream, 'access'>,
+    private readonly maxAgeMs: number,
+    private readonly read: () => Promise<StreamCloseReason | null>
+  ) {}
+
+  /**
+   * Whether the last passing check still holds, and began after tick `after` (a read that found
+   * entries without a notice must be followed by a check).
+   */
+  allows(after = 0): boolean {
+    return (
+      this.trustedRaises === this.live.access.raises &&
+      this.trustedTick > after &&
+      Date.now() - this.trustedAt < this.maxAgeMs
+    );
+  }
+
+  /** Check now (or join a check already under way that began after tick `after`). */
+  check(after = 0): Promise<StreamCloseReason | null> {
+    const raises = this.live.access.raises;
+    if (this.pending && this.pending.raises === raises && this.pending.tick > after)
+      return this.pending.result;
+    const tick = nextTick();
+    const at = Date.now();
+    const result = this.read().then((reason) => {
+      if (!reason && tick > this.trustedTick) {
+        this.trustedRaises = raises;
+        this.trustedTick = tick;
+        this.trustedAt = at;
+      }
+      return reason;
+    });
+    const pending = { raises, tick, result };
+    this.pending = pending;
+    const clear = () => {
+      if (this.pending === pending) this.pending = null;
+    };
+    result.then(clear, clear);
+    return result;
+  }
 }

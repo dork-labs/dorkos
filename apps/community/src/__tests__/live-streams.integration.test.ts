@@ -43,11 +43,18 @@ let spaces = 0;
 
 /** Runs inside a stream's opening request, after its snapshot watermark; tests set it. */
 let afterSnapshot: (() => Promise<void>) | undefined;
+/** Reads of new entries for live streams: a channel feed's, or one stream's own. */
+let entryReads = 0;
 
 beforeAll(async () => {
   h = await startTenancyHarness('live', {
     env: { COMMUNITY_STREAM_FALLBACK_MS: NO_FALLBACK_MS },
-    hooks: { afterSnapshotWatermark: async () => afterSnapshot?.() },
+    hooks: {
+      afterSnapshotWatermark: async () => afterSnapshot?.(),
+      afterEntryAttachmentLookup: async () => {
+        entryReads += 1;
+      },
+    },
   });
   host = await bootstrapHost(h, 'Host', 'host@example.test');
 });
@@ -330,6 +337,101 @@ describe('fan-out', () => {
     }
   });
 
+  it('reads a new entry once for every stream on the channel', async () => {
+    // Purpose: fails if each open stream reads every new entry for itself, which is what capped
+    // delivery far below the scale target: 1,000 streams made one post 2,000 queries.
+    const s = await space();
+    const people = [s.owner, await member(s, 'Ann'), await member(s, 'Bob')];
+    const streams = await Promise.all(
+      [...people, ...people].map((person) => open(s, { cookie: person.cookie }))
+    );
+    try {
+      await post(s, s.owner.cookie, 'settle');
+      for (const stream of streams) expect((await stream.next()).data.entry?.text).toBe('settle');
+      entryReads = 0;
+      const posted = await post(s, s.owner.cookie, 'one read');
+      for (const stream of streams)
+        expect((await stream.next()).data.entry?.id).toBe(posted.entry.id);
+      expect(entryReads).toBe(1);
+    } finally {
+      await Promise.all(streams.map((stream) => stream.close()));
+    }
+  });
+
+  it('never sends a revoked stream an entry posted right after the revocation', async () => {
+    // Purpose: fails if a stream sends on cached access after a notice called it into question.
+    // The removal's notice commits before the post's, so the hub marks the stream first.
+    const s = await space();
+    const bob = await member(s, 'Bob');
+    const helper = await agent(s, bob);
+    const person = await open(s, { cookie: bob.cookie });
+    const agentStream = await open(s, { bearer: helper.token });
+    const owners = await open(s, { cookie: s.owner.cookie });
+    try {
+      await post(s, s.owner.cookie, 'before');
+      for (const stream of [person, agentStream, owners])
+        expect((await stream.next()).data.entry?.text).toBe('before');
+      await expectStatus(
+        await h.call(`${s.base}/members/${bob.memberId}`, {
+          method: 'DELETE',
+          cookie: s.owner.cookie,
+        }),
+        204,
+        'remove member'
+      );
+      await post(s, s.owner.cookie, 'after');
+      expect((await owners.next()).data.entry?.text).toBe('after');
+      for (const stream of [person, agentStream]) {
+        const event = await stream.next();
+        expect(event.event).toBe('closed');
+        expect(event.data.reason).toBe('removed');
+      }
+    } finally {
+      await Promise.all([person, agentStream, owners].map((stream) => stream.close()));
+    }
+  });
+
+  it('tells the feeds when a message is removed, so none sends a stale copy', async () => {
+    // Purpose: fails if a removal sends no notice: a feed would keep the removed text, and a
+    // stream a little behind would send it after the removal.
+    const s = await space();
+    const posted = await post(s, s.owner.cookie, 'to remove');
+    const seen = await noticesDuring(async () => {
+      await expectStatus(
+        await h.call(`${s.base}/entries/${posted.entry.id}`, {
+          method: 'DELETE',
+          cookie: s.owner.cookie,
+        }),
+        200,
+        'remove entry'
+      );
+    });
+    expect(seen).toContainEqual({ k: 'content', c: s.communityId, ch: s.channelId });
+  });
+
+  it('ends a stream whose session expired with no notice at the fallback recheck', async () => {
+    // Purpose: fails if cached access is trusted past the fallback interval: a session that
+    // simply runs out announces nothing, and only the recheck catches it.
+    const fast = await startTenancyHarness('live-expiry', {
+      sharesDatabaseOf: h,
+      env: { COMMUNITY_STREAM_FALLBACK_MS: 1_000 },
+    });
+    const s = await space();
+    const bob = await member(s, 'Bob');
+    const stream = await open(s, { cookie: bob.cookie }, fast.baseUrl);
+    try {
+      await h.pool.query(`UPDATE session SET "expiresAt"=now() WHERE "userId"=$1`, [
+        await userOf(bob.memberId),
+      ]);
+      const event = await stream.next(5_000);
+      expect(event.event).toBe('closed');
+      expect(event.data.reason).toBe('removed');
+    } finally {
+      await stream.close();
+      await fast.close();
+    }
+  });
+
   it('recovers an entry whose notice was lost at the fallback re-read', async () => {
     // Purpose: fails if a stream depends on notices alone. The same database is served by a
     // second server whose fallback is one second; the main server's stays five minutes.
@@ -341,6 +443,14 @@ describe('fan-out', () => {
     const quick = await open(s, { cookie: s.owner.cookie }, fast.baseUrl);
     const slow = await open(s, { cookie: s.owner.cookie });
     try {
+      // Settle both servers first. The main one closed its listener when the last test's streams
+      // did; reopening it counts as a reconnect, and a reconnect re-reads every channel once. The
+      // feeds also re-read once when they start. A re-read that ran after the quiet insert would
+      // carry it to the slow stream with no notice at all, which once failed this test in CI.
+      await expect.poll(() => h.live.listenerState, { timeout: PROMPT_MS }).toBe('listening');
+      await post(s, s.owner.cookie, 'settled');
+      expect((await quick.next()).data.entry?.text).toBe('settled');
+      expect((await slow.next()).data.entry?.text).toBe('settled');
       await insertQuietly(s, 'no notice');
       const event = await quick.next(5_000);
       expect(event.event).toBe('entry');
@@ -1083,7 +1193,7 @@ describe('the listener at boot', () => {
       expect(stream.entries.raised).toBe(true);
       // Listening again on a fresh connection: a notice arrives.
       await stream.entries.wait(0);
-      await h.pool.query('SELECT pg_notify($1, \'{"k":"entry","c":"c","ch":"x"}\')', [
+      await h.pool.query('SELECT pg_notify($1, \'{"k":"entry","c":"c","ch":"x","s":1}\')', [
         LIVE_NOTICE_CHANNEL,
       ]);
       expect(await stream.entries.wait(3_000)).toBe(true);

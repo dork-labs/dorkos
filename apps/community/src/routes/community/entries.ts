@@ -35,7 +35,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isUuid = (value: string) => UUID.test(value);
 
 /** The columns every entry projection reads, from `entries e LEFT JOIN agents a`. */
-const ENTRY_COLUMNS = `e.id,e.channel_id,e.seq,COALESCE(e.author_member_id,e.author_agent_id) AS author_member_id,e.author_agent_id,e.author_display_name,e.text,COALESCE((SELECT array_agg(COALESCE(em.mentioned_member_id,em.mentioned_agent_id) ORDER BY em.position) FROM entry_mentions em WHERE em.entry_id=e.id),'{}'::uuid[]) AS mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at,e.idempotency_key,a.owner_member_id AS agent_owner_member_id`;
+export const ENTRY_COLUMNS = `e.id,e.channel_id,e.seq,COALESCE(e.author_member_id,e.author_agent_id) AS author_member_id,e.author_agent_id,e.author_display_name,e.text,COALESCE((SELECT array_agg(COALESCE(em.mentioned_member_id,em.mentioned_agent_id) ORDER BY em.position) FROM entry_mentions em WHERE em.entry_id=e.id),'{}'::uuid[]) AS mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at,e.idempotency_key,a.owner_member_id AS agent_owner_member_id`;
 
 /** One entry as the projection reads it. */
 export interface EntryRow {
@@ -276,7 +276,12 @@ export function registerEntryRoutes(
           payloadHash,
         ]
       );
-      await notifyLive(client, { k: 'entry', c: principal.community_id, ch: channel.id });
+      await notifyLive(client, {
+        k: 'entry',
+        c: principal.community_id,
+        ch: channel.id,
+        s: Number(next.rows[0].last_seq),
+      });
       const kindsById = new Map(roster.map((target) => [target.id, target.kind]));
       await client.query(
         // content-change: post-binds-new-entry
