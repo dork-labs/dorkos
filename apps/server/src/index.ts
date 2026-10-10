@@ -17,7 +17,8 @@ import { HARNESS_MANIFEST_PATH } from '@dorkos/harness';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import { randomUUID } from 'node:crypto';
 import { createApp, finalizeApp } from './app.js';
-import { createFrontDoor, createFrontDoorServer } from './http/front-door.js';
+import { createFrontDoorServer } from './http/front-door.js';
+import { composeFrontDoor } from './http/hono-api.js';
 import { createSessionLocationsRouter } from './routes/session-locations.js';
 import { ManagedConnectorCloudError } from './services/core/auth/cloud-link-client.js';
 import { DoeRuntime } from './services/runtimes/doe/index.js';
@@ -1268,7 +1269,7 @@ async function start() {
   );
 
   // Initialize the Better Auth identity core over the consolidated DB. Mounted
-  // by createApp() at /api/auth/* regardless of `config.auth.enabled` (the gate
+  // by createHonoApi() at /api/auth/* regardless of `config.auth.enabled` (the gate
   // is a later task) so the enable-login flow can create the owner account
   // before the flag flips. See services/core/auth/.
   // dorkHome is threaded through so the session-signing secret resolves from
@@ -6088,13 +6089,11 @@ async function start() {
 
   const server = startMainListener({
     admission: mainRequestAdmission,
-    // Hono is the front door; every route still answers from the Express app
-    // behind it (`http/front-door.ts`, ADR 261009-192542).
+    // Hono is the front door: moved route groups answer from the Hono `/api`
+    // app (`http/hono-api.ts`), everything else from the Express app behind it
+    // (`http/front-door.ts`, ADR 261009-192542).
     listen: () =>
-      createFrontDoorServer(createFrontDoor(app, { census: env.DORKOS_TEST_RUNTIME })).listen(
-        PORT,
-        host
-      ),
+      createFrontDoorServer(composeFrontDoor(app, mainRequestAdmission)).listen(PORT, host),
     onListening: (server) => {
       logger.info(`[DorkOS] server running on http://${host}:${PORT}`);
 

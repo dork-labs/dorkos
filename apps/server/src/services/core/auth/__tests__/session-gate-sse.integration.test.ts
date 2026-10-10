@@ -73,6 +73,7 @@ import { createDb, runMigrations, user, type Db } from '@dorkos/db';
 import { initAuth } from '../index.js';
 import { configManager, initConfigManager } from '../../config-manager.js';
 import { createApp, finalizeApp } from '../../../../app.js';
+import { composedListener } from '../../../../http/__tests__/composed-listener.js';
 import { env } from '../../../../env.js';
 
 const fixtureTarget = swappableServer();
@@ -126,12 +127,13 @@ describe('sessionGate on GET /api/sessions/:id/events (SSE, integration)', () =>
     db = createDb(path.join(tmpDir, 'gate-sse.db'));
     runMigrations(db);
     initAuth(db, tmpDir);
-    app = createApp({ admission: new MainRequestAdmission() });
+    const admission = new MainRequestAdmission();
+    app = createApp({ admission });
     finalizeApp(app);
 
     // Owner + a real session cookie (auth off during setup so sign-up is clean).
     setAuthEnabled(false);
-    fixtureTarget.mount(app);
+    fixtureTarget.mount(composedListener(app, admission));
     await request(fixtureServer)
       .post('/api/auth/sign-up/email')
       .set('Origin', ORIGIN)

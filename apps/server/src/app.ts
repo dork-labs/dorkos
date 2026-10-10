@@ -44,11 +44,10 @@ import {
   type ConnectorSignedIngress,
 } from './services/connectors/events/signed-ingress.js';
 import { requestLogger } from './middleware/request-logger.js';
-import { buildAuthRateLimiter } from './middleware/auth-rate-limit.js';
 import { resolveAgentIdentity } from './middleware/agent-identity.js';
 import { auditActor } from './middleware/audit-actor.js';
 import { auditRequestFallback } from './middleware/audit-request-fallback.js';
-import { getAuth, toNodeHandler, sessionGate } from './services/core/auth/index.js';
+import { sessionGate } from './services/core/auth/index.js';
 import { expressRequestFacts } from './http/request-facts.js';
 import { corsAllowsOrigin, corsRefusal, warnOnWildcardCorsOrigin } from './http/cors-policy.js';
 import { createFirstContactMarker } from './http/first-contact.js';
@@ -91,8 +90,8 @@ export function createApp(options: {
 
   // Trust one forwarded hop, for `req.protocol` and `req.secure` and nothing
   // else. A reverse proxy or the tunnel terminates TLS upstream and names the
-  // real scheme in `X-Forwarded-Proto`; without this, Better Auth would drop the
-  // `Secure` flag from its cookies on every proxied deployment.
+  // real scheme in `X-Forwarded-Proto`. (Better Auth reads that header itself,
+  // on the Hono chain: `http/better-auth.ts`.)
   //
   // NOTHING SECURITY-RELEVANT MAY READ WHAT THIS DERIVES (DOR-1711). On a direct
   // connection the "first proxy" is the caller, so `req.ip`, `req.ips` and
@@ -143,8 +142,9 @@ export function createApp(options: {
   // 127.0.0.1 is same-origin to the browser, so it sends no preflight and
   // satisfies both the no-Origin and the same-origin branches above. The `Host`
   // header still says `evil.com`, and this rejects it. Mounted before
-  // `express.json` so a rejected body is never parsed, and before the Better
-  // Auth handler so `/api/auth/*` is covered too. Inert when login is on (auth
+  // `express.json` so a rejected body is never parsed. (Better Auth now answers
+  // from the Hono chain, behind that chain's copy of this guard:
+  // `http/better-auth.ts`.) Inert when login is on (auth
   // cookies are origin-scoped) or when the container escape hatch is set — see
   // `middleware/host-guard.ts`.
   app.use('/api', hostGuard);
@@ -153,25 +153,6 @@ export function createApp(options: {
       '/api/connectors/webhooks/:providerInstanceId',
       ...createConnectorSignedIngress(options.connectorEventIngress)
     );
-  }
-
-  // Better Auth handler — mounted BEFORE express.json because Better Auth parses
-  // its own request body (mounting after express.json breaks it). Express 5
-  // wildcard syntax is `*splat` (a bare `*` throws under path-to-regexp v8). The
-  // handler is always mounted in the running server (index.ts calls initAuth
-  // before createApp), even when `config.auth.enabled` is false, so the
-  // enable-login flow can create the owner account before the flag flips. The
-  // guard only skips the mount in unit tests that build the app without auth.
-  const auth = getAuth();
-  if (auth) {
-    // Defense-in-depth brute-force throttle on sign-in/sign-up (DOR-281),
-    // mounted BEFORE the auth handler so it sheds attempts first. App-wide with
-    // an internal `skip` (like `sessionGate`) so it counts only credential POSTs
-    // and never touches session-check GETs or non-auth routes. This layers over
-    // Better Auth's own built-in throttle, which is production-only and
-    // short-windowed — see `middleware/auth-rate-limit.ts`.
-    app.use(buildAuthRateLimiter({ maxAttempts: env.DORKOS_AUTH_SIGNIN_RATE_LIMIT }));
-    app.all('/api/auth/*splat', toNodeHandler(auth));
   }
 
   // Feedback submissions carry an opt-in screenshot inline as a `data:` URL, so

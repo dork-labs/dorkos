@@ -331,22 +331,18 @@ beforeAll(async () => {
   runMigrations(db);
   const auth = initAuth(db, authHome);
   const viaExpress = await listen(buildExpress(admission) as unknown as RequestListener);
-  // A real owner, a real session cookie and a real API key, through the
-  // Express chain's own Better Auth mount.
+  // A real owner, a real session cookie and a real API key, from Better Auth
+  // itself: what is under test is the chain around it, not its routes.
   const account = { email: 'owner' + '@' + 'dork.test', password: 'correct-horse-battery-staple' };
-  const authHeaders = {
-    host: 'localhost:4242',
-    origin: 'http://localhost:4242',
-    'content-type': 'application/json',
-  };
-  const signUp = await send(viaExpress.port, {
-    method: 'POST',
-    path: '/api/auth/sign-up/email',
-    headers: authHeaders,
-    body: JSON.stringify({ ...account, name: 'Owner' }),
+  const signUp = await auth.api.signUpEmail({
+    body: { ...account, name: 'Owner' },
+    asResponse: true,
   });
   expect(signUp.status).toBe(200);
-  GOOD_COOKIE = signUp.cookies.map((cookie) => cookie.split(';')[0]).join('; ');
+  GOOD_COOKIE = signUp.headers
+    .getSetCookie()
+    .map((cookie) => cookie.split(';')[0])
+    .join('; ');
   ownerId = db.select().from(user).get()!.id;
   GOOD_API_KEY = (await auth.api.createApiKey({ body: { userId: ownerId, name: 'parity' } })).key;
   recorded.length = 0;

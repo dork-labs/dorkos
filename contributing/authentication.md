@@ -64,7 +64,7 @@ export async function sessionGate(req, res, next) {
 }
 ```
 
-The gate is mounted **after** the Better Auth handler and `express.json()`, **before** the first API route. The `/mcp` mount (added in `index.ts`) is on the same app, so the app-wide gate covers it too.
+The gate is mounted **after** body parsing, **before** the first API route, on both chains during the move to Hono (`app.ts` for Express, `http/api-chain.ts` for Hono; both call `decideSessionGate`). Better Auth answers before it, from the Hono chain (`http/better-auth.ts`). The `/mcp` mount (added in `index.ts`) is on the Express app, so its app-wide gate covers it too.
 
 #### Health is exempt; deep health is not
 
@@ -128,7 +128,7 @@ Two enforcement points consume it:
 
 ### The `/api` host guard is the login-off complement (DOR-532)
 
-`hostGuard` (`middleware/host-guard.ts`) is mounted at `/api` ahead of `express.json` and the Better Auth handler. It 403s (`HOST_NOT_ALLOWED`) any request whose raw `Host` header is not loopback, not in `DORKOS_TRUSTED_HOSTS`, and not the live tunnel host — closing the DNS-rebinding path to `POST /api/sessions/:id/messages`, which CORS structurally cannot see because a rebound request genuinely _is_ same-origin.
+`hostGuard` (`middleware/host-guard.ts`) is mounted at `/api` ahead of body parsing and the Better Auth handler, on both chains (`refuseUntrustedHost`). It 403s (`HOST_NOT_ALLOWED`) any request whose raw `Host` header is not loopback, not in `DORKOS_TRUSTED_HOSTS`, and not the live tunnel host — closing the DNS-rebinding path to `POST /api/sessions/:id/messages`, which CORS structurally cannot see because a rebound request genuinely _is_ same-origin.
 
 **It has two skip conditions, and both matter when you reason about what is actually protected:**
 
@@ -221,10 +221,10 @@ if (isOwnerAuthor(author.id)) allowEverything();
 if (invite) allowSecondSignUp(); // D6: nobody else holds an account on this machine
 // ✅ multi-user is `apps/community`, a different server with a roster
 
-// ❌ NEVER mount express.json() before the Better Auth handler
-app.use(express.json());
-app.all('/api/auth/*splat', toNodeHandler(auth)); // breaks body parsing
-// ✅ mount the auth handler FIRST (Better Auth parses its own body)
+// ❌ NEVER mount Better Auth after the chain's body parser
+app.all('/api/auth/*', (c) => auth.handler(c.req.raw)); // body already consumed
+// ✅ mount it at the chain's `beforeBodyParsing` point (`http/better-auth.ts`),
+//    with `requestForBetterAuth(c)`: it keeps the X-Forwarded-Proto origin
 ```
 
 ## Troubleshooting
