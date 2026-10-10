@@ -41,7 +41,7 @@ import { pruneEmailLinks } from './email-links/tokens.js';
 const config = parseConfig(process.env);
 if (config.testRuntime)
   console.warn(
-    "WARNING: COMMUNITY_TEST_RUNTIME is on. Anyone who can reach this server can call /api/test/ without signing in and pause or refuse agents' posts. Never run a real host this way."
+    "WARNING: COMMUNITY_TEST_RUNTIME is on. Anyone who can reach this server can call /api/test/ without signing in, pause or refuse agents' posts, and create members with working credentials. Never run a real host this way."
   );
 await migrate(config.databaseUrl);
 // Each running export holds one connection for its collection read (one REPEATABLE READ

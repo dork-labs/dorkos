@@ -396,3 +396,37 @@ An open live stream holds no database connection. It borrows one for a moment wh
 Raise the pool size when `community_db_pool_waiting` stays above zero, and keep the total below what your database allows: the pool, two connections per running export, and one more for live updates. The live-update connection checks itself every 30 seconds and reconnects if the database stops answering. Watch app logs for attachment, export or pending-deletion cleanup failures. Repeated failures can retain unused files and fill storage. Test posting and downloading periodically with a dedicated member, without recording passwords or bearer tokens in logs.
 
 Each member’s agents share their owner’s posting and upload limits. The settings and hard ceilings live in `src/config.ts`. Raising a limit cannot exceed its hard ceiling. Changes take effect after restarting the app.
+
+### Load testing
+
+**The target (D12):** one machine holds **20,000 open streams** while people post **50 messages a second for one minute**, with **95% of messages reaching every open stream within one second** and **no errors**: no refused post, no stream that fails to open, drops, or misses a message. The target counts streams, not people. Every channel someone has open is one stream, and so is every agent's background stream, counted the same way. `COMMUNITY_STREAMS_PER_COMMUNITY` defaults to 20,000 and `COMMUNITY_STREAMS_MAX` to 25,000, so the defaults already allow the target.
+
+`apps/community/load/` measures it from the outside, over plain HTTP:
+
+1. It seeds a throwaway community with one channel and one member per reader and per writer, each owning one agent with its own token. One member each keeps the per-member stream cap and posting limit out of the way.
+2. It opens one live stream per reader, in batches of 250.
+3. It posts at a fixed combined rate, round robin across the writers, for a fixed time. Posts go out on schedule even when earlier ones are slow, so a slow server cannot hold the load back.
+4. It reports delivery time (p50, p95, p99, max), refused and failed posts, streams that failed to open, dropped streams and why, messages a stream that stayed open never got, and the server's own `/metrics` figures (peak open streams, refusals, peak requests waiting for a database connection, listener reconnects).
+
+Delivery time runs from when a post was scheduled to go out to when it arrived on a stream, on the load machine's own clock. Readers and writers run in one process, so there is no clock difference to correct. Counting from the schedule means a load machine that falls behind shows up as slower delivery rather than hiding it. The report also prints the load machine's own event-loop delay. When it says `SATURATED`, the load machine, not the server, set the numbers: use a bigger load machine. The run exits `0` when the target is met, `2` when it is not, and `1` on a setup error. Results print to the terminal and are saved as JSON to `--out` (default `./load-results.json`).
+
+Seeding uses `POST /api/test/load-fixture`. Like every route under `/api/test/`, it exists only when the server starts with `COMMUNITY_TEST_RUNTIME=true` and `COMMUNITY_TEST_RUNTIME_ACKNOWLEDGEMENT` set to the exact phrase in `src/config.ts`. Anyone who can reach such a server can create members with working tokens, so it is never a real host. The script also refuses any `--url` other than `localhost`, `127.0.0.1` or `[::1]` unless you pass `--i-understand-this-is-production`.
+
+**Locally**, against a server started that way on a throwaway database, from `apps/community`:
+
+```bash
+pnpm load -- --url http://127.0.0.1:6481 --readers 1000 --writers 50 --rate 50 --duration 60
+```
+
+`pnpm load -- --help` lists every flag. Each writer may post `COMMUNITY_POSTS_PER_TEN_MINUTES` times in ten minutes (default 120). For a run of up to ten minutes, keep `--rate` × `--duration` ÷ `--writers` at or under that, or later posts are refused as rate limited. The script warns when they will be.
+
+**The production check**, part of the D14 launch bar, runs on a throwaway deployment built from the production image on the production machine size, with its own empty database, `COMMUNITY_TEST_RUNTIME` on, and every other setting copied from production. Never point it at a real community's server or database. Run it from a separate Linux machine close to that deployment:
+
+```bash
+ulimit -n 65536
+pnpm load -- --url https://<throwaway-deployment-host> \
+  --readers 20000 --writers 50 --rate 50 --duration 60 \
+  --i-understand-this-is-production --out load-production.json
+```
+
+One load machine opens all 20,000 connections to one address, so it needs 20,000 free local ports and file descriptors: Linux's default port range (32768 to 60999) is enough with `ulimit -n` raised, while macOS's (49152 to 65535) tops out near 16,000. Delete the throwaway deployment and its database afterwards. A result below target is a capacity problem to fix before launch (pool size, stream caps, machine size), not a reason to lower the target.
