@@ -6085,7 +6085,11 @@ async function start() {
     admission: mainRequestAdmission,
     // Hono is the front door; every route still answers from the Express app
     // behind it (`http/front-door.ts`, ADR 261009-192542).
-    listen: () => createFrontDoorServer(createFrontDoor(app)).listen(PORT, host),
+    listen: () =>
+      createFrontDoorServer(createFrontDoor(app, { census: env.DORKOS_TEST_RUNTIME })).listen(
+        PORT,
+        host
+      ),
     onListening: (server) => {
       logger.info(`[DorkOS] server running on http://${host}:${PORT}`);
 
