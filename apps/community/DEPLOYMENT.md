@@ -33,6 +33,10 @@ The service checks each setting before it opens its HTTP port. It rejects an inc
 
 Four log lines are worth an alert, all with IDs only: `{"event":"community.account.close",…}` each time a host closes someone's account or a closure is refused (including by `COMMUNITY_ACCOUNT_CLOSURES_PER_DAY`), `{"event":"community.takedown.evidence_failed",…}` when a copy to the evidence store fails, `{"event":"community.takedown.evidence_overdue",…}` once an hour while a takedown's copy has waited longer than `COMMUNITY_TAKEDOWN_EVIDENCE_ALERT_HOURS`, and `{"event":"community.takedown.community",…}` each time a whole community is taken down, or a takedown is refused by `COMMUNITY_TAKEDOWN_COMMUNITIES_PER_DAY`. `COMMUNITY_TAKEDOWN_REVERSAL_HOURS` is how long a whole-community takedown can be reversed before the community is deleted. Two offline commands act on one takedown with only `COMMUNITY_DATABASE_URL` set: `node dist-server/takedown/commands.js evidence-retry <id>` and `node dist-server/takedown/commands.js release-held <id>` (from a source checkout, `pnpm --filter @dorkos/community takedowns:evidence-retry <id>` and `takedowns:release-held <id>`). See [operations](OPERATIONS.md#taking-down-illegal-content).
 
+An owner can open a space to anyone who signs in with this server's single sign-on (`COMMUNITY_OIDC_*`). Nobody gets in that way with a password. Set `COMMUNITY_OPEN_ADMISSION=0` to turn every open join off at once; invitations keep working.
+
+A ban keeps out the banned account and its confirmed email. The email is stored only as a key made with `COMMUNITY_AUTH_SECRET`, so rotating that secret stops every existing ban from matching an email. Bans still keep out the accounts they name.
+
 Most people can keep the default limits. Restart the service after changing one. The maximums protect every Community, even when an environment variable requests more.
 
 | Setting                                        |                       Default |                   Maximum |
@@ -47,6 +51,8 @@ Most people can keep the default limits. Restart the service after changing one.
 | `COMMUNITY_BOOTSTRAP_ATTEMPTS_PER_MINUTE`      |                     10 per IP |                100 per IP |
 | `COMMUNITY_INVITE_PREVIEW_ATTEMPTS_PER_MINUTE` |                     20 per IP |                100 per IP |
 | `COMMUNITY_PAIRING_ATTEMPTS_PER_MINUTE`        |                      5 per IP |                100 per IP |
+| `COMMUNITY_OPEN_JOINS_PER_MINUTE`              |                      5 per IP |                100 per IP |
+| `COMMUNITY_OPEN_JOINS_PER_HOST_PER_MINUTE`     |        120 for the whole host | 10,000 for the whole host |
 | `COMMUNITY_HOST_KEY_ATTEMPTS_PER_MINUTE`       |                     20 per IP |                100 per IP |
 | `COMMUNITY_REAUTH_ATTEMPTS_PER_MINUTE`         | 5 wrong passwords per account |            20 per account |
 | `COMMUNITY_HOST_DELETION_NOTICE_DAYS`          |             14 days of notice |     365 days (at least 7) |

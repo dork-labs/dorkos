@@ -133,6 +133,7 @@ export async function checkExportV2(
     'channelMembers',
     'agentChannelMembers',
     'auditEvents',
+    'bans',
     'entries',
   ];
   for (const key of rowCollections) {
@@ -302,6 +303,7 @@ export async function restoreV2(
     importId: job.id,
     derive: (sourceId) => uuidv5(job.id, sourceId),
     ownerSourceId: manifest.requesterMemberId,
+    banEmailKey: limits.banEmailKey,
   };
   let progress = row.restore_progress;
   if (!progress) {

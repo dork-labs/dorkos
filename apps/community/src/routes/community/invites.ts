@@ -33,6 +33,8 @@ import { hashSecret, randomToken, readCookie, signValue, verifyValue } from '../
 import { mintHandle } from '../../handles.js';
 import { readmissionBlocked } from '../../erasure/guards.js';
 import { clearFormerMembership } from './members.js';
+import { refuseBannedAccount } from '../../moderation/bans.js';
+import { joinAutoJoinChannels, lockAutoJoinChannels } from '../../admission/auto-join.js';
 import { resolveCommunityContext } from '../../tenant-context.js';
 
 interface InviteRow {
@@ -121,24 +123,6 @@ function admissionCookie(c: Context, config: CommunityConfig): string {
   );
   if (!value) throw new ApiError(403, 'FORBIDDEN', 'Start with an invitation before joining.');
   return value;
-}
-
-/** Delete one bounded batch of expired admission transactions and their cascading receipts. */
-export async function sweepExpiredAdmissions(pool: Pool, batchSize = 100): Promise<number> {
-  const result = await pool.query(
-    `WITH expired AS (
-       SELECT id FROM pending_admissions
-       WHERE expires_at<=now()
-       ORDER BY expires_at,id
-       LIMIT $1
-       FOR UPDATE SKIP LOCKED
-     )
-     DELETE FROM pending_admissions p USING expired
-     WHERE p.id=expired.id
-     RETURNING p.id`,
-    [batchSize]
-  );
-  return result.rowCount ?? 0;
 }
 
 async function validInvite(
@@ -308,10 +292,11 @@ export function registerInviteRoutes(
       preview = await transaction(pool, async (client) => {
         const { invite, communityName } = await validInvite(c, client, token, config, true);
         if (invite.use_count >= invite.seat_limit) throw invalidInvitation();
-        await assertMemberRoom(client, invite.community_id, {
-          lock: false,
-          userId: await signedInUserId(c, auth),
-        });
+        const userId = await signedInUserId(c, auth);
+        // A banned account learns no more than any other refused invitation.
+        if (userId)
+          await refuseBannedAccount(client, invite.community_id, userId, config.authSecret);
+        await assertMemberRoom(client, invite.community_id, { lock: false, userId });
         await client.query(
           'INSERT INTO pending_admissions(community_id,invite_id,token_hash,expires_at) VALUES($1,$2,$3,$4)',
           [invite.community_id, invite.id, hashSecret(pending), expiresAt]
@@ -490,6 +475,8 @@ export function registerInviteRoutes(
           channelId,
           grant.community_id,
         ]);
+      // The channels everyone joins on arrival, under the same rule.
+      const autoJoin = await lockAutoJoinChannels(client, grant.community_id);
       const inviteResult = await client.query<InviteRow>(
         `SELECT i.* FROM invites i
          JOIN members issuer ON issuer.id=i.issuer_member_id AND issuer.community_id=i.community_id
@@ -517,6 +504,11 @@ export function registerInviteRoutes(
         'SELECT id,active FROM members WHERE community_id=$1 AND user_id=$2 FOR UPDATE',
         [invite.community_id, user.id]
       );
+      // A ban on this account, or on its confirmed email, outlasts any invitation. Read after the
+      // member lock, under the community lock a ban waits on (see refuseBannedAccount).
+      await refuseBannedAccount(client, invite.community_id, user.id, config.authSecret);
+      // Someone already in the space keeps the channels they chose; only an arrival is placed.
+      const arriving = !member.rows[0]?.active;
       if (!member.rows[0]) {
         const handle = await mintHandle(client, invite.community_id, user.name);
         member = await client.query(
@@ -539,6 +531,8 @@ export function registerInviteRoutes(
           'INSERT INTO channel_members(community_id,channel_id,member_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING',
           [invite.community_id, invite.channel_id, member.rows[0].id]
         );
+      if (arriving)
+        await joinAutoJoinChannels(client, invite.community_id, member.rows[0].id, autoJoin);
       if (!previous.rowCount) {
         await client.query(
           'INSERT INTO invite_uses(community_id,invite_id,user_id) VALUES($1,$2,$3)',

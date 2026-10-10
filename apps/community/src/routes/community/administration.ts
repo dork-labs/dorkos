@@ -37,12 +37,18 @@ import { prepareCommunityDeletionInventory } from '../../deletion-worker.js';
 import { resolveCommunityContext } from '../../tenant-context.js';
 import { revokeTenantAccess } from '../../host/communities.js';
 import { endOwnerReplacement } from '../../owner-replacement/end.js';
+import {
+  DELETABLE,
+  deletionOrigin,
+  deletionProjection,
+  deletionTakedown,
+} from './deletion-status.js';
 
 interface SettingsRow {
   id: string;
   name: string;
   description: string | null;
-  admission_policy: 'invite_only' | 'closed';
+  admission_policy: 'invite_only' | 'closed' | 'open';
   icon_blob_key: string | null;
   icon_content_type: string | null;
   settings_version: number;
@@ -138,66 +144,6 @@ function mapIconBlobError(error: unknown): never {
   throw error;
 }
 
-function deletionProjection(row: {
-  community_id: string;
-  lifecycle: string;
-  lifecycle_version: number;
-  delete_after: Date | null;
-  state: 'waiting' | 'deleting' | 'retrying' | null;
-  attempts: number | null;
-  requested_by: 'owner' | 'host' | null;
-  returns_to: 'archived' | 'suspended' | 'held' | null;
-  takedown_category?: 'child_safety' | 'illegal_content' | 'legal_order' | 'terms_violation' | null;
-  takedown_reference?: string | null;
-  takedown_created_at?: Date | null;
-  removed_by_host?: boolean;
-}) {
-  return {
-    communityId: row.community_id,
-    lifecycle: row.lifecycle as 'active' | 'archived' | 'suspended' | 'held' | 'deletion_pending',
-    lifecycleVersion: row.lifecycle_version,
-    deleteAfter: row.delete_after?.toISOString() ?? null,
-    state: row.state,
-    attempts: row.attempts ?? 0,
-    requestedBy: row.requested_by,
-    returnsTo: row.returns_to,
-    takedown:
-      row.takedown_category && row.takedown_created_at
-        ? {
-            category: row.takedown_category,
-            reference: row.takedown_reference ?? null,
-            createdAt: row.takedown_created_at.toISOString(),
-          }
-        : null,
-    removedByHost: row.removed_by_host ?? false,
-  };
-}
-
-/** Who asked for a pending deletion, and where cancelling it would return the community. */
-const deletionOrigin = `CASE WHEN c.delete_requested_by_host_actor IS NOT NULL THEN 'host'
-    WHEN c.delete_requested_by IS NOT NULL THEN 'owner' END AS requested_by,
-  CASE WHEN c.lifecycle<>'deletion_pending' THEN NULL
-    WHEN c.deletion_from_state IN ('held','suspended') THEN c.deletion_from_state
-    ELSE 'archived' END AS returns_to`;
-
-/**
- * The host's takedown behind a pending deletion, with `c` the community: that the host removed
- * it, always, and its reason only when the host chose to tell the owner.
- */
-const deletionTakedown = `(SELECT t.category FROM community_takedowns t
-    WHERE t.id=c.takedown_id AND t.notify) AS takedown_category,
-  (SELECT t.reference FROM community_takedowns t
-    WHERE t.id=c.takedown_id AND t.notify) AS takedown_reference,
-  (SELECT t.created_at FROM community_takedowns t
-    WHERE t.id=c.takedown_id AND t.notify) AS takedown_created_at,
-  c.takedown_id IS NOT NULL AS removed_by_host`;
-
-/**
- * Lifecycles the owner may ask to delete from. Neither a suspension nor a host's hold may trap
- * an owner: a hold stops growth, never an owner's own decision to delete.
- */
-const DELETABLE: readonly string[] = ['active', 'archived', 'suspended', 'held'];
-
 /** Register settings and owner lifecycle operations for one tenant-qualified Community. */
 export function registerAdministrationRoutes(
   app: Hono,
@@ -206,7 +152,15 @@ export function registerAdministrationRoutes(
     auth,
     blobStore,
     confirmPassword,
-  }: { pool: Pool; auth: CommunityAuth; blobStore: BlobStore; confirmPassword: ConfirmPassword }
+    singleSignOn,
+  }: {
+    pool: Pool;
+    auth: CommunityAuth;
+    blobStore: BlobStore;
+    confirmPassword: ConfirmPassword;
+    /** Whether this host has single sign-on, which an `open` space admits people through. */
+    singleSignOn: boolean;
+  }
 ): void {
   app.get('/settings', async (c) => {
     const actor = await requireMember(c, auth, pool);
@@ -245,6 +199,15 @@ export function registerAdministrationRoutes(
         (body.name !== undefined || body.admissionPolicy !== undefined)
       ) {
         throw new ApiError(403, 'FORBIDDEN', 'Only the owner can change identity or access.');
+      }
+      // An open space admits people only through the host's single sign-on; without one it
+      // could admit no one, so say so instead of saving a setting that does nothing.
+      if (body.admissionPolicy === 'open' && !singleSignOn) {
+        throw new ApiError(
+          409,
+          'STATE_CONFLICT',
+          'This server has no single sign-on, so the space can’t be open.'
+        );
       }
       const changed = Object.keys(body);
       const updated = await client.query<SettingsRow>(

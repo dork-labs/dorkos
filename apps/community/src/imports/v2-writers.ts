@@ -27,6 +27,8 @@ export interface RestoreScope {
   importId: string;
   derive: (sourceId: string) => string;
   ownerSourceId: string;
+  /** This host's key for a banned email; see `ImportLimits.banEmailKey`. */
+  banEmailKey?: (email: string) => string;
 }
 
 /** Refuse unless an `ON CONFLICT DO NOTHING` insert wrote every row: a duplicate in the export. */
@@ -42,10 +44,11 @@ const writeChannels: BatchWriter<'channels'> = async (client, rows, scope) => {
     await insertRows(
       client,
       // A channel's last_seq grows as its messages are restored, batch by batch.
-      `INSERT INTO channels(id,community_id,name,description,visibility,archived,last_seq,epoch,created_at)
-       SELECT r.id,$2,r.name,r.description,r.visibility,r.archived,0,1,r.created_at
+      `INSERT INTO channels(id,community_id,name,description,visibility,archived,last_seq,epoch,
+         created_at,auto_join)
+       SELECT r.id,$2,r.name,r.description,r.visibility,r.archived,0,1,r.created_at,r.auto_join
        FROM jsonb_to_recordset($1::jsonb) AS r(id uuid,name text,description text,visibility text,
-         archived boolean,created_at timestamptz)
+         archived boolean,created_at timestamptz,auto_join boolean)
        ON CONFLICT DO NOTHING`,
       rows.map(importedChannel).map((channel) => ({
         id: scope.derive(channel.id),
@@ -54,6 +57,8 @@ const writeChannels: BatchWriter<'channels'> = async (client, rows, scope) => {
         visibility: channel.visibility,
         archived: channel.archived,
         created_at: channel.created_at,
+        // Only a public channel is joined on arrival, whatever the export says.
+        auto_join: channel.auto_join === true && channel.visibility === 'public',
       })),
       scope.communityId
     ),
@@ -463,6 +468,46 @@ const writeAuditEvents: BatchWriter<'auditEvents'> = async (client, rows, scope)
 };
 
 /**
+ * Bans keep `origin='imported'`. Each names a member of this export; its confirmed email, when
+ * the export has one, is keyed again with this host's secret, so the ban keeps out the same
+ * address here. Without one, the exporting host's own key is kept: it matches only if this is
+ * that host, with the same auth secret, and is inert anywhere else. No account here is the
+ * banned one, so `user_id` stays empty. The adopted owner cannot be banned: an export that says
+ * otherwise is refused.
+ */
+const writeBans: BatchWriter<'bans'> = async (client, rows, scope) => {
+  invalid(rows.some((ban) => ban.member_id === scope.ownerSourceId && ban.lifted_at === null));
+  const members = rows.flatMap((ban) =>
+    [ban.member_id, ban.actor_member_id].filter((id): id is string => id !== null)
+  );
+  await allRestored(client, 'members', members.map(scope.derive), scope.communityId);
+  wroteAll(
+    await insertRows(
+      client,
+      `INSERT INTO bans(id,community_id,member_id,actor_member_id,email_hash,reason,origin,
+         created_at,lifted_at)
+       SELECT r.id,$2,r.member_id,r.actor_member_id,r.email_hash,r.reason,'imported',
+         r.created_at,r.lifted_at
+       FROM jsonb_to_recordset($1::jsonb) AS r(id uuid,member_id uuid,actor_member_id uuid,
+         email_hash text,reason text,created_at timestamptz,lifted_at timestamptz)
+       ON CONFLICT DO NOTHING`,
+      rows.map((ban) => ({
+        id: scope.derive(ban.id),
+        member_id: ban.member_id && scope.derive(ban.member_id),
+        actor_member_id: ban.actor_member_id && scope.derive(ban.actor_member_id),
+        email_hash:
+          ban.email && scope.banEmailKey ? scope.banEmailKey(ban.email) : (ban.email_hash ?? null),
+        reason: ban.reason,
+        created_at: ban.created_at,
+        lifted_at: ban.lifted_at,
+      })),
+      scope.communityId
+    ),
+    rows.length
+  );
+};
+
+/**
  * The restore's steps, in dependency order. Handles go with the members and agents they
  * reserve, and mentions with their messages, so each batch is complete on its own.
  */
@@ -475,6 +520,8 @@ export const STEPS: { key: V2Collection; write: BatchWriter<never> }[] = [
   { key: 'entries', write: writeEntries as BatchWriter<never> },
   { key: 'attachments', write: writeAttachments as BatchWriter<never> },
   { key: 'auditEvents', write: writeAuditEvents as BatchWriter<never> },
+  // Last, so a restore that was already under way when bans arrived keeps its step numbers.
+  { key: 'bans', write: writeBans as BatchWriter<never> },
 ];
 
 /** A row's weight in a batch: a message counts its mentions too. */

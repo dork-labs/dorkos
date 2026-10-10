@@ -195,6 +195,7 @@ export async function writeTail(job: ExportJob, collected: Collected): Promise<b
       channelMembers: tallies.channelMembers.files,
       agentChannelMembers: tallies.agentChannelMembers.files,
       auditEvents: tallies.auditEvents.files,
+      bans: tallies.bans.files,
       entries: entryFiles,
       attachments: attachmentFiles,
     },
@@ -205,6 +206,7 @@ export async function writeTail(job: ExportJob, collected: Collected): Promise<b
       channelMembers: tallies.channelMembers.count,
       agentChannelMembers: tallies.agentChannelMembers.count,
       auditEvents: tallies.auditEvents.count,
+      bans: tallies.bans.count,
       entries: data.reduce((sum, segment) => sum + segment.entry_count, 0),
       attachments: data.reduce((sum, segment) => sum + segment.file_count, 0),
     },
@@ -318,7 +320,7 @@ export interface CommunityRow {
   id: string;
   name: string;
   description: string | null;
-  admission_policy: 'invite_only' | 'closed';
+  admission_policy: 'invite_only' | 'closed' | 'open';
   lifecycle: string;
   lifecycle_version: number;
   settings_version: number;

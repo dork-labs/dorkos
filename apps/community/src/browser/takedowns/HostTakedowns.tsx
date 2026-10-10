@@ -11,7 +11,7 @@ import {
   type HostTakedown,
   type TakedownCategory,
 } from './takedowns.js';
-import { FocusDialog } from '../components/CommunityAdministration.js';
+import { FocusDialog } from '../components/FocusDialog.js';
 
 type TargetKind = 'entry' | 'attachment' | 'icon';
 type Page = { takedowns: HostTakedown[]; nextAfter: string | null; evidenceStore: boolean };
