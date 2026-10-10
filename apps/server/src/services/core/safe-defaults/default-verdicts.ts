@@ -355,9 +355,12 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'rooms.lateReplyCeilingMinutes': 60,
   // The engaged window's two ceilings. Both ARE bounds: they are what stops
   // `engaged` becoming `always` with extra steps, and a person can set either
-  // lower.
-  'rooms.engagedWindowMinutes': 10,
-  'rooms.engagedWindowPosts': 5,
+  // lower. Raised to 60 and 15 by DOR-2823: people expect an answer to a reply
+  // an hour later, and agents talking to each other stay at the old 10 and 5
+  // whatever these say (`AGENT_POST_WINDOW`), so the longer values only reach a
+  // person's own conversation.
+  'rooms.engagedWindowMinutes': 60,
+  'rooms.engagedWindowPosts': 15,
   // The collect window's two ceilings (room-participation spec §10.4). Both are
   // bounds on how many turns a burst of messages costs — a pause of zero and a
   // cap of one would be one turn per message — so the shipped values are the
