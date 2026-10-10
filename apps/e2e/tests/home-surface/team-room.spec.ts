@@ -1,4 +1,5 @@
 import { test, expect } from '../../fixtures';
+import { captureRoomFailureData } from '../../fixtures/room-failure-data';
 import {
   SERVER_ROUND_TRIP_MS,
   type TeamRoomApi,
@@ -257,6 +258,7 @@ test.describe('Home is the #team room @smoke', () => {
     homeSurface,
     teamRoomApi,
     page,
+    request,
   }) => {
     const team = await teamRoomApi.teamRoom();
     expect(
@@ -289,10 +291,19 @@ test.describe('Home is the #team room @smoke', () => {
     // birth of a session. The old dashboard composer navigated away from itself.
     await expect(page).toHaveURL(/\/(\?|$)/);
     const root = await postedHere(teamRoomApi, said, before);
-    await teamRoomApi.waitForEntry(
-      (entry) => entry.authorId === team.fallbackSeatAuthorId && entry.cascadeRoot === root,
-      `an answer from the fallback seat to "${said}"`
-    );
+    try {
+      await teamRoomApi.waitForEntry(
+        (entry) => entry.authorId === team.fallbackSeatAuthorId && entry.cascadeRoot === root,
+        `an answer from the fallback seat to "${said}"`
+      );
+    } catch (cause) {
+      try {
+        await captureRoomFailureData(request, [team.id], 'team-fallback-answer');
+      } catch {
+        // Preserve the original assertion failure even if diagnostics are unavailable.
+      }
+      throw cause;
+    }
     // **Then wait for the room to go quiet before counting.** Snapshotting on
     // the first answer cannot see a second one still being written, so a test
     // that counted there would PASS when another agent piled on — it looked too

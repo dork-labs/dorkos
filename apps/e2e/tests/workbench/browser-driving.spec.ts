@@ -223,11 +223,129 @@ test.describe('Browser — an agent uses the page @smoke', () => {
         snapshots.push(request.postDataJSON());
     });
     await openInCanvasBrowser(page, new RightPanelPage(page), './index.html', sessionId, agentDir);
-    await expect
-      .poll(() =>
-        snapshots.some((s) => s.instrumented === true && typeof s.bridgeGeneration === 'string')
-      )
-      .toBe(true);
+    try {
+      await expect
+        .poll(() =>
+          snapshots.some((s) => s.instrumented === true && typeof s.bridgeGeneration === 'string')
+        )
+        .toBe(true);
+    } catch (originalCause) {
+      // Failure-only DATA; the original five-second predicate and cause remain authoritative.
+      try {
+        const data: Record<string, unknown> = {
+          meaning: 'FAILURE_ONLY_DATA_ABSENCE_UNKNOWN',
+          exposedRegistryReadiness: 'UNKNOWN_NOT_EXPOSED',
+          exposedReplayObserved: 'UNKNOWN_NOT_EXPOSED',
+          ingestCount: Math.min(snapshots.length, 10000),
+          lastIngests: snapshots.slice(-8).map((row) => ({
+            active: row.active === true,
+            instrumented: row.instrumented === true,
+            generationPresent: typeof row.bridgeGeneration === 'string',
+          })),
+        };
+        try {
+          data.frames = await page.evaluate(() => {
+            const family = (source: string) => {
+              if (!source) return 'empty';
+              if (source === 'about:blank') return 'about-blank';
+              try {
+                const url = new URL(source, location.href);
+                if (url.pathname.startsWith('/api/workbench/serve/'))
+                  return 'signed-workbench-serve';
+                return url.protocol === 'http:' || url.protocol === 'https:'
+                  ? 'other-http'
+                  : 'other';
+              } catch {
+                return 'unparseable';
+              }
+            };
+            return [...document.querySelectorAll<HTMLIFrameElement>('iframe')]
+              .slice(0, 4)
+              .map((frame) => {
+                let readableDocument:
+                  'unknown' | 'absent' | 'loading' | 'interactive' | 'complete' = 'unknown';
+                let actualDocumentFamily = 'unknown';
+                try {
+                  const doc = frame.contentDocument;
+                  if (!doc) readableDocument = 'absent';
+                  else {
+                    readableDocument = doc.readyState;
+                    actualDocumentFamily = family(doc.URL);
+                  }
+                } catch {
+                  // Cross-origin or retired frames remain UNKNOWN, never an authority claim.
+                }
+                let frontier: Record<string, unknown> | string = 'UNKNOWN_NOT_EXPOSED';
+                const raw = frame.getAttribute('data-original-doc-handshake-frontier');
+                if (raw && raw.length <= 2048) {
+                  try {
+                    const row = JSON.parse(raw) as Record<string, unknown>;
+                    const phases = [
+                      'before-navigation',
+                      'closed-original-handshake',
+                      'original-port-attach-refused',
+                      'original-handshake-offline',
+                      'starting-original-handshake',
+                      'replay-display-without-original-read',
+                      'prepared-original-load',
+                      'received-window-message',
+                      'accepted-original-ack',
+                      'original-load-capture-refused',
+                      'consuming-original-load',
+                      'original-load-completion-refused',
+                      'awaiting-original-blank-load',
+                      'awaiting-original-replay',
+                      'original-host-observation-refused',
+                      'original-load-preparation-refused',
+                    ];
+                    frontier = {
+                      phase: phases.includes(String(row.phase)) ? row.phase : 'UNKNOWN',
+                    };
+                    for (const key of [
+                      'capturePresent',
+                      'keyMatches',
+                      'windowMatches',
+                      'admissionMatches',
+                      'readCurrent',
+                      'blankKeyMatches',
+                      'blankFrameMatches',
+                      'replayObserved',
+                      'frameAdmissionPresent',
+                    ])
+                      if (typeof row[key] === 'boolean') frontier[key] = row[key];
+                    for (const key of ['messages', 'accepted', 'prepared', 'retiredPending'])
+                      if (
+                        Number.isInteger(row[key]) &&
+                        Number(row[key]) >= 0 &&
+                        Number(row[key]) <= 10000
+                      )
+                        frontier[key] = row[key];
+                  } catch {
+                    frontier = 'UNKNOWN_UNPARSEABLE';
+                  }
+                }
+                return {
+                  sourceFamily: family(frame.getAttribute('src') ?? ''),
+                  readableDocument,
+                  actualDocumentFamily,
+                  contentWindowPresent: frame.contentWindow !== null,
+                  frontier,
+                };
+              });
+          });
+        } catch {
+          data.frames = 'UNAVAILABLE_AFTER_ORIGINAL_FAILURE';
+        }
+        try {
+          console.error('ORIGINAL_BROWSER_DRIVING_BLANK_FRONTIER', JSON.stringify(data));
+        } catch {
+          // Diagnostics cannot replace the original failed readiness assertion.
+        }
+      } catch {
+        // Malformed captured request DATA cannot replace the original failed predicate.
+      }
+      throw originalCause;
+    }
     const gen = snapshots.filter((s) => s.instrumented === true).at(-1)!.bridgeGeneration!;
     const child = page.frames().find((f) => f.url().includes('/api/workbench/serve'))!;
     expect(child, 'the attack must run inside the real signed served iframe').toBeDefined();

@@ -3,6 +3,8 @@ import { createServer, type ServerResponse } from 'node:http';
 import { once } from 'node:events';
 import { spawn } from 'node:child_process';
 import { writeSync } from 'node:fs';
+import { createHook } from 'node:async_hooks';
+import { setTimeout as timeoutScheduler, setInterval as intervalScheduler } from 'node:timers';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { mkdtemp, realpath, rm } from 'node:fs/promises';
@@ -337,7 +339,159 @@ export async function startIsolatedConsumerHost(
   const rawOutput = { stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
   const setupDiagnostic = { undefinedCause: false, stdout: '', stderr: '' };
   const widgetDiagnostic = { undefinedCause: false, stdout: '', stderr: '' };
+  let closeDiagnosticRemainder = '';
+  let closeDiagnosticRecords = 0;
+  const forwardCloseDiagnostic = (chunk: Buffer) => {
+    // Finite close DATA only; arbitrary worker output remains in original bounded custody.
+    const lines = (closeDiagnosticRemainder + chunk.toString('utf8')).split('\n');
+    closeDiagnosticRemainder = (lines.pop() ?? '').slice(-256);
+    for (const line of lines) {
+      if (
+        closeDiagnosticRecords < 40 &&
+        /^ORIGINAL_MCP_CLOSE_STAGE child [1-9][0-9]? [0-9]{13} (startup|reviewed-stop|reviewed-join|saved-stop|saved-join|selection-stop|selection-join|mcp-stop|mcp-join|widget-join|canonical-join|vite-close|previews-close|fixture-close|complete) (begin|done|failed)$/.test(
+          line
+        )
+      ) {
+        closeDiagnosticRecords++;
+        try {
+          console.error(line);
+        } catch {
+          // Diagnostic transport cannot replace the original close result.
+        }
+      }
+    }
+  };
+  let resourceDiagnosticRemainder = '';
+  let resourceDiagnosticRecords = 0;
+  const forwardResourceDiagnostic = (chunk: Buffer) => {
+    const lines = (resourceDiagnosticRemainder + chunk.toString('utf8')).split('\n');
+    resourceDiagnosticRemainder = (lines.pop() ?? '').slice(-4096);
+    for (const line of lines) {
+      if (resourceDiagnosticRecords >= 3 || Buffer.byteLength(line + '\n', 'utf8') > 4096) continue;
+      try {
+        const row: unknown = JSON.parse(line);
+        if (!row || typeof row !== 'object' || Array.isArray(row)) continue;
+        const data = row as Record<string, unknown>;
+        if (
+          Object.keys(data).sort().join(',') !==
+          'at,counts,kind,phase,resourceCount,sequence,timeoutOrigins,truncated'
+        )
+          continue;
+        if (
+          data.kind !== 'ORIGINAL_MCP_POST_CLOSE_RESOURCES' ||
+          data.sequence !== resourceDiagnosticRecords + 1
+        )
+          continue;
+        if (
+          !['closed-before-disconnect', 'closed-after-disconnect', 'before-exit'].includes(
+            String(data.phase)
+          )
+        )
+          continue;
+        if (typeof data.at !== 'number' || !Number.isSafeInteger(data.at) || data.at < 0) continue;
+        if (
+          typeof data.resourceCount !== 'number' ||
+          !Number.isInteger(data.resourceCount) ||
+          data.resourceCount < 0 ||
+          data.resourceCount > 65
+        )
+          continue;
+        if (typeof data.truncated !== 'boolean' || data.truncated !== (data.resourceCount === 65))
+          continue;
+        if (!data.counts || typeof data.counts !== 'object' || Array.isArray(data.counts)) continue;
+        const entries = Object.entries(data.counts);
+        if (
+          entries.length > 64 ||
+          entries.some(
+            ([kind, count]) =>
+              !/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(kind) ||
+              typeof count !== 'number' ||
+              !Number.isInteger(count) ||
+              count < 1 ||
+              count > 64
+          )
+        )
+          continue;
+        const sum = entries.reduce((total, [, count]) => total + Number(count), 0);
+        if (sum > 64 || sum > data.resourceCount) continue;
+        if (
+          !data.timeoutOrigins ||
+          typeof data.timeoutOrigins !== 'object' ||
+          Array.isArray(data.timeoutOrigins)
+        )
+          continue;
+        const origins = data.timeoutOrigins as Record<string, unknown>;
+        if (
+          Object.keys(origins).sort().join(',') !==
+          'captures,entries,moduleLevelImportBlindspot,overflow,trackedCount'
+        )
+          continue;
+        if (
+          typeof origins.trackedCount !== 'number' ||
+          !Number.isInteger(origins.trackedCount) ||
+          origins.trackedCount < 0 ||
+          origins.trackedCount > 64
+        )
+          continue;
+        if (typeof origins.overflow !== 'boolean' || origins.moduleLevelImportBlindspot !== true)
+          continue;
+        if (
+          !Array.isArray(origins.entries) ||
+          origins.entries.length > 4 ||
+          origins.entries.some(
+            (frames: unknown) =>
+              !Array.isArray(frames) ||
+              frames.length > 6 ||
+              frames.some(
+                (frame: unknown) =>
+                  typeof frame !== 'string' ||
+                  !/^[A-Za-z0-9_./:@+-]{1,160}$/.test(frame) ||
+                  frame.startsWith('/') ||
+                  frame.includes('..')
+              )
+          )
+        )
+          continue;
+        if (
+          !Array.isArray(origins.captures) ||
+          origins.captures.length !== origins.entries.length ||
+          origins.captures.some((value: unknown) => {
+            if (!value || typeof value !== 'object' || Array.isArray(value)) return true;
+            const capture = value as Record<string, unknown>;
+            if (
+              Object.keys(capture).sort().join(',') !==
+              'mode,outsideScope,rawFrameCount,scaffolding,truncated,unparsed,unsafe'
+            )
+              return true;
+            if (
+              !['timeout-caller', 'interval-caller', 'hook-fallback'].includes(
+                String(capture.mode)
+              ) ||
+              typeof capture.truncated !== 'boolean'
+            )
+              return true;
+            return ['rawFrameCount', 'unparsed', 'outsideScope', 'unsafe', 'scaffolding'].some(
+              (key) =>
+                typeof capture[key] !== 'number' ||
+                !Number.isInteger(capture[key]) ||
+                Number(capture[key]) < 0 ||
+                Number(capture[key]) > 64
+            );
+          })
+        )
+          continue;
+        resourceDiagnosticRecords++;
+        console.error(line);
+      } catch {
+        // Invalid or unavailable resource DATA never changes the original first cause.
+      }
+    }
+  };
   const collect = (stream: 'stdout' | 'stderr', chunk: Buffer) => {
+    if (stream === 'stderr') {
+      forwardCloseDiagnostic(chunk);
+      forwardResourceDiagnostic(chunk);
+    }
     captured += chunk.length;
     if (captured > 1048576) remember(new Error('Owned fixture output frontier exceeded'));
     else {
@@ -349,6 +503,17 @@ export async function startIsolatedConsumerHost(
     if (retirement) return retirement;
     retired = true;
     retirement = (async () => {
+      let closeDiagnosticSequence = 0;
+      const closeData = (phase: 'child-close' | 'home-remove', state: 'begin' | 'done') => {
+        try {
+          console.error(
+            `ORIGINAL_MCP_CLOSE_STAGE parent ${++closeDiagnosticSequence} ${Date.now()} ${phase} ${state}`
+          );
+        } catch {
+          // Diagnostic DATA cannot change lifecycle authority or first cause.
+        }
+      };
+      closeData('child-close', 'begin');
       if (child && child.connected) {
         try {
           child.send({ kind: 'close' }, (cause) => {
@@ -361,6 +526,7 @@ export async function startIsolatedConsumerHost(
       if (ended) {
         try {
           const exit = await ended;
+          closeData('child-close', 'done');
           // Child close follows both owned stdio closures; attach only drained bounded bytes.
           widgetDiagnostic.stdout = rawOutput.stdout.toString('utf8');
           widgetDiagnostic.stderr = rawOutput.stderr.toString('utf8');
@@ -374,7 +540,9 @@ export async function startIsolatedConsumerHost(
       // No broad kill or time-as-closure. Unresolved child wait retains custody.
       if (!failed && (!child || originalChildClosed)) {
         try {
+          closeData('home-remove', 'begin');
           await rm(home, { recursive: true, force: true });
+          closeData('home-remove', 'done');
         } catch (cause) {
           remember(cause);
         }
@@ -558,6 +726,7 @@ export async function startIsolatedConsumerHost(
       kind:
         | 'read-room-scenario-data'
         | 'read-native-integrity-data'
+        | 'start-native-integrity-observation'
         | 'read-checkbox-pair-data'
         | 'read-canonical-recovery-data'
         | 'read-selection-data'
@@ -662,6 +831,16 @@ export async function startIsolatedConsumerHost(
             data.batches.length <= 32
           );
         }
+      );
+    const startNativeEmissionIntegrityObservation = () =>
+      readOwnedEvidence(
+        'start-native-integrity-observation',
+        'native-integrity-started',
+        (value): value is { started: true } =>
+          !!value &&
+          typeof value === 'object' &&
+          Object.keys(value).length === 1 &&
+          (value as { started?: unknown }).started === true
       );
     const readNativeEmissionIntegrityData = () =>
       readOwnedEvidence(
@@ -1287,6 +1466,7 @@ export async function startIsolatedConsumerHost(
       canonicalAction,
       readCanonicalRecoveryData,
       readNativeEmissionIntegrityData,
+      startNativeEmissionIntegrityObservation,
       close,
     };
   } catch (cause) {
@@ -1662,9 +1842,157 @@ export async function startNativeConsumerFixture(
 /** Child-only bootstrap. All module globals die with this owned process, and
  * every returned resource is registered before the next startup await. */
 async function runNativeConsumerWorker() {
+  type TimeoutCapture = {
+    mode: 'timeout-caller' | 'interval-caller' | 'hook-fallback';
+    rawFrameCount: number;
+    unparsed: number;
+    outsideScope: number;
+    unsafe: number;
+    scaffolding: number;
+    truncated: boolean;
+  };
+  const timeoutOrigins = new Map<
+    number,
+    { resource: WeakRef<object>; frames: string[]; capture: TimeoutCapture }
+  >();
+  let timeoutOriginOverflow = false;
+  const scrubTimeoutFrames = (stack: string | undefined, mode: TimeoutCapture['mode']) => {
+    const lines = (stack ?? '').split('\n').slice(1);
+    const capture: TimeoutCapture = {
+      mode,
+      rawFrameCount: Math.min(lines.length, 64),
+      unparsed: 0,
+      outsideScope: 0,
+      unsafe: 0,
+      scaffolding: 0,
+      truncated: lines.length > 64,
+    };
+    const frames: string[] = [];
+    const root = fileURLToPath(new URL('../../../..', import.meta.url)).replace(/\/+$/, '');
+    for (const line of lines.slice(0, 64)) {
+      const match = line.match(/(?:\(|\s)((?:file:\/\/)?[^()\s]+):(\d+):(\d+)\)?$/);
+      if (!match) {
+        capture.unparsed++;
+        continue;
+      }
+      const location = match[1].replace(/^file:\/\//, '');
+      let tag: string;
+      if (location.startsWith('node:')) tag = location;
+      else if (location.startsWith(root + '/') && !location.includes('/node_modules/'))
+        tag = location.slice(root.length + 1);
+      else if (location.includes('/node_modules/'))
+        tag = 'dependency/' + location.slice(location.lastIndexOf('/node_modules/') + 14);
+      else {
+        capture.outsideScope++;
+        continue;
+      }
+      const frame = `${tag}:${match[2]}:${match[3]}`;
+      if (!/^[A-Za-z0-9_./:@+-]{1,160}$/.test(frame) || frame.includes('..')) {
+        capture.unsafe++;
+        continue;
+      }
+      if (
+        frame.startsWith('node:internal/async_hooks:') ||
+        frame.startsWith('node:internal/timers:') ||
+        frame.startsWith('node:timers:') ||
+        (mode === 'hook-fallback' &&
+          frame.startsWith('apps/e2e/fixtures/doc-channel-consumer/server.ts:'))
+      ) {
+        capture.scaffolding++;
+        continue;
+      }
+      if (frames.length < 6) frames.push(frame);
+    }
+    return { frames, capture };
+  };
+  function captureTimeoutOrigin() {
+    for (const [mode, scheduler] of [
+      ['timeout-caller', timeoutScheduler],
+      ['interval-caller', intervalScheduler],
+    ] as const) {
+      const target: { stack?: string } = {};
+      Error.captureStackTrace(target, scheduler);
+      const origin = scrubTimeoutFrames(target.stack, mode);
+      if (origin.frames.length > 0) return origin;
+    }
+    const target: { stack?: string } = {};
+    Error.captureStackTrace(target, captureTimeoutOrigin);
+    return scrubTimeoutFrames(target.stack, 'hook-fallback');
+  }
+  const timeoutOriginHook = createHook({
+    init(id, type, _trigger, resource: object) {
+      if (type !== 'Timeout') return;
+      try {
+        if (timeoutOrigins.size >= 64) {
+          timeoutOriginOverflow = true;
+          return;
+        }
+        timeoutOrigins.set(id, { resource: new WeakRef(resource), ...captureTimeoutOrigin() });
+      } catch {
+        timeoutOriginOverflow = true;
+      }
+    },
+    destroy(id) {
+      timeoutOrigins.delete(id);
+    },
+  });
+  timeoutOriginHook.enable();
+  const currentTimeoutOrigins = () => {
+    const entries: string[][] = [];
+    const captures: TimeoutCapture[] = [];
+    for (const item of timeoutOrigins.values()) {
+      try {
+        const resource = item.resource.deref();
+        if (!resource || typeof (resource as { hasRef?: unknown }).hasRef !== 'function') continue;
+        if (!(resource as { hasRef(): boolean }).hasRef()) continue;
+        if (entries.length < 4) {
+          entries.push(item.frames);
+          captures.push(item.capture);
+        }
+      } catch {
+        timeoutOriginOverflow = true;
+      }
+    }
+    return {
+      trackedCount: timeoutOrigins.size,
+      overflow: timeoutOriginOverflow,
+      moduleLevelImportBlindspot: true,
+      entries,
+      captures,
+    };
+  };
+  let postCloseResourceSequence = 0;
+  let postCloseWitnessInstalled = false;
+  const postCloseResources = (
+    phase: 'closed-before-disconnect' | 'closed-after-disconnect' | 'before-exit'
+  ) => {
+    if (postCloseResourceSequence >= 3) return;
+    try {
+      const resources = process.getActiveResourcesInfo();
+      const counts: Record<string, number> = {};
+      for (const kind of resources.slice(0, 64)) {
+        if (!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(kind)) continue;
+        counts[kind] = (counts[kind] ?? 0) + 1;
+      }
+      const data = JSON.stringify({
+        kind: 'ORIGINAL_MCP_POST_CLOSE_RESOURCES',
+        sequence: ++postCloseResourceSequence,
+        phase,
+        at: Date.now(),
+        resourceCount: Math.min(resources.length, 65),
+        truncated: resources.length > 64,
+        counts,
+        timeoutOrigins: currentTimeoutOrigins(),
+      });
+      if (Buffer.byteLength(data + '\n', 'utf8') <= 4096) writeSync(2, data + '\n');
+    } catch {
+      // Resource DATA cannot change natural exit, retirement or the first cause.
+    }
+  };
   let fixture: Awaited<ReturnType<typeof startNativeConsumerFixture>> | undefined;
   let vite: { close(): Promise<void>; resolvedUrls: { local: string[] } | null } | undefined;
   let previews: { close(): Promise<void> } | undefined;
+  let joinViteStartup: (() => Promise<void>) | undefined;
   let retired = false;
   let retirement: Promise<void> | undefined;
   let canonicalActionWork: Promise<void> | undefined;
@@ -1701,7 +2029,21 @@ async function runNativeConsumerWorker() {
     if (retirement) return retirement;
     retired = true;
     retirement = (async () => {
+      let closeDiagnosticSequence = 0;
+      const closeData = (phase: string, state: 'begin' | 'done' | 'failed') => {
+        if (closeDiagnosticSequence >= 40) return;
+        try {
+          writeSync(
+            2,
+            `ORIGINAL_MCP_CLOSE_STAGE child ${++closeDiagnosticSequence} ${Date.now()} ${phase} ${state}\n`
+          );
+        } catch {
+          // Diagnostic DATA cannot replace the original owning close result.
+        }
+      };
+      closeData('startup', 'begin');
       await startupSettled;
+      closeData('startup', 'done');
       let failed = false,
         first: unknown;
       const remember = (cause: unknown) => {
@@ -1718,24 +2060,27 @@ async function runNativeConsumerWorker() {
         savedActionFailure ??
         reviewedActionFailure;
       if (priorActionFailure) remember(priorActionFailure.cause);
-      const drain = async (run: () => unknown) => {
+      const drain = async (phase: string, run: () => unknown) => {
+        closeData(phase, 'begin');
         try {
           await run();
+          closeData(phase, 'done');
         } catch (cause) {
+          closeData(phase, 'failed');
           remember(cause);
         }
       };
       // Initiate actual pump cancellation before joining an action that may await that pump.
-      await drain(() => fixture?.native.stopOriginalReviewedReplay());
-      if (reviewedActionWork) await drain(() => reviewedActionWork);
-      await drain(() => fixture?.native.stopOriginalSavedDispatch());
-      if (savedActionWork) await drain(() => savedActionWork);
-      await drain(() => fixture?.native.stopOriginalSelectionDispatch());
-      if (selectionActionWork) await drain(() => selectionActionWork);
-      await drain(() => fixture?.native.stopOriginalMcpAppDispatch());
-      if (mcpActionWork) await drain(() => mcpActionWork);
-      if (widgetActionWork) await drain(() => widgetActionWork);
-      if (canonicalActionWork) await drain(() => canonicalActionWork);
+      await drain('reviewed-stop', () => fixture?.native.stopOriginalReviewedReplay());
+      if (reviewedActionWork) await drain('reviewed-join', () => reviewedActionWork);
+      await drain('saved-stop', () => fixture?.native.stopOriginalSavedDispatch());
+      if (savedActionWork) await drain('saved-join', () => savedActionWork);
+      await drain('selection-stop', () => fixture?.native.stopOriginalSelectionDispatch());
+      if (selectionActionWork) await drain('selection-join', () => selectionActionWork);
+      await drain('mcp-stop', () => fixture?.native.stopOriginalMcpAppDispatch());
+      if (mcpActionWork) await drain('mcp-join', () => mcpActionWork);
+      if (widgetActionWork) await drain('widget-join', () => widgetActionWork);
+      if (canonicalActionWork) await drain('canonical-join', () => canonicalActionWork);
       const actionFailure =
         mcpActionFailure ??
         canonicalActionFailure ??
@@ -1744,9 +2089,10 @@ async function runNativeConsumerWorker() {
         savedActionFailure ??
         reviewedActionFailure;
       if (actionFailure) remember(actionFailure.cause);
-      await drain(() => vite?.close());
-      await drain(() => previews?.close());
-      await drain(() => fixture?.close());
+      await drain('vite-close', () => vite?.close());
+      await drain('previews-close', () => previews?.close());
+      await drain('fixture-close', () => fixture?.close());
+      closeData('complete', failed ? 'failed' : 'done');
       if (failed) throw first;
     })();
     return retirement;
@@ -1796,6 +2142,7 @@ async function runNativeConsumerWorker() {
       [
         'read-room-scenario-data',
         'read-native-integrity-data',
+        'start-native-integrity-observation',
         'read-checkbox-pair-data',
         'read-canonical-recovery-data',
         'read-selection-data',
@@ -1812,24 +2159,28 @@ async function runNativeConsumerWorker() {
       const selection = (message as { kind?: unknown }).kind === 'read-selection-data';
       const canonical = (message as { kind?: unknown }).kind === 'read-canonical-recovery-data';
       const integrity = (message as { kind?: unknown }).kind === 'read-native-integrity-data';
+      const integrityStart =
+        (message as { kind?: unknown }).kind === 'start-native-integrity-observation';
       const checkbox = (message as { kind?: unknown }).kind === 'read-checkbox-pair-data';
-      const responseKind = mcpApp
-        ? 'mcp-app-data'
-        : reviewed
-          ? 'reviewed-replay-data'
-          : presence
-            ? 'presence-data'
-            : saved
-              ? 'saved-data'
-              : selection
-                ? 'selection-data'
-                : canonical
-                  ? 'canonical-recovery-data'
-                  : checkbox
-                    ? 'checkbox-pair-data'
-                    : integrity
-                      ? 'native-integrity-data'
-                      : 'room-scenario-data';
+      const responseKind = integrityStart
+        ? 'native-integrity-started'
+        : mcpApp
+          ? 'mcp-app-data'
+          : reviewed
+            ? 'reviewed-replay-data'
+            : presence
+              ? 'presence-data'
+              : saved
+                ? 'saved-data'
+                : selection
+                  ? 'selection-data'
+                  : canonical
+                    ? 'canonical-recovery-data'
+                    : checkbox
+                      ? 'checkbox-pair-data'
+                      : integrity
+                        ? 'native-integrity-data'
+                        : 'room-scenario-data';
       const id = (message as { id?: unknown }).id;
       if (!Number.isInteger(id) || (id as number) < 1 || (id as number) > 96) return;
       if (scenarioReadPending || scenarioReadCount >= 96 || id !== scenarioReadCount + 1) {
@@ -1838,28 +2189,30 @@ async function runNativeConsumerWorker() {
       }
       scenarioReadCount++;
       scenarioReadPending = true;
-      // Original local owner reads only its own retained current delivery IDs;
+      // Original local owner reads or starts observation of its own retained delivery IDs;
       // the IPC request carries no batch/source/principal or supplied count.
       void (async () => {
         try {
           if (!fixture || retired) throw new Error('Owned Room fixture retired');
-          const data = mcpApp
-            ? fixture.native.readOriginalMcpAppData()
-            : reviewed
-              ? await fixture.native.readOriginalReviewedReplayData()
-              : presence
-                ? fixture.native.readOriginalPresenceData()
-                : saved
-                  ? await fixture.native.readOriginalSavedData()
-                  : selection
-                    ? await fixture.native.readOriginalSelectionData()
-                    : canonical
-                      ? fixture.native.readCanonicalRecoveryData()
-                      : checkbox
-                        ? await fixture.native.readOriginalCheckboxPairData()
-                        : integrity
-                          ? fixture.native.readNativeEmissionIntegrityData()
-                          : await fixture.native.readOriginalRoomScenarioData();
+          const data = integrityStart
+            ? fixture.native.startNativeEmissionIntegrityObservation()
+            : mcpApp
+              ? fixture.native.readOriginalMcpAppData()
+              : reviewed
+                ? await fixture.native.readOriginalReviewedReplayData()
+                : presence
+                  ? fixture.native.readOriginalPresenceData()
+                  : saved
+                    ? await fixture.native.readOriginalSavedData()
+                    : selection
+                      ? await fixture.native.readOriginalSelectionData()
+                      : canonical
+                        ? fixture.native.readCanonicalRecoveryData()
+                        : checkbox
+                          ? await fixture.native.readOriginalCheckboxPairData()
+                          : integrity
+                            ? fixture.native.readNativeEmissionIntegrityData()
+                            : await fixture.native.readOriginalRoomScenarioData();
           if (retired) throw new Error('Owned Room fixture retired during read');
           if (process.connected) process.send?.({ kind: responseKind, id, ok: true, data });
         } catch (cause) {
@@ -2159,15 +2512,20 @@ async function runNativeConsumerWorker() {
       typeof message === 'object' &&
       (message as { kind?: unknown }).kind === 'close'
     ) {
-      void close().then(
-        () => {
-          if (process.connected) process.disconnect();
-        },
-        () => {
-          process.exitCode = 1;
-          if (process.connected) process.disconnect();
+      const disconnectAfterClose = () => {
+        const firstCloseWitness = !postCloseWitnessInstalled;
+        postCloseWitnessInstalled = true;
+        if (firstCloseWitness) {
+          postCloseResources('closed-before-disconnect');
+          process.once('beforeExit', () => postCloseResources('before-exit'));
         }
-      );
+        if (process.connected) process.disconnect();
+        if (firstCloseWitness) postCloseResources('closed-after-disconnect');
+      };
+      void close().then(disconnectAfterClose, () => {
+        process.exitCode = 1;
+        disconnectAfterClose();
+      });
     }
   });
   process.once('disconnect', () => {
@@ -2215,6 +2573,54 @@ async function runNativeConsumerWorker() {
       (integrityCase !== 'none' && target !== 'room')
     )
       throw new Error('Finite original native integrity startup required');
+    const clientRoot = fileURLToPath(new URL('../../../client/', import.meta.url));
+    const clientRequire = createRequire(new URL('../../../client/package.json', import.meta.url));
+    // Resolve the installed Vite module; its owned resource startup below overlaps native setup.
+    // Reflect rejection immediately so fixture failure remains the original first cause.
+    const viteModuleWork = Promise.resolve()
+      .then(() => import(pathToFileURL(clientRequire.resolve('vite')).href))
+      .then(
+        (module) => ({ ok: true as const, module }),
+        (cause: unknown) => ({ ok: false as const, cause })
+      );
+    const privateApiOrigin = 'http://127.0.0.1:' + apiPort;
+    // Start only this owned Vite resource. Readiness still waits for every native prerequisite.
+    // Reflect failure immediately; original native/preview failure remains the first cause.
+    const viteStartupWork = (async () => {
+      if (retired) throw new Error('Owned bootstrap retired');
+      const { createServer: createViteServer } = await startupAwait('vite-import', async () => {
+        const result = await viteModuleWork;
+        if (!result.ok) throw result.cause;
+        return result.module;
+      });
+      if (retired) throw new Error('Owned bootstrap retired');
+      vite = await startupAwait('vite-create', () =>
+        createViteServer({
+          root: clientRoot,
+          configFile: join(clientRoot, 'vite.config.ts'),
+          cacheDir: join(home, 'vite-cache'),
+          server: {
+            warmup: { clientFiles: ['./src/main.tsx'] },
+            host: '127.0.0.1',
+            port: vitePort,
+            strictPort: true,
+            hmr: false,
+            proxy: { '/api': { target: privateApiOrigin, changeOrigin: true, ws: true } },
+          },
+        })
+      );
+      if (retired) throw new Error('Owned bootstrap retired');
+      await startupAwait('vite-listen', () =>
+        (vite as typeof vite & { listen(): Promise<void> }).listen()
+      );
+      if (retired) throw new Error('Owned bootstrap retired');
+    })().then(
+      () => ({ ok: true as const }),
+      (cause: unknown) => ({ ok: false as const, cause })
+    );
+    joinViteStartup = async () => {
+      await viteStartupWork;
+    };
     fixture = await startupAwait('native-fixture', () =>
       startNativeConsumerFixture(
         new MainRequestAdmission(),
@@ -2233,30 +2639,9 @@ async function runNativeConsumerWorker() {
     );
     previews = previewListeners; // Same singleton used by authenticated workbench/sign, owned only here.
     if (retired) throw new Error('Owned bootstrap retired');
-    const clientRoot = fileURLToPath(new URL('../../../client/', import.meta.url));
-    const clientRequire = createRequire(new URL('../../../client/package.json', import.meta.url));
-    const { createServer: createViteServer } = await startupAwait(
-      'vite-import',
-      () => import(pathToFileURL(clientRequire.resolve('vite')).href)
-    );
-    vite = await startupAwait('vite-create', () =>
-      createViteServer({
-        root: clientRoot,
-        configFile: join(clientRoot, 'vite.config.ts'),
-        cacheDir: join(home, 'vite-cache'),
-        server: {
-          host: '127.0.0.1',
-          port: vitePort,
-          strictPort: true,
-          hmr: false,
-          proxy: { '/api': { target: fixture!.origin, changeOrigin: true, ws: true } },
-        },
-      })
-    );
-    if (retired) throw new Error('Owned bootstrap retired');
-    await startupAwait('vite-listen', () =>
-      (vite as typeof vite & { listen(): Promise<void> }).listen()
-    );
+    if (fixture.origin !== privateApiOrigin) throw new Error('Owned native API origin mismatch');
+    const viteResult = await viteStartupWork;
+    if (!viteResult.ok) throw viteResult.cause;
     if (retired) throw new Error('Owned bootstrap retired');
     // Original Better Auth API created the owner before native grant capture.
     // The browser signs in over actual HTTP to obtain its genuine cookie; no
@@ -2285,6 +2670,9 @@ async function runNativeConsumerWorker() {
       root: fixture.vault.root,
     });
   } catch (cause) {
+    // Join eventual Vite ownership before startup settlement and original ordered retirement.
+    // A separate Vite failure does not replace the original fixture/setup failure.
+    await joinViteStartup?.();
     settleStartup();
     console.error('Original owned worker setup cause:', cause);
     if (process.connected) {

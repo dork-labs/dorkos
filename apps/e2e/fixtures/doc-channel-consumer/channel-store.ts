@@ -2599,6 +2599,13 @@ export async function openNativeConsumerStore(
       /** Read-only provider-boundary DATA from this exact native source owner.
        * No supplied batch/principal/counter can select or create evidence.
        */
+      /** Parameterless fixture action; the native owner verifies its retained input pair. */
+      startNativeEmissionIntegrityObservation: () => {
+        if (closed || !integrityControl)
+          throw new Error('Original native integrity observation unavailable');
+        integrityControl.start();
+        return Object.freeze({ started: true as const });
+      },
       readNativeEmissionIntegrityData: () => {
         if (closed || !integrityControl)
           throw new Error('Original native integrity DATA unavailable');

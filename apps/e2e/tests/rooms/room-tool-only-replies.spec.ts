@@ -1,5 +1,6 @@
 import type { APIRequestContext, Locator, Page } from '@playwright/test';
 import { test, expect } from '../../fixtures';
+import { captureRoomFailureData } from '../../fixtures/room-failure-data';
 import { SERVER_ROUND_TRIP_MS, type SeededRoom } from '../../fixtures/rooms-api';
 
 /**
@@ -268,7 +269,16 @@ test.describe('An agent decides for itself whether to speak', () => {
     // `dorkos` server would make the call. Waiting for the room to report itself
     // busy is what makes that a fact rather than a hope: a post that raced ahead
     // of the claim would carry no turn and exercise none of the marks.
-    await expectRoomBusy(page);
+    try {
+      await expectRoomBusy(page);
+    } catch (cause) {
+      try {
+        await captureRoomFailureData(request, [room.id], 'tool-only-room-busy');
+      } catch {
+        // Preserve the original assertion failure even if diagnostics are unavailable.
+      }
+      throw cause;
+    }
     await postAsAgent(request, {
       roomId: room.id,
       agentPath: agent.projectPath,

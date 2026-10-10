@@ -1,5 +1,6 @@
 import type { APIRequestContext, APIResponse, Locator, Page } from '@playwright/test';
 import { test, expect } from '../../fixtures';
+import { captureRoomFailureData } from '../../fixtures/room-failure-data';
 import { SERVER_ROUND_TRIP_MS, type SeededRoom } from '../../fixtures/rooms-api';
 
 /**
@@ -600,17 +601,26 @@ test.describe('A room gathers what is said at once @smoke', () => {
 
       // The blocking turn ends, and the waiting message becomes a turn HERE.
       await request.post('/api/test/finish-turn');
-      await expect
-        .poll(
-          async () =>
-            (await roomsApi.listEntries(asking.id)).filter((entry) => entry.authorId === seat)
-              .length,
-          {
-            timeout: SERVER_ROUND_TRIP_MS,
-            message: 'the message that waited on a busy agent never got an answer',
-          }
-        )
-        .toBe(1);
+      try {
+        await expect
+          .poll(
+            async () =>
+              (await roomsApi.listEntries(asking.id)).filter((entry) => entry.authorId === seat)
+                .length,
+            {
+              timeout: SERVER_ROUND_TRIP_MS,
+              message: 'the message that waited on a busy agent never got an answer',
+            }
+          )
+          .toBe(1);
+      } catch (cause) {
+        try {
+          await captureRoomFailureData(request, [busy.id, asking.id], 'busy-other-room-answer');
+        } catch {
+          // Preserve the original assertion failure even if diagnostics are unavailable.
+        }
+        throw cause;
+      }
 
       // **One answer, and it says which message it answers.** A count alone is
       // satisfied by any reply at all; the pointer is what says the room
