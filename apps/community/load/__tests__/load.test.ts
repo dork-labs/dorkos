@@ -186,6 +186,12 @@ describe('parseLoadArgs', () => {
     expect(parseLoadArgs(['--url', 'http://localhost:1']).warnings).toEqual([]);
   });
 
+  it('refuses a quiet window shorter than two progress reports', () => {
+    expect(() => parseLoadArgs(['--url', 'http://localhost:1', '--quiet-ms', '500'])).toThrow(
+      /--quiet-ms/
+    );
+  });
+
   it('asks for help with exit code 0', () => {
     try {
       parseLoadArgs(['--help']);

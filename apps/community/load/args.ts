@@ -26,6 +26,9 @@ export interface LoadArgs {
   warnings: string[];
 }
 
+/** The shortest `--quiet-ms`: twice the reader shares' once-a-second progress reports. */
+const MIN_QUIET_MS = 2_000;
+
 /**
  * The server's default posting limit for one member (and every agent it owns):
  * `COMMUNITY_POSTS_PER_TEN_MINUTES`. Each writer is its own member, so a run asking one writer
@@ -136,6 +139,11 @@ export function parseLoadArgs(argv: readonly string[]): LoadArgs {
   if (ratePerSecond > 0 && writers === 0)
     throw new UsageError('--rate needs at least one --writers to post through.');
 
+  // Reader shares report progress once a second; a shorter quiet window would read a stream that
+  // is still receiving as silent between two reports.
+  const quietMs = positiveInt('quiet-ms', values['quiet-ms']);
+  if (quietMs < MIN_QUIET_MS) throw new UsageError(`--quiet-ms must be at least ${MIN_QUIET_MS}.`);
+
   const warnings: string[] = [];
   const perWriter = writers
     ? Math.ceil((ratePerSecond * Math.min(durationSeconds, 600)) / writers)
@@ -157,7 +165,7 @@ export function parseLoadArgs(argv: readonly string[]): LoadArgs {
     communityName: values['community-name'],
     channelName: values['channel-name'],
     out: values.out,
-    quietMs: positiveInt('quiet-ms', values['quiet-ms']),
+    quietMs,
     drainTimeoutSeconds: positiveInt('drain-timeout', values['drain-timeout']),
     readerThreads:
       values['reader-threads'] === 'auto'

@@ -52,9 +52,16 @@ function tsxEsmApiUrl(): string {
   const require = createRequire(import.meta.url);
   const manifestPath = require.resolve('tsx/package.json');
   const manifest = require(manifestPath) as {
-    exports: Record<string, { import: { default: string } }>;
+    version?: string;
+    exports?: Record<string, { import?: { default?: string } } | undefined>;
   };
-  return new URL(manifest.exports['./esm/api'].import.default, pathToFileURL(manifestPath)).href;
+  const entry = manifest.exports?.['./esm/api']?.import?.default;
+  if (!entry)
+    throw new Error(
+      `tsx ${manifest.version ?? '?'} no longer exports ./esm/api as an ES module; ` +
+        'update tsxEsmApiUrl in load/readers.ts.'
+    );
+  return new URL(entry, pathToFileURL(manifestPath)).href;
 }
 
 function workerShare(input: ReaderShareInput): Share {
