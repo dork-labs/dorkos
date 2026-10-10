@@ -159,7 +159,9 @@ export type ClientFilesHandler = (
  * `app.use('/assets')` mount matched it: ignoring case, at a segment boundary.
  */
 function underAssets(url: string): boolean {
-  const pathname = (url.split('?')[0] ?? url).toLowerCase();
+  // A request line may carry a full URL (a proxy's form); judge its path.
+  const target = /^[a-z][a-z0-9+.-]*:\/\//i.test(url) ? new URL(url).pathname : url;
+  const pathname = (target.split('?')[0] ?? target).toLowerCase();
   return pathname === `/${HASHED_ASSET_DIR}` || pathname.startsWith(`/${HASHED_ASSET_DIR}/`);
 }
 
@@ -224,9 +226,11 @@ export function createClientFiles(distPath: string): ClientFilesHandler {
       send(req, 'index.html', { root: distPath })
         .on('headers', (out: ServerResponse) => {
           for (const [name, value] of Object.entries(SHELL_HEADERS)) out.setHeader(name, value);
+          // On `finish`, not `send`'s own `end`: a HEAD or a 304 streams no
+          // body, and still put the shell in front of a browser.
+          out.once('finish', noteShellServed);
         })
         .on('error', (sendError: unknown) => next(sendError))
-        .on('end', noteShellServed)
         .pipe(res);
     });
   };
