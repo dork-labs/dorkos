@@ -35,7 +35,7 @@ import {
   type CloudV1Context,
 } from '../cloud/v1-client.js';
 import { tunnelManager } from '../tunnel-manager.js';
-import { CommandAcks } from './command-acks.js';
+import { CommandAcks, type CommandAcksDeps } from './command-acks.js';
 import { CommandDispatcher, type CommandLink } from './command-dispatcher.js';
 import { CommandJournal } from './command-journal.js';
 import { CommandStream, type CommandStreamDeps } from './command-stream.js';
@@ -48,6 +48,9 @@ import {
   updateRemoteState,
   type RemoteState,
 } from './remote-state.js';
+
+/** The longest shutdown waits for the command under way to finish. */
+export const SHUTDOWN_IDLE_BOUND_MS = 3_000;
 
 /** What the service touches, injectable for tests. */
 export interface ManagedCommandServiceDeps {
@@ -148,6 +151,30 @@ export class ManagedCommandService {
     }
   }
 
+  /**
+   * Stop for good, at server shutdown: stop the stream, refuse every queued
+   * command, and wait (bounded) for the one under way, so no effect runs
+   * after this resolves and the tunnel is torn down. Never rejects.
+   *
+   * @param boundMs - The longest to wait for the command under way.
+   */
+  async shutdown(boundMs = SHUTDOWN_IDLE_BOUND_MS): Promise<void> {
+    this.stop();
+    const dispatcher = this.dispatcher;
+    if (!dispatcher) return;
+    dispatcher.halt();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const bound = new Promise<'timeout'>((resolve) => {
+      timer = setTimeout(() => resolve('timeout'), boundMs);
+      timer.unref?.();
+    });
+    const result = await Promise.race([dispatcher.idle.then(() => 'idle' as const), bound]);
+    clearTimeout(timer);
+    if (result === 'timeout') {
+      logger.warn('[RemoteAccess] A command was still running at shutdown', { boundMs });
+    }
+  }
+
   /** Stop the stream and any acknowledgement retry. Synchronous; safe to call twice. */
   stop(): void {
     this.epoch += 1;
@@ -181,7 +208,10 @@ export class ManagedCommandService {
 
   private open(link: CommandLink): void {
     const dispatcher = this.dispatcher!;
-    const acks = new CommandAcks(link, { journal: this.journal!, timers: this.deps.acks });
+    const acks = new CommandAcks(link, {
+      journal: withHeldOutcomes(this.journal!, dispatcher),
+      timers: this.deps.acks,
+    });
     const stream = new CommandStream({
       ...this.deps.stream,
       open: (signal) => this.deps.openStream(link.context, signal),
@@ -201,6 +231,39 @@ export class ManagedCommandService {
       }
     });
   }
+}
+
+/**
+ * The journal as the acknowledgement sender sees it: outcomes the dispatcher
+ * holds in memory (the journal would not take them) come first. A journal that
+ * cannot be read owes nothing this round, and a failed attempt count does not
+ * stop a held outcome going out; a failed `finish` throws, and the sender
+ * retries later.
+ */
+function withHeldOutcomes(
+  journal: CommandJournal,
+  dispatcher: CommandDispatcher
+): CommandAcksDeps['journal'] {
+  const quietly = <T>(fn: () => T, fallback: T): T => {
+    try {
+      return fn();
+    } catch (error) {
+      logger.warn('[RemoteAccess] Command journal unavailable', { error: errorName(error) });
+      return fallback;
+    }
+  };
+  return {
+    pendingAcks: (instanceId, limit = 100) =>
+      [
+        ...dispatcher.heldAcks(instanceId),
+        ...quietly(() => journal.pendingAcks(instanceId, limit), []),
+      ].slice(0, limit),
+    noteAttempt: (ids) => quietly(() => journal.noteAttempt(ids), undefined),
+    finish: (items, state) => {
+      dispatcher.releaseHeld(items);
+      journal.finish(items, state);
+    },
+  };
 }
 
 /** The process's command stream service, over the live link, tunnel and store. */

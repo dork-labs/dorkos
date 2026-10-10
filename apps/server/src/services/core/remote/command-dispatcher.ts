@@ -20,7 +20,13 @@
  *    open goes through `tunnelManager.startManaged`, which runs `canExpose()`
  *    and the edge-proof check itself. The authority proves who asked, not that
  *    the answer is yes.
- * 4. **Settle**, then hand the acknowledgement to the sender.
+ * 4. **Settle**, then hand the acknowledgement to the sender. A journal write
+ *    that fails is retried, then held in memory (`command-settle.ts`), so the
+ *    outcome that really happened is still acknowledged.
+ *
+ * Once {@link CommandDispatcher.halt} is called (at shutdown), nothing more is
+ * journaled, and a command already under way is refused `refused:shutting-down`
+ * at its next re-check, so no effect races the tunnel being torn down.
  *
  * Commands run one at a time, in the order they arrived. `inbox_pending`
  * carries no authority and this build has no seat path to signal, so it is
@@ -51,7 +57,8 @@ import type { CloudV1Context } from '../cloud/v1-client.js';
 import { problemOf } from '../cloud/v1-client.js';
 import type { ManagedStartRefusal } from './managed-forwarding.js';
 import type { TunnelManager } from '../tunnel-manager.js';
-import type { CommandJournal } from './command-journal.js';
+import type { CommandJournal, PendingAck } from './command-journal.js';
+import { CommandSettler } from './command-settle.js';
 import { MANAGED_DRAIN_DEADLINE_MS } from './managed-ingress.js';
 import { errorName } from './managed-remote-support.js';
 import type { RemoteCredentials } from './remote-credentials.js';
@@ -112,11 +119,6 @@ export function hostnameOf(address: string | undefined): string | null {
   return HOSTNAME.test(host) ? host : null;
 }
 
-/** The authority is a real one, for this verb, and still current. */
-function stillValid(authority: CloudAuthority, verb: CloudAuthorityVerb): boolean {
-  return isCloudAuthority(authority, verb) && authority.isStillValid();
-}
-
 /** Applies leased commands. One per process: see `managed-command-service.ts`. */
 export class CommandDispatcher {
   private chain: Promise<unknown> = Promise.resolve();
@@ -124,13 +126,18 @@ export class CommandDispatcher {
   private generation = 0;
   /** The drain deadline the latest applied open carried, in seconds. */
   private drainDeadlineSeconds: number | undefined;
+  /** Set by {@link halt}: nothing more is journaled or acted on. */
+  private halted = false;
+  private readonly settler: CommandSettler;
 
   /**
    * Build the dispatcher.
    *
    * @param deps - The journal, the tunnel, the credential store and the ack hook.
    */
-  constructor(private readonly deps: CommandDispatcherDeps) {}
+  constructor(private readonly deps: CommandDispatcherDeps) {
+    this.settler = new CommandSettler(deps.journal);
+  }
 
   /** Resolves once every command handed in so far has been dealt with. */
   get idle(): Promise<void> {
@@ -146,15 +153,55 @@ export class CommandDispatcher {
    *   (then nothing acted, and Cloud redelivers it).
    */
   dispatch(command: LeasedCommand, link: CommandLink): Promise<RemoteCommandOutcome | null> {
+    if (this.halted) return Promise.resolve(null);
     const run = this.chain.then(() => this.handle(command, link));
     this.chain = run.catch(() => undefined);
     return run;
+  }
+
+  /**
+   * Refuse everything from now on: queued commands are not journaled (Cloud
+   * redelivers them), and one under way is refused at its next re-check.
+   * Called at shutdown, before the tunnel stops. Cannot be undone.
+   */
+  halt(): void {
+    this.halted = true;
+  }
+
+  /**
+   * Outcomes the journal would not take, owed to this link; see
+   * `command-settle.ts`. The acknowledgement sender offers them first.
+   *
+   * @param instanceId - The link's instance id.
+   */
+  heldAcks(instanceId: string): PendingAck[] {
+    return this.settler.pending(instanceId);
+  }
+
+  /**
+   * Forget held outcomes whose acknowledgement is finished.
+   *
+   * @param items - The commands and the lease tokens their acknowledgement carried.
+   */
+  releaseHeld(items: ReadonlyArray<{ id: string; leaseToken: string }>): void {
+    this.settler.release(items);
+  }
+
+  /** The authority is a real one, for this verb, still current, and not halted. */
+  private stillValid(authority: CloudAuthority, verb: CloudAuthorityVerb): boolean {
+    return !this.halted && isCloudAuthority(authority, verb) && authority.isStillValid();
+  }
+
+  /** Why a re-check failed: the shutdown, or the link or consent ending. */
+  private refusal(): RemoteCommandOutcome {
+    return this.halted ? 'refused:shutting-down' : 'refused:stale-link';
   }
 
   private async handle(
     command: LeasedCommand,
     link: CommandLink
   ): Promise<RemoteCommandOutcome | null> {
+    if (this.halted) return null;
     let recorded;
     try {
       recorded = this.deps.journal.record({
@@ -171,8 +218,9 @@ export class CommandDispatcher {
       return null;
     }
     if (recorded.kind === 'duplicate') {
-      if (recorded.outcome !== null) this.deps.onSettled();
-      return recorded.outcome;
+      const outcome = recorded.outcome ?? this.settler.redelivered(command.id, command.leaseToken);
+      if (outcome !== null) this.notifySettled();
+      return outcome;
     }
 
     let outcome: RemoteCommandOutcome;
@@ -186,14 +234,24 @@ export class CommandDispatcher {
       });
       outcome = 'failed';
     }
-    this.deps.journal.settle(command.id, outcome);
-    this.deps.onSettled();
+    this.settler.settle(command, link.instanceId, outcome);
+    this.notifySettled();
     logger.info('[RemoteAccess] Command settled', {
       commandId: command.id,
       kind: command.kind,
       outcome,
     });
     return outcome;
+  }
+
+  private notifySettled(): void {
+    try {
+      this.deps.onSettled();
+    } catch (error) {
+      logger.warn('[RemoteAccess] Could not hand an acknowledgement on', {
+        error: errorName(error),
+      });
+    }
   }
 
   private async apply(command: LeasedCommand, link: CommandLink): Promise<RemoteCommandOutcome> {
@@ -221,7 +279,7 @@ export class CommandDispatcher {
 
   private async open(authority: CloudAuthority, link: CommandLink): Promise<RemoteCommandOutcome> {
     const command = authority.command;
-    if (command.kind !== 'open' || !stillValid(authority, 'open')) return 'refused:stale-link';
+    if (command.kind !== 'open' || !this.stillValid(authority, 'open')) return this.refusal();
     const state = this.deps.readRemoteState();
     const secrets = await this.deps.remoteCredentials.resolve(state);
     if (!secrets.ok) return `refused:${secrets.reason.replace(/_/g, '-')}`;
@@ -229,7 +287,7 @@ export class CommandDispatcher {
     const hosts = state.hosts.length > 0 ? state.hosts : await this.addressOf(command, link);
     if (hosts.length === 0) return 'refused:no-target';
 
-    if (!stillValid(authority, 'open')) return 'refused:stale-link';
+    if (!this.stillValid(authority, 'open')) return this.refusal();
     this.generation += 1;
     const result = await this.deps.tunnelManager.startManaged({
       value: secrets.value,
@@ -270,7 +328,7 @@ export class CommandDispatcher {
   // ---------- close ----------
 
   private async close(authority: CloudAuthority): Promise<RemoteCommandOutcome> {
-    if (!stillValid(authority, 'close')) return 'refused:stale-link';
+    if (!this.stillValid(authority, 'close')) return this.refusal();
     if (this.deps.tunnelManager.getManagedPhase() === null) return 'applied';
     const fromCloud = this.drainDeadlineSeconds;
     // Omitted when Cloud named none: the ingress then applies its own bounded
@@ -298,10 +356,10 @@ export class CommandDispatcher {
     link: CommandLink
   ): Promise<RemoteCommandOutcome> {
     const command = authority.command;
-    if (command.kind !== 'rotate' || !stillValid(authority, 'rotate')) return 'refused:stale-link';
+    if (command.kind !== 'rotate' || !this.stillValid(authority, 'rotate')) return this.refusal();
     let credential: RemoteCredential;
     try {
-      // The command's id is the issue key, as the contract directs.
+      // The command's `credentialId` is the issue key, as the contract directs.
       credential = await link.context.client.post(
         V1_ROUTES.remoteCredentialsIssue,
         RemoteCredentialSchema,
@@ -318,7 +376,7 @@ export class CommandDispatcher {
     // Never store a replacement over the credential in use.
     if (credential.credentialId === previous.credentialId) return 'failed';
 
-    if (!stillValid(authority, 'rotate')) return 'refused:stale-link';
+    if (!this.stillValid(authority, 'rotate')) return this.refusal();
     let refs;
     try {
       refs = await this.deps.remoteCredentials.put({
@@ -344,9 +402,9 @@ export class CommandDispatcher {
       return 'failed';
     }
     // Switch only while the link and consent it was asked under still stand.
-    if (!stillValid(authority, 'rotate')) {
+    if (!this.stillValid(authority, 'rotate')) {
       await forget();
-      return 'refused:stale-link';
+      return this.refusal();
     }
     const next = this.deps.updateRemoteState('managed remote rotation', {
       credentialRef: refs.credentialRef,
@@ -376,9 +434,10 @@ export class CommandDispatcher {
     next: RemoteState
   ): Promise<RemoteCommandOutcome> {
     if (this.deps.tunnelManager.getManagedPhase() !== 'open') return 'applied';
-    if (!stillValid(authority, 'rotate')) return 'failed';
+    if (!this.stillValid(authority, 'rotate')) return 'failed';
     const secrets = await this.deps.remoteCredentials.resolve(next);
     if (!secrets.ok || next.edgeProofHeader === null) return 'failed';
+    if (!this.stillValid(authority, 'rotate')) return 'failed';
     this.generation += 1;
     const result = await this.deps.tunnelManager.startManaged({
       value: secrets.value,
@@ -399,8 +458,8 @@ export class CommandDispatcher {
 
   private async revoke(authority: CloudAuthority): Promise<RemoteCommandOutcome> {
     const command = authority.command;
-    if (command.kind !== 'revoke' || !stillValid(authority, 'revoke')) {
-      return 'refused:stale-link';
+    if (command.kind !== 'revoke' || !this.stillValid(authority, 'revoke')) {
+      return this.refusal();
     }
     const state = this.deps.readRemoteState();
     if (state.credentialId !== command.credentialId) {

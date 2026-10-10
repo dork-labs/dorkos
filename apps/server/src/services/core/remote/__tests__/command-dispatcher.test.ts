@@ -347,3 +347,74 @@ describe('hostnameOf', () => {
     expect(hostnameOf(undefined)).toBeNull();
   });
 });
+
+describe('when the journal will not take the outcome', () => {
+  it('retries the write, and a later success leaves nothing held', async () => {
+    const real = w.journal.settle.bind(w.journal);
+    let calls = 0;
+    w.journal.settle = (id, outcome) => {
+      calls += 1;
+      if (calls < 3) throw new Error('SQLITE_BUSY');
+      real(id, outcome);
+    };
+    expect(await w.dispatcher.dispatch(open, w.link)).toBe('applied');
+    expect(w.journal.read([open.id])[0]?.outcome).toBe('applied');
+    expect(w.dispatcher.heldAcks(INSTANCE_ID)).toEqual([]);
+  });
+
+  it('never rejects, and holds the real outcome to acknowledge this process', async () => {
+    const real = w.journal.settle.bind(w.journal);
+    w.journal.settle = () => {
+      throw new Error('SQLITE_IOERR');
+    };
+    expect(await w.dispatcher.dispatch(open, w.link)).toBe('applied');
+    expect(w.settled).toHaveBeenCalledTimes(1);
+    expect(w.dispatcher.heldAcks(INSTANCE_ID)).toEqual([
+      { id: open.id, leaseToken: open.leaseToken, outcome: 'applied', attempts: 0 },
+    ]);
+    expect(w.dispatcher.heldAcks('inst_other')).toEqual([]);
+
+    // A redelivery is answered with the held outcome, under its new lease, acting on nothing.
+    const again = { ...open, leaseToken: 'lt_again' } as LeasedCommand;
+    expect(await w.dispatcher.dispatch(again, w.link)).toBe('applied');
+    expect(w.tunnel.startManaged).toHaveBeenCalledTimes(1);
+    expect(w.dispatcher.heldAcks(INSTANCE_ID)[0]?.leaseToken).toBe('lt_again');
+
+    // Once the journal takes it, it is the journal's to offer.
+    w.journal.settle = real;
+    expect(w.dispatcher.heldAcks(INSTANCE_ID)).toEqual([]);
+    expect(w.journal.read([open.id])[0]?.outcome).toBe('applied');
+  });
+
+  it('forgets a held outcome once its acknowledgement is finished', async () => {
+    w.journal.settle = () => {
+      throw new Error('SQLITE_IOERR');
+    };
+    await w.dispatcher.dispatch(open, w.link);
+    w.dispatcher.releaseHeld([{ id: open.id, leaseToken: 'lt_stale' }]);
+    expect(w.dispatcher.heldAcks(INSTANCE_ID)).toHaveLength(1);
+    w.dispatcher.releaseHeld([{ id: open.id, leaseToken: open.leaseToken }]);
+    expect(w.dispatcher.heldAcks(INSTANCE_ID)).toEqual([]);
+  });
+});
+
+describe('once halted', () => {
+  it('journals nothing more, so Cloud redelivers', async () => {
+    w.dispatcher.halt();
+    expect(await w.dispatcher.dispatch(open, w.link)).toBeNull();
+    expect(w.journal.read([open.id])).toEqual([]);
+    expect(w.tunnel.startManaged).not.toHaveBeenCalled();
+  });
+
+  it('refuses a command already under way at its re-check before the effect', async () => {
+    const resolve = w.credentials.resolve.bind(w.credentials);
+    w.credentials.resolve = async (state) => {
+      w.dispatcher.halt();
+      return resolve(state);
+    };
+    const first = w.dispatcher.dispatch(close, w.link);
+    expect(await w.dispatcher.dispatch(open, w.link)).toBe('refused:shutting-down');
+    expect(w.tunnel.startManaged).not.toHaveBeenCalled();
+    expect(await first).toBe('applied');
+  });
+});

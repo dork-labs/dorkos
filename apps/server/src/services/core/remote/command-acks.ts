@@ -15,8 +15,11 @@
  *   same way, and a single acknowledgement refused with a client error is
  *   `rejected` and not sent again. An outage, a timeout, an expired key or a
  *   rate limit is retried with capped exponential backoff and full jitter.
- * - **Only under its own link.** Acknowledgements go out under the link the
- *   commands arrived on, never a later one.
+ * - **Only to the instance they arrived for.** Acknowledgements go out under
+ *   the link this sender was built for, and only for commands journaled under
+ *   that link's instance id. The journal keys on the instance id alone, so a
+ *   later link to the same instance (a restart, a re-link) does send what an
+ *   earlier one left owed; a link to another instance never does.
  *
  * @module services/core/remote/command-acks
  */
@@ -92,9 +95,17 @@ export class CommandAcks {
       return this.flushing;
     }
     this.clearRetry();
-    this.flushing = this.drain().finally(() => {
-      this.flushing = null;
-    });
+    this.flushing = this.drain()
+      .catch((error: unknown) => {
+        // A journal write failed: nothing is lost, so try again later.
+        logger.warn('[RemoteAccess] Command acknowledgements interrupted; will retry', {
+          error: errorName(error),
+        });
+        this.scheduleRetry();
+      })
+      .finally(() => {
+        this.flushing = null;
+      });
     return this.flushing;
   }
 

@@ -6523,7 +6523,7 @@ async function shutdownServices() {
   // the query so the CLI child actually dies. No-op when none was ever warmed,
   // which is every server until the persistent path is opted into.
   await shutdownSessionPumps();
-  managedRemoteCommands.stop();
+  await managedRemoteCommands.shutdown();
   await tunnelManager.stop();
   // After every runtime and the scheduler: nothing is left to hold awake.
   await keepAwakeService.stop();

@@ -19,8 +19,13 @@
  * @module services/core/remote/sse-parser
  */
 
-/** The largest one event may grow to, in UTF-16 code units, before the stream is refused. */
+/** The largest one event may grow to, in UTF-8 bytes, before the stream is refused. */
 export const SSE_MAX_EVENT_BYTES = 64 * 1024;
+
+/** The UTF-8 size of some text, in bytes. */
+function utf8Bytes(text: string): number {
+  return Buffer.byteLength(text, 'utf8');
+}
 
 /** One dispatched event. */
 export interface SseEvent {
@@ -66,8 +71,11 @@ export class SseParser {
       this.atStart = false;
       if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
     }
-    if (this.skipLeadingLf && text.startsWith('\n')) text = text.slice(1);
-    this.skipLeadingLf = false;
+    // Only a chunk with text in it settles whether the CR was half a CRLF.
+    if (this.skipLeadingLf && text.length > 0) {
+      if (text.startsWith('\n')) text = text.slice(1);
+      this.skipLeadingLf = false;
+    }
     this.buffer += text;
 
     const events: SseEvent[] = [];
@@ -88,7 +96,9 @@ export class SseParser {
       if (event) events.push(event);
     }
     this.buffer = this.buffer.slice(start);
-    if (this.buffer.length + this.dataSize > SSE_MAX_EVENT_BYTES) throw new SseOverflowError();
+    if (utf8Bytes(this.buffer) + this.dataSize > SSE_MAX_EVENT_BYTES) {
+      throw new SseOverflowError();
+    }
     return events;
   }
 
@@ -105,7 +115,7 @@ export class SseParser {
         break;
       case 'data':
         this.data.push(value);
-        this.dataSize += value.length + 1;
+        this.dataSize += utf8Bytes(value) + 1;
         if (this.dataSize > SSE_MAX_EVENT_BYTES) throw new SseOverflowError();
         break;
       case 'id':

@@ -24,6 +24,17 @@ describe('SseParser', () => {
     ]);
   });
 
+  it('keeps a split CRLF whole across an empty chunk', () => {
+    const parser = new SseParser();
+    expect(parser.feed('data: one\r')).toEqual([]);
+    expect(parser.feed('')).toEqual([]);
+    // Still half of the CRLF: not a blank line, so nothing dispatches early.
+    expect(parser.feed('\n')).toEqual([]);
+    expect(parser.feed('data: two\n\n')).toEqual([
+      { event: 'message', data: 'one\ntwo', id: undefined },
+    ]);
+  });
+
   it('ignores comments, unknown fields and events without data', () => {
     const parser = new SseParser();
     expect(parser.feed(': keepalive\n\nfoo: bar\nevent: x\n\n')).toEqual([]);
@@ -43,6 +54,13 @@ describe('SseParser', () => {
     expect(new SseParser().feed('﻿data: x\n\n')).toEqual([
       { event: 'message', data: 'x', id: undefined },
     ]);
+  });
+
+  it('counts the size bound in UTF-8 bytes, not characters', () => {
+    // Three bytes per character: a third of the bound in characters is the bound in bytes.
+    const wide = '€'.repeat(Math.ceil(SSE_MAX_EVENT_BYTES / 3) + 1);
+    expect(() => new SseParser().feed(`data: ${wide}\n`)).toThrow(SseOverflowError);
+    expect(() => new SseParser().feed(wide)).toThrow(SseOverflowError);
   });
 
   it('refuses an event that outgrows the size bound, buffered or not', () => {
