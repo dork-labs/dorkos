@@ -137,6 +137,7 @@ describe('an agent you manage', () => {
       'Chats nav',
       'Schedules nav',
       'Commitments nav',
+      'Heartbeat nav',
       'Rooms nav',
       'Notifications nav',
       'Activity nav',
@@ -203,6 +204,7 @@ describe('someone else’s agent', () => {
       'About text',
       'Runs on text',
       'Commitments nav',
+      'Heartbeat nav',
       'Rooms nav',
     ]);
   });
@@ -228,6 +230,34 @@ describe('the Commitments row', () => {
   });
 });
 
+describe('the Heartbeat row', () => {
+  const row = (over: Partial<ProfileRowsContext>) =>
+    flat(build(OTHERS_AGENT, over)).find((r) => r.id === 'heartbeat')!;
+  const status = { enabled: true, wake: 'events' as const, skippedReason: null, nextBeatAt: null };
+
+  it('says how the agent wakes, and when a timed one next checks in', () => {
+    expect(row({ heartbeat: status }).value).toBe('When something happens');
+    expect(row({ heartbeat: status }).meta).toBeUndefined();
+    const timed = row({
+      heartbeat: {
+        ...status,
+        wake: 'timed',
+        nextBeatAt: new Date(Date.now() + 12 * 60_000 - 1_000).toISOString(),
+      },
+    });
+    expect(timed.value).toBe('Every 30 min in your hours');
+    expect(timed.meta).toBe('next 12 min');
+  });
+
+  it('says off, off for everyone, and nothing while unknown', () => {
+    expect(
+      row({ heartbeat: { ...status, wake: 'off', skippedReason: 'Heartbeat off.' } }).value
+    ).toBe('Off');
+    expect(row({ heartbeat: { ...status, enabled: false } }).value).toBe('Off for everyone');
+    expect(row({ heartbeat: null }).value).toBeNull();
+  });
+});
+
 describe('DorkBot', () => {
   it('keeps its identity rows visible, locked, and explained', () => {
     expect(shape(build(DORKBOT))).toEqual([
@@ -237,6 +267,7 @@ describe('DorkBot', () => {
       'Chats nav',
       'Schedules nav',
       'Commitments nav',
+      'Heartbeat nav',
       'Rooms nav',
       'Notifications nav',
       'Activity nav',

@@ -22,6 +22,7 @@ import { useInteractionStore } from '@/layers/entities/interactions';
 import { useRoomBoundSession } from '@/layers/entities/room';
 import { findTeamOwner, teamMemberFace, useMemberRooms } from '@/layers/entities/team';
 import { useCommitments } from '@/layers/entities/commitment';
+import { useAgentHeartbeat } from '@/layers/entities/heartbeat';
 import { deriveRelationship } from '../lib/profile-relationship';
 import { messageTarget } from '../lib/profile-message';
 import { rowsFor, type ProfileRowsContext } from '../lib/profile-rows';
@@ -107,6 +108,9 @@ export function ProfileView({
     { agentId: commitmentAgentId ?? '' },
     { enabled: Boolean(commitmentAgentId) }
   );
+  // The Heartbeat row's words, read for every agent for the same reason. The
+  // page reads the same key live, so opening it is a cache hit too.
+  const heartbeat = useAgentHeartbeat(commitmentAgentId ?? null);
   // Where this agent works in the room the page is showing, when one is. Answers
   // `null` everywhere else, which is what leaves the docked home — and every
   // route that is not a room — resolving exactly as it always did.
@@ -125,6 +129,7 @@ export function ProfileView({
           overdue: commitments.data.filter((c) => c.overdue).length,
         }
       : null,
+    heartbeat: heartbeat.data ?? null,
   };
 
   // Three ways to have no button, and they are all the same answer: don't draw

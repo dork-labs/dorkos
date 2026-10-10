@@ -10,11 +10,13 @@
  * @module features/profile/lib/profile-rows
  */
 import type { MemberRoom, TeamMember } from '@dorkos/shared/team-schemas';
+import type { HeartbeatStatus } from '@dorkos/shared/heartbeat-schemas';
 import { shortenHomePath } from '@/layers/shared/lib';
 import { roomDisplayTitle } from '@/layers/entities/room';
 import { formatRuntimeIdentity } from '@/layers/entities/runtime';
 import type { ProfilePageId } from '../model/profile-stack';
 import type { ProfileRelationship } from './profile-relationship';
+import { nextCheckMeta, wakeRowValue } from './heartbeat-words';
 
 /**
  * What a row lets you do.
@@ -125,6 +127,11 @@ export interface ProfileRowsContext {
    * unknown. Read for every agent: anyone may read any agent's promises.
    */
   commitments?: ProfileCommitmentsSummary | null;
+  /**
+   * How this agent wakes on its own, or `null` while unknown. Read for every
+   * agent: anyone may read any agent's heartbeat (spec `heartbeats` §7.6).
+   */
+  heartbeat?: Pick<HeartbeatStatus, 'enabled' | 'wake' | 'skippedReason' | 'nextBeatAt'> | null;
 }
 
 /** An agent's promises, as the Commitments row wants them. */
@@ -295,6 +302,23 @@ function commitmentsRow(ctx: ProfileRowsContext): ProfileRowModel {
   };
 }
 
+/**
+ * The Heartbeat row: how this agent wakes, and when it next checks in. Drawn
+ * on every agent's profile, like Commitments.
+ */
+function heartbeatRow(ctx: ProfileRowsContext): ProfileRowModel {
+  const status = ctx.heartbeat;
+  const meta = status?.wake === 'timed' ? nextCheckMeta(status.nextBeatAt) : undefined;
+  return {
+    id: 'heartbeat',
+    kind: 'nav',
+    label: 'Heartbeat',
+    value: status ? wakeRowValue(status) : null,
+    ...(meta ? { meta } : {}),
+    page: 'heartbeat',
+  };
+}
+
 /** Another person on this install: what they do, what they own, where they are. */
 function personRows(member: TeamMember, ctx: ProfileRowsContext): ProfileRowGroup[] {
   const rows: ProfileRowModel[] = [];
@@ -352,6 +376,7 @@ function workRows(ctx: ProfileRowsContext): ProfileRowModel[] {
     });
   }
   rows.push(commitmentsRow(ctx));
+  rows.push(heartbeatRow(ctx));
   rows.push(roomsRow(ctx));
   // No count on this one, deliberately. Everything above answers "how much of
   // this exists"; this answers "what has it told me", and the number that would
@@ -481,6 +506,7 @@ function otherAgentRows(member: TeamMember, ctx: ProfileRowsContext): ProfileRow
         { id: 'about', kind: 'text', label: 'About', value: ctx.description ?? null },
         { id: 'runs-on', kind: 'text', label: 'Runs on', value: runsOnValue(member) },
         commitmentsRow(ctx),
+        heartbeatRow(ctx),
         roomsRow(ctx),
       ],
     },
