@@ -19,8 +19,8 @@ import type { Icon, ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
  * idempotent, openWorld)` combination. Every external tool maps to exactly
  * one of these — see the annotation matrix in the PR description for the
  * per-tool assignment and the judgment calls behind the less obvious ones
- * (e.g. `relay_inbox` is not read-only because `ack:true` mutates message
- * state; `mesh_discover` is not read-only because auto-import upserts the
+ * (e.g. `relay_enable_adapter` is open-world because it connects to an
+ * external chat platform; `mesh_discover` is not read-only because auto-import upserts the
  * agent registry as a scan side effect).
  */
 export const ToolAnnotationPresets = {

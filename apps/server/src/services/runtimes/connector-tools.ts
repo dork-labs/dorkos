@@ -99,6 +99,27 @@ export interface ConnectorRuntimeToolConsumer {
   setConnectorRuntimeTools(tools: ConnectorRuntimeTools): void;
 }
 
+/**
+ * The runtime as a connector tool consumer, or undefined when it does not
+ * implement the contract (a runtime that takes no connector tools).
+ *
+ * @param runtime - Any registered runtime.
+ */
+export function connectorRuntimeConsumer(
+  runtime: unknown
+): ConnectorRuntimeToolConsumer | undefined {
+  if (
+    typeof runtime === 'object' &&
+    runtime !== null &&
+    'setConnectorRuntimeTools' in runtime &&
+    typeof (runtime as { setConnectorRuntimeTools?: unknown }).setConnectorRuntimeTools ===
+      'function'
+  ) {
+    return runtime as ConnectorRuntimeToolConsumer;
+  }
+  return undefined;
+}
+
 /** Inputs required to build one runtime listener header set. */
 export interface ConnectorRuntimeHeadersInput {
   /** Short-lived bearer returned by `openTurn`. */

@@ -1,3 +1,5 @@
+import { newSessionTarget } from '@/layers/shared/lib';
+import { appRoutes } from '@/layers/shared/lib';
 /**
  * How a row LOOKS and what pressing it DOES — the half of the sidebar the model
  * deliberately does not carry.
@@ -354,11 +356,11 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
 
   const openSession = useCallback(
     (sessionId: string, cwd: string | null) => {
-      useInteractionStore.getState().recordOpened('session', sessionId);
-      // The agent too, on the same key space. Today is ordered by the session
-      // record; the New menu's "starts with <name> (last used)" is answered by
-      // the agent one, and it has to survive walking away to Marketplace or
-      // Team — which the router's `?dir` does not.
+      // The chat page records the chat itself as opened, wherever you came from
+      // (`useRecordChatOpened`, spec `your-activity-first` D3). The agent is
+      // recorded here: the New menu's "starts with <name> (last used)" is
+      // answered by that record, and it has to survive walking away to
+      // Marketplace or Team — which the router's `?dir` does not.
       if (cwd !== null) useInteractionStore.getState().recordOpened('agent', cwd);
       navigate(toSession({ dir: cwd ?? undefined, session: sessionId }));
     },
@@ -377,13 +379,19 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
       // notices through the router's own location.
       const isStillWanted = beginSessionNavigation(() => router.state.location);
       void resolveSessionForCwd({ queryClient, transport }, agentPath)
-        .then((resolved) => {
+        .then(async (resolved) => {
           if (!isStillWanted()) return;
           if (resolved === null) {
             notifySessionLookupFailed(agentPath);
             return;
           }
-          openSession(resolved.sessionId, agentPath);
+          if (resolved.isNew) {
+            const target = await newSessionTarget(transport, {
+              session: resolved.sessionId,
+              dir: agentPath,
+            });
+            if (isStillWanted()) void navigate(target);
+          } else openSession(resolved.sessionId, agentPath);
         })
         .catch((error: unknown) => {
           // The resolver handles its own failures, so a throw here is a defect
@@ -420,7 +428,7 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
         case 'suggestion:say-hi-team':
           // Home IS #team (team-room-home §D3.2), so this is the room, not a
           // page about it.
-          void navigate({ to: '/' });
+          void navigate({ ...appRoutes.home() });
           return;
         case 'suggestion:ask-dorkbot':
           // A fresh session with the system agent. The seeded context BC-48
@@ -476,13 +484,13 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
           // being a bounce through an address that no longer draws anything.
           if (target.roomId === teamRoomId) {
             void navigate({
-              to: '/',
+              ...appRoutes.home(),
               search: target.rootEntryId ? { thread: target.rootEntryId } : {},
             });
             return;
           }
           navigate({
-            to: '/channels',
+            ...appRoutes.channels(),
             search: {
               id: target.roomId,
               ...(target.rootEntryId && { thread: target.rootEntryId }),
@@ -498,7 +506,7 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
           if (target.commandId === 'new-session') startNewSession();
           // The Agents section's last row. It stands for every agent the
           // section is not drawing (D3), and Team is the page that lists them.
-          if (target.commandId === 'open-team') void navigate({ to: '/team' });
+          if (target.commandId === 'open-team') void navigate({ ...appRoutes.team() });
           return;
         case 'suggestion':
           openSuggestion(target.suggestionId);
@@ -522,7 +530,7 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
           // that note is a post in #team — which IS the home surface
           // (team-room-home §D3.2). So the row goes where the words already
           // are rather than to a summary written a second time.
-          void navigate({ to: '/' });
+          void navigate({ ...appRoutes.home() });
           return;
         default:
           // Nothing else the union carries is clickable from a Today row.

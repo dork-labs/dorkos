@@ -32,7 +32,8 @@ vi.mock('@/layers/shared/lib', async (importOriginal) => {
 });
 
 const mockNavigate = vi.fn();
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useNavigate: () => mockNavigate,
 }));
 
@@ -265,7 +266,7 @@ describe('CreateAgentDialog', () => {
 
     expect(screen.getByLabelText('Name')).toHaveValue('');
     expect(
-      screen.getByText('You’ll define the job together in your first conversation.')
+      screen.getByText('You’ll define the job together in your first chat.')
     ).toBeInTheDocument();
   });
 
@@ -464,7 +465,7 @@ describe('CreateAgentDialog', () => {
     expect(mockNavigate).toHaveBeenCalledWith(
       expect.objectContaining({
         to: '/session',
-        search: expect.objectContaining({ dir: '/home/test/.dork/agents/scout' }),
+        search: expect.objectContaining({ agentId: 'id', draft: '1', dir: undefined }),
       })
     );
   });
@@ -561,7 +562,9 @@ describe('CreateAgentDialog', () => {
     expect(mockNavigate).toHaveBeenLastCalledWith({
       to: '/session',
       search: {
-        dir: '/home/test/.dork/agents/scout',
+        agentId: 'id',
+        draft: '1',
+        dir: undefined,
         session: navigatedSessionId,
         runtime: 'codex',
       },

@@ -167,7 +167,7 @@ describe('the portrait, in one fixed order', () => {
     expect(screen.getByRole('button', { name: 'Copy @handle' })).toBeInTheDocument();
     expect(screen.getByText(/Working in #team ·/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Managed by/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Open session' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open chat' })).toBeInTheDocument();
   });
 
   it('flags you, the system agent and the default one', async () => {
@@ -278,14 +278,14 @@ describe('the one button', () => {
   it('says what it does rather than promising a message', async () => {
     await renderProfile(MANAGED);
 
-    expect(screen.getByRole('button', { name: 'Open session' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open chat' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Message' })).toBeNull();
   });
 
   it('opens the agent’s own directory, and records the agent', async () => {
     await renderProfile(MANAGED);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Open session' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Open chat' }));
 
     // It names a directory, not a session — which conversation opens is
     // resolved afterwards — so the agent is the only honest thing to record.
@@ -296,30 +296,30 @@ describe('the one button', () => {
 
   it('is gone on your own profile', async () => {
     await renderProfile(SELF);
-    expect(screen.queryByRole('button', { name: 'Open session' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Open chat' })).toBeNull();
   });
 
   it('is gone when the profile is docked in that agent’s own session', async () => {
     // The composer is right there. A button that scrolls you to where you
     // already are is the panel arguing with itself.
     await renderProfile(MANAGED, { inOwnSession: true });
-    expect(screen.queryByRole('button', { name: 'Open session' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Open chat' })).toBeNull();
   });
 
   it('is gone when there is nowhere for a session to open', async () => {
     // No session belongs to a person, and none to an identity that reaches us
     // over Telegram (§8). Never a dead button.
     await renderProfile(PRIYA);
-    expect(screen.queryByRole('button', { name: 'Open session' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Open chat' })).toBeNull();
     cleanup();
 
     await renderProfile(BRIDGED);
-    expect(screen.queryByRole('button', { name: 'Open session' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Open chat' })).toBeNull();
     cleanup();
 
     // An agent whose folder the roster cannot place is one we cannot open.
     await renderProfile(UNPLACED);
-    expect(screen.queryByRole('button', { name: 'Open session' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Open chat' })).toBeNull();
   });
 });
 
@@ -332,12 +332,13 @@ describe('the rows', () => {
 
   it('draws someone else’s agent as facts, plus the rooms you share', async () => {
     // Nothing private, and nothing to change: About and Runs on are plain
-    // facts. Rooms is the one door, because a room is a shared surface.
+    // facts. Rooms is a door because a room is a shared surface, and
+    // Commitments because anyone may read any agent's promises.
     await renderProfile(OTHERS_AGENT);
     const kinds = [...document.querySelectorAll('[data-profile-row]')].map(
       (row) => `${row.getAttribute('data-profile-row')}:${row.getAttribute('data-row-kind')}`
     );
-    expect(kinds).toEqual(['runs-on:text', 'rooms:nav']);
+    expect(kinds).toEqual(['runs-on:text', 'commitments:nav', 'rooms:nav']);
   });
 
   it('keeps DorkBot’s locked rows visible, and explains them on tap', async () => {
@@ -358,9 +359,11 @@ describe('the rows', () => {
       'about',
       'runs-on',
       'personality',
+      'reports-to',
       'folder',
       'sessions',
       'tasks',
+      'commitments',
       'rooms',
       'notifications',
       'skills',
@@ -399,6 +402,7 @@ describe('the rows', () => {
       'personality',
       'sessions',
       'tasks',
+      'commitments',
       'rooms',
       'notifications',
       'skills',

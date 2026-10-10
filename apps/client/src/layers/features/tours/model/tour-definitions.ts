@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 import { DORKBOT_TOUR_LINES } from '@dorkos/shared/dorkbot-templates';
 import { TOUR_ANCHORS, type TourStep } from '@/layers/shared/config';
 
@@ -41,7 +42,7 @@ export interface TourDefinition {
 export const TOUR_DEFINITIONS: Record<TourId, TourDefinition> = {
   general: {
     id: 'general',
-    deepLink: { kind: 'route', to: '/' },
+    deepLink: { kind: 'route', ...appRoutes.home() },
     steps: [
       {
         anchor: TOUR_ANCHORS.homeComposer,
@@ -59,7 +60,7 @@ export const TOUR_DEFINITIONS: Record<TourId, TourDefinition> = {
     id: 'tasks',
     occasion: 'tasks',
     offerLine: DORKBOT_TOUR_LINES.offers.tasks,
-    deepLink: { kind: 'route', to: '/tasks' },
+    deepLink: { kind: 'route', ...appRoutes.tasks() },
     steps: [
       {
         anchor: TOUR_ANCHORS.tasksList,
@@ -72,7 +73,7 @@ export const TOUR_DEFINITIONS: Record<TourId, TourDefinition> = {
     id: 'relay',
     occasion: 'relay',
     offerLine: DORKBOT_TOUR_LINES.offers.relay,
-    deepLink: { kind: 'route', to: '/connections' },
+    deepLink: { kind: 'route', ...appRoutes.connections() },
     steps: [
       {
         anchor: TOUR_ANCHORS.relayIntegrations,
@@ -86,10 +87,10 @@ export const TOUR_DEFINITIONS: Record<TourId, TourDefinition> = {
     occasion: 'mesh',
     offerLine: DORKBOT_TOUR_LINES.offers.mesh,
     // Onto the Team page, rather than spotlighting the sidebar button that opens
-    // it. The offer promises to show the fleet, and the sidebar is a sheet on a
+    // it. The offer promises to show the team, and the sidebar is a sheet on a
     // phone: unmounted while closed, so a step anchored in it would have shown a
     // phone nothing at all.
-    deepLink: { kind: 'route', to: '/team' },
+    deepLink: { kind: 'route', ...appRoutes.team() },
     steps: [
       {
         anchor: TOUR_ANCHORS.teamRoster,

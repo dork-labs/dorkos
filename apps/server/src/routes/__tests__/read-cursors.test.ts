@@ -33,6 +33,7 @@ vi.mock('../../lib/boundary.js', () => ({
 
 vi.mock('../../services/core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    getNativeSessionCwd: vi.fn(() => null),
     getDefault: vi.fn(),
     get: vi.fn(),
     getAllCapabilities: vi.fn(() => ({})),

@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 import { toast } from 'sonner';
 import { useNavigate } from '@tanstack/react-router';
 import { Ban, Hash } from 'lucide-react';
@@ -76,7 +77,7 @@ export function BindingBridgeSection({ binding, onDone }: BindingBridgeSectionPr
   // states the reason instead of a dead button.
   if (binding.platformChatType === 'channel') {
     return (
-      <BridgeRefusal reason="This is a broadcast channel, not a two-way conversation. Your agent can’t reply." />
+      <BridgeRefusal reason="This is a broadcast channel, not a two-way chat. Your agent can’t reply." />
     );
   }
   const isDirectMessage = binding.channelType == null || binding.channelType === 'dm';
@@ -98,7 +99,7 @@ export function BindingBridgeSection({ binding, onDone }: BindingBridgeSectionPr
         updates: { bridge: 'room' },
       });
       if (updated.roomId) {
-        void navigate({ to: '/channels', search: { id: updated.roomId } });
+        void navigate({ ...appRoutes.channels(), search: { id: updated.roomId } });
       }
       onDone?.();
     } catch {

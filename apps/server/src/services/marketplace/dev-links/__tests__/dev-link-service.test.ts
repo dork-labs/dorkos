@@ -958,7 +958,7 @@ describe('a dev link and the permission set its yes covers (DOR-2686)', () => {
     const svc = service();
     const shown = await svc.describeApproval({ path: work, scope: 'global' });
     await declare({ runtime: 'subprocess', allow: { net: ['a.example.com'] } });
-    const forged = shown.replace('Runs in: every session', 'Runs in: nowhere');
+    const forged = shown.replace('Runs in: every chat', 'Runs in: nowhere');
     const err = await refusal(
       svc.link({ path: work, scope: 'global', via: 'agent-card', expectedChange: forged })
     );

@@ -16,7 +16,10 @@ import { ClaimFeed } from '../ui/ClaimFeed';
 // mocked — the same pattern `BindingBridgeSection.test.tsx` uses for the
 // "Bridge to a channel" action this primary action shares a path with.
 const navigateSpy = vi.fn();
-vi.mock('@tanstack/react-router', () => ({ useNavigate: () => navigateSpy }));
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
+  useNavigate: () => navigateSpy,
+}));
 
 vi.mock('sonner', () => ({
   toast: { success: vi.fn(), warning: vi.fn(), error: vi.fn() },

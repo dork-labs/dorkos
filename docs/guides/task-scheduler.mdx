@@ -127,9 +127,9 @@ to tell you.
 account set up in DorkOS, a schedule can name the one its runs use, for example
 to keep a client's nightly job on that client's plan. An id that is no longer set
 up doesn't stop the run: it runs on the usual account, and the Activity feed
-says so. A schedule that keeps one conversation stays on the account that
-conversation started on, so DorkOS refuses to change it once it has run. Turn
-off "Keep one conversation" first.
+says so. A schedule that remembers its last run stays on the account it
+started on, so DorkOS refuses to change it once it has run. Turn off
+"Remember the last run" first.
 
 Clearing a field puts the task back to following its agent. In the app, that is
 the first option in each menu: "Same as agent", "Agent default".
@@ -231,7 +231,7 @@ It shows up on the Schedules tab right away, along with its next run time. DorkO
 
 ## Will it actually run?
 
-Short answer: yes, once it's live in a real DorkOS install. Scheduled tasks always show up and you can always edit them, but one only actually **fires** (starts an agent session) in a real production install of DorkOS, the one you get from the normal install, not a developer preview build. That's a deliberate safety rail: an unattended job can edit files and run commands on its own, so DorkOS won't let a test or development build fire one by accident.
+Short answer: yes, once it's live in a real DorkOS install. Scheduled tasks always show up and you can always edit them, but one only actually **fires** (starts an agent chat) in a real production install of DorkOS, the one you get from the normal install, not a developer preview build. That's a deliberate safety rail: an unattended job can edit files and run commands on its own, so DorkOS won't let a test or development build fire one by accident.
 
 If you're following this guide in a normal DorkOS install, you're already in the environment where they fire. Nothing extra to do.
 
@@ -268,7 +268,7 @@ Clicking **Run now** is different. You are watching, so its cards work normally 
 <Callout type="info">
   This is only about requests that were waiting on **you**. A tool your agent is not allowed to use
   at all — because you wrote a rule against it, or because the safety check turned it down — is
-  refused the same way it would be in any other session, and raising the task's Permissions setting
+  refused the same way it would be in any other chat, and raising the task's Permissions setting
   will not change that.
 </Callout>
 
@@ -281,7 +281,7 @@ To turn it on:
 1. Open the agent, go to **Connections**, and add a connection like Telegram.
 2. Bind the connection and open its **Advanced** settings.
 3. Turn on **Message me when scheduled tasks finish**.
-4. Turn on **Agent can start conversations**. This is the real switch. Nothing gets sent until you allow the agent to reach you.
+4. Turn on **Agent can message first**. This is the real switch. Nothing gets sent until you allow the agent to reach you.
 
 Failures always reach you. Successful runs reach you only while the switch is on, so you can mute the routine "all good" pings and still hear about breaks.
 
@@ -310,9 +310,9 @@ Two cases park with a note instead of moving quietly:
 
 ## How this differs from Claude Code's `/loop`
 
-Claude Code's `/loop` repeats a prompt inside the chat you are sitting in. Close that session and the loop is gone with it.
+Claude Code's `/loop` repeats a prompt inside the chat you are sitting in. Close that chat and the loop is gone with it.
 
-DorkOS Pulse, the scheduler behind this page, is the durable one. Your scheduled tasks live in files, survive restarts, and fire whether or not you have a chat open. Each run starts its own fresh session, and the history of every run is kept.
+DorkOS Pulse, the scheduler behind this page, is the durable one. Your scheduled tasks live in files, survive restarts, and fire whether or not you have a chat open. Each run starts its own fresh chat, and the history of every run is kept.
 
 ## When a scheduled task tells the agent to use another skill
 
@@ -449,7 +449,7 @@ DorkOS uses standard five-field cron expressions:
 
 <TypeTable
   type={{
-    running: { type: 'status', description: 'The agent session is currently executing' },
+    running: { type: 'status', description: 'The agent chat is currently running' },
     completed: { type: 'status', description: 'The agent finished the run without errors' },
     failed: { type: 'status', description: 'The agent encountered an error during execution' },
     blocked: {
@@ -466,7 +466,7 @@ DorkOS uses standard five-field cron expressions:
   }}
 />
 
-Click any run in the history to open the full agent conversation, every tool call, response, and output the agent produced during that run.
+Click any run in the history to open the full agent chat, every tool call, response, and output the agent produced during that run.
 
 DorkOS enforces a configurable concurrency cap on simultaneous runs (4 by default, and anything from 1 to 10 in Settings). If the cap is reached, new triggers are skipped with a warning log. Overrun protection (via croner's `protect` option) stops a scheduled task from starting a new run while its previous run is still active.
 

@@ -1,0 +1,218 @@
+/** Runtime-neutral eager loading and capability search policy. */
+/**
+ * The tools that ride the turn-1 prompt instead of waiting behind a search.
+ *
+ * Bare names, because that is what a tool is registered as; the loading flag is
+ * attached at registration, before Claude Code qualifies anything.
+ *
+ * Kept deliberately short — see the module note on why the server as a whole stays
+ * deferred. Each of these earns it by being needed in a turn that has no
+ * room for a lookup first:
+ *
+ * - the four room verbs, because a room turn is a person waiting in a shared
+ *   channel, and DOR-1292 measured a whole turn lost to searching for one;
+ * - `list_capabilities`, because it is how an agent finds everything else, and a
+ *   discovery entry point nobody can discover is not one;
+ * - `memory_write`, because there must be **no ToolSearch hop between an agent
+ *   and remembering** (the A-06 lesson). The prompt tells every agent, on every
+ *   turn of every runtime, to save what it learns before the turn ends; a tool
+ *   named in that instruction and then deferred is the DOR-1292 defect with a
+ *   different name. The thing an agent fails to save is gone;
+ * - `list_member_rooms` and `search_member_rooms` (agent-memory spec D6), for the
+ *   same reason and in the same turn. `<session_model>` now tells every agent to
+ *   use `search_member_rooms` when it is asked about something said in another
+ *   room, and the ask lands in a room turn — the same waiting-person turn the
+ *   four verbs are here for. A tool the prompt names and the SDK defers is the
+ *   DOR-1292 defect wearing a third name. They ride together because the pair is
+ *   one act: the search hands back a room id, and the list is where an agent gets
+ *   one when the search found nothing to start from.
+ *
+ * **`get_room` and `find_room` are deliberately NOT here** (DOR-1610), and the
+ * omission is written down because this list otherwise reads as "the room tools"
+ * and now names seven of the domain's sixteen. The rule that admits a tool is not
+ * "it is a room verb" but "the prompt already tells an agent to reach for it":
+ * every entry above is named in a prompt block, rides with one that is (the
+ * listing pair, for the reason the bullet above gives), or is the entry point to
+ * everything else. Nothing in the turn-1 prompt names either lookup, so deferring
+ * them costs a search only on the turns that actually want one — and both are
+ * the kind of tool `searchHint` finds by intent. Add them the day a prompt block
+ * names them, and not before; that is the DOR-1292 rule read in this direction.
+ *
+ * **`merge_to_room_main` is named in a block and is still not here** (DOR-1599),
+ * which is the one place the rule above is read narrowly rather than literally,
+ * so the reasoning is written down. `<room_context>` tells a project-room turn
+ * how to get its work into the room, and it names the verb as a searchable
+ * ENDING with the instruction to look it up — a form that is honest on all three
+ * runtimes and that assumes a lookup rather than being defeated by one. What
+ * earns a place on this list is a turn with no room for that lookup: a room
+ * REPLY is a person waiting, and DOR-1292 measured a whole turn lost to it.
+ * Merging is not that turn. It never opens one — it follows work the agent has
+ * already done and committed — so the search lands mid-turn, among the git
+ * commands it is already running. The cost the other way is a schema in the
+ * turn-1 prompt of EVERY session on the install, including the majority with no
+ * project room at all.
+ *
+ * **`read_canvas` IS here, and the difference from merging is the turn it lands
+ * in** (DOR-1999). `<room_tools>` names it callably, in the same breath as the
+ * four conversation verbs and under the same prefix — a deferred name inside
+ * THAT block is the DOR-1292 shape this file warns about twice, because the
+ * block's whole contract is "these are the tools you have". And the turn is the
+ * one this list exists for: the room's context block tells every turn what is on
+ * the canvas but never what a document SAYS, so an agent answering "what does
+ * that say?" needs it inside the reply somebody is waiting on. Merging is the
+ * opposite turn — it follows work already committed, so its lookup lands among
+ * the git commands the agent is already running.
+ *
+ * **`request_permission` IS here** (spec `agent-permissions` D8, D15). A Blocked
+ * area's tools are left out of the list, and the one line that replaces them
+ * tells the agent to ask with the tool ending in `request_permission`. That is
+ * the DOR-1292 rule exactly: a prompt that names a tool the SDK defers costs a
+ * search on the very turn the agent is already stuck. `list_my_permissions`
+ * is named by nothing and stays deferred.
+ *
+ * **`compact_my_session` IS here** (DOR-2732), by the same rule: the
+ * `<context_warning>` note names it on the turn after a conversation fills past
+ * the warning line, and that is the turn with the least room to spend on a
+ * lookup. An agent near its limit that has to search for the tool that frees
+ * room is the DOR-1292 defect at its most expensive.
+ */
+export const ALWAYS_LOADED_TOOLS: ReadonlySet<string> = new Set([
+  'post_to_room',
+  'react_to_room_entry',
+  'read_room_history',
+  'search_room_history',
+  'list_member_rooms',
+  'search_member_rooms',
+  'read_canvas',
+  'list_capabilities',
+  'memory_write',
+  'request_permission',
+  'compact_my_session',
+]);
+
+/**
+ * The four tools an agent-to-agent turn cannot afford to search for first.
+ *
+ * Granted eagerly only to sessions that ARE a registered mesh agent — never to a
+ * plain session, which is most of them. The trade is the same one the set above
+ * makes and it is paid by a different set of turns: reaching a peer means
+ * finding it (`mesh_list`, `mesh_inspect`), messaging it (`chat_send`) and
+ * checking on the chat it answers in (`chat_read`), and DorkOS's own tester
+ * watched an agent narrate the cost of searching for peer tools first inside a
+ * three-minute call budget (DOR-1337 / F8).
+ *
+ * Two of the four are hand-registered and two are capability-projected
+ * (`chat_send`, `chat_read`), so every path that marks a tool eager reads this
+ * set by bare name: the hand-registered wrap and `capabilityMcpTools` on Claude
+ * Code, and the host projection on Doe. `chat_stop` is not on the critical path
+ * of asking a peer something, and stays deferred with the rest of the surface.
+ */
+export const AGENT_TO_AGENT_TOOLS: ReadonlySet<string> = new Set([
+  'mesh_list',
+  'mesh_inspect',
+  'chat_send',
+  'chat_read',
+]);
+
+/**
+ * The one rule that decides whether a session gets {@link AGENT_TO_AGENT_TOOLS}.
+ *
+ * Two call sites read it and they MUST agree, because they are two halves of
+ * one claim: `mcp-tools/index.ts` decides what is actually loaded, and
+ * `messaging/context-builder.ts` writes the sentence telling the agent so. A
+ * prompt that says "already in your tool list" about a deferred tool spends the
+ * turn it was written to save, and one that stays silent about a loaded tool
+ * spends a `ToolSearch` for nothing. Written here, once, so the two cannot
+ * drift by editing one of them.
+ *
+ * The input is derived from the SESSION'S OWN working directory — the same
+ * `session.cwd` the MCP factory is handed. Not the turn's effective cwd, which
+ * a per-message override can move: the identity these tools act as is resolved
+ * from `session.cwd` too, so keying exposure anywhere else would load the tools
+ * for a session that is not the agent they would act as.
+ *
+ * Relay is no longer an input: the chat tools ride no bus (spec
+ * `spin-off-chats` §7), so a registered agent is reason enough.
+ *
+ * @param hasRegisteredAgentAtSessionCwd - Whether Mesh knows an agent at the
+ *   session's working directory.
+ */
+export function loadsAgentToAgentTools(hasRegisteredAgentAtSessionCwd: boolean): boolean {
+  return hasRegisteredAgentAtSessionCwd;
+}
+
+/**
+ * The always-loaded set for one session.
+ *
+ * @param agentToAgent - The answer from {@link loadsAgentToAgentTools}. False
+ *   for every plain session, which then sees exactly {@link ALWAYS_LOADED_TOOLS}.
+ */
+export function alwaysLoadedToolsFor(agentToAgent: boolean): ReadonlySet<string> {
+  if (!agentToAgent) return ALWAYS_LOADED_TOOLS;
+  return new Set([...ALWAYS_LOADED_TOOLS, ...AGENT_TO_AGENT_TOOLS]);
+}
+
+/** Longest search hint kept; anything past this is a description, not a hint. */
+const SEARCH_HINT_MAX_CHARS = 120;
+
+/**
+ * Reduce a tool's own words to the phrase it should be findable by.
+ *
+ * Mechanical on purpose. A hand-maintained hint table is a second description to
+ * keep in sync with the first, and the first already says what the tool is for —
+ * so this takes its opening sentence and stops. A sentence ends at a period
+ * followed by whitespace and a CAPITAL: splitting on `. ` alone cut
+ * "…message, e.g. 👍 on a post" down to "…e.g", which is why the lookahead is
+ * there rather than the simpler pattern. An em-dash aside is cut too, because the
+ * clause before it is the part that names the job.
+ *
+ * Over-long hints are cut at a WORD boundary. Cutting at the character count
+ * turned `relay_inbox`'s hint into "…or o", which is not a phrase anybody or
+ * anything can match on — a hint that ends mid-word is worse than a shorter one.
+ *
+ * @param source - The capability's title, or the tool's description.
+ * @returns A trimmed one-line hint, or `undefined` when there is nothing to say.
+ */
+export function searchHintFrom(source: string): string | undefined {
+  const firstSentence = source.split(/\.\s+(?=[A-Z])/)[0] ?? '';
+  const beforeAside = firstSentence.split(/\s[—-]\s/)[0] ?? '';
+  const hint = beforeAside
+    .replace(/\s+/g, ' ')
+    .replace(/[.\s]+$/, '')
+    .trim();
+  if (hint === '') return undefined;
+  if (hint.length <= SEARCH_HINT_MAX_CHARS) return hint;
+
+  const clipped = hint.slice(0, SEARCH_HINT_MAX_CHARS - 1);
+  const lastSpace = clipped.lastIndexOf(' ');
+  // A single word longer than the budget has no boundary to fall back to, so it
+  // is cut where it is rather than dropped entirely.
+  const body = lastSpace > 0 ? clipped.slice(0, lastSpace) : clipped;
+  return `${body.replace(/[,;:\s]+$/, '')}…`;
+}
+
+/**
+ * The `tool()` extras that decide how one tool is exposed.
+ *
+ * Both halves are computed rather than declared per tool, so a tool added tomorrow
+ * is hinted without anyone remembering to hint it, and always-loading stays a
+ * deliberate five-name decision rather than a default.
+ *
+ * @param bareName - The registered tool name.
+ * @param hintSource - The capability's title, or the tool's description.
+ * @param alwaysLoaded - The set that decides eager loading for THIS session.
+ *   Defaults to {@link ALWAYS_LOADED_TOOLS}; an agent session passes the wider
+ *   set from {@link alwaysLoadedToolsFor}.
+ * @returns Extras to pass as `tool()`'s fifth argument.
+ */
+export function toolExposure(
+  bareName: string,
+  hintSource: string,
+  alwaysLoaded: ReadonlySet<string> = ALWAYS_LOADED_TOOLS
+): { alwaysLoad?: true; searchHint?: string } {
+  const searchHint = searchHintFrom(hintSource);
+  return {
+    ...(alwaysLoaded.has(bareName) ? { alwaysLoad: true as const } : {}),
+    ...(searchHint ? { searchHint } : {}),
+  };
+}

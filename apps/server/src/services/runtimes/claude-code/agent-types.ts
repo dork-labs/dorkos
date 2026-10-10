@@ -7,6 +7,7 @@ import type {
   ContextUsage,
   UsageStatus,
 } from '@dorkos/shared/types';
+import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import type { PendingInteraction } from './messaging/interaction-wait.js';
 import { createToolResultImageState, type ToolResultImageState } from './tool-result-images.js';
 import type { ClaudeConnectorTurnContext } from './connector-turn-context.js';
@@ -154,6 +155,13 @@ export interface AgentSession {
    * outlives the turn that asked for it.
    */
   unattendedTurn?: boolean;
+  /**
+   * The loosest level THIS turn may run at (`MessageOpts.permissionCeiling`),
+   * assigned on every send so it never outlives the turn that carried it. Read
+   * through `turnPermissionMode` (`turn-permission.ts`), never on its
+   * own.
+   */
+  turnPermissionCeiling?: TurnPermissionCeiling;
   /** True when auto-created by updateSession — sendMessage should check transcript before first query. */
   needsTranscriptCheck?: boolean;
   /**

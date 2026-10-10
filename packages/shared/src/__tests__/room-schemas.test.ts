@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
 import {
+  SESSION_POINTER_PATTERN,
+  sessionPointerPhrase,
   agentAuthorRef,
   AuthorRefSchema,
   canonicalizeEntry,
@@ -786,5 +788,25 @@ describe("a done presence signal's outcome (tool-only-room-replies §D7)", () =>
     expect(olderBuild.safeParse({ ...done, outcome: 'silent' }).success).toBe(true);
     // And the state itself is untouched, which is what that build keys on.
     expect(RoomPresenceStateSchema.options).toEqual(['working', 'working_late', 'held', 'done']);
+  });
+});
+
+describe("the words a notice uses to send a reader to an agent's chat (DOR-2789)", () => {
+  it('writes new notices with "chat"', () => {
+    expect(sessionPointerPhrase('Kai')).toBe("Open Kai's chat");
+    expect(
+      SESSION_POINTER_PATTERN.exec("Kai ran into a problem. Open Kai's chat to see why.")?.[0]
+    ).toBe("Open Kai's chat");
+  });
+
+  it('still links a notice written before the rename, which says "session"', () => {
+    // Room logs keep their lines as written, so an old notice must keep its link.
+    expect(
+      SESSION_POINTER_PATTERN.exec("Kai is waiting for you. Open Kai's session to answer.")?.[0]
+    ).toBe("Open Kai's session");
+  });
+
+  it('does not match a sentence that only mentions a chat', () => {
+    expect(SESSION_POINTER_PATTERN.test('Kai was busy in its own chat.')).toBe(false);
   });
 });

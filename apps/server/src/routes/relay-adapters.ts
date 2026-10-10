@@ -23,8 +23,7 @@
  */
 import { Router } from 'express';
 import express from 'express';
-import rateLimit from 'express-rate-limit';
-import { rateLimitKey } from '../middleware/rate-limit-key.js';
+import { expressRateLimit } from '../http/rate-limiter.js';
 import { z } from 'zod';
 import type { WebhookAdapter } from '@dorkos/relay';
 import {
@@ -81,7 +80,7 @@ function resolveAdapterName(adapterManager: AdapterManager, adapterId: string): 
  * channel.
  */
 const BRIDGE_BROADCAST_REASON =
-  "This is a broadcast channel, not a two-way conversation, so it can't become a " +
+  "This is a broadcast channel, not a two-way chat, so it can't become a " +
   'channel here: your agent would have no one to reply to, and a broadcast is a one-way ' +
   'feed by design.';
 
@@ -706,12 +705,10 @@ export function createAdapterRouter(
   // Keys through the shared `rateLimitKey`, like every other limiter here: the
   // TCP peer address, not the spoofable `X-Forwarded-For` that `req.ip` derives
   // from `trust proxy` (DOR-1711).
-  const testRateLimiter = rateLimit({
+  const testRateLimiter = expressRateLimit({
     windowMs: 60_000,
-    max: 10,
-    keyGenerator: rateLimitKey,
-    standardHeaders: true,
-    legacyHeaders: false,
+    limit: 10,
+    headers: 'standard',
     message: { error: 'Too many test requests, try again in a minute' },
   });
 

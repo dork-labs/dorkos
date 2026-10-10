@@ -45,7 +45,7 @@ test.describe('Codex — account models and session resume @integration', () => 
     await page.keyboard.press('Escape');
 
     const readContextMeter = async () => {
-      await page.getByRole('button', { name: /^Session details/ }).click();
+      await page.getByRole('button', { name: /^Chat details/ }).click();
       const contextRow = page.getByTestId('session-row-context');
       await expect(contextRow).toContainText(/\d+% full/, { timeout: 10_000 });
       const reading = (await contextRow.innerText()).match(/(\d+)% full/)?.[0];
@@ -83,7 +83,7 @@ test.describe('Codex — account models and session resume @integration', () => 
     expect(await chat.getSessionId()).toBe(sessionId);
     await readContextMeter();
 
-    await page.getByRole('button', { name: /^Session details/ }).click();
+    await page.getByRole('button', { name: /^Chat details/ }).click();
     await testInfo.attach('codex-resumed-session', {
       body: await page.screenshot(),
       contentType: 'image/png',

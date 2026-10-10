@@ -83,10 +83,9 @@
  *   rather than folded into this one: neither is an unchecked write today.
  * - **Consent about what leaves the machine.** All of `telemetry.*`, which is
  *   consent-gated by design.
- * - **Whether a person is asked at all.** `permissions`, the four
- *   `defaultTrustStop` leaves, and `ui.autonomyAcknowledgedAt`: the switches that
- *   decide whether an approval card ever appears, and the record of the consent
- *   behind them.
+ * - **Whether a person is asked at all.** `permissions` and the four
+ *   `defaultTrustStop` leaves: the switches that decide whether an approval card
+ *   ever appears.
  *
  * ### The one group that is not security-shaped
  *
@@ -318,17 +317,8 @@ export const CONFIG_WRITE_POLICY = {
   // slot offers, exactly like `ui.sidebar.gettingStarted.retired` above; nothing
   // it gates is a security control.
   'ui.promos.dismissedIds': 'agent-writable',
-  // A record of what a PERSON read and agreed to. Writing it stops DorkOS ever
-  // explaining Full autonomy to them again, and an agent forging that record
-  // would be signing a consent form on somebody else's behalf. It is the only
-  // `ui.*` leaf that is not a preference.
-  //
-  // It buys the agent no new REACH — anything that can reach `PATCH
-  // /api/sessions/:id` can put `acknowledgedAutonomy: true` on the request and
-  // open the same door once. What this stops is the durable, silent version.
-  'ui.autonomyAcknowledgedAt': 'operator-only',
-  // The power-door answer, refused for exactly the reason above: these record
-  // that a PERSON was asked a consent question and what they said. An agent that
+  // The power-door answer: these record that a PERSON was asked a consent
+  // question and what they said. An agent that
   // could write them could close the door on a question nobody ever saw — and
   // then, having recorded `'full'`, hand the binding form a pre-selected
   // `canInitiate`. They grant nothing by themselves, which is why they are
@@ -346,7 +336,7 @@ export const CONFIG_WRITE_POLICY = {
   // exactly the line this table draws.
   //
   // `browserPermissionPrimerDismissed` is refused for the sibling reason
-  // `ui.autonomyAcknowledgedAt` above is: it records that a PERSON answered a
+  // the power-door answer above is: it records that a PERSON answered a
   // question, and an agent writing it would be answering on their behalf —
   // permanently, since the card is asked once.
   'notifications.escalation.phoneAfterMinutes': 'operator-only',
@@ -402,6 +392,11 @@ export const CONFIG_WRITE_POLICY = {
   // asked to keep it awake can say where the switch is.
   'keepAwake.whileAgentsWork': 'operator-only',
   'keepAwake.wakeForScheduledTasks': 'operator-only',
+
+  // How long the Activity feed keeps the history people review (spec
+  // `audit-trail` §3.5). Shortening it deletes rows a person may not have read
+  // yet; lengthening it spends disk. Either is the person's call.
+  'activity.retentionDays': 'operator-only',
 
   // Directories DorkOS would scan for agents. Nothing resolves this today (the
   // unified scanner does not read it), so it grants nothing right now. It is
@@ -544,6 +539,16 @@ export const CONFIG_WRITE_POLICY = {
   'profile.displayName': 'agent-writable',
   'profile.rolePromptDismissedAt': 'agent-writable',
   'profile.identityPromptDismissedAt': 'agent-writable',
+  // A person's zone, hours and away note (spec `heartbeats` §3.5), on the same
+  // line as the rest of the profile: a person tells DorkBot "I'm off till
+  // Monday" and it sets `away`. Hours decide when a message to a person is
+  // delivered, never what an agent may do, so changing them widens nothing.
+  'profile.timezone': 'agent-writable',
+  'profile.workingHours.days': 'agent-writable',
+  'profile.workingHours.start': 'agent-writable',
+  'profile.workingHours.end': 'agent-writable',
+  'profile.away.until': 'agent-writable',
+  'profile.away.note': 'agent-writable',
 
   // The one leaf of the profile a person keeps, and the reason it is not a
   // contradiction of the line above (DOR-1022). `displayName` stays writable
@@ -688,6 +693,7 @@ export const CONFIG_WRITE_POLICY = {
   'runtimes.environment.inherit.claudeCode': 'operator-only',
   'runtimes.environment.inherit.codex': 'operator-only',
   'runtimes.environment.inherit.opencode': 'operator-only',
+  'runtimes.environment.inherit.doe': 'operator-only',
   'runtimes.default': 'agent-writable',
   // How much every FUTURE session may do without asking (spec `trust-dial`,
   // decision 6). Operator-only, and it is the one field in this block that is not
@@ -700,19 +706,16 @@ export const CONFIG_WRITE_POLICY = {
   // agent can already ask for. It is DURABLE — nothing sweeps it, so it keeps
   // applying to sessions the person starts tomorrow — and it is SILENT, because a
   // new session simply opens already bypassed, with no dialog and nothing on
-  // screen saying a setting changed. `ui.autonomyAcknowledgedAt` is operator-only
-  // for the sibling reason (forging the consent record), and an agent that could
-  // write both would hold the whole door.
+  // screen saying a setting changed.
   //
   // The stops below autonomy are the same leaf and get the same verdict: this
   // table classifies paths, not values, and a per-value rule would mean an agent
   // could write `'ask'` today and nothing would notice the day the enum grew.
-  // The route enforces a second, value-shaped gate on top for `'autonomy'` (428
-  // `AUTONOMY_ACK_REQUIRED`), which is about consent rather than about who asks.
   'runtimes.defaultTrustStop': 'operator-only',
   'runtimes.claudeCode.defaultTrustStop': 'operator-only',
   'runtimes.codex.defaultTrustStop': 'operator-only',
   'runtimes.opencode.defaultTrustStop': 'operator-only',
+  'runtimes.doe.defaultTrustStop': 'operator-only',
   // Which Claude account new work runs and BILLS on, and the roster it is chosen
   // from (spec claude-code-accounts D6). A Claude config directory carries its own
   // sign-in, so moving the default account moves the operator's spend onto a
@@ -778,6 +781,16 @@ export const CONFIG_WRITE_POLICY = {
   'runtimes.opencode.defaultModel': 'agent-writable',
   'runtimes.codex.defaultModel': 'agent-writable',
   'runtimes.codex.defaultEffort': 'agent-writable',
+  'runtimes.doe.enabled': 'agent-writable',
+  'runtimes.doe.inference.source': 'operator-only',
+  'runtimes.doe.inference.provider': 'operator-only',
+  'runtimes.doe.inference.protocol': 'operator-only',
+  'runtimes.doe.inference.endpoint': 'operator-only',
+  'runtimes.doe.inference.model': 'agent-writable',
+  'runtimes.doe.inference.contextWindow': 'agent-writable',
+  'runtimes.doe.inference.maxOutputTokens': 'agent-writable',
+  'runtimes.doe.inference.credentialRef': 'operator-only',
+  'runtimes.doe.inference.credentialEndpoint': 'operator-only',
   'runtimes.opencode.enabled': 'agent-writable',
   // An executable the server spawns.
   'runtimes.opencode.binaryPath': 'operator-only',
@@ -999,6 +1012,14 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'runtimes.environment.inherit.claudeCode',
       'runtimes.environment.inherit.codex',
       'runtimes.environment.inherit.opencode',
+      'runtimes.environment.inherit.doe',
+      'runtimes.doe.inference.source',
+      'runtimes.doe.inference.provider',
+      'runtimes.doe.inference.protocol',
+      'runtimes.doe.inference.endpoint',
+      'runtimes.doe.inference.credentialRef',
+      'runtimes.doe.inference.credentialEndpoint',
+
       'runtimes.opencode.provider',
       'runtimes.opencode.baseURL',
       'runtimes.claudeCode.defaultAccount',
@@ -1070,7 +1091,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'runtimes.claudeCode.defaultTrustStop',
       'runtimes.codex.defaultTrustStop',
       'runtimes.opencode.defaultTrustStop',
-      'ui.autonomyAcknowledgedAt',
+      'runtimes.doe.defaultTrustStop',
       // The power-door answer. Filed under `approvals` rather than a stake of
       // its own because that is what the question was about: whether the person
       // is asked before work happens. The record grants nothing by itself, but
@@ -1145,6 +1166,9 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       // for it: battery, and whether the machine is on while nobody is there.
       'keepAwake.whileAgentsWork',
       'keepAwake.wakeForScheduledTasks',
+      // How much Activity history this machine keeps on disk, and how much a
+      // person can still look back over.
+      'activity.retentionDays',
       // How large a room's files may get, how much of its conventions file
       // rides every turn, and when an idle working copy is tidied away. Disk
       // and the bill, bounded by the person rather than by the agents filling

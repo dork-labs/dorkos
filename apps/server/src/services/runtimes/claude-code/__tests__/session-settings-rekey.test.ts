@@ -23,7 +23,7 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { sessionMetadata, type Db } from '@dorkos/db';
 import { wrapSdkQuery, sdkSimpleText } from './sdk-scenarios.js';
 import { RuntimeRegistry } from '../../../core/runtime-registry.js';
-import { overlayStoredSettings } from '../../../session/session-settings-overlay.js';
+import { overlayStoredSettings } from '../../../session/resolution/session-settings-overlay.js';
 import { SESSIONS } from '../../../../config/constants.js';
 import type { Session } from '@dorkos/shared/types';
 

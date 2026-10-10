@@ -210,7 +210,7 @@ export function CommandPaletteDialog() {
   const agentHref = useCallback(
     (agent: AgentPathEntry) => {
       const session = cachedSessionForCwd(queryClient, agent.projectPath);
-      return sessionHref({ dir: agent.projectPath, session: session ?? undefined });
+      return sessionHref(session ? { session } : { agentId: agent.id });
     },
     [queryClient]
   );

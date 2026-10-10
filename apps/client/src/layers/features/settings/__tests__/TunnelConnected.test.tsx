@@ -64,17 +64,17 @@ describe('TunnelConnected', () => {
 
   it('does not render session link button when activeSessionId is null', () => {
     render(<TunnelConnected {...defaultProps} />);
-    expect(screen.queryByText('Session link')).toBeNull();
+    expect(screen.queryByText('Chat link')).toBeNull();
   });
 
   it('renders session link button when activeSessionId is provided', () => {
     render(<TunnelConnected {...defaultProps} activeSessionId="sess-abc123" />);
-    expect(screen.getByText('Session link')).toBeInTheDocument();
+    expect(screen.getByText('Chat link')).toBeInTheDocument();
   });
 
   it('copies the session URL when session link button is clicked', () => {
     render(<TunnelConnected {...defaultProps} activeSessionId="sess-abc123" />);
-    fireEvent.click(screen.getByText('Session link'));
+    fireEvent.click(screen.getByText('Chat link'));
     // The route path AND the id. This used to pin the origin plus `?session=`
     // with no `/session` in front of it (DOR-2077).
     expect(mockClipboardWriteText).toHaveBeenCalledWith(

@@ -54,7 +54,7 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
             </Badge>
           )}
           <span className="text-muted-foreground">
-            {sessionCount} {sessionCount === 1 ? 'session' : 'sessions'}
+            {sessionCount} {sessionCount === 1 ? 'chat' : 'chats'}
           </span>
         </div>
 

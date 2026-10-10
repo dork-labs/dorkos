@@ -237,6 +237,60 @@ describe('enforceApprovals with folder grants', () => {
   });
 });
 
+// Power flows downstream, never up (spec `trusted-by-default-flip` §4): the
+// live mode is answered at no looser than the turn's ceiling, so a Full
+// autonomy session a stranger's message woke still asks the person.
+describe('enforceApprovals under a turn ceiling', () => {
+  const respond = vi.fn(async () => ({ data: true }));
+  const provider = {
+    getClient: async () => ({ postSessionIdPermissionsPermissionId: respond }),
+    peekClient: () => null,
+  } as unknown as OpenCodeClientProvider;
+
+  async function run(ceiling: 'runtime-default' | undefined): Promise<StreamEvent[]> {
+    const approvals = new PendingApprovalStore();
+    const out: StreamEvent[] = [];
+    for await (const event of enforceApprovals(
+      {
+        provider,
+        approvals,
+        registry: {
+          get: () => ({ permissionMode: 'bypassPermissions' }),
+        } as unknown as OpenCodeSessionRegistry,
+      },
+      {
+        sessionId: 's1',
+        ocSessionId: 'oc-1',
+        cwd: '/agents/ana',
+        permissions: { pendingPermissionSessions: new Map() } as never,
+        ...(ceiling ? { permissionCeiling: ceiling } : {}),
+      },
+      {
+        type: 'approval_required',
+        data: { toolCallId: 'per_1', timeoutMs: 1000, startedAt: 0, toolName: 'bash', input: {} },
+      } as StreamEvent
+    )) {
+      out.push(event);
+    }
+    approvals.clearSession('s1');
+    return out;
+  }
+
+  afterEach(() => respond.mockClear());
+
+  it('auto-approves under the session’s own Full autonomy with no ceiling', async () => {
+    const out = await run(undefined);
+    expect(respond).toHaveBeenCalledWith(expect.objectContaining({ body: { response: 'once' } }));
+    expect(out).toEqual([]);
+  });
+
+  it('asks the person when the turn is held to the runtime default', async () => {
+    const out = await run('runtime-default');
+    expect(respond).not.toHaveBeenCalled();
+    expect(out.map((event) => event.type)).toEqual(['approval_required']);
+  });
+});
+
 describe('the asks a live 1.18.31 sidecar sent (captured 2026-09-26)', () => {
   // Verbatim `permission.asked` properties from a real sidecar with a local
   // model: a read reaching outside the session's folder, and an edit of the

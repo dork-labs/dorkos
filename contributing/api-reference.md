@@ -538,7 +538,7 @@ Update agent fields by path. Merges the request body into the existing manifest.
 
 All fields are optional. The per-agent `enabledToolGroups` object this endpoint used to accept is retired (spec `agent-permissions` D13): what an agent may do lives on its Permissions page instead (`PATCH /api/agents/:id/permissions`), and both `enabledToolGroups` and `tierCeiling` are refused by name here — see the refusal table below.
 
-**This route is agent-reachable, so what it accepts is a classification rather than a schema.** It backs both the cockpit's self-edit and the `update_agent` MCP tool, and it performs no caller-identity check, so a field an agent must not decide for itself cannot be accepted on this path. Every leaf of the wire carries a verdict in `apps/server/src/services/core/operator/agent-write-policy.ts`, and a drift guard fails the build when a new field arrives without one (DOR-1506). These are the refusals:
+**This route is agent-reachable, so what it accepts is a classification rather than a schema.** It backs both the app's self-edit and the `update_agent` MCP tool, and it performs no caller-identity check, so a field an agent must not decide for itself cannot be accepted on this path. Every leaf of the wire carries a verdict in `apps/server/src/services/core/operator/agent-write-policy.ts`, and a drift guard fails the build when a new field arrives without one (DOR-1506). These are the refusals:
 
 | Field                                                   | Why it is refused                                                                                                                                                                                                                        | Where it is set instead                                                                                                                                                           |
 | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -552,7 +552,7 @@ All three are **refused, not stripped**: a partial write that silently dropped t
 
 "Any object above it" includes one carrying **only keys DorkOS does not recognise**, and that is load-bearing rather than pedantic. A write here REPLACES the object it names instead of merging into it, so `{"enabledToolGroups":{"zzz":1}}` would store `{}` — clearing groups a person had turned off — even though the patch named no guarded key. `{"behavior":{"zzz":1}}` is sharper still, because the schema defaults `responseMode` and the replacement would re-arm the most permissive setting. So naming an object that holds a refused field counts as naming every field under it, unless every key it carries is one the policy classifies.
 
-**Two more fields are refused on the `update_agent` MCP tool ONLY, and are accepted here** (DOR-1698). The split is deliberate and the direction matters: this route is how the cockpit's own Safety Boundaries editor saves, and a person editing their agent's boundaries in the app is the case that must stay free.
+**Two more fields are refused on the `update_agent` MCP tool ONLY, and are accepted here** (DOR-1698). The split is deliberate and the direction matters: this route is how the app's own Safety Boundaries editor saves, and a person editing their agent's boundaries in the app is the case that must stay free.
 
 | Field              | Refused on                                                                | Where an agent does it instead     |
 | ------------------ | ------------------------------------------------------------------------- | ---------------------------------- |
@@ -611,7 +611,7 @@ Query params: `agentId` (optional), `before` (ISO 8601 cursor, optional), `limit
 
 Undo one `permission.changed` event (spec `agent-permissions` D14): every key it moved goes back to its `before`, recorded as one new `permission.changed` with `surface: 'undo'` and `undoOf`. Person-only, like every write.
 
-**Request body:** `{ force?: boolean, acknowledgeAutonomy?: true }` (an empty body is a plain Undo).
+**Request body:** `{ force?: boolean }` (an empty body is a plain Undo).
 
 - A key whose value is no longer the recorded `after` is a conflict. A change to one target is refused whole (`409 UNDO_CONFLICT`, with `conflicts: PermissionUndoSkip[]`). A change that reached several targets sets back the ones that still match and reports the rest in `skipped`; it is refused only when none match. `force: true` sets everything back.
 - A preset switch (`presetSnapshot` on the event) goes back as one unit: the preset, the defaults it cleared, and the global stop.
@@ -622,18 +622,16 @@ Undo one `permission.changed` event (spec `agent-permissions` D14): every key it
 - `200` - `{ changes: PermissionChange[], skipped: PermissionUndoSkip[] }`
 - `404` - `UNKNOWN_EVENT`
 - `409` - `UNDO_CONFLICT` (with `conflicts`), or `NOT_UNDOABLE` for a request-card answer or a notice
-- `428` - `AUTONOMY_ACK_REQUIRED` when the Undo would put a Files & commands stop back on Full autonomy
 
 ### PUT /api/permissions/preset
 
 Choose a preset for everyone (`careful`, `balanced`, `full`). Moves the global Files & commands stop to the preset's (Careful → `ask`, Balanced → `act`, Full power → `autonomy`) and clears the changes made on top of the old preset; `applyToAgents` also removes those agents' own settings so they follow the new preset.
 
-**Request body:** `{ preset, applyToAgents?: string[], surface, acknowledgeAutonomy?: true }`. `acknowledgeAutonomy` records that the person read what Full autonomy means and said yes, in the same write as the preset — needed only when the preset moves Files & commands to Full autonomy and no acknowledgement is already on file.
+**Request body:** `{ preset, applyToAgents?: string[], surface }`.
 
 **Responses:**
 
 - `200` - `{ changes: PermissionChange[], permissions: PermissionsResponse }`
-- `428` - `AUTONOMY_ACK_REQUIRED` when the preset would move Files & commands to Full autonomy and `acknowledgeAutonomy` was not sent and none is on file
 
 ### PATCH /api/permissions/defaults
 
@@ -653,14 +651,13 @@ One agent's resolved permissions, with where each area's state and its Files & c
 
 Change one agent's own areas, actions, or Files & commands stop.
 
-**Request body:** `{ areas?: Record<string, state | null>, actions?: Record<string, state | null>, filesAndCommands?: stop | null, surface, acknowledgeAutonomy?: true }`. `filesAndCommands: null` puts the agent back on the default. `acknowledgeAutonomy` is needed the same way it is on the preset route, when this write moves the agent's own stop to `autonomy`.
+**Request body:** `{ areas?: Record<string, state | null>, actions?: Record<string, state | null>, filesAndCommands?: stop | null, surface }`. `filesAndCommands: null` puts the agent back on the default.
 
 **Refuses `permissions`, `enabledToolGroups`, and `tierCeiling` on `PATCH /api/agents/current` and `PATCH /api/mesh/agents/:id`** — see those routes above; this is the only door in.
 
 **Responses:**
 
 - `200` - `{ changes: PermissionChange[], permissions: AgentPermissionsResponse }`
-- `428` - `AUTONOMY_ACK_REQUIRED`
 
 ## Relay Endpoints
 
@@ -875,7 +872,7 @@ Returns the full adapter catalog with manifests and running instances for each a
       "type": "telegram",
       "displayName": "Telegram",
       "description": "Send and receive messages via a Telegram bot.",
-      "iconEmoji": "\u2708\ufe0f",
+      "iconId": "telegram",
       "category": "messaging",
       "builtin": true,
       "multiInstance": false,

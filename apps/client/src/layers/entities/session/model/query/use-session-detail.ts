@@ -1,12 +1,15 @@
-import { useQuery } from '@tanstack/react-query';
-import { useTransport, useAppStore } from '@/layers/shared/model';
-import { isSessionRequestReady } from '@/layers/shared/lib';
-import type { PermissionModeId, Session } from '@dorkos/shared/types';
+import { useEffect } from 'react';
+import { useSafeNavigate } from '@/layers/shared/model';
+import { toSession } from '@/layers/shared/lib';
+import { useSessionSearch } from '../navigation/use-session-search';
+import { setSessionRouteContext } from '../navigation/session-route-context';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTransport } from '@/layers/shared/model';
+import { useSessionRouteContext } from '../navigation/session-route-context';
+import type { Session } from '@dorkos/shared/types';
 // Same-slice imports via sibling modules (not the entities/session barrel) to
 // avoid a self-referential barrel import within this slice.
 import { sessionKeys } from '../../api/query-keys';
-import { resolvePermissionMode } from '../../lib/permission-mode';
-import { useSessionSettingsOverride } from '../settings/session-settings-overrides';
 
 /** Options for {@link useSessionDetail}. */
 export interface UseSessionDetailOptions<T> {
@@ -25,50 +28,54 @@ export interface UseSessionDetailOptions<T> {
    */
   select?: (session: Session) => T;
   /**
-   * Read a session belonging to a DIFFERENT working directory than the one this
-   * window has selected.
-   *
-   * A session row is addressed by id **and** directory — the server resolves the
-   * transcript under the agent's project path — so the id alone is not enough
-   * for a caller talking about somebody else's session. Almost every caller is
-   * reporting on the session the person is currently inside, which is what the
-   * default (this window's `selectedCwd`) is for. A parked schedule is the
-   * exception: it names the session that PROPOSED it, which is usually not the
-   * one on screen, and without its own directory the lookup would either miss or
-   * — worse — read a different agent's session that happens to share the id.
+   * Optional legacy directory hint for a session owned by another surface.
+   * Existing sessions normally resolve by identity on the server. The active
+   * route supplies its resolved context; other callers omit this hint safely.
    */
   dir?: string;
+  /**
+   * For a surface that only names the chat, like a tab or a History row: read
+   * once, never refetch on window focus, never retry a miss. Live title changes
+   * still arrive, because the session stream merges fresh rows into every
+   * cached detail entry. Without it, ten open chat tabs are ten reads each time
+   * the window regains focus.
+   */
+  nameOnly?: boolean;
 }
 
 /**
  * The session's detail row from the server, cached under the one key every
- * reader and writer shares. Mount it from anywhere that needs a session's
- * settings — TanStack Query dedupes the request, so several surfaces reading
- * one session cost a single fetch and can never disagree.
+ * reader and writer shares, and nothing else: no router, no navigation. For a
+ * surface that only names a chat, like a tab, which may sit outside any route
+ * and must never steer one. {@link useSessionDetail} is this plus the active
+ * route's draft hand-off.
  *
- * @param sessionId - The active session id, or null when none is selected.
- *   When null the query is disabled and no request is made. The same holds
- *   while the working directory is still resolving — see
- *   {@link isSessionRequestReady}.
+ * @param sessionId - The session id, or null for none (no request is made).
  * @param options - Fetch gate, field selector and directory override; see
  *   {@link UseSessionDetailOptions}.
  */
-export function useSessionDetail<T = Session>(
+export function useSessionRow<T = Session>(
   sessionId: string | null,
   options?: UseSessionDetailOptions<T>
 ) {
   const transport = useTransport();
-  const selectedCwd = useAppStore((s) => s.selectedCwd);
-  // The caller's directory wins when it named one. Both paths land in the same
-  // key factory, so a session read under an explicit directory shares its cache
-  // entry with the same session read while that directory is selected.
-  const cwd = options?.dir ?? selectedCwd;
+  const queryClient = useQueryClient();
+
+  // Explicit legacy hints win; otherwise use this identity's resolved context.
+  // A missing context requests server-side resolution, never a global default.
+  const context = useSessionRouteContext(sessionId);
+  const cwd = options?.dir ?? context?.cwd ?? null;
 
   return useQuery({
     queryKey: sessionKeys.detail(sessionId, cwd),
-    queryFn: () => transport.getSession(sessionId!, cwd!),
-    staleTime: 30_000,
-    enabled: isSessionRequestReady(sessionId, cwd) && (options?.enabled ?? true),
+    queryFn: async () => {
+      const session = await transport.getSession(sessionId!, cwd ?? undefined);
+      queryClient.setQueryData(sessionKeys.nativeDetail(sessionId, cwd), session);
+      return session;
+    },
+    staleTime: options?.nameOnly ? Infinity : 30_000,
+    ...(options?.nameOnly && { refetchOnWindowFocus: false, retry: false }),
+    enabled: Boolean(sessionId) && (options?.enabled ?? true),
     select: options?.select,
     // **Dropped wifi is not a reason to stop asking localhost.** TanStack's
     // default `networkMode: 'online'` PAUSES a fetch whenever
@@ -81,47 +88,57 @@ export function useSessionDetail<T = Session>(
 }
 
 /**
- * A session's effective permission mode — the single client-side answer to
- * "will this agent ask me before it acts?". Subscribes to the session cache, so
- * a surface reading it re-renders the moment the mode changes, and honours a
- * change the person just made before the server has confirmed it.
+ * The session's detail row from the server, cached under the one key every
+ * reader and writer shares. Mount it from anywhere that needs a session's
+ * settings — TanStack Query dedupes the request, so several surfaces reading
+ * one session cost a single fetch and can never disagree.
  *
- * Returns null when no session is selected, which is not the same as `'default'`:
- * nothing is running, so there is nothing to say about it.
- *
- * Precedence, most trusted first: the change in flight, the detail row, then
- * whatever the caller already knew.
+ * Also finishes a draft: once the active route's draft session exists on the
+ * server, the URL drops its draft markers.
  *
  * @param sessionId - The active session id, or null when none is selected.
- * @param options.enabled - Whether this caller may fetch the row itself.
- *   Defaults to true; a passive reporting surface should pass false on pages
- *   that show nothing about the session, and a surface rendering a whole list
- *   of sessions must pass false or it costs one request per row.
- * @param options.fallback - The mode this caller already holds from somewhere
- *   else, typically its row in the session list. Used when the detail cache has
- *   nothing for this session — the normal case for any session the person is
- *   not currently inside. Without it such a caller would be told `'default'`,
- *   which is a specific claim about the session, not an absence of one.
+ *   When null the query is disabled and no request is made.
+ * @param options - Fetch gate, field selector and directory override; see
+ *   {@link UseSessionDetailOptions}.
  */
-export function useSessionPermissionMode(
+export function useSessionDetail<T = Session>(
   sessionId: string | null,
-  options?: { enabled?: boolean; fallback?: PermissionModeId }
-): PermissionModeId | null {
-  // Selected down to the mode itself: this feeds the app-wide banner slot, so an
-  // observer tracking the whole row would re-render the shell every time an
-  // unrelated field (model, effort, fast-mode) was written to the same session.
-  const { data: confirmed } = useSessionDetail(sessionId, {
-    enabled: options?.enabled,
-    select: (session) => session.permissionMode,
+  options?: UseSessionDetailOptions<T>
+) {
+  const transport = useTransport();
+  const context = useSessionRouteContext(sessionId);
+  const cwd = options?.dir ?? context?.cwd ?? null;
+  const navigate = useSafeNavigate();
+  const search = useSessionSearch();
+  // Settings PATCHes and optimistic list rows can make detail look successful
+  // before the runtime has created anything. Only an actual native read counts.
+  const native = useQuery<Session>({
+    queryKey: sessionKeys.nativeDetail(sessionId, cwd),
+    queryFn: () => transport.getSession(sessionId!, cwd ?? undefined),
+    enabled: false,
+    staleTime: Infinity,
   });
-  const overrides = useSessionSettingsOverride(sessionId ?? '');
-
-  if (!sessionId) return null;
-  // A {@link PermissionModeId}, not the narrower enum: `confirmed` reads off
-  // `Session.permissionMode`, which carries any id the session's own runtime
-  // reports (`test-mode`'s ids sit outside the enum on purpose). Every surface
-  // downstream reads meaning off the runtime's own descriptors or treats the id
-  // as an opaque display string, so none of them needed the narrowing this used
-  // to assert (DOR-851, DOR-885).
-  return resolvePermissionMode(overrides.permissionMode, confirmed ?? options?.fallback);
+  const query = useSessionRow(sessionId, options);
+  useEffect(() => {
+    if (
+      !navigate ||
+      search.draft !== '1' ||
+      search.session !== sessionId ||
+      !query.isSuccess ||
+      !native.data ||
+      !context?.cwd
+    )
+      return;
+    if (context.draft) setSessionRouteContext(sessionId!, { ...context, draft: false });
+    void navigate({
+      ...toSession((prev) => ({
+        ...prev,
+        draft: undefined,
+        launchRef: undefined,
+        agentId: undefined,
+      })),
+      replace: true,
+    });
+  }, [navigate, search.draft, search.session, sessionId, query.isSuccess, native.data, context]);
+  return query;
 }

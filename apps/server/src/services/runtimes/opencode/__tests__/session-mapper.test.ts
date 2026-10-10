@@ -169,6 +169,21 @@ function createProvider(client: MockClient | null): OpenCodeClientProvider & {
 }
 
 describe('OpenCodeSessionMapper', () => {
+  it('finds a derived external session id without needing its project directory', async () => {
+    const client = createMockClient();
+    const native = ocSession({ directory: '/another/project' });
+    client.session.list.mockResolvedValue({ data: [native] });
+    const mapper = new OpenCodeSessionMapper(createProvider(client));
+    const id = mapper.adoptOpenCodeSession(native.id);
+    const cold = new OpenCodeSessionMapper(createProvider(client));
+    await expect(cold.findSession('/default', id)).resolves.toMatchObject({
+      id,
+      cwd: '/another/project',
+    });
+    expect(client.session.list.mock.calls[0]![0]!.query.directory).toBeUndefined();
+    expect(client.session.create).not.toHaveBeenCalled();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -518,7 +533,7 @@ describe('OpenCodeSessionMapper', () => {
         serveWithCapIgnoringLimit(client, sessions, cap);
         const mapper = new OpenCodeSessionMapper(createProvider(client));
 
-        await expect(mapper.listSessions(PROJECT_DIR)).rejects.toThrow(/ignored the session limit/);
+        await expect(mapper.listSessions(PROJECT_DIR)).rejects.toThrow(/ignored the chat limit/);
         const probe = client.session.list.mock.calls[1]![0]!.query;
         expect(probe.limit).toBe(1);
         // The probe must ask the SAME question the real read asks. A sidecar
@@ -867,7 +882,7 @@ describe('OpenCodeSessionMapper', () => {
       ]);
     });
 
-    // The blast radius of a throw here is the whole conversation, not one
+    // The blast radius of a throw here is the whole chat, not one
     // message: `getMessageHistory` throwing is caught by the runtime facade and
     // turned into the log-backed EventLog fallback, which for a session adopted
     // from the OpenCode TUI holds nothing at all. Before the payload was
@@ -1381,7 +1396,7 @@ describe('getMessageHistory — images', () => {
     expect(history[0]!.parts).toEqual([
       {
         type: 'error',
-        message: 'A session cannot store image/svg+xml — only PNG, JPEG, GIF and WebP images.',
+        message: 'A chat cannot store image/svg+xml — only PNG, JPEG, GIF and WebP images.',
         category: 'execution_error',
       },
     ]);

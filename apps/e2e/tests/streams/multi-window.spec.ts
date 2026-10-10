@@ -166,10 +166,13 @@ test.describe('several cockpit windows', () => {
         // arrives, and without these that is an anonymous test timeout rather
         // than "open window 4" failing.
         await test.step(`open window ${index + 1}`, async () => {
-          await page.goto(`/session?session=${randomUUID()}&dir=${encodeURIComponent(agentDir)}`, {
-            waitUntil: 'domcontentloaded',
-            timeout: 20_000,
-          });
+          await page.goto(
+            `/session?session=${randomUUID()}&draft=1&dir=${encodeURIComponent(agentDir)}`,
+            {
+              waitUntil: 'domcontentloaded',
+              timeout: 20_000,
+            }
+          );
         });
         pages.push(page);
         await page.waitForTimeout(SETTLE_MS);

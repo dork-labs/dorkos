@@ -13,7 +13,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
-import type { RoomKind } from '@dorkos/shared/room-schemas';
+import type { AuthorKind, RoomKind } from '@dorkos/shared/room-schemas';
 import {
   respondsTo,
   selectTriggerTargets,
@@ -236,18 +236,25 @@ describe('selectTriggerTargets — why each member was picked', () => {
   function reasonOf(
     roomKind: RoomKind,
     member: AddressingMember,
-    mentions: string[] = []
+    mentions: string[] = [],
+    authorKind: AuthorKind = 'human'
   ): TriggerReason | undefined {
     return selectTriggerTargets({
       roomKind,
-      authorKind: 'human',
+      authorKind,
       entry: { authorId: 'dorian', mentions },
       members: [member, person],
     })[0]?.reason;
   }
 
-  it('labels an engaged agent nobody named `window` — the only gatable reason', () => {
-    expect(reasonOf('channel', engaged)).toBe('window');
+  it('labels an engaged agent nobody named `window` on an agent’s post — the only gatable reason', () => {
+    expect(reasonOf('channel', engaged, [], 'agent')).toBe('window');
+  });
+
+  it('labels an engaged agent a PERSON is talking with `conversation`, which is never gated', () => {
+    // DOR-2823: a person in a channel is owed an answer, so their unaddressed
+    // follow-up is not ambient.
+    expect(reasonOf('channel', engaged)).toBe('conversation');
   });
 
   it('labels a mention `mention`, even when the window is also open', () => {
@@ -297,7 +304,7 @@ describe('selectTriggerTargets — why each member was picked', () => {
     expect(targets).toEqual([
       { authorId: 'ana', reason: 'mention' },
       { authorId: 'bo', reason: 'always' },
-      { authorId: 'cy', reason: 'window' },
+      { authorId: 'cy', reason: 'conversation' },
     ]);
   });
 });

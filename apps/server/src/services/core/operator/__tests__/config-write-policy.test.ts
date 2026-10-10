@@ -67,6 +67,8 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       // it publishes a card describing every agent here and opens an address
       // outside clients post work to (DOR-1304).
       'a2a.enabled',
+      // How long Activity keeps the history a person reviews (spec `audit-trail`).
+      'activity.retentionDays',
       'agents.defaultDirectory',
       'auth.enabled',
       'browser.enabled',
@@ -183,8 +185,16 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'runtimes.codex.defaultTrustStop',
       'runtimes.codex.transport',
       'runtimes.defaultTrustStop',
+      'runtimes.doe.defaultTrustStop',
+      'runtimes.doe.inference.credentialEndpoint',
+      'runtimes.doe.inference.credentialRef',
+      'runtimes.doe.inference.endpoint',
+      'runtimes.doe.inference.protocol',
+      'runtimes.doe.inference.provider',
+      'runtimes.doe.inference.source',
       'runtimes.environment.inherit.claudeCode',
       'runtimes.environment.inherit.codex',
+      'runtimes.environment.inherit.doe',
       'runtimes.environment.inherit.opencode',
       'runtimes.opencode.baseURL',
       'runtimes.opencode.binaryPath',
@@ -205,7 +215,6 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'tunnel.authtoken',
       'tunnel.domain',
       'tunnel.enabled',
-      'ui.autonomyAcknowledgedAt',
       // Whose saved navigation this is, and where the person's next "switch
       // back to this DorkOS" lands. An agent could otherwise steer that click.
       'ui.communityNavigation.owners[].installationDestination.path',

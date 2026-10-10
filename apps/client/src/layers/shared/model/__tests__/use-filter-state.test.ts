@@ -7,7 +7,8 @@ import { renderHook, act } from '@testing-library/react';
 // Mock TanStack Router hooks
 const mockNavigate = vi.fn();
 const mockSearch: Record<string, string> = {};
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useSearch: () => mockSearch,
   useNavigate: () => mockNavigate,
   useRouter: () => ({}),

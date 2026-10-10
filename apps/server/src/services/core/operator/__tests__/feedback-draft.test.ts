@@ -180,7 +180,7 @@ describe('the feedback_draft capability', () => {
     // Scoped to the runtimes LINE: the settings block below it legitimately
     // names `runtimes.opencode.enabled`, so a whole-body check would pass for
     // the wrong reason (or, as written first, fail for it).
-    expect(body.split('\n')).toContain('- Runtimes configured: claude-code, codex');
+    expect(body.split('\n')).toContain('- Runtimes configured: claude-code, codex, doe');
     expect(body).toContain('runtimes.opencode.enabled: false');
   });
 

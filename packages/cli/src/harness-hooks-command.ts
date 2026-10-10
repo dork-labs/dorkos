@@ -137,7 +137,7 @@ async function listDecisions(dorkHome: string): Promise<number> {
       const where = isWorkspaceHooksEntry(entry)
         ? 'workspace commands for new worktrees of this folder'
         : isGlobalActivationEntry(entry)
-          ? 'for the globally installed package, in every session'
+          ? 'for the globally installed package, in every chat'
           : here.has(entry)
             ? 'matches the hooks installed in this project'
             : 'from another project, or from before this package changed its hooks';

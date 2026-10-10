@@ -19,7 +19,7 @@ Mesh finds the AI agents scattered across your projects and gathers them in one 
 
 ## The problem it solves
 
-When you run agents in several projects, they cannot see each other. A Claude Code agent working on your backend has no idea a Cursor agent is editing your frontend. So you become the go-between, copying context from one session into the next.
+When you run agents in several projects, they cannot see each other. A Claude Code agent working on your backend has no idea a Cursor agent is editing your frontend. So you become the go-between, copying context from one chat into the next.
 
 Mesh removes that step. It finds your agent projects, keeps a list of them, and connects them so they can message each other. Nothing gets added without your approval.
 
@@ -122,7 +122,7 @@ Every registered agent has a manifest stored in `.dork/agent.json`:
 | **capabilities**   | Capability tags (e.g., "typescript", "testing")                                                                                                                                                                                                                                                                                                                                                                  |
 | **behavior**       | Response mode: `always`, `direct-only`, `mention-only`, `engaged`, or `silent`. Only sets what a new direct message starts as. A channel always starts `engaged`, and a room someone already set up keeps what it has                                                                                                                                                                                            |
 | **namespace**      | Derived from project path relative to scan root                                                                                                                                                                                                                                                                                                                                                                  |
-| **persona**        | Optional system prompt text injected into Claude sessions                                                                                                                                                                                                                                                                                                                                                        |
+| **persona**        | Optional system prompt text injected into Claude Code chats                                                                                                                                                                                                                                                                                                                                                      |
 | **personaEnabled** | Whether persona text is injected (default: true)                                                                                                                                                                                                                                                                                                                                                                 |
 | **color**          | CSS color override for visual identity                                                                                                                                                                                                                                                                                                                                                                           |
 | **icon**           | Emoji override for visual identity                                                                                                                                                                                                                                                                                                                                                                               |
@@ -156,8 +156,8 @@ When both Mesh and Relay are enabled, registering an agent in Mesh creates a Rel
   <Card title="Relay" href="/docs/concepts/relay">
     Understand the messaging layer that Mesh agents use to communicate.
   </Card>
-  <Card title="Sessions" href="/docs/concepts/sessions">
-    Learn how agent sessions work and how they connect to the Mesh registry.
+  <Card title="Chats" href="/docs/concepts/sessions">
+    Learn how agent chats work and how they connect to the Mesh registry.
   </Card>
   <Card title="Architecture" href="/docs/concepts/architecture">
     See how Mesh fits into the overall DorkOS architecture.

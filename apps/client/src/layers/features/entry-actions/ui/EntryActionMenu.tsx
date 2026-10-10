@@ -134,7 +134,7 @@ export function EntryActionMenu({
   const isMobile = useIsMobile();
 
   // No menu at all rather than an empty one — the trigger still has to render,
-  // because it IS the message. Matches `SessionContextMenu`.
+  // because it IS the message.
   if (actions.length === 0) return <>{children}</>;
 
   return (

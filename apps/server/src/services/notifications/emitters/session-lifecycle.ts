@@ -34,6 +34,7 @@
  *
  * @module services/notifications/emitters/session-lifecycle
  */
+import { isChatStartedTurn } from '../../session/chat-messages/chat-started-turns.js';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import type { SessionLifecycle, SessionLimit } from '@dorkos/shared/session-stream';
@@ -58,8 +59,8 @@ import { LEDGER_RUNTIMES, type LedgerRuntime } from '@dorkos/shared/account-usag
  * @param cwd - The session's working directory, when the projector knew one.
  */
 export function sessionLabelFor(cwd: string | undefined): string {
-  if (!cwd) return 'A session';
-  return path.basename(cwd) || 'A session';
+  if (!cwd) return 'A chat';
+  return path.basename(cwd) || 'A chat';
 }
 
 /**
@@ -102,6 +103,7 @@ const UNLABELLED_ACCOUNT: Readonly<Record<LedgerRuntime, string>> = {
   'claude-code': 'Your Claude account',
   codex: 'Your Codex account',
   opencode: 'Your OpenCode account',
+  doe: 'Your DorkOS account',
 };
 
 /**
@@ -262,6 +264,10 @@ export function watchSessionLifecycle(): () => void {
     if (before === status.lifecycle) return;
 
     if (before === 'streaming' && status.lifecycle === 'idle') {
+      // A turn another chat's message started is agents working with each
+      // other; it only matters to the person if the agent decides so (spec
+      // `spin-off-chats` §6, "quiet in speech").
+      if (isChatStartedTurn(sessionId)) return;
       // Deliberately raised for every finished turn, including one the operator
       // started by typing here. The seam carries no principal — a turn can be
       // started from the composer, a room, a bridge or a schedule, and the

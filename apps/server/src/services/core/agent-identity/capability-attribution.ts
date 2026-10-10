@@ -24,6 +24,16 @@
  * all about the irreversible thing that ran. An unidentified caller completing
  * something irreversible is the single most important line in this feed.
  *
+ * ## An unidentified change goes to the audit log, not the feed
+ *
+ * The registry now reports every non-read call, identified or not (spec
+ * `audit-trail` PR2). An unidentified `act` call — the person in the app, an
+ * external MCP client with no token — is recorded in the audit log directly,
+ * under the request's actor, and NOT in the Activity feed, which stays exactly
+ * as it was. The feed is the summary people scroll; the audit log is the
+ * complete record, and with trusted-by-default an anonymous change is the
+ * common case.
+ *
  * ## A request is not a failure
  *
  * The request tool (`request_permission`, a capability that forwards an
@@ -37,6 +47,7 @@
  */
 import type { ActivityService } from '../../activity/activity-service.js';
 import { activityActorForIdentity } from '../../activity/activity-actor.js';
+import { auditTrail, recordAudit } from '../../audit/audit-trail.js';
 import {
   CapabilityGateRefusal,
   type CapabilityDefinition,
@@ -107,9 +118,34 @@ export function createCapabilityAttributionObserver(
 ): CapabilityInvocationObserver {
   return ({ capability, context, ok, error }) => {
     const identity = context.identity;
-    // Anonymous reads and ordinary changes stay silent; an anonymous irreversible
-    // action does not (see the module TSDoc).
-    if (!identity && capability.tier !== 'destructive') return;
+    // An anonymous ordinary change is the audit log's alone; an anonymous
+    // irreversible action is also the feed's (see the module TSDoc). The
+    // registry never reports an anonymous read.
+    if (!identity && capability.tier !== 'destructive') {
+      if (capability.tier === 'observe') return;
+      // In session, the scope around this observer is the person whose message
+      // started the turn, and an in-session call with no identity is still an
+      // agent's: name it unidentified, the same as the call ran under.
+      const unidentifiedAgent =
+        context.mcpServer === 'in-session'
+          ? auditTrail()?.accounts.unidentified('Unidentified caller')
+          : undefined;
+      recordAudit({
+        ...(unidentifiedAgent ? { actor: unidentifiedAgent } : {}),
+        action: ok ? 'capability.invoked' : 'capability.failed',
+        operation: 'execute',
+        target: { type: 'capability', id: capability.id, name: capability.title },
+        outcome: ok ? 'ok' : 'failed',
+        ...(ok || error === undefined
+          ? {}
+          : { error: error instanceof Error ? error.message : String(error) }),
+        ...(context.approval?.via === 'approval'
+          ? { links: { approvalId: context.approval.approvalId } }
+          : {}),
+        summary: ok ? `Ran ${capability.title}` : `Tried to run ${capability.title} and it failed`,
+      });
+      return;
+    }
 
     // One naming of an actor, shared with the gate audit and the extension write
     // routes: an agent by its name and path, and an unidentified caller as

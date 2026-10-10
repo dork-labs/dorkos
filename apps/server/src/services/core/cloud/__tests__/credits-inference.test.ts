@@ -217,6 +217,7 @@ describe('the wiring report', () => {
     expect(report.runtimes).toEqual({
       'claude-code': 'wired',
       codex: 'follow-up',
+      doe: 'follow-up',
       opencode: 'follow-up',
     });
     expect(creditsWiringReport([{ type: 'claude-code' }]).runtimes['claude-code']).toBe(
@@ -255,7 +256,12 @@ describe('the wiring report', () => {
         { type: 'opencode', ...SPEAKS_CHAT },
         { type: 'codex', ...SPEAKS_RESPONSES },
       ]).runtimes
-    ).toEqual({ 'claude-code': 'wired', opencode: 'follow-up', codex: 'follow-up' });
+    ).toEqual({
+      'claude-code': 'wired',
+      opencode: 'follow-up',
+      codex: 'follow-up',
+      doe: 'follow-up',
+    });
     // A token that lists nothing (every token before the list): Claude Code
     // only, and nothing offered for OpenCode or Codex.
     __setCreditsStateForTests({ token, now: live });
@@ -265,7 +271,12 @@ describe('the wiring report', () => {
         { type: 'opencode', ...SPEAKS_CHAT },
         { type: 'codex', ...SPEAKS_RESPONSES },
       ]).runtimes
-    ).toEqual({ 'claude-code': 'wired', opencode: 'follow-up', codex: 'follow-up' });
+    ).toEqual({
+      'claude-code': 'wired',
+      opencode: 'follow-up',
+      codex: 'follow-up',
+      doe: 'follow-up',
+    });
     expect(creditsRuntimeWired(SPEAKS_RESPONSES)).toBe(false);
     expect(creditsRuntimeWired(SPEAKS_CHAT)).toBe(false);
   });
@@ -356,5 +367,37 @@ describe('what a refused or stopped credits turn says', () => {
     expect((stopped.data as { message: string }).message).toContain('Codex');
     const other = { type: 'error' as const, data: { message: 'x', category: 'execution_error' } };
     expect(asCreditsStopped(other, 'Codex')).toBe(other);
+  });
+});
+
+describe('multi-format runtime credits', () => {
+  afterEach(() => __setCreditsStateForTests({ token: null }));
+  it('selects each explicitly requested supported format without changing old defaults', async () => {
+    link.linked = true;
+    __setCreditsStateForTests({ token: everyFormat, now: live });
+    const capabilities = {
+      credits: {
+        ...DECLARES.credits,
+        supportedProtocols: [
+          'anthropic-messages',
+          'openai-chat-completions',
+          'openai-responses',
+        ] as const,
+      },
+    };
+    for (const protocol of capabilities.credits.supportedProtocols) {
+      expect((await resolveCreditsLaunch(capabilities, 'DorkOS', 0, protocol)).protocol).toBe(
+        protocol
+      );
+    }
+    expect((await resolveCreditsLaunch(DECLARES, 'Claude Code', 0)).protocol).toBe(
+      'anthropic-messages'
+    );
+    await expect(
+      resolveCreditsLaunch(DECLARES, 'Claude Code', 0, 'openai-responses')
+    ).rejects.toMatchObject({ reason: 'not-supported' });
+    await expect(resolveCreditsLaunch({}, 'DorkOS', 0, 'openai-responses')).rejects.toMatchObject({
+      reason: 'not-supported',
+    });
   });
 });

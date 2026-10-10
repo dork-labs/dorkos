@@ -1,6 +1,6 @@
-import type { Request } from 'express';
-import rateLimit, { type RateLimitRequestHandler } from 'express-rate-limit';
-import { rateLimitKey } from './rate-limit-key.js';
+import type { Request, RequestHandler } from 'express';
+import { recordSignInRateLimited } from '../services/core/auth/auth-audit.js';
+import { expressRateLimit } from '../http/rate-limiter.js';
 
 /**
  * Rate-limit window for credential attempts: 15 minutes.
@@ -59,6 +59,12 @@ function isCredentialAttempt(req: Request): boolean {
   return path === '/api/auth/sign-in/email' || path === '/api/auth/sign-up/email';
 }
 
+/** What a refused attempt is answered with. */
+const RATE_LIMITED_BODY = {
+  error: 'Too many sign-in attempts. Try again in a few minutes.',
+  code: 'RATE_LIMITED',
+};
+
 /**
  * Build the app-level rate limiter for Better Auth's sign-in / sign-up endpoints.
  *
@@ -75,7 +81,7 @@ function isCredentialAttempt(req: Request): boolean {
  * short window permits a high sustained guess rate. This limiter is
  * environment-independent and window-based, closing both gaps.
  *
- * Keys through {@link rateLimitKey}, like every other limiter here: the TCP peer
+ * Keys through `rateLimitKey`, through {@link expressRateLimit}, like every other limiter here: the TCP peer
  * address, which no header can move, unless `DORKOS_TRUST_PROXY` says a proxy is
  * in front. This limiter is why that changed (DOR-1711). It inherited `req.ip`
  * from `app.ts`'s `trust proxy, 1`, so `X-Forwarded-For` decided the bucket — and
@@ -84,21 +90,24 @@ function isCredentialAttempt(req: Request): boolean {
  * is the whole point.
  *
  * @param options - Per-limiter overrides (default: 10 attempts per window).
- * @returns An `express-rate-limit` handler returning a clean JSON `429`.
+ * @returns Express middleware returning a clean JSON `429`.
  */
-export function buildAuthRateLimiter(options: AuthRateLimitOptions = {}): RateLimitRequestHandler {
-  return rateLimit({
+export function buildAuthRateLimiter(options: AuthRateLimitOptions = {}): RequestHandler {
+  return expressRateLimit({
     windowMs: WINDOW_MS,
-    max: options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS,
-    keyGenerator: rateLimitKey,
-    standardHeaders: true,
-    legacyHeaders: false,
+    limit: options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS,
+    headers: 'standard',
     // Count only sign-in/sign-up POSTs; benign session-check GETs and every
     // non-auth route pass through without consuming the budget.
     skip: (req) => !isCredentialAttempt(req),
-    message: {
-      error: 'Too many sign-in attempts. Try again in a few minutes.',
-      code: 'RATE_LIMITED',
+    // The refusal is a sign-in attempt like any other, so it goes in the audit
+    // log too (admins-only, naming nobody). Better Auth never sees it, so its
+    // own hooks cannot record it.
+    message: RATE_LIMITED_BODY,
+    onLimited: (req, res) => {
+      const userAgent = req.headers['user-agent'];
+      recordSignInRateLimited(typeof userAgent === 'string' ? userAgent : undefined);
+      res.status(429).json(RATE_LIMITED_BODY);
     },
   });
 }

@@ -92,7 +92,7 @@ test.describe('Scope chips in the command palette @smoke', () => {
     //    means no hand-off, so the honest total here is 1. If that row ever
     //    turned up under a chip, this line should be the one that says so.
     await expect(palette.options).toHaveCount(1);
-    await expect(palette.options.first()).toHaveText(`No conversations with ${agent.name} yet.`);
+    await expect(palette.options.first()).toHaveText(`No chats with ${agent.name} yet.`);
 
     // 4. The way out is told, and so is its one condition — Backspace clears
     //    the scope only with the caret at the start, and step 5 is that rule.
@@ -140,6 +140,6 @@ test.describe('Scope chips in the command palette @smoke', () => {
     // before the dialog's focus trap could move it. This is the whole reason
     // this case is in a browser.
     await expect(palette.input).toBeFocused();
-    await expect(page.getByText(`No conversations came from #${slug}.`)).toBeVisible();
+    await expect(page.getByText(`No chats came from #${slug}.`)).toBeVisible();
   });
 });

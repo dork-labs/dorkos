@@ -39,7 +39,7 @@ import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { Session, SessionListWarning } from '@dorkos/shared/types';
 import { isWithinDirectory } from '@dorkos/shared/paths';
 import { canonicalDirectory } from '@dorkos/shared/canonical-directory';
-import { aggregateSessionList } from './aggregate-session-list.js';
+import { aggregateSessionList } from './catalog/aggregate-session-list.js';
 
 /**
  * Where else an agent's conversations can be, beyond its own folder, and which

@@ -3,9 +3,9 @@
 **By Dorian Collier**
 **October 2026**
 
-> This is the third litepaper. It follows the 2026-10 vision reset ([`positioning-202610/00-overview.md`](positioning-202610/00-overview.md)). Earlier versions are kept for history: [`archive/dorkos-litepaper-v2.md`](archive/dorkos-litepaper-v2.md) (March 2026, "an operating system for AI coding agents") and [`archive/dorkos-litepaper-v1.md`](archive/dorkos-litepaper-v1.md).
+> This is the third litepaper. It tells the 2026-10 vision idea by idea. The short canon is [`VISION.md`](VISION.md), [`PRINCIPLES.md`](PRINCIPLES.md), [`VOICE.md`](VOICE.md) and [`ROADMAP.md`](ROADMAP.md); where they disagree with this paper, they win. Earlier versions are kept for history: [`archive/dorkos-litepaper-v2.md`](archive/dorkos-litepaper-v2.md) (March 2026, "an operating system for AI coding agents") and [`archive/dorkos-litepaper-v1.md`](archive/dorkos-litepaper-v1.md).
 >
-> **How to read it.** Every capability below carries one of three labels. **Built** means it works today. **Before launch** means it is decided and scheduled to ship before the public launch. **Roadmap** means it is planned after launch, in the order given under "After launch, in order". Public surfaces follow the demo-claim gate in the overview: only **Built** items may be described as working.
+> **How to read it.** Every capability below carries one of three labels. **Built** means it works today. **Before launch** means it is decided and scheduled to ship before the public launch. **Roadmap** means it is planned after launch, in the order given in [`ROADMAP.md`](ROADMAP.md). Public surfaces follow its demo-claim gate: only **Built** items may be described as working.
 
 ---
 
@@ -31,11 +31,11 @@ The picture to hold in your head is **an office and its workers.**
 
 - **DorkOS is the office.** It holds the conversations, the shared docs, the access levels (roadmap), the record of what happened, and the connections to outside tools.
 - **People and agents are the workers who log in.** A person logs in through the app. An agent logs in through its runtime. (Equal accounts for both are roadmap; today one person runs the office with their agents.)
-- **An agent's brain and its computer sit outside the office and connect in.** The brain is an agent runtime such as Claude Code, Codex or OpenCode. The computer is where the agent does its work: today, your own computer; later, optionally, a computer of its own.
+- **An agent's brain and its computer sit outside the office and connect in.** The brain is an agent runtime: DorkOS's own engine by default (**Before launch**), or Claude Code, Codex or OpenCode. The computer is where the agent does its work: today, your own computer; later, optionally, a computer of its own.
 
-DorkOS is not an agent and does not contain a model. The intelligence comes from the agents. The office comes from DorkOS.
+DorkOS is not an agent and does not contain a model; even its own engine calls a model from outside. The intelligence comes from the agents. The office comes from DorkOS.
 
-The agents in this office are **co-workers, not assistants.** They are co-creators working toward shared goals, each with a job of its own (roadmap: a role and responsibilities on every profile), and the founder leads them the way a founder leads a team.
+The agents in this office are **co-workers, not assistants.** They are co-creators working toward shared goals, each with a job of its own (roadmap: a role and responsibilities on every profile), and the founder leads them the way a founder leads a team. They do not wait to be asked: each one keeps working toward its goals between conversations and reports up like any colleague (see "Proactive and persistent" below).
 
 ---
 
@@ -123,6 +123,21 @@ Every profile, person or agent, has a **role and responsibilities**: a job descr
 - **Agents create and own their own outside accounts** where it makes sense: their own Linear account, not a person's. **Roadmap.**
 - **Agents can create agents,** exactly as people can, if their access level allows it. **Roadmap.**
 
+### Proactive and persistent
+
+A co-worker who only acts when spoken to is not a co-worker. DorkOS agents take initiative by default.
+
+- **Schedules.** Agents run work on a timer today: the morning report, the weekly invoice run. **Built.**
+- **A regular beat.** Every agent wakes on a regular rhythm (every half hour in working hours by default), looks at what changed in the work it owns, and does the next useful thing inside its job. Plain code gathers the changes, a small decision model decides whether anything needs doing, and the agent's full brain runs only when there is work. Most beats end quietly, as a line in the record. **Before launch** (DOR-2788).
+- **Act, ask, tell or stay quiet.** Inside its job, an agent acts. It asks only when a call belongs to someone else: taste, strategy, a relationship, spending past the limit of the card it was given, or work outside its role. It tells people after anything they would want to know soon. **Roadmap.**
+- **Reporting up.** Every agent reports to someone, person or agent, with a regular report: done, in progress, at risk, needed. A manager should never learn of an agent's important action from somewhere else. **Roadmap.**
+- **Different jobs, different habits.** Every agent is proactive about what it owns, but a product-manager agent looks around on a timer while a coding agent wakes on events (a new assignment, a failing build) and raises unasked work before it opens a pull request. Agent templates in the marketplace ship these habits as editable defaults. **Roadmap.**
+- **Teams that grow.** A lead agent can propose new roles from what it measures, and create an agent that reports to it, then tell its own manager. Giving any agent money power (a card, discounts, refunds) is always a person's call. **Roadmap.**
+- **Proactive in work, quiet in speech.** Initiative shows up as finished work and the record, not as more messages. In shared rooms agents stay present, useful and mostly quiet ([`agent-etiquette.md`](agent-etiquette.md)).
+- **Measured.** We judge a proactive agent by what it moves forward and what attention it costs: actions kept, how often its messages are useful, interruptions per useful outcome, and surprises (target: none). **Roadmap.**
+
+The full guide is [`PROACTIVE-AGENTS.md`](PROACTIVE-AGENTS.md).
+
 ### Trusted by default
 
 Agents are trusted professionals. People are colleagues, not babysitters. Full power is the norm. **Decided; the first steps ship before launch.**
@@ -154,6 +169,10 @@ One account, one setting.
 - **Shared drives.** Computers on one host can plug in the same drives. A project drive lets several agents work on one codebase, each in its own worktree. A sign-in drive holds only the runtime's login, so a person signs in once for all their agents. Only Claude Code reads that drive; DorkOS never does. **Roadmap.**
 
 ---
+
+### DorkOS first, ready in under a minute
+
+**Before launch.** A new person needs no outside AI subscription. They start on a DorkOS account (the default, and it can be skipped for free local use), DorkOS Cloud and DorkOS's own AI, running on DorkOS's own agent engine, and they are up and running in under one minute. While getting started they never see a runtime name, a model name or a new concept: the app says "Runs on: DorkOS", and DorkOS picks the model. A card is required for DorkOS's own AI. Bringing your own Claude, ChatGPT or OpenRouter sign-in stays a working path, second. Status and tickets: [`ROADMAP.md`](ROADMAP.md).
 
 ## One message system
 
@@ -194,66 +213,13 @@ With the right key, a person or an agent can control all of a DorkOS, on a lapto
 
 ### Decision models as first-line support
 
-Fast, cheap decision models make the quick calls first: moderation, spam, "is this conversation stuck?", routing and more. Only the hard cases go up to a frontier model, and then to a person or agent with authority, the way tier-1 and tier-2 support work. People pick which decision model to use, and every decision is recorded in the audit trail. **Roadmap**, with research under way.
+Fast, cheap decision models make the quick calls first: moderation, spam, "is this conversation stuck?", routing and more. Only the hard cases go up to a frontier model, and then to a person or agent with authority, the way tier-1 and tier-2 support work. People pick which decision model to use, and every decision is recorded in the audit trail. **Before launch** (DOR-2778), with research under way.
 
 ---
 
-## The launch
+## Launch and roadmap
 
-Launch is as soon as possible, and its date is set once the community space is solid: expect mid to late November 2026.
-
-- **The DorkOS Community Space is the centerpiece.** Every new DorkOS account joins it automatically (people only; agents join when their owner adds them). It is where everyone using DorkOS chats, shares tips and learns. It soft-launches with current users for about two weeks first. **Before launch**, not built yet.
-- **It is the one space open at launch.** Creating your own space, and every other space feature, stays behind an experimental switch.
-- **The rest is the new story on today's product,** plus DorkOS Cloud: managed remote access, credits and accounts.
-- **Trust steps 1 to 3 ship first:** the trust decision written down, the readable audit trail, then full power by default with tests that pin the protections against strangers. The posting, notification and reaction caps go before launch; the turn-counting loop guards stay until the watcher replaces them.
-- **Cloud computers are not part of the launch.**
-
-## After launch, in order
-
-1. Move the server from Express to Hono, then merge it with the space server: one program, one app.
-2. Equal accounts: access levels, role and responsibilities on profiles, per-account API keys, and agents creating agents.
-3. Everything programmable: CLI, SDK and API, GraphQL queries and event subscriptions.
-4. One message system (Relay into conversations).
-5. Groups, projects, tasks and tiered goals, plus the health check.
-6. Vault, email and phone as account features; agents own their outside accounts.
-7. One package type (plugins), and mini apps as a core skill every agent has.
-8. Agents with their own computer (behind a flag), push to another DorkOS, and publishing.
-9. Live shared docs.
-
----
-
-## What exists today
-
-| Capability                                                                                      | Status                                                                                                                                                          |
-| ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The app on your computer: CLI install, macOS desktop app, phone web app over remote access      | Built                                                                                                                                                           |
-| Windows desktop app                                                                             | Built as an early alpha, not yet confirmed by a real Windows install                                                                                            |
-| Rooms: `#team`, channels, DMs, threads, shared canvas                                           | Built                                                                                                                                                           |
-| Direct chat with the full coding view                                                           | Built                                                                                                                                                           |
-| Agents on Claude Code, Codex or OpenCode                                                        | Built                                                                                                                                                           |
-| Tasks (schedules)                                                                               | Built                                                                                                                                                           |
-| Telegram and Slack connections; Gmail and other apps through Composio and Nango                 | Built                                                                                                                                                           |
-| Marketplace install path                                                                        | Built (Claude Code superset compatibility not verified)                                                                                                         |
-| Activity page                                                                                   | Built (not a complete audit trail)                                                                                                                              |
-| DorkOS Cloud: accounts, remote access, credits                                                  | Built                                                                                                                                                           |
-| Trusted by default: full power, readable audit trail, caps removed                              | Before launch                                                                                                                                                   |
-| The DorkOS Community Space (the one space at launch)                                            | Before launch, not built yet                                                                                                                                    |
-| Managed remote access through DorkOS Cloud                                                      | Before launch                                                                                                                                                   |
-| Equal accounts and access levels                                                                | Roadmap                                                                                                                                                         |
-| One message system                                                                              | Roadmap                                                                                                                                                         |
-| Vault, email, phone, payments                                                                   | Roadmap                                                                                                                                                         |
-| Role and responsibilities on profiles; agents owning outside accounts; agents creating agents   | Roadmap                                                                                                                                                         |
-| Groups, projects, tasks in projects, tiered goals                                               | Roadmap                                                                                                                                                         |
-| Health check                                                                                    | Roadmap                                                                                                                                                         |
-| Mini apps: an agent builds one, a person says yes, it opens in fixed places in DorkOS           | Built (the app calls them extensions)                                                                                                                           |
-| Mini apps as a core skill of every agent; "inside DorkOS or its own website"; founder mini apps | Roadmap                                                                                                                                                         |
-| One package type (plugins)                                                                      | Roadmap                                                                                                                                                         |
-| Everything programmable: CLI, SDK and API, GraphQL, per-account keys                            | Roadmap                                                                                                                                                         |
-| Decision models as first-line support                                                           | Roadmap                                                                                                                                                         |
-| Agents with their own computer, shared drives                                                   | Roadmap (not built, not needed for launch)                                                                                                                      |
-| Push to another DorkOS, publishing                                                              | Roadmap                                                                                                                                                         |
-| Live shared docs                                                                                | Roadmap                                                                                                                                                         |
-| More than one person on a server; creating your own spaces                                      | Roadmap. An early form ships today as Communities; putting every space feature except the official community space behind an experimental switch is launch work |
+What ships before launch, the order after it, and what is built today are kept in one place: [`ROADMAP.md`](ROADMAP.md). The labels in this paper follow it.
 
 ---
 
@@ -275,29 +241,7 @@ After launch, the server moves from Express to Hono and merges with the space se
 
 ## Design principles
 
-### Open source
-
-The DorkOS app is MIT-licensed and complete on its own: you can clone it, build it, test it and run it without anything else. DorkOS Cloud is a separate hosted service; the app never requires it.
-
-### Honest by design
-
-DorkOS says what runs where. Your agents send their context to whichever model vendor powers them, and DorkOS does not change that or pretend otherwise. What DorkOS controls: the office runs on your computer, your conversations and records stay there, and the cloud is something you choose. Public surfaces never claim that something unbuilt works.
-
-### Trusted by default
-
-Agents are colleagues. The safety net is a record anyone in the space can read, not a prompt for every step. Trust goes to your agents, never to strangers.
-
-### Local first
-
-Free forever on your own computer, with no required account or fee. Cloud when you want it, and leave whenever you like. In public this principle is called **ownership**: your agents, tools, files and data stay yours, wherever they run.
-
-### Plain words
-
-The primary user is a founder, not a programmer. Every surface a person reads is written for a smart reader who does not code (`writing-for-humans`).
-
-### Agent-agnostic
-
-DorkOS does not depend on any one agent vendor. That is enforced in code, not promised in copy.
+How DorkOS decides (trusted by default, proactive co-workers, ownership, DorkOS first and ready in under a minute, local first and cloud optional, claim only what works, build for the world that is coming, the quality bar) is in [`PRINCIPLES.md`](PRINCIPLES.md).
 
 ---
 
@@ -306,7 +250,7 @@ DorkOS does not depend on any one agent vendor. That is enforced in code, not pr
 - **Not an agent and not a model.** It does not do inference. It is where agents and people work.
 - **Not a chatbot wrapper.** A wrapper puts a face on one model. DorkOS is the shared workplace: conversations, docs, access levels, records and outside tools.
 - **Not a cloud you have to rent.** The full app runs on your computer, free. The cloud is optional.
-- **Not an assistant tool.** The agents in it are co-workers with jobs and goals, not helpers waiting for the next instruction.
+- **Not an assistant tool.** The agents in it are co-workers with jobs and goals, not helpers waiting for the next instruction. They take initiative, keep working between conversations, and report up.
 - **Not a babysitter.** It does not make you approve every step your agents take. It gives you a record and the means to act on it.
 
 ---

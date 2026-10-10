@@ -82,11 +82,22 @@ export type TurnOrigin =
    */
   | { readonly kind: 'relay-binding' }
   /**
-   * One agent addressed another directly over the relay (`relay_send` to a
-   * mesh endpoint). Nobody created a session for it and nobody is watching it;
+   * One agent addressed another directly over the relay (a publish to a mesh
+   * endpoint stamped as one of our agents; agents' own send tool for this
+   * retired with spec `spin-off-chats`, which routes them through chats). Nobody created a session for it and nobody is watching it;
    * like a binding, it carries its own grant and seeds no operator stop.
    */
   | { readonly kind: 'agent-dm' }
+  /**
+   * A message on the relay addressed to an agent, from a sender that is NOT one
+   * of our agents: the A2A gateway (another company's agent), an external MCP
+   * client, or a hand-built publish. It arrives on the same agent subject an
+   * agent's own publish does, so the stamped sender is the only fact that
+   * tells it apart, and it gets its own member so that a later change letting
+   * our own agents' DMs follow a configured level can never carry it along
+   * (spec `trusted-by-default-flip` §4).
+   */
+  | { readonly kind: 'outside-sender' }
   /**
    * A connector event woke an agent up (`services/connectors/events/`). Same
    * rule as a binding: the subscription a person approved is the grant, so the
@@ -121,6 +132,15 @@ export type TurnOrigin =
    * bound first and keeps its power.
    */
   | { readonly kind: 'extension-message' }
+  /**
+   * Another chat sent this one a message (`chat_send`, a spin-off's report,
+   * spec `spin-off-chats`), or opened an agent's DM chat to send the first.
+   * Like `agent-launch`, nobody chose a trust stop for it and nobody is
+   * watching: the row seeds no operator stop. Its turn is held to the sending
+   * chat's level by a ceiling the dispatcher reads at launch, so a message
+   * never carries more power than the chat that sent it.
+   */
+  | { readonly kind: 'chat-message' }
   /**
    * A limited session's work carried over to a new session on another account
    * (spec `claude-account-fleet` D9), by a person or by the account advisor.
@@ -248,10 +268,15 @@ export function permissionSeedForOrigin(origin: TurnOrigin): OriginPermissionSee
     // with nothing seeded, like a connector event's.
     //
     // The harness is not a surface anybody ships to.
+    // Another chat's message is the sending chat's work, held to its level by
+    // the launch ceiling; the operator's stop is a promise to a person, and the
+    // sender is not that person.
+    case 'chat-message':
     case 'extension-message':
     case 'schedule':
     case 'relay-binding':
     case 'agent-dm':
+    case 'outside-sender':
     case 'connector-event':
     case 'agent-launch':
     case 'account-handoff':
@@ -263,4 +288,18 @@ export function permissionSeedForOrigin(origin: TurnOrigin): OriginPermissionSee
       throw new Error(`unhandled turn origin: ${JSON.stringify(unhandled)}`);
     }
   }
+}
+
+/** The subject prefix the server stamps on a message one of our agents sends. */
+const AGENT_SENDER_PREFIX = 'relay.agent.';
+
+/**
+ * The origin of a conversation a relay message addressed to an agent started,
+ * from the sender the server stamped on it: `agent-dm` for one of our agents,
+ * `outside-sender` for anybody else (the A2A gateway, an external MCP client).
+ *
+ * @param from - The envelope's server-stamped sender.
+ */
+export function relayTurnOrigin(from: string): TurnOrigin {
+  return from.startsWith(AGENT_SENDER_PREFIX) ? { kind: 'agent-dm' } : { kind: 'outside-sender' };
 }

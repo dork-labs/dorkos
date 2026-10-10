@@ -550,6 +550,73 @@ export const DisplayNameSourceSchema = z.discriminatedUnion('kind', [
 export type DisplayNameSource = z.infer<typeof DisplayNameSourceSchema>;
 
 /**
+ * Whether a string names a time zone this runtime knows.
+ *
+ * Asks `Intl` rather than a list, so it agrees with the formatter every
+ * working-hours computation uses (`@dorkos/shared/working-hours`): a zone `Intl`
+ * cannot format is a zone nothing can compute hours in. Lives here, not in
+ * `working-hours.ts`, so this module imports nothing with state (see the module
+ * doc).
+ *
+ * @param zone - A candidate IANA zone, e.g. `"Europe/Berlin"`.
+ */
+export function isValidTimeZone(zone: string): boolean {
+  if (zone.length === 0) return false;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: zone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** `HH:MM` on a 24-hour clock, 00:00 to 23:59. */
+const CLOCK_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/**
+ * A person's working window (spec `heartbeats` §3.5): which days, and from when
+ * to when, read in their own `profile.timezone`.
+ *
+ * The day ends after it starts, always. A window that runs past midnight
+ * (22:00–06:00) is refused rather than guessed at: which day it belongs to is a
+ * question this shape cannot answer, and nobody has asked for it yet.
+ */
+export const WorkingHoursSchema = z
+  .object({
+    /** Working days, 0 = Sunday … 6 = Saturday. At least one, each once. */
+    days: z
+      .array(z.number().int().min(0).max(6))
+      .min(1)
+      .max(7)
+      .refine((days) => new Set(days).size === days.length, 'Each day can appear only once.'),
+    /** When the working day starts, `HH:MM`. */
+    start: z.string().regex(CLOCK_PATTERN, 'Use a 24-hour time like 09:00.'),
+    /** When it ends, `HH:MM`, after `start`. */
+    end: z.string().regex(CLOCK_PATTERN, 'Use a 24-hour time like 17:00.'),
+  })
+  .refine((hours) => hours.end > hours.start, {
+    message: 'The day has to end after it starts.',
+    path: ['end'],
+  });
+
+/** A person's working window (see {@link WorkingHoursSchema}). */
+export type WorkingHours = z.infer<typeof WorkingHoursSchema>;
+
+/**
+ * That a person is away (spec `heartbeats` §3.5, canon P4): until when, and an
+ * optional note. `until: null` means away until they say otherwise.
+ */
+export const AwaySchema = z.object({
+  /** ISO timestamp they are back, or `null` for "until further notice". */
+  until: z.iso.datetime({ offset: true }).nullable(),
+  /** A short note, e.g. "On holiday". */
+  note: z.string().trim().min(1).max(200).optional(),
+});
+
+/** That a person is away (see {@link AwaySchema}). */
+export type Away = z.infer<typeof AwaySchema>;
+
+/**
  * What the user has told DorkOS about themselves (spec `user-profile-onboarding`).
  *
  * **Local-only by tested invariant, not by promise:** the telemetry heartbeat
@@ -606,6 +673,22 @@ export const UserProfileSchema = z.object({
    * the question was put. Nothing derives a handle when it is absent (DOR-604).
    */
   identityPromptDismissedAt: z.string().nullable().default(null),
+  /**
+   * The person's IANA time zone (spec `heartbeats` §3.5), or `null` while the
+   * app has not told the server one. The app fills it from the browser the
+   * first time it opens after an upgrade, and never overwrites a set value, so
+   * a server in a container or on another host never decides it. Until then
+   * the server's own zone stands in.
+   */
+  timezone: z
+    .string()
+    .refine(isValidTimeZone, 'Use a time zone name like Europe/Berlin.')
+    .nullable()
+    .default(null),
+  /** When the person works, or `null` for Monday to Friday, 09:00 to 17:00. */
+  workingHours: WorkingHoursSchema.nullable().default(null),
+  /** That the person is away, or `null` when they are not (see {@link AwaySchema}). */
+  away: AwaySchema.nullable().default(null),
 });
 
 /** What the user has told DorkOS about themselves (see {@link UserProfileSchema}). */
@@ -1813,6 +1896,7 @@ export function configuredRuntimes(read: (key: string) => unknown): string[] {
   const runtimes = ['claude-code'];
   if (read('runtimes.codex.enabled') !== false) runtimes.push('codex');
   if (read('runtimes.opencode.enabled') !== false) runtimes.push('opencode');
+  if (read('runtimes.doe.enabled') !== false) runtimes.push('doe');
   return runtimes;
 }
 
@@ -1921,10 +2005,6 @@ const DefaultEffortSchema = z.enum(EFFORT_LEVELS).nullable().default(null);
  * module is deliberately dependency-light (it is bridged to JSON Schema and read
  * by the CLI); the two are pinned together by
  * `packages/shared/src/__tests__/config-schema.test.ts`.
- *
- * Writing `'autonomy'` into one of these leaves is consent-gated at the config
- * route — see `AUTONOMY_ACK_REQUIRED` — because it decides how every future
- * session starts, not just this one.
  */
 const DefaultTrustStopSchema = z.enum(['ask', 'act', 'autonomy']).nullable().default(null);
 
@@ -2157,6 +2237,96 @@ const LoggingConfigSchema = z.object({
 /** A permission state as the config file stores it. */
 const PermissionConfigStateSchema = z.enum(PERMISSION_STATES);
 
+/** Explicit inference metadata. Secrets live in the credential store. */
+export const DoeInferenceConfigSchema = z
+  .object({
+    source: z.enum(['api-key', 'local', 'dorkos-credits']),
+    provider: z.string().min(1),
+    protocol: z.enum(['anthropic-messages', 'openai-chat-completions', 'openai-responses']),
+    endpoint: z
+      .string()
+      .url()
+      .refine((value) => {
+        try {
+          const url = new URL(value);
+          return (
+            ['https:', 'http:'].includes(url.protocol) &&
+            !url.username &&
+            !url.password &&
+            !url.search &&
+            !url.hash
+          );
+        } catch {
+          return false;
+        }
+      }, 'Choose an HTTP endpoint without embedded credentials.'),
+    model: z.string().min(1),
+    contextWindow: z.number().int().positive(),
+    maxOutputTokens: z.number().int().positive(),
+    credentialRef: CredentialReferenceSchema.optional(),
+    /** Endpoint this key was explicitly supplied for; changing endpoints requires setup again. */
+    credentialEndpoint: z.string().url().optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.maxOutputTokens > value.contextWindow)
+      ctx.addIssue({
+        code: 'custom',
+        path: ['maxOutputTokens'],
+        message: 'Output limit exceeds the context window.',
+      });
+    let url: URL;
+    try {
+      url = new URL(value.endpoint);
+    } catch {
+      return;
+    }
+    if (
+      value.source === 'local' &&
+      (url.protocol !== 'http:' || !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))
+    )
+      ctx.addIssue({
+        code: 'custom',
+        path: ['endpoint'],
+        message: 'Local models require an HTTP loopback endpoint.',
+      });
+    if (
+      value.credentialRef &&
+      (!value.credentialEndpoint ||
+        (() => {
+          try {
+            return new URL(value.credentialEndpoint).href !== url.href;
+          } catch {
+            return true;
+          }
+        })())
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['credentialEndpoint'],
+        message: 'Save an API key for this endpoint.',
+      });
+    }
+    if (value.source !== 'api-key' && value.credentialRef)
+      ctx.addIssue({
+        code: 'custom',
+        path: ['credentialRef'],
+        message: 'This inference source does not use an API key.',
+      });
+  });
+/** Persisted model and payer choice, without secret values. */
+export type DoeInferenceConfig = z.infer<typeof DoeInferenceConfigSchema>;
+/** DorkOS runtime configuration; a new installation makes no inference choice. */
+export const DoeRuntimeSettingsSchema = z
+  .object({
+    enabled: z.boolean().default(true),
+    inference: DoeInferenceConfigSchema.nullable().default(null),
+    defaultTrustStop: DefaultTrustStopSchema,
+  })
+  .default(() => ({ enabled: true, inference: null, defaultTrustStop: null }));
+/** Parsed DorkOS runtime settings. */
+export type DoeRuntimeSettings = z.infer<typeof DoeRuntimeSettingsSchema>;
+
 export const UserConfigSchema = z.object({
   version: z.literal(1),
   server: z
@@ -2246,35 +2416,6 @@ export const UserConfigSchema = z.object({
         owners: [],
       })),
       /**
-       * When this person last read what Full autonomy means and said "don't ask
-       * me again", as an ISO 8601 UTC string. `null` until they do, which is the
-       * shipped state (spec `trust-dial`, decision 5).
-       *
-       * A timestamp rather than a boolean because the record is only worth
-       * keeping if it says WHEN: Settings shows the date back, and a person who
-       * cannot remember agreeing to anything can see the moment they did and
-       * clear it.
-       *
-       * ## This is a consent ritual, not a security boundary
-       *
-       * Read that sentence before building anything on this field. The server
-       * refuses to put an interactive session into Full autonomy unless the
-       * request carries an acknowledgement — either `acknowledgedAutonomy: true`
-       * on the PATCH, or this standing record. That closes the gap where a
-       * *client* could skip the dialog. It does NOT stop an API caller: anything
-       * that can reach the route can send `acknowledgedAutonomy: true` itself,
-       * and nothing here would know the difference. The boundary against agent
-       * callers is a separate piece of work (`agent-approval-settings`, DOR-501)
-       * and this field is not it. Do not describe it as one.
-       *
-       * Lives under `ui` because it decides what a dialog does, not what any
-       * gate enforces: requiring login to dismiss a dialog would make the
-       * feature unreachable on the default login-off install. It is still
-       * `operator-only` to write, so an agent cannot forge a person's consent
-       * record.
-       */
-      autonomyAcknowledgedAt: z.string().datetime().nullable().default(null),
-      /**
        * When this person answered the full-power door — **either way** (spec
        * `full-power-defaults`, D1).
        *
@@ -2284,15 +2425,9 @@ export const UserConfigSchema = z.object({
        * they answered, because re-asking a question somebody already answered is
        * the nagging this program exists to avoid.
        *
-       * Distinct from {@link UserConfig.ui}`.autonomyAcknowledgedAt`, which is a
-       * standing acknowledgement the server's autonomy gate reads. This one is
-       * only about the door: an answer of "keep asking me first" sets this and
-       * leaves that one null. Nothing here grants a capability — it records that
-       * a question was put and answered.
-       *
-       * `operator-only` to write, for exactly the reason the acknowledgement
-       * above is: a consent record an agent can write is a consent record an
-       * agent can forge.
+       * Nothing here grants a capability: it records that a question was put
+       * and answered. `operator-only` to write, because a consent record an
+       * agent can write is a consent record an agent can forge.
        */
       fullPowerDecidedAt: z.string().datetime().nullable().default(null),
       /**
@@ -2329,7 +2464,6 @@ export const UserConfigSchema = z.object({
       statusBar: { pins: [] },
       composer: { richText: true },
       communityNavigation: { version: 1 as const, owners: [] },
-      autonomyAcknowledgedAt: null,
       // Both halves of the power-door answer. Declared here as well as per-field
       // because `conf` merges top-level defaults SHALLOWLY: the per-field default
       // is what a fresh install lands on, this literal is what an upgrade whose
@@ -2367,7 +2501,7 @@ export const UserConfigSchema = z.object({
        * hour, counted whoever asked for them.
        *
        * Every way of making an agent answer over the message bus — another
-       * agent's `relay_send`, an outside system speaking A2A, a webhook posting
+       * agent's publish, an outside system speaking A2A, a webhook posting
        * back — ends at the same dispatch, and this counts them all there. It
        * does not read who is calling, because in the shipped posture DorkOS
        * cannot reliably tell a program on your machine from you.
@@ -2482,6 +2616,22 @@ export const UserConfigSchema = z.object({
       wakeForScheduledTasks: z.boolean().default(false),
     })
     .default(() => ({ whileAgentsWork: true, wakeForScheduledTasks: false })),
+  /**
+   * The Activity feed (spec `audit-trail` §3.5). A whole top-level section on
+   * purpose, like `keepAwake`: conf writes a new section into every stored
+   * config on its own, so the field needs no migration. The default is declared
+   * twice, here and in the section literal below, and the two must agree.
+   */
+  activity: z
+    .object({
+      /**
+       * Days of Activity history to keep. `DORKOS_ACTIVITY_RETENTION_DAYS`
+       * overrides it when set. Permission changes are kept regardless, and the
+       * audit log keeps every action forever whatever this says.
+       */
+      retentionDays: z.number().int().min(1).max(3650).default(365),
+    })
+    .default(() => ({ retentionDays: 365 })),
   mesh: z
     .object({
       scanRoots: z.array(z.string()).default(() => []),
@@ -2600,7 +2750,9 @@ export const UserConfigSchema = z.object({
       lateReplyCeilingMinutes: z.number().int().min(1).max(1440).default(60),
       /**
        * How long an agent stays addressable after you talk to it, before it goes
-       * back to needing an @mention. Talking to it again starts the clock over.
+       * back to needing an @mention. The clock starts at whichever came last in
+       * that place: the agent's own message, or your @mention of it (DOR-2823).
+       * Talking to it again starts the clock over.
        *
        * This is the ceiling, not the setting: a room can hold an agent to a
        * shorter window, never a longer one. `0` means an agent is only ever
@@ -2610,20 +2762,25 @@ export const UserConfigSchema = z.object({
        * measurement — see `meta/agent-etiquette.md` §9. Nobody publishes a
        * defensible figure for how long a person expects to keep talking to
        * something without naming it again, so this one is ours, to be tuned by
-       * using the product.
+       * using the product. Raised from 10 to 60 by DOR-2823, after a person's
+       * replies kept arriving just after a long agent turn used the window up.
+       *
+       * Agents talking to each other are held to the old 10 minutes and 5
+       * messages whatever this says (`engagement.ts` `AGENT_POST_WINDOW`).
        */
-      engagedWindowMinutes: z.number().int().min(0).max(1440).default(10),
+      engagedWindowMinutes: z.number().int().min(0).max(1440).default(60),
       /**
        * How many messages from other people can go by before an agent stops
-       * treating itself as part of the conversation. Talking to it again starts
-       * the count over.
+       * treating itself as part of the conversation. Counted, like the minutes,
+       * from whichever came last in that place: the agent's own message, or
+       * your @mention of it (DOR-2823). Raised from 5 to 15 by DOR-2823.
        *
        * The second half of the same window, and it ends on whichever runs out
        * first — a quiet ten minutes and a busy ten messages are both reasons to
        * stop assuming a question was meant for you. Also a ceiling, and also a
        * judgement rather than a measurement.
        */
-      engagedWindowPosts: z.number().int().min(0).max(100).default(5),
+      engagedWindowPosts: z.number().int().min(0).max(100).default(15),
       /**
        * How long an agent waits for the room to stop talking before it answers,
        * in milliseconds.
@@ -2812,8 +2969,8 @@ export const UserConfigSchema = z.object({
       maxAutomaticTurnsTotalPerHour: 5000,
       replyWaitMinutes: 10,
       lateReplyCeilingMinutes: 60,
-      engagedWindowMinutes: 10,
-      engagedWindowPosts: 5,
+      engagedWindowMinutes: 60,
+      engagedWindowPosts: 15,
       collectDebounceMs: 500,
       collectMaxEntries: 20,
       responseGate: 'routing' as const,
@@ -2916,6 +3073,9 @@ export const UserConfigSchema = z.object({
     displayNameSource: null,
     rolePromptDismissedAt: null,
     identityPromptDismissedAt: null,
+    timezone: null,
+    workingHours: null,
+    away: null,
   })),
   uploads: z
     .object({
@@ -3377,6 +3537,7 @@ export const UserConfigSchema = z.object({
         // agree or the shallow defaults-merge lands somebody on the old value.
         persistentSession: true,
       })),
+      doe: DoeRuntimeSettingsSchema,
       opencode: z
         .object({
           enabled: z.boolean().default(true),
@@ -3458,9 +3619,10 @@ export const UserConfigSchema = z.object({
         })),
     })
     .default(() => ({
-      environment: { inherit: { claudeCode: [], codex: [], opencode: [] } },
+      environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
       default: 'claude-code',
       defaultTrustStop: null,
+      doe: { enabled: true, inference: null, defaultTrustStop: null },
       claudeCode: {
         defaultAccount: null,
         accounts: [],

@@ -13,10 +13,11 @@ import {
 } from '../config/runtime-descriptors';
 
 describe('RUNTIME_DESCRIPTORS', () => {
-  it('registers all four known runtime types', () => {
+  it('registers all five known runtime types', () => {
     expect(Object.keys(RUNTIME_DESCRIPTORS).sort()).toEqual([
       'claude-code',
       'codex',
+      'doe',
       'opencode',
       'test-mode',
     ]);

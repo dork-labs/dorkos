@@ -16,8 +16,16 @@ import type { Session } from '@dorkos/shared/types';
 // ---------------------------------------------------------------------------
 
 const navigate = vi.fn();
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useNavigate: () => navigate,
+}));
+
+vi.mock('@/layers/shared/model/TransportContext', () => ({
+  useTransport: () => ({
+    createSessionLocation: vi.fn(async () => ({ id: 'test-location' })),
+    getDefaultCwd: vi.fn(async () => ({ path: '/default' })),
+  }),
 }));
 
 const mockSessions = vi.fn<() => { sessions: Session[] }>(() => ({ sessions: [] }));
@@ -233,7 +241,8 @@ describe('EntryRunWithMenu', () => {
     expect(arg.search.runtime).toBe('codex');
     expect(arg.search.prompt).toBe(PROMPT);
     // Same working directory as the origin session.
-    expect(arg.search.dir).toBe('/repo');
+    expect(arg.search.dir).toBeUndefined();
+    expect(arg.search).toMatchObject({ launchRef: 'test-location', draft: '1' });
     // A brand-new session id — NOT the origin session (no mutation, no transplant).
     expect(arg.search.session).toBeTruthy();
     expect(arg.search.session).not.toBe('sess-claude');
@@ -287,7 +296,8 @@ describe('EntryRunWithMenu', () => {
     expect(arg.to).toBe('/session');
     expect(arg.search.runtime).toBe('codex');
     expect(arg.search.prompt).toBe(PROMPT);
-    expect(arg.search.dir).toBe('/repo');
+    expect(arg.search.dir).toBeUndefined();
+    expect(arg.search).toMatchObject({ launchRef: 'test-location', draft: '1' });
     expect(arg.search.session).toBeTruthy();
     expect(arg.search.session).not.toBe('sess-claude');
     // The dialog closed after the launch resumed.

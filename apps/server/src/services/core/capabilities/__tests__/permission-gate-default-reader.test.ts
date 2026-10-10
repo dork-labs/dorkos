@@ -11,7 +11,7 @@ import path from 'node:path';
 import { writeManifest } from '@dorkos/shared/manifest';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { permissionGateSources, resetPermissionGate } from '../permission-enforcement.js';
-import { readAgentExecutionDefaults } from '../../../session/resolve-session-defaults.js';
+import { readAgentExecutionDefaults } from '../../../session/resolution/resolve-session-defaults.js';
 
 const dirs: string[] = [];
 afterEach(async () => {

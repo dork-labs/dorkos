@@ -48,7 +48,7 @@ test.describe('Rooms — leaving from the sidebar row menu @smoke', () => {
 
     // Navigated off the room this took you out of: `/channels` with no `id`
     // renders the empty state, never a room you can no longer post in.
-    await expect(page.getByText('Pick a conversation')).toBeVisible({
+    await expect(page.getByText('Pick a channel or DM')).toBeVisible({
       timeout: SERVER_ROUND_TRIP_MS,
     });
 

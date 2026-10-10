@@ -834,7 +834,8 @@
             "enum": [
               "claude-code",
               "codex",
-              "opencode"
+              "opencode",
+              "doe"
             ]
           },
           "accountId": {
@@ -1663,6 +1664,164 @@
         ],
         "description": "Why not, when `supported` is false; null otherwise."
       },
+      "ListCommitmentsResponse": {
+        "type": "object",
+        "properties": {
+          "commitments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Commitment"
+            }
+          }
+        },
+        "required": [
+          "commitments"
+        ]
+      },
+      "Commitment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "to": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "what": {
+            "type": "string"
+          },
+          "dueAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "$ref": "#/components/schemas/CommitmentState"
+          },
+          "overdue": {
+            "type": "boolean"
+          },
+          "sourceSessionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sourceRoomEntryId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "closedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "to",
+          "what",
+          "dueAt",
+          "state",
+          "overdue",
+          "sourceSessionId",
+          "sourceRoomEntryId",
+          "createdAt",
+          "closedAt",
+          "note"
+        ]
+      },
+      "CommitmentState": {
+        "type": "string",
+        "enum": [
+          "open",
+          "kept",
+          "missed",
+          "dropped"
+        ]
+      },
+      "CommitmentError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "code"
+        ]
+      },
+      "CreateCommitmentRequest": {
+        "type": "object",
+        "properties": {
+          "what": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "to": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "dueAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "what"
+        ]
+      },
+      "UpdateCommitmentRequest": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "$ref": "#/components/schemas/CommitmentState"
+          },
+          "dueAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "from": {
+            "$ref": "#/components/schemas/CommitmentState"
+          }
+        },
+        "required": [
+          "state"
+        ]
+      },
       "HealthResponse": {
         "type": "object",
         "properties": {
@@ -1881,6 +2040,10 @@
             "$ref": "#/components/schemas/SessionStartedBy"
           },
           "userLastMessageAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastTouchedByYouAt": {
             "type": "string",
             "format": "date-time"
           },
@@ -2586,6 +2749,12 @@
           },
           "commandArgs": {
             "type": "string"
+          },
+          "chatMessages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatMessageStamp"
+            }
           }
         },
         "required": [
@@ -3701,6 +3870,93 @@
             "type": "string"
           }
         }
+      },
+      "ChatMessageStamp": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ChatMessageKind"
+          },
+          "from": {
+            "$ref": "#/components/schemas/ChatMessageSender"
+          },
+          "text": {
+            "type": "string"
+          },
+          "delivery": {
+            "$ref": "#/components/schemas/ChatDelivery"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ChatMessageStatus"
+          },
+          "replyToId": {
+            "type": "string"
+          },
+          "sentAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "from",
+          "text",
+          "delivery",
+          "status",
+          "sentAt"
+        ]
+      },
+      "ChatMessageKind": {
+        "type": "string",
+        "enum": [
+          "message",
+          "report",
+          "start",
+          "stop"
+        ]
+      },
+      "ChatMessageSender": {
+        "type": "object",
+        "properties": {
+          "chatId": {
+            "type": "string"
+          },
+          "chatTitle": {
+            "type": "string"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "agentName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "chatId",
+          "agentName"
+        ]
+      },
+      "ChatDelivery": {
+        "type": "string",
+        "enum": [
+          "queue",
+          "steer",
+          "interrupt"
+        ]
+      },
+      "ChatMessageStatus": {
+        "type": "string",
+        "enum": [
+          "queued",
+          "delivered",
+          "steered",
+          "working",
+          "replied",
+          "failed"
+        ]
       },
       "SessionSnapshot": {
         "type": "object",
@@ -4869,6 +5125,12 @@
                   "user",
                   "runtime"
                 ]
+              },
+              "chatMessages": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ChatMessageStamp"
+                }
               }
             },
             "required": [
@@ -4925,6 +5187,12 @@
               },
               "messageId": {
                 "type": "string"
+              },
+              "chatMessages": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ChatMessageStamp"
+                }
               }
             },
             "required": [
@@ -5223,6 +5491,25 @@
               "type",
               "content",
               "messageId"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "chat_activity"
+                ]
+              }
+            },
+            "required": [
+              "seq",
+              "type"
             ]
           }
         ]
@@ -7500,9 +7787,6 @@
             "minLength": 1,
             "maxLength": 200
           },
-          "acknowledgedAutonomy": {
-            "type": "boolean"
-          },
           "runtime": {
             "type": "string"
           },
@@ -7665,6 +7949,114 @@
           "panels",
           "sidebar",
           "agent"
+        ]
+      },
+      "ChatActivityResponse": {
+        "type": "object",
+        "properties": {
+          "sent": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SentChatMessage"
+            }
+          },
+          "stops": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatStopNotice"
+            }
+          }
+        },
+        "required": [
+          "sent",
+          "stops"
+        ]
+      },
+      "SentChatMessage": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ChatMessageKind"
+          },
+          "to": {
+            "type": "object",
+            "properties": {
+              "chatId": {
+                "type": "string"
+              },
+              "chatTitle": {
+                "type": "string"
+              },
+              "agentName": {
+                "type": "string"
+              },
+              "agentId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "chatId"
+            ]
+          },
+          "text": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "delivery": {
+            "$ref": "#/components/schemas/ChatDelivery"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ChatMessageStatus"
+          },
+          "position": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "failureReason": {
+            "type": "string"
+          },
+          "replyId": {
+            "type": "string"
+          },
+          "sentAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "to",
+          "text",
+          "delivery",
+          "status",
+          "sentAt"
+        ]
+      },
+      "ChatStopNotice": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "by": {
+            "$ref": "#/components/schemas/ChatMessageSender"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "by",
+          "at"
         ]
       },
       "SessionQueueResponse": {
@@ -9181,6 +9573,7 @@
           "cursor",
           "codex",
           "opencode",
+          "doe",
           "windsurf",
           "gemini",
           "cline",
@@ -9358,6 +9751,16 @@
             "example": {
               "mode": "home"
             }
+          },
+          "reportsTo": {
+            "type": "string",
+            "description": "Account id this agent reports to: a mesh agent id, or a person’s account id. Absent or null = whoever created it, then the owner.",
+            "example": "01HZY8Q0V6S3W1A2B3C4D5E6F7"
+          },
+          "createdBy": {
+            "type": "string",
+            "description": "Account that created this agent (a person’s account id, or the creating agent’s mesh id). Written once at creation; null when unknown.",
+            "example": "install:9f1c2d3e"
           }
         },
         "required": [
@@ -9771,6 +10174,16 @@
                 "example": {
                   "mode": "home"
                 }
+              },
+              "reportsTo": {
+                "type": "string",
+                "description": "Account id this agent reports to: a mesh agent id, or a person’s account id. Absent or null = whoever created it, then the owner.",
+                "example": "01HZY8Q0V6S3W1A2B3C4D5E6F7"
+              },
+              "createdBy": {
+                "type": "string",
+                "description": "Account that created this agent (a person’s account id, or the creating agent’s mesh id). Written once at creation; null when unknown.",
+                "example": "install:9f1c2d3e"
               }
             }
           },
@@ -9873,6 +10286,13 @@
             ]
           },
           "account": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "reportsTo": {
             "type": [
               "string",
               "null"
@@ -11969,12 +12389,6 @@
           },
           "surface": {
             "$ref": "#/components/schemas/PermissionSurface"
-          },
-          "acknowledgeAutonomy": {
-            "type": "boolean",
-            "enum": [
-              true
-            ]
           }
         },
         "required": [
@@ -12661,12 +13075,6 @@
         "properties": {
           "force": {
             "type": "boolean"
-          },
-          "acknowledgeAutonomy": {
-            "type": "boolean",
-            "enum": [
-              true
-            ]
           }
         }
       },
@@ -12845,12 +13253,6 @@
           },
           "surface": {
             "$ref": "#/components/schemas/PermissionSurface"
-          },
-          "acknowledgeAutonomy": {
-            "type": "boolean",
-            "enum": [
-              true
-            ]
           }
         },
         "required": [
@@ -15861,6 +16263,13 @@
               "null"
             ],
             "minLength": 1
+          },
+          "accountId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "isViewer": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -16601,6 +17010,50 @@
               }
             }
           }
+        ]
+      },
+      "AuditVerifyResult": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "checked": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "lastSeq": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "lastHash": {
+            "type": "string"
+          },
+          "firstBreak": {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "seq",
+              "reason"
+            ]
+          },
+          "nextFromSeq": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          }
+        },
+        "required": [
+          "ok",
+          "checked",
+          "lastSeq",
+          "lastHash"
         ]
       },
       "ListExtensionDecisionsResponse": {
@@ -18654,6 +19107,164 @@
         }
       }
     },
+    "/api/session-locations": {
+      "post": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Reserve a private session folder reference",
+        "description": "Returns a durable opaque reference scoped to the caller. Reuses an existing canonical folder reference. Only a person may reserve a folder; filesystem boundaries and cross-site checks apply.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "cwd": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "cwd"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Existing reference.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  },
+                  "required": [
+                    "id"
+                  ]
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "New reference.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  },
+                  "required": [
+                    "id"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid folder request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller, request origin or filesystem boundary refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Saved folder limit reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/session-locations/{id}": {
+      "get": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Resolve a private session folder reference",
+        "description": "Resolves only the caller’s own reference and revalidates the current filesystem boundary. Unknown references and references owned by someone else both return 404.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Allowed folder.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "cwd": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "cwd"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller, request origin or filesystem boundary refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Reference not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects": {
       "get": {
         "tags": [
@@ -19050,6 +19661,215 @@
         }
       }
     },
+    "/api/commitments": {
+      "get": {
+        "tags": [
+          "Commitments"
+        ],
+        "summary": "What agents promised",
+        "description": "Every agent's promises, readable by anyone in the space: open first (soonest due first), then kept, missed and dropped, newest first. `overdue` is computed on read.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "agentId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "$ref": "#/components/schemas/CommitmentState"
+            },
+            "required": false,
+            "name": "state",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "to",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The promises",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListCommitmentsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{id}/commitments": {
+      "post": {
+        "tags": [
+          "Commitments"
+        ],
+        "summary": "Add a promise for an agent",
+        "description": "A person records something an agent promised. Agents record their own with `commitment_add`, so a caller presenting an agent identity is refused.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCommitmentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The new promise",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Commitment"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body, or a past date (`PAST_DUE`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitmentError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is an agent (`NOT_A_PERSON`), or not the owner (`NOT_YOURS`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitmentError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No agent has that id (`UNKNOWN_AGENT`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitmentError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/commitments/{id}": {
+      "patch": {
+        "tags": [
+          "Commitments"
+        ],
+        "summary": "Close a promise or move its date",
+        "description": "Mark a promise kept, missed or dropped. `state: \"open\"` moves an open promise to a new `dueAt`, or reopens a closed one. Only the agent that promised, or a person, may change it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCommitmentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The promise, changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Commitment"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body, nothing to change (`NOTHING_TO_CHANGE`), or a past date (`PAST_DUE`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitmentError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Another agent made it, or the person is not the owner (`NOT_YOURS`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitmentError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No promise has that id (`NOT_FOUND`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitmentError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "It is no longer in the `from` state the caller named (`CONFLICT`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitmentError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "tags": [
@@ -19213,7 +20033,7 @@
           "Sessions"
         ],
         "summary": "List recent sessions across all agents",
-        "description": "Fans out session listing across every registered agent (DOR-329), merges by `updatedAt` descending, trims to `limit`, and returns a per-agent latest-activity map plus per-runtime `warnings[]` (ADR-0310).",
+        "description": "Fans out session listing across every registered agent (DOR-329), merges by `updatedAt` descending, trims to `limit`, and returns a per-agent latest-activity map plus per-runtime `warnings[]` (ADR-0310). With `touchedSince`, every session whose `lastTouchedByYouAt` is at or after that time is returned too, beyond `limit`, in its `updatedAt` place.",
         "parameters": [
           {
             "schema": {
@@ -19224,6 +20044,15 @@
             },
             "required": false,
             "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": false,
+            "name": "touchedSince",
             "in": "query"
           }
         ],
@@ -19340,7 +20169,7 @@
           "Sessions"
         ],
         "summary": "Update session settings",
-        "description": "Moving an interactive session to a permission mode that never stops to ask requires an acknowledgement. That means any mode the runtime declares at the `autonomy` stop, and any mode it declares with `asks: \"never\"` and a `reach` other than `\"read\"` — Codex files such a mode at the middle stop. Satisfy it with `acknowledgedAutonomy: true` on this request, or with the standing record in `ui.autonomyAcknowledgedAt`. Without one the response is `428 AUTONOMY_ACK_REQUIRED` and nothing is persisted — obtain consent and retry the identical request (spec `trust-dial`, decision 5). This is a consent ritual for a person, not a boundary against a caller.\n\nThe chosen mode is always saved. When it could not also be delivered to a reply already in flight AND it was a tightening (the agent must now ask more, or may reach less far), the answer is `202` with `permissionModePendingUntilNextTurn: true` — saved, in force from the next reply, and NOT governing the reply already running. A loosening in the same position stays a plain `200`: it costs a few extra approval prompts for the rest of one turn and corrects itself.\n\nA session with no recorded runtime is answered with the inference reads fall back to, which can differ from the `runtime` hint you sent — so that answer carries `runtimeUnbound: true` and you can tell a guess from a binding. This is not only a brand-new session: the binding is written by an interactive session's first turn and by nothing else, so a scheduled or room-driven session can have run many turns and still have no owner. The field is absent once one is recorded, and it never appears as `false`.",
+        "description": "The chosen mode is always saved. When it could not also be delivered to a reply already in flight AND it was a tightening (the agent must now ask more, or may reach less far), the answer is `202` with `permissionModePendingUntilNextTurn: true` — saved, in force from the next reply, and NOT governing the reply already running. A loosening in the same position stays a plain `200`: it costs a few extra approval prompts for the rest of one turn and corrects itself.\n\nA session with no recorded runtime is answered with the inference reads fall back to, which can differ from the `runtime` hint you sent — so that answer carries `runtimeUnbound: true` and you can tell a guess from a binding. This is not only a brand-new session: the binding is written by an interactive session's first turn and by nothing else, so a scheduled or room-driven session can have run many turns and still have no owner. The field is absent once one is recorded, and it never appears as `false`.",
         "parameters": [
           {
             "schema": {
@@ -19394,16 +20223,6 @@
           },
           "404": {
             "description": "Session not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "428": {
-            "description": "A mode that never stops to ask was requested without an acknowledgement (`AUTONOMY_ACK_REQUIRED`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -20736,6 +21555,12 @@
                             "user",
                             "runtime"
                           ]
+                        },
+                        "chatMessages": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/ChatMessageStamp"
+                          }
                         }
                       },
                       "required": [
@@ -20792,6 +21617,12 @@
                         },
                         "messageId": {
                           "type": "string"
+                        },
+                        "chatMessages": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/ChatMessageStamp"
+                          }
                         }
                       },
                       "required": [
@@ -21090,6 +21921,25 @@
                         "type",
                         "content",
                         "messageId"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "chat_activity"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type"
                       ]
                     },
                     {
@@ -21618,6 +22468,83 @@
           },
           "404": {
             "description": "Session not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/opened": {
+      "post": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Mark a session opened by you",
+        "description": "Called by the app each time its chat page shows a session, so the session carries `lastTouchedByYouAt` on every device (spec `your-activity-first` D3). Recorded only for a person at the app: no `X-DorkOS-Agent` header, an `X-Client-Id` header, and with login on, a browser session rather than an API key. Any other caller gets the same `204` and nothing is recorded, so an agent or a script can never make a session read as yours. Takes no body.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Accepted; recorded when the caller is a person at the app"
+          },
+          "400": {
+            "description": "The id is not a session id (`INVALID_SESSION_ID`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/chat-messages": {
+      "get": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "What a chat sent other chats, and who stopped it",
+        "description": "The messages this chat sent other chats with `chat_send` or `session_start`, with where each one is now (queued, working, delivered, replied, failed), and the times another chat stopped this one with `chat_stop`. The app re-reads it whenever the session's event stream carries a `chat_activity` event.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The chat's messaging",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatActivityResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid session id",
             "content": {
               "application/json": {
                 "schema": {
@@ -22351,7 +23278,8 @@
               "enum": [
                 "claude-code",
                 "codex",
-                "opencode"
+                "opencode",
+                "doe"
               ],
               "description": "The runtime slug."
             },
@@ -67352,7 +68280,7 @@
           "Permissions"
         ],
         "summary": "Undo one permission change",
-        "description": "Sets every key a recorded `permission.changed` event moved back to its value before, as one new change recorded with `surface: 'undo'` and `undoOf`. A key whose value changed since is a conflict: a change to one target is refused (409 `UNDO_CONFLICT`, listing each conflict) and writes nothing, while a change that reached several targets sets back the ones that still match and reports the rest in `skipped`. `force` sets every key back. A preset switch goes back as one unit. An Undo never writes Allowed in a locked area, and moving Files & commands to Full autonomy needs the acknowledgement (428). Undoing a \"Not now\" on the Always allow suggestion lets the suggestion come back (`suggestionRestored`). A key already back where the change found it is nothing to do.",
+        "description": "Sets every key a recorded `permission.changed` event moved back to its value before, as one new change recorded with `surface: 'undo'` and `undoOf`. A key whose value changed since is a conflict: a change to one target is refused (409 `UNDO_CONFLICT`, listing each conflict) and writes nothing, while a change that reached several targets sets back the ones that still match and reports the rest in `skipped`. `force` sets every key back. A preset switch goes back as one unit. An Undo never writes Allowed in a locked area. Undoing a \"Not now\" on the Always allow suggestion lets the suggestion come back (`suggestionRestored`). A key already back where the change found it is nothing to do.",
         "parameters": [
           {
             "schema": {
@@ -67429,16 +68357,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UndoConflictResponse"
-                }
-              }
-            }
-          },
-          "428": {
-            "description": "The Undo moves Files & commands to Full autonomy (`AUTONOMY_ACK_REQUIRED`)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -76399,6 +77317,57 @@
                   "required": [
                     "saved"
                   ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/audit/verify": {
+      "get": {
+        "tags": [
+          "Audit"
+        ],
+        "summary": "Check the audit log",
+        "description": "Check that the DorkOS audit log has not been edited: walk its hash chain and recompute every link. Returns ok, how many rows were checked, the last row and its hash, and — if the chain is broken — the first row that does not check out and why. Optional fromSeq and limit check a stretch instead of the whole log.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0
+            },
+            "required": false,
+            "name": "fromSeq",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 100000
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "required": false,
+            "name": "prevHash",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Check the audit log result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditVerifyResult"
                 }
               }
             }

@@ -705,7 +705,7 @@ describe('RuntimeSetupDialog — shell', () => {
     renderDialog({ checkRequirements: vi.fn().mockResolvedValue(OPENCODE_CONNECT) });
 
     expect(screen.getByRole('heading', { name: 'OpenCode' })).toBeInTheDocument();
-    expect(screen.getByText('Connect it to start a session.')).toBeInTheDocument();
+    expect(screen.getByText('Connect it to start a chat.')).toBeInTheDocument();
     expect(screen.queryByText(/run these steps in your terminal/i)).not.toBeInTheDocument();
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Install OpenCode' })).toBeInTheDocument();

@@ -115,8 +115,7 @@ describe('useTunnelActions — handleSaveToken surfaces why the save failed', ()
 
   it('shows a 4xx’s own sentence when it wrote one instead of details', async () => {
     const { transport, machine, actions } = setup();
-    // `applyConfigPatch`'s other 400, and the 428 autonomy gate, both send a
-    // real sentence and no `details`.
+    // `applyConfigPatch`'s other 400 sends a real sentence and no `details`.
     vi.mocked(transport.updateConfig).mockRejectedValue(
       Object.assign(new Error('Request body must be a JSON object'), { status: 400 })
     );

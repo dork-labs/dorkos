@@ -24,7 +24,9 @@ import {
 } from '@tanstack/react-router';
 import { zodValidator } from '@tanstack/zod-adapter';
 import { z } from 'zod';
-import { mergeDialogSearch, useAppStore } from '@/layers/shared/model';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { createMockTransport } from '@dorkos/test-utils';
+import { mergeDialogSearch, useAppStore, TransportProvider } from '@/layers/shared/model';
 import { useProfileStore } from '../model/profile-store';
 import { useProfileLeaveGuard } from '../model/profile-leave-guard';
 import { ProfileScope } from '../model/profile-scope';
@@ -90,7 +92,18 @@ function renderHooks(url: string, options: { draft?: boolean } = {}) {
         </>
       }
     >
-      <RouterProvider router={router} />
+      <TransportProvider
+        transport={createMockTransport({
+          createSessionLocation: vi.fn(async (cwd) => ({
+            id: cwd === AGENT ? 'agent-reference' : 'other-reference',
+          })),
+          getSessionLocation: vi.fn(async () => ({ cwd: AGENT })),
+        })}
+      >
+        <QueryClientProvider client={new QueryClient()}>
+          <RouterProvider router={router} />
+        </QueryClientProvider>
+      </TransportProvider>
     </HookSlotContext.Provider>
   );
 
@@ -133,6 +146,18 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('the current link', () => {
+  it.each([`agentPath=${encodeURIComponent(AGENT)}`, 'profileRef=agent-reference'])(
+    'resolves %s without a panel-open modifier or changing conversation cwd',
+    async (address) => {
+      useAppStore.setState({ selectedCwd: '/repo/conversation' });
+      const harness = renderHooks(`/session?${address}`);
+      await harness.ready();
+      await waitFor(() => expect(harness.search().profileRef).toBe('agent-reference'));
+      await waitFor(() => expect(useAppStore.getState().explicitAgentPath).toBe(AGENT));
+      expect(useAppStore.getState().selectedCwd).toBe('/repo/conversation');
+      expect(useAppStore.getState().rightPanelOpen).toBe(false);
+    }
+  );
   it('opens the panel on the Profile tab, pointed at the agent it names', async () => {
     const harness = renderHooks(`/?panel=profile&agentPath=${encodeURIComponent(AGENT)}`);
     await harness.ready();
@@ -305,7 +330,8 @@ describe('links minted by the retired agent panel', () => {
     await waitFor(() => expect(harness.search().panel).toBe('profile'));
     expect(harness.search().hubTab).toBeUndefined();
     expect(harness.search().profilePage).toBe('sessions');
-    expect(harness.search().agentPath).toBe(AGENT);
+    expect(harness.search().profileRef).toBe('agent-reference');
+    expect(harness.search().agentPath).toBeUndefined();
   });
 
   it('lands hubTab=toolkit on the profile’s root instead of dropping it', async () => {
@@ -373,7 +399,8 @@ describe('links minted by the agent dialog, before the hub', () => {
     await waitFor(() => expect(harness.search().panel).toBe('profile'));
     expect(harness.search().agent).toBeUndefined();
     expect(harness.search().profilePage).toBe('tools');
-    expect(harness.search().agentPath).toBe(AGENT);
+    expect(harness.search().profileRef).toBe('agent-reference');
+    expect(harness.search().agentPath).toBeUndefined();
   });
 
   it('rewrites ?dialog=agent, which named no tab at all', async () => {

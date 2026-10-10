@@ -8,7 +8,8 @@ import { AgentAvatar, type AgentVisual } from '@/layers/entities/agent';
 import { useAgentHottestStatus } from '@/layers/entities/session';
 import { useAgentRowMenuNodes } from './AgentRowMenuItems';
 import { AgentActivityBadge } from './AgentActivityBadge';
-import { LiveSessionsChip, SessionSwitcher } from './SessionSwitcher';
+import { LiveSessionsChip } from './LiveSessionsChip';
+import { SessionSwitcher } from './SessionSwitcher';
 import type { SortableBindings } from './dnd/SidebarDndPrimitives';
 
 /**
@@ -93,8 +94,8 @@ interface AgentListItemProps {
  * **The inline three-session panel is gone.** It could show three of fourteen
  * sessions, said nothing about what any of them was doing, and turned the one
  * row an operator clicks most into a disclosure triangle.
- * {@link SessionSwitcher} replaces it: every session, grouped by whether it is
- * live, with the verbs the panel could never carry.
+ * {@link SessionSwitcher} replaces it: every chat, in the one chat list the
+ * profile draws too, with the verbs the panel could never carry.
  */
 export function AgentListItem({
   path,
@@ -244,7 +245,7 @@ export function AgentListItem({
               trailingAction: {
                 content: <LiveSessionsChip count={chipCount} />,
                 onClick: openSwitcher,
-                label: `${chipCount} live sessions, open the session switcher for ${displayName}`,
+                label: `${chipCount} live chats, open the chat switcher for ${displayName}`,
               },
             })}
       />

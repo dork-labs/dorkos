@@ -1273,7 +1273,7 @@ describe('a warm process whose dorkos tool list changed (DOR-2685)', () => {
 
   beforeEach(() => {
     optIn.persistentSession = true;
-    listed = ['ping', 'relay_send'];
+    listed = ['ping', 'relay_list_endpoints'];
     // A fresh instance per launch, as the real factory builds, recording the
     // tool surface the real factory would record for it — the connector tools
     // included on the same rule (`createDorkOsToolServer`'s `connectorTools`).
@@ -1370,7 +1370,7 @@ describe('a warm process whose dorkos tool list changed (DOR-2685)', () => {
     const sessionId = nextSession();
     await turn(sessionId);
 
-    listed = ['ping', 'relay_send'];
+    listed = ['ping', 'relay_list_endpoints'];
     await turn(sessionId, 'after the extension stopped');
 
     expect(cli.launches).toBe(2);

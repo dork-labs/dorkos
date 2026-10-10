@@ -70,7 +70,6 @@ async function permissiveConfig() {
   initConfigManager(dorkHome);
   configManager.set('ui', {
     ...configManager.get('ui'),
-    autonomyAcknowledgedAt: STAMP,
     fullPowerDecidedAt: STAMP,
     fullPowerChoice: 'full',
   });

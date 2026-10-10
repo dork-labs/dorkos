@@ -30,7 +30,7 @@ import type {
   SessionSettingsPort,
 } from '@dorkos/shared/agent-runtime';
 import { RUNTIME_CREDITS_PROTOCOLS } from '@dorkos/shared/agent-runtime';
-import { needsConsentRitual } from '@dorkos/shared/permission-semantics';
+import { actsWithoutAsking } from '@dorkos/shared/permission-semantics';
 import { describeAuthError } from '@dorkos/shared/runtime-error-classification';
 import {
   CompactBoundaryEventSchema,
@@ -489,7 +489,7 @@ export interface RuntimeConformanceOpts {
   /**
    * Waives the safety invariant that a runtime's DEFAULT permission mode must
    * still stop for the person — one that would need a consent ritual if a person
-   * selected it (`needsConsentRitual`) may not be where a session is BORN. The
+   * selected it (`actsWithoutAsking`) may not be where a session is BORN. The
    * string is the reason, and it is required rather than a boolean so the waiver
    * is a sentence somebody wrote, not a flag somebody flipped — an empty or
    * whitespace-only string does not waive anything.
@@ -1913,7 +1913,7 @@ export function runtimeConformance(
       it('subscribeSessionList emits only events that satisfy SessionListEventSchema (DOR-851)', async () => {
         // Purpose: `SessionListBroadcaster` feeds every `subscribeSessionList`
         // event straight through `SessionListEventSchema` and silently DROPS
-        // whatever fails it (apps/server/src/services/session/session-list-broadcaster.ts) —
+        // whatever fails it (apps/server/src/services/session/catalog/session-list-broadcaster.ts) —
         // so a runtime whose own upsert/status events do not parse simply
         // never appears in the live session list, with nothing louder than a
         // log line. That is exactly how DOR-851 happened: test-mode reports
@@ -3537,7 +3537,7 @@ export function runtimeConformance(
             // over before anybody chose to, and no capability flag can make that
             // acceptable — only a written-down reason can (autonomyDefaultReason).
             //
-            // Asked through `needsConsentRitual` — the same rule the consent
+            // Asked through `actsWithoutAsking` — the same rule the consent
             // door applies (DOR-816) — and NOT against `stop`. This is the one
             // path with no door on it: a session born at the default never
             // PATCHes, so nothing downstream can ask the person anything. A
@@ -3552,7 +3552,7 @@ export function runtimeConformance(
             // without writing down why, which is the one thing it exists to stop.
             if ((autonomyDefaultReason ?? '').trim().length === 0) {
               expect(
-                defaultDescriptor !== undefined && needsConsentRitual(defaultDescriptor),
+                defaultDescriptor !== undefined && actsWithoutAsking(defaultDescriptor),
                 `permissionModes.default ('${modes!.default}') must not be a mode that ` +
                   'never asks — a session born there passes no consent door. Declare ' +
                   'autonomyDefaultReason if this runtime genuinely must'

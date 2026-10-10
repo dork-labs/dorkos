@@ -188,6 +188,18 @@ export const AGENT_WRITE_POLICY = {
   // invariant 4). The credential axis `config-write-policy.ts` already holds
   // `runtimes.claudeCode.defaultAccount` on.
   account: 'operator-only',
+  // Who this agent reports to (spec `heartbeats` §4). Agent-writable: it decides
+  // who gets the agent's report and where it escalates, not what it may reach
+  // or whose bill it runs on — anyone may still ask it for anything (canon
+  // P4). Every change is recorded (`agent.reports_to_changed`) and a loop is
+  // refused at this seam (`REPORTS_TO_CYCLE`), so the chain always ends at a
+  // person. `createdBy` is not on the wire at all: no PATCH may write it.
+  //
+  // Not only its OWN: an agent may also set another agent's `reportsTo`, on
+  // purpose. Agents are trusted by default (PRINCIPLES §1) and a lead agent
+  // arranging its team is the feature (canon §9.3); the safeguards are the
+  // audit row anyone can read and the loop refusal, not a caller check.
+  reportsTo: 'agent-writable',
 
   // The three convention FILES, which ride the same PATCH body. SOUL.md and
   // MEMORY.md are the agent's own prose about itself and its own saved notes.

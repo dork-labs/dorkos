@@ -110,7 +110,7 @@ describe('useJumpBackIn', () => {
     // 8 rows, 24 sessions asked for: every room turn and scheduled run inside
     // the window is dropped from the rows, so a window the size of the cap
     // shows nothing at all on a busy install.
-    expect(listRecentSessions).toHaveBeenCalledWith(24);
+    expect(listRecentSessions).toHaveBeenCalledWith(24, expect.any(String));
   });
 
   it('drops a muted room from the list entirely', async () => {

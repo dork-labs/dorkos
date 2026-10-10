@@ -287,7 +287,7 @@ test.describe('SidebarRow — the reserved right gutter @smoke', { tag: SOLE_SID
       expect(overflow.ellipsis).toBe('ellipsis');
 
       // And it stops short of the control, rather than being painted over by it.
-      const chip = holder.getByRole('button', { name: '3 live sessions' });
+      const chip = holder.getByRole('button', { name: '3 live chats' });
       const titleBox = await box(title);
       const chipBox = await box(chip);
       expect(
@@ -317,7 +317,7 @@ test.describe('SidebarRow — the reserved right gutter @smoke', { tag: SOLE_SID
       const row = holder.locator('[data-slot="sidebar-row-demo"]');
       const rowBox = await box(row);
       const padding = await row.evaluate((node) => parseFloat(getComputedStyle(node).paddingRight));
-      const chipBox = await box(holder.getByRole('button', { name: '3 live sessions' }));
+      const chipBox = await box(holder.getByRole('button', { name: '3 live chats' }));
       expect(
         chipBox.x + chipBox.width,
         `the ${name} control is not on the line the row reserved`
@@ -341,13 +341,13 @@ test.describe('SidebarRow — the reserved right gutter @smoke', { tag: SOLE_SID
     // the lane existed, ArrowRight meant "the ⋮" and skipped the control
     // entirely — it was reachable by pointer only.
     await page.keyboard.press('ArrowRight');
-    expect(await focused(page), 'ArrowRight skipped the trailing control').toBe('3 live sessions');
+    expect(await focused(page), 'ArrowRight skipped the trailing control').toBe('3 live chats');
     await page.keyboard.press('ArrowRight');
     expect(await focused(page)).toBe('Demo row actions');
 
     // …and back in the same order, on through the row to the glyph control.
     await page.keyboard.press('ArrowLeft');
-    expect(await focused(page)).toBe('3 live sessions');
+    expect(await focused(page)).toBe('3 live chats');
     await page.keyboard.press('ArrowLeft');
     expect(await focused(page)).toBe('sidebar-row-demo');
     await page.keyboard.press('ArrowLeft');

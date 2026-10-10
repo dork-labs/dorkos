@@ -25,14 +25,14 @@ naming and composition conventions live in
 
 ## Rows
 
-| Want                                                               | Use                                                              | Not                                               | Because                                                                        |
-| ------------------------------------------------------------------ | ---------------------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------ |
-| Any row in the sidebar (session, channel, DM, thread, agent)       | `SidebarRow`                                                     | a hand-rolled row                                 | one chrome, one hover ramp, one menu wiring for every row type                 |
-| A session row outside the sidebar (full detail, or a compact list) | `SessionRow` (`entities/session`, `variant="full" \| "compact"`) | `SidebarRow`                                      | predates `SidebarRow` and keeps its own chrome for non-sidebar contexts        |
-| A settings toggle: label, description, and a control on the side   | `SettingRow`                                                     | `SidebarRow`                                      | pairs a `Field` with a control, not a navigation target                        |
-| A whole sidebar submenu (nested rows behind a trigger)             | `SidebarMenuNode`                                                | a hand-rolled `ContextMenu` + `DropdownMenu` pair | one node union drives the right-click menu and the "…" menu from the same data |
-| A radio/checkbox option inside a question prompt                   | `OptionRow`                                                      | `SettingRow`                                      | carries selection state (`isSelected`/`isFocused`), not a settings control     |
-| A compact one-line status result (a decided or submitted prompt)   | `CompactResultRow`                                               | `OptionRow`                                       | a terminal display, not an interactive control                                 |
+| Want                                                             | Use                               | Not                                               | Because                                                                        |
+| ---------------------------------------------------------------- | --------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Any row in the sidebar (session, channel, DM, thread, agent)     | `SidebarRow`                      | a hand-rolled row                                 | one chrome, one hover ramp, one menu wiring for every row type                 |
+| An agent's list of chats (a profile page, Switch session)        | `ChatList` (`features/chat-list`) | a list of `SidebarRow`s                           | one arrangement of what needs you, spin-offs and automated chats               |
+| A settings toggle: label, description, and a control on the side | `SettingRow`                      | `SidebarRow`                                      | pairs a `Field` with a control, not a navigation target                        |
+| A whole sidebar submenu (nested rows behind a trigger)           | `SidebarMenuNode`                 | a hand-rolled `ContextMenu` + `DropdownMenu` pair | one node union drives the right-click menu and the "…" menu from the same data |
+| A radio/checkbox option inside a question prompt                 | `OptionRow`                       | `SettingRow`                                      | carries selection state (`isSelected`/`isFocused`), not a settings control     |
+| A compact one-line status result (a decided or submitted prompt) | `CompactResultRow`                | `OptionRow`                                       | a terminal display, not an interactive control                                 |
 
 ## Form controls
 

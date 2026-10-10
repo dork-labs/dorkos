@@ -17,13 +17,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 
 const navigate = vi.fn();
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
+  linkOptions: (options: unknown) => options,
   useNavigate: () => navigate,
 }));
 
 const search: Record<string, unknown> = {};
 vi.mock('../use-session-search', () => ({
   useSessionSearch: () => search,
+}));
+
+vi.mock('@/layers/shared/model/TransportContext', () => ({
+  useTransport: () => ({ createSessionLocation: vi.fn(async () => ({ id: 'location' })) }),
 }));
 
 import { useSessionId } from '../use-session-id';
@@ -75,7 +81,7 @@ describe('setSessionId', () => {
     // the same project, and losing it would be its own bug.
     const next = searchAfterSet({ dir: '/proj', runtime: 'codex' }, (set) => set('fresh-uuid'));
 
-    expect(next.dir).toBe('/proj');
+    expect(next.dir).toBeUndefined();
     expect(next.runtime).toBe('codex');
   });
 });

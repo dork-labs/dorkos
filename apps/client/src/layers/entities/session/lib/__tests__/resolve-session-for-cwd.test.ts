@@ -14,6 +14,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
 import type { Session, SessionOrigin } from '@dorkos/shared/types';
 import { createMockTransport } from '@dorkos/test-utils';
+import { useInteractionStore } from '@/layers/entities/interactions';
 import { sessionKeys } from '../../api/query-keys';
 import { cachedSessionForCwd, resolveSessionForCwd } from '../resolve-session-for-cwd';
 
@@ -49,6 +50,83 @@ const transport = createMockTransport();
 
 beforeEach(() => {
   vi.clearAllMocks();
+  useInteractionStore.setState({ opened: {}, counts: {} });
+});
+
+/** A time `minutesAgo` minutes in the past, ISO-8601. */
+function ago(minutesAgo: number): string {
+  return new Date(Date.now() - minutesAgo * 60_000).toISOString();
+}
+
+/** A chat another chat started (`session_start`), `minutesAgo` old. */
+function spinOff(id: string, minutesAgo: number): Session {
+  // A real spin-off carries no origin: `session_start` stamps only `startedBy`.
+  return {
+    ...session(id, minutesAgo),
+    startedBy: { kind: 'chat', sessionId: 'parent', title: null, reason: null, permission: null },
+  };
+}
+
+describe('the agent click opens the chat you were last in (your-activity-first D9)', () => {
+  it('a busy spin-off chat never wins an agent click', async () => {
+    // The ticket's shape: a spin-off chat is the newest by activity — it is
+    // working right now — and you never touched it. Your own chat, touched an
+    // hour ago, is the one you were in.
+    const queryClient = clientWith([
+      spinOff('busy-spin-off', 0),
+      { ...session('mine', 90), lastTouchedByYouAt: ago(60) },
+    ]);
+    const resolved = await resolveSessionForCwd({ queryClient, transport }, CWD);
+    expect(resolved?.sessionId).toBe('mine');
+    expect(cachedSessionForCwd(queryClient, CWD)).toBe('mine');
+  });
+
+  it('never opens an untouched spin-off even when you have no other chat', async () => {
+    const queryClient = clientWith([spinOff('busy-spin-off', 0)]);
+    const resolved = await resolveSessionForCwd({ queryClient, transport }, CWD);
+    expect(resolved?.isNew).toBe(true);
+    expect(cachedSessionForCwd(queryClient, CWD)).toBeNull();
+  });
+
+  it('opens the chat you touched last, not the newest by activity', async () => {
+    const queryClient = clientWith([
+      { ...session('newer', 1), lastTouchedByYouAt: ago(120) },
+      { ...session('older', 200), lastTouchedByYouAt: ago(5) },
+    ]);
+    expect((await resolveSessionForCwd({ queryClient, transport }, CWD))?.sessionId).toBe('older');
+  });
+
+  it('falls back to the newest chat of yours by updatedAt, whatever order the list is in', async () => {
+    // Nothing touched anywhere. The list arrives out of order, so taking the
+    // first chat of yours would open the older one.
+    const queryClient = clientWith([
+      session('older', 90),
+      spinOff('busy-spin-off', 0),
+      session('newest', 5),
+      session('middle', 30),
+    ]);
+    expect((await resolveSessionForCwd({ queryClient, transport }, CWD))?.sessionId).toBe('newest');
+    expect(cachedSessionForCwd(queryClient, CWD)).toBe('newest');
+  });
+
+  it('a room-born chat you touched is a valid target', async () => {
+    const queryClient = clientWith([
+      session('mine', 1),
+      { ...session('room-chat', 30, 'room'), lastTouchedByYouAt: ago(2) },
+    ]);
+    expect((await resolveSessionForCwd({ queryClient, transport }, CWD))?.sessionId).toBe(
+      'room-chat'
+    );
+  });
+
+  it('merges this browser’s own open record, so the click is right before the server answers', async () => {
+    const queryClient = clientWith([
+      { ...session('server-touched', 1), lastTouchedByYouAt: ago(30) },
+      session('just-opened', 200),
+    ]);
+    useInteractionStore.getState().recordOpened('session', 'just-opened', Date.now() - 60_000);
+    expect(cachedSessionForCwd(queryClient, CWD)).toBe('just-opened');
+  });
 });
 
 describe('resolveSessionForCwd', () => {

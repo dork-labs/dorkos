@@ -3,19 +3,11 @@
  * births — the one claim neither half's own tests can make (spec `trust-dial`,
  * decision 6).
  *
- * The halves are tested apart and pass apart: `config.test.ts` proves the config
- * door refuses autonomy without an acknowledgement, and `sessions.test.ts` proves
- * the session door refuses an autonomy mode without one. What only this file
- * asks is whether they COMPOSE — because the design rests on a claim about the
- * pair of them:
- *
- * > set-time is consent-time, and that standing ack satisfies the server's
- * > autonomy requirement for every session the default births.
- *
- * If it did not hold, the feature would look correct in both test files and be
- * unusable in a person's hands: every new session would open bypassed and the
- * first PATCH the cockpit sent — restoring a mode after Plan, say — would bounce
- * off a 428 the person already answered.
+ * The question only this file asks is whether the config write and the session
+ * it births COMPOSE: a standing Full autonomy default seeds new sessions at the
+ * runtime's autonomy mode, and the session route keeps them there. The
+ * Full-autonomy acknowledgement that once guarded both halves is retired
+ * (ADR 261006-225605, DOR-2739).
  *
  * So nothing here is mocked that matters: the real config manager over a real
  * temp `DORK_HOME`, the real config route, the real `RuntimeRegistry` over a
@@ -114,12 +106,10 @@ describe('a standing Full-autonomy default, end to end', () => {
   }
 
   it('births a bypassed session, and the session door lets that session through', async () => {
-    // 1. Settings, in one write: the consent record and the new default. This is
-    //    exactly what the confirmation dialog sends.
+    // 1. Settings: the new default, written like any other setting.
     await request(fixtureServer)
       .patch('/api/config')
       .send({
-        ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' },
         runtimes: { defaultTrustStop: 'autonomy' },
       })
       .expect(200);
@@ -132,10 +122,8 @@ describe('a standing Full-autonomy default, end to end', () => {
     const settings = await runtimeRegistry.getSessionSettings(SESSION_ID);
     expect(settings?.permissionMode).toBe(autonomyModeId());
 
-    // 3. The door the standing ack has to open. The cockpit re-sends this mode
-    //    on ordinary journeys — coming out of Plan is the common one — and
-    //    without a standing record every one of them would 428 on a session that
-    //    was ALREADY running in autonomy.
+    // 3. The cockpit re-sends this mode on ordinary journeys — coming out of
+    //    Plan is the common one — and the session route takes it.
     const patched = await request(fixtureServer)
       .patch(`/api/sessions/${SESSION_ID}`)
       .send({ permissionMode: autonomyModeId() });
@@ -151,7 +139,6 @@ describe('a standing Full-autonomy default, end to end', () => {
     await request(fixtureServer)
       .patch('/api/config')
       .send({
-        ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' },
         runtimes: { defaultTrustStop: 'autonomy' },
       })
       .expect(200);
@@ -186,7 +173,6 @@ describe('a standing Full-autonomy default, end to end', () => {
     await request(fixtureServer)
       .patch('/api/config')
       .send({
-        ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' },
         runtimes: { defaultTrustStop: 'autonomy' },
       })
       .expect(200);
@@ -213,24 +199,17 @@ describe('a standing Full-autonomy default, end to end', () => {
     expect(person?.model).toBe('sonnet');
   });
 
-  it('refuses the default until the acknowledgement exists, and seeds nothing meanwhile', async () => {
-    const refused = await request(fixtureServer)
+  it('takes the default with nothing to acknowledge first, and seeds it (DOR-2739)', async () => {
+    await request(fixtureServer)
       .patch('/api/config')
-      .send({ runtimes: { defaultTrustStop: 'autonomy' } });
-    expect(refused.status).toBe(428);
-    expect(refused.body.code).toBe('AUTONOMY_ACK_REQUIRED');
+      .send({ runtimes: { defaultTrustStop: 'autonomy' } })
+      .expect(200);
 
     const { runtimeRegistry } = await import('../../services/core/runtime-registry.js');
     await runtimeRegistry.persistSessionRuntime(SESSION_ID, 'fake', { kind: 'interactive' });
 
     const settings = await runtimeRegistry.getSessionSettings(SESSION_ID);
-    expect(settings?.permissionMode).toBeUndefined();
-
-    // And the session door is exactly where it was: still asking.
-    const patched = await request(fixtureServer)
-      .patch(`/api/sessions/${SESSION_ID}`)
-      .send({ permissionMode: autonomyModeId() });
-    expect(patched.status).toBe(428);
+    expect(settings?.permissionMode).toBe(autonomyModeId());
   });
 
   it('lets the screen read a choice made before the first message, after a reload', async () => {
@@ -248,7 +227,6 @@ describe('a standing Full-autonomy default, end to end', () => {
     await request(fixtureServer)
       .patch('/api/config')
       .send({
-        ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' },
         runtimes: { defaultTrustStop: 'autonomy' },
       })
       .expect(200);
@@ -289,40 +267,6 @@ describe('a standing Full-autonomy default, end to end', () => {
     expect(await runtimeRegistry.getSessionSettings(unknown)).toBeNull();
     // Still unbound, so the first turn is still free to decide the owner.
     expect((await runtimeRegistry.resolveSessionRuntime(unknown)).bound).toBe(false);
-  });
-
-  it('stops birthing bypassed sessions the moment the acknowledgement is Reset', async () => {
-    // The composition in reverse, and the failure it exists to make unreachable:
-    // clearing the record while the default stood left new sessions opening
-    // bypassed with no consent on file, and the cockpit's first mode change for
-    // one of them bounced off the session door — the person running without
-    // asking, unable to change it back without a dialog they thought they had
-    // just re-armed.
-    await request(fixtureServer)
-      .patch('/api/config')
-      .send({
-        ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' },
-        runtimes: { defaultTrustStop: 'autonomy' },
-      })
-      .expect(200);
-
-    await request(fixtureServer)
-      .patch('/api/config')
-      .send({ ui: { autonomyAcknowledgedAt: null } })
-      .expect(200);
-
-    const { runtimeRegistry } = await import('../../services/core/runtime-registry.js');
-    await runtimeRegistry.persistSessionRuntime(SESSION_ID, 'fake', { kind: 'interactive' });
-
-    // Nothing seeded, because nothing is configured any more.
-    const settings = await runtimeRegistry.getSessionSettings(SESSION_ID);
-    expect(settings?.permissionMode).toBeUndefined();
-
-    // And the door asks again, which is what Reset promised.
-    const patched = await request(fixtureServer)
-      .patch(`/api/sessions/${SESSION_ID}`)
-      .send({ permissionMode: autonomyModeId() });
-    expect(patched.status).toBe(428);
   });
 
   it('starts a new session at a gentler configured stop with no ritual at all', async () => {
@@ -386,31 +330,6 @@ describe('a standing Full-autonomy default, end to end', () => {
 
       expect(patchedLine(lines)).toBe(
         '[Config] Patched by PATCH /api/config: runtimes.claudeCode.defaultTrustStop'
-      );
-    });
-
-    it('names the leaves the SERVER demoted, not just the ones asked for', async () => {
-      // Reset clears the acknowledgement and takes every standing autonomy
-      // default with it, in the same write. Those leaves are the ones nobody
-      // asked to change, so they are the ones most worth having in the log —
-      // and reading the WRITE rather than the request is what catches them.
-      await request(fixtureServer)
-        .patch('/api/config')
-        .send({
-          ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' },
-          runtimes: { defaultTrustStop: 'autonomy' },
-        })
-        .expect(200);
-
-      const lines = await infoLines(() =>
-        request(fixtureServer)
-          .patch('/api/config')
-          .send({ ui: { autonomyAcknowledgedAt: null } })
-          .expect(200)
-      );
-
-      expect(patchedLine(lines)).toBe(
-        '[Config] Patched by PATCH /api/config: runtimes.defaultTrustStop, ui.autonomyAcknowledgedAt'
       );
     });
 

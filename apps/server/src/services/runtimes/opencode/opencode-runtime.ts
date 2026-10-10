@@ -55,6 +55,7 @@ import type {
   AgentRegistryPort,
   ManagedMcpServerResolver,
   SessionUpdateResult,
+  TurnPermissionCeiling,
 } from '@dorkos/shared/agent-runtime';
 import type {
   SessionSnapshot,
@@ -69,6 +70,7 @@ import {
   streamGenerationOf,
 } from '../../session/session-state-projector.js';
 import { readLogBackedHistory } from '../../session/log-backed-history.js';
+import { SessionDiscoveryUnavailableError } from '../../session/resolution/session-lookup-error.js';
 import { overlayModelSubstitutions } from '../../session/overlays/model-substitution-overlay.js';
 import { overlayAgentCompactions } from '../../session/overlays/agent-compaction-overlay.js';
 import { SessionLockManager } from '../../session/session-lock.js';
@@ -92,6 +94,7 @@ import {
 import { mapOpenCodeTodos } from './events/session-event-mapper.js';
 import {
   OpenCodeSessionMapper,
+  isDerivedOpenCodeSessionId,
   unwrap,
   type OpenCodeClientProvider,
   type OpenCodeSessionMapStore,
@@ -470,6 +473,12 @@ export class OpenCodeRuntime implements AgentRuntime {
         connectorTurn: true,
         ...(forAgent !== undefined ? { forAgent } : {}),
         grants: validatedGrants(opts?.additionalDirectories, cwd),
+        // Held per ask, like the grants: a turn another agent's post or a
+        // stranger's message started is answered at no looser a level than its
+        // sender's (spec `trusted-by-default-flip` §4).
+        ...(opts?.permissionCeiling !== undefined
+          ? { permissionCeiling: opts.permissionCeiling }
+          : {}),
       }
     );
   }
@@ -588,7 +597,12 @@ export class OpenCodeRuntime implements AgentRuntime {
       connectionsApplied: boolean,
       plan: OpenCodeSidecarPlan
     ) => Promise<void>,
-    opts?: { connectorTurn?: boolean; forAgent?: string; grants?: readonly DirectoryGrant[] }
+    opts?: {
+      connectorTurn?: boolean;
+      forAgent?: string;
+      grants?: readonly DirectoryGrant[];
+      permissionCeiling?: TurnPermissionCeiling;
+    }
   ): AsyncGenerator<StreamEvent> {
     // **Who pays** (ADR 261001-000811), decided before anything is sent: the
     // sidecar is made right for OpenCode's recorded choice, and a credits turn
@@ -750,6 +764,9 @@ export class OpenCodeRuntime implements AgentRuntime {
         cwd,
         permissions: ctx,
         ...(opts?.grants ? { grants: opts.grants } : {}),
+        ...(opts?.permissionCeiling !== undefined
+          ? { permissionCeiling: opts.permissionCeiling }
+          : {}),
       };
       for await (const mapped of mapOpenCodeTurn(queue, ctx)) {
         // On credits, a refused token is the credits card, never an OpenCode
@@ -1124,6 +1141,10 @@ export class OpenCodeRuntime implements AgentRuntime {
    * which boots the sidecar: a bookmarked id must resolve after a restart
    * instead of 404ing until something else warms the sidecar (DOR-251).
    */
+  async findSession(sessionId: string): Promise<Session | null> {
+    return this.mapper.findSession(DEFAULT_CWD, sessionId);
+  }
+
   async getSession(projectDir: string, sessionId: string): Promise<Session | null> {
     const sessions = await this.listSessions(projectDir);
     const listed = sessions.find((session) => session.id === sessionId);
@@ -1138,10 +1159,9 @@ export class OpenCodeRuntime implements AgentRuntime {
    *
    * OpenCode's store is durable — history comes from the sidecar through the
    * mapper (booting it when needed), so revisits survive both DorkOS and
-   * sidecar restarts. When the sidecar is unreachable (or the session was
-   * never bound) this falls back to the DorkOS-owned event stream, read
-   * durably from the `session_events` store (DOR-189) so the fallback now
-   * survives a DorkOS restart too — the contract ("array, never a throw").
+   * sidecar restarts. A known native conversation reports unavailable when
+   * its store cannot be read; a partial EventLog cannot stand in for its
+   * transcript. Only an unbound draft may use the DorkOS-owned event stream.
    */
   async getMessageHistory(projectDir: string, sessionId: string): Promise<HistoryMessage[]> {
     try {
@@ -1158,6 +1178,12 @@ export class OpenCodeRuntime implements AgentRuntime {
         )
       );
     } catch (err) {
+      if (
+        this.mapper.getOpenCodeSessionId(sessionId) !== undefined ||
+        isDerivedOpenCodeSessionId(sessionId)
+      ) {
+        throw new SessionDiscoveryUnavailableError(this.type);
+      }
       logger.debug(
         '[OpenCodeRuntime] native history read failed — serving durable EventLog fallback',
         logError(err)

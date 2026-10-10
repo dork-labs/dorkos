@@ -441,7 +441,7 @@ function reportClaudeSkillsRestart(existedBefore: boolean, repoRoot: string): vo
   console.log('');
   console.log(`Created ${CLAUDE_SKILLS_DIR}/, which is where Claude Code reads skills.`);
   console.log('  Claude Code watches that folder for changes, but only if it was already');
-  console.log('  there when the session started — so restart any Claude Code session you');
+  console.log('  there when the chat started — so restart any Claude Code chat you');
   console.log('  have open on this project before looking for these skills.');
   console.log(`  (${facts.source.url}, read ${facts.source.fetchedAt})`);
 }

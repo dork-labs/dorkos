@@ -26,10 +26,9 @@ const CLEAR_MS = 4000;
 /** The sentence for one answered request. */
 function sentenceFor(part: Extract<MessagePart, { type: 'tool_call' }>): string {
   const label = part.approvalDisplayName || getToolLabel(part.toolName, part.input ?? '');
-  if (part.approvalOutcome === 'allowed') return `Allowed ${label}. Recorded in the conversation.`;
-  if (part.approvalOutcome === 'denied')
-    return `Didn’t allow ${label}. Recorded in the conversation.`;
-  return `${label} wasn’t answered in time, so it didn’t run. Recorded in the conversation.`;
+  if (part.approvalOutcome === 'allowed') return `Allowed ${label}. Recorded in the chat.`;
+  if (part.approvalOutcome === 'denied') return `Didn’t allow ${label}. Recorded in the chat.`;
+  return `${label} wasn’t answered in time, so it didn’t run. Recorded in the chat.`;
 }
 
 /**
@@ -85,7 +84,7 @@ export function useApprovalAnnouncer(tailParts: MessagePart[], sessionId: string
     const text =
       fresh.length === 1
         ? sentenceFor(fresh[0])
-        : `Answered ${fresh.length} permission requests. Recorded in the conversation.`;
+        : `Answered ${fresh.length} permission requests. Recorded in the chat.`;
     // An answer landing is an EVENT, not derived state: it has to be said once and not
     // re-said on the next render, which is exactly what the `seen` set above
     // guarantees. There is no cascade — this runs at most once per answered

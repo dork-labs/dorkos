@@ -25,6 +25,7 @@
  *
  * @module services/core/usage/account-usage-store
  */
+import { outsideAuditScope } from '../../audit/audit-context.js';
 import {
   IMPLICIT_ACCOUNT_ID,
   LEDGER_RUNTIMES,
@@ -155,7 +156,12 @@ export class AccountUsageStore {
     }
     this.watcher.watchExisting();
     if (!this.scanTimer) {
-      this.scanTimer = unref(setInterval(() => void this.scan(), this.timings.scanIntervalMs));
+      this.scanTimer = unref(
+        setInterval(
+          outsideAuditScope(() => void this.scan()),
+          this.timings.scanIntervalMs
+        )
+      );
     }
   }
 

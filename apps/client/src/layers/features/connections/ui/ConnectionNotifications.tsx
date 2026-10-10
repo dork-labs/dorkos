@@ -290,7 +290,7 @@ function ConnectionNotificationsForAccount({ connectionId }: ConnectionNotificat
                   subscription={subscription}
                   agents={agentChoices}
                   definition={definitionItems.find((item) => item.id === subscription.definitionId)}
-                  channelLabel={channel ? channel.label || 'a chat app conversation' : undefined}
+                  channelLabel={channel ? channel.label || 'a chat app' : undefined}
                   removing={removingIds.has(subscription.id)}
                   onRemove={() => remove(subscription.id)}
                 />

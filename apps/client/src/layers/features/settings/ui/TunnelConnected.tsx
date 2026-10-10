@@ -137,7 +137,7 @@ export function TunnelConnected({ url, activeSessionId, latencyMs }: TunnelConne
               failed={sessionFailed}
               onClick={() => void copySession(sessionUrl)}
               idleIcon={Link}
-              idleLabel="Session link"
+              idleLabel="Chat link"
             />
           )}
 

@@ -108,7 +108,7 @@ export function CreditsErrorActions({
             disabled={capabilities === undefined || setCreditsDefault.isPending}
           >
             {way === 'new-conversation'
-              ? `Start a new conversation on ${label} sign-in`
+              ? `Start a new chat on ${label} sign-in`
               : `Use ${label} sign-in`}
           </Button>
         )}
@@ -120,8 +120,7 @@ export function CreditsErrorActions({
       </div>
       {sessionId && way === 'whole-runtime' && (
         <p className="text-muted-foreground text-xs" data-testid="credits-own-sign-in-reach">
-          This moves all {runtimeLabel ?? 'its'} conversations to {label} sign-in, not just this
-          one.
+          This moves all {runtimeLabel ?? 'its'} chats to {label} sign-in, not just this one.
         </p>
       )}
       {keepOut.error && (

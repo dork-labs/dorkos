@@ -52,7 +52,7 @@ export function RemoveMemberConfirm({
       <p className="text-muted-foreground text-xs">
         Remove {memberName}? It stops seeing new messages. Its messages stay.
       </p>
-      <p className="text-muted-foreground text-xs">Adding it back starts a fresh session.</p>
+      <p className="text-muted-foreground text-xs">Adding it back starts it fresh.</p>
       <div className="flex items-center justify-end gap-2">
         <Button type="button" size="sm" variant="ghost" onClick={onCancel}>
           Cancel

@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { motion } from 'motion/react';
@@ -419,7 +420,7 @@ export function InboxBell() {
                     approvals={extensionApprovals}
                     onOpenSettings={() => {
                       setOpen(false);
-                      void navigate({ to: '/', search: { settings: 'extensions' } });
+                      void navigate({ ...appRoutes.home(), search: { settings: 'extensions' } });
                     }}
                   />
                   {/* Everything else waiting, under a project heading per
@@ -474,7 +475,7 @@ export function InboxBell() {
               <div>
                 <div className="flex min-w-0 items-center justify-between gap-2">
                   <h2 className="text-muted-foreground sr-only text-xs font-medium tracking-widest uppercase md:not-sr-only">
-                    {lens === undefined ? 'Activity' : 'Activity · this session'}
+                    {lens === undefined ? 'Activity' : 'Activity · this chat'}
                   </h2>
                   <div className="ml-auto flex items-center gap-1">
                     {lens !== undefined && (

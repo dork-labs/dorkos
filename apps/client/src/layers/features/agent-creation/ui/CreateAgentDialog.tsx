@@ -126,7 +126,7 @@ export function CreateAgentDialog() {
     ? (template.description ?? 'A ready-made agent.')
     : seed?.template.persona
       ? seed.template.persona
-      : 'You’ll define the job together in your first conversation.';
+      : 'You’ll define the job together in your first chat.';
   const previewCapabilities = template
     ? (template.tags ?? [])
     : (seed?.template.capabilities ?? []);
@@ -247,7 +247,14 @@ export function CreateAgentDialog() {
             hostOnCreated();
             return;
           }
-          navigate(toSession({ dir: data._path, session: newSessionId, runtime: data.runtime }));
+          navigate(
+            toSession({
+              agentId: data.id,
+              draft: '1',
+              session: newSessionId,
+              runtime: data.runtime,
+            })
+          );
         },
         // A template that needs reviewing is shown here (`isShownInline` keeps
         // it out of the toast); every other failure is the shared toast's.

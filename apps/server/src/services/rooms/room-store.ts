@@ -1472,7 +1472,8 @@ export class RoomStore {
    * - **Thread scope.** `null` means the channel's top level, which is
    *   `thread_root_entry_id IS NULL` rather than "no filter": being addressed
    *   inside a thread must not engage an agent across the whole channel, and
-   *   the reverse (spec §3.2).
+   *   the reverse (spec §3.2). A thread's scope includes its ROOT, which is
+   *   read separately because its own row is top-level (DOR-2823).
    * - **`kind = 'post'`.** A notice is the room talking about the conversation,
    *   not a turn in it, so it neither anchors a window nor decays one.
    * - **Not the room's own voice.** The same rule as the line above, on the axis
@@ -1515,6 +1516,36 @@ export class RoomStore {
     roomId: string,
     opts: { threadRootEntryId: string | null; excludeAuthorId: string; limit: number }
   ): RoomEntry[] {
+    return this.recentPostsInScope(roomId, opts);
+  }
+
+  /**
+   * The newest posts in one thread scope, by anybody but the room's own voice,
+   * NEWEST FIRST — the read the conversation rule walks (`engagement.ts`
+   * `conversationFor`, DOR-2823).
+   *
+   * {@link RoomStore.listRecentPostsByOthers} without the author exclusion,
+   * because following a conversation means seeing the agent's OWN posts: the
+   * agent that spoke last is who a person is answering. Same scopes, same
+   * indexes, same thread-root rule.
+   *
+   * @param roomId - The room.
+   * @param opts.threadRootEntryId - The thread to scope to, or `null` for the
+   *   channel's top level.
+   * @param opts.limit - How many of the newest to read.
+   */
+  listRecentPostsInScope(
+    roomId: string,
+    opts: { threadRootEntryId: string | null; limit: number }
+  ): RoomEntry[] {
+    return this.recentPostsInScope(roomId, { ...opts, excludeAuthorId: null });
+  }
+
+  /** The shared body of the two scoped reads above; `null` excludes nobody. */
+  private recentPostsInScope(
+    roomId: string,
+    opts: { threadRootEntryId: string | null; excludeAuthorId: string | null; limit: number }
+  ): RoomEntry[] {
     if (opts.limit <= 0) return [];
     const rows = this.db
       .select()
@@ -1526,7 +1557,9 @@ export class RoomStore {
             ? isNull(roomEntries.threadRootEntryId)
             : eq(roomEntries.threadRootEntryId, opts.threadRootEntryId),
           eq(roomEntries.kind, 'post'),
-          ne(roomEntries.authorId, opts.excludeAuthorId),
+          opts.excludeAuthorId === null
+            ? undefined
+            : ne(roomEntries.authorId, opts.excludeAuthorId),
           // The room's own voice, excluded by the author's kind. A residual
           // filter on a primary-key lookup per candidate row, so the `(room_id,
           // seq)` walk the plan test pins is unchanged.
@@ -1540,7 +1573,36 @@ export class RoomStore {
       .orderBy(...this.timelineOrder(roomId, 'desc'))
       .limit(opts.limit)
       .all();
-    return rows.map(toEntry);
+    const page = rows.map(toEntry);
+    if (opts.threadRootEntryId === null || page.length >= opts.limit) return page;
+    // A thread's root is part of the thread's conversation, but its row stores
+    // `thread_root_entry_id = NULL` (it is a top-level post too), so the read
+    // above never meets it. Left out, "@ana …" that STARTS a thread engaged
+    // nobody inside it: six of the twelve unanswered posts in DOR-2823 were a
+    // person's unmentioned follow-up in a thread whose root had named the agent.
+    // The root is older than every reply, so it belongs at the end of a
+    // newest-first page, and only when the page still has room for it. Its own
+    // read, on the `(room_id, id)` unique index, rather than an OR that would
+    // cost the thread index its ordered walk.
+    const root = this.db
+      .select()
+      .from(roomEntries)
+      .where(
+        and(
+          eq(roomEntries.roomId, roomId),
+          eq(roomEntries.id, opts.threadRootEntryId),
+          eq(roomEntries.kind, 'post'),
+          opts.excludeAuthorId === null
+            ? undefined
+            : ne(roomEntries.authorId, opts.excludeAuthorId),
+          notInArray(
+            roomEntries.authorId,
+            this.db.select({ id: authors.id }).from(authors).where(eq(authors.kind, 'system'))
+          )
+        )
+      )
+      .get();
+    return root ? [...page, toEntry(root)] : page;
   }
 
   /**

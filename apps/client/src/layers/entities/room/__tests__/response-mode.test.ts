@@ -120,7 +120,7 @@ describe('explainRung', () => {
       const { sentence } = explainRung('engaged', roomKind, WINDOW);
 
       expect(sentence).toBe(
-        'Answers when @mentioned, then keeps answering for 3 minutes or 7 messages, whichever ends first.'
+        'Answers when @mentioned, then keeps answering for 3 minutes or 7 messages.'
       );
     }
   );
@@ -131,7 +131,7 @@ describe('explainRung', () => {
       engagedWindowPosts: 1,
     });
 
-    expect(sentence).toContain('1 minute or 1 message,');
+    expect(sentence).toContain('1 minute or 1 message.');
   });
 
   it('invents no numbers while the window is still being read', () => {
@@ -161,7 +161,7 @@ describe('explainRung', () => {
     expect(sentence).toBe('Never speaks here');
     // The reassurance is the point: silencing an agent in one room is not
     // switching the agent off.
-    expect(note).toBe('You can still talk to it in its own session.');
+    expect(note).toBe('You can still talk to it in its own chat.');
   });
 
   it('says who the loudest rung is answering, which differs by room', () => {

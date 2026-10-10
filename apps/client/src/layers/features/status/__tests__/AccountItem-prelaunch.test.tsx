@@ -245,10 +245,10 @@ describe('AccountItem before launch — the account picker', () => {
     render(<Chip />);
     await waitFor(() => expect(accountGroup()).toBeInTheDocument());
     expect(screen.getByTestId('account-scope-note')).toHaveTextContent(
-      'This session only. Locked after the first message.'
+      'This chat only. Locked after the first message.'
     );
     expect(accountGroup()).toHaveAccessibleDescription(
-      'This session only. Locked after the first message.'
+      'This chat only. Locked after the first message.'
     );
   });
 

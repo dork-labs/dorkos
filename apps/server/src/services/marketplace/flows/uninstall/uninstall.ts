@@ -79,6 +79,7 @@ import { UninstallLocator, readManifestIfPresent } from './locate.js';
 import { UninstallSideEffects } from './side-effects.js';
 import { packageIsDevLinked } from '../../dev-links/errors.js';
 import { devLinkInSlot } from '../../dev-links/registry.js';
+import { recordPackageChange } from '../../lib/record-package-change.js';
 import {
   type LocatedPackage,
   type UninstallFlowDeps,
@@ -212,6 +213,16 @@ export class UninstallFlow {
       });
       if (result) {
         await this.forgetInstallRecord(located.installRoot);
+        // The removal half of an update records nothing: the update records
+        // itself, once, when the new version lands.
+        if (!req.replacing) {
+          recordPackageChange({
+            kind: 'uninstalled',
+            name: result.packageName,
+            purge: req.purge === true,
+            ...(req.projectPath ? { projectPath: req.projectPath } : {}),
+          });
+        }
         return result;
       }
       triedEmpty.add(located.installRoot);

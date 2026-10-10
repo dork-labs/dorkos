@@ -238,7 +238,12 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
       // than cosmetic, since the server would otherwise resolve this session
       // from the manifest and the configured default.
       navigate(
-        toSession({ dir: defaultAgentDir, session: newSessionId, runtime: firstSessionRuntime })
+        toSession({
+          agentId: dorkbotFace?.id ?? DORKBOT_SLUG,
+          draft: '1',
+          session: newSessionId,
+          runtime: firstSessionRuntime,
+        })
       );
       onComplete();
     },

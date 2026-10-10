@@ -4,7 +4,7 @@
  * Every OTHER read in this directory asks where one session is, or what one
  * project holds. This asks the opposite question — which ids exist ANYWHERE —
  * because its caller, the boot reconcile in
- * `services/session/reconcile-session-rows.ts`, deletes rows on the strength of
+ * `services/session/catalog/reconcile-session-rows.ts`, deletes rows on the strength of
  * an id being ABSENT. A project-scoped listing cannot answer that: every session
  * belonging to another project is absent from it, which is the ordinary case
  * rather than evidence of anything.

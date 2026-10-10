@@ -238,7 +238,7 @@ export class TemplateNeedsReviewError extends Error {
    */
   constructor(readonly inspection: TemplateInspection) {
     super(
-      'This template brings settings or programs that will run in the new agent’s sessions. ' +
+      'This template brings settings or programs that will run in the new agent’s chats. ' +
         'Look at them, then create the agent again with the content hash you were shown.'
     );
     this.name = 'TemplateNeedsReviewError';

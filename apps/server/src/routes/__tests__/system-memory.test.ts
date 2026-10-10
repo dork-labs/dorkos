@@ -20,7 +20,12 @@ import {
 import { FakeMemoryProvider } from '@dorkos/test-utils/fake-memory-provider';
 
 vi.mock('../../services/core/runtime-registry.js', () => ({
-  runtimeRegistry: { listRuntimes: vi.fn(() => []), has: vi.fn(), get: vi.fn() },
+  runtimeRegistry: {
+    getNativeSessionCwd: vi.fn(() => null),
+    listRuntimes: vi.fn(() => []),
+    has: vi.fn(),
+    get: vi.fn(),
+  },
 }));
 
 vi.mock('../../services/core/tunnel-manager.js', () => ({

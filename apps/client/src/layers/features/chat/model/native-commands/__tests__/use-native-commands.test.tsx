@@ -72,7 +72,7 @@ describe('useNativeCommands', () => {
     await waitFor(() =>
       expect(transport.updateSession).toHaveBeenCalledWith('s1', { title: 'Foo' }, '/repo')
     );
-    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('Renamed session to “Foo”'));
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('Renamed chat to “Foo”'));
   });
 
   it('settles /rename even when the composer unmounts before the mutation lands', async () => {
@@ -123,7 +123,7 @@ describe('useNativeCommands', () => {
     });
     // The sonner mock above forwards only the headline. Since DOR-1755 the
     // server's own words are the toast's `description`, not part of the line.
-    await waitFor(() => expect(toastError).toHaveBeenCalledWith('Couldn’t rename that session'));
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith('Couldn’t rename that chat'));
     expect(toastSuccess).not.toHaveBeenCalled();
   });
 

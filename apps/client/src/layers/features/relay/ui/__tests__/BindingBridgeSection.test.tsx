@@ -13,7 +13,10 @@ import { BindingBridgeSection } from '../BindingBridgeSection';
 // The bridge action lands the person in the new channel via the router. The
 // component is rendered outside a router here, so its one router call is mocked.
 const navigateSpy = vi.fn();
-vi.mock('@tanstack/react-router', () => ({ useNavigate: () => navigateSpy }));
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
+  useNavigate: () => navigateSpy,
+}));
 
 function makeBinding(overrides: Partial<AdapterBinding> = {}): AdapterBinding {
   return {
@@ -104,7 +107,7 @@ describe('BindingBridgeSection — refusals render their reason, not a dead butt
   it('a real broadcast binding (platformChatType: channel) shows the broadcast reason and offers no bridge button', () => {
     renderSection(makeBinding({ platformChatType: 'channel', channelType: 'group' }));
     expect(screen.getByText(/Can’t bridge this chat/i)).toBeInTheDocument();
-    expect(screen.getByText(/broadcast channel, not a two-way conversation/i)).toBeInTheDocument();
+    expect(screen.getByText(/broadcast channel, not a two-way chat/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /bridge to a channel/i })).not.toBeInTheDocument();
   });
 

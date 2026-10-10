@@ -56,7 +56,8 @@ vi.mock('react-resizable-panels', () => ({
 let openRoomId = 'room-1';
 /** The `?entry=` the page reads — a search hit's seq, or nothing. */
 let openEntrySeq: number | undefined;
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useSearch: () => ({
     id: openRoomId,
     ...(openEntrySeq === undefined ? {} : { entry: openEntrySeq }),

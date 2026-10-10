@@ -188,10 +188,10 @@ describe('BridgeSessionAdopter + BridgeLifecycle.bridge (chats-as-channels §7.1
     expect(adopted).toBe(false);
     expect(probe.hasTranscript).toHaveBeenCalledWith('/root', 'sess-stale');
 
-    // The notice is the pointer-LESS variant: a new conversation, no pointer.
+    // The notice is the pointer-LESS variant: a new chat, no pointer.
     const notice = historyNotice(id);
-    expect(notice?.text).toContain('starts a new conversation');
-    expect(notice?.text).not.toContain('picks up');
+    expect(notice?.text).toContain('starts fresh');
+    expect(notice?.text).not.toContain('continues');
 
     // The first turn does NOT resume the stale id — it runs on a fresh mint.
     harness.service.post(id, { authorId: harness.human, text: 'hello' });
@@ -208,7 +208,7 @@ describe('BridgeSessionAdopter + BridgeLifecycle.bridge (chats-as-channels §7.1
     const { id } = await makeLifecycle(adopter, bindings).bridge(createInput());
 
     const notice = historyNotice(id);
-    expect(notice?.text).toContain('picks up a conversation');
+    expect(notice?.text).toContain('continues an exchange');
     expect(notice?.text).toContain("aren't copied here");
   });
 
@@ -225,7 +225,7 @@ describe('BridgeSessionAdopter + BridgeLifecycle.bridge (chats-as-channels §7.1
     // canProbe short-circuits: the disk is never consulted for a runtime that
     // cannot answer, rather than a fabricated probe.
     expect(probe.hasTranscript).not.toHaveBeenCalled();
-    expect(historyNotice(id)?.text).toContain('starts a new conversation');
+    expect(historyNotice(id)?.text).toContain('starts fresh');
   });
 
   it('an opencode-backed binding also takes the fresh-start path', async () => {
@@ -248,7 +248,7 @@ describe('BridgeSessionAdopter + BridgeLifecycle.bridge (chats-as-channels §7.1
 
     expect(adopted).toBe(false);
     expect(runtimeAsked).toEqual([]);
-    expect(historyNotice(id)?.text).toContain('starts a new conversation');
+    expect(historyNotice(id)?.text).toContain('starts fresh');
   });
 
   it('an unresolvable agent root fails the probe and starts fresh', async () => {

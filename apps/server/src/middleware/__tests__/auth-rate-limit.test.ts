@@ -90,6 +90,41 @@ describe('buildAuthRateLimiter', () => {
     expect(blocked.body).toMatchObject({ code: 'RATE_LIMITED' });
   });
 
+  // Spec `audit-trail` PR2: a refused attempt never reaches Better Auth, so
+  // this is the only place it can be recorded.
+  it('records a refused attempt in the audit log, naming nobody', async () => {
+    const { createTestDb } = await import('@dorkos/test-utils/db');
+    const { auditEvents } = await import('@dorkos/db');
+    const { AuditLog } = await import('../../services/audit/audit-log.js');
+    const { AccountIds } = await import('../../services/audit/account-ids.js');
+    const { initAuditTrail, resetAuditTrail } = await import('../../services/audit/audit-trail.js');
+    const db = createTestDb();
+    initAuditTrail({
+      log: new AuditLog(db),
+      accounts: new AccountIds({ db, installId: 'inst-1', readOwnerAccount: () => null }),
+    });
+    try {
+      const app = makeApp();
+      for (let i = 0; i < MAX_ATTEMPTS; i++) {
+        await request(app).post('/api/auth/sign-in/email').send({ email: 'a@b.c' });
+      }
+      expect(db.select().from(auditEvents).all()).toEqual([]);
+      const blocked = await request(app).post('/api/auth/sign-in/email').send({ email: 'a@b.c' });
+      expect(blocked.status).toBe(429);
+      expect(blocked.body).toMatchObject({ code: 'RATE_LIMITED' });
+      expect(db.select().from(auditEvents).all()).toMatchObject([
+        {
+          action: 'auth.sign_in_rate_limited',
+          actorId: 'unidentified',
+          outcome: 'refused',
+          visibility: 'admins',
+        },
+      ]);
+    } finally {
+      resetAuditTrail();
+    }
+  });
+
   it('lets a legitimate user retry a fat-fingered password well under the limit', async () => {
     const app = makeApp();
 

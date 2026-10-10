@@ -1,5 +1,5 @@
-import rateLimit, { type RateLimitRequestHandler } from 'express-rate-limit';
-import { rateLimitKey } from './rate-limit-key.js';
+import { expressRateLimit } from '../http/rate-limiter.js';
+import type { RequestHandler } from 'express';
 
 /** Default requests per minute per IP for the A2A JSON-RPC endpoints. */
 const RPC_DEFAULT_PER_MINUTE = 60;
@@ -21,7 +21,7 @@ export interface A2aRateLimitOptions {
 /**
  * Build one limiter with the JSON-RPC error body A2A clients expect.
  *
- * Keys through {@link rateLimitKey} — the TCP peer address unless
+ * Keys through `rateLimitKey`, through {@link expressRateLimit} — the TCP peer address unless
  * `DORKOS_TRUST_PROXY` says a proxy is in front (DOR-1711). The comment that
  * used to sit here accepted spoofable `X-Forwarded-For` keying because "socket
  * keying behind a tunnel would collapse every client into localhost's one
@@ -31,13 +31,11 @@ export interface A2aRateLimitOptions {
  * proxy you control are still available, explicitly, through the flag.
  * Documented in contributing/api-reference.md § A2A Gateway → Deployment security.
  */
-function buildLimiter(maxPerMinute: number): RateLimitRequestHandler {
-  return rateLimit({
+function buildLimiter(maxPerMinute: number): RequestHandler {
+  return expressRateLimit({
     windowMs: WINDOW_MS,
-    max: maxPerMinute,
-    keyGenerator: rateLimitKey,
-    standardHeaders: true,
-    legacyHeaders: false,
+    limit: maxPerMinute,
+    headers: 'standard',
     message: {
       jsonrpc: '2.0',
       error: { code: -32029, message: 'Rate limit exceeded. Try again shortly.' },
@@ -57,8 +55,8 @@ function buildLimiter(maxPerMinute: number): RateLimitRequestHandler {
  * @param options - Per-minute overrides (defaults: 60 RPC, 300 card)
  */
 export function buildA2aRateLimiters(options: A2aRateLimitOptions = {}): {
-  rpc: RateLimitRequestHandler;
-  card: RateLimitRequestHandler;
+  rpc: RequestHandler;
+  card: RequestHandler;
 } {
   return {
     rpc: buildLimiter(options.rpcMaxPerMinute ?? RPC_DEFAULT_PER_MINUTE),

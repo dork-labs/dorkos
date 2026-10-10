@@ -89,7 +89,6 @@ describe('UserConfigSchema', () => {
         statusBar: { pins: [] },
         composer: { richText: true },
         communityNavigation: { version: 1, owners: [] },
-        autonomyAcknowledgedAt: null,
         fullPowerDecidedAt: null,
         fullPowerChoice: null,
       },
@@ -113,6 +112,7 @@ describe('UserConfigSchema', () => {
       a2a: { enabled: false },
       scheduler: { enabled: true, maxConcurrentRuns: 4, retentionCount: 100 },
       keepAwake: { whileAgentsWork: true, wakeForScheduledTasks: false },
+      activity: { retentionDays: 365 },
       mesh: { scanRoots: [] },
       rooms: {
         turnLimitsEnabled: true,
@@ -122,8 +122,8 @@ describe('UserConfigSchema', () => {
         maxAutomaticTurnsTotalPerHour: 5000,
         replyWaitMinutes: 10,
         lateReplyCeilingMinutes: 60,
-        engagedWindowMinutes: 10,
-        engagedWindowPosts: 5,
+        engagedWindowMinutes: 60,
+        engagedWindowPosts: 15,
         collectDebounceMs: 500,
         collectMaxEntries: 20,
         responseGate: 'routing',
@@ -163,6 +163,11 @@ describe('UserConfigSchema', () => {
         displayNameSource: null,
         rolePromptDismissedAt: null,
         identityPromptDismissedAt: null,
+        // Not told yet: the app seeds the zone from the browser, and null hours
+        // read as Monday to Friday, 9 to 5 (spec `heartbeats` §3.5).
+        timezone: null,
+        workingHours: null,
+        away: null,
       },
       uploads: { maxFileSize: 10 * 1024 * 1024, maxFiles: 10, allowedTypes: ['*/*'] },
       agents: { defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' },
@@ -213,7 +218,8 @@ describe('UserConfigSchema', () => {
       runtimes: {
         default: 'claude-code',
         defaultTrustStop: null,
-        environment: { inherit: { claudeCode: [], codex: [], opencode: [] } },
+        doe: { enabled: true, inference: null, defaultTrustStop: null },
+        environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
         claudeCode: {
           defaultAccount: null,
           accounts: [],
@@ -483,7 +489,6 @@ describe('USER_CONFIG_DEFAULTS', () => {
         statusBar: { pins: [] },
         composer: { richText: true },
         communityNavigation: { version: 1, owners: [] },
-        autonomyAcknowledgedAt: null,
         fullPowerDecidedAt: null,
         fullPowerChoice: null,
       },
@@ -507,6 +512,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
       a2a: { enabled: false },
       scheduler: { enabled: true, maxConcurrentRuns: 4, retentionCount: 100 },
       keepAwake: { whileAgentsWork: true, wakeForScheduledTasks: false },
+      activity: { retentionDays: 365 },
       mesh: { scanRoots: [] },
       rooms: {
         turnLimitsEnabled: true,
@@ -516,8 +522,8 @@ describe('USER_CONFIG_DEFAULTS', () => {
         maxAutomaticTurnsTotalPerHour: 5000,
         replyWaitMinutes: 10,
         lateReplyCeilingMinutes: 60,
-        engagedWindowMinutes: 10,
-        engagedWindowPosts: 5,
+        engagedWindowMinutes: 60,
+        engagedWindowPosts: 15,
         collectDebounceMs: 500,
         collectMaxEntries: 20,
         responseGate: 'routing',
@@ -557,6 +563,11 @@ describe('USER_CONFIG_DEFAULTS', () => {
         displayNameSource: null,
         rolePromptDismissedAt: null,
         identityPromptDismissedAt: null,
+        // Not told yet: the app seeds the zone from the browser, and null hours
+        // read as Monday to Friday, 9 to 5 (spec `heartbeats` §3.5).
+        timezone: null,
+        workingHours: null,
+        away: null,
       },
       uploads: { maxFileSize: 10 * 1024 * 1024, maxFiles: 10, allowedTypes: ['*/*'] },
       agents: { defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' },
@@ -607,7 +618,8 @@ describe('USER_CONFIG_DEFAULTS', () => {
       runtimes: {
         default: 'claude-code',
         defaultTrustStop: null,
-        environment: { inherit: { claudeCode: [], codex: [], opencode: [] } },
+        doe: { enabled: true, inference: null, defaultTrustStop: null },
+        environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
         claudeCode: {
           defaultAccount: null,
           accounts: [],
@@ -813,6 +825,7 @@ describe('per-field and section-literal defaults agree', () => {
     ui: {},
     scheduler: {},
     keepAwake: {},
+    activity: {},
     runtimes: { claudeCode: {} },
   });
 
@@ -834,6 +847,11 @@ describe('per-field and section-literal defaults agree', () => {
   it('keepAwake is on while agents work, and wake is off, either way', () => {
     expect(fromFactory.keepAwake).toEqual({ whileAgentsWork: true, wakeForScheduledTasks: false });
     expect(fromFields.keepAwake).toEqual({ whileAgentsWork: true, wakeForScheduledTasks: false });
+  });
+
+  it('activity keeps a year either way', () => {
+    expect(fromFactory.activity).toEqual({ retentionDays: 365 });
+    expect(fromFields.activity).toEqual({ retentionDays: 365 });
   });
 
   it('runtimes.claudeCode.persistentSession is true either way', () => {
@@ -901,7 +919,8 @@ describe('per-field and section-literal defaults agree', () => {
     expect(fromFactory.runtimes.claudeCode.defaultTrustStop).toBeNull();
     expect(fromFactory.runtimes.codex.defaultTrustStop).toBeNull();
     expect(fromFactory.runtimes.opencode.defaultTrustStop).toBeNull();
-    expect(fromFactory.ui.autonomyAcknowledgedAt).toBeNull();
+    // The Full-autonomy acknowledgement is retired with its ritual (DOR-2739).
+    expect(fromFactory.ui).not.toHaveProperty('autonomyAcknowledgedAt');
     expect(fromFactory.mesh.scanRoots).toEqual([]);
   });
 });
@@ -1048,7 +1067,8 @@ describe('UserConfigSchema runtimes', () => {
     expect(result.runtimes).toEqual({
       default: 'claude-code',
       defaultTrustStop: null,
-      environment: { inherit: { claudeCode: [], codex: [], opencode: [] } },
+      doe: { enabled: true, inference: null, defaultTrustStop: null },
+      environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
       claudeCode: {
         defaultAccount: null,
         accounts: [],
@@ -1088,7 +1108,8 @@ describe('UserConfigSchema runtimes', () => {
     expect(result.runtimes).toEqual({
       default: 'claude-code',
       defaultTrustStop: null,
-      environment: { inherit: { claudeCode: [], codex: [], opencode: [] } },
+      doe: { enabled: true, inference: null, defaultTrustStop: null },
+      environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
       claudeCode: {
         defaultAccount: null,
         accounts: [],
@@ -2203,17 +2224,22 @@ describe('configuredRuntimes', () => {
       values[key];
 
   it('lists every runtime when nothing turns one off', () => {
-    expect(configuredRuntimes(reader({}))).toEqual(['claude-code', 'codex', 'opencode']);
+    expect(configuredRuntimes(reader({}))).toEqual(['claude-code', 'codex', 'opencode', 'doe']);
   });
 
   it('drops only a runtime that is explicitly off, keeping claude-code first', () => {
     expect(configuredRuntimes(reader({ 'runtimes.codex.enabled': false }))).toEqual([
       'claude-code',
       'opencode',
+      'doe',
     ]);
     expect(
       configuredRuntimes(
-        reader({ 'runtimes.codex.enabled': false, 'runtimes.opencode.enabled': false })
+        reader({
+          'runtimes.codex.enabled': false,
+          'runtimes.opencode.enabled': false,
+          'runtimes.doe.enabled': false,
+        })
       )
     ).toEqual(['claude-code']);
   });
@@ -2223,6 +2249,7 @@ describe('configuredRuntimes', () => {
       'claude-code',
       'codex',
       'opencode',
+      'doe',
     ]);
   });
 });

@@ -335,7 +335,7 @@ Tailwind's first-party `scrollbar-*` utilities (v4.3+) are the sanctioned surfac
 
 ### Sidebar
 
-Built on **Shadcn Sidebar** (`layers/shared/ui/sidebar.tsx`) with `collapsible="offcanvas"` mode. On the web cockpit the sidebar body is the `DashboardSidebar` agent roster (in `features/dashboard-sidebar/`) on every route — per-session context now lives in the right-panel inspector, not a sidebar drill-in. A registered `sidebar.body` contribution can take over the body for its route (the marketplace facet panel does on `/marketplace`).
+Built on **Shadcn Sidebar** (`layers/shared/ui/sidebar.tsx`) with `collapsible="offcanvas"` mode. On the web app the sidebar body is the `DashboardSidebar` agent roster (in `features/dashboard-sidebar/`) on every route — per-session context now lives in the right-panel inspector, not a sidebar drill-in. A registered `sidebar.body` contribution can take over the body for its route (the marketplace facet panel does on `/marketplace`).
 
 - **Width**: the visible panel is **272px** — the number to build to, and the number a browser test measures on `sidebar-inner`. **Do not set `--sidebar-width` to 272px.** That variable on `SidebarProvider` (`AppShell.tsx`) sizes the _slot_, and the `inset` variant adds `p-2` — 8px of padding a side — before the tinted surface starts. So the slot is `calc(272px + 1rem)`, which is what `AppShell` writes, and the panel inside it is 272. Writing `17rem` there would give a 256px panel, not a 272px one. Never set a one-off width on a component to work around any of this.
 - **CSS variables**: `--sidebar-*` in `index.css`. The panel sits distinctly off the main background — `--sidebar` is 91% against a 98% background in light mode, and 10% against 4% in dark.
@@ -561,7 +561,7 @@ Pattern: `Popover` > `PopoverTrigger` > `PopoverContent` > `Command` > `CommandI
 
 ## Identity
 
-Every identity in the cockpit — an agent, a person, the room a direct message is with — is drawn as the same disc: `IdentityAvatar` (`shared/ui/identity-avatar.tsx`). It is the only place this convention is implemented, and this section is the only place it is written down.
+Every identity in the app — an agent, a person, the room a direct message is with — is drawn as the same disc: `IdentityAvatar` (`shared/ui/identity-avatar.tsx`). It is the only place this convention is implemented, and this section is the only place it is written down.
 
 **Tell it what the identity is, not how to draw it.** Pass `kind` and the disc derives its shape, its fill and its corner mark together:
 
@@ -584,7 +584,7 @@ Two things make this the shape it is:
 
 **`status` is the top-right corner, and it is kind-agnostic.** One slot, four states, from `IdentityStatus` (`shared/ui/status-dot.ts`): `idle` draws nothing at all, `working` is a `bg-status-success` dot that pulses, `needs-you` a still `bg-status-warning`, `error` a still `bg-status-error`. Ringed in the page background, opposite the badge. **Only `working` moves** — motion is what the word "now" is made of, so a state that pulsed would claim to still be running; under `prefers-reduced-motion` the dot stays and only the animation goes. An agent mid-turn and a person mid-task are the same fact to a roster, so nothing about the slot is agent-specific.
 
-`working` means a turn is streaming as you look at it, and nothing weaker. It used to default to `healthStatus === 'active'` — the mesh's "seen within the last hour" — so every list row in the cockpit pulsed a right-now claim sourced from an hour-old heartbeat. A caller with no turn-level signal passes nothing.
+`working` means a turn is streaming as you look at it, and nothing weaker. It used to default to `healthStatus === 'active'` — the mesh's "seen within the last hour" — so every list row in the app pulsed a right-now claim sourced from an hour-old heartbeat. A caller with no turn-level signal passes nothing.
 
 **One dot vocabulary, everywhere.** The colours live in `STATUS_DOT_COLOR` and reach a dot through `statusDotClass(signal)`, which adds the pulse for `working` and for nothing else. Row-level dots take the same route and add `unseen` (`bg-status-info`) — a fact about a conversation you have not read, which a face never carries. The sidebar's `AgentActivityBadge`, the tab strip's `AppTabItem`, the sidebar `GroupHeader` and the disc's own corner all read that one map; before it they spelled the same green four ways (`bg-green-500`, `bg-emerald-500`, `bg-primary`, `bg-status-success`), each free to drift when either theme moved.
 
@@ -635,7 +635,7 @@ The bound behind all four: an identity's colour answers only where that identity
 
 **Two traps this grammar hit, which apply well beyond identity surfaces:**
 
-- **A `border-<colour>` utility works — and for a long time it did not, which is worth knowing before you read old code.** `index.css` gives every element a neutral `border-color`, and that rule used to be **unlayered**, so it outranked every `@layer` including Tailwind's `utilities`: `border-destructive`, `border-primary`, `border-transparent` and ~290 other border-colour classes rendered as the neutral border, everywhere. It lives in its own `border-defaults` layer now (DOR-1024) — below `utilities` so a class can beat it, above `blintz` so the canvas editor's bundled preflight cannot reset it back to `currentColor` app-wide the moment that chunk loads. Write the class. **A `color-mix()` of a custom property is a class too** — `border-[color-mix(in_oklch,var(--identity-color)_var(--identity-border-strength),hsl(var(--border)))]` is what `TeamMemberCard` wears, the same arbitrary-value shape `identityMarkRing` has always used for its ring, and the strength stays a separate property so `hover:` can move it. A border colour only needs to be **inline** when the value is computed in JS (`AgentNode`, `PresetPill`) or when Motion has to tween it, which it cannot do through a custom property (`use-session-border-state.ts`). If you find an inline `borderColor` whose value is a literal, it is a leftover from the old rule; make it a class.
+- **A `border-<colour>` utility works — and for a long time it did not, which is worth knowing before you read old code.** `index.css` gives every element a neutral `border-color`, and that rule used to be **unlayered**, so it outranked every `@layer` including Tailwind's `utilities`: `border-destructive`, `border-primary`, `border-transparent` and ~290 other border-colour classes rendered as the neutral border, everywhere. It lives in its own `border-defaults` layer now (DOR-1024) — below `utilities` so a class can beat it, above `blintz` so the canvas editor's bundled preflight cannot reset it back to `currentColor` app-wide the moment that chunk loads. Write the class. **A `color-mix()` of a custom property is a class too** — `border-[color-mix(in_oklch,var(--identity-color)_var(--identity-border-strength),hsl(var(--border)))]` is what `TeamMemberCard` wears, the same arbitrary-value shape `identityMarkRing` has always used for its ring, and the strength stays a separate property so `hover:` can move it. A border colour only needs to be **inline** when the value is computed in JS (`AgentNode`, `PresetPill`) or when Motion has to tween it, which it cannot do through a custom property. If you find an inline `borderColor` whose value is a literal, it is a leftover from the old rule; make it a class.
 - **`group-hover:` matches ANY `.group` ancestor, not the nearest one.** Tailwind compiles it to `:where(.group):hover &`. The sidebar wraps its rows in an unnamed `.group` that spans most of the pane, so the bare form left every sidebar face permanently ringed. Always use a **named** group (`group/identity` + `group-hover/identity:`) when the control is anywhere it could be nested.
 
 **Press scales by target size:** `0.99` for a card, `0.98` for a row or chip, `0.94` for a mark used as a button. Scale down only; the release rides the hover duration back up.
@@ -1352,8 +1352,8 @@ All three components are exported from `@/layers/shared/ui`.
 | Route error fallback     | `apps/client/src/layers/shared/ui/route-error-fallback.tsx`      |
 | Not-found fallback       | `apps/client/src/layers/shared/ui/not-found-fallback.tsx`        |
 | Chat components          | `apps/client/src/layers/features/chat/`                          |
-| Session components       | `apps/client/src/layers/features/session-list/`                  |
-| App state                | `apps/client/src/layers/shared/model/app-store.ts`               |
+| Chat list                | `apps/client/src/layers/features/chat-list/`                     |
+| App state                | `apps/client/src/layers/shared/model/app-store/app-store.ts`     |
 | Chat state               | `apps/client/src/layers/features/chat/model/use-chat-session.ts` |
 | Filter engine            | `apps/client/src/layers/shared/lib/filter-engine.ts`             |
 | Filter state hook        | `apps/client/src/layers/shared/model/use-filter-state.ts`        |

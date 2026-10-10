@@ -29,7 +29,7 @@ import {
   type ServerPrincipalProof,
   type ServerPrincipalClaims,
 } from '../../connectors/principal/server-principal.js';
-import { queueKeyOf } from '../../session/session-key-registry.js';
+import { queueKeyOf } from '../../session/resolution/session-key-registry.js';
 import type { RoomService } from '../../rooms/room-service.js';
 import type { RoomStore } from '../../rooms/room-store.js';
 import type { RoomRepoStore } from '../../rooms/repo/room-repo-store.js';

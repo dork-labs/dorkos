@@ -160,7 +160,7 @@ describe('RoomsTab', () => {
     const depth = screen.getByRole('spinbutton', { name: 'Replies in a row' });
     expect(depth).toBeDisabled();
     expect(depth).toHaveValue(7);
-    const concurrency = screen.getByRole('spinbutton', { name: 'Conversations at once' });
+    const concurrency = screen.getByRole('spinbutton', { name: 'Chats at once' });
     for (const field of screen.getAllByRole('spinbutton')) {
       if (field !== concurrency) expect(field).toBeDisabled();
     }
@@ -222,10 +222,10 @@ describe('RoomsTab', () => {
     it('shows how many conversations one agent may work in at once, and the default', () => {
       renderTab(stockRooms({ maxConcurrentTurnsPerAgent: 5 }));
 
-      expect(screen.getByRole('spinbutton', { name: 'Conversations at once' })).toHaveValue(5);
+      expect(screen.getByRole('spinbutton', { name: 'Chats at once' })).toHaveValue(5);
       expect(
         screen.getByText(
-          `How many conversations one agent works in at once. Default: ${MAX_CONCURRENT_TURNS_PER_AGENT_DEFAULT}.`
+          `How many chats one agent works in at once. Default: ${MAX_CONCURRENT_TURNS_PER_AGENT_DEFAULT}.`
         )
       ).toBeInTheDocument();
     });
@@ -234,7 +234,7 @@ describe('RoomsTab', () => {
       const user = userEvent.setup();
       const { transport } = renderTab();
 
-      const field = screen.getByRole('spinbutton', { name: 'Conversations at once' });
+      const field = screen.getByRole('spinbutton', { name: 'Chats at once' });
       await user.clear(field);
       await user.type(field, '1');
       await user.tab();
@@ -249,20 +249,20 @@ describe('RoomsTab', () => {
     it('is named in the section intro, so the card can be found from the top', () => {
       renderTab();
 
-      expect(screen.getByText(/how many conversations each runs/)).toBeInTheDocument();
+      expect(screen.getByText(/how many chats each runs/)).toBeInTheDocument();
     });
 
     it('stays usable while automatic replies are unlimited, because it applies to every turn', () => {
       renderTab(stockRooms({ turnLimitsEnabled: false }));
 
-      expect(screen.getByRole('spinbutton', { name: 'Conversations at once' })).toBeEnabled();
+      expect(screen.getByRole('spinbutton', { name: 'Chats at once' })).toBeEnabled();
     });
 
     it('refuses a number past the range the server accepts', async () => {
       const user = userEvent.setup();
       const { transport } = renderTab();
 
-      const field = screen.getByRole('spinbutton', { name: 'Conversations at once' });
+      const field = screen.getByRole('spinbutton', { name: 'Chats at once' });
       await user.clear(field);
       await user.type(field, '9');
       await user.tab();
@@ -276,9 +276,7 @@ describe('RoomsTab', () => {
       renderTab(older);
 
       expect(screen.getByRole('spinbutton', { name: 'Replies in a row' })).toBeInTheDocument();
-      expect(
-        screen.queryByRole('spinbutton', { name: 'Conversations at once' })
-      ).not.toBeInTheDocument();
+      expect(screen.queryByRole('spinbutton', { name: 'Chats at once' })).not.toBeInTheDocument();
     });
   });
 });

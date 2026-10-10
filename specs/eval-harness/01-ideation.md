@@ -30,7 +30,7 @@ linearIssue: DOR-357
   eval). Wire CI to the D5 eval cadence: per-PR label-gated smoke → nightly full
   → memoized release gate → weekly deep. This is **"everything via prompting"
   made testable** and **the demo-claim gate made executable**
-  (`plans/shapes-program.md` W4 + D5; `meta/positioning-202607/09-gtm-plan.md`
+  (`plans/archive/shapes-program.md` W4 + D5; `meta/archive/positioning-202607/09-gtm-plan.md`
   §2.0).
 
 - **Assumptions** (each flagged where it is load-bearing):
@@ -71,7 +71,7 @@ linearIssue: DOR-357
 
 ## 2) Pre-reading Log
 
-- `plans/shapes-program.md` — W4 scope (runner + 12 core + 2 connector evals),
+- `plans/archive/shapes-program.md` — W4 scope (runner + 12 core + 2 connector evals),
   D5 eval-cadence policy (per-PR label-gated smoke → nightly full → **memoized**
   release gate → weekly deep; `--skip-evals` hatch with guardrails; budget caps
   `~$1–3/full run`, `~$30–90/mo` nightly; transcripts as JSONL; failures

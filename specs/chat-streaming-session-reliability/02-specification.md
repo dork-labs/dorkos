@@ -456,7 +456,7 @@ No user-facing documentation changes needed; these are all internal reliability 
 
 ## References
 
-- Findings report: `plans/2026-03-05-chat-self-test-findings.md`
+- Findings report: `plans/archive/2026-03-05-chat-self-test-findings.md`
 - Node.js backpressure guide: https://nodejs.org/en/docs/guides/backpressuring-in-streams/
 - Node.js `response.write()` docs: https://nodejs.org/api/http.html#responsewritechunk-encoding-callback
 - TanStack Query `setQueryData` updater: https://tanstack.com/query/latest/docs/reference/QueryClient#queryclientsetquerydata

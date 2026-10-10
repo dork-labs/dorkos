@@ -47,7 +47,7 @@ export interface ProfileRowModel {
   /** Where a `nav` row goes. */
   page?: ProfilePageId;
   /** Which popover a `pick` row opens. */
-  pick?: 'runs-on' | 'personality';
+  pick?: 'runs-on' | 'personality' | 'reports-to';
   /** What a `copy` row puts on the clipboard. */
   copyValue?: string;
   /** Why a `locked` row is locked. Shown on hover and read out via `aria-describedby`. */
@@ -115,6 +115,24 @@ export interface ProfileRowsContext {
   firstSeenAt?: string | null;
   /** What this agent has been doing, when the profile has asked. */
   facts?: ProfileAgentFacts;
+  /**
+   * Who this agent reports to, in the row's words ("You (default)"), or `null`
+   * while its manifest is still being read (spec `heartbeats` §4.3).
+   */
+  reportsTo?: string | null;
+  /**
+   * This agent's open promises and how many are overdue, or `null` while
+   * unknown. Read for every agent: anyone may read any agent's promises.
+   */
+  commitments?: ProfileCommitmentsSummary | null;
+}
+
+/** An agent's promises, as the Commitments row wants them. */
+export interface ProfileCommitmentsSummary {
+  /** Promises still open. */
+  open: number;
+  /** Open promises past their due date. */
+  overdue: number;
 }
 
 /**
@@ -261,6 +279,22 @@ function roomsRow(ctx: ProfileRowsContext): ProfileRowModel {
   };
 }
 
+/**
+ * The Commitments row: how many promises are open, and how many are overdue.
+ * Drawn on every agent's profile, because anyone may read any agent's list.
+ */
+function commitmentsRow(ctx: ProfileRowsContext): ProfileRowModel {
+  const summary = ctx.commitments;
+  return {
+    id: 'commitments',
+    kind: 'nav',
+    label: 'Commitments',
+    value: countValue(summary?.open, 'open', 'open'),
+    ...(summary && summary.overdue > 0 ? { meta: `${summary.overdue} overdue` } : {}),
+    page: 'commitments',
+  };
+}
+
 /** Another person on this install: what they do, what they own, where they are. */
 function personRows(member: TeamMember, ctx: ProfileRowsContext): ProfileRowGroup[] {
   const rows: ProfileRowModel[] = [];
@@ -298,8 +332,8 @@ function workRows(ctx: ProfileRowsContext): ProfileRowModel[] {
     {
       id: 'sessions',
       kind: 'nav',
-      label: 'Sessions',
-      value: countValue(facts?.sessions?.count, 'conversation', 'conversations'),
+      label: 'Chats',
+      value: countValue(facts?.sessions?.count, 'chat', 'chats'),
       meta: lastWords(facts?.sessions?.newestAt ?? null),
       page: 'sessions',
     },
@@ -316,6 +350,7 @@ function workRows(ctx: ProfileRowsContext): ProfileRowModel[] {
       page: 'tasks',
     });
   }
+  rows.push(commitmentsRow(ctx));
   rows.push(roomsRow(ctx));
   // No count on this one, deliberately. Everything above answers "how much of
   // this exists"; this answers "what has it told me", and the number that would
@@ -344,6 +379,14 @@ function managedAgentRows(member: TeamMember, ctx: ProfileRowsContext): ProfileR
       // than the fact it replaced.
       value: ctx.facts?.personality ?? null,
       pick: 'personality',
+    },
+    // Who gets this agent's report and its escalations (spec `heartbeats` §4).
+    {
+      id: 'reports-to',
+      kind: 'pick',
+      label: 'Reports to',
+      value: ctx.reportsTo ?? null,
+      pick: 'reports-to',
     },
   ];
   if (folder) {
@@ -433,6 +476,7 @@ function otherAgentRows(member: TeamMember, ctx: ProfileRowsContext): ProfileRow
       rows: [
         { id: 'about', kind: 'text', label: 'About', value: ctx.description ?? null },
         { id: 'runs-on', kind: 'text', label: 'Runs on', value: runsOnValue(member) },
+        commitmentsRow(ctx),
         roomsRow(ctx),
       ],
     },

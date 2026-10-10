@@ -5,14 +5,14 @@ import { useSessionStreamStore } from '../stream/session-stream-store';
 import { useSessionListStore } from '../stream/session-list-store';
 // Same-slice sibling rather than the barrel: `entities/session`'s own index
 // re-exports React components, and this module is imported by every agent row.
-import { humanOriginSessionIds } from '../../lib/partition-sessions-by-origin';
+import { nonAutomatedSessionIds } from '../../lib/chat-ownership';
 import {
   BORDER_COLORS,
   BORDER_LABELS as LABELS,
   borderKindFromLifecycle,
   type SessionBorderKind,
   type SessionBorderState,
-} from './use-session-border-state';
+} from './use-session-status-signals';
 
 /**
  * Priority ranking for border states (higher = hotter). No source here ever
@@ -38,7 +38,7 @@ function hotter(result: SessionBorderKind, candidate: SessionBorderKind | null):
  * Derive the "hottest" border state across all sessions for an agent.
  *
  * Merges three sources and returns the highest-priority status (same merge as
- * {@link useSessionBorderState}, scanned across many sessions):
+ * {@link useSessionStatusSignals}, scanned across many sessions):
  *
  * 1. **Legacy chat store** — send-path/recovery state for `sessionIds`.
  * 2. **Per-session stream store** — hydrated sessions among `sessionIds`.
@@ -47,8 +47,8 @@ function hotter(result: SessionBorderKind, candidate: SessionBorderKind | null):
  *    match is what lets a COLLAPSED agent row light up: the sidebar only
  *    fetches session metadata for the active agent (`sessionIds` is empty
  *    otherwise), but the status fan-out carries every live session's cwd
- *    regardless. Its `streaming` contribution is human-origin only (§18); its
- *    blocked/error/unseen contributions are not, and must not be.
+ *    regardless. Its `streaming` contribution excludes automated chats (§18); its
+ *    blocked/error/unseen contributions do not, and must not.
  *
  * **This hook, not the model's row, is what an agent row draws.**
  * `SidebarModelRow` hands `AgentListItem` no sessions and no status, so the
@@ -125,8 +125,8 @@ export function useAgentHottestStatus(
           if (id in s.unseen) result = hotter(result, 'unseen');
         }
         if (agentPath) {
-          // Who counts as WORKING here — human-origin sessions only
-          // (`design-decisions.md` §18). Everything else this fold produces is
+          // Who counts as WORKING here — every chat but an automated one
+          // (`design-decisions.md` §18, `your-activity-first` D8). Everything else this fold produces is
           // attention rather than liveness and is deliberately left alone: a
           // scheduled run that is blocked, wedged or errored still lights this
           // row, because "an automated session that needs you enters Heads up like
@@ -136,13 +136,13 @@ export function useAgentHottestStatus(
           // chip and Heads up's "N working" both excluded a nightly task while this
           // badge, which is what the row actually draws, called it Working
           // (DOR-1137).
-          const human = new Set(
-            humanOriginSessionIds(Object.keys(s.statusCwds), Object.values(s.sessions))
+          const countsAsLive = new Set(
+            nonAutomatedSessionIds(Object.keys(s.statusCwds), Object.values(s.sessions))
           );
           for (const [id, cwd] of Object.entries(s.statusCwds)) {
             if (cwd !== agentPath) continue;
             const kind = borderKindFromLifecycle(s.statuses[id]?.lifecycle);
-            if (kind === 'streaming' && !human.has(id)) continue;
+            if (kind === 'streaming' && !countsAsLive.has(id)) continue;
             result = hotter(result, kind);
           }
           // Unseen settles carry their own cwd (the live status — and with it

@@ -9,7 +9,7 @@ import { configManager } from '../services/core/config-manager.js';
 // Straight from the module, not the `services/session` barrel: that barrel pulls
 // in the projector, transcript readers, and the turn trigger, none of which a
 // config GET needs to load.
-import { describeExecutionDefaults } from '../services/session/resolve-session-defaults.js';
+import { describeExecutionDefaults } from '../services/session/resolution/resolve-session-defaults.js';
 // The route is where the registry and the resolver meet. `resolve-session-defaults`
 // cannot reach the registry itself — the registry imports IT — so the caller
 // hands over the capability map instead of the module reaching for it.
@@ -353,12 +353,6 @@ router.get('/', async (req, res) => {
       // wire because two surfaces read it: the chat composer picks its field
       // from it, and Settings → Preferences shows it back as a switch.
       composer: configManager.get('ui')?.composer ?? COMPOSER_PREFS_DEFAULTS,
-      // The standing Full-autonomy acknowledgement (spec `trust-dial`,
-      // decision 5). On the wire because the cockpit needs it on two surfaces:
-      // it sends the standing ack with every autonomy PATCH so the server's door
-      // opens without a second dialog, and Settings shows the date back with a
-      // way to clear it. `?? null` covers the pre-migration read window only.
-      autonomyAcknowledgedAt: configManager.get('ui')?.autonomyAcknowledgedAt ?? null,
       // The power-door answer (spec `full-power-defaults`, D1). Both halves go
       // out because the cockpit decides from them whether the door is put up at
       // all: `fullPowerDecidedAt` is the "already asked" signal for both the

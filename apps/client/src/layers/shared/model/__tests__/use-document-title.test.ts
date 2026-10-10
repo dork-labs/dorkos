@@ -2,66 +2,23 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { renderHook } from '@testing-library/react';
-import { useDocumentTitle } from '../use-document-title';
+import { act, renderHook } from '@testing-library/react';
+import { useDocumentTitle, type DocumentTitleState } from '../use-document-title';
 
-const defaults = { isStreaming: false, isWaitingForUser: false, tasksBadgeCount: 0 };
+/** A format that spells the window state out, so a test can read it back. */
+const spell = ({ hidden, unseenReply }: DocumentTitleState) =>
+  `page${hidden ? ' hidden' : ''}${unseenReply ? ' unseen' : ''}`;
+
+function setHidden(hidden: boolean) {
+  Object.defineProperty(document, 'hidden', { value: hidden, configurable: true });
+  act(() => {
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+}
 
 describe('useDocumentTitle', () => {
   beforeEach(() => {
     document.title = '';
-  });
-
-  it('sets title with emoji and directory name', () => {
-    renderHook(() =>
-      useDocumentTitle({ cwd: '/Users/test/myproject', activeForm: null, ...defaults })
-    );
-    expect(document.title).toMatch(/^.{1,2} myproject \u2014 DorkOS$/);
-  });
-
-  it('includes activeForm in title when present', () => {
-    renderHook(() =>
-      useDocumentTitle({ cwd: '/test/proj', activeForm: 'Running tests', ...defaults })
-    );
-    expect(document.title).toContain('Running tests');
-    expect(document.title).toContain('\u2014 DorkOS');
-  });
-
-  it('truncates long activeForm at 40 chars', () => {
-    const longForm = 'A'.repeat(50);
-    renderHook(() => useDocumentTitle({ cwd: '/test', activeForm: longForm, ...defaults }));
-    expect(document.title).toContain('\u2026');
-    expect(document.title.length).toBeLessThan(100);
-  });
-
-  it('falls back to default title when cwd is null', () => {
-    renderHook(() => useDocumentTitle({ cwd: null, activeForm: null, ...defaults }));
-    expect(document.title).toBe('DorkOS');
-  });
-
-  it('uses last path segment as directory name', () => {
-    renderHook(() =>
-      useDocumentTitle({ cwd: '/a/b/c/deep-project', activeForm: null, ...defaults })
-    );
-    expect(document.title).toContain('deep-project');
-    expect(document.title).not.toContain('/a/b/c');
-  });
-
-  it('updates when activeForm changes', () => {
-    const { rerender } = renderHook(
-      ({ activeForm }) => useDocumentTitle({ cwd: '/test', activeForm, ...defaults }),
-      { initialProps: { activeForm: null as string | null } }
-    );
-    expect(document.title).not.toContain('\u2014 Running');
-
-    rerender({ activeForm: 'Running tests' });
-    expect(document.title).toContain('Running tests');
-  });
-});
-
-describe('status prefixes', () => {
-  beforeEach(() => {
-    document.title = '';
     Object.defineProperty(document, 'hidden', { value: false, configurable: true });
   });
 
@@ -69,400 +26,51 @@ describe('status prefixes', () => {
     Object.defineProperty(document, 'hidden', { value: false, configurable: true });
   });
 
-  it('shows 🔔 prefix when isWaitingForUser is true', () => {
-    renderHook(() =>
-      useDocumentTitle({
-        cwd: '/test',
-        activeForm: null,
-        isStreaming: false,
-        isWaitingForUser: true,
-      })
-    );
-    expect(document.title).toMatch(/^🔔 /);
+  it('writes what the format builds', () => {
+    renderHook(() => useDocumentTitle(spell, false));
+    expect(document.title).toBe('page');
   });
 
-  it('does not show 🔔 when isWaitingForUser is false', () => {
-    renderHook(() =>
-      useDocumentTitle({
-        cwd: '/test',
-        activeForm: null,
-        isStreaming: false,
-        isWaitingForUser: false,
-      })
-    );
-    expect(document.title).not.toMatch(/^🔔/);
+  it('rewrites the title when the format’s answer changes', () => {
+    const { rerender } = renderHook(({ name }) => useDocumentTitle(() => name, false), {
+      initialProps: { name: 'Home — DorkOS' },
+    });
+    rerender({ name: 'Scout · Fix the login bug — DorkOS' });
+    expect(document.title).toBe('Scout · Fix the login bug — DorkOS');
   });
 
-  it('shows 🏁 when streaming ends while tab is hidden', () => {
-    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
-    const { rerender } = renderHook(
-      ({ isStreaming }) =>
-        useDocumentTitle({
-          cwd: '/test',
-          activeForm: null,
-          isStreaming,
-          isWaitingForUser: false,
-        }),
-      { initialProps: { isStreaming: true } }
-    );
-    rerender({ isStreaming: false });
-    expect(document.title).toMatch(/^🏁 /);
+  it('tells the format when the window is hidden, and when it is back', () => {
+    renderHook(() => useDocumentTitle(spell, false));
+    setHidden(true);
+    expect(document.title).toBe('page hidden');
+    setHidden(false);
+    expect(document.title).toBe('page');
   });
 
-  it('clears 🏁 when tab becomes visible', () => {
-    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
-    const { rerender } = renderHook(
-      ({ isStreaming }) =>
-        useDocumentTitle({
-          cwd: '/test',
-          activeForm: null,
-          isStreaming,
-          isWaitingForUser: false,
-        }),
-      { initialProps: { isStreaming: true } }
-    );
-    rerender({ isStreaming: false });
-    expect(document.title).toMatch(/^🏁 /);
-
-    // User returns
-    Object.defineProperty(document, 'hidden', { value: false, configurable: true });
-    document.dispatchEvent(new Event('visibilitychange'));
-    expect(document.title).not.toMatch(/^🏁/);
+  it('flags a reply that finished while the window was hidden', () => {
+    const { rerender } = renderHook(({ streaming }) => useDocumentTitle(spell, streaming), {
+      initialProps: { streaming: true },
+    });
+    setHidden(true);
+    rerender({ streaming: false });
+    expect(document.title).toBe('page hidden unseen');
   });
 
-  it('🔔 takes priority over 🏁', () => {
-    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
-    const { rerender } = renderHook(
-      ({ isStreaming, isWaitingForUser }) =>
-        useDocumentTitle({
-          cwd: '/test',
-          activeForm: null,
-          isStreaming,
-          isWaitingForUser,
-        }),
-      { initialProps: { isStreaming: true, isWaitingForUser: false } }
-    );
-    // Streaming ends while hidden (sets unseen flag)
-    rerender({ isStreaming: false, isWaitingForUser: false });
-    expect(document.title).toMatch(/^🏁 /);
-
-    // Now also waiting for user
-    rerender({ isStreaming: false, isWaitingForUser: true });
-    expect(document.title).toMatch(/^🔔 /);
-    expect(document.title).not.toContain('🏁');
+  it('clears the flag once the window is looked at again', () => {
+    const { rerender } = renderHook(({ streaming }) => useDocumentTitle(spell, streaming), {
+      initialProps: { streaming: true },
+    });
+    setHidden(true);
+    rerender({ streaming: false });
+    setHidden(false);
+    expect(document.title).toBe('page');
   });
 
-  it('no prefix when cwd is null', () => {
-    renderHook(() =>
-      useDocumentTitle({
-        cwd: null,
-        activeForm: null,
-        isStreaming: false,
-        isWaitingForUser: true,
-      })
-    );
-    expect(document.title).toBe('DorkOS');
-  });
-
-  it('preserves activeForm with prefix', () => {
-    renderHook(() =>
-      useDocumentTitle({
-        cwd: '/test',
-        activeForm: 'Running tests',
-        isStreaming: false,
-        isWaitingForUser: true,
-      })
-    );
-    expect(document.title).toMatch(/^🔔 /);
-    expect(document.title).toContain('Running tests');
-    expect(document.title).toContain('— DorkOS');
-  });
-
-  it('preserves 🔔 when user returns while still waiting', () => {
-    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
-    const { rerender } = renderHook(
-      ({ isStreaming, isWaitingForUser }) =>
-        useDocumentTitle({
-          cwd: '/test',
-          activeForm: null,
-          isStreaming,
-          isWaitingForUser,
-        }),
-      { initialProps: { isStreaming: true, isWaitingForUser: false } }
-    );
-    // Streaming ends while hidden — sets unseen flag
-    rerender({ isStreaming: false, isWaitingForUser: false });
-    expect(document.title).toMatch(/^🏁 /);
-
-    // AI now waiting for user
-    rerender({ isStreaming: false, isWaitingForUser: true });
-    expect(document.title).toMatch(/^🔔 /);
-
-    // User returns — 🔔 should remain since still waiting
-    Object.defineProperty(document, 'hidden', { value: false, configurable: true });
-    document.dispatchEvent(new Event('visibilitychange'));
-    expect(document.title).toMatch(/^🔔 /);
-  });
-});
-
-describe('tasks badge count', () => {
-  beforeEach(() => {
-    document.title = '';
-  });
-
-  afterEach(() => {
-    Object.defineProperty(document, 'hidden', { value: false, configurable: true });
-  });
-
-  it('shows (N) prefix when tab is hidden and badge count > 0', () => {
-    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
-    renderHook(() =>
-      useDocumentTitle({
-        cwd: '/test',
-        activeForm: null,
-        isStreaming: false,
-        isWaitingForUser: false,
-        tasksBadgeCount: 3,
-      })
-    );
-    expect(document.title).toMatch(/^\(3\) /);
-  });
-
-  it('does not show (N) when tab is visible', () => {
-    Object.defineProperty(document, 'hidden', { value: false, configurable: true });
-    renderHook(() =>
-      useDocumentTitle({
-        cwd: '/test',
-        activeForm: null,
-        isStreaming: false,
-        isWaitingForUser: false,
-        tasksBadgeCount: 3,
-      })
-    );
-    expect(document.title).not.toMatch(/^\(\d+\)/);
-  });
-
-  it('does not show (N) when badge count is 0', () => {
-    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
-    renderHook(() =>
-      useDocumentTitle({
-        cwd: '/test',
-        activeForm: null,
-        isStreaming: false,
-        isWaitingForUser: false,
-        tasksBadgeCount: 0,
-      })
-    );
-    expect(document.title).not.toMatch(/^\(\d+\)/);
-  });
-
-  it('coexists with status prefix', () => {
-    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
-    renderHook(() =>
-      useDocumentTitle({
-        cwd: '/test',
-        activeForm: null,
-        isStreaming: false,
-        isWaitingForUser: true,
-        tasksBadgeCount: 5,
-      })
-    );
-    expect(document.title).toMatch(/^\(5\) 🔔 /);
-  });
-
-  it('clears (N) when tab becomes visible after streaming ends', () => {
-    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
-    const { rerender } = renderHook(
-      ({ isStreaming }) =>
-        useDocumentTitle({
-          cwd: '/test',
-          activeForm: null,
-          isStreaming,
-          isWaitingForUser: false,
-          tasksBadgeCount: 2,
-        }),
-      { initialProps: { isStreaming: true } }
-    );
-    rerender({ isStreaming: false });
-    expect(document.title).toMatch(/^\(2\) 🏁 /);
-
-    // User returns — badge should disappear
-    Object.defineProperty(document, 'hidden', { value: false, configurable: true });
-    document.dispatchEvent(new Event('visibilitychange'));
-    expect(document.title).not.toMatch(/^\(\d+\)/);
-  });
-
-  it('clears (N) when tab becomes visible without streaming transition', () => {
-    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
-    renderHook(() =>
-      useDocumentTitle({
-        cwd: '/test',
-        activeForm: null,
-        isStreaming: false,
-        isWaitingForUser: false,
-        tasksBadgeCount: 4,
-      })
-    );
-    expect(document.title).toMatch(/^\(4\) /);
-
-    // User returns — badge should disappear even without unseen response
-    Object.defineProperty(document, 'hidden', { value: false, configurable: true });
-    document.dispatchEvent(new Event('visibilitychange'));
-    expect(document.title).not.toMatch(/^\(\d+\)/);
-  });
-});
-
-describe('the room on screen', () => {
-  beforeEach(() => {
-    document.title = '';
-    Object.defineProperty(document, 'hidden', { value: false, configurable: true });
-  });
-
-  afterEach(() => {
-    Object.defineProperty(document, 'hidden', { value: false, configurable: true });
-  });
-
-  it('names the room, not the working directory of a session you are not looking at', () => {
-    renderHook(() =>
-      useDocumentTitle({
-        cwd: '/Users/test/apps',
-        activeForm: null,
-        ...defaults,
-        roomTitle: '#general',
-      })
-    );
-    // The bug read `🐧 apps — DorkOS` while `#general` was on screen.
-    expect(document.title).toBe('#general — DorkOS');
-  });
-
-  it('leaves the session title alone when no room is open', () => {
-    renderHook(() =>
-      useDocumentTitle({
-        cwd: '/Users/test/apps',
-        activeForm: null,
-        ...defaults,
-        roomTitle: null,
-      })
-    );
-    expect(document.title).toMatch(/^.{1,2} apps — DorkOS$/);
-  });
-
-  it('badges a hidden tab with the number of rooms waiting', () => {
-    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
-    renderHook(() =>
-      useDocumentTitle({
-        cwd: '/test',
-        activeForm: null,
-        ...defaults,
-        roomTitle: '#general',
-        unreadRoomCount: 3,
-      })
-    );
-    expect(document.title).toBe('(3) #general — DorkOS');
-  });
-
-  it('shows no badge at all while the tab is being looked at', () => {
-    renderHook(() =>
-      useDocumentTitle({
-        cwd: '/test',
-        activeForm: null,
-        ...defaults,
-        roomTitle: '#general',
-        unreadRoomCount: 3,
-      })
-    );
-    expect(document.title).toBe('#general — DorkOS');
-  });
-
-  it('adds unread rooms to the tasks already waiting, as one number', () => {
-    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
-    renderHook(() =>
-      useDocumentTitle({
-        cwd: '/test',
-        activeForm: null,
-        isStreaming: false,
-        isWaitingForUser: false,
-        tasksBadgeCount: 2,
-        unreadRoomCount: 3,
-      })
-    );
-    // Two tasks and three rooms are five things wanting you, not two counters.
-    expect(document.title).toMatch(/^\(5\) /);
-  });
-
-  it('badges a tab parked on no session and no room', () => {
-    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
-    renderHook(() =>
-      useDocumentTitle({ cwd: null, activeForm: null, ...defaults, unreadRoomCount: 2 })
-    );
-    // The whole point of a title badge: the tab you are NOT on can still say so.
-    expect(document.title).toBe('(2) DorkOS');
-  });
-
-  it('drops the badge when you come back, and keeps the room named', () => {
-    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
-    renderHook(() =>
-      useDocumentTitle({
-        cwd: '/test',
-        activeForm: null,
-        ...defaults,
-        roomTitle: '#general',
-        unreadRoomCount: 4,
-      })
-    );
-    expect(document.title).toBe('(4) #general — DorkOS');
-
-    Object.defineProperty(document, 'hidden', { value: false, configurable: true });
-    document.dispatchEvent(new Event('visibilitychange'));
-    expect(document.title).toBe('#general — DorkOS');
-  });
-
-  it('still shows 🔔 while you are reading a room', () => {
-    renderHook(() =>
-      useDocumentTitle({
-        cwd: '/test',
-        activeForm: 'Running tests',
-        isStreaming: false,
-        isWaitingForUser: true,
-        roomTitle: '#general',
-      })
-    );
-    // An agent blocked on a permission prompt is the highest-priority signal in
-    // the product, and which route you are on is no reason to suppress it.
-    // Nothing else carries it either — useFavicon takes no isWaitingForUser.
-    expect(document.title).toBe('🔔 #general — DorkOS');
-  });
-
-  it('still shows 🏁 for a session that finished while you were away', () => {
-    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
-    const { rerender } = renderHook(
-      ({ isStreaming }) =>
-        useDocumentTitle({
-          cwd: '/test',
-          activeForm: null,
-          isStreaming,
-          isWaitingForUser: false,
-          roomTitle: '#general',
-        }),
-      { initialProps: { isStreaming: true } }
-    );
-    rerender({ isStreaming: false });
-    expect(document.title).toBe('🏁 #general — DorkOS');
-  });
-
-  it('puts the badge outside the status flag, as the session shape already does', () => {
-    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
-    renderHook(() =>
-      useDocumentTitle({
-        cwd: '/test',
-        activeForm: null,
-        isStreaming: false,
-        isWaitingForUser: true,
-        roomTitle: '#general',
-        unreadRoomCount: 2,
-      })
-    );
-    // `(2) 🔔 ` is the tab's status column — count, then flag, then the name.
-    expect(document.title).toBe('(2) 🔔 #general — DorkOS');
+  it('does not flag a reply that finished while you were watching', () => {
+    const { rerender } = renderHook(({ streaming }) => useDocumentTitle(spell, streaming), {
+      initialProps: { streaming: true },
+    });
+    rerender({ streaming: false });
+    expect(document.title).toBe('page');
   });
 });

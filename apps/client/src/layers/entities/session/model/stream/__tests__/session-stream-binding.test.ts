@@ -14,6 +14,8 @@ import {
   clearUiStateSendCache,
 } from '@/layers/shared/lib';
 
+import { useAppStore } from '@/layers/shared/model';
+
 import { initSessionStreamBinding, resetSessionStreamBinding } from '../session-stream-binding';
 import { useSessionStreamStore } from '../session-stream-store';
 import { useSessionListStore } from '../session-list-store';
@@ -290,6 +292,7 @@ describe('initSessionStreamBinding', () => {
     useSessionStreamStore
       .getState()
       .setOptimisticUserMessage('request-uuid', { id: 'opt-1', content: 'first words' });
+    useAppStore.getState().loadCanvasForSession('request-uuid');
     manager.connectList();
 
     connections[0]!.push('session_status', {
@@ -307,6 +310,12 @@ describe('initSessionStreamBinding', () => {
     ).toBeNull();
     // And the retirement is recorded for the URL rekey + cache reconciler.
     expect(useSessionListStore.getState().rekeys['request-uuid']).toBe('canonical-id');
+    // Bind canonical canvas before the asynchronous URL loader can settle.
+    expect(useAppStore.getState().canvasSessionId).toBe('canonical-id');
+    installed.onSnapshot?.('canonical-id', SNAPSHOT);
+    expect(useAppStore.getState().canvasStreamAttached).toBe(true);
+    useAppStore.getState().loadCanvasForSession('canonical-id');
+    expect(useAppStore.getState().canvasStreamAttached).toBe(true);
   });
 
   it('a session-stream reconnect forces the next send to re-include uiState', () => {

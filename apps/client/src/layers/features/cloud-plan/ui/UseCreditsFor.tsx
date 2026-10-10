@@ -78,9 +78,9 @@ function rowSentence(row: CreditsForRow): string {
     return `DorkOS turned this on when you linked, because ${row.name} had no sign-in. ${back}`;
   }
   if (row.scope === 'runtime') {
-    return `${row.name} runs on your DorkOS credits, conversations already going included. ${back} It can't be switched while ${row.name} is in the middle of a reply.`;
+    return `${row.name} runs on your DorkOS credits, chats already going included. ${back} It can't be switched while ${row.name} is in the middle of a reply.`;
   }
   return row.hasAccountPicks
-    ? `New ${row.name} work runs on your DorkOS credits unless an agent or a session picks another account. ${back}`
-    : `New ${row.name} conversations run on your DorkOS credits. ${back}`;
+    ? `New ${row.name} work runs on your DorkOS credits unless an agent or a chat picks another account. ${back}`
+    : `New ${row.name} chats run on your DorkOS credits. ${back}`;
 }

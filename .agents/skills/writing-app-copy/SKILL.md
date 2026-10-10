@@ -46,7 +46,7 @@ There is no exception marker. A block that "has to" be long has not been split y
 - **No blame words:** failed, invalid, illegal, fatal, abort, kill. Say what did not happen: "Couldn’t save".
 - **Plain words.** Gloss a technical term in the same sentence or cut it.
 - **No code names.** Relay, Mesh, Pulse, Harness Sync and "runtime" never appear. Say what it does: "Messages can’t be delivered right now", "Runs on: Codex". A name the person chose, like an agent's name, is fine. One carve-out: "Runtimes" stays as the name of its Settings tab and rows (`plans/language-ia-simplification.md` D3, kept by the operator on 2026-10-02). A sentence still says "Runs on: Codex", never "Runtime: codex".
-- **One word per idea.** Once a thing has a name in the app, use that name everywhere. The banned-term list in `scripts/vocab-gate/banned-terms.json` holds the retired ones.
+- **One word per idea.** Once a thing has a name in the app, use that name everywhere. The words to use and the retired ones are in `meta/VOICE.md`; `scripts/vocab-gate/banned-terms.json` is the machine copy the gate enforces.
 
 | Before                                                                    | After                                        |
 | ------------------------------------------------------------------------- | -------------------------------------------- |

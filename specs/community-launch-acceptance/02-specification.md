@@ -201,4 +201,4 @@ No new ADR: this spec adds verification and documentation. It makes no new archi
 - `apps/e2e/community-two-desktop/README.md`
 - `apps/community/FLY.md`, `OPERATIONS.md`, `DEPLOYMENT.md`, `RECOVERY.md`
 - PRs #2318, #2339, #2341, #2366, #2367, #2372, #2373, #2374, #2378
-- `meta/positioning-202607/09-gtm-plan.md` §2.0 (demo-claim gate)
+- `meta/archive/positioning-202607/09-gtm-plan.md` §2.0 (demo-claim gate)

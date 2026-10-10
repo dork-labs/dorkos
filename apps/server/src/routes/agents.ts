@@ -79,6 +79,7 @@ import {
 } from '../services/marketplace/installer/errors.js';
 import { CreateAgentOptionsSchema } from '@dorkos/shared/mesh-schemas';
 import { PackageNameSchema } from '@dorkos/marketplace';
+import { creatorField } from '../services/heartbeats/reports-to.js';
 
 /** Minimal MeshCore interface for sync-on-write. */
 interface MeshCoreLike {
@@ -297,6 +298,8 @@ export function createAgentsRouter(meshCore?: MeshCoreLike, deps: AgentCreationD
         behavior: { responseMode: 'always' },
         registeredAt: new Date().toISOString(),
         registeredBy: 'dorkos-ui',
+        // The account making this request (spec `heartbeats` §4.1).
+        ...creatorField(),
         personaEnabled: true,
         isSystem: false,
         mcpServers: [],
@@ -595,6 +598,7 @@ export function createAgentsRouter(meshCore?: MeshCoreLike, deps: AgentCreationD
           case 'OPERATOR_ONLY':
             return res.status(403).json({ error: err.message });
           case 'UNSUPPORTED_MODEL':
+          case 'REPORTS_TO_CYCLE':
             return res.status(400).json({ error: err.message, code: err.code });
         }
       }

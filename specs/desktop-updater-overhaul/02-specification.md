@@ -1,7 +1,7 @@
 # Desktop updater overhaul — installs that verify themselves, failures that speak
 
 **Spec id:** 260823-163823 · **Tracker:** DOR-1454 (honesty) + DOR-1455 (install path)
-**Project:** Desktop Resilience · **Plan:** `plans/desktop-resilience-program.md` §2B, §4 WS2
+**Project:** Desktop Resilience · **Plan:** `plans/archive/desktop-resilience-program.md` §2B, §4 WS2
 
 ## Problem (evidence, real user)
 

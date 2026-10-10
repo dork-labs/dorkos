@@ -3,6 +3,7 @@ import { ChatPanel } from './ChatPanel';
 import { useSessionCanvas } from '@/layers/features/canvas';
 import { useRightPanelLayoutPersistence } from '@/layers/features/right-panel';
 import {
+  useRecordChatOpened,
   useSessionDetail,
   useSessionId,
   useSessionRekeyTarget,
@@ -35,6 +36,10 @@ import { useMessageLanding } from '../model/use-message-landing';
  */
 export function SessionPage() {
   const [activeSessionId] = useSessionId();
+  // Every way of arriving here — a click, a deep link, a reload, a
+  // notification — counts as you opening this chat (spec `your-activity-first`
+  // D3), so no click handler records it.
+  useRecordChatOpened(activeSessionId);
   const { runtime, prompt, send, seed, message } = useSessionSearch();
   const inPlaceNavigate = useInPlaceNavigate();
   const landOnRow = useMessageLanding(activeSessionId, message);
@@ -75,7 +80,7 @@ export function SessionPage() {
 
   return (
     <>
-      <PageHeading>{sessionTitle?.trim() ? sessionTitle : 'Session'}</PageHeading>
+      <PageHeading>{sessionTitle?.trim() ? sessionTitle : 'Chat'}</PageHeading>
       <ChatPanel
         sessionId={activeSessionId}
         launchRuntime={runtime}

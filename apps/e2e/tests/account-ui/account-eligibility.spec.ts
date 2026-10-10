@@ -240,7 +240,7 @@ test.describe('Claude account project limits @smoke', () => {
         // Not `data-slot="account-chip"`: the menu trigger's own `data-slot`
         // rides the Slot props onto the button and wins.
         const chip = page
-          .getByRole('toolbar', { name: 'Session status' })
+          .getByRole('toolbar', { name: 'Chat status' })
           .locator('button[data-state-tone]');
         await expect(chip).toBeVisible({ timeout: 30_000 });
         await expect(chip).toHaveAttribute('aria-haspopup', 'menu');

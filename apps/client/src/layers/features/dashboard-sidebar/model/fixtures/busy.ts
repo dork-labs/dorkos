@@ -135,6 +135,7 @@ export const busyFixture: SidebarState = emptyState({
   // The server can say when the operator last WROTE in #releases, and it is
   // more recent than when they last opened it — the max is what orders the row.
   userLastMessageAt: { 'room:room-releases': hoursAgo(0.3) },
+  lastTouchedByYouAt: {},
   mentions: { 'room-noise': 1 },
   recents: { items: [], automated: [] },
   prefs: prefs({

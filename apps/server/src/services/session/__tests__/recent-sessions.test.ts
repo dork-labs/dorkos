@@ -11,7 +11,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { FakeAgentRuntime, DIRECTORY_MEMBERSHIP_VECTORS } from '@dorkos/test-utils';
 import type { Session } from '@dorkos/shared/types';
-import { listRecentSessions } from '../recent-sessions.js';
+import { listRecentSessions } from '../catalog/recent-sessions.js';
 import { setAgentSessionSources } from '../agent-session-fanout.js';
 
 function makeSession(
@@ -64,6 +64,51 @@ describe('listRecentSessions', () => {
       '/p2': '2026-02-01T00:00:00.000Z',
     });
     expect(result.warnings).toEqual([]);
+  });
+
+  it('keeps the sessions keepBeyondLimit names, in their updatedAt place (your-activity-first D6)', async () => {
+    const a = runtimeReturning('fake-a', {
+      '/p1': [
+        makeSession('newest', '2026-03-04T00:00:00.000Z', '/p1'),
+        makeSession('newer', '2026-03-03T00:00:00.000Z', '/p1'),
+        makeSession('touched', '2026-03-02T00:00:00.000Z', '/p1'),
+        makeSession('dropped', '2026-03-01T00:00:00.000Z', '/p1'),
+      ],
+    });
+    const asked: string[][] = [];
+
+    const result = await listRecentSessions({
+      runtimes: [a],
+      agentPaths: ['/p1'],
+      limit: 1,
+      keepBeyondLimit: (merged) => {
+        asked.push(merged.map((s) => s.id));
+        return new Set(['touched']);
+      },
+    });
+
+    expect(result.sessions.map((s) => s.id)).toEqual(['newest', 'touched']);
+    // One batched question over every merged session, not one per row.
+    expect(asked).toEqual([['newest', 'newer', 'touched', 'dropped']]);
+  });
+
+  it('adds a kept session once, and not at all when the window already holds it', async () => {
+    // An agent nested inside another's folder: a chat in the inner folder
+    // belongs to both, so `merged` holds it twice.
+    const inner = [
+      makeSession('top', '2026-03-04T00:00:00.000Z', '/p1/sub'),
+      makeSession('touched', '2026-03-02T00:00:00.000Z', '/p1/sub'),
+    ];
+    const a = runtimeReturning('fake-a', { '/p1': inner, '/p1/sub': inner });
+
+    const result = await listRecentSessions({
+      runtimes: [a],
+      agentPaths: ['/p1', '/p1/sub'],
+      limit: 1,
+      keepBeyondLimit: () => new Set(['top', 'touched']),
+    });
+
+    expect(result.sessions.map((s) => s.id)).toEqual(['top', 'touched']);
   });
 
   it('excludes sessions whose cwd is outside the agent path (DOR-203)', async () => {

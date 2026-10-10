@@ -134,7 +134,7 @@ export interface BudgetDecision {
  * takes effect at once.
  *
  * **`null` is unlimited, and it is a distinct state rather than a big number**
- * (the plan's decision 4, `plans/room-turn-limits-overhaul.md`). A cap that is
+ * (the plan's decision 4, `plans/archive/room-turn-limits-overhaul.md`). A cap that is
  * off is not a cap of `Infinity`: nothing is reserved against it, nothing is
  * recorded for it, and {@link RoomTurnBudget.remaining} reports `null` so an
  * agent reading `room_context.budget` is told "no limit" instead of a number

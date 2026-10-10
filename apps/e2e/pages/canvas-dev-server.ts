@@ -1,6 +1,7 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { expect, type Page } from '@playwright/test';
+import { draftSessionUrl } from './session-draft';
 import type { RightPanelPage } from './RightPanelPage';
 
 /**
@@ -109,11 +110,14 @@ export async function openInCanvasBrowser(
   sessionId?: string,
   dir?: string
 ): Promise<void> {
-  const query = [
-    sessionId ? `session=${sessionId}` : '',
-    dir ? `dir=${encodeURIComponent(dir)}` : '',
-  ].filter(Boolean);
-  await rightPanel.goto(query.length > 0 ? `/session?${query.join('&')}` : '/session');
+  const query = [dir ? `dir=${encodeURIComponent(dir)}` : ''].filter(Boolean);
+  await rightPanel.goto(
+    sessionId
+      ? await draftSessionUrl(page, sessionId, dir)
+      : query.length > 0
+        ? `/session?${query.join('&')}`
+        : '/session'
+  );
   await rightPanel.ensureTabStripOpen();
   await rightPanel.browserTab.click();
 

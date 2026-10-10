@@ -36,7 +36,7 @@ import {
 import { openTabAt } from '@/layers/features/app-tabs';
 import { AuthGuard, OwnerSetupHost } from '@/layers/features/auth';
 import { renderCreditsOffer } from '@/layers/widgets/credits-offer';
-import { switchAgentCwd } from '@/layers/entities/session';
+import { initSessionStreamBinding, switchAgentCwd } from '@/layers/entities/session';
 import { eraseCommunityOwnerState } from '@/layers/entities/community';
 import { applyShapeAction } from '@/layers/entities/shapes';
 import { useAutoOpenDiff } from '@/layers/features/diff-review';
@@ -55,6 +55,7 @@ registerCommunityAuthorityCleanup(() => eraseCommunityOwnerState(queryClient));
 
 // Dev playground — lazy-loaded, tree-shaken from production builds
 const DevPlayground = import.meta.env.DEV ? React.lazy(() => import('./dev/DevPlayground')) : null;
+const usesDevPlayground = DevPlayground !== null && window.location.pathname.startsWith('/dev');
 
 // Lazy-loaded devtools panel components (tree-shaken from production builds)
 const LazyQueryPanel = React.lazy(() =>
@@ -231,7 +232,7 @@ function AutoOpenDiffBridge() {
 /** Root decides between the dev playground and the real app. */
 function Root() {
   // Dev playground renders outside router (unchanged)
-  if (window.location.pathname.startsWith('/dev') && DevPlayground) {
+  if (usesDevPlayground && DevPlayground) {
     return (
       <React.Suspense fallback={null}>
         <DevPlayground />
@@ -301,6 +302,14 @@ const transport = new HttpTransport(apiBaseUrl);
 // (`window-manager.ts`), and there a relative `/api` reaches nothing — so both
 // are built from one resolved base rather than each guessing.
 streamManager.useHttpSource(apiBaseUrl, transport);
+// The global stream can deliver its fleet preamble while a lazy route loader
+// is still pending. Install entity listeners before any provider can connect,
+// so the shell later reconciles that initial error/approval state from the store.
+// The DEV playground owns fixture lifecycles, not the server's fleet: its
+// context can connect before showcases finish mounting, and the production
+// listener's reconnect reset would erase their seeded states. Use the same
+// surface decision as Root so production always installs before connecting.
+if (!usesDevPlayground) initSessionStreamBinding();
 
 /**
  * The sidebar's local memory (spec `sidebar-simplification` D6), or none.

@@ -93,6 +93,10 @@
       "types": "./src/config-schema.ts",
       "default": "./dist/config-schema.js"
     },
+    "./working-hours": {
+      "types": "./src/working-hours.ts",
+      "default": "./dist/working-hours.js"
+    },
     "./profile-recommendations": {
       "types": "./src/profile-recommendations.ts",
       "default": "./dist/profile-recommendations.js"
@@ -321,6 +325,10 @@
       "types": "./src/activity-schemas.ts",
       "default": "./dist/activity-schemas.js"
     },
+    "./audit-schemas": {
+      "types": "./src/audit-schemas.ts",
+      "default": "./dist/audit-schemas.js"
+    },
     "./marketplace-schemas": {
       "types": "./src/marketplace-schemas.ts",
       "default": "./dist/marketplace-schemas.js"
@@ -472,6 +480,14 @@
     "./browser-frame-wire": {
       "types": "./src/browser-frame-wire.ts",
       "default": "./dist/browser-frame-wire.js"
+    },
+    "./chat-messages": {
+      "types": "./src/chat-messages.ts",
+      "default": "./dist/chat-messages.js"
+    },
+    "./commitment-schemas": {
+      "types": "./src/commitment-schemas.ts",
+      "default": "./dist/commitment-schemas.js"
     }
   },
   "scripts": {

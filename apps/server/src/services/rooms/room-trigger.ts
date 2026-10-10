@@ -124,6 +124,7 @@
  *
  * @module server/services/rooms/room-trigger
  */
+import { outsideAuditScope } from '../audit/audit-context.js';
 import { randomUUID } from 'node:crypto';
 import { ROOM_LIVE_BEAT_MS } from '@dorkos/shared/room-schemas';
 import type {
@@ -140,6 +141,8 @@ import type {
 } from '@dorkos/shared/room-schemas';
 import type { RoomContextCanvas } from '@dorkos/shared/additional-context';
 import type { SessionActivity } from '@dorkos/shared/session-stream';
+import type { TurnPermissionBound, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
+import { entryLevelOf } from '../core/turn-power/turn-levels.js';
 import type { InterruptReceipt } from '@dorkos/shared/types';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { logError, logger } from '../../lib/logger.js';
@@ -149,6 +152,7 @@ import { ACTIVITY_FANOUT_THROTTLE_MS, isTurnInFlight } from '../session/index.js
 import {
   selectTriggerTargets,
   standDownFallbackSeat,
+  whyNobody,
   type AddressingMember,
   type TriggerReason,
 } from './addressing.js';
@@ -186,7 +190,13 @@ import {
   type CascadeDecision,
   type CascadeRefusalReason,
 } from './cascade-guard.js';
-import { engagementFor, type EngagedWindow, type EngagementWindow } from './engagement.js';
+import {
+  agentPostWindow,
+  conversationFor,
+  engagementFor,
+  type EngagedWindow,
+  type EngagementWindow,
+} from './engagement.js';
 import {
   RoomCollector,
   type CollectedTrigger,
@@ -576,6 +586,52 @@ function isEntryAuthorExternal(authors: AuthorRegistry, authorId: string): boole
 }
 
 /**
+ * The ceiling a turn this entry starts runs under, as the spread a
+ * `RoomTurnRequest` takes (spec `trusted-by-default-flip` §4).
+ *
+ * A stranger's message, or one whose author cannot be resolved, is held to the
+ * receiving runtime's default. Another agent's post is held to the level its
+ * turn ran at when it wrote the post; when that was not kept (a restart, a post
+ * with no session), to the runtime's default, because the alternative is to
+ * hand out the receiving conversation's level on the strength of a missing
+ * record. A person on this machine and the room's own voice are not bounded.
+ *
+ * @param authors - The registry holding the stored author records.
+ * @param entry - The entry that triggered the turn.
+ */
+export function ceilingForEntry(
+  authors: AuthorRegistry,
+  entry: Pick<RoomEntry, 'id' | 'authorId'>
+): { permissionCeiling?: TurnPermissionCeiling } {
+  if (isEntryAuthorExternal(authors, entry.authorId)) {
+    return { permissionCeiling: 'runtime-default' };
+  }
+  const kind = authors.getMany([entry.authorId]).get(entry.authorId)?.kind;
+  if (kind !== 'agent') return {};
+  return { permissionCeiling: entryLevelOf(entry.id) ?? 'runtime-default' };
+}
+
+/**
+ * The ceiling a turn answering several messages runs under: every author's
+ * bound holds at once (a list ceiling, resolved by the runtime to the
+ * strictest). Empty when no author is bounded.
+ *
+ * @param authors - The registry holding the stored author records.
+ * @param entries - Every message the turn answers.
+ */
+export function ceilingForEntries(
+  authors: AuthorRegistry,
+  entries: readonly Pick<RoomEntry, 'id' | 'authorId'>[]
+): { permissionCeiling?: TurnPermissionCeiling } {
+  const bounds = entries.flatMap((entry) => {
+    const one = ceilingForEntry(authors, entry).permissionCeiling;
+    return one === undefined ? [] : [one as TurnPermissionBound];
+  });
+  if (bounds.length === 0) return {};
+  return { permissionCeiling: bounds.length === 1 ? bounds[0]! : bounds };
+}
+
+/**
  * Runs addressing, the cascade guard, and the turns that survive both.
  *
  * Construction is deliberately cheap and side-effect free: an install with no
@@ -923,6 +979,36 @@ export class RoomTriggerDispatcher {
     // may set that mode themselves and mean it (`rooms.fallback_seat_author_id`);
     // and read from the room this dispatch already holds, so it costs no query.
     const seatAuthorId = room.fallbackSeatAuthorId ?? null;
+    // Resolved once and read three times, because every rule below asks the
+    // same question about the same post: only a PERSON's message implicitly
+    // addresses anybody. An author row that has vanished reads as `system`,
+    // which is the conservative side of all of them.
+    const authorKind = records.get(entry.authorId)?.kind ?? 'system';
+    // **A person's post follows the conversation, not the clock** (DOR-2823).
+    // One walk of the scope for the whole roster, because the answer — who
+    // this person is talking to — is the same for every member. An agent's post
+    // keeps the mention-anchored window below, at the old bound.
+    const followsConversation = authorKind === 'human' && room.kind === 'channel';
+    const conversation = followsConversation
+      ? conversationFor(this.deps, {
+          roomId: room.id,
+          threadRootEntryId,
+          isAgentMember: (id) => records.get(id)?.kind === 'agent',
+          joinsConversations: (id) => {
+            const mode = members.find((member) => member.authorId === id)?.responseMode;
+            return mode === 'engaged' || mode === 'always';
+          },
+          isPerson: (id) => records.get(id)?.kind === 'human',
+          window,
+          now,
+        })
+      : null;
+    // The mention-anchored window, for every post the conversation rule does
+    // not cover. An agent's post is weighed at the old bound. A person's post
+    // outside a channel keeps the configured one deliberately: there it only
+    // shapes what an engaged agent is told about its window, because a person's
+    // message in a direct message is addressed to everyone in it anyway.
+    const mentionWindow = authorKind === 'human' ? window : agentPostWindow(window);
     for (const member of members) {
       const record = records.get(member.authorId);
       if (!record) continue;
@@ -931,19 +1017,24 @@ export class RoomTriggerDispatcher {
       //
       // The seat is weighed even though its `always` mode ignores the flag: it
       // READS the window to decide whether to stand down for a post that
-      // addressed somebody else, so it costs one bounded query (six rows at the
-      // shipped defaults) for that one member, in that one room.
+      // addressed somebody else. For an agent's post that is one bounded query
+      // for that one member; a person's post in a channel reads the
+      // conversation above instead, once for the whole roster.
       const weighable = member.responseMode === 'engaged' || member.authorId === seatAuthorId;
-      const open =
-        record.kind === 'agent' && weighable && member.authorId !== entry.authorId
-          ? engagementFor(this.deps, {
+      const candidate = record.kind === 'agent' && weighable && member.authorId !== entry.authorId;
+      const open = !candidate
+        ? null
+        : followsConversation
+          ? conversation?.partners.includes(member.authorId)
+            ? conversation.window
+            : null
+          : engagementFor(this.deps, {
               roomId: room.id,
               threadRootEntryId,
               authorId: member.authorId,
-              window,
+              window: mentionWindow,
               now,
-            })
-          : null;
+            });
       // The CONTEXT map takes `engaged` members only, and deliberately: an
       // agent's `roomContext.addressing` promises a window is `null` for every
       // other mode (`room-context.ts`), because reporting one would describe a
@@ -958,29 +1049,40 @@ export class RoomTriggerDispatcher {
       });
     }
 
-    // Resolved once and read twice, because both rules below ask the same
-    // question about the same post: only a PERSON's message implicitly addresses
-    // anybody. An author row that has vanished reads as `system`, which is the
-    // conservative side of both.
-    const authorKind = records.get(entry.authorId)?.kind ?? 'system';
-
     // The second rule, a no-op in a room with no seat: a post that named another
     // agent is that agent's to answer, and a post an AGENT wrote is a
     // conversation already underway — the seat catches neither. See
     // `standDownFallbackSeat` for the two escapes.
+    const matrix = selectTriggerTargets({
+      roomKind: room.kind,
+      authorKind,
+      entry,
+      members: addressing,
+    });
     const selected = standDownFallbackSeat({
       entry,
       authorKind,
       seatAuthorId,
       members: addressing,
-      selected: selectTriggerTargets({
-        roomKind: room.kind,
-        authorKind,
-        entry,
-        members: addressing,
-      }),
+      selected: matrix,
+      conversationPartners: conversation?.partners ?? [],
     });
     if (selected.length === 0) {
+      // A person's post in a channel that reaches nobody is the failure
+      // DOR-2823 is about, so every one is logged with why. Never a member's
+      // name or a message body, only ids and the reason.
+      if (followsConversation) {
+        logger.info('[rooms] nobody was picked to answer a person', {
+          roomId: room.id,
+          entryId: entry.id,
+          reason: whyNobody({
+            entry,
+            members: addressing,
+            namedUnreachable,
+            partners: conversation?.partners ?? [],
+          }),
+        });
+      }
       // **The commonest shape of the ghost case comes through here**, and it is
       // why this is not a bare `return`. A channel seeds agents at `engaged`, and
       // a ghost claims no names — so `@ana are you there?` addresses nobody,
@@ -1742,6 +1844,13 @@ export class RoomTriggerDispatcher {
       // above the chosen index is refused and unread, so marking it would be a
       // claim about a line nobody will read.
       gathered: new Set(collection.entries.slice(0, chosen.index).map((held) => held.entry.id)),
+      // Every message the turn answers, trigger included, so its power is
+      // decided by the strictest author in the burst (spec
+      // `trusted-by-default-flip` §4) rather than by whoever wrote last.
+      answers: collection.entries.slice(0, chosen.index + 1).map((held) => ({
+        id: held.entry.id,
+        authorId: held.entry.authorId,
+      })),
     };
 
     // The cascade guard allowed these on the merits, one message at a time. The
@@ -2245,7 +2354,15 @@ export class RoomTriggerDispatcher {
         // treated as external: losing the operator's power level for one turn
         // costs a prompt, while reading an unknown author as local would hand
         // it out on the strength of a failed lookup.
-        externalAuthor: isEntryAuthorExternal(this.deps.authors, entry.authorId),
+        //
+        // Over EVERY message the turn answers: a gathered burst that mixes a
+        // stranger and a person is external if any author is.
+        externalAuthor: (target.answers ?? [entry]).some((answered) =>
+          isEntryAuthorExternal(this.deps.authors, answered.authorId)
+        ),
+        // And the turn itself is held to the strictest of its senders' levels,
+        // new conversation or not — see `RoomTurnRequest.permissionCeiling`.
+        ...ceilingForEntries(this.deps.authors, target.answers ?? [entry]),
         // The message, unchanged. A trigger asks the agent exactly what was
         // said; only the welcome-back offer below asks something else.
         prompt: entry.body.text,
@@ -3135,7 +3252,10 @@ export class RoomTriggerDispatcher {
     this.publishPresence(claim, 'working');
     this.publishWorkingCount(claim.roomId, before);
     if (this.republishing === null) {
-      this.republishing = setInterval(() => this.republishPresence(), PRESENCE_REPUBLISH_MS);
+      this.republishing = setInterval(
+        outsideAuditScope(() => this.republishPresence()),
+        PRESENCE_REPUBLISH_MS
+      );
       // A heartbeat is not a reason for the process to stay alive: an unref'd
       // interval lets a CLI that has finished exit while a room still holds a
       // claim, instead of hanging for ten seconds at a time on a timer whose

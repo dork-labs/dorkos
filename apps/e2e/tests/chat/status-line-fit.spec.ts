@@ -405,12 +405,11 @@ test.describe('Status line — the tier floors, under a degraded session', () =>
    * `LiveMakeDefaultOffer` (`TrustDialShowcases.tsx`) wires the real
    * component to a real stop change in a `w-72` (288px) box — narrower even
    * than the ~296px `w-80` the session popover gives it in production — with
-   * no session, no config write, no consent dialog, and none of
+   * no session, no config write, and none of
    * `useMakeDefaultStop`'s 6-second `OFFER_MS` timer standing between a
    * click and a measurement. That combination is what makes the reading
    * deterministic: a live-chat version of this test drove the SAME bug
-   * through `runtimes.defaultTrustStop` / `ui.autonomyAcknowledgedAt` /
-   * `ui.statusBar.pins` writes on the real-runtime `chromium` project, which
+   * through `runtimes.defaultTrustStop` / `ui.statusBar.pins` writes on the real-runtime `chromium` project, which
    * runs under `fullyParallel` workers against one shared server (the same
    * shape `playwright.config.ts` calls out for `composer-escape-and-ime`,
    * DOR-948) — worth avoiding for a bug that has nothing to do with the
@@ -436,7 +435,7 @@ test.describe('Status line — the tier floors, under a degraded session', () =>
     const row = demo.getByTestId('make-default-slot');
     await expect(row).toBeVisible();
     await expect(demo.getByTestId('make-default-offer')).toContainText(
-      'Start every new session in Full autonomy?'
+      'Start every new chat in Full autonomy?'
     );
     // Bring the row on screen the way a real click would. Clicking the radio
     // above scrolled the RADIO into view — often to the bottom edge of the

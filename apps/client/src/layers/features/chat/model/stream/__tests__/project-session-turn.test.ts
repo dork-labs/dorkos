@@ -911,6 +911,33 @@ describe('projectSessionMessages', () => {
     expect(messages[2].id).not.toBe('__in_progress_turn__');
   });
 
+  it('carries a steered chat message’s stamp, so the row draws the sender, not "You" (spin-off-chats §6)', () => {
+    const stamp = {
+      id: 'cm-7',
+      kind: 'message' as const,
+      from: { chatId: 'chat-b', agentName: 'Builder' },
+      text: 'Use the staging branch.',
+      delivery: 'steer' as const,
+      status: 'steered' as const,
+      sentAt: '2026-10-09T10:00:00.000Z',
+    };
+    const messages = projectSessionMessages(history, [
+      { seq: 1, type: 'turn_start', userMessage: 'go' },
+      { seq: 2, type: 'text_delta', text: 'working' },
+      {
+        seq: 3,
+        type: 'turn_input',
+        content:
+          '--- BEGIN CHAT MESSAGE 0000abcd ---\nUse the staging branch.\n--- END CHAT MESSAGE 0000abcd ---',
+        disposition: 'steer',
+        messageId: 'm-9',
+        chatMessages: [stamp],
+      },
+    ]);
+    const steer = messages.find((m) => m.id === 'steer-m-9');
+    expect(steer?.chatMessages).toEqual([stamp]);
+  });
+
   it('renders a steer even when it arrives before any assistant output', () => {
     // Purpose: a steer that lands before the agent has said anything still shows,
     // and does not manufacture an empty assistant bubble ahead of it.

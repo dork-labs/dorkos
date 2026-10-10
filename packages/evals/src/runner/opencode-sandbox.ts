@@ -19,7 +19,7 @@
  *   DorkOS. Pointing at the host's provisioned binary is what keeps a run from
  *   re-downloading it per eval.
  * - `runtimes.opencode.defaultModel` is what a new session starts on
- *   (`services/session/resolve-session-defaults.ts`), which is how the pinned
+ *   (`services/session/resolution/resolve-session-defaults.ts`), which is how the pinned
  *   OpenRouter model reaches `session.promptAsync` as `{providerID, modelID}`.
  *
  * ## Whole sections, not deep merges

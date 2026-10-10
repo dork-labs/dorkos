@@ -259,8 +259,8 @@ export function AddMcpServerForm({
               <p className="text-sm font-medium">Add this server to {agentLabel}?</p>
               <p className="text-muted-foreground text-xs">
                 {kind === 'stdio'
-                  ? 'Runs on this computer when a session starts.'
-                  : 'The agent connects here when a session starts.'}
+                  ? 'Runs on this computer when a chat starts.'
+                  : 'The agent connects here when a chat starts.'}
               </p>
             </div>
           </div>

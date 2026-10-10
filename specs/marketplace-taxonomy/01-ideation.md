@@ -11,14 +11,14 @@ provenance: { tracker: linear, issue: DOR-356 }
 **Slug:** marketplace-taxonomy
 **Author:** spec-taxonomy agent (DorkOS Shapes program, W3)
 **Date:** 2026-07-17
-**Tracker:** DOR-356 (workstream W3 of the Shapes program, `plans/shapes-program.md`)
+**Tracker:** DOR-356 (workstream W3 of the Shapes program, `plans/archive/shapes-program.md`)
 
 ---
 
 ## 1) Intent & Assumptions
 
 - **Task brief:** Give the DorkOS marketplace a **controlled category vocabulary** (a closed, CI-checked list) and the plumbing that makes it useful: multi-membership `categories[]` on packages via the ADR-0236 sidecar, validator + scaffolder support, client facet chips wired to the reserved `?category=` param, per-category SEO routes on the site, category-aware MCP tools, and a mechanical backfill for the `dork-labs/marketplace` registry.
-- **Decided input (founder, 2026-07-17, not relitigated):** membership is **`categories[]` (plural, multi)** carried through the **ADR-0236 sidecar** (`.claude-plugin/dorkos.json`), Segment-catalog-style multi-membership. See `plans/shapes-program.md` W3 row and the resolved open question (DOR-368).
+- **Decided input (founder, 2026-07-17, not relitigated):** membership is **`categories[]` (plural, multi)** carried through the **ADR-0236 sidecar** (`.claude-plugin/dorkos.json`), Segment-catalog-style multi-membership. See `plans/archive/shapes-program.md` W3 row and the resolved open question (DOR-368).
 - **Assumptions** (each restated in §Assumptions of the spec):
   1. A package belongs to **one or more** categories; the singular `category` remains the **primary** category (`categories[0]`) and the **Claude-Code-interop** field.
   2. The closed list is **DorkOS-authored surface only**, and it binds **only the `categories[]` field** (sidecar + `.dork/manifest.json`) plus the CI vocabulary check on our own registry. It never binds the inbound `marketplace.json` parser (we cannot constrain Claude Code's inline `category` string on foreign marketplaces — the inbound-lenient invariant), and it never binds the **singular `category` field**, which stays a lenient `z.string()` everywhere: `packages/harness/src/sources/installed.ts` safeParses installed packages' on-disk `.dork/manifest.json` and returns `undefined` on failure, so an enum on the singular field would make every already-installed package with a legacy free-string category invisible to Harness projection (the DOR-264 regression class). The coherence rule (`category === categories[0]`, where `categories[0]` is enum-typed) provides the effective constraint for newly-authored packages.
@@ -28,7 +28,7 @@ provenance: { tracker: linear, issue: DOR-356 }
 
 ## 2) Pre-reading Log
 
-- `plans/shapes-program.md` (W3 row + resolved question): scope is exactly the seven deliverables above; `?category=` "already reserved"; SEO route "clone `features/category/[category]`"; success criterion 4 = "≥6 category SEO routes with zero unverified claims."
+- `plans/archive/shapes-program.md` (W3 row + resolved question): scope is exactly the seven deliverables above; `?category=` "already reserved"; SEO route "clone `features/category/[category]`"; success criterion 4 = "≥6 category SEO routes with zero unverified claims."
 - `decisions/0236-sidecar-dorkos-json-for-marketplace-extensions.md`: CC's validator enforces `additionalProperties: false` on plugin entries (GitHub #26555) → DorkOS-specific fields live in `.claude-plugin/dorkos.json`, keyed by plugin name, merged by name; missing sidecar ⇒ `dorkos: undefined` (not an error). **`categories[]` is a DorkOS-specific field → it must ride the sidecar, never inline in `marketplace.json`.**
 - `packages/marketplace/src/manifest-schema.ts:98`: `.dork/manifest.json` already has `category: z.string().max(64).optional()` + `tags` (line 95). This is the **author-source** manifest (DorkOS-only, not CC-validated).
 - `packages/marketplace/src/marketplace-json-schema.ts:216`: the registry `marketplace.json` entry has `category: z.string().max(64).optional()` + `tags`/`keywords` — CC-standard, `.passthrough()`.
@@ -129,13 +129,13 @@ Bands are organizational only (all 16 are one flat closed list; multi-membership
 
 **Act 2 — business seeds (6):**
 
-| slug         | label       | grounded in                               |
-| ------------ | ----------- | ----------------------------------------- |
-| `marketing`  | Marketing   | Act-2 seed (`plans/shapes-program.md` W3) |
-| `sales-crm`  | Sales & CRM | CRM-lite shape (P4)                       |
-| `content`    | Content     | content pipeline shape (P3)               |
-| `support`    | Support     | Act-2 seed                                |
-| `accounting` | Accounting  | Act-2 seed                                |
-| `research`   | Research    | Act-2 seed                                |
+| slug         | label       | grounded in                                       |
+| ------------ | ----------- | ------------------------------------------------- |
+| `marketing`  | Marketing   | Act-2 seed (`plans/archive/shapes-program.md` W3) |
+| `sales-crm`  | Sales & CRM | CRM-lite shape (P4)                               |
+| `content`    | Content     | content pipeline shape (P3)                       |
+| `support`    | Support     | Act-2 seed                                        |
+| `accounting` | Accounting  | Act-2 seed                                        |
+| `research`   | Research    | Act-2 seed                                        |
 
 The nine legacy free strings map cleanly (§5 table) — the backfill is mechanical: `code-quality→code-review`, `security→security`, `documentation→documentation`, `integration→[project-management,integrations] | integrations`, `observability→observability`, `release→release-ops`, `development→dev-tools`, `productivity→productivity`, `workflow→agent-ops`.

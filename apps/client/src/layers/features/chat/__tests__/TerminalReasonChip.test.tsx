@@ -51,10 +51,10 @@ describe('TerminalReasonChip', () => {
   });
 
   // Purpose: the chip surfaces a screen-reader context prefix so assistive
-  // tech announces "Session ended: …" rather than just the bare label.
-  it('exposes an aria-label with "Session ended:" prefix', () => {
+  // tech announces "Chat ended: …" rather than just the bare label.
+  it('exposes an aria-label with "Chat ended:" prefix', () => {
     render(<TerminalReasonChip terminalReason="max_turns" />);
-    expect(screen.getByLabelText('Session ended: Turn limit reached')).toBeInTheDocument();
+    expect(screen.getByLabelText('Chat ended: Turn limit reached')).toBeInTheDocument();
   });
 
   // Purpose: stable test id is part of the component's test contract —

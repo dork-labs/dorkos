@@ -173,7 +173,10 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-vi.mock('@tanstack/react-router', () => ({ useNavigate: () => mockNavigate }));
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
+  useNavigate: () => mockNavigate,
+}));
 
 vi.mock('@/layers/shared/model', () => ({
   useTransport: () => mockTransport,
@@ -353,7 +356,7 @@ describe('P3 AC-3 — @agent produces a visible chip that filters', () => {
       const headings = screen
         .getAllByText((_, el) => el?.getAttribute('cmdk-group-heading') !== null)
         .map((el) => el.textContent);
-      expect(headings).toContain('Conversations with Orbit');
+      expect(headings).toContain('Chats with Orbit');
       expect(headings).not.toContain('Conversations');
     });
   });
@@ -432,7 +435,7 @@ describe('#channel behaves identically for rooms', () => {
     await highlight('quiet');
     press('Tab');
 
-    expect(await screen.findByText('No conversations came from #quiet.')).toBeInTheDocument();
+    expect(await screen.findByText('No chats came from #quiet.')).toBeInTheDocument();
   });
 
   it('pops on Backspace exactly as an agent chip does', async () => {
@@ -534,7 +537,7 @@ describe('a prefix inside a scope is a character, not a mode', () => {
     // `#` matched no conversation title, so the list is empty — but the palette
     // says "nothing matched", not "this agent has no conversations", which is
     // the sentence that was wrong.
-    await waitFor(() => expect(screen.queryByText('No conversations with Orbit yet.')).toBeNull());
+    await waitFor(() => expect(screen.queryByText('No chats with Orbit yet.')).toBeNull());
   });
 
   it('searches for the character when a title contains it', async () => {
@@ -552,11 +555,12 @@ describe('a prefix inside a scope is a character, not a mode', () => {
   });
 });
 
-describe('opening a conversation from ⌘K remembers both halves of it', () => {
-  it('records the conversation AND the agent whose project it runs in', async () => {
-    // The sidebar's own row has always written both (`SidebarChrome.openSession`);
-    // ⌘K wrote only the first, so the same act built a weaker memory depending
-    // on which door a person used. Both, or the two surfaces disagree.
+describe('opening a conversation from ⌘K remembers the agent', () => {
+  it('records the agent whose project it runs in, and leaves the chat to the chat page', async () => {
+    // The sidebar's own row writes the agent too (`SidebarChrome.openSession`),
+    // so both doors build the same memory. The chat itself is recorded by the
+    // chat page when it shows it (spec `your-activity-first` D3), so no door
+    // has to remember to.
     await openPalette();
     type('probe alpha');
     await waitFor(() => expect(rowTexts().some((r) => r.includes('probe alpha'))).toBe(true));
@@ -567,11 +571,11 @@ describe('opening a conversation from ⌘K remembers both halves of it', () => {
     fireEvent.click(row as Element);
 
     const { opened } = useInteractionStore.getState();
-    expect(opened['session:sess-orbit-1']).toBeDefined();
+    expect(opened['session:sess-orbit-1']).toBeUndefined();
     expect(opened['agent:/projects/orbit']).toBeDefined();
     expect(mockNavigate).toHaveBeenCalledWith({
       to: '/session',
-      search: { session: 'sess-orbit-1', dir: '/projects/orbit' },
+      search: { session: 'sess-orbit-1', dir: undefined },
     });
   });
 });

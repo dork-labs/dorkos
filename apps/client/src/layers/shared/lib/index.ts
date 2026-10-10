@@ -80,6 +80,8 @@ export {
   declaredScheme,
   describeRefusal,
   internalRoutePath,
+  plainAppAddress,
+  ADDRESS_SEARCH_PARAMS,
   isWebUrl,
   linkRefusalHere,
   openLink,
@@ -158,7 +160,7 @@ export {
   // semantics rather than compared as ids, for the reason that module exists:
   // an id table is right until a runtime ships a mode nobody added to it.
   isTightening,
-  needsConsentRitual,
+  actsWithoutAsking,
   isSilentReadOnly,
   isWorkingMode,
   resolveTrustStops,
@@ -206,13 +208,7 @@ export { listWaitingKinds } from './waiting-kinds';
 // and nothing outside the module reads them (its own test imports the file
 // directly). Putting them on the barrel would be three exports where one is used.
 export { askExitTransition } from './ask-exit-transition';
-export {
-  groupSessionsByTime,
-  shortenHomePath,
-  formatRelativeTime,
-  type TimeGroup,
-  type GroupedSessions,
-} from './session-utils';
+export { shortenHomePath, formatRelativeTime } from './session-utils';
 export {
   type FontFamilyKey,
   type FontConfig,
@@ -408,3 +404,7 @@ export type { DecisionRefusal } from './decision-refusal';
 export { SESSION_ROUTE, sessionHref, toSession, sessionSearchSchema } from './session-link';
 export type { SessionTarget, SessionSearch } from './session-link';
 export { serverSentence } from './server-sentence';
+
+export { appRoutes } from './route-factory';
+
+export { newSessionTarget, sessionLocationTarget } from './session-link';

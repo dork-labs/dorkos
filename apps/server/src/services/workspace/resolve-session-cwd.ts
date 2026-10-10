@@ -84,6 +84,8 @@ export interface ResolveSessionCwdDeps {
   ensureWorkspace(req: EnsureWorkspaceRequest): Promise<Workspace>;
   /** The `agent_path` a session was bound with, or `null`. */
   sessionAgentPath(sessionId: string): Promise<string | null>;
+  /** Actual directory of an existing session; absent for a new draft. */
+  sessionCwd?(sessionId: string): Promise<string | undefined>;
   /** Boundary check for an agent's own directory (the agent-registry carve-out). */
   validateAgentHome(candidate: string): Promise<string>;
   /** Boundary check for a managed checkout (no carve-out — it is a raw tree). */
@@ -149,6 +151,16 @@ export function sessionCwdDeps(
         })
       ),
     sessionAgentPath: (sessionId) => runtimeRegistry.getSessionAgentPath(sessionId),
+    sessionCwd: async (sessionId) => {
+      const { runtime, bound } = await runtimeRegistry.resolveForSessionWithOwnership(sessionId, {
+        allowUnbound: true,
+      });
+      return bound
+        ? (runtime.getSessionCwd?.(sessionId) ??
+            runtimeRegistry.getNativeSessionCwd(sessionId) ??
+            (await runtime.findSession?.(sessionId))?.cwd)
+        : undefined;
+    },
     validateAgentHome: (candidate) => validateBoundaryOrDorkHome(candidate),
     validateManagedCheckout: (candidate) => validateBoundary(candidate),
     canonicalize: canonicalAgentPath,
@@ -219,6 +231,10 @@ async function resolve(
   // directory browser) validate it themselves at their own edges. Validating
   // here would 403 turns that run today, which is the one thing this change
   // promised not to do.
+  if (req.sessionId) {
+    const actual = await deps.sessionCwd?.(req.sessionId);
+    if (actual) return { cwd: actual, rung: 'explicit' };
+  }
   if (req.cwd) return { cwd: req.cwd, rung: 'explicit' };
 
   const agentPath = req.agentPath ?? (req.sessionId ? await agentPathOf(req, deps) : null);

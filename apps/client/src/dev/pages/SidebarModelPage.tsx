@@ -2,7 +2,6 @@ import { PageContainer } from '@/layers/shared/ui';
 import { TocSidebar } from '../TocSidebar';
 import { SIDEBAR_MODEL_SECTIONS } from '../sections/sidebar-model-sections';
 import { SidebarModelShowcases } from '../showcases/SidebarModelShowcases';
-import { AccountMarkShowcase } from '../showcases/AccountMarkShowcases';
 import {
   MobileCatchUpShowcase,
   MobileLongPressSheetShowcase,
@@ -48,7 +47,6 @@ export function SidebarModelPage() {
           <MobileTabBarShowcase />
           <MobileLongPressSheetShowcase />
           <MobileCatchUpShowcase />
-          <AccountMarkShowcase />
         </div>
         <TocSidebar sections={SIDEBAR_MODEL_SECTIONS} />
       </div>

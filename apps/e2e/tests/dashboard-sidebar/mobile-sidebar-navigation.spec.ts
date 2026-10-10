@@ -369,13 +369,21 @@ test.describe('Mobile tabs — 390×844 @smoke', { tag: SOLE_SIDEBAR_TAG }, () =
     await roomsPage.chooseAgent(ana.name);
     await expect(roomsPage.agentChip(ana.name)).toBeVisible();
     // The button says where it goes before it goes there.
-    await expect(roomsPage.startConversationButton).toHaveText(`Open session with ${ana.name}`);
+    await expect(roomsPage.startConversationButton).toHaveText(`Open chat with ${ana.name}`);
     await expect(page.getByTestId('mobile-tab-panels')).toBeVisible();
 
     await roomsPage.startConversationButton.click();
 
     // The agent's own session — the same address its Library row opens.
-    await expect(page).toHaveURL(/\/session\?.*dir=/, { timeout: SERVER_ROUND_TRIP_MS });
+    await expect(page).toHaveURL(/\/session\?.*session=/, { timeout: SERVER_ROUND_TRIP_MS });
+    const sessionUrl = new URL(page.url());
+    expect(sessionUrl.searchParams.has('dir')).toBe(false);
+    expect(sessionUrl.searchParams.has('agentPath')).toBe(false);
+    const launchRef = sessionUrl.searchParams.get('launchRef');
+    expect(launchRef).toBeTruthy();
+    const location = await page.request.get(`/api/session-locations/${launchRef}`);
+    expect(location.ok()).toBe(true);
+    expect(await location.json()).toMatchObject({ cwd: ana.projectPath });
     expect(new URL(page.url()).searchParams.get('session')).toBeTruthy();
     await expect(page.getByTestId('mobile-tab-panels')).toBeHidden();
     await expect(page.getByTestId('mobile-tab-bar')).toBeVisible();
@@ -565,7 +573,7 @@ test.describe('Mobile tabs — 390×844 @smoke', { tag: SOLE_SIDEBAR_TAG }, () =
     const catchUp = page.getByTestId('today-catch-up');
     await expect(catchUp).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
     await expect(catchUp).toHaveAccessibleName(
-      `Catch up: mark ${rooms.length} unread conversations in Today as read`,
+      `Catch up: mark ${rooms.length} unread items in Today as read`,
       { timeout: SERVER_ROUND_TRIP_MS }
     );
 

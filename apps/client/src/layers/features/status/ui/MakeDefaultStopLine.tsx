@@ -46,10 +46,10 @@ export interface MakeDefaultStopLineProps {
    *   they are pointing at. The row holds its height whether or not it has
    *   anything in it.
    * - `'overlay'` — floating just above the status strip, taking no space at
-   *   all. This is the instance that speaks when the popover is CLOSED: entering
-   *   Full autonomy opens a modal dialog, and the dialog's focus grab closes the
-   *   popover underneath it (observed in a browser, 2026-08-01), so the offer
-   *   that follows has nowhere inline to go. Reserving a permanent row under the
+   *   all. This is the instance that speaks when the popover is CLOSED, so the
+   *   offer has nowhere inline to go. (The case that first needed it, a Full
+   *   autonomy dialog whose focus grab closed the popover, observed 2026-08-01,
+   *   is retired by DOR-2739; a popover closed any other way still needs it.) Reserving a permanent row under the
    *   status line for that case would cost every conversation a blank line
    *   forever; floating costs nothing until there is something to say.
    *
@@ -120,7 +120,7 @@ export function MakeDefaultStopLine({
                 {error}
               </>
             ) : (
-              <>Start every new session in {stopLabel(stop)}?</>
+              <>Start every new chat in {stopLabel(stop)}?</>
             )}
           </span>{' '}
           {/* Never `truncate`, and no `flex-wrap` either: whatever the sentence

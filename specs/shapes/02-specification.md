@@ -16,7 +16,7 @@ linearIssue: DOR-355
 
 A **Shape** is the fifth DorkOS marketplace package type. Installing a Shape and switching into it changes _what DorkOS is for you right now_: it activates a set of extensions, arranges the workspace chrome (panels, sidebar, dashboard), makes one or more suggested agents available, and stands up the schedules and connections that make the place work. A Shape is a **place**, not an agent: it holds agents by **affinity, not ownership** (it can _suggest_ or _softly default_ an agent, but never binds one).
 
-This spec defines: (1) the `shape` package type and its manifest schema; (2) the `apply_layout` UI command and the switching UX; (3) install/fork on the existing file-scoped transaction, with lineage; (4) per-piece degradation; and (5) a fully-worked **Linear Ops** example that proves the format needs zero escape hatches. It realizes `plans/shapes-program.md` D2 + W2 and unblocks P1 (Linear Ops) and P2 (Flow Board).
+This spec defines: (1) the `shape` package type and its manifest schema; (2) the `apply_layout` UI command and the switching UX; (3) install/fork on the existing file-scoped transaction, with lineage; (4) per-piece degradation; and (5) a fully-worked **Linear Ops** example that proves the format needs zero escape hatches. It realizes `plans/archive/shapes-program.md` D2 + W2 and unblocks P1 (Linear Ops) and P2 (Flow Board).
 
 The consumer rule (from `research/20260717_shapes-byoa-positioning.md` §5): _if installing it changes what DorkOS is for you, it's a Shape; if it adds a capability, it's a plugin/extension._
 
@@ -526,7 +526,7 @@ Apply is a handful of config writes + task creations + one extension re-mount �
 
 ## References
 
-- `plans/shapes-program.md` (D2, W2, P1, P2, harness-derived-shapes principle).
+- `plans/archive/shapes-program.md` (D2, W2, P1, P2, harness-derived-shapes principle).
 - `research/20260717_shapes-byoa-positioning.md` §4 (capability ground truth), §5 (Shape working design), §6 (priorities/demos), §8 (taxonomy/evals/connectors).
 - `contributing/marketplace-installs.md` §9 (adding a package type), ADR-0304.
 - `packages/marketplace/src/{package-types.ts,manifest-schema.ts}`; `packages/shared/src/{schemas.ts,config-schema.ts,mesh-schemas.ts}`; `packages/extension-api/src/{extension-api.ts,manifest-schema.ts}`; `apps/server/src/core-extensions/linear-issues/{index.ts,extension.json}`; `apps/client/src/layers/shared/lib/ui-action-dispatcher.ts`, `.../features/extensions/model/{extension-api-factory.ts,use-cwd-extension-sync.ts}`.

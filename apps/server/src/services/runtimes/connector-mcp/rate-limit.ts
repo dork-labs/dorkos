@@ -1,6 +1,6 @@
 /** Independent rate limiter for the connector-only runtime MCP listener. */
-import rateLimit, { type RateLimitRequestHandler } from 'express-rate-limit';
-import { rateLimitKey } from '../../../middleware/rate-limit-key.js';
+import { expressRateLimit } from '../../../http/rate-limiter.js';
+import type { RequestHandler } from 'express';
 
 /** Listener-owned rate limit settings. */
 export interface ConnectorRuntimeRateLimitOptions {
@@ -18,13 +18,11 @@ export interface ConnectorRuntimeRateLimitOptions {
  */
 export function buildConnectorRuntimeRateLimiter(
   options: ConnectorRuntimeRateLimitOptions = {}
-): RateLimitRequestHandler {
-  return rateLimit({
+): RequestHandler {
+  return expressRateLimit({
     windowMs: options.windowMs ?? 60_000,
-    max: options.maxPerWindow ?? 120,
-    keyGenerator: rateLimitKey,
-    standardHeaders: true,
-    legacyHeaders: false,
+    limit: options.maxPerWindow ?? 120,
+    headers: 'standard',
     message: {
       jsonrpc: '2.0',
       error: { code: -32029, message: 'Rate limit exceeded. Try again shortly.' },

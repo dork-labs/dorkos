@@ -33,6 +33,12 @@
  * classifier can see). Runtime-agnostic on purpose — a runtime that starts
  * supplying the field later inherits the rule for free.
  *
+ * What it drops can come back once, honestly: the "touched by you" overlay
+ * (`touched-by-you-overlay.ts`) runs after all three and restores the time of a
+ * message you wrote from the app, which the server recorded as yours when it
+ * was sent (spec `your-activity-first` D5). Only that time; never the
+ * transcript's.
+ *
  * @module services/session/origin/user-last-message-origin
  */
 import type { Session, SessionOrigin } from '@dorkos/shared/types';

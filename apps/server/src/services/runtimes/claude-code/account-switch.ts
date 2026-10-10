@@ -28,7 +28,7 @@ import type { UserConfig } from '@dorkos/shared/config-schema';
 import { logger } from '../../../lib/logger.js';
 import { eventFanOut } from '../../core/event-fan-out.js';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
-import { sessionListBroadcaster } from '../../session/session-list-broadcaster.js';
+import { sessionListBroadcaster } from '../../session/catalog/session-list-broadcaster.js';
 // Type-only, so this module adds no runtime dependency on the runtime facade
 // (and no import cycle): the value comes out of the registry, which keys on
 // `runtime.type`.

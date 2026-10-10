@@ -506,7 +506,7 @@ export function recordGlobalActivationApproval(
 ): void {
   recordApprovedEntry(
     globalActivationEntry(name, effects, bindsTo),
-    'approving a global package to run in every session',
+    'approving a global package to run in every chat',
     isGlobalActivationEntryFor(name)
   );
 }
@@ -525,7 +525,7 @@ export function recordGlobalActivationRefusal(
 ): void {
   recordRefusedEntry(
     globalActivationEntry(name, effects, bindsTo),
-    'turning down a global package running in every session'
+    'turning down a global package running in every chat'
   );
 }
 

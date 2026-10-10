@@ -184,7 +184,7 @@ export function registerEventRoutes(
       ? undefined
       : await auth.api.getSession({ headers: c.req.raw.headers });
     if (!member.credentialHash && !openedSession)
-      throw new ApiError(401, 'UNAUTHENTICATED', 'This session is unavailable.');
+      throw new ApiError(401, 'UNAUTHENTICATED', 'This sign-in is no longer valid.');
     const body = await readJson(c, CommunityWireReadCursorRequestSchema);
     const { channel, current } = await transaction(pool, async (client) => {
       const channel = await lockChannel(client, c.req.param('id'), member, 'read');
@@ -280,7 +280,7 @@ export function registerEventRoutes(
     if (openedSession) {
       const currentSession = await auth.api.getSession({ headers: c.req.raw.headers });
       if (!currentSession || currentSession.session.id !== openedSession.session.id)
-        throw new ApiError(401, 'UNAUTHENTICATED', 'This session is unavailable.');
+        throw new ApiError(401, 'UNAUTHENTICATED', 'This sign-in is no longer valid.');
     }
     const encoder = new TextEncoder();
     let revocationTimer: ReturnType<typeof setInterval> | undefined;

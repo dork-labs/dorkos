@@ -176,7 +176,7 @@ export function RoomHistorySkeleton({ roomName }: { roomName?: string }) {
     // room whose NAME has not arrived either is labelled generically; it is a
     // second or two, and inventing a title would be worse.
     <Feed
-      label={roomName === undefined ? 'Conversation' : `Messages in ${roomName}`}
+      label={roomName === undefined ? 'Messages' : `Messages in ${roomName}`}
       busy
       className="flex flex-col gap-4 p-4"
       data-testid="room-timeline-loading"
@@ -487,7 +487,7 @@ export function RoomFlow({
   if (error) {
     return (
       <div className="text-muted-foreground flex flex-col items-center gap-2 p-10 text-center text-sm">
-        <p className="text-foreground font-medium">Couldn’t load this conversation</p>
+        <p className="text-foreground font-medium">Couldn’t load these messages</p>
         <p className="max-w-sm">Nothing was lost. Reload to try again.</p>
       </div>
     );

@@ -19,7 +19,7 @@ linearIssue: DOR-358
 - **Task brief:** Replace the single-JSON-blob storage limit for DorkOS
   extensions with a **per-extension scoped SQLite database** — a real
   relational store an extension can declare tables against, query, and grow.
-  This is workstream **W6** of the Shapes program (`plans/shapes-program.md`)
+  This is workstream **W6** of the Shapes program (`plans/archive/shapes-program.md`)
   and the hard prerequisite for **CRM-grade shapes** (reference shape P4 —
   contacts + pipeline + overnight follow-ups). The validation bar: contacts +
   pipeline tables with follow-up queries must be expressible **with zero escape
@@ -56,7 +56,7 @@ linearIssue: DOR-358
 
 - **Out of scope (explicit):**
   - **Managed sync / multi-user hosted data** — the post-launch revenue line
-    (Obsidian-Sync playbook, `plans/shapes-program.md` W6 + "Explicitly not
+    (Obsidian-Sync playbook, `plans/archive/shapes-program.md` W6 + "Explicitly not
     doing"). Named as future; **not** designed here.
   - Per-agent / per-scope data partitioning (A-SCOPE-GLOBAL).
   - Promoting extension data onto the `Transport` port for Obsidian in-process
@@ -66,7 +66,7 @@ linearIssue: DOR-358
 
 ## 2) Pre-reading Log
 
-- `plans/shapes-program.md` (W6 row + P4 CRM-lite + "Explicitly not doing"):
+- `plans/archive/shapes-program.md` (W6 row + P4 CRM-lite + "Explicitly not doing"):
   W6 scope is storage design + schema/migration story + query API surface;
   managed sync is out. CRM-lite (P4) is the downstream consumer and depends on
   W6. Success criterion "one prompt modifies a shape" implies the data API must

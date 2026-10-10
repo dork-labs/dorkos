@@ -54,7 +54,7 @@ export function AgentChipContextMenu({
         <ResponsiveContextMenuSeparator />
         <ResponsiveContextMenuItem onClick={onNewSession}>
           <Plus className="mr-2 size-4" />
-          New session
+          New chat
         </ResponsiveContextMenuItem>
       </ResponsiveContextMenuContent>
     </ResponsiveContextMenu>

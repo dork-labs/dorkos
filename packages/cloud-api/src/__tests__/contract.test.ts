@@ -96,6 +96,24 @@ describe('money', () => {
     };
     expect(contract.BalanceSchema.safeParse(withoutOwed).success).toBe(false);
   });
+
+  it('carries whether a card is on file only when the service says, never as a default', () => {
+    const balance = {
+      allowance: { grantedMicro: '0', remainingMicro: '0', resetsAt: '2026-09-15T12:00:00.000Z' },
+      purchased: { remainingMicro: '0' },
+      heldMicro: '0',
+      owedMicro: '0',
+      autoReload: { enabled: false, ceilingMicro: null },
+    };
+    const silent = contract.BalanceSchema.parse(balance);
+    expect('paymentMethodOnFile' in silent).toBe(false);
+    expect(contract.BalanceSchema.parse({ ...balance, paymentMethodOnFile: false })).toMatchObject({
+      paymentMethodOnFile: false,
+    });
+    expect(
+      contract.BalanceSchema.safeParse({ ...balance, paymentMethodOnFile: 'yes' }).success
+    ).toBe(false);
+  });
 });
 
 describe('timestamps', () => {

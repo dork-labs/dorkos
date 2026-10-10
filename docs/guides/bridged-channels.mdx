@@ -8,12 +8,12 @@ import { Callout } from 'fumadocs-ui/components/callout';
 # Bridged Channels
 
 A chat you connect to an agent is normally a private line: a message goes to one agent, that agent
-answers, and nothing about it is visible anywhere else. Start a second conversation with the same
+answers, and nothing about it is visible anywhere else. Start a second DorkOS chat with the same
 agent, or ask a second agent to help, and the two know nothing about each other.
 
 Bridging changes that. When you bridge a chat, it becomes a **channel** in DorkOS. What people say
 in the chat lands in a shared log, and your agent reads that log before it answers. You can also
-speak into the chat from DorkOS, and any of the agent's conversations can pick up where the
+speak into the chat from DorkOS, and any of the agent's chats can pick up where the
 others left off, because they all read the same history.
 
 <Callout type="info">
@@ -67,8 +67,8 @@ no record you own. If you ever want to know what your agent saw and when, the lo
 ## What bridging does not do
 
 - It does not import old messages. Chat platforms do not hand a bot its history, so a bridged
-  channel starts its log from the moment you bridge. If the agent already had a conversation going in
-  that chat, it can carry on from there, but the earlier messages stay in that conversation, not the
+  channel starts its log from the moment you bridge. If the agent was already talking in
+  that chat, it can carry on from there, but the earlier messages stay in the agent's own chat history, not the
   channel log.
 - It does not make your agent injection-proof. An agent that reads an outside message and acts on it
   can still do things within the permissions you granted. The permission mode above is the bound that

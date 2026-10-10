@@ -8,7 +8,7 @@ import { Callout } from 'fumadocs-ui/components/callout';
 # Your sidebar
 
 The column down the left of DorkOS reads as two levels: a heading, and the rows under it. Every
-heading looks the same and every row starts on the same line, so a channel, a conversation and an
+heading looks the same and every row starts on the same line, so a channel, a chat and an
 agent all line up.
 
 The headings arrive in this order:
@@ -17,7 +17,7 @@ The headings arrive in this order:
 2. **Today** is what you were working on.
 3. **Your own sections**, then **Pins**, **Channels**, **Direct messages** and **Agents**.
 
-The first two are worked out for you. The rest is the structure you built yourself. A conversation
+The first two are worked out for you. The rest is the structure you built yourself. A chat
 can appear in more than one place at the same time, because each heading answers a different
 question.
 
@@ -35,7 +35,7 @@ Only four things are allowed in:
 
 - an agent asking permission to do something
 - an agent asking you a question
-- a session that stopped with an error
+- a chat that stopped with an error
 - an agent asking you to approve a schedule it wants to run
 
 That is the whole list. Mentions, unread channels, direct messages and background work never
@@ -56,22 +56,22 @@ Nothing here snoozes. Everything leaves when the thing it is about is resolved, 
 
 ## Today: what you were doing
 
-Today holds the conversations, channels, direct messages and threads you have actually been in,
-newest first, about eight of them. The conversation you have open and anything addressed to you
+Today holds the chats, channels, direct messages and threads you have actually been in,
+newest first, about eight of them. The chat or room you have open and anything addressed to you
 by name are always shown, even when that takes the list past eight.
 
 The order is by when **you** last touched each one. An agent starting a turn, finishing one, or
-posting a message moves nothing. Your recent conversations stay put while your agents work.
+posting a message moves nothing. Your recent chats stay put while your agents work.
 
 A few other things Today does:
 
-- The conversation you have open is always its first row.
+- The chat or room you have open is always its first row.
 - Rows refuse to reorder while your pointer is inside Today. The row under your cursor is still
   the row you meant to click.
 - Work you did not start, like a scheduled run, sits behind one "+ N automated" row.
 - Threads are rows of their own, showing the message they hang off.
 
-Anything you have not touched since 4am leaves Today the next morning. The conversation you have
+Anything you have not touched since 4am leaves Today the next morning. The chat or room you have
 open stays, and so does anything addressed to you by name. Nothing is deleted: it is all still
 one ⌘K away.
 
@@ -80,7 +80,7 @@ one ⌘K away.
 Below Today is the part nothing moves on its own.
 
 **Sections** are the groups you make. A section can hold anything you see in the sidebar: a
-channel, a conversation, an agent, or a mix. Your sections sit at the top of this part of the
+channel, a chat, an agent, or a mix. Your sections sit at the top of this part of the
 list, above Pins and Channels, so the thing you organised is the thing you see first. Make one
 from **New › Section**, or right-click any row and pick **New section**.
 
@@ -97,7 +97,7 @@ no longer costs a row forever, and "lately" counts the last time you looked at i
 last time it ran. If you have eight agents or fewer, you still see all of them.
 
 Headings appear when you have something to put under them. There is no "Direct messages" heading
-until you have a conversation, and no "Pins" until you pin something.
+until you have one, and no "Pins" until you pin something.
 
 ## One way in to each agent
 
@@ -106,7 +106,7 @@ shows up once in the sidebar, never twice.
 
 The same rule runs the **New › Group message** picker. Pick one agent and you land in that same
 chat. Pick two or more and you start a group message, and its name grows to include whoever you
-add, unless you named the conversation yourself.
+add, unless you named the group yourself.
 
 Your older one-on-one messages are all still there. Nothing was deleted or moved. Whenever one of
 them has something new for you it shows up under Today, and the agent's own row gets a dot beside
@@ -151,12 +151,12 @@ the menu at the top now, with a "Check for updates" beside it. When a new versio
 waiting, an "Update ready" card appears above the footer strip and goes away once you have it.
 
 And starting your **first** direct message moved, because the "Direct messages" heading now waits
-until you have one. Use **New › Group message**. Once you have a conversation, the `+` beside
+until you have one. Use **New › Group message**. Once you have one, the `+` beside
 Direct messages works as it always did.
 
 <Callout type="info">
-  ⌘K finds conversations, channels, agents and pages by name. It does not search inside your
-  messages. Use it to get somewhere, not to find a sentence.
+  ⌘K finds chats, channels, agents and pages by name. It does not search inside your messages. Use
+  it to get somewhere, not to find a sentence.
 </Callout>
 
 ## On a phone
@@ -167,7 +167,7 @@ bottom instead:
 - **Home** is Heads up and Today together. The number on the tab is the same count Heads up
   shows, so it only ever means "this many agents are waiting on you".
 - **All** is your sections, channels, direct messages, agents and pins. It never shows a number.
-- **DorkBot** opens a conversation with the built-in agent that knows how DorkOS works.
+- **DorkBot** opens a chat with the built-in agent that knows how DorkOS works.
 - **You** holds your account and the rest of the app.
 
 Switching tabs keeps your place in each one. Nothing has to be swiped away before you can use
@@ -181,5 +181,5 @@ Three things work differently under a thumb:
   one tap. It says how many it is about to clear, and it only appears when there is something to
   clear.
 - **Approvals appear in Home**, with Allow and Don't allow on the card. You can unblock an agent
-  without opening the conversation it came from.
+  without opening the chat it came from.
 - The card at the bottom of the sidebar appears at the bottom of Home instead.

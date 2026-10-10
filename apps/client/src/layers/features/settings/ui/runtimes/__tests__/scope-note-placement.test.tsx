@@ -55,7 +55,7 @@ const CLAUDE: PermissionModeDescriptor[] = [
 
 /**
  * Codex: its MIDDLE stop never asks. The whole reason the note follows
- * `needsConsentRitual` rather than the dial position (DOR-816).
+ * `actsWithoutAsking` rather than the dial position (DOR-816).
  */
 const CODEX: PermissionModeDescriptor[] = [
   {

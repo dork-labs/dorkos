@@ -198,7 +198,7 @@ export function OwnerClaim() {
       if (cause instanceof RequestError && cause.status === 401) {
         setAccount(null);
         setStage('account');
-        setError('Your session ended. Sign in again to claim the space.');
+        setError('Your sign-in expired. Sign in again to claim the space.');
         return null;
       }
       if (cause instanceof RequestError && (cause.status === 403 || cause.status === 409)) {

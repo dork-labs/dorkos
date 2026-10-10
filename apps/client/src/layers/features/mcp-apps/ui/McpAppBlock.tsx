@@ -71,7 +71,7 @@ export function McpAppBlock({ sessionId, serverName, uri, title }: McpAppBlockPr
         </div>
         <div className="text-muted-foreground space-y-1 text-xs">
           <p>It runs code from {serverName} in a sealed-off frame.</p>
-          <p>It can’t see your session, files or credentials.</p>
+          <p>It can’t see your chat, files or credentials.</p>
         </div>
         <div>
           <button

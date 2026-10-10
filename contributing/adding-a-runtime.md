@@ -2,7 +2,7 @@
 
 ## Overview
 
-This guide walks through adding a new agent runtime (runtime #4) behind the `AgentRuntime` interface, using the two adapters shipped by the `additional-agent-runtimes` spec (Codex and OpenCode) as worked examples. Follow it end-to-end and your runtime gets full DorkOS treatment: session streaming, aggregated listing, permission modes, dependency checks with setup UX, and its own visual identity in every badge and picker.
+This guide walks through adding an agent runtime behind the `AgentRuntime` interface, using Codex, OpenCode and the first-party Doe engine as worked examples. Follow it end-to-end and your runtime gets full DorkOS treatment: session streaming, aggregated listing, permission modes, dependency checks with setup UX, and its own visual identity in every badge and picker.
 
 Related ADRs: [0307](../decisions/0307-second-and-third-runtimes-opencode-and-codex.md) (runtime selection), [0308](../decisions/0308-opencode-adapter-managed-server-sidecar.md) (sidecar pattern), [0309](../decisions/0309-codex-adapter-sdk-threads.md) (SDK-thread pattern), [0310](../decisions/0310-runtime-owned-session-storage-aggregated-listing.md) (runtime-owned storage, registry aggregation).
 
@@ -16,6 +16,7 @@ Related ADRs: [0307](../decisions/0307-second-and-third-runtimes-opencode-and-co
 | Capabilities matrix                | `packages/test-utils/src/runtime-capability-matrix.ts`, rendered to [capabilities/runtimes.md](capabilities/runtimes.md) |
 | Worked example: JSON-RPC child     | `apps/server/src/services/runtimes/codex/` (app-server by default; `exec`, one subprocess per turn, as the fallback)     |
 | Worked example: managed sidecar    | `apps/server/src/services/runtimes/opencode/`                                                                            |
+| Worked example: first-party engine | `apps/server/src/services/runtimes/doe/` (direct resources, authenticated MCP, independent model history)                |
 | Reference stateless implementation | `apps/server/src/services/runtimes/test-mode/`                                                                           |
 | Runtime registry (composition)     | `apps/server/src/services/core/runtime-registry.ts` (`runtimeRegistry`)                                                  |
 | Composition root registration      | `apps/server/src/index.ts` (registration blocks + `shutdownServices()`)                                                  |
@@ -213,7 +214,7 @@ See [ADR 260908-153657](../decisions/260908-153657-a-live-runtime-turn-renews-co
   | `supportsEffort` | `boolean`                  | Whether your backend can be asked for more or less thinking at all. Per-model rungs are a separate, catalog-level fact (`ModelOption.supportsEffort` / `supportedEffortLevels`); both gates apply. OpenCode declares `false` because its prompt body carries no effort field.              |
   | `sections`       | `RuntimeSettingsSection[]` | Ordered bespoke panels your settings card renders, by `kind`. Empty for most runtimes.                                                                                                                                                                                                     |
 
-  The client's renderer registry (`apps/client/src/layers/features/settings/ui/runtimes/section-registry.tsx`) has shipped: a section appears only if the client has a renderer registered for its kind; an unknown kind renders nothing, deliberately, so an older cockpit against a newer server degrades instead of crashing. Declaring a new kind is therefore a two-sided change: the declaration here, and the renderer in the client. Claude Code's `claude-accounts` and OpenCode's `opencode-power-source` are the two registered kinds today.
+  The client's renderer registry (`apps/client/src/layers/features/settings/ui/runtimes/section-registry.tsx`) has shipped: a section appears only if the client has a renderer registered for its kind; an unknown kind renders nothing, deliberately, so an older app against a newer server degrades instead of crashing. Declaring a new kind is therefore a two-sided change: the declaration here, and the renderer in the client. Claude Code's `claude-accounts` and OpenCode's `opencode-power-source` are the two registered kinds today.
 
   The declaration carries no dynamic state. Account lists, the current provider, and readiness ride `GET /api/config` and `GET /api/system/requirements`, which refetch; capabilities are cached with `staleTime: Infinity` and would go stale if any of that lived here.
 
@@ -441,7 +442,7 @@ runtimeConformance(() => new MyRuntime({ /* fresh isolated deps per test */ }), 
 
 Claude-code takes the first arm; codex, opencode and test-mode take the second. Two things to copy from how claude-code does it:
 
-- **Derive it inside a pass the listing path already makes.** This endpoint is read on every cockpit boot, so a whole-conversation read per row is the wrong trade. Claude-code folds it into the transcript-tail read it already performs — no extra open, read or stat. That window is `TRANSCRIPT.TAIL_BUFFER_BYTES`, sized at 64 KB **by this field**: measured over 474 real transcripts the person's last turn sits a median of 27 KB back, so the previous 16 KB answered ~11% of conversations while 64 KB answers ~90% of those touched in the last week.
+- **Derive it inside a pass the listing path already makes.** This endpoint is read on every app boot, so a whole-conversation read per row is the wrong trade. Claude-code folds it into the transcript-tail read it already performs — no extra open, read or stat. That window is `TRANSCRIPT.TAIL_BUFFER_BYTES`, sized at 64 KB **by this field**: measured over 474 real transcripts the person's last turn sits a median of 27 KB back, so the previous 16 KB answered ~11% of conversations while 64 KB answers ~90% of those touched in the last week.
 - **The `user` role is a wire role, not an author, and DorkOS itself writes on it.** Tool results, resume bootstraps, compaction summaries, relay hand-offs from other agents, scheduled-task prompts and room posts by other agents all arrive as user messages. Claude-code answers the markered ones per record (`isPersonAuthoredUserRecord`) and the unmarkered ones per session: an `agent`/`task`/`room` origin drops the field whole (`services/session/origin/user-last-message-origin.ts`, applied by the runtime and by both route overlays). If your runtime cannot separate a person's message from a relay or scheduled one, that is a reason to take the second arm — it is exactly why codex does.
 
 The rules live in `chooseUserLastMessageAtArm` / `evaluateUserLastMessageAtPresence` / `evaluateUserLastMessageAtOmission` (`packages/test-utils/src/runtime-conformance.ts`), and `packages/test-utils/src/__tests__/runtime-conformance-last-user-message.test.ts` proves each one rejects the wrong answer.
@@ -676,7 +677,7 @@ Then boot `pnpm dev`, confirm the registration log line, and check the runtime a
 Lessons paid for during the Codex/OpenCode implementation:
 
 - **The `getInternalSessionId` C1-rekey trap.** Return `undefined` unless your backend genuinely re-keys the canonical session id the way Claude's JSONL store does. Trigger-turn treats a returned id as the _canonical_ id: it re-keys the projector and the 202 response, orphaning the client's subscription. Both new adapters keep their native ids (Codex thread id, OpenCode `ses_*` id) adapter-internal and return `undefined`; see the TSDoc on `CodexRuntime.getInternalSessionId`.
-- **The runtime tag is the aggregation key (ADR-0310).** Every `Session` you return must carry `runtime: this.type`; conformance asserts it. The listing layer (`aggregateSessionList`, `apps/server/src/services/session/aggregate-session-list.ts`) merges across runtimes on that tag and degrades per runtime (partial list + `warnings[]`, 2s timeout) - a mis-stamped session lands under another runtime's identity everywhere.
+- **The runtime tag is the aggregation key (ADR-0310).** Every `Session` you return must carry `runtime: this.type`; conformance asserts it. The listing layer (`aggregateSessionList`, `apps/server/src/services/session/catalog/aggregate-session-list.ts`) merges across runtimes on that tag and degrades per runtime (partial list + `warnings[]`, 2s timeout) - a mis-stamped session lands under another runtime's identity everywhere.
 - **Raw wire events vs SDK-typed unions.** The SDK's generated types are a claim, not a guarantee. OpenCode's true text-delta event (`message.part.delta`) is absent from the SDK's 32-member `Event` union (the adapter declares `EventMessagePartDelta` itself); Codex's stream-level `error` is documented "unrecoverable" but live probes show it recovering into a normal turn. Verify against live traces and upstream source, handle unknown event types without crashing, and write down what you verified in `NOTES.md`.
 - **Cumulative snapshots masquerading as deltas.** Both SDKs emit cumulative item text. Suffix-diff in the mapper context or the UI renders every paragraph twice.
 - **Sidecar lifecycle (if applicable).** A restarted sidecar mints new credentials, so an SDK's internal SSE retry reconnects with stale auth forever; disable it and own reconnection yourself (`global-event-hub.ts` is the pattern - on drop, fail in-flight turns with a typed error, re-obtain a fresh client through the manager's backoff, resubscribe). Bind loopback-only, inject a conservative permission ruleset (`OPENCODE_SIDECAR_CONFIG`), and wire `shutdownServices()` teardown so no orphan survives DorkOS.
@@ -722,3 +723,13 @@ displayName: 'Turbo 2',
 - [configuration.md](configuration.md): config schema, migrations, precedence
 - [api-reference.md](api-reference.md): the routes that consume the registry
 - [project-structure.md](project-structure.md): server service domains
+
+## First-party engine and inference boundaries
+
+Doe is confined to `services/runtimes/doe/`; Pi remains confined to the standalone `@dorkos/doe` engine. The host implements `AgentRuntime` and translates engine events into the shared display stream. `DoeSessionStore` keeps session metadata and immutable inference selection separate from the engine's full provider-message SQLite store. Display retention never becomes model history.
+
+`runtimes.doe.inference` describes source, service, protocol, endpoint, model and token limits. Store only encrypted credential references through the runtime connection store. Resolve authentication at request time, never during construction, metadata reads or model listing. Preserve payer and history family across restart, and persist the actual resolved model budget for context readings.
+
+Multi-format credits runtimes declare `credits.supportedProtocols`. The optional `getCreditsProtocol(sessionId?)` selects the configured or frozen conversation format; `creditsCapabilitiesFor` derives a transient view without mutating stable capabilities. Session model menus and refusals must pass the session id. The optional `sessionRunsOnCredits` answers the frozen payer, rather than applying a later global setting to an existing conversation.
+
+Host assembly owns turn-scoped MCP clients and a connector principal. Runtime shutdown must drain those turns before their tool, account, room and Mesh dependencies close. Terminal metadata failures must still end the event queue and release active ownership. An unacknowledged stop answers `unconfirmed`; it must not close a store still owned by running work.

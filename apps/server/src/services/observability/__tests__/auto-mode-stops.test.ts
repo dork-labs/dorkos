@@ -49,7 +49,7 @@ describe('counting stops', () => {
 describe('counting assertions', () => {
   it('splits by tier', () => {
     recordClassifierAssertion({ sessionId: 's1', tool: 'mesh_list', tier: 'observe' });
-    recordClassifierAssertion({ sessionId: 's1', tool: 'relay_send', tier: 'act' });
+    recordClassifierAssertion({ sessionId: 's1', tool: 'chat_send', tier: 'act' });
     recordClassifierAssertion({ sessionId: 's1', tool: 'tasks_delete', tier: 'destructive' });
 
     const stats = autoModeStopStats();

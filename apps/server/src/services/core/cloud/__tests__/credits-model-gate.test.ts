@@ -20,12 +20,14 @@ vi.mock('../credits-models.js', () => ({
 const runtimes = vi.hoisted(() => new Map<string, unknown>());
 vi.mock('../../runtime-registry.js', () => ({
   runtimeRegistry: {
+    getNativeSessionCwd: vi.fn(() => null),
     getDefaultType: () => 'claude-code',
     has: (type: string) => runtimes.has(type),
     get: (type: string) => runtimes.get(type),
   },
 }));
 
+import { judgeCreditsModel } from '../credits-models.js';
 import {
   sessionRunsOnCredits,
   agentRunsOnCredits,
@@ -73,6 +75,34 @@ describe('agentRunsOnCredits', () => {
 });
 
 describe('judging a model on credits', () => {
+  it.each(['openai-chat-completions', 'openai-responses'] as const)(
+    'judges the frozen %s protocol',
+    async (protocol) => {
+      const runtime = {
+        getCapabilities: () => ({
+          type: 'doe',
+          credits: {
+            protocol: 'anthropic-messages',
+            scope: 'conversation',
+            supportedProtocols: [
+              'anthropic-messages',
+              'openai-chat-completions',
+              'openai-responses',
+            ],
+          },
+        }),
+        getSupportedModels: async () => [],
+        getCreditsProtocol: (id?: string) => (id === 'frozen' ? protocol : 'anthropic-messages'),
+      } as unknown as AgentRuntime;
+      await creditsModelRefusal(runtime, 'md_served', 'frozen');
+      expect(judgeCreditsModel).toHaveBeenLastCalledWith(
+        expect.objectContaining({ credits: expect.objectContaining({ protocol }) }),
+        'md_served',
+        undefined
+      );
+    }
+  );
+
   it('reads the id an alias expands to', async () => {
     expect(await resolvedModelFor(claude, 'sonnet')).toBe('md_served');
     expect(await resolvedModelFor(claude, 'md_served')).toBeUndefined();

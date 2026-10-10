@@ -340,7 +340,7 @@ describe('RuntimeItem', () => {
       expect(screen.queryByTestId('dropdown-root')).not.toBeInTheDocument();
       expect(screen.queryByRole('button')).not.toBeInTheDocument();
       expect(screen.getByTestId('tooltip-content')).toHaveTextContent(
-        'Set when the session starts. It can’t change after.'
+        'Set when the chat starts. It can’t change after.'
       );
     });
 
@@ -677,8 +677,8 @@ describe('RuntimeItem', () => {
 // DOR-1970 — which account THIS session is spending, from the composer.
 //
 // FB-13 asked for it "in the composer somewhere (even if it's just a tooltip)".
-// DOR-729 shipped `AccountMark`, but only onto session ROWS, so the chip a
-// person composes next to could not answer the question at all.
+// DOR-729 put the account only on session ROWS, so the chip a person composes
+// next to could not answer the question at all.
 // ---------------------------------------------------------------------------
 
 describe('RuntimeItem — the account this session bills to (DOR-1970)', () => {
@@ -704,7 +704,7 @@ describe('RuntimeItem — the account this session bills to (DOR-1970)', () => {
       expect(screen.getByTestId('tooltip-content')).toHaveTextContent('Account: Acme Corp')
     );
     expect(screen.getByTestId('tooltip-content')).toHaveTextContent(
-      'Set when the session starts. It can’t change after.'
+      'Set when the chat starts. It can’t change after.'
     );
   });
 

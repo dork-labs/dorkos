@@ -81,9 +81,9 @@ export function SignedInBrowserCard({ agentId, agentLabel }: SignedInBrowserCard
             {pending ? (
               <>
                 <p className="text-muted-foreground text-xs">
-                  Runs on this computer when a session starts.
+                  Runs on this computer when a chat starts.
                 </p>
-                <p className="text-muted-foreground text-xs">Each session gets its own browser.</p>
+                <p className="text-muted-foreground text-xs">Each chat gets its own browser.</p>
               </>
             ) : (
               <p className="text-muted-foreground text-xs">

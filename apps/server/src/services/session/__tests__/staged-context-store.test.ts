@@ -8,7 +8,7 @@ import {
   setStagedContextStore,
   resetStagedContextStore,
 } from '../staged-context-store.js';
-import { linkSessionId, resetSessionKeys } from '../session-key-registry.js';
+import { linkSessionId, resetSessionKeys } from '../resolution/session-key-registry.js';
 import { logger } from '../../../lib/logger.js';
 
 const SESSION = '00000000-0000-4000-8000-000000000001';

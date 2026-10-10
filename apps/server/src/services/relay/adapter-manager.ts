@@ -1502,13 +1502,6 @@ export class AdapterManager {
         onRefusedAsk: this.deps.onRefusedAsk,
         agentSessionStore: this.bindingSubsystem?.getAgentSessionStore(),
         approvalAuthorizer: (decision) => this.authorizeBridgedApproval(decision),
-        // The one map both sides of the inbound-budget thread read (DOR-791):
-        // the adapter binds a turn here, the in-session `relay_send*` tools read
-        // it back. Taken off the relay rather than constructed, so there is
-        // exactly one per process.
-        ...(this.deps.relayCore?.inboundBudgets && {
-          inboundBudgets: this.deps.relayCore.inboundBudgets,
-        }),
       },
       this.configPath,
       (type, manifest) => this.registerPluginManifest(type, manifest)

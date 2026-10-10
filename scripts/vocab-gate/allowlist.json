@@ -323,7 +323,7 @@
     {
       "path": "docs/concepts/relay.mdx",
       "terms": ["adapter", "adapters"],
-      "contains": "**Claude Code adapter**: routes messages to Claude sessions",
+      "contains": "**Claude Code adapter**: routes messages to Claude Code chats",
       "reason": "DOR-2508, third review round. Names the real built-in component. Same marker-removal reason as the entries above. `contains` pins this entry to that exact bullet."
     },
     {
@@ -496,6 +496,429 @@
       "terms": ["community"],
       "contains": "<span id=\"community-server\" />",
       "reason": "An invisible anchor, not prose: released apps link to cli-usage#community-server, and this keeps that link landing on the renamed Space server section."
+    },
+    {
+      "path": "apps/server/src/services/core/openapi-registry.ts",
+      "terms": ["session", "sessions", "conversation", "conversations"],
+      "reason": "DOR-2789. OpenAPI route descriptions for the developer API reference (/api/docs and the generated docs/api pages, which the docs scan already skips as wire naming). They describe the /api/sessions resource by its API name, which stays."
+    },
+    {
+      "path": "apps/server/src/services/session/fleet/continue-openapi.ts",
+      "terms": ["session", "sessions", "conversation", "conversations"],
+      "reason": "DOR-2789. Per-domain OpenAPI route descriptions (continue, account eligibility, projects), the same developer API reference as openapi-registry.ts. The API resource keeps its name; a sign-in \"session cookie\" there is the HTTP term."
+    },
+    {
+      "path": "apps/server/src/services/core/usage/account-eligibility-openapi.ts",
+      "terms": ["session", "sessions", "conversation", "conversations"],
+      "reason": "DOR-2789. Per-domain OpenAPI route descriptions (continue, account eligibility, projects), the same developer API reference as openapi-registry.ts. The API resource keeps its name; a sign-in \"session cookie\" there is the HTTP term."
+    },
+    {
+      "path": "apps/server/src/services/projects/projects-openapi.ts",
+      "terms": ["session", "sessions", "conversation", "conversations"],
+      "reason": "DOR-2789. Per-domain OpenAPI route descriptions (continue, account eligibility, projects), the same developer API reference as openapi-registry.ts. The API resource keeps its name; a sign-in \"session cookie\" there is the HTTP term."
+    },
+    {
+      "path": "apps/server/src/services/core/mcp-resources/session-resources.ts",
+      "terms": ["session", "sessions", "conversation", "conversations"],
+      "reason": "DOR-2789. MCP resource titles and descriptions, read by agents and MCP clients through the external /mcp server, never rendered in the app. The resource URIs are dorkos://sessions/…, which stay."
+    },
+    {
+      "path": "apps/server/src/services/runtimes/test-mode/",
+      "terms": ["session", "sessions", "conversation", "conversations"],
+      "reason": "DOR-2789. The scripted test-mode runtime that only browser tests run; its scenario text is a fixture, not product copy."
+    },
+    {
+      "path": "apps/site/src/app/(marketing)/test/",
+      "terms": ["session", "sessions", "conversation", "conversations"],
+      "reason": "DOR-2789. The design lab's hero variants and storyboards: sample screens with placeholder transcripts, kept for comparison and not linked from the site."
+    },
+    {
+      "path": "apps/site/src/app/(public)/cookies/page.tsx",
+      "terms": ["session"],
+      "contains": "If you sign in to a DorkOS account, we set a session cookie",
+      "reason": "DOR-2789. \"Session cookie\" is the legal and technical name of the cookie category this policy discloses, and the sentence explains its lifetime. Rewording it would make the cookie notice less precise."
+    },
+    {
+      "path": "apps/site/src/layers/features/marketing/lib/comparisons.ts",
+      "terms": ["conversation"],
+      "contains": "Cursor runs up to eight agents at once, each on its own copy",
+      "reason": "DOR-2789. Compare pages describe other products in their own terms (Devin's, Claude Squad's, Droid's, Claude Code's own \"sessions\", a browser's signed-in sessions, a competitor's \"conversation\"). Renaming another product's feature would misquote it. Every DorkOS-sense use in this file says chat; `contains` pins each competitor string."
+    },
+    {
+      "path": "apps/site/src/layers/features/marketing/lib/comparisons.ts",
+      "terms": ["conversation"],
+      "contains": "This is real teamwork rather than parallel lanes, and each w",
+      "reason": "DOR-2789. Compare pages describe other products in their own terms (Devin's, Claude Squad's, Droid's, Claude Code's own \"sessions\", a browser's signed-in sessions, a competitor's \"conversation\"). Renaming another product's feature would misquote it. Every DorkOS-sense use in this file says chat; `contains` pins each competitor string."
+    },
+    {
+      "path": "apps/site/src/layers/features/marketing/lib/comparisons.ts",
+      "terms": ["sessions"],
+      "contains": "Cognition has moved a good way toward your machine: a comman",
+      "reason": "DOR-2789. Compare pages describe other products in their own terms (Devin's, Claude Squad's, Droid's, Claude Code's own \"sessions\", a browser's signed-in sessions, a competitor's \"conversation\"). Renaming another product's feature would misquote it. Every DorkOS-sense use in this file says chat; `contains` pins each competitor string."
+    },
+    {
+      "path": "apps/site/src/layers/features/marketing/lib/comparisons.ts",
+      "terms": ["sessions"],
+      "contains": "In its desktop editor, yes: it can host five other agents be",
+      "reason": "DOR-2789. Compare pages describe other products in their own terms (Devin's, Claude Squad's, Droid's, Claude Code's own \"sessions\", a browser's signed-in sessions, a competitor's \"conversation\"). Renaming another product's feature would misquote it. Every DorkOS-sense use in this file says chat; `contains` pins each competitor string."
+    },
+    {
+      "path": "apps/site/src/layers/features/marketing/lib/comparisons.ts",
+      "terms": ["session"],
+      "contains": "There is no per-agent wiring here, and that is the point: yo",
+      "reason": "DOR-2789. Compare pages describe other products in their own terms (Devin's, Claude Squad's, Droid's, Claude Code's own \"sessions\", a browser's signed-in sessions, a competitor's \"conversation\"). Renaming another product's feature would misquote it. Every DorkOS-sense use in this file says chat; `contains` pins each competitor string."
+    },
+    {
+      "path": "apps/site/src/layers/features/marketing/lib/comparisons.ts",
+      "terms": ["sessions"],
+      "contains": "The background mode is easy to mistake for scheduling. It wa",
+      "reason": "DOR-2789. Compare pages describe other products in their own terms (Devin's, Claude Squad's, Droid's, Claude Code's own \"sessions\", a browser's signed-in sessions, a competitor's \"conversation\"). Renaming another product's feature would misquote it. Every DorkOS-sense use in this file says chat; `contains` pins each competitor string."
+    },
+    {
+      "path": "apps/site/src/layers/features/marketing/lib/comparisons.ts",
+      "terms": ["session"],
+      "contains": "Not reliably. A Windows build exists, but the project’s own",
+      "reason": "DOR-2789. Compare pages describe other products in their own terms (Devin's, Claude Squad's, Droid's, Claude Code's own \"sessions\", a browser's signed-in sessions, a competitor's \"conversation\"). Renaming another product's feature would misquote it. Every DorkOS-sense use in this file says chat; `contains` pins each competitor string."
+    },
+    {
+      "path": "apps/site/src/layers/features/marketing/lib/comparisons.ts",
+      "terms": ["sessions"],
+      "contains": "No. It has no scheduler. Its background mode only answers pr",
+      "reason": "DOR-2789. Compare pages describe other products in their own terms (Devin's, Claude Squad's, Droid's, Claude Code's own \"sessions\", a browser's signed-in sessions, a competitor's \"conversation\"). Renaming another product's feature would misquote it. Every DorkOS-sense use in this file says chat; `contains` pins each competitor string."
+    },
+    {
+      "path": "apps/site/src/layers/features/marketing/lib/comparisons.ts",
+      "terms": ["sessions"],
+      "contains": "A way of handing over a large piece of work. You agree the p",
+      "reason": "DOR-2789. Compare pages describe other products in their own terms (Devin's, Claude Squad's, Droid's, Claude Code's own \"sessions\", a browser's signed-in sessions, a competitor's \"conversation\"). Renaming another product's feature would misquote it. Every DorkOS-sense use in this file says chat; `contains` pins each competitor string."
+    },
+    {
+      "path": "apps/site/src/layers/features/marketing/lib/comparisons.ts",
+      "terms": ["session"],
+      "contains": "This is the row where someone else matches us. Claude Code a",
+      "reason": "DOR-2789. Compare pages describe other products in their own terms (Devin's, Claude Squad's, Droid's, Claude Code's own \"sessions\", a browser's signed-in sessions, a competitor's \"conversation\"). Renaming another product's feature would misquote it. Every DorkOS-sense use in this file says chat; `contains` pins each competitor string."
+    },
+    {
+      "path": "apps/site/src/layers/features/marketing/lib/comparisons.ts",
+      "terms": ["session"],
+      "contains": "Their documentation is admirably exact, and worth repeating",
+      "reason": "DOR-2789. Compare pages describe other products in their own terms (Devin's, Claude Squad's, Droid's, Claude Code's own \"sessions\", a browser's signed-in sessions, a competitor's \"conversation\"). Renaming another product's feature would misquote it. Every DorkOS-sense use in this file says chat; `contains` pins each competitor string."
+    },
+    {
+      "path": "apps/site/src/layers/features/marketing/lib/comparisons.ts",
+      "terms": ["session"],
+      "contains": "An open source agent harness from DeepSeek, started with one",
+      "reason": "DOR-2789. Compare pages describe other products in their own terms (Devin's, Claude Squad's, Droid's, Claude Code's own \"sessions\", a browser's signed-in sessions, a competitor's \"conversation\"). Renaming another product's feature would misquote it. Every DorkOS-sense use in this file says chat; `contains` pins each competitor string."
+    },
+    {
+      "path": "apps/site/src/layers/features/marketing/lib/comparisons.ts",
+      "terms": ["sessions"],
+      "contains": "Anthropic gives you plenty of choice inside Claude Code, and",
+      "reason": "DOR-2789. Compare pages describe other products in their own terms (Devin's, Claude Squad's, Droid's, Claude Code's own \"sessions\", a browser's signed-in sessions, a competitor's \"conversation\"). Renaming another product's feature would misquote it. Every DorkOS-sense use in this file says chat; `contains` pins each competitor string."
+    },
+    {
+      "path": "apps/site/src/layers/features/marketing/lib/comparisons.ts",
+      "terms": ["session", "sessions"],
+      "contains": "A real strength, with the caveats Anthropic prints itself: t",
+      "reason": "DOR-2789. Compare pages describe other products in their own terms (Devin's, Claude Squad's, Droid's, Claude Code's own \"sessions\", a browser's signed-in sessions, a competitor's \"conversation\"). Renaming another product's feature would misquote it. Every DorkOS-sense use in this file says chat; `contains` pins each competitor string."
+    },
+    {
+      "path": "apps/site/src/layers/features/marketing/lib/comparisons.ts",
+      "terms": ["sessions"],
+      "contains": "No, and Anthropic’s own research says so. Across roughly 400",
+      "reason": "DOR-2789. Compare pages describe other products in their own terms (Devin's, Claude Squad's, Droid's, Claude Code's own \"sessions\", a browser's signed-in sessions, a competitor's \"conversation\"). Renaming another product's feature would misquote it. Every DorkOS-sense use in this file says chat; `contains` pins each competitor string."
+    },
+    {
+      "path": "apps/site/src/layers/features/marketing/lib/comparisons.ts",
+      "terms": ["conversation", "session"],
+      "contains": "Helper agents are good at keeping a long search or a noisy b",
+      "reason": "DOR-2789. Compare pages describe other products in their own terms (Devin's, Claude Squad's, Droid's, Claude Code's own \"sessions\", a browser's signed-in sessions, a competitor's \"conversation\"). Renaming another product's feature would misquote it. Every DorkOS-sense use in this file says chat; `contains` pins each competitor string."
+    },
+    {
+      "path": "apps/site/src/layers/features/marketing/lib/comparisons.ts",
+      "terms": ["sessions"],
+      "contains": "One thing to know about the shape of it, from their own secu",
+      "reason": "DOR-2789. Compare pages describe other products in their own terms (Devin's, Claude Squad's, Droid's, Claude Code's own \"sessions\", a browser's signed-in sessions, a competitor's \"conversation\"). Renaming another product's feature would misquote it. Every DorkOS-sense use in this file says chat; `contains` pins each competitor string."
+    },
+    {
+      "path": "apps/site/src/layers/features/marketing/lib/comparisons.ts",
+      "terms": ["sessions"],
+      "contains": "This is the deepest difference, and neither answer is wrong:",
+      "reason": "DOR-2789. Compare pages describe other products in their own terms (Devin's, Claude Squad's, Droid's, Claude Code's own \"sessions\", a browser's signed-in sessions, a competitor's \"conversation\"). Renaming another product's feature would misquote it. Every DorkOS-sense use in this file says chat; `contains` pins each competitor string."
+    },
+    {
+      "path": "apps/server/src/routes/connector-execution.ts",
+      "terms": ["session"],
+      "contains": "Run this service call with an API key outside an active agen",
+      "reason": "DOR-2789. The refusal an agent gets when it calls the API-key-only service route from inside its own run; read by the calling agent, not shown in the app. `contains` pins the one string."
+    },
+    {
+      "path": "apps/server/src/routes/marketplace/context.ts",
+      "terms": ["sessions"],
+      "contains": "it adds an agent whose sessions run what the package brings.",
+      "reason": "DOR-2789. The requires_confirmation message the marketplace install route returns to the calling agent, telling it to resend with the token once a person approves; not shown in the app. `contains` pins the one string."
+    },
+    {
+      "path": "apps/server/src/routes/marketplace/context.ts",
+      "terms": ["session"],
+      "contains": "it runs things on its own in every session, or replaces a pa",
+      "reason": "DOR-2789. The requires_confirmation message the marketplace install route returns to the calling agent, telling it to resend with the token once a person approves; not shown in the app. `contains` pins the one string."
+    },
+    {
+      "path": "apps/server/src/services/connectors/execution/execution-capabilities.ts",
+      "terms": ["session"],
+      "contains": "Check one service request created by this exact agent sessio",
+      "reason": "DOR-2789. Text only an agent reads (an MCP tool description or tool result), which the ticket leaves out of scope; a person never sees it. `contains` pins this one string, so a person-facing title in the same file is still checked."
+    },
+    {
+      "path": "apps/server/src/services/core/operator/operator-capabilities.ts",
+      "terms": ["session"],
+      "contains": "its most-recent session, newest first — the same per-agent l",
+      "reason": "DOR-2789. Text only an agent reads (an MCP tool description or tool result), which the ticket leaves out of scope; a person never sees it. `contains` pins this one string, so a person-facing title in the same file is still checked."
+    },
+    {
+      "path": "apps/server/src/services/core/operator/operator-capabilities.ts",
+      "terms": ["session"],
+      "contains": "describe what happened in words rather than pasting logs, pa",
+      "reason": "DOR-2789. Text only an agent reads (an MCP tool description or tool result), which the ticket leaves out of scope; a person never sees it. `contains` pins this one string, so a person-facing title in the same file is still checked."
+    },
+    {
+      "path": "apps/server/src/services/memory/memory-capabilities.ts",
+      "terms": ["session", "sessions"],
+      "contains": "sessions know it too — you are one session of yourself, and",
+      "reason": "DOR-2789. Text only an agent reads (an MCP tool description or tool result), which the ticket leaves out of scope; a person never sees it. `contains` pins this one string, so a person-facing title in the same file is still checked."
+    },
+    {
+      "path": "apps/server/src/services/memory/memory-capabilities.ts",
+      "terms": ["conversations"],
+      "contains": "but not conversations. Use `add` for something new, `replace",
+      "reason": "DOR-2789. Text only an agent reads (an MCP tool description or tool result), which the ticket leaves out of scope; a person never sees it. `contains` pins this one string, so a person-facing title in the same file is still checked."
+    },
+    {
+      "path": "apps/server/src/services/memory/memory-capabilities.ts",
+      "terms": ["conversation"],
+      "contains": "small on purpose, and it can come up in ANY conversation you",
+      "reason": "DOR-2789. Text only an agent reads (an MCP tool description or tool result), which the ticket leaves out of scope; a person never sees it. `contains` pins this one string, so a person-facing title in the same file is still checked."
+    },
+    {
+      "path": "apps/server/src/services/mesh/mcp-capabilities.ts",
+      "terms": ["conversation"],
+      "contains": "restart, a server enabled mid-conversation is live on the ne",
+      "reason": "DOR-2789. Text only an agent reads (an MCP tool description or tool result), which the ticket leaves out of scope; a person never sees it. `contains` pins this one string, so a person-facing title in the same file is still checked."
+    },
+    {
+      "path": "apps/server/src/services/mesh/mcp-signin-capabilities.ts",
+      "terms": ["conversation"],
+      "contains": "Begin signing in to an OAuth-protected managed server. In a",
+      "reason": "DOR-2789. Text only an agent reads (an MCP tool description or tool result), which the ticket leaves out of scope; a person never sees it. `contains` pins this one string, so a person-facing title in the same file is still checked."
+    },
+    {
+      "path": "apps/server/src/services/rooms/room-capabilities.ts",
+      "terms": ["conversation"],
+      "contains": "a long conversation — the room log is kept whole, so it outl",
+      "reason": "DOR-2789. Text only an agent reads (an MCP tool description or tool result), which the ticket leaves out of scope; a person never sees it. `contains` pins this one string, so a person-facing title in the same file is still checked."
+    },
+    {
+      "path": "apps/server/src/services/rooms/room-capabilities.ts",
+      "terms": ["conversation"],
+      "contains": "instead for the recent end of a conversation.",
+      "reason": "DOR-2789. Text only an agent reads (an MCP tool description or tool result), which the ticket leaves out of scope; a person never sees it. `contains` pins this one string, so a person-facing title in the same file is still checked."
+    },
+    {
+      "path": "apps/server/src/services/rooms/room-capabilities.ts",
+      "terms": ["sessions"],
+      "contains": "It does not search your own past sessions — only rooms.",
+      "reason": "DOR-2789. Text only an agent reads (an MCP tool description or tool result), which the ticket leaves out of scope; a person never sees it. `contains` pins this one string, so a person-facing title in the same file is still checked."
+    },
+    {
+      "path": "apps/server/src/services/rooms/room-capabilities.ts",
+      "terms": ["conversation"],
+      "contains": "and asking for one that already exists RETURNS that conversa",
+      "reason": "DOR-2789. Text only an agent reads (an MCP tool description or tool result), which the ticket leaves out of scope; a person never sees it. `contains` pins this one string, so a person-facing title in the same file is still checked."
+    },
+    {
+      "path": "apps/server/src/services/rooms/room-capabilities.ts",
+      "terms": ["conversation"],
+      "contains": "Use it when somebody is needed in a conversation that is alr",
+      "reason": "DOR-2789. Text only an agent reads (an MCP tool description or tool result), which the ticket leaves out of scope; a person never sees it. `contains` pins this one string, so a person-facing title in the same file is still checked."
+    },
+    {
+      "path": "apps/server/src/services/rooms/room-capabilities.ts",
+      "terms": ["conversation"],
+      "contains": "somewhere: taking somebody out of a conversation is a decisi",
+      "reason": "DOR-2789. Text only an agent reads (an MCP tool description or tool result), which the ticket leaves out of scope; a person never sees it. `contains` pins this one string, so a person-facing title in the same file is still checked."
+    },
+    {
+      "path": "apps/server/src/services/rooms/room-capabilities.ts",
+      "terms": ["conversation"],
+      "contains": "word reads as a colleague vanishing mid-conversation.",
+      "reason": "DOR-2789. Text only an agent reads (an MCP tool description or tool result), which the ticket leaves out of scope; a person never sees it. `contains` pins this one string, so a person-facing title in the same file is still checked."
+    },
+    {
+      "path": "apps/server/src/services/session/agent-compaction/agent-compaction-service.ts",
+      "terms": ["conversation"],
+      "contains": "Scheduled. This conversation will be summarized after this t",
+      "reason": "DOR-2789. Text only an agent reads (an MCP tool description or tool result), which the ticket leaves out of scope; a person never sees it. `contains` pins this one string, so a person-facing title in the same file is still checked."
+    },
+    {
+      "path": "apps/server/src/services/session/agent-compaction/compaction-capabilities.ts",
+      "terms": ["conversation"],
+      "contains": "Ask for THIS conversation to be summarized so it has room ag",
+      "reason": "DOR-2789. Text only an agent reads (an MCP tool description or tool result), which the ticket leaves out of scope; a person never sees it. `contains` pins this one string, so a person-facing title in the same file is still checked."
+    },
+    {
+      "path": "apps/server/src/services/session/agent-compaction/compaction-capabilities.ts",
+      "terms": ["session"],
+      "contains": "good, so FIRST save what matters to your memory: open work,",
+      "reason": "DOR-2789. Text only an agent reads (an MCP tool description or tool result), which the ticket leaves out of scope; a person never sees it. `contains` pins this one string, so a person-facing title in the same file is still checked."
+    },
+    {
+      "path": "apps/server/src/services/session/agent-compaction/compaction-capabilities.ts",
+      "terms": ["conversation"],
+      "contains": "conversation only, at most once an hour; a second call while",
+      "reason": "DOR-2789. Text only an agent reads (an MCP tool description or tool result), which the ticket leaves out of scope; a person never sees it. `contains` pins this one string, so a person-facing title in the same file is still checked."
+    },
+    {
+      "path": "apps/server/src/services/session/browser-seat/devtools-reads.ts",
+      "terms": ["session"],
+      "contains": "These tools read the console/network/screenshot the current",
+      "reason": "DOR-2789. Text only an agent reads (an MCP tool description or tool result), which the ticket leaves out of scope; a person never sees it. `contains` pins this one string, so a person-facing title in the same file is still checked."
+    },
+    {
+      "path": "apps/server/src/services/session/browser-seat/devtools-reads.ts",
+      "terms": ["session"],
+      "contains": "preview. The current surface has no session attached, so the",
+      "reason": "DOR-2789. Text only an agent reads (an MCP tool description or tool result), which the ticket leaves out of scope; a person never sees it. `contains` pins this one string, so a person-facing title in the same file is still checked."
+    },
+    {
+      "path": "apps/server/src/services/session/browser-seat/ui-control.ts",
+      "terms": ["session"],
+      "contains": "These tools drive and read a live DorkOS window bound to a s",
+      "reason": "DOR-2789. Text only an agent reads (an MCP tool description or tool result), which the ticket leaves out of scope; a person never sees it. `contains` pins this one string, so a person-facing title in the same file is still checked."
+    },
+    {
+      "path": "apps/server/src/services/session/browser-seat/ui-control.ts",
+      "terms": ["session"],
+      "contains": "The current surface has no session attached, so there is no",
+      "reason": "DOR-2789. Text only an agent reads (an MCP tool description or tool result), which the ticket leaves out of scope; a person never sees it. `contains` pins this one string, so a person-facing title in the same file is still checked."
+    },
+    {
+      "path": "docs/glossary.mdx",
+      "terms": ["sessions"],
+      "contains": "Older versions of DorkOS called these sessions.",
+      "reason": "DOR-2789. The Chat glossary entry's one line naming the retired word, so a reader who knows the old name can find the new one."
+    },
+    {
+      "path": "docs/contributing/architecture.mdx",
+      "terms": ["sessions"],
+      "contains": "'sessions.ts': {",
+      "reason": "DOR-2789. Source file name (apps/server/src/routes/sessions.ts) used as a TypeTable key; renaming it would point at a file that does not exist."
+    },
+    {
+      "path": "docs/contributing/architecture.mdx",
+      "terms": ["sessions"],
+      "contains": "'sessions/transcript-reader.ts': {",
+      "reason": "DOR-2789. Source file path used as a TypeTable key; a code path, not prose."
+    },
+    {
+      "path": "docs/contributing/architecture.mdx",
+      "terms": ["session"],
+      "contains": "'session/session-list-broadcaster.ts': {",
+      "reason": "DOR-2789. Source file path (services/session/session-list-broadcaster.ts) used as a TypeTable key; a code path, not prose."
+    },
+    {
+      "path": "docs/contributing/testing.mdx",
+      "terms": ["session"],
+      "contains": "<Folder name=\"services/session\" defaultOpen>",
+      "reason": "DOR-2789. Real directory name in a file-tree component; a code path, not prose."
+    },
+    {
+      "path": "docs/contributing/testing.mdx",
+      "terms": ["session"],
+      "contains": "<File name=\"session-list-broadcaster.test.ts\" />",
+      "reason": "DOR-2789. Real test file name in a file-tree component; a code path, not prose."
+    },
+    {
+      "path": "docs/integrations/extensions.mdx",
+      "terms": ["session"],
+      "contains": "'session.started': {",
+      "reason": "DOR-2789. Wire event name an extension subscribes to (api.events), used as a TypeTable key; renaming it would document an event that does not exist."
+    },
+    {
+      "path": "docs/integrations/extensions.mdx",
+      "terms": ["session"],
+      "contains": "kind: \"session.started\"",
+      "reason": "DOR-2789. TypeScript type of the session.started event payload; code, not prose."
+    },
+    {
+      "path": "docs/integrations/extensions.mdx",
+      "terms": ["session"],
+      "contains": "'session.ended': {",
+      "reason": "DOR-2789. Wire event name an extension subscribes to, used as a TypeTable key."
+    },
+    {
+      "path": "docs/integrations/extensions.mdx",
+      "terms": ["session"],
+      "contains": "kind: \"session.ended\"",
+      "reason": "DOR-2789. TypeScript type of the session.ended event payload; code, not prose."
+    },
+    {
+      "path": "docs/integrations/extensions.mdx",
+      "terms": ["session"],
+      "contains": "'session.switched': {",
+      "reason": "DOR-2789. Wire event name an extension subscribes to, used as a TypeTable key (appears twice in the file)."
+    },
+    {
+      "path": "docs/integrations/extensions.mdx",
+      "terms": ["session"],
+      "contains": "kind: \"session.switched\"",
+      "reason": "DOR-2789. TypeScript type of the session.switched event payload; code, not prose."
+    },
+    {
+      "path": "docs/integrations/extensions.mdx",
+      "terms": ["session"],
+      "contains": "'session.started / session.ended': {",
+      "reason": "DOR-2789. Two wire event names used together as a TypeTable key."
+    },
+    {
+      "path": "docs/getting-started/configuration.mdx",
+      "terms": ["session", "sessions", "conversation", "conversations"],
+      "reason": "TEMPORARY, DOR-2789: open PR #2660, #2677 and #2686 also rewrites this page, so its chat wording waits for that to land. Sweep the page and remove this entry then."
+    },
+    {
+      "path": "docs/guides/action-approvals.mdx",
+      "terms": ["session", "sessions", "conversation", "conversations"],
+      "reason": "TEMPORARY, DOR-2789: open PR #2677 also rewrites this page, so its chat wording waits for that to land. Sweep the page and remove this entry then."
+    },
+    {
+      "path": "docs/guides/agent-browser.mdx",
+      "terms": ["session", "sessions", "conversation", "conversations"],
+      "reason": "TEMPORARY, DOR-2789: open PR #2686 also rewrites this page, so its chat wording waits for that to land. Sweep the page and remove this entry then."
+    },
+    {
+      "path": "docs/guides/cli-usage.mdx",
+      "terms": ["session", "sessions", "conversation", "conversations"],
+      "reason": "TEMPORARY, DOR-2789: open PR #2677 also rewrites this page, so its chat wording waits for that to land. Sweep the page and remove this entry then."
+    },
+    {
+      "path": "docs/guides/permissions.mdx",
+      "terms": ["session", "sessions", "conversation", "conversations"],
+      "reason": "TEMPORARY, DOR-2789: open PR #2677 also rewrites this page, so its chat wording waits for that to land. Sweep the page and remove this entry then."
+    },
+    {
+      "path": "docs/guides/tool-approval.mdx",
+      "terms": ["session", "sessions", "conversation", "conversations"],
+      "reason": "TEMPORARY, DOR-2789: open PR #2677 also rewrites this page, so its chat wording waits for that to land. Sweep the page and remove this entry then."
+    },
+    {
+      "path": "docs/integrations/mcp-server.mdx",
+      "terms": ["session", "sessions", "conversation", "conversations"],
+      "reason": "TEMPORARY, DOR-2789: open PR #2673 also rewrites this page, so its chat wording waits for that to land. Sweep the page and remove this entry then."
+    },
+    {
+      "path": "apps/site/src/app/(public)/privacy/page.tsx",
+      "terms": ["session", "sessions", "conversation", "conversations"],
+      "reason": "DOR-2789. The privacy policy is a legal page and is not reworded in a vocabulary sweep. Its uses are legal and analytics terms (a sign-in session record, \"session recording\" in analytics) and data the installation stores, each worded for the policy rather than the app."
     }
   ]
 }

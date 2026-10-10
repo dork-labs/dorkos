@@ -50,7 +50,7 @@ export const FLOW_FLEET_SETTINGS_TAB_ID = 'flow:fleet';
  * The runtimes that keep a usage ledger, as the slugs of their ledger folders
  * (`<dorkHome>/runtimes/<runtime>/usage/`).
  */
-export const LEDGER_RUNTIMES = ['claude-code', 'codex', 'opencode'] as const;
+export const LEDGER_RUNTIMES = ['claude-code', 'codex', 'opencode', 'doe'] as const;
 
 /** Inferred type for one member of {@link LEDGER_RUNTIMES}. */
 export type LedgerRuntime = (typeof LEDGER_RUNTIMES)[number];

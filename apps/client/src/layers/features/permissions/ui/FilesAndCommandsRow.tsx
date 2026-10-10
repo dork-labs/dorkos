@@ -6,11 +6,7 @@ import {
   type PermissionPreset,
   type PermissionsResponse,
 } from '@dorkos/shared/permissions';
-import {
-  isAutonomyAckRefusal,
-  useAffectedAgentCount,
-  useSetPermission,
-} from '@/layers/entities/permissions';
+import { useAffectedAgentCount, useSetPermission } from '@/layers/entities/permissions';
 import {
   Button,
   CANONICAL_TRUST_STOPS,
@@ -24,12 +20,10 @@ import {
   TrustModeIcon,
   stopLabel,
 } from '@/layers/shared/ui';
-import { AutonomyConfirmDialog } from '@/layers/features/status';
 import { PRESET_LABEL, filesSourceText } from '../lib/permission-copy';
 import { filesWhy, lastChangeWhy } from '../lib/permission-why';
 import { PermissionWhy } from './PermissionWhy';
 import { reportPermissionFailure } from '../lib/report-failure';
-import { useAutonomyConsent } from '../model/use-autonomy-consent';
 
 /** Props for {@link AgentFilesAndCommandsRow}. */
 export interface AgentFilesAndCommandsRowProps {
@@ -45,9 +39,8 @@ export interface AgentFilesAndCommandsRowProps {
  * One agent's Files & commands row: where its sessions stop for you when they
  * edit files and run commands (spec `agent-permissions` D16). Its own stop beats
  * the runtime's and the one everyone has, for every session, scheduled run and
- * room turn it takes. Reset puts it back on the inherited stop. Moving it to
- * Full autonomy asks first when nothing is on file, and sends the yes with the
- * change.
+ * room turn it takes. Reset puts it back on the inherited stop. Every stop,
+ * Full autonomy included, is written straight through.
  *
  * @param props - See {@link AgentFilesAndCommandsRowProps}.
  */
@@ -57,29 +50,15 @@ export function AgentFilesAndCommandsRow({
   files,
 }: AgentFilesAndCommandsRowProps) {
   const write = useSetPermission({ kind: 'agent', agentId });
-  const consent = useAutonomyConsent();
   const own = files.source === 'agent';
   const inherited = files.inherited.stop;
   const shown: PermissionStop | null = files.stop;
 
-  const save = (next: PermissionStop | null) => {
-    const once = (acknowledgeAutonomy?: true) =>
-      write.mutate(
-        {
-          kind: 'patch',
-          filesAndCommands: next,
-          surface: 'agent-page',
-          ...(acknowledgeAutonomy ? { acknowledgeAutonomy } : {}),
-        },
-        {
-          onError: (err) => {
-            if (isAutonomyAckRefusal(err)) consent.ask(once);
-            else reportPermissionFailure(err);
-          },
-        }
-      );
-    consent.run(next === 'autonomy', once);
-  };
+  const save = (next: PermissionStop | null) =>
+    write.mutate(
+      { kind: 'patch', filesAndCommands: next, surface: 'agent-page' },
+      { onError: reportPermissionFailure }
+    );
 
   // The same words the area rows use; the source is added only when it is not
   // simply the setting everyone has.
@@ -104,7 +83,7 @@ export function AgentFilesAndCommandsRow({
             <span className="text-sm font-medium">Files &amp; commands</span>
           </div>
           <p className="text-muted-foreground text-sm">
-            Editing files and running commands in this agent’s sessions
+            Editing files and running commands in this agent’s chats
           </p>
           <p className="text-muted-foreground text-xs">
             <span>{inheritedText}</span> ·{' '}
@@ -150,13 +129,6 @@ export function AgentFilesAndCommandsRow({
         descriptor={CANONICAL_TRUST_STOPS.find((mode) => mode.stop === shown)}
         className="pb-3"
       />
-      <AutonomyConfirmDialog
-        descriptor={consent.descriptor}
-        canRemember={false}
-        consentNote="This agent’s new sessions start here. DorkOS remembers you’ve read this."
-        onCancel={consent.cancel}
-        onConfirm={consent.confirm}
-      />
     </div>
   );
 }
@@ -169,8 +141,8 @@ export interface DefaultFilesAndCommandsRowProps {
   preset: PermissionPreset | null;
   /**
    * Change the stop everyone has. The caller owns the write: it is the
-   * `runtimes.defaultTrustStop` setting, and Settings has one consent-gated
-   * path for it.
+   * `runtimes.defaultTrustStop` setting, and Settings has one write path
+   * for it.
    */
   onChange: (stop: PermissionStop) => void;
   /** Disable the control while a write is in flight. */

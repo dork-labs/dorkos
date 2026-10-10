@@ -11,7 +11,7 @@
 import { describe, it, expect } from 'vitest';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 import type { Session } from '@dorkos/shared/types';
-import { countSessionsPerDay } from '../session-daily-counts.js';
+import { countSessionsPerDay } from '../catalog/session-daily-counts.js';
 
 /** Local-midnight ISO timestamp `daysAgo` days before `now`. */
 function daysBefore(now: Date, daysAgo: number, hour = 12): string {

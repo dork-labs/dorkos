@@ -20,7 +20,8 @@ const mockNavigate = vi.fn();
 // when something else navigated while its lookup was out (DOR-928). It reads
 // `pathname` and `search`, so the shape has to be the router's, not a stand-in.
 const mockLocation = { pathname: '/session', search: {} };
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useNavigate: () => mockNavigate,
   useRouter: () => ({
     state: {
@@ -255,7 +256,11 @@ describe('ShapeSwitcherDialog', () => {
       expect(mockNavigate).toHaveBeenCalledWith(
         expect.objectContaining({
           to: '/session',
-          search: expect.objectContaining({ dir: '/home/kai/linear' }),
+          search: expect.objectContaining({
+            launchRef: 'test-location',
+            draft: '1',
+            dir: undefined,
+          }),
         })
       )
     );
@@ -276,7 +281,11 @@ describe('ShapeSwitcherDialog', () => {
       expect(mockNavigate).toHaveBeenCalledWith(
         expect.objectContaining({
           to: '/session',
-          search: expect.objectContaining({ dir: '/home/kai/linear' }),
+          search: expect.objectContaining({
+            launchRef: 'test-location',
+            draft: '1',
+            dir: undefined,
+          }),
         })
       )
     );

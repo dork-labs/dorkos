@@ -30,6 +30,12 @@ const PROFILE_PICKS: Partial<Record<ProfilePickId, ProfilePickDefinition>> = {
     title: 'Runs on',
     component: lazy(() => import('./RunsOnPopover').then((m) => ({ default: m.RunsOnPopover }))),
   },
+  'reports-to': {
+    title: 'Reports to',
+    component: lazy(() =>
+      import('./ReportsToPopover').then((m) => ({ default: m.ReportsToPopover }))
+    ),
+  },
   personality: {
     title: 'Personality',
     component: lazy(() =>

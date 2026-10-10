@@ -98,18 +98,16 @@ describe('LocalSessionAttachmentStore', () => {
         'image/svg+xml; a=<img src=https://evil.example/x>',
         Buffer.from('<svg/>')
       )
-    ).rejects.toThrow(
-      'A session cannot store image/svg+xml — only PNG, JPEG, GIF and WebP images.'
-    );
+    ).rejects.toThrow('A chat cannot store image/svg+xml — only PNG, JPEG, GIF and WebP images.');
 
     // A type not even shaped like one is named, not echoed.
     await expect(store.put(SESSION, 'abc123', '<script>alert(1)</script>', PNG)).rejects.toThrow(
-      'A session cannot store an unnamed image format — only PNG, JPEG, GIF and WebP images.'
+      'A chat cannot store an unnamed image format — only PNG, JPEG, GIF and WebP images.'
     );
 
     // Nothing at all still reads as a sentence.
     await expect(store.put(SESSION, 'abc123', '', PNG)).rejects.toThrow(
-      'A session cannot store an untyped file — only PNG, JPEG, GIF and WebP images.'
+      'A chat cannot store an untyped file — only PNG, JPEG, GIF and WebP images.'
     );
   });
 

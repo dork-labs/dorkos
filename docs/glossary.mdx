@@ -9,7 +9,7 @@ DorkOS docs reuse a handful of terms on purpose. This page defines each one once
 
 ## Agent
 
-An agent is one of the named AI workers on your team: an AI co-worker you have given a face (a name, color, and emoji) and pointed at one of your projects. You talk to it in a room or in a session. Each agent runs on a runtime (Claude Code, Codex, or OpenCode), but you think in agents, not engines. See [What Is DorkOS?](/docs/getting-started/what-is-dorkos).
+An agent is one of the named AI workers on your team: an AI co-worker you have given a face (a name, color, and emoji) and pointed at one of your projects. You talk to it in a room or in a chat. Each agent runs on a runtime (Claude Code, Codex, or OpenCode), but you think in agents, not engines. See [What Is DorkOS?](/docs/getting-started/what-is-dorkos).
 
 ## Agent Identity
 
@@ -21,11 +21,17 @@ A boundary is the folder, and everything inside it, that DorkOS is allowed to re
 
 ## Canvas
 
-The canvas is the space beside your chat where an agent opens images, PDFs, files, and other documents instead of burying them in the conversation. It can hold several documents at once, each in its own tab. See the [Workbench guide](/docs/guides/workbench).
+The canvas is the space beside your chat where an agent opens images, PDFs, files, and other documents instead of burying them in the chat. It can hold several documents at once, each in its own tab. See the [Workbench guide](/docs/guides/workbench).
 
 ## Channel
 
-A channel is a named, topic-based room that can hold any number of agents and stays open until you archive it. Create one from the sidebar's Channels section. This is a DorkOS conversation, not a Telegram or Slack channel: when we mean one of those, we always say the platform's name. See [Rooms](/docs/concepts/rooms).
+A channel is a named, topic-based room that can hold any number of agents and stays open until you archive it. Create one from the sidebar's Channels section. This is a DorkOS room, not a Telegram or Slack channel: when we mean one of those, we always say the platform's name. See [Rooms](/docs/concepts/rooms).
+
+## Chat
+
+A chat is one back-and-forth with one agent: every message, file change, and reply belongs to it. It survives a page refresh and a second window, so you can pick it back up wherever you left off. See [Chats](/docs/concepts/sessions).
+
+Older versions of DorkOS called these sessions.
 
 ## Connection
 
@@ -33,7 +39,7 @@ A connection is a link between your agents and the outside world, set up on the 
 
 ## Direct Message
 
-A direct message (DM) is a standing conversation with one agent, or with several at once. Unlike a session, it isn't tied to any one project folder. See [Rooms](/docs/concepts/rooms).
+A direct message (DM) is a standing thread with one agent, or with several at once. Unlike a chat, it isn't tied to any one project folder. See [Rooms](/docs/concepts/rooms).
 
 ## DorkBot
 
@@ -41,11 +47,11 @@ DorkBot is the one agent DorkOS creates for itself instead of for one of your pr
 
 ## DorkOS App
 
-The DorkOS app is the window where you chat with your agents, watch them work, and manage everything else DorkOS does. You open it in your browser after installing DorkOS with one command. The sidebar down the left holds four places: **Home**, **Team**, **Connections**, and **Marketplace**. Home has its own row of tabs across the top: **Home**, **Activity**, **Scheduled**, and **Workspaces**. The Home tab is a conversation: your **#team** channel, with anything waiting on you pinned above it. See [What Is DorkOS?](/docs/getting-started/what-is-dorkos).
+The DorkOS app is the window where you chat with your agents, watch them work, and manage everything else DorkOS does. You open it in your browser after installing DorkOS with one command. The sidebar down the left holds four places: **Home**, **Team**, **Connections**, and **Marketplace**. Home has its own row of tabs across the top: **Home**, **Activity**, **Scheduled**, and **Workspaces**. The Home tab is a room: your **#team** channel, with anything waiting on you pinned above it. See [What Is DorkOS?](/docs/getting-started/what-is-dorkos).
 
 ## Extension
 
-An extension is a bundle of code that adds custom UI or automation to DorkOS, built by anyone. It runs in your browser alongside the app and can watch session activity without ever seeing what was actually said inside a session. The mini apps your agents build for you are extensions. See [Extensions](/docs/integrations/extensions).
+An extension is a bundle of code that adds custom UI or automation to DorkOS, built by anyone. It runs in your browser alongside the app and can watch chat activity without ever seeing what was actually said inside a chat. The mini apps your agents build for you are extensions. See [Extensions](/docs/integrations/extensions).
 
 ## Generative UI
 
@@ -69,7 +75,7 @@ A mini app is a tool that lives inside DorkOS, like a dashboard or a tracker. As
 
 ## Moment
 
-A moment is a short line in your **#team** channel marking something that really happened, like "tangerines joined your team" or your first overnight run. Every one is read off a record DorkOS already keeps, so nothing in it is guessed at; each lands once and never repeats; and the room marks at most one an hour. A moment is a message in the conversation, not a separate feed. See [Rooms](/docs/concepts/rooms#moments-the-things-team-marks).
+A moment is a short line in your **#team** channel marking something that really happened, like "tangerines joined your team" or your first overnight run. Every one is read off a record DorkOS already keeps, so nothing in it is guessed at; each lands once and never repeats; and the room marks at most one an hour. A moment is a message in the room, not a separate feed. See [Rooms](/docs/concepts/rooms#moments-the-things-team-marks).
 
 ## Persona
 
@@ -81,19 +87,15 @@ Relay is DorkOS's built-in messaging layer, routing messages between your agents
 
 ## Room
 
-Room is DorkOS's umbrella term for channels and direct messages: an ongoing conversation that isn't tied to one project folder the way a session is. See [Rooms](/docs/concepts/rooms).
+Room is DorkOS's umbrella term for channels and direct messages: an ongoing place to talk that isn't tied to one project folder the way a chat is. See [Rooms](/docs/concepts/rooms).
 
 ## Runtime
 
-A runtime is the engine behind an agent and its sessions, the brain that does the thinking: Claude Code, Codex, or OpenCode. Every runtime lands in the same session list and uses the same chat and tool approvals, so switching between them doesn't change how you work. See [Runtimes](/docs/guides/runtimes).
+A runtime is the engine behind an agent and its chats, the brain that does the thinking: Claude Code, Codex, or OpenCode. Every runtime lands in the same chat list and uses the same chat and tool approvals, so switching between them doesn't change how you work. See [Runtimes](/docs/guides/runtimes).
 
 ## Scheduled Task
 
 A scheduled task is a skill that runs on a timer, like every Monday at 10am, instead of you kicking it off by hand. Any skill becomes one when you add a `schedule:` block to it. It fires on its own for as long as the DorkOS server is running, and it never fires until you approve it. See [Scheduled tasks](/docs/guides/task-scheduler).
-
-## Session
-
-A session is one conversation with one agent: every message, file change, and reply belongs to it. It survives a page refresh and a second window, so you can pick it back up wherever you left off. See [Sessions](/docs/concepts/sessions).
 
 ## Shape
 

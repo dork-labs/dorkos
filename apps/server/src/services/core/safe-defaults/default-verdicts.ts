@@ -129,12 +129,9 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'ui.composer.richText',
   // The power-door answer, both halves (spec `full-power-defaults`, D1). Records
   // of an ANSWER and nothing more: they send nothing off the machine, grant no
-  // capability, and no gate reads them. That is what separates them from
-  // `ui.autonomyAcknowledgedAt` next door, which is classified `safe` because the
-  // server's autonomy gate really does read it — a value there decides whether a
-  // 428 is raised, and a value here decides whether a modal is shown. A wipe that
-  // lands both back on `null` simply puts the question again, which is the right
-  // outcome and costs one dialog.
+  // capability, and no gate reads them. A wipe that lands both back on `null`
+  // simply puts the question again, which is the right outcome and costs one
+  // dialog.
   'ui.fullPowerDecidedAt',
   'ui.fullPowerChoice',
   // Bookkeeping for the one-shot permission upgrade sweep: which server version
@@ -165,6 +162,10 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   // tool, ends with the server's process, and costs battery, which the Sleep
   // setting says in plain words.
   'keepAwake.whileAgentsWork',
+  // How long the Activity feed keeps its rows (spec `audit-trail` §3.5). It
+  // holds no message content, moves nothing off the machine and grants
+  // nothing, and the audit log keeps every action whatever it says.
+  'activity.retentionDays',
   // When an idle agent working copy is tidied away, and how long a queued merge
   // waits its turn. Neither enforces a safety bound: the reap sweep removes
   // nothing that is dirty, unmerged, or being worked in right now — a gate that
@@ -202,6 +203,14 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'profile.displayNameSource.agentName',
   'profile.rolePromptDismissedAt',
   'profile.identityPromptDismissedAt',
+  // Zone, hours and away (spec `heartbeats` §3.5): `null` means "not told yet",
+  // Monday to Friday 9 to 5, and "here". None guards, sends or bounds anything.
+  'profile.timezone',
+  'profile.workingHours.days',
+  'profile.workingHours.start',
+  'profile.workingHours.end',
+  'profile.away.until',
+  'profile.away.note',
   'agents.defaultDirectory',
   'agents.defaultAgent',
   'workspace.enabled',
@@ -276,6 +285,8 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'runtimes.codex.defaultModel',
   'runtimes.codex.defaultEffort',
   'runtimes.opencode.enabled',
+  // Admission alone sends nothing: Doe requires an explicit inference choice.
+  'runtimes.doe.enabled',
   'runtimes.opencode.binaryPath',
   'runtimes.opencode.port',
   'runtimes.codex.enabled',
@@ -315,6 +326,7 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'runtimes.environment.inherit.claudeCode': [],
   'runtimes.environment.inherit.codex': [],
   'runtimes.environment.inherit.opencode': [],
+  'runtimes.environment.inherit.doe': [],
   'tunnel.domain': null,
   'tunnel.authtoken': null,
   'tunnel.auth': null,
@@ -351,9 +363,12 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'rooms.lateReplyCeilingMinutes': 60,
   // The engaged window's two ceilings. Both ARE bounds: they are what stops
   // `engaged` becoming `always` with extra steps, and a person can set either
-  // lower.
-  'rooms.engagedWindowMinutes': 10,
-  'rooms.engagedWindowPosts': 5,
+  // lower. Raised to 60 and 15 by DOR-2823: people expect an answer to a reply
+  // an hour later, and agents talking to each other stay at the old 10 and 5
+  // whatever these say (`AGENT_POST_WINDOW`), so the longer values only reach a
+  // person's own conversation.
+  'rooms.engagedWindowMinutes': 60,
+  'rooms.engagedWindowPosts': 15,
   // The collect window's two ceilings (room-participation spec §10.4). Both are
   // bounds on how many turns a burst of messages costs — a pause of zero and a
   // cap of one would be one turn per message — so the shipped values are the
@@ -440,6 +455,18 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'runtimes.opencode.provider': null,
   'runtimes.opencode.baseURL': null,
   'runtimes.codex.credentialRef': null,
+  // The entire inference choice starts null. Every nested slot is absent:
+  // no payer, endpoint, model, token budget or key is silently chosen.
+  'runtimes.doe.inference.source': undefined,
+  'runtimes.doe.inference.provider': undefined,
+  'runtimes.doe.inference.protocol': undefined,
+  'runtimes.doe.inference.endpoint': undefined,
+  'runtimes.doe.inference.model': undefined,
+  'runtimes.doe.inference.contextWindow': undefined,
+  'runtimes.doe.inference.maxOutputTokens': undefined,
+  'runtimes.doe.inference.credentialRef': undefined,
+  'runtimes.doe.inference.credentialEndpoint': undefined,
+
   providers: {},
   // No standing answer to "how much may a new session do without asking", so
   // every runtime keeps its own default — and no shipped runtime defaults to a
@@ -452,11 +479,7 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'runtimes.claudeCode.defaultTrustStop': null,
   'runtimes.codex.defaultTrustStop': null,
   'runtimes.opencode.defaultTrustStop': null,
-  // Nobody has been told what Full autonomy means, so DorkOS still tells them:
-  // `null` is the value that keeps the door asking. A wipe landing here is the
-  // right outcome — losing a consent record only costs one dialog, while keeping
-  // one through a reset would silence a question nobody re-answered.
-  'ui.autonomyAcknowledgedAt': null,
+  'runtimes.doe.defaultTrustStop': null,
   // No account link, so no identity leaves the machine.
   'cloud.instanceToken': null,
   'cloud.instanceName': null,

@@ -33,7 +33,7 @@ status: ideation
 - `.claude/commands/ideate.md`: Defines the expected ideation workflow and required `01-ideation.md` document structure.
 - `AGENTS.md`: Confirms repo standards, spec placement, architecture expectations, and the existing `AgentRuntime` positioning.
 - `meta/dorkos-litepaper.md`: Product-level positioning already promises pluggable runtimes and explicitly names Codex as part of the runtime landscape.
-- `plans/2026-03-06-claude-code-adapter-audit.md`: Historical audit of Claude-specific coupling. It correctly predicted that route routing, transcript storage, client assumptions, and relay internals would block true multi-runtime support.
+- `plans/archive/2026-03-06-claude-code-adapter-audit.md`: Historical audit of Claude-specific coupling. It correctly predicted that route routing, transcript storage, client assumptions, and relay internals would block true multi-runtime support.
 - `specs/agent-runtime-abstraction/02-specification.md`: Introduced `AgentRuntime` and `RuntimeRegistry`, but the current implementation still leaves default-runtime assumptions in production paths.
 - `specs/agent-runtime-review-remediation/02-specification.md`: Documents cleanup work after the abstraction refactor. Useful for understanding which seams were intentionally deferred.
 - `specs/relay-runtime-adapters/01-ideation.md`: Shows the intended shape of runtime adapters in Relay and confirms Codex was explicitly deferred as future work.

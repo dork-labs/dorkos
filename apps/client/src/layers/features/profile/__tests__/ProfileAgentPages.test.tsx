@@ -41,6 +41,14 @@ vi.mock('sonner', () => ({
   toast: Object.assign(toasts.message, { success: toasts.success, error: toasts.error }),
 }));
 
+// The Sessions page draws the shared chat list, which reads the fleet-wide
+// prompt list off the app's event stream. These cases stand up no stream; what
+// the list needs from it is which chats have a prompt waiting, and none do.
+vi.mock('@/layers/entities/attention', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/attention')>()),
+  usePendingInteractions: () => ({ interactions: [], isLoading: false, isError: false }),
+}));
+
 const byId = (id: string): TeamMember => MOCK_TEAM_ROSTER.find((member) => member.id === id)!;
 
 const SELF = byId('person-dorian');
@@ -247,7 +255,7 @@ describe('the counts a row carries', () => {
     });
 
     const row = document.querySelector('[data-profile-row="sessions"]')!;
-    await waitFor(() => expect(row.textContent).toContain('2 conversations'));
+    await waitFor(() => expect(row.textContent).toContain('2 chats'));
   });
 
   it('counts only the schedules that belong to THIS agent', async () => {
@@ -299,7 +307,7 @@ describe('the counts a row carries', () => {
     sessions.settle({ sessions: [], warnings: [] });
     tasks.settle([]);
 
-    await waitFor(() => expect(row().textContent).toContain('0 conversations'));
+    await waitFor(() => expect(row().textContent).toContain('0 chats'));
   });
 
   it('draws no Tasks row at all where the server has tasks switched off', async () => {
@@ -888,13 +896,13 @@ describe('the Sessions page', () => {
       transport: mockTransport({ listSessions: vi.fn().mockReturnValue(sessions.promise) }),
     });
 
-    await screen.findByRole('heading', { name: 'Sessions' });
-    expect(screen.queryByText(/No conversations yet/)).toBeNull();
+    await screen.findByRole('heading', { name: 'Chats' });
+    expect(screen.queryByText(/No chats with/)).toBeNull();
     expect(document.querySelector('[data-slot="skeleton"]')).not.toBeNull();
 
     sessions.settle({ sessions: [], warnings: [] });
 
-    expect(await screen.findByText(/No conversations yet/)).toBeInTheDocument();
+    expect(await screen.findByText('No chats with Warden yet.')).toBeInTheDocument();
   });
 
   it('says it could not look, rather than that there is nothing', async () => {
@@ -905,8 +913,8 @@ describe('the Sessions page', () => {
       }),
     });
 
-    expect(await screen.findByText(/Couldn’t read Warden’s conversations/)).toBeInTheDocument();
-    expect(screen.queryByText(/No conversations yet/)).toBeNull();
+    expect(await screen.findByText('Couldn’t read Warden’s chats.')).toBeInTheDocument();
+    expect(screen.queryByText(/No chats with/)).toBeNull();
   });
 });
 

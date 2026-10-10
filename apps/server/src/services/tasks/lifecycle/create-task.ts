@@ -42,7 +42,7 @@ import {
   capabilitiesForTaskRuntime,
   resolveScheduledRunPermissionMode,
 } from '../scheduled-run-power.js';
-import { readAgentExecutionDefaults } from '../../session/resolve-session-defaults.js';
+import { readAgentExecutionDefaults } from '../../session/resolution/resolve-session-defaults.js';
 import {
   packageOwnershipContext,
   packageOwnershipOf,

@@ -91,7 +91,7 @@ export const FEEDBACK_FLAG_ALLOWLIST: Readonly<Record<string, FlagType>> = {
  * is dropped rather than echoed. Keep these in sync with the config schema.
  */
 const FEEDBACK_ENUM_VALUES: Readonly<Record<string, readonly string[]>> = {
-  'runtimes.default': ['claude-code', 'codex', 'opencode'],
+  'runtimes.default': ['claude-code', 'codex', 'opencode', 'doe'],
   'logging.level': ['fatal', 'error', 'warn', 'info', 'debug', 'trace'],
   'ui.theme': ['light', 'dark', 'system'],
 };
@@ -210,6 +210,31 @@ export function gatherFeedbackReport(input: FeedbackReportInput): FeedbackReport
 }
 
 /**
+ * Replace credential-shaped substrings: well-known key prefixes (`sk-`,
+ * `ghp_`, `xoxb-` and the like), AWS-style access key ids, and `Bearer` tokens.
+ *
+ * The narrow half of {@link redactSecrets}, exported on its own for records that
+ * must keep paths, hosts and addresses readable (the audit log names the file an
+ * agent edited) but must never hold a credential. A defensive net, not a
+ * guarantee, for the same reasons {@link redactSecrets} gives.
+ *
+ * @param value - The raw string to clean
+ * @returns The string with credential-shaped substrings replaced
+ */
+export function redactCredentialTokens(value: string): string {
+  return (
+    value
+      .replace(
+        /\b(?:sk-|pk-|rk-|ghp_|gho_|ghu_|ghs_|github_pat_|glpat-|npm_|xox[baprsc]-)[A-Za-z0-9._-]+/g,
+        '[redacted]'
+      )
+      // AWS-style access key ids (AKIA/ASIA + 16 uppercase alnum).
+      .replace(/\b(?:AKIA|ASIA|AGPA|AIDA|AROA|ANPA)[0-9A-Z]{16}\b/g, '[redacted]')
+      .replace(/\bBearer\s+[A-Za-z0-9._-]+/gi, '[redacted]')
+  );
+}
+
+/**
  * Best-effort scrub of common secret, token, path, and identity shapes from a
  * string.
  *
@@ -230,17 +255,9 @@ export function gatherFeedbackReport(input: FeedbackReportInput): FeedbackReport
  */
 export function redactSecrets(value: string): string {
   return (
-    value
+    redactCredentialTokens(value)
       // Emails.
       .replace(/[^\s/@]+@[^\s/@]+\.[^\s/@]+/g, '[email]')
-      // Common credential prefixes and shapes.
-      .replace(
-        /\b(?:sk-|pk-|rk-|ghp_|gho_|ghu_|ghs_|github_pat_|glpat-|npm_|xox[baprsc]-)[A-Za-z0-9._-]+/g,
-        '[redacted]'
-      )
-      // AWS-style access key ids (AKIA/ASIA + 16 uppercase alnum).
-      .replace(/\b(?:AKIA|ASIA|AGPA|AIDA|AROA|ANPA)[0-9A-Z]{16}\b/g, '[redacted]')
-      .replace(/\bBearer\s+[A-Za-z0-9._-]+/gi, '[redacted]')
       // IPv4 and IPv6 (and MAC-shaped) addresses.
       .replace(/\b\d{1,3}(?:\.\d{1,3}){3}\b/g, '[ip]')
       .replace(/\b(?:[A-Fa-f0-9]{1,4}:){2,7}[A-Fa-f0-9]{1,4}\b/g, '[ip]')

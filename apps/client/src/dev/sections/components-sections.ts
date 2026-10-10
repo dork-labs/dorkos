@@ -1,4 +1,5 @@
 import type { PlaygroundSection } from '../playground-registry';
+import { APP_TABS_SECTIONS } from './app-tabs-sections';
 
 /**
  * Component sections from ComponentsPage.
@@ -173,13 +174,7 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
     category: 'Navigation',
     keywords: ['nav', 'sidebar', 'settings', 'panel', 'layout', 'menu', 'item'],
   },
-  {
-    id: 'apptabstrip',
-    title: 'AppTabStrip',
-    page: 'components',
-    category: 'Navigation',
-    keywords: ['tab', 'tabs', 'strip', 'window', 'titlebar', 'close', 'new tab', 'session'],
-  },
+  ...APP_TABS_SECTIONS,
   // SidebarShowcases
   {
     id: 'sidebarrow',
@@ -199,30 +194,6 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
       'kebab',
       'drag',
     ],
-  },
-  {
-    id: 'sessionrow',
-    title: 'SessionRow',
-    page: 'components',
-    category: 'Sidebar',
-    keywords: [
-      'session',
-      'row',
-      'active',
-      'permission',
-      'expand',
-      'entrance',
-      'compact',
-      'dot',
-      'variant',
-    ],
-  },
-  {
-    id: 'sessionsview',
-    title: 'SessionsView',
-    page: 'components',
-    category: 'Sidebar',
-    keywords: ['session', 'list', 'group', 'today', 'yesterday', 'empty', 'scroll'],
   },
   {
     id: 'sidebarfooterstrip',

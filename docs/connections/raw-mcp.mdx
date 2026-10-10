@@ -17,7 +17,7 @@ Use this route when you already have a remote server that speaks MCP, the standa
 
 ## What DorkOS verifies
 
-DorkOS opens the configured endpoint, performs an MCP initialization, and requests the server's tool list. It records the connection only after both steps succeed. This proves that the endpoint speaks MCP; it does not prove an authenticated user session. A timeout, changed setup, cancelled flow, or failed probe creates no connection.
+DorkOS opens the configured endpoint, performs an MCP initialization, and requests the server's tool list. It records the connection only after both steps succeed. This proves that the endpoint speaks MCP; it does not prove that you are signed in to it. A timeout, changed setup, cancelled flow, or failed probe creates no connection.
 
 The pending check is stored by DorkOS. Restarting the server does not make DorkOS guess from a URL or an in-memory handle. It resumes only the exact owner, configured route, generation, request, and unexpired private flow. DorkOS checks that authority again after the network probe before it records success.
 

@@ -451,7 +451,7 @@ describe("an agent's Files & commands row", () => {
     );
   });
 
-  it('asks before Full autonomy, and sends the yes with the change', async () => {
+  it('writes Full autonomy straight away, with no dialog and no acknowledgement', async () => {
     const { transport, wrapper } = wrap();
     vi.mocked(transport.getAgentPermissions).mockResolvedValue(
       view({ stop: 'act', source: 'default', inherited: { stop: 'act', source: 'default' } })
@@ -460,17 +460,13 @@ describe("an agent's Files & commands row", () => {
 
     const row = await screen.findByTestId('permission-row-files');
     await userEvent.click(within(row).getByRole('radio', { name: 'Full autonomy' }));
-    const dialog = await screen.findByRole('alertdialog');
-    expect(transport.patchAgentPermissions).not.toHaveBeenCalled();
-
-    await userEvent.click(within(dialog).getByRole('button', { name: /Turn on|Full autonomy/ }));
     await waitFor(() =>
       expect(transport.patchAgentPermissions).toHaveBeenCalledWith('a1', {
         filesAndCommands: 'autonomy',
         surface: 'agent-page',
-        acknowledgeAutonomy: true,
       })
     );
+    expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 });
 

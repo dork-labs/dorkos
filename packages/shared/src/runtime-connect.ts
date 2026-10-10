@@ -1,3 +1,4 @@
+import type { DoeInferenceConfig } from './config-schema.js';
 /**
  * Runtime connect types — the client-facing shapes for the terminal-free connect
  * surface (ADR-0318, effortless-runtime-switching T1). Each type mirrors a
@@ -434,4 +435,14 @@ export const OPENCODE_DIRECT_PROVIDERS: readonly OpenCodeDirectProvider[] = [
  */
 export function findOpenCodeDirectProvider(providerId: string): OpenCodeDirectProvider | undefined {
   return OPENCODE_DIRECT_PROVIDERS.find((entry) => entry.id === providerId);
+}
+
+/** Metadata-only credits choices for one explicit wire protocol. */
+export interface DoeCreditsCatalog {
+  endpoint: string | null;
+  models: { id: string; displayName: string; contextWindow: number; maxOutputTokens: number }[];
+}
+export interface DoeInferenceStatus {
+  inference: DoeInferenceConfig | null;
+  hasKey: boolean;
 }

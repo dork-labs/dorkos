@@ -140,6 +140,21 @@ describe('createCanUseTool — approval gate', () => {
     expect(session.pendingInteractions.size).toBe(0);
   });
 
+  // Power flows downstream, never up (spec `trusted-by-default-flip` §4). Under
+  // a ceiling the turn runs at a mode that calls back for every tool, and the
+  // callback must answer from the TURN's mode: answering from the session's
+  // Full autonomy would allow every call the ceiling exists to stop.
+  it('routes a non-safe tool to approval in a bypass session held to the runtime default', async () => {
+    const session = {
+      ...makeSession('bypassPermissions'),
+      turnPermissionCeiling: 'runtime-default' as const,
+    };
+    const canUseTool = createCanUseTool(session, noopLog);
+
+    void canUseTool(NON_SAFE_TOOL, { command: 'rm -rf build' }, makeContext('tool-ceiling'));
+    await vi.waitFor(() => expect(session.pendingInteractions.has('tool-ceiling')).toBe(true));
+  });
+
   it('auto-allows read-only tools even in auto mode', async () => {
     const session = makeSession('auto');
     const canUseTool = createCanUseTool(session, noopLog);
@@ -467,6 +482,59 @@ describe('control_ui is auto-allowed per action, not per tool (DOR-625)', () => 
     const canUseTool = createCanUseTool(session, noopLog);
     const result = await canUseTool('mcp__dorkos__get_ui_state', {}, makeContext('ui-2'));
     expect(result).toEqual({ behavior: 'allow', updatedInput: {} });
+  });
+});
+
+// Trust never extends to strangers (DOR-2790). A turn another agent or an outside
+// sender started carries a ceiling, and from such a turn the chat verbs that cut
+// into another chat's running turn ask; the ones that only add a message do not.
+describe('chat verbs under a turn ceiling', () => {
+  /** Run one chat call through the gate and say what the gate did. */
+  async function gate(
+    toolName: string,
+    input: Record<string, unknown>,
+    withCeiling: boolean
+  ): Promise<'allowed' | 'asked'> {
+    const session = {
+      ...makeSession('default'),
+      ...(withCeiling ? { turnPermissionCeiling: 'runtime-default' as const } : {}),
+    };
+    const canUseTool = createCanUseTool(session, noopLog, undefined, async () => ({
+      identity: { agentPath: '/agents/a' },
+    }));
+    // A macrotask rival, so an auto-allow (a microtask) cannot lose the race.
+    return Promise.race([
+      canUseTool(toolName, input, makeContext('chat-1')).then(() => 'allowed' as const),
+      new Promise<'asked'>((resolve) => setTimeout(() => resolve('asked'), 0)),
+    ]);
+  }
+
+  const SEND = 'mcp__dorkos__chat_send';
+  const STOP = 'mcp__dorkos__chat_stop';
+  const READ = 'mcp__dorkos__chat_read';
+
+  it.each([
+    ['chat_stop', STOP, { chat: 'c1' }],
+    ['chat_send interrupt', SEND, { to: 'c1', message: 'hi', delivery: 'interrupt' }],
+    ['chat_send steer', SEND, { to: 'c1', message: 'hi', delivery: 'steer' }],
+    ['chat_send with an unknown delivery', SEND, { to: 'c1', message: 'hi', delivery: 'x' }],
+  ])('asks for %s in a turn held to a ceiling', async (_label, tool, input) => {
+    expect(await gate(tool, input, true)).toBe('asked');
+  });
+
+  it.each([
+    ['chat_send with no delivery', SEND, { to: 'c1', message: 'hi' }],
+    ['chat_send queue', SEND, { to: 'c1', message: 'hi', delivery: 'queue' }],
+    ['chat_read', READ, { chat: 'c1' }],
+  ])('still auto-allows %s in a turn held to a ceiling', async (_label, tool, input) => {
+    expect(await gate(tool, input, true)).toBe('allowed');
+  });
+
+  it.each([
+    ['chat_stop', STOP, { chat: 'c1' }],
+    ['chat_send interrupt', SEND, { to: 'c1', message: 'hi', delivery: 'interrupt' }],
+  ])('auto-allows %s in a turn with no ceiling', async (_label, tool, input) => {
+    expect(await gate(tool, input, false)).toBe('allowed');
   });
 });
 

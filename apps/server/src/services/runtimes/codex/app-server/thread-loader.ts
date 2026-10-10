@@ -44,8 +44,7 @@ import { isCodexRpcError } from './protocol/errors.js';
 import type { SandboxMode, ThreadLoadOverrides } from './protocol/methods.js';
 
 /** The copy a person reads when Codex lost the conversation (§6). */
-export const THREAD_STARTS_FRESH_NOTICE =
-  'Codex no longer has this conversation, so it starts fresh.';
+export const THREAD_STARTS_FRESH_NOTICE = 'Codex no longer has this chat, so it starts fresh.';
 
 /**
  * How long the pre-resume `thread/read` may take. A local metadata read; on a
@@ -54,7 +53,7 @@ export const THREAD_STARTS_FRESH_NOTICE =
 export const THREAD_READ_TIMEOUT_MS = 5_000;
 
 /** The copy a person reads when they archived the conversation in Codex (§6). */
-export const THREAD_ARCHIVED_NOTICE = 'This conversation is archived in Codex, so it starts fresh.';
+export const THREAD_ARCHIVED_NOTICE = 'This chat is archived in Codex, so it starts fresh.';
 
 /** Which home a thread loads in, and what that home's trust rule is. */
 export type CodexHomeKind = 'person' | 'credits';

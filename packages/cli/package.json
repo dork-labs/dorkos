@@ -1,6 +1,6 @@
 {
   "name": "dorkos",
-  "version": "0.98.0",
+  "version": "0.103.0",
   "description": "You, multiplied. Build and run your business with an agent team. Your agents join your team chat, take on real work, and build the tools your company runs on.",
   "license": "MIT",
   "author": "Dorian Collier",
@@ -66,7 +66,7 @@
     "@asteasolutions/zod-to-openapi": "9.1.0",
     "@composio/core": "0.21.0",
     "@inquirer/prompts": "^8.7.2",
-    "@modelcontextprotocol/sdk": "1.30.1",
+    "@modelcontextprotocol/sdk": "1.31.0",
     "@ngrok/ngrok": "^1.7.0",
     "@openai/codex": "0.154.0",
     "@openai/codex-sdk": "~0.154.0",

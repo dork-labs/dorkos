@@ -314,7 +314,7 @@ export interface NotificationPayloads {
      * The account's runtime when it is not Claude Code (spec §6 R). Each
      * runtime has its own `default`, so it is part of the episode's identity.
      */
-    runtime?: 'codex' | 'opencode';
+    runtime?: 'codex' | 'opencode' | 'doe';
     /** The ledger window key that ran out, such as `seven_day`, or `unknown`. */
     window: string;
     /** When that window resets, ISO 8601, or `null` when unknown. */
@@ -1171,7 +1171,7 @@ const ENTRIES: NotificationRegistryMap = {
         : `${p.accountLabel} hit its ${limitWindowPhrase(p.window)} limit`,
     body: (p) =>
       p.autoMoveFailed
-        ? 'DorkOS could not move it automatically, so the session is waiting for you.'
+        ? 'DorkOS could not move it automatically, so the chat is waiting for you.'
         : undefined,
     actions: () => OPEN_ACTION,
     // Per account EPISODE: five sessions hitting one account's weekly limit

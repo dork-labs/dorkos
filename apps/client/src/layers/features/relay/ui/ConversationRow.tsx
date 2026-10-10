@@ -369,7 +369,7 @@ export function ConversationRow({ conversation }: ConversationRowProps) {
                       <dd className="truncate font-mono">{conversation.subject}</dd>
                       {conversation.sessionId && (
                         <>
-                          <dt className="text-muted-foreground">Session</dt>
+                          <dt className="text-muted-foreground">Chat</dt>
                           <dd className="font-mono">{conversation.sessionId.slice(0, 8)}</dd>
                         </>
                       )}

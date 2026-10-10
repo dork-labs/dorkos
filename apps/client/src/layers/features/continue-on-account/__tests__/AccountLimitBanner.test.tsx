@@ -840,7 +840,12 @@ describe('out of usage leads with DorkOS credits where they reach the runtime', 
       killed,
       linked: true,
       ready: true,
-      runtimes: { 'claude-code': runtime, codex: 'follow-up', opencode: 'follow-up' },
+      runtimes: {
+        'claude-code': runtime,
+        codex: 'follow-up',
+        opencode: 'follow-up',
+        doe: 'follow-up',
+      },
     });
 
   async function renderWithOffer(setup: Setup) {

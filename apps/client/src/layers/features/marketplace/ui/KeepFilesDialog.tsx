@@ -112,11 +112,9 @@ export function KeepFilesDialog({
                     <p className="text-muted-foreground">Reading what {name} runs…</p>
                   ) : review ? (
                     <>
-                      <p className="text-foreground font-medium">
-                        {name} is held back from sessions.
-                      </p>
+                      <p className="text-foreground font-medium">{name} is held back from chats.</p>
                       <p className="text-foreground">
-                        Keeping also lets it run in every session, as it is now:
+                        Keeping also lets it run in every chat, as it is now:
                       </p>
                       <ul aria-label={`What ${name} runs`} className="space-y-1.5">
                         {rows.map((row, index) => (

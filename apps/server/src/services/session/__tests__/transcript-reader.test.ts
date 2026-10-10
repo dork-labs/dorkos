@@ -789,7 +789,7 @@ describe('TranscriptReader', () => {
 
       const s2 = sessions.find((s) => s.id === 'def-456');
       expect(s2).toBeDefined();
-      expect(s2!.title).toBe('Session def-456');
+      expect(s2!.title).toBe('Chat def-456');
       expect(s2!.permissionMode).toBe('bypassPermissions');
     });
 

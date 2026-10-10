@@ -13,6 +13,7 @@ import { readingActivity } from './skills/reading-activity.js';
 import { answeringDorkosQuestions } from './skills/answering-dorkos-questions.js';
 import { workingInRoomRepos } from './skills/working-in-room-repos.js';
 import { usingTheAgentBrowser } from './skills/using-the-agent-browser.js';
+import { workingWithSpinOffChats } from './skills/working-with-spin-off-chats.js';
 
 /** One authored skill in the pack: its kebab-case name, discovery description, and body. */
 export interface OperatingSkill {
@@ -322,8 +323,23 @@ export interface OperatingSkill {
  *   destructive action that runs a package from a folder, and that install,
  *   update and uninstall refuse a dev-linked package. An agent seeded at 35
  *   would read `package_is_dev_linked` as a fault to retry around.
+ * - 37: `operating-dorkos` describes DorkOS as a workspace for people and agents
+ *   and the agent as a co-worker trusted with routine work it finishes and
+ *   reports (DOR-2736), replacing "the control layer a person uses to run many
+ *   AI agents". An agent seeded at 36 would describe itself as a tool a person
+ *   runs rather than a member of the team.
+ * - 38: `working-with-spin-off-chats` joins the pack (spec `spin-off-chats` §7,
+ *   DOR-2790). The relay send, inbox and endpoint tools are gone; agents message
+ *   chats with `chat_send`, check on them with `chat_read` and stop them with
+ *   `chat_stop`, and a spin-off reports back by itself. The new skill seeds
+ *   without a bump, so the bump is for the sibling lists in `operating-dorkos`
+ *   and `answering-dorkos-questions`, which would otherwise keep omitting it.
+ * - 39: `operating-dorkos` tells agents to record a promise with
+ *   `commitment_add` once made, mark it kept with `commitment_update`, and ask
+ *   before promising an outsider anything (spec `heartbeats` §12, DOR-2788). An
+ *   agent seeded at 38 would keep its promises only in a chat nobody else reads.
  */
-export const OPERATING_SKILLS_VERSION = 36;
+export const OPERATING_SKILLS_VERSION = 39;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the
@@ -338,4 +354,5 @@ export const OPERATING_SKILLS_PACK: readonly OperatingSkill[] = [
   answeringDorkosQuestions,
   workingInRoomRepos,
   usingTheAgentBrowser,
+  workingWithSpinOffChats,
 ];

@@ -15,6 +15,7 @@ import type {
   StreamEvent,
 } from '@dorkos/shared/types';
 import type { RefusedAsk } from '@dorkos/shared/run-refusals';
+import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import type { ApprovalAuthorizer } from './approval-handler.js';
 
 /**
@@ -176,6 +177,14 @@ export type SessionRuntimeBinder = (binding: {
   sessionId: string;
   runtimeType: string;
   agentDirectory?: string;
+  /**
+   * Who sent the message that started the conversation, as the server stamped
+   * it on the envelope (`RelayEnvelope.from`). The binder decides from it
+   * whether this is one of our agents or a sender from outside: the A2A
+   * gateway publishes to the same agent subjects an agent's `relay_send` does,
+   * and the sender is the only fact that tells them apart.
+   */
+  from: string;
 }) => Promise<void>;
 
 /**
@@ -240,6 +249,13 @@ export interface AgentRuntimeLike {
        * that needs a person returns at once instead of holding the turn.
        */
       unattendedApprovals?: boolean;
+      /**
+       * The loosest level this turn may run at. Mirrors
+       * `MessageOpts.permissionCeiling`: a message from an agent, the A2A
+       * gateway or any other sender that may not shape the turn runs no looser
+       * than the runtime's default, even in a conversation set looser.
+       */
+      permissionCeiling?: TurnPermissionCeiling;
     }
   ): AsyncGenerator<StreamEvent>;
   /**
@@ -490,14 +506,6 @@ export interface ClaudeCodeAdapterDeps {
    * default here would be an allow for whatever publisher is added next.
    */
   approvalAuthorizer: ApprovalAuthorizer;
-  /**
-   * Where a running turn records the envelope it is answering, so the agent's
-   * own `relay_send*` calls continue that budget instead of minting a fresh one
-   * (DOR-791). The host passes the SAME instance it gives its tool surface —
-   * `RelayCore.inboundBudgets` — or none, in which case nothing is threaded and
-   * the adapter behaves exactly as it did before.
-   */
-  inboundBudgets?: import('../../inbound-turn-budgets.js').InboundTurnBudgets;
   /**
    * Where the turns an agent starts on its own, after a relay turn ended, are
    * learned about — see {@link LateTurnSource}. Absent means a caller hears

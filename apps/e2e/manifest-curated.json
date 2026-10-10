@@ -57,7 +57,7 @@
         "apps/client/src/layers/entities/attention/model/use-pending-interactions.ts",
         "apps/client/src/layers/widgets/inbox-bell/ui/InboxBell.tsx",
         "apps/server/src/routes/sessions.ts",
-        "apps/server/src/services/session/session-list-broadcaster.ts"
+        "apps/server/src/services/session/catalog/session-list-broadcaster.ts"
       ],
       "explorationNotes": "The room leg is deliberately absent: a prompt on a ROOM lane needs a room, an agent bound into it and a turn dispatched by the room runner, and this leg seeds none of those (its fixture is one agent directory and a chat session). The filter is unit-tested in RoomLiveLane.test.tsx, the roomId join is server-tested in session-list-broadcaster-asks, and the whole path was walked against a real room for the phase acceptance check."
     },
@@ -145,8 +145,8 @@
       "explorationNotes": [
         "Registered INTO chat-mock.spec.ts (not a *.spec.ts): the test-mode leg is shared mutable state and POST /api/test/reset wipes sessions globally, so a parked turn on a concurrent worker gets torn down mid-click. The .ts extension also keeps it off the cockpit leg, where every send would be a billable claude-code turn.",
         "Scenario is bound PER SESSION (POST /api/test/scenario with a sessionId), never as the server default: several scenarios park on a step barrier only their own test releases, and four Playwright projects share this leg \u2014 as the default, one would hang a neighbour's turn.",
-        "Bind AFTER the app settles on a session id (poll the ?session= URL param), not before. Navigating straight to a self-minted id raced the route loader: it re-minted after the send, dropping the optimistic message and leaving the transcript at 'Start a conversation' with the scenario bound to a dead id.",
-        "Buttons carry their keyboard hint in the accessible name ('Allow Enter', 'Don\u2019t allow Esc'), and the hint only renders while the card is active. Anchor with /^Allow(?!\\s+all)/ \u2014 exact never matches, and a loose /allow/i also hits 'Always allow' and the batch bar's 'Allow all'. Always allow is the exception: it carries an explicit aria-label naming the grant ('Always allow, this session' / ', this project' / ', all your Claude sessions', or plain 'Always allow' when the runtime named no scope, DOR-1462), with no keyboard hint and a visible middot where the comma is.",
+        "Bind AFTER the app settles on a session id (poll the ?session= URL param), not before. Navigating straight to a self-minted id raced the route loader: it re-minted after the send, dropping the optimistic message and leaving the transcript at 'Start a chat' with the scenario bound to a dead id.",
+        "Buttons carry their keyboard hint in the accessible name ('Allow Enter', 'Don\u2019t allow Esc'), and the hint only renders while the card is active. Anchor with /^Allow(?!\\s+all)/ \u2014 exact never matches, and a loose /allow/i also hits 'Always allow' and the batch bar's 'Allow all'. Always allow is the exception: it carries an explicit aria-label naming the grant ('Always allow, this chat' / ', this project' / ', all your Claude chats', or plain 'Always allow' when the runtime named no scope, DOR-1462), with no keyboard hint and a visible middot where the comma is.",
         "Assert the DURABLE approval-receipt (data-outcome allowed/denied), not the transient tool-approval-decided or question-prompt-submitted rows: those are replaced when the turn ends and the message is rebuilt from history.",
         "Every assertion names a branch the scenario only reaches on that answer (APPROVED-BRANCH / DENIED-BRANCH / ANSWER-RECEIVED: <choice> / ELICITATION-ACCEPTED: <value>), so 'the card went away' can never pass for 'the answer was delivered'.",
         "Stability: --repeat-each=3 --workers=1, 36/36. WITHOUT --workers=1 repeats land on parallel workers and race the shared /api/test/reset \u2014 that alone fails long-standing untouched tests 10/18.",
@@ -259,8 +259,8 @@
     },
     "session-management": {
       "relatedCode": [
-        "apps/client/src/layers/features/session-list/ui/SessionsView.tsx",
-        "apps/client/src/layers/entities/session/ui/SessionRowFull.tsx",
+        "apps/client/src/layers/features/chat-list/ui/ChatList.tsx",
+        "apps/client/src/layers/features/chat-list/model/build-chat-list.ts",
         "apps/client/src/layers/entities/session/model/query/use-sessions.ts"
       ]
     },
@@ -268,7 +268,7 @@
       "relatedCode": [
         "apps/client/src/layers/features/dashboard-sidebar/ui/SessionSwitcher.tsx",
         "apps/client/src/layers/features/dashboard-sidebar/ui/AgentListItem.tsx",
-        "apps/client/src/layers/features/dashboard-sidebar/model/use-live-sessions.ts"
+        "apps/client/src/layers/features/chat-list/ui/ChatList.tsx"
       ]
     },
     "settings-dialog": {
@@ -305,6 +305,17 @@
         "The right panel is an overlay Sheet below 1024px and mounts NOTHING until it is open, so RightPanelPage.ensureTabStripOpen has to open before it waits for the tablist \u2014 and keep retrying both, because the per-agent layout restore can shut the sheet again mid-wait.",
         "The background-task bar is measured in the Dev Playground on purpose: a real one needs an agent turn that spawns a subagent or a background bash command, which this suite never buys. The showcase renders the real component including the overflow-hidden + 44px maxHeight clip that is the whole reason the chevron's reach is sized to the row.",
         "That clip is why the chevron floor is not 20px of reach: on a bash-only bar (no AgentRunner figure, so a shorter row) the last ~2px is clipped and the growth measures 17.6px rather than 20."
+      ]
+    },
+    "doe-model-setup": {
+      "relatedCode": [
+        "apps/client/src/layers/features/runtime-connect/ui/DoeInferenceForm.tsx",
+        "apps/server/src/services/runtimes/connect/doe-setup-router.ts"
+      ],
+      "explorationNotes": [
+        "Uses the real runtime registry and isolated test home. Saves credential-free loopback metadata without sending a model request.",
+        "Close Settings before reloading: the dialog stays open across a reload. The phone screenshot is attached to the test report.",
+        "Registers a silent fixture agent, chooses DorkOS through its profile Runs on picker, and verifies the real persisted runtime before fixture cleanup."
       ]
     }
   }

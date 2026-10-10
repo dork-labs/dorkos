@@ -1,3 +1,6 @@
+import type { ChatActivityResponse } from './chat-messages.js';
+import type { DoeCreditsCatalog } from './runtime-connect.js';
+import type { DoeInferenceConfig } from './config-schema.js';
 import type {
   PageEvent,
   CanvasChannelEventReceipt,
@@ -203,9 +206,7 @@ import type {
   FoundClaudeFolder,
   LimitHistoryEntry,
 } from './account-usage.js';
-import type { RoomTransport } from './transport-rooms.js';
-import type { CommunityConnectionTransport } from './community-connections.js';
-import type { RemoteCommunityTransport } from './community-views.js';
+import type { TransportSlices } from './transport-slices.js';
 import type { CanvasEditingResponse, UpdateCanvasDocumentRequest } from './room-schemas.js';
 import type { CanvasDocument } from './canvas-schemas.js';
 import type { ReadCursor, ReadCursorThreadKind } from './read-cursor-schemas.js';
@@ -687,8 +688,7 @@ export interface ClientErrorReport {
   stack?: string;
 }
 
-export interface Transport
-  extends RoomTransport, CommunityConnectionTransport, RemoteCommunityTransport {
+export interface Transport extends TransportSlices {
   /** Optional client identifier for SSE presence tracking. */
   readonly clientId?: string;
   /**
@@ -724,8 +724,10 @@ export interface Transport
    * an empty envelope.
    *
    * @param limit - Maximum sessions to return (1-50, default 10).
+   * @param touchedSince - ISO-8601 time; every chat you touched at or after it
+   *   is returned too, beyond `limit` (spec `your-activity-first` D6).
    */
-  listRecentSessions(limit?: number): Promise<RecentSessionsResponse>;
+  listRecentSessions(limit?: number, touchedSince?: string): Promise<RecentSessionsResponse>;
   /**
    * Count the sessions started per day across ALL registered agents
    * (DOR-1039), backing the Activity tab's week line. Returns `dailyCounts`
@@ -740,6 +742,28 @@ export interface Transport
   getSessionDailyCounts(days?: number): Promise<SessionDailyCountsResponse>;
   /** Get metadata for a single session by ID. */
   getSession(id: string, cwd?: string): Promise<Session>;
+  /**
+   * Tell the server the chat page is showing this chat, so it counts as
+   * touched by you on every device (spec `your-activity-first` D3). Called by
+   * the chat page each time it shows a chat id, never by click handlers. The
+   * server records it only for a person at the app and answers the same way
+   * either way, so a caller learns nothing from the answer.
+   *
+   * @param sessionId - The chat being shown.
+   */
+  markSessionOpened(sessionId: string): Promise<void>;
+  /**
+   * What a chat sent other chats, and the times another chat stopped it (spec
+   * `spin-off-chats` §6): the Sent cards and the "Stopped by" lines. Re-read
+   * whenever the chat's stream carries a `chat_activity` event.
+   *
+   * @param sessionId - The chat.
+   */
+  getChatActivity(sessionId: string): Promise<ChatActivityResponse>;
+  /** Reserve a durable, caller-scoped opaque reference to a launch directory. */
+  createSessionLocation(cwd: string): Promise<{ id: string }>;
+  /** Resolve a launch reference without putting its private directory in a URL. */
+  getSessionLocation(id: string): Promise<{ cwd: string }>;
   /**
    * Resolve the runtime type string (e.g. `'claude-code'`, `'test-mode'`) that
    * owns the given session.
@@ -1722,6 +1746,15 @@ export interface Transport
    * @param type - Runtime type (`'claude-code'` | `'codex'`).
    * @param secret - The raw API key. Sent once; never returned or logged.
    */
+  /** Explicit DorkOS inference metadata; never returns the stored secret. */
+  getDoeInference(): Promise<{ inference: DoeInferenceConfig | null; hasKey: boolean }>;
+  setDoeInference(inference: DoeInferenceConfig): Promise<{ ok: true }>;
+  storeDoeCredential(
+    inference: DoeInferenceConfig,
+    secret: string
+  ): Promise<{ ok: true; hasKey: boolean }>;
+  getDoeCreditsModels(protocol: DoeInferenceConfig['protocol']): Promise<DoeCreditsCatalog>;
+
   storeRuntimeCredential(type: string, secret: string): Promise<StoreCredentialResult>;
   /**
    * Store an OpenCode Direct-provider's API key by reference and select it as

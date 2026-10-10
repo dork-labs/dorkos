@@ -119,7 +119,7 @@ export function StateShowcases() {
         <ShowcaseDemo>
           <Card className="text-muted-foreground text-2xs w-full max-w-sm gap-0">
             <DetailRow
-              label="Session ID"
+              label="Chat ID"
               align="start"
               copyValue="8f2c1d90-4c1a-4c0e-9d2b-1f7a55c3e401"
               valueClassName="font-mono select-all"

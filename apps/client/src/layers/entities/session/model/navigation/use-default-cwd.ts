@@ -28,7 +28,7 @@ export function useDefaultCwd() {
   });
 
   useEffect(() => {
-    if (data?.path && selectedCwd === null) {
+    if (data?.path && useAppStore.getState().selectedCwd === null) {
       setSelectedCwd(data.path);
     }
   }, [data, selectedCwd, setSelectedCwd]);

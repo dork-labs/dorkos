@@ -41,7 +41,7 @@ Assumptions:
 - `apps/community/browser-tests/owner-claim.spec.ts` and `membership-accessibility.spec.ts`: owner claim at 1440 and 390 px, keyboard-only join and leave, axe, 44 px phone targets, no sideways scroll.
 - `docs/guides/cli-usage.mdx` (Community server, labelled "early"), `docs/guides/communities.mdx`, `docs/self-hosting/*`.
 - `apps/client/src/layers/features/dashboard-sidebar/ui/context/community-context-actions.ts`: the switcher's **Run your own community** action already exists and opens `https://dorkos.ai/docs/guides/cli-usage#community-server`.
-- `meta/positioning-202607/09-gtm-plan.md` §2.0 and `AGENTS.md` product state: the demo-claim gate.
+- `meta/archive/positioning-202607/09-gtm-plan.md` §2.0 and `AGENTS.md` product state: the demo-claim gate.
 
 ## 3) Codebase map
 

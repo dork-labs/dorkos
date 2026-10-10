@@ -71,6 +71,7 @@ An agent that starts a long command, sets a reminder, or waits on a helper now h
 
 ### Fixed
 
+- When an agent hands work to a helper and reports back later, that report now reaches whoever asked. An agent that sent the work with a message it checks back on gets the late answer in the same inbox for up to 30 minutes, or a note that none is coming. An agent that waited for a single reply is told the other agent is still working, since that later answer cannot reach it. A scheduled task's run history shows what the agent reported after the run ended.
 - A chat that starts a command in the background and ends its turn now hears back when the command finishes. Before, the agent was closed five minutes after its turn and the command died with it.
 - A message sent while a chat was busy no longer restarts the chat on the wrong Claude account. That restart lost the chat with "No conversation found".
 - If DorkOS restarts while a chat is waiting on background work, the chat gets a short note as its next turn, so the agent knows the work stopped and can carry on.

@@ -132,18 +132,15 @@ HttpTransport({ baseUrl: '/api' })
         -> HomeRoomPage (/) or SessionPage (/session)
 ```
 
-**Client routing** (`router.tsx`): TanStack Router with code-based routes. A pathless `_shell` layout route renders `AppShell` (sidebar, header, dialogs). Child routes render into `<Outlet>`:
+**Client routing**: TanStack Router uses thin file modules in `apps/client/src/routes/`. `router.tsx` configures context, custom search parsing and the generated `routeTree.gen.ts`; the shared `router-plugin.ts` generates and splits routes in both client Vite and desktop renderer builds. A pathless `_shell` renders `AppShell`, with `_home` preserving the shared home tabs. See [Routing](routing.md) for the complete inventory, navigation factories, redirects and search contracts.
 
-| Path       | Component                      | Search Params                        |
-| ---------- | ------------------------------ | ------------------------------------ |
-| `/`        | `HomeRoomPage` → `RoomSurface` | `?detail=`, `?itemId=`, `?thread=`   |
-| `/session` | `SessionPage` → `ChatPanel`    | `?session=`, `?dir=` (Zod-validated) |
+Existing-session links carry opaque session identity. Server resolution supplies authoritative runtime and cwd; an agent registration is optional. Explicit drafts preserve optimistic creation and launch choices. Unregistered launch folders use durable caller-scoped `launchRef` references, whose API enforces person and directory boundaries without exposing paths in canonical URLs.
 
 **Home is the #team room.** `/` renders the room every install is opened with (spec `team-room-home` D3.2), through the same `RoomSurface` `/channels?id=` renders — one room widget, two addresses, no fork. `app/HomeRoomPage.tsx` is the composition: it finds the room by the `wellKnown: 'team'` key on `GET /api/rooms` (never by slug, which a person may rename), draws four honest states before there is a room to draw, and mounts the pinned triage header above the room's scroller. It sits at the app layer because it composes two widgets, and a widget may not import another widget.
 
 **The home surface is a layout, not a route.** `/`, `/activity`, `/tasks` and `/workspaces` are one tabbed place, and the tab bar is a second pathless layout route (`_home`, `widgets/home/ui/HomeSurfaceLayout.tsx`) nested inside `_shell`. Because it uses `id` rather than `path` and declares no `validateSearch`, the four pages keep their exact addresses, their own search schemas and their own loaders, so `/activity?categories=agent` still arrives with its filter applied. The active tab is derived from `location.pathname` on every render — there is no tab state to keep in sync with the URL. `shared/config/home-surface.ts` owns the list of those four paths; the tab bar reads it to name the tabs and `features/dashboard-sidebar` reads it to keep the sidebar's single **Home** entry lit across all four.
 
-Each route provides its own sidebar content via a private slot hook in `AppShell` (`useSidebarSlot`); the header is declarative instead. Every route declares its bar as `staticData.header` in `router.tsx` — a component, or `null` for layout/root/redirect-only routes that have no bar of their own. `router.tsx` augments TanStack's `StaticDataRouteOption` with a required `header` field, which is what makes `staticData` a required route option on every route: add a route and forget its bar, and the build fails rather than silently inheriting whatever route rendered last (the old `pathname` switch's failure mode — every channel and DM once read "Dashboard", DOR-587, and Workspaces/Connections/Your reports did the same later, DOR-919). `AppShell`'s `useRouteHeader` calls `resolveRouteHeader` (`layers/widgets/one-bar/model/route-header.ts`) on the router's match chain, walking leaf-first and returning the first non-null `header` — so `/`, a leaf under the `_home` layout that declares `null`, still gets its own bar instead of the layout's absence of one. The sidebar body and the resolved header both cross-fade on route change via `AnimatePresence`. `/` renders `DashboardSidebar` + `DashboardHeader`; `/session` keeps the same `DashboardSidebar` roster (the old session drill-in was retired — per-session context now lives in the right-panel inspector) with the `SessionHeader`. A registered `sidebar.body` contribution can take over the body wholesale for its route (the marketplace facet panel does this on `/marketplace`).
+Each route provides its own sidebar content via a private slot hook in `AppShell` (`useSidebarSlot`); the header is declarative instead. Every route declares its bar as `staticData.header` in its file module — a component, or `null` for layout/root/redirect-only routes that have no bar of their own. `router.tsx` augments TanStack's `StaticDataRouteOption` with a required `header` field, which is what makes `staticData` a required route option on every route: add a route and forget its bar, and the build fails rather than silently inheriting whatever route rendered last (the old `pathname` switch's failure mode — every channel and DM once read "Dashboard", DOR-587, and Workspaces/Connections/Your reports did the same later, DOR-919). `AppShell`'s `useRouteHeader` calls `resolveRouteHeader` (`layers/widgets/one-bar/model/route-header.ts`) on the router's match chain, walking leaf-first and returning the first non-null `header` — so `/`, a leaf under the `_home` layout that declares `null`, still gets its own bar instead of the layout's absence of one. The sidebar body and the resolved header both cross-fade on route change via `AnimatePresence`. `/` renders `DashboardSidebar` + `DashboardHeader`; `/session` keeps the same `DashboardSidebar` roster (the old session drill-in was retired — per-session context now lives in the right-panel inspector) with the `SessionHeader`. A registered `sidebar.body` contribution can take over the body wholesale for its route (the marketplace facet panel does this on `/marketplace`).
 
 The header components live in `apps/client/src/layers/widgets/one-bar/` — a widget rather than a feature, because the bar composes `InboxBell`, itself a widget. `features/top-nav` keeps only `CommandPaletteTrigger`, `SystemHealthDot`, and `useSystemHealth`. `OneBar` lays out `[identity] [chips] [fill] [actions]`; `BarFixedCluster` — search, the inbox bell, the right-panel toggle — is rendered once by `AppShell` as a sibling _after_ the cross-fade, so those three controls never re-animate on navigation and no route's bar can render past them.
 
@@ -311,11 +308,11 @@ All types defined in `packages/shared/src/schemas.ts`, re-exported from `package
 
 ### Files
 
-| File                                                                  | Purpose                                                                             |
-| --------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `packages/shared/src/schemas.ts`                                      | `UiStateSchema`, `UiCommandSchema`, `UiCommandEventSchema`, `UiCanvasContentSchema` |
-| `apps/server/src/services/runtimes/claude-code/mcp-tools/ui-tools.ts` | `control_ui` and `get_ui_state` MCP tool definitions                                |
-| `apps/client/src/layers/shared/lib/ui-action-dispatcher.ts`           | `executeUiCommand()` — pure dispatcher, no React deps                               |
+| File                                                               | Purpose                                                                                            |
+| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| `packages/shared/src/schemas.ts`                                   | `UiStateSchema`, `UiCommandSchema`, `UiCommandEventSchema`, `UiCanvasContentSchema`                |
+| `apps/server/src/services/session/browser-seat/ui-capabilities.ts` | `ui.control` / `ui.state` capabilities, projected as the `control_ui` and `get_ui_state` MCP tools |
+| `apps/client/src/layers/shared/lib/ui-action-dispatcher.ts`        | `executeUiCommand()` — pure dispatcher, no React deps                                              |
 
 ## Runtime Registry
 
@@ -414,8 +411,8 @@ A session that has not sent one yet has **no** runtime, and `session_metadata.ru
 
 Session history is **runtime-specific**: Claude Code reads JSONL transcripts, OpenCode reads its sidecar store, and Codex uses SDK threads plus DorkOS-owned persistence. The Codex SDK cannot list or read threads, so `codex_threads` preserves tracked bindings and metadata while a persisted event log supplies displayed history. There is no universal transcript store. `GET /api/sessions` and the global session-list stream aggregate instead:
 
-- `aggregateSessionList` (`services/session/aggregate-session-list.ts`) fans out `listSessions` across `listRuntimes()` with `Promise.allSettled` and a per-runtime time budget, merges and sorts by `updatedAt`, and tags every session with its `runtime` type. A failing or slow runtime degrades to partial results plus a `warnings[]` entry in the response envelope — never a failed request. An optional `?runtime=` query filters to one runtime.
-- `session-list-broadcaster` (`services/session/session-list-broadcaster.ts`) fans in `subscribeSessionList` across all registered runtimes with per-runtime failure isolation, feeding the global `GET /api/events` stream. Runtimes must register **before** the broadcaster starts (see the composition-root ordering in `index.ts`).
+- `aggregateSessionList` (`services/session/catalog/aggregate-session-list.ts`) fans out `listSessions` across `listRuntimes()` with `Promise.allSettled` and a per-runtime time budget, merges and sorts by `updatedAt`, and tags every session with its `runtime` type. A failing or slow runtime degrades to partial results plus a `warnings[]` entry in the response envelope — never a failed request. An optional `?runtime=` query filters to one runtime.
+- `session-list-broadcaster` (`services/session/catalog/session-list-broadcaster.ts`) fans in `subscribeSessionList` across all registered runtimes with per-runtime failure isolation, feeding the global `GET /api/events` stream. Runtimes must register **before** the broadcaster starts (see the composition-root ordering in `index.ts`).
 
 ### Per-Session Settings Persistence (ADR-0260 / ADR-0261)
 
@@ -433,7 +430,7 @@ Per-session settings — `permissionMode`, `model`, `effort`, `fastMode` — are
 
 - **Hydrate** in `ensureForMessage` — the funnel every send path shares (HTTP, Tasks, relay). When the in-memory session is absent, seed from the port. Precedence: `per-send override → persisted → runtime default` (the runtime declares its default via `RuntimeCapabilities.permissionModes.default`).
 - **Write-through** in `updateSession` — persist the operator's change first (durable even if the live apply fails), then best-effort `setPermissionMode`. Only user-driven PATCHes reach `updateSession`, so transient per-send overrides are never persisted.
-- **Display overlay** in `services/session/session-settings-overlay.ts` — the one projection of the store onto a `Session` for display, shared by every path that hands a session to a client: `GET /`, `GET /:id`, `GET /recent`, and the `session_upserted` fan-out in `SessionListBroadcaster`. Keeping them on one helper is what makes the session-list badge, the in-session toolbar, and runtime enforcement read one value; four separate derivations is exactly how they came to disagree (DOR-463).
+- **Display overlay** in `services/session/resolution/session-settings-overlay.ts` — the one projection of the store onto a `Session` for display, shared by every path that hands a session to a client: `GET /`, `GET /:id`, `GET /recent`, and the `session_upserted` fan-out in `SessionListBroadcaster`. Keeping them on one helper is what makes the session-list badge, the in-session toolbar, and runtime enforcement read one value; four separate derivations is exactly how they came to disagree (DOR-463).
 - **One key.** The overlay resolves each session's store key through `getInternalSessionId(id) ?? id` — the same translation `PATCH /:id` uses to WRITE — and reads that key and no other. A read that keys by the raw id alone misses the row the operator just wrote; a read that tries several keys makes the answer depend on which id the caller asked by.
 - **Re-key on rebind.** The adapter moves the row the moment it binds a new canonical id (`SessionStore.rebindSdkSession` → `rekeySessionSettings`, DOR-493), so the operator's choice follows the session instead of being stranded under the id it was written for. Without the move, a turn sent under the canonical id after eviction or a restart hydrates a miss and the runtime ENFORCES its default mode instead of the operator's. Claude-code is the only runtime that aliases at all; the others return `undefined` from `getInternalSessionId` and never re-key. The property to keep is **an operator's explicit choice never loses to anything that is not a newer operator's explicit choice** — and the merge cannot keep it alone, because the rows record no provenance: an operator's `plan` and a server-seeded `acceptEdits` are the same shape once written. Both merge directions were measured wrong on some input (source-wins loses a newer operator choice; destination-wins loses a real one to a seeded default, since `persistSessionRuntime` INSERTs rows pre-filled from `runtimes.defaultTrustStop`). What keeps it is **ordering**: the row moves before the event that lets `trigger-turn` announce the canonical id, and nobody can name an id they have not been told — so by the time a POST can arrive under the new id, the row is there and bound, nothing is seeded, and nothing is counted as a second session. Destination-wins per field is what remains, correct for the one input still reachable: two rows that both hold operator choices. The move is also **best-effort at the seam**: a settings-store failure warns and leaves the row where it was rather than failing the turn, while the id alias is published either way (approvals, interrupt and the event stream all resolve through it). Note what this does not buy — a session can still end up with two rows if a stale client POSTs under the retired id, because `persistSessionRuntime` mints one for whatever id it is handed (DOR-837). The re-key moves the row; it does not reserve the id it vacated.
 - **Retired ids never reach a list.** `aggregateSessionList` drops any session whose runtime aliases it onto a different canonical id, because every single-session route resolves that id to the successor. The invariant it buys: every id in a listing resolves to itself.
@@ -486,7 +483,7 @@ No other server code imports a runtime SDK directly.
 When the main agent spawns a subagent via the `Task` tool, the subagent's output is streamed live into that task's inline block. Two non-obvious facts make this work:
 
 - **The SDK forwards whole messages, not deltas.** With `forwardSubagentText` (SDK 0.3.168+), a subagent's output arrives as complete `assistant` messages tagged with `parent_tool_use_id` — _not_ as token-level stream deltas. `sdk/event-mappers/message-event-mapper.ts` detects the tag, extracts each text block, and emits a `subagent_text_delta` stream event carrying `{ parentToolUseId, text }`. Non-text blocks (tool_use / thinking) are dropped — v1 is text only.
-- **The client correlates back to the spawning task.** `handleSubagentTextDelta` (`apps/client/src/layers/features/chat/model/stream/stream-tool-handlers.ts`) resolves the event's `parentToolUseId` to the spawning `Task` part via `findBackgroundTaskPartByToolUseId` (the `toolUseId` retained when the background task started), then appends `text` to that part's `subagentText`. The text renders inside the task's block (`SubagentBlock.tsx`). Deltas that arrive before the task is known are dropped.
+- **The client side is not wired today.** The client handler that appended each delta to the spawning `Task` part's `subagentText` (`handleSubagentTextDelta`) was retired with the client stream model in spec 255. `SubagentBlock.tsx` still renders a part's `subagentText`, and `subagentText` is still in the part schema (`packages/shared/src/schemas.ts`), but no current code sets it. Check this before you describe live subagent text as working.
 
 ### Extension MCP Tools
 
@@ -870,7 +867,7 @@ Key sub-modules composed by RelayCore:
 | `DeadLetterQueue`       | O(1) SQLite-backed dead-letter lookup; separate from message history           |
 | `AccessControl`         | Per-subject access control rules (allow/deny by sender pattern)                |
 | `DeliveryPipeline`      | Staged delivery: rate limit → circuit breaker → backpressure → Maildir write   |
-| `AdapterDelivery`       | Adapter delivery with 30-second timeout protection                             |
+| `AdapterDelivery`       | Adapter delivery: `relay.agent.*` detached, other subjects awaited (120 s)     |
 | `SignalEmitter`         | Lifecycle signal broadcasting for Mesh bridge integration                      |
 | `RateLimiter`           | Per-sender sliding window rate limiting                                        |
 | `CircuitBreakerManager` | Per-endpoint circuit breaker (CLOSED / OPEN / HALF_OPEN states)                |
@@ -886,7 +883,7 @@ Pipeline steps:
 3. Rate limit check (per-sender)
 4. Build envelope with budget
 5. Deliver to matching Maildir endpoints (may be zero)
-6. Deliver to matching adapter via `deliverToAdapter()` (timeout-protected, 30s)
+6. Deliver to matching adapter via `deliverToAdapter()` (`relay.agent.*` detached; other subjects awaited under a 120 s timeout)
 7. Dead-letter only when `deliveredTo === 0` and no matching endpoints exist
 
 Adapter delivery includes SQLite indexing (with `adapter:` prefixed endpoint hash) for audit trail completeness.
@@ -924,7 +921,7 @@ Loading errors are non-fatal: the loader warns and skips the failing adapter.
 
 - Loads config from `~/.dork/relay/adapters.json` and watches for changes via chokidar (hot-reload)
 - Delegates adapter instantiation to `adapter-factory.ts` and `adapter-plugin-loader.ts`
-- Masks sensitive fields (via `AdapterManifest.configFields[].sensitive`) in API responses
+- Masks password fields (`configFields[].type === 'password'`) in API responses (`maskSensitiveFields`)
 - Initializes and owns the `BindingStore` and `BindingRouter` subsystems (when `relayCore` is provided)
 - Preserves password fields across config updates (`mergeWithPasswordPreservation`)
 
@@ -940,6 +937,7 @@ Outbound: RelayCore.publish() → AdapterRegistry.deliver() → Adapter.deliver(
 | Adapter             | Library                  | Transport               | Subject Prefix                          |
 | ------------------- | ------------------------ | ----------------------- | --------------------------------------- |
 | `TelegramAdapter`   | grammY                   | Long polling / webhook  | `relay.human.telegram.*`                |
+| `SlackAdapter`      | Slack Bolt               | Socket Mode             | `relay.human.slack.*`                   |
 | `WebhookAdapter`    | Native HTTP              | HTTP POST + HMAC-SHA256 | `relay.webhook.*`                       |
 | `ClaudeCodeAdapter` | Every registered runtime | In-process              | `relay.agent.>`, `relay.system.tasks.>` |
 
@@ -958,44 +956,9 @@ It also **subscribes** to two control subjects — `relay.system.approval.>` (to
 
 On deliver, it extracts payload content via shared `extractPayloadContent()` utilities, streams the SDK response back to the `replyTo` subject as individual `StreamEvent` chunks, and records delivery spans in `TraceStore`.
 
-### Adapter Catalog Management
+### Adapter catalog and bindings
 
-The adapter catalog allows users to discover available adapter types and configure instances without editing JSON files directly.
-
-`AdapterManifest` (in `@dorkos/shared/relay-schemas`) describes each adapter type with:
-
-- `configFields: ConfigField[]` — typed field definitions (text, password, number, boolean) with `required`, `default`, `description`, and `sensitive` flags
-- `multiInstance` — whether multiple instances of the type are allowed
-- `builtin` — whether the adapter ships with DorkOS or is user-installed
-- `category` — adapter grouping (`internal` | `messaging` | `webhook` | `custom`)
-
-`GET /api/relay/adapters/catalog` returns `CatalogEntry[]` — the full manifest plus all configured instances, with sensitive fields masked. The UI (`AdapterSetupWizard`, `AdapterCard`, `CatalogCard`, `ConfigFieldInput`) uses this catalog for guided setup without requiring JSON editing.
-
-### Adapter-Agent Binding Router
-
-The `BindingRouter` (`apps/server/src/services/relay/binding-router.ts`) routes inbound messages from external adapters to the correct agent session. It subscribes to `relay.human.>` and resolves a binding for each message.
-
-**Binding resolution** uses most-specific-first scoring against the `BindingStore`:
-
-1. `adapterId + chatId + channelType` (score 7)
-2. `adapterId + chatId` (score 5)
-3. `adapterId + channelType` (score 3)
-4. `adapterId` only / wildcard (score 1)
-5. No match → message silently dropped (no dead-letter)
-
-**Session strategies** (configured per binding):
-
-- `per-chat` (default) — one agent session per `chatId`; reuses existing sessions
-- `per-user` — one session per user identity extracted from envelope metadata
-- `stateless` — creates a fresh session for every message
-
-**Session persistence** — the session map is written atomically to `{relayDir}/sessions.json` on every new session creation and on shutdown. On startup, `BindingRouter` loads this file to recover session mappings across server restarts. The map uses LRU eviction when it exceeds 10,000 entries.
-
-**Subject parsing** handles both DM subjects (`relay.human.{platformType}.{chatId}`) and group chat subjects (`relay.human.{platformType}.group.{chatId}`). The platform type (e.g., `telegram`) is resolved to the actual adapter instance ID via `resolveAdapterInstanceId`.
-
-**`BindingStore`** (`apps/server/src/services/relay/binding-store.ts`) persists bindings to `~/.dork/relay/bindings.json`. It uses chokidar with mtime-based self-write detection to distinguish external edits from its own saves, triggering hot-reload only for the former.
-
-See `contributing/relay-adapters.md` for the full developer guide on creating custom adapters.
+The adapter catalog (`AdapterManifest`, `ConfigField`, `GET /api/relay/adapters/catalog`) lets people set up adapter instances without editing JSON, and the binding subsystem (`BindingStore` + `BindingRouter`, most-specific-first resolution, `per-chat` / `per-user` / `stateless` session strategies, bridged bindings into rooms) routes inbound chat messages to the right agent session. Both are documented in full in [relay-adapters.md](relay-adapters.md#adapter-catalog), alongside the delivery pipeline and its timeouts.
 
 ## Relay Message Routing (on by default)
 

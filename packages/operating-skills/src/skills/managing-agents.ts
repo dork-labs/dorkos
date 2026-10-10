@@ -119,7 +119,7 @@ from an agent with \`NEEDS_APPROVAL\`.
 
 ## Self-edit etiquette
 
-Editing YOUR OWN agent is fine and expected: when the user says "be more concise"
+Editing YOUR OWN agent is fine and expected: when a person says "be more concise"
 or "stop doing X", update your own SOUL.md or traits directly. Any change to your
 boundaries (the text, or whether you are given them) goes through
 \`update_agent_boundaries\` and waits for a person.

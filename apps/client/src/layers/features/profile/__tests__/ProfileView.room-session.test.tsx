@@ -11,10 +11,10 @@
  * the paths are named here rather than tested four times over.
  *
  * **What made it wrong is worth stating, because it is not a race.**
- * `/session?dir=<path>` resolves the directory's most recent human
- * CONVERSATION, and `partitionSessionsByOrigin` files a room turn (origin
+ * `/session?dir=<path>` resolves the chat you were last in there, and
+ * `partitionSessionsByOwnership` files a room turn you never touched (origin
  * `room`) in the automated bucket deliberately. So the directory route could
- * never land on the room's session — and for an agent that has only ever worked
+ * not land on the room's session — and for an agent that has only ever worked
  * in rooms it minted a brand-new empty one instead.
  */
 import type { ReactNode } from 'react';
@@ -97,6 +97,7 @@ const searchSchema = mergeDialogSearch(
     id: z.string().optional(),
     session: z.string().optional(),
     dir: z.string().optional(),
+    launchRef: z.string().optional(),
   })
 );
 
@@ -182,7 +183,7 @@ function mountProfile(
 
 /** Press the header's one navigating control. */
 async function pressOpenSession() {
-  const button = await screen.findByRole('button', { name: 'Open session' });
+  const button = await screen.findByRole('button', { name: 'Open chat' });
   await userEvent.click(button);
 }
 
@@ -269,7 +270,10 @@ describe('Open session, from inside a room', () => {
     await pressOpenSession();
 
     await waitFor(() => {
-      expect(view.where()).toEqual({ pathname: '/session', search: { dir: WARDEN_PATH } });
+      expect(view.where()).toEqual({
+        pathname: '/session',
+        search: { launchRef: 'test-location' },
+      });
     });
   });
 
@@ -282,7 +286,10 @@ describe('Open session, from inside a room', () => {
     await pressOpenSession();
 
     await waitFor(() => {
-      expect(view.where()).toEqual({ pathname: '/session', search: { dir: WARDEN_PATH } });
+      expect(view.where()).toEqual({
+        pathname: '/session',
+        search: { launchRef: 'test-location' },
+      });
     });
   });
 });
@@ -295,7 +302,10 @@ describe('Open session, from anywhere else', () => {
     await pressOpenSession();
 
     await waitFor(() => {
-      expect(view.where()).toEqual({ pathname: '/session', search: { dir: WARDEN_PATH } });
+      expect(view.where()).toEqual({
+        pathname: '/session',
+        search: { launchRef: 'test-location' },
+      });
     });
     expect(view.listRoomSessions).not.toHaveBeenCalled();
     expect(view.transport.getRoom).not.toHaveBeenCalled();

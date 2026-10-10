@@ -114,7 +114,7 @@ describe('useSessionStatus — runtime and model go together (DOR-2712)', () => 
     await result.current.updateSession({ permissionMode: 'plan' });
 
     const cached = queryClient.getQueryData<{ runtime?: string; permissionMode?: string }>(
-      sessionKeys.detail(SESSION_ID, '/test/cwd')
+      sessionKeys.detail(SESSION_ID, null)
     );
     expect(cached?.permissionMode).toBe('plan');
     expect(cached?.runtime).toBeUndefined();

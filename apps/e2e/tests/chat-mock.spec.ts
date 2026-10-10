@@ -414,7 +414,11 @@ test.describe('Runtime UX — multi-runtime test server', () => {
     // Second session on the secondary runtime. The id is minted explicitly —
     // without it the loader auto-selects the existing session instead of
     // creating a new one.
-    await chatPage.goto(crypto.randomUUID(), { dir: agentDir, runtime: 'test-mode-b' });
+    await chatPage.goto(crypto.randomUUID(), {
+      dir: agentDir,
+      runtime: 'test-mode-b',
+      draft: true,
+    });
     await chatPage.sendMessage('Secondary runtime session');
     // Scoped to the transcript — see GOTCHAS (announcer duplicates the echo).
     await expect(
@@ -423,12 +427,13 @@ test.describe('Runtime UX — multi-runtime test server', () => {
       timeout: 10_000,
     });
 
-    // The fleet's session rows live on the Profile's Sessions page. They used to
-    // be the Agent Hub's Sessions TAB, which was the right panel's default on
-    // `/session`; the Profile's root is a property list, so `session-row`
-    // resolves to nothing until the page is opened (spec `profile-unification`).
+    // An agent's chats live on the Profile's Sessions page, drawn by the shared
+    // chat list; the Profile's root is a property list, so the rows resolve to
+    // nothing until the page is opened. The list marks each row's runtime only
+    // because these two chats run on different ones (spec `your-activity-first`
+    // D12).
     await new RightPanelPage(page).openProfilePage('sessions', agentDir);
-    const rows = page.getByTestId('session-row');
+    const rows = page.locator('[data-slot="chat-list-row"]');
     await expect(
       rows.filter({ has: page.locator('[aria-label="Runs on Test Mode"]') })
     ).toHaveCount(1);
@@ -501,7 +506,7 @@ test.describe('Command Intents — inline palette dedupe + alias hints', () => {
 
     // The plain-language intent descriptions render (writing-for-humans).
     await expect(
-      chatPage.commandPalette.getByText('Shrink the conversation to free up context')
+      chatPage.commandPalette.getByText('Shrink the chat to free up context')
     ).toBeVisible();
   });
 
@@ -532,51 +537,6 @@ test.describe('Command Intents — inline palette dedupe + alias hints', () => {
     const compactRow = chatPage.paletteRow('/compact');
     await expect(compactRow).toHaveCount(1);
     await expect(compactRow).toHaveAttribute('aria-disabled', 'false');
-  });
-});
-
-// Fleet-level context health surfaces (DOR-113, task 4.3). Backed by the
-// test-mode runtime, which emits NO context reading — no `contextTokens` on its
-// list rows and no `contextUsage` on its `session_status` fan-out — so every row
-// resolves to the honest "unknown" gauge and the fleet summary bar correctly
-// hides (nothing to report). This is the one state test-mode can drive; the
-// populated "N near full" bar and a live known gauge require a real reading and
-// are covered by the RTL tests (SessionContextGauge / FleetContextBar /
-// useFleetContextRollup).
-test.describe('Fleet context health — per-row gauge + honest unknown', () => {
-  test('each session row shows a context gauge that reads as a deliberate unknown state', async ({
-    page,
-    request,
-  }) => {
-    await request.post(`${API_URL}/api/test/scenario`, { data: { name: 'simple-text' } });
-
-    // Create a real session so the sidebar list has a row to gauge.
-    const chatPage = new ChatPage(page);
-    await chatPage.goto(undefined, { dir: agentDir });
-    await chatPage.sendMessage('Hello');
-    // Scoped to the transcript — see GOTCHAS (announcer duplicates the echo).
-    await expect(page.getByTestId('transcript-feed').getByText('Echo: Hello')).toBeVisible({
-      timeout: 10_000,
-    });
-
-    // Same move as the runtime-marks case above: these rows are the Profile's
-    // Sessions page now, not a sidebar or hub list.
-    await new RightPanelPage(page).openProfilePage('sessions', agentDir);
-
-    // The session list carries a per-row context gauge.
-    const row = page.getByTestId('session-row').first();
-    await expect(row).toBeVisible({ timeout: 10_000 });
-    await expect(row.getByTestId('session-context-gauge')).toBeVisible();
-
-    // With no reading available, the gauge reads as a deliberate MUTED
-    // "unknown" — never a fabricated 0% or a broken/error state.
-    await expect(row.getByLabel('Context usage unknown')).toBeVisible();
-    await expect(row.getByText('0%')).toHaveCount(0);
-
-    // Every row is unknown ⇒ nothing to summarize ⇒ the fleet summary bar hides
-    // itself (spec §8b: hidden when nothing to report), rather than showing a
-    // hollow "0 near full".
-    await expect(page.getByTestId('fleet-context-bar')).toHaveCount(0);
   });
 });
 
@@ -698,6 +658,7 @@ test.describe('Extensions — live remount on agent/cwd switch (DOR-363)', () =>
   // project-scoped extension: switching agents is already a pure client-side transition.
   test('switching agents with no scoped extension is a pure SPA transition (no reload)', async ({
     page,
+    request,
   }) => {
     await fs.rm(extRoot(dirA), { recursive: true, force: true });
     await fs.rm(extRoot(dirB), { recursive: true, force: true });
@@ -710,8 +671,25 @@ test.describe('Extensions — live remount on agent/cwd switch (DOR-363)', () =>
 
     // The app switched to the target agent's working directory.
     await expect
-      .poll(() => new URL(page.url()).searchParams.get('dir'), { timeout: 10_000 })
+      .poll(
+        async () => {
+          const url = new URL(page.url());
+          const launchRef = url.searchParams.get('launchRef');
+          const sessionId = url.searchParams.get('session');
+          if (!sessionId) return null;
+          const response = await request.get(
+            launchRef
+              ? `${API_URL}/api/session-locations/${launchRef}`
+              : `${API_URL}/api/sessions/${sessionId}`
+          );
+          if (!response.ok()) return null;
+          return (await response.json()).cwd;
+        },
+        { timeout: 10_000 }
+      )
       .toBe(dirA);
+    expect(new URL(page.url()).searchParams.has('dir')).toBe(false);
+    expect(new URL(page.url()).searchParams.has('agentPath')).toBe(false);
 
     await expectNoReload(page);
   });
@@ -751,8 +729,25 @@ test.describe('Extensions — live remount on agent/cwd switch (DOR-363)', () =>
     // The scoped set changed → the remount branch runs: a quiet toast, no reload.
     await expect(page.getByText('Project extensions updated')).toBeVisible({ timeout: 15_000 });
     await expect
-      .poll(() => new URL(page.url()).searchParams.get('dir'), { timeout: 10_000 })
+      .poll(
+        async () => {
+          const url = new URL(page.url());
+          const launchRef = url.searchParams.get('launchRef');
+          const sessionId = url.searchParams.get('session');
+          if (!sessionId) return null;
+          const response = await request.get(
+            launchRef
+              ? `${API_URL}/api/session-locations/${launchRef}`
+              : `${API_URL}/api/sessions/${sessionId}`
+          );
+          if (!response.ok()) return null;
+          return (await response.json()).cwd;
+        },
+        { timeout: 10_000 }
+      )
       .toBe(dirA);
+    expect(new URL(page.url()).searchParams.has('dir')).toBe(false);
+    expect(new URL(page.url()).searchParams.has('agentPath')).toBe(false);
 
     await expectNoReload(page);
   });
@@ -1150,30 +1145,29 @@ test.describe('conversations in the command palette', () => {
       // the number differs per family and per size and there is no arithmetic
       // that gets it from a font-size.
       //
-      // The probe goes INSIDE the title and copies no font properties at all,
-      // which is the whole trick. Copying a handful of them onto a sibling
-      // looks equivalent and is not: `ch` also moves with the things a font
-      // shorthand does not carry — variation settings, optical sizing, feature
-      // settings, stretch — so a probe that names four properties resolves
-      // `6ch` in a subtly different font than the element it is standing in
-      // for. That cost 0.7px here, against a 0.5px tolerance, and it would
-      // drift again with any font change. Inheritance is exact by
-      // construction; a copied list is exact only until someone adds a
-      // property to it.
+      // Measure the same element that owns the floor. A nested span can
+      // resolve `ch` differently under optical font sizing, even after fonts
+      // settle. Preserve its styles and temporarily remove flex constraints
+      // so the actual title's 6ch width is observable without a second font.
+      // Read its layout width through computed style: bounding rectangles
+      // include the palette's animated ancestor scale, while min-width does
+      // not. Comparing those mixes visual and layout units during its entry.
       const titleStyle = getComputedStyle(title);
-      const probe = document.createElement('span');
-      probe.style.position = 'absolute';
-      probe.style.visibility = 'hidden';
-      probe.style.display = 'inline-block';
-      probe.style.width = '6ch';
-      title.appendChild(probe);
-      const sixCh = probe.getBoundingClientRect().width;
-      probe.remove();
+      const titleMinWidth = titleStyle.minWidth;
+      const titleElement = title as HTMLElement;
+      const originalStyle = titleElement.getAttribute('style');
+      titleElement.style.width = '6ch';
+      titleElement.style.minWidth = '0';
+      titleElement.style.maxWidth = 'none';
+      titleElement.style.flex = '0 0 auto';
+      const sixCh = parseFloat(getComputedStyle(titleElement).width);
+      if (originalStyle === null) titleElement.removeAttribute('style');
+      else titleElement.setAttribute('style', originalStyle);
 
       return {
-        lineWidth: line.getBoundingClientRect().width,
+        lineWidth: parseFloat(getComputedStyle(line).width),
         whoMaxWidth: getComputedStyle(who).maxWidth,
-        titleMinWidth: titleStyle.minWidth,
+        titleMinWidth,
         sixCh,
       };
     });

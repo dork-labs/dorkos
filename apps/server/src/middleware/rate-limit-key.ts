@@ -18,9 +18,10 @@
  *
  * @module middleware/rate-limit-key
  */
-import type { Request } from 'express';
-import { ipKeyGenerator } from 'express-rate-limit';
+import { isIPv6 } from 'node:net';
+import { Address6 } from 'ip-address';
 import { env } from '../env.js';
+import type { RequestFacts } from '../http/request-facts.js';
 
 /**
  * The key when no address can be read at all — a socket already torn down.
@@ -46,7 +47,7 @@ export function forwardedForIsTrusted(): boolean {
  *
  * ## What the default costs, and why it is still the default
  *
- * Untrusted (the default), the key is `req.socket.remoteAddress`. DorkOS's own
+ * Untrusted (the default), the key is the TCP peer address. DorkOS's own
  * ngrok tunnel runs IN this process and forwards to the local port, so every
  * request that arrives through it has a loopback peer and they all share one
  * bucket. That is the STRICT direction — a remote caller through the tunnel can
@@ -57,22 +58,50 @@ export function forwardedForIsTrusted(): boolean {
  * sets `DORKOS_TRUST_PROXY=true` and accepts what that means: whoever can reach
  * the proxy's upstream can write the key.
  *
- * The address is normalized through `express-rate-limit`'s own
- * {@link ipKeyGenerator}, which folds the `::ffff:127.0.0.1` form a dual-stack
+ * The address is normalized through {@link clientAddressKey}, which folds the `::ffff:127.0.0.1` form a dual-stack
  * listener reports back to `127.0.0.1` (so one client is one bucket whichever
  * shape Node hands us) and masks a real IPv6 address to its /56 network — an
  * IPv6 client is routinely handed far more than one address, and keying on the
  * full address would let it rotate through them the same way a forged header
  * once did.
  *
- * @param req - The request being counted.
+ * @param request - The facts of the request being counted (`expressRequestFacts`
+ *   or `honoRequestFacts`); only its two addresses are read.
  * @returns The bucket key.
  */
-export function rateLimitKey(req: Request): string {
-  const address = forwardedForIsTrusted() ? req.ip : req.socket.remoteAddress;
+export function rateLimitKey(
+  request: Pick<RequestFacts, 'peerAddress' | 'forwardedAddress'>
+): string {
+  const address = forwardedForIsTrusted() ? request.forwardedAddress : request.peerAddress;
   if (!address) return UNKNOWN_CLIENT_KEY;
   // A `%zone` suffix (link-local IPv6) is part of the route, not the identity,
-  // and `ipKeyGenerator` cannot parse it.
+  // and the address parser cannot read it.
   const zone = address.indexOf('%');
-  return ipKeyGenerator(zone === -1 ? address : address.slice(0, zone));
+  return clientAddressKey(zone === -1 ? address : address.slice(0, zone));
+}
+
+/** The IPv4-compatible range, `::a.b.c.d`. */
+const IPV4_COMPATIBLE = new Address6('::/96');
+
+/**
+ * One client, one key, whatever shape its address arrives in.
+ *
+ * The rule `express-rate-limit`'s `ipKeyGenerator` applied, kept when that
+ * package left (DOR-2796): an IPv4 address embedded in IPv6 (`::ffff:a.b.c.d`,
+ * or the older `::a.b.c.d`) becomes the plain IPv4 address, and any other IPv6
+ * address becomes its /56 network, because one client is routinely handed a
+ * whole /56 to rotate through. Anything else is the key as it is.
+ *
+ * @param address - The client address, without a `%zone` suffix.
+ * @returns The bucket key.
+ */
+export function clientAddressKey(address: string): string {
+  if (!isIPv6(address)) return address;
+  const parsed = new Address6(address);
+  // `::` and `::1` sit in the IPv4-compatible range too; only the dotted
+  // notation (`is4`) says an IPv4 address is really embedded.
+  if (parsed.isMapped4() || (parsed.is4() && parsed.isInSubnet(IPV4_COMPATIBLE))) {
+    return parsed.to4().correctForm();
+  }
+  return new Address6(`${address}/56`).networkForm();
 }

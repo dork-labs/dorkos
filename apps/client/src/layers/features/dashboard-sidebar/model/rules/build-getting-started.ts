@@ -51,7 +51,7 @@ const SUGGESTIONS: readonly Suggestion[] = [
     id: 'suggestion:first-session',
     icon: 'first-session',
     applies: (f) => f.nonSystemAgentCount > 0 && !f.hasEverStartedSession,
-    label: () => 'Start your first session',
+    label: () => 'Start your first chat',
   },
   {
     id: 'suggestion:say-hi-team',

@@ -9,7 +9,8 @@ import type { ErrorComponentProps } from '@tanstack/react-router';
 
 const mockInvalidate = vi.fn();
 const mockNavigate = vi.fn();
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useRouter: () => ({ invalidate: mockInvalidate, navigate: mockNavigate }),
 }));
 

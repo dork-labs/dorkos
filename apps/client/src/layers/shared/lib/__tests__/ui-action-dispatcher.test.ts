@@ -374,7 +374,7 @@ describe('executeUiCommand — pip commands', () => {
     executeUiCommand(ctx, { action: 'open_pip' }, 'agent');
     expect(ctx.getStore().openPip).not.toHaveBeenCalled();
     expect(toast.info).toHaveBeenCalledWith(
-      'Picture-in-picture needs an active session',
+      'Picture-in-picture needs an open chat',
       expect.anything()
     );
   });

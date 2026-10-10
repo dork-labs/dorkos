@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 import { useEffect, useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { useNavigate } from '@tanstack/react-router';
@@ -168,7 +169,7 @@ export function ProgressCard({ onDismiss }: ProgressCardProps) {
     {
       icon: Clock,
       label: 'Schedule a task',
-      onClick: () => navigate({ to: '/tasks' }),
+      onClick: () => navigate({ ...appRoutes.tasks() }),
     },
     {
       icon: Server,

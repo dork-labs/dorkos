@@ -1,3 +1,4 @@
+import { appRoutes } from '@/layers/shared/lib';
 /**
  * The "Jump back in" popover's state: when it is up, which row is highlighted,
  * and where a row goes (spec `team-room-home` §D2.3).
@@ -344,9 +345,9 @@ export function useJumpBackInPopover({
       // Picking a row here is the same act as clicking one in the sidebar, so
       // it leaves the same record (DOR-1156). The panel answers "where were
       // you?" — a door that did not write one made Today forget the answer the
-      // moment the operator acted on it.
+      // moment the operator acted on it. A chat is recorded by the chat page
+      // when it shows it (`useRecordChatOpened`); the agent and a room here.
       if (item.kind === 'session') {
-        useInteractionStore.getState().recordOpened('session', item.session.id);
         if (item.session.cwd) {
           useInteractionStore.getState().recordOpened('agent', item.session.cwd);
         }
@@ -354,7 +355,7 @@ export function useJumpBackInPopover({
         return;
       }
       useInteractionStore.getState().recordOpened('room', item.room.id);
-      navigate({ to: '/channels', search: { id: item.room.id } });
+      navigate({ ...appRoutes.channels(), search: { id: item.room.id } });
     },
     [navigate]
   );

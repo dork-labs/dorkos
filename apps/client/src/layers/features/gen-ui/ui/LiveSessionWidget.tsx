@@ -64,7 +64,7 @@ export function LiveSessionWidget({ sessionId }: LiveSessionWidgetProps): ReactN
   if (fence === null) {
     return (
       <div className="text-muted-foreground flex h-full items-center justify-center p-4 text-center text-sm">
-        No live widget in this session
+        No live widget in this chat
       </div>
     );
   }

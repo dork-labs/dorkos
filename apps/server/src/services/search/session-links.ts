@@ -1,3 +1,4 @@
+import { deriveDorkosSessionId } from '../runtimes/opencode/sessions/session-mapper.js';
 /**
  * Turning a hit's container back into the DorkOS session that opens it
  * (message-search spec Amendment 14, DOR-2020).
@@ -125,5 +126,13 @@ export function resolveSessionIds(
     }
   }
 
+  for (const id of codexKeys ?? []) {
+    const key = containerKey(codexSource.id, id);
+    if (!sessions.has(key) && /^[a-f0-9-]{36}$/i.test(id)) sessions.set(key, id);
+  }
+  for (const id of openCodeKeys ?? []) {
+    const key = containerKey(openCodeSource.id, id);
+    if (!sessions.has(key) && id.startsWith('ses_')) sessions.set(key, deriveDorkosSessionId(id));
+  }
   return sessions;
 }

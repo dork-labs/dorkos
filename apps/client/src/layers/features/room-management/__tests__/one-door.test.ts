@@ -39,7 +39,7 @@ describe('one door to an agent', () => {
   });
 
   it('names the agent it is about', () => {
-    expect(oneDoorSubmitLabel([candidate('Ana')])).toBe('Open session with Ana');
+    expect(oneDoorSubmitLabel([candidate('Ana')])).toBe('Open chat with Ana');
   });
 
   it('says what two or more will make', () => {
@@ -49,6 +49,6 @@ describe('one door to an agent', () => {
   it('says the same thing the label and the destination say', () => {
     // The hint is the rule stated in advance; a hint that disagreed with the
     // button under it would be worse than no hint at all.
-    expect(ONE_DOOR_HINT).toBe('One agent opens a session. Two or more start a group message.');
+    expect(ONE_DOOR_HINT).toBe('One agent opens a chat. Two or more start a group message.');
   });
 });

@@ -585,10 +585,10 @@ function describeInstallInFull(req: ConfirmationRequest): string {
   // agent's sessions run (DOR-2325).
   const agent = req.packageType === 'agent';
   const where = agent
-    ? 'in the new agent’s sessions'
+    ? 'in the new agent’s chats'
     : req.projectPath
       ? 'declared, but not started for a project install'
-      : 'in every session';
+      : 'in every chat';
   const lines = [
     `Asked by ${req.requestedBy ? JSON.stringify(req.requestedBy) : 'a caller that did not say who it is'}.`,
     `Version ${JSON.stringify(req.origin?.version ?? 'not stated')}, from ${JSON.stringify(req.origin?.source ?? req.marketplace ?? 'any enabled marketplace')}.`,
@@ -613,13 +613,13 @@ function describeTemplateInFull(req: ConfirmationRequest): string {
     '',
     ...(findings.length > 0
       ? [
-          'Settings it carries, which the new agent’s sessions load (hooks, permission rules, servers):',
+          'Settings it carries, which the new agent’s chats load (hooks, permission rules, servers):',
           ...findings.map((f) => `- ${JSON.stringify(f)}`),
           '',
           ...(req.templateDisclosure?.settings ?? []).flatMap(describeSettingsFile),
         ]
-      : ['It carries no settings files for the new agent’s sessions.', '']),
-    ...describeEffectsInFull(disclosed, 'in the new agent’s sessions'),
+      : ['It carries no settings files for the new agent’s chats.', '']),
+    ...describeEffectsInFull(disclosed, 'in the new agent’s chats'),
   ].join('\n');
 }
 
@@ -641,7 +641,7 @@ function describeWorkspaceInFull(req: ConfirmationRequest): string {
     `${clone ? 'A clone of' : 'A worktree of'} ${JSON.stringify(ws?.source ?? 'an unnamed source')}, in ${JSON.stringify(req.projectPath ?? 'the workspace folder')}.`,
     '',
     ...hookLines(
-      'Commands DorkOS runs as soon as it is made (after_create), without a session:',
+      'Commands DorkOS runs as soon as it is made (after_create), without a chat:',
       ws?.hooks.after_create ?? []
     ),
     ...hookLines(
@@ -652,22 +652,22 @@ function describeWorkspaceInFull(req: ConfirmationRequest): string {
       ? [
           ...((ws?.findings.length ?? 0) > 0
             ? [
-                'Settings it carries, which every session there loads (hooks, permission rules, servers):',
+                'Settings it carries, which every chat there loads (hooks, permission rules, servers):',
                 ...(ws?.findings ?? []).map((f) => `- ${JSON.stringify(f)}`),
                 '',
                 ...(ws?.settings ?? []).flatMap(describeSettingsFile),
               ]
-            : ['It carries no settings files for its sessions.', '']),
+            : ['It carries no settings files for its chats.', '']),
           ...((ws?.links.length ?? 0) > 0
             ? [
-                'Links, which sessions there follow:',
+                'Links, which chats there follow:',
                 ...(ws?.links ?? []).map(
                   (l) => `- ${JSON.stringify(l.path)} → ${JSON.stringify(l.target)}`
                 ),
                 '',
               ]
             : []),
-          ...describeEffectsInFull(ws?.disclosed ?? null, 'in its sessions'),
+          ...describeEffectsInFull(ws?.disclosed ?? null, 'in its chats'),
         ]
       : []),
   ].join('\n');
@@ -719,7 +719,7 @@ function summaryOf(req: ConfirmationRequest): string {
   switch (req.operation) {
     case 'install':
       return req.packageType === 'agent'
-        ? `Add the agent ${name} from ${marketplace ?? 'any enabled marketplace'}${scopeOf(req)}. Its sessions will run what the package brings, listed below.`
+        ? `Add the agent ${name} from ${marketplace ?? 'any enabled marketplace'}${scopeOf(req)}. Its chats will run what the package brings, listed below.`
         : `Install ${name} from ${marketplace ?? 'any enabled marketplace'}${scopeOf(req)}`;
     case 'uninstall': {
       const base = req.purge
@@ -738,10 +738,10 @@ function summaryOf(req: ConfirmationRequest): string {
     case 'create-package':
       return `Create the ${req.packageType ? quoteSummaryValue(req.packageType) : 'new'} package ${name} in ${marketplace ?? 'your personal marketplace'}`;
     case 'create-agent-from-template':
-      return `Create the agent ${name} from the template ${quoteSummaryValue(req.origin?.source ?? 'unnamed')}. Its sessions will run what the template brings, listed below.`;
+      return `Create the agent ${name} from the template ${quoteSummaryValue(req.origin?.source ?? 'unnamed')}. Its chats will run what the template brings, listed below.`;
     case 'create-workspace':
       return req.workspaceDisclosure?.provider === 'clone'
-        ? `Make the workspace ${name} by cloning ${quoteSummaryValue(req.workspaceDisclosure.source)}. Sessions there will run what the repository brings, listed below.`
+        ? `Make the workspace ${name} by cloning ${quoteSummaryValue(req.workspaceDisclosure.source)}. Chats there will run what the repository brings, listed below.`
         : `Make the workspace ${name} from ${quoteSummaryValue(req.workspaceDisclosure?.source ?? 'unnamed')}. DorkOS will run its workspace commands, listed below.`;
   }
 }

@@ -72,7 +72,9 @@ test.describe('Codex agent creation @smoke', () => {
 
       await expect(page).toHaveURL(/[?&]runtime=codex(?:&|$)/);
       const landedUrl = new URL(page.url());
-      expect(landedUrl.searchParams.get('dir')).toBe(agent._path);
+      expect(landedUrl.searchParams.has('dir')).toBe(false);
+      expect(landedUrl.searchParams.has('agentPath')).toBe(false);
+      expect(landedUrl.searchParams.get('agentId')).toBe(agent.id);
       expect(landedUrl.searchParams.get('runtime')).toBe('codex');
 
       const kickoff = await kickoffRequest;

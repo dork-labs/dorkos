@@ -22,7 +22,7 @@ export async function accountHasPassword(pool: Pool, userId: string): Promise<bo
 /** The signed-in person's own browser session; a grant, agent or host key never reaches here. */
 export async function requireBrowserSession(c: Context, auth: CommunityAuth) {
   if (c.req.header('authorization'))
-    throw new ApiError(403, 'FORBIDDEN', 'This needs your own signed-in browser session.');
+    throw new ApiError(403, 'FORBIDDEN', 'Sign in from your own browser to do this.');
   const session = await auth.api.getSession({ headers: c.req.raw.headers });
   if (!session) throw new ApiError(401, 'UNAUTHENTICATED', 'Sign in to continue.');
   return session;

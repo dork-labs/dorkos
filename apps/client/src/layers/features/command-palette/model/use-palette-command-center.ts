@@ -14,7 +14,7 @@ import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import { activityVerb } from '@/layers/shared/lib';
 import type { StatusSignal } from '@/layers/shared/ui';
 import {
-  partitionSessionsByOrigin,
+  partitionSessionsByOwnership,
   useRecentSessions,
   useSessionListStore,
 } from '@/layers/entities/session';
@@ -54,7 +54,7 @@ export interface PaletteCommandCenter {
   /**
    * Live conversations, waiting-on-you first. Empty when nothing is live.
    *
-   * Human-origin only, like every other liveness count in the cockpit (§18) —
+   * No automated chats, like every other liveness count in the app (§18) —
    * an automated run that needs you arrives in Heads up, not here.
    */
   continueRows: PaletteContinueRow[];
@@ -135,15 +135,16 @@ export function usePaletteCommandCenter(
   );
 
   // Every session record the palette can see, from both sources, so Continue
-  // can read an id's origin off whichever one carries it.
+  // can read whose a chat is off whichever one carries it.
   //
   // **Order does not matter here, and it is worth saying so.**
-  // `humanOriginSessionIds` collects the AUTOMATED ids across all the records it
+  // `nonAutomatedSessionIds` collects the AUTOMATED ids across all the records it
   // is given, so one record marking a session automated excludes it however many
   // unmarked copies sit beside it. Automated wins regardless of order — the safe
   // direction — and the concatenation is only about coverage.
   //
-  // **What each source does and does not know.** Both carry `origin`: the
+  // **What each source does and does not know.** Both carry `origin` and
+  // `lastTouchedByYouAt`: the
   // server applies the same overlays to the REST routes and to the global
   // session-list stream, from one shared rule, so a room turn is marked on
   // whichever of the two a client hears it from first (DOR-1141). The stream's
@@ -178,13 +179,11 @@ export function usePaletteCommandCenter(
   }, [statuses, streamedSessions, sessions, knownSessions]);
 
   const recent = useMemo(() => {
-    const conversations = new Set(
-      partitionSessionsByOrigin(data?.sessions ? [...data.sessions] : []).conversations.map(
-        (session) => session.id
-      )
+    const yours = new Set(
+      partitionSessionsByOwnership(data?.sessions ?? []).yours.map((session) => session.id)
     );
     return buildPaletteRecent({
-      sessions: sessions.filter((session) => conversations.has(session.id)),
+      sessions: sessions.filter((session) => yours.has(session.id)),
       rooms,
       unreadRoomIds,
       agents,

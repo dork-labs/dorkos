@@ -32,6 +32,7 @@ import { createTerminalMethods } from './terminal-methods';
 import { createFeedbackMethods } from './feedback-methods';
 import { createApprovalMethods } from './approval-methods';
 import { createPermissionMethods } from './permission-methods';
+import { createCommitmentMethods } from './commitment-methods';
 import { createNotificationMethods } from './notification-methods';
 import { createPushMethods } from './push-methods';
 import { createConnectorMethods } from './connector-methods';
@@ -75,6 +76,7 @@ export interface HttpTransport
     ReturnType<typeof createFeedbackMethods>,
     ReturnType<typeof createApprovalMethods>,
     ReturnType<typeof createPermissionMethods>,
+    ReturnType<typeof createCommitmentMethods>,
     ReturnType<typeof createNotificationMethods>,
     ReturnType<typeof createPushMethods>,
     ReturnType<typeof createConnectorMethods>,
@@ -121,6 +123,7 @@ export class HttpTransport implements Transport {
       createFeedbackMethods(baseUrl),
       createApprovalMethods(baseUrl),
       createPermissionMethods(baseUrl),
+      createCommitmentMethods(baseUrl),
       createNotificationMethods(baseUrl),
       createPushMethods(baseUrl),
       createConnectorMethods(baseUrl),

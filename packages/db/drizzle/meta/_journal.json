@@ -1023,6 +1023,55 @@
       "when": 1791241755637,
       "tag": "20261005230915_task_run_occurrence",
       "breakpoints": true
+    },
+    {
+      "idx": 146,
+      "version": "6",
+      "when": 1791328215723,
+      "tag": "20261006231015_audit_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 147,
+      "version": "6",
+      "when": 1791414421355,
+      "tag": "20261007230701_private_session_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 148,
+      "version": "6",
+      "when": 1791478831717,
+      "tag": "20261008170031_session_touches",
+      "breakpoints": true
+    },
+    {
+      "idx": 149,
+      "version": "6",
+      "when": 1791565991417,
+      "tag": "20261009171311_chat_messages",
+      "breakpoints": true
+    },
+    {
+      "idx": 150,
+      "version": "6",
+      "when": 1791567432144,
+      "tag": "20261009173712_started_by_report_back",
+      "breakpoints": true
+    },
+    {
+      "idx": 151,
+      "version": "6",
+      "when": 1791626094991,
+      "tag": "20261010095454_agent_reports_to",
+      "breakpoints": true
+    },
+    {
+      "idx": 152,
+      "version": "6",
+      "when": 1791638862326,
+      "tag": "20261010132742_commitments",
+      "breakpoints": true
     }
   ]
 }

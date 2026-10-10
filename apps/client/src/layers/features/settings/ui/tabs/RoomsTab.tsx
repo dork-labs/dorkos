@@ -89,7 +89,7 @@ const LIMIT_FIELDS: readonly LimitField[] = [
 ];
 
 /** The label on the conversations-at-once field, and its accessible name. */
-const CONCURRENCY_LABEL = 'Conversations at once';
+const CONCURRENCY_LABEL = 'Chats at once';
 
 /**
  * How far agents may carry a conversation without you, and how many
@@ -109,7 +109,7 @@ export function RoomsTab() {
       {/* No heading: the Settings dialog draws the panel's own header. */}
       <div className="space-y-1">
         <p className="text-muted-foreground text-xs">
-          How far agents reply to each other, and how many conversations each runs.
+          How far agents reply to each other, and how many chats each runs.
         </p>
         <MoreDetails className="text-xs">
           <p>Every message you send starts the reply counts over.</p>
@@ -219,8 +219,8 @@ export function RoomsTab() {
               label={CONCURRENCY_LABEL}
               description={
                 <>
-                  {`How many conversations one agent works in at once. Default: ${MAX_CONCURRENT_TURNS_PER_AGENT_DEFAULT}.`}{' '}
-                  <InfoTip label="About conversations at once">
+                  {`How many chats one agent works in at once. Default: ${MAX_CONCURRENT_TURNS_PER_AGENT_DEFAULT}.`}{' '}
+                  <InfoTip label="About chats at once">
                     <p>Higher is faster, but turns that change the same files can collide.</p>
                   </InfoTip>
                 </>

@@ -1,5 +1,5 @@
 ---
-paths: blog/**, changelog/unreleased/**, docs/**/*.mdx, README.md, packages/cli/README.md, apps/site/src/layers/features/marketing/lib/features.ts
+paths: blog/**, changelog/unreleased/**, docs/**/*.mdx, README.md, packages/cli/README.md, apps/site/src/layers/features/marketing/lib/features.ts, package.json, packages/*/package.json, apps/*/package.json, packages/operating-skills/src/**, packages/shared/src/dorkbot-templates.ts
 ---
 
 # User-Facing Writing
@@ -16,7 +16,11 @@ Run these five self-checks before you save:
 4. **Read aloud**: if you inhale mid-sentence, split it.
 5. **Us or them?**: it describes what the user gets, not what we did.
 
-Honesty gate (`AGENTS.md`): never claim an unverified surface or feature works. No hype words: show the outcome.
+**What to say about DorkOS** (the message stack, the words we use, the words and claims we never use) is `meta/VOICE.md`, the single source. Read it before writing a sentence about what DorkOS is or does; never restate its lists here or in a skill. A `package.json` `description` is headline copy under its rules.
+
+Honesty gate: never claim an unverified surface or feature works. What may be claimed today is the demo-claim gate in `meta/ROADMAP.md`. No hype words: show the outcome.
+
+Operating skills (`packages/operating-skills`) and the DorkBot templates are prose an agent repeats to the person it works for: describe DorkOS there in the same words.
 
 In-app copy (strings the app renders) has its own, stricter standard: `app-copy.md` and the `writing-app-copy` skill.
 

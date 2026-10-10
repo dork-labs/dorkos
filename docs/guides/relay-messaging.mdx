@@ -1,6 +1,6 @@
 ---
 title: Relay Messaging
-description: Send messages between your agents, your screen, and chat apps like Telegram or Slack
+description: Send messages between DorkOS, your own programs, and chat apps like Telegram or Slack
 ---
 
 import { Steps, Step } from 'fumadocs-ui/components/steps';
@@ -10,7 +10,12 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Relay Messaging
 
-Relay lets your agents send and receive messages: to each other, to you in DorkOS, or to a Telegram or Slack chat. Every message is saved, so nothing goes missing even if an agent is busy.
+Relay carries messages between DorkOS, your own programs, and Telegram or Slack chats. Every message is saved, so nothing goes missing even if an agent is busy.
+
+<Callout type="info">
+  Your agents message each other in chats you can open, not through Relay. See [Spin-off
+  chats](/docs/guides/spin-off-chats) and [Agent Coordination](/docs/guides/agent-coordination).
+</Callout>
 
 This guide gets you sending your first message, then covers chat apps, budgets, and tracing for when you want more control.
 
@@ -82,7 +87,7 @@ This HTTP example lets you choose a human sender address. Read [Sending from loc
 
 `deliveredTo` counts publish targets, including mailbox copies and accepted agent handoffs. It does not confirm that an agent ran your task. The receipt describes the attempt to deliver to the agent.
 
-Read the returned `statusUrl` to check that attempt. When sign-in is on, use the same session cookie or per-user API key as for sending:
+Read the returned `statusUrl` to check that attempt. When sign-in is on, use the same sign-in cookie or per-user API key as for sending:
 
 ```bash
 curl http://localhost:4242/api/relay/messages/01ARZ3NDEKTSV4RRFFQ69G5FAV/status \
@@ -135,13 +140,13 @@ That is the publish-and-check loop. The receipt tells you the recorded delivery 
 
 ## Reference
 
-The rest of this page is a deeper look at how Relay works: the built-in tools, the chat apps it bridges, budgets, and configuration. Agent-to-agent chains are still a newer part of DorkOS, so if you're chaining more than a couple of hops, set explicit budgets (below) to keep things bounded.
+The rest of this page is a deeper look at how Relay works: the built-in tools, the chat apps it bridges, budgets, and configuration. If you build chains of messages from your own programs, set explicit budgets (below) to keep them bounded.
 
 ### Sending from local programs
 
 `POST /api/relay/messages` lets a program send a Relay message through the HTTP API.
 
-With sign-in off, this endpoint needs no app credential. DorkOS checks the request's `Host` header against loopback addresses, configured trusted hosts, and the live tunnel. `DORKOS_ALLOW_INSECURE_BIND` disables that check. With sign-in on, send a valid session cookie or a per-user API key as `Authorization: Bearer <key>`. The Host check is off in this mode.
+With sign-in off, this endpoint needs no app credential. DorkOS checks the request's `Host` header against loopback addresses, configured trusted hosts, and the live tunnel. `DORKOS_ALLOW_INSECURE_BIND` disables that check. With sign-in on, send a valid sign-in cookie or a per-user API key as `Authorization: Bearer <key>`. The Host check is off in this mode.
 
 Browser requests still follow CORS (the browser rule that controls which sites may call your server). Requests without an `Origin` header are allowed by this policy. CORS does not authenticate the sender.
 
@@ -155,41 +160,28 @@ A permitted `relay.human.*` sender can supply three fields that shape a receivin
 
 Existing folder and agent checks still apply. Without the nested approval mode, the Relay turn handler uses `default`. A top-level `payload.permissionMode` does not set it. The receiving runtime determines which approval modes it supports.
 
-MCP (the standard that lets AI tools talk to each other) send tools use the sender DorkOS assigns them. They do not accept a caller-chosen `from`. MCP authentication and tool permissions are separate checks. Messages from agent, session, or external MCP sender addresses cannot use those three fields to shape the receiving turn. This restriction follows the sender address, not the program making an HTTP call.
+DorkOS's MCP tools (MCP is the standard that lets AI tools talk to each other) use the sender DorkOS assigns them. They do not accept a caller-chosen `from`. MCP authentication and tool permissions are separate checks. Messages from agent, chat, or external MCP sender addresses cannot use those three fields to shape the receiving turn. This restriction follows the sender address, not the program making an HTTP call.
 
-An `account` request follows separate host account rules. It applies to a new conversation and grants no sender authority.
+A message from one of those senders also runs no looser than the receiving runtime's starting level, even in a chat already set higher. A message an agent sends never gives the receiving agent more power than a new chat gets, and a message from another company's agent over A2A is never treated as one of yours.
+
+An `account` request follows separate host account rules. It applies to a new chat and grants no sender authority.
 
 ### Using MCP tools
 
-Agents running inside DorkOS can call Relay directly, without making an HTTP request themselves:
+Agents running inside DorkOS can reach Relay directly, without making an HTTP request themselves:
 
 ```
-relay_send                  Send a message to a Relay subject
-relay_inbox                 Read inbox messages for an endpoint
+relay_notify_user           Message the person on a connected chat, or in DorkOS
 relay_list_endpoints        List all registered endpoints
-relay_register_endpoint     Register a new endpoint
-relay_unregister_endpoint   Unregister an endpoint (use to clean up dispatch inboxes)
-relay_send_and_wait         Blocking request/reply: sends a message and waits for the response
-relay_send_async            Fire-and-poll: dispatches a message, returns immediately with an inbox to poll
 relay_get_trace             Get the full delivery trace for a message
 relay_get_metrics           Get aggregate delivery metrics
-relay_list_adapters         List all adapters with status
-relay_enable_adapter        Enable a disabled adapter
-relay_disable_adapter       Disable a running adapter
-relay_reload_adapters       Hot-reload adapter configuration from disk
+relay_list_adapters         List every connected chat app with its status
+relay_enable_adapter        Turn a connected chat app back on
+relay_disable_adapter       Turn a connected chat app off
+relay_reload_adapters       Reload the chat app settings from disk
 ```
 
-`relay_send_and_wait` (added in v0.8.0) handles request and reply in one call. It registers a temporary inbox, sends the message with that inbox as the reply address, and waits until the agent replies. Use it when you need the answer before your next step.
-
-`relay_send_async` returns immediately with a dispatch inbox instead of waiting. The agent keeps working in the background. Poll `relay_inbox` with `ack: true` to check progress: by default it only returns messages waiting for you, and `ack: true` clears each one so the next poll only returns new ones. When you get a payload with `done: true`, call `relay_unregister_endpoint` to clean up.
-
-`relay_send`, `relay_send_and_wait` and `relay_send_async` also take an optional `account`: the Claude account a new conversation should run on. DorkOS honors it only when Flow's account settings allow it. Otherwise the message is still delivered and runs on the usual account, and a conversation that has already started always stays on its own account.
-
-Acknowledging is permanent. `ack: true` deletes the message content from disk as soon as it is handed to you: later reads still show the record (who sent it and when) but the content comes back empty, and there is no undo. Take what you need from the response. Leave `ack` off to look without clearing anything.
-
-Inboxes are private. An agent can read or unregister an endpoint only when it is the agent's own address, an inbox subject `relay_send_async` handed it, or one it registered itself with `relay_register_endpoint`. Asking for another agent's endpoint fails with `ENDPOINT_ACCESS_DENIED`, so one agent cannot read or clear another's mail.
-
-An inbox keeps belonging to the agent that registered it, even after DorkOS restarts: the owner is recorded next to the mailbox on disk, so a second agent that asks for the same address afterwards is turned down rather than handed the mailbox. Agents register their own inboxes under `relay.inbox.*`; the `relay.agent.*`, `relay.system.*` and `relay.human.*` names are managed by DorkOS and an agent asking for one gets `RESERVED_SUBJECT`. Two names that differ only in capital letters cannot both exist, because on macOS and Windows they would end up sharing a single mailbox.
+These tools are for chat apps, delivery and tracing. Agents do not send each other messages through Relay. They message each other's chats with `chat_send` and check on them with `chat_read`, so every message between agents sits in a chat you can open. The older Relay tools agents used for this were removed. See [Agent Coordination](/docs/guides/agent-coordination#messaging-another-agent).
 
 Endpoints you create from the DorkOS interface belong to you, not to any agent, and stay readable in the Relay panel.
 
@@ -208,11 +200,11 @@ You can subscribe with wildcards: `*` stands in for exactly one segment, `>` for
 
 ### What happens when Relay is running
 
-Agents publish messages to named subjects, and Relay routes each one to the right recipient. Agents don't need to know about each other directly; they just need to agree on a subject name.
+Relay carries messages between DorkOS and the outside: your Telegram and Slack chats, webhooks, and your own programs. It also carries the notes an agent sends to reach you when you are away from the app. Each message goes to a named subject, and Relay routes it to whoever listens there. Agents do not use it to talk to each other; they message each other's chats.
 
 Along the way, a message passes through a few checks: is the subject valid, is the sender allowed to send it, is it within its rate limit and budget. If delivery to a recipient keeps failing, Relay's circuit breaker (a safety switch that stops sending to something that's clearly broken) pauses deliveries to it rather than retrying forever. Anything that can't be delivered lands in the dead letter queue, and the full path a message took is recorded so you can look it up later (see [Tracing](#message-tracing) below).
 
-When Relay is on, it also takes over how session messages are delivered. Instead of `POST /api/sessions/:id/messages` calling the agent SDK directly, the message is published to `relay.agent.{sessionId}` and DorkOS's Claude Code side picks it up from there. That means every session message gets Relay's tracing, budgets, and retry handling for free.
+When Relay is on, it also takes over how chat messages are delivered. Instead of `POST /api/sessions/:id/messages` calling the agent SDK directly, the message is published to `relay.agent.{sessionId}` and DorkOS's Claude Code side picks it up from there. That means every chat message gets Relay's tracing, budgets, and retry handling for free.
 
 ### Enabling and disabling Relay
 
@@ -229,13 +221,13 @@ The response includes `relay.enabled: true` when Relay is active.
 <Callout type="info">
   To turn Relay off, switch off **Agent messaging** in Settings › Advanced › Tools and restart
   DorkOS. If `DORKOS_RELAY_ENABLED` is set, it decides instead of the switch. With Relay off, its
-  routes return 404 and session messaging falls back to calling the agent SDK directly. Your message
+  routes return 404 and chat messaging falls back to calling the agent SDK directly. Your message
   history and search index stay on disk, so turning Relay back on later doesn't lose anything.
 </Callout>
 
 ### Budget constraints
 
-Every message carries a budget that keeps chains of agent-to-agent messages from running away:
+Every message carries a budget that keeps chains of messages from running away:
 
 ```bash
 curl -X POST http://localhost:4242/api/relay/messages \
@@ -254,30 +246,28 @@ curl -X POST http://localhost:4242/api/relay/messages \
 
 <Callout type="warn">
   If you leave budget fields out, Relay uses defaults: 5 maximum hops, a 1-hour time-to-live, and 10
-  calls. For automated agent-to-agent workflows, set explicit budgets so a chain of agents can't
-  consume more time or calls than you intended.
+  calls. For automated workflows, set explicit budgets so a chain of messages can't consume more
+  time or calls than you intended.
 </Callout>
-
-You don't have to set one for an agent that's answering a message, though. When a message starts an
-agent's turn, anything that agent sends during that turn continues the same budget, one step further
-along — so a reply can't hand itself a fresh allowance. An agent can ask for a tighter budget than
-the one it inherited; it can't ask for a looser one.
 
 ### The hourly ceiling
 
 Budgets bound one chain of messages. The ceiling bounds your bill.
 
-Every route into an agent — another agent's message, an outside system speaking A2A, a webhook
-posting back — ends at the same place: DorkOS hands the message to the agent and a real turn starts.
-That's where the turns are counted, so no route can go around it and starting a fresh chain doesn't
-buy a fresh allowance.
+Every Relay route into an agent — an outside system speaking A2A, a webhook posting back, a
+scheduled task — ends at the same place: DorkOS hands the message to the agent and a real turn
+starts. That's where the turns are counted, so no Relay route can go around it and starting a fresh
+chain doesn't buy a fresh allowance.
+
+Messages your agents send each other's chats don't travel over Relay, so this ceiling doesn't count
+them. You see those in the chats themselves, and you can stop either chat.
 
 Two numbers, both per hour, both editable:
 
-| Setting                              | Default | Bounds                                                           |
-| ------------------------------------ | ------- | ---------------------------------------------------------------- |
-| `relay.maxAgentTurnsPerAgentPerHour` | `1000`  | What any one agent — or one scheduled task — can cost            |
-| `relay.maxAgentTurnsTotalPerHour`    | `5000`  | Everything above, altogether — agent messages and scheduled runs |
+| Setting                              | Default | Bounds                                                          |
+| ------------------------------------ | ------- | --------------------------------------------------------------- |
+| `relay.maxAgentTurnsPerAgentPerHour` | `1000`  | What any one agent — or one scheduled task — can cost           |
+| `relay.maxAgentTurnsTotalPerHour`    | `5000`  | Everything above, altogether: Relay messages and scheduled runs |
 
 ```bash
 dorkos config set relay.maxAgentTurnsTotalPerHour 2000
@@ -301,7 +291,7 @@ Adapters connect external platforms to Relay's subject system. DorkOS ships with
 
 ### Claude Code adapter
 
-The Claude Code adapter is on by default whenever Relay starts. It listens on `relay.agent.*` subjects and routes incoming messages to Claude Agent SDK sessions. Replies flow back through Relay to the sender's reply address.
+The Claude Code adapter is on by default whenever Relay starts. It listens on `relay.agent.*` subjects and routes incoming messages to Claude Code chats. Replies flow back through Relay to the sender's reply address.
 
 ```json
 {
@@ -322,14 +312,14 @@ The Claude Code adapter is on by default whenever Relay starts. It listens on `r
 
 You can change both in the app, under **Settings → Connections**: **Most chats at once** is `maxConcurrent`, and **Give up after** is `defaultTimeoutMs` in seconds. **Start working right away** turns it on or off.
 
-`maxConcurrent` limits how many agent sessions run at once. `defaultTimeoutMs` sets the longest a message may wait for a busy agent — not how long a session may run. What bounds a running session is the message's own lifetime, and nothing else: a message that runs out of time is turned away rather than given a fresh clock.
+`maxConcurrent` limits how many agent chats run at once. `defaultTimeoutMs` sets the longest a message may wait for a busy agent — not how long a chat may run. What bounds a running chat is the message's own lifetime, and nothing else: a message that runs out of time is turned away rather than given a fresh clock.
 
-A message from a connected Telegram or Slack chat that arrives while every session is busy is not turned away. It waits, and it runs as soon as one of those sessions finishes. If the wait lasts more than ten seconds, the chat gets one line saying the message is waiting.
+A message from a connected Telegram or Slack chat that arrives while every agent chat slot is busy is not turned away. It waits, and it runs as soon as one of those running chats finishes. If the wait lasts more than ten seconds, the chat gets one line saying the message is waiting.
 
 Four limits keep that honest:
 
-- **How many can wait.** Ten per session slot, so 30 with the default `maxConcurrent` of 3. Past that, a message is answered right away instead of waiting.
-- **How long one can wait.** `defaultTimeoutMs`, or whatever is left of the message's own one-hour lifetime, whichever is shorter. This is not the same as how long the busy session may run, so a message can stop waiting while your agent is still working. When that happens the chat gets one more line saying the message was not picked up, and you can send it again.
+- **How many can wait.** Ten per chat slot, so 30 with the default `maxConcurrent` of 3. Past that, a message is answered right away instead of waiting.
+- **How long one can wait.** `defaultTimeoutMs`, or whatever is left of the message's own one-hour lifetime, whichever is shorter. This is not the same as how long the busy chat may run, so a message can stop waiting while your agent is still working. When that happens the chat gets one more line saying the message was not picked up, and you can send it again.
 - **Who gets to wait.** Only a message from a chat you connected. Anything else waiting on an answer, such as one agent asking another, gets the old immediate "too busy" reply, because those callers give up long before a wait would end.
 - **How long the wait survives.** Holds live in memory only, so restarting the server drops any message still waiting.
 
@@ -444,7 +434,7 @@ For more on debugging failed deliveries, see the [Relay Observability](/docs/gui
 
 ## Relay and Tasks
 
-When both Relay and Tasks are on, scheduled jobs are dispatched through Relay. Tasks publishes to `relay.system.tasks.{scheduleId}`, and DorkOS's Claude Code side starts the agent session from there. That gives every scheduled run Relay's budget limits, tracing, and retry handling too.
+When both Relay and Tasks are on, scheduled jobs are dispatched through Relay. Tasks publishes to `relay.system.tasks.{scheduleId}`, and DorkOS's Claude Code side starts the agent's chat from there. That gives every scheduled run Relay's budget limits, tracing, and retry handling too.
 
 ```bash
 export DORKOS_RELAY_ENABLED=true

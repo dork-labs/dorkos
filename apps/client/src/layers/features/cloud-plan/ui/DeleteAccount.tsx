@@ -159,7 +159,7 @@ export function DeleteAccount() {
               <div className="space-y-1">
                 <p className="font-medium">What stays</p>
                 <p className="text-muted-foreground">
-                  Everything on this computer: your agents, sessions, projects and files.
+                  Everything on this computer: your agents, chats, projects and files.
                 </p>
                 <p className="text-muted-foreground">
                   This computer unlinks and keeps working on its own.

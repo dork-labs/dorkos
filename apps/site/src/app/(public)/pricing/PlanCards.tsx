@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { PLANS, type Plan } from './pricing-data';
+import { isComingSoon, itemText, PLANS, type Plan } from './pricing-data';
 
 type Billing = 'monthly' | 'yearly';
 
@@ -126,18 +126,24 @@ function PlanCard({ plan, billing, paidFrom }: { plan: Plan; billing: Billing; p
       </Link>
 
       <ul className="mt-7 space-y-3 text-sm">
-        {plan.benefits.map((benefit) => (
-          <li key={benefit} className="flex gap-2.5">
-            <Check
-              aria-hidden="true"
-              className={cn(
-                'mt-0.5 size-4 shrink-0',
-                dark ? 'text-brand-orange' : 'text-brand-green'
-              )}
-            />
-            <span className={dark ? 'text-cream-white' : 'text-charcoal'}>{benefit}</span>
-          </li>
-        ))}
+        {plan.benefits.map((benefit) => {
+          const text = itemText(benefit);
+          return (
+            <li key={text} className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1">
+              <span className="flex gap-2.5">
+                <Check
+                  aria-hidden="true"
+                  className={cn(
+                    'mt-0.5 size-4 shrink-0',
+                    dark ? 'text-brand-orange' : 'text-brand-green'
+                  )}
+                />
+                <span className={dark ? 'text-cream-white' : 'text-charcoal'}>{text}</span>
+              </span>
+              {isComingSoon(benefit) ? <ComingSoonBadge dark={dark} /> : null}
+            </li>
+          );
+        })}
       </ul>
 
       {plan.note ? (
@@ -151,5 +157,22 @@ function PlanCard({ plan, billing, paidFrom }: { plan: Plan; billing: Billing; p
         </p>
       ) : null}
     </article>
+  );
+}
+
+/**
+ * A small label for something on the page that isn't built yet, like the hosted space or cloud
+ * agents. It never replaces or softens the text beside it.
+ */
+export function ComingSoonBadge({ dark }: { dark?: boolean }) {
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium',
+        dark ? 'bg-cream-white/15 text-cream-tertiary' : 'bg-cream-secondary text-warm-gray'
+      )}
+    >
+      Coming soon
+    </span>
   );
 }

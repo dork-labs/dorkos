@@ -133,7 +133,7 @@ export function useSessionTarget(input: SessionTargetInput): ConversationTarget 
       id: sessionId,
       placeholder,
       canSend: sessionId !== '',
-      ...(sessionId === '' ? { canSendReason: 'Pick a conversation, or start a new one.' } : {}),
+      ...(sessionId === '' ? { canSendReason: 'Pick a chat, or start a new one.' } : {}),
       send,
       queue,
       attachments,

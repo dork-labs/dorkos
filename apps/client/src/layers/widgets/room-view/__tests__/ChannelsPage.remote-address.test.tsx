@@ -18,7 +18,8 @@ const { redirect, remote, local, navigate, sentTo, spaces, address } = vi.hoiste
     thread?: string;
   },
 }));
-vi.mock('@tanstack/react-router', () => ({
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useSearch: () => address,
   useNavigate: () => navigate,
   Navigate: (props: unknown) => {

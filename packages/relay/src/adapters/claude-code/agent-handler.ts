@@ -12,6 +12,7 @@ import { randomUUID } from 'node:crypto';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import { StreamEventTypeSchema, type PermissionMode } from '@dorkos/shared/schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
+import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import { defuseSystemTags } from '@dorkos/shared/untrusted-text';
 // One answer to "is this error the turn failing?", shared with the scheduled-run
@@ -43,7 +44,6 @@ import {
 } from './publish.js';
 import { isCallerCancel } from './agent-cancel-handler.js';
 import { interruptTurn } from './interrupt.js';
-import type { InboundTurnBudgets } from '../../inbound-turn-budgets.js';
 import { describeError } from '../../lib/describe-error.js';
 // One answer to "has this message run out of time?", shared with the publish
 // gate, the scheduled-run handler and the capacity line so the four cannot
@@ -99,12 +99,6 @@ export interface AgentHandlerDeps {
    * session the cockpit binds.
    */
   bindSessionRuntime?: SessionRuntimeBinder;
-  /**
-   * Where this turn records the envelope it is answering, so the agent's own
-   * `relay_send*` calls continue that budget instead of minting a fresh one
-   * (DOR-791). Absent means no threading — the pre-existing behaviour.
-   */
-  inboundBudgets?: InboundTurnBudgets;
   /**
    * This turn's clock, injectable so a test can pin the TTL boundary instead of
    * racing it (DOR-1729).
@@ -480,6 +474,15 @@ export async function handleAgentMessage(
   // prompting mode — absence is not consent (DOR-604). The in-process readers
   // that used to default to 'acceptEdits' were the bug and are gone.
   const effectivePermissionMode: PermissionMode = bindingPerms?.permissionMode ?? 'default';
+  // The mode above only reaches a conversation that is NEW: a runtime resolves
+  // a turn as per-send → stored → its own default, and a warm or stored
+  // conversation keeps the level it already has. So a sender that may not shape
+  // the turn (another agent, the A2A gateway, an external MCP client) also
+  // bounds THIS turn at the runtime's default, whatever the conversation is set
+  // to. Power flows downstream, never up (spec `trusted-by-default-flip` §4).
+  const permissionCeiling: TurnPermissionCeiling | undefined = trustedShaper
+    ? undefined
+    : 'runtime-default';
 
   // Which model an agent is, is a property of the AGENT — so the manifest is
   // looked for where the agent lives, and NOT at `effectiveCwd`. The two differ
@@ -646,17 +649,6 @@ export async function handleAgentMessage(
     },
     { once: true }
   );
-  // Tie this turn to the envelope that started it, for as long as it runs
-  // (DOR-791). Anything the agent sends with `relay_send*` while it runs
-  // continues THIS budget — decremented — instead of minting a fresh full one,
-  // which is what let two agents trade messages forever with a hop counter that
-  // reset every lap. Bound BEFORE `sendMessage`, because the tool server is
-  // built as the query starts, and not at all for a turn that never starts:
-  // there is nothing for a turn that will not run to inherit.
-  const releaseInboundBudget = stoppedBeforeStart
-    ? undefined
-    : deps.inboundBudgets?.bind(ccaSessionKey, envelope.budget);
-
   // New work on this session: a later turn from here on answers THIS message,
   // so whoever was still listening on behalf of an earlier one stops (DOR-2717).
   if (!stoppedBeforeStart) deps.lateFollowers?.get(sessionScope)?.();
@@ -666,6 +658,7 @@ export async function handleAgentMessage(
     ? NO_EVENTS
     : deps.agentManager.sendMessage(ccaSessionKey, prompt, {
         permissionMode: effectivePermissionMode,
+        ...(permissionCeiling !== undefined ? { permissionCeiling } : {}),
         ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
         ...(payloadForAgent ? { forAgent: payloadForAgent } : {}),
         ...(formatBlock ? { systemPromptAppend: formatBlock } : {}),
@@ -776,32 +769,6 @@ export async function handleAgentMessage(
       sessionKey: ccaSessionKey,
     });
     if (timeout) clearTimeout(timeout);
-    // Released when the QUERY is over, which is not the same instant the
-    // iteration stops (DOR-791).
-    //
-    // A clean end and a thrown iterator both mean the query is done, so the
-    // binding goes. A STOPPED turn — its TTL, or a caller that cancelled — does
-    // not: the abort listener above asks the runtime to interrupt, but
-    // `interruptTurn` is bounded and best-effort by design ("this bound only
-    // decides how long we wait to learn the outcome"), so the turn may still be
-    // producing for a moment. A `relay_send` landing in that window and
-    // inheriting NOTHING would mint a FRESH full budget — hop zero, ten calls,
-    // another hour — which is the chain escaping on exactly the stop that was
-    // supposed to end it.
-    //
-    // So a stopped turn KEEPS its binding, exactly as it stood: a TTL death
-    // leaves an expired budget, which the publish gate refuses as `ttl_expired`,
-    // and a cancel leaves a live one, which is still the chain's own and still
-    // decrements. Nothing is leaked — one entry per session, replaced by that
-    // session's next inbound message, and bounded by the registry's LRU cap.
-    if (controller.signal.aborted) {
-      log.debug?.(
-        `[CCA] stopped turn: holding the inbound budget for ${ccaSessionKey} so a late send ` +
-          `cannot start a fresh chain on a turn that was told to end`
-      );
-    } else {
-      releaseInboundBudget?.();
-    }
     if (!streamedDone && envelope.replyTo && relay) {
       // On a crashed (thrown iterator) or TTL-aborted turn, emit an explicit
       // error signal BEFORE the synthesized done. Reply consumers (the A2A
@@ -945,6 +912,7 @@ export async function handleAgentMessage(
         sessionId: durableSessionKey,
         runtimeType: deps.runtimeType ?? deps.agentManager.type ?? 'claude-code',
         ...(agentManifestDir ? { agentDirectory: agentManifestDir } : {}),
+        from: envelope.from,
       });
     } catch (err) {
       // The session id rides as an argument, never inside the format string: it

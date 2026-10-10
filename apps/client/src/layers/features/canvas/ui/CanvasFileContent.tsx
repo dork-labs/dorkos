@@ -110,7 +110,7 @@ export function CanvasFileContent({ content, documentId }: CanvasFileContentProp
   };
 
   if (cwd === null) {
-    return <FileMessage>Open a session to view files.</FileMessage>;
+    return <FileMessage>Open a chat to view files.</FileMessage>;
   }
   if (isLoading) {
     return <FileMessage>Loading file…</FileMessage>;

@@ -37,17 +37,17 @@ const NOTICES: ReadonlyArray<{ code: RoomNoticeCode; text: string; label: string
   {
     code: 'turn_failed',
     label: 'turn_failed — warm, because the answer is not coming',
-    text: "Kai ran into a problem and could not answer here. Open Kai's session to see what went wrong.",
+    text: "Kai ran into a problem and could not answer here. Open Kai's chat to see what went wrong.",
   },
   {
     code: 'awaiting_approval',
     label: 'awaiting_approval — warm, because it is waiting on YOU',
-    text: "Kai is waiting for you to approve something before it can carry on. Open Kai's session to answer. It will wait, but not forever.",
+    text: "Kai is waiting for you to approve something before it can carry on. Open Kai's chat to answer. It will wait, but not forever.",
   },
   {
     code: 'runtime_gone',
     label: 'runtime_gone — warm, because nothing happens until you turn something back on',
-    text: "Kai answers here through Codex, which isn't running on this machine, so it can't reply. Turn Codex back on to pick up where you left off, or remove Kai from this conversation and add it back to start fresh.",
+    text: "Kai answers here through Codex, which isn't running on this machine, so it can't reply. Turn Codex back on to pick up where you left off, or remove Kai from this room and add it back to start fresh.",
   },
   {
     code: 'agent_busy',

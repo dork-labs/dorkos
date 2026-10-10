@@ -1174,6 +1174,31 @@ export function dropSchedulerTimezone(store: {
 }
 
 /**
+ * Migration body: remove `ui.autonomyAcknowledgedAt` (DOR-2739).
+ *
+ * It recorded that a person had read what Full autonomy means, and the server
+ * refused every Full-autonomy write without it. ADR 261006-225605 retires that
+ * ritual: our own agents run at full power by default and the audit trail is
+ * the record, so the field gates nothing and is no longer declared. Deleting it
+ * rather than leaving it is what keeps a key no build reads from riding along
+ * in every config for ever.
+ *
+ * Idempotent: only deletes the key when it is present. Nothing else under `ui`
+ * is touched.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `has`/`delete`).
+ */
+export function dropAutonomyAcknowledgement(store: {
+  has: (key: string) => boolean;
+  delete: (key: string) => void;
+}): void {
+  if (store.has('ui.autonomyAcknowledgedAt')) {
+    store.delete('ui.autonomyAcknowledgedAt');
+  }
+}
+
+/**
  * Migration body: remove the tunnel passcode fields (`tunnel.passcodeEnabled`,
  * `tunnel.passcodeHash`, `tunnel.passcodeSalt`) and the root `sessionSecret`
  * from stored configs. The tunnel passcode auth path and the cookie-session
@@ -3426,6 +3451,45 @@ export function seedIdentityPromptDismissedDefault(store: {
 }
 
 /**
+ * Seed `profile.timezone`, `profile.workingHours` and `profile.away` — a
+ * person's zone, hours and away note (spec `heartbeats` §3.5).
+ *
+ * **The mechanism, not an anchor**, for the reason
+ * {@link seedDisplayNameSourceDefault} gives: nested leaves inside a section
+ * every stored config already carries, and conf's pre-migration merge is
+ * shallow, so nothing else writes them to disk for an upgraded install.
+ *
+ * **Each seeds `null`, which is the honest answer for all three.** Nobody has
+ * told this install a zone yet: the app fills `timezone` from the browser the
+ * first time it opens, and seeding the server's own zone here would decide it
+ * from a machine that may sit in a container or another country. `null` hours
+ * read as Monday to Friday, 09:00 to 17:00, and `null` away means here.
+ *
+ * Per leaf, and absence is tested with `in`: the defaults are `null`, so a
+ * `== null` guard would rewrite a stored `null` on every corrupt-recovery
+ * re-run, and a person who already set one leaf keeps it.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function seedWorkingHoursDefaults(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const profile = store.get('profile');
+  if (profile == null || typeof profile !== 'object') return;
+  const current = profile as Record<string, unknown>;
+  const missing = (['timezone', 'workingHours', 'away'] as const).filter(
+    (leaf) => !(leaf in current)
+  );
+  if (missing.length === 0) return;
+  store.set('profile', {
+    ...current,
+    ...Object.fromEntries(missing.map((leaf) => [leaf, USER_CONFIG_DEFAULTS.profile[leaf]])),
+  });
+}
+
+/**
  * Migration body: reserve `harness.refusedHooks: []` on a `harness` block that
  * predates durable refusals (DOR-1849).
  *
@@ -3897,6 +3961,40 @@ export function retireAgentContextSettings(store: {
   }
   store.delete('agentContext');
   return blocked;
+}
+
+/** Seed a new runtime without choosing a model or changing existing runtimes. */
+export function seedDoeRuntime(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  if (store.get('runtimes.doe') === undefined)
+    store.set('runtimes.doe', { enabled: true, inference: null, defaultTrustStop: null });
+  if (store.get('runtimes.environment.inherit.doe') === undefined)
+    store.set('runtimes.environment.inherit.doe', []);
+}
+
+/**
+ * Raise the engaged window from the old shipped defaults to the new ones
+ * (DOR-2823): 10 minutes to 60, and 5 messages to 15.
+ *
+ * Only a value still AT the old default, or missing, moves. A person who chose
+ * a number, including the operator's own stopgap of 60 and 15, keeps it. A
+ * stored `10` cannot say whether somebody chose it, and the old default is the
+ * far likelier reading: the setting has no UI. Missing is filled because a
+ * stored `rooms` block never inherits a new leaf from conf's shallow defaults.
+ *
+ * @param store - The conf store.
+ */
+export function raiseEngagedWindowDefaults(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  if (store.get('rooms') === undefined) return;
+  const minutes = store.get('rooms.engagedWindowMinutes');
+  if (minutes === 10 || minutes === undefined) store.set('rooms.engagedWindowMinutes', 60);
+  const posts = store.get('rooms.engagedWindowPosts');
+  if (posts === 5 || posts === undefined) store.set('rooms.engagedWindowPosts', 15);
 }
 
 export const CONFIG_MIGRATIONS = {
@@ -4852,6 +4950,32 @@ export const CONFIG_MIGRATIONS = {
     // See `seedCodexTransport`.
     seedCodexTransport(store);
   },
+  '0.101.0': seedDoeRuntime,
+  // v0.101.0 is tagged, so 0.102.0 is the next key.
+  // Frozen from merge, for the reason `'0.60.0'` above states; anything
+  // further opens `'0.103.0'`.
+  //
+  // Disjoint from every other key here: it deletes one leaf under `ui` and
+  // touches nothing beside it.
+  '0.102.0': (store: { has: (key: string) => boolean; delete: (key: string) => void }) => {
+    // `ui.autonomyAcknowledgedAt` — the Full-autonomy acknowledgement, retired
+    // with its ritual (ADR 261006-225605, DOR-2739). See
+    // `dropAutonomyAcknowledgement`.
+    dropAutonomyAcknowledgement(store);
+  },
+  // 0.102.0 has merged (the acknowledgement above), so 0.103.0 is the next
+  // key. Frozen from merge; anything further opens `'0.104.0'`.
+  //
+  // Disjoint from every other key here: it rewrites two `rooms` leaves, and
+  // only when each still holds the old shipped default.
+  '0.103.0': raiseEngagedWindowDefaults,
+  // v0.103.0 is the newest tag and 0.104.0 is claimed by work in flight, so
+  // this opens 0.105.0. Frozen from merge, for the reason `'0.60.0'` above
+  // states; anything further opens `'0.106.0'`.
+  //
+  // Disjoint from every other key here: it adds three nested leaves under
+  // `profile`, beside the fields it preserves.
+  '0.105.0': seedWorkingHoursDefaults,
 } as const;
 
 /**

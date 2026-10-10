@@ -154,7 +154,7 @@ export function describeLinkPreview(preview: DevLinkPreview): string[] {
   const lines = [
     `${preview.name}${preview.version ? ` ${preview.version}` : ''} (${preview.type})`,
     `Folder: ${preview.path}`,
-    preview.scope === 'project' ? 'Runs in this project only.' : 'Runs in every session.',
+    preview.scope === 'project' ? 'Runs in this project only.' : 'Runs in every chat.',
     preview.replaces
       ? `Sets aside the installed copy (${preview.replaces.version}). Unlinking brings it back.`
       : 'Replaces nothing.',

@@ -235,15 +235,20 @@ Severity is the gate here: `lint` passes no `--max-warnings 0`, so anything mean
 - **FSD layer enforcement**: Cross-layer imports are `error`
 - **TSDoc**: `error` on exported functions and classes — a missing or empty description fails `pnpm lint` (DOR-627)
 - **SDK confinement and `os.homedir()`**: `error` — see the Hard Rules in [AGENTS.md](AGENTS.md)
-- **Everything else** (`max-lines`, `no-unused-vars`): `warn`, so it reports without blocking
+- **Everything else** (`max-lines`, `no-unused-vars`): `warn`, so it reports without blocking. `max-lines` is the exception that still bites, through the ratchet below
 - **React Compiler rules**: Bundled with `eslint-plugin-react-hooks` v7 (warnings)
 
 ### File Size Limits
 
 - **< 300 lines**: ideal, no action needed
 - **300–500 lines**: consider splitting if the file has multiple responsibilities
-- **500+ lines**: must split — enforced by the `max-lines` ESLint rule (warn), which
-  excludes blank lines and comments from the count
+- **500+ lines**: must split. The `max-lines` ESLint rule counts lines without
+  blank lines and comments. It is only a `warn`, so `pnpm check:max-lines` holds it as
+  a ratchet in the required `typecheck` check: a file already over 500 is listed in
+  `scripts/max-lines/baseline.json` and may shrink but never grow, and a new file may
+  not pass 500. Test files are exempt. After shrinking or moving one, run
+  `pnpm check:max-lines -- --update`, which lowers its entry or carries it to the new
+  path. Never raise an entry by hand.
 
 See [.claude/rules/conventions.md](.claude/rules/conventions.md) for extraction
 patterns and exceptions, and `packages/eslint-config/base.js` for the enforced rule.
