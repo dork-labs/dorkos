@@ -107,6 +107,9 @@ describe('the room context a trigger derives', () => {
       { kind: 'channel', title: 'Backend', topic: 'shipping v1', members: [], agentPaths },
       human
     );
+    // No lead: this case is about the context a turn derives, and a lead would
+    // answer the unaddressed post (DOR-2823).
+    service.updateRoom(room.id, human, { leadAuthorId: null });
     ana = authors.resolveAgent('/agents/ana', 'Ana').id;
     bo = authors.resolveAgent('/agents/bo', 'Bo').id;
     cy = authors.resolveAgent('/agents/cy', 'Cy').id;

@@ -149,15 +149,19 @@ export class RoomUpdates {
    * offered it, and none can offer it by accident from here. The turn-limit
    * overrides cannot arrive either, for the same reason.
    *
+   * **The lead is on it too** (DOR-2823): an agent in a channel may hand the
+   * channel's lead to another agent member, or take it. Who leads is ordinary
+   * participation, the same as describing the room.
+   *
    * @param roomId - The room to change; the caller must be able to see it.
    * @param callerAuthorId - The agent asking, already resolved.
-   * @param patch - The title and topic half of an update.
+   * @param patch - The title, topic and lead half of an update.
    * @returns The updated room with its roster.
    */
   updateRoomFromTool(
     roomId: string,
     callerAuthorId: string,
-    patch: { title?: string; topic?: string | null }
+    patch: { title?: string; topic?: string | null; leadAuthorId?: string | null }
   ): RoomWithRoster {
     const room = this.visibility.requireVisibleRoom(roomId, callerAuthorId);
     this.authority.requireSystemRoomWritable(room, callerAuthorId, patch);
@@ -220,6 +224,39 @@ export class RoomUpdates {
   }
 
   /**
+   * Refuse a lead nobody could follow (DOR-2823).
+   *
+   * A lead belongs to a channel: in a direct message everything a person says
+   * is already addressed to whoever is in it. It must be an AGENT on the
+   * roster, because the lead is who answers a person's message nobody else is
+   * answering. #team's lead is the install's default agent, which
+   * `ensureTeamRoom` keeps in step with Settings, so a write here would be
+   * undone on the next boot; it is refused rather than allowed to lie.
+   *
+   * @param room - The room being changed.
+   * @param leadAuthorId - The new lead, or `null` to have none.
+   * @throws {RoomError} `INVALID_LEAD` for any of the three.
+   */
+  private requireValidLead(room: Room, leadAuthorId: string | null): void {
+    // `!== 'channel'`, never `=== 'dm'`: an unrecognized kind takes the
+    // narrower branch (`.claude/rules/room-conduct.md`).
+    if (room.kind !== 'channel') {
+      throw new RoomError('INVALID_LEAD', 'A direct message has no lead.');
+    }
+    if (room.wellKnown) {
+      throw new RoomError(
+        'INVALID_LEAD',
+        `The lead of #${room.slug ?? room.title} is your default agent. Change it from an agent's profile.`
+      );
+    }
+    if (leadAuthorId === null) return;
+    const member = this.store.listMembers(room.id).some((m) => m.authorId === leadAuthorId);
+    if (!member || this.authors.getById(leadAuthorId)?.kind !== 'agent') {
+      throw new RoomError('INVALID_LEAD', 'Only an agent in this channel can lead it.');
+    }
+  }
+
+  /**
    * A member's name, as the room's notices name them — as an agent reads it,
    * because the notice is stored and the next turn reads it back (DOR-2458).
    */
@@ -273,6 +310,9 @@ export class RoomUpdates {
     if (deliverNotices !== undefined && !this.bridges.findBridgeByRoom(roomId)) {
       throw new RoomError('NOT_A_BRIDGED_ROOM', 'This room is not bridged to an external chat');
     }
+    // Checked before any write, like the bridge field above, so a refused lead
+    // never leaves a half-applied rename behind it.
+    if (roomPatch.leadAuthorId !== undefined) this.requireValidLead(room, roomPatch.leadAuthorId);
     // Resolved FIRST, because the slug this room is about to have is the one an
     // un-archive has to be judged against — not the one it is leaving behind.
     const slugPatch = this.renamedSlug(room, roomPatch.title, viewerAuthorId);

@@ -10,6 +10,7 @@ import type { RoomKind, RoomRosterEntry } from '@dorkos/shared/room-schemas';
 import { cn, resolveIdentityFace, type AgentVisual } from '@/layers/shared/lib';
 import { useIsMobile, useDragVsTapGuard } from '@/layers/shared/model';
 import {
+  Badge,
   Button,
   DropdownMenu,
   DropdownMenuContent,
@@ -47,6 +48,11 @@ export interface RoomMemberRowProps {
   roomKind: RoomKind;
   /** True when this member is the person reading. */
   isReader: boolean;
+  /**
+   * True when this member leads the channel — the agent that answers a person
+   * when nobody else does (DOR-2823). Draws a small "Lead" badge by the name.
+   */
+  isLead?: boolean;
   /**
    * The agent's face as its own manifest gives it, or `null` when the fleet
    * could not name one. See {@link RoomMemberRow} for what happens then.
@@ -259,6 +265,7 @@ export function RoomMemberRow({
   member,
   roomKind,
   isReader,
+  isLead = false,
   visual,
   presence,
   onViewProfile,
@@ -365,6 +372,18 @@ export function RoomMemberRow({
                   way. */}
               <OriginMark origin={member.origin} className="ml-1 shrink-0" />
               <RetiredMark retired={retired} className="ml-1 shrink-0" />
+              {isLead && (
+                <Badge
+                  variant="secondary"
+                  size="xs"
+                  shape="pill"
+                  data-testid="room-lead-badge"
+                  title="Answers messages nobody else is answering."
+                  className="ml-1.5 shrink-0"
+                >
+                  Lead
+                </Badge>
+              )}
             </p>
             <p id={secondaryId} className="text-muted-foreground truncate text-xs">
               {retired

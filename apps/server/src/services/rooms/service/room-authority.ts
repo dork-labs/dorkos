@@ -274,7 +274,7 @@ export class RoomAuthority {
    * widens the door for AGENTS the owner armed and for nobody else.
    *
    * **`requireOperator` itself is unchanged, and four of its call sites must
-   * never gain an agent path.** `setFallbackSeat` and `updateMembership` decide
+   * never gain an agent path.** `setLead` and `updateMembership` decide
    * who answers what, which is arbitration by another name (ADR 260726-170125);
    * `archiveBridgedRoom` and {@link RoomService.updateRoom} are spend authority
    * and room-level state. Only `addMember` and `removeMember` move here.

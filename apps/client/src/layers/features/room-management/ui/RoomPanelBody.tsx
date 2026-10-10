@@ -12,6 +12,7 @@ import {
   RoomLoudnessLine,
   isRoomMember,
   roomDisplayTitle,
+  roomLead,
   type LoudnessPreview,
 } from '@/layers/entities/room';
 import { useRoomDetailsView } from '../model/use-room-details-view';
@@ -20,6 +21,7 @@ import { useRoomPanelFocusStore, type RoomPanelFocusRequest } from '../model/roo
 import { AddMembersRow } from './AddMembersRow';
 import { RoomDetailsFooter } from './RoomDetailsFooter';
 import { RoomDetailsHeader } from './RoomDetailsHeader';
+import { RoomLeadSection } from './RoomLeadSection';
 import { RoomLimitsSection } from './RoomLimitsSection';
 import { RoomMemberList } from './RoomMemberList';
 import { RoomMemberRow } from './RoomMemberRow';
@@ -102,6 +104,8 @@ export function RoomPanelBody({ roomId }: RoomPanelBodyProps) {
    * holding `General` is a control lying about its own value.
    */
   const spokenTitle = detail === null ? '' : roomDisplayTitle(detail);
+  /** Whose row wears the Lead badge — resolved against the roster, see `roomLead`. */
+  const leadAuthorId = detail === null ? null : (roomLead(detail)?.authorId ?? null);
   const writes = useRoomDetailsWrites({
     roomId,
     roomTitle: spokenTitle,
@@ -479,6 +483,7 @@ export function RoomPanelBody({ roomId }: RoomPanelBodyProps) {
                   member={member}
                   roomKind={detail.kind}
                   isReader={member.authorId === view.room?.viewerAuthorId}
+                  isLead={member.authorId === leadAuthorId}
                   visual={
                     member.author.agentRef
                       ? (view.facesByRef.get(member.author.agentRef) ?? null)
@@ -573,6 +578,10 @@ export function RoomPanelBody({ roomId }: RoomPanelBodyProps) {
             inputRef={searchRef}
           />
         )}
+
+        {/* Right under the roster it chooses from. Not in an archived room,
+            where nothing is answered and every setting is on hold. */}
+        {detail !== null && !detail.archived && <RoomLeadSection room={detail} />}
 
         {/* Under the roster, because it is about what the people above may do
             rather than about who they are — and not drawn at all in an archived

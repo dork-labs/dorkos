@@ -312,9 +312,10 @@ export class RoomStore {
       // caller-supplied key would be a second expression of the member set,
       // free to disagree with the rows beside it.
       dmMemberKey: dmMemberKeyFor(room.kind, bridged, members),
-      // Empty at creation always: the seat is assigned by the boot hook that
-      // resolves the default agent, never by whoever opened the room.
-      fallbackSeatAuthorId: null,
+      // Whoever opened a channel picks its lead, defaulting to the first agent
+      // added (DOR-2823); #team's is assigned by the boot hook that resolves the
+      // default agent.
+      leadAuthorId: room.leadAuthorId ?? null,
       archived: false,
       ambientMaxEntries: DEFAULT_AMBIENT_MAX_ENTRIES,
       // Inheriting, always: a room is created with no opinion of its own about
@@ -564,6 +565,7 @@ export class RoomStore {
       maxAgentDepth?: number | null;
       maxTurnsPerAgentPerCascade?: number | null;
       maxAutoTurnsPerHour?: number | null;
+      leadAuthorId?: string | null;
     }
   ): Room | null {
     if (Object.keys(patch).length > 0) {
@@ -762,8 +764,8 @@ export class RoomStore {
    * @param authorId - The member holding the seat, or `null` to leave it empty.
    * @returns The updated room, or `null` when there is no such room.
    */
-  setFallbackSeat(roomId: string, authorId: string | null): Room | null {
-    this.db.update(rooms).set({ fallbackSeatAuthorId: authorId }).where(eq(rooms.id, roomId)).run();
+  setLead(roomId: string, authorId: string | null): Room | null {
+    this.db.update(rooms).set({ leadAuthorId: authorId }).where(eq(rooms.id, roomId)).run();
     return this.getRoom(roomId);
   }
 

@@ -511,6 +511,71 @@ A thread's scope includes its root — the first message — so a reply anchored
 
 Notices do not count. A notice is authored by the system and is the room talking about the conversation, not a turn in it.
 
+### 9.2a The channel lead, when nothing above picked anybody (DOR-2823)
+
+A channel may have a **lead**: one agent member that answers a person's post nothing above
+answered. Stored in the existing `rooms.fallback_seat_author_id` column — it already carried
+#team's default-agent seat from the team-room-home work, and this phase generalizes it to every
+channel rather than adding a second column. The API field is `Room.leadAuthorId`, renamed from
+`fallbackSeatAuthorId` because it is no longer #team's alone.
+
+**Ordering, computed once per entry in `room-trigger.ts`.** Each step runs only when the one
+before it left the post with nobody:
+
+1. **Mention.** `selectTriggerTargets` (the matrix, §9.1/§5) resolves every `@mention` first, as it
+   always has. A named agent is never reached by any step below.
+2. **The exchange.** For a PERSON's post in a channel, `conversationFor` (§9.2) picks who the
+   person is already talking to there, and that agent answers instead of the matrix's own picks.
+3. **Seat stand-down, #team only.** `seatAuthorId` is non-null only for a `wellKnown` room (#team),
+   and equals its lead there. `standDownFallbackSeat` makes that seat stand down exactly where any
+   channel's own lead would: a post that named another agent, or a post an agent wrote. Everywhere
+   else `seatAuthorId` is `null` and this step is a no-op — an ordinary channel's lead is decided by
+   step 4, not this one.
+4. **The lead.** `pickLead` (`addressing.ts`) runs only when steps 1-3 left the post with nobody,
+   the post is a PERSON's, and the room is a channel (the same `followsConversation` guard as §9.2).
+   It returns the lead's selection whatever the lead's `responseMode` says — `TriggerReason: 'lead'`,
+   never put through the engaged response gate, because a person is owed an answer — unless the
+   post `@mentioned` a different agent member (that agent's to answer, or stay silent on) or named
+   only people (`mentions` is non-empty and excludes the lead: `@kai lunch?` is not the lead's).
+
+An AGENT's post never reaches `pickLead`: the lead check is gated on `followsConversation`
+(`authorKind === 'human' && room.kind === 'channel'`), the same predicate §9.2 uses to split the
+exchange rule from the mention-anchored one. Agent-to-agent traffic stays exactly as quiet as it
+was before this phase.
+
+**Defaults.** `POST /api/rooms` accepts `leadAgentPath`; `createRoom` resolves it to the lead,
+defaulting to `agentPaths[0]` when the field is omitted, so the first agent named becomes the lead
+with no further action. A channel created with no agents gets no lead; `addMember` sets one the
+first time an agent joins such a room. A direct message always answers `leadAuthorId: null` and
+refuses any attempt to set one (`INVALID_LEAD`): everything in a DM already addresses whoever is
+in it, so there is nothing for a lead to pick up.
+
+**Changing it.** `PATCH /api/rooms/:id` `{ leadAuthorId }` is person-only, gated the same way the
+rest of that route is; the `update_room` tool exposes the same field as `lead`, resolved by
+`@handle`, open to any agent that is itself a member of the channel. `requireValidLead`
+(`room-updates.ts`) refuses all three ways a write can be wrong: a non-channel room
+(`INVALID_LEAD`, "A direct message has no lead"), a `wellKnown` room (`INVALID_LEAD`: #team's lead
+tracks Settings' default agent, and a direct write would be undone the next time `ensureTeamRoom`
+runs, so it is refused rather than silently reverted), and an id that is not an agent member of
+this channel. Removing a member who is the lead clears `leadAuthorId` to `null` — never a dangling
+id — and the channel has no lead again until someone sets one.
+
+**Migration** (`packages/db/drizzle/20261010002626_channel_leads.sql`, carries no DDL). Every
+existing channel with `fallback_seat_author_id IS NULL` gets a value, in order:
+
+1. The agent member that answered a person's post most in the last 14 days — counting replies at
+   cascade depth 1 directly under a person's post, ties going to whichever answered most recently.
+2. Failing that, the agent a topic's `steward: <name>` names, matched by handle or by display name,
+   and only when that agent is a member of the room today. That text was a convention people typed
+   into a topic; nothing in the product read it before this migration.
+3. Otherwise none — a channel the backfill cannot place stays leadless, same as a brand-new one.
+
+Only channels are touched, and only where no lead is already set, so #team keeps the default-agent
+seed it already had. Tested end to end in
+`packages/db/src/__tests__/channel-leads-migration.test.ts` (built against the real migration
+history) and the rule itself in `apps/server/src/services/rooms/__tests__/channel-lead.test.ts`
+(driven through the real `RoomService` and dispatcher with only the turn runner scripted).
+
 ### 9.3 Configuration
 
 Two new fields in the `rooms` block of `packages/shared/src/config-schema.ts:621-659`, following the `adding-config-fields` skill end to end (Zod field, defaults object, semver-keyed `conf` migration, docs, tests). A config schema change without a migration is a review-blocking finding.

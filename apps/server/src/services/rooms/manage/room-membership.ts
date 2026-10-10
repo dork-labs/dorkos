@@ -172,6 +172,17 @@ export class RoomMembership {
     }
 
     const member = this.roster.add(room, input);
+    // A channel with no lead takes the first agent that joins it (DOR-2823), so
+    // a channel opened empty and filled later is never left without one. Not
+    // #team, whose lead follows the default agent in Settings.
+    if (
+      room.kind === 'channel' &&
+      !room.wellKnown &&
+      !room.leadAuthorId &&
+      candidate.kind === 'agent'
+    ) {
+      this.store.setLead(roomId, member.authorId);
+    }
     eventFanOut.broadcast('room_member_added', { roomId, authorId: member.authorId });
     this.followRosterTitle(room, priorTitleNames);
     return member;
@@ -407,8 +418,8 @@ export class RoomMembership {
     // into a room it could never leave — the identical failure mode that made
     // defending it the wrong answer, and the reason the standing guarantee
     // "taking an AGENT out is never refused, so nothing is ever wedged" holds.
-    if (room.fallbackSeatAuthorId === authorId) {
-      this.store.setFallbackSeat(roomId, null);
+    if (room.leadAuthorId === authorId) {
+      this.store.setLead(roomId, null);
     }
     // Whatever this room was still waiting for from this agent is over: it is
     // not here to answer it. Dropped rather than left to age out, because the

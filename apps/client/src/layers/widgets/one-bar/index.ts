@@ -14,6 +14,8 @@ export { ExtensionPageBar } from './ui/ExtensionPageBar';
 // mounted across a tab press (see `resolveRouteHeader`).
 export { HomeSurfaceBar } from './ui/HomeSurfaceBar';
 export { BarMembersChip } from './ui/BarMembersChip';
+// Exported for the dev playground, which shows it beside the head count.
+export { RoomLeadChip } from './ui/RoomLeadChip';
 export { ChannelsBar } from './ui/ChannelsBar';
 export { SessionHeader } from './ui/SessionHeader';
 export { TeamHeader, TEAM_VIEW_TABS } from './ui/TeamHeader';

@@ -23,7 +23,7 @@
  * | `rooms.create`      | `create_room`           | `act`     | Open a channel, or a DM with someone. |
  * | `rooms.add_members` | `add_room_members`      | `act`     | Bring people or agents into a room. |
  * | `rooms.remove_members`| `remove_room_members` | `act`     | Take them out again. |
- * | `rooms.update`      | `update_room`           | `act`     | Rename a room, or set its topic. |
+ * | `rooms.update`      | `update_room`           | `act`     | Rename a room, set its topic, or its lead. |
  * | `rooms.leave`       | `leave_room`            | `act`     | Step out of a channel that is finished. |
  *
  * ## The two repo verbs, and the three things they are NOT
@@ -1581,9 +1581,9 @@ export const roomsDomain: CapabilityDomain = {
     }),
     defineCapability({
       id: 'rooms.update',
-      title: 'Rename a channel or set a room topic',
+      title: 'Rename a channel, or set a room topic or lead',
       description:
-        'Change the title or the topic of a room you are in. ' +
+        'Change the title, the topic or the lead of a room you are in. ' +
         'Use it to fix a name that no longer says what the room is about, or to write a topic ' +
         'so somebody arriving knows what they have walked into. ' +
         'Renaming a channel CHANGES ITS #name, so anyone who types the old one will not find ' +
@@ -1592,12 +1592,15 @@ export const roomsDomain: CapabilityDomain = {
         'still set its topic. ' +
         'The home channel is the exception: you can describe it, but only the person who runs ' +
         'this install can rename it. ' +
-        'A name somebody chose is theirs; ask before you change it.',
+        'A name somebody chose is theirs; ask before you change it. ' +
+        "A channel's lead is the agent that answers a person's message nobody else is " +
+        'answering. Hand it to the agent whose work the channel is about, by @handle, or ' +
+        "null for none. The home channel's lead is the person's default agent, set from an agent's profile.",
       tier: 'act',
       area: 'rooms',
       // A person may set Rooms to Ask, so this can raise a card: these are
       // the arguments it shows (spec `agent-permissions` D2).
-      approvalDisplayFields: ['roomId', 'title', 'topic'],
+      approvalDisplayFields: ['roomId', 'title', 'topic', 'lead'],
       approvalSubject: { field: 'roomId', kind: 'room' },
       input: z.object({
         roomId: z
@@ -1615,6 +1618,14 @@ export const roomsDomain: CapabilityDomain = {
           .nullable()
           .optional()
           .describe('A new topic, or null to clear it.'),
+        lead: z
+          .string()
+          .min(1)
+          .nullable()
+          .optional()
+          .describe(
+            "A channel's new lead, by the @handle or the id a room lookup reports, or null for none. Must be an agent in the channel."
+          ),
       }),
       output: z.unknown(),
       surfaces: {
@@ -1627,11 +1638,16 @@ export const roomsDomain: CapabilityDomain = {
       invoke: (deps, input, context) => {
         const rooms = requireRoomDeps(deps);
         const caller = callerAuthor(rooms, context);
-        if (input.title === undefined && input.topic === undefined) {
+        if (input.title === undefined && input.topic === undefined && input.lead === undefined) {
           throw new CapabilityToolError({
-            error: 'Give a title, a topic, or both.',
+            error: 'Give a title, a topic, a lead, or any of them together.',
             code: 'MISSING_FILTER',
           });
+        }
+        let leadAuthorId: string | null | undefined;
+        if (input.lead !== undefined) {
+          leadAuthorId =
+            input.lead === null ? null : (rooms.findAuthorByHandle(input.lead)?.id ?? input.lead);
         }
         answering(() =>
           // `updateRoomFromTool`, never the operator-only `updateRoom` a route
@@ -1641,6 +1657,7 @@ export const roomsDomain: CapabilityDomain = {
           rooms.updateRoomFromTool(input.roomId, caller.id, {
             ...(input.title !== undefined ? { title: input.title } : {}),
             ...(input.topic !== undefined ? { topic: input.topic } : {}),
+            ...(leadAuthorId !== undefined ? { leadAuthorId } : {}),
           })
         );
         const detail = answering(() => rooms.describeRoom(input.roomId, caller.id));

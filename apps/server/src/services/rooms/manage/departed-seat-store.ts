@@ -75,15 +75,15 @@ export class DepartedSeatStore {
         const seats = tx
           .select({
             member: roomMembers,
-            fallbackSeatAuthorId: rooms.fallbackSeatAuthorId,
+            leadAuthorId: rooms.leadAuthorId,
           })
           .from(roomMembers)
           .innerJoin(rooms, eq(rooms.id, roomMembers.roomId))
           .where(and(inArray(roomMembers.authorId, ids), eq(rooms.kind, 'channel')))
           .all();
-        for (const { member, fallbackSeatAuthorId } of seats) {
+        for (const { member, leadAuthorId } of seats) {
           const { roomId, authorId } = member;
-          const heldFallbackSeat = fallbackSeatAuthorId === authorId;
+          const heldFallbackSeat = leadAuthorId === authorId;
           const tombstone = {
             manifestId: manifestOf.get(authorId) ?? null,
             responseMode: member.responseMode,
@@ -107,7 +107,7 @@ export class DepartedSeatStore {
             .where(and(eq(roomSessions.roomId, roomId), eq(roomSessions.authorId, authorId)))
             .run();
           if (heldFallbackSeat) {
-            tx.update(rooms).set({ fallbackSeatAuthorId: null }).where(eq(rooms.id, roomId)).run();
+            tx.update(rooms).set({ leadAuthorId: null }).where(eq(rooms.id, roomId)).run();
           }
         }
         removed = seats.map(({ member }) => ({ roomId: member.roomId, authorId: member.authorId }));
@@ -194,8 +194,8 @@ export class DepartedSeatStore {
           if (inserted.changes === 0) continue;
           if (seat.heldFallbackSeat) {
             tx.update(rooms)
-              .set({ fallbackSeatAuthorId: authorId })
-              .where(and(eq(rooms.id, seat.roomId), isNull(rooms.fallbackSeatAuthorId)))
+              .set({ leadAuthorId: authorId })
+              .where(and(eq(rooms.id, seat.roomId), isNull(rooms.leadAuthorId)))
               .run();
           }
           restored.push({ roomId: seat.roomId, authorId });

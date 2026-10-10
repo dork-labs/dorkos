@@ -49,6 +49,7 @@ import {
   ROOM_CANDIDATES,
 } from './rooms-showcase-data';
 import { RoomPanelDemo } from './rooms-showcase-helpers';
+import { RoomLeadShowcases } from './RoomLeadShowcases';
 
 /** The engaged window this page describes the `Engaged` rung with. */
 const WINDOW: EngagedWindow = { engagedWindowMinutes: 60, engagedWindowPosts: 15 };
@@ -746,6 +747,7 @@ export function RoomsShowcases() {
   return (
     <>
       <RoomPanelShowcase />
+      <RoomLeadShowcases />
       <RoomMemberRowShowcase />
       <RoomAvatarShowcase />
       <BridgeVisibilityBadgeShowcase />

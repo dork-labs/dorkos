@@ -358,7 +358,7 @@ describe('greeting a person in #team', () => {
     service.updateMembership(room.id, human, tangerines, 'always');
     // #team names a fallback seat, so an unaddressed post reaches somebody.
     // These posts must not be that somebody.
-    service.setFallbackSeat(room.id, human, ana);
+    service.setLead(room.id, human, ana);
 
     settings = settingsWith();
     work = [];

@@ -948,6 +948,23 @@ An agent's own settings do not offer **Engaged** as its default. That default on
 one-to-one, at the moment the agent joins it, and how loud an agent is belongs to the room rather
 than to the agent.
 
+#### The channel lead
+
+Every channel can have a lead: the one agent that answers when you write without `@`-naming
+anyone, and you aren't already talking to someone else there.
+
+The lead answers no matter how its own reply setting is set — even **@only**. It steps back in
+two cases: when your message `@mentions` a different agent, and when it names only people. And if
+you're mid-exchange with another agent (see [Staying in the exchange](#staying-in-the-exchange)
+above), that agent keeps the message — the lead only picks up what nobody else would.
+
+**Choosing one.** Pick the lead when you create a channel. Skip that and the first agent you add
+becomes it. Change it later from the channel's members panel. A channel whose lead leaves has no
+lead again until you set a new one.
+
+**#team keeps its own.** Its lead is always your default agent, the one you pick with "Set as default" on an agent's profile, and
+the room itself can't change it.
+
 ### Setting it, in the app
 
 You do not pick any of those words. Open a room's panel — the member count in its header, or

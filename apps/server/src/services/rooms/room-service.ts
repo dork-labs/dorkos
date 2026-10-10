@@ -256,9 +256,9 @@ export class RoomService {
   createRoom(request: CreateRoomRequest, creatorAuthorId: string): OpenedRoom {
     return this.parts.lifecycle.createRoom(request, creatorAuthorId);
   }
-  /** Record a room's fallback seat. See {@link RoomLifecycle.setFallbackSeat}. */
-  setFallbackSeat(roomId: string, operatorAuthorId: string, authorId: string | null): Room {
-    return this.parts.lifecycle.setFallbackSeat(roomId, operatorAuthorId, authorId);
+  /** Record a room's fallback seat. See {@link RoomLifecycle.setLead}. */
+  setLead(roomId: string, operatorAuthorId: string, authorId: string | null): Room {
+    return this.parts.lifecycle.setLead(roomId, operatorAuthorId, authorId);
   }
   /** Get — or open, once — a well-known channel. See {@link RoomLifecycle.ensureSystemChannel}. */
   ensureSystemChannel(
@@ -323,7 +323,7 @@ export class RoomService {
   updateRoomFromTool(
     roomId: string,
     callerAuthorId: string,
-    patch: { title?: string; topic?: string | null }
+    patch: { title?: string; topic?: string | null; leadAuthorId?: string | null }
   ): RoomWithRoster {
     return this.parts.updates.updateRoomFromTool(roomId, callerAuthorId, patch);
   }
