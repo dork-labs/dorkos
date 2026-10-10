@@ -3,11 +3,12 @@
  * here (spec `official-community-space` D9, D10), walked from the live stream bridge through the
  * real RoomService and trigger dispatcher to the turn request the runner receives.
  *
- * The other half of the walk — the turn request to the mode the runtime runs at — is pinned in
- * `rooms/__tests__/room-turn-runner.test.ts` ("a stranger's turn runs at the mode that asks"),
- * where the dispatch the runner makes can be read. Together they are the end-to-end pin: a
- * stranger's mention arrives here as `externalAuthor: true`, and that fact is what sets the
- * ceiling there and what `permissionSeedForOrigin` reads as `'none'`.
+ * The other half of the walk — the turn request's `permissionCeiling` to the mode each runtime
+ * runs at — is pinned by the runner and runtime tests of spec `trusted-by-default-flip` §4
+ * (`rooms/__tests__/room-turn-runner.test.ts`, `runtimes/__tests__/turn-permission-ceiling.test.ts`).
+ * Together they are the end-to-end pin: a stranger's mention arrives here carrying the
+ * `'runtime-default'` ceiling and `externalAuthor: true`, which `permissionSeedForOrigin` reads as
+ * `'none'` for a new conversation's row.
  *
  * @module services/communities/remote/__tests__/space-stranger-safety
  */
@@ -17,7 +18,10 @@ import { authorOrigin } from '../../../rooms/author-registry.js';
 import {
   agentLookupFor,
   createRoomHarness,
+  gatedRunner,
+  settleUntil,
   type RoomHarness,
+  type ScriptedTurnRunner,
 } from '../../../rooms/__tests__/room-test-harness.js';
 import { formatRoomContext } from '../../../runtimes/shared/room-context-block.js';
 import { permissionSeedForOrigin } from '../../../session/origin/turn-origin.js';
@@ -59,9 +63,10 @@ const STRANGER = { memberId: 'remote-stranger', displayName: 'Stranger', kind: '
 const OWNER_ELSEWHERE = { memberId: OWNER_MEMBER, displayName: 'Me', kind: 'human' } as const;
 
 /** A space mirror with Ana enrolled, wired the way production wires it. */
-function space(gate?: RemoteWakeGate) {
+function space(gate?: RemoteWakeGate, runner?: ScriptedTurnRunner) {
   const state: { mirrors?: RemoteMirrorStore } = {};
   const harness: RoomHarness = createRoomHarness({
+    ...(runner ? { runner } : {}),
     agents: agentLookupFor({ '/agents/ana': { name: 'Ana', responseMode: 'always' } }),
     mirrorAccess: {
       canRead: (roomId, authorId) => state.mirrors?.canRead(roomId, authorId) ?? null,
@@ -118,6 +123,7 @@ describe('a stranger in a space (D10)', () => {
     const turn = harness.runner.turns[0]!;
     // The fact the turn runner reads for the ceiling, and the origin's seed reads for the row.
     expect(turn.externalAuthor).toBe(true);
+    expect(turn.permissionCeiling).toBe('runtime-default');
     expect(permissionSeedForOrigin({ kind: 'room', externalAuthor: turn.externalAuthor! })).toBe(
       'none'
     );
@@ -147,6 +153,7 @@ describe('a stranger in a space (D10)', () => {
 
     const turn = harness.runner.turns[0]!;
     expect(turn.externalAuthor).toBe(false);
+    expect(turn.permissionCeiling).toBeUndefined();
     expect(turn.roomContext.room.bridged).toBe(true);
   });
 
@@ -162,8 +169,55 @@ describe('a stranger in a space (D10)', () => {
     await harness.service.triggersIdle();
 
     expect(harness.runner.turns.map((turn) => turn.externalAuthor)).toEqual([false, true]);
+    expect(harness.runner.turns.map((turn) => turn.permissionCeiling)).toEqual([
+      undefined,
+      'runtime-default',
+    ]);
     // Same agent, same room conversation.
     expect(harness.runner.turns[1]!.agentPath).toBe(harness.runner.turns[0]!.agentPath);
+  });
+
+  it('stranger then owner while the agent is busy: the merged turn is still external', async () => {
+    // One turn answers both messages, triggered by the owner's newer one. The
+    // stranger's message gathered behind it must still hold that turn down.
+    const runner = gatedRunner();
+    const { harness, bridge, room, localRoom, agent } = space(undefined, runner);
+
+    harness.service.post(localRoom.id, { authorId: harness.human, text: 'owner, first turn' });
+    await settleUntil(() => runner.holdsFor(agent.id) === 1, 'the owner’s turn to be running');
+    bridge.importLive(room, liveEntry(STRANGER, ['remote-ana']), LIVE);
+    harness.service.post(localRoom.id, { authorId: harness.human, text: 'owner, while busy' });
+
+    // Nothing reaches the running turn: both wait for a turn of their own.
+    expect(runner.turns).toHaveLength(1);
+    runner.release(agent.id);
+    await settleUntil(() => runner.turns.length === 2, 'the merged turn to start');
+
+    const merged = runner.turns[1]!;
+    expect(merged.prompt).toBe('owner, while busy');
+    expect(merged.externalAuthor).toBe(true);
+    expect(merged.permissionCeiling).toBe('runtime-default');
+    runner.releaseAll();
+    await harness.service.triggersIdle();
+  });
+
+  it('owner then stranger while the agent is busy: the owner’s running turn is never steered', async () => {
+    const runner = gatedRunner();
+    const { harness, bridge, room, localRoom, agent } = space(undefined, runner);
+
+    harness.service.post(localRoom.id, { authorId: harness.human, text: 'owner first' });
+    await settleUntil(() => runner.holdsFor(agent.id) === 1, 'the owner’s turn to be running');
+    bridge.importLive(room, liveEntry(STRANGER, ['remote-ana']), LIVE);
+
+    expect(runner.turns).toHaveLength(1);
+    expect(runner.turns[0]!.externalAuthor).toBe(false);
+    expect(runner.turns[0]!.permissionCeiling).toBeUndefined();
+    runner.release(agent.id);
+    await settleUntil(() => runner.turns.length === 2, 'the stranger’s own turn to start');
+    expect(runner.turns[1]!.externalAuthor).toBe(true);
+    expect(runner.turns[1]!.permissionCeiling).toBe('runtime-default');
+    runner.releaseAll();
+    await harness.service.triggersIdle();
   });
 
   it('never dispatches a remote agent’s message, even one that mentions ours', async () => {
@@ -192,7 +246,10 @@ describe('a stranger in a space (D10)', () => {
     const stored = harness.store.listEntriesAfter(localRoom.id, 0)[0]!;
     expect(stored.authorId).not.toBe(agent.id);
     expect(authorOrigin(harness.authors.getById(stored.authorId)!.naturalKey)).not.toBe('local');
-    for (const turn of harness.runner.turns) expect(turn.externalAuthor).toBe(true);
+    for (const turn of harness.runner.turns) {
+      expect(turn.externalAuthor).toBe(true);
+      expect(turn.permissionCeiling).toBe('runtime-default');
+    }
   });
 
   it('cannot enroll another local agent by mentioning it', async () => {

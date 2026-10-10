@@ -125,6 +125,8 @@ export interface RecordedTurn {
    * Optional so a hand-written runner that records less still fits.
    */
   externalAuthor?: boolean;
+  /** The per-turn ceiling the dispatcher set (spec `trusted-by-default-flip` §4). */
+  permissionCeiling?: RoomTurnRequest['permissionCeiling'];
   /** What the agent was told about the room — derived by the real dispatcher. */
   roomContext: RoomContextData;
   /**
@@ -305,6 +307,9 @@ export function outcomeRunner(
         sessionId: request.sessionId,
         prompt: request.prompt,
         externalAuthor: request.externalAuthor,
+        ...(request.permissionCeiling !== undefined
+          ? { permissionCeiling: request.permissionCeiling }
+          : {}),
         roomContext: request.roomContext,
         attachmentProjection: request.attachmentProjection,
       });
@@ -479,6 +484,9 @@ export function gatedRunner({
         sessionId: request.sessionId,
         prompt: request.entry.body.text,
         externalAuthor: request.externalAuthor,
+        ...(request.permissionCeiling !== undefined
+          ? { permissionCeiling: request.permissionCeiling }
+          : {}),
         roomContext: request.roomContext,
         attachmentProjection: request.attachmentProjection,
       });
