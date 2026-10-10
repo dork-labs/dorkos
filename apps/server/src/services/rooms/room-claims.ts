@@ -324,6 +324,12 @@ export interface TriggerTarget {
    * the same answer.
    */
   engaged: EngagementWindow | null;
+  /**
+   * Why a person is owed this agent's answer though the message did not name
+   * it (DOR-2823): their exchange with it, or its lead of the channel. Carried
+   * from the message the turn answers, so the context never offers silence.
+   */
+  answerOwed?: 'conversation' | 'lead';
   /** This target's own dispatch id — one per `(entry, target)` pair, never per entry. */
   dispatchId: string;
   /** The `(room, agent)` session, bound at claim time so a race resolves to one. */

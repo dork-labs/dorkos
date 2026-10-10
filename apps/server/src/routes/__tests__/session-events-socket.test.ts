@@ -68,6 +68,10 @@ vi.mock('../../services/core/runtime-registry.js', () => ({
 
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { sessionEventsRoute } from '../session-events-socket.js';
+import {
+  initSessionVisibility,
+  resetSessionVisibility,
+} from '../../services/audit/session-visibility.js';
 import { validateBoundaryOrDorkHome } from '../../lib/boundary.js';
 import type {
   UpgradeAttempt,
@@ -163,5 +167,45 @@ describe('sessionEventsRoute — which directory the socket streams against', ()
 
     expect(decision).toMatchObject({ ok: false, status: 400 });
     expect(validateBoundaryOrDorkHome).not.toHaveBeenCalled();
+  });
+});
+
+describe('sessionEventsRoute — who may watch the session (spec `audit-trail` §3.4)', () => {
+  /** Authorize as an agent: the header is what makes the caller one. */
+  function authorizeAsAgent(): Promise<UpgradeDecision> {
+    const url = new URL(`ws://localhost:4242${EVENTS_PATH}`);
+    const match = /^\/api\/sessions\/([^/]+)\/events$/.exec(EVENTS_PATH)!;
+    return Promise.resolve(
+      sessionEventsRoute.authorize({
+        url,
+        headers: { 'x-dorkos-agent': 'agent-token' },
+        match,
+        locals: {},
+      } as unknown as UpgradeAttempt)
+    );
+  }
+
+  beforeEach(() => {
+    fakeRuntime.getSessionCwd = vi.fn(() => LIVE_CWD);
+  });
+
+  it("refuses an agent a person's own chat as not found, before any lookup", async () => {
+    resetSessionVisibility();
+    expect(await authorizeAsAgent()).toMatchObject({ ok: false, status: 404 });
+    expect(resolveForSession).not.toHaveBeenCalled();
+  });
+
+  it('lets an agent watch agent work', async () => {
+    initSessionVisibility((ids) => new Map(ids.map((id) => [id, 'space'] as const)));
+    try {
+      expect((await authorizeAsAgent()).ok).toBe(true);
+    } finally {
+      resetSessionVisibility();
+    }
+  });
+
+  it('lets the owner watch their own chat', async () => {
+    resetSessionVisibility();
+    expect((await authorize()).ok).toBe(true);
   });
 });

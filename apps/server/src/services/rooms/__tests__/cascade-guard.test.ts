@@ -637,7 +637,7 @@ describe('cascade guard, wired', () => {
 });
 
 describe('triggering', () => {
-  it('answers a DM without being mentioned, and a channel only when it is', async () => {
+  it('answers a DM without being mentioned, and a channel with no lead only when it is', async () => {
     const agents = agentLookupFor({
       '/agents/ana': { name: 'ana', displayName: 'Ana', responseMode: 'always' },
     });
@@ -656,6 +656,9 @@ describe('triggering', () => {
       { kind: 'channel', title: 'Backend', members: [], agentPaths: ['/agents/ana'] },
       channel.human
     );
+    // No lead: this case is about the engaged mode a channel seeds, and a lead
+    // would answer the unaddressed post (DOR-2823).
+    channel.service.updateRoom(channelRoom.id, channel.human, { leadAuthorId: null });
     channel.service.post(channelRoom.id, { authorId: channel.human, text: 'morning' });
     await channel.service.triggersIdle();
     // A channel seeds `engaged`, and an agent nobody has addressed yet is not in

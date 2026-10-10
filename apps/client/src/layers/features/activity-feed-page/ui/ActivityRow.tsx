@@ -2,7 +2,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { Button, TableRow, TableCell } from '@/layers/shared/ui';
 import { cn, internalRoutePath } from '@/layers/shared/lib';
 import { ActorBadge } from '@/layers/entities/activity';
-import type { ActivityItem } from '@/layers/entities/activity';
+import type { ActivityRowItem } from '@/layers/entities/activity';
 
 // ---------------------------------------------------------------------------
 // Time formatting
@@ -55,8 +55,14 @@ export function formatActivityTime(iso: string, now: Date = new Date()): string 
 // ---------------------------------------------------------------------------
 
 export interface ActivityRowProps {
-  /** The activity event to render. */
-  item: ActivityItem;
+  /** The row to render: an activity event, or an audit event read as one. */
+  item: ActivityRowItem;
+  /**
+   * Lay the row out for a narrow column (a profile page) at every screen
+   * width: no time or actor columns, the actor named inline, as on a phone.
+   * Group headers carry the time.
+   */
+  compact?: boolean;
   className?: string;
 }
 
@@ -82,7 +88,7 @@ export interface ActivityRowProps {
  * origin, or a scheme the link seam refuses leaves the row inert rather than
  * handing the router somewhere it cannot go.
  */
-export function ActivityRow({ item, className }: ActivityRowProps) {
+export function ActivityRow({ item, compact = false, className }: ActivityRowProps) {
   const navigate = useNavigate();
   const time = formatActivityTime(item.occurredAt);
   const linkPath = item.linkPath ? internalRoutePath(item.linkPath) : null;
@@ -108,20 +114,27 @@ export function ActivityRow({ item, className }: ActivityRowProps) {
         className
       )}
     >
-      {/* Time — hidden on mobile (redundant with group headers) */}
-      <TableCell className="w-28 py-1.5 pr-0 pl-2 max-sm:hidden">
-        <span className="text-muted-foreground text-xs tabular-nums">{time}</span>
-      </TableCell>
+      {/* Time and actor — hidden on mobile and when compact (group headers carry the time) */}
+      {!compact && (
+        <>
+          <TableCell className="w-28 py-1.5 pr-0 pl-2 max-sm:hidden">
+            <span className="text-muted-foreground text-xs tabular-nums">{time}</span>
+          </TableCell>
+          <TableCell className="w-24 py-1.5 pr-0 max-sm:hidden">
+            <ActorBadge actorType={item.actorType} actorLabel={item.actorLabel} />
+          </TableCell>
+        </>
+      )}
 
-      {/* Actor badge — hidden on mobile */}
-      <TableCell className="w-24 py-1.5 pr-0 max-sm:hidden">
-        <ActorBadge actorType={item.actorType} actorLabel={item.actorLabel} />
-      </TableCell>
-
-      {/* Summary — on mobile, shows actor label inline */}
-      <TableCell className="max-w-0 py-1.5 max-sm:pl-2">
+      {/* Summary — on mobile or compact, shows actor label inline */}
+      <TableCell className={cn('max-w-0 py-1.5', compact ? 'pl-2' : 'max-sm:pl-2')}>
         <span className="text-foreground/80 block truncate text-sm">
-          <span className="text-muted-foreground mr-1 text-xs font-medium sm:hidden">
+          <span
+            className={cn(
+              'text-muted-foreground mr-1 text-xs font-medium',
+              !compact && 'sm:hidden'
+            )}
+          >
             {item.actorLabel}
           </span>
           {item.summary}
@@ -129,7 +142,7 @@ export function ActivityRow({ item, className }: ActivityRowProps) {
       </TableCell>
 
       {/* Link button */}
-      <TableCell className="w-16 py-1.5 pr-2 text-right max-sm:w-10">
+      <TableCell className={cn('py-1.5 pr-2 text-right', compact ? 'w-10' : 'w-16 max-sm:w-10')}>
         {linkPath && (
           <Button
             variant="ghost"

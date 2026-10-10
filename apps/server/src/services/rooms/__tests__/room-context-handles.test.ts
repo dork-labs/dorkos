@@ -218,6 +218,9 @@ describe('every @name in the room-context block reaches the member it names', ()
       },
       harness.human
     );
+    // No lead: this case is about the handles the context names, and a lead
+    // would answer the unaddressed post (DOR-2823).
+    service.updateRoom(created.id, harness.human, { leadAuthorId: null });
     // A channel seeds `mention-only`; these tests want every agent triggered by
     // an ordinary message, so the roster is not filtered down to one turn.
     room = service.getRoom(created.id, harness.human)!;

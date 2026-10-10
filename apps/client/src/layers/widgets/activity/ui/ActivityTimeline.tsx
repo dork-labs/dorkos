@@ -7,10 +7,10 @@ import {
   ActivityGroupHeader,
   ActivityEmptyState,
   ActivityErrorState,
-  groupByTime,
   useActivityKeyboardNav,
+  type ActivityView,
 } from '@/layers/features/activity-feed-page';
-import type { ActivityItem } from '@/layers/entities/activity';
+import { groupByTime, type ActivityRowItem } from '@/layers/entities/activity';
 
 // ---------------------------------------------------------------------------
 // Per-group fade animation (replaces per-row stagger since motion.div
@@ -90,8 +90,8 @@ function ActivityTimelineSkeleton() {
 // ---------------------------------------------------------------------------
 
 export interface ActivityTimelineProps {
-  /** All loaded activity items (flattened from all pages). */
-  items: ActivityItem[];
+  /** All loaded rows (flattened from all pages): activity events or audit events. */
+  items: ActivityRowItem[];
   /** When true shows a skeleton loader instead of items. */
   isLoading: boolean;
   /** When true the feed failed to load — shows the error state instead of items. */
@@ -100,6 +100,8 @@ export interface ActivityTimelineProps {
   onRetry: () => void;
   /** When true every item is filtered out — shows filtered empty state. */
   isFiltered: boolean;
+  /** Which list these rows are, so an empty one says the right thing. */
+  view?: ActivityView;
   className?: string;
 }
 
@@ -117,6 +119,7 @@ export function ActivityTimeline({
   isError,
   onRetry,
   isFiltered,
+  view = 'activity',
   className,
 }: ActivityTimelineProps) {
   const groups = useMemo(() => groupByTime(items, new Date()), [items]);
@@ -144,7 +147,7 @@ export function ActivityTimeline({
   if (items.length === 0) {
     return (
       <div data-slot="activity-timeline" className={cn(className)}>
-        <ActivityEmptyState isFiltered={isFiltered} />
+        <ActivityEmptyState isFiltered={isFiltered} view={view} />
       </div>
     );
   }

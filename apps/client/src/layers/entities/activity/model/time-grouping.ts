@@ -1,20 +1,20 @@
 /**
  * Time-based grouping utility for activity feed items.
  *
- * Groups a flat list of ActivityItems into buckets: Today, Yesterday,
+ * Groups a flat list of activity rows into buckets: Today, Yesterday,
  * This week, and Earlier. Preserves insertion order so the natural
  * descending sort (newest first) flows through intact.
  *
- * @module features/activity-feed-page/model/time-grouping
+ * @module entities/activity/model/time-grouping
  */
-import type { ActivityItem } from '@dorkos/shared/activity-schemas';
+import type { ActivityRowItem } from './activity-types';
 
-/** A labelled group of activity items. */
-export interface ActivityGroup {
+/** A labelled group of activity rows. */
+export interface ActivityGroup<T extends ActivityRowItem = ActivityRowItem> {
   /** Human-readable label: "Today" | "Yesterday" | "This week" | "Earlier". */
   label: string;
   /** Items in this group, in their original insertion order. */
-  items: ActivityItem[];
+  items: T[];
 }
 
 /** All possible time group labels in display order (newest → oldest). */
@@ -32,8 +32,8 @@ const GROUP_ORDER: TimeGroupLabel[] = ['Today', 'Yesterday', 'This week', 'Earli
  * @param now - Reference date/time (pass `new Date()` in production, a fixed date in tests).
  * @returns Array of groups in Today → Earlier order, omitting empty groups.
  */
-export function groupByTime(items: ActivityItem[], now: Date): ActivityGroup[] {
-  const buckets = new Map<TimeGroupLabel, ActivityItem[]>();
+export function groupByTime<T extends ActivityRowItem>(items: T[], now: Date): ActivityGroup<T>[] {
+  const buckets = new Map<TimeGroupLabel, T[]>();
 
   for (const item of items) {
     const label = getTimeGroupLabel(new Date(item.occurredAt), now);

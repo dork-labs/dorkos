@@ -49,6 +49,10 @@ import {
   initAgentIdentityService,
   resetAgentIdentityService,
 } from '../../services/core/agent-identity/agent-identity-service.js';
+import {
+  initSessionVisibility,
+  resetSessionVisibility,
+} from '../../services/audit/session-visibility.js';
 
 const app = createApp({ admission: new MainRequestAdmission() });
 finalizeApp(app);
@@ -66,6 +70,15 @@ const open = (url: string, sessionId = SESSION) =>
   request(testServer)
     .post(`/api/sessions/${sessionId}/canvas`)
     .send({ content: urlContent(url) });
+
+// The agent callers below act on agent work, so the session read guard
+// (`routes/session-read-guard.ts`) lets them through to the rule under test.
+beforeEach(() => {
+  initSessionVisibility((ids) => new Map(ids.map((id) => [id, 'space'] as const)));
+});
+afterEach(() => {
+  resetSessionVisibility();
+});
 
 describe('the session canvas routes', () => {
   let db: Db;

@@ -1,6 +1,6 @@
 ---
 title: The record
-description: DorkOS keeps a permanent record of what happened on your computer, and anyone can check it for edits
+description: DorkOS keeps a permanent record of what happened on your computer, readable by you and your agents, and anyone can check it for edits
 ---
 
 # The record
@@ -43,6 +43,41 @@ A tool can still be running when a reply ends, such as a long command left going
 Helpers are the smaller agents an agent can start for part of a job. In DorkOS and Claude Code, every tool a helper uses is recorded too, marked as a helper's. In Codex and OpenCode, the record shows that a helper started, but not each tool it used. Those runtimes don't share that detail with DorkOS yet.
 
 Chats you start with `claude` or `codex` outside DorkOS never pass through it, so their tools are not recorded.
+
+## Who can see what
+
+The record is open to everyone in your space: you and every one of your agents. Your agents can read what each other did, so one agent can check another's work.
+
+| What                                                                                                                                             | You | Your agents               |
+| ------------------------------------------------------------------------------------------------------------------------------------------------ | --- | ------------------------- |
+| Actions anyone took, including actions an agent took inside your own chats                                                                       | Yes | Yes                       |
+| What your agents said and did in their own work: scheduled tasks, messages between agents or chats, work an extension or a connected app started | Yes | Yes                       |
+| Replies in a team channel                                                                                                                        | Yes | Only the channel's agents |
+| What you and an agent said in your own chats: in the app, in a direct message with an agent, or from a chat app like Telegram or Slack           | Yes | No                        |
+| Sign-in lines, which note the device and network                                                                                                 | Yes | No                        |
+
+DorkOS's agent tools and API keep your own chats from other agents. An agent asking for one is told it doesn't exist. The actions the agent took in that chat are still in the record for everyone, so nothing it did is hidden. What you said is not shown, and neither is which chat it happened in.
+
+There is one exception. When one of your chats starts another chat, that new chat can read back the one that started it. That is how a helper reads what it was asked to do. Sending a message is not enough: an agent that writes to your chat and gets a reply still can't read the rest of it. No other agent can.
+
+A chat started before this release, or with `claude` outside DorkOS, counts as your own unless DorkOS knows it was agent work, such as a scheduled task or a reply in a team channel.
+
+### What this does not cover
+
+DorkOS knows a request comes from an agent only when the agent says so, as its DorkOS tools do. A request that doesn't, such as a plain web request to DorkOS or `dorkos call` run from a terminal, is treated as you. And your chats are saved as files on your computer, which any program running there can open, agents included. So this keeps your chats out of what your agents see through DorkOS. It is not a lock against a program on your computer that sets out to read those files.
+
+## Reading it
+
+In the app, open Activity and switch to **All actions** to see every line of the record, newest first. An agent's profile has an Activity page with everything that agent did, or had done to it.
+
+From the command line:
+
+```bash
+dorkos call audit.query --input '{"action":"config.","limit":20}'
+dorkos call audit.account_timeline --input '{"accountId":"<agent id>"}'
+```
+
+Your agents have the same reads as tools: `audit_query` to search the record, `audit_get` for one line and what it points to, `account_timeline` for one agent's or person's history, and `transcript_read` to read an agent's work chat.
 
 ## Activity and the record
 

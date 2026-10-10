@@ -15,11 +15,9 @@ import {
 } from '@dorkos/shared/schemas';
 import type {
   InterruptReceipt,
-  PermissionModeId,
   SessionListResponse,
   StoredSessionSettingsResponse,
 } from '@dorkos/shared/types';
-import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { MeshCore } from '@dorkos/mesh';
 import { getChatMessageService } from '../services/session/chat-messages/chat-message-service.js';
 import type { ChatActivityResponse } from '@dorkos/shared/chat-messages';
@@ -36,8 +34,9 @@ import {
   type OperatorCookieRefusal,
 } from '../lib/caller-authority.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
+import { getRequestAgentIdentity, presentsAgentIdentity } from '../middleware/agent-identity.js';
+import { httpTurnOrigin } from '../services/session/origin/turn-origin.js';
 import { trustedCaller } from '../services/core/capabilities/index.js';
-import { getRequestAgentIdentity } from '../middleware/agent-identity.js';
 import { askEntitlement, type AskSubject } from '../services/session/asks/ask-entitlement.js';
 import { getUserById, readOwnerAccount, type RequestUser } from '../services/core/auth/index.js';
 import { resolveAnswererName } from '../services/identity/operator-profile.js';
@@ -69,6 +68,12 @@ import {
   sessionQueueUpdateHandler,
 } from './session-queue-handler.js';
 import { sessionEventsHandler } from './session-events-handler.js';
+import { guardSessionParam, readableSessions } from './session-read-guard.js';
+import {
+  modelGateAuthority,
+  rejectUndeclaredPermissionMode,
+  rejectUnknownModel,
+} from './session-model-gate.js';
 import {
   recordWroteIfPerson,
   sessionOpenedHandler,
@@ -81,7 +86,6 @@ import { sessionDevtoolsRecordingHandler } from './session-recording.js';
 import { sessionAttachmentHandler } from './session-attachments-handler.js';
 import { sessionMcpAppResourceHandler } from './session-mcp-app-resource-handler.js';
 import { sessionRunsOnCredits } from '../services/core/cloud/credits-model-gate.js';
-import { rejectUnknownModel } from './session-model-gate.js';
 import { refuseErrorUnlessOwner } from './cloud-owner-bar.js';
 import {
   cancelContinueHandler,
@@ -123,6 +127,11 @@ function workspaceCallerOf(
 }
 
 const router = Router();
+
+// Every `/:id` route below, and every sub-router mounted under one, answers 404
+// to an agent for a session it may not read: a person's own chat (spec
+// `audit-trail` §3.4). One guard, so a new route cannot forget it.
+router.param('id', guardSessionParam);
 
 /**
  * What a caller is told when it tried to answer a prompt without being a person
@@ -257,7 +266,9 @@ router.get('/', async (req, res) => {
     : runtimeRegistry.listRuntimes();
   const { sessions, warnings } = await aggregateSessionList({ runtimes, projectDir });
 
-  const page = sessions.slice(0, limit);
+  // An agent lists agent work only, never a person's own chat (spec
+  // `audit-trail` §3.4). Filtered before the page is cut, so the page is full.
+  const page = readableSessions(req, res, sessions).slice(0, limit);
   // Overlay persisted settings (ADR-0260) through the ONE shared resolver that
   // `GET /:id` also uses, so the two endpoints cannot report different modes
   // for one session (DOR-463).
@@ -309,14 +320,17 @@ router.get('/recent', async (req, res) => {
       ),
     }),
   });
+  // An agent sees agent work only, never a person's own chat (spec
+  // `audit-trail` §3.4).
+  const readable = readableSessions(req, res, sessions);
   // Same persisted-settings overlay as the other two session reads — a recent
   // session is the same session, so it must not report a different mode.
-  overlayStoredSettings(sessions, runtimeRegistry);
+  overlayStoredSettings(readable, runtimeRegistry);
   // The same origin overlays the list endpoint applies, in the same order — a
   // room turn is an engine run under a thread the reader can already see, and
   // the binding table is the only place that knows.
-  applySessionOriginOverlays(sessions, sessionOriginResolvers(req.app.locals));
-  res.json({ sessions, agentActivity, warnings });
+  applySessionOriginOverlays(readable, sessionOriginResolvers(req.app.locals));
+  res.json({ sessions: readable, agentActivity, warnings });
 });
 
 // GET /api/sessions/daily-counts - Sessions started per day across ALL agents
@@ -605,74 +619,6 @@ router.get('/:id/messages', async (req, res) => {
   });
 });
 
-/**
- * Check a requested permission mode against what the runtime declares it can
- * run, returning an operator-readable message when it cannot (or `null` when
- * the mode is fine).
- *
- * @param runtime - The runtime that owns the session being updated.
- * @param permissionMode - The mode the request asks to store.
- */
-function rejectUndeclaredPermissionMode(
-  runtime: AgentRuntime,
-  permissionMode: PermissionModeId
-): string | null {
-  const declared = runtime.getCapabilities().permissionModes;
-  if (!declared.supported || declared.values.length === 0) {
-    return `The ${runtime.type} runtime has no permission modes to choose from.`;
-  }
-  const ids = declared.values.map((descriptor) => descriptor.id);
-  if (ids.includes(permissionMode)) return null;
-  return `The ${runtime.type} runtime cannot run permission mode '${permissionMode}'. It supports: ${ids.join(', ')}.`;
-}
-
-/**
- * The runtime whose catalog may REFUSE this model write, or `null` when nothing
- * has the standing to refuse it.
- *
- * ## Why a gate has to ask this at all
- *
- * `resolveSessionRuntime` answers for every session id, bound or not — an
- * unbound one gets the legacy inference, `claude-code`, so that reads keep
- * working before the first turn. {@link rejectUnknownModel} was written on top
- * of that answer as if it were ownership, and it is not: a person who starts a
- * session, switches the chip to OpenCode and picks an OpenCode model was told
- * "the claude-code runtime cannot run" it, for a session claude-code did not own
- * and never would. The gate fired against a runtime nobody chose.
- *
- * So it asks in the order of who actually knows:
- *
- * - **Bound** → the owner. Ownership is a fact in `session_metadata`, the gate
- *   has full authority, and this is the case DOR-1660 was about.
- * - **Unbound, and the request names a registered runtime** → that one. Nothing
- *   here binds anything — the hint only says which catalog to judge against, and
- *   it is the catalog the person was picking from. Ownership is still the first
- *   turn's to write (ADR-0255).
- * - **Unbound, and nobody said** → `null`. The gate declines rather than guesses.
- *
- * That last rung is the same rule {@link rejectUnknownModel} already applies to
- * an empty catalog, one level up: evidence nobody has is not evidence against.
- * The cost of declining is a turn that fails honestly later; the cost of
- * guessing is a person locked out of a model that works.
- *
- * An unregistered hint is treated as no hint. A caller cannot conjure authority
- * out of a runtime this server does not have, and 400-ing on it would refuse a
- * settings write over a field that only ever narrows a check.
- *
- * @param owner - The runtime instance the session resolved to.
- * @param bound - Whether `owner` is the session's recorded owner or the inference.
- * @param hint - `body.runtime`: the runtime the caller believes will own this session.
- */
-function modelGateAuthority(
-  owner: AgentRuntime,
-  bound: boolean,
-  hint: string | undefined
-): AgentRuntime | null {
-  if (bound) return owner;
-  if (hint === undefined || !runtimeRegistry.has(hint)) return null;
-  return runtimeRegistry.get(hint);
-}
-
 // PATCH /api/sessions/:id - Update session settings
 router.patch('/:id', async (req, res) => {
   const sessionId = parseSessionId(req.params.id);
@@ -958,13 +904,15 @@ router.post('/:id/messages', async (req, res) => {
   // Read X-Client-Id header, or generate UUID if missing
   const clientId = (req.headers['x-client-id'] as string) || crypto.randomUUID();
 
+  // `{ kind: 'interactive' }` is what unlocks the trust stop, and this route is
+  // where that claim is true: a message posted to `/api/sessions/:id/messages`
+  // came from a person at a control panel holding the session's event stream
+  // open. Rooms, tasks and bindings never pass through here, and each names
+  // itself at its own call (DOR-2105). A caller presenting an agent identity
+  // is not that person: its chat is agent work, so it can read what it
+  // started (spec `audit-trail` §3.4), and it seeds no operator stop.
   const result = await dispatchSessionMessage({
-    // `{ kind: 'interactive' }` is what unlocks the trust stop, and this route is
-    // where that claim is true: a message posted to `/api/sessions/:id/messages`
-    // came from a person at a control panel holding the session's event stream
-    // open. Rooms, tasks and bindings never pass through here, and each names
-    // itself at its own call (DOR-2105).
-    origin: { kind: 'interactive' },
+    origin: httpTurnOrigin(presentsAgentIdentity(req, res)),
     sessionId,
     request: parsed.data,
     clientId,

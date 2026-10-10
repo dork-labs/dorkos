@@ -227,6 +227,57 @@ export function useSetRoomLimits(): UseMutationResult<
   });
 }
 
+/** Which channel to change, and who leads it. `null` means nobody does. */
+export interface SetRoomLeadInput {
+  roomId: string;
+  /** An agent member's author id, or `null` to clear the lead. */
+  leadAuthorId: string | null;
+}
+
+/**
+ * Choose which agent leads a channel: the one that answers a person's message
+ * nobody else is answering (DOR-2823).
+ *
+ * Refused with `INVALID_LEAD` on a direct message, on #team (whose lead is the
+ * install's default agent) and for anyone who is not an agent member here — the
+ * shared toast says so with the label below. Operator-only, like every other
+ * write on this route.
+ *
+ * **Optimistic, for the reason {@link useSetRoomLimits} is**: the select the
+ * reader just changed reads its value off the cached room, and would otherwise
+ * snap back to the old lead for a round trip. Rolled back on failure.
+ */
+export function useSetRoomLead(): UseMutationResult<
+  RoomWithRoster,
+  Error,
+  SetRoomLeadInput,
+  { previous: RoomWithRoster | undefined }
+> {
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ roomId, leadAuthorId }: SetRoomLeadInput) =>
+      transport.updateRoom(roomId, { leadAuthorId }),
+    onMutate: async ({ roomId, leadAuthorId }) => {
+      const key = roomKeys.detail(roomId);
+      await queryClient.cancelQueries({ queryKey: key });
+      const previous = queryClient.getQueryData<RoomWithRoster>(key);
+      queryClient.setQueryData<RoomWithRoster>(key, (old) =>
+        old ? { ...old, leadAuthorId } : old
+      );
+      return { previous };
+    },
+    onError: (_error, { roomId }, context) => {
+      if (context?.previous !== undefined) {
+        queryClient.setQueryData(roomKeys.detail(roomId), context.previous);
+      }
+    },
+    onSettled: (_room, _error, { roomId }) => refreshRoom(queryClient, roomId),
+    meta: { errorLabel: 'Couldn’t change the lead' },
+  });
+}
+
 /** Bring an archived room back. */
 export function useUnarchiveRoom(): UseMutationResult<RoomWithRoster, Error, UnarchiveRoomInput> {
   const transport = useTransport();

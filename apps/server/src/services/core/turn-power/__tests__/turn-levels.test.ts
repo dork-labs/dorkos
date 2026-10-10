@@ -22,7 +22,7 @@ import {
   recordTurnLevels,
   TURN_LEVEL_MEMORY,
 } from '../turn-levels.js';
-import { ceilingForEntries, ceilingForEntry } from '../../../rooms/room-trigger.js';
+import { ceilingForEntries, ceilingForEntry } from '../../../rooms/limits/turn-ceiling.js';
 import type { AuthorRegistry } from '../../../rooms/author-registry.js';
 
 const DEFAULT = { asks: 'always', reach: 'edit' };

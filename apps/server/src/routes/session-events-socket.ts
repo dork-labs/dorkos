@@ -38,6 +38,8 @@ import { validateBoundaryOrDorkHome, BoundaryError } from '../lib/boundary.js';
 import { parseSessionId } from '../lib/route-utils.js';
 import { parseResumeCursor } from '../lib/stream-cursor.js';
 import { logger } from '../lib/logger.js';
+import { readableSessionIds } from '../services/audit/session-visibility.js';
+import { readerOfRequest } from './audit-reader.js';
 
 /** Matches `/api/sessions/:id/events`, capturing the session id. */
 const SESSION_EVENTS_PATH = /^\/api\/sessions\/([^/]+)\/events$/;
@@ -73,6 +75,11 @@ export const sessionEventsRoute: UpgradeRoute = {
 
     const sessionId = parseSessionId(decodeURIComponent(match[1]!));
     if (!sessionId) return refuse(400, 'Invalid session ID');
+    // The same read check as the SSE handler: a person's own chat is not an
+    // agent's to watch, and reads as not found (spec `audit-trail` §3.4).
+    if (!readableSessionIds(readerOfRequest({ headers }, { locals }), [sessionId]).has(sessionId)) {
+      return refuse(404, 'Session not found');
+    }
 
     const cwdParam = url.searchParams.get('cwd') || undefined;
     /** Judge one directory against the boundary; a refusal is the decision. */

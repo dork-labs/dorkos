@@ -74,7 +74,7 @@ export interface TeamRoomSummary {
   archived: boolean;
   wellKnown: string | null;
   /** The membership that answers a post nobody addressed (spec D3.4). */
-  fallbackSeatAuthorId: string | null;
+  leadAuthorId: string | null;
 }
 
 /**

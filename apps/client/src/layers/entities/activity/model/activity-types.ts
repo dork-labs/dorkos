@@ -14,6 +14,19 @@ export type {
   ListActivityQuery,
   ListActivityResponse,
 } from '@dorkos/shared/activity-schemas';
+import type { ActivityItem } from '@dorkos/shared/activity-schemas';
+
+/**
+ * What one activity row draws: who, what, when, and where it opens.
+ *
+ * Narrower than {@link ActivityItem} on purpose, so a row from the audit log
+ * (`auditEventToRow`) fits the same component without inventing a category or
+ * an event type it does not have.
+ */
+export type ActivityRowItem = Pick<
+  ActivityItem,
+  'id' | 'occurredAt' | 'actorType' | 'actorLabel' | 'summary' | 'linkPath'
+>;
 
 // ---------------------------------------------------------------------------
 // Category display config

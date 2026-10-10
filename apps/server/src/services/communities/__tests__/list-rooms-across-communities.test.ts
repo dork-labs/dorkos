@@ -27,7 +27,7 @@ function localRoom(id: string, lastActivityAt: string): RoomSummary {
     archived: false,
     ambientMaxEntries: 40,
     wellKnown: null,
-    fallbackSeatAuthorId: null,
+    leadAuthorId: null,
     createdAt: '2026-08-01T00:00:00.000Z',
     lastActivityAt,
     unreadCount: 0,

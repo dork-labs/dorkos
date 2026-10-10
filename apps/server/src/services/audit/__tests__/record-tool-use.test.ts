@@ -12,9 +12,8 @@ import { addressOf, recordRuntimeToolCall, toolTarget } from '../record-tool-use
 import { setAgentHomeRegistry } from '../../core/agent-identity/agent-home.js';
 import { runTurn, SCOUT, setUpAuditTrail, toolRows } from './tool-use-harness.js';
 
-/** Token prefixes built from parts, so no fixture reads as a real key to a secret scanner. */
+/** A token prefix built from parts, so no fixture reads as a real key to a secret scanner. */
 const STRIPE_LIVE = ['sk', 'live', ''].join('_');
-const GITHUB_PAT = ['ghp', ''].join('_');
 
 const start = (id: string, name: string, input?: string): StreamEvent => ({
   type: 'tool_call_start',

@@ -427,3 +427,19 @@ describe('a retired agent on a direct message roster (DOR-2095)', () => {
     expect(screen.getByRole('button', { name: 'How loud Ana is here' })).toBeInTheDocument();
   });
 });
+
+describe('RoomMemberRow — the lead (DOR-2823)', () => {
+  afterEach(cleanup);
+
+  it('marks the lead’s row with a Lead badge', () => {
+    viewport('desktop');
+    renderRow({ isLead: true });
+    expect(screen.getByTestId('room-lead-badge')).toHaveTextContent('Lead');
+  });
+
+  it('draws no badge on a row that does not lead', () => {
+    viewport('desktop');
+    renderRow();
+    expect(screen.queryByTestId('room-lead-badge')).not.toBeInTheDocument();
+  });
+});

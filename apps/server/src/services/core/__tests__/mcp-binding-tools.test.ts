@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   createBindingListHandler,
   createBindingCreateHandler,
@@ -8,6 +8,7 @@ import {
 } from '../../runtimes/claude-code/mcp-tools/index.js';
 import { createBindingListSessionsHandler } from '../../runtimes/claude-code/mcp-tools/binding-tools.js';
 import { NotifyBudget } from '../../relay/notify-budget.js';
+import { initSessionVisibility, resetSessionVisibility } from '../../audit/session-visibility.js';
 
 vi.mock('@dorkos/shared/manifest', () => ({
   readManifest: vi.fn(),
@@ -233,6 +234,17 @@ describe('Binding MCP Tools', () => {
       },
     ];
 
+    /** Sessions that are a person's own chat; the rest are agent work. */
+    let privateIds = new Set<string>();
+    beforeEach(() => {
+      privateIds = new Set();
+      initSessionVisibility(
+        (ids) =>
+          new Map(ids.map((id) => [id, privateIds.has(id) ? 'participants' : 'space'] as const))
+      );
+    });
+    afterEach(() => resetSessionVisibility());
+
     function makeMockBindingRouter(overrides?: Record<string, unknown>) {
       return {
         getSessionsByBinding: vi
@@ -295,6 +307,25 @@ describe('Binding MCP Tools', () => {
         sessionId: 'sess-1',
         subject: 'relay.human.telegram.tg-main.chat-abc',
       });
+    });
+
+    it("leaves out the session id of a person's own chat, and keeps its subject", async () => {
+      privateIds = new Set(['sess-1']);
+      const handler = createBindingListSessionsHandler(
+        makeSessionDeps({
+          bindingStore: makeMockBindingStore({
+            getById: vi.fn().mockReturnValue({ adapterId: 'tg-main' }),
+          }),
+          bindingRouter: makeMockBindingRouter(),
+          adapterManager: makeMockAdapterManager(),
+        })
+      );
+
+      const data = JSON.parse((await handler({})).content[0].text);
+
+      expect(data.sessions[0]).not.toHaveProperty('sessionId');
+      expect(data.sessions[0].subject).toBe('relay.human.telegram.tg-main.chat-abc');
+      expect(data.sessions[1].sessionId).toBe('sess-2');
     });
 
     it('filters by bindingId when provided (calls getSessionsByBinding)', async () => {

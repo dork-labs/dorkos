@@ -33,14 +33,15 @@ const SRC = fileURLToPath(new URL('../../../..', import.meta.url));
 const EXPECTED: Readonly<Record<string, readonly string[]>> = {
   // A person posted a message and is holding the session's event stream open.
   // It binds through the launch service, which forwards what it is told.
-  'routes/sessions.ts': ['interactive'],
+  'routes/sessions.ts': ['agent-launch', 'interactive'],
   // A room turn, carrying the one fact that decides its power.
   'services/rooms/room-turn-runner.ts': ['room'],
   // A task's run — the timer's, or a person's "Run now".
   'services/tasks/task-scheduler-service.ts': ['schedule'],
-  // A message addressed to an agent over the relay: one of our agents, or a
-  // sender from outside (the A2A gateway), decided by `relayTurnOrigin`.
-  'services/relay/adapter-factory.ts': ['agent-dm', 'outside-sender'],
+  // A message addressed to an agent over the relay: one of our agents, a chat
+  // binding's own adapter, or a sender from outside (the A2A gateway), decided
+  // by `relayTurnOrigin`.
+  'services/relay/adapter-factory.ts': ['agent-dm', 'relay-binding', 'outside-sender'],
   // A chat binding created a session for an inbound message.
   'services/relay/binding-subsystem.ts': ['relay-binding'],
   // A connector event woke an agent up.
@@ -87,7 +88,8 @@ const PASS_THROUGH = 'services/session/launch/launch-session.ts';
  * can return. A call site that passes one is read as passing all of them.
  */
 const ORIGIN_HELPERS: Readonly<Record<string, readonly string[]>> = {
-  'relayTurnOrigin(': ['agent-dm', 'outside-sender'],
+  'relayTurnOrigin(': ['agent-dm', 'relay-binding', 'outside-sender'],
+  'httpTurnOrigin(': ['agent-launch', 'interactive'],
 };
 
 /** The calls that bind a session and name an origin at the call. */

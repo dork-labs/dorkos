@@ -1586,7 +1586,7 @@ describe('the rooms MANAGEMENT verbs', () => {
         (update?.input as unknown as { shape: Record<string, unknown> }).shape
       );
 
-      expect(shape.sort()).toEqual(['roomId', 'title', 'topic']);
+      expect(shape.sort()).toEqual(['lead', 'roomId', 'title', 'topic']);
     });
 
     it('refuses a rename onto a taken name without naming the room that holds it', async () => {

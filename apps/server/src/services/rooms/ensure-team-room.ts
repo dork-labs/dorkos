@@ -354,7 +354,7 @@ function syncDefaultAgent(deps: TeamRoomDeps, room: Room): void {
   }
   const byId = new Map(roster.map((member) => [member.authorId, member]));
 
-  const previous = room.fallbackSeatAuthorId ?? null;
+  const previous = room.leadAuthorId ?? null;
   if (previous && previous !== seatAuthorId) {
     const outgoing = byId.get(previous);
     // Only if it still holds what this function gave it. A person who has since
@@ -368,7 +368,7 @@ function syncDefaultAgent(deps: TeamRoomDeps, room: Room): void {
   if (incoming) setResponseMode(deps, room, incoming, DEFAULT_AGENT_RESPONSE_MODE);
   if (previous === seatAuthorId) return;
   try {
-    deps.service.setFallbackSeat(room.id, deps.operatorAuthorId(), seatAuthorId);
+    deps.service.setLead(room.id, deps.operatorAuthorId(), seatAuthorId);
   } catch (err) {
     logger.warn('[Rooms] could not record the team room seat', {
       error: err instanceof Error ? err.message : String(err),

@@ -42,6 +42,9 @@ function filesOf(sheet: Locator): Locator {
  */
 async function openRowMenu(row: Locator): Promise<void> {
   const page = row.page();
+  // The panel's Lead section (DOR-2823) pushes the Files tree below the fold on
+  // a desktop window, so scroll the row into view as a person would.
+  await row.scrollIntoViewIfNeeded();
   const box = await row.boundingBox();
   if (box === null) throw new Error('The row is not on screen');
   await page.mouse.move(box.x + 12, box.y + box.height / 2);

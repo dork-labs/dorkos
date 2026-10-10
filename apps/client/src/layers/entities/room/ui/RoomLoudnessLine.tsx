@@ -20,6 +20,11 @@ export interface RoomLoudnessLineProps {
    * forgot to pass is a feature that silently is not there.
    */
   preview: LoudnessPreview | null;
+  /**
+   * The channel's lead as `roomLead` resolves it, or `null`. It answers what
+   * nobody else does, so a quiet room with one is not a room nobody answers.
+   */
+  leadAuthorId?: string | null;
   className?: string;
 }
 
@@ -57,11 +62,17 @@ export interface RoomLoudnessLineProps {
  * during the read would state something false about the room and then correct
  * itself. Whatever holds it decides when there is a roster to describe.
  */
-export function RoomLoudnessLine({ members, roomKind, preview, className }: RoomLoudnessLineProps) {
+export function RoomLoudnessLine({
+  members,
+  roomKind,
+  preview,
+  leadAuthorId = null,
+  className,
+}: RoomLoudnessLineProps) {
   const loudness =
     preview === null
-      ? roomLoudness(members, roomKind)
-      : previewLoudness(members, roomKind, preview.authorId, preview.rung);
+      ? roomLoudness(members, roomKind, leadAuthorId)
+      : previewLoudness(members, roomKind, preview.authorId, preview.rung, leadAuthorId);
 
   return (
     <div
