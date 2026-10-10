@@ -16105,6 +16105,13 @@
               "null"
             ],
             "minLength": 1
+          },
+          "accountId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "isViewer": {
+            "type": "boolean"
           }
         },
         "required": [
