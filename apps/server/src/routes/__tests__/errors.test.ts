@@ -4,7 +4,7 @@
  * absolute paths, home dirs, tokens, and the raw message never reach the ingest.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import express from 'express';
+import { getRequestListener } from '@hono/node-server';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import fs from 'fs';
@@ -14,8 +14,15 @@ import path from 'path';
 vi.mock('../../lib/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
+// The route is served through the `/api` chain, whose host guard and session
+// gate read the login setting: off, as on a fresh install.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn(() => undefined), set: vi.fn() },
+}));
 
 import errorRoutes from '../errors.js';
+import { createApiApp } from '../../http/api-chain.js';
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import {
   registerServerErrorReporting,
   type RegisterServerErrorReportingOptions,
@@ -32,10 +39,9 @@ async function waitFor(pred: () => boolean, timeoutMs = 1000): Promise<void> {
 }
 
 function makeApp() {
-  const app = express();
-  app.use(express.json({ limit: '1mb' }));
-  app.use('/api/errors', errorRoutes);
-  return app;
+  const app = createApiApp({ admission: new MainRequestAdmission() });
+  app.route('/api/errors', errorRoutes);
+  return getRequestListener(app.fetch, { overrideGlobalObjects: false });
 }
 
 function register(fetchImpl: typeof fetch, consent: boolean): void {

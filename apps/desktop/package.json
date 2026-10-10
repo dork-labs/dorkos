@@ -37,7 +37,6 @@
     "@openai/codex": "0.154.0",
     "@openai/codex-sdk": "~0.154.0",
     "@opencode-ai/sdk": "^1.18.30",
-    "@scalar/express-api-reference": "^0.10.23",
     "better-sqlite3": "^12.11.1",
     "conf": "^15.1.0",
     "cors": "^2.8.6",

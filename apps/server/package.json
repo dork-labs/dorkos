@@ -59,7 +59,7 @@
     "@opentelemetry/exporter-trace-otlp-http": "^0.222.0",
     "@opentelemetry/resources": "^2.11.0",
     "@opentelemetry/sdk-trace-node": "^2.11.0",
-    "@scalar/express-api-reference": "^0.10.23",
+    "@scalar/client-side-rendering": "0.4.7",
     "better-auth": "1.7.6",
     "better-sqlite3": "^12.11.1",
     "body-parser": "^2.3.0",
