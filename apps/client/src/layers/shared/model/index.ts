@@ -109,6 +109,13 @@ export {
   type CreditsOfferProps,
   type CreditsOfferSlot,
 } from './credits-offer/credits-offer-slot';
+export {
+  LinkChipProvider,
+  useLinkChipSlot,
+  type LinkChipAnchorProps,
+  type LinkChipRenderProps,
+  type LinkChipSlot,
+} from './link-chip/link-chip-slot';
 export { useCommunityAuthority } from './use-community-authority';
 export {
   commitCommunityRouteEpoch,
