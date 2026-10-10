@@ -4,6 +4,7 @@ covers:
   - 'feat(tabs): every tab says who or where, and whether it needs you (DOR-2820)'
   - 'feat(tabs): the window title names the page you are on (DOR-2820)'
   - 'fix(tabs): keep Paused and the prompt list right, and the shell quiet (DOR-2820)'
+  - "refactor(playground): give the tab strip's sections their own file (DOR-2820)"
 ---
 
 ### Changed
