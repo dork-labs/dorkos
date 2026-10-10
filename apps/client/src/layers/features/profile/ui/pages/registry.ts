@@ -73,6 +73,10 @@ const PROFILE_PAGES: Partial<Record<ProfilePageId, ProfilePageDefinition>> = {
       import('./NotificationsPage').then((m) => ({ default: m.NotificationsPage }))
     ),
   },
+  activity: {
+    title: 'Activity',
+    component: lazy(() => import('./ActivityPage').then((m) => ({ default: m.ActivityPage }))),
+  },
   skills: {
     title: 'Skills',
     component: lazy(() => import('./SkillsPage').then((m) => ({ default: m.SkillsPage }))),

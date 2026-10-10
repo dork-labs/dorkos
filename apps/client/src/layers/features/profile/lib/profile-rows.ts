@@ -321,7 +321,8 @@ function runsOnValue(member: TeamMember): string | null {
 }
 
 /**
- * What this agent has been doing: its conversations, its schedules, its rooms.
+ * What this agent has been doing: its conversations, its schedules, its rooms,
+ * and every action on record.
  *
  * The same three rows for an agent you manage and for DorkBot — what DorkBot
  * withholds is its identity, not its work.
@@ -362,6 +363,9 @@ function workRows(ctx: ProfileRowsContext): ProfileRowModel[] {
     value: null,
     page: 'notifications',
   });
+  // What it did, and what was done to it, from the audit log. No value: a count
+  // of every recorded action is a number nobody acts on.
+  rows.push({ id: 'activity', kind: 'nav', label: 'Activity', value: null, page: 'activity' });
   return rows;
 }
 

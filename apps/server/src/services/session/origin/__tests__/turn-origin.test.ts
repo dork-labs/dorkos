@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url';
 import {
   permissionSeedForOrigin,
   relayTurnOrigin,
+  httpTurnOrigin,
   type OriginPermissionSeed,
   type TurnOrigin,
 } from '../turn-origin.js';
@@ -106,6 +107,13 @@ describe('permissionSeedForOrigin', () => {
   });
 });
 
+describe('httpTurnOrigin', () => {
+  it('calls a person at the app interactive, and an agent caller an agent launch', () => {
+    expect(httpTurnOrigin(false)).toEqual({ kind: 'interactive' });
+    expect(httpTurnOrigin(true)).toEqual({ kind: 'agent-launch' });
+  });
+});
+
 describe('relayTurnOrigin', () => {
   it('calls a message from one of our agents an agent DM', () => {
     expect(relayTurnOrigin('relay.agent.default.agent-01')).toEqual({ kind: 'agent-dm' });
@@ -118,11 +126,21 @@ describe('relayTurnOrigin', () => {
     'a2a-gateway',
     'relay.external.mcp',
     'relay.session.project-1a2b3c4d',
-    'relay.human.telegram.4242',
     'relay.system.tasks',
     'relay.agentx.default.agent-01',
+    'relay.humans.telegram.4242',
     '',
   ])('calls a message from %o an outside sender', (from) => {
     expect(relayTurnOrigin(from)).toEqual({ kind: 'outside-sender' });
   });
+
+  // A chat binding's adapter stamps these. If the binding's own first write
+  // failed, this is the session's first origin, and it must keep a person's
+  // chat from Telegram private (spec `audit-trail` §3.4).
+  it.each(['relay.human.telegram.4242.bot', 'relay.human.slack.T1.bot', 'relay.webhook.hook-1'])(
+    'calls a message from %o a chat binding',
+    (from) => {
+      expect(relayTurnOrigin(from)).toEqual({ kind: 'relay-binding' });
+    }
+  );
 });

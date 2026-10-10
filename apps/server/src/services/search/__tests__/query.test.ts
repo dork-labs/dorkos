@@ -146,6 +146,24 @@ describe('searchMessages — the per-container floor', () => {
   });
 });
 
+describe('searchMessages — a scope past SQLite’s variable limit', () => {
+  it('answers a container list longer than one statement can bind', () => {
+    // An agent may read thousands of sessions. Bound one variable each, 40,000
+    // keys is past SQLite's limit (32,766) and the query refuses to run.
+    say('claude-code', 'session-39999', 1, 'the heron migration');
+    const containers = Array.from({ length: 40_000 }, (_, i) => ({
+      originKey: `session-${i}`,
+    }));
+    const hits = searchMessages(db, {
+      scopes: [{ sourceId: 'claude-code', visibility: 'containers', containers }],
+      query: 'heron',
+      limit: 10,
+    });
+
+    expect(coordinates(hits)).toEqual(['claude-code:session-39999:1']);
+  });
+});
+
 describe('searchMessages — the scope clause', () => {
   beforeEach(() => {
     // The collision the source-scoping rule exists for: a room and a session

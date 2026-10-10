@@ -51,7 +51,7 @@
  *
  * @module routes/debug
  */
-import { Router } from 'express';
+import { Router, type Request, type Response } from 'express';
 import { clearsTheAgentBar } from '../lib/caller-authority.js';
 import { readOwnerAccount } from '../services/core/auth/index.js';
 import type { RequestUser } from '../services/core/auth/session-gate.js';
@@ -63,6 +63,8 @@ import {
 import fs from 'node:fs';
 import path from 'node:path';
 import { parseSessionId, sendError } from '../lib/route-utils.js';
+import { readerOfRequest, refuseUnreadableSession } from './audit-reader.js';
+import { readableSessionIds } from '../services/audit/session-visibility.js';
 import {
   recentDispatches,
   recentRefusals,
@@ -118,6 +120,29 @@ export interface DebugDeps {
 
 const router = Router();
 
+/**
+ * Drop the rows about a session this caller may not read (spec `audit-trail`
+ * §3.4), so a debug list never names a person's own chat to an agent. Rows
+ * about no session stay. The owner gets every row.
+ *
+ * @param req - The request, for the reader.
+ * @param res - The response carrying the resolved agent identity.
+ * @param rows - The rows to filter.
+ */
+function readableRows<T extends { sessionId?: string }>(
+  req: Request,
+  res: Response,
+  rows: T[]
+): T[] {
+  const reader = readerOfRequest(req, res);
+  if (reader.kind === 'owner') return rows;
+  const readable = readableSessionIds(
+    reader,
+    rows.flatMap((row) => (row.sessionId === undefined ? [] : [row.sessionId]))
+  );
+  return rows.filter((row) => row.sessionId === undefined || readable.has(row.sessionId));
+}
+
 /** How many buffered rows a request gets when it does not say. */
 const DEFAULT_LIMIT = 50;
 
@@ -161,12 +186,16 @@ router.get('/dispatches', (req, res) => {
     // "nothing to report" and "could not be read" at once — acceptable for a
     // debug view, and the reason nothing else should copy this shape.
   }
-  res.json({ claims, holds, recent: recentDispatches(readLimit(req.query.limit)) });
+  res.json({
+    claims,
+    holds,
+    recent: readableRows(req, res, recentDispatches(readLimit(req.query.limit))),
+  });
 });
 
 // GET /api/debug/refusals — every path that recently declined to do the obvious thing.
 router.get('/refusals', (req, res) => {
-  res.json({ refusals: recentRefusals(readLimit(req.query.limit)) });
+  res.json({ refusals: readableRows(req, res, recentRefusals(readLimit(req.query.limit))) });
 });
 
 // GET /api/debug/phantom-cancellations — how often the CLI cancelled its own
@@ -187,14 +216,16 @@ router.get('/auto-mode-stops', (_req, res) => {
 });
 
 // GET /api/debug/projectors — the live projector registry.
-router.get('/projectors', (_req, res) => {
-  res.json({ projectors: listProjectorDebugCounters() });
+router.get('/projectors', (req, res) => {
+  res.json({ projectors: readableRows(req, res, listProjectorDebugCounters()) });
 });
 
 // GET /api/debug/sessions/:id — one session's live spine.
 router.get('/sessions/:id', async (req, res) => {
   const sessionId = parseSessionId(req.params.id);
   if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
+  // The same read check as the session routes (spec `audit-trail` §3.4).
+  if (refuseUnreadableSession(req, res, sessionId)) return;
 
   const projector = peekProjector(sessionId);
   // `resolveSessionRuntime`, not `getSessionRuntimeType`, for the second half it

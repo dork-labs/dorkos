@@ -186,11 +186,16 @@ export const chatDomain: CapabilityDomain = {
           const sent = await chatDeps.service.send(caller, input);
           // The chat it landed in, by name, so the agent can tell a person
           // where it went without its id (DOR-2824). A title that cannot be
-          // read never fails a message that was already sent.
-          const chatTitle = await chatDeps.read
-            .describe(sent.chatId)
-            .then((described) => described.title)
-            .catch(() => null);
+          // read never fails a message that was already sent. A chat the
+          // sender may not read (a person's own) comes back untitled.
+          const chatTitle = (await chatDeps.read
+            .maySeeTitle(caller, sent.chatId)
+            .catch(() => false))
+            ? await chatDeps.read
+                .describe(sent.chatId)
+                .then((described) => described.title)
+                .catch(() => null)
+            : null;
           return {
             ok: true as const,
             ...sent,

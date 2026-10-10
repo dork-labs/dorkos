@@ -496,7 +496,10 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // endpoint tools retire. `<chat_tools>` names the three chat tools prefixed.
     // 118 -> 121 for the three commitment tools (spec `heartbeats` §12): no
     // prompt block names them, so they stay deferred and unprefixed.
-    expect(advertised.size).toBe(121);
+    // 121 -> 125 for `audit_query`, `audit_get`, `account_timeline` and
+    // `transcript_read` (spec `audit-trail` PR4): no prompt block names them,
+    // so they stay deferred and unprefixed.
+    expect(advertised.size).toBe(125);
     for (const name of [
       'configure_doc_channel',
       'approve_doc_route',

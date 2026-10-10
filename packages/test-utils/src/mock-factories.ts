@@ -16,6 +16,7 @@ import type {
   UiCanvasContent,
 } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
+import { activityTransportMocks } from './mock-activity-transport.js';
 import type { AccountUsage } from '@dorkos/shared/account-usage';
 import {
   CONNECTION_GONE_AGENT_COPY,
@@ -485,7 +486,6 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     createSessionLocation: vi.fn().mockResolvedValue({ id: 'test-location' }),
     getSessionLocation: vi.fn().mockResolvedValue({ cwd: '/test/project' }),
     markSessionOpened: vi.fn().mockResolvedValue(undefined),
-    getChatActivity: vi.fn().mockResolvedValue({ sent: [], stops: [] }),
     getSessionRuntimeType: vi.fn().mockResolvedValue('claude-code'),
     // Nothing stored, which is what a brand-new session id genuinely has. A
     // test about a settings change made BEFORE the first message overrides this
@@ -1211,8 +1211,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     prepareReset: vi.fn().mockResolvedValue({ token: 'test-reset-token' }),
     resetAllData: vi.fn().mockResolvedValue({ message: 'Reset initiated. Server will restart.' }),
     restartServer: vi.fn().mockResolvedValue({ message: 'Restart initiated.' }),
-    // Activity Feed
-    listActivityEvents: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
+    ...activityTransportMocks(),
     // Templates
     getTemplates: vi.fn().mockResolvedValue([]),
     // Marketplace

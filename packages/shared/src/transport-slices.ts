@@ -9,6 +9,7 @@ import type { RoomTransport } from './transport-rooms.js';
 import type { CommunityConnectionTransport } from './community-connections.js';
 import type { RemoteCommunityTransport } from './community-views.js';
 import type { CommitmentTransport } from './transport-commitments.js';
+import type { ActivityTransport } from './transport-activity.js';
 
 /** Every Transport slice declared outside `transport.ts`. */
 export interface TransportSlices
@@ -16,4 +17,5 @@ export interface TransportSlices
     RoomTransport,
     CommunityConnectionTransport,
     RemoteCommunityTransport,
-    CommitmentTransport {}
+    CommitmentTransport,
+    ActivityTransport {}
