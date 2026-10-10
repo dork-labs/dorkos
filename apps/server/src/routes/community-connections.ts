@@ -245,7 +245,8 @@ export function createCommunityConnectionsRouter(
   attentionCache: CommunityAttentionCache = new CommunityAttentionCache(),
   ownerNoticeCache: CommunityOwnerNoticeCache = new CommunityOwnerNoticeCache(),
   announcer: CommunityOwnerNoticeAnnouncer = new CommunityOwnerNoticeAnnouncer(resolveDorkHome()),
-  wakePolicy: Pick<RemoteWakePolicy, 'get' | 'set'> = getRemoteWakePolicy()
+  // Looked up per request when not injected, so building the router reads nothing from disk.
+  wakePolicy?: Pick<RemoteWakePolicy, 'get' | 'set'>
 ): Router {
   const router = Router();
   const caches: ActivityCaches = {
@@ -465,7 +466,7 @@ export function createCommunityConnectionsRouter(
     try {
       res.json(
         CommunityWakeAgentsFromSchema.parse({
-          wakeAgentsFrom: await wakePolicy.get(ref.data, owner),
+          wakeAgentsFrom: await (wakePolicy ?? getRemoteWakePolicy()).get(ref.data, owner),
         })
       );
     } catch (error) {
@@ -486,7 +487,7 @@ export function createCommunityConnectionsRouter(
       return;
     }
     try {
-      await wakePolicy.set(ref.data, owner, body.data.wakeAgentsFrom);
+      await (wakePolicy ?? getRemoteWakePolicy()).set(ref.data, owner, body.data.wakeAgentsFrom);
       res.json(body.data);
     } catch (error) {
       failure(res, error);
