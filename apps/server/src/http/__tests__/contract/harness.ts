@@ -15,6 +15,7 @@
  * @module http/__tests__/contract/harness
  */
 import { spawn, type ChildProcess } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import http from 'node:http';
 import { once } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -27,16 +28,32 @@ import type { ZodType } from 'zod';
 
 const SERVER_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 const REPO_ROOT = path.resolve(SERVER_DIR, '../..');
-const TSX = path.join(SERVER_DIR, 'node_modules/.bin/tsx');
+// The CLI script run by this Node, not the `.bin` shim, so it spawns the same way everywhere.
+const TSX_CLI = path.join(SERVER_DIR, 'node_modules/tsx/dist/cli.mjs');
 const RECORD_MOUNT_PATHS = path.join(SERVER_DIR, 'src/http/route-census/record-mount-paths.ts');
 
 /** How long a cold boot may take before the harness gives up. */
 export const BOOT_TIMEOUT_MS = 180_000;
 
+/**
+ * The `beforeAll` budget for a boot: longer than {@link BOOT_TIMEOUT_MS}, so the
+ * harness always gives up (and stops the child) before vitest abandons the
+ * hook and leaves nobody to stop it.
+ */
+export const BOOT_HOOK_TIMEOUT_MS = BOOT_TIMEOUT_MS + 30_000;
+
+/** Children still running, stopped if this process exits without closing them. */
+const running = new Set<ChildProcess>();
+process.once('exit', () => {
+  for (const child of running) child.kill('SIGKILL');
+});
+
 /** A running composed server. */
 export interface ComposedServer {
   /** Where it listens, e.g. `http://127.0.0.1:53511`. */
   readonly baseUrl: string;
+  /** The last of what the server printed, for a failure message. */
+  log(): string;
   /** Stop it and delete its data directory. */
   close(): Promise<void>;
 }
@@ -59,16 +76,22 @@ async function freePort(): Promise<number> {
 function serverEnv(
   port: number,
   dorkHome: string,
+  version: string,
   extra: Record<string, string>
 ): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(process.env)) {
-    if (/^(DORKOS_|DORK_HOME$|VITEST|NODE_ENV$|TEST$)/.test(key)) continue;
+    if (/^(DORKOS_|DORK_HOME$|VITEST|NODE_ENV$|NODE_OPTIONS$|TEST$|CLAUDE_CONFIG_DIR$)/.test(key)) {
+      continue;
+    }
     env[key] = value;
   }
   return {
     ...env,
     NODE_ENV: 'development',
+    // Names this boot, so the harness can tell its server from another
+    // worker's that won a race for the same port. Still a `0.0.0` dev build.
+    DORKOS_VERSION_OVERRIDE: version,
     DORKOS_PORT: String(port),
     DORKOS_HOST: '127.0.0.1',
     DORK_HOME: dorkHome,
@@ -85,6 +108,7 @@ function serverEnv(
 /** Poll `/api/health` until the server answers, or the child dies. */
 async function waitUntilUp(
   baseUrl: string,
+  version: string,
   child: ChildProcess,
   output: () => string
 ): Promise<void> {
@@ -94,8 +118,16 @@ async function waitUntilUp(
       throw new Error(`The server exited (${child.exitCode}) before it answered:\n${output()}`);
     }
     try {
-      if ((await fetch(`${baseUrl}/api/health`)).ok) return;
-    } catch {
+      const res = await fetch(`${baseUrl}/api/health`);
+      if (res.ok) {
+        const { version: answered } = (await res.json()) as { version?: string };
+        if (answered !== version) {
+          throw new Error(`Another server answered on ${baseUrl} (version ${answered})`);
+        }
+        return;
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('Another server')) throw error;
       // Not listening yet.
     }
     await new Promise((resolve) => setTimeout(resolve, 250));
@@ -114,11 +146,14 @@ export async function bootComposedServer(
 ): Promise<ComposedServer> {
   const port = await freePort();
   const dorkHome = await mkdtemp(path.join(tmpdir(), 'dorkos-contract-'));
-  const child = spawn(TSX, ['--import', RECORD_MOUNT_PATHS, 'src/index.ts'], {
+  const version = `0.0.0-contract.${randomUUID().slice(0, 8)}`;
+  const child = spawn(process.execPath, [TSX_CLI, '--import', RECORD_MOUNT_PATHS, 'src/index.ts'], {
     cwd: SERVER_DIR,
-    env: serverEnv(port, dorkHome, extra),
+    env: serverEnv(port, dorkHome, version, extra),
     stdio: ['ignore', 'pipe', 'pipe'],
   });
+  running.add(child);
+  child.once('exit', () => running.delete(child));
   let log = '';
   const keep = (chunk: Buffer): void => {
     log = (log + chunk.toString()).slice(-8_000);
@@ -138,12 +173,12 @@ export async function bootComposedServer(
     await rm(dorkHome, { recursive: true, force: true });
   };
   try {
-    await waitUntilUp(baseUrl, child, () => log);
+    await waitUntilUp(baseUrl, version, child, () => log);
   } catch (error) {
     await close();
     throw error;
   }
-  return { baseUrl, close };
+  return { baseUrl, log: () => log, close };
 }
 
 /**
@@ -259,7 +294,7 @@ export function contractSuite(group: string, cases: readonly ContractCase[]): vo
     let server: ComposedServer | undefined;
     beforeAll(async () => {
       server = await bootComposedServer();
-    }, BOOT_TIMEOUT_MS);
+    }, BOOT_HOOK_TIMEOUT_MS);
     afterAll(async () => {
       await server?.close();
     }, 30_000);

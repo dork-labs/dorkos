@@ -18,10 +18,24 @@
  * built router. Middleware mounted at the root of a router is left out; it runs
  * for everything and serves nothing on its own.
  *
+ * ## What it cannot see
+ *
+ * - One `USE` entry can stand for several middlewares at the same path (the
+ *   `/api` host guard and the `/api` 404 are both `USE /api`), and a lazily
+ *   built router (`/api/ext/:id`) is one entry for everything behind it.
+ * - A route given as a regular expression is recorded as its source text,
+ *   which Hono cannot write the same way; its move needs a baseline edit.
+ * - It is the census of a TEST server (`__tests__/contract/harness.ts`): the
+ *   `/api/test` control routes are in it, and the production-only static app
+ *   and SPA fallback are not. Those get their own contract when they move.
+ * - Equal strings are not the only way two routes collide. Hono answers first,
+ *   so a Hono `GET /a/:id` would swallow an Express `GET /a/catalog`.
+ *   {@link shadowProblems} checks for that.
+ *
  * @module http/route-census/census
  */
 import { METHODS } from 'node:http';
-import type { Hono } from 'hono';
+import { Hono } from 'hono';
 
 /** The tag `record-mount-paths.ts` puts on each Express layer: its mount path. */
 export const MOUNT_PATH = Symbol.for('dorkos.route-census.mount-path');
@@ -127,6 +141,52 @@ export function censusProblems(actual: RouteCensus, baseline: RouteCensus): stri
       if (!have.has(entry)) problems.push(`${side} no longer serves ${entry}`);
     for (const entry of have)
       if (!want.has(entry)) problems.push(`${side} now serves ${entry}, not in the baseline`);
+  }
+  return problems;
+}
+
+/** Split an entry into its method and path. */
+function parseEntry(entry: string): { method: string; path: string } {
+  const space = entry.indexOf(' ');
+  return { method: entry.slice(0, space), path: entry.slice(space + 1) };
+}
+
+/**
+ * Every Express entry a Hono route would catch first, since the front door
+ * routes to Hono before it hands anything to Express.
+ *
+ * Each Express path is turned into one concrete request (a `:param` becomes a
+ * sample segment, a `*splat` two) and offered to a router holding only the
+ * Hono side. Anything it matches is a request that would no longer reach
+ * Express. Regular-expression paths are skipped.
+ *
+ * @param census - The census of a running server.
+ * @returns One line per shadowed Express entry.
+ */
+export async function shadowProblems(census: RouteCensus): Promise<string[]> {
+  if (census.hono.length === 0) return [];
+  const probe = new Hono();
+  for (const entry of census.hono) {
+    const { method, path } = parseEntry(entry);
+    const answer = () => new Response(entry);
+    if (method === 'ALL' || method === 'USE') {
+      probe.all(path, answer);
+      if (method === 'USE') probe.all(`${path === '/' ? '' : path}/*`, answer);
+    } else {
+      probe.on(method, path, answer);
+    }
+  }
+  const problems: string[] = [];
+  for (const entry of census.express) {
+    const { method, path } = parseEntry(entry);
+    if (!path.startsWith('/')) continue;
+    const sample = path
+      .replace(/:[A-Za-z0-9_]+/g, 'census-sample')
+      .replace(/\*[A-Za-z0-9_]*/g, 'census/sample');
+    const res = await probe.request(sample, {
+      method: method === 'ALL' || method === 'USE' ? 'GET' : method,
+    });
+    if (res.status !== 404) problems.push(`hono's ${await res.text()} catches ${entry}`);
   }
   return problems;
 }

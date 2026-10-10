@@ -20,7 +20,9 @@ contractSuite('health', [
     expect: {
       status: 200,
       headers: {
-        'content-type': 'application/json; charset=utf-8',
+        // Not the exact string: Express adds `; charset=utf-8`, Hono's `c.json`
+        // does not, and both are the same answer.
+        'content-type': /^application\/json\b/,
         'x-content-type-options': 'nosniff',
       },
       schema: HealthResponseSchema,
@@ -50,6 +52,8 @@ contractSuite('health', [
     },
   },
   {
+    // Pinned as it is today, a 500 from the CORS delegate's thrown error, so a
+    // move keeps it. A plainer refusal is a change of its own, after the move.
     name: 'an untrusted browser origin is refused',
     path: '/api/health',
     headers: { origin: 'https://evil.example' },

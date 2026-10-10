@@ -4,7 +4,7 @@
  * none. A deliberately removed route is the first case.
  */
 import { describe, expect, it } from 'vitest';
-import { censusProblems } from '../route-census/census.js';
+import { censusProblems, shadowProblems } from '../route-census/census.js';
 
 const baseline = { hono: ['GET /api/health'], express: ['GET /api/models', 'POST /api/models'] };
 
@@ -36,5 +36,32 @@ describe('censusProblems', () => {
       'hono now serves GET /api/models, not in the baseline',
       'express no longer serves GET /api/models',
     ]);
+  });
+});
+
+describe('shadowProblems', () => {
+  it('finds a Hono pattern that would catch an Express route first', async () => {
+    const census = {
+      hono: ['GET /api/relay/adapters/:id'],
+      express: ['GET /api/relay/adapters/catalog', 'POST /api/relay/adapters/catalog'],
+    };
+    expect(await shadowProblems(census)).toEqual([
+      "hono's GET /api/relay/adapters/:id catches GET /api/relay/adapters/catalog",
+    ]);
+  });
+
+  it('finds a Hono mount that covers an Express route beneath it', async () => {
+    const census = { hono: ['USE /api/relay'], express: ['DELETE /api/relay/bindings/:id'] };
+    expect(await shadowProblems(census)).toEqual([
+      "hono's USE /api/relay catches DELETE /api/relay/bindings/:id",
+    ]);
+  });
+
+  it('finds nothing when the two sides are apart', async () => {
+    const census = {
+      hono: ['GET /api/health', 'GET /api/health/deep'],
+      express: ['GET /api/models/:id'],
+    };
+    expect(await shadowProblems(census)).toEqual([]);
   });
 });
