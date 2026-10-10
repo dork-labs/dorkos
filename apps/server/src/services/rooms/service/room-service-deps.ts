@@ -137,6 +137,11 @@ export interface RoomServiceDeps {
   /** The rows behind this room's attachments. The BYTES live behind a separate seam. */
   attachments: AttachmentRowStore;
   authors: AuthorRegistry;
+  /**
+   * The usage limit a chat's account hit during its last turn (DOR-2823), so a
+   * failed room turn can say when the agent can answer again. Absent in tests.
+   */
+  usageLimitFor?(sessionId: string): { resetsAt: string | null } | null;
   broadcaster: RoomBroadcaster;
   agents: RoomAgentLookup;
   /** How a triggered agent actually takes its turn. */

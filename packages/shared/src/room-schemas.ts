@@ -203,6 +203,7 @@ export const RoomNoticeCodeSchema = z
     'bridge_agent_swapped',
     'bridge_history_note',
     'room_archived',
+    'nobody_answering',
   ])
   .openapi('RoomNoticeCode');
 

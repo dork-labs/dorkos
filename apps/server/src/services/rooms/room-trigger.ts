@@ -388,6 +388,25 @@ function withGone(refused: readonly SkippedTrigger[], gone: ReadonlySet<string>)
   ];
 }
 
+/**
+ * The receipt the room puts on a person's message for each agent picked to
+ * answer it, and takes off when that agent's turn ends (DOR-2823).
+ */
+export const RECEIPT_EMOJI = '👀';
+
+/**
+ * How long the room waits before trying a busy agent again, attempt by attempt
+ * (DOR-2823). Roughly two hours in all, then it says so and stops.
+ */
+export const BUSY_RETRY_DELAYS_MS: readonly number[] = [
+  15_000, 30_000, 60_000, 120_000, 300_000, 600_000, 900_000, 1_200_000, 1_800_000, 1_800_000,
+];
+
+/** The key a busy retry is tracked under: one message, for one agent. */
+function retryKey(roomId: string, authorId: string, entryId: string): string {
+  return `${roomId}\u0000${authorId}\u0000${entryId}`;
+}
+
 /** Everything {@link RoomTriggerDispatcher} is constructed from. */
 export interface RoomTriggerDeps {
   store: RoomStore;
@@ -397,6 +416,20 @@ export interface RoomTriggerDeps {
   agents: RoomAgentLookup;
   /** Whether an author is the install's owner — see `RoomContextDeps.isOwnerAuthor`. */
   isOwnerAuthor(authorId: string): boolean;
+  /**
+   * Put the room's 👀 receipt on a person's message for an agent that was picked
+   * to answer it, or take it off (DOR-2823). Written by the room on the agent's
+   * behalf: it costs the agent no reaction and is never the agent's answer.
+   * Optional so a harness without reactions runs unchanged.
+   */
+  markReceipt?(roomId: string, entryId: string, authorId: string, on: boolean): void;
+  /**
+   * The usage limit a chat's account hit during its last turn, if any: when it
+   * resets (ISO 8601) or `null` when unknown (DOR-2823). Lets a failed turn
+   * say "out of usage until 4:10 PM" instead of "ran into a problem".
+   * Optional so a harness without the limit store runs unchanged.
+   */
+  usageLimitFor?(sessionId: string): { resetsAt: string | null } | null;
   /** The operator's profile name — see `RoomContextDeps.operatorName`. */
   operatorName?(): string | null;
   /**
@@ -686,6 +719,21 @@ export class RoomTriggerDispatcher {
    * last release, rather than ticking over an empty map forever.
    */
   private republishing: NodeJS.Timeout | null = null;
+  /**
+   * The 👀 receipts standing for each `(room, agent)`: entry id to its `seq`.
+   * In memory, like the claims they describe; a restart mid-turn can leave one
+   * standing, which the next turn by that agent in that room clears.
+   */
+  /**
+   * Busy launches waiting to be tried again (DOR-2823): attempts made so far,
+   * keyed by {@link retryKey}. In memory: a restart drops them, and the
+   * agent's next turn in that room still reads the message.
+   */
+  private readonly busyRetries = new Map<string, number>();
+  private readonly receipts = new Map<
+    string,
+    { roomId: string; authorId: string; entries: Map<string, number> }
+  >();
 
   /**
    * What this room has already said about itself, and what it says next.
@@ -766,6 +814,12 @@ export class RoomTriggerDispatcher {
     const selection = this.selectCandidates(room, entry, namedUnreachable);
     for (const candidate of selection.candidates) {
       this.collectOne(room, entry, candidate, arrivedAt);
+    }
+    // **A person sees at once that somebody has their message** (DOR-2823): the
+    // 👀 receipt, from each agent the room picked, taken off when its turn ends.
+    if (this.deps.authors.getById(entry.authorId)?.kind === 'human') {
+      for (const candidate of selection.candidates)
+        this.markReceipt(room.id, entry, candidate.authorId);
     }
     return {
       triggered: selection.candidates.map((candidate) => candidate.author),
@@ -1017,16 +1071,29 @@ export class RoomTriggerDispatcher {
       // DOR-2823 is about, so every one is logged with why. Never a member's
       // name or a message body, only ids and the reason.
       if (followsConversation) {
+        const reason = whyNobody({
+          entry,
+          members: addressing,
+          namedUnreachable,
+          partners: conversation?.partners ?? [],
+        });
         logger.info('[rooms] nobody was picked to answer a person', {
           roomId: room.id,
           entryId: entry.id,
-          reason: whyNobody({
-            entry,
-            members: addressing,
-            namedUnreachable,
-            partners: conversation?.partners ?? [],
-          }),
+          reason,
         });
+        // **Never silent** (DOR-2823): one quiet line when the message reached
+        // nobody because there is nobody to reach, never when it named somebody
+        // (that is addressed) and never in a chat bridged outside.
+        if (this.deps.bridgedFraming(room.id) === null) {
+          if (reason === 'no_agents') this.notices.reportNobody(room, entry, 'no_agents');
+          else if (
+            (reason === 'no_conversation' || reason === 'partner_not_answering') &&
+            leadAuthorId === null
+          ) {
+            this.notices.reportNobody(room, entry, 'no_lead');
+          }
+        }
       }
       // **The commonest shape of the ghost case comes through here**, and it is
       // why this is not a bare `return`. A channel seeds agents at `engaged`, and
@@ -1766,6 +1833,7 @@ export class RoomTriggerDispatcher {
       ...(chosen.held.reason === 'conversation' || chosen.held.reason === 'lead'
         ? { answerOwed: chosen.held.reason }
         : {}),
+      reason: chosen.held.reason,
       // ONE ID PER (turn, target), minted here rather than per entry. A message
       // addressed to three agents is three dispatches sharing one `entryId`: the
       // fan-out is recovered by the entry, and each agent's own chain — claim,
@@ -2564,8 +2632,28 @@ export class RoomTriggerDispatcher {
       });
       return 'halted';
     }
+    if (reply.unanswered === 'busy' && this.retryWhenFree(room, entry, target)) {
+      return reply.unanswered;
+    }
     if (reply.unanswered) {
-      this.notices.reportSilence(room, entry, target, reply.unanswered, target.dispatchId);
+      const limit =
+        reply.unanswered === 'failed'
+          ? (this.deps.usageLimitFor?.(target.sessionId) ?? null)
+          : null;
+      this.notices.reportSilence(
+        room,
+        entry,
+        target,
+        reply.unanswered,
+        target.dispatchId,
+        reply.unanswered === 'busy' &&
+          this.busyRetries.has(retryKey(room.id, target.authorId, entry.id))
+          ? { busyWith: 'gave-up' }
+          : limit
+            ? { outOfUsageUntil: limit.resetsAt }
+            : {}
+      );
+      this.busyRetries.delete(retryKey(room.id, target.authorId, entry.id));
       return reply.unanswered;
     }
 
@@ -3308,6 +3396,12 @@ export class RoomTriggerDispatcher {
     // and an answered one all end the wait equally, and only this line runs on
     // all three.
     this.notices.turnEnded(claim.roomId, claim.authorId);
+    // The turn that owned these messages is over, so their 👀 comes off: up to
+    // the message it answered, never one that arrived later and still waits.
+    this.clearReceipts(
+      key,
+      this.deps.store.getEntryById(claim.roomId, claim.entryId)?.seq ?? Number.POSITIVE_INFINITY
+    );
     const before = this.workingCount(claim.roomId);
     this.claimed.delete(key);
     // Before the `done`, in the same block that stops the republish timer: an
@@ -3543,6 +3637,8 @@ export class RoomTriggerDispatcher {
    * @param reason - How it ended, for the log. Never rendered.
    */
   private releaseHold(key: string, reason: HoldEnd): void {
+    // Nothing will answer a hold that ends any way but starting, so its 👀 goes.
+    if (reason !== 'started') this.clearReceipts(key, Number.POSITIVE_INFINITY);
     const record = this.held.get(key);
     if (record === undefined) return;
     this.held.delete(key);
@@ -3884,8 +3980,136 @@ export class RoomTriggerDispatcher {
    * @param reason - How it ended, for the log.
    */
   private settleCollection(collection: RoomCollection, reason: HoldEnd): void {
-    this.releaseHold(agentKey(collection.room.id, collection.authorId), reason);
+    const key = agentKey(collection.room.id, collection.authorId);
+    const newest = collection.entries.at(-1)?.entry.seq;
+    if (newest !== undefined) this.clearReceipts(key, newest);
+    this.releaseHold(key, reason);
     this.settleOne();
+  }
+
+  /**
+   * Put a launch the runtime refused as busy back in line, instead of dropping
+   * it (DOR-2823). The agent was working in its own chat, or finishing work the
+   * runtime would not interrupt; neither is a reason to leave a person without
+   * an answer. Tried again on a backoff ({@link BUSY_RETRY_DELAYS_MS}), through
+   * the same collector a new message goes through, so a room archived or an
+   * agent removed in the meantime is handled the way it always is.
+   *
+   * The first retry writes the one notice that says so, and it is true: the
+   * room will try again on its own.
+   *
+   * @param room - The room.
+   * @param entry - The message the refused turn would have answered.
+   * @param target - The refused turn.
+   * @returns `false` once every retry is spent, so the caller says the room
+   *   gave up.
+   */
+  private retryWhenFree(room: Room, entry: RoomEntry, target: TriggerTarget): boolean {
+    const key = retryKey(room.id, target.authorId, entry.id);
+    const attempts = this.busyRetries.get(key) ?? 0;
+    const delay = BUSY_RETRY_DELAYS_MS[attempts];
+    if (delay === undefined) return false;
+    this.busyRetries.set(key, attempts + 1);
+    if (attempts === 0) {
+      this.notices.reportSilence(room, entry, target, 'busy', target.dispatchId, {
+        busyWith: 'retrying',
+      });
+    }
+    logger.info('[rooms] a busy agent will be tried again', {
+      roomId: room.id,
+      authorId: target.authorId,
+      entryId: entry.id,
+      attempt: attempts + 1,
+      inMs: delay,
+    });
+    const timer = setTimeout(() => this.retryNow(room.id, entry.id, target), delay);
+    timer.unref?.();
+    return true;
+  }
+
+  /**
+   * Put one busy launch back through the collector, as it was first picked.
+   *
+   * @param roomId - The room.
+   * @param entryId - The message to answer.
+   * @param target - The turn that was refused.
+   */
+  private retryNow(roomId: string, entryId: string, target: TriggerTarget): void {
+    const room = this.deps.store.getRoom(roomId);
+    const entry = this.deps.store.getEntryById(roomId, entryId);
+    const record = this.deps.authors.getById(target.authorId);
+    const member = this.deps.store.listMembers(roomId).some((m) => m.authorId === target.authorId);
+    if (!room || room.archived || !entry || !record || !member) {
+      this.busyRetries.delete(retryKey(roomId, target.authorId, entryId));
+      return;
+    }
+    this.collectOne(
+      room,
+      entry,
+      {
+        authorId: target.authorId,
+        agentPath: target.agentPath,
+        displayName: target.displayName,
+        author: toAuthorRef(record),
+        depth: target.depth,
+        engaged: target.engaged,
+        reason: target.reason ?? 'mention',
+      },
+      Date.now()
+    );
+    if (this.deps.authors.getById(entry.authorId)?.kind === 'human') {
+      this.markReceipt(roomId, entry, target.authorId);
+    }
+  }
+
+  /**
+   * Put the 👀 receipt on a person's message for one picked agent (DOR-2823).
+   *
+   * @param roomId - The room.
+   * @param entry - The person's message.
+   * @param authorId - The agent picked to answer it.
+   */
+  private markReceipt(roomId: string, entry: RoomEntry, authorId: string): void {
+    if (!this.deps.markReceipt) return;
+    const key = agentKey(roomId, authorId);
+    const standing = this.receipts.get(key) ?? { roomId, authorId, entries: new Map() };
+    standing.entries.set(entry.id, entry.seq);
+    this.receipts.set(key, standing);
+    try {
+      this.deps.markReceipt(roomId, entry.id, authorId, true);
+    } catch (err) {
+      // A receipt is a courtesy: failing to show one must never cost the turn.
+      logger.warn('[rooms] could not put the receipt on a message', {
+        roomId,
+        entryId: entry.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  /**
+   * Take one agent's 👀 receipts off, up to and including `upToSeq`.
+   *
+   * @param key - The `(room, agent)` key.
+   * @param upToSeq - The newest message whose receipt comes off.
+   */
+  private clearReceipts(key: string, upToSeq: number): void {
+    const standing = this.receipts.get(key);
+    if (!standing || !this.deps.markReceipt) return;
+    for (const [entryId, seq] of standing.entries) {
+      if (seq > upToSeq) continue;
+      standing.entries.delete(entryId);
+      try {
+        this.deps.markReceipt(standing.roomId, entryId, standing.authorId, false);
+      } catch (err) {
+        logger.warn('[rooms] could not take the receipt off a message', {
+          roomId: standing.roomId,
+          entryId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+    if (standing.entries.size === 0) this.receipts.delete(key);
   }
 
   /**

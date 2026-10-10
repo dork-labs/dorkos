@@ -708,6 +708,8 @@ export function createRoomHarness(opts: {
   maxAutomaticTurnsPerRoomPerHour?: number;
   maxAutomaticTurnsTotalPerHour?: number;
   engagedWindow?: EngagedWindow;
+  /** The usage limit a chat's account hit, for the out-of-usage notice (DOR-2823). */
+  usageLimitFor?: (sessionId: string) => { resetsAt: string | null } | null;
   /**
    * `rooms.responseGate`. Defaults to the SHIPPED value, so a test that says
    * nothing measures what an install does — a harness pinned to `'off'` would
@@ -928,6 +930,7 @@ export function createRoomHarness(opts: {
     indexEntry: opts.indexEntry ?? (({ roomId, seq }) => indexRoomEntry(db, roomId, seq)),
     limitsFor,
     engagedWindow: () => engagedWindow,
+    ...(opts.usageLimitFor ? { usageLimitFor: opts.usageLimitFor } : {}),
     responseGate: () => responseGate,
     collect: () => collect,
     holdCeilingMs: () => holdCeilingMs,

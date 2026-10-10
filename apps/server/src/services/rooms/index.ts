@@ -62,6 +62,7 @@ import { RoomBroadcaster } from './room-stream.js';
 import type { RoomTurnRunner } from './room-trigger.js';
 import { RoomTurnBudget, type TurnBudgetLimits } from './limits/turn-budget.js';
 import { createSessionRoomTurnRunner } from './room-turn-runner.js';
+import { getSessionLimitStore } from '../session/fleet/session-limit-store.js';
 import { lastPersonSignalAt, WelcomeBackGreeter } from './welcome-back/greeter.js';
 import { createSessionWorkSource } from './welcome-back/work-source.js';
 
@@ -573,6 +574,13 @@ export function createRoomSubsystem(opts: {
     attachments,
     authors,
     broadcaster,
+    // A failed turn whose account ran out of usage says when it can answer
+    // again (DOR-2823). Read at the moment of failure, never cached.
+    usageLimitFor: (sessionId) => {
+      const stored = getSessionLimitStore()?.get(sessionId);
+      if (!stored || stored.state === 'reset-ready' || stored.state === 'moved') return null;
+      return { resetsAt: stored.limit.resetsAt ?? null };
+    },
     bridges,
     agents: agentLookup,
     turns:

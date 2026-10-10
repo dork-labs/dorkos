@@ -48,6 +48,8 @@ import {
   buildBusyNotice,
   buildHaltedNotice,
   buildTurnFailedNotice,
+  buildNobodyNotice,
+  type NobodyNoticeReason,
   buildWaitingNotice,
   BUSY_CONTEXTS,
   type AgentHaltOutcome,
@@ -97,6 +99,9 @@ export interface CascadeStamp {
  */
 export type RoomTurnUnanswered =
   'busy' | 'failed' | 'gone' | 'left' | 'unavailable' | 'runtime-gone';
+
+/** How long one "nobody answered" line stands for its room and reason. */
+const NOBODY_NOTICE_DAMP_MS = 60 * 60_000;
 
 /** How a notice reaches the room's durable log. */
 export interface RoomNoticeWriter {
@@ -165,6 +170,12 @@ export interface SilenceContext {
    * is the one addressing.
    */
   namedDirectly?: boolean;
+  /**
+   * The agent's account ran out of usage during this turn (DOR-2823): when it
+   * resets, ISO 8601, or `null` when that is not known. Absent for any other
+   * failure.
+   */
+  outOfUsageUntil?: string | null;
 }
 
 /**
@@ -298,6 +309,9 @@ export class RoomNoticeLog {
    * their rosters, which is not something a busy room can grow.
    */
   private readonly noticedHalt = new Set<string>();
+
+  /** When each `(room, reason)` last said nobody was answering. */
+  private readonly nobodySaid = new Map<string, number>();
 
   constructor(deps: RoomNoticeLogDeps) {
     this.deps = deps;
@@ -778,6 +792,29 @@ export class RoomNoticeLog {
   }
 
   /**
+   * Say, once in a while, that a person's message in a channel reached no
+   * agent at all (DOR-2823).
+   *
+   * Damped on the ROOM and the reason for an hour: a channel with no lead
+   * where people talk among themselves would otherwise answer every message
+   * with the same line. The dispatcher logs every such decision regardless.
+   *
+   * @param room - The channel.
+   * @param entry - The person's message, for the thread it belongs under.
+   * @param reason - Why nobody was picked.
+   * @returns Whether a line was written.
+   */
+  reportNobody(room: Room, entry: RoomEntry, reason: NobodyNoticeReason): boolean {
+    const key = `${room.id}\u0000${reason}`;
+    const last = this.nobodySaid.get(key);
+    const now = Date.now();
+    if (last !== undefined && now - last < NOBODY_NOTICE_DAMP_MS) return false;
+    const written = this.writeNotice(room, entry, null, buildNobodyNotice(reason));
+    if (written) this.nobodySaid.set(key, now);
+    return written;
+  }
+
+  /**
    * Say that an agent somebody ASKED ran its turn and chose not to reply (spec
    * `tool-only-room-replies` §D6).
    *
@@ -1010,7 +1047,8 @@ const SILENCE_BODIES: Record<
   (agent: NoticeSubject, context: SilenceContext & { busyWith: BusyContext }) => RoomEntryBody
 > = {
   busy: (agent, { busyWith }) => buildBusyNotice(agent.displayName, agent.authorId, busyWith),
-  failed: (agent) => buildTurnFailedNotice(agent.displayName, agent.authorId),
+  failed: (agent, { outOfUsageUntil }) =>
+    buildTurnFailedNotice(agent.displayName, agent.authorId, outOfUsageUntil),
   gone: (agent) => buildAgentGoneNotice(agent.displayName, agent.authorId),
   left: (agent) => buildAgentLeftNotice(agent.displayName, agent.authorId),
   unavailable: (agent) => buildAgentUnavailableNotice(agent.displayName, agent.authorId),

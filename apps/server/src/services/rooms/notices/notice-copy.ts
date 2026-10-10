@@ -93,7 +93,7 @@ export function buildBudgetNotice(scope: BudgetRefusalScope = 'room'): RoomEntry
  * LIVE lane may say more, because it resolves the room per reader against the
  * rooms that reader can already see.
  */
-export type BusyContext = 'held-too-long' | 'unknown';
+export type BusyContext = 'held-too-long' | 'retrying' | 'gave-up' | 'unknown';
 
 /**
  * Every busy context there is, so the damping key can enumerate them.
@@ -105,6 +105,8 @@ export type BusyContext = 'held-too-long' | 'unknown';
  */
 export const BUSY_CONTEXTS = Object.keys({
   'held-too-long': true,
+  retrying: true,
+  'gave-up': true,
   unknown: true,
 } satisfies Record<BusyContext, true>) as BusyContext[];
 
@@ -144,6 +146,12 @@ export function buildBusyNotice(
 const BUSY_LINES: Record<BusyContext, (agentName: string) => string> = {
   'held-too-long': (agentName) =>
     `${agentName} has been working in another chat for a long time, so it hasn't got to your message yet. It will read it the next time it picks up work here.`,
+  // The room retries a busy launch on its own (DOR-2823), so this line is true
+  // when it is written: nobody has to send anything again.
+  retrying: (agentName) =>
+    `${agentName} is busy in its own chat. It will answer here when it's free.`,
+  'gave-up': (agentName) =>
+    `${agentName} stayed busy for two hours, so it didn't answer here. Send your message again when it's free.`,
   unknown: (agentName) =>
     `${agentName} was busy in its own chat, so it didn't answer here. It will read your message the next time it picks up work in this room.`,
 };
@@ -355,11 +363,62 @@ const AGENT_HALT_LINES: Record<AgentHaltOutcome, (agentName: string) => string> 
  * @param agentName - Display name of the agent whose turn failed.
  * @param subjectAuthorId - Author id of that agent, for rendering.
  */
-export function buildTurnFailedNotice(agentName: string, subjectAuthorId: string): RoomEntryBody {
+export function buildTurnFailedNotice(
+  agentName: string,
+  subjectAuthorId: string,
+  outOfUsageUntil?: string | null
+): RoomEntryBody {
+  // A usage limit is not a problem to go and look at: it says when it ends
+  // (DOR-2823). `undefined` is an ordinary failure; `null` is a limit with no
+  // known reset.
+  if (outOfUsageUntil !== undefined) {
+    return {
+      text:
+        outOfUsageUntil === null
+          ? `${agentName} is out of usage, so it couldn't answer here.`
+          : `${agentName} is out of usage until ${clockTime(outOfUsageUntil)}, so it couldn't answer here.`,
+      notice: 'turn_failed',
+      subjectAuthorId,
+    };
+  }
   return {
     text: `${agentName} ran into a problem and could not answer here. Open ${agentName}'s chat to see what went wrong.`,
     notice: 'turn_failed',
     subjectAuthorId,
+  };
+}
+
+/**
+ * A reset time as a person reads a clock on this machine ("4:10 PM"), with the
+ * day when it is not today.
+ *
+ * @param iso - The reset, ISO 8601.
+ */
+function clockTime(iso: string): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return 'it resets';
+  const time = at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const sameDay = at.toDateString() === new Date().toDateString();
+  return sameDay ? time : `${at.toLocaleDateString([], { weekday: 'short' })} ${time}`;
+}
+
+/** Why a person's message in a channel reached no agent, as the room says it. */
+export type NobodyNoticeReason = 'no_agents' | 'no_lead';
+
+/**
+ * The one quiet line a channel writes when a person's message reached no agent
+ * at all (DOR-2823). Never for a message that named somebody or named only
+ * people: those are addressed, and saying so would be noise.
+ *
+ * @param reason - Why nobody was picked.
+ */
+export function buildNobodyNotice(reason: NobodyNoticeReason): RoomEntryBody {
+  return {
+    text:
+      reason === 'no_agents'
+        ? 'No agent is in this channel to answer. Add one to get answers here.'
+        : 'Nobody answered: this channel has no lead. @mention an agent, or pick a lead.',
+    notice: 'nobody_answering',
   };
 }
 
