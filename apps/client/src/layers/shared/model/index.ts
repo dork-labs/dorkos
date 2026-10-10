@@ -200,6 +200,7 @@ export {
   type StatusBarContribution,
   type TabMarker,
   useTabMarker,
+  usePageBadge,
   menuExtensionPages,
   useMenuExtensionPages,
   useExtensionPageAtPath,

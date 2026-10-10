@@ -2,6 +2,7 @@ import type { ComponentType } from 'react';
 import type { UiCommand, UiCanvasContent } from '@dorkos/shared/types';
 import type { ExtensionEventsAPI } from './extension-events.js';
 import type { StartWorkInput } from './start-work.js';
+import type { ExtensionPageBadge } from './page-badge.js';
 
 /**
  * Slot identifiers matching the Phase 2 registry.
@@ -369,6 +370,21 @@ export interface ExtensionAPI {
     component: ComponentType<ExtensionPageProps>,
     options: ExtensionPageOptions
   ): () => void;
+
+  /**
+   * Put a status, a count or a sentence on any tab showing one of your pages;
+   * null clears it.
+   *
+   * `path` is the path you passed to `registerPage`, so a badge on a `:param`
+   * page shows on every tab of it. The host draws the badge exactly as it draws
+   * its own pages' (one mark at most: the count, else the status dot) and puts
+   * the sentence in the tab's hover card and accessible name. A badge that
+   * fails the check (a status outside `PAGE_BADGE_STATUSES`, a count that is
+   * not a whole number 0 or more, a sentence over 80 characters) or names a
+   * page you have not registered is ignored with a console warning. Badges
+   * clear when your extension deactivates.
+   */
+  setPageBadge(path: string, badge: ExtensionPageBadge | null): void;
 
   /**
    * Add an item to the chat status bar, beside the runtime and account chips.

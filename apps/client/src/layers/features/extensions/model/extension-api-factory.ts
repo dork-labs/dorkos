@@ -11,6 +11,7 @@ import type {
   ExtensionEvent,
   ExtensionEventKind,
   ExtensionEventDeclaration,
+  ExtensionPageBadge,
   ExtensionPageOptions,
   ExtensionPageProps,
   ProjectRef,
@@ -18,7 +19,12 @@ import type {
   StatusBarSlotContext,
   StartWorkInput,
 } from '@dorkos/extension-api';
-import { isExtensionEventDeclared, StartWorkError } from '@dorkos/extension-api';
+import {
+  copyPageBadge,
+  isExtensionEventDeclared,
+  pageBadgeProblem,
+  StartWorkError,
+} from '@dorkos/extension-api';
 import type { UiCommand, UiCanvasContent } from '@dorkos/shared/types';
 import {
   DecisionActionResponseSchema,
@@ -85,6 +91,7 @@ export function createExtensionAPI(
 ): { api: ExtensionAPI; cleanups: Array<() => void> } {
   const cleanups: Array<() => void> = [];
   let markersQueuedForCleanup = false;
+  let badgesQueuedForCleanup = false;
 
   const api: ExtensionAPI = {
     id: extId,
@@ -271,6 +278,22 @@ export function createExtensionAPI(
         cleanups.push(() => deps.registry.clearTabMarkers(extId));
       }
       deps.registry.setTabMarker(contributionId, marker);
+    },
+
+    setPageBadge(path: string, badge: ExtensionPageBadge | null): void {
+      const contributionId = `${extId}:${path}`;
+      const owned = deps.registry.getContributions('pages').some((c) => c.id === contributionId);
+      const problem = owned ? badge && pageBadgeProblem(badge) : 'that page is not registered';
+      if (problem) {
+        console.warn(`[extensions] ${extId}: setPageBadge('${path}') was ignored: ${problem}`);
+        return;
+      }
+      // Kept apart from the page, so cleared with the extension; queued once.
+      if (!badgesQueuedForCleanup) {
+        badgesQueuedForCleanup = true;
+        cleanups.push(() => deps.registry.clearPageBadges(extId));
+      }
+      deps.registry.setPageBadge(contributionId, badge && copyPageBadge(badge));
     },
 
     executeCommand(command: UiCommand): void {
