@@ -366,6 +366,7 @@ import { MarketplaceInstaller } from './services/marketplace/installer/marketpla
 import { createMarketplaceRouter } from './routes/marketplace.js';
 import { runAutoProjection } from './services/harness/auto-project.js';
 import { backfillAgentWorkspaceSkills } from './services/harness/project-agent-workspace.js';
+import { refreshUntouchedTemplates } from './services/mesh/refresh-untouched-templates.js';
 import { runAgentCreatedProjection } from './services/harness/project-on-agent-created.js';
 import {
   createEveryAgentArrivalReaction,
@@ -2793,6 +2794,11 @@ async function start() {
       const workspaces = meshCore.listWithPaths().map((agent) => agent.projectPath);
       backfillAgentWorkspaceSkills(workspaces, dorkHome).catch((err: unknown) => {
         logger.warn('[Mesh] Agent workspace skill backfill failed', logError(err));
+      });
+      // Same agent homes, same fire-and-forget shape: starter text nobody
+      // edited catches up with today's template (DOR-2779, ADR-0302 amendment).
+      refreshUntouchedTemplates(workspaces, dorkHome).catch((err: unknown) => {
+        logger.warn('[Mesh] Starter text refresh failed', logError(err));
       });
     } catch (err) {
       logger.warn('[Mesh] Failed to start agent workspace skill backfill', logError(err));
