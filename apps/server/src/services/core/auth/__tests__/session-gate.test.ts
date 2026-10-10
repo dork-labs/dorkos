@@ -20,6 +20,7 @@ import {
 } from '../index.js';
 import { configManager, initConfigManager } from '../../config-manager.js';
 import { env } from '../../../../env.js';
+import { REQUEST_FACTS_ADAPTERS } from '../../../../http/__tests__/request-facts-adapters.js';
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
@@ -429,40 +430,55 @@ describe('sessionGate — /api/* and /mcp credential gate (integration)', () => 
     // valid credential, and this is the only place the difference is observable
     // — a per-user API key satisfies the gate exactly as a browser session does
     // (DOR-474), so if these two returned the same shape those writes would have
-    // nothing to branch on.
-    it('resolves a cookie identity, and says the cookie is what proved it', async () => {
-      const req = { headers: { cookie: cookies.join('; ') } } as unknown as express.Request;
-      expect(await verifyRequestAuth(req)).toEqual({ userId: ownerId, credential: 'cookie' });
-    });
-
-    it('resolves a Bearer API key identity, and says it was NOT a cookie', async () => {
-      const req = {
-        headers: { authorization: `Bearer ${apiKey}` },
-      } as unknown as express.Request;
-      expect(await verifyRequestAuth(req)).toEqual({
-        userId: ownerId,
-        credential: 'api-key',
-        credentialId: apiKeyId,
+    // nothing to branch on. The plain-header cases run once per chain
+    // (DOR-2794): each adapter's facts must prove the same identity.
+    describe.each(REQUEST_FACTS_ADAPTERS)('through the $name adapter', (adapter) => {
+      it('resolves a cookie identity, and says the cookie is what proved it', async () => {
+        const req = await adapter.facts({ headers: { cookie: cookies.join('; ') } });
+        expect(await verifyRequestAuth(req)).toEqual({ userId: ownerId, credential: 'cookie' });
       });
-    });
 
-    it('never labels an x-api-key caller a cookie caller (pins a Better Auth default)', async () => {
-      // The `credential` label is only honest because Better Auth's apiKey plugin
-      // cannot mint a SESSION from an `x-api-key` header. That behavior is gated
-      // on `enableSessionForAPIKeys`, which defaults to `false`, and DorkOS calls
-      // bare `apiKey()` with no config — so the default is load-bearing for a
-      // guard in another module and nothing else in the repo asserts it.
-      //
-      // If a future version flips that default, `getSession` would answer for a
-      // key-bearing request and this identity would come back labelled `cookie`,
-      // silently handing a per-user API key the one thing the cookie bar exists
-      // to withhold. This test goes red on that day, which is the entire point.
-      const req = { headers: { 'x-api-key': apiKey } } as unknown as express.Request;
-      const resolved = await verifyRequestAuth(req);
-      expect(resolved?.credential).not.toBe('cookie');
-      // Today it resolves to nothing at all: `x-api-key` is not the Bearer header
-      // this codebase reads, so neither path claims it.
-      expect(resolved).toBeNull();
+      it('resolves a Bearer API key identity, and says it was NOT a cookie', async () => {
+        const req = await adapter.facts({
+          headers: { authorization: `Bearer ${apiKey}` },
+        });
+        expect(await verifyRequestAuth(req)).toEqual({
+          userId: ownerId,
+          credential: 'api-key',
+          credentialId: apiKeyId,
+        });
+      });
+
+      it('never labels an x-api-key caller a cookie caller (pins a Better Auth default)', async () => {
+        // The `credential` label is only honest because Better Auth's apiKey plugin
+        // cannot mint a SESSION from an `x-api-key` header. That behavior is gated
+        // on `enableSessionForAPIKeys`, which defaults to `false`, and DorkOS calls
+        // bare `apiKey()` with no config — so the default is load-bearing for a
+        // guard in another module and nothing else in the repo asserts it.
+        //
+        // If a future version flips that default, `getSession` would answer for a
+        // key-bearing request and this identity would come back labelled `cookie`,
+        // silently handing a per-user API key the one thing the cookie bar exists
+        // to withhold. This test goes red on that day, which is the entire point.
+        const req = await adapter.facts({ headers: { 'x-api-key': apiKey } });
+        const resolved = await verifyRequestAuth(req);
+        expect(resolved?.credential).not.toBe('cookie');
+        // Today it resolves to nothing at all: `x-api-key` is not the Bearer header
+        // this codebase reads, so neither path claims it.
+        expect(resolved).toBeNull();
+      });
+
+      it('returns null with no credentials', async () => {
+        const req = await adapter.facts({ headers: {} });
+        expect(await verifyRequestAuth(req)).toBeNull();
+      });
+
+      it('returns null with an invalid Bearer key', async () => {
+        const req = await adapter.facts({
+          headers: { authorization: 'Bearer nope' },
+        });
+        expect(await verifyRequestAuth(req)).toBeNull();
+      });
     });
 
     it('leaves a renewal-due original row unchanged while the ordinary verifier can renew it', async () => {
@@ -580,18 +596,6 @@ describe('sessionGate — /api/* and /mcp credential gate (integration)', () => 
         .set('Authorization', `Bearer ${apiKey}`);
       expect(program.status).toBe(200);
       expect(program.body.user.credential).toBe('api-key');
-    });
-
-    it('returns null with no credentials', async () => {
-      const req = { headers: {} } as unknown as express.Request;
-      expect(await verifyRequestAuth(req)).toBeNull();
-    });
-
-    it('returns null with an invalid Bearer key', async () => {
-      const req = {
-        headers: { authorization: 'Bearer nope' },
-      } as unknown as express.Request;
-      expect(await verifyRequestAuth(req)).toBeNull();
     });
 
     it('refuses a deleted genuine key owner while the original key row remains unchanged', async () => {

@@ -21,6 +21,7 @@
 import type { Request } from 'express';
 import { ipKeyGenerator } from 'express-rate-limit';
 import { env } from '../env.js';
+import { expressRequestFacts, type RequestFacts } from '../http/request-facts.js';
 
 /**
  * The key when no address can be read at all — a socket already torn down.
@@ -46,7 +47,7 @@ export function forwardedForIsTrusted(): boolean {
  *
  * ## What the default costs, and why it is still the default
  *
- * Untrusted (the default), the key is `req.socket.remoteAddress`. DorkOS's own
+ * Untrusted (the default), the key is the TCP peer address. DorkOS's own
  * ngrok tunnel runs IN this process and forwards to the local port, so every
  * request that arrives through it has a loopback peer and they all share one
  * bucket. That is the STRICT direction — a remote caller through the tunnel can
@@ -65,14 +66,28 @@ export function forwardedForIsTrusted(): boolean {
  * full address would let it rotate through them the same way a forged header
  * once did.
  *
- * @param req - The request being counted.
+ * @param request - The facts of the request being counted (`expressRequestFacts`
+ *   or `honoRequestFacts`); only its two addresses are read.
  * @returns The bucket key.
  */
-export function rateLimitKey(req: Request): string {
-  const address = forwardedForIsTrusted() ? req.ip : req.socket.remoteAddress;
+export function rateLimitKey(
+  request: Pick<RequestFacts, 'peerAddress' | 'forwardedAddress'>
+): string {
+  const address = forwardedForIsTrusted() ? request.forwardedAddress : request.peerAddress;
   if (!address) return UNKNOWN_CLIENT_KEY;
   // A `%zone` suffix (link-local IPv6) is part of the route, not the identity,
   // and `ipKeyGenerator` cannot parse it.
   const zone = address.indexOf('%');
   return ipKeyGenerator(zone === -1 ? address : address.slice(0, zone));
+}
+
+/**
+ * {@link rateLimitKey} in the shape `express-rate-limit`'s `keyGenerator` takes,
+ * for the limiters the Express chain still mounts.
+ *
+ * @param req - The Express request being counted.
+ * @returns The bucket key.
+ */
+export function expressRateLimitKey(req: Request): string {
+  return rateLimitKey(expressRequestFacts(req));
 }

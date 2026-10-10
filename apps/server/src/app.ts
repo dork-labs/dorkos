@@ -55,6 +55,7 @@ import { auditRequestFallback } from './middleware/audit-request-fallback.js';
 import { getAuth, toNodeHandler, sessionGate } from './services/core/auth/index.js';
 import { type BrowserOriginPolicy, isTrustedBrowserOrigin } from './lib/trusted-origins.js';
 import { resolveBrowserOriginFacts } from './middleware/browser-origin.js';
+import { expressRequestFacts } from './http/request-facts.js';
 import { logger } from './lib/logger.js';
 import { testControlRouter } from './routes/test-control.js';
 import { createMockMcpOAuthRouter } from './routes/mock-mcp-oauth-server.js';
@@ -154,7 +155,7 @@ function buildCors(): express.RequestHandler {
         // policy's to answer.
         if (
           isTrustedBrowserOrigin(
-            resolveBrowserOriginFacts(req, { hostCheckInert: false }),
+            resolveBrowserOriginFacts(expressRequestFacts(req), { hostCheckInert: false }),
             CORS_ORIGIN_POLICY
           )
         ) {
@@ -219,6 +220,8 @@ export function createApp(options: {
   //     proxy is in front. Until DOR-1711 they all inherited this line, so a
   //     rotating `X-Forwarded-For` bought unlimited buckets and the sign-in
   //     brute-force limiter counted nothing.
+  // One trusted hop. `forwardedClientAddress` in `http/request-facts.ts` gives
+  // the Hono chain the same `req.ip`; change both together.
   app.set('trust proxy', 1);
 
   // After terminal admission, but ahead of the other `/api` handlers: a

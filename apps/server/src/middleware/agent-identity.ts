@@ -27,6 +27,7 @@ import {
   type AgentIdentity,
 } from '../services/core/agent-identity/agent-identity-service.js';
 import { logger } from '../lib/logger.js';
+import type { RequestFacts } from '../http/request-facts.js';
 
 /** The header an agent presents its minted identity token in. */
 export const AGENT_IDENTITY_HEADER = 'x-dorkos-agent';
@@ -73,17 +74,29 @@ export function getRequestAgentIdentity(res: Pick<Response, 'locals'>): AgentIde
  * never sends it at all — so the only caller that reaches it is one hand-rolling
  * requests, for which the strict answer is the useful one.
  *
- * @param req - The incoming request, for the raw header.
- * @param res - The response carrying whatever the middleware resolved.
+ * Takes a request's facts (`http/request-facts.ts`), or the Express request and
+ * response the Express chain still hands its routes.
+ *
+ * @param req - The request's facts, or the Express request, for the raw header.
+ * @param res - With an Express request: the response carrying whatever the
+ *   middleware resolved.
  * @returns True when the header was present, however it resolved.
  */
 export function presentsAgentIdentity(
+  request: Pick<RequestFacts, 'headers' | 'agentIdentity'>
+): boolean;
+export function presentsAgentIdentity(
   req: Pick<Request, 'headers'>,
   res: Pick<Response, 'locals'>
+): boolean;
+export function presentsAgentIdentity(
+  req: Pick<Request, 'headers'> | Pick<RequestFacts, 'headers' | 'agentIdentity'>,
+  res?: Pick<Response, 'locals'>
 ): boolean {
-  return (
-    getRequestAgentIdentity(res) !== undefined || req.headers[AGENT_IDENTITY_HEADER] !== undefined
-  );
+  const resolved = res
+    ? getRequestAgentIdentity(res)
+    : (req as Pick<RequestFacts, 'agentIdentity'>).agentIdentity;
+  return resolved !== undefined || req.headers[AGENT_IDENTITY_HEADER] !== undefined;
 }
 
 /**

@@ -24,7 +24,7 @@
 import { Router } from 'express';
 import express from 'express';
 import rateLimit from 'express-rate-limit';
-import { rateLimitKey } from '../middleware/rate-limit-key.js';
+import { expressRateLimitKey } from '../middleware/rate-limit-key.js';
 import { z } from 'zod';
 import type { WebhookAdapter } from '@dorkos/relay';
 import {
@@ -709,7 +709,7 @@ export function createAdapterRouter(
   const testRateLimiter = rateLimit({
     windowMs: 60_000,
     max: 10,
-    keyGenerator: rateLimitKey,
+    keyGenerator: expressRateLimitKey,
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many test requests, try again in a minute' },

@@ -6,11 +6,16 @@
  * `DORKOS_ALLOW_INSECURE_BIND` per test. That mock would reach every other
  * assertion in the file next door, which is about who a caller is and reads real
  * config.
+ *
+ * Every case runs through a real Express app AND a real Hono app (DOR-2794):
+ * both chains must call the same caller local.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import express from 'express';
+import { Hono } from 'hono';
 import request from '@dorkos/test-utils/supertest';
-import { listeningServer } from '@dorkos/test-utils/listening-server';
+import type { RequestFactsEnv } from '../../http/request-facts.js';
+import { honoListener, listeningServer } from '@dorkos/test-utils/listening-server';
 
 // Mutable stand-in so the container flag can be moved one test at a time — the
 // reader consults it per request, which is the behaviour under test. Same shape
@@ -19,6 +24,7 @@ const mockEnv = vi.hoisted(() => ({ DORKOS_ALLOW_INSECURE_BIND: false }));
 vi.mock('../../env.js', () => ({ env: mockEnv }));
 
 const { isLocalCaller } = await import('../caller-authority.js');
+const { honoRequestFacts } = await import('../../http/request-facts.js');
 
 /**
  * The TCP peer the app reports for the current test. `null` spells "the socket
@@ -40,22 +46,36 @@ app.use((req, _res, next) => {
   next();
 });
 app.get('/probe', (req, res) => res.json({ local: isLocalCaller(req) }));
-const server = listeningServer(app);
 
-/** Ask the probe with a given `Host` header and TCP peer. */
-async function probe(host: string, peer: string | null = '127.0.0.1'): Promise<boolean> {
-  currentPeer = peer;
-  const res = await request(server).get('/probe').set('Host', host);
-  expect(res.status).toBe(200);
-  return res.body.local as boolean;
-}
+// The same probe as a moved route would ask it.
+const honoApp = new Hono<RequestFactsEnv>();
+honoApp.get('/probe', (c) => {
+  Object.defineProperty(c.env.incoming.socket, 'remoteAddress', {
+    value: currentPeer ?? undefined,
+    configurable: true,
+  });
+  return c.json({ local: isLocalCaller(honoRequestFacts(c)) });
+});
+
+const servers = {
+  express: listeningServer(app),
+  hono: listeningServer(honoListener(honoApp)),
+};
 
 beforeEach(() => {
   mockEnv.DORKOS_ALLOW_INSECURE_BIND = false;
   currentPeer = '127.0.0.1';
 });
 
-describe('isLocalCaller', () => {
+describe.each(['express', 'hono'] as const)('isLocalCaller, through %s', (chain) => {
+  /** Ask the probe with a given `Host` header and TCP peer. */
+  async function probe(host: string, peer: string | null = '127.0.0.1'): Promise<boolean> {
+    currentPeer = peer;
+    const res = await request(servers[chain]).get('/probe').set('Host', host);
+    expect(res.status).toBe(200);
+    return res.body.local as boolean;
+  }
+
   it('admits a loopback peer asking for a loopback host', async () => {
     expect(await probe('localhost:4242')).toBe(true);
     expect(await probe('127.0.0.1:4242')).toBe(true);

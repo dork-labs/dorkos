@@ -1,7 +1,7 @@
 import type { Request } from 'express';
 import { recordSignInRateLimited } from '../services/core/auth/auth-audit.js';
 import rateLimit, { type RateLimitRequestHandler } from 'express-rate-limit';
-import { rateLimitKey } from './rate-limit-key.js';
+import { expressRateLimitKey } from './rate-limit-key.js';
 
 /**
  * Rate-limit window for credential attempts: 15 minutes.
@@ -82,7 +82,7 @@ const RATE_LIMITED_BODY = {
  * short window permits a high sustained guess rate. This limiter is
  * environment-independent and window-based, closing both gaps.
  *
- * Keys through {@link rateLimitKey}, like every other limiter here: the TCP peer
+ * Keys through {@link expressRateLimitKey}, like every other limiter here: the TCP peer
  * address, which no header can move, unless `DORKOS_TRUST_PROXY` says a proxy is
  * in front. This limiter is why that changed (DOR-1711). It inherited `req.ip`
  * from `app.ts`'s `trust proxy, 1`, so `X-Forwarded-For` decided the bucket — and
@@ -97,7 +97,7 @@ export function buildAuthRateLimiter(options: AuthRateLimitOptions = {}): RateLi
   return rateLimit({
     windowMs: WINDOW_MS,
     max: options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS,
-    keyGenerator: rateLimitKey,
+    keyGenerator: expressRateLimitKey,
     standardHeaders: true,
     legacyHeaders: false,
     // Count only sign-in/sign-up POSTs; benign session-check GETs and every

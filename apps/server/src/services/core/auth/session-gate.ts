@@ -37,6 +37,7 @@ import { logger } from '../../../lib/logger.js';
 // `getAuth` is a hoisted accessor called at request time, so this back-import to
 // the auth barrel (which re-exports this module) is a safe function-level cycle.
 import { getAuth, captureOriginalRequestAuthReader, type Auth } from './index.js';
+import type { RequestFacts } from '../../../http/request-facts.js';
 
 /** The identity resolved from a request's credentials, attached to `res.locals.user`. */
 export interface RequestUser {
@@ -275,15 +276,16 @@ export interface VerifyRequestAuthOptions {
  * a per-user API key is not the same principal as a person in a browser session
  * and a few writes turn on telling them apart (see {@link RequestUser}).
  *
- * @param req - Anything carrying the request's headers — an Express `Request`,
- *   or the raw `IncomingMessage` of a WebSocket upgrade.
+ * @param req - Anything carrying the request's headers — a request's facts
+ *   (`expressRequestFacts` or `honoRequestFacts`), or the raw `IncomingMessage`
+ *   of a WebSocket upgrade.
  * @param options - See {@link VerifyRequestAuthOptions}. Omit unless the caller
  *   already knows what the request's bearer is.
  * @returns The resolved identity and how it was proved, or `null` when
  *   unauthenticated.
  */
 export async function verifyRequestAuth(
-  req: Pick<Request, 'headers'>,
+  req: Pick<RequestFacts, 'headers'>,
   options: VerifyRequestAuthOptions = {}
 ): Promise<RequestUser | null> {
   const auth = getAuth();
