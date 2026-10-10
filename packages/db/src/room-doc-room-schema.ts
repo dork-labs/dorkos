@@ -95,6 +95,8 @@ export const roomSchema: Readonly<Record<string, RoomDocExpectedTable>> = {
       ['account', 'TEXT', 0, 0, null],
       ['registered_at', 'TEXT', 1, 0, null],
       ['updated_at', 'TEXT', 1, 0, null],
+      ['reports_to', 'TEXT', 0, 0, null],
+      ['created_by', 'TEXT', 0, 0, null],
     ],
     foreignKeys: [],
     checks: [],

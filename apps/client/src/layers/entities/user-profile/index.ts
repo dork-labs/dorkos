@@ -13,5 +13,6 @@
  */
 export { useProfile } from './model/use-profile';
 export type { ProfileApi } from './model/use-profile';
+export { useSeedProfileTimezone, browserTimeZone } from './model/use-seed-profile-timezone';
 export { ProfileRolePicker } from './ui/ProfileRolePicker';
 export type { ProfileRolePickerProps } from './ui/ProfileRolePicker';

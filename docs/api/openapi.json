@@ -9692,6 +9692,16 @@
             "example": {
               "mode": "home"
             }
+          },
+          "reportsTo": {
+            "type": "string",
+            "description": "Account id this agent reports to: a mesh agent id, or a person’s account id. Absent or null = whoever created it, then the owner.",
+            "example": "01HZY8Q0V6S3W1A2B3C4D5E6F7"
+          },
+          "createdBy": {
+            "type": "string",
+            "description": "Account that created this agent (a person’s account id, or the creating agent’s mesh id). Written once at creation; null when unknown.",
+            "example": "install:9f1c2d3e"
           }
         },
         "required": [
@@ -10105,6 +10115,16 @@
                 "example": {
                   "mode": "home"
                 }
+              },
+              "reportsTo": {
+                "type": "string",
+                "description": "Account id this agent reports to: a mesh agent id, or a person’s account id. Absent or null = whoever created it, then the owner.",
+                "example": "01HZY8Q0V6S3W1A2B3C4D5E6F7"
+              },
+              "createdBy": {
+                "type": "string",
+                "description": "Account that created this agent (a person’s account id, or the creating agent’s mesh id). Written once at creation; null when unknown.",
+                "example": "install:9f1c2d3e"
               }
             }
           },
@@ -10207,6 +10227,13 @@
             ]
           },
           "account": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "reportsTo": {
             "type": [
               "string",
               "null"
@@ -16226,6 +16253,13 @@
               "null"
             ],
             "minLength": 1
+          },
+          "accountId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "isViewer": {
+            "type": "boolean"
           }
         },
         "required": [

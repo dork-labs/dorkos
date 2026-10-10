@@ -233,12 +233,14 @@ describe('Database Migrations', () => {
       expect(
         db.$client.prepare('SELECT * FROM session_native_bindings ORDER BY session_id').all()
       ).toEqual(publishedBindings);
-      expect(journal.entries.slice(148).map((entry) => entry.idx)).toEqual([148, 149, 150, 151]);
+      expect(journal.entries.slice(148).map((entry) => entry.idx)).toEqual([
+        148, 149, 150, 151, 152,
+      ]);
       expect(db.$client.prepare('SELECT * FROM audit_events ORDER BY seq').all()).toEqual(
         publishedAudit
       );
-      // Fresh/main-only upgrades apply immutable Chat149/report_back150 and genuine Doc151 once.
-      for (const entry of journal.entries.slice(149, 152)) {
+      // Fresh/main-only upgrades apply immutable Chat149/report_back150 and Main agent151 and genuine Doc152 once.
+      for (const entry of journal.entries.slice(149, 153)) {
         const hash = createHash('sha256')
           .update(readFileSync(path.join(DRIZZLE_DIR, `${entry.tag}.sql`)))
           .digest('hex');

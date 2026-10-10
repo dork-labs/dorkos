@@ -36,6 +36,12 @@ import {
   findOperatorOnlyAgentPaths,
   NESTED_AGENT_FIELDS,
 } from './agent-write-policy.js';
+import {
+  canonicalReportsTo,
+  checkReportsToWrite,
+  recordReportsToChange,
+  type ReportsToMesh,
+} from '../../heartbeats/reports-to-writes.js';
 
 /**
  * Identity fields that cannot be changed on a system agent (`isSystem: true`).
@@ -51,7 +57,12 @@ const SYSTEM_PROTECTED_FIELDS = ['displayName', 'description', 'isSystem'] as co
 
 /** Discriminating code for {@link AgentUpdateError}, mapped to HTTP status by the route. */
 export type AgentUpdateErrorCode =
-  'VALIDATION' | 'NOT_FOUND' | 'SYSTEM_PROTECTED' | 'OPERATOR_ONLY' | 'UNSUPPORTED_MODEL';
+  | 'VALIDATION'
+  | 'NOT_FOUND'
+  | 'SYSTEM_PROTECTED'
+  | 'OPERATOR_ONLY'
+  | 'UNSUPPORTED_MODEL'
+  | 'REPORTS_TO_CYCLE';
 
 /**
  * Typed failure from {@link updateAgentManifest}. Callers translate `code` into
@@ -209,8 +220,11 @@ function mergedFieldValue(
   };
 }
 
-/** Minimal MeshCore surface needed for the post-write DB sync (ADR-0043). */
-interface MeshSyncLike {
+/**
+ * Minimal MeshCore surface: the post-write DB sync (ADR-0043), and the agent
+ * lookup the reports-to chain is walked through when a patch names `reportsTo`.
+ */
+interface MeshSyncLike extends Partial<ReportsToMesh> {
   syncFromDisk(projectPath: string): Promise<SyncFromDiskResult>;
 }
 
@@ -299,6 +313,15 @@ export async function updateAgentManifest(opts: {
         `Cannot modify ${blockedFields.join(', ')} on system agents`
       );
     }
+  }
+
+  // Who it reports to must be someone who exists, and must not close a loop:
+  // every chain ends at a person (spec `heartbeats` §4.1). Checked against the
+  // mesh mirror before anything is written.
+  if ('reportsTo' in rawBody) {
+    const refusal = checkReportsToWrite(meshCore, existing.id, parsed.data.reportsTo ?? null);
+    if (refusal) throw new AgentUpdateError(refusal.code, refusal.message);
+    parsed.data.reportsTo = canonicalReportsTo(meshCore, parsed.data.reportsTo ?? null);
   }
 
   // An agent on DorkOS credits names a model credits serve (DOR-2636), on this
@@ -429,6 +452,10 @@ export async function updateAgentManifest(opts: {
     await meshCore?.syncFromDisk(agentPath);
   } catch {
     /* non-fatal */
+  }
+
+  if ('reportsTo' in rawBody) {
+    recordReportsToChange(existing, existing.reportsTo ?? null, updated.reportsTo ?? null);
   }
 
   return updated;

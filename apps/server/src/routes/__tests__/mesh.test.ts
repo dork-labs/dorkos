@@ -286,6 +286,26 @@ describe('Mesh routes', () => {
       );
     });
 
+    it('never takes reportsTo or createdBy from the body (DOR-2788)', async () => {
+      // reportsTo is set only through a write surface that refuses a loop, and
+      // createdBy is the account making the request.
+      meshCore.registerByPath.mockResolvedValue(MOCK_MANIFEST);
+      await request(fixtureServer)
+        .post('/api/mesh/agents')
+        .send({
+          path: '/home/user/project',
+          overrides: {
+            name: 'test-agent',
+            runtime: 'claude-code',
+            reportsTo: 'agent-2',
+            createdBy: 'forged',
+          },
+        });
+      const fields = meshCore.registerByPath.mock.calls[0]?.[1] as Record<string, unknown>;
+      expect(fields).not.toHaveProperty('reportsTo');
+      expect(fields.createdBy).not.toBe('forged');
+    });
+
     // DOR-2054. This route is open to agents by its own comment, and it handed
     // `overrides` to `registerByPath` untouched: a display-style name became the
     // immutable slug, and a colour that is not a colour was written to disk.
@@ -776,6 +796,51 @@ describe('Mesh routes', () => {
         expect(meshCore.update).not.toHaveBeenCalled();
       }
     );
+
+    it('refuses a reports-to change that would make a loop (DOR-2788)', async () => {
+      // agent-2 already reports to agent-1, so agent-1 may not report to agent-2.
+      meshCore.get.mockImplementation((id: string) =>
+        id === 'agent-1'
+          ? { ...MOCK_MANIFEST }
+          : id === 'agent-2'
+            ? { ...MOCK_MANIFEST, id: 'agent-2', reportsTo: 'agent-1' }
+            : undefined
+      );
+
+      const res = await request(fixtureServer)
+        .patch('/api/mesh/agents/agent-1')
+        .send({ reportsTo: 'agent-2' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('REPORTS_TO_CYCLE');
+      expect(meshCore.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses a manager nobody can find, and stores a valid one', async () => {
+      meshCore.get.mockImplementation((id: string) =>
+        id === 'agent-1' || id === 'agent-3' ? { ...MOCK_MANIFEST, id } : undefined
+      );
+      const unknown = await request(fixtureServer)
+        .patch('/api/mesh/agents/agent-1')
+        .send({ reportsTo: 'nobody' });
+      expect(unknown.status).toBe(400);
+      expect(unknown.body.code).toBe('VALIDATION');
+
+      meshCore.update.mockReturnValue({ ...MOCK_MANIFEST, reportsTo: 'agent-3' });
+      const ok = await request(fixtureServer)
+        .patch('/api/mesh/agents/agent-1')
+        .send({ reportsTo: 'agent-3' });
+      expect(ok.status).toBe(200);
+      expect(meshCore.update).toHaveBeenCalledWith('agent-1', { reportsTo: 'agent-3' });
+    });
+
+    it('never writes createdBy, whatever the body says', async () => {
+      meshCore.update.mockReturnValue({ ...MOCK_MANIFEST });
+      await request(fixtureServer)
+        .patch('/api/mesh/agents/agent-1')
+        .send({ displayName: 'Ana', createdBy: 'forged' });
+      expect(meshCore.update).toHaveBeenCalledWith('agent-1', { displayName: 'Ana' });
+    });
 
     it('lets a person change an agent’s model here', async () => {
       meshCore.update.mockReturnValue({ ...MOCK_MANIFEST, model: 'opus' });

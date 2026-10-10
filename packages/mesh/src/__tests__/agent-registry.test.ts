@@ -69,6 +69,20 @@ describe('insert and get', () => {
     expect(result!.projectPath).toBe(entry.projectPath);
   });
 
+  it('mirrors reportsTo and createdBy, and clears reportsTo on update', () => {
+    // The reports-to chain is walked from this mirror (spec `heartbeats` §4.1).
+    registry.upsert(makeEntry({ reportsTo: '01MANAGER', createdBy: 'install:abc' }));
+    expect(registry.get('01JKABC00001')).toMatchObject({
+      reportsTo: '01MANAGER',
+      createdBy: 'install:abc',
+    });
+
+    registry.update('01JKABC00001', { reportsTo: null });
+    const after = registry.get('01JKABC00001');
+    expect(after?.reportsTo).toBeUndefined();
+    expect(after?.createdBy).toBe('install:abc');
+  });
+
   it('returns undefined for non-existent id', () => {
     expect(registry.get('nonexistent')).toBeUndefined();
   });

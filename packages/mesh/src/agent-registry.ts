@@ -261,6 +261,8 @@ export class AgentRegistry {
         model: agent.model ?? null,
         effort: agent.effort ?? null,
         account: agent.account ?? null,
+        reportsTo: agent.reportsTo ?? null,
+        createdBy: agent.createdBy ?? null,
         registeredAt: agent.registeredAt,
         updatedAt: now,
       })
@@ -284,6 +286,8 @@ export class AgentRegistry {
           model: agent.model ?? null,
           effort: agent.effort ?? null,
           account: agent.account ?? null,
+          reportsTo: agent.reportsTo ?? null,
+          createdBy: agent.createdBy ?? null,
           updatedAt: now,
           status: 'active', // Re-registration clears unreachable
         },
@@ -454,6 +458,8 @@ export class AgentRegistry {
         model: merged.model ?? null,
         effort: merged.effort ?? null,
         account: merged.account ?? null,
+        reportsTo: merged.reportsTo ?? null,
+        createdBy: merged.createdBy ?? null,
         updatedAt: now,
       })
       .where(eq(agents.id, id))
@@ -701,6 +707,10 @@ export class AgentRegistry {
       // preference" rather than travelling into the launch ladder as a
       // reference that always misses.
       account: row.account || undefined,
+      // Who it reports to and who created it (spec `heartbeats` §4.1). An empty
+      // string names nobody, so it reads as "not set" like `account` above.
+      reportsTo: row.reportsTo || undefined,
+      createdBy: row.createdBy || undefined,
       // `permissions` is not persisted in the DB schema, so this cache cannot
       // answer for it, and nothing may make an authorization decision from its
       // absence here: the capability gate reads `.dork/agent.json` directly

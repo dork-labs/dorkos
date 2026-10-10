@@ -93,6 +93,10 @@
       "types": "./src/config-schema.ts",
       "default": "./dist/config-schema.js"
     },
+    "./working-hours": {
+      "types": "./src/working-hours.ts",
+      "default": "./dist/working-hours.js"
+    },
     "./profile-recommendations": {
       "types": "./src/profile-recommendations.ts",
       "default": "./dist/profile-recommendations.js"

@@ -550,6 +550,73 @@ export const DisplayNameSourceSchema = z.discriminatedUnion('kind', [
 export type DisplayNameSource = z.infer<typeof DisplayNameSourceSchema>;
 
 /**
+ * Whether a string names a time zone this runtime knows.
+ *
+ * Asks `Intl` rather than a list, so it agrees with the formatter every
+ * working-hours computation uses (`@dorkos/shared/working-hours`): a zone `Intl`
+ * cannot format is a zone nothing can compute hours in. Lives here, not in
+ * `working-hours.ts`, so this module imports nothing with state (see the module
+ * doc).
+ *
+ * @param zone - A candidate IANA zone, e.g. `"Europe/Berlin"`.
+ */
+export function isValidTimeZone(zone: string): boolean {
+  if (zone.length === 0) return false;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: zone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** `HH:MM` on a 24-hour clock, 00:00 to 23:59. */
+const CLOCK_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/**
+ * A person's working window (spec `heartbeats` §3.5): which days, and from when
+ * to when, read in their own `profile.timezone`.
+ *
+ * The day ends after it starts, always. A window that runs past midnight
+ * (22:00–06:00) is refused rather than guessed at: which day it belongs to is a
+ * question this shape cannot answer, and nobody has asked for it yet.
+ */
+export const WorkingHoursSchema = z
+  .object({
+    /** Working days, 0 = Sunday … 6 = Saturday. At least one, each once. */
+    days: z
+      .array(z.number().int().min(0).max(6))
+      .min(1)
+      .max(7)
+      .refine((days) => new Set(days).size === days.length, 'Each day can appear only once.'),
+    /** When the working day starts, `HH:MM`. */
+    start: z.string().regex(CLOCK_PATTERN, 'Use a 24-hour time like 09:00.'),
+    /** When it ends, `HH:MM`, after `start`. */
+    end: z.string().regex(CLOCK_PATTERN, 'Use a 24-hour time like 17:00.'),
+  })
+  .refine((hours) => hours.end > hours.start, {
+    message: 'The day has to end after it starts.',
+    path: ['end'],
+  });
+
+/** A person's working window (see {@link WorkingHoursSchema}). */
+export type WorkingHours = z.infer<typeof WorkingHoursSchema>;
+
+/**
+ * That a person is away (spec `heartbeats` §3.5, canon P4): until when, and an
+ * optional note. `until: null` means away until they say otherwise.
+ */
+export const AwaySchema = z.object({
+  /** ISO timestamp they are back, or `null` for "until further notice". */
+  until: z.iso.datetime({ offset: true }).nullable(),
+  /** A short note, e.g. "On holiday". */
+  note: z.string().trim().min(1).max(200).optional(),
+});
+
+/** That a person is away (see {@link AwaySchema}). */
+export type Away = z.infer<typeof AwaySchema>;
+
+/**
  * What the user has told DorkOS about themselves (spec `user-profile-onboarding`).
  *
  * **Local-only by tested invariant, not by promise:** the telemetry heartbeat
@@ -606,6 +673,22 @@ export const UserProfileSchema = z.object({
    * the question was put. Nothing derives a handle when it is absent (DOR-604).
    */
   identityPromptDismissedAt: z.string().nullable().default(null),
+  /**
+   * The person's IANA time zone (spec `heartbeats` §3.5), or `null` while the
+   * app has not told the server one. The app fills it from the browser the
+   * first time it opens after an upgrade, and never overwrites a set value, so
+   * a server in a container or on another host never decides it. Until then
+   * the server's own zone stands in.
+   */
+  timezone: z
+    .string()
+    .refine(isValidTimeZone, 'Use a time zone name like Europe/Berlin.')
+    .nullable()
+    .default(null),
+  /** When the person works, or `null` for Monday to Friday, 09:00 to 17:00. */
+  workingHours: WorkingHoursSchema.nullable().default(null),
+  /** That the person is away, or `null` when they are not (see {@link AwaySchema}). */
+  away: AwaySchema.nullable().default(null),
 });
 
 /** What the user has told DorkOS about themselves (see {@link UserProfileSchema}). */
@@ -2990,6 +3073,9 @@ export const UserConfigSchema = z.object({
     displayNameSource: null,
     rolePromptDismissedAt: null,
     identityPromptDismissedAt: null,
+    timezone: null,
+    workingHours: null,
+    away: null,
   })),
   uploads: z
     .object({

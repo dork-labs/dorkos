@@ -9,6 +9,7 @@ import {
 } from '../../../../lib/boundary.js';
 import { notifyAgentCreated } from '../../../core/agent-created-hook.js';
 import { resolveNamedAgentIdentity } from '../../../mesh/normalize-agent-identity.js';
+import { currentCreatorAccountId } from '../../../heartbeats/reports-to.js';
 import type { McpToolDeps } from './types.js';
 import { jsonContent, structuredJsonContent } from './types.js';
 
@@ -175,6 +176,9 @@ export function createMeshRegisterHandler(deps: McpToolDeps) {
           runtime: runtimeResult.data,
           ...(args.description && { description: args.description }),
           ...(args.capabilities && { capabilities: args.capabilities }),
+          // The calling agent (or person), recorded once on a minted manifest
+          // (spec `heartbeats` §4.1). An adopted manifest keeps its own.
+          createdBy: currentCreatorAccountId(),
         },
         'mcp-tool'
       );

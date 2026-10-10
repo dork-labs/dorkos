@@ -109,6 +109,7 @@ vi.mock('fs/promises', () => ({
 }));
 
 import { createAgentWorkspace, AgentCreationError } from '../agent-creator.js';
+import { runWithAuditActor } from '../../audit/audit-context.js';
 import { seedAgentFace, AGENT_COLOR_PRESETS, AGENT_EMOJI_SET } from '@dorkos/shared/agent-face';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 
@@ -146,6 +147,35 @@ describe('createAgentWorkspace', () => {
     expect(result.path).toContain('my-agent');
     // Should create parent (recursive) + agent dir + .dork/
     expect(mockMkdir).toHaveBeenCalledTimes(3);
+  });
+
+  // ── Who created it (spec `heartbeats` §4.1, DOR-2788) ───────────────────
+
+  it('records the calling agent as createdBy when an agent creates one', async () => {
+    // `create_agent` runs inside the calling agent's audit scope, so the new
+    // agent reports to its creator by default (canon §9.2, rule 5).
+    const result = await runWithAuditActor(
+      { actor: { accountId: '01CREATORAGENT', kind: 'agent', name: 'Juno' }, surface: 'mcp' },
+      () => createAgentWorkspace({ name: 'my-agent' }, mockMeshCore)
+    );
+    expect(result.manifest.createdBy).toBe('01CREATORAGENT');
+    expect(mockWriteManifest).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ createdBy: '01CREATORAGENT' })
+    );
+  });
+
+  it('records the person at the app as createdBy', async () => {
+    const result = await runWithAuditActor(
+      { actor: { accountId: 'install:abc', kind: 'person', name: 'Owner' }, surface: 'app' },
+      () => createAgentWorkspace({ name: 'my-agent' }, mockMeshCore)
+    );
+    expect(result.manifest.createdBy).toBe('install:abc');
+  });
+
+  it('writes no createdBy when nobody can be named', async () => {
+    const result = await createAgentWorkspace({ name: 'my-agent' }, mockMeshCore);
+    expect(result.manifest).not.toHaveProperty('createdBy');
   });
 
   // ── Cross-harness instruction scaffolding (DOR-142) ─────────────────────

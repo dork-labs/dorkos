@@ -920,15 +920,15 @@ importers:
       express:
         specifier: ^5.2.1
         version: 5.2.1
-      express-rate-limit:
-        specifier: ^8.7.0
-        version: 8.7.0(express@5.2.1)
       giget:
         specifier: ^3.3.1
         version: 3.3.1
       hono:
         specifier: ^4.13.9
         version: 4.13.12
+      ip-address:
+        specifier: ^10.7.1
+        version: 10.7.2
       mdast-util-from-markdown:
         specifier: 2.0.3
         version: 2.0.3

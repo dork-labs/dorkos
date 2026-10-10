@@ -45,12 +45,12 @@ const docs = [
 ] as const;
 
 // Root's authentic combined-schema migration identifies the reviewed Room watermark.
-// SQL identity alone cannot distinguish the published150 and current151 history rows.
+// Exact timestamps distinguish published150, published151 and current152 despite shared SQL.
 const consolidatedDoc: MigrationEntry & { hash: string } = {
-  idx: 151,
+  idx: 152,
   version: '6',
-  when: 1791626823308,
-  tag: '20261010100703_long_shocker',
+  when: 1791639241501,
+  tag: '20261010133401_milky_jocasta',
   breakpoints: true,
   hash: '44321f0c067d6ce35619f22ac071fcd08bdddd8dec4a7b099f8ce31998b1324f',
 };
@@ -69,6 +69,23 @@ const publishedRoom = {
   tag: '20261009202012_sleepy_killer_shrike',
   breakpoints: true,
   hash: '44321f0c067d6ce35619f22ac071fcd08bdddd8dec4a7b099f8ce31998b1324f',
+} as const;
+
+const publishedRoom151 = {
+  idx: 151,
+  version: '6',
+  when: 1791626823308,
+  tag: '20261010100703_long_shocker',
+  breakpoints: true,
+  hash: '44321f0c067d6ce35619f22ac071fcd08bdddd8dec4a7b099f8ce31998b1324f',
+} as const;
+const agentReports = {
+  idx: 151,
+  version: '6',
+  when: 1791626094991,
+  tag: '20261010095454_agent_reports_to',
+  breakpoints: true,
+  hash: 'a7f1de118e0678648345368108a441c4ff7d76cf8be40320eca8127b58c9fa04',
 } as const;
 
 /** Read the exact journal slot and SQL; a matching table or timestamp is never authority. */
@@ -94,28 +111,28 @@ function reviewedSql(folder: string, expected: MigrationEntry & { hash: string }
 }
 
 /**
- * Recognize published c55's completed Room150 before the legacy-three early return.
- * Its later watermark would otherwise suppress Main150 report_back. Never lower
- * it, replay Room DDL, infer covered history from column presence, or admit an
- * unknown hash. Immutable report_back DDL, schema verification and new covered
- * Room bookkeeping share one transaction, so a failed check rolls everything back.
+ * Recognize only the exact published Room150/151 histories before timestamp-based migration.
+ * Both may suppress shipped Main DDL. Install missing exact Main steps and move the original
+ * Room watermark atomically; row identity/hash remain intact and Room DDL is never replayed.
  */
 function bridgePublishedRoomMigration(db: Db, folder: string, rows: MigrationRow[]): boolean {
-  const oldRows = rows.filter(
-    (row) => row.hash === publishedRoom.hash && row.created_at === publishedRoom.when
+  const published = [publishedRoom, publishedRoom151];
+  const oldRows = rows.filter((row) =>
+    published.some((entry) => row.hash === entry.hash && row.created_at === entry.when)
+  );
+  const journal = JSON.parse(readFileSync(path.join(folder, 'meta/_journal.json'), 'utf8')) as {
+    entries: MigrationEntry[];
+  };
+  const shipped = [reportBack, agentReports];
+  const canonical = new Map(
+    journal.entries.slice(150).map((entry) => [
+      createHash('sha256')
+        .update(readFileSync(path.join(folder, `${entry.tag}.sql`)))
+        .digest('hex'),
+      entry.when,
+    ])
   );
   if (!oldRows.length) {
-    const journal = JSON.parse(readFileSync(path.join(folder, 'meta/_journal.json'), 'utf8')) as {
-      entries: MigrationEntry[];
-    };
-    const canonical = new Map(
-      journal.entries.slice(150).map((entry) => [
-        createHash('sha256')
-          .update(readFileSync(path.join(folder, `${entry.tag}.sql`)))
-          .digest('hex'),
-        entry.when,
-      ])
-    );
     if (
       rows.some(
         (row) => row.created_at >= reportBack.when && canonical.get(row.hash) !== row.created_at
@@ -123,62 +140,110 @@ function bridgePublishedRoomMigration(db: Db, folder: string, rows: MigrationRow
     )
       refuse('unrecognized published or newer watermark');
     const completed = rows.filter((row) => row.hash === consolidatedDoc.hash);
-    if (completed.length) {
-      reviewedSql(folder, reportBack);
-      reviewedSql(folder, consolidatedDoc);
-      const report = rows.filter((row) => row.hash === reportBack.hash);
+    if (!completed.length) return false;
+    reviewedSql(folder, consolidatedDoc);
+    if (completed.length !== 1 || completed[0]!.created_at !== consolidatedDoc.when)
+      refuse('canonical Room completion differs');
+    let previousIdentity = 0;
+    for (const entry of journal.entries.slice(0, 150)) {
+      const hash = createHash('sha256')
+        .update(readFileSync(path.join(folder, `${entry.tag}.sql`)))
+        .digest('hex');
+      const matching = rows.filter((row) => row.hash === hash);
       if (
-        completed.length !== 1 ||
-        completed[0]!.created_at !== consolidatedDoc.when ||
-        report.length !== 1 ||
-        report[0]!.created_at !== reportBack.when
+        matching.length !== 1 ||
+        matching[0]!.created_at !== entry.when ||
+        matching[0]!.rowIdentity <= previousIdentity ||
+        matching[0]!.rowIdentity >= completed[0]!.rowIdentity
       )
-        refuse('canonical Room completion lacks exact shipped report_back history');
-      let previousIdentity = 0;
-      for (const entry of journal.entries.slice(0, 150)) {
-        const hash = createHash('sha256')
-          .update(readFileSync(path.join(folder, `${entry.tag}.sql`)))
-          .digest('hex');
-        const matching = rows.filter((row) => row.hash === hash);
-        if (
-          matching.length !== 1 ||
-          matching[0]!.created_at !== entry.when ||
-          matching[0]!.rowIdentity <= previousIdentity ||
-          matching[0]!.rowIdentity >= completed[0]!.rowIdentity
-        )
-          refuse('canonical Room shipped prefix differs');
-        previousIdentity = matching[0]!.rowIdentity;
-      }
-      const known = new Map(
-        journal.entries.map((entry) => [
-          createHash('sha256')
-            .update(readFileSync(path.join(folder, `${entry.tag}.sql`)))
-            .digest('hex'),
-          entry.when,
-        ])
-      );
-      for (const doc of docs) known.set(doc.hash, doc.when);
-      if (
-        rows.some(
-          (row) =>
-            known.get(row.hash) !== row.created_at ||
-            rows.filter((other) => other.hash === row.hash).length !== 1
-        )
-      )
-        refuse('canonical Room history has unknown or duplicate rows');
+        refuse('canonical Room shipped prefix differs');
+      previousIdentity = matching[0]!.rowIdentity;
     }
+    let previousShippedIdentity = previousIdentity;
+    for (const entry of shipped) {
+      reviewedSql(folder, entry);
+      const matching = rows.filter((row) => row.hash === entry.hash);
+      if (
+        matching.length !== 1 ||
+        matching[0]!.created_at !== entry.when ||
+        matching[0]!.rowIdentity <= previousShippedIdentity
+      )
+        refuse('canonical Room completion lacks exact shipped Main history');
+      previousShippedIdentity = matching[0]!.rowIdentity;
+    }
+    const known = new Map(
+      journal.entries.map((entry) => [
+        createHash('sha256')
+          .update(readFileSync(path.join(folder, `${entry.tag}.sql`)))
+          .digest('hex'),
+        entry.when,
+      ])
+    );
+    for (const doc of docs) known.set(doc.hash, doc.when);
+    if (
+      rows.some(
+        (row) =>
+          known.get(row.hash) !== row.created_at ||
+          rows.filter((other) => other.hash === row.hash).length !== 1
+      )
+    )
+      refuse('canonical Room history has unknown or duplicate rows');
+    // Future schema is admitted only by an exact, ordered, actually recorded prefix.
+    // Pending later journal entries must not change the restart reference schema.
+    let futureGap = false;
+    let referenceEnd = consolidatedDoc.idx + 1;
+    let futureIdentity = Math.max(completed[0]!.rowIdentity, previousShippedIdentity);
+    let futureStamp = consolidatedDoc.when;
+    const referenceHashes = new Set(
+      journal.entries.slice(0, referenceEnd).map((entry) =>
+        createHash('sha256')
+          .update(readFileSync(path.join(folder, `${entry.tag}.sql`)))
+          .digest('hex')
+      )
+    );
+    for (const [offset, entry] of journal.entries.slice(referenceEnd).entries()) {
+      const hash = createHash('sha256')
+        .update(readFileSync(path.join(folder, `${entry.tag}.sql`)))
+        .digest('hex');
+      if (
+        entry.idx !== consolidatedDoc.idx + 1 + offset ||
+        entry.when <= futureStamp ||
+        referenceHashes.has(hash)
+      )
+        refuse('future canonical journal is not an ordered unique prefix');
+      referenceHashes.add(hash);
+      futureStamp = entry.when;
+      const matching = rows.filter((row) => row.hash === hash);
+      if (!matching.length) {
+        futureGap = true;
+        continue;
+      }
+      if (
+        futureGap ||
+        matching.length !== 1 ||
+        matching[0]!.created_at !== entry.when ||
+        matching[0]!.rowIdentity <= futureIdentity
+      )
+        refuse('future canonical history is not an exact recorded prefix');
+      futureIdentity = matching[0]!.rowIdentity;
+      referenceEnd = entry.idx + 1;
+    }
+    verifyCanonicalSchema(db, folder, undefined, [], referenceEnd);
     return false;
   }
   if (oldRows.length !== 1) refuse('published Room bookkeeping differs');
-  if (consolidatedDoc.idx !== 151 || consolidatedDoc.when <= publishedRoom.when)
-    refuse('new Doc migration does not follow published Room watermark');
-  const journal = JSON.parse(readFileSync(path.join(folder, 'meta/_journal.json'), 'utf8')) as {
-    entries: MigrationEntry[];
-  };
-  const reportSql = reviewedSql(folder, reportBack);
+  const original = oldRows[0]!;
+  const legacy = published.find(
+    (entry) => entry.hash === original.hash && entry.when === original.created_at
+  )!;
+  if (consolidatedDoc.idx !== 152 || consolidatedDoc.when <= publishedRoom151.when)
+    refuse('new Doc migration does not follow both published Room watermarks');
+  if (consolidatedDoc.hash !== legacy.hash)
+    refuse('canonical Room SQL identity differs from reviewed published SQL');
   reviewedSql(folder, consolidatedDoc);
-  const archived = readFileSync(path.join(folder, 'legacy-doc', `${publishedRoom.tag}.sql`));
-  if (createHash('sha256').update(archived).digest('hex') !== publishedRoom.hash)
+  const shippedSql = shipped.map((entry) => reviewedSql(folder, entry));
+  const archived = readFileSync(path.join(folder, 'legacy-doc', `${legacy.tag}.sql`));
+  if (createHash('sha256').update(archived).digest('hex') !== legacy.hash)
     refuse('archived published Room SQL differs');
   const expected = new Map<string, Set<number>>();
   const allow = (hash: string, stamp: number) => {
@@ -196,14 +261,12 @@ function bridgePublishedRoomMigration(db: Db, folder: string, rows: MigrationRow
       matching.length !== 1 ||
       matching[0]!.created_at !== entry.when ||
       matching[0]!.rowIdentity <= previousIdentity ||
-      matching[0]!.rowIdentity >= oldRows[0]!.rowIdentity
+      matching[0]!.rowIdentity >= original.rowIdentity
     )
       refuse('published Room shipped prefix differs');
     previousIdentity = matching[0]!.rowIdentity;
     allow(hash, entry.when);
   }
-  // The earlier exact three-Doc bridge may have completed the published schema.
-  // Preserve those recognized rows; partial/old/mixed prefixes are not completed c55.
   const historical = docs.map((doc) => rows.filter((row) => row.hash === doc.hash));
   if (
     historical.some((matching) => matching.length) &&
@@ -211,68 +274,77 @@ function bridgePublishedRoomMigration(db: Db, folder: string, rows: MigrationRow
       (matching, i) =>
         matching.length !== 1 ||
         matching[0]!.created_at !== docs[i]!.when ||
-        matching[0]!.rowIdentity >= oldRows[0]!.rowIdentity ||
+        matching[0]!.rowIdentity >= original.rowIdentity ||
         (i > 0 && matching[0]!.rowIdentity <= historical[i - 1]![0]!.rowIdentity)
     )
   )
     refuse('published Room historical Doc prefix differs');
   for (const doc of docs) allow(doc.hash, doc.when);
-  allow(publishedRoom.hash, publishedRoom.when);
+  allow(legacy.hash, legacy.when);
   for (const entry of journal.entries.slice(150)) {
     const hash = createHash('sha256')
       .update(readFileSync(path.join(folder, `${entry.tag}.sql`)))
       .digest('hex');
     allow(hash, entry.when);
   }
-  for (const row of rows) {
-    if (
-      !expected.get(row.hash)?.has(row.created_at) ||
-      rows.filter((other) => other.hash === row.hash).length !== 1
+  if (
+    rows.some(
+      (row) =>
+        !expected.get(row.hash)?.has(row.created_at) ||
+        rows.filter((other) => other.hash === row.hash).length !== 1
     )
-      refuse('unrecognized or duplicate published Room history');
+  )
+    refuse('unrecognized or duplicate published Room history');
+  const shippedRows = shipped.map((entry) => rows.filter((row) => row.hash === entry.hash));
+  // Old151 may retain the original Room row before the appended Main150 row.
+  if (legacy === publishedRoom151 && shippedRows[0]!.length !== 1)
+    refuse('published Room151 lacks exact shipped Main150 history');
+  let precedingIdentity = previousIdentity;
+  let missing = false;
+  for (const [i, matching] of shippedRows.entries()) {
+    if (!matching.length) {
+      missing = true;
+      continue;
+    }
+    if (
+      missing ||
+      matching[0]!.created_at !== shipped[i]!.when ||
+      matching[0]!.rowIdentity <= precedingIdentity ||
+      (shipped[i]!.idx >= legacy.idx && matching[0]!.rowIdentity <= original.rowIdentity)
+    )
+      refuse('published Room shipped completion has a gap');
+    precedingIdentity = matching[0]!.rowIdentity;
   }
-  const reportRows = rows.filter((row) => row.hash === reportBack.hash);
-  const finalRows = rows.filter(
-    (row) => row.hash === consolidatedDoc.hash && row.created_at === consolidatedDoc.when
-  );
-  const futureHashes = journal.entries.slice(152).map((entry) =>
+  const futureHashes = journal.entries.slice(consolidatedDoc.idx + 1).map((entry) =>
     createHash('sha256')
       .update(readFileSync(path.join(folder, `${entry.tag}.sql`)))
       .digest('hex')
   );
-  if (
-    (reportRows.length && reportRows[0]!.rowIdentity <= oldRows[0]!.rowIdentity) ||
-    (finalRows.length &&
-      reportRows.length &&
-      finalRows[0]!.rowIdentity <= reportRows[0]!.rowIdentity) ||
-    (finalRows.length && !reportRows.length) ||
-    (rows.some((row) => futureHashes.includes(row.hash)) && !finalRows.length)
-  )
-    refuse('published Room canonical completion has a gap');
-  if (finalRows.length) return true;
-  const sqlite = db.$client;
-  sqlite.transaction(() => {
-    // Before missing shipped DDL, compare the authentic completed old schema.
-    if (!reportRows.length) {
-      verifyCanonicalSchema(db, folder, true);
-      for (const statement of reportSql.toString('utf8').split('--> statement-breakpoint'))
-        if (statement.trim()) sqlite.exec(statement);
-      sqlite
+  if (rows.some((row) => futureHashes.includes(row.hash)))
+    refuse('future migration precedes canonical Room completion');
+  db.$client.transaction(() => {
+    // Exact history selects the authentic pre-upgrade schema; columns alone never authorize DDL.
+    verifyCanonicalSchema(
+      db,
+      folder,
+      legacy,
+      shipped.filter((_, i) => shippedRows[i]!.length > 0)
+    );
+    for (const [i, entry] of shipped.entries()) {
+      if (shippedRows[i]!.length) continue;
+      for (const statement of shippedSql[i]!.toString('utf8').split('--> statement-breakpoint'))
+        if (statement.trim()) db.$client.exec(statement);
+      db.$client
         .prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)')
-        .run(reportBack.hash, reportBack.when);
+        .run(entry.hash, entry.when);
     }
     verifyCanonicalSchema(db, folder);
-    // Only the watermark changes. Original rowid/id/hash stay in place; its
-    // position before the newly appended report_back row retains published
-    // attribution, unlike fresh histories where report_back precedes Room151.
-    const original = oldRows[0]!;
     if (
-      sqlite
+      db.$client
         .prepare(
           'UPDATE __drizzle_migrations SET created_at = ? WHERE rowid = ? AND hash = ? AND created_at = ?'
         )
-        .run(consolidatedDoc.when, original.rowIdentity, publishedRoom.hash, publishedRoom.when)
-        .changes !== 1
+        .run(consolidatedDoc.when, original.rowIdentity, legacy.hash, legacy.when).changes !== 1
     )
       refuse('exact published Room row changed before canonical timestamp move');
   })();
@@ -375,7 +447,7 @@ export function bridgeLegacyDocMigrationHistory(db: Db, folder: string): void {
     return bytes;
   });
   const chat = journal.entries[149];
-  const consolidated = journal.entries[151];
+  const consolidated = journal.entries[consolidatedDoc.idx];
   if (
     !chat ||
     chat.idx !== 149 ||
@@ -383,7 +455,7 @@ export function bridgeLegacyDocMigrationHistory(db: Db, folder: string): void {
     !consolidated ||
     consolidated.idx !== consolidatedDoc.idx ||
     consolidated.tag !== consolidatedDoc.tag ||
-    journal.entries.length < 152
+    journal.entries.length <= consolidatedDoc.idx
   )
     refuse('current shipped Chat and regenerated Doc journal differs');
   const chatBytes = readFileSync(path.join(folder, `${chat.tag}.sql`));
@@ -398,19 +470,23 @@ export function bridgeLegacyDocMigrationHistory(db: Db, folder: string): void {
   )
     refuse('regenerated migration differs from reviewed SQL');
   const reportBytes = reviewedSql(folder, reportBack);
+  const agentBytes = reviewedSql(folder, agentReports);
   reviewedSql(folder, consolidatedDoc);
   const reportRows = rows.filter((row) => row.hash === reportBack.hash);
+  const agentRows = rows.filter((row) => row.hash === agentReports.hash);
   const chatRows = rows.filter((row) => row.hash === chatHash);
   const finalRows = rows.filter((row) => row.hash === finalHash);
   for (const [matching, entry] of [
     [chatRows, chat],
     [reportRows, reportBack],
+    [agentRows, agentReports],
     [finalRows, consolidated],
   ] as const) {
     if (matching.length > 1 || (matching[0] && matching[0].created_at !== entry.when))
       refuse('current migration bookkeeping differs');
   }
-  const futureRows = journal.entries.slice(152).flatMap((entry) => {
+  if (agentRows.length && !reportRows.length) refuse('shipped Main151 precedes Main150 history');
+  const futureRows = journal.entries.slice(consolidatedDoc.idx + 1).flatMap((entry) => {
     const hash = createHash('sha256')
       .update(readFileSync(path.join(folder, `${entry.tag}.sql`)))
       .digest('hex');
@@ -430,6 +506,7 @@ export function bridgeLegacyDocMigrationHistory(db: Db, folder: string): void {
         !mainRows.includes(row) &&
         !chatRows.includes(row) &&
         !reportRows.includes(row) &&
+        !agentRows.includes(row) &&
         !finalRows.includes(row) &&
         !futureRows.includes(row)
     )
@@ -440,10 +517,11 @@ export function bridgeLegacyDocMigrationHistory(db: Db, folder: string): void {
       recorded.some((matching) => matching.length !== 1) ||
       legacy.length ||
       !chatRows.length ||
-      !reportRows.length
+      !reportRows.length ||
+      !agentRows.length
     )
       refuse('incomplete historical prefix claims consolidated migration');
-    // A durable completed151 permits ordinary future migrations; never replay Doc DDL.
+    // A durable completed152 permits ordinary future migrations; never replay Doc DDL.
     return;
   }
 
@@ -535,6 +613,13 @@ export function bridgeLegacyDocMigrationHistory(db: Db, folder: string): void {
         .prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)')
         .run(reportBack.hash, reportBack.when);
     }
+    if (!agentRows.length) {
+      for (const statement of agentBytes.toString('utf8').split('--> statement-breakpoint'))
+        if (statement.trim()) sqlite.exec(statement);
+      sqlite
+        .prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)')
+        .run(agentReports.hash, agentReports.when);
+    }
     verifyCanonicalSchema(db, folder);
     sqlite
       .prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)')
@@ -543,7 +628,13 @@ export function bridgeLegacyDocMigrationHistory(db: Db, folder: string): void {
 }
 
 /** Compare real PRAGMA structure and CHECK/index semantics against a fresh canonical migration. */
-function verifyCanonicalSchema(db: Db, folder: string, published = false): void {
+function verifyCanonicalSchema(
+  db: Db,
+  folder: string,
+  published?: MigrationEntry & { hash: string },
+  shippedAfter: Array<MigrationEntry & { hash: string }> = [],
+  referenceEnd: number = consolidatedDoc.idx + 1
+): void {
   const reference = constructDatabase(':memory:').db;
   const temporary = mkdtempSync(path.join(os.tmpdir(), 'dorkos-doc-schema-'));
   let failure: { cause: unknown } | undefined;
@@ -554,8 +645,12 @@ function verifyCanonicalSchema(db: Db, folder: string, published = false): void 
       entries: MigrationEntry[];
     };
     const entries = published
-      ? [...journal.entries.slice(0, 150), publishedRoom]
-      : journal.entries.slice(0, 152);
+      ? [
+          ...journal.entries.slice(0, published.idx),
+          ...shippedAfter.filter((entry) => entry.idx >= published.idx),
+          published,
+        ]
+      : journal.entries.slice(0, referenceEnd);
     mkdirSync(path.join(temporary, 'meta'));
     writeFileSync(
       path.join(temporary, 'meta/_journal.json'),
@@ -567,7 +662,7 @@ function verifyCanonicalSchema(db: Db, folder: string, published = false): void 
         readFileSync(
           path.join(
             folder,
-            ...(published && entry === publishedRoom ? ['legacy-doc'] : []),
+            ...(published && entry === published ? ['legacy-doc'] : []),
             `${entry.tag}.sql`
           )
         )

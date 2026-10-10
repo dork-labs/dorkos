@@ -276,6 +276,32 @@ describe('reconcile()', () => {
     );
   });
 
+  it('syncs who an agent reports to and who created it from disk to DB', async () => {
+    // A hand-edited `reportsTo` has to reach the mirror the reports-to chain is
+    // walked from (spec `heartbeats` §4.1), and so does a field removed by hand.
+    const entry = makeEntry({ id: 'a1', projectPath: '/root/proj/backend', createdBy: 'old' });
+    registry.list.mockReturnValue([entry]);
+    vi.mocked(fsPromises.access).mockResolvedValue(undefined);
+    vi.mocked(manifestModule.readManifest).mockResolvedValue(
+      makeManifest({
+        id: 'a1',
+        name: entry.name,
+        description: entry.description,
+        runtime: entry.runtime,
+        capabilities: entry.capabilities,
+        behavior: entry.behavior,
+        reportsTo: '01MANAGER',
+      })
+    );
+
+    const result = await reconcile(deps);
+    expect(result.synced).toBe(1);
+    expect(registry.update).toHaveBeenCalledWith(
+      'a1',
+      expect.objectContaining({ reportsTo: '01MANAGER', createdBy: undefined })
+    );
+  });
+
   it('does not sync when only non-compared fields differ', async () => {
     const entry = makeEntry({
       id: 'a1',

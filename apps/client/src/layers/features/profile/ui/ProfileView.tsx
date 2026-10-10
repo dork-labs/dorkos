@@ -24,6 +24,7 @@ import { findTeamOwner, teamMemberFace, useMemberRooms } from '@/layers/entities
 import { deriveRelationship } from '../lib/profile-relationship';
 import { messageTarget } from '../lib/profile-message';
 import { rowsFor, type ProfileRowsContext } from '../lib/profile-rows';
+import { describeReportsTo } from '../lib/profile-reports-to';
 import { useManagedAgentFacts } from '../model/use-managed-agent-facts';
 import {
   beneathMemberId,
@@ -108,6 +109,7 @@ export function ProfileView({
     description: manifest.data?.description ?? null,
     rooms: rooms.data ? { count: rooms.data.rooms.length, rooms: rooms.data.rooms } : null,
     facts,
+    reportsTo: manifest.data ? describeReportsTo(manifest.data, roster, member).label : null,
   };
 
   // Three ways to have no button, and they are all the same answer: don't draw

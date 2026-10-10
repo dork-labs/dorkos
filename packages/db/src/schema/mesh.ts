@@ -42,6 +42,14 @@ export const agents = sqliteTable('agents', {
   // to name every agent that differs from the server default, and answering
   // that from disk would mean opening every agent.json. NULL = inherit.
   account: text('account'),
+  // Who this agent reports to and which account created it (spec `heartbeats`
+  // §4.1), mirrored from `.dork/agent.json` by the reconciler (ADR-0043) so the
+  // reports-to chain can be walked from the agent LIST without opening every
+  // manifest on disk. Account ids: a mesh ULID for an agent, an account id for
+  // a person. NULL = not set (the chain falls back to the creator, then the
+  // owner) and unknown creator respectively.
+  reportsTo: text('reports_to'),
+  createdBy: text('created_by'),
   registeredAt: text('registered_at').notNull(),
   updatedAt: text('updated_at').notNull(),
   // manifest_json DROPPED — redundant with individual structured columns

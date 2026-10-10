@@ -155,7 +155,7 @@ describe('Doc Room upgrade from populated shipped main', () => {
           .prepare('SELECT * FROM __drizzle_migrations ORDER BY rowid')
           .all();
         expect(afterHistory.slice(0, idx + 1)).toEqual(history);
-        expect(afterHistory).toHaveLength(152);
+        expect(afterHistory).toHaveLength(153);
         runMigrations(db);
         expect(
           db.$client.prepare('SELECT * FROM __drizzle_migrations ORDER BY rowid').all()
