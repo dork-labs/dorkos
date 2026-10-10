@@ -566,6 +566,7 @@ import { spacesEnabled } from './middleware/spaces-enabled.js';
 import { SearchIndexer, selectSearchSources } from './services/search/index.js';
 import { TerminalManager, terminalUpgradeRoute } from './services/terminal/index.js';
 import { attachUpgradeRouter } from './services/core/streams/upgrade-router.js';
+import { createManagedIngress } from './services/core/remote/managed-ingress.js';
 import { durableStreamRoutes } from './routes/stream-sockets.js';
 import { createTerminalRouter } from './routes/terminal.js';
 import { registerDorkosCommunityTelemetry } from './services/marketplace/telemetry/telemetry-reporter.js';
@@ -6106,6 +6107,17 @@ async function start() {
         mainRequestAdmission
       );
       logger.info('[DorkOS] WebSocket upgrade router attached');
+
+      // The managed remote-access ingress: a loopback listener of its own that
+      // managed forwarding targets, running the edge-proof and host checks
+      // before handing requests to this app and upgrades to the router above.
+      // Nothing listens until managed access opens.
+      tunnelManager.attachManagedIngress(
+        createManagedIngress({
+          handler: app,
+          forwardUpgrade: (req, socket, head) => server.emit('upgrade', req, socket, head),
+        })
+      );
 
       // Fire-and-forget: record startup in the activity feed so the dashboard
       // shows when the server was last (re)started.

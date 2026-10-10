@@ -72,6 +72,7 @@ import { isInstallOwner } from '../services/core/auth/install-owner.js';
 import { configManager } from '../services/core/config-manager.js';
 import { env } from '../env.js';
 import { isLocalRequest } from './trusted-origins.js';
+import { isManagedIngress } from '../services/core/remote/ingress-mark.js';
 import { resolveDecisionAuthority } from '../services/core/approvals/decision-authority.js';
 import { expressRequestFacts, type RequestFacts } from '../http/request-facts.js';
 
@@ -264,6 +265,9 @@ export function requireOperatorCookieUnderLogin(
  *
  * Unflagged — the default on a normal machine — both signals are still required.
  *
+ * A request admitted by the managed remote-access ingress is never local, under
+ * any flag: it is someone on another device by construction.
+ *
  * One residual remains and is inherent: a reverse proxy on this same host
  * connects from `127.0.0.1`, so it is indistinguishable from a local caller at
  * the socket layer (see `isLoopbackPeer` in `lib/trusted-origins.ts`). Its
@@ -275,8 +279,12 @@ export function requireOperatorCookieUnderLogin(
  * @returns True when the request may reach an action reserved for this machine.
  */
 export function isLocalCaller(
-  request: Pick<RequestFacts, 'peerAddress' | 'headers'> | Request
+  request: Pick<RequestFacts, 'peerAddress' | 'headers' | 'managedIngress'> | Request
 ): boolean {
+  // Managed remote access arrives from the ngrok agent on loopback, so the
+  // socket half would pass; the ingress marks it so nothing it carries is ever
+  // taken for a person at this machine, whatever its `Host` says.
+  if ('socket' in request ? isManagedIngress(request) : request.managedIngress) return false;
   // An Express request carries its socket; facts never do.
   const peer = 'socket' in request ? request.socket?.remoteAddress : request.peerAddress;
   return isLocalRequest({

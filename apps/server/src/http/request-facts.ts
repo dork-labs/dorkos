@@ -26,6 +26,7 @@ import type { Context } from 'hono';
 import type { HttpBindings } from '@hono/node-server';
 import type { AgentIdentity } from '../services/core/agent-identity/agent-identity-service.js';
 import type { RequestUser } from '../services/core/auth/session-gate.js';
+import { isManagedIngress } from '../services/core/remote/ingress-mark.js';
 
 /** What a policy may know about one request. */
 export interface RequestFacts {
@@ -42,6 +43,12 @@ export interface RequestFacts {
   readonly forwardedAddress: string | undefined;
   /** Whether the connection itself is TLS. The server binds plain HTTP, so in practice false. */
   readonly connectionEncrypted: boolean;
+  /**
+   * Whether the managed remote-access ingress admitted this request. Its TCP
+   * peer is the forwarding agent on loopback, so a policy deciding whether a
+   * person is at this machine must read this, never the peer alone.
+   */
+  readonly managedIngress: boolean;
   /** The identity the session gate proved, when it ran and proved one. */
   readonly user: RequestUser | undefined;
   /** The agent the `X-DorkOS-Agent` middleware resolved, when one did. */
@@ -109,6 +116,7 @@ export function expressRequestFacts(req: Request, res?: Pick<Response, 'locals'>
     peerAddress: req.socket?.remoteAddress,
     forwardedAddress: req.ip,
     connectionEncrypted: isEncrypted(req),
+    managedIngress: isManagedIngress(req),
     user: res?.locals.user as RequestUser | undefined,
     agentIdentity: res?.locals.agentIdentity as AgentIdentity | undefined,
   };
@@ -134,6 +142,7 @@ export function honoRequestFacts(c: Context<RequestFactsEnv>): RequestFacts {
     peerAddress: incoming.socket.remoteAddress,
     forwardedAddress: forwardedClientAddress(forwardedFor, incoming.socket.remoteAddress),
     connectionEncrypted: isEncrypted(incoming),
+    managedIngress: isManagedIngress(incoming),
     user: c.get('user'),
     agentIdentity: c.get('agentIdentity'),
   };

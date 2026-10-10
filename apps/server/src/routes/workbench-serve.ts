@@ -36,7 +36,11 @@ import { validateBoundary, BoundaryError } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
 import { WORKBENCH } from '../config/constants.js';
 import { injectFrameScripts } from '../services/workbench-serve/frame-inject.js';
-import { getTunnelHost, parseHostname, resolveAuthTrustedOrigins } from '../lib/trusted-origins.js';
+import {
+  getTunnelHosts,
+  parseHostname,
+  resolveAuthTrustedOrigins,
+} from '../lib/trusted-origins.js';
 import {
   workbenchTokenSigner,
   WorkbenchTokenError,
@@ -158,10 +162,10 @@ router.post('/sign', async (req, res) => {
  */
 async function signPreview(req: Request, res: Response, port: number) {
   const hostname = parseHostname(req.get('host')) ?? 'localhost';
-  const tunnelHost = getTunnelHost();
-  if (tunnelHost !== null && hostname === tunnelHost) {
+  if (getTunnelHosts().includes(hostname)) {
     // A tunnel publishes one port, and it is not this one. Say so rather than
-    // handing back an address that will quietly fail to load.
+    // handing back an address that will quietly fail to load. Every tunnel
+    // address counts: each managed hostname forwards that same one port.
     return res.json({ url: null, unavailable: 'tunnel' as const });
   }
 

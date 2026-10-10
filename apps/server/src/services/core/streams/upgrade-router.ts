@@ -25,9 +25,10 @@ import {
   type BrowserOriginPolicy,
   isTrustedBrowserOrigin,
   parseHostname,
-  getTunnelHost,
+  getTunnelHosts,
 } from '../../../lib/trusted-origins.js';
 import { isHostAllowed, parseTrustedHosts } from '../../../middleware/host-guard.js';
+import { bypassesManagedIngress } from '../../../middleware/managed-host-guard.js';
 import { configManager } from '../config-manager.js';
 import { env } from '../../../env.js';
 import { authorizeStreamUpgrade, type StreamUpgradeLocals } from './stream-upgrade-auth.js';
@@ -169,7 +170,7 @@ function originIsTrusted(req: IncomingMessage, credential: UpgradeRoute['credent
       hostAllowed: isHostAllowed({
         hostname: parseHostname(headers.host),
         trustedHosts: parseTrustedHosts(env.DORKOS_TRUSTED_HOSTS),
-        tunnelHost: getTunnelHost(),
+        tunnelHosts: getTunnelHosts(),
       }),
       // eslint-disable-next-line no-restricted-syntax -- DORKOS_CORS_ORIGIN is not in env.ts; read the same way app.ts reads it
       configuredOrigins: process.env.DORKOS_CORS_ORIGIN,
@@ -222,6 +223,12 @@ export function attachUpgradeRouter(
   server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     if (admission.isClosed) {
       refuse(socket, 503, 'Service Unavailable');
+      return;
+    }
+    // A managed hostname is served only through the managed ingress, which
+    // checked the edge proof before handing the upgrade here.
+    if (bypassesManagedIngress(req)) {
+      refuse(socket, 403, 'Forbidden');
       return;
     }
     // `req.url` is origin-form (`/api/...`); the base only satisfies the parser
