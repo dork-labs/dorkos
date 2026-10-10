@@ -57,6 +57,9 @@ export interface RemoteInstallationAgent {
   active: boolean;
 }
 
+/** A callback about one owner's connection to one community. */
+type OwnerConnectionCallback<T> = (communityRef: CommunityRef, ownerKey: string) => T;
+
 /**
  * Read the agents one owner's installation added to one Community, active or
  * revoked here, from local records only. Only these are ever named or removed.
@@ -66,9 +69,6 @@ export interface RemoteInstallationAgent {
  * each installation holds its own agent there and removing one never removes
  * the other's.
  */
-/** A callback about one owner's connection to one community. */
-type OwnerConnectionCallback<T> = (communityRef: CommunityRef, ownerKey: string) => T;
-
 export type RemoteInstallationAgentsReader = (
   communityRef: CommunityRef,
   ownerKey: string

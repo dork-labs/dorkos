@@ -9,10 +9,12 @@
  * now (`spaces.official.url`, or `DORKOS_OFFICIAL_SPACE_URL`). Changing or clearing the link
  * un-officials an old connection at once.
  *
- * A canonical `/c/<uuid>` link names the community outright. A short-name or origin-only link
- * does not, so the community it led to is recorded when a pairing starts from it
+ * A canonical `/c/<uuid>` link names the community outright, and is the one to configure. A
+ * short-name link does not, so the community it led to is recorded when a pairing starts from it
  * (`official-space.json`): the link, the origin and the community id discovery returned. That
- * record answers only while it was made for the link configured now.
+ * record answers only while it was made for the link configured now, so a connection made
+ * before it existed is recognised only through a canonical link. An origin-only link names no
+ * community and leaves the exception off.
  *
  * Nothing here compares against a literal hostname.
  *
@@ -72,14 +74,23 @@ function parseLink(url: string): ParsedCommunityLink | null {
 }
 
 /**
- * The configured official link when it is a usable space address, trimmed, or `null` when it is
- * empty or unusable: what the app is told, so it offers the official space only when it can be
- * joined.
+ * Parse the configured official link, or `null` when it is empty, unusable, or names a whole
+ * server rather than one community: an origin-only link cannot say which community is official.
+ */
+function parseOfficialLink(raw: string): ParsedCommunityLink | null {
+  const parsed = parseLink(raw);
+  return parsed && (parsed.communityId || parsed.shortName) ? parsed : null;
+}
+
+/**
+ * The configured official link when it names one community (its canonical `/c/<id>` link or its
+ * short name), trimmed, or `null` when it is empty or unusable: what the app is told, so it
+ * offers the official space only when it can be joined.
  *
  * @param raw - The link as configured.
  */
 export function usableOfficialLink(raw: string): string | null {
-  return parseLink(raw) ? raw.trim() : null;
+  return parseOfficialLink(raw) ? raw.trim() : null;
 }
 
 /**
@@ -114,10 +125,10 @@ export class OfficialSpace {
   /** The configured official link, parsed, or `null` when there is none or it is unusable. */
   link(): ParsedCommunityLink | null {
     const raw = this.readUrl();
-    const parsed = parseLink(raw);
+    const parsed = parseOfficialLink(raw);
     if (!parsed && raw.trim() && this.warnedLink !== raw) {
       this.warnedLink = raw;
-      logger.warn('[OfficialSpace] The official space link is not a usable space address');
+      logger.warn('[OfficialSpace] The official space link does not name one space');
     }
     return parsed;
   }
@@ -134,14 +145,25 @@ export class OfficialSpace {
 
   /**
    * Whether a link a person typed is the configured official link, in any spelling that names
-   * the same address.
+   * the same address. For a short-name official link that a pairing already
+   * resolved, the community's canonical `/c/<id>` link on the same server counts too: it is what
+   * the join flow sends back when a server hosts more than one community.
    *
    * @param url - The link to compare.
    */
   isOfficialLink(url: string): boolean {
     const official = this.link();
     const typed = parseLink(url);
-    return official !== null && typed !== null && linkKey(official) === linkKey(typed);
+    if (official === null || typed === null) return false;
+    if (linkKey(official) === linkKey(typed)) return true;
+    if (official.communityId || !typed.communityId) return false;
+    const resolution = this.readResolution();
+    return (
+      resolution !== null &&
+      resolution.link === linkKey(official) &&
+      resolution.origin === typed.origin.origin &&
+      resolution.communityId === typed.communityId
+    );
   }
 
   /**
@@ -184,8 +206,8 @@ export class OfficialSpace {
   }
 
   /**
-   * Record what a pairing that started from the official link discovered, so a short-name or
-   * origin-only link can be matched to its community later. A pairing from any other link
+   * Record what a pairing that started from the official link discovered, so a short-name link
+   * can be matched to its community later. A pairing from any other link
    * records nothing. Written before the pending connection is, so its own change is judged with
    * it.
    *

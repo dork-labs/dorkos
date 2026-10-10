@@ -467,7 +467,8 @@ import {
   getRemoteConnectionStore,
   getRemotePairingService,
   getRemoteWakePolicy,
-  getOfficialSpace,
+  isConnectionVisible,
+  loadOfficialSpace,
   publishRemoteCommunityDeliveryChanges,
   setRemoteCommunityDb,
   setRemoteCommunityDeliveryProjection,
@@ -554,7 +555,8 @@ import {
   sweepDepartedAgentSeats,
 } from './services/rooms/manage/departed-agents.js';
 import { registerLocalCommunity } from './services/communities/index.js';
-import { spaceReachable, spacesEnabled } from './middleware/spaces-enabled.js';
+import { spaceReachable } from './middleware/spaces-enabled.js';
+import { registeredAgentRoots } from './agent-roots.js';
 import { SearchIndexer, selectSearchSources } from './services/search/index.js';
 import { TerminalManager, terminalUpgradeRoute } from './services/terminal/index.js';
 import { attachUpgradeRouter } from './services/core/streams/upgrade-router.js';
@@ -756,27 +758,6 @@ let testComposioFixture:
       >
     >
   | undefined;
-
-/**
- * Every registered agent that has a project on disk, as the legacy migration
- * wants them.
- *
- * Lives here rather than inline because the filter is the interesting part: an
- * agent with no resolvable project path has no `.dork/tasks/` to migrate and no
- * `.agents/skills/` to migrate into, and asking about it would only produce a
- * pair of ENOENTs.
- *
- * @param meshCore - The registry, absent when Mesh is switched off.
- */
-function registeredAgentRoots(
-  meshCore: MeshCore | undefined
-): { agentId: string; projectPath: string }[] {
-  if (!meshCore) return [];
-  return meshCore.list().flatMap((agent) => {
-    const projectPath = meshCore.getProjectPath(agent.id);
-    return projectPath ? [{ agentId: agent.id, projectPath }] : [];
-  });
-}
 
 /**
  * Log what an install-recovery sweep did, when it did anything.
@@ -2469,11 +2450,7 @@ async function start() {
     // remote work and before the server listens: until it has loaded no space
     // is, so with spaces off nothing remote is reachable (fail closed). Loaded
     // whatever Mesh did, since the official space's routes do not need Mesh.
-    try {
-      await getOfficialSpace().load(() => getRemoteConnectionStore().places());
-    } catch (err) {
-      logger.warn('[Communities] Could not read which space is official', logError(err));
-    }
+    await loadOfficialSpace();
     if (meshStartupReconciled) {
       remoteCommunityRuntime?.start();
       remoteCommunitySubscriptions?.start();
@@ -2702,8 +2679,7 @@ async function start() {
     meshCore,
     configManager,
     communityConnections: getRemoteConnectionStore(),
-    connectionVisible: (change) =>
-      spacesEnabled() || getOfficialSpace().isOfficialConnection(change),
+    connectionVisible: isConnectionVisible,
     eventFanOut,
   });
 

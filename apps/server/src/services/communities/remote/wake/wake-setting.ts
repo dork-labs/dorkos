@@ -34,6 +34,10 @@ export interface ConnectionWakeSetting {
   ownerKey: string;
   /** The owner's own member id in the space, or `null` before pairing completes. */
   connectedHumanMemberId: string | null;
+  /** The origin the connection is pinned to. */
+  pinnedOrigin: string;
+  /** The community id discovery returned at pairing. */
+  remoteCommunityId: string;
   /** Who may wake this owner's agents there: the owner's choice, or the default. */
   wakeAgentsFrom: WakeAgentsFrom;
   /** What the owner chose, or `null` when they never did and the default applies. */
@@ -42,7 +46,8 @@ export interface ConnectionWakeSetting {
 
 /**
  * Who in this space may wake the owner's agents; when nobody chose, {@link
- * DEFAULT_WAKE_AGENTS_FROM}, or {@link OFFICIAL_WAKE_AGENTS_FROM} for the official space. Throws `RemoteConnectionNotFoundError` for another owner's connection.
+ * DEFAULT_WAKE_AGENTS_FROM}, or {@link OFFICIAL_WAKE_AGENTS_FROM} for the official space.
+ * Throws `RemoteConnectionNotFoundError` for another owner's connection.
  *
  * @param store - The connection store that keeps the setting.
  * @param ref - The local connection ref.

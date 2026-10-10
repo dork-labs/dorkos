@@ -320,6 +320,8 @@ export class RemoteConnectionStore {
         ref: record.ref,
         ownerKey: record.ownerKey,
         connectedHumanMemberId: record.connectedHumanMemberId,
+        pinnedOrigin: record.pinnedOrigin,
+        remoteCommunityId: record.remoteCommunityId,
         wakeAgentsFrom: chosen ?? this.defaultWake(record),
         chosen,
       };

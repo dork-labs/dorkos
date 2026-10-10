@@ -16,6 +16,7 @@ import type { RemoteConnectionStore } from '../connection-store.js';
 import {
   DEFAULT_WAKE_AGENTS_FROM,
   readWakeAgentsFrom,
+  type ConnectionWakeSetting,
   type WakeAgentsFrom,
 } from './wake-setting.js';
 
@@ -31,7 +32,10 @@ export interface RemoteWakeGate {
   wakes(communityRef: CommunityRef, ownerAuthorId: string, authorMemberId: string): boolean;
 }
 
-interface Entry {
+/** Where a connection points, which decides its default: the official space's is narrower. */
+export type WakePlace = Pick<ConnectionWakeSetting, 'pinnedOrigin' | 'remoteCommunityId'>;
+
+interface Entry extends WakePlace {
   /** The owner's choice, or `null` when the default applies. */
   chosen: WakeAgentsFrom | null;
   ownerMemberId: string | null;
@@ -52,13 +56,14 @@ export class RemoteWakePolicy implements RemoteWakeGate {
    *   the gate has no answer yet. Bounded: past the last one the gate keeps waking nobody until
    *   the next connection change reads again.
    * @param defaultFor - Who may wake agents on a connection whose owner never chose, asked on
-   *   every message so a change of the official space's link applies at once (narrower for the
-   *   official space, spec `official-community-space` D9).
+   *   every message with the place the connection points at, so a change of the official space's
+   *   link applies at once and nothing hangs on another in-memory answer having loaded (narrower
+   *   for the official space, spec `official-community-space` D9).
    */
   constructor(
     private readonly store: RemoteConnectionStore,
     private readonly retryDelaysMs: readonly number[] = [250, 1_000, 5_000],
-    private readonly defaultFor: (ref: CommunityRef) => WakeAgentsFrom = () =>
+    private readonly defaultFor: (place: WakePlace) => WakeAgentsFrom = () =>
       DEFAULT_WAKE_AGENTS_FROM
   ) {
     store.onChange(() => {
@@ -83,7 +88,12 @@ export class RemoteWakePolicy implements RemoteWakeGate {
           this.entries = new Map(
             settings.map((setting) => [
               key(setting.ref, setting.ownerKey),
-              { chosen: setting.chosen, ownerMemberId: setting.connectedHumanMemberId },
+              {
+                chosen: setting.chosen,
+                ownerMemberId: setting.connectedHumanMemberId,
+                pinnedOrigin: setting.pinnedOrigin,
+                remoteCommunityId: setting.remoteCommunityId,
+              },
             ])
           );
         }
@@ -138,7 +148,7 @@ export class RemoteWakePolicy implements RemoteWakeGate {
   wakes(communityRef: CommunityRef, ownerAuthorId: string, authorMemberId: string): boolean {
     const entry = this.entries?.get(key(communityRef, ownerAuthorId));
     if (!entry) return false;
-    if ((entry.chosen ?? this.defaultFor(communityRef)) === 'members') return true;
+    if ((entry.chosen ?? this.defaultFor(entry)) === 'members') return true;
     return entry.ownerMemberId !== null && entry.ownerMemberId === authorMemberId;
   }
 }

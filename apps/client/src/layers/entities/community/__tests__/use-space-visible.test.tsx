@@ -8,14 +8,13 @@
  * experiment, the official link and the connections it is about.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, renderHook, screen } from '@testing-library/react';
-import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
+import { act, cleanup, fireEvent, render, renderHook, screen } from '@testing-library/react';
 
 const state = vi.hoisted(() => ({
   enabled: false,
   isLoading: false,
   officialLink: null as string | null,
-  connections: undefined as Partial<CommunityConnectionDescriptor>[] | undefined,
+  connections: undefined as { ref: string; official?: boolean }[] | undefined,
   connectionsError: false,
   dismissed: [] as string[],
   dismissPromo: vi.fn(),
@@ -38,7 +37,10 @@ import { isSpaceVisible, useSpaceVisible } from '../model/use-space-visible';
 import { OFFICIAL_SPACE_OFFER_ID, useOfficialSpaceOffer } from '../model/use-official-space-offer';
 import { useJoinSpaceRequest } from '../model/join-space-request';
 import { OfficialSpaceOfferCard } from '../ui/OfficialSpaceOfferCard';
-import { OfficialSpaceUnreachableNotice } from '../ui/OfficialSpaceUnreachableNotice';
+import {
+  OFFICIAL_SPACE_UNREACHABLE_AFTER_MS,
+  OfficialSpaceUnreachableNotice,
+} from '../ui/OfficialSpaceUnreachableNotice';
 
 const LINK = 'https://space.example.test/c/11111111-1111-4111-8111-111111111111';
 
@@ -165,21 +167,29 @@ describe('OfficialSpaceUnreachableNotice', () => {
     lastKnown: null,
   } as const;
 
-  it('says calmly that the official space is not reachable right now', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('says calmly that the official space is not reachable, once it stays that way', () => {
+    vi.useFakeTimers();
     render(
       <OfficialSpaceUnreachableNotice
         connection={{ official: true, status: 'connected', access: unverified }}
       />
     );
+    // A re-check in flight reads as unverified for a moment, so nothing shows at once.
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(OFFICIAL_SPACE_UNREACHABLE_AFTER_MS));
     expect(screen.getByRole('status')).toHaveTextContent(
       'The DorkOS community isn’t reachable right now.'
     );
   });
 
   it('says nothing for another space, or while the official one answers', () => {
+    vi.useFakeTimers();
     const other = render(
       <OfficialSpaceUnreachableNotice connection={{ status: 'connected', access: unverified }} />
     );
+    act(() => vi.advanceTimersByTime(OFFICIAL_SPACE_UNREACHABLE_AFTER_MS));
     expect(other.container).toBeEmptyDOMElement();
     const answering = render(
       <OfficialSpaceUnreachableNotice
@@ -190,6 +200,7 @@ describe('OfficialSpaceUnreachableNotice', () => {
         }}
       />
     );
+    act(() => vi.advanceTimersByTime(OFFICIAL_SPACE_UNREACHABLE_AFTER_MS));
     expect(answering.container).toBeEmptyDOMElement();
   });
 });

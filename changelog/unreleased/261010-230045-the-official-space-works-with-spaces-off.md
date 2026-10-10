@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(spaces): the official DorkOS space works with the spaces switch off (DOR-2769)'
+  - 'fix(spaces): hold the official wake default without the boot load, and narrow saved navigation (DOR-2769)'
 ---
 
 ### Added

@@ -300,6 +300,27 @@ describe('the official space while the spaces experiment is off', () => {
     });
   });
 
+  it('names no other space in the saved navigation', async () => {
+    // Saved navigation keeps connected spaces only.
+    const saved = spaces.connections.map((connection) => ({ ...connection }));
+    for (const connection of spaces.connections)
+      (connection as { status: string }).status = 'connected';
+    try {
+      const on = await request(bootApp()).get('/api/community-connections/navigation');
+      expect(on.body.order).toEqual(expect.arrayContaining(['remote_official', 'remote_other']));
+      await offWithOfficial(async (app) => {
+        const res = await request(app).get('/api/community-connections/navigation');
+        expect(res.status).toBe(200);
+        expect(res.body.order).toEqual(['remote_official']);
+        expect(
+          res.body.destinations.filter((item: { ref: string }) => item.ref !== 'remote_official')
+        ).toEqual([]);
+      });
+    } finally {
+      spaces.connections.splice(0, spaces.connections.length, ...saved);
+    }
+  });
+
   it('lets an official :ref through to the space routes', async () => {
     await offWithOfficial(async (app) => {
       const res = await request(app).get('/api/communities/remote_official/rooms');

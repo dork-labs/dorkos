@@ -16,7 +16,7 @@ import type { CredentialStore } from '../../core/credential-provider.js';
 import { RemoteConnectionStore } from '../remote/connection-store.js';
 import { RemoteWakePolicy } from '../remote/wake/wake-policy.js';
 import { readWakeAgentsFrom } from '../remote/wake/wake-setting.js';
-import { OfficialSpace } from '../official-space.js';
+import { OfficialSpace, usableOfficialLink } from '../official-space.js';
 
 const ID = '11111111-1111-4111-8111-111111111111';
 const OTHER_ID = '22222222-2222-4222-8222-222222222222';
@@ -90,6 +90,14 @@ describe('the official link', () => {
     expect(official.isOfficialConnection(OFFICIAL)).toBe(false);
   });
 
+  it('is off for a link that names a whole server rather than one space', () => {
+    link = ORIGIN;
+    expect(official.link()).toBeNull();
+    expect(official.isOfficialLink(ORIGIN)).toBe(false);
+    expect(usableOfficialLink(ORIGIN)).toBeNull();
+    expect(usableOfficialLink(`${ORIGIN}/c/${ID}`)).toBe(`${ORIGIN}/c/${ID}`);
+  });
+
   it('compares typed links in any spelling of the same address', () => {
     link = `${ORIGIN}/Makers`;
     expect(official.isOfficialLink(`${ORIGIN}/makers`)).toBe(true);
@@ -110,6 +118,15 @@ describe('a short-name link', () => {
     await official.noteDiscovery(`${ORIGIN}/makers`, ORIGIN, ID);
     expect(official.isOfficialConnection(OFFICIAL)).toBe(true);
     expect(official.isOfficialConnection({ ...OFFICIAL, remoteCommunityId: OTHER_ID })).toBe(false);
+  });
+
+  it('takes the canonical link of the community it resolved to, and no other', async () => {
+    link = `${ORIGIN}/makers`;
+    expect(official.isOfficialLink(`${ORIGIN}/c/${ID}`)).toBe(false);
+    await official.noteDiscovery(link, ORIGIN, ID);
+    expect(official.isOfficialLink(`${ORIGIN}/c/${ID}`)).toBe(true);
+    expect(official.isOfficialLink(`${ORIGIN}/c/${OTHER_ID}`)).toBe(false);
+    expect(official.isOfficialLink(`https://elsewhere.example/c/${ID}`)).toBe(false);
   });
 
   it('survives a restart, and stops answering once the link moves', async () => {
@@ -231,9 +248,10 @@ describe('the connection store', () => {
         verifiedAt: '2026-10-07T00:00:00.000Z',
       },
     });
-    await official.load(() => store.places());
-    const gate = new RemoteWakePolicy(store, [], (ref: CommunityRef) =>
-      official.isOfficialRef(ref) ? 'me' : 'members'
+    // No `official.load()`: the gate judges the connection's own place on every message, so a
+    // boot that could not load the in-memory answer still holds the official default.
+    const gate = new RemoteWakePolicy(store, [], (place) =>
+      official.isOfficialConnection(place) ? 'me' : 'members'
     );
     await gate.reload();
 
