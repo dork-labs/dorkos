@@ -25,9 +25,18 @@ export class RateLimited extends ApiError {
   constructor(
     message: string,
     /** Whole seconds until the window frees an attempt, at least 1. */
-    public readonly retryAfterSeconds: number
+    public readonly retryAfterSeconds: number,
+    /** `COMMUNITY_SLOW_MODE` for a channel's slow mode; `RATE_LIMITED` otherwise. */
+    code: 'RATE_LIMITED' | 'COMMUNITY_SLOW_MODE' = 'RATE_LIMITED'
   ) {
-    super(429, 'RATE_LIMITED', message);
+    super(429, code, message);
+  }
+}
+
+/** `403 COMMUNITY_MUTED`: the person (or an agent's owner) is muted, until `until`. */
+export class Muted extends ApiError {
+  constructor(public readonly until: Date) {
+    super(403, 'COMMUNITY_MUTED', "You're muted in this space for now.");
   }
 }
 
@@ -92,7 +101,11 @@ export function handleError(error: unknown, c: Context): Response {
     if (error instanceof RateLimited || error instanceof ServiceBusy)
       c.header('Retry-After', String(error.retryAfterSeconds));
     return c.json(
-      CommunityWireErrorSchema.parse({ code: error.code, message: error.message }),
+      CommunityWireErrorSchema.parse({
+        code: error.code,
+        message: error.message,
+        ...(error instanceof Muted ? { until: error.until.toISOString() } : {}),
+      }),
       error.status as 400
     );
   }

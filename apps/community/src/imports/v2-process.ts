@@ -135,6 +135,7 @@ export async function checkExportV2(
     'auditEvents',
     'bans',
     'entries',
+    'reports',
   ];
   for (const key of rowCollections) {
     for await (const line of collectionLines(opened, key, reading.maxLine)) {
@@ -370,7 +371,11 @@ export async function restoreV2(
       `UPDATE communities SET
          description=CASE WHEN $2 THEN description ELSE $3 END,
          admission_policy=CASE WHEN $4 THEN admission_policy ELSE $5 END,
-         icon_blob_key=$6,icon_content_type=$7
+         icon_blob_key=$6,icon_content_type=$7,
+         rules_text=$8,reserved_names=$10,
+         -- Never below an acceptance a restored member holds, so new rules always need a new one.
+         rules_version=GREATEST($9::int,(SELECT COALESCE(MAX(rules_accepted_version),0)
+           FROM members WHERE community_id=$1))
        WHERE id=$1`,
       [
         communityId,
@@ -380,6 +385,11 @@ export async function restoreV2(
         manifest.community.admissionPolicy,
         icon.rows[0]?.blob_key ?? null,
         icon.rows[0]?.content_type ?? null,
+        // The rules keep their version, so each restored member's acceptance still means what
+        // it meant; an archive from before rules carries none.
+        manifest.community.rules?.text ?? null,
+        manifest.community.rules?.version ?? 0,
+        manifest.community.reservedNames ?? [],
       ]
     );
     return ownerId;

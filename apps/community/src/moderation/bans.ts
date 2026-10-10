@@ -100,3 +100,15 @@ export async function refuseBannedAccount(
   if (await isBanned(db, communityId, { userId, email: row?.verified ? row.email : null }, secret))
     throw bannedRefusal();
 }
+
+/**
+ * Whether `actor` may ban or mute a current member in `target`'s role: the owner anyone but
+ * the owner, an admin plain members only.
+ */
+export function outranks(
+  actor: 'owner' | 'admin' | 'member',
+  target: 'owner' | 'admin' | 'member'
+): boolean {
+  if (target === 'owner') return false;
+  return target === 'member' || actor === 'owner';
+}

@@ -8,6 +8,7 @@
 import { z } from 'zod';
 import { CommunityAdminAdmissionPolicySchema } from './community-admin-wire.js';
 import { HANDLE_PATTERN } from './handle.js';
+import { CommunityWireDisplayNameSchema } from './community-moderation-wire.js';
 
 const id = z.string().min(1);
 const timestamp = z.iso.datetime();
@@ -32,6 +33,8 @@ export const CommunityExportChannelRowSchema = z.strictObject({
   archived: z.boolean(),
   created_at: timestamp,
   auto_join: z.boolean().optional(),
+  /** Absent from archives written before slow mode existed; reads as 0 (off). */
+  slow_mode_seconds: z.int().min(0).max(21_600).optional(),
 });
 /**
  * One `members/NNNNNN.ndjson` line. `email` is present for owner exports (null for an erased
@@ -46,6 +49,10 @@ export const CommunityExportMemberRowSchema = z.strictObject({
   created_at: timestamp,
   removed_at: timestamp.nullable(),
   email: z.string().nullable(),
+  /** Absent from archives written before mutes existed. */
+  muted_until: timestamp.nullable().optional(),
+  /** Absent from archives written before rules existed; reads as 0. */
+  rules_accepted_version: z.int().nonnegative().optional(),
 });
 /** One `agents/NNNNNN.ndjson` line. */
 export const CommunityExportAgentRowSchema = z.strictObject({
@@ -89,6 +96,31 @@ export const CommunityExportBanRowSchema = z.strictObject({
   created_at: timestamp,
   lifted_at: timestamp.nullable(),
 });
+/** One `reports/NNNNNN.ndjson` line (owner and evidence exports only). */
+export const CommunityExportReportRowSchema = z.strictObject({
+  id,
+  entry_id: id,
+  source: z.enum(['member', 'check']),
+  reporter_member_id: nullableId,
+  check_name: z
+    .string()
+    .regex(/^[a-z][a-z0-9_.-]{0,63}$/)
+    .nullable(),
+  reason: z.enum(['spam', 'harassment', 'off_topic', 'illegal', 'other']),
+  note: z.string().min(1).max(1_000).nullable(),
+  status: z.enum(['open', 'actioned', 'dismissed']),
+  action: z.enum(['remove', 'mute', 'ban']).nullable(),
+  resolver_member_id: nullableId,
+  created_at: timestamp,
+  resolved_at: timestamp.nullable(),
+});
+/** The rules an export carries, with their version. */
+export const CommunityExportRulesSchema = z.strictObject({
+  text: z.string().min(1).max(20_000),
+  version: z.int().positive(),
+});
+/** The display names an export says the space reserves. */
+export const CommunityExportReservedNamesSchema = z.array(CommunityWireDisplayNameSchema).max(200);
 /** One `audit-events/NNNNNN.ndjson` line (owner exports only). */
 export const CommunityExportAuditEventRowSchema = z.strictObject({
   id,
@@ -146,6 +178,8 @@ const exportFileKeys = {
   attachments: z.array(archivePath),
   /** Absent from archives written before bans existed. */
   bans: z.array(archivePath).optional(),
+  /** Absent from archives written before reports existed. */
+  reports: z.array(archivePath).optional(),
 };
 const count = z.int().nonnegative();
 
@@ -187,6 +221,10 @@ export const CommunityExportManifestV2Schema = z
           checksum: z.string().regex(/^[a-f0-9]{64}$/),
         })
         .nullable(),
+      /** The rules and their version; absent from archives written before rules existed. */
+      rules: CommunityExportRulesSchema.nullable().optional(),
+      /** Display names reserved for the space; absent from older archives. */
+      reservedNames: CommunityExportReservedNamesSchema.optional(),
     }),
     files: z.strictObject(exportFileKeys),
     counts: z.strictObject({
@@ -200,6 +238,8 @@ export const CommunityExportManifestV2Schema = z
       attachments: count,
       /** Absent from archives written before bans existed. */
       bans: count.optional(),
+      /** Absent from archives written before reports existed. */
+      reports: count.optional(),
     }),
   })
   .refine(

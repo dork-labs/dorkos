@@ -497,6 +497,8 @@ async function hostLifecycle(action: 'suspend' | 'resume'): Promise<void> {
  * spare member back to a plain member. Every step uses the public API as the right actor.
  */
 async function restoreBaseline(): Promise<void> {
+  // Rules an action wrote would hold every later post (moderation.integration.test.ts).
+  await pool.query('UPDATE communities SET rules_text=NULL WHERE id=$1', [alphaId]);
   let current = await alpha();
   if (current.lifecycle === 'suspended') await hostLifecycle('resume');
   current = await alpha();
@@ -2064,6 +2066,120 @@ const actions: Action<unknown>[] = [
     status: 200,
     call: () => ({ method: 'GET', path: scoped('/bans') }),
   }),
+  define<{ target: string }>({
+    rule: 'Mute a member: owner and admin (admin only plain members)',
+    route: 'POST /members/:id/mute',
+    allowed: MODERATORS,
+    status: 200,
+    prepare: async () => ({ target: await freshMember() }),
+    call: ({ target }) => ({
+      method: 'POST',
+      path: scoped(`/members/${target}/mute`),
+      body: { minutes: 10 },
+    }),
+    effect: async (_body, _role, { target }) => {
+      const row = await pool.query('SELECT muted_until FROM members WHERE id=$1', [target]);
+      expect(row.rows[0].muted_until).not.toBeNull();
+    },
+  }),
+  define<{ target: string }>({
+    rule: 'End a mute: owner and admin',
+    route: 'DELETE /members/:id/mute',
+    allowed: MODERATORS,
+    status: 204,
+    prepare: async () => {
+      const target = await freshMember();
+      await pool.query("UPDATE members SET muted_until=now()+interval '1 hour' WHERE id=$1", [
+        target,
+      ]);
+      return { target };
+    },
+    call: ({ target }) => ({ method: 'DELETE', path: scoped(`/members/${target}/mute`) }),
+    effect: async (_body, _role, { target }) => {
+      const row = await pool.query('SELECT muted_until FROM members WHERE id=$1', [target]);
+      expect(row.rows[0].muted_until).toBeNull();
+    },
+  }),
+  define({
+    rule: 'List mutes: owner and admin',
+    route: 'GET /mutes',
+    allowed: MODERATORS,
+    status: 200,
+    call: () => ({ method: 'GET', path: scoped('/mutes') }),
+  }),
+  define<{ version: number }>({
+    rule: 'Edit the rules: owner and admin',
+    route: 'PUT /rules',
+    allowed: MODERATORS,
+    status: 200,
+    prepare: async () => {
+      const row = await pool.query<{ rules_version: number }>(
+        'SELECT rules_version FROM communities WHERE id=$1',
+        [alphaId]
+      );
+      return { version: row.rows[0].rules_version };
+    },
+    call: ({ version }) => ({
+      method: 'PUT',
+      path: scoped('/rules'),
+      body: { text: 'Be kind.', expectedVersion: version },
+    }),
+    effect: async (_body, _role, { version }) => {
+      const row = await pool.query('SELECT rules_text,rules_version FROM communities WHERE id=$1', [
+        alphaId,
+      ]);
+      expect(row.rows[0]).toEqual({ rules_text: 'Be kind.', rules_version: version + 1 });
+    },
+  }),
+  define({
+    rule: 'Read the reserved names: owner and admin',
+    route: 'GET /reserved-names',
+    allowed: MODERATORS,
+    status: 200,
+    call: () => ({ method: 'GET', path: scoped('/reserved-names') }),
+  }),
+  define({
+    rule: 'Reserve display names: owner only',
+    route: 'PUT /reserved-names',
+    allowed: OWNER,
+    status: 200,
+    call: () => ({ method: 'PUT', path: scoped('/reserved-names'), body: { names: ['Staff'] } }),
+    effect: async () => {
+      const row = await pool.query('SELECT reserved_names FROM communities WHERE id=$1', [alphaId]);
+      expect(row.rows[0].reserved_names).toEqual(['Staff']);
+    },
+  }),
+  define({
+    rule: 'Read the report queue: owner and admin',
+    route: 'GET /reports',
+    allowed: MODERATORS,
+    status: 200,
+    call: () => ({ method: 'GET', path: scoped('/reports') }),
+  }),
+  define<{ report: string }>({
+    rule: 'Resolve a report: owner and admin',
+    route: 'POST /reports/:id/resolve',
+    allowed: MODERATORS,
+    status: 200,
+    prepare: async () => {
+      const entry = await ownerEntry();
+      const report = await pool.query<{ id: string }>(
+        `INSERT INTO reports(community_id,entry_id,reporter_member_id,reason)
+         VALUES($1,$2,$3,'spam') RETURNING id`,
+        [alphaId, entry, spareMemberId]
+      );
+      return { report: report.rows[0].id };
+    },
+    call: ({ report }) => ({
+      method: 'POST',
+      path: scoped(`/reports/${report}/resolve`),
+      body: { action: 'dismiss' },
+    }),
+    effect: async (_body, _role, { report }) => {
+      const row = await pool.query('SELECT status FROM reports WHERE id=$1', [report]);
+      expect(row.rows[0].status).toBe('dismissed');
+    },
+  }),
   define({
     rule: 'List auto-join channels: owner and admin',
     route: 'GET /channels/auto-join',
@@ -2457,6 +2573,13 @@ const OUTSIDE_ADMINISTRATION: Record<string, string> = {
   'POST /owner-replacements/claim':
     'the claim cookie plus the account the host named; owner-replacement-claim.integration.test.ts',
   'GET /open-admission': 'whether the URL community is open to single sign-on; public',
+  'GET /me/standing': "the caller's own mute; moderation.integration.test.ts",
+  'PATCH /me': 'the caller renames themselves; moderation.integration.test.ts',
+  'GET /rules': 'any member or agent reads the rules it posts under',
+  'POST /rules/accept': 'the caller accepts the rules for themselves',
+  'GET /channels/:id/slow-mode': 'ordinary reading of a channel the caller can read',
+  'POST /entries/:id/reports':
+    'any member reports a message they can read; moderation.integration.test.ts',
   'POST /open-admission/preflight':
     'this browser asks to join an open space; open-admission.integration.test.ts',
   'POST /open-admission/join':

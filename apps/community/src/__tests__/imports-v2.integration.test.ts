@@ -72,6 +72,8 @@ const channels: { general: string; hidden: string; elsewhere: string } = {
 };
 /** A member banned from the source, with the address the ban keys, and a lifted ban. */
 const banned = { memberId: '', email: '', ban: '', lifted: '' };
+/** An open report of the root and a resolved one of the reply, for the round trip (0034). */
+const reported = { open: '', resolved: '' };
 const marked = {
   root: '',
   reply: '',
@@ -290,7 +292,15 @@ async function expectNothingLeft(communityId: string): Promise<void> {
   await drainCleanup(h);
   expect(await count('SELECT 1 FROM communities WHERE id=$1', [communityId])).toBe(0);
   expect(await count('SELECT 1 FROM managed_blobs WHERE community_id=$1', [communityId])).toBe(0);
-  for (const table of ['channels', 'entries', 'members', 'attachments', 'audit_events', 'bans'])
+  for (const table of [
+    'channels',
+    'entries',
+    'members',
+    'attachments',
+    'audit_events',
+    'bans',
+    'reports',
+  ])
     expect(await count(`SELECT 1 FROM ${table} WHERE community_id=$1`, [communityId])).toBe(0);
 }
 
@@ -468,6 +478,37 @@ beforeAll(async () => {
     marked.erased,
     ERASED_ENTRY_TEXT,
   ]);
+  // Rules at version 3 that Pat accepted, a reserved name, Pat muted, general in slow mode with
+  // a clock running, and two reports (0034). The clock is rate state and never travels.
+  await h.pool.query(
+    "UPDATE communities SET rules_text='Be kind.',rules_version=3,reserved_names='{Staff}' WHERE id=$1",
+    [source.communityId]
+  );
+  await h.pool.query(
+    "UPDATE members SET muted_until=now()+interval '1 day',rules_accepted_version=3 WHERE id=$1",
+    [pat.memberId]
+  );
+  await h.pool.query('UPDATE channels SET slow_mode_seconds=30 WHERE id=$1', [channels.general]);
+  await h.pool.query(
+    `INSERT INTO channel_post_clocks(community_id,channel_id,member_id,posted_at)
+     VALUES($1,$2,$3,now())`,
+    [source.communityId, channels.general, pat.memberId]
+  );
+  reported.open = (
+    await h.pool.query<{ id: string }>(
+      `INSERT INTO reports(community_id,entry_id,reporter_member_id,reason,note)
+       VALUES($1,$2,$3,'spam','Loud') RETURNING id`,
+      [source.communityId, marked.root, pat.memberId]
+    )
+  ).rows[0].id;
+  reported.resolved = (
+    await h.pool.query<{ id: string }>(
+      `INSERT INTO reports(community_id,entry_id,reporter_member_id,reason,status,action,
+         resolver_member_id,resolved_at)
+       VALUES($1,$2,$3,'harassment','actioned','mute',$4,now()) RETURNING id`,
+      [source.communityId, marked.reply, source.owner.memberId, source.owner.memberId]
+    )
+  ).rows[0].id;
   const files = [];
   for (let index = 0; index < 6; index++)
     files.push(
@@ -553,6 +594,8 @@ beforeAll(async () => {
   opened = await openArchive(archive);
   // The owner export carries both bans and the auto-join mark.
   expect(opened.manifest.counts.bans).toBe(2);
+  expect(opened.manifest.counts.reports).toBe(2);
+  expect(opened.manifest.community.rules).toEqual({ text: 'Be kind.', version: 3 });
   expect(
     opened
       .rows<{ id: string; auto_join: boolean }>('channels')
@@ -820,6 +863,62 @@ it('restores a version 2 export uploaded in parts, across a cut-off upload and a
       reason: null,
       origin: 'imported',
       lifted: true,
+    },
+  ]);
+
+  // Rules keep their version, so Pat's acceptance still means what it meant; the mute, the slow
+  // mode and both reports come across, the reports as imports; no slow-mode clock does.
+  const conduct = await h.pool.query(
+    'SELECT rules_text,rules_version,reserved_names FROM communities WHERE id=$1',
+    [communityId]
+  );
+  expect(conduct.rows[0]).toEqual({
+    rules_text: 'Be kind.',
+    rules_version: 3,
+    reserved_names: ['Staff'],
+  });
+  const patRow = await h.pool.query(
+    'SELECT muted_until>now() AS muted,rules_accepted_version FROM members WHERE id=$1',
+    [derive(pat.memberId)]
+  );
+  expect(patRow.rows[0]).toEqual({ muted: true, rules_accepted_version: 3 });
+  expect(
+    (
+      await h.pool.query('SELECT slow_mode_seconds FROM channels WHERE id=$1', [
+        derive(channels.general),
+      ])
+    ).rows[0].slow_mode_seconds
+  ).toBe(30);
+  expect(
+    await count('SELECT 1 FROM channel_post_clocks WHERE community_id=$1', [communityId])
+  ).toBe(0);
+  const reports = await h.pool.query(
+    `SELECT id,entry_id,reporter_member_id,reason,note,status,action,resolver_member_id,origin
+     FROM reports WHERE community_id=$1 ORDER BY status DESC`,
+    [communityId]
+  );
+  expect(reports.rows).toEqual([
+    {
+      id: derive(reported.open),
+      entry_id: derive(marked.root),
+      reporter_member_id: derive(pat.memberId),
+      reason: 'spam',
+      note: 'Loud',
+      status: 'open',
+      action: null,
+      resolver_member_id: null,
+      origin: 'imported',
+    },
+    {
+      id: derive(reported.resolved),
+      entry_id: derive(marked.reply),
+      reporter_member_id: derive(source.owner.memberId),
+      reason: 'harassment',
+      note: null,
+      status: 'actioned',
+      action: 'mute',
+      resolver_member_id: derive(source.owner.memberId),
+      origin: 'imported',
     },
   ]);
 

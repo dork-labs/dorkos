@@ -48,7 +48,8 @@ export async function writeCollections(job: ExportJob): Promise<Collected> {
     await reader.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
     const community = await reader.query<CommunityRow>(
       `SELECT c.id,c.name,c.description,c.admission_policy,c.lifecycle,c.lifecycle_version,
-              c.settings_version,c.icon_blob_key,c.icon_content_type,
+              c.settings_version,c.icon_blob_key,c.icon_content_type,c.rules_text,
+              c.rules_version,c.reserved_names,
               m.byte_size::text AS icon_byte_size,m.checksum AS icon_checksum
        FROM communities c LEFT JOIN managed_blobs m
          ON m.blob_key=c.icon_blob_key AND m.community_id=c.id
@@ -179,6 +180,12 @@ export async function writeTail(job: ExportJob, collected: Collected): Promise<b
       lifecycle,
       lifecycleVersion: community.lifecycle_version,
       settingsVersion: community.settings_version,
+      rules:
+        community.rules_text === null
+          ? null
+          : { text: community.rules_text, version: community.rules_version },
+      // An owner setting: owner and evidence archives carry it, a personal one does not.
+      ...(job.job.scope === 'personal' ? {} : { reservedNames: community.reserved_names }),
       icon: icon
         ? {
             path: 'community/icon',
@@ -196,6 +203,7 @@ export async function writeTail(job: ExportJob, collected: Collected): Promise<b
       agentChannelMembers: tallies.agentChannelMembers.files,
       auditEvents: tallies.auditEvents.files,
       bans: tallies.bans.files,
+      reports: tallies.reports.files,
       entries: entryFiles,
       attachments: attachmentFiles,
     },
@@ -207,6 +215,7 @@ export async function writeTail(job: ExportJob, collected: Collected): Promise<b
       agentChannelMembers: tallies.agentChannelMembers.count,
       auditEvents: tallies.auditEvents.count,
       bans: tallies.bans.count,
+      reports: tallies.reports.count,
       entries: data.reduce((sum, segment) => sum + segment.entry_count, 0),
       attachments: data.reduce((sum, segment) => sum + segment.file_count, 0),
     },
@@ -328,6 +337,9 @@ export interface CommunityRow {
   icon_content_type: string | null;
   icon_byte_size: string | null;
   icon_checksum: string | null;
+  rules_text: string | null;
+  rules_version: number;
+  reserved_names: string[];
 }
 
 /** What the collection phase hands the tail. */

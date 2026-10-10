@@ -23,6 +23,7 @@ import { ApiError, json, readJson } from '../../http.js';
 import { memberIsLeaving } from '../../erasure/guards.js';
 import { endOwnerReplacement } from '../../owner-replacement/end.js';
 import { notifyLive } from '../../live/notices.js';
+import { recheckReturningName } from '../../moderation/display-names.js';
 
 async function live(
   client: PoolClient,
@@ -101,8 +102,11 @@ export async function remove(
 export async function clearFormerMembership(
   client: PoolClient,
   memberId: string,
-  communityId: string
+  communityId: string,
+  /** True only when they come back as the owner, who may use a reserved name. */
+  { staff = false }: { staff?: boolean } = {}
 ): Promise<void> {
+  await recheckReturningName(client, memberId, communityId, { staff });
   await client.query('DELETE FROM channel_members WHERE member_id=$1 AND community_id=$2', [
     memberId,
     communityId,
@@ -279,7 +283,10 @@ export function registerMemberRoutes(
       if (await memberIsLeaving(client, successor))
         throw new ApiError(409, 'STATE_CONFLICT', 'That member is leaving this space.');
       await client.query("UPDATE members SET role='member' WHERE id=$1", [current.id]);
-      await client.query("UPDATE members SET role='owner' WHERE id=$1", [successor.id]);
+      // Nobody can lift a mute on the owner, so becoming the owner ends one (0034).
+      await client.query("UPDATE members SET role='owner',muted_until=NULL WHERE id=$1", [
+        successor.id,
+      ]);
       const updated = await client.query<{ lifecycle_version: number }>(
         `UPDATE communities SET lifecycle_version=lifecycle_version+1
          WHERE id=$1 RETURNING lifecycle_version`,

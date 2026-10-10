@@ -12,6 +12,7 @@ import { channelWatermarks } from '../content/watermark.js';
 import { deleteReadyExports, restartExportJobs } from '../exports/store.js';
 import { remove } from '../routes/community/members.js';
 import { erasureHeldByLegalHold } from './guards.js';
+import { huskModerationRecords } from '../moderation/erasure.js';
 import { appendJournalRow, type ErasureJournalRecord } from './journal.js';
 import { notifyAccountAccess, notifyLive } from '../live/notices.js';
 import { randomHuskHandle, rewriteHandleTokens } from './husk-handles.js';
@@ -458,17 +459,13 @@ async function applyHusk(
     );
     await client.query(
       `UPDATE members SET display_name=$3,handle=$4,user_id=NULL,active=false,
-         removed_at=COALESCE(removed_at,now()),erased_at=now()
+         removed_at=COALESCE(removed_at,now()),erased_at=now(),muted_until=NULL
        WHERE id=$2 AND community_id=$1`,
       [target.communityId, target.memberId, ERASED_MEMBER_NAME, handle]
     );
     await notifyLive(client, { k: 'member', c: target.communityId, m: target.memberId });
-    // A ban on this membership loses the account and the moderator's words about the person,
-    // and keeps its keyed email, so erasing an account is not a way back in (0033).
-    await client.query(
-      'UPDATE bans SET user_id=NULL,reason=NULL WHERE community_id=$1 AND member_id=$2',
-      [target.communityId, target.memberId]
-    );
+    // Bans, reports and slow-mode clocks keep the moderators' record without the person (0033).
+    await huskModerationRecords(client, target.communityId, target.memberId);
     for (const agent of agents.rows) {
       const agentHandle = randomHuskHandle();
       await client.query(

@@ -159,7 +159,8 @@ export function registerChannelRoutes(
       refusePrivateAutoJoin(channel.visibility, body.autoJoin);
       await client.query(
         `UPDATE channels SET name=COALESCE($2,name),description=CASE WHEN $3::boolean THEN $4 ELSE description END,
-           archived=COALESCE($5,archived),auto_join=COALESCE($6,auto_join),epoch=epoch+1 WHERE id=$1`,
+           archived=COALESCE($5,archived),auto_join=COALESCE($6,auto_join),
+           slow_mode_seconds=COALESCE($7,slow_mode_seconds),epoch=epoch+1 WHERE id=$1`,
         [
           c.req.param('id'),
           body.name ?? null,
@@ -167,8 +168,15 @@ export function registerChannelRoutes(
           body.description ?? null,
           body.archived ?? null,
           body.autoJoin ?? null,
+          body.slowModeSeconds ?? null,
         ]
       );
+      if (body.slowModeSeconds !== undefined)
+        await client.query(
+          `INSERT INTO audit_events(community_id,actor_member_id,action,subject_id,next_state,changed_fields)
+           VALUES($1,$2,'channel.slow_mode',$3,$4,ARRAY['slow_mode_seconds'])`,
+          [member.community_id, member.id, c.req.param('id'), String(body.slowModeSeconds)]
+        );
       // Archiving and the epoch change both end the channel's open streams.
       await notifyLive(client, { k: 'channel', c: member.community_id, ch: c.req.param('id') });
     });

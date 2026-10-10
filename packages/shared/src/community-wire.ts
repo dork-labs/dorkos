@@ -17,6 +17,14 @@ import {
   COMMUNITY_OWNER_REPLACEMENT_REFERENCE_PATTERN,
 } from './community-admin-wire.js';
 import { HANDLE_PATTERN } from './handle.js';
+import {
+  COMMUNITY_MODERATION_ERROR_CODES,
+  COMMUNITY_MODERATION_ROUTES,
+  CommunityWireSlowModeSecondsSchema,
+} from './community-moderation-wire.js';
+
+// Bans, mutes, slow mode, rules, display names and reports live in their own module.
+export * from './community-moderation-wire.js';
 
 export * from './community-export-archive.js';
 
@@ -63,6 +71,7 @@ export const COMMUNITY_API_V1_ROUTES = {
   bans: '/api/v1/bans',
   ban: '/api/v1/bans/:id',
   memberBan: '/api/v1/members/:id/ban',
+  ...COMMUNITY_MODERATION_ROUTES,
   channelAutoJoin: '/api/v1/channels/auto-join',
   pairingStart: '/api/v1/pairings/start',
   pairingApprove: '/api/v1/pairings/approve',
@@ -647,12 +656,16 @@ export const CommunityWireChannelCreateRequestSchema = z.strictObject({
   visibility: z.enum(['public', 'private']).optional(),
   autoJoin: z.boolean().optional(),
 });
-/** Rename, describe, archive a channel, or set whether new members join it on arrival. */
+/**
+ * Rename, describe, archive a channel, set whether new members join it on arrival, or set its
+ * slow mode (owners and admins post without waiting).
+ */
 export const CommunityWireChannelUpdateRequestSchema = z.strictObject({
   name: z.string().min(1).optional(),
   description: z.string().nullable().optional(),
   archived: z.boolean().optional(),
   autoJoin: z.boolean().optional(),
+  slowModeSeconds: CommunityWireSlowModeSecondsSchema.optional(),
 });
 /**
  * The channels every newly admitted person joins on arrival, for owners and admins. Kept apart
@@ -975,29 +988,6 @@ export const CommunityWireOpenAdmissionPreflightResponseSchema = z.strictObject(
 export const CommunityWireOpenAdmissionJoinRequestSchema = z.strictObject({});
 /** The membership an open join created, kept or reactivated. */
 export const CommunityWireOpenAdmissionJoinResponseSchema = z.strictObject({ memberId: id });
-
-/** Ban a member: they leave the space and cannot come back with that account or email. */
-export const CommunityWireBanRequestSchema = z.strictObject({
-  reason: z.string().trim().min(1).max(500).optional(),
-});
-/** One standing ban, as owners and admins see it. Never carries the email or its key. */
-export const CommunityWireBanSchema = z.strictObject({
-  id,
-  /** The membership the ban ended; null for a ban an import restored without its member. */
-  memberId: id.nullable(),
-  displayName: z.string(),
-  handle: z.string().nullable(),
-  reason: z.string().nullable(),
-  createdAt: timestamp,
-});
-/** One standing ban. */
-export type CommunityWireBan = z.infer<typeof CommunityWireBanSchema>;
-/** The ban a ban request made or found standing. */
-export const CommunityWireBanResponseSchema = z.strictObject({ ban: CommunityWireBanSchema });
-/** Standing bans, newest first. */
-export const CommunityWireBanListResponseSchema = z.strictObject({
-  bans: z.array(CommunityWireBanSchema).max(500),
-});
 
 /** A local install begins pairing with a verifier-derived challenge. */
 export const CommunityWirePairingStartRequestSchema = z.strictObject({
@@ -1462,6 +1452,8 @@ export const CommunityWireErrorCodeSchema = z.enum([
    * code.
    */
   'SIGN_IN_REFUSED',
+  // Mute, slow mode and rules (0034); older readers see an unknown code.
+  ...COMMUNITY_MODERATION_ERROR_CODES,
 ]);
 /** A Community's machine-readable error code; the closed set a client may branch on. */
 export type CommunityWireErrorCode = z.infer<typeof CommunityWireErrorCodeSchema>;
@@ -1469,6 +1461,8 @@ export type CommunityWireErrorCode = z.infer<typeof CommunityWireErrorCodeSchema
 export const CommunityWireErrorSchema = z.strictObject({
   code: CommunityWireErrorCodeSchema,
   message: z.string().min(1),
+  /** `COMMUNITY_MUTED` only: when the mute ends. Added later. */
+  until: timestamp.optional(),
 });
 /** Public error response. */
 export type CommunityWireError = z.infer<typeof CommunityWireErrorSchema>;

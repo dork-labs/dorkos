@@ -12,7 +12,7 @@ import type { CommunityConfig } from '../../config.js';
 import { lockActiveCommunity, requireSessionUser, transaction } from '../../data.js';
 import { ApiError, json, readJson } from '../../http.js';
 import { assertMemberRoom } from '../../host/limits.js';
-import { mintHandle } from '../../handles.js';
+import { admittedIdentity } from '../../moderation/display-names.js';
 import { readmissionBlocked } from '../../erasure/guards.js';
 import { OIDC_PROVIDER_ID } from '../../oidc.js';
 import { signValue } from '../../security.js';
@@ -152,10 +152,10 @@ export function registerOpenAdmissionRoutes(
       await refuseBannedAccount(client, tenant.communityId, user.id, config.authSecret);
       if (member.rows[0]?.active) return member.rows[0].id;
       if (!member.rows[0]) {
-        const handle = await mintHandle(client, tenant.communityId, user.name);
+        const { handle, name } = await admittedIdentity(client, tenant.communityId, user.name);
         member = await client.query(
           "INSERT INTO members(community_id,user_id,display_name,handle,role) VALUES($1,$2,$3,$4,'member') RETURNING id,active",
-          [tenant.communityId, user.id, user.name, handle]
+          [tenant.communityId, user.id, name, handle]
         );
         await client.query(
           'INSERT INTO community_handles(community_id,handle,member_id) VALUES($1,$2,$3)',

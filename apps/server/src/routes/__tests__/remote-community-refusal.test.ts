@@ -38,6 +38,10 @@ describe('communityRefusal', () => {
     [new PinnedHttpError(423, 'COMMUNITY_ARCHIVED'), 423, 'COMMUNITY_READ_ONLY'],
     [new PinnedHttpError(429, 'RATE_LIMITED'), 429, 'COMMUNITY_LIMIT_REACHED'],
     [new PinnedHttpError(422), 422, 'COMMUNITY_REJECTED'],
+    // DOR-2768: the space's moderation holds the post, and says which hold.
+    [new PinnedHttpError(403, 'COMMUNITY_MUTED'), 403, 'COMMUNITY_MUTED'],
+    [new PinnedHttpError(429, 'COMMUNITY_SLOW_MODE'), 429, 'COMMUNITY_SLOW_MODE'],
+    [new PinnedHttpError(403, 'COMMUNITY_RULES_NOT_ACCEPTED'), 403, 'COMMUNITY_RULES_NOT_ACCEPTED'],
     [new PinnedHttpError(503, 'COMMUNITY_SUSPENDED'), 423, 'COMMUNITY_SUSPENDED'],
     [new CommunityRoomNotFoundError(community, 'room-a'), 404, 'COMMUNITY_NOT_FOUND'],
     [new StaleCommunityCursorError(community, 'room-a', 'stale'), 410, 'COMMUNITY_CURSOR_STALE'],
