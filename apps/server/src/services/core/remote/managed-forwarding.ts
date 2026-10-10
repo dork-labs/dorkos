@@ -202,7 +202,10 @@ export class ManagedForwarding {
    * @param closesAtRequest - {@link closeCount} when the open was asked for.
    */
   async open(input: ManagedStartInput, closesAtRequest: number): Promise<ManagedStartResult> {
-    const closedSince = () => this.managedCloses !== closesAtRequest;
+    // Every close other than this open's own must win, including one that
+    // lands while an earlier session is being replaced or finished below.
+    let closesExpected = closesAtRequest;
+    const closedSince = () => this.managedCloses !== closesExpected;
     const supersededRefusal = () =>
       managedRefusal('superseded', 'Managed access was closed while opening.');
     const refusal = await this.refusalFor(input);
@@ -236,11 +239,29 @@ export class ManagedForwarding {
     if (current && current.phase === 'open') {
       // Another credential replaces this one: its ngrok side closes, and the
       // ingress stays up so the old edge proof keeps its overlap window.
-      await this.closeSession(current);
+      current.connected = false;
+      this.owner.emitStatus();
+      try {
+        await this.closeSession(current);
+      } catch (err) {
+        logger.warn('[Tunnel] The previous managed session did not close', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return this.abandon(
+          current,
+          null,
+          'forward_failed',
+          'The previous remote access did not close, so the new one stayed closed.'
+        );
+      }
+      if (closedSince()) return supersededRefusal();
     } else if (current) {
       // Draining: a close is already owed, so finish it now and start clean
-      // (a draining ingress must not carry over into a new open).
+      // (a draining ingress must not carry over into a new open). That close
+      // is this open's own; any other one that lands meanwhile still wins.
+      closesExpected = this.managedCloses + 1;
       await this.close({ immediate: true }).catch(() => undefined);
+      if (closedSince()) return supersededRefusal();
     }
 
     const state: ManagedState = {
@@ -391,9 +412,19 @@ export class ManagedForwarding {
 
   private async reconcileHosts(state: ManagedState, wanted: string[]): Promise<ManagedHostsResult> {
     const wantedSet = new Set(wanted);
-    const toAdd = wanted.filter((host) => !state.listeners.has(host));
+    let toAdd = wanted.filter((host) => !state.listeners.has(host));
     const toRemove = [...state.listeners.keys()].filter((host) => !wantedSet.has(host));
     const failed: string[] = [];
+
+    // Publishing another address widens exposure, so it asks the exposure guard
+    // first; closing one only narrows it, and never waits on that answer.
+    if (toAdd.length > 0 && !(await this.owner.exposureAllowed())) {
+      logger.warn('[Tunnel] Managed addresses not opened: exposure is not allowed', {
+        count: toAdd.length,
+      });
+      failed.push(...toAdd);
+      toAdd = [];
+    }
 
     const added = await this.addHosts(state, toAdd, failed);
     const removed = await this.removeHosts(state, toRemove, failed);
@@ -484,14 +515,22 @@ export class ManagedForwarding {
    *
    * @param options - Whether to cut admitted requests rather than let them finish.
    * @param options.immediate - `true` for withdrawal and shutdown.
+   * @param options.drainDeadlineMs - For a gentle close, how long admitted
+   *   requests may run; omitted, the ingress's bounded local default applies.
    */
-  async close({ immediate }: { immediate: boolean }): Promise<void> {
+  async close({
+    immediate,
+    drainDeadlineMs,
+  }: {
+    immediate: boolean;
+    drainDeadlineMs?: number;
+  }): Promise<void> {
     this.managedEpoch += 1;
     this.managedCloses += 1;
     const state = this.managed;
     const ingress = this.ingress;
     if (!state) {
-      await ingress?.close({ immediate });
+      await ingress?.close({ immediate, drainDeadlineMs });
       return;
     }
     if (state.phase !== 'draining') {
@@ -505,7 +544,7 @@ export class ManagedForwarding {
       } else {
         // The ngrok session carries the admitted requests' responses, so it
         // closes only after the ingress has let them finish.
-        await ingress?.close({ immediate: false });
+        await ingress?.close({ immediate: false, drainDeadlineMs });
         await this.closeSession(state);
       }
     } finally {

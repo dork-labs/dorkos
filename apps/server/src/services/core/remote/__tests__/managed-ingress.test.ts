@@ -70,9 +70,13 @@ beforeEach(async () => {
   app.get('/whoami', (req, res) => {
     res.json({
       local: isLocalCaller(req),
-      ingress: res.locals.ingress,
       marked: isManagedIngress(req),
     });
+  });
+  app.get('/stream', (_req, res) => {
+    // A long-lived event stream: it never ends on its own.
+    res.writeHead(200, { 'content-type': 'text/event-stream' });
+    res.write(': open\n\n');
   });
   app.get('/slow', (_req, res) => {
     setTimeout(() => res.json({ done: true }), 150);
@@ -278,7 +282,7 @@ describe('locality', () => {
     ingress.setHosts(['localhost']);
     const res = await get(port, '/whoami', ['Host: localhost', proofHeader]);
     expect(res.status).toBe(200);
-    expect(JSON.parse(res.body)).toEqual({ local: false, ingress: 'managed', marked: true });
+    expect(JSON.parse(res.body)).toEqual({ local: false, marked: true });
   });
 });
 
@@ -326,8 +330,21 @@ describe('drain and close', () => {
   it('a gentle close waits for admitted work; the port then stops answering', async () => {
     const slow = get(port, '/slow', [hostHeader, proofHeader]);
     await vi.waitFor(() => expect(ingress.inFlight).toBe(1));
-    await ingress.close({ immediate: false });
+    expect(await ingress.close({ immediate: false })).toEqual({
+      deadlineHit: false,
+      usedLocalDeadline: true,
+    });
     expect((await slow).status).toBe(200);
+    await expect(get(port, '/anything', [hostHeader, proofHeader])).rejects.toThrow();
+  });
+
+  it('a gentle close cuts a stream still open at the drain deadline, and says so', async () => {
+    const stream = get(port, '/stream', [hostHeader, proofHeader]);
+    await vi.waitFor(() => expect(ingress.inFlight).toBe(1));
+    const result = await ingress.close({ immediate: false, drainDeadlineMs: 50 });
+    expect(result).toEqual({ deadlineHit: true, usedLocalDeadline: false });
+    expect((await stream).status).toBe(200);
+    await vi.waitFor(() => expect(ingress.inFlight).toBe(0));
     await expect(get(port, '/anything', [hostHeader, proofHeader])).rejects.toThrow();
   });
 

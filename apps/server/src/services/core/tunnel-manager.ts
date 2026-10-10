@@ -73,13 +73,22 @@ export interface TunnelManagerDeps {
   canExpose?: () => boolean | Promise<boolean>;
 }
 
+/** The person's own-account ngrok listener, as far as this manager uses it. */
+type ByoListener = { close(): Promise<void>; url(): string | null };
+
 /** Singleton manager for ngrok tunnel lifecycle (start, stop, status). */
 export class TunnelManager extends EventEmitter {
-  private listener: { close(): Promise<void>; url(): string | null } | null = null;
+  private listener: ByoListener | null = null;
+  /**
+   * An own-account listener ngrok refused to close, by its own close and by
+   * `disconnect` alike. It may still be forwarding, so managed access stays
+   * closed — and the mode stays `byo` — until a later close of it succeeds.
+   */
+  private byoUnclosed: ByoListener | null = null;
   private _status: StoredStatus = { ...DEFAULT_STATUS };
   private readonly managedForwarding = new ManagedForwarding({
     exposureAllowed: () => this.exposureAllowed(),
-    ownTunnelOpen: () => this.listener !== null,
+    ownTunnelOpen: () => this.listener !== null || this.byoUnclosed !== null,
     closeOwnTunnel: () => this.closeByo(),
     emitStatus: () => this.emit('status_change', this.status),
   });
@@ -104,9 +113,12 @@ export class TunnelManager extends EventEmitter {
     );
   }
 
-  /** Which forwarding is open: none, the person's own tunnel, or managed access. */
+  /**
+   * Which forwarding is open: none, the person's own tunnel, or managed access.
+   * An own tunnel ngrok would not close counts as open, because it may be.
+   */
   getMode(): RemoteAccessMode {
-    if (this.listener) return 'byo';
+    if (this.listener || this.byoUnclosed) return 'byo';
     if (this.managedForwarding.isOpen) return 'managed';
     return 'off';
   }
@@ -255,30 +267,73 @@ export class TunnelManager extends EventEmitter {
    * (DOR-1738). The error still propagates — the caller decides what to say
    * about it — but the local state is no longer hostage to it.
    *
-   * Closes managed access too, at once: stopping only ever narrows exposure,
-   * and shutdown relies on this closing everything.
+   * Closes managed access too, at once: shutdown relies on this closing
+   * everything. To close only the person's own tunnel, use {@link stopOwnTunnel}.
    */
   async stop(): Promise<void> {
-    // Unconditionally: a managed open still waiting in the queue must be
-    // cancelled too, not only one that has already started.
-    await this.closeManaged({ immediate: true });
-    await this.closeByo();
+    try {
+      // Unconditionally: a managed open still waiting in the queue must be
+      // cancelled too, not only one that has already started.
+      await this.closeManaged({ immediate: true });
+    } finally {
+      // Even when managed access would not close: the own tunnel still closes,
+      // and an own-account open waiting in the queue is still cancelled.
+      await this.closeByo();
+    }
   }
 
-  /** Close the person's own tunnel only; the reset survives a failing close. */
+  /**
+   * Close the person's own tunnel only, leaving managed access alone — what
+   * `POST /api/tunnel/stop` does. Like {@link stop}, the local state is reset
+   * even when ngrok fails to close, and the error still propagates.
+   */
+  stopOwnTunnel(): Promise<void> {
+    return this.closeByo();
+  }
+
+  /**
+   * Close the person's own tunnel, and any earlier one ngrok refused to close.
+   * The listener is let go of whatever ngrok says (DOR-1738); one that would
+   * not close by `close()` or `disconnect` is kept as {@link byoUnclosed}.
+   */
   private async closeByo(): Promise<void> {
     this.byoEpoch += 1;
-    const listener = this.listener;
-    if (!listener) {
-      this.updateStatus({ ...DEFAULT_STATUS });
-      return;
-    }
-
+    const listeners = [this.listener, this.byoUnclosed].filter(
+      (listener): listener is ByoListener => listener !== null
+    );
+    let unclosed: ByoListener | null = null;
+    let failure: unknown = null;
     try {
-      await listener.close();
+      for (const listener of listeners) {
+        const error = await this.closeByoListener(listener);
+        if (error !== null) {
+          unclosed = listener;
+          failure ??= error;
+        }
+      }
     } finally {
       this.listener = null;
+      this.byoUnclosed = unclosed;
       this.updateStatus({ ...DEFAULT_STATUS });
+    }
+    if (failure !== null) throw failure;
+  }
+
+  /** Close one own-account listener, falling back to `disconnect`; the error, or `null` when it closed. */
+  private async closeByoListener(listener: ByoListener): Promise<unknown> {
+    try {
+      await listener.close();
+      return null;
+    } catch (err) {
+      try {
+        const url = listener.url();
+        if (!url) return err;
+        const ngrok = await import('@ngrok/ngrok');
+        await ngrok.disconnect(url);
+        return null;
+      } catch {
+        return err;
+      }
     }
   }
 
@@ -352,8 +407,11 @@ export class TunnelManager extends EventEmitter {
    *
    * @param options - Whether to cut admitted requests rather than let them finish.
    * @param options.immediate - `true` for withdrawal and shutdown.
+   * @param options.drainDeadlineMs - For a gentle close, how long admitted
+   *   requests may run before the rest are cut; omitted, a bounded local
+   *   default applies.
    */
-  closeManaged(options: { immediate: boolean }): Promise<void> {
+  closeManaged(options: { immediate: boolean; drainDeadlineMs?: number }): Promise<void> {
     return this.managedForwarding.close(options);
   }
 }

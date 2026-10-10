@@ -18,9 +18,9 @@
  *    right now, compared without regard to case.
  * 4. **Paths** — `/a2a` and `/.well-known/agent*` are not offered over managed
  *    access (DOR-2085 decides when they are).
- * 5. **Mark** — the request is marked as managed (`ingress-mark.ts`) and
- *    `res.locals.ingress` is `'managed'`, so `isLocalCaller` can never mistake
- *    it for a person at this machine, even though its TCP peer is loopback.
+ * 5. **Mark** — the request is marked as managed (`ingress-mark.ts`), and
+ *    `isLocalCaller` reads that mark, so it can never mistake a managed request
+ *    for a person at this machine, even though its TCP peer is loopback.
  *
  * WebSocket upgrades take the same checks and are then handed to the main
  * server's one upgrade router, so every stream keeps its own credential gate.
@@ -56,6 +56,32 @@ export interface ManagedIngressOptions {
   now?: () => number;
 }
 
+/**
+ * How long a gentle close lets admitted requests finish when its caller names
+ * no deadline. Bounded, because a long-lived stream (SSE) never finishes on
+ * its own and would otherwise hold the close open forever.
+ */
+export const MANAGED_DRAIN_DEADLINE_MS = 30_000;
+
+/** What closing the managed ingress asks for. */
+export interface ManagedIngressCloseOptions {
+  /** `true` cuts every connection now; `false` lets admitted requests finish first. */
+  immediate: boolean;
+  /**
+   * For a gentle close, how long admitted requests may run before whatever is
+   * left is cut. Omitted: {@link MANAGED_DRAIN_DEADLINE_MS}.
+   */
+  drainDeadlineMs?: number;
+}
+
+/** What actually happened when the managed ingress closed. */
+export interface ManagedIngressCloseResult {
+  /** Whether admitted requests were still running at the deadline and were cut. */
+  deadlineHit: boolean;
+  /** Whether the local default deadline was used because the caller named none. */
+  usedLocalDeadline: boolean;
+}
+
 /** The managed ingress listener. One per process; owned by `TunnelManager`. */
 export interface ManagedIngress {
   /**
@@ -80,12 +106,13 @@ export interface ManagedIngress {
   /** How many admitted HTTP requests have not finished yet. */
   readonly inFlight: number;
   /**
-   * Stop listening. `immediate: false` waits for admitted requests to finish
-   * first; `immediate: true` cuts every connection now, and also hurries along
-   * a gentle close already in progress. Either way every forwarded WebSocket is
-   * closed, and the hosts and proof are forgotten.
+   * Stop listening. `immediate: false` lets admitted requests finish, up to the
+   * drain deadline, then cuts what is left; `immediate: true` cuts every
+   * connection now, and also hurries along a gentle close already in progress.
+   * Either way every forwarded WebSocket is closed, and the hosts and proof are
+   * forgotten.
    */
-  close(options: { immediate: boolean }): Promise<void>;
+  close(options: ManagedIngressCloseOptions): Promise<ManagedIngressCloseResult>;
 }
 
 /**
@@ -159,7 +186,7 @@ export function createManagedIngress(options: ManagedIngressOptions): ManagedIng
   let server: http.Server | null = null;
   let url: string | null = null;
   let opening: Promise<string> | null = null;
-  let closing: Promise<void> | null = null;
+  let closing: Promise<ManagedIngressCloseResult> | null = null;
   let hosts = new Set<string>();
   let proof: EdgeProofState | null = null;
   let draining = false;
@@ -227,9 +254,6 @@ export function createManagedIngress(options: ManagedIngressOptions): ManagedIng
       return;
     }
     markManagedIngress(req);
-    // Express keeps a `res.locals` it finds already set, so this survives into
-    // every middleware and route.
-    (res as ServerResponse & { locals?: Record<string, unknown> }).locals = { ingress: 'managed' };
     inFlight += 1;
     res.once('close', settle);
     if (expectsContinue) res.writeContinue();
@@ -252,9 +276,20 @@ export function createManagedIngress(options: ManagedIngressOptions): ManagedIng
     options.forwardUpgrade(req, socket, head);
   }
 
-  function waitForIdle(): Promise<void> {
-    if (inFlight === 0) return Promise.resolve();
-    return new Promise((resolve) => idleWaiters.push(resolve));
+  /** Resolves `true` once nothing admitted is running, or `false` when `ms` runs out first. */
+  function waitForIdle(ms: number): Promise<boolean> {
+    if (inFlight === 0) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      const done = () => {
+        clearTimeout(timer);
+        resolve(true);
+      };
+      const timer = setTimeout(() => {
+        idleWaiters = idleWaiters.filter((waiter) => waiter !== done);
+        resolve(false);
+      }, ms);
+      idleWaiters.push(done);
+    });
   }
 
   function forceClose(target: http.Server): void {
@@ -263,8 +298,20 @@ export function createManagedIngress(options: ManagedIngressOptions): ManagedIng
     upgraded.clear();
   }
 
-  async function doClose(target: http.Server, immediate: boolean): Promise<void> {
-    if (!immediate) await waitForIdle();
+  async function doClose(
+    target: http.Server,
+    immediate: boolean,
+    deadlineMs: number,
+    usedLocalDeadline: boolean
+  ): Promise<ManagedIngressCloseResult> {
+    // Past the deadline, `forceClose` below cuts whatever is still running.
+    const deadlineHit = immediate ? false : !(await waitForIdle(deadlineMs));
+    if (deadlineHit) {
+      logger.warn('[ManagedIngress] Drain deadline passed; closing the requests still open', {
+        inFlight,
+        deadlineMs,
+      });
+    }
     await new Promise<void>((resolve) => {
       target.close(() => resolve());
       forceClose(target);
@@ -276,6 +323,7 @@ export function createManagedIngress(options: ManagedIngressOptions): ManagedIng
       proof = null;
       draining = false;
     }
+    return { deadlineHit, usedLocalDeadline: !immediate && usedLocalDeadline };
   }
 
   return {
@@ -329,7 +377,7 @@ export function createManagedIngress(options: ManagedIngressOptions): ManagedIng
       return inFlight;
     },
 
-    async close({ immediate }) {
+    async close({ immediate, drainDeadlineMs }) {
       draining = true;
       if (closing) {
         // Hurry a gentle close along: cutting the connections closes every
@@ -343,9 +391,11 @@ export function createManagedIngress(options: ManagedIngressOptions): ManagedIng
         hosts = new Set();
         proof = null;
         draining = false;
-        return;
+        return { deadlineHit: false, usedLocalDeadline: false };
       }
-      closing = doClose(target, immediate).finally(() => {
+      const usedLocalDeadline = drainDeadlineMs === undefined;
+      const deadlineMs = Math.max(0, drainDeadlineMs ?? MANAGED_DRAIN_DEADLINE_MS);
+      closing = doClose(target, immediate, deadlineMs, usedLocalDeadline).finally(() => {
         closing = null;
       });
       return closing;

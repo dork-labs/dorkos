@@ -12,6 +12,12 @@ const fake = vi.hoisted(() => {
   const state = {
     failDomains: new Set<string>(),
     connectGate: null as Promise<void> | null,
+    /** Held by a session's close until released. */
+    sessionCloseGate: null as Promise<void> | null,
+    /** Session values whose close rejects. */
+    sessionCloseFails: new Set<string>(),
+    /** Whether `ngrok.disconnect` closes an own-account listener. */
+    disconnectWorks: false,
     sessions: [] as FakeSession[],
   };
   let nextId = 0;
@@ -62,6 +68,9 @@ const fake = vi.hoisted(() => {
       this.listeners.delete(id);
     }
     async close() {
+      log.push(`session.closing ${this.value}`);
+      if (state.sessionCloseGate) await state.sessionCloseGate;
+      if (state.sessionCloseFails.has(this.value)) throw new Error('ngrok would not close');
       this.closed = true;
       this.listeners.clear();
       log.push(`session.close ${this.value}`);
@@ -105,6 +114,10 @@ vi.mock('@ngrok/ngrok', () => ({
     fake.log.push('byo.forward');
     return fake.byoListener;
   }),
+  disconnect: vi.fn(async (url: string) => {
+    if (!fake.state.disconnectWorks) throw new Error('ngrok would not disconnect');
+    fake.log.push(`byo.disconnect ${url}`);
+  }),
 }));
 
 import { TunnelManager } from '../tunnel-manager.js';
@@ -137,6 +150,7 @@ function fakeIngress(): ManagedIngress & {
     close: vi.fn(async ({ immediate }: { immediate: boolean }) => {
       ingress.listening = false;
       fake.log.push(`ingress.close ${immediate ? 'immediate' : 'gentle'}`);
+      return { deadlineHit: false, usedLocalDeadline: !immediate };
     }),
   };
   return ingress;
@@ -153,6 +167,9 @@ beforeEach(() => {
   fake.log.length = 0;
   fake.state.failDomains.clear();
   fake.state.connectGate = null;
+  fake.state.sessionCloseGate = null;
+  fake.state.sessionCloseFails.clear();
+  fake.state.disconnectWorks = false;
   fake.state.sessions.length = 0;
   exposable = true;
   manager = new TunnelManager({ canExpose: () => exposable });
@@ -344,7 +361,12 @@ describe('drain and close', () => {
     await open(['a.example']);
     fake.log.length = 0;
     await manager.closeManaged({ immediate: false });
-    expect(fake.log).toEqual(['ingress.drain', 'ingress.close gentle', 'session.close cred-1']);
+    expect(fake.log).toEqual([
+      'ingress.drain',
+      'ingress.close gentle',
+      'session.closing cred-1',
+      'session.close cred-1',
+    ]);
     expect(manager.getMode()).toBe('off');
     expect(manager.managedHosts).toEqual([]);
     expect(manager.status).toMatchObject({ mode: 'off', isRunning: false, url: null });
@@ -453,5 +475,129 @@ describe('races', () => {
     await manager.applyHosts(['a.example', 'b.example']);
     await open(['b.example'], { generation: 2 });
     expect(ingress.open).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('review fixes (DOR-2086 S1)', () => {
+  const NEXT = { header: 'x-dorkos-edge', secret: 'n'.repeat(48) };
+  const openNext = () => open(['a.example'], { value: 'cred-2', edgeProof: NEXT, generation: 2 });
+
+  it('a close while another credential replaces the session reopens nothing', async () => {
+    await open(['a.example']);
+    let release!: () => void;
+    fake.state.sessionCloseGate = new Promise((resolve) => (release = resolve));
+    const pending = openNext();
+    await vi.waitFor(() => expect(fake.log).toContain('session.closing cred-1'));
+
+    const closing = manager.closeManaged({ immediate: true });
+    release();
+    await closing;
+
+    expect(await pending).toMatchObject({ ok: false, reason: 'superseded' });
+    expect(fake.log).not.toContain('connect cred-2');
+    expect(manager.getMode()).toBe('off');
+    expect(manager.managedHosts).toEqual([]);
+  });
+
+  it('a close while a draining session is finished for a new open reopens nothing', async () => {
+    await open(['a.example']);
+    manager.beginDrain();
+    let release!: () => void;
+    fake.state.sessionCloseGate = new Promise((resolve) => (release = resolve));
+    const pending = openNext();
+    await vi.waitFor(() => expect(fake.log).toContain('session.closing cred-1'));
+
+    const closing = manager.closeManaged({ immediate: true });
+    release();
+    await closing;
+
+    expect(await pending).toMatchObject({ ok: false, reason: 'superseded' });
+    expect(fake.log).not.toContain('connect cred-2');
+    expect(manager.getMode()).toBe('off');
+  });
+
+  it('a replacement whose old session will not close fails honestly', async () => {
+    await open(['a.example']);
+    fake.state.sessionCloseFails.add('cred-1');
+
+    expect(await openNext()).toMatchObject({ ok: false, reason: 'forward_failed' });
+    expect(fake.log).not.toContain('connect cred-2');
+    expect(manager.getMode()).toBe('off');
+    expect(manager.status).toMatchObject({ connected: false, isRunning: false });
+  });
+
+  it('adding a host asks the exposure guard; removing one does not', async () => {
+    await open(['a.example', 'b.example']);
+    fake.log.length = 0;
+    exposable = false;
+
+    const result = await manager.applyHosts(['b.example', 'c.example']);
+
+    expect(result).toEqual({
+      ok: false,
+      hosts: ['b.example'],
+      added: [],
+      removed: ['a.example'],
+      failed: ['c.example'],
+    });
+    expect(fake.log).toEqual(['closeListener a.example']);
+    expect(ingress.hosts).toEqual(['b.example']);
+  });
+
+  it('an own tunnel ngrok would not close blocks managed access until it closes', async () => {
+    await manager.start({ port: 4242, authtoken: 't' });
+    const close = vi
+      .spyOn(fake.byoListener, 'close')
+      .mockRejectedValue(new Error('ngrok would not close'));
+
+    await expect(manager.stop()).rejects.toThrow('ngrok would not close');
+    expect(manager.getMode()).toBe('byo');
+
+    expect(await open(['a.example'])).toMatchObject({ ok: false, reason: 'byo_close_failed' });
+    expect(fake.log).not.toContain('connect cred-1');
+    expect(manager.getMode()).toBe('byo');
+
+    close.mockRestore();
+    expect((await open(['a.example'])).ok).toBe(true);
+    expect(fake.log.indexOf('byo.close')).toBeLessThan(fake.log.indexOf('connect cred-1'));
+    expect(manager.getMode()).toBe('managed');
+  });
+
+  it('falls back to disconnect when the own tunnel will not close', async () => {
+    await manager.start({ port: 4242, authtoken: 't' });
+    const close = vi
+      .spyOn(fake.byoListener, 'close')
+      .mockRejectedValue(new Error('ngrok would not close'));
+    fake.state.disconnectWorks = true;
+
+    await expect(manager.stop()).resolves.toBeUndefined();
+    expect(fake.log).toContain('byo.disconnect https://byo.ngrok.app');
+    expect(manager.getMode()).toBe('off');
+    close.mockRestore();
+  });
+
+  it('stop() closes the own tunnel even when managed access will not close', async () => {
+    await manager.start({ port: 4242, authtoken: 't' });
+    const closeManaged = vi
+      .spyOn(manager, 'closeManaged')
+      .mockRejectedValue(new Error('managed would not close'));
+
+    await expect(manager.stop()).rejects.toThrow('managed would not close');
+    expect(fake.log).toContain('byo.close');
+    expect(manager.getMode()).toBe('off');
+    closeManaged.mockRestore();
+  });
+
+  it('stopOwnTunnel() leaves managed access open', async () => {
+    await open(['a.example']);
+    await manager.stopOwnTunnel();
+    expect(fake.state.sessions[0]!.closed).toBe(false);
+    expect(manager.getMode()).toBe('managed');
+  });
+
+  it('passes a gentle close its drain deadline', async () => {
+    await open(['a.example']);
+    await manager.closeManaged({ immediate: false, drainDeadlineMs: 5_000 });
+    expect(ingress.close).toHaveBeenCalledWith({ immediate: false, drainDeadlineMs: 5_000 });
   });
 });
