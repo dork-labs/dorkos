@@ -132,6 +132,7 @@ describe('an agent you manage', () => {
       'About nav',
       'Runs on pick',
       'Personality pick',
+      'Reports to pick',
       'Folder copy',
       'Chats nav',
       'Schedules nav',
@@ -148,6 +149,20 @@ describe('an agent you manage', () => {
       // learned are the same kind of thing to a person looking for them.
       'Memory nav',
     ]);
+  });
+
+  it('says who the agent reports to, and nothing while it is unknown', () => {
+    const rowOf = (ctx: Partial<ProfileRowsContext>) =>
+      build(MANAGED, ctx)
+        .flatMap((group) => group.rows)
+        .find((row) => row.id === 'reports-to');
+    expect(rowOf({ reportsTo: 'You (default)' })).toMatchObject({
+      kind: 'pick',
+      label: 'Reports to',
+      value: 'You (default)',
+      pick: 'reports-to',
+    });
+    expect(rowOf({})?.value).toBeNull();
   });
 
   it('names the three convention files by their files, in the toolkit', () => {

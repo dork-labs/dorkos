@@ -539,6 +539,16 @@ export const CONFIG_WRITE_POLICY = {
   'profile.displayName': 'agent-writable',
   'profile.rolePromptDismissedAt': 'agent-writable',
   'profile.identityPromptDismissedAt': 'agent-writable',
+  // A person's zone, hours and away note (spec `heartbeats` §3.5), on the same
+  // line as the rest of the profile: a person tells DorkBot "I'm off till
+  // Monday" and it sets `away`. Hours decide when a message to a person is
+  // delivered, never what an agent may do, so changing them widens nothing.
+  'profile.timezone': 'agent-writable',
+  'profile.workingHours.days': 'agent-writable',
+  'profile.workingHours.start': 'agent-writable',
+  'profile.workingHours.end': 'agent-writable',
+  'profile.away.until': 'agent-writable',
+  'profile.away.note': 'agent-writable',
 
   // The one leaf of the profile a person keeps, and the reason it is not a
   // contradiction of the line above (DOR-1022). `displayName` stays writable

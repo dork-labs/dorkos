@@ -358,6 +358,7 @@ describe('the rows', () => {
       'about',
       'runs-on',
       'personality',
+      'reports-to',
       'folder',
       'sessions',
       'tasks',

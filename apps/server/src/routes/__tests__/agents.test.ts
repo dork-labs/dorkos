@@ -100,6 +100,7 @@ import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import express from 'express';
 import { createAgentsRouter } from '../agents.js';
+import { runWithAuditActor } from '../../services/audit/audit-context.js';
 import { setOnAgentCreated } from '../../services/core/agent-created-hook.js';
 import { validateBoundary, validateBoundaryOrDorkHome, BoundaryError } from '../../lib/boundary.js';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
@@ -554,6 +555,19 @@ describe('Agents Routes', () => {
       expect(mockWriteManifest).not.toHaveBeenCalled();
     });
 
+    it('refuses an agent reporting to itself with REPORTS_TO_CYCLE (DOR-2788)', async () => {
+      mockReadManifest.mockResolvedValue(mockManifest);
+
+      const res = await request(testServer)
+        .patch('/api/agents/current')
+        .query({ path: '/home/user/project' })
+        .send({ reportsTo: 'test-agent-id' });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ code: 'REPORTS_TO_CYCLE' });
+      expect(mockWriteManifest).not.toHaveBeenCalled();
+    });
+
     it("records the agent's own model and effort", async () => {
       mockReadManifest.mockResolvedValue(mockManifest);
 
@@ -864,6 +878,42 @@ describe('Agents Routes', () => {
       );
       expect(vi.mocked(validateBoundaryOrDorkHome)).toHaveBeenCalledWith(DORKBOT_PATH);
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// createdBy: the account that made the agent (spec `heartbeats` §4.1)
+// ---------------------------------------------------------------------------
+
+describe('POST /api/agents records who created it (DOR-2788)', () => {
+  const attributed = express();
+  attributed.use(express.json());
+  // Stands in for the audit-actor middleware: the person at the app.
+  attributed.use((_req, _res, next) =>
+    runWithAuditActor(
+      { actor: { accountId: 'acct-owner', kind: 'person', name: 'Dorian' }, surface: 'app' },
+      next
+    )
+  );
+  attributed.use('/api/agents', createAgentsRouter());
+  const attributedServer = listeningServer(attributed);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockReadManifest.mockResolvedValue(null);
+    mockWriteManifest.mockResolvedValue(undefined);
+  });
+
+  it('writes createdBy from the caller, never from the body', async () => {
+    const res = await request(attributedServer)
+      .post('/api/agents')
+      .send({ path: '/home/user/new-project', createdBy: 'forged' });
+
+    expect(res.status).toBe(201);
+    expect(mockWriteManifest).toHaveBeenCalledWith(
+      '/home/user/new-project',
+      expect.objectContaining({ createdBy: 'acct-owner' })
+    );
   });
 });
 

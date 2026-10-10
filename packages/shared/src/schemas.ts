@@ -4684,6 +4684,26 @@ export const ServerConfigSchema = z
           description:
             'ISO timestamp when the one-time name-and-handle question was closed (saved or skipped), or null',
         }),
+        timezone: z.string().nullable().optional().openapi({
+          description: "The person's IANA time zone, or null until the app has told the server one",
+        }),
+        workingHours: z
+          .object({
+            days: z.array(z.number().int()).openapi({ description: 'Working days, 0 = Sunday' }),
+            start: z.string().openapi({ description: 'Start of the working day, HH:MM' }),
+            end: z.string().openapi({ description: 'End of the working day, HH:MM' }),
+          })
+          .nullable()
+          .optional()
+          .openapi({ description: 'Working hours, or null for Monday to Friday, 09:00 to 17:00' }),
+        away: z
+          .object({
+            until: z.string().nullable().openapi({ description: 'ISO timestamp they are back' }),
+            note: z.string().optional().openapi({ description: 'A short note' }),
+          })
+          .nullable()
+          .optional()
+          .openapi({ description: 'That the person is away, or null' }),
       })
       .optional()
       .openapi({

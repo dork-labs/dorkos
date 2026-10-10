@@ -134,6 +134,8 @@ export async function reconcile(deps: ReconcilerDeps): Promise<ReconcileResult> 
         icon: manifest.icon,
         model: manifest.model,
         effort: manifest.effort,
+        reportsTo: manifest.reportsTo,
+        createdBy: manifest.createdBy,
       });
       result.synced++;
     }
@@ -209,6 +211,8 @@ function manifestDiffersFromEntry(manifest: AgentManifest, entry: AgentRegistryE
     (manifest.color ?? undefined) !== (entry.color ?? undefined) ||
     (manifest.icon ?? undefined) !== (entry.icon ?? undefined) ||
     (manifest.model ?? undefined) !== (entry.model ?? undefined) ||
-    (manifest.effort ?? undefined) !== (entry.effort ?? undefined)
+    (manifest.effort ?? undefined) !== (entry.effort ?? undefined) ||
+    (manifest.reportsTo ?? undefined) !== (entry.reportsTo ?? undefined) ||
+    (manifest.createdBy ?? undefined) !== (entry.createdBy ?? undefined)
   );
 }

@@ -172,6 +172,9 @@ function fullyPopulatedConfig(): Record<string, unknown> {
       displayNameSource: { kind: 'agent', agentName: 'DorkBot' },
       rolePromptDismissedAt: '2026-08-05T12:00:00.000Z',
       identityPromptDismissedAt: '2026-08-05T12:00:00.000Z',
+      timezone: 'Europe/Berlin',
+      workingHours: { days: [1, 2, 3, 4, 5], start: '09:00', end: '17:00' },
+      away: { until: '2026-08-20T00:00:00.000Z', note: 'On holiday' },
     },
     workbench: { defaultViewers: { csv: 'file' }, terminalGraceTtlMinutes: 10, autoOpenDiff: true },
     tunnel: {

@@ -63,6 +63,12 @@ export interface ProfileAgent {
   /** True while a save is in flight. */
   isSaving: boolean;
   /**
+   * The last save's failure, or `null`. For a surface that reports one kind of
+   * failure itself (see `options.isShownInline`); every other surface leaves
+   * failures to the app-wide toast.
+   */
+  error: (Error & { code?: string }) | null;
+  /**
    * Save a change. Invalidates the manifest AND the roster (§4).
    *
    * `onSaved` runs only once the server has stored it. **There is no failure
@@ -88,10 +94,12 @@ export interface ProfileAgent {
  *   toast, composed with the server's own sentence. Pages that edit one named
  *   thing say so ("Couldn't save your instructions"); the rest inherit
  *   {@link DEFAULT_ERROR_LABEL}.
+ * @param options.isShownInline - True for a failure this surface shows itself
+ *   (and only while it is on screen), so the shared toast skips it.
  */
 export function useProfileAgent(
   member: TeamMember,
-  options?: { errorLabel?: string }
+  options?: { errorLabel?: string; isShownInline?: (error: Error) => boolean }
 ): ProfileAgent {
   const projectPath = member.agent?.projectPath ?? null;
   const query = useCurrentAgent(projectPath);
@@ -99,7 +107,10 @@ export function useProfileAgent(
   // itself, because a toast fired from a `mutate` callback is skipped exactly
   // when it matters most — the panel closed, or the operator hit Save twice —
   // and it double-reported with the app-wide handler when it did fire.
-  const updateAgent = useUpdateAgent({ errorLabel: options?.errorLabel ?? DEFAULT_ERROR_LABEL });
+  const updateAgent = useUpdateAgent({
+    errorLabel: options?.errorLabel ?? DEFAULT_ERROR_LABEL,
+    ...(options?.isShownInline ? { isShownInline: options.isShownInline } : {}),
+  });
   const queryClient = useQueryClient();
 
   const update = useCallback(
@@ -154,6 +165,7 @@ export function useProfileAgent(
     projectPath,
     isPending: projectPath !== null && query.isPending,
     isSaving: updateAgent.isPending,
+    error: (updateAgent.error as (Error & { code?: string }) | null) ?? null,
     update,
   };
 }

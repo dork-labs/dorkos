@@ -316,6 +316,15 @@ export const CONFIG_DISCLOSURE = {
   'profile.displayNameSource.agentName': 'expose',
   'profile.rolePromptDismissedAt': 'expose',
   'profile.identityPromptDismissedAt': 'expose',
+  // A person's zone, hours and away note (spec `heartbeats` §3.5). Exposed so
+  // an agent can say "she's off till Monday" and time what it sends; the same
+  // local-only profile, no secret in any of it.
+  'profile.timezone': 'expose',
+  'profile.workingHours.days': 'expose',
+  'profile.workingHours.start': 'expose',
+  'profile.workingHours.end': 'expose',
+  'profile.away.until': 'expose',
+  'profile.away.note': 'expose',
 
   'uploads.maxFileSize': 'expose',
   'uploads.maxFiles': 'expose',

@@ -47,7 +47,7 @@ export interface ProfileRowModel {
   /** Where a `nav` row goes. */
   page?: ProfilePageId;
   /** Which popover a `pick` row opens. */
-  pick?: 'runs-on' | 'personality';
+  pick?: 'runs-on' | 'personality' | 'reports-to';
   /** What a `copy` row puts on the clipboard. */
   copyValue?: string;
   /** Why a `locked` row is locked. Shown on hover and read out via `aria-describedby`. */
@@ -115,6 +115,11 @@ export interface ProfileRowsContext {
   firstSeenAt?: string | null;
   /** What this agent has been doing, when the profile has asked. */
   facts?: ProfileAgentFacts;
+  /**
+   * Who this agent reports to, in the row's words ("You (default)"), or `null`
+   * while its manifest is still being read (spec `heartbeats` §4.3).
+   */
+  reportsTo?: string | null;
 }
 
 /**
@@ -344,6 +349,14 @@ function managedAgentRows(member: TeamMember, ctx: ProfileRowsContext): ProfileR
       // than the fact it replaced.
       value: ctx.facts?.personality ?? null,
       pick: 'personality',
+    },
+    // Who gets this agent's report and its escalations (spec `heartbeats` §4).
+    {
+      id: 'reports-to',
+      kind: 'pick',
+      label: 'Reports to',
+      value: ctx.reportsTo ?? null,
+      pick: 'reports-to',
     },
   ];
   if (folder) {
