@@ -11,7 +11,7 @@ export interface WriterStats {
   succeeded: number;
   /** How many posts got each non-2xx status, keyed by status code. */
   failedByStatus: Map<number, number>;
-  /** How many posts errored below HTTP (a dropped connection, a timeout). */
+  /** How many posts errored below HTTP (a dropped connection) or got no answer in 30 seconds. */
   networkErrors: number;
   /** Round-trip latency of the POST itself (not delivery: see `deliveries` in the report). */
   postAck: LatencyHistogram;

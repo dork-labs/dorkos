@@ -245,7 +245,7 @@ function printReport(report: LoadReport): void {
   line(
     'Posts',
     `${writers.attempted} attempted, ${writers.succeeded} succeeded, ` +
-      `${writers.networkErrors} network errors`
+      `${writers.networkErrors} timed out or failed below HTTP`
   );
   if (Object.keys(writers.failedByStatus).length)
     line('  failed by status', JSON.stringify(writers.failedByStatus));
