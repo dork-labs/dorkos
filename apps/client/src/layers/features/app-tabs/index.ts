@@ -13,6 +13,7 @@
  */
 export { AppTabBar } from './ui/AppTabBar';
 export { AppTabStrip } from './ui/AppTabStrip';
+export type { AppTabMenuActions } from './ui/AppTabContextMenu';
 export { APP_TAB_PANEL_ID } from './ui/AppTabItem';
 export { TabHistoryControls } from './ui/TabHistoryControls';
 export { useAppTabsSync } from './model/use-app-tabs-sync';

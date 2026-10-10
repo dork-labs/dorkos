@@ -9,7 +9,14 @@ export {
   useAppTabsStore,
   useAppTabs,
   useActiveTabHistory,
+  openTabIn,
+  closeTabIn,
+  pinTabIn,
+  duplicateTabIn,
+  closeOtherTabsIn,
+  moveTabIn,
   type AppTab,
+  type AppTabsLayout,
 } from './app-tabs/app-tabs-store';
 export type { SettingsTab } from './app-store/app-store-panels';
 export type { CanvasDocument, BrowserHistoryState } from './app-store/app-store-canvas';
