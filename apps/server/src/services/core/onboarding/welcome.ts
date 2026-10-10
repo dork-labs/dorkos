@@ -15,7 +15,7 @@ import { TEAM_ROOM_WELL_KNOWN } from '@dorkos/shared/room-schemas';
 import { dorkbotWelcomeText } from '@dorkos/shared/dorkbot-templates';
 import type { OnboardingWelcomeResult } from '@dorkos/shared/onboarding-schemas';
 import { logConfigWrite } from '../operator/config-write.js';
-import { FirstRunError, type FirstRunConfigPort } from './first-run.js';
+import { FirstRunError, firstRunClosed, type FirstRunConfigPort } from './first-run.js';
 
 /** The room calls the welcome needs. */
 export interface WelcomeRooms {
@@ -24,7 +24,12 @@ export interface WelcomeRooms {
   /** One room's agent members, with their directories. */
   listAgentMembers(roomId: string): { authorId: string; agentPath: string }[];
   /** Post an agent's scripted greeting without waking anyone. */
-  postAgentGreeting(roomId: string, input: { authorId: string; text: string }): RoomEntry;
+  postAgentGreeting(
+    roomId: string,
+    input: { authorId: string; text: string; greeting: 'first-run' }
+  ): RoomEntry;
+  /** Whether one entry is in one room's log. */
+  hasEntry(roomId: string, entryId: string): boolean;
 }
 
 /** What posting the welcome needs. Injectable for tests. */
@@ -59,7 +64,8 @@ export class WelcomeUnavailableError extends Error {
  * Post DorkBot's welcome into #team, once, and return its entry.
  *
  * @param deps - The config, the rooms, DorkBot's directory and the name.
- * @throws {FirstRunError} 409 once the first run finished without a welcome.
+ * @throws {FirstRunError} 409 once the first run was finished or dismissed
+ *   without a welcome.
  * @throws {WelcomeUnavailableError} 503 when #team or DorkBot's seat in it is
  *   missing.
  */
@@ -67,19 +73,26 @@ export function postFirstRunWelcome(deps: WelcomeDeps): OnboardingWelcomeResult 
   const room = deps.rooms.findWellKnownRoom(TEAM_ROOM_WELL_KNOWN);
   if (!room) throw new WelcomeUnavailableError('#team is not ready yet. Try again.');
   const onboarding = deps.config.get('onboarding');
-  if (onboarding.welcomeEntryId !== null) {
-    return { roomId: room.id, entryId: onboarding.welcomeEntryId };
+  // A stored id counts only while #team still holds that entry; a stale or
+  // foreign one is posted over rather than handed to the chips.
+  const stored = onboarding.welcomeEntryId;
+  if (stored !== null && deps.rooms.hasEntry(room.id, stored)) {
+    return { roomId: room.id, entryId: stored };
   }
-  if (onboarding.completedAt !== null) {
+  if (firstRunClosed(onboarding)) {
     throw new FirstRunError(409, 'onboarding_complete', 'Setup is already finished.');
   }
   const dorkbot = deps.rooms
     .listAgentMembers(room.id)
     .find((member) => path.resolve(member.agentPath) === path.resolve(deps.dorkbotPath));
   if (!dorkbot) throw new WelcomeUnavailableError('DorkBot is not in #team yet. Try again.');
+  // On Own AI, only an AI app still waiting for its sign-in leaves the
+  // runtime-default stamp unset, so the stamp says whether agents can reply.
+  const aiReady = onboarding.runtimeDefaultSetAt !== null;
   const entry = deps.rooms.postAgentGreeting(room.id, {
     authorId: dorkbot.authorId,
-    text: dorkbotWelcomeText(onboarding.firstRunPath, deps.personName()),
+    text: dorkbotWelcomeText(onboarding.firstRunPath, deps.personName(), { aiReady }),
+    greeting: 'first-run',
   });
   const next = { ...deps.config.get('onboarding'), welcomeEntryId: entry.id };
   deps.config.set('onboarding', next);

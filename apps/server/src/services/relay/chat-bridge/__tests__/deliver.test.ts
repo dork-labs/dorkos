@@ -281,6 +281,22 @@ describe('ChatBridgeDelivery (chats-as-channels §6, §10)', () => {
     expect(publish).toHaveBeenCalledTimes(1); // still one — no duplicate
   });
 
+  it('a scripted greeting stays in the app: the bridge never delivers it', async () => {
+    const room = harness.service.createBridgedRoom(bridgeRequest('555'));
+    const delivery = makeDelivery(bindingRow(room.id, '555'));
+    binding = makeBinding({ canReply: true, canInitiate: true });
+    const agent = harness.authors.resolveAgent(AGENT_PATH, 'Ana');
+    // The control: the same agent's ordinary post here is delivered.
+    expect(await delivery.deliverEntry(agentPost(room.id, 'hello'))).toBe('delivered');
+    const greeting = harness.service.postAgentGreeting(room.id, {
+      authorId: agent.id,
+      text: 'Hi there. Your agents are ready.',
+      greeting: 'first-run',
+    });
+    expect(await delivery.deliverEntry(greeting)).toBe('skipped');
+    expect(publish).toHaveBeenCalledTimes(1);
+  });
+
   it('A6.3: a cockpit post reaches the chat when canInitiate is on, is blocked (with a notice) when off', async () => {
     const room = harness.service.createBridgedRoom(bridgeRequest('555'));
     const delivery = makeDelivery(bindingRow(room.id, '555'));

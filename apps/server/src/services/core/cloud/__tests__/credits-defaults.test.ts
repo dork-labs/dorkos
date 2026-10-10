@@ -151,11 +151,17 @@ describe('filling the gaps on a new link', () => {
 
 describe('a new link made from the first run’s DorkOS path', () => {
   /** A config whose onboarding block says which path the first run picked. */
-  function firstRunConfig(onboarding: { firstRunPath: string | null; completedAt: string | null }) {
+  function firstRunConfig(onboarding: {
+    firstRunPath: string | null;
+    completedAt: string | null;
+    dismissedAt?: string | null;
+  }) {
     const config = memoryConfig();
     const get = config.get;
     config.get = ((key: string) =>
-      key === 'onboarding' ? onboarding : get(key as 'cloud')) as CreditsConfigPort['get'];
+      key === 'onboarding'
+        ? { dismissedAt: null, ...onboarding }
+        : get(key as 'cloud')) as CreditsConfigPort['get'];
     return config;
   }
 
@@ -184,6 +190,7 @@ describe('a new link made from the first run’s DorkOS path', () => {
       { firstRunPath: 'own', completedAt: null },
       { firstRunPath: null, completedAt: null },
       { firstRunPath: 'dorkos', completedAt: '2026-10-01T00:00:00.000Z' },
+      { firstRunPath: 'dorkos', completedAt: null, dismissedAt: '2026-10-01T00:00:00.000Z' },
     ]) {
       const config = firstRunConfig(onboarding);
       expect(recordFirstRunCreditsChoice(config)).toBe(false);

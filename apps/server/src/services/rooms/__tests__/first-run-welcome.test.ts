@@ -145,18 +145,54 @@ describe('postFirstRunWelcome', () => {
     expect(entry.body.text).toBe('Hi there. Agents need AI to reply. Connect DorkOS or your own.');
   });
 
-  it('refuses after the first run finished without a welcome', () => {
-    config.onboarding.completedAt = '2026-10-01T00:00:00.000Z';
-    expect(() => postFirstRunWelcome(deps)).toThrow(/already finished/);
+  for (const closed of ['completedAt', 'dismissedAt'] as const) {
+    it(`refuses once the first run has ${closed} without a welcome`, () => {
+      config.onboarding[closed] = '2026-10-01T00:00:00.000Z';
+      expect(() => postFirstRunWelcome(deps)).toThrow(/already finished/);
+    });
+  }
+
+  it('posts anew over a stored id #team does not hold, never handing it to the chips', () => {
+    config.onboarding.welcomeEntryId = 'entry-from-somewhere-else';
+    const result = postFirstRunWelcome(deps);
+    expect(result.entryId).not.toBe('entry-from-somewhere-else');
+    expect(harness.service.hasEntry(team.id, result.entryId)).toBe(true);
+    expect(config.onboarding.welcomeEntryId).toBe(result.entryId);
+  });
+
+  it('marks the welcome as a greeting, which keeps it off chat bridges', () => {
+    const { entryId } = postFirstRunWelcome(deps);
+    const entry = harness.service
+      .listEntries(team.id, harness.human, { limit: 50 })
+      .find((e) => e.id === entryId)!;
+    expect(entry.body.greeting).toBe('first-run');
+  });
+
+  it('asks for the sign-in while an AI app is still waiting for one', () => {
+    config.onboarding.firstRunPath = 'own';
+    config.onboarding.runtimeDefaultSetAt = null;
+    const { entryId } = postFirstRunWelcome(deps);
+    const entry = harness.service
+      .listEntries(team.id, harness.human, { limit: 50 })
+      .find((e) => e.id === entryId)!;
+    expect(entry.body.text).toBe('Hi Dorian. Sign in to an AI app to start.');
   });
 
   it('will not post as an author who is not an agent seated in the room', () => {
     expect(() =>
-      harness.service.postAgentGreeting(team.id, { authorId: harness.human, text: 'hi' })
+      harness.service.postAgentGreeting(team.id, {
+        authorId: harness.human,
+        text: 'hi',
+        greeting: 'first-run',
+      })
     ).toThrow(RoomError);
     const stranger = harness.authors.resolveAgent('/dork/agents/stranger', 'Stranger').id;
     expect(() =>
-      harness.service.postAgentGreeting(team.id, { authorId: stranger, text: 'hi' })
+      harness.service.postAgentGreeting(team.id, {
+        authorId: stranger,
+        text: 'hi',
+        greeting: 'first-run',
+      })
     ).toThrow(RoomError);
   });
 });

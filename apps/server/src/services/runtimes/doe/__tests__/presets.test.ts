@@ -107,6 +107,56 @@ describe('parseModelList', () => {
 });
 
 describe('pickPresetModel', () => {
+  it('OpenAI: takes the exact preferred id over dated, mini and pro variants', () => {
+    // Shaped like a real /v1/models answer: unordered, full of variants.
+    const listed = [
+      'gpt-5-mini',
+      'dall-e-3',
+      'gpt-5-pro',
+      'text-embedding-3-small',
+      'gpt-4o-realtime-preview',
+      'gpt-5-nano',
+      'gpt-5-2025-08-07',
+      'gpt-5',
+      'gpt-4o-mini-tts',
+      'gpt-4.1',
+    ].map((id) => ({ id }));
+    expect(pickPresetModel(DOE_PRESETS.openai, listed).model).toBe('gpt-5');
+  });
+
+  it('OpenAI: a prefix never lands on a variant when a plain one is listed', () => {
+    const listed = ['gpt-5.1-mini', 'gpt-5.1-codex', 'gpt-5.1-2026-01-01'].map((id) => ({ id }));
+    expect(pickPresetModel(DOE_PRESETS.openai, listed).model).toBe('gpt-5.1-codex');
+  });
+
+  it('Anthropic: the newest Sonnet the list names first', () => {
+    const listed = [
+      { id: 'claude-opus-4-1-20250805' },
+      { id: 'claude-sonnet-4-5-20250929' },
+      { id: 'claude-sonnet-4-20250514' },
+      { id: 'claude-haiku-4-5-20251001' },
+    ];
+    expect(pickPresetModel(DOE_PRESETS.anthropic, listed).model).toBe('claude-sonnet-4-5-20250929');
+  });
+
+  it('OpenRouter: skips a search or image variant of the preferred family', () => {
+    const listed = [
+      'openai/gpt-5-image',
+      'anthropic/claude-sonnet-4.5:search',
+      'anthropic/claude-sonnet-4.5',
+    ].map((id) => ({ id }));
+    expect(pickPresetModel(DOE_PRESETS.openrouter, listed).model).toBe(
+      'anthropic/claude-sonnet-4.5'
+    );
+  });
+
+  it('with no preference matching, the first listed id that is no variant', () => {
+    const listed = ['nomic-embed-text', 'whisper-transcribe', 'llama3.2'].map((id) => ({ id }));
+    expect(pickPresetModel(DOE_PRESETS.local, [{ id: 'x-embedding' }, ...listed]).model).toBe(
+      'nomic-embed-text'
+    );
+  });
+
   it('takes the first listed id matching a preference, in the preferences’ order', () => {
     const picked = pickPresetModel(DOE_PRESETS.openai, [
       { id: 'dall-e-3' },

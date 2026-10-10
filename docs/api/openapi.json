@@ -14133,6 +14133,13 @@
           "waitingKind": {
             "$ref": "#/components/schemas/RoomWaitingKind"
           },
+          "greeting": {
+            "type": "string",
+            "enum": [
+              "first-run"
+            ],
+            "description": "Set on an agent's scripted greeting DorkOS wrote for it, such as DorkBot's first-run welcome in #team. It woke nobody, and it stays in the app: a chat bridge never delivers it."
+          },
           "answersEntryId": {
             "type": "string",
             "description": "The entry this post answers, set on every agent-authored post the room writes for a turn. Chat posts in arrival order whatever a message is responding to, and an agent whose message waited behind work in another conversation answers out of order often rather than rarely — so the pointer is what a reader follows back to the question."
@@ -20368,7 +20375,7 @@
           "Onboarding"
         ],
         "summary": "Record and set up the path picked on the Welcome screen",
-        "description": "Undoes what an earlier pick set up (a credits record goes back to the own sign-in, the default runtime and DorkBot go back to what they were), then applies this one: DorkOS moves the default runtime and DorkBot to DorkOS and leaves credits to the new link; Own AI saves the key (or finds the local model) and lets DorkOS pick the model from the service's own list; no account records the path only. This computer and its owner only.",
+        "description": "Calls run one at a time. Checks the key and reads the service model list with it first, and writes nothing when either refuses. Then undoes what an earlier pick set up (a credits record goes back to the own sign-in, the default runtime and DorkBot go back to what they were) and applies this one: DorkOS moves the default runtime and DorkBot to DorkOS, clears the model setup so DorkOS picks the model, and leaves credits to the new link; Own AI saves the key (or finds the local model) with the model DorkOS picked from the service's list and turns credits off for DorkOS; no account records the path only. This computer and its owner only.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -20451,7 +20458,7 @@
             }
           },
           "400": {
-            "description": "Not a known path, or the key was refused (`invalid_key`)",
+            "description": "Not a known path, or the key or setup was refused (`invalid_key`, `invalid_setup`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -20493,7 +20500,7 @@
             }
           },
           "409": {
-            "description": "The first run is finished (`onboarding_complete`)",
+            "description": "The first run is finished or dismissed (`onboarding_complete`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -20514,7 +20521,7 @@
             }
           },
           "502": {
-            "description": "The key was saved, but the service's model list could not be read",
+            "description": "The service's model list could not be read with the key; nothing was saved",
             "content": {
               "application/json": {
                 "schema": {
@@ -20543,7 +20550,7 @@
           "Onboarding"
         ],
         "summary": "Post DorkBot's first-run welcome into #team, once",
-        "description": "Posts the welcome as DorkBot without starting any agent turn or notification, keeps its entry id in `onboarding.welcomeEntryId`, and answers with it. A later call answers with the same entry and posts nothing.",
+        "description": "Posts the welcome as DorkBot without starting any agent turn or notification (and never to a chat bridge), keeps its entry id in `onboarding.welcomeEntryId`, and answers with it. A later call answers with the same entry while #team still holds it, and posts nothing.",
         "responses": {
           "200": {
             "description": "The welcome entry",
@@ -20589,7 +20596,7 @@
             }
           },
           "409": {
-            "description": "The first run finished without a welcome (`onboarding_complete`)",
+            "description": "The first run finished or was dismissed without a welcome (`onboarding_complete`)",
             "content": {
               "application/json": {
                 "schema": {

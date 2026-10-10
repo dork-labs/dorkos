@@ -295,16 +295,18 @@ export async function fillCreditsGaps(
  * no "DorkOS chose for you" notice follows. Runs after {@link fillCreditsGaps},
  * which starts the choices over on a new account.
  *
- * Only while the first run is still open and its recorded path is `dorkos`: a
- * person who switched to their own AI, or finished the first run, is never
- * armed by a link approved later.
+ * Only while the first run is still open (neither finished nor dismissed) and
+ * its recorded path is `dorkos`: a person who switched to their own AI, or
+ * finished or dismissed the first run, is never armed by a link approved later.
  *
  * @param config - Config reader/writer.
  * @returns Whether credits were recorded.
  */
 export function recordFirstRunCreditsChoice(config: CreditsConfigPort = configManager): boolean {
   const onboarding = config.get('onboarding');
-  if (onboarding?.firstRunPath !== 'dorkos' || onboarding.completedAt !== null) return false;
+  if (onboarding?.firstRunPath !== 'dorkos') return false;
+  // Finished or dismissed closes the door; both are written only by a person.
+  if (onboarding.completedAt !== null || onboarding.dismissedAt !== null) return false;
   const current = readCreditsSettings(config);
   writeCreditsSettings(config, {
     ...current,

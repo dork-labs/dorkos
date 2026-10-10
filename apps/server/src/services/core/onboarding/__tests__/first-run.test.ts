@@ -9,26 +9,26 @@ import {
 vi.mock('../../operator/config-write.js', () => ({ logConfigWrite: vi.fn() }));
 vi.mock('../../config-manager.js', () => ({ configManager: { get: vi.fn(), set: vi.fn() } }));
 
-import { ConnectError } from '../../../runtimes/connect/connect-error.js';
 import type { PresetFetch } from '../../../runtimes/doe/presets.js';
 import { recordFirstRunCreditsChoice } from '../../cloud/credits-defaults.js';
 import { FirstRunError, applyFirstRun, type FirstRunDeps } from '../first-run.js';
 
 const KEY_REF = 'file:doe-key';
+const REGISTERED = new Set(['claude-code', 'codex', 'opencode', 'doe']);
+
+/** A model-list answer. */
+function list(body: unknown, status = 200) {
+  return { ok: status < 300, status, json: async () => body };
+}
 
 /** An in-memory config plus fakes for every writer. No network, no disk. */
 function harness(opts: { linked?: boolean; models?: unknown; listStatus?: number } = {}) {
   let config: UserConfig = UserConfigSchema.parse({ version: 1 });
   const dorkbot: string[] = [];
-  const fetch = vi.fn<PresetFetch>(async () => ({
-    ok: (opts.listStatus ?? 200) < 300,
-    status: opts.listStatus ?? 200,
-    json: async () => opts.models ?? { data: [{ id: 'gpt-4.1' }, { id: 'gpt-5' }] },
-  }));
-  const storeCredential = vi.fn(async (inference: DoeInferenceConfig, secret: string) => {
-    if (secret.startsWith('sk-ant-oat')) {
-      throw new ConnectError('Anthropic subscription tokens cannot run DorkOS agents.', 400);
-    }
+  const fetch = vi.fn<PresetFetch>(async () =>
+    list(opts.models ?? { data: [{ id: 'gpt-4.1' }, { id: 'gpt-5' }] }, opts.listStatus)
+  );
+  const storeCredential = vi.fn(async (inference: DoeInferenceConfig) => {
     const stored = { ...inference, credentialRef: KEY_REF, credentialEndpoint: inference.endpoint };
     config = {
       ...config,
@@ -49,6 +49,7 @@ function harness(opts: { linked?: boolean; models?: unknown; listStatus?: number
     storeCredential,
     fetch,
     linked: () => opts.linked ?? false,
+    isRuntime: (type) => REGISTERED.has(type),
     now: () => new Date('2026-10-10T12:00:00.000Z'),
   };
   return {
@@ -62,6 +63,8 @@ function harness(opts: { linked?: boolean; models?: unknown; listStatus?: number
     },
   };
 }
+
+const OPENAI = { path: 'own', choice: { kind: 'openai', apiKey: 'sk-test' } } as const;
 
 describe('applyFirstRun', () => {
   let h: ReturnType<typeof harness>;
@@ -83,6 +86,13 @@ describe('applyFirstRun', () => {
     expect(h.fetch).not.toHaveBeenCalled();
   });
 
+  it('dorkos: clears a model setup an earlier pick left, so DorkOS picks the model', async () => {
+    await applyFirstRun(OPENAI, h.deps);
+    expect(h.config().runtimes.doe.inference?.credentialRef).toBe(KEY_REF);
+    await applyFirstRun({ path: 'dorkos' }, h.deps);
+    expect(h.config().runtimes.doe.inference).toBeNull();
+  });
+
   it('dorkos on a computer already linked records credits as the person’s pick now', async () => {
     h = harness({ linked: true });
     await applyFirstRun({ path: 'dorkos' }, h.deps);
@@ -94,19 +104,19 @@ describe('applyFirstRun', () => {
     });
   });
 
-  it('own key: saves the key first, then reads the list with it and picks the model', async () => {
-    const result = await applyFirstRun(
-      { path: 'own', choice: { kind: 'openai', apiKey: 'sk-test' } },
-      h.deps
-    );
+  it('own key: reads the list with the key, then saves the key with the picked model', async () => {
+    const result = await applyFirstRun(OPENAI, h.deps);
     expect(result).toEqual({ path: 'own', runtime: 'doe', model: 'gpt-5' });
-    expect(h.storeCredential.mock.invocationCallOrder[0]).toBeLessThan(
-      h.fetch.mock.invocationCallOrder[0]!
+    expect(h.fetch.mock.invocationCallOrder[0]).toBeLessThan(
+      h.storeCredential.mock.invocationCallOrder[0]!
+    );
+    expect(h.storeCredential).toHaveBeenCalledWith(
+      expect.objectContaining({ model: 'gpt-5', endpoint: 'https://api.openai.com/v1' }),
+      'sk-test'
     );
     expect(h.config().runtimes.doe.inference).toMatchObject({
       source: 'api-key',
       protocol: 'openai-responses',
-      endpoint: 'https://api.openai.com/v1',
       model: 'gpt-5',
       credentialRef: KEY_REF,
     });
@@ -114,8 +124,38 @@ describe('applyFirstRun', () => {
     expect(h.config().onboarding.firstRunPath).toBe('own');
   });
 
-  it('own key: a list that cannot be read keeps the key and changes nothing else', async () => {
-    h = harness({ listStatus: 401 });
+  it('own key: turns off credits a link made before the first run set as a default', async () => {
+    // A link approved before the first run, whose gap fill put the DorkOS
+    // runtime on credits as DorkOS's own choice.
+    h.edit({
+      cloud: {
+        ...h.config().cloud,
+        credits: {
+          defaults: {
+            doe: {
+              runsOn: 'credits',
+              chosenBy: 'default',
+              announced: false,
+              signInReoffered: false,
+            },
+          },
+          offer: 'none',
+          agents: [],
+          linkedTo: 'acct-1',
+        },
+      },
+    });
+    await applyFirstRun(OPENAI, h.deps);
+    expect(h.config().cloud.credits?.defaults.doe).toMatchObject({
+      runsOn: 'own-sign-in',
+      chosenBy: 'user',
+    });
+  });
+
+  it('own key: a list that cannot be read changes nothing at all', async () => {
+    await applyFirstRun({ path: 'dorkos' }, h.deps);
+    const before = h.config();
+    h.deps.fetch = vi.fn<PresetFetch>(async () => list({ error: 'no' }, 401));
     const error = await applyFirstRun(
       { path: 'own', choice: { kind: 'anthropic', apiKey: 'sk-ant-api-x' } },
       h.deps
@@ -126,17 +166,18 @@ describe('applyFirstRun', () => {
       code: 'models_unreachable',
       message: "Couldn't reach Anthropic. Check the key.",
     });
-    expect(h.config().runtimes.doe.inference?.credentialRef).toBe(KEY_REF);
-    expect(h.config().runtimes.default).toBe('claude-code');
-    expect(h.dorkbot).toEqual([]);
-    expect(h.config().onboarding.firstRunPath).toBeNull();
+    expect(h.config()).toBe(before);
+    expect(h.storeCredential).not.toHaveBeenCalled();
   });
 
-  it('own key: a refused key is refused before anything is read', async () => {
+  it('own key: a refused key changes nothing and reaches no service', async () => {
+    await applyFirstRun({ path: 'dorkos' }, h.deps);
+    const before = h.config();
     await expect(
       applyFirstRun({ path: 'own', choice: { kind: 'anthropic', apiKey: 'sk-ant-oat-1' } }, h.deps)
     ).rejects.toMatchObject({ status: 400, code: 'invalid_key' });
     expect(h.fetch).not.toHaveBeenCalled();
+    expect(h.config()).toBe(before);
   });
 
   it('local: lists the models with no key and runs on the first one', async () => {
@@ -196,14 +237,47 @@ describe('applyFirstRun', () => {
     });
   });
 
-  it('refuses once the first run is finished, and writes nothing', async () => {
-    h.edit({ onboarding: { ...h.config().onboarding, completedAt: '2026-10-01T00:00:00.000Z' } });
-    const before = h.config();
-    await expect(applyFirstRun({ path: 'dorkos' }, h.deps)).rejects.toMatchObject({
-      status: 409,
-      code: 'onboarding_complete',
+  for (const closed of ['completedAt', 'dismissedAt'] as const) {
+    it(`refuses once the first run has ${closed}, and writes nothing`, async () => {
+      h.edit({ onboarding: { ...h.config().onboarding, [closed]: '2026-10-01T00:00:00.000Z' } });
+      const before = h.config();
+      await expect(applyFirstRun({ path: 'dorkos' }, h.deps)).rejects.toMatchObject({
+        status: 409,
+        code: 'onboarding_complete',
+      });
+      expect(h.config()).toBe(before);
     });
-    expect(h.config()).toBe(before);
+  }
+
+  it('runs calls one at a time, in the order they arrived', async () => {
+    // The key check is slow; a DorkOS press lands while it waits. Run in
+    // order, the later press is the one that stands, and its credits record
+    // is not undone by the earlier key arriving late.
+    h = harness({ linked: true });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    h.deps.fetch = vi.fn<PresetFetch>(async () => {
+      await gate;
+      return list({ data: [{ id: 'gpt-5' }] });
+    });
+    const own = applyFirstRun(OPENAI, h.deps);
+    const dorkos = applyFirstRun({ path: 'dorkos' }, h.deps);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    release();
+    await Promise.all([own, dorkos]);
+    expect(h.config().onboarding.firstRunPath).toBe('dorkos');
+    expect(h.config().runtimes.doe.inference).toBeNull();
+    expect(h.config().cloud.credits?.defaults.doe?.runsOn).toBe('credits');
+  });
+
+  it('undoes to the built-in default when the runtime before is not registered', async () => {
+    h.edit({ runtimes: { ...h.config().runtimes, default: 'gone-runtime' } });
+    await applyFirstRun({ path: 'dorkos' }, h.deps);
+    await applyFirstRun({ path: 'none' }, h.deps);
+    expect(h.config().runtimes.default).toBe('claude-code');
+    expect(h.dorkbot.at(-1)).toBe('claude-code');
   });
 
   describe('each call undoes the previous one first', () => {
@@ -213,7 +287,7 @@ describe('applyFirstRun', () => {
       expect(recordFirstRunCreditsChoice(h.deps.config)).toBe(true);
       expect(h.config().cloud.credits?.defaults.doe?.runsOn).toBe('credits');
 
-      await applyFirstRun({ path: 'own', choice: { kind: 'openai', apiKey: 'sk-test' } }, h.deps);
+      await applyFirstRun(OPENAI, h.deps);
       expect(h.config().cloud.credits?.defaults.doe).toMatchObject({
         runsOn: 'own-sign-in',
         chosenBy: 'user',
@@ -233,19 +307,22 @@ describe('applyFirstRun', () => {
       expect(h.config().onboarding.priorRuntime).toBe('codex');
     });
 
-    it('a failed pick after DorkOS leaves no path recorded that a later link could arm', async () => {
+    it('DorkOS, then an AI app: credits the DorkOS pick armed are put back', async () => {
+      h = harness({ linked: true });
       await applyFirstRun({ path: 'dorkos' }, h.deps);
-      h.deps.fetch = vi.fn<PresetFetch>(async () => ({
-        ok: false,
-        status: 500,
-        json: async () => ({}),
-      }));
-      await expect(
-        applyFirstRun({ path: 'own', choice: { kind: 'openai', apiKey: 'sk-test' } }, h.deps)
-      ).rejects.toBeInstanceOf(FirstRunError);
-      expect(h.config().onboarding.firstRunPath).toBeNull();
+      await applyFirstRun({ path: 'own', choice: { kind: 'agent-app' } }, h.deps);
+      expect(h.config().cloud.credits?.defaults.doe?.runsOn).toBe('own-sign-in');
       expect(h.config().runtimes.default).toBe('claude-code');
-      expect(recordFirstRunCreditsChoice(h.deps.config)).toBe(false);
     });
+  });
+});
+
+describe('recordFirstRunCreditsChoice', () => {
+  it('records nothing once the first run is dismissed', async () => {
+    const h = harness();
+    await applyFirstRun({ path: 'dorkos' }, h.deps);
+    h.edit({ onboarding: { ...h.config().onboarding, dismissedAt: '2026-10-10T13:00:00.000Z' } });
+    expect(recordFirstRunCreditsChoice(h.deps.config)).toBe(false);
+    expect(h.config().cloud.credits?.defaults ?? {}).toEqual({});
   });
 });

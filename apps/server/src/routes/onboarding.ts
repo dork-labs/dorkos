@@ -18,6 +18,7 @@ import { logger, logError } from '../lib/logger.js';
 import { configManager } from '../services/core/config-manager.js';
 import { readOwnerAccount } from '../services/core/auth/index.js';
 import { isCloudLinked } from '../services/core/cloud/v1-client.js';
+import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { AgentUpdateError, updateAgentManifest } from '../services/core/operator/agent-updater.js';
 import {
   FirstRunError,
@@ -78,6 +79,7 @@ const productionDeps: OnboardingRouterDeps = {
     storeCredential: (inference, secret) => storeDoeCredential(inference, secret),
     fetch: ((url, init) => fetch(url, init)) satisfies PresetFetch,
     linked: isCloudLinked,
+    isRuntime: (type) => runtimeRegistry.has(type),
   }),
   welcome: () => ({
     config: configManager,

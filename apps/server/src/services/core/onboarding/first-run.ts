@@ -2,12 +2,17 @@
  * The first-run path a person picks on the Welcome screen, set up (spec
  * `one-minute-onboarding` §4.1, ADR 261010-143210).
  *
- * Every call first undoes what the previous call set up, so "press Continue,
- * cancel, save a key" never leaves DorkOS credits armed or the default runtime
- * moved: the DorkOS runtime's credits record goes back to the person's own
- * sign-in, and `runtimes.default` and DorkBot's runtime go back to what they
- * were before the first call (`onboarding.priorRuntime`). Then it applies the
- * new pick and records it.
+ * Calls run one at a time. Each first checks everything that can refuse (the
+ * key, a hand-typed setup, the service's model list read with the key) and
+ * writes nothing until all of it passed, so a refusal leaves the previous pick
+ * exactly as it was. Then it undoes what the previous call set up, so "press
+ * Continue, cancel, save a key" never leaves DorkOS credits armed or the
+ * default runtime moved: the DorkOS runtime's credits record goes back to the
+ * person's own sign-in, and `runtimes.default` and DorkBot's runtime go back to
+ * what they were before the first call (`onboarding.priorRuntime`). Then it
+ * applies the new pick and records it. Own AI turns credits off for the DorkOS
+ * runtime whoever set them (a gap fill on an earlier link included); the DorkOS
+ * pick clears `runtimes.doe.inference`, so DorkOS picks the model.
  *
  * The DorkOS path writes no credits record itself while the link is still to
  * be made. A new link starts every credits choice over (`fillCreditsGaps`), so
@@ -35,6 +40,7 @@ import {
   setCreditsDefault,
 } from '../cloud/credits-defaults.js';
 import { ConnectError } from '../../runtimes/connect/connect-error.js';
+import { validateDoeSecret } from '../../runtimes/connect/doe-credentials.js';
 import {
   DOE_PRESETS,
   PresetModelsUnreachableError,
@@ -47,6 +53,9 @@ import {
 
 /** The DorkOS runtime's type. */
 const DOE = 'doe';
+
+/** The runtime an undo falls back to when the one before is not registered. */
+const FALLBACK_RUNTIME = 'claude-code';
 
 /** Who the config lines name. */
 const WRITER = 'the first-run route';
@@ -69,6 +78,8 @@ export interface FirstRunDeps {
   fetch: PresetFetch;
   /** Whether this computer is linked already, so no new link will follow. */
   linked: () => boolean;
+  /** Whether a runtime type is registered, so an undo never names one that is not. */
+  isRuntime: (type: string) => boolean;
   /** The clock, for `runtimeDefaultSetAt`. */
   now?: () => Date;
 }
@@ -116,6 +127,24 @@ async function useRuntime(deps: FirstRunDeps, runtime: string): Promise<void> {
 }
 
 /**
+ * Whether the first run is over: finished, or dismissed. Both are written only
+ * by a person (`onboarding.completedAt` and `dismissedAt` are operator-only),
+ * so an agent cannot reopen it.
+ *
+ * @param onboarding - The stored onboarding section.
+ */
+export function firstRunClosed(onboarding: UserConfig['onboarding']): boolean {
+  return onboarding.completedAt !== null || onboarding.dismissedAt !== null;
+}
+
+/** Put the DorkOS runtime back on the person's own sign-in when credits are its default. */
+function turnDoeCreditsOff(deps: FirstRunDeps): void {
+  if (readCreditsSettings(deps.config).defaults[DOE]?.runsOn === 'credits') {
+    setCreditsDefault(DOE, false, deps.config);
+  }
+}
+
+/**
  * Undo what the previous pick set up, and clear its record, so a pick that
  * fails partway leaves nothing armed behind it.
  */
@@ -125,19 +154,14 @@ async function undoPreviousPick(
   prior: string
 ): Promise<void> {
   if (previous === null) return;
-  if (
-    previous === 'dorkos' &&
-    readCreditsSettings(deps.config).defaults[DOE]?.runsOn === 'credits'
-  ) {
-    setCreditsDefault(DOE, false, deps.config);
-  }
+  if (previous === 'dorkos') turnDoeCreditsOff(deps);
   await useRuntime(deps, prior);
   writeOnboarding(deps, { firstRunPath: null, runtimeDefaultSetAt: null });
 }
 
 /** Save the DorkOS runtime's model setup, checked against its schema. */
-function writeInference(deps: FirstRunDeps, inference: DoeInferenceConfig): void {
-  const parsed = DoeInferenceConfigSchema.parse(inference);
+function writeInference(deps: FirstRunDeps, inference: DoeInferenceConfig | null): void {
+  const parsed = inference === null ? null : DoeInferenceConfigSchema.parse(inference);
   const runtimes = deps.config.get('runtimes');
   writeSection(deps, 'runtimes', { ...runtimes, doe: { ...runtimes.doe, inference: parsed } });
 }
@@ -153,90 +177,140 @@ async function pickFromList(deps: FirstRunDeps, preset: DoePreset, secret: strin
   }
 }
 
-/** Save a key, turning its refusal into a first-run refusal. */
-async function storeKey(
-  deps: FirstRunDeps,
-  inference: DoeInferenceConfig,
-  secret: string
-): Promise<DoeInferenceConfig> {
+/** Refuse a key that cannot run the DorkOS runtime, before anything is written. */
+function checkKey(secret: string): void {
   try {
-    return await deps.storeCredential(inference, secret);
+    validateDoeSecret(secret);
   } catch (error) {
-    if (error instanceof ConnectError && error.status === 400) {
-      throw new FirstRunError(400, 'invalid_key', error.message);
-    }
+    if (error instanceof ConnectError) throw new FirstRunError(400, 'invalid_key', error.message);
     throw error;
   }
 }
 
+/** Check a hand-typed setup against its schema, before anything is written. */
+function checkInference(inference: DoeInferenceConfig): DoeInferenceConfig {
+  const parsed = DoeInferenceConfigSchema.safeParse(inference);
+  if (!parsed.success) {
+    throw new FirstRunError(400, 'invalid_setup', 'Check the model, endpoint, and token limits.');
+  }
+  return parsed.data;
+}
+
+/** An Own AI pick, checked and ready to write: the writes, and the model it runs on. */
+interface PreparedChoice {
+  model?: string;
+  write: () => Promise<void>;
+}
+
 /**
- * Set the DorkOS runtime up for an Own AI pick, and return the model it now
- * runs on. `agent-app` sets up nothing here: the app's connect cards do.
+ * Check an Own AI pick and read what it needs (the service's model list)
+ * WITHOUT writing anything, so every refusal leaves the previous pick as it
+ * was. `agent-app` sets up nothing here: the app's connect cards do.
  */
-async function applyOwnChoice(
-  deps: FirstRunDeps,
-  choice: OwnAiChoice
-): Promise<string | undefined> {
+async function prepareOwnChoice(deps: FirstRunDeps, choice: OwnAiChoice): Promise<PreparedChoice> {
   switch (choice.kind) {
     case 'agent-app':
-      return undefined;
+      return { write: async () => {} };
     case 'local': {
       const preset = DOE_PRESETS.local;
       const picked = await pickFromList(deps, preset, undefined);
-      writeInference(deps, { ...presetInference(preset), ...picked });
-      return picked.model;
+      return {
+        model: picked.model,
+        write: async () => writeInference(deps, { ...presetInference(preset), ...picked }),
+      };
     }
     case 'custom': {
-      if (choice.inference.source === 'local') {
-        writeInference(deps, choice.inference);
-        return choice.inference.model;
+      const inference = checkInference(choice.inference);
+      if (inference.source === 'local') {
+        return { model: inference.model, write: async () => writeInference(deps, inference) };
       }
       if (!choice.apiKey) throw new FirstRunError(400, 'invalid_key', 'Enter an API key.');
-      await storeKey(deps, choice.inference, choice.apiKey);
-      return choice.inference.model;
+      const secret = choice.apiKey;
+      checkKey(secret);
+      return {
+        model: inference.model,
+        write: async () => {
+          await deps.storeCredential(inference, secret);
+        },
+      };
     }
     default: {
       const preset = DOE_PRESETS[choice.kind];
-      // The key is saved first: nothing reaches the service before the person
-      // pressed Save, and a list that cannot be read keeps the key.
-      const stored = await storeKey(deps, presetInference(preset), choice.apiKey);
-      const picked = await pickFromList(deps, preset, choice.apiKey);
-      writeInference(deps, { ...stored, ...picked });
-      return picked.model;
+      const secret = choice.apiKey;
+      checkKey(secret);
+      // The list is read with the key the person just saved in the form, and
+      // only then is anything written: a list that cannot be read changes
+      // nothing, and the person fixes the key and saves again.
+      const picked = await pickFromList(deps, preset, secret);
+      return {
+        model: picked.model,
+        write: async () => {
+          await deps.storeCredential({ ...presetInference(preset), ...picked }, secret);
+        },
+      };
     }
   }
 }
 
+/** One first-run pick at a time: a slow key check must not interleave with another pick. */
+let queue: Promise<unknown> = Promise.resolve();
+
 /**
- * Record the path picked on the Welcome screen and set it up.
+ * Record the path picked on the Welcome screen and set it up. Calls run one
+ * at a time, each reading the stored state afresh once it is its turn.
  *
  * @param request - The path, and for Own AI what was picked.
  * @param deps - The config and the writers.
  * @throws {FirstRunError} `onboarding_complete` (409) once the first run is
- *   finished; `invalid_key` (400) before anything is saved;
- *   `models_unreachable` (502) when the key was saved but the list could not be
- *   read.
+ *   finished or dismissed; `invalid_key` or `invalid_setup` (400) and
+ *   `models_unreachable` (502) before anything is written.
  */
-export async function applyFirstRun(
+export function applyFirstRun(
   request: FirstRunRequest,
   deps: FirstRunDeps
 ): Promise<FirstRunResult> {
+  const run = queue.then(() => applyFirstRunNow(request, deps));
+  queue = run.catch(() => undefined);
+  return run;
+}
+
+/** {@link applyFirstRun}'s body, run inside the queue. */
+async function applyFirstRunNow(
+  request: FirstRunRequest,
+  deps: FirstRunDeps
+): Promise<FirstRunResult> {
+  if (firstRunClosed(deps.config.get('onboarding'))) {
+    throw new FirstRunError(409, 'onboarding_complete', 'Setup is already finished.');
+  }
+  // Everything that can refuse runs before the first write.
+  const prepared =
+    request.path === 'own' ? await prepareOwnChoice(deps, request.choice) : undefined;
+
   const onboarding = deps.config.get('onboarding');
-  if (onboarding.completedAt !== null) {
+  if (firstRunClosed(onboarding)) {
     throw new FirstRunError(409, 'onboarding_complete', 'Setup is already finished.');
   }
   // What to undo back to, kept from the FIRST call: a later call reads the
-  // default this route already moved.
-  const prior = onboarding.priorRuntime ?? deps.config.get('runtimes').default;
-  if (onboarding.priorRuntime === null) writeOnboarding(deps, { priorRuntime: prior });
+  // default this route already moved. A runtime that is no longer registered
+  // (or a value written by hand) falls back to the built-in default.
+  const stored = onboarding.priorRuntime ?? deps.config.get('runtimes').default;
+  const prior = deps.isRuntime(stored) ? stored : FALLBACK_RUNTIME;
+  if (onboarding.priorRuntime !== prior) writeOnboarding(deps, { priorRuntime: prior });
   await undoPreviousPick(deps, onboarding.firstRunPath, prior);
 
-  let model: string | undefined;
   if (request.path === 'dorkos') {
+    // "Chosen by DorkOS": a credits chat runs on DorkOS's own pick, never on a
+    // key some earlier pick left behind.
+    writeInference(deps, null);
     await useRuntime(deps, DOE);
-  } else if (request.path === 'own') {
-    model = await applyOwnChoice(deps, request.choice);
-    if (request.choice.kind !== 'agent-app') await useRuntime(deps, DOE);
+  } else if (request.path === 'own' && prepared) {
+    await prepared.write();
+    if (request.choice.kind !== 'agent-app') {
+      // The person's own AI, whoever set credits as the DorkOS runtime's
+      // default (a gap fill on an earlier link included).
+      turnDoeCreditsOff(deps);
+      await useRuntime(deps, DOE);
+    }
   }
   // An AI app's connect cards pick the default from what signed in, and they
   // pick only while this stamp is unset.
@@ -251,6 +325,6 @@ export async function applyFirstRun(
   return {
     path: request.path,
     runtime: deps.config.get('runtimes').default,
-    ...(model ? { model } : {}),
+    ...(prepared?.model ? { model: prepared.model } : {}),
   };
 }

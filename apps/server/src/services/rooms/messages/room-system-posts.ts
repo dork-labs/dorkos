@@ -168,7 +168,8 @@ export class RoomSystemPosts {
    * cascade is spent at the ceiling, so it starts no turn: #team seats every
    * agent, and {@link RoomPosting.post} would dispatch the greeting to all of
    * them. It raises no notification either, because the notifier runs on that
-   * path and not on this one.
+   * path and not on this one. It carries `body.greeting`, so a chat bridge never
+   * delivers it: the greeting belongs to the app.
    *
    * The author must be an agent seated in the room, so this cannot put words
    * in a person's mouth or speak for an agent somewhere it is not.
@@ -176,11 +177,15 @@ export class RoomSystemPosts {
    * @param roomId - The room to greet in.
    * @param input.authorId - The seated agent the greeting is from.
    * @param input.text - The greeting.
+   * @param input.greeting - Which scripted greeting this is.
    * @returns The committed entry.
    * @throws {RoomError} `ROOM_ARCHIVED` for an archived room, `MEMBER_NOT_FOUND`
    *   when the author is not an agent seated in it.
    */
-  postAgentGreeting(roomId: string, input: { authorId: string; text: string }): RoomEntry {
+  postAgentGreeting(
+    roomId: string,
+    input: { authorId: string; text: string; greeting: 'first-run' }
+  ): RoomEntry {
     const room = this.visibility.requireRoom(roomId);
     if (room.archived) throw new RoomError('ROOM_ARCHIVED', 'This room is archived');
     const author = this.authors.getById(input.authorId);
@@ -193,7 +198,7 @@ export class RoomSystemPosts {
       id,
       authorId: input.authorId,
       kind: 'post',
-      body: { text: input.text },
+      body: { text: input.text, greeting: input.greeting },
       mentions: [],
       mentionSpans: [],
       sessionId: null,

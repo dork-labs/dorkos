@@ -62,6 +62,12 @@ describe('dorkbot-templates', () => {
       );
     });
 
+    it('asks for an AI app sign-in on Own AI until one is ready', () => {
+      expect(dorkbotWelcomeText('own', 'Dorian', { aiReady: false })).toBe(
+        'Hi Dorian. Sign in to an AI app to start.'
+      );
+    });
+
     it('falls back to "there", and reads no path as no AI', () => {
       expect(dorkbotWelcomeText(null, null)).toBe(
         'Hi there. Agents need AI to reply. Connect DorkOS or your own.'

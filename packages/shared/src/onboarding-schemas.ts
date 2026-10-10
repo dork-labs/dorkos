@@ -74,14 +74,17 @@ export const FirstRunResultSchema = z.object({
 export type FirstRunResult = z.infer<typeof FirstRunResultSchema>;
 
 /**
- * Why `POST /api/onboarding/first-run` refused, beside its sentence:
+ * Why `POST /api/onboarding/first-run` refused, beside its sentence. Every
+ * refusal leaves the previous pick exactly as it was:
  *
- * - `onboarding_complete`: the first run is finished; nothing changed.
- * - `models_unreachable`: the key was saved, but the service's model list could
- *   not be read, so nothing else changed.
- * - `invalid_key`: the key was refused before anything was saved.
+ * - `onboarding_complete`: the first run is finished or dismissed.
+ * - `invalid_key`: the key was refused (empty, or a subscription token).
+ * - `invalid_setup`: a hand-typed setup did not check out.
+ * - `models_unreachable`: the service's model list could not be read with the
+ *   key, so nothing was saved; fix the key and save again.
  */
-export type FirstRunRefusalCode = 'onboarding_complete' | 'models_unreachable' | 'invalid_key';
+export type FirstRunRefusalCode =
+  'onboarding_complete' | 'models_unreachable' | 'invalid_key' | 'invalid_setup';
 
 /** `POST /api/onboarding/welcome` — DorkBot's welcome in #team. */
 export const OnboardingWelcomeResultSchema = z.object({

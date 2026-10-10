@@ -179,7 +179,7 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
         'POST /doe/credential runs the same loopback and refuseUnlessAccountOwner bars before the encrypted store is touched; the helper audits both changed config sections without logging the plaintext key',
       'services/runtimes/connect/doe-credentials.ts': 'the definition itself',
       'routes/onboarding.ts':
-        'POST /api/onboarding/first-run saves the key a person typed in the Own AI list, after the same loopback and refuseUnlessAccountOwner bars as POST /doe/credential. Its other writes (the default runtime, the DorkOS model setup, the onboarding record) go through `services/core/onboarding/first-run.ts`, which leaves a logConfigWrite line for each (spec `one-minute-onboarding` §4.1)',
+        'POST /api/onboarding/first-run saves the key a person typed in the Own AI list, after the same loopback and refuseUnlessAccountOwner bars as POST /doe/credential, and only once the key passed `validateDoeSecret` and the service listed models with it. Its other writes (the default runtime, the DorkOS model setup, the credits record, the onboarding record, whose `firstRunPath`, `priorRuntime`, `welcomeEntryId`, `completedAt` and `dismissedAt` are operator-only) go through `services/core/onboarding/first-run.ts`, one call at a time, each leaving a logConfigWrite line (spec `one-minute-onboarding` §4.1)',
     },
   },
   {

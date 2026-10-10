@@ -51,11 +51,14 @@ export function registerOnboardingOpenApi(registry: OpenAPIRegistry): void {
     tags: ['Onboarding'],
     summary: 'Record and set up the path picked on the Welcome screen',
     description:
-      'Undoes what an earlier pick set up (a credits record goes back to the own sign-in, the ' +
-      'default runtime and DorkBot go back to what they were), then applies this one: DorkOS ' +
-      'moves the default runtime and DorkBot to DorkOS and leaves credits to the new link; Own ' +
-      'AI saves the key (or finds the local model) and lets DorkOS pick the model from the ' +
-      "service's own list; no account records the path only. This computer and its owner only.",
+      'Calls run one at a time. Checks the key and reads the service model list with it first, ' +
+      'and writes nothing when either refuses. Then undoes what an earlier pick set up (a ' +
+      'credits record goes back to the own sign-in, the default runtime and DorkBot go back to ' +
+      'what they were) and applies this one: DorkOS moves the default runtime and DorkBot to ' +
+      'DorkOS, clears the model setup so DorkOS picks the model, and leaves credits to the new ' +
+      'link; Own AI saves the key (or finds the local model) with the model DorkOS picked from ' +
+      "the service's list and turns credits off for DorkOS; no account records the path only. " +
+      'This computer and its owner only.',
     request: {
       body: { content: { 'application/json': { schema: FirstRunRequestDocSchema } } },
     },
@@ -64,10 +67,12 @@ export function registerOnboardingOpenApi(registry: OpenAPIRegistry): void {
         description: 'What the pick set up',
         content: { 'application/json': { schema: FirstRunResultSchema } },
       },
-      400: refusal('Not a known path, or the key was refused (`invalid_key`)'),
+      400: refusal(
+        'Not a known path, or the key or setup was refused (`invalid_key`, `invalid_setup`)'
+      ),
       403: refusal('Not this computer, or not the owner'),
-      409: refusal('The first run is finished (`onboarding_complete`)'),
-      502: refusal("The key was saved, but the service's model list could not be read"),
+      409: refusal('The first run is finished or dismissed (`onboarding_complete`)'),
+      502: refusal("The service's model list could not be read with the key; nothing was saved"),
     },
   });
 
@@ -77,16 +82,18 @@ export function registerOnboardingOpenApi(registry: OpenAPIRegistry): void {
     tags: ['Onboarding'],
     summary: "Post DorkBot's first-run welcome into #team, once",
     description:
-      'Posts the welcome as DorkBot without starting any agent turn or notification, keeps its ' +
-      'entry id in `onboarding.welcomeEntryId`, and answers with it. A later call answers with ' +
-      'the same entry and posts nothing.',
+      'Posts the welcome as DorkBot without starting any agent turn or notification (and never ' +
+      'to a chat bridge), keeps its entry id in `onboarding.welcomeEntryId`, and answers with ' +
+      'it. A later call answers with the same entry while #team still holds it, and posts nothing.',
     responses: {
       200: {
         description: 'The welcome entry',
         content: { 'application/json': { schema: OnboardingWelcomeResultSchema } },
       },
       403: refusal('Not the owner'),
-      409: refusal('The first run finished without a welcome (`onboarding_complete`)'),
+      409: refusal(
+        'The first run finished or was dismissed without a welcome (`onboarding_complete`)'
+      ),
       503: refusal('#team, or DorkBot in it, is not ready yet (`team_unavailable`)'),
     },
   });

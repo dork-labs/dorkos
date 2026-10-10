@@ -59,10 +59,13 @@ const WELCOME_OFFER = 'Want a first tool? Pick one below, or tell me what you ne
  *
  * @param path - The first-run path the person picked; `null` reads as no AI.
  * @param name - What to call the person; falls back to "there".
+ * @param opts - `aiReady: false` on Own AI while an AI app still waits for
+ *   its sign-in, so the welcome asks for it instead of offering a tool.
  */
 export function dorkbotWelcomeText(
   path: 'dorkos' | 'own' | 'none' | null,
-  name: string | null
+  name: string | null,
+  opts: { aiReady?: boolean } = {}
 ): string {
   const cleaned = name?.replace(/\s+/g, ' ').trim().slice(0, 60);
   const who = cleaned ? cleaned : 'there';
@@ -70,6 +73,7 @@ export function dorkbotWelcomeText(
     case 'dorkos':
       return `Hi ${who}. Your agents run on DorkOS. Usage is in Settings.\n\n${WELCOME_OFFER}`;
     case 'own':
+      if (opts.aiReady === false) return `Hi ${who}. Sign in to an AI app to start.`;
       return `Hi ${who}. Your agents are ready.\n\n${WELCOME_OFFER}`;
     default:
       return `Hi ${who}. Agents need AI to reply. Connect DorkOS or your own.`;

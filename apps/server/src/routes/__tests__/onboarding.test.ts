@@ -40,6 +40,7 @@ const firstRunDeps = (): FirstRunDeps => ({
   storeCredential,
   fetch: fetchList,
   linked: () => false,
+  isRuntime: () => true,
 });
 
 const welcomeDeps = (): WelcomeDeps => ({
@@ -48,6 +49,7 @@ const welcomeDeps = (): WelcomeDeps => ({
     findWellKnownRoom: () => null,
     listAgentMembers: () => [],
     postAgentGreeting,
+    hasEntry: () => false,
   },
   dorkbotPath: '/dork/agents/dorkbot',
   personName: () => null,

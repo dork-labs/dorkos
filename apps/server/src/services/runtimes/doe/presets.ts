@@ -3,10 +3,9 @@
  * a model already running on this computer (spec `one-minute-onboarding` §6.3).
  *
  * Each preset says how to reach the service (request format and endpoint) and
- * which model to start on: after the person saved their key, the server reads
- * the service's own model list and takes the first listed id that matches the
- * preset's preferences, in order, else the first listed. Nothing reaches a
- * service before the person pressed Save.
+ * which model to start on: when the person presses Save, the server reads the
+ * service's own model list with their key and picks one ({@link pickPresetModel});
+ * only then is the key stored. Nothing reaches a service before Save.
  *
  * @module services/runtimes/doe/presets
  */
@@ -193,10 +192,19 @@ export async function listPresetModels(
 }
 
 /**
- * The model to start on: the first listed id matching a preference, in the
- * preferences' order, else the first listed. Sizes come from the list when it
- * reports them, else the preset's limits, and the output never exceeds the
- * context.
+ * Model ids that are a special-purpose or cut-down variant (`gpt-5-mini`,
+ * `gpt-4o-realtime-preview`, `text-embedding-3-small`): never the model a chat
+ * should start on, so a prefix never picks one.
+ */
+const VARIANT_ID =
+  /(^|[-_./:])(pro|nano|mini|image|audio|realtime|search|embedding|tts|transcribe)([-_./:]|$)/i;
+
+/**
+ * The model to start on. In order: a listed id equal to a preference (best
+ * first); the first listed id that starts with a preference and is no
+ * variant; the first listed id that is no variant; the first listed. Sizes
+ * come from the list when it reports them, else the preset's limits, and the
+ * output never exceeds the context.
  *
  * @param preset - The service.
  * @param models - Its list, as read.
@@ -205,10 +213,14 @@ export function pickPresetModel(
   preset: DoePreset,
   models: readonly ListedModel[]
 ): { model: string; contextWindow: number; maxOutputTokens: number } {
-  const preferred = preset.preferences
-    .map((prefix) => models.find((model) => model.id.startsWith(prefix)))
+  const plain = models.filter((model) => !VARIANT_ID.test(model.id));
+  const exact = preset.preferences
+    .map((id) => models.find((model) => model.id === id))
     .find((model) => model !== undefined);
-  const chosen = preferred ?? models[0];
+  const prefixed = preset.preferences
+    .map((prefix) => plain.find((model) => model.id.startsWith(prefix)))
+    .find((model) => model !== undefined);
+  const chosen = exact ?? prefixed ?? plain[0] ?? models[0];
   if (!chosen) throw new PresetModelsUnreachableError(preset);
   const contextWindow = chosen.contextWindow ?? preset.limits.contextWindow;
   const maxOutputTokens = Math.min(
