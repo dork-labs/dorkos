@@ -1377,8 +1377,8 @@ describe('GET /api/config', () => {
       const res = await request(server).get('/api/config').expect(200);
 
       expect(res.body.rooms).toEqual({
-        engagedWindowMinutes: 10,
-        engagedWindowPosts: 5,
+        engagedWindowMinutes: 60,
+        engagedWindowPosts: 15,
         ...ROOM_TURN_LIMIT_DEFAULTS,
         maxConcurrentTurnsPerAgent: MAX_CONCURRENT_TURNS_PER_AGENT_DEFAULT,
       });
