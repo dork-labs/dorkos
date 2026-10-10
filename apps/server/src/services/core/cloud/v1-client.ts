@@ -112,6 +112,13 @@ export interface CloudV1Context {
   isCurrent(): boolean;
 }
 
+/**
+ * Where each captured context's event streams go, and with which key. Kept
+ * beside the context rather than on it, so the key never becomes a property
+ * anything could read, log or serialize.
+ */
+const streamTargets = new WeakMap<CloudV1Context, { baseUrl: string; token: string }>();
+
 /** Capture the current link for a bounded sequence of Cloud requests. */
 export function captureCloudV1Context(): CloudV1Context | null {
   observeTokenChanges();
@@ -121,7 +128,7 @@ export function captureCloudV1Context(): CloudV1Context | null {
   const epoch = tokenEpoch;
   const manager = configManager;
   const generation = getCloudLinkGeneration();
-  return {
+  const context: CloudV1Context = {
     client: buildClient(baseUrl, token),
     isCurrent: () =>
       epoch === tokenEpoch &&
@@ -130,6 +137,36 @@ export function captureCloudV1Context(): CloudV1Context | null {
       baseUrl === resolveCloudBaseUrl() &&
       generation === getCloudLinkGeneration(),
   };
+  streamTargets.set(context, { baseUrl, token });
+  return context;
+}
+
+/**
+ * Open a server-sent events stream on a `/v1` route under a captured link,
+ * presenting that link's key. The JSON client cannot read a stream, so the
+ * managed remote access command stream uses this instead.
+ *
+ * @param context - A context from {@link captureCloudV1Context}.
+ * @param path - The `/v1` path, from `V1_ROUTES`.
+ * @param signal - Aborts the request and the stream.
+ * @returns The response, body unread.
+ * @throws When the context is no longer current, or was not captured here.
+ */
+export function openCloudV1Stream(
+  context: CloudV1Context,
+  path: string,
+  signal: AbortSignal
+): Promise<Response> {
+  const target = streamTargets.get(context);
+  if (!target || !context.isCurrent()) {
+    return Promise.reject(new Error('The Cloud link this stream belongs to has ended.'));
+  }
+  // The same test-mode replacement the JSON client uses, when one is set.
+  const doFetch: FetchLike = v1Fetch ?? ((input, init) => globalThis.fetch(input, init));
+  return doFetch(`${target.baseUrl}${path}`, {
+    headers: { authorization: `Bearer ${target.token}`, accept: 'text/event-stream' },
+    signal,
+  });
 }
 
 /** Resolve only a service-issued instance ID under the captured credential. */

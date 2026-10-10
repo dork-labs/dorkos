@@ -278,6 +278,10 @@ describe('Database Migrations', () => {
       'relay_index',
       'relay_receipt_observer_owner',
       'relay_traces',
+      // Managed remote access (DOR-2086): every leased Cloud command, journaled
+      // before it acts, and the activity batches waiting to be reported.
+      'remote_command_journal',
+      'remote_event_outbox',
       // Files uploaded into a room, bound to the entry that carries them inside
       // that entry's own transaction — nullable `entry_id` is the "uploaded,
       // not yet posted" state (room-attachments spec, migration 0058).

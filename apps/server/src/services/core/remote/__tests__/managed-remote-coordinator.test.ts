@@ -80,6 +80,7 @@ function fakeTunnel() {
 interface Harness {
   cloud: FakeCloud;
   coordinator: ManagedRemoteCoordinator;
+  commands: { start: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn> };
   tunnel: ReturnType<typeof fakeTunnel>;
   store: CredentialStore;
   sleeps: number[];
@@ -103,6 +104,7 @@ function harness(
   const waiting: Array<() => void> = [];
   const cloud = new FakeCloud();
   const tunnel = fakeTunnel();
+  const commands = { start: vi.fn(async () => true), stop: vi.fn() };
   const store = options.store ?? new EncryptedFileCredentialStore(tmpDir);
   const sleeps: number[] = [];
   const now = { value: Date.parse('2026-09-15T12:00:00.000Z') };
@@ -119,6 +121,7 @@ function harness(
     readRemoteState,
     updateRemoteState,
     remoteCredentials: new RemoteCredentials(() => store),
+    commands,
     tunnel: tunnel as never,
     ownTunnelEnabled: () => false,
     sleep: (ms, signal) => {
@@ -131,7 +134,16 @@ function harness(
     now: () => now.value,
     newIdempotencyKey: () => `key-${++key}`,
   });
-  return { cloud, coordinator, tunnel, store, sleeps, now, release: () => waiting.shift()?.() };
+  return {
+    cloud,
+    coordinator,
+    commands,
+    tunnel,
+    store,
+    sleeps,
+    now,
+    release: () => waiting.shift()?.(),
+  };
 }
 
 /** Everything under the temp data directory, as text. */
@@ -208,7 +220,7 @@ describe('setup', () => {
   });
 
   it('on approval saves the consent, stores the secrets, confirms, then saves references and hosts', async () => {
-    const { cloud, coordinator, store } = harness();
+    const { cloud, coordinator, store, commands } = harness();
     approving(cloud).on(
       'GET',
       REQUEST,
@@ -231,6 +243,8 @@ describe('setup', () => {
       hosts: withEdgeProof.hosts,
       edgeProofHeader: withEdgeProof.edgeProof.header,
     });
+    // Only now does the command stream start: Cloud's open arrives on it.
+    expect(commands.start).toHaveBeenCalledTimes(1);
     expect(await store.get(`remote-tunnel-${withEdgeProof.credentialId}`)).toBe(
       withEdgeProof.value
     );
@@ -551,6 +565,7 @@ describe('withdrawal', () => {
 
     const outcome = h.coordinator.withdraw();
     // Synchronous: before any Cloud answer, everything local is already done.
+    expect(h.commands.stop).toHaveBeenCalled();
     expect(readRemoteState()).toMatchObject({
       mode: 'off',
       enrolmentId: null,
@@ -693,6 +708,7 @@ describe('withdrawal', () => {
     const h = harness();
     expect(await h.coordinator.withdrawOnUnlink()).toBe('done');
     expect(h.cloud.calls).toEqual([]);
+    expect(h.commands.stop).toHaveBeenCalledTimes(1);
   });
 
   it('on unlink sends its Cloud calls under the old key before the link is cleared', async () => {

@@ -286,6 +286,7 @@ import {
   createAlwaysSuggestion,
 } from './services/core/permissions/index.js';
 import { managedRemoteCoordinator } from './services/core/remote/managed-remote-coordinator.js';
+import { managedRemoteCommands } from './services/core/remote/managed-command-service.js';
 import { titleForMcpTool } from './services/core/mcp-tool-tiers.js';
 import { createTeamRouter } from './routes/team.js';
 import { createProfileRouter } from './routes/profile.js';
@@ -6085,6 +6086,8 @@ async function start() {
       // hands requests to the same front door and upgrades to the router above.
       // Nothing listens until managed access opens.
       tunnelManager.attachManagedIngress(managedIngressFor(frontDoorListener(frontDoor), server));
+      // Reconnect Cloud's command stream when already set up (DOR-2086); opens nothing.
+      managedRemoteCommands.boot(db);
 
       // Fire-and-forget: record startup in the activity feed so the dashboard
       // shows when the server was last (re)started.
@@ -6483,15 +6486,11 @@ async function shutdownServices() {
     await relayCore.close();
   }
   // Close trace store after RelayCore — ensures final spans are flushed
-  if (traceStore) {
-    traceStore.close();
-  }
+  traceStore?.close();
   if (taskFileWatcher) {
     await taskFileWatcher.stopAll();
   }
-  if (taskReconciler) {
-    taskReconciler.stop();
-  }
+  taskReconciler?.stop();
   // Both halves of the skills trigger, in the order they depend on each other:
   // stop listening for turn boundaries first, so nothing can schedule work into
   // a watcher that is closing its handles.
@@ -6506,9 +6505,7 @@ async function shutdownServices() {
     await devLinkWatcher.stop();
     devLinkWatcher = undefined;
   }
-  if (searchIndexer) {
-    searchIndexer.stop();
-  }
+  searchIndexer?.stop();
   commitmentWiring?.stop();
   if (meshCore) {
     meshCore.stopPeriodicReconciliation();
@@ -6526,6 +6523,7 @@ async function shutdownServices() {
   // the query so the CLI child actually dies. No-op when none was ever warmed,
   // which is every server until the persistent path is opted into.
   await shutdownSessionPumps();
+  managedRemoteCommands.stop();
   await tunnelManager.stop();
   // After every runtime and the scheduler: nothing is left to hold awake.
   await keepAwakeService.stop();

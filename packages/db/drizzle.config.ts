@@ -50,6 +50,7 @@ export default defineConfig({
     './src/schema/extensions/extension-decisions.ts',
     './src/schema/extensions/extension-agent-sends.ts',
     './src/schema/commitments/commitments.ts',
+    './src/schema/remote/remote-commands.ts',
   ],
   out: './drizzle',
   // Snapshot baselines are sorted by filename; keep future names after the timestamp migration.

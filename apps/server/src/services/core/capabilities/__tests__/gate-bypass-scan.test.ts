@@ -51,7 +51,6 @@
  *
  * @module services/core/capabilities/__tests__/gate-bypass-scan
  */
-import { existsSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -70,17 +69,6 @@ interface ProtectedEffect {
   call: string;
   /** Paths relative to `apps/server/src`, each with why it is allowed. */
   allowed: Record<string, string>;
-  /**
-   * Allowed callers that are not written yet, each with the gate it will run.
-   *
-   * For an effect that lands before the one module meant to reach it (DOR-2086
-   * lands its protected effects first, then the dispatcher and coordinator
-   * that call them). A planned path is exempt from the "still calls it" check
-   * only while its file does not exist. The day it is created the scan FAILS
-   * until the entry is promoted to `allowed`, so the pull request that writes
-   * the caller has to edit this file and say, in review, which gate it runs.
-   */
-  planned?: Record<string, string>;
 }
 
 const PROTECTED_EFFECTS: ProtectedEffect[] = [
@@ -472,10 +460,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     call: 'mintCloudAuthority(',
     allowed: {
       'services/core/capabilities/cloud-authority.ts': 'the definition itself',
-    },
-    planned: {
       'services/core/remote/command-dispatcher.ts':
-        'the command dispatcher (S4), its only caller: it mints once per command read from the instance-authenticated stream, under the link context the stream was opened with, after the command is journaled; the mint itself refuses a stale link, a non-authorizing kind, a missing lease and an absent enrolment',
+        'the command dispatcher, its only caller: it mints once per command read from the instance-authenticated stream, under the link context the stream was opened with, only after the command is journaled; the mint itself refuses a stale link, a non-authorizing kind, a missing lease and an absent enrolment, and `inbox_pending` never reaches it',
     },
   },
   {
@@ -486,10 +472,9 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     // ASK. The two entries after the next pin the layer beneath it.
     what: 'opens managed forwarding, publishing this computer at the address Cloud issued',
     call: 'tunnelManager.startManaged(',
-    allowed: {},
-    planned: {
+    allowed: {
       'services/core/remote/command-dispatcher.ts':
-        'a Cloud `open` (or `rotate` switch) command, holding a `CloudAuthority` it re-checks with `isStillValid()` immediately before the call; never from a request',
+        'a Cloud `open` command, or the listener switch of a confirmed `rotate`, holding a `CloudAuthority` for that verb that it re-checks with `isStillValid()` immediately before the call; never from a request',
     },
   },
   {
@@ -498,11 +483,10 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     // publishes this computer at another address, so who may ask is pinned.
     what: 'changes which Cloud-issued hostnames managed forwarding serves',
     call: 'tunnelManager.applyHosts(',
+    // No caller, on purpose: a host change rides `startManaged`, which diffs
+    // the host set of an open session itself. A caller added later has to be
+    // listed here with the gate it runs.
     allowed: {},
-    planned: {
-      'services/core/remote/command-dispatcher.ts':
-        'a Cloud host-set command for the open credential, holding a `CloudAuthority`; never from a request',
-    },
   },
   {
     // DOR-2086. The layer beneath `tunnelManager.startManaged(`. Reached around
@@ -547,10 +531,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     allowed: {
       'services/core/remote/managed-remote-coordinator.ts':
         'the enrolment ceremony a person started on this computer: stores what Cloud issued only after a person approved on Cloud and only while the captured link and setup are still current, reached through `startEnrolment(` (pinned below to the setup route and its cookie, trusted-caller, local-caller and login bars). The references reach config only after Cloud confirmed the store',
-    },
-    planned: {
       'services/core/remote/command-dispatcher.ts':
-        'a Cloud `rotate` command, holding a `CloudAuthority` for `rotate`',
+        'a Cloud `rotate` command, holding a `CloudAuthority` for `rotate` it re-checks immediately before; the replacement is stored under its own new id, and its references reach config only after Cloud confirmed it',
     },
   },
   {
@@ -560,10 +542,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     allowed: {
       'services/core/remote/managed-remote-coordinator.ts':
         'local withdrawal (`POST /api/remote-access/withdraw`, behind the cookie, trusted-caller and local-caller bars but never the login bar) and the unlink step the server runs itself, and a setup that went stale or was not confirmed forgetting what it stored: forgetting narrows only',
-    },
-    planned: {
       'services/core/remote/command-dispatcher.ts':
-        'a Cloud `revoke` command, or the old credential after a confirmed `rotate`, holding a `CloudAuthority`',
+        'a Cloud `revoke` command, the replaced credential after a confirmed `rotate`, or a replacement that was not confirmed, each holding a `CloudAuthority`; forgetting narrows only',
     },
   },
   {
@@ -572,8 +552,7 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     // edge secret, so who may ask is pinned like the writes.
     what: 'reads the managed tunnel credential and its edge proof secret out of the encrypted store',
     call: 'remoteCredentials.resolve(',
-    allowed: {},
-    planned: {
+    allowed: {
       'services/core/remote/command-dispatcher.ts':
         'a Cloud `open` or `rotate` switch, holding a `CloudAuthority` it re-checks immediately before, resolving the secrets it hands to `tunnelManager.startManaged(` and nothing else',
     },
@@ -597,10 +576,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
       'services/core/remote/remote-state.ts': 'the definition itself',
       'services/core/remote/managed-remote-coordinator.ts':
         'a person selecting a mode (`selectMode(`) or finishing enrolment (`startEnrolment(`) on this computer, both pinned below to the setup route and its cookie, trusted-caller and local-caller bars, with a real login for anything managed; withdrawal (`POST /api/remote-access/withdraw`, behind the cookie, trusted-caller and local-caller bars but never the login bar, so it works with login or Cloud down; and the unlink step the server runs itself): mode off, enrolment and references cleared; and narrowing an enrolment recorded under another link (`withdrawnRemoteState`), which only narrows',
-    },
-    planned: {
       'services/core/remote/command-dispatcher.ts':
-        'a Cloud `rotate` or `revoke` command recording the credential it switched to or forgot, holding a `CloudAuthority`; never the mode or the enrolment',
+        'a Cloud `rotate` or `revoke` command recording the credential it switched to or forgot, holding a `CloudAuthority` it re-checks immediately before; it writes only the credential fields, never the mode or the enrolment',
     },
   },
   {
@@ -901,16 +878,6 @@ describe('the managed credential store names (DOR-2086)', () => {
 });
 
 describe('no ungated path reaches a protected effect', () => {
-  it('names only planned callers that are not also allowed', () => {
-    // A path listed in both would read as planned forever and hide nothing, but
-    // it would also mean two reasons for one caller; keep one.
-    for (const effect of PROTECTED_EFFECTS) {
-      for (const planned of Object.keys(effect.planned ?? {})) {
-        expect(Object.keys(effect.allowed), `${effect.call}: ${planned}`).not.toContain(planned);
-      }
-    }
-  });
-
   it('found the server sources to scan', () => {
     // A scan over an empty file list is vacuously green, which is the one way
     // this test could fail to do its job without saying so.
@@ -920,18 +887,6 @@ describe('no ungated path reaches a protected effect', () => {
   for (const effect of PROTECTED_EFFECTS) {
     it(`${effect.call} is called only by modules that gate it`, () => {
       const actual = callersOf(effect.call);
-      // A planned caller that now exists is not silently allowed: the pull
-      // request that wrote it promotes the entry, and says which gate it runs.
-      const written = Object.keys(effect.planned ?? {}).filter((f) =>
-        existsSync(path.join(SERVER_SRC, f))
-      );
-      expect(
-        written,
-        written.length
-          ? `\n${written.join('\n')}\n\nThese planned callers of ${effect.call} now exist. ` +
-              `Promote this entry to \`allowed\` in this file, with the gate the module runs.`
-          : ''
-      ).toEqual([]);
       const allowed = Object.keys(effect.allowed).sort();
       const unexpected = actual.filter((f) => !allowed.includes(f));
       const missing = allowed.filter((f) => !actual.includes(f));
