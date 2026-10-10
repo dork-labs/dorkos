@@ -5,6 +5,7 @@ covers:
   - 'feat(tabs): the window title names the page you are on (DOR-2820)'
   - 'fix(tabs): keep Paused and the prompt list right, and the shell quiet (DOR-2820)'
   - "refactor(playground): give the tab strip's sections their own file (DOR-2820)"
+  - 'fix(tabs): a chat with no title yet no longer crashes the window title (DOR-2820)'
 ---
 
 ### Changed
