@@ -10,6 +10,8 @@ import type {
   CreateAgentRequestBody,
   DiscoveryCandidate,
   DenialRecord,
+  AgentPauseList,
+  AgentPauseResult,
   AgentHealth,
   MeshStatus,
   TopologyView,
@@ -98,6 +100,26 @@ export function createMeshMethods(baseUrl: string) {
     clearMeshDenial(path: string): Promise<{ success: boolean }> {
       return fetchJSON(baseUrl, `/mesh/denied/${encodeURIComponent(path)}`, {
         method: 'DELETE',
+      });
+    },
+
+    // --- Pausing an agent everywhere (spec `audit-trail` PR5) ---
+
+    listAgentPauses(): Promise<AgentPauseList> {
+      return fetchJSON(baseUrl, '/agents/pauses');
+    },
+
+    pauseAgent(agentId: string, reason?: string): Promise<AgentPauseResult> {
+      return fetchJSON(baseUrl, `/agents/${encodeURIComponent(agentId)}/pause`, {
+        method: 'POST',
+        body: JSON.stringify(reason ? { reason } : {}),
+      });
+    },
+
+    resumeAgent(agentId: string, reason?: string): Promise<AgentPauseResult> {
+      return fetchJSON(baseUrl, `/agents/${encodeURIComponent(agentId)}/resume`, {
+        method: 'POST',
+        body: JSON.stringify(reason ? { reason } : {}),
       });
     },
 

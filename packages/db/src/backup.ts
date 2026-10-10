@@ -443,6 +443,35 @@ export function snapshotDaily(db: Db, options: SnapshotOptions): string | null {
   return dest;
 }
 
+/** What {@link takeDailySnapshot} logs through. */
+export interface SnapshotLog {
+  info(message: string): void;
+  warn(message: string, meta?: unknown): void;
+}
+
+/**
+ * Take the day's snapshot of `dork.db`, if today has not had one yet.
+ *
+ * Best-effort by design, and that is the difference from the pre-migration
+ * snapshot: nothing irreversible happens next, so a full disk should cost a
+ * warning in the log rather than a server that will not start.
+ *
+ * @param db - The consolidated database.
+ * @param backupsDir - `<dorkHome>/backups`.
+ * @param log - Where to say what happened.
+ */
+export function takeDailySnapshot(db: Db, backupsDir: string, log: SnapshotLog): void {
+  try {
+    const written = snapshotDaily(db, { dir: backupsDir });
+    if (written) log.info(`[DB] Daily snapshot written to ${written}`);
+  } catch (err) {
+    log.warn('[DB] Daily snapshot failed — your data is fine, the backup is not', {
+      error: err instanceof Error ? err.message : String(err),
+      ...(err instanceof Error && err.stack ? { stack: err.stack } : {}),
+    });
+  }
+}
+
 /**
  * Snapshot one extension's `store.db` before its next schema migration.
  *

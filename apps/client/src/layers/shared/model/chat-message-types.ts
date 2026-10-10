@@ -169,6 +169,10 @@ export interface TransportErrorInfo {
   message: string;
   /** Whether the user can retry the same action. */
   retryable: boolean;
+  /** The server's refusal code, when it sent one (e.g. `AGENT_PAUSED`). */
+  code?: string;
+  /** With `AGENT_PAUSED`: the paused agent's id, so the app can offer Resume. */
+  agentId?: string;
 }
 
 export type ChatStatus = 'idle' | 'streaming' | 'error';

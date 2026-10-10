@@ -56,7 +56,9 @@
         "services/audit/",
         "schema/audit/",
         "audit-schemas",
-        "routes/audit.ts"
+        "routes/audit.ts",
+        "services/mesh/pause/",
+        "routes/agent-pause.ts"
       ]
     },
     {
@@ -874,7 +876,8 @@
       "patterns": [
         "services/audit/",
         "schema/audit/",
-        "services/activity/"
+        "services/activity/",
+        "services/mesh/pause/"
       ]
     },
     {

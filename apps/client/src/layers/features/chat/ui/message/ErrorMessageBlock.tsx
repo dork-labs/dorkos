@@ -6,6 +6,8 @@ import { describeKnownModelError } from '@dorkos/shared/runtime-error-classifica
 import { Button, LinkifiedText, containsUrl } from '@/layers/shared/ui';
 import { cn, COLLAPSE_TRANSITION, COLLAPSE_VARIANTS } from '@/layers/shared/lib';
 import { AccountLimitMarker } from '@/layers/features/continue-on-account';
+import { AgentPausedNotice } from '@/layers/entities/mesh';
+import { AGENT_PAUSED_CODE } from '@dorkos/shared/mesh-schemas';
 import { AuthErrorActions } from './AuthErrorActions';
 import { CREDITS_UNAVAILABLE_CODE, CreditsErrorActions } from './CreditsErrorActions';
 import { ModelErrorActions } from './ModelErrorActions';
@@ -135,7 +137,8 @@ interface ErrorMessageBlockProps {
   code?: string;
   /**
    * Why, for a code with more than one cause: a DorkOS credits refusal names
-   * which, so only the ways on that fit it are offered.
+   * which, so only the ways on that fit it are offered. For `AGENT_PAUSED` it
+   * is the paused agent's id, which the notice's Resume lifts.
    */
   reason?: string;
   /** The timestamp of the message holding this error, ISO-8601. */
@@ -167,7 +170,12 @@ const RATE_LIMIT_CODE = 'rate_limit';
  * untrusted machine output is linkified rather than parsed).
  */
 export function ErrorMessageBlock(props: ErrorMessageBlockProps) {
-  const { code, at, sessionId } = props;
+  const { code, at, sessionId, reason } = props;
+  // A turn refused because its agent is paused is not a failure: the paused
+  // notice with Resume, never an error card (spec `audit-trail` PR5).
+  if (code === AGENT_PAUSED_CODE && reason) {
+    return <AgentPausedNotice agentId={reason} />;
+  }
   // A turn that ran out of usage is told by the out-of-usage banner while the
   // episode is open, then by one muted line; the card stays for an episode
   // older than the limit history (spec `claude-account-ui` §6.7).

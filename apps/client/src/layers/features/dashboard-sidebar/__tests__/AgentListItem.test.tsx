@@ -266,6 +266,16 @@ describe('AgentListItem', () => {
     expect(rowButton.querySelector('button')).toBeNull();
   });
 
+  // --- Paused everywhere (spec audit-trail PR5) ---
+
+  it('marks a paused agent with a pause glyph, and nothing otherwise', () => {
+    renderItem({ isPaused: true });
+    expect(screen.getByLabelText('Paused')).toBeInTheDocument();
+    cleanup();
+    renderItem();
+    expect(screen.queryByLabelText('Paused')).not.toBeInTheDocument();
+  });
+
   // --- Mute (DOR-339) ---
 
   describe('muted rendering', () => {

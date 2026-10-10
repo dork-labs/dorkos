@@ -3144,6 +3144,38 @@ describe('the record of background work a process holds (DOR-2065)', () => {
     expect(records()).toEqual([expect.objectContaining({ key: sessionId, cwd: CWD })]);
   });
 
+  it('ends a paused agent’s warm process, shell and all, and only the one it picks', async () => {
+    // A pause (spec `audit-trail` PR5): a warm process can open a turn nobody
+    // dispatched, so it is ended from the runtime's own records, background
+    // work included, where a polite reap would decline.
+    const { sessionId, process } = await warmWithShell();
+
+    await expect(
+      runtime.endSessionsWhere((session) => session.cwd === '/projects/someone-else')
+    ).resolves.toEqual([]);
+    expect(process.ended).toBe(false);
+
+    const seen: Array<{ sessionId: string; cwd: string | undefined }> = [];
+    const ended = await runtime.endSessionsWhere((session) => {
+      seen.push(session);
+      return session.cwd === CWD;
+    });
+
+    expect(seen).toContainEqual({ sessionId, cwd: CWD });
+    expect(ended).toEqual([sessionId]);
+    expect(runtime.getSessionWarmth(sessionId)).toBe('cold');
+    expect(process.ended).toBe(true);
+    expect(records()).toEqual([]);
+
+    // Now cold, with nothing running: a later pause does not even ask about it.
+    const askedAgain: string[] = [];
+    await runtime.endSessionsWhere((session) => {
+      askedAgain.push(session.sessionId);
+      return true;
+    });
+    expect(askedAgain).toEqual([]);
+  });
+
   it('does not let a running shell keep a credits session alive after credits stop', async () => {
     // A revoked token must not stay live for hours behind a shell: stopping
     // credits ends the process even though a polite reap would decline it.

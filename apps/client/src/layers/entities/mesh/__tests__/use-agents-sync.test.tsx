@@ -44,11 +44,23 @@ afterEach(() => {
 });
 
 describe('useAgentsSync', () => {
-  it('subscribes to agents_changed and nothing else', () => {
+  it('subscribes to agents_changed and agent_pauses_changed, and nothing else', () => {
     const { wrapper } = createWrapper();
     renderHook(() => useAgentsSync(COALESCE_MS), { wrapper });
 
-    expect([...handlers.keys()]).toEqual(['agents_changed']);
+    expect([...handlers.keys()]).toEqual(['agents_changed', 'agent_pauses_changed']);
+  });
+
+  it('re-reads only the paused set when a pause changes (spec audit-trail PR5)', () => {
+    const { queryClient, wrapper } = createWrapper();
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+    renderHook(() => useAgentsSync(COALESCE_MS), { wrapper });
+
+    handlers.get('agent_pauses_changed')!({ changedAt: '2026-10-09T00:00:00.000Z' });
+    vi.advanceTimersByTime(COALESCE_MS);
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['mesh', 'agent-pauses'] });
+    expect(invalidateSpy).toHaveBeenCalledTimes(1);
   });
 
   it('invalidates exactly the three agent-identity caches after the window', () => {

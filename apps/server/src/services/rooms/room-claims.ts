@@ -478,6 +478,9 @@ export const DISPATCH_OUTCOMES: Record<ClaimOutcome, DispatchOutcome> = {
   // nothing broke, no model ran, and an operator reading the dispatch buffer for
   // crashes should not find this install's missing runtime in with them.
   'runtime-gone': 'refused',
+  // A claim was taken and the runner refused the turn before it started,
+  // because somebody paused the agent (spec `audit-trail` PR5). Nothing broke.
+  paused: 'refused',
 };
 
 /**
@@ -512,6 +515,8 @@ export const PRESENCE_OUTCOMES: Record<ClaimOutcome, 'answered' | 'silent' | und
   // The `runtime_gone` line is durable and says both recoveries; an ephemeral
   // marker beside it would be the second, vaguer version of the same news.
   'runtime-gone': undefined,
+  // The `agent_paused` line is durable; a marker beside it would say it twice.
+  paused: undefined,
 };
 
 /**

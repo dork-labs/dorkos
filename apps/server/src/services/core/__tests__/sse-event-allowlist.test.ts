@@ -49,9 +49,9 @@ import { describe, expect, it } from 'vitest';
 const SERVER_SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 
 /** The client module that owns the allowlist. */
-const STREAM_MANAGER = path.resolve(
+const GENERIC_EVENTS_FILE = path.resolve(
   SERVER_SRC,
-  '../../client/src/layers/shared/lib/transport/stream-manager.ts'
+  '../../client/src/layers/shared/lib/transport/generic-events.ts'
 );
 
 /**
@@ -126,9 +126,9 @@ async function broadcastNames(): Promise<string[]> {
 
 /** The names in the client's `GENERIC_EVENTS` array, read from its source. */
 async function allowlist(): Promise<string[]> {
-  const source = await readFile(STREAM_MANAGER, 'utf-8');
+  const source = await readFile(GENERIC_EVENTS_FILE, 'utf-8');
   const block = /export const GENERIC_EVENTS = \[([\s\S]*?)\] as const;/.exec(source);
-  if (!block) throw new Error(`Could not find GENERIC_EVENTS in ${STREAM_MANAGER}`);
+  if (!block) throw new Error(`Could not find GENERIC_EVENTS in ${GENERIC_EVENTS_FILE}`);
   return [...block[1].matchAll(/'([A-Za-z0-9_]+)'/g)].map((m) => m[1]).sort();
 }
 
@@ -157,7 +157,7 @@ describe('the client allowlist covers every event the server broadcasts', () => 
             `not list them, so StreamManager attaches no listener and they are dropped without ` +
             `a trace.\n\n` +
             `Add each name to GENERIC_EVENTS in ` +
-            `apps/client/src/layers/shared/lib/transport/stream-manager.ts.`
+            `apps/client/src/layers/shared/lib/transport/generic-events.ts.`
         : ''
     ).toEqual([]);
   });

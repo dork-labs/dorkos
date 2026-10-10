@@ -50,6 +50,7 @@ const CHROME = {
   roomsById: new Map<string, { id: string }>(),
   roomVisualOf: () => ({ kind: 'sigil' }),
   mutedRoomIds: new Set<string>(),
+  pausedAgentIds: new Set<string>(),
   roomSectionIds: new Map<string, string>(),
   moveTargetGroups: [],
   viewProfileFor: () => () => {},

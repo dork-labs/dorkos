@@ -14153,6 +14153,7 @@
           "agent_unavailable",
           "agent_left",
           "runtime_gone",
+          "agent_paused",
           "agent_declined",
           "awaiting_approval",
           "halted",
@@ -17464,6 +17465,89 @@
           "event"
         ]
       },
+      "AgentPauseResult": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "paused": {
+            "type": "boolean"
+          },
+          "changed": {
+            "type": "boolean"
+          },
+          "pause": {
+            "$ref": "#/components/schemas/AgentPause"
+          },
+          "stoppedTurns": {
+            "type": "integer"
+          },
+          "stoppedRuns": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "agentId",
+          "paused",
+          "changed"
+        ]
+      },
+      "AgentPause": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "pausedBy": {
+            "$ref": "#/components/schemas/AuditActor"
+          },
+          "pausedAt": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agentId",
+          "pausedBy",
+          "pausedAt"
+        ]
+      },
+      "AgentPauseRequest": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The mesh id of the agent to pause or resume."
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why, in a sentence. Kept in the audit log with who did it."
+          }
+        },
+        "required": [
+          "agentId"
+        ]
+      },
+      "AgentPauseList": {
+        "type": "object",
+        "properties": {
+          "pauses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentPause"
+            }
+          }
+        },
+        "required": [
+          "pauses"
+        ]
+      },
       "ListExtensionDecisionsResponse": {
         "type": "object",
         "properties": {
@@ -20772,7 +20856,7 @@
             }
           },
           "409": {
-            "description": "Refused before anything started, for where the turn would run (`DESK_NOT_OWN`, `ROOM_SESSION_MOVED`), or because the account may not work in this project (`account_not_allowed_here`, whose body also names `project` and `accountId`); the body says what to do instead",
+            "description": "Refused before anything started, for where the turn would run (`DESK_NOT_OWN`, `ROOM_SESSION_MOVED`), or because the account may not work in this project (`account_not_allowed_here`, whose body also names `project` and `accountId`), or because the agent is paused (`AGENT_PAUSED`, whose body also names `agentId`); the body says what to do instead",
             "content": {
               "application/json": {
                 "schema": {
@@ -78013,6 +78097,87 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AuditQueryResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{agentId}/pause": {
+      "post": {
+        "tags": [
+          "Agent"
+        ],
+        "summary": "Pause an agent everywhere",
+        "description": "Stop an agent everywhere at once: its running turns end, its running scheduled runs stop, and nothing starts a new turn for it (messages, schedules, rooms, relay) until someone resumes it. Anyone may pause any agent, including DorkBot; it never waits for approval. Held work is not replayed later. Recorded with who did it and why. Pass the mesh id of the agent and, ideally, a reason.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentPauseRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Pause an agent everywhere result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentPauseResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{agentId}/resume": {
+      "post": {
+        "tags": [
+          "Agent"
+        ],
+        "summary": "Resume a paused agent",
+        "description": "Lift a pause so the agent can work again. Anyone may resume an agent except the paused agent itself. Work it was held from is not replayed. Recorded with who did it and why.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentPauseRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resume a paused agent result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentPauseResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/pauses": {
+      "get": {
+        "tags": [
+          "Agent"
+        ],
+        "summary": "List paused agents",
+        "description": "List every agent that is paused right now, with who paused it, when, and why.",
+        "responses": {
+          "200": {
+            "description": "List paused agents result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentPauseList"
                 }
               }
             }

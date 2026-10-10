@@ -14,7 +14,8 @@ import {
   type SessionListEvent,
 } from '@dorkos/shared/session-stream';
 
-import { StreamManager, GENERIC_EVENTS, type DurableStreamConnection } from '../stream-manager';
+import { StreamManager, type DurableStreamConnection } from '../stream-manager';
+import { GENERIC_EVENTS } from '../generic-events';
 import type { StreamConnectionOptions } from '../ws-connection';
 
 // NOTE on the testing-rule's "mock Transport via TransportProvider" wording:
