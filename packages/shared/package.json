@@ -484,6 +484,10 @@
     "./chat-messages": {
       "types": "./src/chat-messages.ts",
       "default": "./dist/chat-messages.js"
+    },
+    "./commitment-schemas": {
+      "types": "./src/commitment-schemas.ts",
+      "default": "./dist/commitment-schemas.js"
     }
   },
   "scripts": {
