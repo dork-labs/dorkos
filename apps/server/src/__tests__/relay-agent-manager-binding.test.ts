@@ -58,6 +58,12 @@ const RELAY_PATH = path.resolve(
   '../startup/relay-adapters.ts'
 );
 const relaySource = readFileSync(RELAY_PATH, 'utf-8');
+/** The scheduler's construction, moved here from `index.ts` (DOR-2821). */
+const TASKS_PATH = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '../startup/tasks.ts'
+);
+const tasksSource = readFileSync(TASKS_PATH, 'utf-8');
 
 /**
  * The dependency object literal passed to `new AdapterManager(...)`, from the
@@ -90,13 +96,16 @@ function adapterManagerConstruction(): string {
  * @returns The source text of the TaskSchedulerService construction.
  */
 function schedulerConstruction(): string {
-  const start = source.indexOf('new TaskSchedulerService(');
-  expect(start, 'TaskSchedulerService is no longer constructed in index.ts').toBeGreaterThan(-1);
-  const end = source.indexOf('});', start);
+  const start = tasksSource.indexOf('new TaskSchedulerService(');
+  expect(
+    start,
+    'TaskSchedulerService is no longer constructed in startup/tasks.ts'
+  ).toBeGreaterThan(-1);
+  const end = tasksSource.indexOf('});', start);
   expect(end, 'could not find the end of the TaskSchedulerService construction').toBeGreaterThan(
     start
   );
-  return source.slice(start, end);
+  return tasksSource.slice(start, end);
 }
 
 describe('the Tasks scheduler asks the relay which runtimes it holds', () => {
@@ -125,7 +134,14 @@ describe('the Tasks scheduler asks the relay which runtimes it holds', () => {
     // deliverable and every scheduled run it green-lit failed with "No receiver
     // for the scheduled run" (DOR-1636).
     const construction = schedulerConstruction();
-    expect(construction).toMatch(/adapterManager\?\.canRunTaskOnBus\(/);
+    // Read through `currentAdapterManager()`, a getter onto `index.ts`'s own
+    // variable, since the scheduler is built in `startup/tasks.ts` (DOR-2821).
+    expect(construction).toMatch(/currentAdapterManager\(\)\?\.canRunTaskOnBus\(/);
+    expect(
+      source,
+      'index.ts must hand Tasks a getter onto the live adapterManager, never the value it ' +
+        'holds at that line: Phase C resets it to undefined when its init throws.'
+    ).toMatch(/currentAdapterManager: \(\) => adapterManager\b/);
     expect(
       construction,
       'hasAgentRuntime is the map-only reading DOR-1636 removed; asking it again reinstates ' +
