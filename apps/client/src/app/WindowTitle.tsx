@@ -31,7 +31,9 @@ export function WindowTitle({ unreadRoomCount }: WindowTitleProps) {
   useTabSignalsSync();
   const isStreaming = useAppStore((s) => s.isStreaming);
   const isWaitingForUser = useAppStore((s) => s.isWaitingForUser);
-  const tasksBadgeCount = useAppStore((s) => s.tasksBadgeCount);
+  // `(N)` while hidden: unread rooms plus schedules waiting for your OK or
+  // failed their last run, the two things worth coming back for.
+  const scheduleCount = useTabSignalsStore((s) => s.scheduleAttentionCount);
   const needsYouCount = useTabSignalsStore((s) => s.needsYouCount);
   const href = useRouterState({ select: (state) => state.location.href });
   const page = useTabIdentity(href);
@@ -39,7 +41,7 @@ export function WindowTitle({ unreadRoomCount }: WindowTitleProps) {
     (window) =>
       windowTitle(page, {
         ...window,
-        badgeCount: tasksBadgeCount + unreadRoomCount,
+        badgeCount: unreadRoomCount + scheduleCount,
         // 🔔 on every page while anything is waiting on you, not only the chat.
         needsYou: isWaitingForUser || needsYouCount > 0,
       }),

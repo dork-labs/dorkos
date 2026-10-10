@@ -262,7 +262,7 @@ const UNKNOWN_ROUTE: RouteIdentity = { primary: 'DorkOS', Icon: LayoutDashboard 
 
 /**
  * A status or count a page reports for its own tab — the seam Schedules,
- * Activity, Connections and extension pages fill (DOR-2820 PR C).
+ * Activity, Connections and extension pages fill (DOR-2820).
  */
 export interface RouteBadge {
   /** The page's status, when it has one. */
@@ -292,6 +292,105 @@ export function routeTabIdentity(pathname: string, badge?: RouteBadge | null): T
     count: positive(badge?.count),
     countEmphasis: status === 'needs-you' || status === 'failed',
   });
+}
+
+/** What the schedules are doing, for the Schedules tab. */
+export interface SchedulesBadgeInput {
+  /** Schedules an agent proposed, waiting for your OK. */
+  waiting: number;
+  /** Schedules whose latest run failed. */
+  failed: number;
+  /** The names of the schedules running right now. */
+  running: readonly string[];
+}
+
+/**
+ * The Schedules tab's status: waiting for your OK, then a failed last run,
+ * then running. Waiting and failed carry their count; running names the
+ * schedule when there is only one.
+ *
+ * @param input - What the schedules are doing.
+ * @returns The badge, or `null` when nothing is going on.
+ */
+export function schedulesBadge(input: SchedulesBadgeInput): RouteBadge | null {
+  const waiting = positive(input.waiting);
+  const failed = positive(input.failed);
+  const status = pickTabStatus({
+    needsYou: waiting !== undefined,
+    failed: failed !== undefined,
+    working: input.running.length > 0,
+  });
+  switch (status) {
+    case 'needs-you':
+      return {
+        status,
+        count: waiting,
+        sentence: `${plural(waiting!, 'schedule waits', 'schedules wait')} for your OK`,
+      };
+    case 'failed':
+      return {
+        status,
+        count: failed,
+        sentence:
+          failed === 1
+            ? '1 schedule failed its last run'
+            : `${failed} schedules failed their last run`,
+      };
+    case 'working':
+      return {
+        status,
+        sentence:
+          input.running.length === 1
+            ? `${input.running[0]} is running`
+            : `${input.running.length} schedules are running`,
+      };
+    default:
+      return null;
+  }
+}
+
+/**
+ * How many schedules want a look: waiting for your OK, or failed their last
+ * run. What the window title's `(N)` adds for schedules while it is hidden.
+ *
+ * @param input - What the schedules are doing.
+ */
+export function schedulesAttentionCount(input: SchedulesBadgeInput): number {
+  return Math.max(0, input.waiting) + Math.max(0, input.failed);
+}
+
+/**
+ * The Activity tab's count of events since you last opened Activity.
+ *
+ * @param newCount - Events newer than your last visit.
+ * @returns The badge, or `null` when there is nothing new.
+ */
+export function activityBadge(newCount: number): RouteBadge | null {
+  const count = positive(newCount);
+  if (count === undefined) return null;
+  return {
+    status: 'new',
+    count,
+    sentence: `${plural(count, 'new event', 'new events')} since you last looked`,
+  };
+}
+
+/**
+ * The Connections tab's count of requests waiting for your OK: what the
+ * Connections page lists under Needs you.
+ *
+ * @param waiting - Agents asking to use an app, and programs asking to change
+ *   a connection, not yet answered.
+ * @returns The badge, or `null` when nothing waits.
+ */
+export function connectionsBadge(waiting: number): RouteBadge | null {
+  const count = positive(waiting);
+  if (count === undefined) return null;
+  return {
+    status: 'needs-you',
+    count,
+    sentence: `${plural(count, 'request waits', 'requests wait')} for your OK`,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -623,7 +722,7 @@ export interface WindowTitleState {
   hidden: boolean;
   /** Whether a reply finished while it was hidden. */
   unseenReply: boolean;
-  /** Unread rooms plus waiting schedules, shown as `(N)` while hidden. */
+  /** Unread rooms plus schedules that want a look, shown as `(N)` while hidden. */
   badgeCount: number;
   /** Whether anything in the app is blocked on you, beyond this page. */
   needsYou?: boolean;

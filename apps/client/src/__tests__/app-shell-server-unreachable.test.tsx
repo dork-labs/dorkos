@@ -128,7 +128,7 @@ vi.mock('@/layers/features/profile', () => ({
 // Nothing is waiting here, and the real queue needs an event stream.
 vi.mock('@/layers/entities/attention', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/attention')>()),
-  useWaitingQueue: () => ({ items: [] }),
+  useWaitingQueue: () => ({ items: [], schedules: [] }),
 }));
 
 vi.mock('@/layers/entities/session', async (importOriginal) => ({

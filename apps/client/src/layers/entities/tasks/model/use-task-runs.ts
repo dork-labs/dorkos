@@ -89,6 +89,48 @@ export function useTaskRun(id: string | null) {
   });
 }
 
+/** How many of the newest runs the always-on readers look at. */
+const RECENT_RUNS_LIMIT = 50;
+
+/**
+ * The newest runs across every schedule, newest first, re-read every ten
+ * seconds while the window is visible.
+ *
+ * One query for every always-mounted reader: the sidebar's running count and
+ * the Schedules tab's status (DOR-2820) share its cache entry and its poll,
+ * each taking only what it needs through `select`.
+ */
+function recentTaskRunsOptions<T>(
+  transport: ReturnType<typeof useTransport>,
+  enabled: boolean,
+  select: (runs: TaskRun[]) => T
+) {
+  return {
+    queryKey: [...TASK_RUNS_KEY, 'recent'] as const,
+    queryFn: () => transport.listTaskRuns({ limit: RECENT_RUNS_LIMIT }),
+    select,
+    enabled,
+    refetchInterval: 10_000,
+    refetchIntervalInBackground: false,
+  };
+}
+
+/** Hand the runs back as they are. */
+const allRuns = (runs: TaskRun[]) => runs;
+
+/** Count the runs still going. */
+const countRunning = (runs: TaskRun[]) => runs.filter((r) => r.status === 'running').length;
+
+/**
+ * The newest runs across every schedule, newest first.
+ *
+ * @param enabled - When false the query is skipped (Tasks feature gate).
+ */
+export function useRecentTaskRuns(enabled = true) {
+  const transport = useTransport();
+  return useQuery(recentTaskRunsOptions(transport, enabled, allRuns));
+}
+
 /**
  * Return the count of currently running Tasks.
  *
@@ -96,17 +138,7 @@ export function useTaskRun(id: string | null) {
  */
 export function useActiveTaskRunCount(enabled = true) {
   const transport = useTransport();
-
-  return useQuery({
-    queryKey: [...TASK_RUNS_KEY, 'active-count'],
-    queryFn: async () => {
-      const runs = await transport.listTaskRuns({ limit: 50 });
-      return runs.filter((r) => r.status === 'running').length;
-    },
-    enabled,
-    refetchInterval: 10_000,
-    refetchIntervalInBackground: false,
-  });
+  return useQuery(recentTaskRunsOptions(transport, enabled, countRunning));
 }
 
 /**
