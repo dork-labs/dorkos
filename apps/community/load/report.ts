@@ -218,7 +218,7 @@ function printReport(report: LoadReport): void {
   );
   line(
     'Reader streams opened',
-    `${readers.opened} on ${report.readerThreads} thread(s) (${readers.openFailed} failed, ` +
+    `${readers.opened} on ${report.readerThreads ? `${report.readerThreads} thread(s)` : 'the main thread'} (${readers.openFailed} failed, ` +
       `${readers.openedLate} opened after posting began)`
   );
   if (readers.openFailed) line('  failed by', JSON.stringify(readers.openFailedBy));
