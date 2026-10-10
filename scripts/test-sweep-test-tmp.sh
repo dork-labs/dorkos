@@ -334,7 +334,9 @@ echo "$root/$u3/sub/file" >>"$work/open"
 make_dir "$u4" 48
 for n in public-native-9A1DC340-1201-4dd9-bd75-29581047384f public-native-042dc340-1201-4dd9-bd75-29581047384 \
   public-native-042dc3401201-4dd9-bd75-29581047384f public-native-abcdef public-native \
-  srv-err-042dc340-1201-4dd9-bd75-29581047384f xpublic-native-042dc340-1201-4dd9-bd75-29581047384f; do
+  srv-err-042dc340-1201-4dd9-bd75-29581047384f xpublic-native-042dc340-1201-4dd9-bd75-29581047384f \
+  public-native-042dc340-1201-4dd9-bd75-29581047384fx public-native-042dc340-1201-4dd9-bd75-29581047384f-abcdef \
+  public-native-7b1dc340-1201-4dd9-bd75-29581047384F; do
   make_dir "$n" 48
 done
 out="$(run_sweep)"
@@ -345,7 +347,9 @@ check "a two-hour-old public-native-<uuid> home is kept" "$(kept "$u2")"
 check "a public-native-<uuid> home with an open file is kept" "$(kept "$u3")"
 for n in public-native-9A1DC340-1201-4dd9-bd75-29581047384f public-native-042dc340-1201-4dd9-bd75-29581047384 \
   public-native-042dc3401201-4dd9-bd75-29581047384f public-native-abcdef public-native \
-  srv-err-042dc340-1201-4dd9-bd75-29581047384f xpublic-native-042dc340-1201-4dd9-bd75-29581047384f; do
+  srv-err-042dc340-1201-4dd9-bd75-29581047384f xpublic-native-042dc340-1201-4dd9-bd75-29581047384f \
+  public-native-042dc340-1201-4dd9-bd75-29581047384fx public-native-042dc340-1201-4dd9-bd75-29581047384f-abcdef \
+  public-native-7b1dc340-1201-4dd9-bd75-29581047384F; do
   check "$n is not an allowlisted UUID shape, kept" "$(kept "$n")"
 done
 : >"$work/open"

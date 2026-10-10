@@ -151,7 +151,8 @@ UUID_ALLOWLIST=(
   # The managed-browser acceptance runs (PR #2686) mint a whole DorkOS data
   # folder per run, browser download included (about 400 MB), as
   # $TMPDIR/public-native-<uuid>, and keep it. 42 of them piled up by
-  # 2026-10-10. The browser fixtures refuse any other name, so the shape holds.
+  # 2026-10-10. The fixtures require the `public-native-` prefix; the UUID
+  # suffix is what the acceptance runs have been seen to mint.
   'public-native'
 )
 
@@ -212,7 +213,8 @@ resolve_root() {
 build_pattern() {
   local alt="" ualt="" p line
   for p in "${ALLOWLIST[@]}"; do alt="${alt:+$alt|}$p"; done
-  for p in "${UUID_ALLOWLIST[@]}"; do ualt="${ualt:+$ualt|}$p"; done
+  # The `+` form: an empty array is "unbound" under bash 3.2's `set -u`.
+  for p in ${UUID_ALLOWLIST[@]+"${UUID_ALLOWLIST[@]}"}; do ualt="${ualt:+$ualt|}$p"; done
   if [[ -n "$PREFIX_FILE" ]]; then
     while IFS= read -r line || [[ -n "$line" ]]; do
       line="${line%%#*}"
@@ -225,7 +227,13 @@ build_pattern() {
       alt="$alt|${line//./\\.}"
     done <"$PREFIX_FILE"
   fi
-  echo "^(($alt)-[A-Za-z0-9]{6}|($ualt)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$"
+  # No UUID branch at all when its list is empty: an empty `()` group would
+  # make any bare `-<uuid>` name a candidate.
+  local uuid_branch=""
+  if [[ -n "$ualt" ]]; then
+    uuid_branch="|($ualt)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+  fi
+  echo "^(($alt)-[A-Za-z0-9]{6}$uuid_branch)$"
 }
 
 # Top-level names under $1 (one per line) that are on the list $2 names, read
@@ -397,7 +405,12 @@ main() {
   by_prefix="$(awk -F '\t' -v r="$root/" '
     FNR == NR { if (index($2, r) == 1) kb[substr($2, length(r) + 1)] = $1; next }
     {
-      if (match($0, /-[0-9a-f]+-[0-9a-f]+-[0-9a-f]+-[0-9a-f]+-[0-9a-f]+$/) && RLENGTH == 37) p = substr($0, 1, RSTART - 1)
+      u = 0
+      if (match($0, /-[0-9a-f]+-[0-9a-f]+-[0-9a-f]+-[0-9a-f]+-[0-9a-f]+$/) && RLENGTH == 37) {
+        m = substr($0, RSTART)
+        u = substr(m, 10, 1) == "-" && substr(m, 15, 1) == "-" && substr(m, 20, 1) == "-" && substr(m, 25, 1) == "-"
+      }
+      if (u) p = substr($0, 1, RSTART - 1)
       else p = substr($0, 1, length($0) - 7)
       c[p]++; s[p] += kb[$0]; t += kb[$0] }
     END { for (p in c) printf "%d\t%d\t%s\n", c[p], s[p], p; printf "TOTAL\t%d\n", t }
