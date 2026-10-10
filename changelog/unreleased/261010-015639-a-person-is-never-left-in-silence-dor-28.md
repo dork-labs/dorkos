@@ -4,6 +4,8 @@ covers:
   - "fix(rooms): Stop cancels a busy retry, and the receipt is the room's alone (DOR-2823)"
   - "fix(rooms): receipts never spend an agent's reactions, and a chosen no-lead channel stays quiet (DOR-2823)"
   - 'fix(rooms): say "no agent here" above the message box, not as a room message (DOR-2823)'
+  - 'test(e2e): rooms specs clear the lead and expect the no-agent hint (DOR-2823)'
+  - 'refactor(rooms): receipts and busy retries get their own module, under the line ratchet (DOR-2823)'
 ---
 
 ### Added

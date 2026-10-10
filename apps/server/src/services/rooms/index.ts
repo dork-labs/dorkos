@@ -62,9 +62,8 @@ import { RoomBroadcaster } from './room-stream.js';
 import type { RoomTurnRunner } from './room-trigger.js';
 import { RoomTurnBudget, type TurnBudgetLimits } from './limits/turn-budget.js';
 import { createSessionRoomTurnRunner } from './room-turn-runner.js';
-import { getSessionLimitStore } from '../session/fleet/session-limit-store.js';
-import { logger } from '../../lib/logger.js';
-import { ROOM_RECEIPT_EMOJI } from '@dorkos/shared/room-schemas';
+import { storedUsageLimit } from './notices/usage-limit.js';
+import { clearStaleReceipts } from './receipts/turn-receipts.js';
 import { lastPersonSignalAt, WelcomeBackGreeter } from './welcome-back/greeter.js';
 import { createSessionWorkSource } from './welcome-back/work-source.js';
 
@@ -471,15 +470,8 @@ export function createRoomSubsystem(opts: {
   const store = new RoomStore(opts.db);
   const limitsFor = createRoomLimitsResolver(store);
   const reactions = new ReactionStore(opts.db);
-  // Receipts a restart left behind (DOR-2823): nothing they described is still
-  // running. A day back is enough, since no room turn outlives the late-reply
-  // ceiling.
-  const staleReceipts = reactions.clearRecentAgentReactions(ROOM_RECEIPT_EMOJI, 24 * 60 * 60_000);
-  if (staleReceipts.length > 0) {
-    logger.info('[rooms] cleared receipts a restart left standing', {
-      count: staleReceipts.length,
-    });
-  }
+  // Receipts a restart left behind (DOR-2823).
+  clearStaleReceipts(reactions);
   const canvasDocuments = new CanvasDocumentStore(opts.db);
   const attachments = new AttachmentRowStore(opts.db);
   const agentLookup = opts.agents ?? createAgentLookup(opts.db);
@@ -587,11 +579,7 @@ export function createRoomSubsystem(opts: {
     broadcaster,
     // A failed turn whose account ran out of usage says when it can answer
     // again (DOR-2823). Read at the moment of failure, never cached.
-    usageLimitFor: (sessionId) => {
-      const stored = getSessionLimitStore()?.get(sessionId);
-      if (!stored || stored.state === 'reset-ready' || stored.state === 'moved') return null;
-      return { resetsAt: stored.limit.resetsAt ?? null };
-    },
+    usageLimitFor: storedUsageLimit,
     bridges,
     agents: agentLookup,
     turns:

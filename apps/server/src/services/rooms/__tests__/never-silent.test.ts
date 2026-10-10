@@ -17,10 +17,14 @@
  * @module server/services/rooms/tests/never-silent
  */
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
+import {
+  ROOM_RECEIPT_EMOJI,
+  type RoomEntry,
+  type RoomWithRoster,
+} from '@dorkos/shared/room-schemas';
 import { logger } from '../../../lib/logger.js';
 import type { RoomService } from '../room-service.js';
-import { BUSY_RETRY_DELAYS_MS, RECEIPT_EMOJI } from '../room-trigger.js';
+import { BUSY_RETRY_DELAYS_MS } from '../receipts/turn-receipts.js';
 import {
   agentLookupFor,
   createRoomHarness,
@@ -84,7 +88,7 @@ function open(
 function receiptsOn(w: Wired, entry: RoomEntry): string[] {
   return w.service
     .reactionsFor(w.room.id, entry.id)
-    .filter((r) => r.emoji === RECEIPT_EMOJI)
+    .filter((r) => r.emoji === ROOM_RECEIPT_EMOJI)
     .flatMap((r) => r.authorIds ?? []);
 }
 
@@ -116,7 +120,7 @@ describe('the 👀 receipt', () => {
     const asked = w.service.post(w.room.id, { authorId: w.human, text: 'hello' });
     let code: string | undefined;
     try {
-      w.service.toggleReaction(w.room.id, asked.id, w.ana, RECEIPT_EMOJI, true);
+      w.service.toggleReaction(w.room.id, asked.id, w.ana, ROOM_RECEIPT_EMOJI, true);
     } catch (err) {
       code = (err as { code?: string }).code;
     }

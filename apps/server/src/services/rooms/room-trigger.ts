@@ -126,27 +126,24 @@
  */
 import { outsideAuditScope } from '../audit/audit-context.js';
 import { randomUUID } from 'node:crypto';
-import { ROOM_LIVE_BEAT_MS, ROOM_RECEIPT_EMOJI } from '@dorkos/shared/room-schemas';
+import { ROOM_LIVE_BEAT_MS } from '@dorkos/shared/room-schemas';
 import type {
   AuthorKind,
   AuthorRef,
   Room,
-  RoomAttachment,
   RoomEntry,
   RoomHeldBehind,
-  RoomPresencePayload,
   RoomPresenceState,
   RoomWorkingClaim,
   SkippedTrigger,
 } from '@dorkos/shared/room-schemas';
-import type { RoomContextCanvas } from '@dorkos/shared/additional-context';
 import type { SessionActivity } from '@dorkos/shared/session-stream';
 import type { InterruptReceipt } from '@dorkos/shared/types';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { logError, logger } from '../../lib/logger.js';
 import { runInDispatch } from '../../lib/dispatch-context.js';
 import { recordDispatchEnd, recordDispatchStart } from '../observability/dispatch-buffers.js';
-import { ACTIVITY_FANOUT_THROTTLE_MS, isTurnInFlight } from '../session/index.js';
+import { ACTIVITY_FANOUT_THROTTLE_MS } from '../session/index.js';
 import {
   selectTriggerTargets,
   pickLead,
@@ -157,7 +154,6 @@ import {
 } from './addressing.js';
 import {
   routeAmbient,
-  type ResponseGateMode,
   type RoutedEntry,
   type RoutingVerdict,
 } from './response-gate/routing-rules.js';
@@ -181,8 +177,7 @@ import {
   type HeldView,
   type TriggerTarget,
 } from './room-claims.js';
-import type { BridgedRoomFraming } from '../relay/chat-bridge/room-context-framing.js';
-import { toAuthorRef, type AuthorRegistry } from './author-registry.js';
+import { toAuthorRef } from './author-registry.js';
 import { ceilingForEntries, isEntryAuthorExternal } from './limits/turn-ceiling.js';
 import { isLiveAuthor } from './handles/author-handles.js';
 import {
@@ -194,43 +189,22 @@ import {
   agentPostWindow,
   conversationFor,
   engagementFor,
-  type EngagedWindow,
   type EngagementWindow,
 } from './engagement.js';
-import {
-  RoomCollector,
-  type CollectedTrigger,
-  type CollectWindow,
-  type RoomCollection,
-} from './room-collect.js';
-import type { ReactionStore } from './reactions/reaction-store.js';
-import { agentFacingName, buildRoomContext, nameForAgents } from './room-context.js';
-import type { RoomWorktreeManager } from './repo/room-worktree-manager.js';
-import {
-  resolveRoomTurnPlace,
-  roomTurnLaunchStep,
-  type RoomTurnLaunch,
-  type RoomTurnPlace,
-} from './repo/room-turn-place.js';
-import { editBaselineStore } from '../diff/index.js';
-import { runtimeRegistry } from '../core/runtime-registry.js';
-import {
-  RoomNoticeLog,
-  type CascadeStamp,
-  type RoomNoticeWriter,
-  type RoomTurnUnanswered,
-} from './notices/notice-log.js';
+import { RoomCollector, type CollectedTrigger, type RoomCollection } from './room-collect.js';
+import { buildRoomContext, nameForAgents } from './room-context.js';
+import { resolveRoomTurnPlace, type RoomTurnPlace } from './repo/room-turn-place.js';
+import { RoomNoticeLog, type CascadeStamp, type RoomTurnUnanswered } from './notices/notice-log.js';
 import { buildCascadeNotice } from './notices/notice-copy.js';
-import type { RoomAgentLookup } from './room-errors.js';
+import { usageLimitNow } from './notices/usage-limit.js';
+import { TurnReceipts } from './receipts/turn-receipts.js';
+import { roomLaunchStepFor } from './repo/room-launch-step.js';
+import type { RoomDispatchSummary, RoomTriggerDeps } from './service/room-trigger-deps.js';
 import {
   RoomTurnRuntimeGoneError,
   type LateRoomReply,
   type RoomTurnReply,
-  type RoomTurnRunner,
 } from './room-turn-port.js';
-import type { RoomStore } from './room-store.js';
-import type { RoomLimitsResolver } from './limits/room-limits.js';
-import type { RoomTurnBudget } from './limits/turn-budget.js';
 
 // Re-exported rather than redefined. The turn port moved to its own module
 // (`room-turn-port.ts`), and the room service plus every rooms test imports it
@@ -244,36 +218,6 @@ export type {
   RoomTurnResult,
   RoomTurnRunner,
 } from './room-turn-port.js';
-
-/**
- * How a post gets written back into the room.
- *
- * `replyTo` is what keeps an answer where the question was asked: an agent
- * triggered by a thread reply answers in that thread, not at the channel's top
- * level (ADR 260728-022013). Under the child-room shape the answer landed in the
- * thread for free, because the thread was the room.
- */
-export interface RoomTriggerWriter extends RoomNoticeWriter {
-  post(
-    roomId: string,
-    input: {
-      authorId: string;
-      text: string;
-      sessionId?: string;
-      trigger: CascadeStamp;
-      replyTo?: string;
-      /**
-       * The entry this post answers.
-       *
-       * `replyTo` says which THREAD to land in; this says which MESSAGE was
-       * answered, and the two are different questions — a channel post has no
-       * thread and still answers something. Set on every agent-authored post,
-       * because a reader cannot tell from the outside which answers waited.
-       */
-      answersEntryId?: string;
-    }
-  ): RoomEntry;
-}
 
 /**
  * One agent a message reached, as the guard left it — before anything asks
@@ -305,49 +249,6 @@ interface TriggerCandidate {
   engaged: EngagementWindow | null;
   /** Why the matrix picked it — the response gate's only scoping input. */
   reason: TriggerReason;
-}
-
-/**
- * What one post asked of a room, as far as the write itself can say.
- *
- * **Everything here is decided synchronously**, inside `RoomService.post` and so
- * inside the HTTP request that wrote the entry — which is exactly why it can ride
- * the 202. Selection, the cascade guard and the liveness check all answer facts
- * about THIS MESSAGE (see {@link RoomTriggerDispatcher.selectCandidates}); the
- * turn budget does not, and is deliberately absent — it is charged when the
- * collect window closes, long after this has been sent, and a refusal it has not
- * made yet is not one to report.
- *
- * **`triggered` is what the room ASKED FOR, not what it guarantees**, and the
- * distinction is not academic. A collected batch is judged again when its window
- * closes, in two separate places, so an agent named here can still end up not
- * answering:
- *
- * - {@link RoomTriggerDispatcher.chooseTrigger} re-asks the cascade guard per
- *   message — asking it once at accept-time was a real defect — and
- *   `claimCollected` then asks the turn budget and the roster. A ceiling reached
- *   by a reply that landed while the batch waited, an exhausted budget, a member
- *   that left: each of those reaches the reader as the room's own durable notice.
- * - {@link RoomTriggerDispatcher.gateBatch} can route an AMBIENT burst to silence
- *   (DOR-1203). That one writes no notice on purpose — a line every time an agent
- *   tactfully says nothing is the over-participation the gate exists to prevent —
- *   and it cannot touch an addressed message: one `mention` or `dm` anywhere in a
- *   burst passes the whole burst through.
- *
- * So this field is the accept-time answer; the room's log is the settled one for
- * everything that announces itself, and deliberate silence is the one outcome
- * neither says out loud.
- *
- * `skipped` is narrower and firmer: nearly every entry in it also carries a
- * notice written on the same pass, and the one exception is the refusal the room
- * deliberately stays quiet about — see
- * {@link RoomTriggerDispatcher.announceCascade}.
- */
-export interface RoomDispatchSummary {
-  /** The agents a turn is now owed from, in the order the roster listed them. */
-  triggered: AuthorRef[];
-  /** The agents this message reached that will not answer it, and why. */
-  skipped: SkippedTrigger[];
 }
 
 /**
@@ -386,169 +287,6 @@ function withGone(refused: readonly SkippedTrigger[], gone: ReadonlySet<string>)
     ...refused,
     ...[...gone].map((authorId): SkippedTrigger => ({ authorId, reason: 'gone' })),
   ];
-}
-
-/** The room's 👀 receipt (DOR-2823), re-exported for the dispatcher's readers. */
-export const RECEIPT_EMOJI = ROOM_RECEIPT_EMOJI;
-
-/**
- * How long the room waits before trying a busy agent again, attempt by attempt
- * (DOR-2823). Roughly two hours in all, then it says so and stops.
- */
-export const BUSY_RETRY_DELAYS_MS: readonly number[] = [
-  15_000, 30_000, 60_000, 120_000, 300_000, 600_000, 900_000, 1_200_000, 1_800_000, 1_800_000,
-];
-
-/** The key a busy retry is tracked under: one message, for one agent. */
-function retryKey(roomId: string, authorId: string, entryId: string): string {
-  return `${roomId}\u0000${authorId}\u0000${entryId}`;
-}
-
-/** Everything {@link RoomTriggerDispatcher} is constructed from. */
-export interface RoomTriggerDeps {
-  store: RoomStore;
-  /** Read-only here: the room context reports acknowledgments, never writes one. */
-  reactions: ReactionStore;
-  authors: AuthorRegistry;
-  agents: RoomAgentLookup;
-  /** Whether an author is the install's owner — see `RoomContextDeps.isOwnerAuthor`. */
-  isOwnerAuthor(authorId: string): boolean;
-  /**
-   * Put the room's 👀 receipt on a person's message for an agent that was picked
-   * to answer it, or take it off (DOR-2823). Written by the room on the agent's
-   * behalf: it costs the agent no reaction and is never the agent's answer.
-   * Optional so a harness without reactions runs unchanged.
-   */
-  markReceipt?(roomId: string, entryId: string, authorId: string, on: boolean): void;
-  /**
-   * The usage limit a chat's account hit during its last turn, if any: when it
-   * resets (ISO 8601) or `null` when unknown (DOR-2823). Lets a failed turn
-   * say "out of usage until 4:10 PM" instead of "ran into a problem".
-   * Optional so a harness without the limit store runs unchanged.
-   */
-  usageLimitFor?(sessionId: string): { resetsAt: string | null } | null;
-  /** The operator's profile name — see `RoomContextDeps.operatorName`. */
-  operatorName?(): string | null;
-  /**
-   * What a room's turn is told about the chat it projects, or `null` when
-   * unbridged. Read only by `buildRoomContext` — the dispatcher itself never
-   * branches on it, because a bridged room's turns are decided by exactly the
-   * machinery every other room's are (chats-as-channels §11.1).
-   */
-  bridgedFraming(roomId: string): BridgedRoomFraming | null;
-  /**
-   * The stored forum-topic name for a batch of entries. Read only by
-   * `buildRoomContext`, for the same reason as {@link RoomTriggerDeps.bridgedFraming}.
-   */
-  topicNamesFor(entryIds: readonly string[]): Map<string, string>;
-  /**
-   * The attachments on a batch of entries. Read only by `buildRoomContext`, for
-   * the same reason as {@link RoomTriggerDeps.bridgedFraming}.
-   */
-  attachmentsFor(roomId: string, entryIds: readonly string[]): Map<string, RoomAttachment[]>;
-  /**
-   * What is on this room's shared canvas, as LABELS. Read only by
-   * `buildRoomContext`, for the same reason as {@link RoomTriggerDeps.bridgedFraming}.
-   */
-  canvasFor(roomId: string, threadRootEntryId?: string): RoomContextCanvas | null;
-  runner: RoomTurnRunner;
-  /**
-   * The install's room-worktree manager, for granting a turn in a project room
-   * its agent's copy of the room's files (spec `agent-home-desk` §5.1).
-   * Optional: an install with no repo machinery grants nothing, and every turn
-   * runs in the agent's own directory either way.
-   */
-  worktrees?: () => RoomWorktreeManager | null;
-  writer: RoomTriggerWriter;
-  /**
-   * The per-room ceiling on automatic turns, counted whoever the caller claims
-   * to be. The cascade guard reads caller-asserted identity and is therefore
-   * only as strong as the posture; this is not.
-   */
-  budget: RoomTurnBudget;
-  /**
-   * What bounds automatic replies in ONE room: the room's own overrides where
-   * it has them, Settings otherwise (`resolveRoomLimits`, DOR-1429).
-   *
-   * One seam rather than the three loose config readers it replaced, because
-   * the three were never independent — `turnLimitsEnabled` decides whether the
-   * other two are consulted at all, and a caller that read them one at a time
-   * could assemble half a verdict while somebody toggled a setting between two
-   * of the reads.
-   *
-   * Resolved per dispatch, so a change in Settings or on the room binds the
-   * very next message rather than the next server start. The hourly ceilings
-   * are NOT read here: {@link RoomTriggerDeps.budget} owns those, through the
-   * same ladder.
-   */
-  limitsFor: RoomLimitsResolver;
-  /**
-   * The live engaged-window ceilings, read per dispatch for the same reason:
-   * shortening the window in Settings has to bind the very next message.
-   */
-  engagedWindow(): EngagedWindow;
-  /**
-   * The live collect ceilings, read per burst for the same reason: shortening
-   * the gathering window in Settings has to bind the very next message.
-   */
-  collect(): CollectWindow;
-  /**
-   * Whether an overhearing agent may be excused from a message that was plainly
-   * somebody else's — `rooms.responseGate`.
-   *
-   * Read per sweep, like every other setting on this path, so switching it off
-   * binds the very next burst rather than the next server start. `'off'` makes
-   * {@link RoomTriggerDispatcher.gateBatch} return its input untouched, which is
-   * bit-for-bit the behaviour that shipped before DOR-1203.
-   */
-  responseGate(): ResponseGateMode;
-  /**
-   * How long a message may wait on an agent busy in another room before this
-   * room gives up on it, in milliseconds — `rooms.lateReplyCeilingMinutes`.
-   *
-   * The same ceiling the turn runner uses for a late answer, read here for the
-   * same reason it is read there: the two are the same judgement about when a
-   * room stops waiting, at two different grains. Read per tick so a change in
-   * Settings binds the very next sweep.
-   */
-  holdCeilingMs(): number;
-  /**
-   * How many turns one agent may run in its own directory at once —
-   * `rooms.maxConcurrentTurnsPerAgent`, the count behind the second claim
-   * ceiling (see `claimBusyWith`).
-   *
-   * Read at every claim decision rather than captured, so raising it in
-   * Settings lets the very next message start, and lowering it holds the very
-   * next one — without stopping any turn already running.
-   */
-  maxConcurrentTurnsPerAgent(): number;
-  /**
-   * Put one agent's working state on the room's stream — live only, never
-   * logged.
-   *
-   * Deliberately NARROWER than the `RoomService.publishSignal` it is wired to at
-   * construction, which keeps a `signal` parameter because it mirrors the
-   * community port. Here the signal is always `progress` (room-presence spec §1:
-   * reuse the relay's vocabulary, never mint a name; `typing` is not used because
-   * agents do not type, they work), so passing it would be a parameter with one
-   * correct value and several wrong ones. The rule is a type instead of a
-   * comment, and the payload is required rather than optional because a presence
-   * publish that omits it is an indicator no client can key, age, or clear.
-   */
-  publishPresence(roomId: string, authorId: string, presence: RoomPresencePayload): void;
-  /**
-   * Say how many agents are working in a room, to everyone — not just to the
-   * readers who have that room open.
-   *
-   * The sibling of `publishPresence`, on the other stream and at the other
-   * grain. Presence rides the room's own channel and names an agent, an entry
-   * and a start, because the room view draws a sentence about them. This rides
-   * the GLOBAL fan-out and carries a bare count, because the sidebar draws a dot
-   * on a row for a room the reader is not in — and a count is the most a row can
-   * say without leaking who is talking to whom into a list that spans every
-   * room. Both are ephemeral; neither is ever logged.
-   */
-  publishWorkingCount(roomId: string, working: number): void;
 }
 
 /**
@@ -716,25 +454,8 @@ export class RoomTriggerDispatcher {
    * last release, rather than ticking over an empty map forever.
    */
   private republishing: NodeJS.Timeout | null = null;
-  /**
-   * Busy launches waiting to be tried again (DOR-2823): attempts made so far,
-   * keyed by {@link retryKey}. In memory: a restart drops them, and the
-   * agent's next turn in that room still reads the message.
-   */
-  private readonly busyRetries = new Map<string, number>();
-  /** The timer of each busy launch still waiting, so Stop can cancel it. */
-  private readonly busyRetryTimers = new Map<string, NodeJS.Timeout>();
-  /**
-   * The 👀 receipts standing for each `(room, agent)`: entry id to its `seq`.
-   * In memory, like the claims they describe. A restart mid-turn could leave
-   * one standing, so the room clears agents' recent 👀 at boot
-   * (`ReactionStore.clearRecentAgentReactions`), which it can do because agents
-   * may no longer put 👀 on anything themselves.
-   */
-  private readonly receipts = new Map<
-    string,
-    { roomId: string; authorId: string; entries: Map<string, number> }
-  >();
+  /** The 👀 receipts standing and the busy launches waiting (DOR-2823). */
+  private readonly receipts: TurnReceipts;
 
   /**
    * What this room has already said about itself, and what it says next.
@@ -779,6 +500,11 @@ export class RoomTriggerDispatcher {
       window: deps.collect,
       run: (batch) => this.runCollected(batch),
     });
+    this.receipts = new TurnReceipts({
+      ...(deps.markReceipt ? { markReceipt: deps.markReceipt.bind(deps) } : {}),
+      lastReadSeq: (roomId, authorId) =>
+        deps.store.listMembers(roomId).find((m) => m.authorId === authorId)?.lastReadSeq ?? -1,
+    });
   }
 
   /**
@@ -820,7 +546,7 @@ export class RoomTriggerDispatcher {
     // 👀 receipt, from each agent the room picked, taken off when its turn ends.
     if (this.deps.authors.getById(entry.authorId)?.kind === 'human') {
       for (const candidate of selection.candidates)
-        this.markReceipt(room.id, entry, candidate.authorId);
+        this.receipts.mark(room.id, entry, candidate.authorId);
     }
     return {
       triggered: selection.candidates.map((candidate) => candidate.author),
@@ -2351,7 +2077,7 @@ export class RoomTriggerDispatcher {
         cwd,
         additionalDirectories: place.additionalDirectories,
         worktree: place.worktree,
-        ...this.launchStepFor(room.id, target.authorId, target.agentPath, place),
+        ...roomLaunchStepFor(this.deps, room.id, target.authorId, target.agentPath, place),
         sessionId: target.sessionId,
         entry,
         // **Who wrote it, as a trust boundary** — see `RoomTurnRequest`. Read
@@ -2627,20 +2353,15 @@ export class RoomTriggerDispatcher {
     if (reply.unanswered === 'busy' && this.retryWhenFree(room, entry, target)) {
       return reply.unanswered;
     }
-    if (!reply.unanswered) this.busyRetries.delete(retryKey(room.id, target.authorId, entry.id));
     if (reply.unanswered) {
-      const stored =
-        reply.unanswered === 'failed'
-          ? (this.deps.usageLimitFor?.(
-              // The binding as it stands now: a first turn may have renamed
-              // the session, and the limit is filed under the new name.
-              this.deps.store.getRoomSession(room.id, target.authorId) ?? target.sessionId
-            ) ?? null)
-          : null;
-      // A reset already past is a stale row, not why this turn failed.
+      const gaveUp =
+        reply.unanswered === 'busy' && this.receipts.isRetrying(room.id, target.authorId, entry.id);
       const limit =
-        stored && (stored.resetsAt === null || Date.parse(stored.resetsAt) > Date.now())
-          ? stored
+        reply.unanswered === 'failed'
+          ? usageLimitNow(
+              this.deps.usageLimitFor,
+              this.deps.store.getRoomSession(room.id, target.authorId) ?? target.sessionId
+            )
           : null;
       this.notices.reportSilence(
         room,
@@ -2648,16 +2369,11 @@ export class RoomTriggerDispatcher {
         target,
         reply.unanswered,
         target.dispatchId,
-        reply.unanswered === 'busy' &&
-          this.busyRetries.has(retryKey(room.id, target.authorId, entry.id))
-          ? { busyWith: 'gave-up' }
-          : limit
-            ? { outOfUsageUntil: limit.resetsAt }
-            : {}
+        gaveUp ? { busyWith: 'gave-up' } : limit ? { outOfUsageUntil: limit.resetsAt } : {}
       );
-      this.busyRetries.delete(retryKey(room.id, target.authorId, entry.id));
-      return reply.unanswered;
     }
+    this.receipts.forgetRetry(room.id, target.authorId, entry.id);
+    if (reply.unanswered) return reply.unanswered;
 
     // The turn ran and nothing refused it, so whatever was blocking this agent
     // here is over. Recovery IS the re-arm: the next time it cannot answer, the
@@ -3006,7 +2722,7 @@ export class RoomTriggerDispatcher {
         cwd,
         additionalDirectories: place.additionalDirectories,
         worktree: place.worktree,
-        ...this.launchStepFor(room.id, authorId, input.agentPath, place),
+        ...roomLaunchStepFor(this.deps, room.id, authorId, input.agentPath, place),
         sessionId: input.sessionId,
         entry,
         // Never external: `entry` here is the greeter's own status post, written
@@ -3400,7 +3116,7 @@ export class RoomTriggerDispatcher {
     this.notices.turnEnded(claim.roomId, claim.authorId);
     // The turn that owned these messages is over, so their 👀 comes off: up to
     // the message it answered, never one that arrived later and still waits.
-    this.clearReceipts(
+    this.receipts.clearUpTo(
       key,
       this.deps.store.getEntryById(claim.roomId, claim.entryId)?.seq ?? Number.POSITIVE_INFINITY
     );
@@ -3640,7 +3356,7 @@ export class RoomTriggerDispatcher {
    */
   private releaseHold(key: string, reason: HoldEnd): void {
     // Nothing will answer a hold that ends any way but starting, so its 👀 goes.
-    if (reason !== 'started') this.clearReceipts(key, Number.POSITIVE_INFINITY);
+    if (reason !== 'started') this.receipts.clearUpTo(key, Number.POSITIVE_INFINITY);
     const record = this.held.get(key);
     if (record === undefined) return;
     this.held.delete(key);
@@ -3984,7 +3700,7 @@ export class RoomTriggerDispatcher {
   private settleCollection(collection: RoomCollection, reason: HoldEnd): void {
     const key = agentKey(collection.room.id, collection.authorId);
     const newest = collection.entries.at(-1)?.entry.seq;
-    if (newest !== undefined) this.clearReceipts(key, newest);
+    if (newest !== undefined) this.receipts.clearUpTo(key, newest);
     this.releaseHold(key, reason);
     this.settleOne();
   }
@@ -3993,12 +3709,10 @@ export class RoomTriggerDispatcher {
    * Put a launch the runtime refused as busy back in line, instead of dropping
    * it (DOR-2823). The agent was working in its own chat, or finishing work the
    * runtime would not interrupt; neither is a reason to leave a person without
-   * an answer. Tried again on a backoff ({@link BUSY_RETRY_DELAYS_MS}), through
+   * an answer. Tried again on a backoff (`BUSY_RETRY_DELAYS_MS`), through
    * the same collector a new message goes through, so a room archived or an
-   * agent removed in the meantime is handled the way it always is.
-   *
-   * The first retry writes the one notice that says so, and it is true: the
-   * room will try again on its own.
+   * agent removed in the meantime is handled the way it always is. The first
+   * retry writes the one notice that says so, and it is true.
    *
    * @param room - The room.
    * @param entry - The message the refused turn would have answered.
@@ -4007,12 +3721,11 @@ export class RoomTriggerDispatcher {
    *   gave up.
    */
   private retryWhenFree(room: Room, entry: RoomEntry, target: TriggerTarget): boolean {
-    const key = retryKey(room.id, target.authorId, entry.id);
-    const attempts = this.busyRetries.get(key) ?? 0;
-    const delay = BUSY_RETRY_DELAYS_MS[attempts];
-    if (delay === undefined) return false;
-    this.busyRetries.set(key, attempts + 1);
-    if (attempts === 0) {
+    const next = this.receipts.scheduleRetry(room.id, target.authorId, entry.id, () =>
+      this.retryNow(room.id, entry.id, target)
+    );
+    if (next === null) return false;
+    if (next.attempt === 1) {
       this.notices.reportSilence(room, entry, target, 'busy', target.dispatchId, {
         busyWith: 'retrying',
       });
@@ -4021,31 +3734,9 @@ export class RoomTriggerDispatcher {
       roomId: room.id,
       authorId: target.authorId,
       entryId: entry.id,
-      attempt: attempts + 1,
-      inMs: delay,
+      attempt: next.attempt,
+      inMs: next.inMs,
     });
-    // Outside the audit scope of the post that started this, like every other
-    // timer here, and guarded: a throw from a bare timer is an uncaught one.
-    const timer = setTimeout(
-      outsideAuditScope(() => {
-        this.busyRetryTimers.delete(key);
-        try {
-          this.retryNow(room.id, entry.id, target);
-        } catch (err) {
-          this.busyRetries.delete(key);
-          this.clearReceipt(room.id, target.authorId, entry.id);
-          logger.warn('[rooms] could not try a busy agent again', {
-            roomId: room.id,
-            authorId: target.authorId,
-            entryId: entry.id,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }
-      }),
-      delay
-    );
-    timer.unref?.();
-    this.busyRetryTimers.set(key, timer);
     return true;
   }
 
@@ -4064,8 +3755,8 @@ export class RoomTriggerDispatcher {
     // Nothing to answer any more: the room or the agent is gone, or a turn the
     // agent took since has already read this message.
     if (!room || room.archived || !entry || !record || !member || member.lastReadSeq >= entry.seq) {
-      this.busyRetries.delete(retryKey(roomId, target.authorId, entryId));
-      this.clearReceipt(roomId, target.authorId, entryId);
+      this.receipts.forgetRetry(roomId, target.authorId, entryId);
+      this.receipts.clear(roomId, target.authorId, entryId);
       return;
     }
     this.collectOne(
@@ -4083,115 +3774,8 @@ export class RoomTriggerDispatcher {
       Date.now()
     );
     if (this.deps.authors.getById(entry.authorId)?.kind === 'human') {
-      this.markReceipt(roomId, entry, target.authorId);
+      this.receipts.mark(roomId, entry, target.authorId);
     }
-  }
-
-  /**
-   * Take one message's 👀 receipt off for one agent.
-   *
-   * @param roomId - The room.
-   * @param authorId - The agent.
-   * @param entryId - The message.
-   */
-  private clearReceipt(roomId: string, authorId: string, entryId: string): void {
-    const key = agentKey(roomId, authorId);
-    const standing = this.receipts.get(key);
-    if (!standing?.entries.has(entryId)) return;
-    standing.entries.delete(entryId);
-    if (standing.entries.size === 0) this.receipts.delete(key);
-    try {
-      this.deps.markReceipt?.(roomId, entryId, authorId, false);
-    } catch (err) {
-      logger.warn('[rooms] could not take the receipt off a message', {
-        roomId,
-        entryId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
-
-  /**
-   * Cancel every busy launch still waiting in a room, or for one agent in it,
-   * and take their receipts off. Stop means stop, including later.
-   *
-   * @param roomId - The room.
-   * @param authorId - One agent, or every agent when omitted.
-   */
-  private cancelBusyRetries(roomId: string, authorId?: string): void {
-    const prefix = authorId === undefined ? `${roomId}\u0000` : `${roomId}\u0000${authorId}\u0000`;
-    for (const [key, timer] of this.busyRetryTimers) {
-      if (!key.startsWith(prefix)) continue;
-      clearTimeout(timer);
-      this.busyRetryTimers.delete(key);
-      this.busyRetries.delete(key);
-      const [, agent, entryId] = key.split('\u0000');
-      if (agent && entryId) this.clearReceipt(roomId, agent, entryId);
-    }
-  }
-
-  /**
-   * Put the 👀 receipt on a person's message for one picked agent (DOR-2823).
-   *
-   * @param roomId - The room.
-   * @param entry - The person's message.
-   * @param authorId - The agent picked to answer it.
-   */
-  private markReceipt(roomId: string, entry: RoomEntry, authorId: string): void {
-    if (!this.deps.markReceipt) return;
-    const key = agentKey(roomId, authorId);
-    const standing = this.receipts.get(key) ?? { roomId, authorId, entries: new Map() };
-    standing.entries.set(entry.id, entry.seq);
-    this.receipts.set(key, standing);
-    try {
-      this.deps.markReceipt(roomId, entry.id, authorId, true);
-    } catch (err) {
-      // A receipt is a courtesy: failing to show one must never cost the turn.
-      logger.warn('[rooms] could not put the receipt on a message', {
-        roomId,
-        entryId: entry.id,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
-
-  /**
-   * Take one agent's 👀 receipts off, up to and including `upToSeq`.
-   *
-   * @param key - The `(room, agent)` key.
-   * @param upToSeq - The newest message whose receipt comes off.
-   */
-  private clearReceipts(key: string, upToSeq: number): void {
-    const standing = this.receipts.get(key);
-    if (!standing || !this.deps.markReceipt) return;
-    for (const [entryId, seq] of standing.entries) {
-      if (seq > upToSeq) continue;
-      // Still waiting on a busy agent: the receipt stays while the room keeps
-      // its promise to answer, unless the turn ending now already read the
-      // message, which answers it and makes the waiting retry moot.
-      const pending = retryKey(standing.roomId, standing.authorId, entryId);
-      const timer = this.busyRetryTimers.get(pending);
-      if (timer !== undefined) {
-        const readTo =
-          this.deps.store.listMembers(standing.roomId).find((m) => m.authorId === standing.authorId)
-            ?.lastReadSeq ?? -1;
-        if (readTo < seq) continue;
-        clearTimeout(timer);
-        this.busyRetryTimers.delete(pending);
-        this.busyRetries.delete(pending);
-      }
-      standing.entries.delete(entryId);
-      try {
-        this.deps.markReceipt(standing.roomId, entryId, standing.authorId, false);
-      } catch (err) {
-        logger.warn('[rooms] could not take the receipt off a message', {
-          roomId: standing.roomId,
-          entryId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-    }
-    if (standing.entries.size === 0) this.receipts.delete(key);
   }
 
   /**
@@ -4456,63 +4040,6 @@ export class RoomTriggerDispatcher {
   }
 
   /**
-   * The launch-time step for a turn granted a copy of the room's files, as the
-   * runner hands it to the dispatcher — or nothing for a room without files.
-   *
-   * Built here because this is where the room's session bindings and its
-   * worktree manager are: it must not touch the copy while another session
-   * bound to this (room, agent) has a turn in flight (`roomTurnLaunchStep`).
-   *
-   * @param roomId - The room.
-   * @param authorId - The agent's author id in it.
-   * @param agentPath - The agent's home.
-   * @param place - Where the turn was placed.
-   */
-  private launchStepFor(
-    roomId: string,
-    authorId: string,
-    agentPath: string,
-    place: RoomTurnPlace
-  ): { prepareLaunch?: (sessionId: string) => Promise<RoomTurnLaunch> } {
-    const worktrees = this.deps.worktrees?.();
-    if (!worktrees || place.worktree === null) return {};
-    return {
-      prepareLaunch: roomTurnLaunchStep(
-        {
-          // The id the binding holds, and every retired id that still resolves
-          // to it: an app-resumed turn on an old id is granted the same copy.
-          boundSessionIds: () => {
-            const bound = this.deps.store.getRoomSession(roomId, authorId);
-            return bound ? [bound, ...this.deps.store.sessionLedger.retiredIdsFor(bound)] : [];
-          },
-          isTurnInFlight: async (sessionId) =>
-            isTurnInFlight(sessionId, await runtimeRegistry.resolveForSession(sessionId)),
-          worktrees,
-          // Named from the room log, never from git (spec `agent-home-desk` §6.2).
-          describeCommits: (shas) => {
-            const named = new Map<string, { kind: 'merge' | 'person'; who: string | null }>();
-            for (const [sha, note] of this.deps.store.commitAnnouncements(roomId, shas)) {
-              const subject = note.subjectAuthorId;
-              const stored = subject === null ? null : this.deps.authors.getById(subject);
-              // The owner by their own name, never the registry's 'You' (DOR-2458).
-              const who =
-                subject === null || !stored
-                  ? null
-                  : agentFacingName(this.deps, subject, stored.displayName);
-              named.set(sha, { kind: note.kind, who });
-            }
-            return named;
-          },
-          forgetBaselines: (sessionIds, absPaths) => {
-            for (const sessionId of sessionIds) editBaselineStore.forget(sessionId, absPaths);
-          },
-        },
-        { roomId, worktree: place.worktree, agentPath, files: place.files }
-      ),
-    };
-  }
-
-  /**
    * Stop everything running in one room: interrupt every in-flight turn, drop
    * every claim, and say so once.
    *
@@ -4549,7 +4076,7 @@ export class RoomTriggerDispatcher {
    *   says the room was already idle.
    */
   async halt(room: Room): Promise<number> {
-    this.cancelBusyRetries(room.id);
+    this.receipts.cancelRetries(room.id);
     const claims = [...this.claimed.values()].filter((claim) => claim.roomId === room.id);
     // **Marked before anything else, and before the first `await`.** A turn
     // whose stream closes while this method is still delivering interrupts must
@@ -4704,7 +4231,7 @@ export class RoomTriggerDispatcher {
    *   one turn and is counted once.
    */
   async haltAgent(room: Room, authorId: string, byAuthorId: string): Promise<number> {
-    this.cancelBusyRetries(room.id, authorId);
+    this.receipts.cancelRetries(room.id, authorId);
     const key = agentKey(room.id, authorId);
     const claim = this.claimed.get(key);
     // Read BEFORE the mark, or it would always be true. A press that is still

@@ -25,7 +25,8 @@ import type { AttachmentRowStore } from '../attachments/attachment-row-store.js'
 import type { RoomAgentLookup } from '../room-errors.js';
 import type { RoomStore } from '../room-store.js';
 import type { RoomBroadcaster } from '../room-stream.js';
-import type { RoomDispatchSummary, RoomTurnRunner } from '../room-trigger.js';
+import type { RoomTurnRunner } from '../room-trigger.js';
+import type { RoomDispatchSummary } from './room-trigger-deps.js';
 import type { RoomTurnBudget } from '../limits/turn-budget.js';
 
 /**

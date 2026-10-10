@@ -17,7 +17,7 @@
  *
  * @module server/services/rooms/service/room-core
  */
-import type { RoomPresencePayload } from '@dorkos/shared/room-schemas';
+import { ROOM_RECEIPT_EMOJI, type RoomPresencePayload } from '@dorkos/shared/room-schemas';
 import type { RoomContextCanvas } from '@dorkos/shared/additional-context';
 import type { ReadCursorService } from '../../core/read-cursor-service.js';
 import { eventFanOut } from '../../core/event-fan-out.js';
@@ -36,7 +36,8 @@ import type { RoomAgentLookup } from '../room-errors.js';
 import { RoomRoster } from '../room-roster.js';
 import type { RoomStore } from '../room-store.js';
 import type { RoomBroadcaster } from '../room-stream.js';
-import { RECEIPT_EMOJI, RoomTriggerDispatcher, type RoomTriggerWriter } from '../room-trigger.js';
+import { RoomTriggerDispatcher } from '../room-trigger.js';
+import type { RoomTriggerWriter } from './room-trigger-deps.js';
 import type {
   RoomEntryIndexer,
   RoomMessageFinder,
@@ -207,7 +208,7 @@ export function createRoomCore(deps: RoomServiceDeps, writeBack: RoomWriteBack):
     // is the room's courtesy and never the agent's answer or its reaction budget.
     markReceipt: (roomId, entryId, authorId, on) => {
       deps.reactions.set(
-        { roomId, entryId, authorId, emoji: RECEIPT_EMOJI },
+        { roomId, entryId, authorId, emoji: ROOM_RECEIPT_EMOJI },
         new Date().toISOString(),
         on
       );

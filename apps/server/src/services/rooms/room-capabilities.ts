@@ -724,9 +724,8 @@ export const roomsDomain: CapabilityDomain = {
         '(✅ seen, 👍 agreed) rather than posting a word like "Ack" — and then say ' +
         'nothing else about it, because a message that reports the reaction is the message the ' +
         'reaction was meant to replace. ' +
-        "DorkOS puts 👀 on a person's message when you are picked to answer it, and takes it " +
-        'off when your turn ends; you cannot use 👀 yourself. After a long piece of work, ✅ on ' +
-        'the message says it is finished. ' +
+        "DorkOS puts 👀 on a person's message when you are picked to answer it and takes it off " +
+        'when your turn ends; you cannot use 👀 yourself. After long work, ✅ says it is finished. ' +
         'Nobody is interrupted by it: it starts no turn and notifies no one. ' +
         'Calling it again with the same emoji takes the reaction back. ' +
         'You have a limited number of these per room per hour, so spend them where a word would ' +
