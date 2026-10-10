@@ -39,10 +39,9 @@ test.describe('Room panel — what only a laid-out page can show @smoke', () => 
     const roomLine = sheet.locator('[data-slot="room-loudness-line"]');
     await expect(roomLine).toBeVisible();
     // The fixture silences every agent it seeds, so this is the room's real
-    // resting answer and the preview below has somewhere to move to. A channel
-    // made with agents is led by the first of them (DOR-2823), and a lead
-    // answers what nobody else does whatever its rung, so the line names Ana.
-    await expect(roomLine).toContainText(`${ana.name} answers what nobody else does`);
+    // resting answer and the preview below has somewhere to move to. It clears
+    // the channel's lead too (DOR-2823), so nobody answers what nobody addressed.
+    await expect(roomLine).toContainText('Nobody here will answer you');
     await expect(roomLine).not.toHaveAttribute('data-preview', 'true');
 
     const pill = sheet.getByRole('button', { name: `How loud ${ana.name} is here` });
@@ -85,7 +84,7 @@ test.describe('Room panel — what only a laid-out page can show @smoke', () => 
     // hover target waits for an element that is mid-transition by construction.
     await page.mouse.move(4, 4);
     await expect(roomLine).not.toHaveAttribute('data-preview', 'true');
-    await expect(roomLine).toContainText(`${ana.name} answers what nobody else does`);
+    await expect(roomLine).toContainText('Nobody here will answer you');
   });
 
   test('a rung committed moves the member meter and the room meter to the same answer', async ({
