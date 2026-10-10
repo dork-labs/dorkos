@@ -36,6 +36,12 @@ So the decision above holds with one stated exception: the engine still never re
 
 ADR-0301 owns the manifest's existence and its schema; this one owns the write policy the code cites, which is why the exception is stated here.
 
+## Amendment — 2026-10-10 (DOR-2779)
+
+A second narrow exception, for files DorkOS wrote and nobody touched. DorkBot's `AGENTS.md` and the prose half of an agent's `SOUL.md` are starter text from a template, written once. When the template changes, older installs keep the old story: before 2026-10 that was "a coding assistant" and "the operating system for autonomous AI agents", while every turn now tells agents they are co-workers.
+
+So a boot step (`services/mesh/refresh-untouched-templates.ts`) rewrites such a file **only when it is byte-identical to a template a released DorkOS wrote**, kept as a frozen list recovered from git history. For `SOUL.md` only the prose below the trait fence is compared and replaced; the fence is DorkOS-owned already. One changed character, or a trailing newline an editor added, makes the file the person's, and it is never touched. Only agent homes under `<dorkHome>/agents/` are in reach, never a person's own repository. The rule above still holds for every file anyone has edited.
+
 ## Consequences
 
 ### Positive
