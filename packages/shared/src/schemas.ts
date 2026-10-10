@@ -917,20 +917,6 @@ export type StoredSessionSettingsResponse = z.infer<typeof StoredSessionSettings
 export const UpdateSessionRequestSchema = SessionSettingsSchema.extend({
   title: z.string().min(1).max(200).optional(),
   /**
-   * "The person asked for this, and they were told what it means." Required —
-   * as this flag or as the standing record in `ui.autonomyAcknowledgedAt` — on
-   * any request that moves an interactive session to a Full-autonomy mode, and
-   * ignored on every other request (spec `trust-dial`, decision 5).
-   *
-   * Deliberately NOT part of {@link SessionSettingsSchema}: it is a statement
-   * about this one request, not a setting. Nothing persists it, and the next
-   * PATCH has to say it again.
-   *
-   * It proves a ritual happened, not an identity. Any caller can send `true`;
-   * see `ui.autonomyAcknowledgedAt` for what this does and does not defend.
-   */
-  acknowledgedAutonomy: z.boolean().optional(),
-  /**
    * The runtime the caller believes this session will run on — a HINT, never a
    * binding.
    *
@@ -4873,10 +4859,6 @@ export const ServerConfigSchema = z
         // defined in config-schema.ts; on the wire because `SessionComposer`
         // picks its field from it and Settings shows it back as a switch.
         composer: ComposerPrefsSchema,
-        autonomyAcknowledgedAt: z.string().nullable().openapi({
-          description:
-            'When this person last acknowledged what Full autonomy means and asked not to be shown the dialog again (ISO 8601), or null. The cockpit sends the standing acknowledgement on every autonomy PATCH from here',
-        }),
         // The two halves of the power-door answer (spec `full-power-defaults`,
         // D1). On the wire because the cockpit decides from them whether to put
         // the door up at all — a curated DTO that omitted them would leave the

@@ -2488,9 +2488,12 @@ describe('backfillShapesDefaults migration (DOR-355)', () => {
   });
 });
 
+// A frozen merged body (0.66.0-era). The leaf it seeds is retired by the
+// 0.102.0 key (`config-autonomy-ack-retired-migration.test.ts`); these pin the
+// body itself, which may never change.
 describe('backfillAutonomyAcknowledgement migration (spec trust-dial, decision 5)', () => {
-  it('fresh install: nobody has acknowledged anything', () => {
-    expect(USER_CONFIG_DEFAULTS.ui.autonomyAcknowledgedAt).toBeNull();
+  it('fresh install: the retired leaf is not declared any more (DOR-2739)', () => {
+    expect(USER_CONFIG_DEFAULTS.ui).not.toHaveProperty('autonomyAcknowledgedAt');
   });
 
   it('upgraded install: seeds null onto an existing ui block, preserving the rest', () => {
@@ -2506,13 +2509,9 @@ describe('backfillAutonomyAcknowledgement migration (spec trust-dial, decision 5
   });
 
   it('never hands out a consent nobody gave', () => {
-    // The direction that matters. An upgrade that seeded a timestamp would
-    // silence the door for every existing install, and nobody would have chosen
-    // that — so the seeded value is the one that keeps asking.
     const store = createMockStore({ ui: { theme: 'system' } });
     backfillAutonomyAcknowledgement(store);
-    const parsed = UserConfigSchema.parse({ version: 1, ui: store.data.ui });
-    expect(parsed.ui.autonomyAcknowledgedAt).toBeNull();
+    expect((store.data.ui as Record<string, unknown>).autonomyAcknowledgedAt).toBeNull();
   });
 
   it('is idempotent — never overwrites an acknowledgement already on file', () => {
@@ -3976,7 +3975,7 @@ describe('CONFIG_MIGRATIONS append-only pins (DOR-1222 regression guard)', () =>
     // pass this having scanned nothing. The count is the knowable bound; the
     // table is append-only, so raising it is the deliberate act of adding a
     // migration, which is exactly when this check should be re-read.
-    expect(Object.keys(bodies)).toHaveLength(44);
+    expect(Object.keys(bodies)).toHaveLength(45);
 
     const reaching = Object.keys(bodies).filter((key) =>
       reachedDeclarations(bodies[key]!, pool).includes('describeLoadError')

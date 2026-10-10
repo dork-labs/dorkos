@@ -1006,7 +1006,7 @@ describe('ScheduleApprovalCard — granting the operator’s own level', () => {
   /**
    * Click the raise and walk through the consent door it opens.
    *
-   * Every raise the shipped profiles offer is one `needsConsentRitual` gates,
+   * Every raise the shipped profiles offer is one `actsWithoutAsking` gates,
    * so this is the ordinary path and the cases below say so by using it. The
    * two cases about the door ITSELF drive it by hand.
    */
@@ -1089,7 +1089,7 @@ describe('ScheduleApprovalCard — granting the operator’s own level', () => {
     // The case the narrow reading misses. Codex files `workspace-write` at the
     // MIDDLE stop and it never asks, so gating the dial's top position alone
     // let "Approve at Act" hand a schedule a level that cannot pause, with no
-    // dialog anywhere. The rule is `needsConsentRitual`, not `isAutonomyStop`.
+    // dialog anywhere. The rule is `actsWithoutAsking`, not `isAutonomyStop`.
     const updateTask = vi.fn().mockResolvedValue(proposal({ status: 'active' }));
     renderCard(proposal({ runtime: 'codex', permissionMode: 'default' }), {
       getConfig: configAtStop('act'),

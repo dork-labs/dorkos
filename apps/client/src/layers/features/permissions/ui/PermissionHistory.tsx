@@ -5,7 +5,6 @@ import type {
   UndoPermissionChangeResponse,
 } from '@dorkos/shared/permissions';
 import {
-  isAutonomyAckRefusal,
   undoConflictsOf,
   usePermissionHistory,
   useUndoPermission,
@@ -14,10 +13,8 @@ import { formatRelativeTime } from '@/layers/shared/lib';
 import { Button, Skeleton, stopLabel } from '@/layers/shared/ui';
 import type { PermissionStop } from '@dorkos/shared/agent-runtime';
 import { PERMISSION_STOPS } from '@dorkos/shared/permission-semantics';
-import { AutonomyConfirmDialog } from '@/layers/features/status';
 import { PRESET_LABEL, STATE_LABEL } from '../lib/permission-copy';
 import { reportPermissionFailure } from '../lib/report-failure';
-import { useAutonomyConsent, type AutonomyConsent } from '../model/use-autonomy-consent';
 
 /** Props for {@link PermissionHistory}. */
 export interface PermissionHistoryProps {
@@ -107,7 +104,7 @@ export function partialUndoNote(result: UndoPermissionChangeResponse): string | 
 }
 
 /** One history row, with its Undo. */
-function HistoryRow({ item, consent }: { item: PermissionHistoryEntry; consent: AutonomyConsent }) {
+function HistoryRow({ item }: { item: PermissionHistoryEntry }) {
   const undo = useUndoPermission();
   const [conflicts, setConflicts] = useState<PermissionUndoSkip[] | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -118,29 +115,21 @@ function HistoryRow({ item, consent }: { item: PermissionHistoryEntry; consent: 
   const undoable = item.undoable && !undone;
   const when = formatRelativeTime(item.occurredAt);
 
-  const send = (force: boolean) => {
-    const once = (acknowledgeAutonomy?: true) =>
-      undo.mutate(
-        {
-          eventId: item.id,
-          ...(force ? { force: true as const } : {}),
-          ...(acknowledgeAutonomy ? { acknowledgeAutonomy } : {}),
+  const send = (force: boolean) =>
+    undo.mutate(
+      { eventId: item.id, ...(force ? { force: true as const } : {}) },
+      {
+        onSuccess: (result) => {
+          setConflicts(null);
+          setNote(partialUndoNote(result));
         },
-        {
-          onSuccess: (result) => {
-            setConflicts(null);
-            setNote(partialUndoNote(result));
-          },
-          onError: (err) => {
-            const found = undoConflictsOf(err);
-            if (found) setConflicts(found);
-            else if (isAutonomyAckRefusal(err)) consent.ask(once);
-            else reportPermissionFailure(err);
-          },
-        }
-      );
-    once();
-  };
+        onError: (err) => {
+          const found = undoConflictsOf(err);
+          if (found) setConflicts(found);
+          else reportPermissionFailure(err);
+        },
+      }
+    );
 
   return (
     <li className="space-y-1" data-testid="permission-history-row">
@@ -215,9 +204,6 @@ function HistoryRow({ item, consent }: { item: PermissionHistoryEntry; consent: 
  */
 export function PermissionHistory({ agentId }: PermissionHistoryProps) {
   const { data, isPending, isError } = usePermissionHistory(agentId);
-  // One consent step for the whole list: an Undo that puts Files & commands
-  // back on Full autonomy asks first, the way every other door to it does.
-  const consent = useAutonomyConsent();
   if (isError) {
     return <p className="text-muted-foreground text-sm">Couldn’t read the history.</p>;
   }
@@ -227,19 +213,10 @@ export function PermissionHistory({ agentId }: PermissionHistoryProps) {
     return <p className="text-muted-foreground text-sm">No permission changes yet.</p>;
   }
   return (
-    <>
-      <ul className="@container space-y-3" aria-label="Permission history">
-        {items.map((item) => (
-          <HistoryRow key={item.id} item={item} consent={consent} />
-        ))}
-      </ul>
-      <AutonomyConfirmDialog
-        descriptor={consent.descriptor}
-        canRemember={false}
-        consentNote="Undo puts Files & commands back on Full autonomy. DorkOS remembers you’ve read this."
-        onCancel={consent.cancel}
-        onConfirm={consent.confirm}
-      />
-    </>
+    <ul className="@container space-y-3" aria-label="Permission history">
+      {items.map((item) => (
+        <HistoryRow key={item.id} item={item} />
+      ))}
+    </ul>
   );
 }

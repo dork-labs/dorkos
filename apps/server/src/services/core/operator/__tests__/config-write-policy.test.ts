@@ -215,7 +215,6 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'tunnel.authtoken',
       'tunnel.domain',
       'tunnel.enabled',
-      'ui.autonomyAcknowledgedAt',
       // Whose saved navigation this is, and where the person's next "switch
       // back to this DorkOS" lands. An agent could otherwise steer that click.
       'ui.communityNavigation.owners[].installationDestination.path',

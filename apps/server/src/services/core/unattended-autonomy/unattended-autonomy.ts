@@ -109,9 +109,8 @@
  *
  * ## Why it is NOT under `services/core/approvals`
  *
- * That was the first instinct — `autonomy-consent.ts` lives there and holds the
- * record of a person agreeing to Full autonomy, which is the same subject read
- * from the other end. The structural guard in
+ * That was the first instinct, since approvals are the same subject read from
+ * the other end. The structural guard in
  * `services/core/capabilities/__tests__/permission-mode-firewall.test.ts`
  * refused it, correctly: nothing under `approvals/` or `capabilities/` may read
  * `permissionMode` in code, because an agent can already set a mode on a task

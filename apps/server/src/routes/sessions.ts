@@ -2,10 +2,6 @@ import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import {
-  AUTONOMY_ACK_REQUIRED_CODE,
-  hasStandingAutonomyAck,
-} from '../services/core/approvals/autonomy-consent.js';
-import {
   UpdateSessionRequestSchema,
   ForkSessionRequestSchema,
   SendMessageRequestSchema,
@@ -23,14 +19,13 @@ import type {
   SessionListResponse,
   StoredSessionSettingsResponse,
 } from '@dorkos/shared/types';
-import type { AgentRuntime, PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
+import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { MeshCore } from '@dorkos/mesh';
 import { getChatMessageService } from '../services/session/chat-messages/chat-message-service.js';
 import type { ChatActivityResponse } from '@dorkos/shared/chat-messages';
 import { stampHistory } from '../services/session/chat-messages/chat-message-stamps.js';
 import { filterKickoffHistory } from '@dorkos/shared/kickoff';
 import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
-import { isAutonomyStop, needsConsentRitual } from '@dorkos/shared/permission-semantics';
 import { assertBoundary, parseSessionId, sendError } from '../lib/route-utils.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logError, logger } from '../lib/logger.js';
@@ -678,39 +673,6 @@ function modelGateAuthority(
   return runtimeRegistry.get(hint);
 }
 
-/**
- * The mode as its runtime declared it, or `undefined` for an id this runtime
- * does not offer (which {@link rejectUndeclaredPermissionMode} has already
- * refused by the time the door reads it).
- *
- * @param runtime - The runtime that owns the session being updated.
- * @param permissionMode - The mode the request asks to store.
- */
-function declaredMode(
-  runtime: AgentRuntime,
-  permissionMode: PermissionModeId
-): PermissionModeDescriptor | undefined {
-  return runtime.getCapabilities().permissionModes.values.find((d) => d.id === permissionMode);
-}
-
-/**
- * What a caller refused by the consent door is told, in the words that are true
- * of the mode they asked for.
- *
- * Two sentences rather than one, because one would be false somewhere: the
- * autonomy stop is a position with a name a person recognises from the dial,
- * while a middle stop that never asks is a surprise about behaviour and has to
- * be described as one. Neither names the runtime's own spelling of the mode —
- * the product speaks in the dial's words.
- *
- * @param descriptor - The mode as its runtime declared it.
- */
-function consentRequiredMessage(descriptor: PermissionModeDescriptor): string {
-  return isAutonomyStop(descriptor)
-    ? 'Turning on Full autonomy needs you to confirm what it means first.'
-    : "This mode won't stop for approval on each action, so you need to confirm what it means first.";
-}
-
 // PATCH /api/sessions/:id - Update session settings
 router.patch('/:id', async (req, res) => {
   const sessionId = parseSessionId(req.params.id);
@@ -726,7 +688,6 @@ router.patch('/:id', async (req, res) => {
     effort,
     fastMode,
     title,
-    acknowledgedAutonomy,
     runtime: runtimeHint,
     account: accountHint,
   } = parsed.data;
@@ -753,81 +714,6 @@ router.patch('/:id', async (req, res) => {
   if (requestedMode !== undefined) {
     const modeError = rejectUndeclaredPermissionMode(runtime, requestedMode);
     if (modeError) return sendError(res, 400, modeError, 'UNSUPPORTED_PERMISSION_MODE');
-    // ## THE CONSENT DOOR (spec `trust-dial`, decision 5, widened 2026-08-01)
-    //
-    // A mode that stops asking is the one change a person cannot walk back: by
-    // the time they notice they did not mean it, it has already happened. Every
-    // mode that still asks is one click and instantly reversible. So the ones
-    // that stop asking ask first — and the asking is checked HERE, because a
-    // gate that only exists in one client's dialog is not a gate. A second
-    // cockpit tab, a script, or a keyboard arrow that selects on focus would
-    // each walk straight past it.
-    //
-    // WHICH modes is {@link needsConsentRitual}'s answer, not this route's, and
-    // it is deliberately wider than the Full-autonomy stop. Codex files a mode
-    // at the MIDDLE stop that runs shell commands in the workspace and has no
-    // way to pause and ask; gating the autonomy position alone let that in with
-    // no ritual at all. The rule is semantic — never asks, can do more than read
-    // — so a future runtime with the same shape is caught the day it declares
-    // itself, without a server release and without its name appearing here.
-    //
-    // The request satisfies the door with `acknowledgedAutonomy: true`, or with
-    // the standing record a person leaves behind by ticking "don't show this
-    // again". Both are checked on EVERY gated PATCH: the checkbox trades a
-    // repeated ritual for a recorded one, and never weakens the contract. ONE
-    // record covers the whole door whatever mode opened it — what a person
-    // acknowledged is that a mode will not stop to ask, which is the same fact
-    // at either stop, and a second record would mean asking again about
-    // something they have already been told.
-    //
-    // ### What this is not
-    //
-    // It is a consent ritual for a person, not a boundary against a caller. Any
-    // program that can reach this route can send `acknowledgedAutonomy: true`
-    // itself, and nothing here can tell it from the cockpit. What it buys is
-    // that a person cannot arrive in a mode that never asks without having been
-    // told what that means. The boundary for agent callers is separate work
-    // (`agent-approval-settings`, DOR-501); do not describe this as covering it.
-    //
-    // ### Scope: this route is not the only way into a mode that never asks
-    //
-    // It gates the interactive CHANGE, and nothing else, so read the other ways
-    // in as deliberately out of scope rather than as gaps nobody noticed:
-    //
-    // - **Relay bindings, task execution, room turns.** All create and drive
-    //   sessions in-process via `ensureSession` and never reach this route, so
-    //   this door is not what bounds them. A binding carries a grant a person
-    //   set on it; a schedule carries its own mode and the bypass clamp on
-    //   file-sourced ones. A room turn carries NEITHER, and follows the
-    //   operator's configured stop instead — read at creation, clamped to
-    //   entries written on this machine (DOR-1917, ADR 260908-170643). What all
-    //   three share is that the value they start at was set through the
-    //   consent-gated config route, never through this one.
-    // - **A runtime's own default.** A session is BORN at whatever mode its
-    //   runtime declares as default, with no PATCH and therefore no door;
-    //   `test-mode` is born at its autonomy stop, which is the entire point of
-    //   that runtime. What keeps that honest is the separate invariant that no
-    //   production runtime may default to a mode that never asks — asked through
-    //   the SAME {@link needsConsentRitual} this door applies, so the two cannot
-    //   drift apart and leave a mode that is refused here but shipped as a
-    //   birthplace. Enforced per runtime by the conformance suite
-    //   (`runtimeConformance`, waivable only with a written reason) and across
-    //   the whole set by
-    //   `services/runtimes/__tests__/permission-semantics.test.ts`. This door
-    //   would be the wrong place for it: there is no request to refuse.
-    const descriptor = declaredMode(runtime, requestedMode);
-    if (descriptor && needsConsentRitual(descriptor) && !acknowledgedAutonomy) {
-      if (!hasStandingAutonomyAck()) {
-        // 428, not 400. The body is well-formed and the mode is one this runtime
-        // genuinely offers — nothing about the request is malformed, so calling
-        // it a validation failure would be false. What is missing is a
-        // precondition the caller can go and satisfy before retrying the
-        // identical request, which is the one thing 428 says and no other 4xx
-        // does: 403 would claim they may never do this, and 409 would claim
-        // something changed underneath them.
-        return sendError(res, 428, consentRequiredMessage(descriptor), AUTONOMY_ACK_REQUIRED_CODE);
-      }
-    }
   }
   // Same authority argument as the mode gate directly above, applied to the
   // model: only the runtime can say whether the id it was handed is real, and it

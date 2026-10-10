@@ -13,11 +13,11 @@ import { test, expect } from '../fixtures';
  *   1. the stage RENDERS the door in the onboarding frame (the `beforeEach` gate);
  *   2. ACCEPT ("Unlock full power") lands full power atomically and PERSISTS
  *      across a reload — the server config gains `defaultTrustStop: 'autonomy'`
- *      with a recorded `autonomyAcknowledgedAt` and `fullPowerChoice: 'full'`,
- *      and the mesh opens; a reload does not undo any of it;
+ *      and `fullPowerChoice: 'full'`, and the mesh opens; a reload does not undo
+ *      any of it;
  *   3. DECLINE ("Keep asking me first") records `fullPowerChoice: 'supervised'`
- *      and the Careful preset (Files & commands: Ask first), touches nothing
- *      consent-gated, and PERSISTS across a reload.
+ *      and the Careful preset (Files & commands: Ask first), opens no autonomy
+ *      stop and no mesh, and PERSISTS across a reload.
  *
  * ## It RUNS in CI (no skip gate), and how it stays out of other specs' way
  *
@@ -41,7 +41,6 @@ import { test, expect } from '../fixtures';
 /** The consent-relevant slice of `GET /api/config` this spec asserts on. */
 interface PowerConfigView {
   defaultTrustStop: string | null;
-  autonomyAcknowledgedAt: string | null;
   fullPowerDecidedAt: string | null;
   fullPowerChoice: string | null;
 }
@@ -61,7 +60,6 @@ async function readPowerConfig(request: APIRequestContext): Promise<PowerConfigV
   expect(response.ok()).toBe(true);
   const config = (await response.json()) as {
     ui?: {
-      autonomyAcknowledgedAt?: string | null;
       fullPowerDecidedAt?: string | null;
       fullPowerChoice?: string | null;
     };
@@ -69,7 +67,6 @@ async function readPowerConfig(request: APIRequestContext): Promise<PowerConfigV
   };
   return {
     defaultTrustStop: config.executionDefaults?.trustStop ?? null,
-    autonomyAcknowledgedAt: config.ui?.autonomyAcknowledgedAt ?? null,
     fullPowerDecidedAt: config.ui?.fullPowerDecidedAt ?? null,
     fullPowerChoice: config.ui?.fullPowerChoice ?? null,
   };
@@ -94,7 +91,7 @@ async function unsettleOnboardingAndPower(request: APIRequestContext): Promise<v
         completedSteps: [],
         skippedSteps: [],
       },
-      ui: { fullPowerDecidedAt: null, fullPowerChoice: null, autonomyAcknowledgedAt: null },
+      ui: { fullPowerDecidedAt: null, fullPowerChoice: null },
       runtimes: { defaultTrustStop: null },
     },
   });
@@ -124,7 +121,6 @@ async function healToSafeState(request: APIRequestContext): Promise<void> {
       ui: {
         fullPowerDecidedAt: new Date().toISOString(),
         fullPowerChoice: 'supervised',
-        autonomyAcknowledgedAt: null,
       },
       runtimes: { defaultTrustStop: null },
     },
@@ -173,7 +169,6 @@ test.describe('Onboarding power stage @full-power', () => {
 
     const config = await readPowerConfig(request);
     expect(config.defaultTrustStop).toBe('autonomy');
-    expect(config.autonomyAcknowledgedAt).not.toBeNull();
     expect(config.fullPowerChoice).toBe('full');
     expect(await readMeshOpen(request)).toBe(true);
 
@@ -186,7 +181,7 @@ test.describe('Onboarding power stage @full-power', () => {
     expect(afterReload.fullPowerDecidedAt).not.toBeNull();
   });
 
-  test('DECLINE records supervised, touches nothing consent-gated, and persists across a reload', async ({
+  test('DECLINE records supervised, opens nothing, and persists across a reload', async ({
     request,
     basePage,
   }) => {
@@ -202,7 +197,6 @@ test.describe('Onboarding power stage @full-power', () => {
     // `agent-permissions` D5): the answer is written down, never left to a
     // runtime's own default.
     expect(config.defaultTrustStop).toBe('ask');
-    expect(config.autonomyAcknowledgedAt).toBeNull();
     expect(await readMeshOpen(request)).toBe(false);
 
     await page.reload();
@@ -226,7 +220,6 @@ test.describe('Onboarding power stage @full-power', () => {
     expect(config.fullPowerDecidedAt).toBeNull();
     expect(config.fullPowerChoice).toBeNull();
     expect(config.defaultTrustStop).toBeNull();
-    expect(config.autonomyAcknowledgedAt).toBeNull();
     expect(await readMeshOpen(request)).toBe(false);
   });
 });

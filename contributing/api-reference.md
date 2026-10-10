@@ -611,7 +611,7 @@ Query params: `agentId` (optional), `before` (ISO 8601 cursor, optional), `limit
 
 Undo one `permission.changed` event (spec `agent-permissions` D14): every key it moved goes back to its `before`, recorded as one new `permission.changed` with `surface: 'undo'` and `undoOf`. Person-only, like every write.
 
-**Request body:** `{ force?: boolean, acknowledgeAutonomy?: true }` (an empty body is a plain Undo).
+**Request body:** `{ force?: boolean }` (an empty body is a plain Undo).
 
 - A key whose value is no longer the recorded `after` is a conflict. A change to one target is refused whole (`409 UNDO_CONFLICT`, with `conflicts: PermissionUndoSkip[]`). A change that reached several targets sets back the ones that still match and reports the rest in `skipped`; it is refused only when none match. `force: true` sets everything back.
 - A preset switch (`presetSnapshot` on the event) goes back as one unit: the preset, the defaults it cleared, and the global stop.
@@ -622,18 +622,16 @@ Undo one `permission.changed` event (spec `agent-permissions` D14): every key it
 - `200` - `{ changes: PermissionChange[], skipped: PermissionUndoSkip[] }`
 - `404` - `UNKNOWN_EVENT`
 - `409` - `UNDO_CONFLICT` (with `conflicts`), or `NOT_UNDOABLE` for a request-card answer or a notice
-- `428` - `AUTONOMY_ACK_REQUIRED` when the Undo would put a Files & commands stop back on Full autonomy
 
 ### PUT /api/permissions/preset
 
 Choose a preset for everyone (`careful`, `balanced`, `full`). Moves the global Files & commands stop to the preset's (Careful → `ask`, Balanced → `act`, Full power → `autonomy`) and clears the changes made on top of the old preset; `applyToAgents` also removes those agents' own settings so they follow the new preset.
 
-**Request body:** `{ preset, applyToAgents?: string[], surface, acknowledgeAutonomy?: true }`. `acknowledgeAutonomy` records that the person read what Full autonomy means and said yes, in the same write as the preset — needed only when the preset moves Files & commands to Full autonomy and no acknowledgement is already on file.
+**Request body:** `{ preset, applyToAgents?: string[], surface }`.
 
 **Responses:**
 
 - `200` - `{ changes: PermissionChange[], permissions: PermissionsResponse }`
-- `428` - `AUTONOMY_ACK_REQUIRED` when the preset would move Files & commands to Full autonomy and `acknowledgeAutonomy` was not sent and none is on file
 
 ### PATCH /api/permissions/defaults
 
@@ -653,14 +651,13 @@ One agent's resolved permissions, with where each area's state and its Files & c
 
 Change one agent's own areas, actions, or Files & commands stop.
 
-**Request body:** `{ areas?: Record<string, state | null>, actions?: Record<string, state | null>, filesAndCommands?: stop | null, surface, acknowledgeAutonomy?: true }`. `filesAndCommands: null` puts the agent back on the default. `acknowledgeAutonomy` is needed the same way it is on the preset route, when this write moves the agent's own stop to `autonomy`.
+**Request body:** `{ areas?: Record<string, state | null>, actions?: Record<string, state | null>, filesAndCommands?: stop | null, surface }`. `filesAndCommands: null` puts the agent back on the default.
 
 **Refuses `permissions`, `enabledToolGroups`, and `tierCeiling` on `PATCH /api/agents/current` and `PATCH /api/mesh/agents/:id`** — see those routes above; this is the only door in.
 
 **Responses:**
 
 - `200` - `{ changes: PermissionChange[], permissions: AgentPermissionsResponse }`
-- `428` - `AUTONOMY_ACK_REQUIRED`
 
 ## Relay Endpoints
 

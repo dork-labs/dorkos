@@ -23,8 +23,6 @@ export type SetPermissionInput =
       filesAndCommands?: PermissionStop | null;
       /** Default scope only: agents to bring along to the new default. */
       applyToAgents?: string[];
-      /** The person just confirmed what Full autonomy means (spec `agent-permissions` D16). */
-      acknowledgeAutonomy?: true;
       surface: PermissionSurface;
     }
   | {
@@ -32,21 +30,8 @@ export type SetPermissionInput =
       kind: 'preset';
       preset: PermissionPreset;
       applyToAgents?: string[];
-      /** As on a patch: sent when the preset moves Files & commands to Full autonomy. */
-      acknowledgeAutonomy?: true;
       surface: PermissionSurface;
     };
-
-/**
- * Whether a failed write is the server asking for the Full autonomy
- * acknowledgement first (`428 AUTONOMY_ACK_REQUIRED`), which is a question to
- * put to the person rather than a failure to report.
- *
- * @param err - What the write threw.
- */
-export function isAutonomyAckRefusal(err: unknown): boolean {
-  return (err as { code?: string } | null)?.code === 'AUTONOMY_ACK_REQUIRED';
-}
 
 /**
  * Write a permission for one scope — the defaults, or one agent — through the
@@ -56,8 +41,7 @@ export function isAutonomyAckRefusal(err: unknown): boolean {
  * permissions) must leave the switch where it was, so the cached value only
  * moves when the server's answer comes back. Every write refreshes the
  * overview, every agent view, the history, the mesh agent list, and config: a
- * preset sets the Files & commands stop, and a Full autonomy yes is recorded
- * there too.
+ * preset sets the Files & commands stop.
  *
  * @param scope - Where the write lands.
  * @returns The TanStack mutation.
@@ -73,7 +57,6 @@ export function useSetPermission(scope: PermissionScope) {
           preset: input.preset,
           surface: input.surface,
           ...(input.applyToAgents ? { applyToAgents: input.applyToAgents } : {}),
-          ...(input.acknowledgeAutonomy ? { acknowledgeAutonomy: true as const } : {}),
         });
       }
       const body = {
@@ -87,7 +70,6 @@ export function useSetPermission(scope: PermissionScope) {
           ...(input.filesAndCommands !== undefined
             ? { filesAndCommands: input.filesAndCommands }
             : {}),
-          ...(input.acknowledgeAutonomy ? { acknowledgeAutonomy: true as const } : {}),
         });
       }
       return transport.patchPermissionDefaults({

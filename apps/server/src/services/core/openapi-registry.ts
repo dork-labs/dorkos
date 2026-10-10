@@ -989,15 +989,6 @@ registry.registerPath({
   tags: ['Sessions'],
   summary: 'Update session settings',
   description:
-    'Moving an interactive session to a permission mode that never stops to ask ' +
-    'requires an acknowledgement. That means any mode the runtime declares at the ' +
-    '`autonomy` stop, and any mode it declares with `asks: "never"` and a `reach` ' +
-    'other than `"read"` — Codex files such a mode at the middle stop. Satisfy it ' +
-    'with `acknowledgedAutonomy: true` on this request, or with the standing ' +
-    'record in `ui.autonomyAcknowledgedAt`. Without one the response is `428 ' +
-    'AUTONOMY_ACK_REQUIRED` and nothing is persisted — obtain consent and retry ' +
-    'the identical request (spec `trust-dial`, decision 5). This is a consent ' +
-    'ritual for a person, not a boundary against a caller.\n\n' +
     'The chosen mode is always saved. When it could not also be delivered to a ' +
     'reply already in flight AND it was a tightening (the agent must now ask ' +
     'more, or may reach less far), the answer is `202` with ' +
@@ -1035,12 +1026,6 @@ registry.registerPath({
     },
     404: {
       description: 'Session not found',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    428: {
-      description:
-        'A mode that never stops to ask was requested without an acknowledgement ' +
-        '(`AUTONOMY_ACK_REQUIRED`)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
@@ -5953,8 +5938,7 @@ registry.registerPath({
     'since is a conflict: a change to one target is refused (409 `UNDO_CONFLICT`, listing each ' +
     'conflict) and writes nothing, while a change that reached several targets sets back the ' +
     'ones that still match and reports the rest in `skipped`. `force` sets every key back. A ' +
-    'preset switch goes back as one unit. An Undo never writes Allowed in a locked area, and ' +
-    'moving Files & commands to Full autonomy needs the acknowledgement (428). Undoing a ' +
+    'preset switch goes back as one unit. An Undo never writes Allowed in a locked area. Undoing a ' +
     '"Not now" on the Always allow suggestion lets the suggestion come back ' +
     '(`suggestionRestored`). A key already back where the change found it is nothing to do.',
   request: {
@@ -5976,10 +5960,6 @@ registry.registerPath({
         'A key changed since (`UNDO_CONFLICT`, with `conflicts`), or the history line is not a ' +
         'change, such as an answer on a request card (`NOT_UNDOABLE`)',
       content: { 'application/json': { schema: UndoConflictResponseSchema } },
-    },
-    428: {
-      description: 'The Undo moves Files & commands to Full autonomy (`AUTONOMY_ACK_REQUIRED`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
 });

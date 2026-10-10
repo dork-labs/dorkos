@@ -57,18 +57,6 @@ const EXOTIC_CAPABILITIES: RuntimeCapabilities = {
 /** The mode the mocked session reports; mutable so one suite can render both. */
 const sessionState = { permissionMode: 'yolo' as string };
 
-// The Trust Dial reads the standing Full-autonomy acknowledgement from user
-// config before it sends one. Stubbed to "nobody has acknowledged anything",
-// which is the shipped state and the one every case below assumes.
-vi.mock('@/layers/entities/config/model/use-autonomy-acknowledgement', () => ({
-  useAutonomyAcknowledgement: () => ({
-    acknowledgedAt: null,
-    acknowledge: vi.fn(),
-    clear: vi.fn(),
-    isPending: false,
-  }),
-}));
-
 // The status line now also asks where NEW sessions start, so it reads config and
 // can write it (spec `trust-dial`, decision 6C). Stubbed to "nothing configured,
 // writes go nowhere" — the offer is its own suite's subject

@@ -93,9 +93,10 @@ interface PermissionModeItemProps {
    *
    * The caller needs it because the offer above has TWO homes and only one may
    * speak at a time: inside this popover while it is open, and floating over the
-   * status strip once it is not. Entering Full autonomy opens a modal dialog
-   * whose focus grab closes this popover (observed in a browser, 2026-08-01), so
-   * the offer that follows would otherwise be drawn into an unmounted tree.
+   * status strip once it is not. Entering Full autonomy used to open a modal
+   * dialog whose focus grab closed this popover (observed in a browser,
+   * 2026-08-01); that dialog is retired (DOR-2739), but anything that closes the
+   * popover before the offer arrives would still draw it into an unmounted tree.
    */
   onOpenChange?: (open: boolean) => void;
 }

@@ -3,15 +3,13 @@
  * card happens to render it (spec `runtimes-settings-redesign`, task 2.3).
  *
  * Two surfaces write trust stops through this hook — the per-runtime row and the
- * global one — and the consent contract between them is the thing that must not
- * drift: what shape the patch takes, when it asks first, and above all that the
- * acknowledgement and the stop travel in ONE request. The server refuses the
- * stop without a standing acknowledgement, so a split into two requests races
- * and the stop bounces. That is the regression these tests exist for.
+ * global one — and the contract between them is the thing that must not drift:
+ * what shape the patch takes, and that Full autonomy is written straight through
+ * like any other stop (ADR 261006-225605).
  *
  * A mock `Transport` behind a real `TransportProvider`, not mocked hooks: the
  * request that reaches the wire is the assertion, and the query wiring the hook
- * owns (`useConfig`, `useUpdateConfig`, capabilities) is part of what is under
+ * owns (`useUpdateConfig`, capabilities) is part of what is under
  * test.
  *
  * @vitest-environment jsdom
@@ -43,10 +41,9 @@ const DEFAULTS: ExecutionDefaults = {
 /**
  * Three runtimes, because the contract is about what each one DECLARES.
  *
- * Codex carries its own autonomy mode with its own sentence, so a staged dialog
- * reading Claude Code's promise instead of Codex's would be visible here rather
- * than only to a person. `test-mode` declares `configSection: null` — the
- * runtime that has nowhere to store a setting, and therefore writes nothing.
+ * Codex declares its own config section. `test-mode` declares `configSection:
+ * null` — the runtime that has nowhere to store a setting, and therefore writes
+ * nothing.
  */
 async function capabilityFixture() {
   const base = await createMockTransport().getCapabilities();
@@ -97,7 +94,6 @@ type UpdateConfigMock = Mock<(patch: Record<string, unknown>) => Promise<void>>;
 function setup(
   options: {
     executionDefaults?: ExecutionDefaults;
-    acknowledgedAt?: string | null;
     updateConfig?: UpdateConfigMock;
   } = {}
 ) {
@@ -116,7 +112,7 @@ function setup(
       runtimes: ['claude-code'],
       claudeCliPath: null,
       executionDefaults: options.executionDefaults ?? DEFAULTS,
-      ui: { autonomyAcknowledgedAt: options.acknowledgedAt ?? null },
+      ui: {},
       tunnel: {
         enabled: false,
         connected: false,
@@ -139,11 +135,10 @@ function setup(
   return { ...view, updateConfig, queryClient };
 }
 
-/** Both reads the hook depends on have landed and been rendered. */
+/** The capability read the hook depends on has landed and been rendered. */
 async function ready(queryClient: QueryClient) {
   await waitFor(() => {
     expect(queryClient.getQueryData(['capabilities'])).toBeDefined();
-    expect(queryClient.getQueryData(configKeys.current())).toBeDefined();
   });
   await act(async () => {});
 }
@@ -187,72 +182,46 @@ describe('useTrustStopWrites — the patch shape', () => {
   });
 });
 
-describe('useTrustStopWrites — the Full-autonomy door', () => {
-  it('writes nothing and stages the runtime’s OWN promise when nobody has acknowledged', async () => {
+describe('useTrustStopWrites — Full autonomy is a normal choice', () => {
+  it('writes a global Full autonomy stop straight through, with no acknowledgement', async () => {
+    // ADR 261006-225605 retired the consent ritual: no staging, no dialog, and
+    // nothing under `ui` rides the write. `toHaveBeenCalledWith` compares the
+    // whole patch, so an acknowledgement riding along would fail it.
+    const { result, updateConfig, queryClient } = setup();
+    await ready(queryClient);
+
+    act(() => result.current.changeTrustStop(null, 'autonomy'));
+
+    await waitFor(() => expect(updateConfig).toHaveBeenCalledTimes(1));
+    expect(updateConfig).toHaveBeenCalledWith({ runtimes: { defaultTrustStop: 'autonomy' } });
+    expect(updateConfig.mock.calls[0]![0]).not.toHaveProperty('ui');
+  });
+
+  it('writes a per-runtime Full autonomy stop straight through', async () => {
     const { result, updateConfig, queryClient } = setup();
     await ready(queryClient);
 
     act(() => result.current.changeTrustStop('codex', 'autonomy'));
 
-    await waitFor(() => expect(result.current.pendingAutonomy).not.toBeNull());
-    expect(result.current.pendingAutonomy?.runtime).toBe('codex');
-    // Codex's sentence, not Claude Code's — what Full autonomy means differs by
-    // agent, and a stand-in would be wrong for somebody.
-    expect(result.current.pendingAutonomy?.descriptor.promise).toBe(
-      'Codex runs everything without asking, anywhere on this machine.'
-    );
-    expect(updateConfig).not.toHaveBeenCalled();
-  });
-
-  it('sends the acknowledgement and the stop in exactly ONE request', async () => {
-    // The load-bearing property. The server refuses the stop without a standing
-    // acknowledgement, so two requests would race and the stop could land first
-    // and bounce. Any refactor that splits this is a defect.
-    const { result, updateConfig, queryClient } = setup();
-    await ready(queryClient);
-
-    act(() => result.current.changeTrustStop(null, 'autonomy'));
-    await waitFor(() => expect(result.current.pendingAutonomy).not.toBeNull());
-    act(() => result.current.confirmAutonomy());
-
-    await waitFor(() => expect(updateConfig).toHaveBeenCalledTimes(1));
-    const patch = updateConfig.mock.calls[0]![0] as {
-      ui: { autonomyAcknowledgedAt: string };
-      runtimes: { defaultTrustStop: string };
-    };
-    expect(patch.runtimes).toEqual({ defaultTrustStop: 'autonomy' });
-    expect(Number.isNaN(Date.parse(patch.ui.autonomyAcknowledgedAt))).toBe(false);
-    expect(result.current.pendingAutonomy).toBeNull();
-  });
-
-  it('asks nothing of somebody who already acknowledged it', async () => {
-    const { result, updateConfig, queryClient } = setup({
-      acknowledgedAt: '2026-08-01T09:30:00.000Z',
-    });
-    await ready(queryClient);
-
-    act(() => result.current.changeTrustStop(null, 'autonomy'));
-
     await waitFor(() =>
-      expect(updateConfig).toHaveBeenCalledWith({ runtimes: { defaultTrustStop: 'autonomy' } })
+      expect(updateConfig).toHaveBeenCalledWith({
+        runtimes: { codex: { defaultTrustStop: 'autonomy' } },
+      })
     );
-    expect(result.current.pendingAutonomy).toBeNull();
   });
 });
 
 describe('useTrustStopWrites — what a person is told when it fails', () => {
   it('shows the server’s own refusal verbatim', async () => {
     const updateConfig: UpdateConfigMock = vi.fn(() =>
-      Promise.reject(new Error('Full autonomy needs an acknowledgement first.'))
+      Promise.reject(new Error('Only a person can change this.'))
     );
     const { result, queryClient } = setup({ updateConfig });
     await ready(queryClient);
 
     act(() => result.current.changeTrustStop(null, 'act'));
 
-    await waitFor(() =>
-      expect(result.current.writeError).toBe('Full autonomy needs an acknowledgement first.')
-    );
+    await waitFor(() => expect(result.current.writeError).toBe('Only a person can change this.'));
     act(() => result.current.clearWriteError());
     expect(result.current.writeError).toBeNull();
   });
