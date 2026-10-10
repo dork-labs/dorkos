@@ -16,7 +16,7 @@
 import { describe, it, expect } from 'vitest';
 import { authors } from '@dorkos/db';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { engagementFor, type EngagedWindow } from '../engagement.js';
+import { conversationFor, engagementFor, type EngagedWindow } from '../engagement.js';
 import { RoomStore } from '../room-store.js';
 import { ROOM_A, ROOM_B, type FixtureEntry } from './real-room-misses.fixture.js';
 
@@ -136,5 +136,70 @@ describe('the real posts nobody answered (DOR-2823)', () => {
     ])('%s seq %i', (_room, log, seq) => {
       expect(engagedAt(log, seq, SHIPPED)).toBe(true);
     });
+  });
+});
+
+/** The new shipped window (DOR-2823). */
+const DEFAULTS: EngagedWindow = { minutes: 60, posts: 15 };
+
+/**
+ * Who `seq` is for by conversation, when it lands, at the new defaults.
+ *
+ * @param log - One room's fixture log.
+ * @param seq - The unmentioned post by the person.
+ */
+function conversationAt(log: readonly FixtureEntry[], seq: number): string[] | null {
+  const { store, target } = replayUpTo(log, seq);
+  const agents = new Set<string>([IDS.AGENT, IDS.OTHER_AGENT]);
+  return (
+    conversationFor(
+      { store },
+      {
+        roomId: ROOM,
+        threadRootEntryId: target.root === undefined ? null : idOf(target.root),
+        isAgentMember: (id) => agents.has(id),
+        joinsConversations: (id) => agents.has(id),
+        isPerson: (id) => id === IDS.HUMAN,
+        window: DEFAULTS,
+        now: new Date(target.at),
+      }
+    )?.partners ?? null
+  );
+}
+
+describe('following the conversation answers ten of the twelve (DOR-2823)', () => {
+  it.each([
+    // The clock ran out: the agent had answered, then the window closed.
+    ['room A', ROOM_A, 43],
+    ['room A', ROOM_A, 51],
+    ['room B', ROOM_B, 311],
+    ['room B', ROOM_B, 316],
+    // The thread root named the agent.
+    ['room A', ROOM_A, 48],
+    ['room B', ROOM_B, 279],
+    ['room B', ROOM_B, 289],
+    ['room B', ROOM_B, 297],
+    ['room B', ROOM_B, 303],
+    ['room B', ROOM_B, 308],
+  ])('%s seq %i goes to the agent', (_room, log, seq) => {
+    expect(conversationAt(log, seq)).toEqual([IDS.AGENT]);
+  });
+
+  it.each([
+    ['room A', ROOM_A, 38],
+    ['room B', ROOM_B, 282],
+    ['room B', ROOM_B, 293],
+    ['room B', ROOM_B, 314],
+  ])('%s seq %i, which was answered, still goes to the agent', (_room, log, seq) => {
+    expect(conversationAt(log, seq)).toEqual([IDS.AGENT]);
+  });
+
+  // Days after anybody spoke: no conversation to follow. These two are the
+  // channel lead's to answer.
+  it.each([
+    ['room B', ROOM_B, 272],
+    ['room B', ROOM_B, 275],
+  ])('%s seq %i is part of no conversation', (_room, log, seq) => {
+    expect(conversationAt(log, seq)).toBeNull();
   });
 });
