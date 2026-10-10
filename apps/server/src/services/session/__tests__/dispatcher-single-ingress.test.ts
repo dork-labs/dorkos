@@ -90,6 +90,13 @@ const ALLOWED = new Map<string, string>([
       'computer stays awake while it is consumed, and starts nothing of its own.',
   ],
   [
+    'apps/server/src/services/audit/record-tool-use.ts',
+    'The audit wrap (spec `audit-trail` PR3), a decorator on the same terms as the ' +
+      'keep-awake one: registered at the same seam (`RuntimeRegistry.register`), it ' +
+      'wraps the generator a caller already asked for, only reads the tool events ' +
+      'that pass through it, and starts nothing of its own.',
+  ],
+  [
     'apps/server/src/services/tasks/task-scheduler-service.ts',
     'The scheduler drives its own turn: it consumes the stream in-band for the ' +
       'run row and races it against a cancel signal, which is work no dispatcher ' +

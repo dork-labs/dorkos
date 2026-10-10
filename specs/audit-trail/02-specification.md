@@ -217,24 +217,27 @@ Every PR: `pnpm verify` green, TSDoc on exports, a changelog fragment in `change
 
 **Changelog**: "Approved actions, setting changes, package installs and sign-ins now show in the record."
 
-### PR3: Runtime tool calls (all three runtimes)
+### PR3: Runtime tool calls (every runtime)
 
 **Files**
 
-- `services/audit/record-tool-use.ts`: a Proxy in the same shape as `core/keep-awake/hold-during-turn.ts`, applied in `runtimeRegistry.register()`, so every turn from every surface (interactive, room, task, relay, connector event) and every runtime is seen once. It enters the audit ALS context for the turn (session, runtime, agent from `opts.cwd`/`opts.forAgent`), watches `tool_call_start` (to remember name + input) and the terminal `tool_result`/`tool_call_end`, and records `runtime.tool_used`:
-  - `target_name`: a ≤ 200-char summary from a per-tool extractor table (Bash → command, Edit/Write/Read → file path, WebFetch → URL host + path, MCP → server/tool), redacted by the writer. Unknown tools → tool name only.
-  - `operation`: `access` for read-only tools (Read, Grep, Glob, LS, WebSearch, Codex/OpenCode read equivalents), else `execute`.
+- `services/audit/record-tool-use.ts`: a Proxy in the same shape as `core/keep-awake/hold-during-turn.ts`, applied in `decorateRuntime` (`core/runtime-seam/decorate-runtime.ts`, called by `runtimeRegistry.register()`) just inside keep-awake, so every turn from every surface (interactive, room, task, relay, connector event) and every runtime is seen once. It watches the turn's runtime-neutral tool `StreamEvent`s (no per-runtime table was needed: all three mappers emit `toolCallId`/`toolName`/`input`/`status`) and records `runtime.tool_used` once per call, when it reaches a terminal status (`complete`/`error`):
+  - The actor is the agent whose home the turn stands in, resolved by `resolveAgentHome(cwd, turnAgentOf(opts))` like every other turn-path identity check (a worktree or subfolder of a home is that home), named by its mesh id and display name; a turn in no agent's home is `unidentified`. Named explicitly on every row rather than through the ALS scope, because an async generator's body runs in its consumer's context.
+  - `target`: a ≤ 200-char summary from a per-tool extractor (`toolTarget`): shell → command, Edit/Write/Read → file path, WebFetch → host + first path segment (never deeper segments, the query or fragment, where webhook keys and tokens ride), search → query/pattern, Codex `ApplyPatch` → first file (`{changes:[{path}]}` or a raw patch's `*** Update File:` lines), any `mcp__*` → the tool name; unknown tools → no target. Swept for secrets BEFORE it is cut, and swept again by the writer, which redacts `target.id` as well as `target.name` (review: a raw command in the id was stored verbatim). The writer also learned `Bearer <token>`, `--password <value>`-style flags and MySQL's glued `-p<password>`.
+  - `operation`: `access` for read-only tools (Read, Grep, Glob, LS, WebFetch, WebSearch and the OpenCode spellings), else `execute`.
   - `source.toolCallId` and `source.sessionId` link to the transcript; full input and output stay there.
-  - DorkOS's own MCP tools (`mcp__dorkos__*` and the Codex/OpenCode spellings) are skipped here because PR2 records them server-side with better data.
-- Shared tool-name tables for the three runtimes if the normalized `StreamEvent` does not already carry a runtime-neutral name (verify against `runtimes/codex/event-mapper.ts` and `runtimes/opencode/events/part-event-mapper.ts`).
+  - DorkOS's own MCP tools are skipped, as the running runtime spells them (`mcp__dorkos__*` for Claude Code and Codex, `dorkos_*` for OpenCode, the bare registered name for Doe): PR2 records them at the gate.
+  - Claude's `tool_call_end` means only that the INPUT finished streaming (DOR-2011), so it settles nothing; a call is settled once per session (not per turn), even when Codex follows a terminal `tool_call_end` with a `tool_result`, or a hook and the stream both report it.
+  - A call still open when the turn ends (a Codex background command, an interrupted turn) is recorded once as `runtime.tool_started` ("no result before the reply ended") and its target remembered in memory for its session; when its result arrives, in a later turn, it is recorded once as `runtime.tool_used` with the real outcome, under the agent that began it. Never a guessed `failed`. A call cut off while its input was still streaming never ran and is not recorded. Memory only: a restart, an interrupt that never delivers the result, or more than 500 remembered sessions means no second row, and the guide says so.
+  - The writer's `target.id` sweep is a contract for every caller: an id holding a credential-shaped run (32+ hex, a token prefix) is stored redacted, so no lookup may key on such an id.
+  - Helper agents: Claude Code drops a helper's messages from the stream, so SDK `PostToolUse`/`PostToolUseFailure` hooks (`runtimes/claude-code/audit-tool-hooks.ts`) record calls that carry an `agent_id`; Doe's helper calls come through `DoeTurnEvents.onHelperTool` (Doe now passes a tool's arguments on `tool-start`). Codex and OpenCode expose only the helper's start, recorded as `runtime.helper_started`; the guide says their helpers' tools are not listed.
 
 **Tests**
 
-- Proxy test with a fake runtime: a stream with two tool calls writes two rows with the right session, agent ULID and outcome; a stream that throws mid-tool records `failed`; `return()` early records nothing half-written.
-- One fixture per runtime (Claude Code, Codex, OpenCode) through the real event mappers: a shell command produces `runtime.tool_used` with the command as target.
-- A token in a Bash command is redacted in `target_name`.
-- `mcp__dorkos__*` calls are not double-recorded.
-- The Proxy is in the `register()` chain (fails if removed: assert via the registry test that a registered runtime is wrapped).
+- `services/audit/__tests__/record-tool-use.test.ts` over a fake runtime: one row per settled call with target, outcome, operation and source; the turn passes through unchanged; a call settled once whatever terminal frames arrive; streamed input accumulated before the result; DorkOS tools skipped on every runtime; an unsettled call recorded as failed when the runtime throws and when the caller stops early; nothing recorded with no trail. `toolTarget` table per tool shape, including Codex's JSON patch.
+- One fixture per runtime through its real mapper, in that runtime's folder (the SDK-import rule): Claude Code (`mapStreamEvent` + `mapMessageEvent`, input in pieces, then the result), Codex (`mapCodexEvent`: a passing and a failing command, a file change), OpenCode (`mapPartSnapshot`: a command, a failed edit, a DorkOS tool).
+- `core/__tests__/runtime-registry.test.ts`: a runtime registered through the registry records its tool calls (fails with the wrap removed).
+- Each was mutation-checked: removing the settled guard, the input accumulation, the DorkOS skip, the end-of-turn failure, or the registry wrap turns at least one red.
 
 **Docs**: `docs/guides/audit-trail.mdx` ("what your agents did inside their tools"), `docs/guides/runtimes.mdx` one line.
 
@@ -302,7 +305,7 @@ Every PR: `pnpm verify` green, TSDoc on exports, a changelog fragment in `change
 
 ## Risks
 
-- **Write volume** from PR3: one sync insert per tool call. Measured target: < 1 ms p99 per `record` on a dev Mac with 1M rows; if not met, batch per turn inside one transaction.
+- **Write volume** from PR3: one sync insert per tool call. Measured target: < 1 ms p99 per `record` on a dev Mac with 1M rows; if not met, batch per turn inside one transaction. Measured in PR3 (M4 Mac, 200,000 rows, in-memory SQLite): mean 0.24 ms, p50 0.17 ms, p99 2.1 ms (garbage-collection spikes). Not batched: a tool call itself takes far longer than its row, and batching would lose a turn's rows on a crash.
 - **The insert trigger's `MAX(seq)` subquery** is an index lookup on the PK, so it stays O(log n). Verify with `EXPLAIN QUERY PLAN` in the PR1 test.
 - **DB size** grows forever. ~400 bytes/row; 5,000 tool calls a day is ~700 MB/year. Acceptable for v1; pruning with an explained gap is the first follow-up.
 - **ALS loss** at stored-callback boundaries (as `dispatch-context.ts` documents) records the actor as `system`. Tests cover the three choke points that use the context.

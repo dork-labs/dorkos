@@ -94,6 +94,7 @@ import { resolveThinkingOptions } from './thinking-config.js';
 import { createEditBaselineCapture, detectSlashCommandName } from './message-sender-shared.js';
 import type { MessageSenderOpts } from './message-sender-shared.js';
 import { turnPermissionMode } from '../turn-permission.js';
+import { auditToolHookMatchers } from '../audit-tool-hooks.js';
 
 /**
  * Whether DorkOS attaches host context to auto mode's permission classifier,
@@ -764,6 +765,10 @@ export async function resolveLaunch(args: {
   // backstop holds: `interactive-handlers.ts` auto-denies on abort and on
   // timeout, so a prompt that arrives outside a foreground turn degrades
   // gracefully rather than hanging one.
+  const auditHooks = auditToolHookMatchers({
+    sessionId,
+    turn: { cwd: effectiveCwd, forAgent, roomTurn: messageOpts?.roomTurn },
+  });
   sdkOptions.hooks = {
     PreToolUse: [
       {
@@ -801,7 +806,11 @@ export async function resolveLaunch(args: {
         matcher: CLASSIFIER_CONTEXT_MATCHER,
         hooks: [createClassifierContextHook({ sessionId, enabled: CLASSIFIER_CONTEXT_ON })],
       },
+      ...auditHooks.PostToolUse,
     ],
+    // A helper agent's tool calls never reach the stream the audit record
+    // reads, so these record them (spec `audit-trail` PR3). Observe-only.
+    PostToolUseFailure: auditHooks.PostToolUseFailure,
     // Which session timers are still pending (DOR-2717). CronCreate,
     // ScheduleWakeup and /loop live inside the CLI and are no background task,
     // so the stream never names them; the Stop hook's input does, at every turn

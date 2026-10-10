@@ -25,8 +25,8 @@
  *
  * ## Redaction happens here
  *
- * Every free-text field (`summary`, `error`, `reason`, `target.name`, and every
- * string inside `change`) is swept for credential shapes before it is hashed,
+ * Every free-text field (`summary`, `error`, `reason`, `target.name`,
+ * `target.id`, and every string inside `change`) is swept for credential shapes before it is hashed,
  * and a `change` on a field in `SENSITIVE_CONFIG_KEYS` keeps its name and loses
  * both values. Callers cannot opt out, so no caller can forget.
  *
@@ -139,8 +139,37 @@ function isSecretName(name: string): boolean {
   );
 }
 
+/** A command line that runs a MySQL or MariaDB client. */
+const MYSQL_CLIENT = /\b(?:mysql|mysqldump|mysqladmin|mariadb|mariadb-dump)\b/;
+
 /** Shapes a secret takes in free text, each with what to keep around it. */
 const SECRET_TEXT: readonly [RegExp, (match: string, ...groups: string[]) => string][] = [
+  // `Authorization: Basic <token>`, `Bearer <token>`: first, because the
+  // name-value rule below would take only the scheme word and leave the token.
+  [
+    /\b(Bearer|Basic|Token)(\s+)[A-Za-z0-9._~+/=-]{8,}/g,
+    (_m, scheme, gap) => `${scheme}${gap}${REDACTED}`,
+  ],
+  // A Telegram bot token, which rides in the URL path: `/bot123456:AAE…`.
+  [/\bbot(\d{5,}):[A-Za-z0-9_-]{30,}/g, () => `bot${REDACTED}`],
+  // A cookie header carries a session: `Cookie: session=…; csrftoken=…`.
+  [/\b((?:Set-)?Cookie:\s*)[^\n"']+/gi, (_m, head) => `${head}${REDACTED}`],
+  // `curl -u user:password`, `--user user:password`: keep the user.
+  [
+    /(?<!\S)(-u|--user)(\s+|=)([^\s:"']+):([^\s"']+)/g,
+    (_m, flag, gap, user) => `${flag}${gap}${user}:${REDACTED}`,
+  ],
+  // `docker login -p <password>`: `-p` is a secret only on that command.
+  [
+    /(\bdocker\s+login\b[^\n]*?\s)-p(\s+|=)[^\s"']+/g,
+    (_m, head, gap) => `${head}-p${gap}${REDACTED}`,
+  ],
+  // `aws configure set aws_secret_access_key <value>`: a secret-named key
+  // handed to a `set` subcommand, with its value as the next word.
+  [
+    /(\bset\s+)([A-Za-z0-9_.-]{1,128})(\s+)([^\s"']+)/g,
+    (match, head, name, gap) => (isSecretName(name) ? `${head}${name}${gap}${REDACTED}` : match),
+  ],
   // `"apiKey": "abcd1234"` — a JSON (or JSON-ish) member named like a secret.
   // The name is bounded, so each quote costs a bounded amount.
   [
@@ -165,6 +194,13 @@ const SECRET_TEXT: readonly [RegExp, (match: string, ...groups: string[]) => str
   ],
   // A JWT: three base64url segments, the first a JSON header.
   [/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, () => REDACTED],
+  // A command-line flag named like a secret with its value after a space:
+  // `--password hunter2`, `--api-key abcd`. (`--token=abcd` is the rule above.)
+  [
+    /(?<![A-Za-z0-9_-])(--?[A-Za-z][A-Za-z0-9_-]{0,63})(\s+)(?!-)([^\s"'&;|]+)/g,
+    (match, flag, gap) =>
+      isSecretName(flag.replace(/^-+/, '')) ? `${flag}${gap}${REDACTED}` : match,
+  ],
   // Google, Notion, Stripe and Slack app tokens by their prefixes.
   [/\b(?:AIza|ntn_|secret_|sk_live_|sk_test_|rk_live_|xapp-)[A-Za-z0-9_-]{10,}/g, () => REDACTED],
 ];
@@ -177,11 +213,18 @@ const SECRET_TEXT: readonly [RegExp, (match: string, ...groups: string[]) => str
  * The input is cut to {@link MAX_SWEPT} before the sweep, so no caller can make
  * one record expensive, and to {@link MAX_TEXT} after it. Sweeping before the
  * final cut matters: cutting first can leave the start of a secret too short to
- * be recognised.
+ * be recognised. Exported so a caller that cuts a value shorter still (a
+ * runtime tool's target) can sweep it first.
+ *
+ * @param text - The free text to sweep.
  */
-function redactText(text: string): string {
+export function redactAuditText(text: string): string {
   let swept = redactSecretsInText(redactCredentialTokens(text.slice(0, MAX_SWEPT)));
   for (const [pattern, replace] of SECRET_TEXT) swept = swept.replace(pattern, replace);
+  // MySQL and MariaDB take a password glued to `-p` (`mysql -pHunter2`). Only
+  // on a line that runs one of them: elsewhere `-p…` is an ordinary flag.
+  if (MYSQL_CLIENT.test(swept))
+    swept = swept.replace(/(?<!\S)-p(?=[^\s"'])[^\s"']+/g, `-p${REDACTED}`);
   return swept.length <= MAX_TEXT ? swept : `${swept.slice(0, MAX_TEXT - 1)}…`;
 }
 
@@ -191,7 +234,7 @@ function redactText(text: string): string {
  * yes/no, which no secret is).
  */
 function redactDeep(value: unknown): unknown {
-  if (typeof value === 'string') return redactText(value);
+  if (typeof value === 'string') return redactAuditText(value);
   if (Array.isArray(value)) return value.map(redactDeep);
   if (value !== null && typeof value === 'object') {
     return Object.fromEntries(
@@ -392,15 +435,20 @@ export class AuditLog {
             action: input.action,
             operation: input.operation,
             targetType: target?.type ?? null,
-            targetId: target?.id ?? null,
-            targetName: target?.name !== undefined ? redactText(target.name) : null,
+            // A target's id is swept like its name: a runtime tool's target is
+            // a command line, which can carry a key in either. A contract for
+            // every caller: an id holding a credential-shaped run (32+ hex,
+            // a known token prefix) is stored with that run redacted, so never
+            // key a lookup on such an id.
+            targetId: target ? redactAuditText(target.id) : null,
+            targetName: target?.name !== undefined ? redactAuditText(target.name) : null,
             containerId: target?.containerId ?? null,
             outcome: input.outcome,
-            error: input.error !== undefined ? redactText(input.error) : null,
+            error: input.error !== undefined ? redactAuditText(input.error) : null,
             change: input.change?.length ? json(redactChange(input.change)) : null,
-            reason: input.reason !== undefined ? redactText(input.reason) : null,
+            reason: input.reason !== undefined ? redactAuditText(input.reason) : null,
             links: input.links ? json(input.links) : null,
-            summary: redactText(input.summary),
+            summary: redactAuditText(input.summary),
             visibility,
             participants: visibility === 'participants' ? json(input.participants) : null,
             prevHash: last?.hash ?? GENESIS_HASH,

@@ -27,6 +27,7 @@ The record also holds things that never show in Activity:
 - work merged into a room's files, and who merged it
 - API keys created or revoked, and the sign-in tokens DorkOS gives agents
 - sign-ins, sign-outs, sign-ins that expired or were revoked, and failed sign-ins
+- the tools an agent uses inside DorkOS, Claude Code, Codex or OpenCode: the command it ran, the file it changed, the page it fetched, and whether it worked
 - any other change made through the app or its API that nothing above covers: who did it, which kind of change, and whether it worked. These lines can name what was changed, such as a package or a setting, but never what was sent with it. Chat messages and room posts are talk, not changes, so they never appear here.
 
 Sign-in lines also note the device and network they came from, so they are marked as the owner's alone.
@@ -35,7 +36,13 @@ Each line says who acted. An agent is named by an id that stays the same if you 
 
 The record never holds message text. A changed setting that holds a secret shows its name only. Anything in a line that looks like a password or key is replaced with `[redacted]` before it is saved. That last part is best effort: it catches the usual shapes, not every possible one.
 
-Tools an agent runs inside Claude Code, Codex or OpenCode will join the record in a later release.
+A tool line names what the tool acted on, not its whole input or output. A web address keeps only its site and first folder. The full detail stays in the chat, and the line points to it.
+
+A tool can still be running when a reply ends, such as a long command left going in the background. It gets a "began" line then. If DorkOS later sees it finish, a second line says how it went. A tool stopped by an interrupt, or one that finishes while DorkOS is restarting, may never get that second line.
+
+Helpers are the smaller agents an agent can start for part of a job. In DorkOS and Claude Code, every tool a helper uses is recorded too, marked as a helper's. In Codex and OpenCode, the record shows that a helper started, but not each tool it used. Those runtimes don't share that detail with DorkOS yet.
+
+Chats you start with `claude` or `codex` outside DorkOS never pass through it, so their tools are not recorded.
 
 ## Activity and the record
 
