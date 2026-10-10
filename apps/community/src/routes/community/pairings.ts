@@ -29,9 +29,9 @@ import {
   requireLiveRole,
   refuseIfClearedSinceStart,
   requireMember,
-  revokeCallingConnectionGrant,
   transaction,
 } from '../../data.js';
+import { lockRevocationMember, revokeCallingConnectionGrant } from './grant-revocation.js';
 import type { ConfirmPassword } from '../../password-confirmation.js';
 import { ApiError, json, readJson } from '../../http.js';
 import { equalSecret, hashSecret, randomToken } from '../../security.js';
@@ -116,25 +116,6 @@ async function requirePairingMember(
     return;
   }
   await refuseIfClearedSinceStart(client, actor.user_id);
-  const member = await client.query(
-    'SELECT 1 FROM members WHERE id=$1 AND community_id=$2 AND active FOR SHARE',
-    [actor.id, actor.community_id]
-  );
-  if (!member.rowCount) throw new ApiError(403, 'FORBIDDEN', 'Your membership has ended.');
-}
-
-async function lockRevocationMember(
-  client: PoolClient,
-  actor: Awaited<ReturnType<typeof requireMember>>
-): Promise<void> {
-  const community = await client.query<{ lifecycle: string }>(
-    `SELECT lifecycle FROM communities
-     WHERE id=$1 AND lifecycle IN ('active','archived','suspended','held','deletion_pending')
-     FOR SHARE`,
-    [actor.community_id]
-  );
-  if (!community.rowCount)
-    throw new ApiError(409, 'COMMUNITY_UNAVAILABLE', 'This space is unavailable.');
   const member = await client.query(
     'SELECT 1 FROM members WHERE id=$1 AND community_id=$2 AND active FOR SHARE',
     [actor.id, actor.community_id]

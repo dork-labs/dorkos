@@ -21,7 +21,8 @@ import { mintHandle } from './handles.js';
 import { registerChannelRoutes } from './routes/community/channels.js';
 import { registerEntryRoutes } from './routes/community/entries.js';
 import { registerEventRoutes } from './routes/community/events.js';
-import { LiveHub } from './live/hub.js';
+import type { LiveHub } from './live/hub.js';
+import { createLiveHub, stopLiveWithPool } from './live/app-hub.js';
 import { registerMonitoringRoutes } from './live/monitoring.js';
 import { registerInviteRoutes } from './routes/community/invites.js';
 import { registerMemberRoutes } from './routes/community/members.js';
@@ -56,8 +57,7 @@ import {
   registerMinimumAgeRoutes,
   requireAgeConfirmation,
 } from './sign-up/minimum-age.js';
-import { IMPORT_ARCHIVE_UPLOAD_PATH, registerImportRoutes } from './routes/host/imports.js';
-import { IMPORT_PART_UPLOAD_PATH } from './imports/part-routes.js';
+import { registerImportRoutes } from './routes/host/imports.js';
 import { UploadSlots } from './imports/upload.js';
 import { registerHistoryOriginRoute } from './routes/community/history-origin.js';
 import { createHostAuthority } from './host/authority.js';
@@ -81,37 +81,7 @@ import { callerLimitKey, EmailLinkLimiter } from './email-links/limiter.js';
 import { EMAIL_LINK_CAPS, emailLinksOn } from './email-links/model.js';
 import { queueEmailConfirmation, registerEmailLinkRequestRoutes } from './email-links/requests.js';
 import { registerEmailLinkUseRoutes } from './email-links/confirm.js';
-
-/** Build the live-stream hub the configuration describes. */
-export function createLiveHub(config: CommunityConfig): LiveHub {
-  return new LiveHub({
-    listenUrl: config.database.listenUrl,
-    maxStreams: config.streams.max,
-    maxStreamsPerCommunity: config.streams.perCommunity,
-    maxStreamsPerMember: config.streams.perMember,
-    fallbackMs: config.streams.fallbackMs,
-  });
-}
-
-/**
- * Stop `live` whenever `pool` ends, before the pool itself does. The hub's connection sits outside
- * the pool, so ending the pool alone would leave it connected, and a test dropping its database
- * right after would find it still in use. `pg` emits no event when a pool ends, so this wraps
- * `end` once. It is only for a hub the app made itself; a caller that passes its own stops it.
- */
-function stopLiveWithPool(live: LiveHub, pool: Pool): void {
-  const end = pool.end.bind(pool) as () => Promise<void>;
-  const endWithLive = (callback?: (error?: Error) => void) => {
-    const ended = live
-      .stop()
-      .catch(() => undefined)
-      .then(() => end());
-    if (!callback) return ended;
-    ended.then(() => callback(), callback);
-    return undefined;
-  };
-  pool.end = endWithLive as Pool['end'];
-}
+import { createApiRequestGuard } from './limits/api-request-guard.js';
 
 /** Assemble the injectable HTTP app without reading environment variables. */
 export function createCommunityApp({
@@ -201,73 +171,7 @@ export function createCommunityApp({
     hasPassword: (userId) => accountHasPassword(pool, userId),
   });
   const jsonBodyMs = hooks?.jsonBodyMs ?? JSON_BODY_MS;
-  app.use('/api/*', async (c, next) => {
-    if (!['GET', 'HEAD', 'OPTIONS'].includes(c.req.method)) {
-      const origin = c.req.header('origin');
-      if (origin && origin !== config.publicUrl) {
-        throw new ApiError(403, 'FORBIDDEN', 'This request came from an untrusted site.');
-      }
-      if (!origin && c.req.header('sec-fetch-site') === 'cross-site') {
-        throw new ApiError(403, 'FORBIDDEN', 'This request came from an untrusted site.');
-      }
-      // Bound JSON and auth requests before parsing, even for chunked or false-length bodies.
-      if (
-        (c.req.path.match(/^\/api\/v1\/(?:communities\/[^/]+\/)?channels\/[^/]+\/attachments$/) &&
-          c.req.method === 'POST') ||
-        ((IMPORT_ARCHIVE_UPLOAD_PATH.test(c.req.path) ||
-          IMPORT_PART_UPLOAD_PATH.test(c.req.path)) &&
-          c.req.method === 'PUT')
-      ) {
-        await next();
-        return;
-      }
-      const maxBodyBytes = Math.max(config.limits.textBytes + 32 * 1024, 96 * 1024);
-      const declared = Number(c.req.header('content-length'));
-      if (declared > maxBodyBytes)
-        throw new ApiError(413, 'ATTACHMENT_TOO_LARGE', 'Request body is too large.');
-      if (c.req.raw.body) {
-        const reader = c.req.raw.body.getReader();
-        const chunks: Uint8Array[] = [];
-        let size = 0;
-        // The server lets a request take hours to arrive, for export uploads. A small JSON
-        // body gets its own short deadline, so a slow drip cannot hold a connection open.
-        const deadline = Date.now() + jsonBodyMs;
-        while (true) {
-          let timer: ReturnType<typeof setTimeout> | undefined;
-          const { done, value } = await Promise.race([
-            reader.read(),
-            new Promise<never>((_, reject) => {
-              timer = setTimeout(
-                () =>
-                  reject(new ApiError(408, 'UNAVAILABLE', 'The request took too long to arrive.')),
-                Math.max(0, deadline - Date.now())
-              );
-            }),
-          ])
-            .catch(async (error: unknown) => {
-              await reader.cancel().catch(() => undefined);
-              throw error;
-            })
-            .finally(() => clearTimeout(timer));
-          if (done) break;
-          size += value.byteLength;
-          if (size > maxBodyBytes) {
-            await reader.cancel();
-            throw new ApiError(413, 'ATTACHMENT_TOO_LARGE', 'Request body is too large.');
-          }
-          chunks.push(value);
-        }
-        const body = new Uint8Array(new ArrayBuffer(size));
-        let offset = 0;
-        for (const chunk of chunks) {
-          body.set(chunk, offset);
-          offset += chunk.byteLength;
-        }
-        c.req.raw = new Request(c.req.raw, { body: new Blob([body]) });
-      }
-    }
-    await next();
-  });
+  app.use('/api/*', createApiRequestGuard(config, jsonBodyMs));
   app.use('/api/auth/sign-up/*', async (c, next) => {
     limitAttempts(`signup:${peer(c)}`, config.limits.signupAttemptsPerMinute);
     await next();
