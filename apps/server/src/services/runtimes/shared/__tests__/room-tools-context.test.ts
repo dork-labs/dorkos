@@ -69,12 +69,15 @@ describe('what the block says about the early signal (DOR-1975)', () => {
   // folded away, so a reflow cannot red a rule that is still stated.
   const block = buildRoomToolsBlock(PREFIX);
 
-  it('signals BEFORE the long work, not after', () => {
-    // The ordering word is the part that matters: the instruction is worthless
-    // if the signal arrives with the result.
+  it('says the room puts the 👀 on for the agent, and the agent cannot', () => {
+    // DOR-2823: the early signal is now the room's receipt, written the moment
+    // the agent is picked, so the teaching must stop asking the agent for it.
     const words = block.replace(/\s+/g, ' ');
-    expect(words).toContain('BEFORE A LONG TURN, PUT 👀 ON THE MESSAGE THAT TRIGGERED YOU');
-    expect(words).toContain('first, before the work');
+    expect(words).toContain(
+      "DORKOS PUTS 👀 ON A PERSON'S MESSAGE FOR YOU the moment you are picked to answer it"
+    );
+    expect(words).toContain('you cannot use 👀 yourself');
+    expect(words).not.toContain('PUT 👀 ON THE MESSAGE THAT TRIGGERED YOU');
   });
 
   it('forbids BOTH a reaction and an "on it" message for one trigger', () => {
@@ -85,20 +88,21 @@ describe('what the block says about the early signal (DOR-1975)', () => {
     );
   });
 
-  it('swaps the 👀 for a ✅ when the work is done, and says what that ✅ means', () => {
-    // Without the swap an agent leaves a room saying it is still working when
-    // it is not; `on: false` is the mechanism, and naming it is what makes the
-    // instruction actionable. And ✅ already means "seen" in the ack triple a
-    // few lines up, so the text has to say which ✅ this is.
+  it('offers a ✅ for finished work, and never asks the agent to take a 👀 off', () => {
+    // The room takes its own receipt off when the turn ends (DOR-2823), so the
+    // old "swap the 👀 for a ✅" step would ask for a reaction the agent cannot
+    // make. ✅ already means "seen" a few lines up, so the text says which ✅.
     const words = block.replace(/\s+/g, ' ');
-    expect(words).toContain('take the 👀 off (on: false) and put ✅ on');
-    expect(words).toContain('A ✅ that replaced your own 👀 means finished');
+    expect(words).toContain(
+      'After a long piece of work, you may put ✅ on the message to say it is finished'
+    );
+    expect(words).not.toContain('take the 👀 off');
   });
 
   it('asks for no signal at all when the answer is coming in this turn', () => {
     // The bound. Without it "signal early" becomes a progress narration in emoji.
     expect(block.replace(/\s+/g, ' ')).toContain(
-      'If the answer is coming in THIS turn, signal nothing; the answer is the acknowledgment'
+      'If the answer is coming in THIS turn, signal nothing more; the answer is the acknowledgment'
     );
   });
 });

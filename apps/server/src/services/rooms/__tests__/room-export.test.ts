@@ -178,12 +178,14 @@ describe('exporting a room', () => {
   });
 
   describe('resolving who said what', () => {
-    it('names the author, the people they addressed, and everyone who reacted', () => {
+    it('names the author, the people they addressed, and everyone who reacted', async () => {
       authors.setHandle(human, 'dorian');
       service.post(channelId, { authorId: human, text: 'ping @ana' });
       const answered = service.post(channelId, { authorId: ana, text: 'here' });
       service.toggleReaction(channelId, answered.id, human, '🎉');
       service.toggleReaction(channelId, answered.id, bo, '🎉');
+      // Let Ana's turn end, so the room's 👀 receipt is off the ping (DOR-2823).
+      await service.triggersIdle();
 
       const { entries } = readExport(service.exportRoom(channelId, human));
 

@@ -100,7 +100,7 @@
     "apps/server/src/services/rooms/repo/room-worktree-manager.ts": 578,
     "apps/server/src/services/rooms/room-capabilities.ts": 1213,
     "apps/server/src/services/rooms/room-store.ts": 950,
-    "apps/server/src/services/rooms/room-trigger.ts": 1601,
+    "apps/server/src/services/rooms/room-trigger.ts": 1584,
     "apps/server/src/services/rooms/room-turn-runner.ts": 566,
     "apps/server/src/services/runtimes/claude-code/claude-code-runtime.ts": 1088,
     "apps/server/src/services/runtimes/claude-code/mcp-tools/task-tools.ts": 506,

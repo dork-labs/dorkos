@@ -270,7 +270,10 @@ describe('RoomService', () => {
         published.push(event);
       });
       service.post(roomId, { authorId: human, text: 'hi' });
-      expect(published).toHaveLength(1);
+      // The other publish is the room's 👀 receipt for Ana (DOR-2823).
+      expect(published.filter((event) => (event as { type: string }).type !== 'reaction')).toEqual([
+        expect.objectContaining({ type: 'entry' }),
+      ]);
       publish.mockRestore();
     });
   });

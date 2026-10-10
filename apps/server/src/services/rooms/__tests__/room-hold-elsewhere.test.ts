@@ -419,7 +419,8 @@ describe('a message for an agent working elsewhere', () => {
     // `unknown` busy line and arms its key.
     runner.failOldestAsBusy(ana);
     await settleUntil(() => notices(b.id).length === 1, 'the session-busy line');
-    expect(notices(b.id)[0]!.body.text).toContain('was busy in its own chat');
+    // The runner-busy line, worded as a promise since DOR-2823.
+    expect(notices(b.id)[0]!.body.text).toContain('is busy in its own chat');
 
     // Now Ana takes a turn somewhere else, and an UNDIRECTED message here waits
     // behind it until the room gives up.

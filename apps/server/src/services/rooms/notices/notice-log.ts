@@ -165,6 +165,12 @@ export interface SilenceContext {
    * is the one addressing.
    */
   namedDirectly?: boolean;
+  /**
+   * The agent's account ran out of usage during this turn (DOR-2823): when it
+   * resets, ISO 8601, or `null` when that is not known. Absent for any other
+   * failure.
+   */
+  outOfUsageUntil?: string | null;
 }
 
 /**
@@ -1010,7 +1016,8 @@ const SILENCE_BODIES: Record<
   (agent: NoticeSubject, context: SilenceContext & { busyWith: BusyContext }) => RoomEntryBody
 > = {
   busy: (agent, { busyWith }) => buildBusyNotice(agent.displayName, agent.authorId, busyWith),
-  failed: (agent) => buildTurnFailedNotice(agent.displayName, agent.authorId),
+  failed: (agent, { outOfUsageUntil }) =>
+    buildTurnFailedNotice(agent.displayName, agent.authorId, outOfUsageUntil),
   gone: (agent) => buildAgentGoneNotice(agent.displayName, agent.authorId),
   left: (agent) => buildAgentLeftNotice(agent.displayName, agent.authorId),
   unavailable: (agent) => buildAgentUnavailableNotice(agent.displayName, agent.authorId),

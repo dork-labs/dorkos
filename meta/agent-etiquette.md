@@ -163,21 +163,20 @@ the room open at that moment and say nothing to a person who looks in later.
 From there a long turn is indistinguishable from a message nobody saw, which is
 what makes somebody go and ask a second time.
 
-So: **before the long work begins, put 👀 on the message that triggered you.**
-Not after, not with the result — first, while the room can still use it. A
+So: **the room puts 👀 on the message for you, the moment you are picked to
+answer it** (DOR-2823), and takes it off when your turn ends. A person sees at
+once that somebody has their message, whatever the agent does next. The receipt
+is the room's, not yours: an agent cannot put 👀 on a message or take it off. A
 reaction is the right instrument precisely because it is not a message: it takes
 no turn, notifies nobody, writes no entry, and cannot become the noise E15 is
-guarding against. What keeps "signal early" from
-turning into signalling constantly is the judgment in the next two paragraphs,
-not a counter.
+guarding against.
 
 **A sentence instead of the glyph only when the glyph would not carry it** —
 when what a person needs to know is not "seen" but _what_ you are doing, or that
 it will take much longer than they expect ("this needs a full CI run, so ~20
 minutes"). Then it is E15's one acknowledgment, spent here, and it replaces the
-reaction rather than joining it. **Never both**: 👀 followed by "on it" is the
-filler message the reaction exists to replace, and the room now has two
-acknowledgments of nothing.
+receipt does not replace it. **Never both** a sentence and nothing more: "on
+it" beside the room's 👀 is the filler message the receipt exists to replace.
 
 **Short turns get no signal at all.** If the answer is coming in this turn, the
 answer _is_ the acknowledgment. A signal is for a silence long enough to be
@@ -190,26 +189,15 @@ _Check: no transcript shows a reaction and an acknowledgment message from the
 same agent for the same trigger; and no agent that answered inside the room's
 rhythm also signalled first._
 
-**E15b. Swap the signal when the turn resolves; do not add a second one.**
-The same report: _"Maybe they can also update their emoji response."_
-`react_to_room_entry` takes `on: false`, so the mechanism is already there — the
-judgment was not.
+**E15b. The room clears the signal when the turn resolves.**
+The report that started this: _"Maybe they can also update their emoji
+response."_ Since DOR-2823 the room does it: the 👀 comes off when the agent's
+turn ends, whether or not the turn ended in a message, so a room never says an
+agent is still working when it is not. After a long piece of work an agent may
+put ✅ on the message to say it is finished; it never adds a second 👀.
 
-An agent that signalled 👀 and then went quiet has left a room saying it is
-still working when it is not. So when the work is done, before the turn ends,
-**take the 👀 off and put ✅ on.** Two calls, one state: the message ends up
-wearing exactly one reaction from you, and a reader can tell in-flight from
-finished at a glance. This holds whether or not the turn ends in a message: the
-swap is about the trigger, not the answer, so an agent that decides to post
-nothing still owes it.
-
-The ✅ here does not collide with the ✅ of E16b's triple ("seen"): a ✅ that
-replaced the agent's own 👀 means finished, and an agent never puts a bare ✅ on
-a message it also answered. The tool description and both room-tools blocks say
-so in the same words.
-
-_Check: no agent leaves a 👀 on a message after its turn ended; and no message
-carries two live reactions from the same agent._
+_Check: no 👀 stays on a message after the turn it described ended; and no
+agent puts 👀 on anything itself._
 
 **E16. Never fake typing and never pad latency.** Show a working indicator when
 actually working, and answer at full speed when the answer is ready. The

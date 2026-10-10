@@ -435,6 +435,8 @@ export type RoomErrorCode =
    * addressed to whoever is in it.
    */
   | 'INVALID_LEAD'
+  /** An agent tried to put the room's own 👀 receipt on a message (DOR-2823). */
+  | 'RECEIPT_EMOJI_RESERVED'
   /**
    * `RoomService.rebridge` was asked to re-bridge a `(adapterId, chatId)` that
    * has no surviving bridge row (chats-as-channels spec §3.5). Re-bridging is

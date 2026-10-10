@@ -15,7 +15,18 @@
  *
  * @module server/services/rooms/reaction-store
  */
-import { roomEntryReactions, and, eq, inArray, desc, sql, count, type Db } from '@dorkos/db';
+import {
+  authors,
+  roomEntryReactions,
+  and,
+  eq,
+  gte,
+  inArray,
+  desc,
+  sql,
+  count,
+  type Db,
+} from '@dorkos/db';
 import {
   REACTION_FREQUENTS_COUNT,
   REACTION_FREQUENTS_DEFAULT,
@@ -92,6 +103,53 @@ export class ReactionStore {
       },
       { behavior: 'immediate' }
     );
+  }
+
+  /**
+   * Remove every reaction with `emoji` that an AGENT put on within the last
+   * `withinMs`, and say which entries they were on.
+   *
+   * The boot half of the 👀 receipt (DOR-2823): receipts live in memory beside
+   * the turns they describe, so a restart mid-turn would leave one standing for
+   * good. Agents cannot put 👀 on anything themselves, so every recent agent 👀
+   * is a receipt, and nothing it describes survived the restart.
+   *
+   * @param emoji - The receipt emoji.
+   * @param withinMs - How far back to look.
+   * @returns The `(room, entry)` pairs that lost one, for the boot log.
+   */
+  clearRecentAgentReactions(
+    emoji: string,
+    withinMs: number
+  ): Array<{ roomId: string; entryId: string }> {
+    const since = new Date(Date.now() - withinMs).toISOString();
+    const agentIds = this.db
+      .select({ id: authors.id })
+      .from(authors)
+      .where(eq(authors.kind, 'agent'));
+    const rows = this.db
+      .select({ roomId: roomEntryReactions.roomId, entryId: roomEntryReactions.entryId })
+      .from(roomEntryReactions)
+      .where(
+        and(
+          eq(roomEntryReactions.emoji, emoji),
+          gte(roomEntryReactions.createdAt, since),
+          inArray(roomEntryReactions.authorId, agentIds)
+        )
+      )
+      .all();
+    if (rows.length === 0) return [];
+    this.db
+      .delete(roomEntryReactions)
+      .where(
+        and(
+          eq(roomEntryReactions.emoji, emoji),
+          gte(roomEntryReactions.createdAt, since),
+          inArray(roomEntryReactions.authorId, agentIds)
+        )
+      )
+      .run();
+    return rows;
   }
 
   /**

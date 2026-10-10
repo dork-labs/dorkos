@@ -14,7 +14,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type Database from 'better-sqlite3';
 import type { Db } from '@dorkos/db';
 import type { RoomEntry, RoomEvent, RoomWithRoster } from '@dorkos/shared/room-schemas';
-import { REACTION_FREQUENTS_DEFAULT } from '@dorkos/shared/room-schemas';
+import { REACTION_FREQUENTS_DEFAULT, ROOM_RECEIPT_EMOJI } from '@dorkos/shared/room-schemas';
 import type { AuthorRegistry } from '../../author-registry.js';
 import type { ReactionStore } from '../reaction-store.js';
 import { RoomError } from '../../room-errors.js';
@@ -65,6 +65,44 @@ describe('reactions', () => {
     vi.spyOn(broadcaster, 'publish').mockImplementation((roomId, event) => {
       if (roomId === room.id) published.push(event);
       deliver(roomId, event);
+    });
+  });
+
+  describe('the boot sweep of receipts a restart left behind (DOR-2823)', () => {
+    it('clears only recent 👀 by agents, and nothing a person or an older reaction left', async () => {
+      // Both posts reach Ana, the channel's lead; her turns end and take their
+      // own receipts off before the stored rows below are set up.
+      const said = service.post(room.id, { authorId: human, text: 'morning' });
+      await service.triggersIdle();
+      const now = new Date().toISOString();
+      const old = new Date(Date.now() - 2 * 86_400_000).toISOString();
+      const key = (authorId: string, emoji: string) => ({
+        roomId: room.id,
+        entryId: said.id,
+        authorId,
+        emoji,
+      });
+      reactions.set(key(ana, ROOM_RECEIPT_EMOJI), now, true);
+      reactions.set(key(ana, '👍'), now, true);
+      reactions.set(key(human, ROOM_RECEIPT_EMOJI), now, true);
+      const later = service.post(room.id, { authorId: human, text: 'still there?' });
+      await service.triggersIdle();
+      reactions.set(
+        { roomId: room.id, entryId: later.id, authorId: ana, emoji: ROOM_RECEIPT_EMOJI },
+        old,
+        true
+      );
+
+      const cleared = reactions.clearRecentAgentReactions(ROOM_RECEIPT_EMOJI, 86_400_000);
+
+      expect(cleared).toEqual([{ roomId: room.id, entryId: said.id }]);
+      const left = reactions.listForEntry(room.id, said.id);
+      expect(left.find((r) => r.emoji === '👍')?.authorIds).toEqual([ana]);
+      expect(left.find((r) => r.emoji === ROOM_RECEIPT_EMOJI)?.authorIds).toEqual([human]);
+      expect(
+        reactions.listForEntry(room.id, later.id).find((r) => r.emoji === ROOM_RECEIPT_EMOJI)
+          ?.authorIds
+      ).toEqual([ana]);
     });
   });
 
@@ -319,11 +357,13 @@ describe('reactions', () => {
   });
 
   describe('who may react', () => {
-    it('lets an agent in the room react, bounded rather than banned', () => {
+    it('lets an agent in the room react, bounded rather than banned', async () => {
       // The reversal of etiquette E16b (ADR 260814-195522). The BOUND that
       // replaced the ban is `room-tool-hand.test.ts`'s; this pins that the door
       // is open at all, because it used to be a `PEOPLE_ONLY` refusal here.
       const entry = service.post(room.id, { authorId: human, text: 'shipping today' });
+      // Let Ana's turn end, so the room's 👀 receipt is off the post (DOR-2823).
+      await service.triggersIdle();
 
       expect(service.toggleReaction(room.id, entry.id, ana, '👍').reacted).toBe(true);
       expect(service.reactionsFor(room.id, entry.id)).toEqual([

@@ -89,6 +89,13 @@ export const RoomEntryKindSchema = z.enum(['post', 'notice']).openapi('RoomEntry
 export type RoomEntryKind = z.infer<typeof RoomEntryKindSchema>;
 
 /**
+ * The receipt the room puts on a person's message for each agent picked to
+ * answer it, and takes off when that agent's turn ends (DOR-2823). The room's
+ * alone: an agent cannot put it on or take it off itself.
+ */
+export const ROOM_RECEIPT_EMOJI = '👀';
+
+/**
  * Why the room is speaking in its own voice. Kept to the cases that actually
  * write a `notice`; a new member-facing event earns a new code here rather than
  * a free-text convention.
