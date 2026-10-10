@@ -205,6 +205,11 @@
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
 
 import { findGuardedPaths, prepareGuardedPaths } from './guarded-paths.js';
+import {
+  CLOUD_REMOTE_CREDENTIAL_PATHS,
+  CLOUD_REMOTE_REACH_PATHS,
+  CLOUD_REMOTE_WRITE_POLICY,
+} from '../remote/remote-config-policy.js';
 
 /**
  * Whether an agent may write one config leaf through `config_patch`.
@@ -843,6 +848,9 @@ export const CONFIG_WRITE_POLICY = {
   'cloud.credits.agents': 'operator-only',
   'cloud.credits.linkedTo': 'operator-only',
 
+  // Managed remote access (DOR-2086); see `remote/remote-config-policy.ts`.
+  ...CLOUD_REMOTE_WRITE_POLICY,
+
   // A configured raw-MCP server becomes a tool endpoint sessions can attach —
   // an agent writing one grants itself a capability, which is exactly the line
   // this module holds (same reasoning as `mesh.scanRoots` and the approved
@@ -958,6 +966,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'tunnel.domain',
       'tunnel.authtoken',
       'tunnel.auth',
+      ...CLOUD_REMOTE_REACH_PATHS,
       'mcp.enabled',
       'browser.enabled',
       'spaces.enabled',
@@ -1008,6 +1017,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'cloud.credits.offer',
       'cloud.credits.agents',
       'cloud.credits.linkedTo',
+      ...CLOUD_REMOTE_CREDENTIAL_PATHS,
       'runtimes.codex.credentialRef',
       'runtimes.environment.inherit.claudeCode',
       'runtimes.environment.inherit.codex',

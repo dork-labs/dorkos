@@ -1067,6 +1067,63 @@ Linking this instance to a DorkOS account lets the account see and manage it. Ru
       type: "'none' | 'pending' | 'dismissed'",
       default: "'none'",
     },
+    'cloud.remote.mode': {
+      description:
+        'How this computer is reachable from your other devices: off, through your own ngrok account (byo), or through DorkOS (managed). Managed is not offered yet, so it stays off or byo. After the update that adds this setting, a computer whose own tunnel was already on starts as byo. Choosing a mode never changes your own ngrok settings.',
+      type: "'off' | 'byo' | 'managed'",
+      default: "'off'",
+    },
+    'cloud.remote.enrolmentId': {
+      description:
+        'Set only after you approve managed access for this computer, and cleared when you withdraw it. DorkOS writes this; do not edit it by hand.',
+      type: 'string | null',
+      default: 'null',
+    },
+    'cloud.remote.instanceId': {
+      description:
+        'Which link to your DorkOS account the approval belongs to. Unlinking clears it, so a new link always asks again. DorkOS writes this.',
+      type: 'string | null',
+      default: 'null',
+    },
+    'cloud.remote.consentVersion': {
+      description: 'Which version of the managed access terms you agreed to. DorkOS writes this.',
+      type: 'string | null',
+      default: 'null',
+    },
+    'cloud.remote.credentialRef': {
+      description:
+        'Where the managed access key is stored on this computer, encrypted. It names the stored key and never holds the key itself.',
+      type: 'string | null',
+      default: 'null',
+    },
+    'cloud.remote.credentialId': {
+      description: 'Which managed access key is in use. DorkOS writes this.',
+      type: 'string | null',
+      default: 'null',
+    },
+    'cloud.remote.fingerprint': {
+      description:
+        'A short, safe-to-share summary of that key, for telling keys apart. Never the key.',
+      type: 'string | null',
+      default: 'null',
+    },
+    'cloud.remote.hosts': {
+      description:
+        'The web addresses this computer answers on with managed access. DorkOS writes this.',
+      type: 'string[]',
+      default: '[]',
+    },
+    'cloud.remote.edgeProofRef': {
+      description:
+        'Where the secret that proves a request came through DorkOS is stored on this computer, encrypted. Never the secret itself.',
+      type: 'string | null',
+      default: 'null',
+    },
+    'cloud.remote.edgeProofHeader': {
+      description: 'The name of the request header that carries that proof. DorkOS writes this.',
+      type: 'string | null',
+      default: 'null',
+    },
   }}
 />
 

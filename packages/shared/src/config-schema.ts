@@ -40,6 +40,8 @@ import {
 import { BUILTIN_MEMORY_PROVIDER_ID } from './memory-provider.js';
 import { ROOM_REPO_CAP_DEFAULTS } from './room-repo.js';
 import { RuntimeEnvironmentSchema } from './runtime-environment-schema.js';
+import { CredentialReferenceSchema } from './credential-reference.js';
+import * as remote from './remote-access-settings.js';
 // Plain id lists, never the named schemas in `permissions/permission-schemas.ts`:
 // the same SRC-alias reason as `HARNESS_IDS` above.
 import {
@@ -47,6 +49,8 @@ import {
   PERMISSION_PRESETS,
   PERMISSION_STATES,
 } from './permissions/permission-ids.js';
+export * from './credential-reference.js';
+export * from './remote-access-settings.js';
 export {
   RuntimeInheritedEnvNamesSchema,
   isReservedRuntimeEnvName,
@@ -388,55 +392,6 @@ export const SENSITIVE_CONFIG_KEYS = [
   'cloud.instanceToken',
   'cloud.previousLinkProof',
 ] as const;
-
-/**
- * Credential-reference schemes recognized by the `CredentialProvider` port
- * (ADR-0315). A stored credential is always one of these references, never a
- * raw secret.
- */
-export const CREDENTIAL_SCHEMES = ['keychain', 'env', 'file'] as const;
-
-/** One of the recognized {@link CREDENTIAL_SCHEMES}. */
-export type CredentialScheme = (typeof CREDENTIAL_SCHEMES)[number];
-
-/**
- * A credential value stored in config is a REFERENCE, never plaintext:
- * `keychain:<id>` (OS keychain), `env:<VAR>` (process env), or `file:<name>`
- * (encrypted dork-home secret store). The value after the scheme must be
- * non-empty. This pattern is the schema-level guard that keeps raw secrets out
- * of `config.json` — a plaintext key (e.g. `sk-ant-...`) fails validation
- * (ADR-0315, decision: never persist plaintext).
- */
-export const CREDENTIAL_REF_PATTERN = /^(?:keychain|env|file):.+/;
-
-/**
- * Zod schema for a single credential reference value. Rejects anything that is
- * not a well-formed `keychain:`/`env:`/`file:` reference — the structural
- * guarantee that a raw secret can never be persisted as a provider value.
- */
-export const CredentialReferenceSchema = z
-  .string()
-  .regex(CREDENTIAL_REF_PATTERN, 'must be a keychain:/env:/file: reference, never a raw secret');
-
-/**
- * Split a credential reference into its `scheme` and `value`, or return `null`
- * when the string is not a well-formed reference (no colon, an unrecognized
- * scheme, or an empty value). The lone parser for the reference grammar — the
- * `CredentialProvider` port and the schema guard share this single definition.
- *
- * @param ref - The stored reference string (e.g. `env:OPENROUTER_API_KEY`).
- */
-export function parseCredentialReference(
-  ref: string
-): { scheme: CredentialScheme; value: string } | null {
-  const idx = ref.indexOf(':');
-  if (idx <= 0) return null;
-  const scheme = ref.slice(0, idx);
-  const value = ref.slice(idx + 1);
-  if (value.length === 0) return null;
-  if (!(CREDENTIAL_SCHEMES as readonly string[]).includes(scheme)) return null;
-  return { scheme: scheme as CredentialScheme, value };
-}
 
 /**
  * The guided onboarding steps a first-time user walks through, in flow order:
@@ -3740,6 +3695,12 @@ export const UserConfigSchema = z.object({
         agents: [],
         linkedTo: null,
       })),
+      /**
+       * Managed remote access: the selected mode, the enrolment a person
+       * approved, and references to the stored credential (DOR-2086). See
+       * {@link RemoteAccessSettingsSchema}.
+       */
+      remote: remote.RemoteAccessSettingsSchema.default(remote.defaultRemoteAccessSettings),
     })
     .default(() => ({
       instanceToken: null,
@@ -3747,6 +3708,7 @@ export const UserConfigSchema = z.object({
       linkedAccountLabel: null,
       previousLinkProof: null,
       credits: { defaults: {}, offer: 'none' as const, agents: [], linkedTo: null },
+      remote: remote.defaultRemoteAccessSettings(),
     })),
   /**
    * Connector gateway settings (connector-completion spec). `rawMcpServers`

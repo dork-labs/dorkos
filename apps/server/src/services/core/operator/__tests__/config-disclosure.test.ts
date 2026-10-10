@@ -192,6 +192,18 @@ function fullyPopulatedConfig(): Record<string, unknown> {
       instanceToken: 'LEAK-4-cloud-instance-token',
       instanceName: 'my-box',
       linkedAccountLabel: 'LEAK-5-person@example.com',
+      remote: {
+        mode: 'managed',
+        enrolmentId: 'LEAK-remote-enrolment',
+        consentVersion: 'LEAK-remote-consent',
+        instanceId: 'LEAK-remote-instance',
+        credentialRef: 'file:LEAK-remote-tunnel-ref',
+        credentialId: 'LEAK-remote-credential-id',
+        fingerprint: 'LEAK-remote-fingerprint',
+        hosts: ['LEAK-remote-host.example.com'],
+        edgeProofRef: 'file:LEAK-remote-edge-ref',
+        edgeProofHeader: 'leak-remote-edge-header',
+      },
     },
     runtimes: {
       environment: {
@@ -310,6 +322,16 @@ describe('CONFIG_DISCLOSURE drift guard', () => {
       'cloud.instanceToken',
       'cloud.linkedAccountLabel',
       'cloud.previousLinkProof',
+      // Managed remote access (DOR-2086): consent, credential and address.
+      'cloud.remote.consentVersion',
+      'cloud.remote.credentialId',
+      'cloud.remote.credentialRef',
+      'cloud.remote.edgeProofHeader',
+      'cloud.remote.edgeProofRef',
+      'cloud.remote.enrolmentId',
+      'cloud.remote.fingerprint',
+      'cloud.remote.hosts',
+      'cloud.remote.instanceId',
       'connectors.rawMcpServers[].url',
       // Not a secret: absolute paths on this machine that no agent needs (DOR-2383).
       'extensions.approvedPermissions',

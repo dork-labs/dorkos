@@ -51,6 +51,7 @@
  *
  * @module services/core/capabilities/__tests__/gate-bypass-scan
  */
+import { existsSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -69,6 +70,17 @@ interface ProtectedEffect {
   call: string;
   /** Paths relative to `apps/server/src`, each with why it is allowed. */
   allowed: Record<string, string>;
+  /**
+   * Allowed callers that are not written yet, each with the gate it will run.
+   *
+   * For an effect that lands before the one module meant to reach it (DOR-2086
+   * lands its protected effects first, then the dispatcher and coordinator
+   * that call them). A planned path is exempt from the "still calls it" check
+   * only while its file does not exist. The day it is created the scan FAILS
+   * until the entry is promoted to `allowed`, so the pull request that writes
+   * the caller has to edit this file and say, in review, which gate it runs.
+   */
+  planned?: Record<string, string>;
 }
 
 const PROTECTED_EFFECTS: ProtectedEffect[] = [
@@ -147,6 +159,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
         'stores the token this instance was linked with, behind the link flow (logConfigWrite: "the account link" / "unlinking this instance")',
       'services/core/auth/seed-legacy-mcp-key.ts':
         'a boot migration that CLEARS a legacy key — narrowing only, and no request reaches it (logConfigWrite: "the MCP key migration")',
+      'services/core/remote/remote-state.ts':
+        'the one writer of `cloud.remote` (DOR-2086), behind `updateRemoteState(`, whose callers are pinned in their own entry below. It spreads the stored `cloud` section and replaces only `remote`, validates the whole record (a raw secret fails the reference pattern; `managed` needs an active enrolment), and never reads or writes `tunnel` (logConfigWrite: the caller-named subsystem)',
       'services/shapes/shape-services.ts':
         'records which Shape is active, reachable only through applyShape, which is itself on this list and tier-gated at routes/shapes.ts (DOR-625)',
       'services/harness/hook-consent.ts':
@@ -449,6 +463,93 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     },
   },
   {
+    // DOR-2086. The marker that lets one Cloud command open, close, rotate or
+    // revoke managed remote access. `cloud-authority.ts` explains why one
+    // watched token is exhaustive for it: the class is not exported.
+    what: 'mints the marker that lets a Cloud command act on managed remote access',
+    call: 'mintCloudAuthority(',
+    allowed: {
+      'services/core/capabilities/cloud-authority.ts': 'the definition itself',
+    },
+    planned: {
+      'services/core/remote/command-dispatcher.ts':
+        'the command dispatcher (S4), its only caller: it mints once per command read from the instance-authenticated stream, under the link context the stream was opened with, after the command is journaled; the mint itself refuses a stale link, a non-authorizing kind, a missing lease and an absent enrolment',
+    },
+  },
+  {
+    // DOR-2086. Opening managed forwarding publishes this computer at a Cloud
+    // address. `TunnelManager` defines it (S1); `startManaged` runs
+    // `canExpose()` itself, so this pins who may ASK.
+    what: 'opens managed forwarding, publishing this computer at the address Cloud issued',
+    call: 'tunnelManager.startManaged(',
+    allowed: {},
+    planned: {
+      'services/core/remote/command-dispatcher.ts':
+        'a Cloud `open` (or `rotate` switch) command, holding a `CloudAuthority` it re-checks with `isStillValid()` immediately before the call; never from a request',
+    },
+  },
+  {
+    // DOR-2086. Storing a managed credential's two one-time secrets.
+    what: 'stores a managed tunnel credential and its edge proof secret',
+    call: 'remoteCredentials.put(',
+    allowed: {},
+    planned: {
+      'services/core/remote/managed-remote-coordinator.ts':
+        'the enrolment ceremony a person started on this computer (S3): stores what Cloud issued after a person approved, behind the cookie, trusted-caller and local-caller bars on the setup route',
+      'services/core/remote/command-dispatcher.ts':
+        'a Cloud `rotate` command, holding a `CloudAuthority` for `rotate`',
+    },
+  },
+  {
+    // DOR-2086. Forgetting one. Only ever narrows reach.
+    what: 'forgets a managed tunnel credential and its edge proof secret',
+    call: 'remoteCredentials.delete(',
+    allowed: {},
+    planned: {
+      'services/core/remote/managed-remote-coordinator.ts':
+        'local withdrawal and unlink (S3): forgetting narrows only, so like `POST /api/tunnel/stop` it is reachable without the setup bars',
+      'services/core/remote/command-dispatcher.ts':
+        'a Cloud `revoke` command, or the old credential after a confirmed `rotate`, holding a `CloudAuthority`',
+    },
+  },
+  {
+    // DOR-2086. Reading the managed credential's secrets, just before
+    // forwarding. Not a mutation, but it hands out the tunnel value and the
+    // edge secret, so who may ask is pinned like the writes.
+    what: 'reads the managed tunnel credential and its edge proof secret out of the encrypted store',
+    call: 'remoteCredentials.resolve(',
+    allowed: {},
+    planned: {
+      'services/core/remote/command-dispatcher.ts':
+        'a Cloud `open` or `rotate` switch, holding a `CloudAuthority` it re-checks immediately before, resolving the secrets it hands to `tunnelManager.startManaged(` and nothing else',
+    },
+  },
+  {
+    // DOR-2086. A second store over the same secrets would be a door this scan
+    // could not see, so constructing one is watched too.
+    what: 'builds another handle on the managed credential store',
+    call: 'new RemoteCredentials(',
+    allowed: {
+      'services/core/remote/remote-credentials.ts': 'the module singleton, `remoteCredentials`',
+    },
+  },
+  {
+    // DOR-2086. The writer of `cloud.remote`: mode, enrolment and credential
+    // references. The general config door refuses the block outright
+    // (`USE_REMOTE_ACCESS_API`), so this is the only way in.
+    what: 'writes the managed remote access record: the selected mode, the enrolment a person approved, and the credential references',
+    call: 'updateRemoteState(',
+    allowed: {
+      'services/core/remote/remote-state.ts': 'the definition itself',
+    },
+    planned: {
+      'services/core/remote/managed-remote-coordinator.ts':
+        'a person selecting a mode, finishing enrolment, or withdrawing on this computer (S3): selection and enrolment behind the cookie, trusted-caller and local-caller bars; withdrawal unguarded because it only narrows',
+      'services/core/remote/command-dispatcher.ts':
+        'a Cloud `rotate` or `revoke` command recording the credential it switched to or forgot, holding a `CloudAuthority`; never the mode or the enrolment',
+    },
+  },
+  {
     what: 'mints the marker that skips the tier gate entirely',
     // Since DOR-474 a marker also requires a session cookie whenever login is on,
     // because the two-step path it stands in for (ask, then grant) requires one.
@@ -703,7 +804,34 @@ function callersOf(call: string): string[] {
   return hits.sort();
 }
 
+describe('the managed credential store names (DOR-2086)', () => {
+  it('appear in exactly one production module', async () => {
+    // `remote-credentials.ts` is the only place a managed secret's store name
+    // is built. A second module spelling `remote-tunnel-` or `remote-edge-`
+    // could read or overwrite a managed secret around every entry above. Read
+    // RAW, comments and strings included: here the string IS the door.
+    const hits: string[] = [];
+    for (const file of SOURCES) {
+      const text = await readFile(file, 'utf-8');
+      if (text.includes('remote-tunnel-') || text.includes('remote-edge-')) {
+        hits.push(path.relative(SERVER_SRC, file));
+      }
+    }
+    expect(hits.sort()).toEqual(['services/core/remote/remote-credentials.ts']);
+  });
+});
+
 describe('no ungated path reaches a protected effect', () => {
+  it('names only planned callers that are not also allowed', () => {
+    // A path listed in both would read as planned forever and hide nothing, but
+    // it would also mean two reasons for one caller; keep one.
+    for (const effect of PROTECTED_EFFECTS) {
+      for (const planned of Object.keys(effect.planned ?? {})) {
+        expect(Object.keys(effect.allowed), `${effect.call}: ${planned}`).not.toContain(planned);
+      }
+    }
+  });
+
   it('found the server sources to scan', () => {
     // A scan over an empty file list is vacuously green, which is the one way
     // this test could fail to do its job without saying so.
@@ -713,6 +841,18 @@ describe('no ungated path reaches a protected effect', () => {
   for (const effect of PROTECTED_EFFECTS) {
     it(`${effect.call} is called only by modules that gate it`, () => {
       const actual = callersOf(effect.call);
+      // A planned caller that now exists is not silently allowed: the pull
+      // request that wrote it promotes the entry, and says which gate it runs.
+      const written = Object.keys(effect.planned ?? {}).filter((f) =>
+        existsSync(path.join(SERVER_SRC, f))
+      );
+      expect(
+        written,
+        written.length
+          ? `\n${written.join('\n')}\n\nThese planned callers of ${effect.call} now exist. ` +
+              `Promote this entry to \`allowed\` in this file, with the gate the module runs.`
+          : ''
+      ).toEqual([]);
       const allowed = Object.keys(effect.allowed).sort();
       const unexpected = actual.filter((f) => !allowed.includes(f));
       const missing = allowed.filter((f) => !actual.includes(f));

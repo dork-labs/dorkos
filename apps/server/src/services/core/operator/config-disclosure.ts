@@ -515,6 +515,24 @@ export const CONFIG_DISCLOSURE = {
   // belong to: spending policy and an account identity, withheld.
   'cloud.credits.agents': 'withhold',
   'cloud.credits.linkedTo': 'withhold',
+  // Managed remote access (DOR-2086). The selected mode is the same kind of
+  // fact as `tunnel.enabled` and is exposed for the same reason: an agent asked
+  // "can I reach this from my phone?" should be able to say which way is set up.
+  // Everything else is withheld. The two references point at stored secrets,
+  // so they become `credentialRefConfigured` / `edgeProofRefConfigured`; the
+  // enrolment, consent version, credential id and fingerprint identify an
+  // account-held consent and credential; the hosts are the public address and
+  // the edge header names where the edge's proof travels.
+  'cloud.remote.mode': 'expose',
+  'cloud.remote.enrolmentId': 'withhold',
+  'cloud.remote.consentVersion': 'withhold',
+  'cloud.remote.instanceId': 'withhold',
+  'cloud.remote.credentialRef': 'withhold',
+  'cloud.remote.credentialId': 'withhold',
+  'cloud.remote.fingerprint': 'withhold',
+  'cloud.remote.hosts': 'withhold',
+  'cloud.remote.edgeProofRef': 'withhold',
+  'cloud.remote.edgeProofHeader': 'withhold',
 
   // Raw-MCP URLs may contain userinfo, query tokens, or secret path segments.
   // Withhold the complete URL rather than guessing which parts are credentials;
@@ -543,6 +561,8 @@ export const PRESENCE_FLAG_PATHS: readonly string[] = [
   'cloud.previousLinkProof',
   'runtimes.codex.credentialRef',
   'runtimes.doe.inference.credentialRef',
+  'cloud.remote.credentialRef',
+  'cloud.remote.edgeProofRef',
 ];
 
 /**
