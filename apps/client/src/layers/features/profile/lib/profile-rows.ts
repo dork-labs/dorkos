@@ -132,6 +132,11 @@ export interface ProfileRowsContext {
    * agent: anyone may read any agent's heartbeat (spec `heartbeats` §7.6).
    */
   heartbeat?: Pick<HeartbeatStatus, 'enabled' | 'wake' | 'skippedReason' | 'nextBeatAt'> | null;
+  /**
+   * The moment "next in 12 min" is read from, as epoch ms. Passed in by a
+   * ticking caller so the row moves with the clock; defaults to now.
+   */
+  now?: number;
 }
 
 /** An agent's promises, as the Commitments row wants them. */
@@ -308,7 +313,10 @@ function commitmentsRow(ctx: ProfileRowsContext): ProfileRowModel {
  */
 function heartbeatRow(ctx: ProfileRowsContext): ProfileRowModel {
   const status = ctx.heartbeat;
-  const meta = status?.wake === 'timed' ? nextCheckMeta(status.nextBeatAt) : undefined;
+  const meta =
+    status?.enabled && status.wake === 'timed'
+      ? nextCheckMeta(status.nextBeatAt, new Date(ctx.now ?? Date.now()))
+      : undefined;
   return {
     id: 'heartbeat',
     kind: 'nav',

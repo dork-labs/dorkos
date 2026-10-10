@@ -245,8 +245,16 @@ describe('the Heartbeat row', () => {
         nextBeatAt: new Date(Date.now() + 12 * 60_000 - 1_000).toISOString(),
       },
     });
-    expect(timed.value).toBe('Every 30 min in your hours');
-    expect(timed.meta).toBe('next 12 min');
+    expect(timed.value).toBe('Every 30 min in working hours');
+    expect(timed.meta).toBe('next in 12 min');
+  });
+
+  it('reads the next check from the moment it is handed, so a ticking caller moves it', () => {
+    const at = Date.parse('2026-10-12T10:30:00Z');
+    const heartbeat = { ...status, wake: 'timed' as const, nextBeatAt: new Date(at).toISOString() };
+    expect(row({ heartbeat, now: at - 20 * 60_000 }).meta).toBe('next in 20 min');
+    expect(row({ heartbeat, now: at - 10 * 60_000 }).meta).toBe('next in 10 min');
+    expect(row({ heartbeat, now: at }).meta).toBe('next any moment');
   });
 
   it('says off, off for everyone, and nothing while unknown', () => {

@@ -14,6 +14,7 @@ import { useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { HeartbeatStatus } from '@dorkos/shared/heartbeat-schemas';
 import { Button, MoreDetails, Skeleton } from '@/layers/shared/ui';
+import { useNow } from '@/layers/shared/model';
 import { heartbeatKeys, useAgentHeartbeat } from '@/layers/entities/heartbeat';
 import { deriveRelationship } from '../../lib/profile-relationship';
 import {
@@ -29,8 +30,11 @@ import { HeartbeatFileEditor } from './ConventionPage';
 import type { ProfilePageContentProps } from './types';
 
 /** How the agent wakes, and when it next checks in. */
-function WakeSection({ status }: { status: HeartbeatStatus }) {
-  const next = status.enabled && status.wake === 'timed' ? nextCheckWords(status.nextBeatAt) : null;
+function WakeSection({ status, now }: { status: HeartbeatStatus; now: number }) {
+  const next =
+    status.enabled && status.wake === 'timed'
+      ? nextCheckWords(status.nextBeatAt, new Date(now))
+      : null;
   return (
     <section className="space-y-1" data-slot="heartbeat-wake">
       <h3 className="text-sm font-semibold">How it wakes</h3>
@@ -66,7 +70,8 @@ function FileSection(props: ProfilePageContentProps & { status: HeartbeatStatus 
   if (isPending) return <Skeleton className="h-40 w-full" />;
   // No file: the agent wakes on events with the built-in checklist (spec §2).
   // The server ships no templates to the app, so "Write one" opens a blank file.
-  if (agent && (agent.heartbeatContent ?? null) === null && !writing) {
+  const isNew = Boolean(agent) && (agent?.heartbeatContent ?? null) === null;
+  if (isNew && !writing) {
     return (
       <section className="space-y-2" data-slot="heartbeat-file-empty">
         <h3 className="text-sm font-semibold">No HEARTBEAT.md yet</h3>
@@ -84,6 +89,7 @@ function FileSection(props: ProfilePageContentProps & { status: HeartbeatStatus 
         member={member}
         roster={roster}
         onPush={onPush}
+        {...(isNew ? { onCancel: () => setWriting(false) } : {})}
         onSaved={() =>
           void queryClient.invalidateQueries({ queryKey: heartbeatKeys.agent(agentId) })
         }
@@ -99,24 +105,33 @@ export function HeartbeatPage(props: ProfilePageContentProps) {
   const query = useAgentHeartbeat(agentId, { live: true });
   const relationship = deriveRelationship(member, roster);
   const yours = relationship === 'managed' || relationship === 'system';
-  const nameOf = useMemo(() => heldRecipientNames(roster), [roster]);
+  const nameOf = useMemo(() => heldRecipientNames(roster, member), [roster, member]);
+  // Ticks the "in 12 min" and "5m ago" lines, which move with no new data.
+  const now = useNow(30_000);
+  // Once the editor has been drawn it stays, even if the space switch goes off
+  // under it: unmounting it would throw away a draft nobody saved. Adjusted
+  // during render, like the editor's own draft sync, so it never lags a frame.
+  const [fileShown, setFileShown] = useState(false);
+  if (yours && query.data?.enabled && !fileShown) setFileShown(true);
 
   if (!agentId) return null;
   if (query.isPending) return <Skeleton className="h-24 w-full" />;
-  if (query.isError || !query.data) {
+  // A failed refetch keeps the last good answer on screen (and the editor with
+  // it); the error line is only for a page that never read one.
+  if (!query.data) {
     return <p className="text-muted-foreground text-sm">Couldn’t read this heartbeat.</p>;
   }
   const status = query.data;
 
   return (
     <div className="space-y-6" data-slot="profile-heartbeat">
-      <WakeSection status={status} />
-      {/* With the space switch off there is nothing to tune: no beat reads it. */}
-      {yours && status.enabled && <FileSection {...props} status={status} />}
-      <HeartbeatHeld held={status.held} nameOf={nameOf} />
+      <WakeSection status={status} now={now} />
+      {/* With the space switch off from the start there is nothing to tune. */}
+      {yours && fileShown && <FileSection {...props} status={status} />}
+      <HeartbeatHeld held={status.held} nameOf={nameOf} now={now} />
       <section className="space-y-2" data-slot="heartbeat-beats">
         <h3 className="text-sm font-semibold">Last checks</h3>
-        <HeartbeatBeats beats={status.lastBeats} />
+        <HeartbeatBeats beats={status.lastBeats} now={now} canOpenChat={status.enabled} />
       </section>
     </div>
   );

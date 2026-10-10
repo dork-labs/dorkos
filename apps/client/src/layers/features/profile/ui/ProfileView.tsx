@@ -1,6 +1,6 @@
 import { notifySessionLookupFailed } from '@/layers/entities/session';
 import { reportClientError } from '@/layers/shared/lib';
-import { useTransport } from '@/layers/shared/model';
+import { useNow, useTransport } from '@/layers/shared/model';
 import { sessionLocationTarget } from '@/layers/shared/lib';
 /**
  * One Profile — the whole surface, for every identity on this install (spec
@@ -111,6 +111,8 @@ export function ProfileView({
   // The Heartbeat row's words, read for every agent for the same reason. The
   // page reads the same key live, so opening it is a cache hit too.
   const heartbeat = useAgentHeartbeat(commitmentAgentId ?? null);
+  // Ticks the row's "next in 12 min", which moves with no new data.
+  const now = useNow(30_000);
   // Where this agent works in the room the page is showing, when one is. Answers
   // `null` everywhere else, which is what leaves the docked home — and every
   // route that is not a room — resolving exactly as it always did.
@@ -130,6 +132,7 @@ export function ProfileView({
         }
       : null,
     heartbeat: heartbeat.data ?? null,
+    now,
   };
 
   // Three ways to have no button, and they are all the same answer: don't draw

@@ -10,6 +10,7 @@
 import type { BeatKind, BeatOutcome, HeartbeatStatus } from '@dorkos/shared/heartbeat-schemas';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import type { StatusTone } from '@/layers/shared/ui';
+import { findTeamOwner } from '@/layers/entities/team';
 
 /** The fields of the status that decide how an agent wakes. */
 type WakeFacts = Pick<HeartbeatStatus, 'enabled' | 'wake' | 'skippedReason'>;
@@ -17,7 +18,8 @@ type WakeFacts = Pick<HeartbeatStatus, 'enabled' | 'wake' | 'skippedReason'>;
 /**
  * Whether the server runs this agent's beats at all, setting aside its own
  * `wake: off`. False when the space switch is off or its runtime is not one
- * this server runs; `skippedReason` says which.
+ * this server runs. The server's `skippedReason` names which, but in its own
+ * words, so the page writes its own sentence rather than showing it.
  */
 function beatsHere(status: WakeFacts): boolean {
   return status.enabled && (status.skippedReason === null || status.wake === 'off');
@@ -30,10 +32,10 @@ function beatsHere(status: WakeFacts): boolean {
  */
 export function wakeSentence(status: WakeFacts): string {
   if (!status.enabled) return 'Heartbeats are off for everyone.';
-  if (!beatsHere(status)) return status.skippedReason ?? 'Heartbeat off.';
+  if (!beatsHere(status)) return 'Doesn’t wake here: its runtime isn’t on this computer.';
   switch (status.wake) {
     case 'timed':
-      return 'Wakes every 30 minutes in your hours.';
+      return 'Wakes every 30 minutes in working hours.';
     case 'events':
       return 'Wakes when something happens.';
     case 'off':
@@ -51,7 +53,7 @@ export function wakeRowValue(status: WakeFacts): string {
   if (!beatsHere(status)) return 'Doesn’t run here';
   switch (status.wake) {
     case 'timed':
-      return 'Every 30 min in your hours';
+      return 'Every 30 min in working hours';
     case 'events':
       return 'When something happens';
     case 'off':
@@ -88,7 +90,8 @@ export function nextCheckWords(iso: string | null, now: Date = new Date()): stri
 }
 
 /**
- * The next check, in a row's trailing meta: "next 12 min", "next 9:00 AM".
+ * The next check, in a row's trailing meta: "next in 12 min", "next at 9:00 AM",
+ * "next any moment".
  *
  * @param iso - `nextBeatAt`, or null.
  * @param now - The moment to read it from.
@@ -97,9 +100,9 @@ export function nextCheckMeta(iso: string | null, now: Date = new Date()): strin
   if (!iso) return undefined;
   const minutes = minutesUntil(iso, now);
   if (minutes === null) return undefined;
-  if (minutes <= 1) return 'next now';
-  if (minutes < 60) return `next ${minutes} min`;
-  return `next ${clock(new Date(iso))}`;
+  if (minutes <= 1) return 'next any moment';
+  if (minutes < 60) return `next in ${minutes} min`;
+  return `next at ${clock(new Date(iso))}`;
 }
 
 /** What each kind of beat is called on the page. */
@@ -139,6 +142,16 @@ export function arrivesWords(iso: string, now: Date = new Date()): string | null
 }
 
 /**
+ * The sweep messages the schema writes as plain sentences already
+ * (`SweepSchema` in `@dorkos/shared/heartbeat-schemas`). Anything else the
+ * parser says about `sweep` is its own jargon, and gets the generic line.
+ */
+const PLAIN_SWEEP_MESSAGES: ReadonlySet<string> = new Set([
+  'Use hours and minutes, like "4h" or "1h30m".',
+  'A sweep runs at most every 30 minutes.',
+]);
+
+/**
  * What a person should change, given the parser's reason the header of
  * `HEARTBEAT.md` does not read (`fileError`, `field: message`).
  *
@@ -153,9 +166,10 @@ export function fileProblemWords(error: string): string {
       return 'Set report to daily, weekly or off.';
     case 'watch':
       return 'Watch lists addressed, commitments, schedules, health or workspace.';
-    case 'sweep':
-      // The schema's own messages here are already plain sentences.
-      return error.slice('sweep: '.length);
+    case 'sweep': {
+      const message = error.slice('sweep: '.length);
+      return PLAIN_SWEEP_MESSAGES.has(message) ? message : 'Set sweep like "4h" or "1h30m".';
+    }
     case 'name':
     case 'description':
       return 'Keep name and description short.';
@@ -164,25 +178,37 @@ export function fileProblemWords(error: string): string {
   }
 }
 
-/** The account ids the server also reads as the owner (`reports-to.ts`). */
+/** The account ids the server also reads as the install owner (`reports-to.ts`). */
 function isOwnerAlias(id: string): boolean {
   return id === 'owner' || id.startsWith('install:');
 }
 
 /**
  * A lookup from the account id a held message is addressed to, to a name: "you"
- * for the person reading, a roster name otherwise, "someone" when the roster
- * cannot say. Only people are listed; the server leaves raises to agents out.
+ * when that person is the one reading, a roster name otherwise, "someone" when
+ * the roster cannot say. Only people are listed; the server leaves raises to
+ * agents out.
+ *
+ * The `owner` and `install:<id>` aliases name the install's owner, not the
+ * viewer: the owner's row is the one `isSelf` marks, and it says "you" only
+ * when `isViewer` says the owner is the one reading.
  *
  * @param roster - The team roster.
+ * @param agent - The agent whose heartbeat this is, to fall back on its owner
+ *   when the roster marks no owner row.
  */
-export function heldRecipientNames(roster: readonly TeamMember[]): (accountId: string) => string {
-  const owner = roster.find((member) => member.isSelf);
+export function heldRecipientNames(
+  roster: readonly TeamMember[],
+  agent?: TeamMember
+): (accountId: string) => string {
+  const owner =
+    roster.find((member) => member.isSelf && member.kind !== 'agent') ??
+    (agent ? findTeamOwner(agent, [...roster]) : undefined);
   return (accountId) => {
     const member = isOwnerAlias(accountId)
       ? owner
       : roster.find((candidate) => candidate.person?.accountId === accountId);
     if (!member) return 'someone';
-    return member.person?.isViewer || member.isSelf ? 'you' : member.displayName;
+    return member.person?.isViewer === true ? 'you' : member.displayName;
   };
 }

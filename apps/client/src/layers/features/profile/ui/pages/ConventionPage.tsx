@@ -6,9 +6,10 @@
  * One component, three pages, because they differ only in which file they are
  * about. HEARTBEAT.md borrows it too, as one section of the Heartbeat page
  * ({@link HeartbeatFileEditor}). The three pages take the whole height, and all
- * four save on a button rather than on a timer: these are the files a person writes prose into, and prose is edited in
- * passes — a debounce that fires mid-thought writes half a sentence to disk and
- * gives no moment where you can see that your work is safe.
+ * four save on a button rather than on a timer: these are the files a person
+ * writes prose into, and prose is edited in passes — a debounce that fires
+ * mid-thought writes half a sentence to disk and gives no moment where you can
+ * see that your work is safe.
  *
  * Memory is the one the AGENT also writes. That changes nothing here — the same
  * editor, the same Save, the same refusal when the file is over budget — which
@@ -186,10 +187,12 @@ interface ConventionPageProps extends ProfilePageContentProps {
   fill?: boolean;
   /** Runs once a save is stored, after the page's own bookkeeping. */
   onSaved?: () => void;
+  /** Draws a Cancel beside Save that runs this. For a file not written yet. */
+  onCancel?: () => void;
 }
 
 /** One convention file, full height, with a Save you have to mean. */
-function ConventionPage({ member, file, fill = true, onSaved }: ConventionPageProps) {
+function ConventionPage({ member, file, fill = true, onSaved, onCancel }: ConventionPageProps) {
   const { agent, isPending, isSaving, update } = useProfileAgent(member, {
     errorLabel: file.errorLabel,
   });
@@ -301,9 +304,14 @@ function ConventionPage({ member, file, fill = true, onSaved }: ConventionPagePr
         >
           {status(over, overhead, isDirty, savedAt)}
         </span>
+        {onCancel && (
+          <Button size="sm" variant="ghost" className="ml-auto" onClick={onCancel}>
+            Cancel
+          </Button>
+        )}
         <Button
           size="sm"
-          className="ml-auto"
+          className={onCancel ? undefined : 'ml-auto'}
           disabled={!isDirty || over > 0 || isSaving}
           onClick={save}
         >
@@ -360,8 +368,11 @@ export function MemoryPage(props: ProfilePageContentProps) {
  * HEARTBEAT.md — what this agent watches between conversations, as one section
  * of the Heartbeat page rather than a page of its own.
  *
- * @param props - The page's props, plus what to do once a save is stored.
+ * @param props - The page's props, plus what to do once a save is stored and,
+ *   for a file not written yet, what Cancel does.
  */
-export function HeartbeatFileEditor(props: ProfilePageContentProps & { onSaved?: () => void }) {
+export function HeartbeatFileEditor(
+  props: ProfilePageContentProps & { onSaved?: () => void; onCancel?: () => void }
+) {
   return <ConventionPage {...props} file={FILES.heartbeat} fill={false} />;
 }
