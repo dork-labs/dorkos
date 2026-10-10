@@ -126,14 +126,14 @@ Both gates stop at resolution and never _evaluate_ the bundle — evaluating it 
 
 ### The window loads from localhost, not file://
 
-In production the main window loads `http://localhost:<serverPort>` — the bundled server serves the built SPA via `express.static`. It does **not** use `loadFile('…/index.html')`. Reason: a `file://` page sends `Origin: null`, which the server's CORS allowlist rejects, so a `file://` renderer can't call its own API. Serving both SPA and API from one localhost origin makes every request same-origin (and cookie auth works exactly as in the web app). See **ADR `260712-005315`**. The main process passes the server child `CLIENT_DIST_PATH` pointing at the asar-**unpacked** renderer.
+In production the main window loads `http://localhost:<serverPort>` — the bundled server serves the built SPA (`apps/server/src/http/client-files.ts`, on `serve-static`). It does **not** use `loadFile('…/index.html')`. Reason: a `file://` page sends `Origin: null`, which the server's CORS allowlist rejects, so a `file://` renderer can't call its own API. Serving both SPA and API from one localhost origin makes every request same-origin (and cookie auth works exactly as in the web app). See **ADR `260712-005315`**. The main process passes the server child `CLIENT_DIST_PATH` pointing at the asar-**unpacked** renderer.
 
 ### Native binaries must be unpacked from asar
 
 A Mach-O binary cannot be `dlopen`ed/executed from inside `app.asar`. So `electron-builder.yml` `asarUnpack`s:
 
 - `better-sqlite3` and `node-pty` (native `.node` addons),
-- `dist/renderer/**` (`express.static` can't range-read from inside asar),
+- `dist/renderer/**` (the static file server can't range-read from inside asar),
 - **four** families of per-platform binary package, each with a darwin-arm64 and a win32-x64 glob: `@anthropic-ai/claude-agent-sdk-*` (the `claude` executable), `@openai/codex-*` (the vendored Codex CLI), `@esbuild/*` (the compiler the extension host runs) and `@ngrok/ngrok-*` (the Remote Access tunnel, whose Windows package is `…-win32-x64-msvc`). `@anthropic-ai/claude-agent-sdk/**` itself is unpacked too. See §3,
 - `core-extensions/**` (staged into `DORK_HOME` via `fs.cp`).
 

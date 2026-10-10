@@ -134,6 +134,14 @@ describe('first-client-contact markers', () => {
     expect(markers()).toEqual([SHELL_MARKER]);
   });
 
+  it('logs the shell marker for a HEAD on a deep link, which streams no body', async () => {
+    const app = bootApp();
+
+    await request(fixtureTarget.mount(app)).head('/agents/deep/route');
+
+    expect(markers()).toEqual([SHELL_MARKER]);
+  });
+
   it('logs the API marker once, however many API requests arrive', async () => {
     const app = bootApp();
 

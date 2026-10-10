@@ -172,7 +172,7 @@ function viteDevPort(): number {
  * not always the API port, and that difference is the whole reason this exists.
  *
  * In production the server serves the SPA itself, so the cockpit lives at
- * `DORKOS_PORT`. In development it does not: `express.static` is production-only,
+ * `DORKOS_PORT`. In development it does not: serving the client (`http/client-files.ts`) is production-only,
  * nothing answers `/` on the API port, and the cockpit is on the Vite dev server.
  * A link built from `DORKOS_PORT` in dev is therefore dead exactly for the people
  * most likely to click it — and a tunnel pointed at it would forward to nothing.
