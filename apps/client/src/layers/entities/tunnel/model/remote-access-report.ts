@@ -72,6 +72,23 @@ export function isManagedReport(report: RemoteAccessReport | null): report is Re
 }
 
 /**
+ * Which mode a switch turned ON should use.
+ *
+ * Managed when it is already selected, or when nothing is selected and this
+ * computer is approved for it: approval was the person's explicit choice. In
+ * every other case, the person's own ngrok tunnel, exactly as before. Never
+ * BYO merely because managed access has no ngrok token.
+ *
+ * @param report - A report already passed through {@link usableReport}.
+ */
+export function startTarget(report: RemoteAccessReport | null): 'byo' | 'managed' {
+  if (!report) return 'byo';
+  if (report.mode === 'managed') return 'managed';
+  if (report.mode === 'off' && report.enrolment.status === 'enrolled') return 'managed';
+  return 'byo';
+}
+
+/**
  * The app state a managed report puts remote access in.
  *
  * `opening` reads as `starting`, the state every surface already treats as

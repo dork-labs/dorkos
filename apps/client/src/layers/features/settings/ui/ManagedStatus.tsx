@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Button } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import {
@@ -8,6 +8,7 @@ import {
   type ManagedRemoteAccess,
   type TunnelState,
 } from '@/layers/entities/tunnel';
+import { useRescueFocus } from '../model/use-rescue-focus';
 import { TunnelConnected } from './TunnelConnected';
 
 /** Props for {@link ManagedStatus}. */
@@ -22,6 +23,12 @@ export interface ManagedStatusProps {
   activeSessionId: string | null;
   /** The dialog's latency probe, `null` when not measured. */
   latencyMs: number | null;
+  /**
+   * Whether to offer turning it off here. True when the mode choice is not
+   * shown (DorkOS Cloud could not be reached), so "Remove" is never the only
+   * way out.
+   */
+  offerOff: boolean;
 }
 
 /** States in which there is something for "Close now" to close. */
@@ -36,8 +43,10 @@ const CLOSABLE: ReadonlySet<TunnelState> = new Set(['connected', 'starting', 're
  * when Cloud could not be reached, in which case everything above is this
  * computer's own last-known account.
  *
- * Turning it off is the mode choice above. Here are the two managed-only
- * actions: close it now (the choice stays), and remove it from this computer.
+ * Turning it off is the mode choice above, while it is shown. When it is not
+ * (DorkOS Cloud could not be reached), a "Turn off" here does the same, so a
+ * person never has to remove setup just to stop remote access. The other two
+ * actions are managed-only: close it now (the choice stays), and remove it.
  */
 export function ManagedStatus({
   state,
@@ -45,10 +54,13 @@ export function ManagedStatus({
   managed,
   activeSessionId,
   latencyMs,
+  offerOff,
 }: ManagedStatusProps) {
   const actions = useRemoteAccessActions();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  useRescueFocus(headingRef, state);
 
   const run = (write: () => Promise<void>) => {
     setError(null);
@@ -67,7 +79,9 @@ export function ManagedStatus({
           className={cn('inline-block size-2 shrink-0 rounded-full', remoteAccessDotTone(state))}
           aria-hidden
         />
-        <p className="text-sm font-medium">{remoteAccessHeading(state)}</p>
+        <h3 ref={headingRef} tabIndex={-1} className="text-sm font-medium outline-none">
+          {remoteAccessHeading(state)}
+        </h3>
       </div>
 
       <div className="text-muted-foreground space-y-1 text-xs">
@@ -89,6 +103,16 @@ export function ManagedStatus({
         {CLOSABLE.has(state) && (
           <Button variant="outline" size="sm" disabled={busy} onClick={() => run(actions.closeNow)}>
             Close now
+          </Button>
+        )}
+        {offerOff && (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={busy}
+            onClick={() => run(() => actions.chooseMode('off'))}
+          >
+            Turn off
           </Button>
         )}
         <Button variant="ghost" size="sm" disabled={busy} onClick={() => run(actions.withdraw)}>

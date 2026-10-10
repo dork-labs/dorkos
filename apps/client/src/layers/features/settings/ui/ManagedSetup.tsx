@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { RemoteAccessEnrolment } from '@dorkos/shared/types';
 import { Button, ExternalLinkAnchor, buttonVariants } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import { useRemoteAccessActions } from '@/layers/entities/tunnel';
+import { useRescueFocus } from '../model/use-rescue-focus';
 
 /** Props for {@link ManagedSetup}. */
 export interface ManagedSetupProps {
@@ -56,10 +57,14 @@ function PendingSetup({
   onCancel: () => void;
 }) {
   const now = useNow();
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  useRescueFocus(headingRef, 'pending');
   return (
     <div className="space-y-3" data-testid="managed-setup-pending">
       <div className="space-y-0.5">
-        <p className="text-sm font-medium">Approve on your DorkOS account</p>
+        <h3 ref={headingRef} tabIndex={-1} className="text-sm font-medium outline-none">
+          Approve on your DorkOS account
+        </h3>
         <p className="text-muted-foreground text-xs">Check that this code matches.</p>
       </div>
       <p
@@ -102,6 +107,8 @@ export function ManagedSetup({ enrolment }: ManagedSetupProps) {
   const actions = useRemoteAccessActions();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  useRescueFocus(headingRef, enrolment.status);
 
   const run = (write: () => Promise<void>) => {
     setError(null);
@@ -142,7 +149,9 @@ export function ManagedSetup({ enrolment }: ManagedSetupProps) {
   return (
     <div className="space-y-3" data-testid={`managed-setup-${enrolment.status}`}>
       <div className="space-y-0.5">
-        <p className="text-sm font-medium">{lead.title}</p>
+        <h3 ref={headingRef} tabIndex={-1} className="text-sm font-medium outline-none">
+          {lead.title}
+        </h3>
         <p className="text-muted-foreground text-xs">{lead.body}</p>
       </div>
       <p className="text-sm" data-testid="managed-setup-consent">

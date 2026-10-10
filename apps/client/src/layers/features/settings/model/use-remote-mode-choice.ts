@@ -47,10 +47,17 @@ export function useRemoteModeChoice(managed: ManagedRemoteAccess): RemoteModeCho
 
   // Drop a local pick once the server's answer moves (React's "adjust state
   // while rendering" pattern, not an effect, so no frame shows the stale pick).
+  //
+  // One move keeps DorkOS shown instead: a setup that was showing and has now
+  // been declined or timed out. The server's mode never moved, but the person
+  // is mid-setup and needs to read what happened and start again, not be
+  // dropped back to a choice with no word about it.
+  const setupEnded =
+    managed.enrolment.status === 'denied' || managed.enrolment.status === 'expired';
   const [seen, setSeen] = useState(fromReport);
   if (seen !== fromReport) {
     setSeen(fromReport);
-    setPicked(null);
+    setPicked(seen === 'managed' && setupEnded ? 'managed' : null);
   }
 
   const shown = picked ?? fromReport;
