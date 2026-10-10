@@ -4,13 +4,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ReactNode } from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { createMockSessionLimit, createMockTransport } from '@dorkos/test-utils';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { SessionStatus } from '@dorkos/shared/session-stream';
+import type { Session } from '@dorkos/shared/types';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import { TransportProvider } from '@/layers/shared/model';
 import { setSessionRouteContext, useSessionListStore } from '@/layers/entities/session';
+import { pendingInteractionsQueryOptions } from '@/layers/entities/attention';
 
 const agentByPath = vi.fn<(cwd: string | null) => AgentManifest | null>(() => null);
 vi.mock('@/layers/entities/agent', async (importOriginal) => ({
@@ -42,7 +44,13 @@ const SCOUT = { id: 'scout', name: 'scout', displayName: 'Scout', icon: '🔍' }
 beforeEach(() => {
   vi.clearAllMocks();
   agentByPath.mockImplementation((cwd) => (cwd === '/Users/kai/api' ? SCOUT : null));
-  useSessionListStore.setState({ sessions: {}, statuses: {}, statusCwds: {}, unseen: {} });
+  useSessionListStore.setState({
+    sessions: {},
+    statuses: {},
+    statusCwds: {},
+    unseen: {},
+    limits: {},
+  });
   useTabSignalsStore.setState({ needsYouCount: 0, routeBadges: {} });
   vi.mocked(transport.getSession).mockReturnValue(new Promise(() => {}));
 });
@@ -63,9 +71,9 @@ describe('useTabIdentity', () => {
     });
 
     it('says Paused once its account runs out of usage', () => {
-      useSessionListStore.setState({
-        statuses: { 'chat-1': status({ limit: createMockSessionLimit('waiting') }) },
-      });
+      useSessionListStore
+        .getState()
+        .setSessionStatus('chat-1', status({ limit: createMockSessionLimit('waiting') }));
       const { result } = renderHook(() => useTabIdentity('/session?session=chat-1'), { wrapper });
       expect(result.current.status).toBe('paused');
       expect(result.current.statusSentence).toMatch(/^Out of usage/);
@@ -80,12 +88,76 @@ describe('useTabIdentity', () => {
       expect(result.current.accessibleName).toMatch(/^Scout, Working/);
     });
 
-    it('puts a failure ahead of a pause', () => {
-      useSessionListStore.setState({
-        statuses: {
-          'chat-1': status({ lifecycle: 'error', limit: createMockSessionLimit('ask') }),
+    it('says working, not Paused, once the stream clears a limit the row still carries', async () => {
+      vi.mocked(transport.getSession).mockResolvedValue({
+        id: 'chat-1',
+        cwd: '/Users/kai/api',
+        title: 'Fix the login bug',
+        updatedAt: '2026-10-09T09:00:00.000Z',
+        status: { lifecycle: 'idle', limit: createMockSessionLimit('waiting') },
+      } as unknown as Session);
+      const { result } = renderHook(() => useTabIdentity('/session?session=chat-1'), { wrapper });
+      await waitFor(() => expect(result.current.status).toBe('paused'));
+      act(() =>
+        useSessionListStore.getState().applyListEvent({
+          type: 'session_status',
+          sessionId: 'chat-1',
+          status: status({ lifecycle: 'streaming', limit: null }),
+        } as never)
+      );
+      expect(result.current.status).toBe('working');
+    });
+
+    it('says Paused for a background chat that runs out of usage while idle', async () => {
+      vi.mocked(transport.getSession).mockResolvedValue({
+        id: 'chat-1',
+        cwd: '/Users/kai/api',
+        title: 'Fix the login bug',
+        updatedAt: '2026-10-09T09:00:00.000Z',
+      } as unknown as Session);
+      const { result } = renderHook(() => useTabIdentity('/session?session=chat-1'), { wrapper });
+      await waitFor(() => expect(result.current.secondary).toBe('Fix the login bug'));
+      expect(result.current.status).toBeUndefined();
+      // Idle statuses are pruned from the liveness map; the limit must survive.
+      act(() =>
+        useSessionListStore.getState().applyListEvent({
+          type: 'session_status',
+          sessionId: 'chat-1',
+          status: status({ lifecycle: 'idle', limit: createMockSessionLimit('waiting') }),
+        } as never)
+      );
+      expect(result.current.status).toBe('paused');
+    });
+
+    it('leaves the shared prompt list refetchable after a chat tab observes it', async () => {
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      vi.mocked(transport.listPendingInteractions).mockResolvedValue({ interactions: [] });
+      const shared = ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={client}>
+          <TransportProvider transport={transport}>{children}</TransportProvider>
+        </QueryClientProvider>
+      );
+      // The Inbox's own reader first, then the tab, which renders last.
+      renderHook(
+        () => {
+          useQuery(pendingInteractionsQueryOptions(transport));
+          return useTabIdentity('/session?session=chat-1');
         },
-      });
+        { wrapper: shared }
+      );
+      await waitFor(() => expect(transport.listPendingInteractions).toHaveBeenCalledTimes(1));
+      await act(() => client.invalidateQueries({ queryKey: ['pending-interactions'] }));
+      expect(transport.listPendingInteractions).toHaveBeenCalledTimes(2);
+      expect(client.getQueryState(['pending-interactions'])?.status).toBe('success');
+    });
+
+    it('puts a failure ahead of a pause', () => {
+      useSessionListStore
+        .getState()
+        .setSessionStatus(
+          'chat-1',
+          status({ lifecycle: 'error', limit: createMockSessionLimit('ask') })
+        );
       const { result } = renderHook(() => useTabIdentity('/session?session=chat-1'), { wrapper });
       expect(result.current.status).toBe('failed');
     });
@@ -114,6 +186,22 @@ describe('useTabIdentity', () => {
       secondary: '2 working',
       status: 'working',
     });
+  });
+
+  it('does not count a scheduled run as an agent working, but still says it needs you', () => {
+    useSessionListStore.setState({
+      sessions: {
+        sched: { id: 'sched', origin: 'task' } as Session,
+        blocked: { id: 'blocked', origin: 'task' } as Session,
+      },
+      statuses: {
+        sched: status({ lifecycle: 'streaming' }),
+        blocked: status({ lifecycle: 'blocked' }),
+      },
+      statusCwds: { sched: '/Users/kai/api', blocked: '/Users/kai/web' },
+    });
+    const { result } = renderHook(() => useTabIdentity('/team'), { wrapper });
+    expect(result.current).toMatchObject({ secondary: undefined, status: 'needs-you' });
   });
 
   it('names the Settings dialog open over any page after its section', () => {

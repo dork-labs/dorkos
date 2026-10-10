@@ -4,14 +4,16 @@
  * @module features/app-tabs/model/use-chat-tab-input
  */
 import { useMemo } from 'react';
-import { skipToken, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import type { PendingInteractionsResponse } from '@dorkos/shared/interaction-events';
 import type { PendingInteractionDTO } from '@dorkos/shared/types';
 import { activityClause, formatResetTime, getAgentDisplayName } from '@/layers/shared/lib';
 import { useAgentVisual, useCurrentAgent } from '@/layers/entities/agent';
-import { PENDING_INTERACTIONS_QUERY_KEY } from '@/layers/entities/attention';
+import { useTransport } from '@/layers/shared/model';
+import { pendingInteractionsQueryOptions } from '@/layers/entities/attention';
 import {
   sessionDisplayTitle,
+  useSessionListLimit,
   useSessionListStore,
   useSessionRouteContext,
   useSessionRow,
@@ -58,25 +60,26 @@ export function useChatTabInput(target: TabTarget | null): ChatTabInput | null {
       cwd: session.cwd ?? null,
       title: session.title,
       updatedAt: session.updatedAt,
-      lifecycle: session.status?.lifecycle,
-      limit: session.status?.limit,
+      limit: session.status?.limit ?? null,
     }),
   });
   const dir = target ? (routeContext?.cwd ?? target.dir ?? row?.cwd ?? null) : null;
   const { data: agent } = useCurrentAgent(dir);
   const visual = useAgentVisual(agent ?? null, dir ?? '');
 
-  // The live status the list store holds wins over the row's snapshot, as the
-  // chat list reads it. Passing it is what lets a tab say Paused at all.
-  const liveLifecycle = useSessionListStore((s) =>
+  // The usage limit: the last one the global stream reported, which it keeps
+  // even after the chat goes idle waiting for its reset. The row's snapshot
+  // only counts until the stream has said anything about this chat: the row
+  // is read once (`nameOnly`), so its status is frozen at mount.
+  const liveLimit = useSessionListLimit(sessionId ?? '');
+  const lifecycle = useSessionListStore((s) =>
     sessionId ? s.statuses[sessionId]?.lifecycle : undefined
   );
-  const liveLimit = useSessionListStore((s) =>
-    sessionId ? s.statuses[sessionId]?.limit : undefined
+  const limit = liveLimit !== undefined ? liveLimit : (row?.limit ?? null);
+  const limitStatus = useMemo(
+    () => (limit ? { lifecycle: lifecycle ?? 'idle', limit } : null),
+    [lifecycle, limit]
   );
-  const lifecycle = liveLifecycle ?? row?.lifecycle;
-  const limit = liveLimit ?? row?.limit ?? null;
-  const limitStatus = useMemo(() => (lifecycle ? { lifecycle, limit } : null), [lifecycle, limit]);
   const signals = useSessionStatusSignals(sessionId ?? '', limitStatus);
   const activity = useSessionToolActivity(sessionId ?? '');
 
@@ -85,10 +88,13 @@ export function useChatTabInput(target: TabTarget | null): ChatTabInput | null {
   const streamPrompt = useSessionStreamStore((s) =>
     sessionId ? s.sessions[sessionId]?.pendingInteractions[0] : undefined
   );
+  // The shared options, fetcher included, with fetching switched off: an
+  // observer without the real `queryFn` would overwrite the shared query's
+  // and break every refetch of it.
+  const transport = useTransport();
   const { data: fleetPrompt } = useQuery({
-    queryKey: PENDING_INTERACTIONS_QUERY_KEY,
-    queryFn: skipToken,
-    enabled: signals.needsYou && streamPrompt === undefined,
+    ...pendingInteractionsQueryOptions(transport),
+    enabled: false,
     select: (data: PendingInteractionsResponse) =>
       data.interactions.find((entry) => entry.sessionId === sessionId)?.interaction,
   });

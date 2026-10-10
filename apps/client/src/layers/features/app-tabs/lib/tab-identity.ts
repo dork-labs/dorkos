@@ -588,10 +588,27 @@ export interface TabLabel {
  * @param opts - `collapseAgent` when another open chat tab shares the agent.
  */
 export function tabLabel(id: TabIdentity, opts: { collapseAgent?: boolean } = {}): TabLabel {
-  if (opts.collapseAgent && id.agentKey && id.secondary && id.icon.kind === 'emoji') {
-    return { lead: id.secondary };
-  }
+  if (collapsesAgent(id, opts)) return { lead: id.secondary! };
   return { lead: id.primary, trail: id.secondary };
+}
+
+/** Whether {@link tabLabel} leads with the chat title rather than the agent. */
+function collapsesAgent(id: TabIdentity, opts: { collapseAgent?: boolean }): boolean {
+  return Boolean(opts.collapseAgent && id.agentKey && id.secondary && id.icon.kind === 'emoji');
+}
+
+/**
+ * What a screen reader announces for a tab: the identity's accessible name,
+ * led by whatever the tab visibly leads with. When the chat title leads (see
+ * {@link tabLabel}), it leads here too, then the agent, then the status.
+ *
+ * @param id - The tab's identity.
+ * @param opts - `collapseAgent` when another open chat tab shares the agent.
+ */
+export function tabAccessibleName(id: TabIdentity, opts: { collapseAgent?: boolean } = {}): string {
+  if (!collapsesAgent(id, opts)) return id.accessibleName;
+  const head = `${id.primary}, ${id.secondary}`;
+  return `${id.secondary}, ${id.primary}${id.accessibleName.slice(head.length)}`;
 }
 
 /** What every title ends with, so a pinned browser tab is still recognisably ours. */

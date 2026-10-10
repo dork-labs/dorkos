@@ -14,6 +14,7 @@ import {
   roomTabIdentity,
   routeTabIdentity,
   settingsTabIdentity,
+  tabAccessibleName,
   tabLabel,
   tabStatusSentence,
   teamTabIdentity,
@@ -209,6 +210,20 @@ describe('smart names', () => {
 
   it('collapses the agent to its emoji and leads with the chat when another tab shares it', () => {
     expect(tabLabel(id, { collapseAgent: true })).toEqual({ lead: 'Fix the login bug' });
+  });
+
+  it('announces what it visibly leads with', () => {
+    const working = chatTabIdentity({
+      agentName: 'Scout',
+      visual: { emoji: '🔍' },
+      chatTitle: 'Fix the login bug',
+      agentKey: 'scout',
+      signals: { working: true },
+    });
+    expect(tabAccessibleName(working)).toBe('Scout, Fix the login bug, Working');
+    expect(tabAccessibleName(working, { collapseAgent: true })).toBe(
+      'Fix the login bug, Scout, Working'
+    );
   });
 
   it('keeps the agent when there is no chat title to lead with', () => {

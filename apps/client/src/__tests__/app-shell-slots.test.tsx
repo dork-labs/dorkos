@@ -313,7 +313,10 @@ vi.mock('@/layers/entities/attention', async () => ({
   // pill both read these now.
   usePendingInteractions: () => ({ interactions: [], isLoading: false }),
   // A chat tab observes this cache for its prompt's words (DOR-2820).
-  PENDING_INTERACTIONS_QUERY_KEY: ['pending-interactions'],
+  pendingInteractionsQueryOptions: () => ({
+    queryKey: ['pending-interactions'],
+    queryFn: () => Promise.resolve({ interactions: [] }),
+  }),
   useSettlingAsks: () => [],
   useAskAgentNames: () => ({}),
   usePendingApprovals: () => ({
@@ -551,7 +554,6 @@ vi.mock('@/layers/shared/model/app-store', () => ({
       sidebarOpen: true,
       setSidebarOpen: vi.fn(),
       isStreaming: false,
-      activeForm: null,
       isWaitingForUser: false,
       tasksBadgeCount: 0,
       onboardingHiddenForSession: false,

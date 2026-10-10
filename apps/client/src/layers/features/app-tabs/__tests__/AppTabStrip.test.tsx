@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup, within, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
@@ -343,8 +343,8 @@ describe('AppTabStrip', () => {
 
     it('leads with the chat title when two tabs share an agent, and keeps the full name for screen readers', async () => {
       renderStrip([tab('a', '/session?session=c1'), tab('b', '/session?session=c2')]);
-      const first = await screen.findByRole('tab', { name: 'Scout, Fix the login bug' });
-      await waitFor(() => expect(first).toHaveTextContent(/^\S*Fix the login bug$/u));
+      const first = await screen.findByRole('tab', { name: 'Fix the login bug, Scout' });
+      expect(first).toHaveTextContent(/^\S*Fix the login bug$/u);
       expect(first).not.toHaveTextContent('Scout');
     });
 

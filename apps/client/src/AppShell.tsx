@@ -12,7 +12,7 @@ import { useElectronCloseTab } from './app/use-electron-close-tab';
 import { useElectronFullscreen } from './app/use-electron-fullscreen';
 import { useWindowFocusDimming } from './app/use-window-focus-dimming';
 import { useOpenRoom } from './app/use-open-room';
-import { useWindowTitle } from './app/use-window-title';
+import { WindowTitle } from './app/WindowTitle';
 import { useCommunityWatchers } from './app/use-community-watchers';
 import { TitlebarDragStrip } from './app/TitlebarDragStrip';
 import { SidebarBodyErrorBoundary } from './app/SidebarBodyErrorBoundary';
@@ -262,8 +262,6 @@ export function AppShell() {
 
   const [selectedCwd] = useDirectoryState();
   const isStreaming = useAppStore((s) => s.isStreaming);
-  const isWaitingForUser = useAppStore((s) => s.isWaitingForUser);
-  const tasksBadgeCount = useAppStore((s) => s.tasksBadgeCount);
   const { data: currentAgent } = useCurrentAgent(selectedCwd);
   const agentVisual = useAgentVisual(currentAgent ?? null, selectedCwd ?? '');
   // The open room for the channel bar, and the rooms waiting on you whichever
@@ -277,8 +275,6 @@ export function AppShell() {
     isStreaming,
     color: currentAgent ? agentVisual.color : undefined,
   });
-  useWindowTitle({ isStreaming, isWaitingForUser, badgeCount: tasksBadgeCount + unreadRoomCount });
-
   useShortcutsPanel();
   useRightPanelShortcut();
   useProfileShortcut();
@@ -612,6 +608,7 @@ export function AppShell() {
 
   return (
     <TooltipProvider>
+      <WindowTitle unreadRoomCount={unreadRoomCount} />
       <MotionConfig reducedMotion="user">
         <AnimatePresence mode="wait">
           {showOnboarding ? (

@@ -57,6 +57,15 @@ interface SessionListStoreState {
    */
   contextReadings: Record<string, SessionContextReading>;
   /**
+   * The last usage limit the stream reported per session, `null` once it
+   * cleared. Unlike {@link statuses} it is NOT pruned when a session settles:
+   * a chat that runs out of usage goes idle while it waits for the reset, and
+   * that is exactly when the tab has to say Paused (DOR-2820). Absent means the
+   * stream has said nothing about the session since connect. Cleared on
+   * remove, rekey-retire and reconnect, like {@link contextReadings}.
+   */
+  limits: Record<string, SessionStatus['limit']>;
+  /**
    * Sessions that settled while NOT being viewed (background work the operator
    * has not acknowledged), keyed by id with the session's cwd as the value when
    * the settle event carried one (`null` otherwise). The cwd lets a collapsed
@@ -129,6 +138,7 @@ export const useSessionListStore = create<SessionListStoreState & SessionListAct
       statuses: {},
       statusCwds: {},
       contextReadings: {},
+      limits: {},
       unseen: {},
       rekeys: {},
 
@@ -148,6 +158,7 @@ export const useSessionListStore = create<SessionListStoreState & SessionListAct
             delete state.statuses[sessionId];
             delete state.statusCwds[sessionId];
             delete state.contextReadings[sessionId];
+            delete state.limits[sessionId];
             delete state.unseen[sessionId];
           },
           false,
@@ -158,6 +169,7 @@ export const useSessionListStore = create<SessionListStoreState & SessionListAct
         set(
           (state) => {
             state.statuses[sessionId] = status;
+            state.limits[sessionId] = status.limit ?? null;
             if (cwd !== undefined) state.statusCwds[sessionId] = cwd;
           },
           false,
@@ -176,6 +188,7 @@ export const useSessionListStore = create<SessionListStoreState & SessionListAct
                 delete state.statuses[event.sessionId];
                 delete state.statusCwds[event.sessionId];
                 delete state.contextReadings[event.sessionId];
+                delete state.limits[event.sessionId];
                 delete state.unseen[event.sessionId];
                 break;
               case 'session_status': {
@@ -193,6 +206,7 @@ export const useSessionListStore = create<SessionListStoreState & SessionListAct
                   delete state.statuses[event.retiredSessionId];
                   delete state.statusCwds[event.retiredSessionId];
                   delete state.contextReadings[event.retiredSessionId];
+                  delete state.limits[event.retiredSessionId];
                   delete state.unseen[event.retiredSessionId];
                   state.rekeys[event.retiredSessionId] = event.sessionId;
                 }
@@ -207,6 +221,8 @@ export const useSessionListStore = create<SessionListStoreState & SessionListAct
                     receivedAt: new Date().toISOString(),
                   };
                 }
+                // Every status says where the limit stands, settled or not.
+                state.limits[event.sessionId] = event.status.limit ?? null;
                 // Settled lifecycles carry no liveness signal
                 // (borderKindFromLifecycle treats absent and idle identically),
                 // so prune the status/cwd instead of storing — `session_removed`
@@ -255,6 +271,7 @@ export const useSessionListStore = create<SessionListStoreState & SessionListAct
             // A reading held across a disconnect could be stale after a server
             // restart (same reasoning as the status drop), so clear it too.
             state.contextReadings = {};
+            state.limits = {};
           },
           false,
           'session-list/resetStatuses'
@@ -286,6 +303,15 @@ export function useSessionListSessions(): Session[] {
 /** Selector: the status projection for a single session, or `null`. */
 export function useSessionListStatus(sessionId: string): SessionStatus | null {
   return useSessionListStore(useCallback((s) => s.statuses[sessionId] ?? null, [sessionId]));
+}
+
+/**
+ * Selector: the last usage limit the stream reported for a session — `null`
+ * once it cleared, `undefined` when the stream has said nothing since connect
+ * (read the session row then).
+ */
+export function useSessionListLimit(sessionId: string): SessionStatus['limit'] | undefined {
+  return useSessionListStore(useCallback((s) => s.limits[sessionId], [sessionId]));
 }
 
 /**

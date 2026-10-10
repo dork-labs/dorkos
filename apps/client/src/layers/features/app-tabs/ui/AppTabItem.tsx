@@ -3,7 +3,7 @@ import { X } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import type { AppTab } from '@/layers/shared/model';
 import type { RovingTabProps, TabActivationSource } from '@/layers/shared/ui';
-import { tabLabel, type TabIdentity } from '../lib/tab-identity';
+import { tabAccessibleName, tabLabel, type TabIdentity } from '../lib/tab-identity';
 import { useSharesAgentWithAnotherTab } from '../model/tab-agent-registry';
 import { useTabIdentity } from '../model/use-tab-identity';
 import { TabHoverCard } from './TabHoverCard';
@@ -39,9 +39,9 @@ interface AppTabItemViewProps {
  * and status with the real component. {@link AppTabItem} is the wired one.
  *
  * The accessible name is the identity's, name then status sentence ("Scout,
- * Fix the login bug, Needs you: Waiting for your answer"), not the visible
- * text: a collapsed or truncated label still announces in full, and the dot's
- * colour is never the only signal.
+ * Fix the login bug, Needs you: Waiting for your answer"), led by what the
+ * tab visibly leads with: a collapsed or truncated label still announces in
+ * full, and the dot's colour is never the only signal.
  */
 export function AppTabItemView({
   identity,
@@ -78,7 +78,7 @@ export function AppTabItemView({
           role="tab"
           aria-selected={isActive}
           aria-controls={isActive ? APP_TAB_PANEL_ID : undefined}
-          aria-label={identity.accessibleName}
+          aria-label={tabAccessibleName(identity, { collapseAgent })}
           {...tabProps}
           className={cn(
             'focus-ring flex min-w-0 items-center gap-1.5 rounded-md py-1 text-xs transition-colors',

@@ -11,7 +11,7 @@ import { useCallback, useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { resolveIdentityFace, SETTINGS_TAB_DIRECTORY } from '@/layers/shared/lib';
 import { useExtensionPageAtPath } from '@/layers/shared/model';
-import { useSessionListStore } from '@/layers/entities/session';
+import { nonAutomatedSessionIds, useSessionListStore } from '@/layers/entities/session';
 import { hasUnread, roomDisplayTitle, useRoom, useRooms } from '@/layers/entities/room';
 import {
   communityAccessState,
@@ -72,6 +72,11 @@ const NO_FLEET = { workingCount: 0, needsYou: false, failed: false };
  * Fold the live status of every chat in `paths` (or all of them, for `null`)
  * into how many agents are working and whether any needs you or failed.
  *
+ * A scheduled or automated run is not an agent "working" for you, so it never
+ * counts toward the working number, the rule `useAgentHottestStatus` follows
+ * (DOR-1137). A blocked or failed automated run still does: it needs you all
+ * the same.
+ *
  * @param enabled - Whether to read at all.
  * @param paths - Agent folders to fold, or `null` for the whole fleet.
  */
@@ -81,16 +86,20 @@ function useFleetSignals(enabled: boolean, paths: string | null) {
       useCallback(
         (s) => {
           if (!enabled) return NO_FLEET;
-          const working = new Set<string>();
+          const streaming: string[] = [];
           let needsYou = false;
           let failed = false;
           for (const [id, status] of Object.entries(s.statuses)) {
-            const cwd = s.statusCwds[id];
-            if (paths !== null && cwd !== paths) continue;
-            if (status.lifecycle === 'streaming') working.add(cwd ?? id);
+            if (paths !== null && s.statusCwds[id] !== paths) continue;
+            if (status.lifecycle === 'streaming') streaming.push(id);
             else if (status.lifecycle === 'blocked') needsYou = true;
             else if (status.lifecycle === 'error') failed = true;
           }
+          const working = new Set(
+            nonAutomatedSessionIds(streaming, Object.values(s.sessions)).map(
+              (id) => s.statusCwds[id] ?? id
+            )
+          );
           return { workingCount: working.size, needsYou, failed };
         },
         [enabled, paths]

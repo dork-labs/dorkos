@@ -16,7 +16,8 @@
  * @module entities/attention/model/use-pending-interactions
  */
 import { useMemo } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { queryOptions, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { Transport } from '@dorkos/shared/transport';
 import { useShallow } from 'zustand/shallow';
 import {
   InteractionPendingEventSchema,
@@ -31,6 +32,22 @@ import { recordAskReceipt, settleAsk } from './ask-receipt-store';
 
 /** Query key for the fleet-wide pending-prompt list. */
 export const PENDING_INTERACTIONS_QUERY_KEY = ['pending-interactions'] as const;
+
+/**
+ * The fleet-wide pending-prompt query, key and fetcher together. A reader that
+ * only wants to observe the cache (`enabled: false`) must still pass these:
+ * an observer without the real `queryFn` overwrites the shared query's
+ * options, and the next invalidate or refetch then fails with "Missing
+ * queryFn" for every reader.
+ *
+ * @param transport - The app transport.
+ */
+export function pendingInteractionsQueryOptions(transport: Transport) {
+  return queryOptions({
+    queryKey: PENDING_INTERACTIONS_QUERY_KEY,
+    queryFn: () => transport.listPendingInteractions(),
+  });
+}
 
 /** Shared empty, so an unanswered query never mints a fresh array identity. */
 const NO_INTERACTIONS: readonly InteractionPendingEvent[] = [];
@@ -76,10 +93,7 @@ export function usePendingInteractions(): PendingInteractionsState {
   const transport = useTransport();
   const queryClient = useQueryClient();
 
-  const { data, isLoading, isError } = useQuery({
-    queryKey: PENDING_INTERACTIONS_QUERY_KEY,
-    queryFn: () => transport.listPendingInteractions(),
-  });
+  const { data, isLoading, isError } = useQuery(pendingInteractionsQueryOptions(transport));
 
   useEventSubscription('interaction_pending', (raw) => {
     const parsed = InteractionPendingEventSchema.safeParse(raw);

@@ -1,8 +1,9 @@
 /**
- * Derives a session's sidebar border indicator state from the live session
- * projections.
+ * A session's live status facts, read from its projections, and the shared
+ * border vocabulary (colours, kinds, labels) an agent row's hottest status is
+ * drawn in.
  *
- * Three sources are merged, hottest signal wins (spec chat-stream-reconnection):
+ * Three sources are merged (spec chat-stream-reconnection):
  *
  * 1. **Per-session stream store** — the seq-gated projection for sessions this
  *    client has hydrated (foreground + recently attached).
@@ -12,10 +13,9 @@
  * 3. **Legacy chat store** — the send-path/recovery state, kept as a source
  *    until the dual-pipeline retirement.
  *
- * @module entities/session/model/status/use-session-border-state
+ * @module entities/session/model/status/use-session-status-signals
  */
 import { useCallback } from 'react';
-import { useReducedMotion } from 'motion/react';
 import {
   sessionDisplayState,
   type SessionLifecycle,
@@ -199,87 +199,5 @@ export function useSessionStatusSignals(
     limited: limitDisplayFor(limitStatus),
     failed: status === 'error' || liveKind === 'error',
     unseen,
-  };
-}
-
-/**
- * Derive a session's border indicator from its live projections (stream store,
- * global list store, legacy chat store — hottest signal wins).
- *
- * The border communicates **operational status** only. Selection state ("active")
- * is handled independently by the row component via background highlight.
- *
- * Priority (highest first):
- * 1. **Pending approval** — most actionable signal; must never be hidden.
- * 2. **Streaming** — agent is generating output.
- * 3. **Limited** — the session's account ran out of usage (only when the caller
- *    passes the session's status, which it does only while the account
- *    identity gate is open).
- * 4. **Error** — last turn failed.
- * 5. **Unseen** — background activity the user has not yet acknowledged.
- * 6. **Idle** — default.
- *
- * Pulse animations are suppressed when the user has requested reduced motion.
- *
- * @param sessionId - Session to observe
- * @param limitStatus - The session's live lifecycle and usage limit, for the
- *   `limited` border. Omit it (as the agent and tab dots do) to never draw one.
- */
-export function useSessionBorderState(
-  sessionId: string,
-  limitStatus?: Pick<SessionStatus, 'lifecycle' | 'limit'> | null
-): SessionBorderState {
-  const signals = useSessionStatusSignals(sessionId, limitStatus);
-  const shouldReduceMotion = useReducedMotion();
-
-  if (signals.needsYou) {
-    return {
-      kind: 'pendingApproval',
-      color: BORDER_COLORS.amber,
-      pulse: !shouldReduceMotion,
-      dimColor: BORDER_COLORS.amberDim,
-      label: BORDER_LABELS.pendingApproval,
-    };
-  }
-  if (signals.working) {
-    return {
-      kind: 'streaming',
-      color: BORDER_COLORS.green,
-      pulse: !shouldReduceMotion,
-      dimColor: BORDER_COLORS.greenDim,
-      label: BORDER_LABELS.streaming,
-    };
-  }
-  if (signals.limited) {
-    // Red while the session needs action; the neutral grey once the person
-    // chose to wait (decision Q13).
-    return {
-      kind: 'limited',
-      color: signals.limited.needsAction ? BORDER_COLORS.destructive : BORDER_COLORS.neutral,
-      pulse: false,
-      label: BORDER_LABELS.limited,
-    };
-  }
-  if (signals.failed) {
-    return {
-      kind: 'error',
-      color: BORDER_COLORS.destructive,
-      pulse: false,
-      label: BORDER_LABELS.error,
-    };
-  }
-  if (signals.unseen) {
-    return {
-      kind: 'unseen',
-      color: BORDER_COLORS.blue,
-      pulse: false,
-      label: BORDER_LABELS.unseen,
-    };
-  }
-  return {
-    kind: 'idle',
-    color: BORDER_COLORS.idle,
-    pulse: false,
-    label: BORDER_LABELS.idle,
   };
 }
