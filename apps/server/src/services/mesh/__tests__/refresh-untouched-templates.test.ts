@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
+import { createHash } from 'crypto';
+import { writeManifest } from '@dorkos/shared/manifest';
 import { buildSoulContent, defaultSoulTemplate } from '@dorkos/shared/convention-files';
 import { renderTraits, DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import { dorkbotClaudeMdTemplate } from '@dorkos/shared/dorkbot-templates';
@@ -11,6 +13,10 @@ import {
   refreshSoulContent,
   refreshUntouchedTemplates,
 } from '../refresh-untouched-templates.js';
+
+/** sha256 prefixes of each old template, computed from git history, not from the lists. */
+const DORKBOT_FINGERPRINTS = ['8bbbe607e61c6a24', '37db35aff4b2fb6f', '88bc13eeede41a76'];
+const SOUL_FINGERPRINTS = ['0ae265f490efe529'];
 
 /** A SOUL.md exactly as a pre-2026-10 DorkOS wrote it, traits as given. */
 function oldSoul(name: string, traits = DEFAULT_TRAITS): string {
@@ -31,10 +37,19 @@ describe('refreshUntouchedTemplates', () => {
     await fs.rm(dorkHome, { recursive: true, force: true });
   });
 
-  /** Make an agent home holding the given SOUL.md. */
-  async function agentWithSoul(slug: string, soul: string): Promise<string> {
+  /** Make an agent home, named `displayName`, holding the given SOUL.md. */
+  async function agentWithSoul(slug: string, soul: string, displayName?: string): Promise<string> {
     const dir = path.join(dorkHome, 'agents', slug);
     await fs.mkdir(path.join(dir, '.dork'), { recursive: true });
+    await writeManifest(dir, {
+      id: '01JTEMPLATEREFRESH00000000',
+      name: slug,
+      ...(displayName ? { displayName } : {}),
+      runtime: 'claude-code',
+      capabilities: [],
+      registeredAt: '2026-10-10T00:00:00.000Z',
+      registeredBy: 'test',
+    } as never);
     await fs.writeFile(path.join(dir, '.dork', 'SOUL.md'), soul);
     return dir;
   }
@@ -76,7 +91,11 @@ describe('refreshUntouchedTemplates', () => {
 
   it("updates an untouched SOUL.md's prose and keeps its name and trait block", async () => {
     const traits = { ...DEFAULT_TRAITS, humor: 5 };
-    const dir = await agentWithSoul('scout', oldSoul('Scout the Second', traits));
+    const dir = await agentWithSoul(
+      'scout',
+      oldSoul('Scout the Second', traits),
+      'Scout the Second'
+    );
 
     const summary = await refreshUntouchedTemplates([dir], dorkHome);
 
@@ -84,9 +103,45 @@ describe('refreshUntouchedTemplates', () => {
     expect(await readSoul(dir)).toBe(defaultSoulTemplate('Scout the Second', renderTraits(traits)));
   });
 
+  it('matches the slug when the agent has no display name', async () => {
+    const dir = await agentWithSoul('scout', oldSoul('scout'));
+
+    expect((await refreshUntouchedTemplates([dir], dorkHome)).souls).toBe(1);
+  });
+
+  it('leaves a SOUL.md alone when the words around the name were edited', async () => {
+    const edited = oldSoul('Ada, our release reviewer');
+    const dir = await agentWithSoul('ada', edited, 'Ada');
+
+    const summary = await refreshUntouchedTemplates([dir], dorkHome);
+
+    expect(summary.souls).toBe(0);
+    expect(await readSoul(dir)).toBe(edited);
+  });
+
+  it('leaves a renamed agent alone, the safe way to be wrong', async () => {
+    const dir = await agentWithSoul('scout', oldSoul('Scout'), 'Ranger');
+
+    expect((await refreshUntouchedTemplates([dir], dorkHome)).souls).toBe(0);
+    expect(await readSoul(dir)).toBe(oldSoul('Scout'));
+  });
+
+  it('never follows a symlinked SOUL.md', async () => {
+    const dir = await agentWithSoul('scout', '', 'Scout');
+    const target = path.join(dorkHome, 'elsewhere-SOUL.md');
+    await fs.writeFile(target, oldSoul('Scout'));
+    await fs.rm(path.join(dir, '.dork', 'SOUL.md'));
+    await fs.symlink(target, path.join(dir, '.dork', 'SOUL.md'));
+
+    await refreshUntouchedTemplates([dir], dorkHome);
+
+    expect(await fs.readFile(target, 'utf-8')).toBe(oldSoul('Scout'));
+    expect((await fs.lstat(path.join(dir, '.dork', 'SOUL.md'))).isSymbolicLink()).toBe(true);
+  });
+
   it('leaves an edited SOUL.md exactly as it was', async () => {
     const edited = `${oldSoul('Scout')}\n- Ship on Fridays`;
-    const dir = await agentWithSoul('scout', edited);
+    const dir = await agentWithSoul('scout', edited, 'Scout');
 
     const summary = await refreshUntouchedTemplates([dir], dorkHome);
 
@@ -96,7 +151,7 @@ describe('refreshUntouchedTemplates', () => {
 
   it('leaves a SOUL.md alone when someone wrote above the trait fence', async () => {
     const edited = `Note to self.\n${oldSoul('Scout')}`;
-    const dir = await agentWithSoul('scout', edited);
+    const dir = await agentWithSoul('scout', edited, 'Scout');
 
     await refreshUntouchedTemplates([dir], dorkHome);
 
@@ -119,7 +174,7 @@ describe('refreshUntouchedTemplates', () => {
   });
 
   it('does nothing on the second boot', async () => {
-    const dir = await agentWithSoul('scout', oldSoul('Scout'));
+    const dir = await agentWithSoul('scout', oldSoul('Scout'), 'Scout');
     await fs.writeFile(path.join(dorkbotDir, 'AGENTS.md'), PREVIOUS_DORKBOT_AGENTS_MD[1]);
     await refreshUntouchedTemplates([dir, dorkbotDir], dorkHome);
 
@@ -141,12 +196,26 @@ describe('refreshUntouchedTemplates', () => {
 
 describe('refreshSoulContent', () => {
   it('ignores a file whose only marker is a passing mention', () => {
-    expect(refreshSoulContent('I keep the <!-- TRAITS:END --> marker in mind.')).toBeNull();
+    expect(
+      refreshSoulContent('I keep the <!-- TRAITS:END --> marker in mind.', ['Scout'])
+    ).toBeNull();
   });
 
   it('ignores the current template, so the pass is a no-op once applied', () => {
     expect(
-      refreshSoulContent(defaultSoulTemplate('Scout', renderTraits(DEFAULT_TRAITS)))
+      refreshSoulContent(defaultSoulTemplate('Scout', renderTraits(DEFAULT_TRAITS)), ['Scout'])
     ).toBeNull();
+  });
+});
+
+describe('the frozen template lists', () => {
+  const sha = (text: string) => createHash('sha256').update(text).digest('hex').slice(0, 16);
+
+  // Each entry must stay byte-for-byte what a released DorkOS wrote, recovered
+  // from git history (DOR-2779). Editing one silently stops it matching the
+  // files it exists for, so the fingerprints are pinned. Append, never edit.
+  it('has not changed', () => {
+    expect(PREVIOUS_DORKBOT_AGENTS_MD.map(sha)).toEqual(DORKBOT_FINGERPRINTS);
+    expect(PREVIOUS_SOUL_PROSE.map(sha)).toEqual(SOUL_FINGERPRINTS);
   });
 });

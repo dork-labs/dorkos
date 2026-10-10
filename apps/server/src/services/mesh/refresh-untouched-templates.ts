@@ -35,7 +35,7 @@ import {
   defaultSoulTemplate,
   extractCustomProse,
 } from '@dorkos/shared/convention-files';
-import { MANIFEST_DIR } from '@dorkos/shared/manifest';
+import { MANIFEST_DIR, readManifest } from '@dorkos/shared/manifest';
 import { dorkbotClaudeMdTemplate } from '@dorkos/shared/dorkbot-templates';
 import { isAgentHome } from '../harness/project-agent-workspace.js';
 import { logger, logError } from '../../lib/logger.js';
@@ -125,20 +125,25 @@ export const PREVIOUS_SOUL_PROSE: readonly string[] = [
  * The agent name an untouched old SOUL prose was written with, or `null` when
  * the prose is not exactly one of {@link PREVIOUS_SOUL_PROSE}.
  *
- * The name is whatever sat in the slot, so a renamed agent keeps the name its
- * file already uses. A name never spans a line: the template put it mid-sentence.
+ * The slot must hold one of `names`, exactly. Without that, a person who wrote
+ * "You are Ada, our release reviewer, a coding assistant." would read as
+ * untouched with the name "Ada, our release reviewer". The cost runs the safe
+ * way: an agent renamed since its file was written is left alone.
  *
  * @param prose - Everything after the trait fence's end marker, untrimmed.
+ * @param names - The agent's current names: its display name and its slug.
  */
-export function matchPreviousSoulProse(prose: string): string | null {
+export function matchPreviousSoulProse(prose: string, names: readonly string[]): string | null {
   for (const template of PREVIOUS_SOUL_PROSE) {
-    const [before, after] = template.split(NAME_SLOT) as [string, string];
+    const parts = template.split(NAME_SLOT);
+    if (parts.length !== 2) continue;
+    const [before, after] = parts as [string, string];
     // `buildSoulContent` puts exactly one blank line between fence and prose.
     const head = `\n\n${before}`;
     if (prose.length <= head.length + after.length) continue;
     if (!prose.startsWith(head) || !prose.endsWith(after)) continue;
     const name = prose.slice(head.length, prose.length - after.length);
-    if (name.length > 0 && !name.includes('\n')) return name;
+    if (names.includes(name)) return name;
   }
   return null;
 }
@@ -152,13 +157,14 @@ export function matchPreviousSoulProse(prose: string): string | null {
  * The fence itself is kept as it is.
  *
  * @param content - The whole `SOUL.md`.
+ * @param names - The agent's current names, see {@link matchPreviousSoulProse}.
  */
-export function refreshSoulContent(content: string): string | null {
+export function refreshSoulContent(content: string, names: readonly string[]): string | null {
   if (!content.startsWith(TRAIT_SECTION_START)) return null;
   const endsAt = content.indexOf(TRAIT_SECTION_END, TRAIT_SECTION_START.length);
   if (endsAt === -1) return null;
   const fenceEnd = endsAt + TRAIT_SECTION_END.length;
-  const name = matchPreviousSoulProse(content.slice(fenceEnd));
+  const name = matchPreviousSoulProse(content.slice(fenceEnd), names);
   if (name === null) return null;
   const prose = extractCustomProse(defaultSoulTemplate(name, ''));
   return `${content.slice(0, fenceEnd)}\n\n${prose}`;
@@ -230,7 +236,14 @@ export async function refreshUntouchedTemplates(
     if (!isAgentHome(agentDir, dorkHome)) continue;
     const soulPath = path.join(agentDir, MANIFEST_DIR, CONVENTION_FILES.soul);
     try {
-      if (await refreshFile(soulPath, refreshSoulContent)) summary.souls += 1;
+      // A `.dork` that is a link points somewhere a boot has no business writing.
+      if ((await fs.lstat(path.dirname(soulPath))).isSymbolicLink()) continue;
+      const manifest = await readManifest(agentDir, logger);
+      if (!manifest) continue;
+      const names = [manifest.displayName, manifest.name].filter((n): n is string => !!n);
+      if (await refreshFile(soulPath, (content) => refreshSoulContent(content, names))) {
+        summary.souls += 1;
+      }
     } catch (err) {
       logger.warn('[Mesh] Could not refresh SOUL.md', { agentDir, ...logError(err) });
     }
